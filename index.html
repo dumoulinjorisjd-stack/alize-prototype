@@ -229,6 +229,9 @@
   .avcell{height:40px;border-radius:10px;border:1.5px solid var(--hair);background:var(--card);font-size:11px;color:var(--muted);transition:all .12s;display:flex;align-items:center;justify-content:center}
   .avcell:active{transform:scale(.94)}
   .avcell.on{background:var(--teal);border-color:var(--teal);color:#fff}
+  .appt{display:flex;gap:13px;padding:13px;border-radius:14px;background:var(--card);border:1px solid var(--hair);border-left:4px solid var(--teal);box-shadow:0 8px 22px -20px var(--shadow);margin-bottom:9px}
+  .appt-time{width:50px;flex:none;display:flex;flex-direction:column;gap:1px}
+  .appt-time b{font-family:var(--f-num);font-size:15px;font-weight:800;font-variant-numeric:tabular-nums}
 
   .navbar{position:sticky;bottom:0;display:flex;background:var(--card);border-top:1px solid var(--hair);padding:8px 0 calc(8px + env(safe-area-inset-bottom))}
   .navbar button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10.5px;font-weight:650;color:var(--muted);padding:3px}
@@ -346,11 +349,18 @@
   const COMMISSION=0.15;
   const DAYS=[['lun','Lun'],['mar','Mar'],['mer','Mer'],['jeu','Jeu'],['ven','Ven'],['sam','Sam'],['dim','Dim']];
   const BLOCKS=[['m','Matin'],['a','Après-m.'],['s','Soir']];
+  const SEED_AGENDA=[
+    {day:'Aujourd’hui',slot:'09:00',svc:'menage',client:'Villa Bartolomé',zone:'Gustavia',duration:2,status:'done'},
+    {day:'Aujourd’hui',slot:'16:30',svc:'repassage',client:'Mme Laplace',zone:'St-Jean',duration:1,status:'upcoming'},
+    {day:'Demain',slot:'08:30',svc:'menage',client:'Villa Sereno',zone:'Flamands',duration:3,status:'upcoming'},
+    {day:'Vendredi 11',slot:'09:00',svc:'cuisine',client:'M. Brin',zone:'Lorient',duration:3,status:'upcoming'}
+  ];
 
   const S={
     persona:'client',clientNav:'home',proNav:'home',onboarded:false,
     card:{brand:'Visa',last4:'4242'},mission:null,draft:null,
     proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],
+    agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),
     avail:{lun:{m:1,a:1,s:0},mar:{m:1,a:1,s:0},mer:{m:1,a:1,s:1},jeu:{m:1,a:1,s:0},ven:{m:1,a:1,s:1},sam:{m:1,a:0,s:0},dim:{m:0,a:0,s:0}}
   };
   function newMission(svc){return {svc:svc.id,svcName:svc.nm,rate:svc.rate,duration:3,zone:'Gustavia',address:'Villa Colibri, Gustavia',notes:'',when:'Aujourd’hui',slot:'14:00',status:'draft',provider:null,rating:0,competitors:0};}
@@ -470,30 +480,61 @@
   function renderPro(){
     const m=S.mission;
     if(m){if(m.status==='pending')return proRequest();if(m.status==='accepted'||m.status==='working')return proActive();if(m.status==='done_pro')return proWaiting();if(m.status==='paid'||m.status==='rated')return proPaid();}
-    if(S.proNav==='dispo')return proDispo();
+    if(S.proNav==='agenda')return proAgenda();
     if(S.proNav==='earnings')return proEarnings();
     return proHome();
   }
   function proNavbar(){
     const act=attention()==='pro';
     const item=(id,ic,lbl,badge)=>`<button data-pnav="${id}" class="${S.proNav===id&&!S.mission?'on':''}"><span class="nb-ic">${ic}${badge?'<span class="nb-badge"></span>':''}</span>${lbl}</button>`;
-    return `<div class="navbar">${item('home',I.bolt,'Missions',act)}${item('dispo',I.cal,'Dispos',false)}${item('earnings',I.wallet,'Revenus',false)}</div>`;
+    return `<div class="navbar">${item('home',I.bolt,'Missions',act)}${item('agenda',I.cal,'Agenda',false)}${item('earnings',I.wallet,'Revenus',false)}</div>`;
   }
   function proHome(){
     return `<div class="pad"><div class="row between" style="margin-top:10px"><div><span class="eyebrow">Artisan · Ménage &amp; maison</span><div class="h-hello">Marie-Lou</div></div><div class="avatar">ML</div></div>
       <div class="card" style="padding:16px;margin-top:12px"><div class="row between"><div><b style="font-size:15px">${S.proOnline?'Vous êtes en ligne':'Hors ligne'}</b><div class="mini">${S.proOnline?'Vous recevez les missions sur vos créneaux dispo':'Activez pour recevoir des missions'}</div></div><button class="switch" data-act="toggle-online" style="background:${S.proOnline?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${S.proOnline?'25px':'3px'}"></span></button></div></div>
       <div class="row" style="gap:11px;margin-top:12px"><div class="card" style="padding:14px;flex:1"><div class="mini">Aujourd'hui</div><b class="money" style="font-size:20px;font-family:var(--f-disp)">${S.proJobsToday}</b><div class="mini">missions</div></div><div class="card" style="padding:14px;flex:1"><div class="mini">Note</div><b class="money" style="font-size:20px;font-family:var(--f-disp)">4,9</b><div class="mini"><span class="stars">★</span> · 214</div></div><div class="card" style="padding:14px;flex:1"><div class="mini">Dispos</div><b class="money" style="font-size:20px;font-family:var(--f-disp)">${availCount()}</b><div class="mini">créneaux</div></div></div>
+      ${(()=>{const n=S.agenda.find(a=>a.status!=='done');if(!n)return '';const s=SERVICES.find(x=>x.id===n.svc);return `<button class="card" style="padding:14px;margin-top:12px;width:100%;text-align:left;display:block" data-pnav="agenda"><div class="row between"><span class="eyebrow" style="color:var(--muted)">Prochaine prestation</span><span class="mini">Voir l’agenda ›</span></div><div class="row" style="gap:12px;margin-top:8px"><div class="appt-time"><b>${n.slot}</b><span class="mini">${n.duration} h</span></div><div><b style="font-size:14.5px">${s.nm}</b><div class="mini">${n.day} · ${n.client}</div></div></div></button>`;})()}
       ${S.proOnline?`<div class="card" style="padding:18px;margin-top:14px;text-align:center;border-style:dashed"><div class="radar sm"><div class="ring r1"></div><div class="ring r2"></div><div class="core">${I.bolt}</div></div><p class="sub" style="margin:6px 0 0">En attente de nouvelles missions…</p><p class="mini" style="margin-top:8px">Côté <b>Client</b>, lancez une réservation pour recevoir une demande ici.</p></div>`:`<div class="card" style="padding:22px;margin-top:14px;text-align:center;color:var(--muted)">Passez en ligne pour recevoir des missions.</div>`}
       <div style="height:12px"></div></div>${proNavbar()}`;
   }
-  function proDispo(){
+  function apptPayout(a){const s=SERVICES.find(x=>x.id===a.svc);return Math.round(s.rate*a.duration*0.85*100)/100;}
+  function apptCard(a){
+    const s=SERVICES.find(x=>x.id===a.svc);
+    const col={upcoming:'var(--teal)',live:'var(--coral)',done:'var(--muted)'}[a.status];
+    const chip={upcoming:['grey','À venir'],live:['coral','En cours'],done:['good','Terminée']}[a.status];
+    return `<div class="appt" style="border-left-color:${col}">
+      <div class="appt-time"><b>${a.slot}</b><span class="mini">${a.duration} h</span></div>
+      <div style="flex:1">
+        <div class="row between"><b style="font-size:14.5px">${s.nm}</b><span class="chip ${chip[0]}" style="padding:3px 9px">${chip[1]}</span></div>
+        <div class="mini" style="margin-top:3px">${a.client} · ${I.pin} ${a.zone}</div>
+        <div class="mini" style="margin-top:3px">Vous percevez <b style="color:var(--ink)">${eur(apptPayout(a))}</b></div>
+      </div></div>`;
+  }
+  function apptList(){
+    const items=S.agenda;
+    const up=items.filter(a=>a.status!=='done');
+    const totalUp=up.reduce((t,a)=>t+apptPayout(a),0);
+    const summary=`<div class="card" style="padding:15px;margin-top:14px"><div class="row between">
+      <div><div class="mini">À venir</div><b class="money" style="font-size:19px;font-family:var(--f-disp)">${up.length} prestation${up.length>1?'s':''}</b></div>
+      <div style="text-align:right"><div class="mini">Revenus à venir</div><b class="money" style="font-size:19px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(totalUp)}</b></div></div></div>`;
+    if(!items.length)return summary+`<div class="card" style="padding:24px;margin-top:12px;text-align:center;color:var(--muted)">Aucune prestation réservée pour l’instant.<br>Vos missions acceptées apparaîtront ici.</div>`;
+    const order=[],g={};
+    items.forEach(a=>{if(!g[a.day]){g[a.day]=[];order.push(a.day);}g[a.day].push(a);});
+    const html=order.map(day=>`<div style="margin-top:18px"><div class="row between" style="margin-bottom:9px"><b style="font-size:13.5px;font-family:var(--f-disp)">${day}</b><span class="mini">${g[day].length} RDV</span></div>${g[day].map(apptCard).join('')}</div>`).join('');
+    return summary+html+'<div style="height:6px"></div>';
+  }
+  function dispoGrid(){
     const head=`<div class="avgrid"><div></div>${BLOCKS.map(b=>`<div class="hd">${b[1]}</div>`).join('')}`;
     const rows=DAYS.map(d=>{const cells=BLOCKS.map(b=>{const on=S.avail[d[0]][b[0]];return `<button class="avcell ${on?'on':''}" data-av="${d[0]}:${b[0]}">${on?I.check:''}</button>`;}).join('');return `<div class="day">${d[1]}</div>${cells}`;}).join('');
-    return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">${I.cal} Mes disponibilités</span><div class="h-hello">Quand travaillez-vous&nbsp;?</div>
-      <p class="sub">Touchez les créneaux où vous êtes disponible. Vous ne recevez des missions que sur ces créneaux.</p>
-      ${head}${rows}</div>
+    return `<p class="sub" style="margin-top:14px">Touchez les créneaux où vous êtes disponible. Vous ne recevez des missions que sur ces créneaux.</p>
+      ${head}${rows}
       <div class="card" style="padding:14px;margin-top:16px"><div class="row between"><span class="sub"><b class="money" style="color:var(--ink)">${availCount()}</b> créneaux actifs / semaine</span><span class="chip good">${I.check} À jour</span></div></div>
-      <div class="footcta" style="position:static;background:none;padding:16px 0 0"><button class="btn primary" data-act="save-dispo">Enregistrer mes disponibilités</button></div></div>${proNavbar()}`;
+      <div style="margin-top:14px"><button class="btn primary" data-act="save-dispo">Enregistrer mes disponibilités</button></div>`;
+  }
+  function proAgenda(){
+    const tab=S.agendaTab;
+    const seg=`<div class="segs" style="margin-top:8px"><button class="seg ${tab==='presta'?'on':''}" data-atab="presta">Prestations</button><button class="seg ${tab==='dispo'?'on':''}" data-atab="dispo">Disponibilités</button></div>`;
+    return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">${I.cal} Mon agenda</span><div class="h-hello">${tab==='dispo'?'Mes disponibilités':'Prestations réservées'}</div>${seg}${tab==='dispo'?dispoGrid():apptList()}</div>${proNavbar()}`;
   }
   function proRequest(){
     const m=S.mission,t=totals(m);
@@ -545,13 +586,14 @@
     setTimeout(()=>{if(!S.mission||S.mission.status!=='searching'){clearInterval(iv);return;}clearInterval(iv);S.mission.provider=Object.assign({},PROVIDERS[S.mission.svc]);S.mission.status='pending';render();if(S.persona!=='pro')toast(S.mission.competitors+' artisans ont reçu votre demande');},2600);
   }
   document.addEventListener('click',(e)=>{
-    const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-pnav],[data-star],[data-persona],[data-av],[data-cfg],[data-zone],[data-slot]');
+    const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-pnav],[data-star],[data-persona],[data-av],[data-atab],[data-cfg],[data-zone],[data-slot]');
     if(!b)return;
     if(b.dataset.persona){go(b.dataset.persona);return;}
     if(b.dataset.cnav){S.clientNav=b.dataset.cnav;render();return;}
     if(b.dataset.pnav){S.proNav=b.dataset.pnav;render();return;}
     if(b.dataset.svc){const svc=SERVICES.find(s=>s.id===b.dataset.svc);S.draft=newMission(svc);renderConfig();return;}
     if(b.dataset.av){const[d,bl]=b.dataset.av.split(':');S.avail[d][bl]=S.avail[d][bl]?0:1;render();return;}
+    if(b.dataset.atab){S.agendaTab=b.dataset.atab;render();return;}
     if(b.dataset.zone){if(S.draft){S.draft.zone=b.dataset.zone;S.draft.address=b.dataset.zone==='Gustavia'?'Villa Colibri, Gustavia':('Villa, '+b.dataset.zone);}renderConfig();return;}
     if(b.dataset.slot){if(S.draft)S.draft.slot=b.dataset.slot;renderConfig();return;}
     if(b.dataset.star){const n=+b.dataset.star;S.mission.rating=n;document.querySelectorAll('#rateStars button').forEach(x=>x.classList.toggle('lit',+x.dataset.star<=n));const rb=document.getElementById('rateBtn');if(rb)rb.disabled=false;return;}
@@ -559,15 +601,15 @@
     switch(b.dataset.act){
       case 'finish-onboard':S.onboarded=true;render();toast('Carte enregistrée — vous ne la ressortirez plus');break;
       case 'cancel-mission':S.mission=null;S.clientNav='home';render();break;
-      case 'confirm-done':S.mission.status='paid';S.proEarnings+=totals(S.mission).payout;render();break;
+      case 'confirm-done':S.mission.status='paid';S.proEarnings+=totals(S.mission).payout;if(S.mission._appt)S.mission._appt.status='done';render();break;
       case 'report-issue':toast('Signalement transmis — vous ne serez pas débité');break;
       case 'submit-rating':S.mission.status='rated';render();break;
       case 'new-mission':S.history.unshift(S.mission);S.mission=null;S.clientNav='home';render();break;
       case 'toggle-online':S.proOnline=!S.proOnline;render();break;
       case 'save-dispo':toast('Disponibilités enregistrées');break;
-      case 'pro-accept':S.mission.status='accepted';render();toast('Mission remportée — vous avez accepté en premier !');break;
+      case 'pro-accept':{S.mission.status='accepted';const ap={day:'Aujourd’hui',slot:S.mission.slot,svc:S.mission.svc,client:'Camille M.',zone:S.mission.zone,duration:S.mission.duration,status:'upcoming'};S.mission._appt=ap;S.agenda.unshift(ap);render();toast('Mission remportée — ajoutée à votre agenda !');break;}
       case 'pro-decline':S.mission.status='searching';render();setTimeout(()=>{if(S.mission&&S.mission.status==='searching'){S.mission.status='pending';render();}},1400);toast('Mission passée — proposée aux autres');break;
-      case 'pro-advance':S.mission.status=b.dataset.to;render();break;
+      case 'pro-advance':S.mission.status=b.dataset.to;if(b.dataset.to==='working'&&S.mission._appt)S.mission._appt.status='live';render();break;
       case 'pro-back-home':if(S.mission)S.history.unshift(S.mission);S.mission=null;S.proNav='home';render();break;
     }
     paintPersona();
@@ -587,7 +629,7 @@
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm">${I.search} Trouver un artisan · ${eur(t.total)}</button></div></div></div>`;
   }
   view.addEventListener('input',(e)=>{const t=e.target.closest('[data-cfg="notes"]');if(t&&S.draft)S.draft.notes=t.value;});
-  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,onboarded:false,history:[]});render();toast('Scénario réinitialisé');});
+  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,onboarded:false,history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a}))});render();toast('Scénario réinitialisé');});
 
   /* ---------- PWA: install + service worker ---------- */
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
@@ -595,8 +637,8 @@
   const installBtn=document.getElementById('installBtn');
   const installSteps=document.getElementById('installSteps');
   const isiOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
-  if(isiOS){installSteps.innerHTML='Sur iPhone&nbsp;: appuie sur <b>Partager</b> ⬆️ puis <b>« Sur l\\'écran d\\'accueil »</b>.';}
-  window.addEventListener('beforeinstallprompt',(e)=>{e.preventDefault();deferredPrompt=e;installBtn.style.display='block';installSteps.textContent='Ton navigateur peut l\\'installer en un clic :';});
+  if(isiOS){installSteps.innerHTML='Sur iPhone&nbsp;: appuie sur <b>Partager</b> ⬆️ puis <b>« Sur l’écran d’accueil »</b>.';}
+  window.addEventListener('beforeinstallprompt',(e)=>{e.preventDefault();deferredPrompt=e;installBtn.style.display='block';installSteps.textContent='Ton navigateur peut l’installer en un clic :';});
   installBtn.addEventListener('click',async()=>{if(!deferredPrompt)return;deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null;installBtn.style.display='none';});
   if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(()=>{});});}
 
