@@ -242,6 +242,9 @@
   .appt{display:flex;gap:13px;padding:13px;border-radius:14px;background:var(--card);border:1px solid var(--hair);border-left:4px solid var(--teal);box-shadow:0 8px 22px -20px var(--shadow);margin-bottom:9px}
   .appt-time{width:50px;flex:none;display:flex;flex-direction:column;gap:1px}
   .appt-time b{font-family:var(--f-num);font-size:15px;font-weight:800;font-variant-numeric:tabular-nums}
+  .geomap{margin-top:10px;border-radius:14px;overflow:hidden;border:1px solid var(--hair);position:relative}
+  .geomap svg{width:100%;height:118px;display:block}
+  .geocoords{position:absolute;left:8px;bottom:8px;background:var(--card);color:var(--ink);font-family:var(--f-num);font-size:11.5px;font-weight:700;padding:4px 8px;border-radius:8px;box-shadow:0 6px 16px -8px var(--shadow)}
 
   .navbar{position:sticky;bottom:0;display:flex;background:var(--card);border-top:1px solid var(--hair);padding:8px 0 calc(8px + env(safe-area-inset-bottom))}
   .navbar button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10.5px;font-weight:650;color:var(--muted);padding:3px}
@@ -381,10 +384,12 @@
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],
     avail:{lun:{m:1,a:1,s:0},mar:{m:1,a:1,s:0},mer:{m:1,a:1,s:1},jeu:{m:1,a:1,s:0},ven:{m:1,a:1,s:1},sam:{m:1,a:0,s:0},dim:{m:0,a:0,s:0}}
   };
-  function newMission(svc){return {svc:svc.id,svcName:svc.nm,rate:svc.rate,tip:0,frequency:'ponctuelle',duration:3,zone:'Gustavia',address:'Villa Colibri, Gustavia',notes:'',when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',status:'draft',provider:null,rating:0,competitors:0};}
+  function newMission(svc){return {svc:svc.id,svcName:svc.nm,rate:svc.rate,tip:0,frequency:'ponctuelle',duration:3,zone:'Gustavia',address:'Villa Colibri, Gustavia',geo:null,notes:'',when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',status:'draft',provider:null,rating:0,competitors:0};}
   function totals(m){const rate=m.rate;const sub=rate*m.duration;const tip=m.tip||0;const total=sub+tip;return {rate,sub,tip,commission:0,payout:total,total};}
   const eur=(n)=>n.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
   const fmtDate=(iso)=>{if(!iso)return 'Aujourd’hui';const p=iso.split('-');return p[2]+'/'+p[1];};
+  function miniMap(g){return `<div class="geomap"><svg viewBox="0 0 300 130" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="300" height="130" fill="var(--teal-wash)"/><path d="M0 96 Q80 82 150 93 T300 88 V130 H0Z" fill="color-mix(in srgb,var(--teal) 20%,transparent)"/><g stroke="color-mix(in srgb,var(--teal) 22%,transparent)" stroke-width="1"><path d="M0 40h300M0 74h300M60 0v130M150 0v130M240 0v130"/></g><g transform="translate(150 62)"><circle r="20" fill="color-mix(in srgb,var(--coral) 20%,transparent)"><animate attributeName="r" values="10;22;10" dur="2.2s" repeatCount="indefinite"/></circle><circle r="7" fill="var(--coral)"/><circle r="2.6" fill="#fff"/></g></svg><div class="geocoords">📍 ${g.lat}, ${g.lng}</div></div>`;}
+  function geolocate(){const fb={lat:17.8962,lng:-62.8498};const set=(g)=>{if(S.draft){S.draft.geo=g;renderConfig();}toast('Point GPS enregistré');};if(navigator.geolocation){toast('Localisation en cours…');navigator.geolocation.getCurrentPosition(p=>set({lat:+p.coords.latitude.toFixed(5),lng:+p.coords.longitude.toFixed(5)}),()=>set(fb),{enableHighAccuracy:true,timeout:6000,maximumAge:0});}else set(fb);}
   const availCount=()=>Object.values(S.avail).reduce((t,d)=>t+d.m+d.a+d.s,0);
 
   const view=document.getElementById('view');
@@ -656,6 +661,7 @@
     return `<div class="pad"><div style="height:8px"></div><div class="row between"><span class="chip good">${stLabel}</span><span class="mini">Mission remportée 🎉</span></div>
       <div class="h-hello" style="margin-top:8px">${m.svcName}</div>
       <div class="card" style="padding:15px;margin-top:12px"><div class="row" style="gap:8px;flex-wrap:wrap"><span class="chip grey">${I.clock} ${m.slot}</span><span class="chip grey">${m.duration} h</span></div><div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px"><span class="chip grey">${I.pin} ${m.address}</span></div><hr class="dashed"><div class="row between"><span class="sub">Client</span><b>Camille M.</b></div><div class="row between" style="margin-top:6px"><span class="sub">Vous percevez</span><b class="money" style="color:var(--teal-deep)">${eur(t.payout)}</b></div></div>
+      ${m.geo?`<div class="card" style="padding:14px;margin-top:12px"><div class="row between"><span class="chip">📍 Localisation du domicile</span><a class="chip good" style="padding:5px 11px;text-decoration:none" href="https://www.google.com/maps/search/?api=1&query=${m.geo.lat},${m.geo.lng}" target="_blank" rel="noopener">Itinéraire ›</a></div>${miniMap(m.geo)}</div>`:''}
       <div class="banner teal" style="margin-top:14px">${I.shield}<span>Le paiement du client est déjà sécurisé et vous est versé dès qu'il valide. Aucun échange à gérer&nbsp;: tout est cadré par Ti-Services.</span></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-act="pro-advance" data-to="${next.to}">${next.lbl}</button></div></div>`;
   }
@@ -702,7 +708,7 @@
     if(b.dataset.tip){if(!S.draft)return;S.draft.tip=parseFloat(b.dataset.tip);renderConfig();return;}
     if(b.dataset.freq){if(!S.draft)return;S.draft.frequency=b.dataset.freq;renderConfig();return;}
     if(b.dataset.star){const n=+b.dataset.star;S.mission.rating=n;document.querySelectorAll('#rateStars button').forEach(x=>x.classList.toggle('lit',+x.dataset.star<=n));const rb=document.getElementById('rateBtn');if(rb)rb.disabled=false;return;}
-    if(b.dataset.cfg){const c=b.dataset.cfg;if(!S.draft)return;if(c==='back'){S.draft=null;render();}else if(c==='minus'){S.draft.duration=Math.max(1,S.draft.duration-1);renderConfig();}else if(c==='plus'){S.draft.duration=Math.min(10,S.draft.duration+1);renderConfig();}else if(c==='confirm'){S.mission=S.draft;S.draft=null;startSearch();}return;}
+    if(b.dataset.cfg){const c=b.dataset.cfg;if(!S.draft)return;if(c==='back'){S.draft=null;render();}else if(c==='minus'){S.draft.duration=Math.max(1,S.draft.duration-1);renderConfig();}else if(c==='plus'){S.draft.duration=Math.min(10,S.draft.duration+1);renderConfig();}else if(c==='geoloc'){geolocate();}else if(c==='confirm'){S.mission=S.draft;S.draft=null;startSearch();}return;}
     switch(b.dataset.act){
       case 'onb-start':S.onbStep=1;render();break;
       case 'onb-back0':S.onbStep=0;render();break;
@@ -741,6 +747,7 @@
       <div class="field"><label>Durée estimée</label><div class="stepper"><button data-cfg="minus">−</button><span class="val">${m.duration} h</span><button data-cfg="plus">+</button></div></div>
       <div class="field"><label>Secteur</label><div class="segs">${zones}</div></div>
       <div class="field"><label>Adresse</label><input class="txt" value="${m.address}"></div>
+      <div class="field"><label>Point GPS du domicile</label><button class="btn ghost sm" data-cfg="geoloc">📍 ${m.geo?'Actualiser ma position':'Utiliser ma position actuelle'}</button>${m.geo?miniMap(m.geo):`<p class="mini" style="margin-top:6px">Ajoutez un point GPS pour que le prestataire trouve votre domicile facilement.</p>`}</div>
       <div class="field"><label>Décrivez votre besoin</label><textarea rows="3" data-cfg="notes" placeholder="${PLACEHOLDERS[m.svc]||'Décrivez précisément la prestation…'}">${m.notes}</textarea><p class="mini" style="margin-top:6px">Plus c'est précis (« bricolage » est large&nbsp;!), plus l'artisan accepte vite et au bon tarif.</p></div>
       <div class="est"><div class="line"><span>${m.svcName} · ${t.rate} €/h × ${m.duration} h</span><b>${eur(t.sub)}</b></div>${t.tip>0?`<div class="line"><span>Coup de pouce 💛</span><b>+${eur(t.tip)}</b></div>`:''}<div class="total"><span>${(m.frequency&&m.frequency!=='ponctuelle')?'Par prestation':'Total'}</span><b>${eur(t.total)}</b></div><small>${I.shield} Vous ne réglez rien à la main. Bloqué en garantie sur ${S.card.brand} ••••&nbsp;${S.card.last4}, débité seulement après validation.</small></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm">${I.search} Trouver un artisan · ${eur(t.total)}</button></div></div></div>`;
