@@ -1,4 +1,4 @@
-# ti-service — maquette (PWA)
+# Ti-Services — maquette (PWA)
 
 Prototype cliquable et **installable** d'une application de **mise en relation de petits
 services à la demande** à **Saint-Barthélemy** : ménage, garde d'enfants, jardinage…
