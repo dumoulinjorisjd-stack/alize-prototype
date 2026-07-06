@@ -169,6 +169,9 @@
   .benic{width:34px;height:34px;border-radius:10px;background:var(--teal-wash);color:var(--teal-deep);display:flex;align-items:center;justify-content:center;flex:none}
   .demobtn{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;padding:13px;border-radius:13px;border:1.5px dashed color-mix(in srgb,var(--teal) 45%,var(--hair));background:var(--teal-wash);color:var(--teal-deep);font-weight:700;font-size:13.5px}
   .demobtn:active{transform:scale(.98)}
+  .slider{-webkit-appearance:none;appearance:none;width:100%;height:8px;border-radius:6px;background:var(--hair);outline:none;margin-top:8px}
+  .slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:24px;height:24px;border-radius:50%;background:var(--teal);cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.25)}
+  .slider::-moz-range-thumb{width:24px;height:24px;border:none;border-radius:50%;background:var(--teal);cursor:pointer}
 
   .field{margin-top:14px}
   .field>label{font-size:12.5px;font-weight:650;color:var(--ink-soft);display:block;margin-bottom:7px}
@@ -401,7 +404,7 @@
   const S={
     persona:'client',clientNav:'home',proNav:'home',onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},
     card:{brand:'Visa',last4:'4242'},mission:null,draft:null,
-    proStatus:'approved',proName:'Marie-Lou',proRate:35,proStatusType:'entreprise',proSiret:'',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'',siret:'',rate:'',bio:'',insurer:'',insuranceDoc:false},
+    proStatus:'approved',proName:'Marie-Lou',proRate:35,proStatusType:'entreprise',proSiret:'',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false},
     proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),
     admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,
@@ -644,22 +647,18 @@
   function proSignup(){
     const f=S.proForm;
     const cats=SERVICES.map(s=>`<button class="cat ${f.cats.includes(s.id)?'sel':''}" data-pcat="${s.id}"><div class="pick">${I.check}</div><div class="ic">${I[s.id]}</div><div class="nm">${s.nm}</div><div class="rt">${s.rate} €/h</div></button>`).join('');
-    const st=f.status||'';
-    const legal = st==='particulier'
-      ? `<div class="banner coral" style="margin-top:12px">${I.shield}<span><b>⛔ Interdit sans immatriculation.</b> Un particulier non déclaré ne peut pas être rémunéré (travail dissimulé). Vous devez être <b>immatriculé (micro-entrepreneur)</b> et fournir un <b>SIRET valide</b> — sans quoi l'inscription est impossible.</span></div>`
-      : (st==='entreprise' ? `<div class="banner teal" style="margin-top:12px">${I.shield}<span>Votre SIRET permet de vérifier votre entreprise et de vous reverser vos gains en toute légalité.</span></div>` : '');
-    const siretField = st ? `<div class="field"><label>SIRET (14 chiffres)</label><input class="txt" data-pf="siret" value="${f.siret}" inputmode="numeric" placeholder="Ex. 123 456 789 00012"></div>${legal}` : '';
+    const rate=f.rate||35;
     return `<div class="pad"><div style="height:10px"></div>
       <button class="reset" data-act="back-to-client" style="margin:0 0 8px">← Je suis un client</button>
       <span class="eyebrow">Rejoindre Ti-Services</span>
       <div class="h-hello">Devenez artisan partenaire</div>
-      <p class="sub" style="margin-top:6px">On rejoint Ti-Services sur <b>candidature</b>, comme un recrutement : profil et statut vérifiés avant activation.</p>
-      <div class="card" style="padding:16px;margin-top:16px">
+      <p class="sub" style="margin-top:6px">Sur <b>candidature</b>, comme un recrutement : profil vérifié avant activation.</p>
+      <div class="banner coral" style="margin-top:14px">${I.shield}<span><b>Réservé aux professionnels immatriculés</b> (micro-entrepreneur ou société). Un particulier non déclaré ne peut pas s'inscrire — <b>SIRET obligatoire</b>.</span></div>
+      <div class="card" style="padding:16px;margin-top:14px">
         <div class="field"><label>Nom / Raison sociale</label><input class="txt" data-pf="name" value="${f.name}" placeholder="Ex. Marie-Lou Cagan"></div>
         <div class="field"><label>Téléphone</label><input class="txt" data-pf="phone" value="${f.phone}" inputmode="tel" placeholder="Ex. 0690 00 00 00"></div>
-        <div class="field"><label>Vous êtes…</label><div class="segs"><button class="seg ${st==='entreprise'?'on':''}" data-pstatus="entreprise">Entreprise / Pro</button><button class="seg ${st==='particulier'?'on':''}" data-pstatus="particulier">Particulier</button></div></div>
-        ${siretField}
-        <div class="field"><label>Taux horaire souhaité</label><input class="txt" data-pf="rate" value="${f.rate}" inputmode="numeric" placeholder="Ex. 35 (€/h)"></div>
+        <div class="field"><label>SIRET (14 chiffres) — obligatoire</label><input class="txt" data-pf="siret" value="${f.siret}" inputmode="numeric" placeholder="Ex. 123 456 789 00012"></div>
+        <div class="field"><label>Montant horaire souhaité — <b id="prateVal">${rate} €/h</b></label><input type="range" class="slider" min="15" max="100" step="5" value="${rate}" data-prate><p class="mini" style="margin-top:4px">Ce tarif sera validé par Ti-Services.</p></div>
         <div class="field"><label>Présentation / expérience</label><textarea rows="3" data-pf="bio" placeholder="Votre expérience, vos spécialités, votre zone…">${f.bio}</textarea></div>
         <div class="field"><label>Assurance responsabilité civile (obligatoire)</label><input class="txt" data-pf="insurer" value="${f.insurer}" placeholder="Assureur &amp; n° de police (ex. AXA 12345)"><button class="btn ghost sm" data-act="pro-attach-insurance" style="margin-top:8px">${f.insuranceDoc?'✓ Attestation jointe':'📎 Joindre mon attestation'}</button><p class="mini" style="margin-top:6px">Chaque prestataire doit justifier d'une assurance responsabilité civile en cours de validité.</p></div>
       </div>
@@ -667,7 +666,7 @@
       <div class="cats">${cats}</div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0">
         <button class="btn primary" data-act="pro-submit">Envoyer ma candidature</button>
-        <p class="mini" style="text-align:center;margin-top:10px">Candidature soumise à validation de Ti-Services (statut &amp; SIRET vérifiés).</p>
+        <p class="mini" style="text-align:center;margin-top:10px">Candidature soumise à validation de Ti-Services (SIRET, assurance &amp; tarif vérifiés).</p>
       </div></div>`;
   }
   function proPending(){
@@ -805,7 +804,7 @@
     if(b.dataset.svc){const svc=SERVICES.find(s=>s.id===b.dataset.svc);S.draft=newMission(svc);renderConfig();return;}
     if(b.dataset.av){const[d,bl]=b.dataset.av.split(':');S.avail[d][bl]=S.avail[d][bl]?0:1;render();return;}
     if(b.dataset.atab){S.agendaTab=b.dataset.atab;render();return;}
-    if(b.dataset.pcat){const c=b.dataset.pcat,i=S.proForm.cats.indexOf(c);if(i<0)S.proForm.cats.push(c);else S.proForm.cats.splice(i,1);render();return;}
+    if(b.dataset.pcat){const c=b.dataset.pcat,i=S.proForm.cats.indexOf(c);if(i<0)S.proForm.cats.push(c);else S.proForm.cats.splice(i,1);b.classList.toggle('sel');return;}
     if(b.dataset.pstatus){S.proForm.status=b.dataset.pstatus;render();return;}
     if(b.dataset.zone){if(S.draft){S.draft.zone=b.dataset.zone;S.draft.address=b.dataset.zone==='Gustavia'?'Villa Colibri, Gustavia':('Villa, '+b.dataset.zone);}renderConfig();return;}
     if(b.dataset.slot){if(S.draft)S.draft.slot=b.dataset.slot;renderConfig();return;}
@@ -834,8 +833,8 @@
       case 'demo-go-client':S.persona='client';render();break;
       case 'demo-go-admin':S.persona='admin';S.admin.view='home';S.admin.sel=null;render();break;
       case 'pro-attach-insurance':S.proForm.insuranceDoc=true;render();toast('Attestation d’assurance ajoutée');break;
-      case 'pro-submit':{const f=S.proForm;if(!f.cats.length){toast('Sélectionnez au moins un service');break;}if(!f.status){toast('Indiquez si vous êtes une entreprise ou un particulier');break;}if(!/^\d{14}$/.test((f.siret||'').replace(/\s/g,''))){toast('Un SIRET valide (14 chiffres) est requis');break;}if(!f.insuranceDoc){toast('Joignez votre attestation d’assurance');break;}S.adminArtisans=S.adminArtisans.filter(x=>x.id!=='self');S.adminArtisans.unshift({id:'self',name:f.name||'Nouveau prestataire',status:'attente',type:f.status,cats:f.cats.slice(),rate:parseInt(f.rate,10)||30,siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,rating:0,jobs:0,zone:'—'});S.proStatus='pending';render();break;}
-      case 'pro-approve':S.proStatus='approved';if(S.proForm.name)S.proName=S.proForm.name;if(S.proForm.cats.length)S.proCats=S.proForm.cats.slice();if(S.proForm.rate)S.proRate=parseInt(S.proForm.rate,10)||S.proRate;S.proStatusType=S.proForm.status||S.proStatusType;S.proSiret=(S.proForm.siret||'').replace(/\s/g,'');S.proBio=S.proForm.bio||'';S.proInsured=!!S.proForm.insuranceDoc;if(S.proForm.insurer)S.proInsurer=S.proForm.insurer;render();toast('Profil validé — bienvenue sur Ti-Services !');break;
+      case 'pro-submit':{const f=S.proForm;if(!f.cats.length){toast('Sélectionnez au moins un service');break;}if(!/^\d{14}$/.test((f.siret||'').replace(/\s/g,''))){toast('Un SIRET valide (14 chiffres) est requis');break;}if(!f.insuranceDoc){toast('Joignez votre attestation d’assurance');break;}S.adminArtisans=S.adminArtisans.filter(x=>x.id!=='self');S.adminArtisans.unshift({id:'self',name:f.name||'Nouveau prestataire',status:'attente',type:'entreprise',cats:f.cats.slice(),rate:parseInt(f.rate,10)||30,siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,rating:0,jobs:0,zone:'—'});S.proStatus='pending';render();break;}
+      case 'pro-approve':S.proStatus='approved';if(S.proForm.name)S.proName=S.proForm.name;if(S.proForm.cats.length)S.proCats=S.proForm.cats.slice();if(S.proForm.rate)S.proRate=parseInt(S.proForm.rate,10)||S.proRate;S.proStatusType='entreprise';S.proSiret=(S.proForm.siret||'').replace(/\s/g,'');S.proBio=S.proForm.bio||'';S.proInsured=!!S.proForm.insuranceDoc;if(S.proForm.insurer)S.proInsurer=S.proForm.insurer;render();toast('Profil validé — bienvenue sur Ti-Services !');break;
       case 'pro-accept':{const m=S.mission;m.provider=Object.assign({},PROVIDERS[m.svc]);m.status='accepted';const r=totals(m).rate;const amt=totals(m).total;const freq=m.frequency||'ponctuelle';const labels=occLabels(freq);const entries=labels.map(d=>({day:d,slot:m.slot,svc:m.svc,client:'Camille M.',zone:m.zone,duration:m.duration,rate:r,amount:amt,status:'upcoming'}));m._appt=entries[0];entries.slice().reverse().forEach(e=>S.agenda.unshift(e));if(freq!=='ponctuelle'){S.recurring.unshift({svc:m.svc,svcName:m.svcName,short:freqInfo(freq).short,slot:m.slot,zone:m.zone});}render();toast(labels.length>1?'Prestation récurrente ajoutée à votre agenda !':'Mission remportée — ajoutée à votre agenda !');break;}
       case 'pro-decline':S.mission.status='searching';render();setTimeout(()=>{if(S.mission&&S.mission.status==='searching'){S.mission.status='pending';render();}},1400);toast('Mission passée — proposée aux autres');break;
       case 'pro-advance':S.mission.status=b.dataset.to;if(S.mission._appt){if(b.dataset.to==='working')S.mission._appt.status='live';else if(b.dataset.to==='done_pro')S.mission._appt.status='tovalidate';}render();break;
@@ -864,9 +863,10 @@
     const t=e.target.closest('[data-cfg="notes"]');if(t&&S.draft)S.draft.notes=t.value;
     const pf=e.target.closest('[data-pf]');if(pf)S.proForm[pf.dataset.pf]=pf.value;
     const cf=e.target.closest('[data-cf]');if(cf)S.clientForm[cf.dataset.cf]=cf.value;
+    const pr=e.target.closest('[data-prate]');if(pr){S.proForm.rate=+pr.value;const el=document.getElementById('prateVal');if(el)el.textContent=pr.value+' €/h';}
     const cd=e.target.closest('[data-cfdate]');if(cd&&S.draft){S.draft.dateISO=cd.value;S.draft.when=fmtDate(cd.value);renderConfig();}
   });
-  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,proStatus:'approved',proName:'Marie-Lou',proRate:35,proStatusType:'entreprise',proSiret:'',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'',siret:'',rate:'',bio:'',insurer:'',insuranceDoc:false}});render();toast('Scénario réinitialisé');});
+  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,proStatus:'approved',proName:'Marie-Lou',proRate:35,proStatusType:'entreprise',proSiret:'',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false}});render();toast('Scénario réinitialisé');});
 
   /* ---------- PWA: install + service worker ---------- */
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
