@@ -379,7 +379,7 @@
   const S={
     persona:'client',clientNav:'home',proNav:'home',onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},
     card:{brand:'Visa',last4:'4242'},mission:null,draft:null,
-    proStatus:'approved',proName:'Marie-Lou',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[]},
+    proStatus:'approved',proName:'Marie-Lou',proRate:35,proStatusType:'entreprise',proSiret:'',proBio:'',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'',siret:'',rate:'',bio:''},
     proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],
     avail:{lun:{m:1,a:1,s:0},mar:{m:1,a:1,s:0},mer:{m:1,a:1,s:1},jeu:{m:1,a:1,s:0},ven:{m:1,a:1,s:1},sam:{m:1,a:0,s:0},dim:{m:0,a:0,s:0}}
@@ -556,21 +556,29 @@
   function proSignup(){
     const f=S.proForm;
     const cats=SERVICES.map(s=>`<button class="cat ${f.cats.includes(s.id)?'sel':''}" data-pcat="${s.id}"><div class="pick">${I.check}</div><div class="ic">${I[s.id]}</div><div class="nm">${s.nm}</div><div class="rt">${s.rate} €/h</div></button>`).join('');
-    const ok=f.cats.length>0;
+    const st=f.status||'';
+    const legal = st==='particulier'
+      ? `<div class="banner coral" style="margin-top:12px">${I.shield}<span><b>Info légale.</b> Un particulier ne peut être rémunéré qu'en étant déclaré. Pour rejoindre Ti-Services, immatriculez-vous (micro-entrepreneur) et indiquez un <b>SIRET valide</b>.</span></div>`
+      : (st==='entreprise' ? `<div class="banner teal" style="margin-top:12px">${I.shield}<span>Votre SIRET permet de vérifier votre entreprise et de vous reverser vos gains en toute légalité.</span></div>` : '');
+    const siretField = st ? `<div class="field"><label>SIRET (14 chiffres)</label><input class="txt" data-pf="siret" value="${f.siret}" inputmode="numeric" placeholder="Ex. 123 456 789 00012"></div>${legal}` : '';
     return `<div class="pad"><div style="height:10px"></div>
       <button class="reset" data-act="back-to-client" style="margin:0 0 8px">← Je suis un client</button>
       <span class="eyebrow">Rejoindre Ti-Services</span>
       <div class="h-hello">Devenez artisan partenaire</div>
-      <p class="sub" style="margin-top:6px">On rejoint Ti-Services sur <b>candidature</b>. Chaque professionnel est vérifié (identité, sérieux, références) avant activation — un peu comme un recrutement. Vous recevez ensuite les missions qui correspondent à vos services.</p>
+      <p class="sub" style="margin-top:6px">On rejoint Ti-Services sur <b>candidature</b>, comme un recrutement : profil et statut vérifiés avant activation.</p>
       <div class="card" style="padding:16px;margin-top:16px">
         <div class="field"><label>Nom / Raison sociale</label><input class="txt" data-pf="name" value="${f.name}" placeholder="Ex. Marie-Lou Cagan"></div>
         <div class="field"><label>Téléphone</label><input class="txt" data-pf="phone" value="${f.phone}" inputmode="tel" placeholder="Ex. 0690 00 00 00"></div>
+        <div class="field"><label>Vous êtes…</label><div class="segs"><button class="seg ${st==='entreprise'?'on':''}" data-pstatus="entreprise">Entreprise / Pro</button><button class="seg ${st==='particulier'?'on':''}" data-pstatus="particulier">Particulier</button></div></div>
+        ${siretField}
+        <div class="field"><label>Taux horaire souhaité</label><input class="txt" data-pf="rate" value="${f.rate}" inputmode="numeric" placeholder="Ex. 35 (€/h)"></div>
+        <div class="field"><label>Présentation / expérience</label><textarea rows="3" data-pf="bio" placeholder="Votre expérience, vos spécialités, votre zone…">${f.bio}</textarea></div>
       </div>
       <div class="field" style="margin-top:18px"><label>Quels services souhaitez-vous réaliser&nbsp;? (un ou plusieurs)</label></div>
       <div class="cats">${cats}</div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0">
-        <button class="btn primary" data-act="pro-submit" ${ok?'':'disabled'}>Envoyer ma candidature</button>
-        <p class="mini" style="text-align:center;margin-top:10px">${ok?f.cats.length+' service(s) sélectionné(s)':'Sélectionnez au moins un service'}</p>
+        <button class="btn primary" data-act="pro-submit">Envoyer ma candidature</button>
+        <p class="mini" style="text-align:center;margin-top:10px">Candidature soumise à validation de Ti-Services (statut &amp; SIRET vérifiés).</p>
       </div></div>`;
   }
   function proPending(){
@@ -590,7 +598,7 @@
       </div></div>`;
   }
   function proHome(){
-    return `<div class="pad"><div class="row between" style="margin-top:10px"><div><span class="eyebrow">Artisan · ${S.proCats.map(c=>SERVICES.find(s=>s.id===c).nm).slice(0,2).join(' · ')}</span><div class="h-hello">${S.proName}</div></div><div class="avatar">ML</div></div>
+    return `<div class="pad"><div class="row between" style="margin-top:10px"><div><span class="eyebrow">Artisan · ${S.proCats.map(c=>SERVICES.find(s=>s.id===c).nm).slice(0,2).join(' · ')} · ${S.proRate} €/h</span><div class="h-hello">${S.proName}</div></div><div class="avatar">ML</div></div>
       <div class="card" style="padding:16px;margin-top:12px"><div class="row between"><div><b style="font-size:15px">${S.proOnline?'Vous êtes en ligne':'Hors ligne'}</b><div class="mini">${S.proOnline?'Vous recevez les missions sur vos créneaux dispo':'Activez pour recevoir des missions'}</div></div><button class="switch" data-act="toggle-online" style="background:${S.proOnline?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${S.proOnline?'25px':'3px'}"></span></button></div></div>
       <div class="row" style="gap:11px;margin-top:12px"><div class="card" style="padding:14px;flex:1"><div class="mini">Aujourd'hui</div><b class="money" style="font-size:20px;font-family:var(--f-disp)">${S.proJobsToday}</b><div class="mini">missions</div></div><div class="card" style="padding:14px;flex:1"><div class="mini">Note</div><b class="money" style="font-size:20px;font-family:var(--f-disp)">4,9</b><div class="mini"><span class="stars">★</span> · 214</div></div><div class="card" style="padding:14px;flex:1"><div class="mini">Dispos</div><b class="money" style="font-size:20px;font-family:var(--f-disp)">${availCount()}</b><div class="mini">créneaux</div></div></div>
       ${(()=>{const n=S.agenda.find(a=>a.status!=='done');if(!n)return '';const s=SERVICES.find(x=>x.id===n.svc);return `<button class="card" style="padding:14px;margin-top:12px;width:100%;text-align:left;display:block" data-pnav="agenda"><div class="row between"><span class="eyebrow" style="color:var(--muted)">Prochaine prestation</span><span class="mini">Voir l’agenda ›</span></div><div class="row" style="gap:12px;margin-top:8px"><div class="appt-time"><b>${n.slot}</b><span class="mini">${n.duration} h</span></div><div><b style="font-size:14.5px">${s.nm}</b><div class="mini">${n.day} · ${n.client}</div></div></div></button>`;})()}
@@ -680,7 +688,7 @@
   function proEarnings(){
     return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">Revenus</span><div class="h-hello">Ce mois-ci</div>
       <div class="card" style="padding:18px;margin-top:12px"><div class="mini">Net perçu (juillet)</div><b class="money" style="font-size:30px;font-family:var(--f-disp)">${eur(S.proEarnings)}</b><div class="row between" style="margin-top:14px"><span class="sub">Missions réalisées</span><b>37</b></div><div class="row between" style="margin-top:6px"><span class="sub">Prochain virement</span><b>lun. 7 juil.</b></div></div>
-      <div class="card" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">Compte de versement</b><span class="chip good">${I.check} Vérifié</span></div><div class="mini" style="margin-top:8px">IBAN ••••&nbsp;7788 · KYC validé</div></div></div>${proNavbar()}`;
+      <div class="card" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">Compte de versement</b><span class="chip good">${I.check} Vérifié</span></div><div class="mini" style="margin-top:8px">IBAN ••••&nbsp;7788 · ${S.proStatusType==='particulier'?'Particulier':'Entreprise'} · SIRET ${S.proSiret?'••• '+S.proSiret.slice(-5):'vérifié'} ✓</div></div></div>${proNavbar()}`;
   }
 
   /* ---------- ACTIONS ---------- */
@@ -692,7 +700,7 @@
     setTimeout(()=>{if(!S.mission||S.mission.status!=='searching'){clearInterval(iv);return;}clearInterval(iv);S.mission.status='pending';render();if(S.persona!=='pro')toast(S.mission.competitors+' artisans ont reçu votre demande');},2600);
   }
   document.addEventListener('click',(e)=>{
-    const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-pnav],[data-star],[data-persona],[data-av],[data-atab],[data-pcat],[data-cfg],[data-zone],[data-czone],[data-when],[data-tip],[data-freq],[data-slot]');
+    const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-pnav],[data-star],[data-persona],[data-av],[data-atab],[data-pcat],[data-pstatus],[data-cfg],[data-zone],[data-czone],[data-when],[data-tip],[data-freq],[data-slot]');
     if(!b)return;
     if(b.dataset.persona){go(b.dataset.persona);return;}
     if(b.dataset.cnav){S.clientNav=b.dataset.cnav;render();return;}
@@ -701,6 +709,7 @@
     if(b.dataset.av){const[d,bl]=b.dataset.av.split(':');S.avail[d][bl]=S.avail[d][bl]?0:1;render();return;}
     if(b.dataset.atab){S.agendaTab=b.dataset.atab;render();return;}
     if(b.dataset.pcat){const c=b.dataset.pcat,i=S.proForm.cats.indexOf(c);if(i<0)S.proForm.cats.push(c);else S.proForm.cats.splice(i,1);render();return;}
+    if(b.dataset.pstatus){S.proForm.status=b.dataset.pstatus;render();return;}
     if(b.dataset.zone){if(S.draft){S.draft.zone=b.dataset.zone;S.draft.address=b.dataset.zone==='Gustavia'?'Villa Colibri, Gustavia':('Villa, '+b.dataset.zone);}renderConfig();return;}
     if(b.dataset.slot){if(S.draft)S.draft.slot=b.dataset.slot;renderConfig();return;}
     if(b.dataset.czone){S.clientForm.zone=b.dataset.czone;render();return;}
@@ -726,8 +735,8 @@
       case 'back-to-client':S.persona='client';S.proStatus='approved';render();break;
       case 'demo-go-pro':S.persona='pro';render();break;
       case 'demo-go-client':S.persona='client';render();break;
-      case 'pro-submit':if(S.proForm.cats.length){S.proStatus='pending';render();}break;
-      case 'pro-approve':S.proStatus='approved';if(S.proForm.name)S.proName=S.proForm.name;if(S.proForm.cats.length)S.proCats=S.proForm.cats.slice();render();toast('Profil validé — bienvenue sur Ti-Services !');break;
+      case 'pro-submit':{const f=S.proForm;if(!f.cats.length){toast('Sélectionnez au moins un service');break;}if(!f.status){toast('Indiquez si vous êtes une entreprise ou un particulier');break;}if(!/^\d{14}$/.test((f.siret||'').replace(/\s/g,''))){toast('Un SIRET valide (14 chiffres) est requis');break;}S.proStatus='pending';render();break;}
+      case 'pro-approve':S.proStatus='approved';if(S.proForm.name)S.proName=S.proForm.name;if(S.proForm.cats.length)S.proCats=S.proForm.cats.slice();if(S.proForm.rate)S.proRate=parseInt(S.proForm.rate,10)||S.proRate;S.proStatusType=S.proForm.status||S.proStatusType;S.proSiret=(S.proForm.siret||'').replace(/\s/g,'');S.proBio=S.proForm.bio||'';render();toast('Profil validé — bienvenue sur Ti-Services !');break;
       case 'pro-accept':{const m=S.mission;m.provider=Object.assign({},PROVIDERS[m.svc]);m.status='accepted';const r=totals(m).rate;const amt=totals(m).total;const freq=m.frequency||'ponctuelle';const labels=occLabels(freq);const entries=labels.map(d=>({day:d,slot:m.slot,svc:m.svc,client:'Camille M.',zone:m.zone,duration:m.duration,rate:r,amount:amt,status:'upcoming'}));m._appt=entries[0];entries.slice().reverse().forEach(e=>S.agenda.unshift(e));if(freq!=='ponctuelle'){S.recurring.unshift({svc:m.svc,svcName:m.svcName,short:freqInfo(freq).short,slot:m.slot,zone:m.zone});}render();toast(labels.length>1?'Prestation récurrente ajoutée à votre agenda !':'Mission remportée — ajoutée à votre agenda !');break;}
       case 'pro-decline':S.mission.status='searching';render();setTimeout(()=>{if(S.mission&&S.mission.status==='searching'){S.mission.status='pending';render();}},1400);toast('Mission passée — proposée aux autres');break;
       case 'pro-advance':S.mission.status=b.dataset.to;if(S.mission._appt){if(b.dataset.to==='working')S.mission._appt.status='live';else if(b.dataset.to==='done_pro')S.mission._appt.status='tovalidate';}render();break;
@@ -758,7 +767,7 @@
     const cf=e.target.closest('[data-cf]');if(cf)S.clientForm[cf.dataset.cf]=cf.value;
     const cd=e.target.closest('[data-cfdate]');if(cd&&S.draft){S.draft.dateISO=cd.value;S.draft.when=fmtDate(cd.value);renderConfig();}
   });
-  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],proStatus:'approved',proName:'Marie-Lou',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[]}});render();toast('Scénario réinitialisé');});
+  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],proStatus:'approved',proName:'Marie-Lou',proRate:35,proStatusType:'entreprise',proSiret:'',proBio:'',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'',siret:'',rate:'',bio:''}});render();toast('Scénario réinitialisé');});
 
   /* ---------- PWA: install + service worker ---------- */
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
