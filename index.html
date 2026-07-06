@@ -370,6 +370,24 @@
   function svcBase(id){const s=SERVICES.find(x=>x.id===id);return s?s.rate:30;}
   function svcFloor(id){return Math.round(svcBase(id)*0.7);}
   function svcReco(id){const a=S.avgOffers&&S.avgOffers[id];return a?Math.round(a.sum/a.n):svcBase(id);}
+  const ADMIN_ARTS=()=>[
+    {id:'a1',name:'Marie-Lou Cagan',status:'valide',type:'entreprise',cats:['menage','repassage'],rate:35,siret:'80412578900014',insured:true,rating:4.9,jobs:214,zone:'Gustavia'},
+    {id:'a2',name:'Jean-Phi Bernier',status:'valide',type:'entreprise',cats:['jardin'],rate:40,siret:'75212369800021',insured:true,rating:4.8,jobs:301,zone:'Lorient'},
+    {id:'a3',name:'Sabrina Théodore',status:'valide',type:'entreprise',cats:['baby'],rate:28,siret:'91802233400019',insured:true,rating:5.0,jobs:98,zone:'St-Jean'},
+    {id:'a4',name:'Kevin Questel',status:'attente',type:'entreprise',cats:['bricolage','demenagement'],rate:45,siret:'88900112200013',insured:true,rating:0,jobs:0,zone:'Public'},
+    {id:'a5',name:'Rosa Almeida',status:'attente',type:'entreprise',cats:['menage','cuisine'],rate:30,siret:'90311145500027',insured:false,rating:0,jobs:0,zone:'Flamands'}
+  ];
+  const ADMIN_CLIS=()=>[
+    {id:'c1',name:'Camille Magras',status:'valide',zone:'Gustavia',card:'Visa ••4242',bookings:7},
+    {id:'c2',name:'Thomas Ledée',status:'valide',zone:'St-Jean',card:'Mastercard ••8890',bookings:3},
+    {id:'c3',name:'Élodie Nihau',status:'attente',zone:'Flamands',card:'Carte à vérifier',bookings:0}
+  ];
+  const ADMIN_BOOK=()=>[
+    {id:'b1',client:'Camille Magras',artisan:'Marie-Lou Cagan',svc:'menage',status:'working',amount:105,when:'Auj. 14:00'},
+    {id:'b2',client:'Thomas Ledée',artisan:'Jean-Phi Bernier',svc:'jardin',status:'accepted',amount:120,when:'Auj. 16:00'},
+    {id:'b3',client:'Camille Magras',artisan:'Sabrina Théodore',svc:'baby',status:'pending',amount:84,when:'Demain 09:00'}
+  ];
+  function bkStatus(s){return {pending:['coral','En attente'],accepted:['good','Confirmée'],working:['coral','En cours'],done_pro:['grey','À valider'],paid:['good','Réglée'],rated:['good','Terminée']}[s]||['grey',s];}
   const COMMISSION=0.15;
   const DAYS=[['lun','Lun'],['mar','Mar'],['mer','Mer'],['jeu','Jeu'],['ven','Ven'],['sam','Sam'],['dim','Dim']];
   const BLOCKS=[['m','Matin'],['a','Après-m.'],['s','Soir']];
@@ -386,6 +404,7 @@
     proStatus:'approved',proName:'Marie-Lou',proRate:35,proStatusType:'entreprise',proSiret:'',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'',siret:'',rate:'',bio:'',insurer:'',insuranceDoc:false},
     proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),
+    admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,
     avail:{lun:{m:1,a:1,s:0},mar:{m:1,a:1,s:0},mer:{m:1,a:1,s:1},jeu:{m:1,a:1,s:0},ven:{m:1,a:1,s:1},sam:{m:1,a:0,s:0},dim:{m:0,a:0,s:0}}
   };
   function newMission(svc){return {svc:svc.id,svcName:svc.nm,rate:svcReco(svc.id),frequency:'ponctuelle',duration:3,zone:'Gustavia',address:'Villa Colibri, Gustavia',geo:null,notes:'',when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',status:'draft',provider:null,rating:0,competitors:0};}
@@ -403,9 +422,74 @@
 
   function attention(){const m=S.mission;if(!m)return null;if(m.status==='pending')return 'pro';if(m.status==='done_pro')return 'client';return null;}
   function paintPersona(){}
-  function render(){view.innerHTML='<div class="anim">'+(S.persona==='client'?renderClient():renderPro())+'</div>';view.scrollTop=0;paintPersona();}
+  function render(){view.innerHTML='<div class="anim">'+(S.persona==='admin'?renderAdmin():(S.persona==='client'?renderClient():renderPro()))+'</div>';view.scrollTop=0;paintPersona();}
 
   /* ---------- CLIENT ---------- */
+  /* ---------- ADMIN ---------- */
+  function renderAdmin(){if(S.admin.view==='art')return adminFiche('art');if(S.admin.view==='cli')return adminFiche('cli');return adminHome();}
+  function catNames(cats){return cats.map(c=>{const s=SERVICES.find(x=>x.id===c);return s?s.nm:c;}).join(', ');}
+  function inits(n){return n.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();}
+  function adminHome(){
+    const arts=S.adminArtisans,clis=S.adminClients;
+    const pendA=arts.filter(a=>a.status==='attente'),pendC=clis.filter(c=>c.status==='attente');
+    const live=(S.mission&&['pending','accepted','working','done_pro'].includes(S.mission.status))?1:0;
+    const validA=arts.filter(a=>a.status==='valide').length;
+    const stat=(lbl,val,sub)=>`<div class="card" style="padding:13px;flex:1;min-width:0"><div class="mini">${lbl}</div><b class="money" style="font-size:22px;font-family:var(--f-disp);display:block">${val}</b><div class="mini">${sub}</div></div>`;
+    const q=[];
+    pendA.forEach(a=>q.push(`<div class="card" style="padding:14px;margin-top:10px;border-left:4px solid var(--warn)">
+      <div class="row between"><b style="font-size:14.5px">${a.name}</b><span class="chip grey" style="padding:3px 9px">Artisan</span></div>
+      <div class="mini" style="margin-top:3px">${a.type==='particulier'?'Particulier':'Entreprise'} · ${catNames(a.cats)} · ${a.rate} €/h</div>
+      <div class="row" style="gap:6px;margin-top:7px;flex-wrap:wrap"><span class="chip ${a.siret?'good':'coral'}" style="padding:3px 9px">SIRET ${a.siret?'fourni':'manquant'}</span><span class="chip ${a.insured?'good':'coral'}" style="padding:3px 9px">Assurance ${a.insured?'OK':'manquante'}</span></div>
+      <div class="row" style="gap:8px;margin-top:10px"><button class="btn good sm" data-adm="valid-art:${a.id}" ${(a.insured&&a.siret)?'':'disabled'}>Valider</button><button class="btn ghost sm" data-adm="rej-art:${a.id}">Refuser</button><button class="btn ghost sm" data-adm="art:${a.id}">Fiche</button></div>
+      ${!a.insured?`<p class="mini" style="margin-top:6px;color:var(--coral-deep)">Attestation d'assurance manquante — validation impossible.</p>`:''}</div>`));
+    pendC.forEach(cc=>q.push(`<div class="card" style="padding:14px;margin-top:10px;border-left:4px solid var(--warn)">
+      <div class="row between"><b style="font-size:14.5px">${cc.name}</b><span class="chip grey" style="padding:3px 9px">Client</span></div>
+      <div class="mini" style="margin-top:3px">${cc.zone} · ${cc.card}</div>
+      <div class="row" style="gap:8px;margin-top:10px"><button class="btn good sm" data-adm="valid-cli:${cc.id}">Valider</button><button class="btn ghost sm" data-adm="cli:${cc.id}">Fiche</button></div></div>`));
+    const queue=q.length?q.join(''):`<div class="card" style="padding:18px;text-align:center;color:var(--muted);margin-top:10px">Rien à valider 🎉</div>`;
+    const liveRow=live?[{client:'Camille Magras',artisan:(S.mission.provider?S.mission.provider.nm:'en recherche…'),svc:S.mission.svc,status:S.mission.status,amount:totals(S.mission).total,when:S.mission.when+' '+S.mission.slot}]:[];
+    const allB=liveRow.concat(S.adminBookings);
+    const bookings=allB.map(bk=>{const st=bkStatus(bk.status);const sv=SERVICES.find(s=>s.id===bk.svc);return `<div class="card" style="padding:13px;margin-top:9px"><div class="row between"><b style="font-size:14px">${sv?sv.nm:bk.svc}</b><span class="chip ${st[0]}" style="padding:3px 9px">${st[1]}</span></div><div class="mini" style="margin-top:3px">${bk.client} → ${bk.artisan} · ${bk.when}</div><div class="mini" style="margin-top:2px">${eur(bk.amount)}</div></div>`;}).join('');
+    const artList=arts.map(a=>`<button class="card" style="padding:12px;margin-top:8px;width:100%;text-align:left;display:block" data-adm="art:${a.id}"><div class="row between"><b style="font-size:14px">${a.name}</b><span class="chip ${a.status==='valide'?'good':'coral'}" style="padding:3px 9px">${a.status==='valide'?'Validé':'En attente'}</span></div><div class="mini" style="margin-top:2px">${catNames(a.cats)} · ${a.rate} €/h · ${a.zone}</div></button>`).join('');
+    const cliList=clis.map(cc=>`<button class="card" style="padding:12px;margin-top:8px;width:100%;text-align:left;display:block" data-adm="cli:${cc.id}"><div class="row between"><b style="font-size:14px">${cc.name}</b><span class="chip ${cc.status==='valide'?'good':'coral'}" style="padding:3px 9px">${cc.status==='valide'?'Validé':'En attente'}</span></div><div class="mini" style="margin-top:2px">${cc.zone} · ${cc.bookings} réservations</div></button>`).join('');
+    return `<div class="pad">
+      <div class="row between" style="margin-top:10px"><div><span class="eyebrow">Console admin · Ti-Services</span><div class="h-hello">Tableau de bord</div></div><div class="avatar" style="background:linear-gradient(135deg,var(--ink),#000)">TS</div></div>
+      <div class="row" style="gap:9px;margin-top:12px">${stat('En cours',allB.length,'réservations')}${stat('Artisans',validA,pendA.length+' en attente')}${stat('Clients',clis.length,pendC.length+' en attente')}</div>
+      <div class="card" style="padding:14px;margin-top:10px"><div class="row between"><span class="sub">Commission ce mois</span><b class="money" style="font-size:18px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(S.adminCommission)}</b></div></div>
+      <div style="height:16px"></div><span class="eyebrow">À valider${q.length?' · '+q.length:''}</span>${queue}
+      <div style="height:18px"></div><span class="eyebrow">Réservations en cours · ${allB.length}</span>${bookings}
+      <div style="height:18px"></div><span class="eyebrow">Fiches artisans · ${arts.length}</span>${artList}
+      <div style="height:18px"></div><span class="eyebrow">Fiches clients · ${clis.length}</span>${cliList}
+      <div class="footcta" style="position:static;background:none;padding:20px 0 10px"><button class="btn ghost" data-adm="quit">← Quitter la console admin</button></div>
+    </div>`;
+  }
+  function adminFiche(kind){
+    if(kind==='art'){
+      const a=S.adminArtisans.find(x=>x.id===S.admin.sel);if(!a)return adminHome();
+      return `<div class="pad"><button class="reset" data-adm="home" style="margin:10px 0 6px">← Retour</button>
+        <div class="row" style="gap:12px"><div class="avatar lg">${inits(a.name)}</div><div><b style="font-size:18px;font-family:var(--f-disp)">${a.name}</b><div class="mini">Artisan · ${a.type==='particulier'?'Particulier':'Entreprise'} · ${a.zone}</div></div></div>
+        <div class="card" style="padding:16px;margin-top:16px">
+          <div class="row between"><span class="sub">Statut</span><span class="chip ${a.status==='valide'?'good':'coral'}">${a.status==='valide'?'Validé':'En attente'}</span></div><hr class="dashed">
+          <div class="row between"><span class="sub">Services</span><b>${catNames(a.cats)}</b></div>
+          <div class="row between" style="margin-top:6px"><span class="sub">Taux souhaité</span><b>${a.rate} €/h</b></div>
+          <div class="row between" style="margin-top:6px"><span class="sub">SIRET</span><b class="money">${a.siret||'—'}</b></div>
+          <div class="row between" style="margin-top:6px"><span class="sub">Assurance RC</span><b style="color:${a.insured?'var(--good)':'var(--coral-deep)'}">${a.insured?'Fournie ✓':'Manquante'}</b></div>
+          <div class="row between" style="margin-top:6px"><span class="sub">Note · missions</span><b>${a.rating?a.rating.toFixed(1)+' ★ · '+a.jobs:'—'}</b></div>
+        </div>
+        ${a.status==='attente'?`<div class="row" style="gap:8px;margin-top:14px"><button class="btn good" data-adm="valid-art:${a.id}" ${(a.insured&&a.siret)?'':'disabled'}>Valider le prestataire</button><button class="btn ghost" data-adm="rej-art:${a.id}">Refuser</button></div>${(!a.insured||!a.siret)?`<p class="mini" style="margin-top:8px;color:var(--coral-deep)">${!a.siret?'SIRET manquant. ':''}${!a.insured?'Assurance manquante. ':''}Validation impossible tant que le dossier n'est pas complet.</p>`:''}`:''}
+      </div>`;
+    }
+    const cc=S.adminClients.find(x=>x.id===S.admin.sel);if(!cc)return adminHome();
+    return `<div class="pad"><button class="reset" data-adm="home" style="margin:10px 0 6px">← Retour</button>
+      <div class="row" style="gap:12px"><div class="avatar lg">${inits(cc.name)}</div><div><b style="font-size:18px;font-family:var(--f-disp)">${cc.name}</b><div class="mini">Client · ${cc.zone}</div></div></div>
+      <div class="card" style="padding:16px;margin-top:16px">
+        <div class="row between"><span class="sub">Statut</span><span class="chip ${cc.status==='valide'?'good':'coral'}">${cc.status==='valide'?'Validé':'En attente'}</span></div><hr class="dashed">
+        <div class="row between"><span class="sub">Moyen de paiement</span><b>${cc.card}</b></div>
+        <div class="row between" style="margin-top:6px"><span class="sub">Réservations</span><b>${cc.bookings}</b></div>
+      </div>
+      ${cc.status==='attente'?`<div class="row" style="gap:8px;margin-top:14px"><button class="btn good" data-adm="valid-cli:${cc.id}">Valider le client</button></div>`:''}
+    </div>`;
+  }
   function renderClient(){
     const m=S.mission;
     if(!S.onboarded)return clientOnboard();
@@ -498,7 +582,7 @@
     return `<div class="pad"><div style="height:12px"></div><div class="row" style="gap:14px"><div class="avatar lg">CM</div><div><b style="font-size:18px;font-family:var(--f-disp)">Camille Magras</b><div class="mini">Gustavia · Saint-Barth</div></div></div>
       <div class="card" style="padding:16px;margin-top:18px"><div class="row between"><span class="chip">${I.card} Paiement automatique</span></div><div class="row between" style="margin-top:12px"><b>${S.card.brand} ••••&nbsp;${S.card.last4}</b><span class="chip good" style="padding:4px 10px">${I.check} Vérifiée</span></div><div class="banner teal" style="margin-top:14px">${I.shield}<span>Débit automatique après chaque prestation validée. Reçu à chaque fois — rien à gérer.</span></div></div>
       <div class="card" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">Garantie Ti-Services</b><span class="chip good">Active</span></div><p class="sub" style="margin-top:8px">Artisan absent ou travail non conforme&nbsp;? Vous n'êtes pas débité et on vous retrouve quelqu'un.</p></div>
-      <p class="mini" style="text-align:center;margin-top:16px"><button class="linklike" data-act="demo-go-pro">👷 Voir l'espace artisan (démo)</button></p></div>${clientNavbar()}`;
+      <p class="mini" style="text-align:center;margin-top:16px"><button class="linklike" data-act="demo-go-pro">👷 Voir l'espace artisan (démo)</button> · <button class="linklike" data-act="demo-go-admin">⚙︎ Admin (démo)</button></p></div>${clientNavbar()}`;
   }
   function clientSearching(){
     const m=S.mission;
@@ -562,7 +646,7 @@
     const cats=SERVICES.map(s=>`<button class="cat ${f.cats.includes(s.id)?'sel':''}" data-pcat="${s.id}"><div class="pick">${I.check}</div><div class="ic">${I[s.id]}</div><div class="nm">${s.nm}</div><div class="rt">${s.rate} €/h</div></button>`).join('');
     const st=f.status||'';
     const legal = st==='particulier'
-      ? `<div class="banner coral" style="margin-top:12px">${I.shield}<span><b>Info légale.</b> Un particulier ne peut être rémunéré qu'en étant déclaré. Pour rejoindre Ti-Services, immatriculez-vous (micro-entrepreneur) et indiquez un <b>SIRET valide</b>.</span></div>`
+      ? `<div class="banner coral" style="margin-top:12px">${I.shield}<span><b>⛔ Interdit sans immatriculation.</b> Un particulier non déclaré ne peut pas être rémunéré (travail dissimulé). Vous devez être <b>immatriculé (micro-entrepreneur)</b> et fournir un <b>SIRET valide</b> — sans quoi l'inscription est impossible.</span></div>`
       : (st==='entreprise' ? `<div class="banner teal" style="margin-top:12px">${I.shield}<span>Votre SIRET permet de vérifier votre entreprise et de vous reverser vos gains en toute légalité.</span></div>` : '');
     const siretField = st ? `<div class="field"><label>SIRET (14 chiffres)</label><input class="txt" data-pf="siret" value="${f.siret}" inputmode="numeric" placeholder="Ex. 123 456 789 00012"></div>${legal}` : '';
     return `<div class="pad"><div style="height:10px"></div>
@@ -608,7 +692,7 @@
       <div class="row" style="gap:11px;margin-top:12px"><div class="card" style="padding:14px;flex:1"><div class="mini">Aujourd'hui</div><b class="money" style="font-size:20px;font-family:var(--f-disp)">${S.proJobsToday}</b><div class="mini">missions</div></div><div class="card" style="padding:14px;flex:1"><div class="mini">Note</div><b class="money" style="font-size:20px;font-family:var(--f-disp)">4,9</b><div class="mini"><span class="stars">★</span> · 214</div></div><div class="card" style="padding:14px;flex:1"><div class="mini">Dispos</div><b class="money" style="font-size:20px;font-family:var(--f-disp)">${availCount()}</b><div class="mini">créneaux</div></div></div>
       ${(()=>{const n=S.agenda.find(a=>a.status!=='done');if(!n)return '';const s=SERVICES.find(x=>x.id===n.svc);return `<button class="card" style="padding:14px;margin-top:12px;width:100%;text-align:left;display:block" data-pnav="agenda"><div class="row between"><span class="eyebrow" style="color:var(--muted)">Prochaine prestation</span><span class="mini">Voir l’agenda ›</span></div><div class="row" style="gap:12px;margin-top:8px"><div class="appt-time"><b>${n.slot}</b><span class="mini">${n.duration} h</span></div><div><b style="font-size:14.5px">${s.nm}</b><div class="mini">${n.day} · ${n.client}</div></div></div></button>`;})()}
       ${S.proOnline?`<div class="card" style="padding:18px;margin-top:14px;text-align:center;border-style:dashed"><div class="radar sm"><div class="ring r1"></div><div class="ring r2"></div><div class="core">${I.bolt}</div></div><p class="sub" style="margin:6px 0 0">En attente de nouvelles missions…</p><p class="mini" style="margin-top:8px">Côté <b>Client</b>, lancez une réservation pour recevoir une demande ici.</p></div>`:`<div class="card" style="padding:22px;margin-top:14px;text-align:center;color:var(--muted)">Passez en ligne pour recevoir des missions.</div>`}
-      <p class="mini" style="text-align:center;margin-top:16px"><button class="linklike" data-act="demo-go-client">🧑 Voir l'espace client (démo)</button></p>
+      <p class="mini" style="text-align:center;margin-top:16px"><button class="linklike" data-act="demo-go-client">🧑 Voir l'espace client (démo)</button> · <button class="linklike" data-act="demo-go-admin">⚙︎ Admin (démo)</button></p>
       <div style="height:12px"></div></div>${proNavbar()}`;
   }
   function apptPayout(a){if(a.amount!=null)return a.amount;const base=SERVICES.find(x=>x.id===a.svc).rate;return (a.rate||base)*a.duration;}
@@ -704,9 +788,18 @@
     setTimeout(()=>{if(!S.mission||S.mission.status!=='searching'){clearInterval(iv);return;}clearInterval(iv);S.mission.status='pending';render();if(S.persona!=='pro')toast(S.mission.competitors+' artisans ont reçu votre demande');},2600);
   }
   document.addEventListener('click',(e)=>{
-    const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-pnav],[data-star],[data-persona],[data-av],[data-atab],[data-pcat],[data-pstatus],[data-cfg],[data-zone],[data-czone],[data-when],[data-offer],[data-freq],[data-slot]');
+    const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pstatus],[data-cfg],[data-zone],[data-czone],[data-when],[data-offer],[data-freq],[data-slot]');
     if(!b)return;
     if(b.dataset.persona){go(b.dataset.persona);return;}
+    if(b.dataset.adm){const parts=b.dataset.adm.split(':'),act=parts[0],id=parts[1];
+      if(act==='quit'){S.persona='client';S.admin.view='home';S.admin.sel=null;}
+      else if(act==='home'){S.admin.view='home';S.admin.sel=null;}
+      else if(act==='art'){S.admin.view='art';S.admin.sel=id;}
+      else if(act==='cli'){S.admin.view='cli';S.admin.sel=id;}
+      else if(act==='valid-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a&&a.insured&&a.siret){a.status='valide';toast('Artisan validé');}else{toast('Dossier incomplet (SIRET / assurance)');}}
+      else if(act==='rej-art'){S.adminArtisans=S.adminArtisans.filter(x=>x.id!==id);S.admin.view='home';toast('Candidature refusée');}
+      else if(act==='valid-cli'){const cc=S.adminClients.find(x=>x.id===id);if(cc)cc.status='valide';toast('Client validé');}
+      render();return;}
     if(b.dataset.cnav){S.clientNav=b.dataset.cnav;render();return;}
     if(b.dataset.pnav){S.proNav=b.dataset.pnav;render();return;}
     if(b.dataset.svc){const svc=SERVICES.find(s=>s.id===b.dataset.svc);S.draft=newMission(svc);renderConfig();return;}
@@ -739,8 +832,9 @@
       case 'back-to-client':S.persona='client';S.proStatus='approved';render();break;
       case 'demo-go-pro':S.persona='pro';render();break;
       case 'demo-go-client':S.persona='client';render();break;
+      case 'demo-go-admin':S.persona='admin';S.admin.view='home';S.admin.sel=null;render();break;
       case 'pro-attach-insurance':S.proForm.insuranceDoc=true;render();toast('Attestation d’assurance ajoutée');break;
-      case 'pro-submit':{const f=S.proForm;if(!f.cats.length){toast('Sélectionnez au moins un service');break;}if(!f.status){toast('Indiquez si vous êtes une entreprise ou un particulier');break;}if(!/^\d{14}$/.test((f.siret||'').replace(/\s/g,''))){toast('Un SIRET valide (14 chiffres) est requis');break;}if(!f.insuranceDoc){toast('Joignez votre attestation d’assurance');break;}S.proStatus='pending';render();break;}
+      case 'pro-submit':{const f=S.proForm;if(!f.cats.length){toast('Sélectionnez au moins un service');break;}if(!f.status){toast('Indiquez si vous êtes une entreprise ou un particulier');break;}if(!/^\d{14}$/.test((f.siret||'').replace(/\s/g,''))){toast('Un SIRET valide (14 chiffres) est requis');break;}if(!f.insuranceDoc){toast('Joignez votre attestation d’assurance');break;}S.adminArtisans=S.adminArtisans.filter(x=>x.id!=='self');S.adminArtisans.unshift({id:'self',name:f.name||'Nouveau prestataire',status:'attente',type:f.status,cats:f.cats.slice(),rate:parseInt(f.rate,10)||30,siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,rating:0,jobs:0,zone:'—'});S.proStatus='pending';render();break;}
       case 'pro-approve':S.proStatus='approved';if(S.proForm.name)S.proName=S.proForm.name;if(S.proForm.cats.length)S.proCats=S.proForm.cats.slice();if(S.proForm.rate)S.proRate=parseInt(S.proForm.rate,10)||S.proRate;S.proStatusType=S.proForm.status||S.proStatusType;S.proSiret=(S.proForm.siret||'').replace(/\s/g,'');S.proBio=S.proForm.bio||'';S.proInsured=!!S.proForm.insuranceDoc;if(S.proForm.insurer)S.proInsurer=S.proForm.insurer;render();toast('Profil validé — bienvenue sur Ti-Services !');break;
       case 'pro-accept':{const m=S.mission;m.provider=Object.assign({},PROVIDERS[m.svc]);m.status='accepted';const r=totals(m).rate;const amt=totals(m).total;const freq=m.frequency||'ponctuelle';const labels=occLabels(freq);const entries=labels.map(d=>({day:d,slot:m.slot,svc:m.svc,client:'Camille M.',zone:m.zone,duration:m.duration,rate:r,amount:amt,status:'upcoming'}));m._appt=entries[0];entries.slice().reverse().forEach(e=>S.agenda.unshift(e));if(freq!=='ponctuelle'){S.recurring.unshift({svc:m.svc,svcName:m.svcName,short:freqInfo(freq).short,slot:m.slot,zone:m.zone});}render();toast(labels.length>1?'Prestation récurrente ajoutée à votre agenda !':'Mission remportée — ajoutée à votre agenda !');break;}
       case 'pro-decline':S.mission.status='searching';render();setTimeout(()=>{if(S.mission&&S.mission.status==='searching'){S.mission.status='pending';render();}},1400);toast('Mission passée — proposée aux autres');break;
@@ -772,7 +866,7 @@
     const cf=e.target.closest('[data-cf]');if(cf)S.clientForm[cf.dataset.cf]=cf.value;
     const cd=e.target.closest('[data-cfdate]');if(cd&&S.draft){S.draft.dateISO=cd.value;S.draft.when=fmtDate(cd.value);renderConfig();}
   });
-  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),proStatus:'approved',proName:'Marie-Lou',proRate:35,proStatusType:'entreprise',proSiret:'',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'',siret:'',rate:'',bio:'',insurer:'',insuranceDoc:false}});render();toast('Scénario réinitialisé');});
+  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,proStatus:'approved',proName:'Marie-Lou',proRate:35,proStatusType:'entreprise',proSiret:'',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'',siret:'',rate:'',bio:'',insurer:'',insuranceDoc:false}});render();toast('Scénario réinitialisé');});
 
   /* ---------- PWA: install + service worker ---------- */
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
