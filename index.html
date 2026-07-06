@@ -384,8 +384,8 @@
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],
     avail:{lun:{m:1,a:1,s:0},mar:{m:1,a:1,s:0},mer:{m:1,a:1,s:1},jeu:{m:1,a:1,s:0},ven:{m:1,a:1,s:1},sam:{m:1,a:0,s:0},dim:{m:0,a:0,s:0}}
   };
-  function newMission(svc){return {svc:svc.id,svcName:svc.nm,rate:svc.rate,tip:0,frequency:'ponctuelle',duration:3,zone:'Gustavia',address:'Villa Colibri, Gustavia',geo:null,notes:'',when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',status:'draft',provider:null,rating:0,competitors:0};}
-  function totals(m){const rate=m.rate;const sub=rate*m.duration;const tip=m.tip||0;const total=sub+tip;return {rate,sub,tip,commission:0,payout:total,total};}
+  function newMission(svc){return {svc:svc.id,svcName:svc.nm,rate:svc.rate,frequency:'ponctuelle',duration:3,zone:'Gustavia',address:'Villa Colibri, Gustavia',geo:null,notes:'',when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',status:'draft',provider:null,rating:0,competitors:0};}
+  function totals(m){const rate=m.rate;const sub=rate*m.duration;return {rate,sub,commission:0,payout:sub,total:sub};}
   const eur=(n)=>n.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
   const fmtDate=(iso)=>{if(!iso)return 'Aujourd’hui';const p=iso.split('-');return p[2]+'/'+p[1];};
   function miniMap(g){return `<div class="geomap"><svg viewBox="0 0 300 130" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="300" height="130" fill="var(--teal-wash)"/><path d="M0 96 Q80 82 150 93 T300 88 V130 H0Z" fill="color-mix(in srgb,var(--teal) 20%,transparent)"/><g stroke="color-mix(in srgb,var(--teal) 22%,transparent)" stroke-width="1"><path d="M0 40h300M0 74h300M60 0v130M150 0v130M240 0v130"/></g><g transform="translate(150 62)"><circle r="20" fill="color-mix(in srgb,var(--coral) 20%,transparent)"><animate attributeName="r" values="10;22;10" dur="2.2s" repeatCount="indefinite"/></circle><circle r="7" fill="var(--coral)"/><circle r="2.6" fill="#fff"/></g></svg><div class="geocoords">📍 ${g.lat}, ${g.lng}</div></div>`;}
@@ -516,7 +516,7 @@
       ${m.status==='pending'?`<div class="card" style="padding:16px;margin-top:12px;text-align:center"><div class="radar sm" style="height:96px"><div class="ring r1"></div><div class="ring r2"></div><div class="core" style="width:44px;height:44px">${I.search}</div></div><p class="sub" style="margin:0">Un artisan disponible va accepter votre demande…</p><p class="mini" style="margin-top:6px">Vous découvrirez qui intervient dès l'acceptation.</p></div>`:(p?`<div class="card" style="padding:14px;margin-top:12px"><div class="row" style="gap:12px"><div class="avatar">${p.ini}</div><div style="flex:1"><b style="font-size:15px">${p.nm}</b><div class="mini"><span class="stars">★</span> ${p.rating.toFixed(1)} · ${p.jobs} missions</div></div><span class="chip good" style="padding:4px 10px">${I.check} Vérifié · Assuré</span></div></div>`:'')}
       <div class="card" style="padding:16px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Suivi</div><div class="timeline" style="margin-top:12px">${tls}</div></div>
       <div class="banner teal" style="margin-top:12px">${I.shield}<span>Aucun appel à passer&nbsp;: le statut se met à jour tout seul ici, et le paiement est garanti par Ti-Services.</span></div>
-      <div class="est" style="background:var(--card-2);border-color:var(--hair)"><div class="line"><span>Montant garanti</span><b>${eur(t.total)}</b></div><div class="line"><span>Sur ${S.card.brand} ••••&nbsp;${S.card.last4}</span><b>bloqué</b></div><small>${I.shield} Rien à faire&nbsp;: débité automatiquement à la fin, seulement si vous validez.</small></div>
+      <div class="est" style="background:var(--card-2);border-color:var(--hair)"><div class="line"><span>Montant garanti</span><b>${eur(t.total)}</b></div><div class="line"><span>Sur ${S.card.brand} ••••&nbsp;${S.card.last4}</span><b>bloqué</b></div><small>${I.shield} Rien à faire&nbsp;: débité automatiquement à la fin (jamais plus que ce montant), seulement si vous validez.</small></div>
       ${m.status==='pending'?`<div class="footcta" style="position:static;background:none;padding:16px 0 0"><button class="demobtn" data-act="demo-go-pro">👷 Voir côté artisan (démo)</button><button class="btn ghost" data-act="cancel-mission" style="margin-top:12px">Annuler la demande</button></div>`:'<div style="height:18px"></div>'}</div>`;
   }
   function clientConfirm(){
@@ -647,10 +647,9 @@
     return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">${I.cal} Mon agenda</span><div class="h-hello">${tab==='dispo'?'Mes disponibilités':'Prestations réservées'}</div>${seg}${tab==='dispo'?dispoGrid():apptList()}</div>${proNavbar()}`;
   }
   function proRequest(){
-    const m=S.mission,t=totals(m);const tip=m.tip||0;
+    const m=S.mission,t=totals(m);
     return `<div class="pad"><div style="height:6px"></div>
       <div class="compbar"><span class="live"></span>${I.flame}&nbsp;Au premier qui accepte · ${m.competitors} artisans notifiés</div>
-      ${tip>0?`<div class="banner coral" style="margin-top:10px">💛<span><b>Coup de pouce +${eur(tip)}</b> — mission plus attractive, à saisir vite.</span></div>`:''}
       ${(m.frequency&&m.frequency!=='ponctuelle')?`<div class="banner teal" style="margin-top:10px">🔁<span><b>Prestation récurrente · ${freqInfo(m.frequency).short}</b> — revenu régulier avec le même client.</span></div>`:''}
       <div class="card reqcard" style="padding:18px;margin-top:12px"><svg class="ring-timer" viewBox="0 0 40 40"><circle class="bg" cx="20" cy="20" r="18"/><circle class="fg" cx="20" cy="20" r="18"/></svg>
         <div class="ic" style="width:44px;height:44px;border-radius:12px;background:var(--teal-wash);color:var(--teal-deep);display:flex;align-items:center;justify-content:center">${I[m.svc]}</div>
@@ -660,7 +659,7 @@
         <div class="row between"><span class="sub">Client</span><b>Camille M.</b></div>
         <div class="row between" style="margin-top:6px"><span class="sub">Secteur</span><b>${I.pin} ${m.zone}</b></div>
         ${m.notes?`<div style="margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Détail de la demande</div><p class="sub" style="margin-top:4px;color:var(--ink-soft)">${m.notes}</p></div>`:''}<hr class="dashed">
-        <div class="row between" style="align-items:flex-end"><div><span class="sub">Tarif proposé</span>${tip>0?`<div style="margin-top:4px"><span class="chip coral" style="padding:3px 9px">💛 +${eur(tip)} de pourboire</span></div>`:''}</div><div style="text-align:right"><b class="money" style="font-size:22px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(t.total)}</b><div class="mini">${t.rate} €/h × ${m.duration} h${tip>0?' + pourboire':''}</div></div></div></div>
+        <div class="row between" style="align-items:flex-end"><div><span class="sub">Offre du client</span><div class="mini" style="margin-top:2px">Libre à vous d'accepter</div></div><div style="text-align:right"><b class="money" style="font-size:22px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(t.total)}</b><div class="mini">${t.rate} €/h × ${m.duration} h</div></div></div></div>
       <div class="stack" style="margin-top:16px"><button class="btn accept" data-act="pro-accept">${I.flame} Accepter avant les autres</button><button class="btn ghost sm" data-act="pro-decline">Passer mon tour</button><p class="mini" style="text-align:center">Premier arrivé, premier servi&nbsp;: dès qu'un artisan accepte, la mission disparaît pour les autres. L'adresse exacte s'affiche une fois acceptée.</p></div></div>`;
   }
   function proActive(){
@@ -701,7 +700,7 @@
     setTimeout(()=>{if(!S.mission||S.mission.status!=='searching'){clearInterval(iv);return;}clearInterval(iv);S.mission.status='pending';render();if(S.persona!=='pro')toast(S.mission.competitors+' artisans ont reçu votre demande');},2600);
   }
   document.addEventListener('click',(e)=>{
-    const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-pnav],[data-star],[data-persona],[data-av],[data-atab],[data-pcat],[data-pstatus],[data-cfg],[data-zone],[data-czone],[data-when],[data-tip],[data-freq],[data-slot]');
+    const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-pnav],[data-star],[data-persona],[data-av],[data-atab],[data-pcat],[data-pstatus],[data-cfg],[data-zone],[data-czone],[data-when],[data-offer],[data-freq],[data-slot]');
     if(!b)return;
     if(b.dataset.persona){go(b.dataset.persona);return;}
     if(b.dataset.cnav){S.clientNav=b.dataset.cnav;render();return;}
@@ -715,7 +714,7 @@
     if(b.dataset.slot){if(S.draft)S.draft.slot=b.dataset.slot;renderConfig();return;}
     if(b.dataset.czone){S.clientForm.zone=b.dataset.czone;render();return;}
     if(b.dataset.when){if(!S.draft)return;const v=b.dataset.when;if(v==='__pick'){S.draft.dateMode='pick';}else{S.draft.dateMode=null;S.draft.when=v;}renderConfig();return;}
-    if(b.dataset.tip){if(!S.draft)return;S.draft.tip=parseFloat(b.dataset.tip);renderConfig();return;}
+    if(b.dataset.offer){if(!S.draft)return;const st=5;S.draft.rate=Math.max(15,Math.min(120,S.draft.rate+(b.dataset.offer==='up'?st:-st)));renderConfig();return;}
     if(b.dataset.freq){if(!S.draft)return;S.draft.frequency=b.dataset.freq;renderConfig();return;}
     if(b.dataset.star){const n=+b.dataset.star;S.mission.rating=n;document.querySelectorAll('#rateStars button').forEach(x=>x.classList.toggle('lit',+x.dataset.star<=n));const rb=document.getElementById('rateBtn');if(rb)rb.disabled=false;return;}
     if(b.dataset.cfg){const c=b.dataset.cfg;if(!S.draft)return;if(c==='back'){S.draft=null;render();}else if(c==='minus'){S.draft.duration=Math.max(1,S.draft.duration-1);renderConfig();}else if(c==='plus'){S.draft.duration=Math.min(10,S.draft.duration+1);renderConfig();}else if(c==='geoloc'){geolocate();}else if(c==='confirm'){S.mission=S.draft;S.draft=null;startSearch();}return;}
@@ -754,13 +753,13 @@
       <div class="field"><label>Quand&nbsp;?</label><div class="segs"><button class="seg ${m.dateMode!=='pick'&&m.when==='Aujourd’hui'?'on':''}" data-when="Aujourd’hui">Aujourd'hui</button><button class="seg ${m.dateMode!=='pick'&&m.when==='Demain'?'on':''}" data-when="Demain">Demain</button><button class="seg ${m.dateMode==='pick'?'on':''}" data-when="__pick">Choisir…</button></div>${m.dateMode==='pick'?`<input class="txt" type="date" data-cfdate style="margin-top:10px" value="${m.dateISO||''}">`:''}</div>
       <div class="field"><label>Heure</label><div class="segs">${slots}</div></div>
       <div class="field"><label>Fréquence</label><div class="segs">${FREQS.map(f=>`<button class="seg ${(m.frequency||'ponctuelle')===f.id?'on':''}" data-freq="${f.id}">${f.lbl}</button>`).join('')}</div>${(m.frequency&&m.frequency!=='ponctuelle')?`<p class="mini" style="margin-top:6px">🔁 Prestation régulière — le même artisan à chaque fois, annulable à tout moment.</p>`:''}</div>
-      <div class="field"><label>Coup de pouce (pourboire)</label><div class="segs">${[0,5,10,20].map(v=>`<button class="seg ${(m.tip||0)===v?'on':''}" data-tip="${v}">${v===0?'Aucun':'+'+v+' €'}</button>`).join('')}</div><p class="mini" style="margin-top:6px">💛 Optionnel — un pourboire rend votre demande plus attractive et accélère l'acceptation.</p></div>
+      <div class="field"><label>Votre offre — tarif horaire</label><div class="stepper"><button data-offer="down">−</button><span class="val">${m.rate} €/h</span><button data-offer="up">+</button></div><p class="mini" style="margin-top:6px">Prix conseillé&nbsp;: ${SERVICES.find(s=>s.id===m.svc).rate} €/h. Ti-Services <b>ne fixe pas le prix</b> — c'est votre offre, l'artisan reste libre de l'accepter. Une offre plus élevée est acceptée plus vite.</p></div>
       <div class="field"><label>Durée estimée</label><div class="stepper"><button data-cfg="minus">−</button><span class="val">${m.duration} h</span><button data-cfg="plus">+</button></div></div>
       <div class="field"><label>Secteur</label><div class="segs">${zones}</div></div>
       <div class="field"><label>Adresse</label><input class="txt" value="${m.address}"></div>
       <div class="field"><label>Point GPS du domicile</label><button class="btn ghost sm" data-cfg="geoloc">📍 ${m.geo?'Actualiser ma position':'Utiliser ma position actuelle'}</button>${m.geo?miniMap(m.geo):`<p class="mini" style="margin-top:6px">Ajoutez un point GPS pour que le prestataire trouve votre domicile facilement.</p>`}</div>
       <div class="field"><label>Décrivez votre besoin</label><textarea rows="3" data-cfg="notes" placeholder="${PLACEHOLDERS[m.svc]||'Décrivez précisément la prestation…'}">${m.notes}</textarea><p class="mini" style="margin-top:6px">Plus c'est précis (« bricolage » est large&nbsp;!), plus l'artisan accepte vite et au bon tarif.</p></div>
-      <div class="est"><div class="line"><span>${m.svcName} · ${t.rate} €/h × ${m.duration} h</span><b>${eur(t.sub)}</b></div>${t.tip>0?`<div class="line"><span>Coup de pouce 💛</span><b>+${eur(t.tip)}</b></div>`:''}<div class="total"><span>${(m.frequency&&m.frequency!=='ponctuelle')?'Par prestation':'Total'}</span><b>${eur(t.total)}</b></div><small>${I.shield} Vous ne réglez rien à la main. Bloqué en garantie sur ${S.card.brand} ••••&nbsp;${S.card.last4}, débité seulement après validation — via Mollie (séquestre agréé).</small></div>
+      <div class="est"><div class="line"><span>${m.svcName} · ${t.rate} €/h × ${m.duration} h</span><b>${eur(t.sub)}</b></div><div class="total"><span>${(m.frequency&&m.frequency!=='ponctuelle')?'Par prestation':'Total'}</span><b>${eur(t.total)}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité (sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — séquestre agréé). Aucun supplément sans votre accord.</small></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm">${I.search} Trouver un artisan · ${eur(t.total)}</button></div></div></div>`;
   }
   view.addEventListener('input',(e)=>{
