@@ -163,6 +163,10 @@
   .cat .pick{position:absolute;top:10px;right:10px;width:20px;height:20px;border-radius:50%;border:2px solid var(--hair);display:flex;align-items:center;justify-content:center;color:transparent;transition:all .15s}
   .cat.sel .pick{background:var(--teal);border-color:var(--teal);color:#fff}
   .linklike{color:var(--teal-deep);font-weight:700;text-decoration:underline;text-underline-offset:3px}
+  .showcase{display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px;margin-top:16px}
+  .sc-tile{display:flex;flex-direction:column;align-items:center;gap:7px;padding:13px 6px;border-radius:14px;background:var(--card);border:1px solid var(--hair);font-size:11.5px;font-weight:650;text-align:center;color:var(--ink-soft)}
+  .sc-tile .ic{width:36px;height:36px;border-radius:10px;background:var(--teal-wash);color:var(--teal-deep);display:flex;align-items:center;justify-content:center}
+  .benic{width:34px;height:34px;border-radius:10px;background:var(--teal-wash);color:var(--teal-deep);display:flex;align-items:center;justify-content:center;flex:none}
 
   .field{margin-top:14px}
   .field>label{font-size:12.5px;font-weight:650;color:var(--ink-soft);display:block;margin-bottom:7px}
@@ -361,7 +365,7 @@
   ];
 
   const S={
-    persona:'client',clientNav:'home',proNav:'home',onboarded:false,
+    persona:'client',clientNav:'home',proNav:'home',onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},
     card:{brand:'Visa',last4:'4242'},mission:null,draft:null,
     proStatus:'approved',proName:'Marie-Lou',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[]},
     proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],
@@ -412,18 +416,57 @@
     return `<div class="navbar">${item('home',I.home,'Accueil',false)}${item('wallet',I.wallet,'Missions',act)}${item('profile',I.user,'Profil',false)}</div>`;
   }
   function clientOnboard(){
-    return `<div class="pad"><div style="height:14px"></div>
-      <span class="eyebrow">Bienvenue sur Ti-Services</span><div class="h-hello">Un coup de main, tout de suite.</div>
-      <p class="sub" style="margin-top:6px">Enregistrez une carte une seule fois. Ensuite vous ne sortez plus jamais votre portefeuille&nbsp;: tout est réglé automatiquement, en sécurité, seulement après une prestation validée.</p>
-      <div class="card" style="padding:16px;margin-top:20px">
+    if(S.onbStep===1)return onbInfos();
+    if(S.onbStep===2)return onbCard();
+    return onbWelcome();
+  }
+  function onbWelcome(){
+    const tiles=SERVICES.map(s=>`<div class="sc-tile"><div class="ic">${I[s.id]}</div><span>${s.nm}</span></div>`).join('');
+    const benefits=[[I.shield,'Artisans vérifiés','Profils contrôlés et notés par la communauté.'],[I.lock,'Vous ne gérez pas le paiement','Débité automatiquement, seulement après une prestation validée.'],[I.bolt,'À la demande','Sans abonnement, un pro quand vous en avez besoin.']]
+      .map(x=>`<div class="row" style="gap:12px;align-items:flex-start"><div class="benic">${x[0]}</div><div><b style="font-size:14px">${x[1]}</b><div class="mini" style="margin-top:1px">${x[2]}</div></div></div>`).join('');
+    return `<div class="pad"><div style="height:16px"></div>
+      <span class="eyebrow">${I.pin} Saint-Barthélemy</span>
+      <div class="h-hello" style="font-size:27px">Un pro de confiance, à la demande.</div>
+      <p class="sub" style="margin-top:6px">Ménage, garde d'enfants, jardinage… Un artisan vérifié chez vous en quelques minutes, sans prise de tête.</p>
+      <div class="showcase">${tiles}</div>
+      <div class="stack" style="gap:13px;margin-top:20px">${benefits}</div>
+      <div class="footcta" style="position:static;background:none;padding:22px 0 0">
+        <button class="btn primary" data-act="onb-start">Créer mon compte</button>
+        <p class="mini" style="text-align:center;margin-top:14px">Vous êtes un professionnel&nbsp;? <button class="linklike" data-act="go-artisan-signup">Rejoindre Ti-Services ›</button></p>
+      </div></div>`;
+  }
+  function onbInfos(){
+    const f=S.clientForm;
+    const zones=ZONES.map(z=>`<button class="seg ${f.zone===z?'on':''}" data-czone="${z}">${z}</button>`).join('');
+    const ok=(f.name||'').trim().length>1;
+    return `<div class="pad"><div style="height:10px"></div>
+      <button class="reset" data-act="onb-back0" style="margin:0 0 8px">← Retour</button>
+      <span class="eyebrow">Créer mon compte · Étape 1 / 2</span>
+      <div class="h-hello">Vos informations</div>
+      <div class="card" style="padding:16px;margin-top:16px">
+        <div class="field"><label>Prénom &amp; nom</label><input class="txt" data-cf="name" value="${f.name}" placeholder="Ex. Camille Magras"></div>
+        <div class="field"><label>E-mail</label><input class="txt" data-cf="email" value="${f.email}" inputmode="email" placeholder="vous@exemple.com"></div>
+        <div class="field"><label>Votre secteur</label><div class="segs">${zones}</div></div>
+      </div>
+      <div class="footcta" style="position:static;background:none;padding:18px 0 0">
+        <button class="btn primary" data-act="onb-infos-next" ${ok?'':'disabled'}>Continuer</button>
+        <p class="mini" style="text-align:center;margin-top:10px">${I.lock} Aucune carte demandée à cette étape.</p>
+      </div></div>`;
+  }
+  function onbCard(){
+    return `<div class="pad"><div style="height:10px"></div>
+      <button class="reset" data-act="onb-back1" style="margin:0 0 8px">← Retour</button>
+      <span class="eyebrow">Créer mon compte · Étape 2 / 2</span>
+      <div class="h-hello">Votre moyen de paiement</div>
+      <p class="sub" style="margin-top:6px">Dernière étape. <b>Aucun débit maintenant</b> — vous ne payez qu'après une prestation validée. Ensuite, plus besoin de ressortir votre carte.</p>
+      <div class="card" style="padding:16px;margin-top:16px">
         <div class="row between"><span class="chip">${I.card} Carte de paiement</span><span class="chip good" style="padding:4px 9px">${I.lock} Chiffré</span></div>
         <div class="field"><label>Numéro de carte</label><input class="txt" value="4242 4242 4242 4242" inputmode="numeric"></div>
         <div class="row" style="gap:11px;margin-top:11px"><div style="flex:1"><label style="font-size:12.5px;font-weight:650;color:var(--ink-soft)">Expiration</label><input class="txt" value="08/28" style="margin-top:7px"></div><div style="flex:1"><label style="font-size:12.5px;font-weight:650;color:var(--ink-soft)">CVC</label><input class="txt" value="•••" style="margin-top:7px"></div></div>
         <div class="banner teal" style="margin-top:14px">${I.shield}<span>Simple empreinte bancaire. Rien n'est prélevé tant que vous n'avez pas validé une prestation.</span></div>
       </div>
-      <div class="footcta" style="position:static;background:none;padding:20px 0 0"><button class="btn primary" data-act="finish-onboard">Enregistrer ma carte &amp; commencer</button>
-        <p class="mini" style="text-align:center;margin-top:14px">Vous êtes un professionnel&nbsp;? <button class="linklike" data-act="go-artisan-signup">Rejoindre Ti-Services ›</button></p>
-        <p class="mini" style="text-align:center;margin-top:8px">Maquette — aucune donnée réelle envoyée.</p></div>
+      <div class="footcta" style="position:static;background:none;padding:20px 0 0"><button class="btn primary" data-act="finish-onboard">Terminer l'inscription</button>
+        <p class="mini" style="text-align:center;margin-top:10px">Maquette — aucune donnée réelle envoyée.</p></div>
     </div>`;
   }
   function clientHome(){
@@ -635,7 +678,7 @@
     setTimeout(()=>{if(!S.mission||S.mission.status!=='searching'){clearInterval(iv);return;}clearInterval(iv);S.mission.provider=Object.assign({},PROVIDERS[S.mission.svc]);S.mission.status='pending';render();if(S.persona!=='pro')toast(S.mission.competitors+' artisans ont reçu votre demande');},2600);
   }
   document.addEventListener('click',(e)=>{
-    const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-pnav],[data-star],[data-persona],[data-av],[data-atab],[data-pcat],[data-cfg],[data-zone],[data-slot]');
+    const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-pnav],[data-star],[data-persona],[data-av],[data-atab],[data-pcat],[data-cfg],[data-zone],[data-czone],[data-slot]');
     if(!b)return;
     if(b.dataset.persona){go(b.dataset.persona);return;}
     if(b.dataset.cnav){S.clientNav=b.dataset.cnav;render();return;}
@@ -646,10 +689,15 @@
     if(b.dataset.pcat){const c=b.dataset.pcat,i=S.proForm.cats.indexOf(c);if(i<0)S.proForm.cats.push(c);else S.proForm.cats.splice(i,1);render();return;}
     if(b.dataset.zone){if(S.draft){S.draft.zone=b.dataset.zone;S.draft.address=b.dataset.zone==='Gustavia'?'Villa Colibri, Gustavia':('Villa, '+b.dataset.zone);}renderConfig();return;}
     if(b.dataset.slot){if(S.draft)S.draft.slot=b.dataset.slot;renderConfig();return;}
+    if(b.dataset.czone){S.clientForm.zone=b.dataset.czone;render();return;}
     if(b.dataset.star){const n=+b.dataset.star;S.mission.rating=n;document.querySelectorAll('#rateStars button').forEach(x=>x.classList.toggle('lit',+x.dataset.star<=n));const rb=document.getElementById('rateBtn');if(rb)rb.disabled=false;return;}
     if(b.dataset.cfg){const c=b.dataset.cfg;if(!S.draft)return;if(c==='back'){S.draft=null;render();}else if(c==='minus'){S.draft.duration=Math.max(1,S.draft.duration-1);renderConfig();}else if(c==='plus'){S.draft.duration=Math.min(10,S.draft.duration+1);renderConfig();}else if(c==='confirm'){S.mission=S.draft;S.draft=null;startSearch();}return;}
     switch(b.dataset.act){
-      case 'finish-onboard':S.onboarded=true;render();toast('Carte enregistrée — vous ne la ressortirez plus');break;
+      case 'onb-start':S.onbStep=1;render();break;
+      case 'onb-back0':S.onbStep=0;render();break;
+      case 'onb-back1':S.onbStep=1;render();break;
+      case 'onb-infos-next':if((S.clientForm.name||'').trim().length>1){S.onbStep=2;render();}break;
+      case 'finish-onboard':S.onboarded=true;render();toast('Compte créé — bienvenue sur Ti-Services !');break;
       case 'cancel-mission':S.mission=null;S.clientNav='home';render();break;
       case 'confirm-done':S.mission.status='paid';S.proEarnings+=totals(S.mission).payout;if(S.mission._appt)S.mission._appt.status='done';render();break;
       case 'report-issue':toast('Signalement transmis — vous ne serez pas débité');break;
@@ -685,8 +733,9 @@
   view.addEventListener('input',(e)=>{
     const t=e.target.closest('[data-cfg="notes"]');if(t&&S.draft)S.draft.notes=t.value;
     const pf=e.target.closest('[data-pf]');if(pf)S.proForm[pf.dataset.pf]=pf.value;
+    const cf=e.target.closest('[data-cf]');if(cf)S.clientForm[cf.dataset.cf]=cf.value;
   });
-  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,onboarded:false,history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),proStatus:'approved',proName:'Marie-Lou',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[]}});render();toast('Scénario réinitialisé');});
+  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),proStatus:'approved',proName:'Marie-Lou',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[]}});render();toast('Scénario réinitialisé');});
 
   /* ---------- PWA: install + service worker ---------- */
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
