@@ -362,6 +362,7 @@
   const FREQS=[{id:'ponctuelle',lbl:'Ponctuelle',short:'ponctuelle'},{id:'hebdo',lbl:'Chaque semaine',short:'chaque semaine'},{id:'bihebdo',lbl:'Toutes les 2 sem.',short:'toutes les 2 semaines'},{id:'mensuelle',lbl:'Chaque mois',short:'chaque mois'}];
   const freqInfo=(id)=>FREQS.find(f=>f.id===id)||FREQS[0];
   function occLabels(freq){if(freq==='hebdo')return ['Aujourd’hui','Semaine prochaine','Dans 2 semaines','Dans 3 semaines'];if(freq==='bihebdo')return ['Aujourd’hui','Dans 2 semaines','Dans 4 semaines'];if(freq==='mensuelle')return ['Aujourd’hui','Le mois prochain'];return ['Aujourd’hui'];}
+  const PLACEHOLDERS={menage:'Ex. 2 chambres + cuisine, produits fournis.',baby:'Ex. garde de 2 enfants (4 et 6 ans), sortie d’école.',jardin:'Ex. tondre 200 m² et tailler une haie.',repassage:'Ex. 2 paniers de linge, chemises comprises.',bricolage:'Ex. monter une étagère IKEA et fixer 2 cadres au mur.',cuisine:'Ex. repas pour 4, cuisine créole.',demenagement:'Ex. studio, 15 cartons + 1 canapé, 2e étage sans ascenseur.',info:'Ex. configurer une box internet + imprimante wifi.',animaux:'Ex. promener un chien 2×/jour ce week-end.'};
   const COMMISSION=0.15;
   const DAYS=[['lun','Lun'],['mar','Mar'],['mer','Mer'],['jeu','Jeu'],['ven','Ven'],['sam','Sam'],['dim','Dim']];
   const BLOCKS=[['m','Matin'],['a','Après-m.'],['s','Soir']];
@@ -380,8 +381,8 @@
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],
     avail:{lun:{m:1,a:1,s:0},mar:{m:1,a:1,s:0},mer:{m:1,a:1,s:1},jeu:{m:1,a:1,s:0},ven:{m:1,a:1,s:1},sam:{m:1,a:0,s:0},dim:{m:0,a:0,s:0}}
   };
-  function newMission(svc){return {svc:svc.id,svcName:svc.nm,rate:svc.rate,surge:1,frequency:'ponctuelle',duration:3,zone:'Gustavia',address:'Villa Colibri, Gustavia',notes:'',when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',status:'draft',provider:null,rating:0,competitors:0};}
-  function totals(m){const rate=Math.round(m.rate*(m.surge||1));const sub=rate*m.duration;return {rate,sub,commission:0,payout:sub,total:sub};}
+  function newMission(svc){return {svc:svc.id,svcName:svc.nm,rate:svc.rate,tip:0,frequency:'ponctuelle',duration:3,zone:'Gustavia',address:'Villa Colibri, Gustavia',notes:'',when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',status:'draft',provider:null,rating:0,competitors:0};}
+  function totals(m){const rate=m.rate;const sub=rate*m.duration;const tip=m.tip||0;const total=sub+tip;return {rate,sub,tip,commission:0,payout:total,total};}
   const eur=(n)=>n.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
   const fmtDate=(iso)=>{if(!iso)return 'Aujourd’hui';const p=iso.split('-');return p[2]+'/'+p[1];};
   const availCount=()=>Object.values(S.avail).reduce((t,d)=>t+d.m+d.a+d.s,0);
@@ -592,7 +593,7 @@
       <p class="mini" style="text-align:center;margin-top:16px"><button class="linklike" data-act="demo-go-client">🧑 Voir l'espace client (démo)</button></p>
       <div style="height:12px"></div></div>${proNavbar()}`;
   }
-  function apptPayout(a){const base=SERVICES.find(x=>x.id===a.svc).rate;return (a.rate||base)*a.duration;}
+  function apptPayout(a){if(a.amount!=null)return a.amount;const base=SERVICES.find(x=>x.id===a.svc).rate;return (a.rate||base)*a.duration;}
   function apptCard(a){
     const s=SERVICES.find(x=>x.id===a.svc);
     const col={upcoming:'var(--teal)',live:'var(--coral)',tovalidate:'var(--warn)',done:'var(--good)'}[a.status];
@@ -631,12 +632,11 @@
     const seg=`<div class="segs" style="margin-top:8px"><button class="seg ${tab==='presta'?'on':''}" data-atab="presta">Prestations</button><button class="seg ${tab==='dispo'?'on':''}" data-atab="dispo">Disponibilités</button></div>`;
     return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">${I.cal} Mon agenda</span><div class="h-hello">${tab==='dispo'?'Mes disponibilités':'Prestations réservées'}</div>${seg}${tab==='dispo'?dispoGrid():apptList()}</div>${proNavbar()}`;
   }
-  function surgeInfo(m){const s=m.surge||1;if(s>=1.5)return{t:'Nuit / express',ic:'🌙'};if(s>=1.25)return{t:'Urgent',ic:'⚡'};return null;}
   function proRequest(){
-    const m=S.mission,t=totals(m);const sl=surgeInfo(m);
+    const m=S.mission,t=totals(m);const tip=m.tip||0;
     return `<div class="pad"><div style="height:6px"></div>
       <div class="compbar"><span class="live"></span>${I.flame}&nbsp;Au premier qui accepte · ${m.competitors} artisans notifiés</div>
-      ${sl?`<div class="banner coral" style="margin-top:10px">${I.flame}<span><b>Tarif majoré · ${sl.t}</b> — mission prioritaire, à saisir vite.</span></div>`:''}
+      ${tip>0?`<div class="banner coral" style="margin-top:10px">💛<span><b>Coup de pouce +${eur(tip)}</b> — mission plus attractive, à saisir vite.</span></div>`:''}
       ${(m.frequency&&m.frequency!=='ponctuelle')?`<div class="banner teal" style="margin-top:10px">🔁<span><b>Prestation récurrente · ${freqInfo(m.frequency).short}</b> — revenu régulier avec le même client.</span></div>`:''}
       <div class="card reqcard" style="padding:18px;margin-top:12px"><svg class="ring-timer" viewBox="0 0 40 40"><circle class="bg" cx="20" cy="20" r="18"/><circle class="fg" cx="20" cy="20" r="18"/></svg>
         <div class="ic" style="width:44px;height:44px;border-radius:12px;background:var(--teal-wash);color:var(--teal-deep);display:flex;align-items:center;justify-content:center">${I[m.svc]}</div>
@@ -645,8 +645,8 @@
         <hr class="dashed">
         <div class="row between"><span class="sub">Client</span><b>Camille M.</b></div>
         <div class="row between" style="margin-top:6px"><span class="sub">Secteur</span><b>${I.pin} ${m.zone}</b></div>
-        ${m.notes?`<p class="sub" style="margin-top:12px">« ${m.notes} »</p>`:''}<hr class="dashed">
-        <div class="row between" style="align-items:flex-end"><div><span class="sub">Tarif proposé</span>${sl?`<div style="margin-top:4px"><span class="chip coral" style="padding:3px 9px">${sl.ic} ${sl.t}</span></div>`:''}</div><div style="text-align:right"><b class="money" style="font-size:22px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(t.total)}</b><div class="mini">${t.rate} €/h × ${m.duration} h</div></div></div></div>
+        ${m.notes?`<div style="margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Détail de la demande</div><p class="sub" style="margin-top:4px;color:var(--ink-soft)">${m.notes}</p></div>`:''}<hr class="dashed">
+        <div class="row between" style="align-items:flex-end"><div><span class="sub">Tarif proposé</span>${tip>0?`<div style="margin-top:4px"><span class="chip coral" style="padding:3px 9px">💛 +${eur(tip)} de pourboire</span></div>`:''}</div><div style="text-align:right"><b class="money" style="font-size:22px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(t.total)}</b><div class="mini">${t.rate} €/h × ${m.duration} h${tip>0?' + pourboire':''}</div></div></div></div>
       <div class="stack" style="margin-top:16px"><button class="btn accept" data-act="pro-accept">${I.flame} Accepter avant les autres</button><button class="btn ghost sm" data-act="pro-decline">Passer mon tour</button><p class="mini" style="text-align:center">Premier arrivé, premier servi&nbsp;: dès qu'un artisan accepte, la mission disparaît pour les autres. L'adresse exacte s'affiche une fois acceptée.</p></div></div>`;
   }
   function proActive(){
@@ -686,7 +686,7 @@
     setTimeout(()=>{if(!S.mission||S.mission.status!=='searching'){clearInterval(iv);return;}clearInterval(iv);S.mission.status='pending';render();if(S.persona!=='pro')toast(S.mission.competitors+' artisans ont reçu votre demande');},2600);
   }
   document.addEventListener('click',(e)=>{
-    const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-pnav],[data-star],[data-persona],[data-av],[data-atab],[data-pcat],[data-cfg],[data-zone],[data-czone],[data-when],[data-surge],[data-freq],[data-slot]');
+    const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-pnav],[data-star],[data-persona],[data-av],[data-atab],[data-pcat],[data-cfg],[data-zone],[data-czone],[data-when],[data-tip],[data-freq],[data-slot]');
     if(!b)return;
     if(b.dataset.persona){go(b.dataset.persona);return;}
     if(b.dataset.cnav){S.clientNav=b.dataset.cnav;render();return;}
@@ -699,7 +699,7 @@
     if(b.dataset.slot){if(S.draft)S.draft.slot=b.dataset.slot;renderConfig();return;}
     if(b.dataset.czone){S.clientForm.zone=b.dataset.czone;render();return;}
     if(b.dataset.when){if(!S.draft)return;const v=b.dataset.when;if(v==='__pick'){S.draft.dateMode='pick';}else{S.draft.dateMode=null;S.draft.when=v;}renderConfig();return;}
-    if(b.dataset.surge){if(!S.draft)return;S.draft.surge=parseFloat(b.dataset.surge);renderConfig();return;}
+    if(b.dataset.tip){if(!S.draft)return;S.draft.tip=parseFloat(b.dataset.tip);renderConfig();return;}
     if(b.dataset.freq){if(!S.draft)return;S.draft.frequency=b.dataset.freq;renderConfig();return;}
     if(b.dataset.star){const n=+b.dataset.star;S.mission.rating=n;document.querySelectorAll('#rateStars button').forEach(x=>x.classList.toggle('lit',+x.dataset.star<=n));const rb=document.getElementById('rateBtn');if(rb)rb.disabled=false;return;}
     if(b.dataset.cfg){const c=b.dataset.cfg;if(!S.draft)return;if(c==='back'){S.draft=null;render();}else if(c==='minus'){S.draft.duration=Math.max(1,S.draft.duration-1);renderConfig();}else if(c==='plus'){S.draft.duration=Math.min(10,S.draft.duration+1);renderConfig();}else if(c==='confirm'){S.mission=S.draft;S.draft=null;startSearch();}return;}
@@ -722,7 +722,7 @@
       case 'demo-go-client':S.persona='client';render();break;
       case 'pro-submit':if(S.proForm.cats.length){S.proStatus='pending';render();}break;
       case 'pro-approve':S.proStatus='approved';if(S.proForm.name)S.proName=S.proForm.name;if(S.proForm.cats.length)S.proCats=S.proForm.cats.slice();render();toast('Profil validé — bienvenue sur Ti-Services !');break;
-      case 'pro-accept':{const m=S.mission;m.provider=Object.assign({},PROVIDERS[m.svc]);m.status='accepted';const r=totals(m).rate;const freq=m.frequency||'ponctuelle';const labels=occLabels(freq);const entries=labels.map(d=>({day:d,slot:m.slot,svc:m.svc,client:'Camille M.',zone:m.zone,duration:m.duration,rate:r,status:'upcoming'}));m._appt=entries[0];entries.slice().reverse().forEach(e=>S.agenda.unshift(e));if(freq!=='ponctuelle'){S.recurring.unshift({svc:m.svc,svcName:m.svcName,short:freqInfo(freq).short,slot:m.slot,zone:m.zone});}render();toast(labels.length>1?'Prestation récurrente ajoutée à votre agenda !':'Mission remportée — ajoutée à votre agenda !');break;}
+      case 'pro-accept':{const m=S.mission;m.provider=Object.assign({},PROVIDERS[m.svc]);m.status='accepted';const r=totals(m).rate;const amt=totals(m).total;const freq=m.frequency||'ponctuelle';const labels=occLabels(freq);const entries=labels.map(d=>({day:d,slot:m.slot,svc:m.svc,client:'Camille M.',zone:m.zone,duration:m.duration,rate:r,amount:amt,status:'upcoming'}));m._appt=entries[0];entries.slice().reverse().forEach(e=>S.agenda.unshift(e));if(freq!=='ponctuelle'){S.recurring.unshift({svc:m.svc,svcName:m.svcName,short:freqInfo(freq).short,slot:m.slot,zone:m.zone});}render();toast(labels.length>1?'Prestation récurrente ajoutée à votre agenda !':'Mission remportée — ajoutée à votre agenda !');break;}
       case 'pro-decline':S.mission.status='searching';render();setTimeout(()=>{if(S.mission&&S.mission.status==='searching'){S.mission.status='pending';render();}},1400);toast('Mission passée — proposée aux autres');break;
       case 'pro-advance':S.mission.status=b.dataset.to;if(S.mission._appt){if(b.dataset.to==='working')S.mission._appt.status='live';else if(b.dataset.to==='done_pro')S.mission._appt.status='tovalidate';}render();break;
       case 'pro-back-home':if(S.mission)S.history.unshift(S.mission);S.mission=null;S.proNav='home';render();break;
@@ -737,12 +737,12 @@
       <div class="field"><label>Quand&nbsp;?</label><div class="segs"><button class="seg ${m.dateMode!=='pick'&&m.when==='Aujourd’hui'?'on':''}" data-when="Aujourd’hui">Aujourd'hui</button><button class="seg ${m.dateMode!=='pick'&&m.when==='Demain'?'on':''}" data-when="Demain">Demain</button><button class="seg ${m.dateMode==='pick'?'on':''}" data-when="__pick">Choisir…</button></div>${m.dateMode==='pick'?`<input class="txt" type="date" data-cfdate style="margin-top:10px" value="${m.dateISO||''}">`:''}</div>
       <div class="field"><label>Heure</label><div class="segs">${slots}</div></div>
       <div class="field"><label>Fréquence</label><div class="segs">${FREQS.map(f=>`<button class="seg ${(m.frequency||'ponctuelle')===f.id?'on':''}" data-freq="${f.id}">${f.lbl}</button>`).join('')}</div>${(m.frequency&&m.frequency!=='ponctuelle')?`<p class="mini" style="margin-top:6px">🔁 Prestation régulière — le même artisan à chaque fois, annulable à tout moment.</p>`:''}</div>
-      <div class="field"><label>Tarif proposé</label><div class="segs" style="flex-direction:column;align-items:stretch"><button class="seg ${(m.surge||1)===1?'on':''}" data-surge="1">Standard · ${Math.round(m.rate)} €/h</button><button class="seg ${(m.surge||1)===1.25?'on':''}" data-surge="1.25">Urgent · ${Math.round(m.rate*1.25)} €/h</button><button class="seg ${(m.surge||1)===1.5?'on':''}" data-surge="1.5">Nuit / express · ${Math.round(m.rate*1.5)} €/h</button></div><p class="mini" style="margin-top:6px">${I.flame} Un tarif plus élevé est accepté plus vite (urgence, nuit, dernière minute).</p></div>
+      <div class="field"><label>Coup de pouce (pourboire)</label><div class="segs">${[0,5,10,20].map(v=>`<button class="seg ${(m.tip||0)===v?'on':''}" data-tip="${v}">${v===0?'Aucun':'+'+v+' €'}</button>`).join('')}</div><p class="mini" style="margin-top:6px">💛 Optionnel — un pourboire rend votre demande plus attractive et accélère l'acceptation.</p></div>
       <div class="field"><label>Durée estimée</label><div class="stepper"><button data-cfg="minus">−</button><span class="val">${m.duration} h</span><button data-cfg="plus">+</button></div></div>
       <div class="field"><label>Secteur</label><div class="segs">${zones}</div></div>
       <div class="field"><label>Adresse</label><input class="txt" value="${m.address}"></div>
-      <div class="field"><label>Précisions (optionnel)</label><textarea rows="2" data-cfg="notes" placeholder="Ex. villa 2 chambres, produits fournis…">${m.notes}</textarea></div>
-      <div class="est"><div class="line"><span>${m.svcName} · ${t.rate} €/h × ${m.duration} h</span><b>${eur(t.sub)}</b></div><div class="total"><span>${(m.frequency&&m.frequency!=='ponctuelle')?'Par prestation':'Total'}</span><b>${eur(t.total)}</b></div><small>${I.shield} Vous ne réglez rien à la main. Bloqué en garantie sur ${S.card.brand} ••••&nbsp;${S.card.last4}, débité seulement après validation.</small></div>
+      <div class="field"><label>Décrivez votre besoin</label><textarea rows="3" data-cfg="notes" placeholder="${PLACEHOLDERS[m.svc]||'Décrivez précisément la prestation…'}">${m.notes}</textarea><p class="mini" style="margin-top:6px">Plus c'est précis (« bricolage » est large&nbsp;!), plus l'artisan accepte vite et au bon tarif.</p></div>
+      <div class="est"><div class="line"><span>${m.svcName} · ${t.rate} €/h × ${m.duration} h</span><b>${eur(t.sub)}</b></div>${t.tip>0?`<div class="line"><span>Coup de pouce 💛</span><b>+${eur(t.tip)}</b></div>`:''}<div class="total"><span>${(m.frequency&&m.frequency!=='ponctuelle')?'Par prestation':'Total'}</span><b>${eur(t.total)}</b></div><small>${I.shield} Vous ne réglez rien à la main. Bloqué en garantie sur ${S.card.brand} ••••&nbsp;${S.card.last4}, débité seulement après validation.</small></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm">${I.search} Trouver un artisan · ${eur(t.total)}</button></div></div></div>`;
   }
   view.addEventListener('input',(e)=>{
