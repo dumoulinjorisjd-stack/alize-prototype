@@ -10,7 +10,7 @@ Inspiré d'Uber, **sans géolocalisation** (inutile pour ce type de prestation) 
 - l'**artisan** renseigne ses **disponibilités** (planning hebdo) et accepte ou non ;
 - **premier arrivé, premier servi** : la mission part au premier artisan qui accepte ;
 - le paiement est **bloqué en garantie (séquestre)** puis versé à l'artisan après
-  validation, la plateforme prélevant une **commission de mise en relation (15 %)**.
+  validation, la plateforme prélevant une **commission de mise en relation**.
 
 ## Tester / installer sur téléphone
 

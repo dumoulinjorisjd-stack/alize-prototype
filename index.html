@@ -369,9 +369,10 @@
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),
     avail:{lun:{m:1,a:1,s:0},mar:{m:1,a:1,s:0},mer:{m:1,a:1,s:1},jeu:{m:1,a:1,s:0},ven:{m:1,a:1,s:1},sam:{m:1,a:0,s:0},dim:{m:0,a:0,s:0}}
   };
-  function newMission(svc){return {svc:svc.id,svcName:svc.nm,rate:svc.rate,duration:3,zone:'Gustavia',address:'Villa Colibri, Gustavia',notes:'',when:'Aujourd’hui',slot:'14:00',status:'draft',provider:null,rating:0,competitors:0};}
+  function newMission(svc){return {svc:svc.id,svcName:svc.nm,rate:svc.rate,duration:3,zone:'Gustavia',address:'Villa Colibri, Gustavia',notes:'',when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',status:'draft',provider:null,rating:0,competitors:0};}
   function totals(m){const sub=m.rate*m.duration;const commission=Math.round(sub*COMMISSION*100)/100;const payout=Math.round((sub-commission)*100)/100;return {sub,commission,payout,total:sub};}
   const eur=(n)=>n.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
+  const fmtDate=(iso)=>{if(!iso)return 'Aujourd’hui';const p=iso.split('-');return p[2]+'/'+p[1];};
   const availCount=()=>Object.values(S.avail).reduce((t,d)=>t+d.m+d.a+d.s,0);
 
   const view=document.getElementById('view');
@@ -511,7 +512,7 @@
   function clientReceipt(rated){
     const m=S.mission,t=totals(m),p=m.provider;
     if(!rated){return `<div class="pad"><div class="paycap"><div class="checkmark">${I.bigcheck}</div><div><div class="h-hello" style="text-align:center">C'est réglé, automatiquement</div><p class="sub" style="text-align:center">${eur(t.total)} débité sur ${S.card.brand} ••••&nbsp;${S.card.last4}</p></div></div>
-      <div class="card" style="padding:16px"><div class="eyebrow" style="color:var(--muted)">Reçu</div><div class="receipt-line" style="margin-top:8px"><span>${m.svcName} · ${m.duration} h</span><b>${eur(t.sub)}</b></div><hr class="dashed"><div class="receipt-line"><span>Total réglé</span><b>${eur(t.total)}</b></div><div class="receipt-line"><span>dont commission Ti-Services (15%)</span><b>${eur(t.commission)}</b></div><div class="receipt-line"><span>Versé à ${p.nm}</span><b>${eur(t.payout)}</b></div></div>
+      <div class="card" style="padding:16px"><div class="eyebrow" style="color:var(--muted)">Reçu</div><div class="receipt-line" style="margin-top:8px"><span>${m.svcName} · ${m.duration} h</span><b>${eur(t.sub)}</b></div><hr class="dashed"><div class="receipt-line"><span>Total réglé</span><b>${eur(t.total)}</b></div><div class="receipt-line"><span>Prestataire</span><b>${p.nm}</b></div></div>
       <p class="sub" style="text-align:center;margin:18px 0 10px">Comment s'est passée la prestation&nbsp;?</p><div class="rate-stars" id="rateStars">${[1,2,3,4,5].map(n=>`<button data-star="${n}">★</button>`).join('')}</div>
       <div class="footcta" style="position:static;background:none;padding:6px 0 0"><button class="btn primary" data-act="submit-rating" id="rateBtn" disabled>Envoyer mon avis</button></div></div>`;}
     return `<div class="pad"><div class="paycap"><div class="checkmark">${I.bigcheck}</div><div><div class="h-hello" style="text-align:center">Merci&nbsp;!</div><p class="sub" style="text-align:center">Votre avis aide la communauté.</p></div></div>
@@ -628,7 +629,7 @@
         <div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap"><span class="chip grey">${I.clock} ${m.when} · ${m.slot}</span><span class="chip grey">${m.duration} heures</span><span class="chip grey">${I.pin} ${m.address}</span></div>
         ${m.notes?`<p class="sub" style="margin-top:12px">« ${m.notes} »</p>`:''}<hr class="dashed">
         <div class="row between"><span class="sub">Vous percevez</span><b class="money" style="font-size:22px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(t.payout)}</b></div>
-        <div class="mini" style="margin-top:2px">Client débité ${eur(t.total)} · commission Ti-Services ${eur(t.commission)}</div></div>
+        <div class="mini" style="margin-top:2px">Montant net pour vous, versé après validation du client.</div></div>
       <div class="stack" style="margin-top:16px"><button class="btn accept" data-act="pro-accept">${I.flame} Accepter avant les autres</button><button class="btn ghost sm" data-act="pro-decline">Passer mon tour</button><p class="mini" style="text-align:center">Premier arrivé, premier servi&nbsp;: dès qu'un artisan accepte, la mission disparaît pour les autres.</p></div></div>`;
   }
   function proActive(){
@@ -650,12 +651,12 @@
   function proPaid(){
     const m=S.mission,t=totals(m);
     return `<div class="pad"><div class="paycap"><div class="checkmark">${I.bigcheck}</div><div><div class="h-hello" style="text-align:center">Vous avez été payé</div><p class="sub" style="text-align:center">+${eur(t.payout)} versés sur votre compte</p></div></div>
-      <div class="card" style="padding:16px"><div class="eyebrow" style="color:var(--muted)">Détail du versement</div><div class="receipt-line" style="margin-top:8px"><span>${m.svcName} · ${m.duration} h</span><b>${eur(t.sub)}</b></div><div class="receipt-line"><span>Commission Ti-Services (15%)</span><b>− ${eur(t.commission)}</b></div><hr class="dashed"><div class="receipt-line"><span>Net perçu</span><b style="color:var(--good)">${eur(t.payout)}</b></div></div>
+      <div class="card" style="padding:16px"><div class="eyebrow" style="color:var(--muted)">Détail du versement</div><div class="receipt-line" style="margin-top:8px"><span>${m.svcName} · ${m.duration} h</span><span class="mini">${m.when} · ${m.slot}</span></div><hr class="dashed"><div class="receipt-line"><span>Net perçu</span><b style="color:var(--good)">${eur(t.payout)}</b></div></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-act="pro-back-home">Retour aux missions</button></div></div>`;
   }
   function proEarnings(){
     return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">Revenus</span><div class="h-hello">Ce mois-ci</div>
-      <div class="card" style="padding:18px;margin-top:12px"><div class="mini">Net perçu (juillet)</div><b class="money" style="font-size:30px;font-family:var(--f-disp)">${eur(S.proEarnings)}</b><div class="row between" style="margin-top:14px"><span class="sub">Missions réalisées</span><b>37</b></div><div class="row between" style="margin-top:6px"><span class="sub">Commission Ti-Services prélevée</span><b class="money">${eur(226.68)}</b></div><div class="row between" style="margin-top:6px"><span class="sub">Prochain virement</span><b>lun. 7 juil.</b></div></div>
+      <div class="card" style="padding:18px;margin-top:12px"><div class="mini">Net perçu (juillet)</div><b class="money" style="font-size:30px;font-family:var(--f-disp)">${eur(S.proEarnings)}</b><div class="row between" style="margin-top:14px"><span class="sub">Missions réalisées</span><b>37</b></div><div class="row between" style="margin-top:6px"><span class="sub">Prochain virement</span><b>lun. 7 juil.</b></div></div>
       <div class="card" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">Compte de versement</b><span class="chip good">${I.check} Vérifié</span></div><div class="mini" style="margin-top:8px">IBAN ••••&nbsp;7788 · KYC validé</div></div></div>${proNavbar()}`;
   }
 
@@ -668,7 +669,7 @@
     setTimeout(()=>{if(!S.mission||S.mission.status!=='searching'){clearInterval(iv);return;}clearInterval(iv);S.mission.provider=Object.assign({},PROVIDERS[S.mission.svc]);S.mission.status='pending';render();if(S.persona!=='pro')toast(S.mission.competitors+' artisans ont reçu votre demande');},2600);
   }
   document.addEventListener('click',(e)=>{
-    const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-pnav],[data-star],[data-persona],[data-av],[data-atab],[data-pcat],[data-cfg],[data-zone],[data-czone],[data-slot]');
+    const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-pnav],[data-star],[data-persona],[data-av],[data-atab],[data-pcat],[data-cfg],[data-zone],[data-czone],[data-when],[data-slot]');
     if(!b)return;
     if(b.dataset.persona){go(b.dataset.persona);return;}
     if(b.dataset.cnav){S.clientNav=b.dataset.cnav;render();return;}
@@ -680,6 +681,7 @@
     if(b.dataset.zone){if(S.draft){S.draft.zone=b.dataset.zone;S.draft.address=b.dataset.zone==='Gustavia'?'Villa Colibri, Gustavia':('Villa, '+b.dataset.zone);}renderConfig();return;}
     if(b.dataset.slot){if(S.draft)S.draft.slot=b.dataset.slot;renderConfig();return;}
     if(b.dataset.czone){S.clientForm.zone=b.dataset.czone;render();return;}
+    if(b.dataset.when){if(!S.draft)return;const v=b.dataset.when;if(v==='__pick'){S.draft.dateMode='pick';}else{S.draft.dateMode=null;S.draft.when=v;}renderConfig();return;}
     if(b.dataset.star){const n=+b.dataset.star;S.mission.rating=n;document.querySelectorAll('#rateStars button').forEach(x=>x.classList.toggle('lit',+x.dataset.star<=n));const rb=document.getElementById('rateBtn');if(rb)rb.disabled=false;return;}
     if(b.dataset.cfg){const c=b.dataset.cfg;if(!S.draft)return;if(c==='back'){S.draft=null;render();}else if(c==='minus'){S.draft.duration=Math.max(1,S.draft.duration-1);renderConfig();}else if(c==='plus'){S.draft.duration=Math.min(10,S.draft.duration+1);renderConfig();}else if(c==='confirm'){S.mission=S.draft;S.draft=null;startSearch();}return;}
     switch(b.dataset.act){
@@ -713,19 +715,20 @@
     const zones=ZONES.map(z=>`<button class="seg ${m.zone===z?'on':''}" data-zone="${z}">${z}</button>`).join('');
     const slots=['08:00','10:00','12:00','14:00','16:00'].map(s=>`<button class="seg ${m.slot===s?'on':''}" data-slot="${s}">${s}</button>`).join('');
     view.innerHTML=`<div class="anim"><div class="pad"><button class="reset" data-cfg="back" style="margin:8px 0 2px">← Retour</button><span class="eyebrow">${m.svcName}</span><div class="h-hello">Détails de la mission</div>
-      <div class="field"><label>Quand&nbsp;?</label><div class="segs"><button class="seg on" style="pointer-events:none">Aujourd'hui</button><button class="seg">Demain</button><button class="seg">Choisir…</button></div></div>
+      <div class="field"><label>Quand&nbsp;?</label><div class="segs"><button class="seg ${m.dateMode!=='pick'&&m.when==='Aujourd’hui'?'on':''}" data-when="Aujourd’hui">Aujourd'hui</button><button class="seg ${m.dateMode!=='pick'&&m.when==='Demain'?'on':''}" data-when="Demain">Demain</button><button class="seg ${m.dateMode==='pick'?'on':''}" data-when="__pick">Choisir…</button></div>${m.dateMode==='pick'?`<input class="txt" type="date" data-cfdate style="margin-top:10px" value="${m.dateISO||''}">`:''}</div>
       <div class="field"><label>Heure</label><div class="segs">${slots}</div></div>
       <div class="field"><label>Durée estimée</label><div class="stepper"><button data-cfg="minus">−</button><span class="val">${m.duration} h</span><button data-cfg="plus">+</button></div></div>
       <div class="field"><label>Secteur</label><div class="segs">${zones}</div></div>
       <div class="field"><label>Adresse</label><input class="txt" value="${m.address}"></div>
       <div class="field"><label>Précisions (optionnel)</label><textarea rows="2" data-cfg="notes" placeholder="Ex. villa 2 chambres, produits fournis…">${m.notes}</textarea></div>
-      <div class="est"><div class="line"><span>${m.svcName} · ${m.rate} €/h × ${m.duration} h</span><b>${eur(t.sub)}</b></div><div class="line"><span>Commission Ti-Services (15%) incluse</span><b>${eur(t.commission)}</b></div><div class="total"><span>Total</span><b>${eur(t.total)}</b></div><small>${I.shield} Vous ne réglez rien à la main. Bloqué en garantie sur ${S.card.brand} ••••&nbsp;${S.card.last4}, versé à l'artisan (${eur(t.payout)}) après validation.</small></div>
+      <div class="est"><div class="line"><span>${m.svcName} · ${m.rate} €/h × ${m.duration} h</span><b>${eur(t.sub)}</b></div><div class="total"><span>Total</span><b>${eur(t.total)}</b></div><small>${I.shield} Vous ne réglez rien à la main. Bloqué en garantie sur ${S.card.brand} ••••&nbsp;${S.card.last4}, débité seulement après validation.</small></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm">${I.search} Trouver un artisan · ${eur(t.total)}</button></div></div></div>`;
   }
   view.addEventListener('input',(e)=>{
     const t=e.target.closest('[data-cfg="notes"]');if(t&&S.draft)S.draft.notes=t.value;
     const pf=e.target.closest('[data-pf]');if(pf)S.proForm[pf.dataset.pf]=pf.value;
     const cf=e.target.closest('[data-cf]');if(cf)S.clientForm[cf.dataset.cf]=cf.value;
+    const cd=e.target.closest('[data-cfdate]');if(cd&&S.draft){S.draft.dateISO=cd.value;S.draft.when=fmtDate(cd.value);renderConfig();}
   });
   document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),proStatus:'approved',proName:'Marie-Lou',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[]}});render();toast('Scénario réinitialisé');});
 
