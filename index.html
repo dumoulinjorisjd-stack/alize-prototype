@@ -167,6 +167,8 @@
   .sc-tile{display:flex;flex-direction:column;align-items:center;gap:7px;padding:13px 6px;border-radius:14px;background:var(--card);border:1px solid var(--hair);font-size:11.5px;font-weight:650;text-align:center;color:var(--ink-soft)}
   .sc-tile .ic{width:36px;height:36px;border-radius:10px;background:var(--teal-wash);color:var(--teal-deep);display:flex;align-items:center;justify-content:center}
   .benic{width:34px;height:34px;border-radius:10px;background:var(--teal-wash);color:var(--teal-deep);display:flex;align-items:center;justify-content:center;flex:none}
+  .demobtn{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;padding:13px;border-radius:13px;border:1.5px dashed color-mix(in srgb,var(--teal) 45%,var(--hair));background:var(--teal-wash);color:var(--teal-deep);font-weight:700;font-size:13.5px}
+  .demobtn:active{transform:scale(.98)}
 
   .field{margin-top:14px}
   .field>label{font-size:12.5px;font-weight:650;color:var(--ink-soft);display:block;margin-bottom:7px}
@@ -291,11 +293,6 @@
   </aside>
 
   <div class="stage">
-    <div class="persona" id="persona">
-      <span class="pill" id="pill"></span>
-      <button data-persona="client" class="on"><span>Client</span><span class="badge" id="badge-client">1</span></button>
-      <button data-persona="pro"><span>Artisan</span><span class="badge" id="badge-pro">1</span></button>
-    </div>
     <div class="phone">
       <div class="notch"></div>
       <div class="screen">
@@ -379,20 +376,11 @@
 
   const view=document.getElementById('view');
   const toastEl=document.getElementById('toast');
-  const pill=document.getElementById('pill');
-  const personaEl=document.getElementById('persona');
   let toastTimer;
   function toast(msg){toastEl.textContent=msg;toastEl.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>toastEl.classList.remove('show'),2400);}
 
   function attention(){const m=S.mission;if(!m)return null;if(m.status==='pending')return 'pro';if(m.status==='done_pro')return 'client';return null;}
-  function paintPersona(){
-    personaEl.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.persona===S.persona));
-    const active=personaEl.querySelector('button.on');
-    pill.style.left=active.offsetLeft+'px';pill.style.width=active.offsetWidth+'px';
-    const who=attention();
-    document.getElementById('badge-client').classList.toggle('show',who==='client'&&S.persona!=='client');
-    document.getElementById('badge-pro').classList.toggle('show',who==='pro'&&S.persona!=='pro');
-  }
+  function paintPersona(){}
   function render(){view.innerHTML='<div class="anim">'+(S.persona==='client'?renderClient():renderPro())+'</div>';view.scrollTop=0;paintPersona();}
 
   /* ---------- CLIENT ---------- */
@@ -449,7 +437,7 @@
         <div class="field"><label>Votre secteur</label><div class="segs">${zones}</div></div>
       </div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0">
-        <button class="btn primary" data-act="onb-infos-next" ${ok?'':'disabled'}>Continuer</button>
+        <button class="btn primary" data-act="onb-infos-next">Continuer</button>
         <p class="mini" style="text-align:center;margin-top:10px">${I.lock} Aucune carte demandée à cette étape.</p>
       </div></div>`;
   }
@@ -486,7 +474,8 @@
   function clientProfile(){
     return `<div class="pad"><div style="height:12px"></div><div class="row" style="gap:14px"><div class="avatar lg">CM</div><div><b style="font-size:18px;font-family:var(--f-disp)">Camille Magras</b><div class="mini">Gustavia · Saint-Barth</div></div></div>
       <div class="card" style="padding:16px;margin-top:18px"><div class="row between"><span class="chip">${I.card} Paiement automatique</span></div><div class="row between" style="margin-top:12px"><b>${S.card.brand} ••••&nbsp;${S.card.last4}</b><span class="chip good" style="padding:4px 10px">${I.check} Vérifiée</span></div><div class="banner teal" style="margin-top:14px">${I.shield}<span>Débit automatique après chaque prestation validée. Reçu à chaque fois — rien à gérer.</span></div></div>
-      <div class="card" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">Garantie Ti-Services</b><span class="chip good">Active</span></div><p class="sub" style="margin-top:8px">Artisan absent ou travail non conforme&nbsp;? Vous n'êtes pas débité et on vous retrouve quelqu'un.</p></div></div>${clientNavbar()}`;
+      <div class="card" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">Garantie Ti-Services</b><span class="chip good">Active</span></div><p class="sub" style="margin-top:8px">Artisan absent ou travail non conforme&nbsp;? Vous n'êtes pas débité et on vous retrouve quelqu'un.</p></div>
+      <p class="mini" style="text-align:center;margin-top:16px"><button class="linklike" data-act="demo-go-pro">👷 Voir l'espace artisan (démo)</button></p></div>${clientNavbar()}`;
   }
   function clientSearching(){
     const m=S.mission;
@@ -494,7 +483,7 @@
       <p class="sub">On notifie les artisans <b>disponibles sur votre créneau</b>. Le premier à accepter prend la mission.</p>
       <div class="radar"><div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div><div class="core">${I.search}</div></div>
       <div class="card" style="padding:14px;text-align:center"><p class="sub" style="margin:0"><b id="notif">…</b> artisans notifiés</p></div>
-      <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn ghost" data-act="cancel-mission">Annuler la recherche</button><p class="mini" style="text-align:center;margin-top:10px">Astuce&nbsp;: passez sur <b>Artisan</b> pour accepter la mission.</p></div></div>`;
+      <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="demobtn" data-act="demo-go-pro">👷 Voir côté artisan pour accepter (démo)</button><button class="btn ghost" data-act="cancel-mission" style="margin-top:12px">Annuler la recherche</button></div></div>`;
   }
   function clientTracking(){
     const m=S.mission,t=totals(m),p=m.provider;
@@ -509,7 +498,7 @@
       <div class="card" style="padding:16px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Suivi</div><div class="timeline" style="margin-top:12px">${tls}</div></div>
       <div class="banner teal" style="margin-top:12px">${I.shield}<span>Aucun appel à passer&nbsp;: le statut se met à jour tout seul ici, et le paiement est garanti par Ti-Services.</span></div>
       <div class="est" style="background:var(--card-2);border-color:var(--hair)"><div class="line"><span>Montant garanti</span><b>${eur(t.total)}</b></div><div class="line"><span>Sur ${S.card.brand} ••••&nbsp;${S.card.last4}</span><b>bloqué</b></div><small>${I.shield} Rien à faire&nbsp;: débité automatiquement à la fin, seulement si vous validez.</small></div>
-      ${m.status==='pending'?`<div class="footcta" style="position:static;background:none;padding:16px 0 0"><button class="btn ghost" data-act="cancel-mission">Annuler la demande</button></div>`:'<div style="height:18px"></div>'}</div>`;
+      ${m.status==='pending'?`<div class="footcta" style="position:static;background:none;padding:16px 0 0"><button class="demobtn" data-act="demo-go-pro">👷 Voir côté artisan (démo)</button><button class="btn ghost" data-act="cancel-mission" style="margin-top:12px">Annuler la demande</button></div>`:'<div style="height:18px"></div>'}</div>`;
   }
   function clientConfirm(){
     const m=S.mission,t=totals(m),p=m.provider;
@@ -587,6 +576,7 @@
       <div class="row" style="gap:11px;margin-top:12px"><div class="card" style="padding:14px;flex:1"><div class="mini">Aujourd'hui</div><b class="money" style="font-size:20px;font-family:var(--f-disp)">${S.proJobsToday}</b><div class="mini">missions</div></div><div class="card" style="padding:14px;flex:1"><div class="mini">Note</div><b class="money" style="font-size:20px;font-family:var(--f-disp)">4,9</b><div class="mini"><span class="stars">★</span> · 214</div></div><div class="card" style="padding:14px;flex:1"><div class="mini">Dispos</div><b class="money" style="font-size:20px;font-family:var(--f-disp)">${availCount()}</b><div class="mini">créneaux</div></div></div>
       ${(()=>{const n=S.agenda.find(a=>a.status!=='done');if(!n)return '';const s=SERVICES.find(x=>x.id===n.svc);return `<button class="card" style="padding:14px;margin-top:12px;width:100%;text-align:left;display:block" data-pnav="agenda"><div class="row between"><span class="eyebrow" style="color:var(--muted)">Prochaine prestation</span><span class="mini">Voir l’agenda ›</span></div><div class="row" style="gap:12px;margin-top:8px"><div class="appt-time"><b>${n.slot}</b><span class="mini">${n.duration} h</span></div><div><b style="font-size:14.5px">${s.nm}</b><div class="mini">${n.day} · ${n.client}</div></div></div></button>`;})()}
       ${S.proOnline?`<div class="card" style="padding:18px;margin-top:14px;text-align:center;border-style:dashed"><div class="radar sm"><div class="ring r1"></div><div class="ring r2"></div><div class="core">${I.bolt}</div></div><p class="sub" style="margin:6px 0 0">En attente de nouvelles missions…</p><p class="mini" style="margin-top:8px">Côté <b>Client</b>, lancez une réservation pour recevoir une demande ici.</p></div>`:`<div class="card" style="padding:22px;margin-top:14px;text-align:center;color:var(--muted)">Passez en ligne pour recevoir des missions.</div>`}
+      <p class="mini" style="text-align:center;margin-top:16px"><button class="linklike" data-act="demo-go-client">🧑 Voir l'espace client (démo)</button></p>
       <div style="height:12px"></div></div>${proNavbar()}`;
   }
   function apptPayout(a){const s=SERVICES.find(x=>x.id===a.svc);return Math.round(s.rate*a.duration*0.85*100)/100;}
@@ -655,7 +645,7 @@
     const m=S.mission,t=totals(m);
     return `<div class="pad"><div style="height:10px"></div><span class="eyebrow">En attente de validation</span><div class="h-hello">Prestation signalée terminée</div>
       <p class="sub">Le client confirme la prestation. Dès validation, ${eur(t.payout)} sont versés sur votre compte.</p>
-      <div class="card" style="padding:16px;margin-top:14px"><div class="radar sm"><div class="ring r1"></div><div class="ring r2"></div><div class="core">${I.clock}</div></div><p class="sub" style="text-align:center;margin:0">En attente de Camille M.…</p><p class="mini" style="text-align:center;margin-top:8px">Repassez côté <b>Client</b> pour confirmer.</p></div></div>`;
+      <div class="card" style="padding:16px;margin-top:14px"><div class="radar sm"><div class="ring r1"></div><div class="ring r2"></div><div class="core">${I.clock}</div></div><p class="sub" style="text-align:center;margin:0">En attente de Camille M.…</p><p class="mini" style="text-align:center;margin-top:8px">Repassez côté client pour confirmer.</p></div><div class="footcta" style="position:static;background:none;padding:16px 0 0"><button class="demobtn" data-act="demo-go-client">🧑 Voir côté client pour valider (démo)</button></div></div>`;
   }
   function proPaid(){
     const m=S.mission,t=totals(m);
@@ -696,7 +686,7 @@
       case 'onb-start':S.onbStep=1;render();break;
       case 'onb-back0':S.onbStep=0;render();break;
       case 'onb-back1':S.onbStep=1;render();break;
-      case 'onb-infos-next':if((S.clientForm.name||'').trim().length>1){S.onbStep=2;render();}break;
+      case 'onb-infos-next':if((S.clientForm.name||'').trim().length>1){S.onbStep=2;render();}else{toast('Entrez votre nom pour continuer');}break;
       case 'finish-onboard':S.onboarded=true;render();toast('Compte créé — bienvenue sur Ti-Services !');break;
       case 'cancel-mission':S.mission=null;S.clientNav='home';render();break;
       case 'confirm-done':S.mission.status='paid';S.proEarnings+=totals(S.mission).payout;if(S.mission._appt)S.mission._appt.status='done';render();break;
@@ -707,6 +697,8 @@
       case 'save-dispo':toast('Disponibilités enregistrées');break;
       case 'go-artisan-signup':S.persona='pro';S.proStatus='signup';S.proForm={name:'',phone:'',cats:[]};render();break;
       case 'back-to-client':S.persona='client';S.proStatus='approved';render();break;
+      case 'demo-go-pro':S.persona='pro';render();break;
+      case 'demo-go-client':S.persona='client';render();break;
       case 'pro-submit':if(S.proForm.cats.length){S.proStatus='pending';render();}break;
       case 'pro-approve':S.proStatus='approved';if(S.proForm.name)S.proName=S.proForm.name;if(S.proForm.cats.length)S.proCats=S.proForm.cats.slice();render();toast('Profil validé — bienvenue sur Ti-Services !');break;
       case 'pro-accept':{S.mission.status='accepted';const ap={day:'Aujourd’hui',slot:S.mission.slot,svc:S.mission.svc,client:'Camille M.',zone:S.mission.zone,duration:S.mission.duration,status:'upcoming'};S.mission._appt=ap;S.agenda.unshift(ap);render();toast('Mission remportée — ajoutée à votre agenda !');break;}
