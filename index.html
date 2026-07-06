@@ -366,6 +366,10 @@
   const freqInfo=(id)=>FREQS.find(f=>f.id===id)||FREQS[0];
   function occLabels(freq){if(freq==='hebdo')return ['Aujourd’hui','Semaine prochaine','Dans 2 semaines','Dans 3 semaines'];if(freq==='bihebdo')return ['Aujourd’hui','Dans 2 semaines','Dans 4 semaines'];if(freq==='mensuelle')return ['Aujourd’hui','Le mois prochain'];return ['Aujourd’hui'];}
   const PLACEHOLDERS={menage:'Ex. 2 chambres + cuisine, produits fournis.',baby:'Ex. garde de 2 enfants (4 et 6 ans), sortie d’école.',jardin:'Ex. tondre 200 m² et tailler une haie.',repassage:'Ex. 2 paniers de linge, chemises comprises.',bricolage:'Ex. monter une étagère IKEA et fixer 2 cadres au mur.',cuisine:'Ex. repas pour 4, cuisine créole.',demenagement:'Ex. studio, 15 cartons + 1 canapé, 2e étage sans ascenseur.',info:'Ex. configurer une box internet + imprimante wifi.',animaux:'Ex. promener un chien 2×/jour ce week-end.'};
+  const AVG_SEED=()=>{const o={};SERVICES.forEach(s=>{o[s.id]={sum:s.rate*24,n:24};});return o;};
+  function svcBase(id){const s=SERVICES.find(x=>x.id===id);return s?s.rate:30;}
+  function svcFloor(id){return Math.round(svcBase(id)*0.7);}
+  function svcReco(id){const a=S.avgOffers&&S.avgOffers[id];return a?Math.round(a.sum/a.n):svcBase(id);}
   const COMMISSION=0.15;
   const DAYS=[['lun','Lun'],['mar','Mar'],['mer','Mer'],['jeu','Jeu'],['ven','Ven'],['sam','Sam'],['dim','Dim']];
   const BLOCKS=[['m','Matin'],['a','Après-m.'],['s','Soir']];
@@ -381,10 +385,10 @@
     card:{brand:'Visa',last4:'4242'},mission:null,draft:null,
     proStatus:'approved',proName:'Marie-Lou',proRate:35,proStatusType:'entreprise',proSiret:'',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'',siret:'',rate:'',bio:'',insurer:'',insuranceDoc:false},
     proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],
-    agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],
+    agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),
     avail:{lun:{m:1,a:1,s:0},mar:{m:1,a:1,s:0},mer:{m:1,a:1,s:1},jeu:{m:1,a:1,s:0},ven:{m:1,a:1,s:1},sam:{m:1,a:0,s:0},dim:{m:0,a:0,s:0}}
   };
-  function newMission(svc){return {svc:svc.id,svcName:svc.nm,rate:svc.rate,frequency:'ponctuelle',duration:3,zone:'Gustavia',address:'Villa Colibri, Gustavia',geo:null,notes:'',when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',status:'draft',provider:null,rating:0,competitors:0};}
+  function newMission(svc){return {svc:svc.id,svcName:svc.nm,rate:svcReco(svc.id),frequency:'ponctuelle',duration:3,zone:'Gustavia',address:'Villa Colibri, Gustavia',geo:null,notes:'',when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',status:'draft',provider:null,rating:0,competitors:0};}
   function totals(m){const rate=m.rate;const sub=rate*m.duration;return {rate,sub,commission:0,payout:sub,total:sub};}
   const eur=(n)=>n.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
   const fmtDate=(iso)=>{if(!iso)return 'Aujourd’hui';const p=iso.split('-');return p[2]+'/'+p[1];};
@@ -714,10 +718,10 @@
     if(b.dataset.slot){if(S.draft)S.draft.slot=b.dataset.slot;renderConfig();return;}
     if(b.dataset.czone){S.clientForm.zone=b.dataset.czone;render();return;}
     if(b.dataset.when){if(!S.draft)return;const v=b.dataset.when;if(v==='__pick'){S.draft.dateMode='pick';}else{S.draft.dateMode=null;S.draft.when=v;}renderConfig();return;}
-    if(b.dataset.offer){if(!S.draft)return;const st=5;S.draft.rate=Math.max(15,Math.min(120,S.draft.rate+(b.dataset.offer==='up'?st:-st)));renderConfig();return;}
+    if(b.dataset.offer){if(!S.draft)return;const st=5;const fl=svcFloor(S.draft.svc);S.draft.rate=Math.max(fl,S.draft.rate+(b.dataset.offer==='up'?st:-st));renderConfig();return;}
     if(b.dataset.freq){if(!S.draft)return;S.draft.frequency=b.dataset.freq;renderConfig();return;}
     if(b.dataset.star){const n=+b.dataset.star;S.mission.rating=n;document.querySelectorAll('#rateStars button').forEach(x=>x.classList.toggle('lit',+x.dataset.star<=n));const rb=document.getElementById('rateBtn');if(rb)rb.disabled=false;return;}
-    if(b.dataset.cfg){const c=b.dataset.cfg;if(!S.draft)return;if(c==='back'){S.draft=null;render();}else if(c==='minus'){S.draft.duration=Math.max(1,S.draft.duration-1);renderConfig();}else if(c==='plus'){S.draft.duration=Math.min(10,S.draft.duration+1);renderConfig();}else if(c==='geoloc'){geolocate();}else if(c==='confirm'){S.mission=S.draft;S.draft=null;startSearch();}return;}
+    if(b.dataset.cfg){const c=b.dataset.cfg;if(!S.draft)return;if(c==='back'){S.draft=null;render();}else if(c==='minus'){S.draft.duration=Math.max(1,S.draft.duration-1);renderConfig();}else if(c==='plus'){S.draft.duration=Math.min(10,S.draft.duration+1);renderConfig();}else if(c==='geoloc'){geolocate();}else if(c==='confirm'){const d=S.draft;if(S.avgOffers[d.svc]){S.avgOffers[d.svc].sum+=d.rate;S.avgOffers[d.svc].n++;}S.mission=d;S.draft=null;startSearch();}return;}
     switch(b.dataset.act){
       case 'onb-start':S.onbStep=1;render();break;
       case 'onb-back0':S.onbStep=0;render();break;
@@ -753,7 +757,7 @@
       <div class="field"><label>Quand&nbsp;?</label><div class="segs"><button class="seg ${m.dateMode!=='pick'&&m.when==='Aujourd’hui'?'on':''}" data-when="Aujourd’hui">Aujourd'hui</button><button class="seg ${m.dateMode!=='pick'&&m.when==='Demain'?'on':''}" data-when="Demain">Demain</button><button class="seg ${m.dateMode==='pick'?'on':''}" data-when="__pick">Choisir…</button></div>${m.dateMode==='pick'?`<input class="txt" type="date" data-cfdate style="margin-top:10px" value="${m.dateISO||''}">`:''}</div>
       <div class="field"><label>Heure</label><div class="segs">${slots}</div></div>
       <div class="field"><label>Fréquence</label><div class="segs">${FREQS.map(f=>`<button class="seg ${(m.frequency||'ponctuelle')===f.id?'on':''}" data-freq="${f.id}">${f.lbl}</button>`).join('')}</div>${(m.frequency&&m.frequency!=='ponctuelle')?`<p class="mini" style="margin-top:6px">🔁 Prestation régulière — le même artisan à chaque fois, annulable à tout moment.</p>`:''}</div>
-      <div class="field"><label>Votre offre — tarif horaire</label><div class="stepper"><button data-offer="down">−</button><span class="val">${m.rate} €/h</span><button data-offer="up">+</button></div><p class="mini" style="margin-top:6px">Prix conseillé&nbsp;: ${SERVICES.find(s=>s.id===m.svc).rate} €/h. Ti-Services <b>ne fixe pas le prix</b> — c'est votre offre, l'artisan reste libre de l'accepter. Une offre plus élevée est acceptée plus vite.</p></div>
+      <div class="field"><label>Votre offre — tarif horaire</label><div class="stepper"><button data-offer="down">−</button><span class="val">${m.rate} €/h</span><button data-offer="up">+</button></div><p class="mini" style="margin-top:6px">💡 Recommandé&nbsp;: <b>${svcReco(m.svc)} €/h</b> (moyenne des offres) · minimum ${svcFloor(m.svc)} €/h. Ti-Services <b>ne fixe pas le prix</b> — c'est votre offre, l'artisan reste libre de l'accepter. Pas de plafond&nbsp;; une offre plus élevée est acceptée plus vite.${m.rate<svcReco(m.svc)?' <b style="color:var(--coral-deep)">En dessous de la moyenne, l’acceptation peut être plus longue.</b>':''}</p></div>
       <div class="field"><label>Durée estimée</label><div class="stepper"><button data-cfg="minus">−</button><span class="val">${m.duration} h</span><button data-cfg="plus">+</button></div></div>
       <div class="field"><label>Secteur</label><div class="segs">${zones}</div></div>
       <div class="field"><label>Adresse</label><input class="txt" value="${m.address}"></div>
@@ -768,7 +772,7 @@
     const cf=e.target.closest('[data-cf]');if(cf)S.clientForm[cf.dataset.cf]=cf.value;
     const cd=e.target.closest('[data-cfdate]');if(cd&&S.draft){S.draft.dateISO=cd.value;S.draft.when=fmtDate(cd.value);renderConfig();}
   });
-  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],proStatus:'approved',proName:'Marie-Lou',proRate:35,proStatusType:'entreprise',proSiret:'',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'',siret:'',rate:'',bio:'',insurer:'',insuranceDoc:false}});render();toast('Scénario réinitialisé');});
+  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),proStatus:'approved',proName:'Marie-Lou',proRate:35,proStatusType:'entreprise',proSiret:'',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'',siret:'',rate:'',bio:'',insurer:'',insuranceDoc:false}});render();toast('Scénario réinitialisé');});
 
   /* ---------- PWA: install + service worker ---------- */
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
