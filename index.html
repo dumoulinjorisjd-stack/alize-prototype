@@ -138,6 +138,9 @@
   .chip.coral{background:var(--coral-wash);color:var(--coral-deep)}
   .chip.good{background:var(--good-wash);color:var(--good)}
   .chip.grey{background:var(--sand-2);color:var(--ink-soft)}
+  .chip.warn{background:color-mix(in srgb,var(--warn) 20%,transparent);color:var(--warn)}
+  .contacts{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .contacts a{flex:1;min-width:96px;width:auto;text-decoration:none;padding:11px 8px;font-size:13.5px}
 
   .btn{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;padding:16px;border-radius:16px;font-size:15.5px;font-weight:700;transition:transform .12s,filter .2s;letter-spacing:-.01em}
   .btn:active{transform:scale(.975)}
@@ -373,23 +376,33 @@
   function svcFloor(id){return Math.round(svcBase(id)*0.7);}
   function svcReco(id){const a=S.avgOffers&&S.avgOffers[id];return a?Math.round(a.sum/a.n):svcBase(id);}
   const ADMIN_ARTS=()=>[
-    {id:'a1',name:'Marie-Lou Cagan',status:'valide',type:'entreprise',cats:['menage','repassage'],rate:35,siret:'80412578900014',insured:true,rating:4.9,jobs:214,zone:'Gustavia'},
-    {id:'a2',name:'Jean-Phi Bernier',status:'valide',type:'entreprise',cats:['jardin'],rate:40,siret:'75212369800021',insured:true,rating:4.8,jobs:301,zone:'Lorient'},
-    {id:'a3',name:'Sabrina Théodore',status:'valide',type:'entreprise',cats:['baby'],rate:28,siret:'91802233400019',insured:true,rating:5.0,jobs:98,zone:'St-Jean'},
-    {id:'a4',name:'Kevin Questel',status:'attente',type:'entreprise',cats:['bricolage','demenagement'],rate:45,siret:'88900112200013',insured:true,rating:0,jobs:0,zone:'Public'},
-    {id:'a5',name:'Rosa Almeida',status:'attente',type:'entreprise',cats:['menage','cuisine'],rate:30,siret:'90311145500027',insured:false,rating:0,jobs:0,zone:'Flamands'}
+    {id:'a1',name:'Marie-Lou Cagan',status:'valide',type:'entreprise',cats:['menage','repassage'],rate:35,siret:'80412578900014',insured:true,rating:4.9,jobs:214,zone:'Gustavia',phone:'+590690112233',email:'marie-lou.cagan@example.com'},
+    {id:'a2',name:'Jean-Phi Bernier',status:'valide',type:'entreprise',cats:['jardin'],rate:40,siret:'75212369800021',insured:true,rating:4.8,jobs:301,zone:'Lorient',phone:'+590690223344',email:'jp.bernier@example.com'},
+    {id:'a3',name:'Sabrina Théodore',status:'valide',type:'entreprise',cats:['baby'],rate:28,siret:'91802233400019',insured:true,rating:5.0,jobs:98,zone:'St-Jean',phone:'+590690334455',email:'s.theodore@example.com'},
+    {id:'a4',name:'Kevin Questel',status:'attente',type:'entreprise',cats:['bricolage','demenagement'],rate:45,siret:'88900112200013',insured:true,rating:0,jobs:0,zone:'Public',phone:'+590690445566',email:'k.questel@example.com'},
+    {id:'a5',name:'Rosa Almeida',status:'attente',type:'entreprise',cats:['menage','cuisine'],rate:30,siret:'90311145500027',insured:false,rating:0,jobs:0,zone:'Flamands',phone:'+590690556677',email:'rosa.almeida@example.com'},
+    {id:'a6',name:'Yannick Gréaux',status:'refuse',type:'entreprise',cats:['bricolage'],rate:75,siret:'',insured:false,rating:0,jobs:0,zone:'Public',phone:'+590690667788',email:'y.greaux@example.com',reason:'SIRET et attestation d’assurance non fournis'}
   ];
   const ADMIN_CLIS=()=>[
-    {id:'c1',name:'Camille Magras',status:'valide',zone:'Gustavia',card:'Visa ••4242',bookings:7},
-    {id:'c2',name:'Thomas Ledée',status:'valide',zone:'St-Jean',card:'Mastercard ••8890',bookings:3},
-    {id:'c3',name:'Élodie Nihau',status:'attente',zone:'Flamands',card:'Carte à vérifier',bookings:0}
+    {id:'c1',name:'Camille Magras',status:'valide',zone:'Gustavia',card:'Visa ••4242',bookings:7,phone:'+590690778899',email:'camille.magras@example.com'},
+    {id:'c2',name:'Thomas Ledée',status:'valide',zone:'St-Jean',card:'Mastercard ••8890',bookings:3,phone:'+590690889900',email:'t.ledee@example.com'},
+    {id:'c3',name:'Élodie Nihau',status:'attente',zone:'Flamands',card:'Carte à vérifier',bookings:0,phone:'+590690990011',email:'e.nihau@example.com'}
   ];
   const ADMIN_BOOK=()=>[
     {id:'b1',client:'Camille Magras',artisan:'Marie-Lou Cagan',svc:'menage',status:'working',amount:105,when:'Auj. 14:00'},
     {id:'b2',client:'Thomas Ledée',artisan:'Jean-Phi Bernier',svc:'jardin',status:'accepted',amount:120,when:'Auj. 16:00'},
     {id:'b3',client:'Camille Magras',artisan:'Sabrina Théodore',svc:'baby',status:'pending',amount:84,when:'Demain 09:00'}
   ];
-  function bkStatus(s){return {pending:['coral','En attente'],accepted:['good','Confirmée'],working:['coral','En cours'],done_pro:['grey','À valider'],paid:['good','Réglée'],rated:['good','Terminée']}[s]||['grey',s];}
+  /* Cycle de vie d'une réservation — libellés volontairement distincts :
+     Recherche → Acceptée → En cours → À valider (par le client) → Réglée → Terminée */
+  function bkStatus(s){return {pending:['coral','Recherche d’artisan'],accepted:['good','Acceptée'],working:['warn','En cours'],done_pro:['warn','À valider par le client'],paid:['good','Réglée'],rated:['grey','Terminée']}[s]||['grey',s];}
+  /* Statut de COMPTE (dossier d'inscription) — distinct du cycle d'une réservation */
+  function acctChip(st){return {valide:['good','Actif'],attente:['coral','En attente'],refuse:['grey','Refusé']}[st]||['grey',st];}
+  function digits(p){return (p||'').replace(/[^0-9]/g,'');}
+  function contactRow(p){return `<div class="contacts">`+
+    `<a class="btn ghost sm" href="https://wa.me/${digits(p.phone)}" target="_blank" rel="noopener">💬 WhatsApp</a>`+
+    `<a class="btn ghost sm" href="tel:${digits(p.phone)}">📞 Appeler</a>`+
+    `<a class="btn ghost sm" href="mailto:${p.email||''}">✉️ E-mail</a></div>`;}
   const COMMISSION=0.15;
   const DAYS=[['lun','Lun'],['mar','Mar'],['mer','Mer'],['jeu','Jeu'],['ven','Ven'],['sam','Sam'],['dim','Dim']];
   const BLOCKS=[['m','Matin'],['a','Après-m.'],['s','Soir']];
@@ -458,25 +471,30 @@
       <div class="row between"><b style="font-size:14.5px">${a.name}</b><span class="chip grey" style="padding:3px 9px">Artisan</span></div>
       <div class="mini" style="margin-top:3px">${a.type==='particulier'?'Particulier':'Entreprise'} · ${catNames(a.cats)} · ${a.rate} €/h</div>
       <div class="row" style="gap:6px;margin-top:7px;flex-wrap:wrap"><span class="chip ${a.siret?'good':'coral'}" style="padding:3px 9px">SIRET ${a.siret?'fourni':'manquant'}</span><span class="chip ${a.insured?'good':'coral'}" style="padding:3px 9px">Assurance ${a.insured?'OK':'manquante'}</span></div>
+      <p class="mini" style="margin-top:9px;color:var(--muted)">Échangez avant de décider&nbsp;:</p>${contactRow(a)}
       <div class="row" style="gap:8px;margin-top:10px"><button class="btn good sm" data-adm="valid-art:${a.id}" ${(a.insured&&a.siret)?'':'disabled'}>Valider</button><button class="btn ghost sm" data-adm="rej-art:${a.id}">Refuser</button><button class="btn ghost sm" data-adm="art:${a.id}">Fiche</button></div>
       ${!a.insured?`<p class="mini" style="margin-top:6px;color:var(--coral-deep)">Attestation d'assurance manquante — validation impossible.</p>`:''}</div>`));
     pendC.forEach(cc=>q.push(`<div class="card" style="padding:14px;margin-top:10px;border-left:4px solid var(--warn)">
       <div class="row between"><b style="font-size:14.5px">${cc.name}</b><span class="chip grey" style="padding:3px 9px">Client</span></div>
       <div class="mini" style="margin-top:3px">${cc.zone} · ${cc.card}</div>
+      <p class="mini" style="margin-top:9px;color:var(--muted)">Échangez avant de décider&nbsp;:</p>${contactRow(cc)}
       <div class="row" style="gap:8px;margin-top:10px"><button class="btn good sm" data-adm="valid-cli:${cc.id}">Valider</button><button class="btn ghost sm" data-adm="cli:${cc.id}">Fiche</button></div></div>`));
-    const queue=q.length?q.join(''):`<div class="card" style="padding:18px;text-align:center;color:var(--muted);margin-top:10px">Rien à valider 🎉</div>`;
+    const queue=q.length?q.join(''):`<div class="card" style="padding:18px;text-align:center;color:var(--muted);margin-top:10px">Aucune candidature en attente 🎉</div>`;
     const liveRow=live?[{client:'Camille Magras',artisan:(S.mission.provider?S.mission.provider.nm:'en recherche…'),svc:S.mission.svc,status:S.mission.status,amount:totals(S.mission).total,when:S.mission.when+' '+S.mission.slot}]:[];
     const allB=liveRow.concat(S.adminBookings);
     const bookings=allB.map(bk=>{const st=bkStatus(bk.status);const sv=SERVICES.find(s=>s.id===bk.svc);return `<div class="card" style="padding:13px;margin-top:9px"><div class="row between"><b style="font-size:14px">${sv?sv.nm:bk.svc}</b><span class="chip ${st[0]}" style="padding:3px 9px">${st[1]}</span></div><div class="mini" style="margin-top:3px">${bk.client} → ${bk.artisan} · ${bk.when}</div><div class="mini" style="margin-top:2px">${eur(bk.amount)}</div></div>`;}).join('');
-    const artList=arts.map(a=>`<button class="card" style="padding:12px;margin-top:8px;width:100%;text-align:left;display:block" data-adm="art:${a.id}"><div class="row between"><b style="font-size:14px">${a.name}</b><span class="chip ${a.status==='valide'?'good':'coral'}" style="padding:3px 9px">${a.status==='valide'?'Validé':'En attente'}</span></div><div class="mini" style="margin-top:2px">${catNames(a.cats)} · ${a.rate} €/h · ${a.zone}</div></button>`).join('');
-    const cliList=clis.map(cc=>`<button class="card" style="padding:12px;margin-top:8px;width:100%;text-align:left;display:block" data-adm="cli:${cc.id}"><div class="row between"><b style="font-size:14px">${cc.name}</b><span class="chip ${cc.status==='valide'?'good':'coral'}" style="padding:3px 9px">${cc.status==='valide'?'Validé':'En attente'}</span></div><div class="mini" style="margin-top:2px">${cc.zone} · ${cc.bookings} réservations</div></button>`).join('');
+    const activeArts=arts.filter(a=>a.status!=='refuse'),refA=arts.filter(a=>a.status==='refuse');
+    const artList=activeArts.map(a=>{const c=acctChip(a.status);return `<button class="card" style="padding:12px;margin-top:8px;width:100%;text-align:left;display:block" data-adm="art:${a.id}"><div class="row between"><b style="font-size:14px">${a.name}</b><span class="chip ${c[0]}" style="padding:3px 9px">${c[1]}</span></div><div class="mini" style="margin-top:2px">${catNames(a.cats)} · ${a.rate} €/h · ${a.zone}</div></button>`;}).join('');
+    const cliList=clis.map(cc=>{const c=acctChip(cc.status);return `<button class="card" style="padding:12px;margin-top:8px;width:100%;text-align:left;display:block" data-adm="cli:${cc.id}"><div class="row between"><b style="font-size:14px">${cc.name}</b><span class="chip ${c[0]}" style="padding:3px 9px">${c[1]}</span></div><div class="mini" style="margin-top:2px">${cc.zone} · ${cc.bookings} réservations</div></button>`;}).join('');
+    const refList=refA.map(a=>`<div class="card" style="padding:12px;margin-top:8px;border-left:4px solid var(--hair)"><div class="row between"><b style="font-size:14px">${a.name}</b><span class="chip grey" style="padding:3px 9px">Refusé</span></div><div class="mini" style="margin-top:2px">${catNames(a.cats)} · ${a.zone}</div>${a.reason?`<p class="mini" style="margin-top:5px;color:var(--coral-deep)">Motif&nbsp;: ${a.reason}</p>`:''}${contactRow(a)}<div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost sm" data-adm="reexam-art:${a.id}">Réexaminer</button><button class="btn ghost sm" data-adm="art:${a.id}">Fiche</button></div></div>`).join('');
     return `<div class="pad">
       <div class="row between" style="margin-top:10px"><div><span class="eyebrow">Console admin · Ti-Services</span><div class="h-hello">Tableau de bord</div></div><div class="avatar" style="background:linear-gradient(135deg,var(--ink),#000)">TS</div></div>
       <div class="row" style="gap:9px;margin-top:12px">${stat('En cours',allB.length,'réservations')}${stat('Artisans',validA,pendA.length+' en attente')}${stat('Clients',clis.length,pendC.length+' en attente')}</div>
       <div class="card" style="padding:14px;margin-top:10px"><div class="row between"><span class="sub">Commission ce mois</span><b class="money" style="font-size:18px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(S.adminCommission)}</b></div></div>
-      <div style="height:16px"></div><span class="eyebrow">À valider${q.length?' · '+q.length:''}</span>${queue}
-      <div style="height:18px"></div><span class="eyebrow">Réservations en cours · ${allB.length}</span>${bookings}
-      <div style="height:18px"></div><span class="eyebrow">Fiches artisans · ${arts.length}</span>${artList}
+      <div style="height:16px"></div><span class="eyebrow">Candidatures à traiter${q.length?' · '+q.length:''}</span>${queue}
+      <div style="height:18px"></div><span class="eyebrow">Réservations en cours · ${allB.length}</span><p class="mini" style="margin:6px 0 2px;color:var(--muted)">Cycle&nbsp;: Recherche d'artisan → Acceptée → En cours → À valider par le client → Réglée → Terminée.</p>${bookings}
+      <div style="height:18px"></div><span class="eyebrow">Fiches artisans · ${activeArts.length}</span>${artList}
+      ${refA.length?`<div style="height:18px"></div><span class="eyebrow">Prestataires refusés · ${refA.length}</span>${refList}`:''}
       <div style="height:18px"></div><span class="eyebrow">Fiches clients · ${clis.length}</span>${cliList}
       <div class="footcta" style="position:static;background:none;padding:20px 0 10px"><button class="btn ghost" data-adm="quit">← Quitter la console admin</button></div>
     </div>`;
@@ -487,24 +505,28 @@
       return `<div class="pad"><button class="reset" data-adm="home" style="margin:10px 0 6px">← Retour</button>
         <div class="row" style="gap:12px"><div class="avatar lg">${inits(a.name)}</div><div><b style="font-size:18px;font-family:var(--f-disp)">${a.name}</b><div class="mini">Artisan · ${a.type==='particulier'?'Particulier':'Entreprise'} · ${a.zone}</div></div></div>
         <div class="card" style="padding:16px;margin-top:16px">
-          <div class="row between"><span class="sub">Statut</span><span class="chip ${a.status==='valide'?'good':'coral'}">${a.status==='valide'?'Validé':'En attente'}</span></div><hr class="dashed">
+          <div class="row between"><span class="sub">Statut</span><span class="chip ${acctChip(a.status)[0]}">${acctChip(a.status)[1]}</span></div><hr class="dashed">
           <div class="row between"><span class="sub">Services</span><b>${catNames(a.cats)}</b></div>
           <div class="row between" style="margin-top:6px"><span class="sub">Taux souhaité</span><b>${a.rate} €/h</b></div>
           <div class="row between" style="margin-top:6px"><span class="sub">SIRET</span><b class="money">${a.siret||'—'}</b></div>
           <div class="row between" style="margin-top:6px"><span class="sub">Assurance RC</span><b style="color:${a.insured?'var(--good)':'var(--coral-deep)'}">${a.insured?'Fournie ✓':'Manquante'}</b></div>
           <div class="row between" style="margin-top:6px"><span class="sub">Note · missions</span><b>${a.rating?a.rating.toFixed(1)+' ★ · '+a.jobs:'—'}</b></div>
+          ${a.status==='refuse'&&a.reason?`<hr class="dashed"><div class="row between"><span class="sub">Motif du refus</span><b style="color:var(--coral-deep);text-align:right;max-width:60%">${a.reason}</b></div>`:''}
         </div>
+        <div class="card" style="padding:16px;margin-top:12px"><span class="eyebrow" style="color:var(--muted)">Contacter avant décision</span>${contactRow(a)}</div>
         ${a.status==='attente'?`<div class="row" style="gap:8px;margin-top:14px"><button class="btn good" data-adm="valid-art:${a.id}" ${(a.insured&&a.siret)?'':'disabled'}>Valider le prestataire</button><button class="btn ghost" data-adm="rej-art:${a.id}">Refuser</button></div>${(!a.insured||!a.siret)?`<p class="mini" style="margin-top:8px;color:var(--coral-deep)">${!a.siret?'SIRET manquant. ':''}${!a.insured?'Assurance manquante. ':''}Validation impossible tant que le dossier n'est pas complet.</p>`:''}`:''}
+        ${a.status==='refuse'?`<div class="row" style="gap:8px;margin-top:14px"><button class="btn ghost" data-adm="reexam-art:${a.id}">Réexaminer la candidature</button></div>`:''}
       </div>`;
     }
     const cc=S.adminClients.find(x=>x.id===S.admin.sel);if(!cc)return adminHome();
     return `<div class="pad"><button class="reset" data-adm="home" style="margin:10px 0 6px">← Retour</button>
       <div class="row" style="gap:12px"><div class="avatar lg">${inits(cc.name)}</div><div><b style="font-size:18px;font-family:var(--f-disp)">${cc.name}</b><div class="mini">Client · ${cc.zone}</div></div></div>
       <div class="card" style="padding:16px;margin-top:16px">
-        <div class="row between"><span class="sub">Statut</span><span class="chip ${cc.status==='valide'?'good':'coral'}">${cc.status==='valide'?'Validé':'En attente'}</span></div><hr class="dashed">
+        <div class="row between"><span class="sub">Statut</span><span class="chip ${acctChip(cc.status)[0]}">${acctChip(cc.status)[1]}</span></div><hr class="dashed">
         <div class="row between"><span class="sub">Moyen de paiement</span><b>${cc.card}</b></div>
         <div class="row between" style="margin-top:6px"><span class="sub">Réservations</span><b>${cc.bookings}</b></div>
       </div>
+      <div class="card" style="padding:16px;margin-top:12px"><span class="eyebrow" style="color:var(--muted)">Contacter</span>${contactRow(cc)}</div>
       ${cc.status==='attente'?`<div class="row" style="gap:8px;margin-top:14px"><button class="btn good" data-adm="valid-cli:${cc.id}">Valider le client</button></div>`:''}
     </div>`;
   }
@@ -818,7 +840,8 @@
       else if(act==='art'){S.admin.view='art';S.admin.sel=id;}
       else if(act==='cli'){S.admin.view='cli';S.admin.sel=id;}
       else if(act==='valid-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a&&a.insured&&a.siret){a.status='valide';toast('Artisan validé');}else{toast('Dossier incomplet (SIRET / assurance)');}}
-      else if(act==='rej-art'){S.adminArtisans=S.adminArtisans.filter(x=>x.id!==id);S.admin.view='home';toast('Candidature refusée');}
+      else if(act==='rej-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.status='refuse';if(!a.reason)a.reason=(!a.siret?'SIRET manquant. ':'')+(!a.insured?'Assurance manquante. ':'')||'Ne correspond pas aux critères Ti-Services';}S.admin.view='home';toast('Candidature refusée — conservée dans l’historique');}
+      else if(act==='reexam-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.status='attente';toast('Candidature remise en attente');}}
       else if(act==='valid-cli'){const cc=S.adminClients.find(x=>x.id===id);if(cc)cc.status='valide';toast('Client validé');}
       render();return;}
     if(b.dataset.cnav){S.clientNav=b.dataset.cnav;render();return;}
