@@ -402,6 +402,15 @@
     {id:'c2',name:'Thomas Ledée',status:'valide',zone:'St-Jean',card:'Mastercard ••8890',bookings:3,phone:'+590690889900',email:'t.ledee@example.com'},
     {id:'c3',name:'Élodie Nihau',status:'attente',zone:'Flamands',card:'Carte à vérifier',bookings:0,phone:'+590690990011',email:'e.nihau@example.com'}
   ];
+  /* Barème de commission dégressive (fidélité). Chiffres visibles UNIQUEMENT
+     en admin — jamais côté client/artisan (règle : le % ne s'affiche pas,
+     il figure dans les CGU). L'artisan voit un statut, pas un pourcentage. */
+  const FID_TIERS=[
+    {key:'bronze',nm:'Bronze',min:0,pct:15},
+    {key:'argent',nm:'Argent',min:50,pct:12},
+    {key:'or',nm:'Or',min:150,pct:10},
+    {key:'platine',nm:'Platine',min:300,pct:8}
+  ];
   const ADMIN_BOOK=()=>[
     {id:'b1',client:'Camille Magras',artisan:'Marie-Lou Cagan',svc:'menage',status:'working',amount:105,when:'Auj. 14:00'},
     {id:'b2',client:'Thomas Ledée',artisan:'Jean-Phi Bernier',svc:'jardin',status:'accepted',amount:120,when:'Auj. 16:00'},
@@ -412,6 +421,10 @@
   function bkStatus(s){return {pending:['coral','Recherche d’artisan'],accepted:['good','Acceptée'],working:['warn','En cours'],done_pro:['warn','À valider par le client'],paid:['good','Réglée'],rated:['grey','Terminée']}[s]||['grey',s];}
   /* Statut de COMPTE (dossier d'inscription) — distinct du cycle d'une réservation */
   function acctChip(st){return {valide:['good','Actif'],attente:['coral','En attente'],refuse:['grey','Refusé']}[st]||['grey',st];}
+  function fidTiers(){return S.fidTiers||FID_TIERS;}
+  function fidFor(jobs){let cur=fidTiers()[0];for(const t of fidTiers()){if(jobs>=t.min)cur=t;}return cur;}
+  function fidNext(jobs){for(const t of fidTiers()){if(jobs<t.min)return t;}return null;}
+  function fidColor(key){return {bronze:'#B0743A',argent:'#8A93A6',or:'#D6A72E',platine:'#4FA6C0'}[key]||'var(--teal-deep)';}
   function digits(p){return (p||'').replace(/[^0-9]/g,'');}
   function contactRow(p){return `<div class="contacts">`+
     `<a class="btn ghost sm" href="https://wa.me/${digits(p.phone)}" target="_blank" rel="noopener">💬 WhatsApp</a>`+
@@ -433,7 +446,9 @@
     proStatus:'approved',proName:'Marie-Lou',proRate:35,proStatusType:'entreprise',proSiret:'',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false},
     proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),
-    chat:false,advantages:false,
+    chat:false,advantages:false,referral:false,
+    proJobsTotal:214,fidTiers:FID_TIERS.map(t=>({...t})),referralCode:'MARILOU-SBH',
+    filleuls:[{name:'Kevin Questel',status:'valide',bonus:40},{name:'Rosa Almeida',status:'attente',bonus:0}],
     admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,
     avail:{lun:{m:1,a:1,s:0},mar:{m:1,a:1,s:0},mer:{m:1,a:1,s:1},jeu:{m:1,a:1,s:0},ven:{m:1,a:1,s:1},sam:{m:1,a:0,s:0},dim:{m:0,a:0,s:0}}
   };
@@ -455,6 +470,7 @@
   let _scr=null;
   function curScreen(){
     if(S.advantages)return S.persona+':advantages';
+    if(S.referral)return S.persona+':referral';
     if(S.chat)return S.persona+':chat';
     if(S.persona==='admin')return 'admin:'+S.admin.view+':'+(S.admin.sel||'');
     if(S.persona==='pro')return 'pro:'+S.proStatus+':'+S.proNav+':'+(S.mission?S.mission.status:'');
@@ -508,6 +524,9 @@
       <div class="row between" style="margin-top:10px"><div><span class="eyebrow">Console admin · Ti-Services</span><div class="h-hello">Tableau de bord</div></div><div class="avatar" style="background:linear-gradient(135deg,var(--ink),#000)">TS</div></div>
       <div class="row" style="gap:9px;margin-top:12px">${stat('En cours',allB.length,'réservations')}${stat('Artisans',validA,pendA.length+' en attente')}${stat('Clients',clis.length,pendC.length+' en attente')}</div>
       <div class="card" style="padding:14px;margin-top:10px"><div class="row between"><span class="sub">Commission ce mois</span><b class="money" style="font-size:18px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(S.adminCommission)}</b></div></div>
+      <div style="height:16px"></div><span class="eyebrow">Barème de commission · fidélité</span>
+      <div class="card" style="padding:14px;margin-top:10px"><p class="mini" style="margin:0 0 4px;color:var(--muted)">Plus l'artisan réalise de missions, plus la commission baisse. Visible ici uniquement — jamais côté client/artisan (le % figure dans les CGU).</p>
+      ${fidTiers().map(t=>`<div class="row between" style="margin-top:10px;align-items:center"><span class="sub" style="display:flex;align-items:center;gap:7px"><span class="chip" style="padding:3px 9px;background:${fidColor(t.key)}22;color:${fidColor(t.key)}">★ ${t.nm}</span>dès ${t.min} missions</span><span class="row" style="gap:8px;align-items:center"><button class="btn ghost sm" style="width:36px;padding:7px 0" data-adm="fiddown:${t.key}">−</button><b class="money" style="min-width:44px;text-align:center">${t.pct} %</b><button class="btn ghost sm" style="width:36px;padding:7px 0" data-adm="fidup:${t.key}">+</button></span></div>`).join('')}</div>
       <div style="height:16px"></div><span class="eyebrow">Candidatures à traiter${q.length?' · '+q.length:''}</span>${queue}
       <div style="height:18px"></div><span class="eyebrow">Réservations en cours · ${allB.length}</span><p class="mini" style="margin:6px 0 2px;color:var(--muted)">Cycle&nbsp;: Recherche d'artisan → Acceptée → En cours → À valider par le client → Réglée → Terminée.</p>${bookings}
       <div style="height:18px"></div><span class="eyebrow">Fiches artisans · ${activeArts.length}</span>${artList}
@@ -528,6 +547,7 @@
           <div class="row between" style="margin-top:6px"><span class="sub">SIRET</span><b class="money">${a.siret||'—'}</b></div>
           <div class="row between" style="margin-top:6px"><span class="sub">Assurance RC</span><b style="color:${a.insured?'var(--good)':'var(--coral-deep)'}">${a.insured?'Fournie ✓':'Manquante'}</b></div>
           <div class="row between" style="margin-top:6px"><span class="sub">Note · missions</span><b>${a.rating?a.rating.toFixed(1)+' ★ · '+a.jobs:'—'}</b></div>
+          <div class="row between" style="margin-top:6px"><span class="sub">Palier fidélité · commission</span><b><span class="chip" style="padding:2px 8px;background:${fidColor(fidFor(a.jobs).key)}22;color:${fidColor(fidFor(a.jobs).key)}">★ ${fidFor(a.jobs).nm}</span> ${fidFor(a.jobs).pct} %</b></div>
           ${a.status==='refuse'&&a.reason?`<hr class="dashed"><div class="row between"><span class="sub">Motif du refus</span><b style="color:var(--coral-deep);text-align:right;max-width:60%">${a.reason}</b></div>`:''}
         </div>
         <div class="card" style="padding:16px;margin-top:12px"><span class="eyebrow" style="color:var(--muted)">Contacter avant décision</span>${contactRow(a)}</div>
@@ -740,6 +760,7 @@
     if(S.proStatus==='signup')return proSignup();
     if(S.proStatus==='pending')return proPending();
     if(S.advantages)return advantagesScreen();
+    if(S.referral)return proReferral();
     if(S.chat&&S.mission)return chatScreen();
     const m=S.mission;
     if(m){if(m.status==='pending')return proRequest();if(m.status==='accepted'||m.status==='working')return proActive();if(m.status==='done_pro')return proWaiting();if(m.status==='paid'||m.status==='rated')return proPaid();}
@@ -882,10 +903,37 @@
       <div class="card" style="padding:16px"><div class="eyebrow" style="color:var(--muted)">Détail du versement</div><div class="receipt-line" style="margin-top:8px"><span>${m.svcName} · ${m.duration} h</span><span class="mini">${m.when} · ${m.slot}</span></div><hr class="dashed"><div class="receipt-line"><span>Net perçu</span><b style="color:var(--good)">${eur(t.payout)}</b></div></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-act="pro-back-home">Retour aux missions</button></div></div>`;
   }
+  function fidCard(){
+    const jobs=S.proJobsTotal,tier=fidFor(jobs),next=fidNext(jobs),col=fidColor(tier.key);
+    let prog='';
+    if(next){const span=next.min-tier.min,done=Math.max(0,Math.min(span,jobs-tier.min));const pc=Math.round(done/span*100);
+      prog=`<div style="height:9px;border-radius:999px;background:var(--sand-2);margin-top:12px;overflow:hidden"><div style="height:100%;width:${pc}%;border-radius:999px;background:${col}"></div></div>
+      <p class="mini" style="margin-top:7px">Plus que <b>${next.min-jobs} missions</b> pour atteindre le statut <b>${next.nm}</b> — et conserver une part encore plus grande de chaque prestation.</p>`;
+    }else{prog=`<p class="mini" style="margin-top:10px">🎉 Statut maximum atteint — vous conservez la plus grande part possible de chaque prestation.</p>`;}
+    return `<div class="card" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">Statut fidélité</b><span class="chip" style="padding:4px 11px;background:${col}22;color:${col}">★ ${tier.nm}</span></div>
+      <p class="sub" style="margin-top:8px">Plus vous enchaînez les missions via Ti-Services, plus la commission baisse&nbsp;: vous gardez davantage sur chaque prestation.</p>
+      <div class="row between" style="margin-top:8px"><span class="mini">${jobs} missions au total</span>${next?`<span class="mini">Prochain&nbsp;: ${next.nm}</span>`:''}</div>${prog}</div>`;
+  }
   function proEarnings(){
     return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">Revenus</span><div class="h-hello">Ce mois-ci</div>
       <div class="card" style="padding:18px;margin-top:12px"><div class="mini">Net perçu (juillet)</div><b class="money" style="font-size:30px;font-family:var(--f-disp)">${eur(S.proEarnings)}</b><div class="row between" style="margin-top:14px"><span class="sub">Missions réalisées</span><b>37</b></div><div class="row between" style="margin-top:6px"><span class="sub">Prochain virement</span><b>lun. 7 juil.</b></div></div>
+      ${fidCard()}
+      <button class="card" data-act="open-referral" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.heart}&nbsp;Parrainer un artisan</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Gagnez un bonus pour chaque artisan que vous parrainez — et lui aussi.</p></button>
       <div class="card" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">Compte de versement</b><span class="chip good">${I.check} Vérifié</span></div><div class="mini" style="margin-top:8px">IBAN ••••&nbsp;7788 · ${S.proStatusType==='particulier'?'Particulier':'Entreprise'} · SIRET ${S.proSiret?'••• '+S.proSiret.slice(-5):'vérifié'} ✓ · Assurance RC ${S.proInsured?'à jour ✓':'à fournir'}</div></div></div>${proNavbar()}`;
+  }
+  function proReferral(){
+    const earned=S.filleuls.filter(f=>f.status==='valide').reduce((t,f)=>t+f.bonus,0);
+    const pending=S.filleuls.filter(f=>f.status==='attente').length;
+    const list=S.filleuls.length?S.filleuls.map(f=>`<div class="card" style="padding:13px;margin-top:9px"><div class="row between"><b style="font-size:14px">${f.name}</b><span class="chip ${f.status==='valide'?'good':'coral'}" style="padding:3px 9px">${f.status==='valide'?I.check+' Validé · +'+eur(f.bonus):'En attente'}</span></div></div>`).join(''):`<div class="card" style="padding:18px;text-align:center;color:var(--muted);margin-top:9px">Aucun filleul pour l'instant.</div>`;
+    return `<div class="pad"><button class="reset" data-act="close-referral" style="margin:8px 0 2px">← Retour</button>
+      <span class="eyebrow">${I.heart} Parrainage</span>
+      <div class="h-hello">Parrainez, gagnez ensemble</div>
+      <p class="sub" style="margin-top:6px">Vous gagnez <b>40 €</b> par artisan parrainé et validé — et votre filleul reçoit <b>40 €</b> à sa première mission.</p>
+      <div class="card" style="padding:18px;margin-top:14px;text-align:center"><div class="mini">Votre code de parrainage</div><b class="money" style="font-size:24px;font-family:var(--f-disp);letter-spacing:1.5px;display:block;margin-top:4px">${S.referralCode}</b><button class="btn primary" data-act="copy-referral" style="margin-top:12px">${I.chat} Partager mon lien</button></div>
+      <div class="row" style="gap:11px;margin-top:12px"><div class="card" style="padding:14px;flex:1"><div class="mini">Bonus gagnés</div><b class="money" style="font-size:20px;font-family:var(--f-disp)">${eur(earned)}</b></div><div class="card" style="padding:14px;flex:1"><div class="mini">Filleuls</div><b class="money" style="font-size:20px;font-family:var(--f-disp)">${S.filleuls.length}</b><div class="mini">${pending} en attente</div></div></div>
+      <div style="height:16px"></div><span class="eyebrow">Mes filleuls</span>${list}
+      <div class="banner teal" style="margin-top:14px">${I.shield}<span>Le bonus est versé une fois le filleul validé et sa première mission réalisée dans l'app.</span></div>
+      <div style="height:10px"></div></div>${proNavbar()}`;
   }
 
   /* ---------- ACTIONS ---------- */
@@ -909,9 +957,11 @@
       else if(act==='rej-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.status='refuse';if(!a.reason)a.reason=(!a.siret?'SIRET manquant. ':'')+(!a.insured?'Assurance manquante. ':'')||'Ne correspond pas aux critères Ti-Services';}S.admin.view='home';toast('Candidature refusée — conservée dans l’historique');}
       else if(act==='reexam-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.status='attente';toast('Candidature remise en attente');}}
       else if(act==='valid-cli'){const cc=S.adminClients.find(x=>x.id===id);if(cc)cc.status='valide';toast('Client validé');}
+      else if(act==='fidup'){const t=fidTiers().find(x=>x.key===id);if(t)t.pct=Math.min(30,t.pct+1);}
+      else if(act==='fiddown'){const t=fidTiers().find(x=>x.key===id);if(t)t.pct=Math.max(1,t.pct-1);}
       render();return;}
-    if(b.dataset.cnav){S.advantages=false;S.chat=false;S.clientNav=b.dataset.cnav;render();return;}
-    if(b.dataset.pnav){S.advantages=false;S.chat=false;S.proNav=b.dataset.pnav;render();return;}
+    if(b.dataset.cnav){S.advantages=false;S.chat=false;S.referral=false;S.clientNav=b.dataset.cnav;render();return;}
+    if(b.dataset.pnav){S.advantages=false;S.chat=false;S.referral=false;S.proNav=b.dataset.pnav;render();return;}
     if(b.dataset.svc){const svc=SERVICES.find(s=>s.id===b.dataset.svc);S.draft=newMission(svc);renderConfig();return;}
     if(b.dataset.av){const[d,bl]=b.dataset.av.split(':');S.avail[d][bl]=S.avail[d][bl]?0:1;render();return;}
     if(b.dataset.atab){S.agendaTab=b.dataset.atab;render();return;}
@@ -949,6 +999,9 @@
       case 'masked-call':toast('Appel routé par Ti-Services — numéro réel masqué (démo)');break;
       case 'show-advantages':S.advantages=true;render();break;
       case 'close-advantages':S.advantages=false;render();break;
+      case 'open-referral':S.referral=true;render();break;
+      case 'close-referral':S.referral=false;render();break;
+      case 'copy-referral':toast('Lien de parrainage copié — partagez-le (démo)');break;
       case 'pro-attach-insurance':S.proForm.insuranceDoc=true;render();toast('Attestation d’assurance ajoutée');break;
       case 'pro-submit':{const f=S.proForm;if(!f.cats.length){toast('Sélectionnez au moins un service');break;}if(!/^\d{14}$/.test((f.siret||'').replace(/\s/g,''))){toast('Un SIRET valide (14 chiffres) est requis');break;}if(!f.insuranceDoc){toast('Joignez votre attestation d’assurance');break;}S.adminArtisans=S.adminArtisans.filter(x=>x.id!=='self');S.adminArtisans.unshift({id:'self',name:f.name||'Nouveau prestataire',status:'attente',type:'entreprise',cats:f.cats.slice(),rate:parseInt(f.rate,10)||30,siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,rating:0,jobs:0,zone:'—'});S.proStatus='pending';render();break;}
       case 'pro-approve':S.proStatus='approved';if(S.proForm.name)S.proName=S.proForm.name;if(S.proForm.cats.length)S.proCats=S.proForm.cats.slice();if(S.proForm.rate)S.proRate=parseInt(S.proForm.rate,10)||S.proRate;S.proStatusType='entreprise';S.proSiret=(S.proForm.siret||'').replace(/\s/g,'');S.proBio=S.proForm.bio||'';S.proInsured=!!S.proForm.insuranceDoc;if(S.proForm.insurer)S.proInsurer=S.proForm.insurer;render();toast('Profil validé — bienvenue sur Ti-Services !');break;
@@ -990,7 +1043,7 @@
     const cd=e.target.closest('[data-cfdate]');if(cd&&S.draft){S.draft.dateISO=cd.value;S.draft.when=fmtDate(cd.value);renderConfig();}
     const ct=e.target.closest('[data-cftime]');if(ct&&S.draft&&ct.value){S.draft.slot=ct.value;}
   });
-  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,chat:false,advantages:false,onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,proStatus:'approved',proName:'Marie-Lou',proRate:35,proStatusType:'entreprise',proSiret:'',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false}});render();toast('Scénario réinitialisé');});
+  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,chat:false,advantages:false,referral:false,fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,proStatus:'approved',proName:'Marie-Lou',proRate:35,proStatusType:'entreprise',proSiret:'',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false}});render();toast('Scénario réinitialisé');});
 
   /* ---------- PWA: install + service worker ---------- */
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
@@ -1006,6 +1059,7 @@
   /* ---------- Bouton retour du téléphone : revient à l'écran précédent (ne quitte pas l'app) ---------- */
   function goBack(){
     if(S.advantages){S.advantages=false;render();return;}
+    if(S.referral){S.referral=false;render();return;}
     if(S.chat){S.chat=false;render();return;}
     if(S.persona==='admin'){if(S.admin.view!=='home'){S.admin.view='home';S.admin.sel=null;render();}else{S.persona='client';render();}return;}
     if(S.persona==='pro'){
