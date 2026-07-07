@@ -409,7 +409,7 @@
     admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,
     avail:{lun:{m:1,a:1,s:0},mar:{m:1,a:1,s:0},mer:{m:1,a:1,s:1},jeu:{m:1,a:1,s:0},ven:{m:1,a:1,s:1},sam:{m:1,a:0,s:0},dim:{m:0,a:0,s:0}}
   };
-  function newMission(svc){return {svc:svc.id,svcName:svc.nm,rate:svcReco(svc.id),frequency:'ponctuelle',duration:3,zone:'Gustavia',address:'Villa Colibri, Gustavia',geo:null,notes:'',when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',status:'draft',provider:null,rating:0,competitors:0};}
+  function newMission(svc){return {svc:svc.id,svcName:svc.nm,rate:svcReco(svc.id),frequency:'ponctuelle',duration:3,zone:'Gustavia',address:'Villa Colibri, Gustavia',geo:null,notes:'',when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',slotMode:null,status:'draft',provider:null,rating:0,competitors:0};}
   function totals(m){const rate=m.rate;const sub=rate*m.duration;return {rate,sub,commission:0,payout:sub,total:sub};}
   const eur=(n)=>n.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
   const fmtDate=(iso)=>{if(!iso)return 'Aujourd’hui';const p=iso.split('-');return p[2]+'/'+p[1];};
@@ -424,7 +424,23 @@
 
   function attention(){const m=S.mission;if(!m)return null;if(m.status==='pending')return 'pro';if(m.status==='done_pro')return 'client';return null;}
   function paintPersona(){}
-  function render(){view.innerHTML='<div class="anim">'+(S.persona==='admin'?renderAdmin():(S.persona==='client'?renderClient():renderPro()))+'</div>';view.scrollTop=0;paintPersona();}
+  let _scr=null;
+  function curScreen(){
+    if(S.persona==='admin')return 'admin:'+S.admin.view+':'+(S.admin.sel||'');
+    if(S.persona==='pro')return 'pro:'+S.proStatus+':'+S.proNav+':'+(S.mission?S.mission.status:'');
+    if(!S.onboarded)return 'onb:'+S.onbStep;
+    if(S.mission)return 'client:mission:'+S.mission.status;
+    return 'client:'+S.clientNav;
+  }
+  /* Anime uniquement lors d'un vrai changement d'écran ; les mises à jour
+     sur place (toggles de segments, étoiles…) ne rejouent pas le slidein
+     et conservent la position de défilement — plus de clignotement. */
+  function paintView(html,key){
+    const same=(key===_scr);const top=view.scrollTop;
+    view.innerHTML='<div'+(same?'':' class="anim"')+'>'+html+'</div>';
+    view.scrollTop=same?top:0;_scr=key;
+  }
+  function render(){paintView((S.persona==='admin'?renderAdmin():(S.persona==='client'?renderClient():renderPro())),curScreen());paintPersona();}
 
   /* ---------- CLIENT ---------- */
   /* ---------- ADMIN ---------- */
@@ -813,7 +829,7 @@
     if(b.dataset.pcat){const c=b.dataset.pcat,i=S.proForm.cats.indexOf(c);if(i<0)S.proForm.cats.push(c);else S.proForm.cats.splice(i,1);b.classList.toggle('sel');return;}
     if(b.dataset.pstatus){S.proForm.status=b.dataset.pstatus;render();return;}
     if(b.dataset.zone){if(S.draft){S.draft.zone=b.dataset.zone;S.draft.address=b.dataset.zone==='Gustavia'?'Villa Colibri, Gustavia':('Villa, '+b.dataset.zone);}renderConfig();return;}
-    if(b.dataset.slot){if(S.draft)S.draft.slot=b.dataset.slot;renderConfig();return;}
+    if(b.dataset.slot){if(S.draft){if(b.dataset.slot==='__pick'){S.draft.slotMode='pick';}else{S.draft.slotMode=null;S.draft.slot=b.dataset.slot;}}renderConfig();return;}
     if(b.dataset.czone){S.clientForm.zone=b.dataset.czone;render();return;}
     if(b.dataset.when){if(!S.draft)return;const v=b.dataset.when;if(v==='__pick'){S.draft.dateMode='pick';}else{S.draft.dateMode=null;S.draft.when=v;}renderConfig();return;}
     if(b.dataset.offer){if(!S.draft)return;const st=5;const fl=svcFloor(S.draft.svc);S.draft.rate=Math.max(fl,S.draft.rate+(b.dataset.offer==='up'?st:-st));renderConfig();return;}
@@ -851,10 +867,13 @@
   function renderConfig(){
     const m=S.draft,t=totals(m);
     const zones=ZONES.map(z=>`<button class="seg ${m.zone===z?'on':''}" data-zone="${z}">${z}</button>`).join('');
-    const slots=['08:00','10:00','12:00','14:00','16:00'].map(s=>`<button class="seg ${m.slot===s?'on':''}" data-slot="${s}">${s}</button>`).join('');
-    view.innerHTML=`<div class="anim"><div class="pad"><button class="reset" data-cfg="back" style="margin:8px 0 2px">← Retour</button><span class="eyebrow">${m.svcName}</span><div class="h-hello">Détails de la mission</div>
+    const presetSlots=['08:00','10:00','12:00','14:00','16:00'];
+    const customTime=m.slotMode==='pick'||!presetSlots.includes(m.slot);
+    const slots=presetSlots.map(s=>`<button class="seg ${(!customTime&&m.slot===s)?'on':''}" data-slot="${s}">${s}</button>`).join('')
+      +`<button class="seg ${customTime?'on':''}" data-slot="__pick">Autre…</button>`;
+    paintView(`<div class="pad"><button class="reset" data-cfg="back" style="margin:8px 0 2px">← Retour</button><span class="eyebrow">${m.svcName}</span><div class="h-hello">Détails de la mission</div>
       <div class="field"><label>Quand&nbsp;?</label><div class="segs"><button class="seg ${m.dateMode!=='pick'&&m.when==='Aujourd’hui'?'on':''}" data-when="Aujourd’hui">Aujourd'hui</button><button class="seg ${m.dateMode!=='pick'&&m.when==='Demain'?'on':''}" data-when="Demain">Demain</button><button class="seg ${m.dateMode==='pick'?'on':''}" data-when="__pick">Choisir…</button></div>${m.dateMode==='pick'?`<input class="txt" type="date" data-cfdate style="margin-top:10px" value="${m.dateISO||''}">`:''}</div>
-      <div class="field"><label>Heure</label><div class="segs">${slots}</div></div>
+      <div class="field"><label>Heure</label><div class="segs">${slots}</div>${customTime?`<input class="txt" type="time" data-cftime step="900" style="margin-top:10px" value="${/^\d{2}:\d{2}$/.test(m.slot)?m.slot:''}">`:''}</div>
       <div class="field"><label>Fréquence</label><div class="segs">${FREQS.map(f=>`<button class="seg ${(m.frequency||'ponctuelle')===f.id?'on':''}" data-freq="${f.id}">${f.lbl}</button>`).join('')}</div>${(m.frequency&&m.frequency!=='ponctuelle')?`<p class="mini" style="margin-top:6px">🔁 Prestation régulière — le même artisan à chaque fois, annulable à tout moment.</p>`:''}</div>
       <div class="field"><label>Votre offre — tarif horaire</label><div class="stepper"><button data-offer="down">−</button><span class="val">${m.rate} €/h</span><button data-offer="up">+</button></div><p class="mini" style="margin-top:6px">💡 Recommandé&nbsp;: <b>${svcReco(m.svc)} €/h</b> (moyenne des offres) · minimum ${svcFloor(m.svc)} €/h. Ti-Services <b>ne fixe pas le prix</b> — c'est votre offre, l'artisan reste libre de l'accepter. Pas de plafond&nbsp;; une offre plus élevée est acceptée plus vite.${m.rate<svcReco(m.svc)?' <b style="color:var(--coral-deep)">En dessous de la moyenne, l’acceptation peut être plus longue.</b>':''}</p></div>
       <div class="field"><label>Durée estimée</label><div class="stepper"><button data-cfg="minus">−</button><span class="val">${m.duration} h</span><button data-cfg="plus">+</button></div></div>
@@ -863,7 +882,7 @@
       <div class="field"><label>Point GPS du domicile</label><button class="btn ghost sm" data-cfg="geoloc">📍 ${m.geo?'Actualiser ma position':'Utiliser ma position actuelle'}</button>${m.geo?miniMap(m.geo):`<p class="mini" style="margin-top:6px">Ajoutez un point GPS pour que le prestataire trouve votre domicile facilement.</p>`}</div>
       <div class="field"><label>Décrivez votre besoin</label><textarea rows="3" data-cfg="notes" placeholder="${PLACEHOLDERS[m.svc]||'Décrivez précisément la prestation…'}">${m.notes}</textarea><p class="mini" style="margin-top:6px">Plus c'est précis (« bricolage » est large&nbsp;!), plus l'artisan accepte vite et au bon tarif.</p></div>
       <div class="est"><div class="line"><span>${m.svcName} · ${t.rate} €/h × ${m.duration} h</span><b>${eur(t.sub)}</b></div><div class="total"><span>${(m.frequency&&m.frequency!=='ponctuelle')?'Par prestation':'Total'}</span><b>${eur(t.total)}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité (sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — séquestre agréé). Aucun supplément sans votre accord.</small></div>
-      <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm">${I.search} Trouver un artisan · ${eur(t.total)}</button></div></div></div>`;
+      <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm">${I.search} Trouver un artisan · ${eur(t.total)}</button></div></div>`,'config');
   }
   view.addEventListener('input',(e)=>{
     const t=e.target.closest('[data-cfg="notes"]');if(t&&S.draft)S.draft.notes=t.value;
@@ -871,6 +890,7 @@
     const cf=e.target.closest('[data-cf]');if(cf)S.clientForm[cf.dataset.cf]=cf.value;
     const pr=e.target.closest('[data-prate]');if(pr){S.proForm.rate=+pr.value;const el=document.getElementById('prateVal');if(el)el.textContent=pr.value+' €/h';}
     const cd=e.target.closest('[data-cfdate]');if(cd&&S.draft){S.draft.dateISO=cd.value;S.draft.when=fmtDate(cd.value);renderConfig();}
+    const ct=e.target.closest('[data-cftime]');if(ct&&S.draft&&ct.value){S.draft.slot=ct.value;}
   });
   document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,proStatus:'approved',proName:'Marie-Lou',proRate:35,proStatusType:'entreprise',proSiret:'',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false}});render();toast('Scénario réinitialisé');});
 
