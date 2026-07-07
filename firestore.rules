@@ -1,0 +1,89 @@
+rules_version = '2';
+
+/* Ti-Services — règles de sécurité Firestore (bêta Phase 1)
+   Modèle : comptes utilisateurs, dossiers artisans (validés par l'admin),
+   demandes (« premier arrivé, premier servi »), messagerie à numéro masqué.
+   L'admin est identifié par son e-mail (voir isAdmin — à remplacer par TON e-mail). */
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function uid() { return request.auth.uid; }
+    function email() { return request.auth.token.email; }
+
+    // ⚠️ Remplacer par ton e-mail admin (celui de connexion à la bêta)
+    function isAdmin() {
+      return signedIn() && email() == 'ADMIN_EMAIL_A_REMPLACER@gmail.com';
+    }
+
+    function artisanDoc(id) {
+      return get(/databases/$(database)/documents/artisans/$(id)).data;
+    }
+    function isValidArtisan() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/artisans/$(uid()))
+        && artisanDoc(uid()).status == 'valide';
+    }
+
+    // Profils utilisateurs (client et/ou artisan)
+    match /users/{userId} {
+      allow read:   if isAdmin() || uid() == userId;
+      allow create: if uid() == userId;
+      allow update: if isAdmin() || uid() == userId;
+      allow delete: if isAdmin();
+    }
+
+    // Dossiers artisans : créés par le prestataire (statut « attente » forcé),
+    // le statut ne peut être changé que par l'admin.
+    match /artisans/{artisanId} {
+      allow read:   if isAdmin() || uid() == artisanId;
+      allow create: if uid() == artisanId
+                    && request.resource.data.status == 'attente';
+      allow update: if isAdmin()
+                    || (uid() == artisanId
+                        && request.resource.data.status == resource.data.status);
+      allow delete: if isAdmin();
+    }
+
+    // Demandes de prestation
+    match /requests/{reqId} {
+      function isClient()   { return signedIn() && resource.data.clientUid == uid(); }
+      function isProvider() { return signedIn() && resource.data.providerUid == uid(); }
+
+      // Lecture : client propriétaire, prestataire assigné, tout artisan validé
+      // (pour découvrir les demandes ouvertes à accepter), admin.
+      allow read: if isAdmin() || isClient() || isProvider() || isValidArtisan();
+
+      // Création par le client, statut « pending », clientUid = soi-même.
+      allow create: if signedIn()
+                    && request.resource.data.clientUid == uid()
+                    && request.resource.data.status == 'pending';
+
+      // Mise à jour :
+      //  - admin : tout ;
+      //  - client propriétaire : suivi / annulation / validation de sa demande ;
+      //  - prestataire assigné : avancement des statuts ;
+      //  - « premier arrivé » : un artisan validé prend une demande encore pending.
+      allow update: if isAdmin()
+        || isClient()
+        || isProvider()
+        || (isValidArtisan()
+            && resource.data.status == 'pending'
+            && request.resource.data.status == 'accepted'
+            && request.resource.data.providerUid == uid());
+
+      allow delete: if isAdmin() || isClient();
+
+      // Messagerie : réservée au client, au prestataire assigné et à l'admin.
+      match /messages/{msgId} {
+        function parent() {
+          return get(/databases/$(database)/documents/requests/$(reqId)).data;
+        }
+        allow read, create: if isAdmin()
+          || parent().clientUid == uid()
+          || parent().providerUid == uid();
+      }
+    }
+  }
+}
