@@ -152,6 +152,23 @@
   .advcard .ai{flex:none;width:38px;height:38px;border-radius:11px;background:var(--teal-wash);color:var(--teal-deep);display:flex;align-items:center;justify-content:center}
   .advcard .at{font-size:14.5px;font-weight:700}
   .advcard .ad{font-size:13px;color:var(--ink-soft);margin-top:2px;line-height:1.4}
+  .interv-row{padding:13px;margin-top:9px}
+  .inv{background:#fff;color:#151515;border-radius:14px;padding:22px;margin-top:14px;font-size:13px;line-height:1.5;border:1px solid #e6e4ef}
+  .inv h2{font-size:21px;font-family:var(--f-disp);letter-spacing:1px;margin:0;color:#151515}
+  .inv .mut{color:#6a6a6a}
+  .inv .sec{margin-top:16px}
+  .inv table{width:100%;border-collapse:collapse;margin-top:12px}
+  .inv th,.inv td{text-align:left;padding:9px 6px;border-bottom:1px solid #ececf2;font-size:12.5px}
+  .inv td.r,.inv th.r{text-align:right}
+  .inv .tot{font-weight:800;font-size:16px;color:#151515}
+  .inv .legal{margin-top:16px;font-size:11px;color:#777;line-height:1.45}
+  @media print{
+    body *{visibility:hidden !important}
+    #invoiceDoc, #invoiceDoc *{visibility:visible !important}
+    #invoiceDoc{position:absolute;left:0;top:0;width:100%;padding:0;margin:0}
+    #invoiceDoc .inv{border:none;margin:0}
+    .noprint, .noprint *{display:none !important}
+  }
 
   .btn{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;padding:16px;border-radius:16px;font-size:15.5px;font-weight:700;transition:transform .12s,filter .2s;letter-spacing:-.01em}
   .btn:active{transform:scale(.975)}
@@ -411,6 +428,12 @@
     {key:'or',nm:'Or',min:150,pct:10},
     {key:'platine',nm:'Platine',min:300,pct:8}
   ];
+  /* Interventions déjà réalisées par l'artisan connecté (récap + factures). */
+  const PRO_HISTORY=()=>[
+    {id:'h1',dateISO:'2026-07-05',svc:'menage',client:'Villa Bartolomé',clientFull:'SCI Bartolomé',clientZone:'Gustavia',duration:2,rate:35,amount:70,invNo:'2026-0042',paidVia:'carte'},
+    {id:'h2',dateISO:'2026-07-03',svc:'repassage',client:'Mme Laplace',clientFull:'Mme Laplace',clientZone:'St-Jean',duration:1,rate:30,amount:30,invNo:'2026-0041',paidVia:'carte'},
+    {id:'h3',dateISO:'2026-06-28',svc:'menage',client:'Villa Sereno',clientFull:'M. et Mme Brin',clientZone:'Flamands',duration:3,rate:35,amount:105,invNo:'2026-0040',paidVia:'carte'}
+  ];
   const ADMIN_BOOK=()=>[
     {id:'b1',client:'Camille Magras',artisan:'Marie-Lou Cagan',svc:'menage',status:'working',amount:105,when:'Auj. 14:00'},
     {id:'b2',client:'Thomas Ledée',artisan:'Jean-Phi Bernier',svc:'jardin',status:'accepted',amount:120,when:'Auj. 16:00'},
@@ -443,10 +466,11 @@
   const S={
     persona:'client',clientNav:'home',proNav:'home',onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},
     card:{brand:'Visa',last4:'4242'},mission:null,draft:null,
-    proStatus:'approved',proName:'Marie-Lou',proRate:35,proStatusType:'entreprise',proSiret:'',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false},
+    proStatus:'approved',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false},
     proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],
+    proHistory:PRO_HISTORY(),
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),
-    chat:false,advantages:false,referral:false,
+    chat:false,advantages:false,referral:false,interv:false,invoiceId:null,
     proJobsTotal:214,fidTiers:FID_TIERS.map(t=>({...t})),referralCode:'MARILOU-SBH',
     filleuls:[{name:'Kevin Questel',status:'valide',bonus:40},{name:'Rosa Almeida',status:'attente',bonus:0}],
     admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,
@@ -470,6 +494,8 @@
   let _scr=null;
   function curScreen(){
     if(S.advantages)return S.persona+':advantages';
+    if(S.invoiceId)return S.persona+':invoice:'+S.invoiceId;
+    if(S.interv)return S.persona+':interv';
     if(S.referral)return S.persona+':referral';
     if(S.chat)return S.persona+':chat';
     if(S.persona==='admin')return 'admin:'+S.admin.view+':'+(S.admin.sel||'');
@@ -760,6 +786,8 @@
     if(S.proStatus==='signup')return proSignup();
     if(S.proStatus==='pending')return proPending();
     if(S.advantages)return advantagesScreen();
+    if(S.invoiceId)return proInvoice();
+    if(S.interv)return proInterventions();
     if(S.referral)return proReferral();
     if(S.chat&&S.mission)return chatScreen();
     const m=S.mission;
@@ -790,6 +818,7 @@
         <div class="field"><label>Montant horaire souhaité — <b id="prateVal">${rate} €/h</b></label><input type="range" class="slider" min="15" max="100" step="5" value="${rate}" data-prate><p class="mini" style="margin-top:4px">Ce tarif sera validé par Ti-Services.</p></div>
         <div class="field"><label>Présentation / expérience</label><textarea rows="3" data-pf="bio" placeholder="Votre expérience, vos spécialités, votre zone…">${f.bio}</textarea></div>
         <div class="field"><label>Assurance responsabilité civile (obligatoire)</label><input class="txt" data-pf="insurer" value="${f.insurer}" placeholder="Assureur &amp; n° de police (ex. AXA 12345)"><button class="btn ghost sm" data-act="pro-attach-insurance" style="margin-top:8px">${f.insuranceDoc?'✓ Attestation jointe':'📎 Joindre mon attestation'}</button><p class="mini" style="margin-top:6px">Chaque prestataire doit justifier d'une assurance responsabilité civile en cours de validité.</p></div>
+        <div class="field"><label>Facturation</label><button data-act="toggle-mandat" style="background:none;border:none;padding:0;width:100%;text-align:left;display:flex;gap:11px;align-items:flex-start"><span style="flex:none;width:22px;height:22px;border-radius:7px;border:2px solid ${f.mandat?'var(--good)':'var(--hair)'};background:${f.mandat?'var(--good)':'transparent'};color:#fff;display:flex;align-items:center;justify-content:center;margin-top:1px">${f.mandat?I.check:''}</span><span class="mini" style="line-height:1.45">J'autorise Ti-Services à <b>établir mes factures en mon nom et pour mon compte</b> (mandat de facturation, art. 289 du CGI) — une facture par prestation, automatiquement. Je reste responsable de mes obligations fiscales.</span></button></div>
       </div>
       <div class="field" style="margin-top:18px"><label>Quels services souhaitez-vous réaliser&nbsp;? (un ou plusieurs)</label></div>
       <div class="cats">${cats}</div>
@@ -914,10 +943,47 @@
       <p class="sub" style="margin-top:8px">Plus vous enchaînez les missions via Ti-Services, plus la commission baisse&nbsp;: vous gardez davantage sur chaque prestation.</p>
       <div class="row between" style="margin-top:8px"><span class="mini">${jobs} missions au total</span>${next?`<span class="mini">Prochain&nbsp;: ${next.nm}</span>`:''}</div>${prog}</div>`;
   }
+  function svcName(id){const s=SERVICES.find(x=>x.id===id);return s?s.nm:id;}
+  function fmtLong(iso){if(!iso)return '';const M=['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];const p=iso.split('-');if(p.length<3)return iso;return (+p[2])+' '+M[(+p[1])-1]+' '+p[0];}
+  function proInterventions(){
+    const list=S.proHistory||[];
+    const total=list.reduce((t,h)=>t+h.amount,0);
+    const rows=list.length?list.map(h=>`<div class="card interv-row"><div class="row between"><b style="font-size:14px">${svcName(h.svc)}</b><span class="money" style="font-weight:700">${eur(h.amount)}</span></div>
+      <div class="mini" style="margin-top:3px">${fmtLong(h.dateISO)} · ${h.client} · ${h.duration} h</div>
+      <div class="row between" style="margin-top:10px;align-items:center"><span class="chip good" style="padding:3px 9px">${I.check} Réglée · Facture ${h.invNo}</span><button class="btn ghost sm" style="width:auto;padding:8px 14px" data-act="invoice:${h.id}">${I.card}&nbsp;Facture</button></div></div>`).join(''):`<div class="card" style="padding:24px;text-align:center;color:var(--muted);margin-top:12px">Aucune intervention réalisée pour l'instant.<br>Vos prestations terminées apparaîtront ici avec leur facture.</div>`;
+    return `<div class="pad"><button class="reset" data-act="close-interv" style="margin:8px 0 2px">← Retour</button>
+      <span class="eyebrow">${I.card} Comptabilité</span>
+      <div class="h-hello">Mes interventions</div>
+      <div class="card" style="padding:15px;margin-top:12px"><div class="row between"><div><div class="mini">Interventions réalisées</div><b class="money" style="font-size:19px;font-family:var(--f-disp)">${list.length}</b></div><div style="text-align:right"><div class="mini">Total encaissé</div><b class="money" style="font-size:19px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(total)}</b></div></div></div>
+      <div class="banner teal" style="margin-top:12px">${I.shield}<span>Ti-Services établit vos factures <b>en votre nom et pour votre compte</b> (mandat de facturation) — une par prestation, plus un relevé mensuel. Rien à saisir.</span></div>
+      <div style="height:6px"></div>${rows}<div style="height:10px"></div></div>${proNavbar()}`;
+  }
+  function proInvoice(){
+    const h=(S.proHistory||[]).find(x=>x.id===S.invoiceId);
+    if(!h)return proInterventions();
+    return `<div class="pad">
+      <div class="row between noprint" style="margin-top:6px;gap:8px"><button class="reset" data-act="close-invoice">← Retour</button><button class="btn primary" data-act="print-invoice" style="width:auto;padding:10px 16px">${I.card}&nbsp;Enregistrer / Imprimer</button></div>
+      <div id="invoiceDoc"><div class="inv">
+        <div class="row between" style="align-items:flex-start"><div><h2>FACTURE</h2><div class="mut">N° ${h.invNo}</div><div class="mut">Date : ${fmtLong(h.dateISO)}</div></div><div style="text-align:right"><div style="font-family:var(--f-disp);font-weight:800;font-size:16px;color:#151515">Ti-Services</div><div class="mut">Saint-Barthélemy</div></div></div>
+        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Prestataire</div><b>${S.proLegal}</b><div class="mut">${S.proStatusType==='particulier'?'Particulier':'Entreprise'} · ${S.proAddress}</div><div class="mut">SIRET ${S.proSiret||'—'} · Assurance RC ${S.proInsurer||'—'}</div></div>
+        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Client</div><b>${h.clientFull}</b><div class="mut">${h.clientZone}, Saint-Barthélemy</div></div>
+        <table><thead><tr><th>Prestation</th><th class="r">Qté</th><th class="r">PU</th><th class="r">Total</th></tr></thead>
+        <tbody><tr><td>${svcName(h.svc)} — prestation à domicile</td><td class="r">${h.duration} h</td><td class="r">${eur(h.rate)}</td><td class="r">${eur(h.amount)}</td></tr></tbody></table>
+        <div class="row between sec"><span class="mut">Total net à payer</span><span class="tot">${eur(h.amount)}</span></div>
+        <div class="row between" style="margin-top:6px"><span class="mut">Réglé par ${h.paidVia==='carte'?'carte bancaire':'virement'} via Ti-Services le ${fmtLong(h.dateISO)}</span><b style="color:#1c8f5f">Payé</b></div>
+        <div class="legal">
+          TVA non applicable — Saint-Barthélemy (collectivité d'outre-mer, hors du champ de la TVA française).<br>
+          Facture établie par Ti-Services au nom et pour le compte du prestataire, en vertu d'un mandat de facturation accepté à l'inscription (art. 289 du CGI).<br>
+          Indemnité forfaitaire pour frais de recouvrement en cas de retard : 40 €. Pas d'escompte pour paiement anticipé.
+        </div>
+      </div></div>
+      <div style="height:12px"></div></div>`;
+  }
   function proEarnings(){
     return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">Revenus</span><div class="h-hello">Ce mois-ci</div>
       <div class="card" style="padding:18px;margin-top:12px"><div class="mini">Net perçu (juillet)</div><b class="money" style="font-size:30px;font-family:var(--f-disp)">${eur(S.proEarnings)}</b><div class="row between" style="margin-top:14px"><span class="sub">Missions réalisées</span><b>37</b></div><div class="row between" style="margin-top:6px"><span class="sub">Prochain virement</span><b>lun. 7 juil.</b></div></div>
       ${fidCard()}
+      <button class="card" data-act="open-interv" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.card}&nbsp;Mes interventions & factures</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Historique de vos prestations réalisées et leurs factures (établies automatiquement en votre nom).</p></button>
       <button class="card" data-act="open-referral" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.heart}&nbsp;Parrainer un artisan</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Gagnez un bonus pour chaque artisan que vous parrainez — et lui aussi.</p></button>
       <div class="card" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">Compte de versement</b><span class="chip good">${I.check} Vérifié</span></div><div class="mini" style="margin-top:8px">IBAN ••••&nbsp;7788 · ${S.proStatusType==='particulier'?'Particulier':'Entreprise'} · SIRET ${S.proSiret?'••• '+S.proSiret.slice(-5):'vérifié'} ✓ · Assurance RC ${S.proInsured?'à jour ✓':'à fournir'}</div></div></div>${proNavbar()}`;
   }
@@ -960,8 +1026,8 @@
       else if(act==='fidup'){const t=fidTiers().find(x=>x.key===id);if(t)t.pct=Math.min(30,t.pct+1);}
       else if(act==='fiddown'){const t=fidTiers().find(x=>x.key===id);if(t)t.pct=Math.max(1,t.pct-1);}
       render();return;}
-    if(b.dataset.cnav){S.advantages=false;S.chat=false;S.referral=false;S.clientNav=b.dataset.cnav;render();return;}
-    if(b.dataset.pnav){S.advantages=false;S.chat=false;S.referral=false;S.proNav=b.dataset.pnav;render();return;}
+    if(b.dataset.cnav){S.advantages=false;S.chat=false;S.referral=false;S.interv=false;S.invoiceId=null;S.clientNav=b.dataset.cnav;render();return;}
+    if(b.dataset.pnav){S.advantages=false;S.chat=false;S.referral=false;S.interv=false;S.invoiceId=null;S.proNav=b.dataset.pnav;render();return;}
     if(b.dataset.svc){const svc=SERVICES.find(s=>s.id===b.dataset.svc);S.draft=newMission(svc);renderConfig();return;}
     if(b.dataset.av){const[d,bl]=b.dataset.av.split(':');S.avail[d][bl]=S.avail[d][bl]?0:1;render();return;}
     if(b.dataset.atab){S.agendaTab=b.dataset.atab;render();return;}
@@ -975,6 +1041,7 @@
     if(b.dataset.freq){if(!S.draft)return;S.draft.frequency=b.dataset.freq;renderConfig();return;}
     if(b.dataset.star){const n=+b.dataset.star;S.mission.rating=n;document.querySelectorAll('#rateStars button').forEach(x=>x.classList.toggle('lit',+x.dataset.star<=n));const rb=document.getElementById('rateBtn');if(rb)rb.disabled=false;return;}
     if(b.dataset.cfg){const c=b.dataset.cfg;if(!S.draft)return;if(c==='back'){S.draft=null;render();}else if(c==='minus'){S.draft.duration=Math.max(1,S.draft.duration-1);renderConfig();}else if(c==='plus'){S.draft.duration=Math.min(10,S.draft.duration+1);renderConfig();}else if(c==='geoloc'){geolocate();}else if(c==='confirm'){const d=S.draft;if(S.avgOffers[d.svc]){S.avgOffers[d.svc].sum+=d.rate;S.avgOffers[d.svc].n++;}S.mission=d;S.draft=null;startSearch();}return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('invoice:')===0){S.invoiceId=b.dataset.act.split(':')[1];render();return;}
     switch(b.dataset.act){
       case 'onb-start':S.onbStep=1;render();break;
       case 'onb-back0':S.onbStep=0;render();break;
@@ -982,13 +1049,13 @@
       case 'onb-infos-next':if((S.clientForm.name||'').trim().length>1){S.onbStep=2;render();}else{toast('Entrez votre nom pour continuer');}break;
       case 'finish-onboard':S.onboarded=true;render();toast('Compte créé — bienvenue sur Ti-Services !');break;
       case 'cancel-mission':S.mission=null;S.clientNav='home';render();break;
-      case 'confirm-done':S.mission.status='paid';S.proEarnings+=totals(S.mission).payout;if(S.mission._appt)S.mission._appt.status='done';render();break;
+      case 'confirm-done':{const mm=S.mission,tt=totals(mm);mm.status='paid';S.proEarnings+=tt.payout;if(mm._appt)mm._appt.status='done';S.proHistory=S.proHistory||[];const seq='2026-'+String(43+S.proHistory.length).padStart(4,'0');S.proHistory.unshift({id:'hm'+S.proHistory.length,dateISO:(mm.dateISO||new Date().toISOString().slice(0,10)),svc:mm.svc,client:'Camille M.',clientFull:'Camille Magras',clientZone:mm.zone,duration:mm.duration,rate:tt.rate,amount:tt.payout,invNo:seq,paidVia:'carte'});render();break;}
       case 'report-issue':toast('Signalement transmis — vous ne serez pas débité');break;
       case 'submit-rating':S.mission.status='rated';render();break;
       case 'new-mission':S.history.unshift(S.mission);S.mission=null;S.clientNav='home';render();break;
       case 'toggle-online':S.proOnline=!S.proOnline;render();break;
       case 'save-dispo':toast('Disponibilités enregistrées');break;
-      case 'go-artisan-signup':S.persona='pro';S.proStatus='signup';S.proForm={name:'',phone:'',cats:[]};render();break;
+      case 'go-artisan-signup':S.persona='pro';S.proStatus='signup';S.proForm={name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false};render();break;
       case 'back-to-client':S.persona='client';S.proStatus='approved';render();break;
       case 'demo-go-pro':S.persona='pro';render();break;
       case 'demo-go-client':S.persona='client';render();break;
@@ -1002,8 +1069,13 @@
       case 'open-referral':S.referral=true;render();break;
       case 'close-referral':S.referral=false;render();break;
       case 'copy-referral':toast('Lien de parrainage copié — partagez-le (démo)');break;
+      case 'open-interv':S.interv=true;render();break;
+      case 'close-interv':S.interv=false;render();break;
+      case 'close-invoice':S.invoiceId=null;render();break;
+      case 'print-invoice':window.print();break;
+      case 'toggle-mandat':S.proForm.mandat=!S.proForm.mandat;render();break;
       case 'pro-attach-insurance':S.proForm.insuranceDoc=true;render();toast('Attestation d’assurance ajoutée');break;
-      case 'pro-submit':{const f=S.proForm;if(!f.cats.length){toast('Sélectionnez au moins un service');break;}if(!/^\d{14}$/.test((f.siret||'').replace(/\s/g,''))){toast('Un SIRET valide (14 chiffres) est requis');break;}if(!f.insuranceDoc){toast('Joignez votre attestation d’assurance');break;}S.adminArtisans=S.adminArtisans.filter(x=>x.id!=='self');S.adminArtisans.unshift({id:'self',name:f.name||'Nouveau prestataire',status:'attente',type:'entreprise',cats:f.cats.slice(),rate:parseInt(f.rate,10)||30,siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,rating:0,jobs:0,zone:'—'});S.proStatus='pending';render();break;}
+      case 'pro-submit':{const f=S.proForm;if(!f.cats.length){toast('Sélectionnez au moins un service');break;}if(!/^\d{14}$/.test((f.siret||'').replace(/\s/g,''))){toast('Un SIRET valide (14 chiffres) est requis');break;}if(!f.insuranceDoc){toast('Joignez votre attestation d’assurance');break;}if(!f.mandat){toast('Acceptez le mandat de facturation pour continuer');break;}S.adminArtisans=S.adminArtisans.filter(x=>x.id!=='self');S.adminArtisans.unshift({id:'self',name:f.name||'Nouveau prestataire',status:'attente',type:'entreprise',cats:f.cats.slice(),rate:parseInt(f.rate,10)||30,siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,rating:0,jobs:0,zone:'—',phone:f.phone||'',email:''});S.proStatus='pending';render();break;}
       case 'pro-approve':S.proStatus='approved';if(S.proForm.name)S.proName=S.proForm.name;if(S.proForm.cats.length)S.proCats=S.proForm.cats.slice();if(S.proForm.rate)S.proRate=parseInt(S.proForm.rate,10)||S.proRate;S.proStatusType='entreprise';S.proSiret=(S.proForm.siret||'').replace(/\s/g,'');S.proBio=S.proForm.bio||'';S.proInsured=!!S.proForm.insuranceDoc;if(S.proForm.insurer)S.proInsurer=S.proForm.insurer;render();toast('Profil validé — bienvenue sur Ti-Services !');break;
       case 'pro-accept':{const m=S.mission;m.provider=Object.assign({},PROVIDERS[m.svc]);m.status='accepted';const r=totals(m).rate;const amt=totals(m).total;const freq=m.frequency||'ponctuelle';const labels=occLabels(freq);const entries=labels.map(d=>({day:d,slot:m.slot,svc:m.svc,client:'Camille M.',zone:m.zone,duration:m.duration,rate:r,amount:amt,status:'upcoming'}));m._appt=entries[0];entries.slice().reverse().forEach(e=>S.agenda.unshift(e));if(freq!=='ponctuelle'){S.recurring.unshift({svc:m.svc,svcName:m.svcName,short:freqInfo(freq).short,slot:m.slot,zone:m.zone});}if(!m.chat||!m.chat.length)m.chat=[{from:'pro',text:'Bonjour Camille ! Bien reçu votre demande, je serai là à '+m.slot+'. À tout à l’heure 👋'}];render();toast(labels.length>1?'Prestation récurrente ajoutée à votre agenda !':'Mission remportée — ajoutée à votre agenda !');break;}
       case 'pro-decline':S.mission.status='searching';render();setTimeout(()=>{if(S.mission&&S.mission.status==='searching'){S.mission.status='pending';render();}},1400);toast('Mission passée — proposée aux autres');break;
@@ -1043,7 +1115,7 @@
     const cd=e.target.closest('[data-cfdate]');if(cd&&S.draft){S.draft.dateISO=cd.value;S.draft.when=fmtDate(cd.value);renderConfig();}
     const ct=e.target.closest('[data-cftime]');if(ct&&S.draft&&ct.value){S.draft.slot=ct.value;}
   });
-  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,chat:false,advantages:false,referral:false,fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,proStatus:'approved',proName:'Marie-Lou',proRate:35,proStatusType:'entreprise',proSiret:'',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false}});render();toast('Scénario réinitialisé');});
+  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,chat:false,advantages:false,referral:false,interv:false,invoiceId:null,proHistory:PRO_HISTORY(),fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,proStatus:'approved',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false}});render();toast('Scénario réinitialisé');});
 
   /* ---------- PWA: install + service worker ---------- */
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
@@ -1059,6 +1131,8 @@
   /* ---------- Bouton retour du téléphone : revient à l'écran précédent (ne quitte pas l'app) ---------- */
   function goBack(){
     if(S.advantages){S.advantages=false;render();return;}
+    if(S.invoiceId){S.invoiceId=null;render();return;}
+    if(S.interv){S.interv=false;render();return;}
     if(S.referral){S.referral=false;render();return;}
     if(S.chat){S.chat=false;render();return;}
     if(S.persona==='admin'){if(S.admin.view!=='home'){S.admin.view='home';S.admin.sel=null;render();}else{S.persona='client';render();}return;}
