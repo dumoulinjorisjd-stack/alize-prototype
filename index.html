@@ -403,8 +403,9 @@
   function occLabels(freq){if(freq==='hebdo')return ['Aujourd’hui','Semaine prochaine','Dans 2 semaines','Dans 3 semaines'];if(freq==='bihebdo')return ['Aujourd’hui','Dans 2 semaines','Dans 4 semaines'];if(freq==='mensuelle')return ['Aujourd’hui','Le mois prochain'];return ['Aujourd’hui'];}
   const PLACEHOLDERS={menage:'Ex. 2 chambres + cuisine, produits fournis.',baby:'Ex. garde de 2 enfants (4 et 6 ans), sortie d’école.',jardin:'Ex. tondre 200 m² et tailler une haie.',repassage:'Ex. 2 paniers de linge, chemises comprises.',bricolage:'Ex. monter une étagère IKEA et fixer 2 cadres au mur.',cuisine:'Ex. repas pour 4, cuisine créole.',demenagement:'Ex. studio, 15 cartons + 1 canapé, 2e étage sans ascenseur.',info:'Ex. configurer une box internet + imprimante wifi.',animaux:'Ex. promener un chien 2×/jour ce week-end.'};
   const AVG_SEED=()=>{const o={};SERVICES.forEach(s=>{o[s.id]={sum:s.rate*24,n:24};});return o;};
+  const FLOORS_INIT=()=>{const o={};SERVICES.forEach(s=>{o[s.id]=Math.round(s.rate*0.7);});return o;};
   function svcBase(id){const s=SERVICES.find(x=>x.id===id);return s?s.rate:30;}
-  function svcFloor(id){return Math.round(svcBase(id)*0.7);}
+  function svcFloor(id){const f=S.floors&&S.floors[id];return (f!=null)?f:Math.round(svcBase(id)*0.7);}
   function svcReco(id){const a=S.avgOffers&&S.avgOffers[id];return a?Math.round(a.sum/a.n):svcBase(id);}
   const ADMIN_ARTS=()=>[
     {id:'a1',name:'Marie-Lou Cagan',status:'valide',type:'entreprise',cats:['menage','repassage'],rate:35,siret:'80412578900014',insured:true,rating:4.9,jobs:214,zone:'Gustavia',phone:'+590690112233',email:'marie-lou.cagan@example.com'},
@@ -469,14 +470,14 @@
     proStatus:'approved',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false},
     proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],
     proHistory:PRO_HISTORY(),
-    agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),
+    agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),
     chat:false,advantages:false,referral:false,interv:false,invoiceId:null,
     proJobsTotal:214,fidTiers:FID_TIERS.map(t=>({...t})),referralCode:'MARILOU-SBH',
     filleuls:[{name:'Kevin Questel',status:'valide',bonus:40},{name:'Rosa Almeida',status:'attente',bonus:0}],
     admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,
     avail:{lun:{m:1,a:1,s:0},mar:{m:1,a:1,s:0},mer:{m:1,a:1,s:1},jeu:{m:1,a:1,s:0},ven:{m:1,a:1,s:1},sam:{m:1,a:0,s:0},dim:{m:0,a:0,s:0}}
   };
-  function newMission(svc){return {svc:svc.id,svcName:svc.nm,rate:svcReco(svc.id),frequency:'ponctuelle',duration:3,zone:'Gustavia',address:'Villa Colibri, Gustavia',geo:null,notes:'',when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',slotMode:null,status:'draft',provider:null,rating:0,competitors:0,chat:[]};}
+  function newMission(svc){return {svc:svc.id,svcName:svc.nm,rate:Math.max(svcFloor(svc.id),svcReco(svc.id)),frequency:'ponctuelle',duration:3,zone:'Gustavia',address:'Villa Colibri, Gustavia',geo:null,notes:'',when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',slotMode:null,status:'draft',provider:null,rating:0,competitors:0,chat:[]};}
   function totals(m){const rate=m.rate;const sub=rate*m.duration;return {rate,sub,commission:0,payout:sub,total:sub};}
   const eur=(n)=>n.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
   const fmtDate=(iso)=>{if(!iso)return 'Aujourd’hui';const p=iso.split('-');return p[2]+'/'+p[1];};
@@ -553,6 +554,9 @@
       <div style="height:16px"></div><span class="eyebrow">Barème de commission · fidélité</span>
       <div class="card" style="padding:14px;margin-top:10px"><p class="mini" style="margin:0 0 4px;color:var(--muted)">Plus l'artisan réalise de missions, plus la commission baisse. Visible ici uniquement — jamais côté client/artisan (le % figure dans les CGU).</p>
       ${fidTiers().map(t=>`<div class="row between" style="margin-top:10px;align-items:center"><span class="sub" style="display:flex;align-items:center;gap:7px"><span class="chip" style="padding:3px 9px;background:${fidColor(t.key)}22;color:${fidColor(t.key)}">★ ${t.nm}</span>dès ${t.min} missions</span><span class="row" style="gap:8px;align-items:center"><button class="btn ghost sm" style="width:36px;padding:7px 0" data-adm="fiddown:${t.key}">−</button><b class="money" style="min-width:44px;text-align:center">${t.pct} %</b><button class="btn ghost sm" style="width:36px;padding:7px 0" data-adm="fidup:${t.key}">+</button></span></div>`).join('')}</div>
+      <div style="height:16px"></div><span class="eyebrow">Tarifs planchers par service</span>
+      <div class="card" style="padding:14px;margin-top:10px"><p class="mini" style="margin:0 0 4px;color:var(--muted)">Montant horaire minimum que le client peut proposer, par service. En dessous, l'offre est refusée. Le client voit ce minimum dans le formulaire.</p>
+      ${SERVICES.map(s=>`<div class="row between" style="margin-top:10px;align-items:center"><span class="sub" style="display:flex;align-items:center;gap:8px"><span style="display:inline-flex;width:26px;height:26px;border-radius:8px;background:var(--teal-wash);color:var(--teal-deep);align-items:center;justify-content:center">${I[s.id]}</span>${s.nm}</span><span class="row" style="gap:8px;align-items:center"><button class="btn ghost sm" style="width:36px;padding:7px 0" data-adm="floordown:${s.id}">−</button><b class="money" style="min-width:58px;text-align:center">${svcFloor(s.id)} €/h</b><button class="btn ghost sm" style="width:36px;padding:7px 0" data-adm="floorup:${s.id}">+</button></span></div>`).join('')}</div>
       <div style="height:16px"></div><span class="eyebrow">Candidatures à traiter${q.length?' · '+q.length:''}</span>${queue}
       <div style="height:18px"></div><span class="eyebrow">Réservations en cours · ${allB.length}</span><p class="mini" style="margin:6px 0 2px;color:var(--muted)">Cycle&nbsp;: Recherche d'artisan → Acceptée → En cours → À valider par le client → Réglée → Terminée.</p>${bookings}
       <div style="height:18px"></div><span class="eyebrow">Fiches artisans · ${activeArts.length}</span>${artList}
@@ -1025,6 +1029,8 @@
       else if(act==='valid-cli'){const cc=S.adminClients.find(x=>x.id===id);if(cc)cc.status='valide';toast('Client validé');}
       else if(act==='fidup'){const t=fidTiers().find(x=>x.key===id);if(t)t.pct=Math.min(30,t.pct+1);}
       else if(act==='fiddown'){const t=fidTiers().find(x=>x.key===id);if(t)t.pct=Math.max(1,t.pct-1);}
+      else if(act==='floorup'){S.floors[id]=Math.min(200,svcFloor(id)+1);}
+      else if(act==='floordown'){S.floors[id]=Math.max(5,svcFloor(id)-1);}
       render();return;}
     if(b.dataset.cnav){S.advantages=false;S.chat=false;S.referral=false;S.interv=false;S.invoiceId=null;S.clientNav=b.dataset.cnav;render();return;}
     if(b.dataset.pnav){S.advantages=false;S.chat=false;S.referral=false;S.interv=false;S.invoiceId=null;S.proNav=b.dataset.pnav;render();return;}
@@ -1115,7 +1121,7 @@
     const cd=e.target.closest('[data-cfdate]');if(cd&&S.draft){S.draft.dateISO=cd.value;S.draft.when=fmtDate(cd.value);renderConfig();}
     const ct=e.target.closest('[data-cftime]');if(ct&&S.draft&&ct.value){S.draft.slot=ct.value;}
   });
-  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,chat:false,advantages:false,referral:false,interv:false,invoiceId:null,proHistory:PRO_HISTORY(),fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,proStatus:'approved',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false}});render();toast('Scénario réinitialisé');});
+  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,chat:false,advantages:false,referral:false,interv:false,invoiceId:null,proHistory:PRO_HISTORY(),fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,proStatus:'approved',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false}});render();toast('Scénario réinitialisé');});
 
   /* ---------- PWA: install + service worker ---------- */
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
