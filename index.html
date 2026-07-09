@@ -466,7 +466,7 @@
 
   const S={
     persona:'client',clientNav:'home',proNav:'home',onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},
-    card:null,payStep:false,payEdit:false,finishing:false,disputing:false,mission:null,draft:null,
+    card:null,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,mission:null,draft:null,
     proStatus:'approved',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false},
     proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],
     proHistory:PRO_HISTORY(),
@@ -477,7 +477,7 @@
     admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,
     avail:{lun:{m:1,a:1,s:0},mar:{m:1,a:1,s:0},mer:{m:1,a:1,s:1},jeu:{m:1,a:1,s:0},ven:{m:1,a:1,s:1},sam:{m:1,a:0,s:0},dim:{m:0,a:0,s:0}}
   };
-  function newMission(svc){return {svc:svc.id,svcName:svc.nm,rate:Math.max(svcFloor(svc.id),svcReco(svc.id)),finalHours:null,disputeMsg:null,frequency:'ponctuelle',duration:3,zone:'Gustavia',address:'Villa Colibri, Gustavia',geo:null,notes:'',when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',slotMode:null,status:'draft',provider:null,rating:0,competitors:0,chat:[]};}
+  function newMission(svc){return {svc:svc.id,svcName:svc.nm,rate:Math.max(svcFloor(svc.id),svcReco(svc.id)),finalHours:null,disputeMsg:null,frequency:'ponctuelle',duration:3,zone:'Gustavia',address:'Villa Colibri, Gustavia',geo:null,notes:'',when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',slotMode:null,status:'draft',provider:null,rating:0,competitors:0,chat:[],support:{client:[],pro:[]}};}
   function billHours(m){return (m.finalHours!=null)?m.finalHours:m.duration;}
   function totals(m){const rate=m.rate;const h=billHours(m);const sub=rate*h;return {rate,sub,hours:h,commission:0,payout:sub,total:sub};}
   function finalizePaid(m){const tt=totals(m);m.status='paid';S.proEarnings+=tt.payout;if(m._appt){m._appt.status='done';m._appt.duration=billHours(m);m._appt.amount=tt.payout;}S.proHistory=S.proHistory||[];const seq='2026-'+String(43+S.proHistory.length).padStart(4,'0');S.proHistory.unshift({id:'hm'+S.proHistory.length,dateISO:(m.dateISO||new Date().toISOString().slice(0,10)),svc:m.svc,client:'Camille M.',clientFull:'Camille Magras',clientZone:m.zone,duration:billHours(m),rate:tt.rate,amount:tt.payout,invNo:seq,paidVia:'carte'});}
@@ -504,6 +504,7 @@
     if(S.draft&&S.payStep)return 'client:pay:'+(S.payEdit?'edit':'saved');
     if(S.persona==='pro'&&S.finishing)return 'pro:finish';
     if(S.persona==='client'&&S.disputing)return 'client:dispute';
+    if(S.support)return S.persona+':support:'+(S.supportSide||S.persona);
     if(S.persona==='admin')return 'admin:'+S.admin.view+':'+(S.admin.sel||'');
     if(S.persona==='pro')return 'pro:'+S.proStatus+':'+S.proNav+':'+(S.mission?S.mission.status:'');
     if(!S.onboarded)return 'onb:'+S.onbStep;
@@ -522,7 +523,7 @@
 
   /* ---------- CLIENT ---------- */
   /* ---------- ADMIN ---------- */
-  function renderAdmin(){if(S.admin.view==='art')return adminFiche('art');if(S.admin.view==='cli')return adminFiche('cli');return adminHome();}
+  function renderAdmin(){if(S.support&&S.mission)return supportChat();if(S.admin.view==='art')return adminFiche('art');if(S.admin.view==='cli')return adminFiche('cli');return adminHome();}
   function catNames(cats){return cats.map(c=>{const s=SERVICES.find(x=>x.id===c);return s?s.nm:c;}).join(', ');}
   function inits(n){return n.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();}
   function adminHome(){
@@ -552,6 +553,8 @@
     const artList=activeArts.map(a=>{const c=acctChip(a.status);return `<button class="card" style="padding:12px;margin-top:8px;width:100%;text-align:left;display:block" data-adm="art:${a.id}"><div class="row between"><b style="font-size:14px">${a.name}</b><span class="chip ${c[0]}" style="padding:3px 9px">${c[1]}</span></div><div class="mini" style="margin-top:2px">${catNames(a.cats)} · ${a.rate} €/h · ${a.zone}</div></button>`;}).join('');
     const cliList=clis.map(cc=>{const c=acctChip(cc.status);return `<button class="card" style="padding:12px;margin-top:8px;width:100%;text-align:left;display:block" data-adm="cli:${cc.id}"><div class="row between"><b style="font-size:14px">${cc.name}</b><span class="chip ${c[0]}" style="padding:3px 9px">${c[1]}</span></div><div class="mini" style="margin-top:2px">${cc.zone} · ${cc.bookings} réservations</div></button>`;}).join('');
     const refList=refA.map(a=>`<div class="card" style="padding:12px;margin-top:8px;border-left:4px solid var(--hair)"><div class="row between"><b style="font-size:14px">${a.name}</b><span class="chip grey" style="padding:3px 9px">Refusé</span></div><div class="mini" style="margin-top:2px">${catNames(a.cats)} · ${a.zone}</div>${a.reason?`<p class="mini" style="margin-top:5px;color:var(--coral-deep)">Motif&nbsp;: ${a.reason}</p>`:''}${contactRow(a)}<div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost sm" data-adm="reexam-art:${a.id}">Réexaminer</button><button class="btn ghost sm" data-adm="art:${a.id}">Fiche</button></div></div>`).join('');
+    const sm=S.mission;const supBlocks=[];
+    if(sm&&sm.support){['client','pro'].forEach(side=>{const th=sm.support[side];if(th&&th.length){const last=th[th.length-1];const who=side==='client'?'Camille Magras':(sm.provider?sm.provider.nm:'Artisan');const needReply=last.from!=='admin';supBlocks.push(`<button class="card" data-adm="support:${side}" style="padding:13px;margin-top:9px;width:100%;text-align:left;display:block;border-left:4px solid ${needReply?'var(--coral)':'var(--good)'}"><div class="row between"><b style="font-size:14px">${who}</b><span class="chip ${needReply?'coral':'good'}" style="padding:3px 9px">${needReply?'À répondre':'Répondu'}</span></div><div class="mini" style="margin-top:3px">${sm.svcName} · ${sm.when} ${sm.slot}</div><div class="mini" style="margin-top:4px;color:var(--ink-soft)">« ${esc(last.text).slice(0,64)} »</div></button>`);}});}
     return `<div class="pad">
       <div class="row between" style="margin-top:10px"><div><span class="eyebrow">Console admin · Ti-Services</span><div class="h-hello">Tableau de bord</div></div><div class="avatar" style="background:linear-gradient(135deg,var(--ink),#000)">TS</div></div>
       <div class="row" style="gap:9px;margin-top:12px">${stat('En cours',allB.length,'réservations')}${stat('Artisans',validA,pendA.length+' en attente')}${stat('Clients',clis.length,pendC.length+' en attente')}</div>
@@ -565,6 +568,7 @@
         ${S.mission.disputeMsg?`<div class="banner teal" style="margin-top:10px">💬<span>« ${esc(S.mission.disputeMsg)} »</span></div>`:''}
         <div class="row" style="gap:8px;margin-top:11px"><button class="btn good sm" data-adm="dispute-accept">Valider la modification</button><button class="btn ghost sm" data-adm="dispute-revert">Revenir à l'accord initial</button></div>
       </div>`:''}
+      ${supBlocks.length?`<div style="height:16px"></div><span class="eyebrow">Messages support · ${supBlocks.length}</span>${supBlocks.join('')}`:''}
       <div style="height:16px"></div><span class="eyebrow">Barème de commission · fidélité</span>
       <div class="card" style="padding:14px;margin-top:10px"><p class="mini" style="margin:0 0 4px;color:var(--muted)">Plus l'artisan réalise de missions, plus la commission baisse. Visible ici uniquement — jamais côté client/artisan (le % figure dans les CGU).</p>
       ${fidTiers().map(t=>`<div class="row between" style="margin-top:10px;align-items:center"><span class="sub" style="display:flex;align-items:center;gap:7px"><span class="chip" style="padding:3px 9px;background:${fidColor(t.key)}22;color:${fidColor(t.key)}">★ ${t.nm}</span>dès ${t.min} missions</span><span class="row" style="gap:8px;align-items:center"><button class="btn ghost sm" style="width:36px;padding:7px 0" data-adm="fiddown:${t.key}">−</button><b class="money" style="min-width:44px;text-align:center">${t.pct} %</b><button class="btn ghost sm" style="width:36px;padding:7px 0" data-adm="fidup:${t.key}">+</button></span></div>`).join('')}</div>
@@ -615,6 +619,7 @@
   function chatName(){return S.persona==='client'?(S.mission&&S.mission.provider?S.mission.provider.nm.split(' ')[0]:'votre artisan'):'Camille M.';}
   function chatInits(){return S.persona==='client'?(S.mission&&S.mission.provider?S.mission.provider.ini:'··'):'CM';}
   function sendChat(){const el=document.getElementById('chatInput');if(!el||!S.mission)return;const v=el.value.trim();if(!v)return;S.mission.chat=S.mission.chat||[];S.mission.chat.push({from:S.persona,text:v});render();}
+  function sendSupport(){const el=document.getElementById('supportInput');if(!el||!S.mission)return;const v=el.value.trim();if(!v)return;const admin=(S.persona==='admin');const side=admin?(S.supportSide||'client'):S.persona;S.mission.support=S.mission.support||{client:[],pro:[]};if(!S.mission.support[side])S.mission.support[side]=[];S.mission.support[side].push({from:admin?'admin':side,text:v});render();view.scrollTop=view.scrollHeight;}
   function chatScreen(){
     const m=S.mission,other=chatName();
     const msgs=m.chat||[];
@@ -625,6 +630,23 @@
       <div class="chat-msgs">${list}</div>
       <button class="btn ghost sm" data-act="masked-call" style="margin-top:12px">${I.phone}&nbsp;Appeler (numéro masqué)</button>
       <div class="chatbar"><input id="chatInput" placeholder="Écrire à ${other}…" autocomplete="off" maxlength="500"><button class="btn primary" data-act="chat-send">Envoyer</button></div>
+      <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--hair)"><p class="mini" style="margin-bottom:8px;color:var(--muted)">Un souci, un litige, une question sur cette prestation&nbsp;?</p>
+        <button class="btn ghost sm" data-act="open-support" style="justify-content:flex-start;gap:8px">${I.shield}&nbsp;Contacter Ti-Services (support)${(()=>{const th=(m.support&&m.support[S.persona])||[];return th.length?` · ${th.length}`:'';})()}</button></div>
+      <div style="height:6px"></div></div>`;
+  }
+  function supportChat(){
+    const m=S.mission;if(!m)return S.persona==='admin'?adminHome():(S.persona==='pro'?proHome():clientHome());
+    const admin=(S.persona==='admin');
+    const side=admin?(S.supportSide||'client'):S.persona;
+    const thread=(m.support&&m.support[side])||[];
+    const whoLbl=side==='client'?'Camille M.':(m.provider?m.provider.nm:'artisan');
+    const list=thread.length?thread.map(x=>{const mine=admin?(x.from==='admin'):(x.from===side);return `<div class="bub ${mine?'me':'them'}">${esc(x.text)}</div>`;}).join(''):`<p class="mini" style="text-align:center;color:var(--muted);margin:auto 0">${admin?'Aucun message pour l’instant.':'Écrivez à Ti-Services à propos de cette prestation.'}</p>`;
+    return `<div class="pad"><button class="reset" data-act="close-support" style="margin:8px 0 2px">← Retour</button>
+      <div class="row" style="gap:11px;align-items:center;margin-top:2px"><div class="avatar" style="width:42px;height:42px;font-size:14px;background:linear-gradient(135deg,var(--teal),var(--teal-deep))">TS</div><div style="flex:1"><b style="font-size:16px;font-family:var(--f-disp)">Ti-Services · Support</b><div class="mini">${admin?('Échange avec le '+(side==='client'?'client':'artisan')):'Assistance Ti-Services'}</div></div></div>
+      <div class="banner teal" style="margin-top:12px">${I.shield}<span>À propos de&nbsp;: <b>${m.svcName}</b> · ${m.when} ${m.slot}${admin?` · ${whoLbl}`:''}. ${admin?'Vous voyez directement la prestation concernée.':'Ti-Services voit directement de quelle prestation il s’agit — pas besoin de tout réexpliquer.'}</span></div>
+      <div class="chat-msgs">${list}</div>
+      <div class="chatbar"><input id="supportInput" placeholder="${admin?'Répondre…':'Écrire à Ti-Services…'}" autocomplete="off" maxlength="500"><button class="btn primary" data-act="support-send">Envoyer</button></div>
+      <p class="mini" style="text-align:center;margin-top:12px"><button class="linklike" data-act="${admin?'support-to-user':'support-to-admin'}">${admin?('🧑 Voir côté '+(side==='client'?'client':'artisan')+' (démo)'):'⚙︎ Voir la réception côté Ti-Services (démo)'}</button></p>
       <div style="height:6px"></div></div>`;
   }
   function advantagesScreen(){
@@ -657,6 +679,7 @@
     const m=S.mission;
     if(!S.onboarded)return clientOnboard();
     if(S.advantages)return advantagesScreen();
+    if(S.support&&m)return supportChat();
     if(S.chat&&m)return chatScreen();
     if(S.draft&&S.payStep)return clientPay();
     if(m){switch(m.status){
@@ -840,6 +863,7 @@
     if(S.proStatus==='signup')return proSignup();
     if(S.proStatus==='pending')return proPending();
     if(S.advantages)return advantagesScreen();
+    if(S.support&&S.mission)return supportChat();
     if(S.invoiceId)return proInvoice();
     if(S.interv)return proInterventions();
     if(S.referral)return proReferral();
@@ -1087,7 +1111,8 @@
     if(!b)return;
     if(b.dataset.persona){go(b.dataset.persona);return;}
     if(b.dataset.adm){const parts=b.dataset.adm.split(':'),act=parts[0],id=parts[1];
-      if(act==='quit'){S.persona='client';S.admin.view='home';S.admin.sel=null;}
+      if(act==='quit'){S.persona='client';S.admin.view='home';S.admin.sel=null;S.support=false;S.supportSide=null;}
+      else if(act==='support'){S.support=true;S.supportSide=id;render();view.scrollTop=view.scrollHeight;return;}
       else if(act==='home'){S.admin.view='home';S.admin.sel=null;}
       else if(act==='art'){S.admin.view='art';S.admin.sel=id;}
       else if(act==='cli'){S.admin.view='cli';S.admin.sel=id;}
@@ -1102,8 +1127,8 @@
       else if(act==='dispute-accept'){if(S.mission&&S.mission.status==='disputed'){finalizePaid(S.mission);toast('Modification validée — prestation réglée');}}
       else if(act==='dispute-revert'){if(S.mission&&S.mission.status==='disputed'){S.mission.finalHours=S.mission.duration;finalizePaid(S.mission);toast('Retour à l’accord initial — prestation réglée');}}
       render();return;}
-    if(b.dataset.cnav){S.advantages=false;S.chat=false;S.referral=false;S.interv=false;S.invoiceId=null;S.clientNav=b.dataset.cnav;render();return;}
-    if(b.dataset.pnav){S.advantages=false;S.chat=false;S.referral=false;S.interv=false;S.invoiceId=null;S.proNav=b.dataset.pnav;render();return;}
+    if(b.dataset.cnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.invoiceId=null;S.clientNav=b.dataset.cnav;render();return;}
+    if(b.dataset.pnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.invoiceId=null;S.proNav=b.dataset.pnav;render();return;}
     if(b.dataset.svc){const svc=SERVICES.find(s=>s.id===b.dataset.svc);S.draft=newMission(svc);renderConfig();return;}
     if(b.dataset.av){const[d,bl]=b.dataset.av.split(':');S.avail[d][bl]=S.avail[d][bl]?0:1;render();return;}
     if(b.dataset.atab){S.agendaTab=b.dataset.atab;render();return;}
@@ -1147,6 +1172,11 @@
       case 'close-chat':S.chat=false;render();break;
       case 'chat-send':sendChat();view.scrollTop=view.scrollHeight;break;
       case 'masked-call':toast('Appel routé par Ti-Services — numéro réel masqué (démo)');break;
+      case 'open-support':S.support=true;render();view.scrollTop=view.scrollHeight;break;
+      case 'close-support':S.support=false;if(S.persona==='admin')S.supportSide=null;render();break;
+      case 'support-send':sendSupport();break;
+      case 'support-to-admin':S.support=true;S.supportSide=(S.persona==='pro'?'pro':'client');S.persona='admin';S.admin.view='home';S.admin.sel=null;render();break;
+      case 'support-to-user':{const side=S.supportSide||'client';S.support=false;S.supportSide=null;S.persona=(side==='pro'?'pro':'client');render();break;}
       case 'show-advantages':S.advantages=true;render();break;
       case 'close-advantages':S.advantages=false;render();break;
       case 'open-referral':S.referral=true;render();break;
@@ -1194,6 +1224,7 @@
   }
   view.addEventListener('keydown',(e)=>{
     if(e.key==='Enter'&&e.target.id==='chatInput'){e.preventDefault();sendChat();view.scrollTop=view.scrollHeight;}
+    if(e.key==='Enter'&&e.target.id==='supportInput'){e.preventDefault();sendSupport();}
   });
   view.addEventListener('input',(e)=>{
     const t=e.target.closest('[data-cfg="notes"]');if(t&&S.draft)S.draft.notes=t.value;
@@ -1203,7 +1234,7 @@
     const cd=e.target.closest('[data-cfdate]');if(cd&&S.draft){S.draft.dateISO=cd.value;S.draft.when=fmtDate(cd.value);renderConfig();}
     const ct=e.target.closest('[data-cftime]');if(ct&&S.draft&&ct.value){S.draft.slot=ct.value;}
   });
-  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,card:null,payStep:false,payEdit:false,finishing:false,disputing:false,chat:false,advantages:false,referral:false,interv:false,invoiceId:null,proHistory:PRO_HISTORY(),fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,proStatus:'approved',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false}});render();toast('Scénario réinitialisé');});
+  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,card:null,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,chat:false,advantages:false,referral:false,interv:false,invoiceId:null,proHistory:PRO_HISTORY(),fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,proStatus:'approved',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false}});render();toast('Scénario réinitialisé');});
 
   /* ---------- PWA: install + service worker ---------- */
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
@@ -1224,6 +1255,7 @@
     if(S.referral){S.referral=false;render();return;}
     if(S.chat){S.chat=false;render();return;}
     if(S.persona==='admin'){if(S.admin.view!=='home'){S.admin.view='home';S.admin.sel=null;render();}else{S.persona='client';render();}return;}
+    if(S.support){S.support=false;if(S.persona==='admin')S.supportSide=null;render();return;}
     if(S.finishing){S.finishing=false;render();return;}
     if(S.disputing){S.disputing=false;render();return;}
     if(S.persona==='pro'){
