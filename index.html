@@ -408,8 +408,8 @@
   const AVG_SEED=()=>{const o={};SERVICES.forEach(s=>{o[s.id]={sum:s.rate*24,n:24};});return o;};
   const FLOORS_INIT=()=>{const o={};SERVICES.forEach(s=>{o[s.id]=Math.round(s.rate*0.7);});return o;};
   const ADDRESSES_INIT=()=>[
-    {id:'ad1',label:'Villa Colibri',address:'Villa Colibri, Gustavia',zone:'Gustavia',geo:{lat:17.89620,lng:-62.84980}},
-    {id:'ad2',label:'Villa Sereno',address:'Villa Sereno, Flamands',zone:'Flamands',geo:{lat:17.92100,lng:-62.85900}}
+    {id:'ad1',label:'Villa Colibri',address:'Villa Colibri, Gustavia',zone:'Gustavia',geo:{lat:17.89620,lng:-62.84980},access:'Code portail 4521 · chat à la maison · clé sous le pot à droite'},
+    {id:'ad2',label:'Villa Sereno',address:'Villa Sereno, Flamands',zone:'Flamands',geo:{lat:17.92100,lng:-62.85900},access:''}
   ];
   /* --- Conciergerie : carnet de clients (chacun paie avec SA carte) --- */
   const CONCIERGE_CLIENTS=()=>[
@@ -495,7 +495,7 @@
     admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,
     avail:{lun:{m:1,a:1,s:0},mar:{m:1,a:1,s:0},mer:{m:1,a:1,s:1},jeu:{m:1,a:1,s:0},ven:{m:1,a:1,s:1},sam:{m:1,a:0,s:0},dim:{m:0,a:0,s:0}}
   };
-  function newMission(svc){const a=S.addresses.find(x=>x.id===S.addrDefault)||S.addresses[0]||null;return {svc:svc.id,svcName:svc.nm,rate:Math.max(svcFloor(svc.id),svcReco(svc.id)),finalHours:null,disputeMsg:null,frequency:'ponctuelle',duration:3,zone:a?a.zone:'Gustavia',address:a?a.address:'',addressId:a?a.id:'__manual',geo:a?a.geo:null,notes:'',when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',slotMode:null,status:'draft',provider:null,rating:0,competitors:0,chat:[],support:{client:[],pro:[]}};}
+  function newMission(svc){const a=S.addresses.find(x=>x.id===S.addrDefault)||S.addresses[0]||null;return {svc:svc.id,svcName:svc.nm,rate:Math.max(svcFloor(svc.id),svcReco(svc.id)),finalHours:null,disputeMsg:null,frequency:'ponctuelle',duration:3,zone:a?a.zone:'Gustavia',address:a?a.address:'',addressId:a?a.id:'__manual',geo:a?a.geo:null,access:a?(a.access||''):'',notes:'',when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',slotMode:null,status:'draft',provider:null,rating:0,competitors:0,chat:[],support:{client:[],pro:[]}};}
   function billHours(m){return (m.finalHours!=null)?m.finalHours:m.duration;}
   function totals(m){const rate=m.rate;const h=billHours(m);const sub=rate*h;return {rate,sub,hours:h,commission:0,payout:sub,total:sub};}
   function finalizePaid(m){const tt=totals(m);m.status='paid';S.proEarnings+=tt.payout;if(m._appt){m._appt.status='done';m._appt.duration=billHours(m);m._appt.amount=tt.payout;}S.proHistory=S.proHistory||[];const seq='2026-'+String(43+S.proHistory.length).padStart(4,'0');S.proHistory.unshift({id:'hm'+S.proHistory.length,dateISO:(m.dateISO||new Date().toISOString().slice(0,10)),svc:m.svc,client:'Camille M.',clientFull:'Camille Magras',clientZone:m.zone,duration:billHours(m),rate:tt.rate,amount:tt.payout,invNo:seq,paidVia:'carte'});}
@@ -699,7 +699,7 @@
   }
   /* ================= CONCIERGERIE (module add-on) ================= */
   function concClient(id){return S.concClients.find(x=>x.id===id);}
-  function concStatus(s){return {searching:['coral','Recherche artisan'],planned:['good','Planifiée'],done:['warn','À valider'],paid:['good','Réglée']}[s]||['grey',s];}
+  function concStatus(s){return {searching:['coral','Recherche artisan'],planned:['good','Planifiée'],done:['good','Validation auto'],issue:['coral','Souci signalé'],paid:['good','Réglée']}[s]||['grey',s];}
   function conciergeNavbar(){
     const item=(id,ic,lbl)=>`<button data-cnav2="${id}" class="${S.concNav===id&&!S.concOrder&&!S.concView?'on':''}"><span class="nb-ic">${ic}</span>${lbl}</button>`;
     return `<div class="navbar">${item('home',I.home,'Accueil')}${item('clients',I.user,'Clients')}${item('retrib',I.wallet,'Rétribution')}</div>`;
@@ -738,7 +738,7 @@
     return `<div class="pad"><div class="row between" style="margin-top:10px"><div><span class="eyebrow">🛎️ Conciergerie</span><div class="h-hello">Vos commandes</div></div><div class="avatar" style="background:linear-gradient(135deg,var(--teal),var(--teal-deep))">CG</div></div>
       <div class="row" style="gap:9px;margin-top:12px">${stat('Clients',clients.length,clients.filter(c=>c.authorized).length+' actifs')}${stat('En cours',inProg,'commandes')}${stat('Apport',eur(S.concEarn),'ce mois')}</div>
       <div style="margin-top:14px"><button class="btn primary" data-act="conc-new">＋ Nouvelle commande</button></div>
-      ${(()=>{const dv=orders.filter(o=>o.status==='done');return dv.length?`<div style="height:16px"></div><span class="eyebrow" style="color:var(--warn)">À valider · ${dv.length}</span>${dv.map(o=>{const sv=SERVICES.find(s=>s.id===o.svc);return `<div class="card" style="padding:13px;margin-top:9px;border-left:4px solid var(--warn)"><div class="row between"><b style="font-size:14px">${sv?sv.nm:o.svcName}</b><span class="mini">${eur(o.amount)}</span></div><div class="mini" style="margin-top:3px">${o.clientName} · ${o.artisan||''}</div><div class="row" style="gap:8px;margin-top:9px"><button class="btn good sm" style="width:auto;padding:8px 14px" data-act="conc-quickvalidate:${o.id}">${I.check} Valider</button><button class="btn ghost sm" style="width:auto;padding:8px 14px" data-act="conc-view:${o.id}">Détail</button></div></div>`;}).join('')}`:'';})()}
+      ${(()=>{const dv=orders.filter(o=>o.status==='issue');return dv.length?`<div style="height:16px"></div><span class="eyebrow" style="color:var(--coral-deep)">À traiter · exceptions · ${dv.length}</span>${dv.map(o=>{const sv=SERVICES.find(s=>s.id===o.svc);return `<div class="card" style="padding:13px;margin-top:9px;border-left:4px solid var(--coral)"><div class="row between"><b style="font-size:14px">${sv?sv.nm:o.svcName}</b><span class="chip coral" style="padding:3px 9px">Souci signalé</span></div><div class="mini" style="margin-top:3px">${o.clientName} · ${eur(o.amount)}</div><div class="row" style="gap:8px;margin-top:9px"><button class="btn good sm" style="width:auto;padding:8px 14px" data-act="conc-quickvalidate:${o.id}">${I.check} Valider</button><button class="btn ghost sm" style="width:auto;padding:8px 14px" data-act="conc-view:${o.id}">Détail</button></div></div>`;}).join('')}`:'';})()}
       <div style="height:16px"></div><span class="eyebrow">Commandes</span>${ordList}
       <p class="mini" style="text-align:center;margin-top:16px"><button class="linklike" data-act="demo-go-client">🧑 Quitter la conciergerie (démo)</button></p>
       <div style="height:8px"></div></div>${conciergeNavbar()}`;
@@ -815,8 +815,9 @@
       <button class="btn ghost sm" data-act="conc-reorder:${o.id}" style="margin-top:12px">${I.check}&nbsp;Refaire cette commande</button>
       ${o.status==='searching'?`<div class="card" style="padding:16px;margin-top:12px;text-align:center"><div class="radar sm" style="height:80px"><div class="ring r1"></div><div class="ring r2"></div><div class="core">${I.search}</div></div><p class="sub" style="margin:0">Recherche d'un artisan disponible…</p></div>`:''}
       ${o.status==='planned'?`<div class="banner teal" style="margin-top:12px">${I.shield}<span>Prestation planifiée avec ${o.artisan}. Le client n'a rien à gérer.</span></div><div class="footcta" style="position:static;background:none;padding:14px 0 0"><button class="btn primary" data-act="conc-order-done">Prestation terminée (démo artisan)</button></div>`:''}
-      ${o.status==='done'?`<div class="banner teal" style="margin-top:12px">${I.shield}<span>L'artisan a signalé la prestation terminée. Validez au nom du client&nbsp;: débit et facture à son nom.</span></div><div class="footcta" style="position:static;background:none;padding:14px 0 0"><button class="btn good" data-act="conc-order-validate">${I.check} Valider · ${eur(o.amount)}</button></div>`:''}
-      ${o.status==='paid'?`<div class="banner teal" style="margin-top:12px">${I.shield}<span>Réglée sur la carte de ${o.clientName}. Facture ${o.invNo} à son nom. Commission d'apport ${eur(o.retro)} créditée.</span></div><button class="btn ghost sm" data-act="conc-invoice:${o.id}" style="margin-top:12px">${I.card} Facture au nom du client</button>`:''}
+      ${o.status==='done'?`<div class="card" style="padding:16px;margin-top:12px"><div class="row" style="gap:11px;align-items:center"><div class="radar sm" style="height:auto;width:auto"><div class="core" style="position:static;width:38px;height:38px">${I.check}</div></div><div style="flex:1"><b style="font-size:14.5px">Validation automatique en cours</b><div class="mini" style="margin-top:2px">Réglé au nom du client sous 24 h, sauf si vous signalez un souci. Vous n'avez rien à faire.</div></div></div></div><div class="footcta" style="position:static;background:none;padding:12px 0 0"><button class="btn ghost sm" data-act="conc-order-issue">Signaler un souci</button></div>`:''}
+      ${o.status==='issue'?`<div class="banner coral" style="margin-top:12px">${I.shield}<span>Souci signalé — validation automatique suspendue. Ti-Services vous recontacte pour trancher. Vous pouvez aussi valider malgré tout.</span></div><div class="footcta" style="position:static;background:none;padding:12px 0 0"><button class="btn good" data-act="conc-order-validate">${I.check} Valider malgré tout · ${eur(o.amount)}</button></div>`:''}
+      ${o.status==='paid'?`<div class="banner teal" style="margin-top:12px">${I.shield}<span>Réglée automatiquement sur la carte de ${o.clientName}. Facture ${o.invNo} à son nom. Commission d'apport ${eur(o.retro)} créditée.</span></div><button class="btn ghost sm" data-act="conc-invoice:${o.id}" style="margin-top:12px">${I.card} Facture au nom du client</button>`:''}
       <div style="height:8px"></div></div>`;
   }
   function conciergeInvoice(){
@@ -945,7 +946,8 @@
         <div class="field"><label>Nom du lieu</label><input class="txt" data-af="label" value="${esc(f.label)}" placeholder="Ex. Villa Colibri"></div>
         <div class="field"><label>Adresse / description</label><input class="txt" data-af="address" value="${esc(f.address)}" placeholder="Ex. Villa Colibri, Gustavia"></div>
         <div class="field"><label>Secteur</label><div class="segs">${ZONES.map(z=>`<button class="seg ${f.zone===z?'on':''}" data-afzone="${z}">${z}</button>`).join('')}</div></div>
-        <div class="field" style="margin:0"><label>Point GPS permanent</label><button class="btn ghost sm" data-act="addr-geo">📍 ${f.geo?'Actualiser ma position':'Enregistrer ma position actuelle'}</button>${f.geo?miniMap(f.geo):`<p class="mini" style="margin-top:6px">Placez-vous à l'adresse et enregistrez le point GPS.</p>`}</div>
+        <div class="field"><label>Point GPS permanent</label><button class="btn ghost sm" data-act="addr-geo">📍 ${f.geo?'Actualiser ma position':'Enregistrer ma position actuelle'}</button>${f.geo?miniMap(f.geo):`<p class="mini" style="margin-top:6px">Placez-vous à l'adresse et enregistrez le point GPS.</p>`}</div>
+        <div class="field" style="margin:0"><label>🔑 Infos d'accès (transmises à l'artisan)</label><textarea rows="2" data-af="access" placeholder="Ex. Code portail 4521 · chat à la maison · clé sous le pot">${esc(f.access||'')}</textarea><p class="mini" style="margin-top:6px">Saisi une seule fois pour ce logement — repris automatiquement à chaque commande.</p></div>
       </div>
       <div class="stack" style="margin-top:16px"><button class="btn primary" data-act="addr-save">${I.check} Enregistrer</button>
       ${!isNew?`${S.addrDefault!==f.id?`<button class="btn ghost sm" data-act="addr-default">Définir comme adresse par défaut</button>`:''}<button class="btn ghost sm" data-act="addr-delete">Supprimer cette adresse</button>`:''}</div></div>`;
@@ -1179,6 +1181,7 @@
     return `<div class="pad"><div style="height:8px"></div><div class="row between"><span class="chip good">${stLabel}</span><span class="mini">Mission remportée 🎉</span></div>
       <div class="h-hello" style="margin-top:8px">${m.svcName}</div>
       <div class="card" style="padding:15px;margin-top:12px"><div class="row" style="gap:8px;flex-wrap:wrap"><span class="chip grey">${I.clock} ${m.slot}</span><span class="chip grey">${m.duration} h</span></div><div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px"><span class="chip grey">${I.pin} ${m.address}</span></div><hr class="dashed"><div class="row between"><span class="sub">Client</span><b>Camille M.</b></div><div class="row between" style="margin-top:6px"><span class="sub">Vous percevez</span><b class="money" style="color:var(--teal-deep)">${eur(t.payout)}</b></div></div>
+      ${m.access?`<div class="card" style="padding:14px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">🔑 Infos d'accès</div><p class="sub" style="margin-top:6px;color:var(--ink-soft)">${esc(m.access)}</p></div>`:''}
       ${m.geo?`<div class="card" style="padding:14px;margin-top:12px"><div class="row between"><span class="chip">📍 Localisation du domicile</span><a class="chip good" style="padding:5px 11px;text-decoration:none" href="https://www.google.com/maps/search/?api=1&query=${m.geo.lat},${m.geo.lng}" target="_blank" rel="noopener">Itinéraire ›</a></div>${miniMap(m.geo)}</div>`:''}
       <button class="btn ghost sm" data-act="open-chat" style="margin-top:12px;justify-content:flex-start;gap:8px">${I.chat}&nbsp;Contacter le client (numéro masqué)${(m.chat&&m.chat.length)?` · ${m.chat.length}`:''}</button>
       <button class="btn ghost sm" data-act="open-support" style="margin-top:8px;justify-content:flex-start;gap:8px">${I.shield}&nbsp;Contacter Ti-Services (support)${(()=>{const th=(m.support&&m.support.pro)||[];return th.length?` · ${th.length}`:'';})()}</button>
@@ -1333,7 +1336,7 @@
     if(b.dataset.pcat){const c=b.dataset.pcat,i=S.proForm.cats.indexOf(c);if(i<0)S.proForm.cats.push(c);else S.proForm.cats.splice(i,1);b.classList.toggle('sel');return;}
     if(b.dataset.pstatus){S.proForm.status=b.dataset.pstatus;render();return;}
     if(b.dataset.zone){if(S.draft)S.draft.zone=b.dataset.zone;renderConfig();return;}
-    if(b.dataset.addr){if(S.draft){const v=b.dataset.addr;if(v==='__manual'){S.draft.addressId='__manual';S.draft.address='';S.draft.geo=null;}else{const a=S.addresses.find(x=>x.id===v);if(a){S.draft.addressId=a.id;S.draft.address=a.address;S.draft.zone=a.zone;S.draft.geo=a.geo;}}}renderConfig();return;}
+    if(b.dataset.addr){if(S.draft){const v=b.dataset.addr;if(v==='__manual'){S.draft.addressId='__manual';S.draft.address='';S.draft.geo=null;S.draft.access='';}else{const a=S.addresses.find(x=>x.id===v);if(a){S.draft.addressId=a.id;S.draft.address=a.address;S.draft.zone=a.zone;S.draft.geo=a.geo;S.draft.access=a.access||'';}}}renderConfig();return;}
     if(b.dataset.afzone){if(S.addrForm)S.addrForm.zone=b.dataset.afzone;render();return;}
     if(b.dataset.slot){if(S.draft){if(b.dataset.slot==='__pick'){S.draft.slotMode='pick';}else{S.draft.slotMode=null;S.draft.slot=b.dataset.slot;}}renderConfig();return;}
     if(b.dataset.czone){S.clientForm.zone=b.dataset.czone;render();return;}
@@ -1343,13 +1346,13 @@
     if(b.dataset.star){const n=+b.dataset.star;S.mission.rating=n;document.querySelectorAll('#rateStars button').forEach(x=>x.classList.toggle('lit',+x.dataset.star<=n));const rb=document.getElementById('rateBtn');if(rb)rb.disabled=false;return;}
     if(b.dataset.cfg){const c=b.dataset.cfg;if(!S.draft)return;if(c==='back'){S.draft=null;render();}else if(c==='minus'){S.draft.duration=Math.max(1,S.draft.duration-1);renderConfig();}else if(c==='plus'){S.draft.duration=Math.min(10,S.draft.duration+1);renderConfig();}else if(c==='geoloc'){geolocate(g=>{if(S.draft){S.draft.geo=g;renderConfig();}});}else if(c==='addr-save-draft'){const d=S.draft;const id='ad'+Date.now();S.addresses.push({id,label:(d.address||'Adresse ponctuelle').slice(0,40),address:d.address,zone:d.zone,geo:d.geo});d.addressId=id;toast('Adresse enregistrée dans votre profil');renderConfig();}else if(c==='confirm'){S.payStep=true;S.payEdit=false;render();}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('invoice:')===0){S.invoiceId=b.dataset.act.split(':')[1];render();return;}
-    if(b.dataset.act&&b.dataset.act.indexOf('addr-edit:')===0){const a=S.addresses.find(x=>x.id===b.dataset.act.split(':')[1]);if(a){S.addrForm={id:a.id,label:a.label,address:a.address,zone:a.zone,geo:a.geo?{...a.geo}:null};render();}return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('addr-edit:')===0){const a=S.addresses.find(x=>x.id===b.dataset.act.split(':')[1]);if(a){S.addrForm={id:a.id,label:a.label,address:a.address,zone:a.zone,geo:a.geo?{...a.geo}:null,access:a.access||''};render();}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('conc-view:')===0){S.concView=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('conc-invoice:')===0){S.concInvoice=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&(b.dataset.act.indexOf('conc-client:')===0||b.dataset.act.indexOf('conc-client-edit:')===0)){const c=concClient(b.dataset.act.split(':')[1]);if(c){S.concClientView=null;S.concForm={id:c.id,name:c.name,email:c.email,phone:c.phone,alabel:c.addr?c.addr.label:'',aaddr:c.addr?c.addr.address:'',azone:c.addr?c.addr.zone:'Gustavia',ageo:c.addr?c.addr.geo:null,notes:c.notes||'',authorized:c.authorized,card:c.card};render();}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('conc-client-view:')===0){S.concClientView=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('conc-new-for:')===0){S.concClientView=null;S.concOrder={step:'service',clientId:b.dataset.act.split(':')[1]};render();return;}
-    if(b.dataset.act&&b.dataset.act.indexOf('conc-quickvalidate:')===0){const o=S.concOrders.find(x=>x.id===b.dataset.act.split(':')[1]);if(o&&o.status==='done'){o.status='paid';o.retro=Math.round(o.amount*S.retroRate/100);S.concEarn+=o.retro;o.invNo='2026-'+String(50+S.concOrders.length).padStart(4,'0');render();toast('Prestation réglée — facture au nom du client');}return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('conc-quickvalidate:')===0){const o=S.concOrders.find(x=>x.id===b.dataset.act.split(':')[1]);if(o&&(o.status==='done'||o.status==='issue')){o.status='paid';o.retro=Math.round(o.amount*S.retroRate/100);S.concEarn+=o.retro;o.invNo='2026-'+String(50+S.concOrders.length).padStart(4,'0');render();toast('Prestation réglée — facture au nom du client');}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('conc-reorder:')===0){const o=S.concOrders.find(x=>x.id===b.dataset.act.split(':')[1]);if(o){S.concClientView=null;S.concView=null;S.concOrder={step:'form',clientId:o.clientId,svc:o.svc,svcName:o.svcName,rate:o.rate,duration:o.duration,when:'Aujourd’hui',slot:o.slot,notes:o.notes||''};render();toast('Commande pré-remplie — ajustez puis validez');}return;}
     switch(b.dataset.act){
       case 'onb-start':S.onbStep=1;render();break;
@@ -1383,7 +1386,8 @@
       case 'conc-order-back-service':S.concOrder.step='service';render();break;
       case 'conc-order-place':{const o=S.concOrder,c=concClient(o.clientId),id='co'+Date.now(),amount=o.rate*o.duration;S.concOrders.unshift({id,clientId:c.id,clientName:c.name,svc:o.svc,svcName:o.svcName,duration:o.duration,rate:o.rate,amount,when:o.when,slot:o.slot,notes:o.notes,accessNotes:c.notes||'',address:c.addr?c.addr.address:'',zone:c.addr?c.addr.zone:'',status:'searching',artisan:null,retro:0,invNo:null});S.concOrder=null;S.concView=id;render();setTimeout(()=>{const ord=S.concOrders.find(x=>x.id===id);if(ord&&ord.status==='searching'){ord.status='planned';ord.artisan='Marie-Lou Cagan';if(S.persona==='concierge')render();}},2600);break;}
       case 'conc-view-back':S.concView=null;render();break;
-      case 'conc-order-done':{const o=S.concOrders.find(x=>x.id===S.concView);if(o){o.status='done';render();}break;}
+      case 'conc-order-done':{const o=S.concOrders.find(x=>x.id===S.concView);if(o){o.status='done';render();const id=o.id;setTimeout(()=>{const ord=S.concOrders.find(x=>x.id===id);if(ord&&ord.status==='done'){ord.status='paid';ord.retro=Math.round(ord.amount*S.retroRate/100);S.concEarn+=ord.retro;ord.invNo='2026-'+String(50+S.concOrders.length).padStart(4,'0');if(S.persona==='concierge')render();}},4000);}break;}
+      case 'conc-order-issue':{const o=S.concOrders.find(x=>x.id===S.concView);if(o&&o.status==='done'){o.status='issue';render();toast('Souci signalé à Ti-Services — validation automatique suspendue');}break;}
       case 'conc-order-validate':{const o=S.concOrders.find(x=>x.id===S.concView);if(o){o.status='paid';o.retro=Math.round(o.amount*S.retroRate/100);S.concEarn+=o.retro;o.invNo='2026-'+String(50+S.concOrders.length).padStart(4,'0');render();toast('Prestation réglée — facture au nom du client');}break;}
       case 'conc-invoice-back':S.concInvoice=null;render();break;
       case 'conc-retinv':S.concRetInv=true;render();break;
@@ -1399,12 +1403,12 @@
       case 'close-chat':S.chat=false;render();break;
       case 'chat-send':sendChat();view.scrollTop=view.scrollHeight;break;
       case 'masked-call':toast('Appel routé par Ti-Services — numéro réel masqué (démo)');break;
-      case 'addr-new':S.addrForm={id:null,label:'',address:'',zone:'Gustavia',geo:null};render();break;
+      case 'addr-new':S.addrForm={id:null,label:'',address:'',zone:'Gustavia',geo:null,access:''};render();break;
       case 'addr-cancel':S.addrForm=null;render();break;
       case 'addr-geo':geolocate(g=>{if(S.addrForm){S.addrForm.geo=g;render();}});break;
       case 'addr-default':if(S.addrForm&&S.addrForm.id){S.addrDefault=S.addrForm.id;toast('Adresse par défaut mise à jour');render();}break;
       case 'addr-delete':if(S.addrForm&&S.addrForm.id){S.addresses=S.addresses.filter(x=>x.id!==S.addrForm.id);if(S.addrDefault===S.addrForm.id)S.addrDefault=(S.addresses[0]&&S.addresses[0].id)||null;S.addrForm=null;render();toast('Adresse supprimée');}break;
-      case 'addr-save':{const f=S.addrForm;if(!f)break;if(!(f.label||'').trim()){toast('Donnez un nom au lieu');break;}if(f.id){const a=S.addresses.find(x=>x.id===f.id);if(a){a.label=f.label;a.address=f.address;a.zone=f.zone;a.geo=f.geo;}}else{const id='ad'+Date.now();S.addresses.push({id,label:f.label,address:f.address,zone:f.zone,geo:f.geo});if(S.addresses.length===1)S.addrDefault=id;}S.addrForm=null;render();toast('Adresse enregistrée');break;}
+      case 'addr-save':{const f=S.addrForm;if(!f)break;if(!(f.label||'').trim()){toast('Donnez un nom au lieu');break;}if(f.id){const a=S.addresses.find(x=>x.id===f.id);if(a){a.label=f.label;a.address=f.address;a.zone=f.zone;a.geo=f.geo;a.access=f.access||'';}}else{const id='ad'+Date.now();S.addresses.push({id,label:f.label,address:f.address,zone:f.zone,geo:f.geo,access:f.access||''});if(S.addresses.length===1)S.addrDefault=id;}S.addrForm=null;render();toast('Adresse enregistrée');break;}
       case 'open-support':S.support=true;render();view.scrollTop=view.scrollHeight;break;
       case 'close-support':S.support=false;if(S.persona==='admin')S.supportSide=null;render();break;
       case 'support-send':sendSupport();break;
