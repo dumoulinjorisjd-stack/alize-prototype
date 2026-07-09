@@ -484,7 +484,7 @@
     persona:'client',clientNav:'home',proNav:'home',onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},
     card:null,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,mission:null,draft:null,
     addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,
-    concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,
+    concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,
     proStatus:'approved',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false},
     proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],
     proHistory:PRO_HISTORY(),
@@ -524,7 +524,7 @@
     if(S.persona==='client'&&S.disputing)return 'client:dispute';
     if(S.support)return S.persona+':support:'+(S.supportSide||S.persona);
     if(S.addrForm)return 'client:addr:'+(S.addrForm.id||'new');
-    if(S.persona==='concierge'){if(S.concInvoice)return 'conc:inv:'+S.concInvoice;if(S.concForm)return 'conc:form:'+(S.concForm.id||'new');if(S.concOrder)return 'conc:order:'+S.concOrder.step;if(S.concView)return 'conc:view:'+S.concView;return 'conc:'+S.concNav;}
+    if(S.persona==='concierge'){if(S.concRetInv)return 'conc:retinv';if(S.concInvoice)return 'conc:inv:'+S.concInvoice;if(S.concForm)return 'conc:form:'+(S.concForm.id||'new');if(S.concOrder)return 'conc:order:'+S.concOrder.step;if(S.concView)return 'conc:view:'+S.concView;return 'conc:'+S.concNav;}
     if(S.persona==='admin')return 'admin:'+S.admin.view+':'+(S.admin.sel||'');
     if(S.persona==='pro')return 'pro:'+S.proStatus+':'+S.proNav+':'+(S.mission?S.mission.status:'');
     if(!S.onboarded)return 'onb:'+S.onbStep;
@@ -704,7 +704,23 @@
     const item=(id,ic,lbl)=>`<button data-cnav2="${id}" class="${S.concNav===id&&!S.concOrder&&!S.concView?'on':''}"><span class="nb-ic">${ic}</span>${lbl}</button>`;
     return `<div class="navbar">${item('home',I.home,'Accueil')}${item('clients',I.user,'Clients')}${item('retrib',I.wallet,'Rétribution')}</div>`;
   }
+  function conciergeRetribInvoice(){
+    const paid=S.concOrders.filter(o=>o.status==='paid');
+    const total=paid.reduce((t,o)=>t+o.retro,0)||S.concEarn;
+    const rows=paid.length?paid.map(o=>`<tr><td>Apport — ${o.svcName} (${o.clientName})</td><td class="r">${eur(o.amount)}</td><td class="r">${S.retroRate} %</td><td class="r">${eur(o.retro)}</td></tr>`).join(''):`<tr><td>Commission d'apport d'affaires — juillet 2026</td><td class="r">—</td><td class="r">${S.retroRate} %</td><td class="r">${eur(total)}</td></tr>`;
+    return `<div class="pad"><div class="row between noprint" style="margin-top:6px;gap:8px"><button class="reset" data-act="conc-retinv-back">← Retour</button><button class="btn primary" data-act="print-invoice" style="width:auto;padding:10px 16px">${I.card} Enregistrer / Imprimer</button></div>
+      <p class="mini noprint" style="text-align:center;color:var(--muted);margin-bottom:8px">Émise chaque mois par le concierge à Ti-Services (ou par relevé d'auto-facturation).</p>
+      <div id="invoiceDoc"><div class="inv">
+        <div class="row between" style="align-items:flex-start"><div><h2>FACTURE</h2><div class="mut">Commission d'apport · juillet 2026</div></div><div style="text-align:right"><div style="font-family:var(--f-disp);font-weight:800;font-size:16px;color:#151515">Conciergerie Alizés</div><div class="mut">Saint-Barthélemy</div></div></div>
+        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Émetteur · apporteur d'affaires</div><b>Conciergerie Alizés</b><div class="mut">Entreprise · SIRET 88012345600018 · Gustavia, 97133 Saint-Barthélemy</div></div>
+        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Facturé à</div><b>Ti-Services</b><div class="mut">Plateforme d'intermédiation · Saint-Barthélemy</div></div>
+        <table><thead><tr><th>Objet</th><th class="r">Base</th><th class="r">Taux</th><th class="r">Montant</th></tr></thead><tbody>${rows}</tbody></table>
+        <div class="row between sec"><span class="mut">Total dû par Ti-Services</span><span class="tot">${eur(total)}</span></div>
+        <div class="legal">TVA non applicable — Saint-Barthélemy (COM, hors du champ de la TVA française). Commission d'apport d'affaires au titre du contrat d'apporteur. Peut être établie par relevé d'auto-facturation (mandat). Aucune commission n'est refacturée au client final.</div>
+      </div></div><div style="height:12px"></div></div>`;
+  }
   function renderConcierge(){
+    if(S.concRetInv)return conciergeRetribInvoice();
     if(S.concForm)return conciergeClientForm();
     if(S.concInvoice)return conciergeInvoice();
     if(S.concOrder)return conciergeOrder();
@@ -787,6 +803,7 @@
   function conciergeInvoice(){
     const o=S.concOrders.find(x=>x.id===S.concInvoice);if(!o)return conciergeHome();const t=o.amount;
     return `<div class="pad"><div class="row between noprint" style="margin-top:6px;gap:8px"><button class="reset" data-act="conc-invoice-back">← Retour</button><button class="btn primary" data-act="print-invoice" style="width:auto;padding:10px 16px">${I.card} Enregistrer / Imprimer</button></div>
+      <p class="mini noprint" style="text-align:center;color:var(--muted);margin-bottom:8px">${I.check} Générée automatiquement · transmise à l'artisan (comptabilité) et au client (justificatif).</p>
       <div id="invoiceDoc"><div class="inv">
         <div class="row between" style="align-items:flex-start"><div><h2>FACTURE</h2><div class="mut">N° ${o.invNo}</div></div><div style="text-align:right"><div style="font-family:var(--f-disp);font-weight:800;font-size:16px;color:#151515">Ti-Services</div><div class="mut">Saint-Barthélemy</div></div></div>
         <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Prestataire</div><b>${o.artisan||'Artisan Ti-Services'}</b><div class="mut">Entreprise · Saint-Barthélemy</div></div>
@@ -801,7 +818,7 @@
     const paid=S.concOrders.filter(o=>o.status==='paid');
     const rows=paid.length?paid.map(o=>`<div class="card" style="padding:13px;margin-top:9px"><div class="row between"><b style="font-size:14px">${o.svcName}</b><span class="money" style="color:var(--good);font-weight:700">+${eur(o.retro)}</span></div><div class="mini" style="margin-top:3px">${o.clientName} · ${o.when} · prestation ${eur(o.amount)}</div></div>`).join(''):`<div class="card" style="padding:20px;text-align:center;color:var(--muted);margin-top:10px">Aucune rétrocession pour l'instant.</div>`;
     return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">${I.wallet} Rétribution</span><div class="h-hello">Vos commissions d'apport</div>
-      <div class="card" style="padding:18px;margin-top:12px"><div class="mini">Rétrocessions ce mois</div><b class="money" style="font-size:30px;font-family:var(--f-disp)">${eur(S.concEarn)}</b><div class="mini" style="margin-top:6px">Taux d'apport&nbsp;: ${S.retroRate} % · versé par Ti-Services</div></div>
+      <div class="card" style="padding:18px;margin-top:12px"><div class="mini">Rétrocessions ce mois</div><b class="money" style="font-size:30px;font-family:var(--f-disp)">${eur(S.concEarn)}</b><div class="mini" style="margin-top:6px">Taux d'apport&nbsp;: ${S.retroRate} % · versé par Ti-Services</div><button class="btn ghost sm" data-act="conc-retinv" style="margin-top:12px">${I.card} Éditer ma facture de rétribution (mensuelle)</button></div>
       <div class="banner teal" style="margin-top:12px">${I.shield}<span>Vous êtes rémunéré par Ti-Services sur sa commission — <b>le prix du client ne change pas</b> et l'artisan perçoit la même chose. Versement mensuel, relevé d'auto-facturation.</span></div>
       <div style="height:16px"></div><span class="eyebrow">Détail des prestations réglées</span>${rows}
       <div style="height:8px"></div></div>${conciergeNavbar()}`;
@@ -1209,6 +1226,7 @@
     if(!h)return proInterventions();
     return `<div class="pad">
       <div class="row between noprint" style="margin-top:6px;gap:8px"><button class="reset" data-act="close-invoice">← Retour</button><button class="btn primary" data-act="print-invoice" style="width:auto;padding:10px 16px">${I.card}&nbsp;Enregistrer / Imprimer</button></div>
+      <p class="mini noprint" style="text-align:center;color:var(--muted);margin-bottom:8px">${I.check} Générée automatiquement · transmise à l'artisan (comptabilité) et au client (justificatif).</p>
       <div id="invoiceDoc"><div class="inv">
         <div class="row between" style="align-items:flex-start"><div><h2>FACTURE</h2><div class="mut">N° ${h.invNo}</div><div class="mut">Date : ${fmtLong(h.dateISO)}</div></div><div style="text-align:right"><div style="font-family:var(--f-disp);font-weight:800;font-size:16px;color:#151515">Ti-Services</div><div class="mut">Saint-Barthélemy</div></div></div>
         <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Prestataire</div><b>${S.proLegal}</b><div class="mut">${S.proStatusType==='particulier'?'Particulier':'Entreprise'} · ${S.proAddress}</div><div class="mut">SIRET ${S.proSiret||'—'} · Assurance RC ${S.proInsurer||'—'}</div></div>
@@ -1345,6 +1363,8 @@
       case 'conc-order-done':{const o=S.concOrders.find(x=>x.id===S.concView);if(o){o.status='done';render();}break;}
       case 'conc-order-validate':{const o=S.concOrders.find(x=>x.id===S.concView);if(o){o.status='paid';o.retro=Math.round(o.amount*S.retroRate/100);S.concEarn+=o.retro;o.invNo='2026-'+String(50+S.concOrders.length).padStart(4,'0');render();toast('Prestation réglée — facture au nom du client');}break;}
       case 'conc-invoice-back':S.concInvoice=null;render();break;
+      case 'conc-retinv':S.concRetInv=true;render();break;
+      case 'conc-retinv-back':S.concRetInv=false;render();break;
       case 'conc-client-new':S.concForm={id:null,name:'',email:'',phone:'',alabel:'',aaddr:'',azone:'Gustavia',authorized:false,card:null};render();break;
       case 'conc-client-cancel':S.concForm=null;render();break;
       case 'conc-auth':if(S.concForm){S.concForm.authorized=true;S.concForm.card={brand:'Visa',last4:'4242'};render();toast('Lien envoyé — carte autorisée par le client (démo)');}break;
@@ -1436,7 +1456,7 @@
     const cf2=e.target.closest('[data-cf2]');if(cf2&&S.concForm){S.concForm[cf2.dataset.cf2]=cf2.value;}
     const cn=e.target.closest('[data-conc-notes]');if(cn&&S.concOrder){S.concOrder.notes=cn.value;}
   });
-  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,card:null,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,chat:false,advantages:false,referral:false,interv:false,invoiceId:null,proHistory:PRO_HISTORY(),fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,proStatus:'approved',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false}});render();toast('Scénario réinitialisé');});
+  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,card:null,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,chat:false,advantages:false,referral:false,interv:false,invoiceId:null,proHistory:PRO_HISTORY(),fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,proStatus:'approved',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false}});render();toast('Scénario réinitialisé');});
 
   /* ---------- PWA: install + service worker ---------- */
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
@@ -1458,6 +1478,7 @@
     if(S.chat){S.chat=false;render();return;}
     if(S.persona==='admin'){if(S.admin.view!=='home'){S.admin.view='home';S.admin.sel=null;render();}else{S.persona='client';render();}return;}
     if(S.persona==='concierge'){
+      if(S.concRetInv){S.concRetInv=false;render();return;}
       if(S.concInvoice){S.concInvoice=null;render();return;}
       if(S.concForm){S.concForm=null;render();return;}
       if(S.concOrder){if(S.concOrder.step==='service'){S.concOrder.step='client';render();return;}if(S.concOrder.step==='form'){S.concOrder.step='service';render();return;}S.concOrder=null;render();return;}
