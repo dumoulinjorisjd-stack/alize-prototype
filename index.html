@@ -152,6 +152,9 @@
   .advcard .ai{flex:none;width:38px;height:38px;border-radius:11px;background:var(--teal-wash);color:var(--teal-deep);display:flex;align-items:center;justify-content:center}
   .advcard .at{font-size:14.5px;font-weight:700}
   .advcard .ad{font-size:13px;color:var(--ink-soft);margin-top:2px;line-height:1.4}
+  .addr-opt{display:block;width:100%;text-align:left;padding:12px 14px;border-radius:14px;border:1.5px solid var(--hair);background:var(--card);color:var(--ink)}
+  .addr-opt.on{border-color:var(--teal);background:var(--teal-wash)}
+  .addr-opt b{font-size:14px}
   .interv-row{padding:13px;margin-top:9px}
   .inv{background:#fff;color:#151515;border-radius:14px;padding:22px;margin-top:14px;font-size:13px;line-height:1.5;border:1px solid #e6e4ef}
   .inv h2{font-size:21px;font-family:var(--f-disp);letter-spacing:1px;margin:0;color:#151515}
@@ -404,6 +407,10 @@
   const PLACEHOLDERS={menage:'Ex. 2 chambres + cuisine, produits fournis.',baby:'Ex. garde de 2 enfants (4 et 6 ans), sortie d’école.',jardin:'Ex. tondre 200 m² et tailler une haie.',repassage:'Ex. 2 paniers de linge, chemises comprises.',bricolage:'Ex. monter une étagère IKEA et fixer 2 cadres au mur.',cuisine:'Ex. repas pour 4, cuisine créole.',demenagement:'Ex. studio, 15 cartons + 1 canapé, 2e étage sans ascenseur.',info:'Ex. configurer une box internet + imprimante wifi.',animaux:'Ex. promener un chien 2×/jour ce week-end.'};
   const AVG_SEED=()=>{const o={};SERVICES.forEach(s=>{o[s.id]={sum:s.rate*24,n:24};});return o;};
   const FLOORS_INIT=()=>{const o={};SERVICES.forEach(s=>{o[s.id]=Math.round(s.rate*0.7);});return o;};
+  const ADDRESSES_INIT=()=>[
+    {id:'ad1',label:'Villa Colibri',address:'Villa Colibri, Gustavia',zone:'Gustavia',geo:{lat:17.89620,lng:-62.84980}},
+    {id:'ad2',label:'Villa Sereno',address:'Villa Sereno, Flamands',zone:'Flamands',geo:{lat:17.92100,lng:-62.85900}}
+  ];
   function svcBase(id){const s=SERVICES.find(x=>x.id===id);return s?s.rate:30;}
   function svcFloor(id){const f=S.floors&&S.floors[id];return (f!=null)?f:Math.round(svcBase(id)*0.7);}
   function svcReco(id){const a=S.avgOffers&&S.avgOffers[id];return a?Math.round(a.sum/a.n):svcBase(id);}
@@ -467,6 +474,7 @@
   const S={
     persona:'client',clientNav:'home',proNav:'home',onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},
     card:null,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,mission:null,draft:null,
+    addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,
     proStatus:'approved',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false},
     proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],
     proHistory:PRO_HISTORY(),
@@ -477,14 +485,14 @@
     admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,
     avail:{lun:{m:1,a:1,s:0},mar:{m:1,a:1,s:0},mer:{m:1,a:1,s:1},jeu:{m:1,a:1,s:0},ven:{m:1,a:1,s:1},sam:{m:1,a:0,s:0},dim:{m:0,a:0,s:0}}
   };
-  function newMission(svc){return {svc:svc.id,svcName:svc.nm,rate:Math.max(svcFloor(svc.id),svcReco(svc.id)),finalHours:null,disputeMsg:null,frequency:'ponctuelle',duration:3,zone:'Gustavia',address:'Villa Colibri, Gustavia',geo:null,notes:'',when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',slotMode:null,status:'draft',provider:null,rating:0,competitors:0,chat:[],support:{client:[],pro:[]}};}
+  function newMission(svc){const a=S.addresses.find(x=>x.id===S.addrDefault)||S.addresses[0]||null;return {svc:svc.id,svcName:svc.nm,rate:Math.max(svcFloor(svc.id),svcReco(svc.id)),finalHours:null,disputeMsg:null,frequency:'ponctuelle',duration:3,zone:a?a.zone:'Gustavia',address:a?a.address:'',addressId:a?a.id:'__manual',geo:a?a.geo:null,notes:'',when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',slotMode:null,status:'draft',provider:null,rating:0,competitors:0,chat:[],support:{client:[],pro:[]}};}
   function billHours(m){return (m.finalHours!=null)?m.finalHours:m.duration;}
   function totals(m){const rate=m.rate;const h=billHours(m);const sub=rate*h;return {rate,sub,hours:h,commission:0,payout:sub,total:sub};}
   function finalizePaid(m){const tt=totals(m);m.status='paid';S.proEarnings+=tt.payout;if(m._appt){m._appt.status='done';m._appt.duration=billHours(m);m._appt.amount=tt.payout;}S.proHistory=S.proHistory||[];const seq='2026-'+String(43+S.proHistory.length).padStart(4,'0');S.proHistory.unshift({id:'hm'+S.proHistory.length,dateISO:(m.dateISO||new Date().toISOString().slice(0,10)),svc:m.svc,client:'Camille M.',clientFull:'Camille Magras',clientZone:m.zone,duration:billHours(m),rate:tt.rate,amount:tt.payout,invNo:seq,paidVia:'carte'});}
   const eur=(n)=>n.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
   const fmtDate=(iso)=>{if(!iso)return 'Aujourd’hui';const p=iso.split('-');return p[2]+'/'+p[1];};
   function miniMap(g){return `<div class="geomap"><svg viewBox="0 0 300 130" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="300" height="130" fill="var(--teal-wash)"/><path d="M0 96 Q80 82 150 93 T300 88 V130 H0Z" fill="color-mix(in srgb,var(--teal) 20%,transparent)"/><g stroke="color-mix(in srgb,var(--teal) 22%,transparent)" stroke-width="1"><path d="M0 40h300M0 74h300M60 0v130M150 0v130M240 0v130"/></g><g transform="translate(150 62)"><circle r="20" fill="color-mix(in srgb,var(--coral) 20%,transparent)"><animate attributeName="r" values="10;22;10" dur="2.2s" repeatCount="indefinite"/></circle><circle r="7" fill="var(--coral)"/><circle r="2.6" fill="#fff"/></g></svg><div class="geocoords">📍 ${g.lat}, ${g.lng}</div></div>`;}
-  function geolocate(){const fb={lat:17.8962,lng:-62.8498};const set=(g)=>{if(S.draft){S.draft.geo=g;renderConfig();}toast('Point GPS enregistré');};if(navigator.geolocation){toast('Localisation en cours…');navigator.geolocation.getCurrentPosition(p=>set({lat:+p.coords.latitude.toFixed(5),lng:+p.coords.longitude.toFixed(5)}),()=>set(fb),{enableHighAccuracy:true,timeout:6000,maximumAge:0});}else set(fb);}
+  function geolocate(apply){const fb={lat:17.8962,lng:-62.8498};const set=(g)=>{apply(g);toast('Point GPS enregistré');};if(navigator.geolocation){toast('Localisation en cours…');navigator.geolocation.getCurrentPosition(p=>set({lat:+p.coords.latitude.toFixed(5),lng:+p.coords.longitude.toFixed(5)}),()=>set(fb),{enableHighAccuracy:true,timeout:6000,maximumAge:0});}else set(fb);}
   const availCount=()=>Object.values(S.avail).reduce((t,d)=>t+d.m+d.a+d.s,0);
 
   const view=document.getElementById('view');
@@ -505,6 +513,7 @@
     if(S.persona==='pro'&&S.finishing)return 'pro:finish';
     if(S.persona==='client'&&S.disputing)return 'client:dispute';
     if(S.support)return S.persona+':support:'+(S.supportSide||S.persona);
+    if(S.addrForm)return 'client:addr:'+(S.addrForm.id||'new');
     if(S.persona==='admin')return 'admin:'+S.admin.view+':'+(S.admin.sel||'');
     if(S.persona==='pro')return 'pro:'+S.proStatus+':'+S.proNav+':'+(S.mission?S.mission.status:'');
     if(!S.onboarded)return 'onb:'+S.onbStep;
@@ -678,6 +687,7 @@
   function renderClient(){
     const m=S.mission;
     if(!S.onboarded)return clientOnboard();
+    if(S.addrForm)return clientAddrEdit();
     if(S.advantages)return advantagesScreen();
     if(S.support&&m)return supportChat();
     if(S.chat&&m)return chatScreen();
@@ -762,8 +772,25 @@
   function clientProfile(){
     return `<div class="pad"><div style="height:12px"></div><div class="row" style="gap:14px"><div class="avatar lg">CM</div><div><b style="font-size:18px;font-family:var(--f-disp)">Camille Magras</b><div class="mini">Gustavia · Saint-Barth</div></div></div>
       <div class="card" style="padding:16px;margin-top:18px"><div class="row between"><span class="chip">${I.card} Paiement automatique</span></div>${S.card?`<div class="row between" style="margin-top:12px"><b>${S.card.brand} ••••&nbsp;${S.card.last4}</b><span class="chip good" style="padding:4px 10px">${I.check} Vérifiée</span></div><div class="banner teal" style="margin-top:14px">${I.shield}<span>Débit automatique après chaque prestation validée. Reçu à chaque fois — rien à gérer.</span></div>`:`<div class="mini" style="margin-top:12px">Aucune carte enregistrée — elle vous sera demandée à votre première réservation, en toute sécurité.</div>`}</div>
+      <div class="card" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">${I.pin}&nbsp;Mes adresses</b><button class="btn ghost sm" style="width:auto;padding:6px 12px" data-act="addr-new">＋ Ajouter</button></div>
+        ${S.addresses.length?S.addresses.map(a=>`<button class="card" data-act="addr-edit:${a.id}" style="padding:12px;margin-top:9px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${a.label}${S.addrDefault===a.id?` <span class="chip" style="padding:2px 8px">Par défaut</span>`:''}</b>${a.geo?`<span class="chip good" style="padding:3px 9px">${I.pin} GPS</span>`:`<span class="chip coral" style="padding:3px 9px">GPS manquant</span>`}</div><div class="mini" style="margin-top:2px">${a.address} · ${a.zone}</div></button>`).join(''):`<p class="mini" style="margin-top:10px;color:var(--muted)">Aucune adresse enregistrée. Ajoutez vos villas avec leur point GPS permanent.</p>`}
+        <p class="mini" style="margin-top:10px;color:var(--muted)">À Saint-Barthélemy, le point GPS est le repère le plus fiable — enregistré une fois, réutilisé à chaque commande.</p></div>
       <button class="card" data-act="show-advantages" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">Garantie Ti-Services</b><span class="chip good">Active</span></div><p class="sub" style="margin-top:8px">Artisan absent ou travail non conforme&nbsp;? Vous n'êtes pas débité et on vous retrouve quelqu'un.</p><span class="mini" style="color:var(--teal-deep);font-weight:650;margin-top:8px;display:inline-block">Voir tous vos avantages ›</span></button>
       <p class="mini" style="text-align:center;margin-top:16px"><button class="linklike" data-act="demo-go-pro">👷 Voir l'espace artisan (démo)</button> · <button class="linklike" data-act="demo-go-admin">⚙︎ Admin (démo)</button></p></div>${clientNavbar()}`;
+  }
+  function clientAddrEdit(){
+    const f=S.addrForm;const isNew=!f.id;
+    return `<div class="pad"><button class="reset" data-act="addr-cancel" style="margin:8px 0 2px">← Retour</button>
+      <span class="eyebrow">${I.pin} Adresse</span><div class="h-hello">${isNew?'Nouvelle adresse':'Modifier l’adresse'}</div>
+      <p class="sub" style="margin-top:6px">À Saint-Barthélemy, le <b>point GPS</b> est le repère le plus fiable. Enregistrez-le une fois&nbsp;: il servira à chaque prestation à cette adresse.</p>
+      <div class="card" style="padding:16px;margin-top:14px">
+        <div class="field"><label>Nom du lieu</label><input class="txt" data-af="label" value="${esc(f.label)}" placeholder="Ex. Villa Colibri"></div>
+        <div class="field"><label>Adresse / description</label><input class="txt" data-af="address" value="${esc(f.address)}" placeholder="Ex. Villa Colibri, Gustavia"></div>
+        <div class="field"><label>Secteur</label><div class="segs">${ZONES.map(z=>`<button class="seg ${f.zone===z?'on':''}" data-afzone="${z}">${z}</button>`).join('')}</div></div>
+        <div class="field" style="margin:0"><label>Point GPS permanent</label><button class="btn ghost sm" data-act="addr-geo">📍 ${f.geo?'Actualiser ma position':'Enregistrer ma position actuelle'}</button>${f.geo?miniMap(f.geo):`<p class="mini" style="margin-top:6px">Placez-vous à l'adresse et enregistrez le point GPS.</p>`}</div>
+      </div>
+      <div class="stack" style="margin-top:16px"><button class="btn primary" data-act="addr-save">${I.check} Enregistrer</button>
+      ${!isNew?`${S.addrDefault!==f.id?`<button class="btn ghost sm" data-act="addr-default">Définir comme adresse par défaut</button>`:''}<button class="btn ghost sm" data-act="addr-delete">Supprimer cette adresse</button>`:''}</div></div>`;
   }
   function clientSearching(){
     const m=S.mission;
@@ -1109,7 +1136,7 @@
     setTimeout(()=>{clearInterval(iv);if(S.mission!==mine||mine.status!=='searching')return;mine.status='pending';render();if(S.persona!=='pro')toast(mine.competitors+' artisans ont reçu votre demande');},2600);
   }
   document.addEventListener('click',(e)=>{
-    const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pstatus],[data-cfg],[data-zone],[data-czone],[data-when],[data-offer],[data-freq],[data-slot]');
+    const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pstatus],[data-cfg],[data-zone],[data-czone],[data-when],[data-offer],[data-freq],[data-slot],[data-addr],[data-afzone]');
     if(!b)return;
     if(b.dataset.persona){go(b.dataset.persona);return;}
     if(b.dataset.adm){const parts=b.dataset.adm.split(':'),act=parts[0],id=parts[1];
@@ -1129,22 +1156,25 @@
       else if(act==='dispute-accept'){if(S.mission&&S.mission.status==='disputed'){finalizePaid(S.mission);toast('Modification validée — prestation réglée');}}
       else if(act==='dispute-revert'){if(S.mission&&S.mission.status==='disputed'){S.mission.finalHours=S.mission.duration;finalizePaid(S.mission);toast('Retour à l’accord initial — prestation réglée');}}
       render();return;}
-    if(b.dataset.cnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.invoiceId=null;S.clientNav=b.dataset.cnav;render();return;}
+    if(b.dataset.cnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.invoiceId=null;S.addrForm=null;S.clientNav=b.dataset.cnav;render();return;}
     if(b.dataset.pnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.invoiceId=null;S.proNav=b.dataset.pnav;render();return;}
     if(b.dataset.svc){const svc=SERVICES.find(s=>s.id===b.dataset.svc);S.draft=newMission(svc);renderConfig();return;}
     if(b.dataset.av){const[d,bl]=b.dataset.av.split(':');S.avail[d][bl]=S.avail[d][bl]?0:1;render();return;}
     if(b.dataset.atab){S.agendaTab=b.dataset.atab;render();return;}
     if(b.dataset.pcat){const c=b.dataset.pcat,i=S.proForm.cats.indexOf(c);if(i<0)S.proForm.cats.push(c);else S.proForm.cats.splice(i,1);b.classList.toggle('sel');return;}
     if(b.dataset.pstatus){S.proForm.status=b.dataset.pstatus;render();return;}
-    if(b.dataset.zone){if(S.draft){S.draft.zone=b.dataset.zone;S.draft.address=b.dataset.zone==='Gustavia'?'Villa Colibri, Gustavia':('Villa, '+b.dataset.zone);}renderConfig();return;}
+    if(b.dataset.zone){if(S.draft)S.draft.zone=b.dataset.zone;renderConfig();return;}
+    if(b.dataset.addr){if(S.draft){const v=b.dataset.addr;if(v==='__manual'){S.draft.addressId='__manual';S.draft.address='';S.draft.geo=null;}else{const a=S.addresses.find(x=>x.id===v);if(a){S.draft.addressId=a.id;S.draft.address=a.address;S.draft.zone=a.zone;S.draft.geo=a.geo;}}}renderConfig();return;}
+    if(b.dataset.afzone){if(S.addrForm)S.addrForm.zone=b.dataset.afzone;render();return;}
     if(b.dataset.slot){if(S.draft){if(b.dataset.slot==='__pick'){S.draft.slotMode='pick';}else{S.draft.slotMode=null;S.draft.slot=b.dataset.slot;}}renderConfig();return;}
     if(b.dataset.czone){S.clientForm.zone=b.dataset.czone;render();return;}
     if(b.dataset.when){if(!S.draft)return;const v=b.dataset.when;if(v==='__pick'){S.draft.dateMode='pick';}else{S.draft.dateMode=null;S.draft.when=v;}renderConfig();return;}
     if(b.dataset.offer){if(!S.draft)return;const st=5;const fl=svcFloor(S.draft.svc);S.draft.rate=Math.max(fl,S.draft.rate+(b.dataset.offer==='up'?st:-st));renderConfig();return;}
     if(b.dataset.freq){if(!S.draft)return;S.draft.frequency=b.dataset.freq;renderConfig();return;}
     if(b.dataset.star){const n=+b.dataset.star;S.mission.rating=n;document.querySelectorAll('#rateStars button').forEach(x=>x.classList.toggle('lit',+x.dataset.star<=n));const rb=document.getElementById('rateBtn');if(rb)rb.disabled=false;return;}
-    if(b.dataset.cfg){const c=b.dataset.cfg;if(!S.draft)return;if(c==='back'){S.draft=null;render();}else if(c==='minus'){S.draft.duration=Math.max(1,S.draft.duration-1);renderConfig();}else if(c==='plus'){S.draft.duration=Math.min(10,S.draft.duration+1);renderConfig();}else if(c==='geoloc'){geolocate();}else if(c==='confirm'){S.payStep=true;S.payEdit=false;render();}return;}
+    if(b.dataset.cfg){const c=b.dataset.cfg;if(!S.draft)return;if(c==='back'){S.draft=null;render();}else if(c==='minus'){S.draft.duration=Math.max(1,S.draft.duration-1);renderConfig();}else if(c==='plus'){S.draft.duration=Math.min(10,S.draft.duration+1);renderConfig();}else if(c==='geoloc'){geolocate(g=>{if(S.draft){S.draft.geo=g;renderConfig();}});}else if(c==='addr-save-draft'){const d=S.draft;const id='ad'+Date.now();S.addresses.push({id,label:(d.address||'Adresse ponctuelle').slice(0,40),address:d.address,zone:d.zone,geo:d.geo});d.addressId=id;toast('Adresse enregistrée dans votre profil');renderConfig();}else if(c==='confirm'){S.payStep=true;S.payEdit=false;render();}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('invoice:')===0){S.invoiceId=b.dataset.act.split(':')[1];render();return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('addr-edit:')===0){const a=S.addresses.find(x=>x.id===b.dataset.act.split(':')[1]);if(a){S.addrForm={id:a.id,label:a.label,address:a.address,zone:a.zone,geo:a.geo?{...a.geo}:null};render();}return;}
     switch(b.dataset.act){
       case 'onb-start':S.onbStep=1;render();break;
       case 'onb-back0':S.onbStep=0;render();break;
@@ -1174,6 +1204,12 @@
       case 'close-chat':S.chat=false;render();break;
       case 'chat-send':sendChat();view.scrollTop=view.scrollHeight;break;
       case 'masked-call':toast('Appel routé par Ti-Services — numéro réel masqué (démo)');break;
+      case 'addr-new':S.addrForm={id:null,label:'',address:'',zone:'Gustavia',geo:null};render();break;
+      case 'addr-cancel':S.addrForm=null;render();break;
+      case 'addr-geo':geolocate(g=>{if(S.addrForm){S.addrForm.geo=g;render();}});break;
+      case 'addr-default':if(S.addrForm&&S.addrForm.id){S.addrDefault=S.addrForm.id;toast('Adresse par défaut mise à jour');render();}break;
+      case 'addr-delete':if(S.addrForm&&S.addrForm.id){S.addresses=S.addresses.filter(x=>x.id!==S.addrForm.id);if(S.addrDefault===S.addrForm.id)S.addrDefault=(S.addresses[0]&&S.addresses[0].id)||null;S.addrForm=null;render();toast('Adresse supprimée');}break;
+      case 'addr-save':{const f=S.addrForm;if(!f)break;if(!(f.label||'').trim()){toast('Donnez un nom au lieu');break;}if(f.id){const a=S.addresses.find(x=>x.id===f.id);if(a){a.label=f.label;a.address=f.address;a.zone=f.zone;a.geo=f.geo;}}else{const id='ad'+Date.now();S.addresses.push({id,label:f.label,address:f.address,zone:f.zone,geo:f.geo});if(S.addresses.length===1)S.addrDefault=id;}S.addrForm=null;render();toast('Adresse enregistrée');break;}
       case 'open-support':S.support=true;render();view.scrollTop=view.scrollHeight;break;
       case 'close-support':S.support=false;if(S.persona==='admin')S.supportSide=null;render();break;
       case 'support-send':sendSupport();break;
@@ -1218,9 +1254,19 @@
       <div class="field"><label>Votre offre — tarif horaire</label><div class="stepper"><button data-offer="down">−</button><span class="val">${m.rate} €/h</span><button data-offer="up">+</button></div><p class="mini" style="margin-top:6px">💡 Recommandé&nbsp;: <b>${svcReco(m.svc)} €/h</b> (moyenne des offres) · minimum ${svcFloor(m.svc)} €/h. Ti-Services <b>ne fixe pas le prix</b> — c'est votre offre, l'artisan reste libre de l'accepter. Pas de plafond&nbsp;; une offre plus élevée est acceptée plus vite.${m.rate<svcReco(m.svc)?' <b style="color:var(--coral-deep)">En dessous de la moyenne, l’acceptation peut être plus longue.</b>':''}</p></div>
       <div class="field"><label>Durée estimée</label><div class="stepper"><button data-cfg="minus">−</button><span class="val">${m.duration} h</span><button data-cfg="plus">+</button></div></div>
       <div class="field"><label>Décrivez votre besoin</label><textarea rows="3" data-cfg="notes" placeholder="${PLACEHOLDERS[m.svc]||'Décrivez précisément la prestation…'}">${m.notes}</textarea><p class="mini" style="margin-top:6px">Plus c'est précis (« bricolage » est large&nbsp;!), plus l'artisan accepte vite et au bon tarif.</p></div>
-      <div class="field"><label>Secteur</label><div class="segs">${zones}</div></div>
-      <div class="field"><label>Adresse</label><input class="txt" value="${m.address}"></div>
-      <div class="field"><label>Point GPS du domicile</label><button class="btn ghost sm" data-cfg="geoloc">📍 ${m.geo?'Actualiser ma position':'Utiliser ma position actuelle'}</button>${m.geo?miniMap(m.geo):`<p class="mini" style="margin-top:6px">Ajoutez un point GPS pour que le prestataire trouve votre domicile facilement.</p>`}</div>
+      <div class="field"><label>Adresse de la prestation</label>
+        <div class="stack" style="gap:8px;margin-top:2px">
+          ${S.addresses.map(a=>`<button class="addr-opt${m.addressId===a.id?' on':''}" data-addr="${a.id}"><div class="row between"><b>${a.label}</b>${a.geo?`<span class="chip good" style="padding:2px 8px">${I.pin} GPS</span>`:`<span class="chip coral" style="padding:2px 8px">GPS manquant</span>`}</div><div class="mini" style="margin-top:2px">${a.address} · ${a.zone}</div></button>`).join('')}
+          <button class="addr-opt${m.addressId==='__manual'?' on':''}" data-addr="__manual"><b>＋ Autre adresse (ponctuelle)</b><div class="mini" style="margin-top:2px">Un lieu occasionnel, non enregistré</div></button>
+        </div>
+        ${m.addressId==='__manual'?`
+          <div class="field" style="margin-top:12px"><label style="font-size:12.5px">Adresse / description du lieu</label><input class="txt" data-addrmanual value="${esc(m.address||'')}" placeholder="Ex. Villa des Amis, près de la plage de Saline"></div>
+          <div class="field"><label style="font-size:12.5px">Secteur</label><div class="segs">${zones}</div></div>
+          <button class="btn ghost sm" data-cfg="geoloc">📍 ${m.geo?'Actualiser le point GPS':'Enregistrer le point GPS'}</button>
+          ${m.geo?miniMap(m.geo):`<p class="mini" style="margin-top:6px">À Saint-Barth, le point GPS est le repère le plus fiable — ajoutez-le pour que l'artisan trouve.</p>`}
+          ${(m.geo&&(m.address||'').trim())?`<button class="btn ghost sm" data-cfg="addr-save-draft" style="margin-top:8px">${I.pin} Enregistrer cette adresse dans mon profil</button>`:''}
+        `:`${m.geo?miniMap(m.geo):''}`}
+      </div>
       <div class="est"><div class="line"><span>${m.svcName} · ${t.rate} €/h × ${m.duration} h</span><b>${eur(t.sub)}</b></div><div class="total"><span>${(m.frequency&&m.frequency!=='ponctuelle')?'Par prestation':'Total'}</span><b>${eur(t.total)}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité ${S.card?`(sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — séquestre agréé)`:`(moyen de paiement demandé juste après, via Mollie — séquestre agréé)`}. Aucun supplément sans votre accord.</small></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm">${I.search} Trouver un artisan · ${eur(t.total)}</button></div></div>`,'config');
   }
@@ -1235,8 +1281,10 @@
     const pr=e.target.closest('[data-prate]');if(pr){S.proForm.rate=+pr.value;const el=document.getElementById('prateVal');if(el)el.textContent=pr.value+' €/h';}
     const cd=e.target.closest('[data-cfdate]');if(cd&&S.draft){S.draft.dateISO=cd.value;S.draft.when=fmtDate(cd.value);renderConfig();}
     const ct=e.target.closest('[data-cftime]');if(ct&&S.draft&&ct.value){S.draft.slot=ct.value;}
+    const am=e.target.closest('[data-addrmanual]');if(am&&S.draft){S.draft.address=am.value;}
+    const af=e.target.closest('[data-af]');if(af&&S.addrForm){S.addrForm[af.dataset.af]=af.value;}
   });
-  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,card:null,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,chat:false,advantages:false,referral:false,interv:false,invoiceId:null,proHistory:PRO_HISTORY(),fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,proStatus:'approved',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false}});render();toast('Scénario réinitialisé');});
+  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,card:null,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,chat:false,advantages:false,referral:false,interv:false,invoiceId:null,proHistory:PRO_HISTORY(),fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,proStatus:'approved',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false}});render();toast('Scénario réinitialisé');});
 
   /* ---------- PWA: install + service worker ---------- */
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
@@ -1257,6 +1305,7 @@
     if(S.referral){S.referral=false;render();return;}
     if(S.chat){S.chat=false;render();return;}
     if(S.persona==='admin'){if(S.admin.view!=='home'){S.admin.view='home';S.admin.sel=null;render();}else{S.persona='client';render();}return;}
+    if(S.addrForm){S.addrForm=null;render();return;}
     if(S.support){S.support=false;if(S.persona==='admin')S.supportSide=null;render();return;}
     if(S.finishing){S.finishing=false;render();return;}
     if(S.disputing){S.disputing=false;render();return;}
