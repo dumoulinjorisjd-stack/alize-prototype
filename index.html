@@ -466,7 +466,7 @@
 
   const S={
     persona:'client',clientNav:'home',proNav:'home',onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},
-    card:{brand:'Visa',last4:'4242'},mission:null,draft:null,
+    card:null,payStep:false,payEdit:false,mission:null,draft:null,
     proStatus:'approved',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false},
     proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],
     proHistory:PRO_HISTORY(),
@@ -499,6 +499,7 @@
     if(S.interv)return S.persona+':interv';
     if(S.referral)return S.persona+':referral';
     if(S.chat)return S.persona+':chat';
+    if(S.draft&&S.payStep)return 'client:pay:'+(S.payEdit?'edit':'saved');
     if(S.persona==='admin')return 'admin:'+S.admin.view+':'+(S.admin.sel||'');
     if(S.persona==='pro')return 'pro:'+S.proStatus+':'+S.proNav+':'+(S.mission?S.mission.status:'');
     if(!S.onboarded)return 'onb:'+S.onbStep;
@@ -644,6 +645,7 @@
     if(!S.onboarded)return clientOnboard();
     if(S.advantages)return advantagesScreen();
     if(S.chat&&m)return chatScreen();
+    if(S.draft&&S.payStep)return clientPay();
     if(m){switch(m.status){
       case 'searching':return clientSearching();
       case 'pending':case 'accepted':case 'working':return clientTracking();
@@ -662,7 +664,6 @@
   }
   function clientOnboard(){
     if(S.onbStep===1)return onbInfos();
-    if(S.onbStep===2)return onbCard();
     return onbWelcome();
   }
   function onbWelcome(){
@@ -693,33 +694,18 @@
     const ok=(f.name||'').trim().length>1;
     return `<div class="pad"><div style="height:10px"></div>
       <button class="reset" data-act="onb-back0" style="margin:0 0 8px">← Retour</button>
-      <span class="eyebrow">Créer mon compte · Étape 1 / 2</span>
+      <span class="eyebrow">Créer mon compte</span>
       <div class="h-hello">Vos informations</div>
       <div class="card" style="padding:16px;margin-top:16px">
         <div class="field"><label>Prénom &amp; nom</label><input class="txt" data-cf="name" value="${f.name}" placeholder="Ex. Camille Magras"></div>
         <div class="field"><label>E-mail</label><input class="txt" data-cf="email" value="${f.email}" inputmode="email" placeholder="vous@exemple.com"></div>
         <div class="field"><label>Votre secteur</label><div class="segs">${zones}</div></div>
       </div>
+      <div class="banner teal" style="margin-top:14px">${I.shield}<span><b>Aucune carte demandée maintenant.</b> Vous ne renseignez votre moyen de paiement qu'au moment de votre première réservation — et rien n'est débité tant que la prestation n'est pas validée.</span></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0">
-        <button class="btn primary" data-act="onb-infos-next">Continuer</button>
-        <p class="mini" style="text-align:center;margin-top:10px">${I.lock} Aucune carte demandée à cette étape.</p>
+        <button class="btn primary" data-act="finish-onboard">${I.check} Créer mon compte</button>
+        <p class="mini" style="text-align:center;margin-top:10px">${I.lock} Sans engagement · aucune carte à cette étape.</p>
       </div></div>`;
-  }
-  function onbCard(){
-    return `<div class="pad"><div style="height:10px"></div>
-      <button class="reset" data-act="onb-back1" style="margin:0 0 8px">← Retour</button>
-      <span class="eyebrow">Créer mon compte · Étape 2 / 2</span>
-      <div class="h-hello">Votre moyen de paiement</div>
-      <p class="sub" style="margin-top:6px">Dernière étape. <b>Aucun débit maintenant</b> — vous ne payez qu'après une prestation validée. Ensuite, plus besoin de ressortir votre carte.</p>
-      <div class="card" style="padding:16px;margin-top:16px">
-        <div class="row between"><span class="chip">${I.card} Carte de paiement</span><span class="chip good" style="padding:4px 9px">${I.lock} Chiffré</span></div>
-        <div class="field"><label>Numéro de carte</label><input class="txt" value="4242 4242 4242 4242" inputmode="numeric"></div>
-        <div class="row" style="gap:11px;margin-top:11px"><div style="flex:1"><label style="font-size:12.5px;font-weight:650;color:var(--ink-soft)">Expiration</label><input class="txt" value="08/28" style="margin-top:7px"></div><div style="flex:1"><label style="font-size:12.5px;font-weight:650;color:var(--ink-soft)">CVC</label><input class="txt" value="•••" style="margin-top:7px"></div></div>
-        <div class="banner teal" style="margin-top:14px">${I.shield}<span>Simple empreinte bancaire. Rien n'est prélevé tant que vous n'avez pas validé une prestation. Séquestre opéré par Mollie, établissement de paiement agréé.</span></div>
-      </div>
-      <div class="footcta" style="position:static;background:none;padding:20px 0 0"><button class="btn primary" data-act="finish-onboard">Terminer l'inscription</button>
-        <p class="mini" style="text-align:center;margin-top:10px">Maquette — aucune donnée réelle envoyée.</p></div>
-    </div>`;
   }
   function clientHome(){
     const cats=SERVICES.map(s=>`<button class="cat" data-svc="${s.id}"><div class="ic">${I[s.id]}</div><div class="nm">${s.nm}</div><div class="rt">dès <b>${s.rate} €</b>/h</div></button>`).join('');
@@ -738,7 +724,7 @@
   }
   function clientProfile(){
     return `<div class="pad"><div style="height:12px"></div><div class="row" style="gap:14px"><div class="avatar lg">CM</div><div><b style="font-size:18px;font-family:var(--f-disp)">Camille Magras</b><div class="mini">Gustavia · Saint-Barth</div></div></div>
-      <div class="card" style="padding:16px;margin-top:18px"><div class="row between"><span class="chip">${I.card} Paiement automatique</span></div><div class="row between" style="margin-top:12px"><b>${S.card.brand} ••••&nbsp;${S.card.last4}</b><span class="chip good" style="padding:4px 10px">${I.check} Vérifiée</span></div><div class="banner teal" style="margin-top:14px">${I.shield}<span>Débit automatique après chaque prestation validée. Reçu à chaque fois — rien à gérer.</span></div></div>
+      <div class="card" style="padding:16px;margin-top:18px"><div class="row between"><span class="chip">${I.card} Paiement automatique</span></div>${S.card?`<div class="row between" style="margin-top:12px"><b>${S.card.brand} ••••&nbsp;${S.card.last4}</b><span class="chip good" style="padding:4px 10px">${I.check} Vérifiée</span></div><div class="banner teal" style="margin-top:14px">${I.shield}<span>Débit automatique après chaque prestation validée. Reçu à chaque fois — rien à gérer.</span></div>`:`<div class="mini" style="margin-top:12px">Aucune carte enregistrée — elle vous sera demandée à votre première réservation, en toute sécurité.</div>`}</div>
       <button class="card" data-act="show-advantages" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">Garantie Ti-Services</b><span class="chip good">Active</span></div><p class="sub" style="margin-top:8px">Artisan absent ou travail non conforme&nbsp;? Vous n'êtes pas débité et on vous retrouve quelqu'un.</p><span class="mini" style="color:var(--teal-deep);font-weight:650;margin-top:8px;display:inline-block">Voir tous vos avantages ›</span></button>
       <p class="mini" style="text-align:center;margin-top:16px"><button class="linklike" data-act="demo-go-pro">👷 Voir l'espace artisan (démo)</button> · <button class="linklike" data-act="demo-go-admin">⚙︎ Admin (démo)</button></p></div>${clientNavbar()}`;
   }
@@ -773,6 +759,35 @@
       <div class="card" style="padding:16px;margin-top:16px"><div class="row" style="gap:12px"><div class="avatar">${p.ini}</div><div style="flex:1"><b style="font-size:15px">${m.svcName}</b><div class="mini">${m.duration} h · ${m.when} · ${m.slot}</div></div></div><hr class="dashed"><div class="receipt-line"><span>Montant (débit auto)</span><b>${eur(t.total)}</b></div><div class="receipt-line"><span>Réglé sur</span><b>${S.card.brand} ••••&nbsp;${S.card.last4}</b></div></div>
       <div class="banner coral" style="margin-top:14px">${I.shield}<span>Un souci&nbsp;? Signalez au lieu de valider — vous ne serez pas débité.</span></div>
       <div class="stack" style="margin-top:18px"><button class="btn good" data-act="confirm-done">${I.check} Confirmer la prestation</button><p class="mini" style="text-align:center">Vous serez débité automatiquement de ${eur(t.total)}. Rien d'autre à faire.</p><button class="btn ghost sm" data-act="report-issue">Signaler un problème</button></div></div>`;
+  }
+  function placeMission(){const d=S.draft;if(!d)return;if(S.avgOffers[d.svc]){S.avgOffers[d.svc].sum+=d.rate;S.avgOffers[d.svc].n++;}S.mission=d;S.draft=null;S.payStep=false;S.payEdit=false;startSearch();}
+  function clientPay(){
+    const m=S.draft,t=totals(m);
+    const recap=`<div class="card" style="padding:15px;margin-top:14px"><div class="row between"><b style="font-size:14px">${m.svcName}</b><b class="money">${eur(t.total)}</b></div><div class="mini" style="margin-top:3px">${m.when} · ${m.slot} · ${m.duration} h · ${m.zone}</div></div>`;
+    const reassure=`<div class="banner teal" style="margin-top:14px">${I.shield}<span><b>Aucun débit maintenant.</b> Simple empreinte bancaire — vous n'êtes prélevé qu'après avoir validé la prestation, jamais plus que ${eur(t.total)}. Séquestre opéré par Mollie (établissement agréé).</span></div>`;
+    if(S.card&&!S.payEdit){
+      return `<div class="pad"><button class="reset" data-act="pay-back" style="margin:8px 0 2px">← Retour</button>
+        <span class="eyebrow">${I.card} Paiement</span><div class="h-hello">Confirmer la réservation</div>
+        <p class="sub" style="margin-top:6px">Réglé automatiquement après la prestation, avec votre moyen de paiement enregistré.</p>
+        ${recap}
+        <div class="card" style="padding:16px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Moyen de paiement</div>
+          <div class="row between" style="margin-top:10px"><div class="row" style="gap:11px;align-items:center"><span class="benic">${I.card}</span><div><b>${S.card.brand} ••••&nbsp;${S.card.last4}</b><div class="mini">Expire ${S.card.exp||'08/28'}</div></div></div><span class="chip good" style="padding:4px 10px">${I.check} Enregistrée</span></div>
+          <button class="btn ghost sm" data-act="pay-change" style="margin-top:12px">Changer de moyen de paiement</button>
+        </div>
+        ${reassure}
+        <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-act="pay-confirm">${I.search} Confirmer · trouver un artisan · ${eur(t.total)}</button></div></div>`;
+    }
+    return `<div class="pad"><button class="reset" data-act="${S.card?'pay-canceledit':'pay-back'}" style="margin:8px 0 2px">← Retour</button>
+      <span class="eyebrow">${I.card} Paiement</span><div class="h-hello">${S.card?'Changer de carte':'Votre moyen de paiement'}</div>
+      <p class="sub" style="margin-top:6px">${S.card?'':'Une seule fois. '}Aucun débit maintenant — vous ne payez qu'après une prestation validée, puis c'est automatique.</p>
+      ${recap}
+      <div class="card" style="padding:16px;margin-top:12px">
+        <div class="row between"><span class="chip">${I.card} Carte de paiement</span><span class="chip good" style="padding:4px 9px">${I.lock} Chiffré</span></div>
+        <div class="field"><label>Numéro de carte</label><input class="txt" id="payCardNum" value="4242 4242 4242 4242" inputmode="numeric"></div>
+        <div class="row" style="gap:11px;margin-top:11px"><div style="flex:1"><label style="font-size:12.5px;font-weight:650;color:var(--ink-soft)">Expiration</label><input class="txt" id="payCardExp" value="08/28" style="margin-top:7px"></div><div style="flex:1"><label style="font-size:12.5px;font-weight:650;color:var(--ink-soft)">CVC</label><input class="txt" value="•••" style="margin-top:7px"></div></div>
+      </div>
+      ${reassure}
+      <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-act="pay-save">${I.lock} Enregistrer &amp; trouver un artisan · ${eur(t.total)}</button><p class="mini" style="text-align:center;margin-top:10px">Maquette — aucune donnée réelle envoyée.</p></div></div>`;
   }
   function clientReceipt(rated){
     const m=S.mission,t=totals(m),p=m.provider;
@@ -1009,10 +1024,11 @@
   /* ---------- ACTIONS ---------- */
   function go(p){if(p)S.persona=p;render();}
   function startSearch(){
-    S.mission.status='searching';S.mission.competitors=3+Math.floor(availCount()/8);render();
-    let n=0;const target=S.mission.competitors;const el=()=>document.getElementById('notif');if(el())el().textContent='0';
-    const iv=setInterval(()=>{n++;if(el())el().textContent=n;if(n>=target)clearInterval(iv);},260);
-    setTimeout(()=>{if(!S.mission||S.mission.status!=='searching'){clearInterval(iv);return;}clearInterval(iv);S.mission.status='pending';render();if(S.persona!=='pro')toast(S.mission.competitors+' artisans ont reçu votre demande');},2600);
+    const mine=S.mission;
+    mine.status='searching';mine.competitors=3+Math.floor(availCount()/8);render();
+    let n=0;const target=mine.competitors;const el=()=>document.getElementById('notif');if(el())el().textContent='0';
+    const iv=setInterval(()=>{if(S.mission!==mine){clearInterval(iv);return;}n++;if(el())el().textContent=n;if(n>=target)clearInterval(iv);},260);
+    setTimeout(()=>{clearInterval(iv);if(S.mission!==mine||mine.status!=='searching')return;mine.status='pending';render();if(S.persona!=='pro')toast(mine.competitors+' artisans ont reçu votre demande');},2600);
   }
   document.addEventListener('click',(e)=>{
     const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pstatus],[data-cfg],[data-zone],[data-czone],[data-when],[data-offer],[data-freq],[data-slot]');
@@ -1046,14 +1062,13 @@
     if(b.dataset.offer){if(!S.draft)return;const st=5;const fl=svcFloor(S.draft.svc);S.draft.rate=Math.max(fl,S.draft.rate+(b.dataset.offer==='up'?st:-st));renderConfig();return;}
     if(b.dataset.freq){if(!S.draft)return;S.draft.frequency=b.dataset.freq;renderConfig();return;}
     if(b.dataset.star){const n=+b.dataset.star;S.mission.rating=n;document.querySelectorAll('#rateStars button').forEach(x=>x.classList.toggle('lit',+x.dataset.star<=n));const rb=document.getElementById('rateBtn');if(rb)rb.disabled=false;return;}
-    if(b.dataset.cfg){const c=b.dataset.cfg;if(!S.draft)return;if(c==='back'){S.draft=null;render();}else if(c==='minus'){S.draft.duration=Math.max(1,S.draft.duration-1);renderConfig();}else if(c==='plus'){S.draft.duration=Math.min(10,S.draft.duration+1);renderConfig();}else if(c==='geoloc'){geolocate();}else if(c==='confirm'){const d=S.draft;if(S.avgOffers[d.svc]){S.avgOffers[d.svc].sum+=d.rate;S.avgOffers[d.svc].n++;}S.mission=d;S.draft=null;startSearch();}return;}
+    if(b.dataset.cfg){const c=b.dataset.cfg;if(!S.draft)return;if(c==='back'){S.draft=null;render();}else if(c==='minus'){S.draft.duration=Math.max(1,S.draft.duration-1);renderConfig();}else if(c==='plus'){S.draft.duration=Math.min(10,S.draft.duration+1);renderConfig();}else if(c==='geoloc'){geolocate();}else if(c==='confirm'){S.payStep=true;S.payEdit=false;render();}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('invoice:')===0){S.invoiceId=b.dataset.act.split(':')[1];render();return;}
     switch(b.dataset.act){
       case 'onb-start':S.onbStep=1;render();break;
       case 'onb-back0':S.onbStep=0;render();break;
       case 'onb-back1':S.onbStep=1;render();break;
-      case 'onb-infos-next':if((S.clientForm.name||'').trim().length>1){S.onbStep=2;render();}else{toast('Entrez votre nom pour continuer');}break;
-      case 'finish-onboard':S.onboarded=true;render();toast('Compte créé — bienvenue sur Ti-Services !');break;
+      case 'finish-onboard':if((S.clientForm.name||'').trim().length>1){S.onboarded=true;render();toast('Compte créé — bienvenue sur Ti-Services !');}else{toast('Entrez votre nom pour continuer');}break;
       case 'cancel-mission':S.mission=null;S.clientNav='home';render();break;
       case 'confirm-done':{const mm=S.mission,tt=totals(mm);mm.status='paid';S.proEarnings+=tt.payout;if(mm._appt)mm._appt.status='done';S.proHistory=S.proHistory||[];const seq='2026-'+String(43+S.proHistory.length).padStart(4,'0');S.proHistory.unshift({id:'hm'+S.proHistory.length,dateISO:(mm.dateISO||new Date().toISOString().slice(0,10)),svc:mm.svc,client:'Camille M.',clientFull:'Camille Magras',clientZone:mm.zone,duration:mm.duration,rate:tt.rate,amount:tt.payout,invNo:seq,paidVia:'carte'});render();break;}
       case 'report-issue':toast('Signalement transmis — vous ne serez pas débité');break;
@@ -1075,6 +1090,11 @@
       case 'open-referral':S.referral=true;render();break;
       case 'close-referral':S.referral=false;render();break;
       case 'copy-referral':toast('Lien de parrainage copié — partagez-le (démo)');break;
+      case 'pay-back':S.payStep=false;S.payEdit=false;if(S.draft)renderConfig();else render();break;
+      case 'pay-change':S.payEdit=true;render();break;
+      case 'pay-canceledit':S.payEdit=false;render();break;
+      case 'pay-confirm':placeMission();break;
+      case 'pay-save':{const el=document.getElementById('payCardNum'),ex=document.getElementById('payCardExp');const num=(el?el.value:'').replace(/\D/g,'');const last4=num.slice(-4)||'4242';const brand=/^(5[1-5]|2[2-7])/.test(num)?'Mastercard':(/^3[47]/.test(num)?'Amex':'Visa');S.card={brand,last4,exp:(ex&&ex.value)||'08/28'};placeMission();break;}
       case 'open-interv':S.interv=true;render();break;
       case 'close-interv':S.interv=false;render();break;
       case 'close-invoice':S.invoiceId=null;render();break;
@@ -1107,7 +1127,7 @@
       <div class="field"><label>Secteur</label><div class="segs">${zones}</div></div>
       <div class="field"><label>Adresse</label><input class="txt" value="${m.address}"></div>
       <div class="field"><label>Point GPS du domicile</label><button class="btn ghost sm" data-cfg="geoloc">📍 ${m.geo?'Actualiser ma position':'Utiliser ma position actuelle'}</button>${m.geo?miniMap(m.geo):`<p class="mini" style="margin-top:6px">Ajoutez un point GPS pour que le prestataire trouve votre domicile facilement.</p>`}</div>
-      <div class="est"><div class="line"><span>${m.svcName} · ${t.rate} €/h × ${m.duration} h</span><b>${eur(t.sub)}</b></div><div class="total"><span>${(m.frequency&&m.frequency!=='ponctuelle')?'Par prestation':'Total'}</span><b>${eur(t.total)}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité (sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — séquestre agréé). Aucun supplément sans votre accord.</small></div>
+      <div class="est"><div class="line"><span>${m.svcName} · ${t.rate} €/h × ${m.duration} h</span><b>${eur(t.sub)}</b></div><div class="total"><span>${(m.frequency&&m.frequency!=='ponctuelle')?'Par prestation':'Total'}</span><b>${eur(t.total)}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité ${S.card?`(sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — séquestre agréé)`:`(moyen de paiement demandé juste après, via Mollie — séquestre agréé)`}. Aucun supplément sans votre accord.</small></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm">${I.search} Trouver un artisan · ${eur(t.total)}</button></div></div>`,'config');
   }
   view.addEventListener('keydown',(e)=>{
@@ -1121,7 +1141,7 @@
     const cd=e.target.closest('[data-cfdate]');if(cd&&S.draft){S.draft.dateISO=cd.value;S.draft.when=fmtDate(cd.value);renderConfig();}
     const ct=e.target.closest('[data-cftime]');if(ct&&S.draft&&ct.value){S.draft.slot=ct.value;}
   });
-  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,chat:false,advantages:false,referral:false,interv:false,invoiceId:null,proHistory:PRO_HISTORY(),fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,proStatus:'approved',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false}});render();toast('Scénario réinitialisé');});
+  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,card:null,payStep:false,payEdit:false,chat:false,advantages:false,referral:false,interv:false,invoiceId:null,proHistory:PRO_HISTORY(),fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,proStatus:'approved',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','repassage','cuisine'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false}});render();toast('Scénario réinitialisé');});
 
   /* ---------- PWA: install + service worker ---------- */
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
@@ -1149,6 +1169,7 @@
       if(S.proNav!=='home'){S.proNav='home';render();return;}
       S.persona='client';render();return;
     }
+    if(S.payStep){if(S.payEdit&&S.card){S.payEdit=false;render();return;}S.payStep=false;S.payEdit=false;if(S.draft)renderConfig();else render();return;}
     if(S.draft){S.draft=null;render();return;}
     if(S.mission){const st=S.mission.status;if(st==='searching'){S.mission=null;S.clientNav='home';render();}else if(st==='paid'||st==='rated'){S.history.unshift(S.mission);S.mission=null;S.clientNav='home';render();}return;}
     if(!S.onboarded){if(S.onbStep>0){S.onbStep--;render();}return;}
