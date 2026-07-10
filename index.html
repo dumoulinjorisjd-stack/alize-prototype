@@ -588,7 +588,7 @@
 
   const S={
     persona:'client',clientNav:'home',proNav:'home',onboarded:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},
-    card:null,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,mission:null,draft:null,
+    card:null,cardForm:false,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,mission:null,draft:null,
     addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,
     concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,
     proPhoto:null,proStatus:'approved',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},photo:''},
@@ -629,6 +629,7 @@
   let _scr=null;
   function curScreen(){
     if(S.showPitch)return 'pitch';
+    if(S.cardForm)return 'client:cardform';
     if(S.clientInv&&S.mission)return 'client:cinv';
     if(S.advantages)return S.persona+':advantages';
     if(S.invoiceId)return S.persona+':invoice:'+S.invoiceId;
@@ -655,7 +656,7 @@
     view.innerHTML='<div'+(same?'':' class="anim"')+'>'+html+'</div>';
     view.scrollTop=same?top:0;_scr=key;updateHomeFab();
   }
-  function updateHomeFab(){const f=document.getElementById('homefab');if(!f)return;const show=S.onboarded&&!S.authView&&!S.showPitch&&S.persona==='client'&&!!(S.mission||S.draft||S.chat||S.support||S.clientInv||S.advantages||S.addrForm||S.referral||S.interv);f.classList.toggle('show',show);}
+  function updateHomeFab(){const f=document.getElementById('homefab');if(!f)return;const show=S.onboarded&&!S.authView&&!S.showPitch&&S.persona==='client'&&!!(S.mission||S.draft||S.chat||S.support||S.clientInv||S.advantages||S.addrForm||S.referral||S.interv||S.cardForm);f.classList.toggle('show',show);}
   function render(){if(S.showPitch){paintView(pitchView(),'pitch');paintPersona();return;}paintView((S.persona==='admin'?renderAdmin():(S.persona==='concierge'?renderConcierge():(S.persona==='client'?renderClient():renderPro()))),curScreen());paintPersona();}
 
   /* ---------- ÉCRAN VITRINE / PITCH (présentation à un nouvel arrivant) ---------- */
@@ -1004,6 +1005,7 @@
     if(S.advantages)return advantagesScreen();
     if(S.support&&m)return supportChat();
     if(S.chat&&m)return chatScreen();
+    if(S.cardForm)return clientCardEdit();
     if(S.clientInv&&m)return clientInvoiceDoc();
     if(S.draft&&S.payStep)return clientPay();
     if(m){switch(m.status){
@@ -1111,7 +1113,7 @@
   function clientProfile(){
     const cnm=(S.clientForm&&S.clientForm.name)||'Camille Magras';const czone=(S.clientForm&&S.clientForm.zone)||'Gustavia';
     return `<div class="pad"><div style="height:12px"></div><div class="row" style="gap:14px">${avatarPhoto(S.account&&S.account.photo,inits(cnm),'lg')}<div><b style="font-size:18px;font-family:var(--f-disp)">${esc(cnm)}</b><div class="mini">${czone} · Saint-Barth</div></div></div>
-      <div class="card" style="padding:16px;margin-top:18px"><div class="row between"><span class="chip">${I.card} Paiement automatique</span></div>${S.card?`<div class="row between" style="margin-top:12px"><b>${S.card.brand} ••••&nbsp;${S.card.last4}</b><span class="chip good" style="padding:4px 10px">${I.check} Vérifiée</span></div><div class="banner teal" style="margin-top:14px">${I.shield}<span>Débit automatique après chaque prestation validée. Reçu à chaque fois — rien à gérer.</span></div>`:`<div class="mini" style="margin-top:12px">Aucune carte enregistrée — elle vous sera demandée à votre première réservation, en toute sécurité.</div>`}</div>
+      <div class="card" style="padding:16px;margin-top:18px"><div class="row between"><span class="chip">${I.card} Moyen de paiement</span>${S.card?`<span class="chip good" style="padding:4px 10px">${I.check} Enregistré</span>`:''}</div>${S.card?`<div class="row between" style="margin-top:12px"><div class="row" style="gap:11px;align-items:center"><span class="benic">${I.card}</span><div><b>${S.card.brand} ••••&nbsp;${S.card.last4}</b><div class="mini">Expire ${S.card.exp||'08/28'}</div></div></div></div><div class="row" style="gap:8px;margin-top:12px"><button class="btn ghost sm" data-act="add-card">Modifier</button><button class="btn ghost sm" data-act="card-remove">Retirer</button></div><div class="banner teal" style="margin-top:12px">${I.shield}<span>Débit automatique après chaque prestation validée. Reçu à chaque fois — rien à gérer.</span></div>`:`<p class="mini" style="margin-top:10px">Facultatif — enregistrez une carte pour réserver plus vite la prochaine fois. Sinon, elle vous sera demandée à votre première réservation. Rien n'est débité tant qu'une prestation n'est pas validée.</p><button class="btn ghost sm" data-act="add-card" style="margin-top:12px">${I.card} Ajouter un moyen de paiement</button>`}</div>
       <div class="card" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">${I.pin}&nbsp;Mes adresses</b><button class="btn ghost sm" style="width:auto;padding:6px 12px" data-act="addr-new">＋ Ajouter</button></div>
         ${S.addresses.length?S.addresses.map(a=>`<button class="card" data-act="addr-edit:${a.id}" style="padding:12px;margin-top:9px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${a.label}${S.addrDefault===a.id?` <span class="chip" style="padding:2px 8px">Par défaut</span>`:''}</b>${a.geo?`<span class="chip good" style="padding:3px 9px">${I.pin} GPS</span>`:`<span class="chip coral" style="padding:3px 9px">GPS manquant</span>`}</div><div class="mini" style="margin-top:2px">${a.address} · ${a.zone}</div></button>`).join(''):`<p class="mini" style="margin-top:10px;color:var(--muted)">Aucune adresse enregistrée. Ajoutez vos villas avec leur point GPS permanent.</p>`}
         <p class="mini" style="margin-top:10px;color:var(--muted)">À Saint-Barthélemy, le point GPS est le repère le plus fiable — enregistré une fois, réutilisé à chaque commande.</p></div>
@@ -1186,6 +1188,20 @@
       ${m.disputeMsg?`<div class="card" style="padding:16px;margin-top:14px"><div class="eyebrow" style="color:var(--muted)">Votre message</div><p class="sub" style="margin-top:6px;color:var(--ink-soft)">« ${esc(m.disputeMsg)} »</p></div>`:''}
       <div class="card" style="padding:14px;margin-top:12px"><div class="radar sm"><div class="ring r1"></div><div class="ring r2"></div><div class="core">${I.shield}</div></div><p class="sub" style="text-align:center;margin:0">Médiation en cours…</p></div>
       <div class="footcta" style="position:static;background:none;padding:16px 0 0"><button class="demobtn" data-act="demo-go-admin">⚙︎ Voir côté admin pour trancher (démo)</button></div></div>`;
+  }
+  /* Ajout/modification d'un moyen de paiement depuis le profil (facultatif).
+     ⚠️ Sécurité : on ne conserve JAMAIS le numéro complet ni le CVC — seulement
+     la marque + les 4 derniers chiffres, en mémoire (jamais dans localStorage). */
+  function clientCardEdit(){
+    return `<div class="pad"><button class="reset" data-act="card-cancel" style="margin:8px 0 2px">← Retour</button>
+      <span class="eyebrow">${I.card} Moyen de paiement</span><div class="h-hello">${S.card?'Modifier la carte':'Ajouter une carte'}</div>
+      <p class="sub" style="margin-top:6px">Facultatif — pour réserver plus vite la prochaine fois. Vous n'êtes débité qu'<b>après une prestation validée</b>, jamais avant.</p>
+      <div class="card" style="padding:16px;margin-top:14px">
+        <div class="field"><label>Numéro de carte</label><input class="txt" id="pfCardNum" value="${S.card?('•••• •••• •••• '+S.card.last4):''}" inputmode="numeric" autocomplete="cc-number" placeholder="1234 5678 9012 3456"></div>
+        <div class="row" style="gap:10px"><div class="field" style="flex:1;margin:0"><label>Expiration</label><input class="txt" id="pfCardExp" value="${S.card?(S.card.exp||''):''}" inputmode="numeric" autocomplete="cc-exp" placeholder="MM/AA"></div><div class="field" style="flex:1;margin:0"><label>CVC</label><input class="txt" id="pfCardCvc" inputmode="numeric" autocomplete="off" placeholder="•••"></div></div>
+      </div>
+      <div class="banner teal" style="margin-top:14px">${I.lock}<span>Paiement confié à <b>Mollie</b>, prestataire agréé (norme <b>PCI-DSS</b>). Vos données de carte sont chiffrées et transmises directement à Mollie&nbsp;: Ti-Services n'en conserve <b>jamais</b> le numéro ni le CVC — seulement les 4 derniers chiffres, pour l'affichage.</span></div>
+      <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-act="card-save">${I.lock} Enregistrer ma carte</button><p class="mini" style="text-align:center;margin-top:10px">Maquette — aucune donnée réelle n'est envoyée ni conservée.</p></div></div>`;
   }
   function placeMission(){const d=S.draft;if(!d)return;if(S.avgOffers[d.svc]){S.avgOffers[d.svc].sum+=d.rate;S.avgOffers[d.svc].n++;}S.mission=d;S.draft=null;S.payStep=false;S.payEdit=false;startSearch();}
   function clientPay(){
@@ -1669,6 +1685,10 @@
       case 'copy-referral':toast('Lien de parrainage copié — partagez-le (démo)');break;
       case 'pay-back':S.payStep=false;S.payEdit=false;if(S.draft)renderConfig();else render();break;
       case 'pay-change':S.payEdit=true;render();break;
+      case 'add-card':S.cardForm=true;render();break;
+      case 'card-cancel':S.cardForm=false;render();break;
+      case 'card-remove':S.card=null;S.cardForm=false;render();toast('Moyen de paiement retiré');break;
+      case 'card-save':{const el=document.getElementById('pfCardNum'),ex=document.getElementById('pfCardExp');const num=(el?el.value:'').replace(/\D/g,'');let last4,brand;if(num.length>=4){last4=num.slice(-4);brand=/^(5[1-5]|2[2-7])/.test(num)?'Mastercard':(/^3[47]/.test(num)?'Amex':'Visa');}else if(S.card){last4=S.card.last4;brand=S.card.brand;}else{toast('Entrez un numéro de carte valide');break;}S.card={brand,last4,exp:(ex&&ex.value)||(S.card?S.card.exp:'08/28')};S.cardForm=false;render();toast('Moyen de paiement enregistré 🔒');break;}
       case 'pay-canceledit':S.payEdit=false;render();break;
       case 'pay-confirm':placeMission();break;
       case 'pay-save':{const el=document.getElementById('payCardNum'),ex=document.getElementById('payCardExp');const num=(el?el.value:'').replace(/\D/g,'');const last4=num.slice(-4)||'4242';const brand=/^(5[1-5]|2[2-7])/.test(num)?'Mastercard':(/^3[47]/.test(num)?'Amex':'Visa');S.card={brand,last4,exp:(ex&&ex.value)||'08/28'};placeMission();break;}
@@ -1744,7 +1764,7 @@
     const ai=e.target.closest('[data-avatarinput]');
     if(ai&&ai.files&&ai.files[0]){let url='';try{url=URL.createObjectURL(ai.files[0]);}catch(_){}if(!url)return;if(ai.dataset.avatarinput==='client')S.clientForm.photo=url;else S.proForm.photo=url;ai.value='';render();}
   });
-  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,card:null,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,rebookFreq:'hebdo',showPitch:false,proHistory:PRO_HISTORY(),fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,proPhoto:null,proStatus:'approved',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},photo:''}});render();toast('Scénario réinitialisé');});
+  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,card:null,cardForm:false,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,rebookFreq:'hebdo',showPitch:false,proHistory:PRO_HISTORY(),fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,proPhoto:null,proStatus:'approved',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},photo:''}});render();toast('Scénario réinitialisé');});
 
   /* ---------- PWA: install + service worker ---------- */
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
@@ -1760,6 +1780,7 @@
   /* ---------- Bouton retour du téléphone : revient à l'écran précédent (ne quitte pas l'app) ---------- */
   function goBack(){
     if(S.showPitch){S.showPitch=false;render();return;}
+    if(S.cardForm){S.cardForm=false;render();return;}
     if(S.clientInv){S.clientInv=false;render();return;}
     if(S.advantages){S.advantages=false;render();return;}
     if(S.invoiceId){S.invoiceId=null;render();return;}
