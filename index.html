@@ -218,6 +218,12 @@
   .zouti-line span{font-size:12.5px;line-height:1.35;color:var(--ink-soft);font-weight:600}
   .or-sep{display:flex;align-items:center;gap:10px;margin:14px 0 12px;color:var(--muted);font-size:12px;font-weight:600}
   .or-sep::before,.or-sep::after{content:"";flex:1;height:1px;background:var(--hair)}
+  .photopick{display:flex;align-items:center;gap:13px;cursor:pointer;padding:2px 0 4px}
+  .pp-ring{flex:none;width:62px;height:62px;border-radius:50%;border:2px dashed color-mix(in srgb,var(--teal) 45%,var(--hair));background:var(--teal-wash);display:flex;align-items:center;justify-content:center;overflow:hidden;color:var(--teal-deep)}
+  .pp-img{width:100%;height:100%;background-size:cover;background-position:center}
+  .pp-plus{font-size:25px;font-weight:700;line-height:1}
+  .pp-txt{display:flex;flex-direction:column;gap:1px} .pp-txt b{font-size:14px}
+  .avatar[style*="background-image"]{background-color:var(--sand-2)}
   @media (prefers-reduced-motion:reduce){.octo,.octo .pod,.octo-mini{animation:none}}
   /* ===== Écran vitrine / pitch ===== */
   .ptrusts{display:flex;gap:8px;margin-top:18px}
@@ -269,6 +275,7 @@
 
   .avatar{width:46px;height:46px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:16px;background:linear-gradient(135deg,var(--teal),var(--teal-deep));font-family:var(--f-disp)}
   .avatar.lg{width:64px;height:64px;font-size:22px}
+  .avatar.sm{width:32px;height:32px;font-size:12px}
   .stars{color:var(--warn);font-size:13px;letter-spacing:1px}
 
   .timeline{margin:6px 0 0;padding:2px 0}
@@ -448,6 +455,10 @@
   function zoutiLine(txt){return `<div class="zouti-line">${octoMini(34,'wave')}<span>${txt}</span></div>`;}
   // Radar de recherche : Zouti au centre (à la place de la loupe), anneaux qui pulsent
   function searchRadar(sm){return `<div class="radar${sm?' sm':''}"><div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div><div class="core bare">${octoMini(sm?46:64,'bob')}</div></div>`;}
+  // Avatar : photo de profil si disponible, sinon initiales
+  function avatarPhoto(photo,initials,cls){return photo?`<div class="avatar ${cls||''}" style="background-image:url('${photo}');background-size:cover;background-position:center;color:transparent">${initials}</div>`:`<div class="avatar ${cls||''}">${initials}</div>`;}
+  // Sélecteur de photo de profil (création de compte client / artisan). who: 'client'|'pro'
+  function photoPicker(current,who){return `<label class="photopick"><span class="pp-ring">${current?`<span class="pp-img" style="background-image:url('${current}')"></span>`:`<span class="pp-plus">＋</span>`}</span><span class="pp-txt"><b>${current?'Photo ajoutée ✓':'Ajouter une photo'}</b><span class="mini">${current?'Toucher pour changer':'Rassure : on voit à qui on a affaire'}</span></span><input type="file" accept="image/*" data-avatarinput="${who}" hidden></label>`;}
 
   /* Compte de démo persistant (maquette) : on garde nom/e-mail/secteur pour
      illustrer « je reviens et je me connecte ». Le mot de passe n'est JAMAIS
@@ -562,11 +573,11 @@
   ];
 
   const S={
-    persona:'client',clientNav:'home',proNav:'home',onboarded:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:''},
+    persona:'client',clientNav:'home',proNav:'home',onboarded:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',photo:''},
     card:null,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,mission:null,draft:null,
     addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,
     concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,
-    proStatus:'approved',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{}},
+    proPhoto:null,proStatus:'approved',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},photo:''},
     proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],
     proHistory:PRO_HISTORY(),
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),
@@ -1012,6 +1023,7 @@
       <span class="eyebrow">Créer mon compte</span>
       <div class="h-hello">Vos informations</div>
       <div class="card" style="padding:16px;margin-top:16px">
+        <div class="field">${photoPicker(f.photo,'client')}</div>
         <div class="field"><label>Prénom &amp; nom</label><input class="txt" data-cf="name" value="${esc(f.name)}" placeholder="Ex. Camille Magras"></div>
         <div class="field"><label>E-mail</label><input class="txt" data-cf="email" value="${esc(f.email)}" inputmode="email" autocomplete="email" placeholder="vous@exemple.com"></div>
         <div class="field"><label>Mot de passe</label><input class="txt" type="password" data-cf="password" value="${esc(f.password||'')}" autocomplete="new-password" placeholder="6 caractères minimum"><p class="mini" style="margin-top:5px">Il vous servira à vous reconnecter la prochaine fois.</p></div>
@@ -1047,7 +1059,7 @@
   function clientHome(){
     const cats=SERVICES.map(s=>`<button class="cat" data-svc="${s.id}"><div class="ic">${I[s.id]}</div><div class="nm">${s.nm}</div><div class="rt">dès <b>${s.rate} €</b>/h</div></button>`).join('');
     const first=((S.clientForm&&S.clientForm.name)||'Camille').trim().split(' ')[0];
-    return `<div class="pad"><div style="margin-top:10px"><span class="eyebrow">${I.pin} ${(S.clientForm&&S.clientForm.zone)||'Gustavia'} · Saint-Barth</span><div class="h-hello">Bonjour ${esc(first)}</div></div>
+    return `<div class="pad"><div class="row between" style="margin-top:10px"><div><span class="eyebrow">${I.pin} ${(S.clientForm&&S.clientForm.zone)||'Gustavia'} · Saint-Barth</span><div class="h-hello">Bonjour ${esc(first)}</div></div>${avatarPhoto(S.account&&S.account.photo,inits((S.clientForm&&S.clientForm.name)||'Camille Magras'),'')}</div>
       <p class="sub" style="margin-top:2px">De quel service avez-vous besoin&nbsp;?</p><div class="cats">${cats}</div>
       ${zoutiLine('Choisissez, '+esc(first)+' — je m’occupe de trouver le bon artisan.')}
       <div style="height:16px"></div></div>${clientNavbar()}`;
@@ -1061,7 +1073,8 @@
     return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">Mes réservations</span><div class="h-hello">Prestations réalisées</div>${summary}${rec}${list}<div style="height:6px"></div></div>${clientNavbar()}`;
   }
   function clientProfile(){
-    return `<div class="pad"><div style="height:12px"></div><div class="row" style="gap:14px"><div class="avatar lg">CM</div><div><b style="font-size:18px;font-family:var(--f-disp)">Camille Magras</b><div class="mini">Gustavia · Saint-Barth</div></div></div>
+    const cnm=(S.clientForm&&S.clientForm.name)||'Camille Magras';const czone=(S.clientForm&&S.clientForm.zone)||'Gustavia';
+    return `<div class="pad"><div style="height:12px"></div><div class="row" style="gap:14px">${avatarPhoto(S.account&&S.account.photo,inits(cnm),'lg')}<div><b style="font-size:18px;font-family:var(--f-disp)">${esc(cnm)}</b><div class="mini">${czone} · Saint-Barth</div></div></div>
       <div class="card" style="padding:16px;margin-top:18px"><div class="row between"><span class="chip">${I.card} Paiement automatique</span></div>${S.card?`<div class="row between" style="margin-top:12px"><b>${S.card.brand} ••••&nbsp;${S.card.last4}</b><span class="chip good" style="padding:4px 10px">${I.check} Vérifiée</span></div><div class="banner teal" style="margin-top:14px">${I.shield}<span>Débit automatique après chaque prestation validée. Reçu à chaque fois — rien à gérer.</span></div>`:`<div class="mini" style="margin-top:12px">Aucune carte enregistrée — elle vous sera demandée à votre première réservation, en toute sécurité.</div>`}</div>
       <div class="card" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">${I.pin}&nbsp;Mes adresses</b><button class="btn ghost sm" style="width:auto;padding:6px 12px" data-act="addr-new">＋ Ajouter</button></div>
         ${S.addresses.length?S.addresses.map(a=>`<button class="card" data-act="addr-edit:${a.id}" style="padding:12px;margin-top:9px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${a.label}${S.addrDefault===a.id?` <span class="chip" style="padding:2px 8px">Par défaut</span>`:''}</b>${a.geo?`<span class="chip good" style="padding:3px 9px">${I.pin} GPS</span>`:`<span class="chip coral" style="padding:3px 9px">GPS manquant</span>`}</div><div class="mini" style="margin-top:2px">${a.address} · ${a.zone}</div></button>`).join(''):`<p class="mini" style="margin-top:10px;color:var(--muted)">Aucune adresse enregistrée. Ajoutez vos villas avec leur point GPS permanent.</p>`}
@@ -1240,7 +1253,8 @@
       <p class="sub" style="margin-top:6px">Sur <b>candidature</b>, comme un recrutement : profil vérifié avant activation.</p>
       <div class="banner coral" style="margin-top:14px">${I.shield}<span><b>Réservé aux professionnels immatriculés</b> (micro-entrepreneur ou société). Un particulier non déclaré ne peut pas s'inscrire — <b>SIRET obligatoire</b>.</span></div>
       <div class="card" style="padding:16px;margin-top:14px">
-        <div class="field"><label>Nom / Raison sociale</label><input class="txt" data-pf="name" value="${f.name}" placeholder="Ex. Marie-Lou Cagan"></div>
+        <div class="field">${photoPicker(f.photo,'pro')}<p class="mini" style="margin-top:2px">Un visage rassure les clients — les profils avec photo sont choisis plus souvent.</p></div>
+        <div class="field"><label>Nom / Raison sociale</label><input class="txt" data-pf="name" value="${esc(f.name)}" placeholder="Ex. Marie-Lou Cagan"></div>
         <div class="field"><label>Téléphone</label><input class="txt" data-pf="phone" value="${f.phone}" inputmode="tel" placeholder="Ex. 0690 00 00 00"></div>
         <div class="field"><label>SIRET (14 chiffres) — obligatoire</label><input class="txt" data-pf="siret" value="${f.siret}" inputmode="numeric" placeholder="Ex. 123 456 789 00012"></div>
         <div class="field"><label>Présentation / expérience</label><textarea rows="3" data-pf="bio" placeholder="Votre expérience, vos spécialités, votre zone…">${f.bio}</textarea></div>
@@ -1266,6 +1280,7 @@
       <div class="card" style="padding:16px;margin-top:6px">
         <div class="row between"><span class="chip" style="background:var(--warn);color:#fff">${I.clock} En cours d'examen</span><span class="mini">Réponse sous 48 h</span></div>
         <p class="sub" style="margin-top:12px">Ti-Services vérifie votre identité et votre sérieux avant d'activer votre compte. L'équipe vous recontacte — comme un recrutement.</p>
+        ${f.photo?`<div class="row" style="gap:11px;align-items:center;margin-top:12px">${avatarPhoto(f.photo,inits(f.name||'Vous'),'')}<div><b style="font-size:14px">${esc(f.name||'Votre profil')}</b><div class="mini">${I.check} Photo de profil ajoutée — les clients verront votre visage</div></div></div>`:''}
         ${svc?`<div class="mini" style="margin-top:10px">Services demandés&nbsp;: <b style="color:var(--ink)">${svc}</b></div>`:''}
       </div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0">
@@ -1274,7 +1289,7 @@
       </div></div>`;
   }
   function proHome(){
-    return `<div class="pad"><div class="row between" style="margin-top:10px"><div><span class="eyebrow">Artisan · ${S.proCats.map(c=>{const s=SERVICES.find(x=>x.id===c);return s?s.nm:c;}).slice(0,2).join(' · ')} · dès ${S.proRate} €/h</span><div class="h-hello">${S.proName}</div></div><div class="avatar">ML</div></div>
+    return `<div class="pad"><div class="row between" style="margin-top:10px"><div><span class="eyebrow">Artisan · ${S.proCats.map(c=>{const s=SERVICES.find(x=>x.id===c);return s?s.nm:c;}).slice(0,2).join(' · ')} · dès ${S.proRate} €/h</span><div class="h-hello">${S.proName}</div></div>${avatarPhoto(S.proPhoto,'ML','')}</div>
       <div class="card" style="padding:16px;margin-top:12px"><div class="row between"><div><b style="font-size:15px">${S.proOnline?'Vous êtes en ligne':'Hors ligne'}</b><div class="mini">${S.proOnline?'Vous recevez les missions sur vos créneaux dispo':'Activez pour recevoir des missions'}</div></div><button class="switch" data-act="toggle-online" style="background:${S.proOnline?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${S.proOnline?'25px':'3px'}"></span></button></div></div>
       <div class="row" style="gap:11px;margin-top:12px"><div class="card" style="padding:14px;flex:1"><div class="mini">Aujourd'hui</div><b class="money" style="font-size:20px;font-family:var(--f-disp)">${S.proJobsToday}</b><div class="mini">missions</div></div><div class="card" style="padding:14px;flex:1"><div class="mini">Note</div><b class="money" style="font-size:20px;font-family:var(--f-disp)">4,9</b><div class="mini"><span class="stars">★</span> · 214</div></div><div class="card" style="padding:14px;flex:1"><div class="mini">Dispos</div><b class="money" style="font-size:20px;font-family:var(--f-disp)">${availCount()}</b><div class="mini">créneaux</div></div></div>
       ${(()=>{const n=S.agenda.find(a=>a.status!=='done');if(!n)return '';const s=SERVICES.find(x=>x.id===n.svc);return `<button class="card" style="padding:14px;margin-top:12px;width:100%;text-align:left;display:block" data-pnav="agenda"><div class="row between"><span class="eyebrow" style="color:var(--muted)">Prochaine prestation</span><span class="mini">Voir l’agenda ›</span></div><div class="row" style="gap:12px;margin-top:8px"><div class="appt-time"><b>${n.slot}</b><span class="mini">${n.duration} h</span></div><div><b style="font-size:14.5px">${s.nm}</b><div class="mini">${n.day} · ${n.client}</div></div></div></button>`;})()}
@@ -1345,7 +1360,7 @@
     const stLabel={accepted:'À venir · '+m.slot,working:'En cours'}[m.status];
     return `<div class="pad"><div style="height:8px"></div><div class="row between"><span class="chip good">${stLabel}</span><span class="mini">Mission remportée 🎉</span></div>
       <div class="h-hello" style="margin-top:8px">${m.svcName}</div>
-      <div class="card" style="padding:15px;margin-top:12px"><div class="row" style="gap:8px;flex-wrap:wrap"><span class="chip grey">${I.clock} ${m.slot}</span><span class="chip grey">${m.duration} h</span></div><div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px"><span class="chip grey">${I.pin} ${m.address}</span></div><hr class="dashed"><div class="row between"><span class="sub">Client</span><b>Camille M.</b></div><div class="row between" style="margin-top:6px"><span class="sub">Vous percevez</span><b class="money" style="color:var(--teal-deep)">${eur(t.payout)}</b></div></div>
+      <div class="card" style="padding:15px;margin-top:12px"><div class="row" style="gap:8px;flex-wrap:wrap"><span class="chip grey">${I.clock} ${m.slot}</span><span class="chip grey">${m.duration} h</span></div><div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px"><span class="chip grey">${I.pin} ${m.address}</span></div><hr class="dashed"><div class="row between"><span class="sub">Client</span><span class="row" style="gap:8px;align-items:center">${avatarPhoto(S.account&&S.account.photo,'CM','sm')}<b>Camille M.</b></span></div><div class="row between" style="margin-top:6px"><span class="sub">Vous percevez</span><b class="money" style="color:var(--teal-deep)">${eur(t.payout)}</b></div></div>
       ${(m.photos&&m.photos.length)?`<div class="card" style="padding:14px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Photos du client</div><div class="thumbs" style="margin-top:8px">${m.photos.map(u=>`<div class="thumb"><img src="${u}" alt="Photo du client"></div>`).join('')}</div></div>`:''}
       ${m.access?`<div class="card" style="padding:14px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">🔑 Infos d'accès</div><p class="sub" style="margin-top:6px;color:var(--ink-soft)">${esc(m.access)}</p></div>`:''}
       ${m.geo?`<div class="card" style="padding:14px;margin-top:12px"><div class="row between"><span class="chip">📍 Localisation du domicile</span><a class="chip good" style="padding:5px 11px;text-decoration:none" href="https://www.google.com/maps/search/?api=1&query=${m.geo.lat},${m.geo.lng}" target="_blank" rel="noopener">Itinéraire ›</a></div>${miniMap(m.geo)}</div>`:''}
@@ -1542,7 +1557,7 @@
       case 'onb-start':S.onbStep=1;render();break;
       case 'onb-back0':S.onbStep=0;render();break;
       case 'onb-back1':S.onbStep=1;render();break;
-      case 'finish-onboard':{const c=S.clientForm;if((c.name||'').trim().length>1&&/.+@.+\..+/.test(c.email||'')&&(c.password||'').length>=6){S.account={name:c.name.trim(),email:c.email.trim(),zone:c.zone};saveAccount(S.account);S.onboarded=true;S.authView=null;render();burstConfetti();toast('Compte créé 🐙 — bienvenue, '+c.name.trim().split(' ')[0]+' !');}else{toast('Nom, e-mail et mot de passe (6 car.) requis');}break;}
+      case 'finish-onboard':{const c=S.clientForm;if((c.name||'').trim().length>1&&/.+@.+\..+/.test(c.email||'')&&(c.password||'').length>=6){S.account={name:c.name.trim(),email:c.email.trim(),zone:c.zone,photo:c.photo||''};saveAccount(S.account);S.onboarded=true;S.authView=null;render();burstConfetti();toast('Compte créé 🐙 — bienvenue, '+c.name.trim().split(' ')[0]+' !');}else{toast('Nom, e-mail et mot de passe (6 car.) requis');}break;}
       case 'show-login':S.authView='login';S.loginForm={email:(S.account?S.account.email:(S.clientForm.email||'')),password:''};render();break;
       case 'login-back':S.authView=null;render();break;
       case 'login-to-signup':S.authView=null;S.onbStep=1;render();break;
@@ -1625,8 +1640,8 @@
       case 'print-invoice':window.print();break;
       case 'toggle-mandat':S.proForm.mandat=!S.proForm.mandat;render();break;
       case 'pro-attach-insurance':S.proForm.insuranceDoc=true;render();toast('Attestation d’assurance ajoutée');break;
-      case 'pro-submit':{const f=S.proForm;if(!f.cats.length){toast('Sélectionnez au moins un service');break;}if(!/^\d{14}$/.test((f.siret||'').replace(/\s/g,''))){toast('Un SIRET valide (14 chiffres) est requis');break;}if(!f.insuranceDoc){toast('Joignez votre attestation d’assurance');break;}if(!f.mandat){toast('Acceptez le mandat de facturation pour continuer');break;}const rates={};f.cats.forEach(c=>{rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});const minRate=Math.min.apply(null,f.cats.map(c=>rates[c]));S.adminArtisans=S.adminArtisans.filter(x=>x.id!=='self');S.adminArtisans.unshift({id:'self',name:f.name||'Nouveau prestataire',status:'attente',type:'entreprise',cats:f.cats.slice(),rates,rate:minRate,siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,rating:0,jobs:0,zone:'—',phone:f.phone||'',email:''});S.proStatus='pending';render();break;}
-      case 'pro-approve':{S.proStatus='approved';const f=S.proForm;if(f.name)S.proName=f.name;if(f.cats.length)S.proCats=f.cats.slice();const rates={};f.cats.forEach(c=>{rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});S.proRates=rates;if(f.cats.length)S.proRate=Math.min.apply(null,f.cats.map(c=>rates[c]));S.proStatusType='entreprise';S.proSiret=(f.siret||'').replace(/\s/g,'');S.proBio=f.bio||'';S.proInsured=!!f.insuranceDoc;if(f.insurer)S.proInsurer=f.insurer;render();toast('Profil validé — bienvenue sur Ti-Services !');break;}
+      case 'pro-submit':{const f=S.proForm;if(!f.cats.length){toast('Sélectionnez au moins un service');break;}if(!/^\d{14}$/.test((f.siret||'').replace(/\s/g,''))){toast('Un SIRET valide (14 chiffres) est requis');break;}if(!f.insuranceDoc){toast('Joignez votre attestation d’assurance');break;}if(!f.mandat){toast('Acceptez le mandat de facturation pour continuer');break;}const rates={};f.cats.forEach(c=>{rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});const minRate=Math.min.apply(null,f.cats.map(c=>rates[c]));S.adminArtisans=S.adminArtisans.filter(x=>x.id!=='self');S.adminArtisans.unshift({id:'self',name:f.name||'Nouveau prestataire',status:'attente',type:'entreprise',cats:f.cats.slice(),rates,rate:minRate,siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,rating:0,jobs:0,zone:'—',phone:f.phone||'',email:'',photo:f.photo||''});S.proStatus='pending';render();break;}
+      case 'pro-approve':{S.proStatus='approved';const f=S.proForm;if(f.photo)S.proPhoto=f.photo;if(f.name)S.proName=f.name;if(f.cats.length)S.proCats=f.cats.slice();const rates={};f.cats.forEach(c=>{rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});S.proRates=rates;if(f.cats.length)S.proRate=Math.min.apply(null,f.cats.map(c=>rates[c]));S.proStatusType='entreprise';S.proSiret=(f.siret||'').replace(/\s/g,'');S.proBio=f.bio||'';S.proInsured=!!f.insuranceDoc;if(f.insurer)S.proInsurer=f.insurer;render();toast('Profil validé — bienvenue sur Ti-Services !');break;}
       case 'pro-accept':{const m=S.mission;m.provider=Object.assign({},PROVIDERS[m.svc]);m.status='accepted';const r=totals(m).rate;const amt=totals(m).total;const freq=m.frequency||'ponctuelle';const labels=occLabels(freq);const entries=labels.map(d=>({day:d,slot:m.slot,svc:m.svc,client:'Camille M.',zone:m.zone,duration:m.duration,rate:r,amount:amt,status:'upcoming'}));m._appt=entries[0];entries.slice().reverse().forEach(e=>S.agenda.unshift(e));if(freq!=='ponctuelle'){S.recurring.unshift({svc:m.svc,svcName:m.svcName,short:freqInfo(freq).short,slot:m.slot,zone:m.zone});}if(!m.chat||!m.chat.length)m.chat=[{from:'pro',text:'Bonjour Camille ! Bien reçu votre demande, je serai là à '+m.slot+'. À tout à l’heure 👋'}];render();burstConfetti();toast(labels.length>1?'Prestation récurrente ajoutée à votre agenda !':'Mission remportée — ajoutée à votre agenda !');break;}
       case 'pro-decline':S.mission.status='searching';render();setTimeout(()=>{if(S.mission&&S.mission.status==='searching'){S.mission.status='pending';render();}},1400);toast('Mission passée — proposée aux autres');break;
       case 'pro-advance':S.mission.status=b.dataset.to;if(S.mission._appt){if(b.dataset.to==='working')S.mission._appt.status='live';else if(b.dataset.to==='done_pro')S.mission._appt.status='tovalidate';}render();break;
@@ -1686,9 +1701,11 @@
   });
   view.addEventListener('change',(e)=>{
     const fp=e.target.closest('[data-photoinput]');
-    if(fp&&S.draft){const files=Array.from(fp.files||[]);if(!files.length)return;S.draft.photos=S.draft.photos||[];files.slice(0,6).forEach(f=>{try{S.draft.photos.push(URL.createObjectURL(f));}catch(_){}});fp.value='';renderConfig();}
+    if(fp&&S.draft){const files=Array.from(fp.files||[]);if(!files.length)return;S.draft.photos=S.draft.photos||[];files.slice(0,6).forEach(f=>{try{S.draft.photos.push(URL.createObjectURL(f));}catch(_){}});fp.value='';renderConfig();return;}
+    const ai=e.target.closest('[data-avatarinput]');
+    if(ai&&ai.files&&ai.files[0]){let url='';try{url=URL.createObjectURL(ai.files[0]);}catch(_){}if(!url)return;if(ai.dataset.avatarinput==='client')S.clientForm.photo=url;else S.proForm.photo=url;ai.value='';render();}
   });
-  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,card:null,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,rebookFreq:'hebdo',showPitch:false,proHistory:PRO_HISTORY(),fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:''},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,proStatus:'approved',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{}}});render();toast('Scénario réinitialisé');});
+  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,card:null,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,rebookFreq:'hebdo',showPitch:false,proHistory:PRO_HISTORY(),fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',photo:''},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,proPhoto:null,proStatus:'approved',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},photo:''}});render();toast('Scénario réinitialisé');});
 
   /* ---------- PWA: install + service worker ---------- */
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
