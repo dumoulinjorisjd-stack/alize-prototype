@@ -1,9 +1,10 @@
 /* Ti-Services — service worker (coquille hors-ligne) */
-const CACHE = 'ti-services-v61';
+const CACHE = 'ti-services-v62';
 const SHELL = [
   './',
   './index.html',
   './manifest.webmanifest',
+  './zouti-logo.svg',
   './icon.svg',
   './icon-192.png',
   './icon-512.png'
