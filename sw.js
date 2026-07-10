@@ -1,5 +1,5 @@
 /* Ti-Services — service worker (coquille hors-ligne) */
-const CACHE = 'ti-services-v58';
+const CACHE = 'ti-services-v59';
 const SHELL = [
   './',
   './index.html',
@@ -23,6 +23,8 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
+  // Ne pas intercepter le cross-origin (Firebase, gstatic, googleapis…) : réseau direct.
+  if (new URL(req.url).origin !== self.location.origin) return;
   // navigations : réseau d'abord, repli sur la coquille en cache (hors-ligne)
   if (req.mode === 'navigate') {
     e.respondWith(fetch(req).catch(() => caches.match('./index.html')));

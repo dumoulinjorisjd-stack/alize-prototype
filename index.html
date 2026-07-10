@@ -412,8 +412,16 @@
     appName: 'Ti-Services',
     siteUrl: '',                          // ex. 'https://ti-services.fr' le moment venu
     supportEmail: 'bonjour@ti-services.fr',
-    adminEmail: '',                       // compte admin (bêta Firebase)
-    firebase: null                        // objet firebaseConfig (bêta) — cf. DEPLOIEMENT.md
+    adminEmail: 'contact@archipel-btp.com',   // compte admin (bêta)
+    // Clés publiques du client web (non secrètes) — sécurité = règles Firestore + domaines autorisés.
+    firebase: {
+      apiKey: 'AIzaSyBHHSo8NQ5cnQAjwJY7m1tdPsNO7lNoWDQ',
+      authDomain: 'ti-service-e8ced.firebaseapp.com',
+      projectId: 'ti-service-e8ced',
+      storageBucket: 'ti-service-e8ced.firebasestorage.app',
+      messagingSenderId: '1077236110023',
+      appId: '1:1077236110023:web:e9a879939d91cb5558a4e2'
+    }
   };
   // Base des liens absolus (partage, parrainage, lien e-mail de connexion) :
   // le domaine s'il est défini, sinon l'adresse courante — rien d'autre à changer.
@@ -492,8 +500,8 @@
   /* Compte de démo persistant (maquette) : on garde nom/e-mail/secteur pour
      illustrer « je reviens et je me connecte ». Le mot de passe n'est JAMAIS
      stocké — l'écran de connexion se contente de le vérifier localement. */
-  function loadAccount(){try{const r=localStorage.getItem('tiservices_account');return r?JSON.parse(r):null;}catch(_){return null;}}
-  function saveAccount(a){try{localStorage.setItem('tiservices_account',JSON.stringify({name:a.name,email:a.email,zone:a.zone}));}catch(_){}}
+  function loadAccount(){if(CONFIG.firebase&&!window.__NOFB)return null;try{const r=localStorage.getItem('tiservices_account');return r?JSON.parse(r):null;}catch(_){return null;}}
+  function saveAccount(a){if(CONFIG.firebase&&!window.__NOFB)return;try{localStorage.setItem('tiservices_account',JSON.stringify({name:a.name,email:a.email,zone:a.zone}));}catch(_){}}
   // Petite fête aux moments clés (mission remportée / prestation validée)
   function burstConfetti(){
     const scr=document.querySelector('.screen');if(!scr)return;
@@ -1086,7 +1094,7 @@
         <div class="field" style="margin:0"><label>Votre secteur</label><div class="segs">${zones}</div></div>
       </div>
       <div class="or-sep"><span>ou</span></div>
-      <button class="btn ghost" data-act="google-soon" style="opacity:.65"><svg width="17" height="17" viewBox="0 0 24 24"><path fill="#4285F4" d="M23 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.2a5.3 5.3 0 0 1-2.3 3.5v2.9h3.7C21.7 18.9 23 15.9 23 12.3z"/><path fill="#34A853" d="M12 24c3.1 0 5.7-1 7.6-2.8l-3.7-2.9c-1 .7-2.3 1.1-3.9 1.1-3 0-5.5-2-6.4-4.8H1.8v3C3.7 21.3 7.5 24 12 24z"/><path fill="#FBBC05" d="M5.6 14.3a7.2 7.2 0 0 1 0-4.6v-3H1.8a12 12 0 0 0 0 10.6z"/><path fill="#EA4335" d="M12 4.8c1.7 0 3.2.6 4.4 1.7l3.3-3.3C17.7 1.2 15.1 0 12 0 7.5 0 3.7 2.7 1.8 6.7l3.8 3c.9-2.8 3.4-4.9 6.4-4.9z"/></svg>&nbsp;Continuer avec Google <span class="chip grey" style="padding:2px 8px;margin-left:4px">bientôt</span></button>
+      <button class="btn ghost" data-act="google-soon" style="opacity:.65"><svg width="17" height="17" viewBox="0 0 24 24"><path fill="#4285F4" d="M23 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.2a5.3 5.3 0 0 1-2.3 3.5v2.9h3.7C21.7 18.9 23 15.9 23 12.3z"/><path fill="#34A853" d="M12 24c3.1 0 5.7-1 7.6-2.8l-3.7-2.9c-1 .7-2.3 1.1-3.9 1.1-3 0-5.5-2-6.4-4.8H1.8v3C3.7 21.3 7.5 24 12 24z"/><path fill="#FBBC05" d="M5.6 14.3a7.2 7.2 0 0 1 0-4.6v-3H1.8a12 12 0 0 0 0 10.6z"/><path fill="#EA4335" d="M12 4.8c1.7 0 3.2.6 4.4 1.7l3.3-3.3C17.7 1.2 15.1 0 12 0 7.5 0 3.7 2.7 1.8 6.7l3.8 3c.9-2.8 3.4-4.9 6.4-4.9z"/></svg>&nbsp;Continuer avec Google ${FB?"":'<span class="chip grey" style="padding:2px 8px;margin-left:4px">bientôt</span>'}</button>
       <div class="footcta" style="position:static;background:none;padding:16px 0 0">
         <button class="btn primary" data-act="finish-onboard"${ok?'':' disabled'}>${I.check} Créer mon compte</button>
         <p class="mini" style="text-align:center;margin-top:10px">${I.lock} Aucune carte à cette étape — moyen de paiement demandé seulement à la 1ʳᵉ réservation.</p>
@@ -1106,7 +1114,7 @@
         <div class="field" style="margin:0"><label>Mot de passe</label><div class="pw-wrap"><input class="txt" type="password" data-lf="password" value="${esc(f.password||'')}" autocomplete="current-password" placeholder="Votre mot de passe"><button type="button" class="pw-eye" data-act="pw-toggle" aria-label="Afficher le mot de passe">${I.eye}</button></div></div>
       </div>
       <div class="or-sep"><span>ou</span></div>
-      <button class="btn ghost" data-act="google-soon" style="opacity:.65"><svg width="17" height="17" viewBox="0 0 24 24"><path fill="#4285F4" d="M23 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.2a5.3 5.3 0 0 1-2.3 3.5v2.9h3.7C21.7 18.9 23 15.9 23 12.3z"/><path fill="#34A853" d="M12 24c3.1 0 5.7-1 7.6-2.8l-3.7-2.9c-1 .7-2.3 1.1-3.9 1.1-3 0-5.5-2-6.4-4.8H1.8v3C3.7 21.3 7.5 24 12 24z"/><path fill="#FBBC05" d="M5.6 14.3a7.2 7.2 0 0 1 0-4.6v-3H1.8a12 12 0 0 0 0 10.6z"/><path fill="#EA4335" d="M12 4.8c1.7 0 3.2.6 4.4 1.7l3.3-3.3C17.7 1.2 15.1 0 12 0 7.5 0 3.7 2.7 1.8 6.7l3.8 3c.9-2.8 3.4-4.9 6.4-4.9z"/></svg>&nbsp;Continuer avec Google <span class="chip grey" style="padding:2px 8px;margin-left:4px">bientôt</span></button>
+      <button class="btn ghost" data-act="google-soon" style="opacity:.65"><svg width="17" height="17" viewBox="0 0 24 24"><path fill="#4285F4" d="M23 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.2a5.3 5.3 0 0 1-2.3 3.5v2.9h3.7C21.7 18.9 23 15.9 23 12.3z"/><path fill="#34A853" d="M12 24c3.1 0 5.7-1 7.6-2.8l-3.7-2.9c-1 .7-2.3 1.1-3.9 1.1-3 0-5.5-2-6.4-4.8H1.8v3C3.7 21.3 7.5 24 12 24z"/><path fill="#FBBC05" d="M5.6 14.3a7.2 7.2 0 0 1 0-4.6v-3H1.8a12 12 0 0 0 0 10.6z"/><path fill="#EA4335" d="M12 4.8c1.7 0 3.2.6 4.4 1.7l3.3-3.3C17.7 1.2 15.1 0 12 0 7.5 0 3.7 2.7 1.8 6.7l3.8 3c.9-2.8 3.4-4.9 6.4-4.9z"/></svg>&nbsp;Continuer avec Google ${FB?"":'<span class="chip grey" style="padding:2px 8px;margin-left:4px">bientôt</span>'}</button>
       <div class="footcta" style="position:static;background:none;padding:16px 0 0">
         <button class="btn primary" data-act="do-login"${ok?'':' disabled'}>${I.lock} Se connecter</button>
         <p class="mini" style="text-align:center;margin-top:10px">Pas encore de compte&nbsp;? <button class="linklike" data-act="login-to-signup">Créer un compte</button></p>
@@ -1136,6 +1144,7 @@
         ${S.addresses.length?S.addresses.map(a=>`<button class="card" data-act="addr-edit:${a.id}" style="padding:12px;margin-top:9px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${a.label}${S.addrDefault===a.id?` <span class="chip" style="padding:2px 8px">Par défaut</span>`:''}</b>${a.geo?`<span class="chip good" style="padding:3px 9px">${I.pin} GPS</span>`:`<span class="chip coral" style="padding:3px 9px">GPS manquant</span>`}</div><div class="mini" style="margin-top:2px">${a.address} · ${a.zone}</div></button>`).join(''):`<p class="mini" style="margin-top:10px;color:var(--muted)">Aucune adresse enregistrée. Ajoutez vos villas avec leur point GPS permanent.</p>`}
         <p class="mini" style="margin-top:10px;color:var(--muted)">À Saint-Barthélemy, le point GPS est le repère le plus fiable — enregistré une fois, réutilisé à chaque commande.</p></div>
       <button class="card" data-act="show-advantages" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">Garantie Ti-Services</b><span class="chip good">Active</span></div><p class="sub" style="margin-top:8px">Artisan absent ou travail non conforme&nbsp;? Vous n'êtes pas débité et on vous retrouve quelqu'un.</p><span class="mini" style="color:var(--teal-deep);font-weight:650;margin-top:8px;display:inline-block">Voir tous vos avantages ›</span></button>
+      ${FB?`<button class="btn ghost sm" data-act="logout" style="margin-top:14px">Se déconnecter</button>`:''}
       <p class="mini" style="text-align:center;margin-top:16px"><button class="linklike" data-act="demo-go-pro">👷 Artisan (démo)</button> · <button class="linklike" data-act="demo-go-concierge">🛎️ Conciergerie (démo)</button> · <button class="linklike" data-act="demo-go-admin">⚙︎ Admin (démo)</button></p></div>${clientNavbar()}`;
   }
   function clientAddrEdit(){
@@ -1628,12 +1637,13 @@
       case 'onb-start':S.onbStep=1;render();break;
       case 'onb-back0':S.onbStep=0;render();break;
       case 'onb-back1':S.onbStep=1;render();break;
-      case 'finish-onboard':{const c=S.clientForm;if((c.name||'').trim().length>1&&/.+@.+\..+/.test(c.email||'')&&(c.password||'').length>=6&&c.password===c.password2){S.account={name:c.name.trim(),email:c.email.trim(),zone:c.zone,photo:c.photo||''};saveAccount(S.account);S.onboarded=true;S.authView=null;render();burstConfetti();toast('Compte créé 🐙 — bienvenue, '+c.name.trim().split(' ')[0]+' !');}else{toast('Nom, e-mail et mots de passe identiques (6 car.) requis');}break;}
+      case 'finish-onboard':{const c=S.clientForm;const ok=(c.name||'').trim().length>1&&/.+@.+\..+/.test(c.email||'')&&(c.password||'').length>=6&&c.password===c.password2;if(!ok){toast('Nom, e-mail et mots de passe identiques (6 car.) requis');break;}if(FB){fbSignup(c);}else{S.account={name:c.name.trim(),email:c.email.trim(),zone:c.zone,photo:c.photo||''};saveAccount(S.account);S.onboarded=true;S.authView=null;render();burstConfetti();toast('Compte créé 🐙 — bienvenue, '+c.name.trim().split(' ')[0]+' !');}break;}
       case 'show-login':S.authView='login';S.loginForm={email:(S.account?S.account.email:(S.clientForm.email||'')),password:''};render();break;
       case 'login-back':S.authView=null;render();break;
       case 'login-to-signup':S.authView=null;S.onbStep=1;render();break;
-      case 'do-login':{const f=S.loginForm;if(/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=1){const acc=S.account&&S.account.email===f.email.trim()?S.account:{name:(S.account?S.account.name:'Camille Magras'),email:f.email.trim(),zone:(S.account?S.account.zone:'Gustavia')};S.account=acc;S.clientForm={name:acc.name,email:acc.email,zone:acc.zone,password:''};S.onboarded=true;S.authView=null;render();toast('Content de vous revoir, '+acc.name.split(' ')[0]+' !');}else{toast('E-mail et mot de passe requis');}break;}
-      case 'google-soon':toast('Connexion Google — bientôt disponible');break;
+      case 'do-login':{const f=S.loginForm;if(!(/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=1)){toast('E-mail et mot de passe requis');break;}if(FB){fbLogin(f);}else{const acc=S.account&&S.account.email===f.email.trim()?S.account:{name:(S.account?S.account.name:'Camille Magras'),email:f.email.trim(),zone:(S.account?S.account.zone:'Gustavia')};S.account=acc;S.clientForm={name:acc.name,email:acc.email,zone:acc.zone,password:''};S.onboarded=true;S.authView=null;render();toast('Content de vous revoir, '+acc.name.split(' ')[0]+' !');}break;}
+      case 'google-soon':if(FB){fbGoogle();}else{toast('Connexion Google — bientôt disponible');}break;
+      case 'logout':fbLogout();if(!FB){S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;render();}break;
       case 'cancel-mission':S.mission=null;S.clientNav='home';render();break;
       case 'confirm-done':finalizePaid(S.mission);render();burstConfetti();break;
       case 'show-pitch':S.showPitch=true;render();break;
@@ -1837,7 +1847,59 @@
   window.addEventListener('popstate',function(){goBack();pushGuard();});
   pushGuard();
 
+  /* ============ FIREBASE (bêta) — Auth + profil Firestore ============
+     Actif seulement si CONFIG.firebase est renseigné (et hors tests: window.__NOFB).
+     Sinon : mode démo inchangé (comptes en localStorage). */
+  let FB=null;
+  function fbErr(e){const c=(e&&e.code)||'';return ({
+    'auth/email-already-in-use':'Un compte existe déjà avec cet e-mail — connectez-vous.',
+    'auth/invalid-email':'E-mail invalide.',
+    'auth/weak-password':'Mot de passe trop faible (6 caractères minimum).',
+    'auth/wrong-password':'Mot de passe incorrect.',
+    'auth/user-not-found':'Aucun compte avec cet e-mail.',
+    'auth/invalid-credential':'E-mail ou mot de passe incorrect.',
+    'auth/operation-not-allowed':'Méthode de connexion non activée dans la console Firebase.',
+    'auth/unauthorized-domain':'Domaine non autorisé (Firebase → Auth → Authorized domains).',
+    'auth/popup-closed-by-user':'Connexion Google annulée.',
+    'auth/too-many-requests':'Trop de tentatives — réessayez plus tard.'
+  })[c] || ('Erreur : '+(c||(e&&e.message)||'inconnue'));}
+  async function initFirebase(){
+    if(!CONFIG.firebase || window.__NOFB) return;
+    S.account=null; // en mode réel l'identité vient de Firebase (pas du localStorage)
+    try{
+      const V='https://www.gstatic.com/firebasejs/10.12.5/';
+      const [appM,authM,fsM]=await Promise.all([import(V+'firebase-app.js'),import(V+'firebase-auth.js'),import(V+'firebase-firestore.js')]);
+      const app=appM.initializeApp(CONFIG.firebase);
+      FB={app,auth:authM.getAuth(app),db:fsM.getFirestore(app),a:authM,f:fsM};
+      authM.onAuthStateChanged(FB.auth,function(user){ if(user){loadUserProfile(user);} else if(S.onboarded){S.onboarded=false;S.mission=null;S.draft=null;S.persona='client';S.clientNav='home';render();} });
+      render(); // rafraîchit l'écran (ex. bouton Google actif)
+    }catch(e){ console.warn('Firebase indisponible — mode démo',e); FB=null; }
+  }
+  async function loadUserProfile(user){
+    try{
+      const ref=FB.f.doc(FB.db,'users',user.uid);
+      let data=null; try{ const snap=await FB.f.getDoc(ref); data=snap.exists()?snap.data():null; }catch(_){}
+      const name=(data&&data.name)||user.displayName||((user.email||'').split('@')[0]||'Client');
+      const zone=(data&&data.zone)||'Gustavia';
+      if(!data){ try{ await FB.f.setDoc(ref,{name:name,email:user.email||'',zone:zone,role:'client',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){} }
+      S.account={name:name,email:user.email||'',zone:zone,uid:user.uid};
+      S.clientForm=Object.assign({},S.clientForm,{name:name,email:user.email||'',zone:zone,password:'',password2:''});
+      S.onboarded=true;S.authView=null;S.cardForm=false;render();
+    }catch(e){ console.warn(e); }
+  }
+  async function fbSignup(c){
+    try{
+      const cred=await FB.a.createUserWithEmailAndPassword(FB.auth,c.email.trim(),c.password);
+      try{ await FB.f.setDoc(FB.f.doc(FB.db,'users',cred.user.uid),{name:c.name.trim(),email:c.email.trim(),zone:c.zone,role:'client',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
+      burstConfetti(); toast('Compte créé 🐙 — bienvenue, '+c.name.trim().split(' ')[0]+' !');
+    }catch(e){ toast(fbErr(e)); }
+  }
+  async function fbLogin(f){ try{ await FB.a.signInWithEmailAndPassword(FB.auth,f.email.trim(),f.password); }catch(e){ toast(fbErr(e)); } }
+  async function fbGoogle(){ try{ await FB.a.signInWithPopup(FB.auth,new FB.a.GoogleAuthProvider()); }catch(e){ toast(fbErr(e)); } }
+  function fbLogout(){ if(FB){ try{FB.a.signOut(FB.auth);}catch(_){} } }
+
   render();
+  initFirebase();
 })();
 </script>
 </body>
