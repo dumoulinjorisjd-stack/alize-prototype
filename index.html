@@ -1679,7 +1679,10 @@
       case 'onb-start':S.onbStep=1;render();break;
       case 'onb-back0':S.onbStep=0;render();break;
       case 'onb-back1':S.onbStep=1;render();break;
-      case 'finish-onboard':{const c=S.clientForm;const ok=(c.name||'').trim().length>1&&/.+@.+\..+/.test(c.email||'')&&(c.password||'').length>=6&&c.password===c.password2;if(!ok){toast('Nom, e-mail et mots de passe identiques (6 car.) requis');break;}if(FB){fbSignup(c);}else{S.account={name:c.name.trim(),email:c.email.trim(),zone:c.zone,photo:c.photo||''};saveAccount(S.account);S.onboarded=true;S.authView=null;render();burstConfetti();toast('Compte créé 🐙 — bienvenue, '+c.name.trim().split(' ')[0]+' !');}break;}
+      case 'finish-onboard':{const c=S.clientForm;const ok=(c.name||'').trim().length>1&&/.+@.+\..+/.test(c.email||'')&&(c.password||'').length>=6&&c.password===c.password2;if(!ok){toast('Nom, e-mail et mots de passe identiques (6 car.) requis');break;}
+        // Nouveau compte = part de zéro (aucune donnée de démo pré-remplie).
+        S.addresses=[];S.addrDefault=null;S.history=[];S.recurring=[];S.card=null;S.mission=null;S.draft=null;
+        if(FB){fbSignup(c);}else{S.account={name:c.name.trim(),email:c.email.trim(),zone:c.zone,photo:c.photo||''};saveAccount(S.account);S.onboarded=true;S.authView=null;render();burstConfetti();toast('Compte créé 🐙 — bienvenue, '+c.name.trim().split(' ')[0]+' !');}break;}
       case 'show-login':S.authView='login';S.loginForm={email:(S.account?S.account.email:(S.clientForm.email||'')),password:''};render();break;
       case 'login-back':S.authView=null;render();break;
       case 'login-to-signup':S.authView=null;S.onbStep=1;render();break;
@@ -1710,7 +1713,11 @@
       case 'save-dispo':toast('Disponibilités enregistrées');break;
       case 'go-artisan-signup':S.persona='pro';S.proStatus='signup';S.proForm={name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{}};render();break;
       case 'back-to-client':S.persona='client';S.proStatus='approved';render();break;
-      case 'start-demo':S.demoMode=true;S.onboarded=true;S.authView=null;S.persona='client';S.clientForm={name:'Camille Magras',email:'demo@ti-services.fr',zone:'Gustavia',password:'',password2:'',photo:''};S.account={name:'Camille Magras',email:'demo@ti-services.fr',zone:'Gustavia'};S.mission=null;S.draft=null;render();toast('Mode démonstration 🐙 — explorez librement');break;
+      case 'start-demo':S.demoMode=true;S.onboarded=true;S.authView=null;S.persona='client';S.clientForm={name:'Camille Magras',email:'demo@ti-services.fr',zone:'Gustavia',password:'',password2:'',photo:''};S.account={name:'Camille Magras',email:'demo@ti-services.fr',zone:'Gustavia'};S.mission=null;S.draft=null;
+        // Démo = compte de démonstration pré-rempli (villas côté client, artisan actif Marie-Lou).
+        S.addresses=ADDRESSES_INIT();S.addrDefault='ad1';S.history=[];S.recurring=[];S.card=null;
+        S.proStatus='approved';S.proName='Marie-Lou';S.proCats=['menage','jardin'];S.proRate=35;S.proHistory=PRO_HISTORY();S.agenda=SEED_AGENDA.map(a=>({...a}));S.proEarnings=1284.50;S.proJobsToday=3;S.proJobsTotal=214;
+        render();toast('Mode démonstration 🐙 — explorez librement');break;
       case 'exit-demo':S.demoMode=false;S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;S.draft=null;S.account=loadAccount();render();break;
       case 'demo-go-pro':if(!isDemo())break;S.persona='pro';render();break;
       case 'demo-go-client':if(!isDemo())break;S.persona='client';render();break;
@@ -1775,7 +1782,10 @@
       case 'toggle-mandat':S.proForm.mandat=!S.proForm.mandat;render();break;
       case 'pro-attach-insurance':S.proForm.insuranceDoc=true;render();toast('Attestation d’assurance ajoutée');break;
       case 'pro-submit':{const f=S.proForm;if(!f.cats.length){toast('Sélectionnez au moins un service');break;}if(!/^\d{14}$/.test((f.siret||'').replace(/\s/g,''))){toast('Un SIRET valide (14 chiffres) est requis');break;}if(!f.insuranceDoc){toast('Joignez votre attestation d’assurance');break;}if(!f.mandat){toast('Acceptez le mandat de facturation pour continuer');break;}const rates={};f.cats.forEach(c=>{rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});const minRate=Math.min.apply(null,f.cats.map(c=>rates[c]));S.adminArtisans=S.adminArtisans.filter(x=>x.id!=='self');S.adminArtisans.unshift({id:'self',name:f.name||'Nouveau prestataire',status:'attente',type:'entreprise',cats:f.cats.slice(),rates,rate:minRate,siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,rating:0,jobs:0,zone:'—',phone:f.phone||'',email:'',photo:f.photo||''});S.proStatus='pending';render();break;}
-      case 'pro-approve':{S.proStatus='approved';const f=S.proForm;if(f.photo)S.proPhoto=f.photo;if(f.name)S.proName=f.name;if(f.cats.length)S.proCats=f.cats.slice();const rates={};f.cats.forEach(c=>{rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});S.proRates=rates;if(f.cats.length)S.proRate=Math.min.apply(null,f.cats.map(c=>rates[c]));S.proStatusType='entreprise';S.proSiret=(f.siret||'').replace(/\s/g,'');S.proBio=f.bio||'';S.proInsured=!!f.insuranceDoc;if(f.insurer)S.proInsurer=f.insurer;render();toast('Profil validé — bienvenue sur Ti-Services !');break;}
+      case 'pro-approve':{S.proStatus='approved';const f=S.proForm;if(f.photo)S.proPhoto=f.photo;if(f.name)S.proName=f.name;if(f.cats.length)S.proCats=f.cats.slice();const rates={};f.cats.forEach(c=>{rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});S.proRates=rates;if(f.cats.length)S.proRate=Math.min.apply(null,f.cats.map(c=>rates[c]));S.proStatusType='entreprise';S.proSiret=(f.siret||'').replace(/\s/g,'');S.proBio=f.bio||'';S.proInsured=!!f.insuranceDoc;if(f.insurer)S.proInsurer=f.insurer;
+        // Nouvel artisan = part de zéro : aucun historique ni agenda pré-rempli.
+        S.proHistory=[];S.agenda=[];S.recurring=[];S.proEarnings=0;S.proJobsToday=0;S.proJobsTotal=0;S.mission=null;
+        render();toast('Profil validé — bienvenue sur Ti-Services !');break;}
       case 'pro-accept':{const m=S.mission;m.provider=Object.assign({},PROVIDERS[m.svc]);m.status='accepted';const r=totals(m).rate;const amt=totals(m).total;const freq=m.frequency||'ponctuelle';const labels=occLabels(freq);const entries=labels.map(d=>({day:d,slot:m.slot,svc:m.svc,client:'Camille M.',zone:m.zone,duration:m.duration,unit:m.unit,rate:r,amount:amt,status:'upcoming'}));m._appt=entries[0];entries.slice().reverse().forEach(e=>S.agenda.unshift(e));if(freq!=='ponctuelle'){S.recurring.unshift({svc:m.svc,svcName:m.svcName,short:freqInfo(freq).short,slot:m.slot,zone:m.zone});}if(!m.chat||!m.chat.length)m.chat=[{from:'pro',text:'Bonjour Camille ! Bien reçu votre demande, je serai là à '+m.slot+'. À tout à l’heure 👋'}];render();burstConfetti();toast(labels.length>1?'Prestation récurrente ajoutée à votre agenda !':'Mission remportée — ajoutée à votre agenda !');break;}
       case 'pro-decline':S.mission.status='searching';render();setTimeout(()=>{if(S.mission&&S.mission.status==='searching'){S.mission.status='pending';render();}},1400);toast('Mission passée — proposée aux autres');break;
       case 'pro-advance':S.mission.status=b.dataset.to;if(S.mission._appt){if(b.dataset.to==='working')S.mission._appt.status='live';else if(b.dataset.to==='done_pro')S.mission._appt.status='tovalidate';}render();break;
@@ -1933,6 +1943,9 @@
       if(!data){ try{ await FB.f.setDoc(ref,{name:name,email:user.email||'',zone:zone,role:'client',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){} }
       S.account={name:name,email:user.email||'',zone:zone,uid:user.uid};
       S.clientForm=Object.assign({},S.clientForm,{name:name,email:user.email||'',zone:zone,password:'',password2:''});
+      // Compte réel : on part de zéro (ou des données persistées si elles existent) — pas de villas de démo.
+      S.addresses=(data&&Array.isArray(data.addresses))?data.addresses:[];S.addrDefault=(data&&data.addrDefault)||null;
+      S.history=(data&&Array.isArray(data.history))?data.history:[];S.recurring=(data&&Array.isArray(data.recurring))?data.recurring:[];S.card=(data&&data.card)||null;
       S.onboarded=true;S.authView=null;S.cardForm=false;render();
     }catch(e){ console.warn(e); }
   }
