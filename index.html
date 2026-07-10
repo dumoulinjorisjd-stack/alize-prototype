@@ -217,6 +217,20 @@
   @keyframes octowave{0%,58%,100%{transform:rotate(0)}70%{transform:rotate(-8deg)}84%{transform:rotate(6deg)}}
   .zouti-line{display:flex;align-items:center;gap:9px;margin-top:10px;padding:10px 12px;border-radius:14px;background:var(--teal-wash);border:1px solid color-mix(in srgb,var(--teal) 22%,transparent)}
   .zouti-line span{font-size:12.5px;line-height:1.35;color:var(--ink-soft);font-weight:600}
+  .iconbtn{width:40px;height:40px;border-radius:13px;display:inline-flex;align-items:center;justify-content:center;background:var(--teal-wash);color:var(--teal-deep);border:1px solid color-mix(in srgb,var(--teal) 24%,transparent);cursor:pointer;flex:none;transition:transform .12s}
+  .iconbtn:active{transform:scale(.92)}
+  .sharecard{position:relative;overflow:hidden;margin-top:14px;padding:22px 20px 24px;border-radius:24px;background:linear-gradient(170deg,var(--card),var(--card-2));border:1px solid var(--hair);box-shadow:0 18px 44px -26px rgba(0,0,0,.4);text-align:center}
+  .sc-glow{position:absolute;top:-70px;left:50%;transform:translateX(-50%);width:220px;height:220px;border-radius:50%;background:radial-gradient(circle,var(--teal-wash),transparent 70%);opacity:.9;pointer-events:none}
+  .sc-head{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px}
+  .sc-brand{font-family:var(--f-disp);font-weight:800;font-size:25px;letter-spacing:-.02em}
+  .sc-tag{position:relative;margin-top:6px;font-size:13px;color:var(--ink-soft);font-weight:600;max-width:230px;margin-left:auto;margin-right:auto;line-height:1.4}
+  .sc-qr{position:relative;margin:16px auto 0;width:200px;height:200px;padding:8px;border-radius:18px;background:#fff;border:1px solid var(--hair);box-shadow:0 6px 18px -12px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center}
+  .sc-qr svg{display:block;border-radius:6px}
+  .sc-scan{position:relative;margin-top:12px;font-size:12.5px;font-weight:700;color:var(--teal-deep);display:flex;align-items:center;justify-content:center;gap:6px}
+  .sc-scan svg{width:15px;height:15px}
+  .sc-link{position:relative;margin-top:14px;display:inline-flex;align-items:center;gap:7px;max-width:100%;padding:9px 14px;border-radius:999px;background:var(--sand-2);border:1px solid var(--hair);color:var(--ink);font-size:12.5px;font-weight:650;text-decoration:none}
+  .sc-link span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .sc-link svg{flex:none;color:var(--teal-deep)}
   .or-sep{display:flex;align-items:center;gap:10px;margin:14px 0 12px;color:var(--muted);font-size:12px;font-weight:600}
   .or-sep::before,.or-sep::after{content:"";flex:1;height:1px;background:var(--hair)}
   .pw-wrap{position:relative}
@@ -411,6 +425,9 @@
   const CONFIG = {
     appName: 'Ti-Services',
     siteUrl: '',                          // ex. 'https://ti-services.fr' le moment venu
+    // Adresse canonique encodée dans le QR-code de partage. DOIT correspondre au QR
+    // (QR_PATH plus bas) : si tu la changes (domaine), régénère le QR — cf. gen_qr.py.
+    shareUrl: 'https://dumoulinjorisjd-stack.github.io/alize-prototype/',
     supportEmail: 'bonjour@ti-services.fr',
     adminEmail: 'contact@archipel-btp.com',   // compte admin (bêta)
     // Clés publiques du client web (non secrètes) — sécurité = règles Firestore + domaines autorisés.
@@ -426,6 +443,8 @@
   // Base des liens absolus (partage, parrainage, lien e-mail de connexion) :
   // le domaine s'il est défini, sinon l'adresse courante — rien d'autre à changer.
   function siteBase(){ return (CONFIG.siteUrl||'').replace(/\/+$/,'') || (location.origin + location.pathname.replace(/[^/]*$/,'')).replace(/\/+$/,''); }
+  // Lien de partage : le domaine s'il est défini, sinon l'adresse canonique du QR.
+  function shareLink(){ return (CONFIG.siteUrl||'').replace(/\/+$/,'') || CONFIG.shareUrl || siteBase(); }
   try{ if(CONFIG.siteUrl){ const l=document.querySelector('link[rel="canonical"]')||document.head.appendChild(Object.assign(document.createElement('link'),{rel:'canonical'})); l.href=CONFIG.siteUrl; } }catch(e){}
   window.TI_CONFIG = CONFIG;
   // Mode démo (outil marketing, libre) vs vraie bêta (rôles cloisonnés).
@@ -462,8 +481,15 @@
     phone:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h3l2 5-2.5 1.5a11 11 0 0 0 5 5L19 15l2 5v0-0a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/></svg>',
     heart:'<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21s-7-4.6-9.5-9C1 9 2.5 5.5 6 5.5c2 0 3.2 1.2 4 2.3.8-1.1 2-2.3 4-2.3 3.5 0 5 3.5 3.5 6.5C19 16.4 12 21 12 21z"/></svg>',
     eye:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>',
-    eyeoff:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.7 6.2A9.7 9.7 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 3.9M6.1 6.1A17 17 0 0 0 2 12s3.5 7 10 7a9.6 9.6 0 0 0 4-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/></svg>'
+    eyeoff:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.7 6.2A9.7 9.7 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 3.9M6.1 6.1A17 17 0 0 0 2 12s3.5 7 10 7a9.6 9.6 0 0 0 4-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/></svg>',
+    share:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v13"/><path d="M8 7l4-4 4 4"/><path d="M5 12v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>',
+    copy:'<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>',
+    link:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/></svg>'
   };
+  // QR-code de partage (statique, encode CONFIG.shareUrl) — généré avec segno. Régénérer si l'URL change.
+  const QR_VB = 41;
+  const QR_PATH = 'M4 4h7v1h-7zM13 4h2v1h-2zM16 4h1v1h-1zM21 4h5v1h-5zM27 4h1v1h-1zM30 4h7v1h-7zM4 5h1v1h-1zM10 5h1v1h-1zM13 5h1v1h-1zM16 5h1v1h-1zM19 5h2v1h-2zM22 5h1v1h-1zM24 5h3v1h-3zM30 5h1v1h-1zM36 5h1v1h-1zM4 6h1v1h-1zM6 6h3v1h-3zM10 6h1v1h-1zM12 6h1v1h-1zM14 6h1v1h-1zM18 6h1v1h-1zM23 6h1v1h-1zM25 6h2v1h-2zM30 6h1v1h-1zM32 6h3v1h-3zM36 6h1v1h-1zM4 7h1v1h-1zM6 7h3v1h-3zM10 7h1v1h-1zM12 7h5v1h-5zM21 7h1v1h-1zM24 7h1v1h-1zM28 7h1v1h-1zM30 7h1v1h-1zM32 7h3v1h-3zM36 7h1v1h-1zM4 8h1v1h-1zM6 8h3v1h-3zM10 8h1v1h-1zM12 8h2v1h-2zM15 8h1v1h-1zM17 8h5v1h-5zM23 8h2v1h-2zM27 8h1v1h-1zM30 8h1v1h-1zM32 8h3v1h-3zM36 8h1v1h-1zM4 9h1v1h-1zM10 9h1v1h-1zM12 9h2v1h-2zM15 9h1v1h-1zM17 9h2v1h-2zM21 9h2v1h-2zM25 9h2v1h-2zM28 9h1v1h-1zM30 9h1v1h-1zM36 9h1v1h-1zM4 10h7v1h-7zM12 10h1v1h-1zM14 10h1v1h-1zM16 10h1v1h-1zM18 10h1v1h-1zM20 10h1v1h-1zM22 10h1v1h-1zM24 10h1v1h-1zM26 10h1v1h-1zM28 10h1v1h-1zM30 10h7v1h-7zM12 11h1v1h-1zM14 11h2v1h-2zM20 11h1v1h-1zM22 11h1v1h-1zM24 11h2v1h-2zM27 11h2v1h-2zM4 12h1v1h-1zM6 12h5v1h-5zM15 12h4v1h-4zM21 12h1v1h-1zM24 12h1v1h-1zM26 12h2v1h-2zM30 12h5v1h-5zM4 13h1v1h-1zM6 13h1v1h-1zM8 13h2v1h-2zM13 13h1v1h-1zM17 13h1v1h-1zM20 13h1v1h-1zM22 13h3v1h-3zM27 13h1v1h-1zM30 13h2v1h-2zM33 13h2v1h-2zM36 13h1v1h-1zM4 14h3v1h-3zM9 14h5v1h-5zM17 14h4v1h-4zM22 14h1v1h-1zM24 14h3v1h-3zM29 14h2v1h-2zM32 14h1v1h-1zM34 14h2v1h-2zM7 15h3v1h-3zM11 15h3v1h-3zM15 15h1v1h-1zM17 15h1v1h-1zM22 15h1v1h-1zM25 15h3v1h-3zM29 15h2v1h-2zM32 15h3v1h-3zM4 16h1v1h-1zM7 16h2v1h-2zM10 16h4v1h-4zM15 16h1v1h-1zM18 16h4v1h-4zM23 16h2v1h-2zM26 16h2v1h-2zM31 16h3v1h-3zM35 16h1v1h-1zM7 17h2v1h-2zM13 17h2v1h-2zM16 17h1v1h-1zM19 17h1v1h-1zM22 17h3v1h-3zM26 17h2v1h-2zM30 17h1v1h-1zM35 17h2v1h-2zM5 18h1v1h-1zM7 18h1v1h-1zM10 18h1v1h-1zM14 18h1v1h-1zM16 18h2v1h-2zM19 18h2v1h-2zM24 18h2v1h-2zM29 18h2v1h-2zM34 18h2v1h-2zM4 19h1v1h-1zM6 19h2v1h-2zM15 19h2v1h-2zM18 19h2v1h-2zM22 19h5v1h-5zM28 19h7v1h-7zM5 20h2v1h-2zM10 20h2v1h-2zM14 20h2v1h-2zM17 20h1v1h-1zM19 20h1v1h-1zM21 20h3v1h-3zM26 20h4v1h-4zM31 20h3v1h-3zM36 20h1v1h-1zM4 21h4v1h-4zM9 21h1v1h-1zM14 21h1v1h-1zM17 21h1v1h-1zM20 21h1v1h-1zM22 21h4v1h-4zM27 21h1v1h-1zM30 21h2v1h-2zM33 21h4v1h-4zM8 22h1v1h-1zM10 22h1v1h-1zM12 22h1v1h-1zM15 22h1v1h-1zM19 22h2v1h-2zM25 22h1v1h-1zM29 22h4v1h-4zM34 22h2v1h-2zM4 23h1v1h-1zM7 23h1v1h-1zM11 23h1v1h-1zM15 23h2v1h-2zM18 23h2v1h-2zM23 23h1v1h-1zM25 23h1v1h-1zM29 23h7v1h-7zM5 24h1v1h-1zM8 24h5v1h-5zM14 24h1v1h-1zM17 24h3v1h-3zM21 24h2v1h-2zM26 24h4v1h-4zM31 24h3v1h-3zM36 24h1v1h-1zM4 25h2v1h-2zM9 25h1v1h-1zM11 25h1v1h-1zM14 25h1v1h-1zM17 25h1v1h-1zM19 25h6v1h-6zM26 25h2v1h-2zM30 25h1v1h-1zM33 25h2v1h-2zM36 25h1v1h-1zM4 26h1v1h-1zM6 26h1v1h-1zM9 26h2v1h-2zM12 26h6v1h-6zM26 26h1v1h-1zM28 26h2v1h-2zM31 26h5v1h-5zM4 27h1v1h-1zM7 27h1v1h-1zM9 27h1v1h-1zM15 27h1v1h-1zM18 27h1v1h-1zM20 27h1v1h-1zM24 27h2v1h-2zM32 27h3v1h-3zM4 28h1v1h-1zM6 28h2v1h-2zM10 28h6v1h-6zM18 28h1v1h-1zM21 28h1v1h-1zM24 28h1v1h-1zM26 28h7v1h-7zM36 28h1v1h-1zM12 29h4v1h-4zM20 29h2v1h-2zM23 29h3v1h-3zM28 29h1v1h-1zM32 29h1v1h-1zM34 29h1v1h-1zM36 29h1v1h-1zM4 30h7v1h-7zM13 30h1v1h-1zM15 30h1v1h-1zM19 30h1v1h-1zM21 30h1v1h-1zM24 30h1v1h-1zM27 30h2v1h-2zM30 30h1v1h-1zM32 30h1v1h-1zM34 30h2v1h-2zM4 31h1v1h-1zM10 31h1v1h-1zM12 31h1v1h-1zM16 31h1v1h-1zM19 31h2v1h-2zM23 31h3v1h-3zM27 31h2v1h-2zM32 31h5v1h-5zM4 32h1v1h-1zM6 32h3v1h-3zM10 32h1v1h-1zM12 32h1v1h-1zM15 32h5v1h-5zM22 32h3v1h-3zM26 32h1v1h-1zM28 32h6v1h-6zM35 32h1v1h-1zM4 33h1v1h-1zM6 33h3v1h-3zM10 33h1v1h-1zM12 33h3v1h-3zM18 33h2v1h-2zM22 33h3v1h-3zM27 33h3v1h-3zM32 33h1v1h-1zM34 33h3v1h-3zM4 34h1v1h-1zM6 34h3v1h-3zM10 34h1v1h-1zM12 34h4v1h-4zM17 34h3v1h-3zM21 34h2v1h-2zM24 34h1v1h-1zM27 34h5v1h-5zM4 35h1v1h-1zM10 35h1v1h-1zM13 35h2v1h-2zM16 35h2v1h-2zM19 35h1v1h-1zM23 35h3v1h-3zM32 35h1v1h-1zM34 35h1v1h-1zM4 36h7v1h-7zM12 36h1v1h-1zM14 36h3v1h-3zM18 36h4v1h-4zM23 36h1v1h-1zM26 36h4v1h-4zM31 36h1v1h-1zM35 36h1v1h-1z';
+  function qrSvg(px){ return `<svg viewBox="0 0 ${QR_VB} ${QR_VB}" width="${px}" height="${px}" shape-rendering="crispEdges" aria-label="QR-code Ti-Services"><rect width="${QR_VB}" height="${QR_VB}" fill="#fff"/><path d="${QR_PATH}" fill="#20233A"/></svg>`; }
 
   /* ===== Mascotte « Zouti » — la pieuvre : 8 bras, un pour chaque besoin ===== */
   const MASCOT='Zouti';
@@ -624,7 +650,7 @@
     proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],
     proHistory:PRO_HISTORY(),
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),
-    chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,rebookFreq:'hebdo',showPitch:false,demoMode:false,
+    chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,
     proJobsTotal:214,fidTiers:FID_TIERS.map(t=>({...t})),referralCode:'MARILOU-SBH',
     filleuls:[{name:'Kevin Questel',status:'valide',bonus:40},{name:'Rosa Almeida',status:'attente',bonus:0}],
     admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,
@@ -664,6 +690,7 @@
     if(S.invoiceId)return S.persona+':invoice:'+S.invoiceId;
     if(S.interv)return S.persona+':interv';
     if(S.referral)return S.persona+':referral';
+    if(S.share)return S.persona+':share';
     if(S.chat)return S.persona+':chat';
     if(S.draft&&S.payStep)return 'client:pay:'+(S.payEdit?'edit':'saved');
     if(S.persona==='pro'&&S.finishing)return 'pro:finish';
@@ -685,7 +712,7 @@
     view.innerHTML='<div'+(same?'':' class="anim"')+'>'+html+'</div>';
     view.scrollTop=same?top:0;_scr=key;updateHomeFab();
   }
-  function updateHomeFab(){const f=document.getElementById('homefab');if(!f)return;const show=S.onboarded&&!S.authView&&!S.showPitch&&S.persona==='client'&&!!(S.mission||S.draft||S.chat||S.support||S.clientInv||S.advantages||S.addrForm||S.referral||S.interv||S.cardForm);f.classList.toggle('show',show);}
+  function updateHomeFab(){const f=document.getElementById('homefab');if(!f)return;const show=S.onboarded&&!S.authView&&!S.showPitch&&S.persona==='client'&&!!(S.mission||S.draft||S.chat||S.support||S.clientInv||S.advantages||S.addrForm||S.referral||S.share||S.interv||S.cardForm);f.classList.toggle('show',show);}
   function render(){if(S.showPitch){paintView(pitchView(),'pitch');paintPersona();return;}paintView((S.persona==='admin'?renderAdmin():(S.persona==='concierge'?renderConcierge():(S.persona==='client'?renderClient():renderPro()))),curScreen());paintPersona();}
 
   /* ---------- ÉCRAN VITRINE / PITCH (présentation à un nouvel arrivant) ---------- */
@@ -1030,6 +1057,7 @@
   function renderClient(){
     const m=S.mission;
     if(!S.onboarded)return clientOnboard();
+    if(S.share)return shareCard();
     if(S.addrForm)return clientAddrEdit();
     if(S.advantages)return advantagesScreen();
     if(S.support&&m)return supportChat();
@@ -1127,7 +1155,7 @@
   function clientHome(){
     const cats=SERVICES.map(s=>`<button class="cat" data-svc="${s.id}"><div class="ic">${I[s.id]}</div><div class="nm">${s.nm}</div><div class="rt">dès <b>${s.rate} €</b>/h</div></button>`).join('');
     const first=((S.clientForm&&S.clientForm.name)||'Camille').trim().split(' ')[0];
-    return `<div class="pad"><div class="row between" style="margin-top:10px"><div><span class="eyebrow">${I.pin} ${(S.clientForm&&S.clientForm.zone)||'Gustavia'} · Saint-Barth</span><div class="h-hello">Bonjour ${esc(first)}</div></div>${avatarPhoto(S.account&&S.account.photo,inits((S.clientForm&&S.clientForm.name)||'Camille Magras'),'')}</div>
+    return `<div class="pad"><div class="row between" style="margin-top:10px"><div><span class="eyebrow">${I.pin} ${(S.clientForm&&S.clientForm.zone)||'Gustavia'} · Saint-Barth</span><div class="h-hello">Bonjour ${esc(first)}</div></div><div class="row" style="gap:9px;align-items:center"><button class="iconbtn" data-act="open-share" aria-label="Partager Ti-Services" title="Partager">${I.share}</button>${avatarPhoto(S.account&&S.account.photo,inits((S.clientForm&&S.clientForm.name)||'Camille Magras'),'')}</div></div>
       <p class="sub" style="margin-top:2px">De quel service avez-vous besoin&nbsp;?</p><div class="cats">${cats}</div>
       ${zoutiLine('Choisissez, '+esc(first)+' — je m’occupe de trouver le bon artisan.')}
       <div style="height:16px"></div></div>${clientNavbar()}`;
@@ -1140,6 +1168,24 @@
     const rec=S.recurring.length?`<div style="margin-top:16px"><div class="eyebrow" style="color:var(--muted)">Prestations régulières</div>${S.recurring.map(r=>`<div class="card" style="padding:13px;margin-top:8px"><div class="row between"><b style="font-size:14px">${r.svcName}</b><span class="chip" style="padding:3px 9px">🔁 ${r.short}</span></div><div class="row between" style="margin-top:3px"><span class="mini">${r.slot} · ${r.zone}</span><span class="chip good" style="padding:3px 9px">${I.check} Actif</span></div></div>`).join('')}</div>`:'';
     return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">Mes réservations</span><div class="h-hello">Prestations réalisées</div>${summary}${rec}${list}<div style="height:6px"></div></div>${clientNavbar()}`;
   }
+  // Carte de partage : QR à flasher + lien + partage natif (aucun fichier à chercher).
+  function shareCard(){
+    const url=shareLink();const disp=url.replace(/^https?:\/\//,'').replace(/\/+$/,'');
+    return `<div class="pad"><button class="reset" data-act="close-share" style="margin:8px 0 2px">← Retour</button>
+      <div class="sharecard">
+        <div class="sc-glow"></div>
+        <div class="sc-head">${octoMini(58,'wave')}<div class="sc-brand"><span style="color:var(--teal-deep)">Ti</span><span style="color:var(--ink)">-Services</span></div></div>
+        <div class="sc-tag">Un pro de confiance, à la demande — à&nbsp;Saint-Barth.</div>
+        <div class="sc-qr">${qrSvg(184)}</div>
+        <div class="sc-scan">${I.bolt} Flashez le code pour ouvrir l'app</div>
+        <a class="sc-link" href="${url}" target="_blank" rel="noopener">${I.link}<span>${esc(disp)}</span></a>
+      </div>
+      <div class="footcta" style="position:static;background:none;padding:16px 0 0">
+        <button class="btn primary" data-act="share-link">${I.share} Partager</button>
+        <button class="btn ghost" data-act="copy-link" style="margin-top:10px">${I.copy} Copier le lien</button>
+        <p class="mini" style="text-align:center;margin-top:12px">${I.lock} Le lien ouvre Ti-Services directement — rien à installer.</p>
+      </div></div>`;
+  }
   function clientProfile(){
     const cnm=(S.clientForm&&S.clientForm.name)||'Camille Magras';const czone=(S.clientForm&&S.clientForm.zone)||'Gustavia';
     return `<div class="pad"><div style="height:12px"></div><div class="row" style="gap:14px">${avatarPhoto(S.account&&S.account.photo,inits(cnm),'lg')}<div><b style="font-size:18px;font-family:var(--f-disp)">${esc(cnm)}</b><div class="mini">${czone} · Saint-Barth</div></div></div>
@@ -1148,6 +1194,7 @@
         ${S.addresses.length?S.addresses.map(a=>`<button class="card" data-act="addr-edit:${a.id}" style="padding:12px;margin-top:9px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${a.label}${S.addrDefault===a.id?` <span class="chip" style="padding:2px 8px">Par défaut</span>`:''}</b>${a.geo?`<span class="chip good" style="padding:3px 9px">${I.pin} GPS</span>`:`<span class="chip coral" style="padding:3px 9px">GPS manquant</span>`}</div><div class="mini" style="margin-top:2px">${a.address} · ${a.zone}</div></button>`).join(''):`<p class="mini" style="margin-top:10px;color:var(--muted)">Aucune adresse enregistrée. Ajoutez vos villas avec leur point GPS permanent.</p>`}
         <p class="mini" style="margin-top:10px;color:var(--muted)">À Saint-Barthélemy, le point GPS est le repère le plus fiable — enregistré une fois, réutilisé à chaque commande.</p></div>
       <button class="card" data-act="show-advantages" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">Garantie Ti-Services</b><span class="chip good">Active</span></div><p class="sub" style="margin-top:8px">Artisan absent ou travail non conforme&nbsp;? Vous n'êtes pas débité et on vous retrouve quelqu'un.</p><span class="mini" style="color:var(--teal-deep);font-weight:650;margin-top:8px;display:inline-block">Voir tous vos avantages ›</span></button>
+      <button class="card" data-act="open-share" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.share}&nbsp;Partager Ti-Services</b><span class="mini" style="color:var(--teal-deep);font-weight:650">QR &amp; lien ›</span></div><p class="sub" style="margin-top:8px">Un QR à faire flasher et un lien à envoyer — partagez l'app à vos voisins en un geste.</p></button>
       ${S.demoMode?`<div class="banner teal" style="margin-top:16px">${I.bolt}<span><b>Mode démonstration</b> — vous explorez librement tous les espaces. Ce n'est pas un vrai compte.</span></div><button class="btn ghost sm" data-act="exit-demo" style="margin-top:10px">Quitter la démo</button>`:(FB?`<button class="btn ghost sm" data-act="logout" style="margin-top:16px">Se déconnecter</button>`:'')}
       ${isDemo()?`<p class="mini" style="text-align:center;margin-top:14px">Explorer les autres espaces&nbsp;: <button class="linklike" data-act="demo-go-pro">👷 Artisan</button> · <button class="linklike" data-act="demo-go-concierge">🛎️ Conciergerie</button> · <button class="linklike" data-act="demo-go-admin">⚙︎ Admin</button></p>`:''}</div>${clientNavbar()}`;
   }
@@ -1716,6 +1763,10 @@
       case 'open-referral':S.referral=true;render();break;
       case 'close-referral':S.referral=false;render();break;
       case 'copy-referral':{const link=siteBase()+'/?parrain='+encodeURIComponent(S.referralCode);const share={title:CONFIG.appName,text:'Rejoins-moi sur '+CONFIG.appName+' à Saint-Barth',url:link};if(navigator.share){navigator.share(share).catch(()=>{});}else if(navigator.clipboard){navigator.clipboard.writeText(link).then(()=>toast('Lien de parrainage copié')).catch(()=>toast('Lien : '+link));}else{toast('Lien : '+link);}break;}
+      case 'open-share':S.persona='client';S.share=true;render();break;
+      case 'close-share':S.share=false;render();break;
+      case 'share-link':{const link=shareLink();const data={title:CONFIG.appName,text:'Ti-Services — un pro de confiance à la demande à Saint-Barth 🐙',url:link};if(navigator.share){navigator.share(data).catch(()=>{});}else if(navigator.clipboard){navigator.clipboard.writeText(link).then(()=>toast('Lien copié — collez-le où vous voulez')).catch(()=>toast('Lien : '+link));}else{toast('Lien : '+link);}break;}
+      case 'copy-link':{const link=shareLink();if(navigator.clipboard){navigator.clipboard.writeText(link).then(()=>toast('Lien copié 🔗')).catch(()=>toast('Lien : '+link));}else{toast('Lien : '+link);}break;}
       case 'pay-back':S.payStep=false;S.payEdit=false;if(S.draft)renderConfig();else render();break;
       case 'pay-change':S.payEdit=true;render();break;
       case 'add-card':S.cardForm=true;render();break;
@@ -1797,7 +1848,7 @@
     const ai=e.target.closest('[data-avatarinput]');
     if(ai&&ai.files&&ai.files[0]){let url='';try{url=URL.createObjectURL(ai.files[0]);}catch(_){}if(!url)return;if(ai.dataset.avatarinput==='client')S.clientForm.photo=url;else S.proForm.photo=url;ai.value='';render();}
   });
-  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,card:null,cardForm:false,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,rebookFreq:'hebdo',showPitch:false,demoMode:false,proHistory:PRO_HISTORY(),fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,proPhoto:null,proStatus:'approved',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},photo:''}});render();toast('Scénario réinitialisé');});
+  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,card:null,cardForm:false,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,proHistory:PRO_HISTORY(),fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,proPhoto:null,proStatus:'approved',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},photo:''}});render();toast('Scénario réinitialisé');});
 
   /* ---------- PWA: install + service worker ---------- */
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
@@ -1819,6 +1870,7 @@
     if(S.invoiceId){S.invoiceId=null;render();return;}
     if(S.interv){S.interv=false;render();return;}
     if(S.referral){S.referral=false;render();return;}
+    if(S.share){S.share=false;render();return;}
     if(S.chat){S.chat=false;render();return;}
     if(S.persona==='admin'){if(S.admin.view!=='home'){S.admin.view='home';S.admin.sel=null;render();}else{S.persona='client';render();}return;}
     if(S.persona==='concierge'){
