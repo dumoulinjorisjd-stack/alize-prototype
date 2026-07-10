@@ -210,7 +210,15 @@
   .confetti{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:60}
   .confetti i{position:absolute;top:-14px;width:8px;height:13px;border-radius:2px;animation:conffall 1.5s cubic-bezier(.3,.7,.4,1) forwards}
   @keyframes conffall{0%{opacity:1;transform:translate(0,-10px) rotate(0)}100%{opacity:0;transform:translate(var(--x,0),720px) rotate(var(--r,360deg))}}
-  @media (prefers-reduced-motion:reduce){.octo,.octo .pod{animation:none}}
+  .octo-mini{display:block;flex:none}
+  .octo-mini.bob{transform-origin:50% 46%;animation:octobob 4.6s ease-in-out infinite}
+  .octo-mini.wave{transform-origin:60% 88%;animation:octowave 3.4s ease-in-out infinite}
+  @keyframes octowave{0%,58%,100%{transform:rotate(0)}70%{transform:rotate(-8deg)}84%{transform:rotate(6deg)}}
+  .zouti-line{display:flex;align-items:center;gap:9px;margin-top:10px;padding:10px 12px;border-radius:14px;background:var(--teal-wash);border:1px solid color-mix(in srgb,var(--teal) 22%,transparent)}
+  .zouti-line span{font-size:12.5px;line-height:1.35;color:var(--ink-soft);font-weight:600}
+  .or-sep{display:flex;align-items:center;gap:10px;margin:14px 0 12px;color:var(--muted);font-size:12px;font-weight:600}
+  .or-sep::before,.or-sep::after{content:"";flex:1;height:1px;background:var(--hair)}
+  @media (prefers-reduced-motion:reduce){.octo,.octo .pod,.octo-mini{animation:none}}
   /* ===== Écran vitrine / pitch ===== */
   .ptrusts{display:flex;gap:8px;margin-top:18px}
   .ptrust{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;padding:12px 6px;border-radius:14px;background:var(--card);border:1px solid var(--hair);color:var(--teal-deep);font-size:11.5px;font-weight:700;text-align:center}
@@ -421,16 +429,30 @@
       <circle cx="41.5" cy="66" r="3.2" fill="#FF9B8F"/><circle cx="78.5" cy="66" r="3.2" fill="#FF9B8F"/>
       <path d="${smile}" stroke="#2A2340" stroke-width="2.6" fill="none" stroke-linecap="round"/>`;
   }
-  // Héros : la pieuvre dont chaque bras tient un métier
+  // Héros : la pieuvre dont chaque bras tient un métier (tentacules courts)
   function octoHero(){
-    const tips=[[34,150],[60,196],[108,214],[152,214],[200,196],[226,150]];
-    const bases=[[108,80],[114,82],[122,84],[138,84],[146,82],[152,80]];
-    const ctrls=['80 105, 45 120','92 120, 66 165','116 130, 108 180','144 130, 152 180','168 120, 194 165','180 105, 215 120'];
+    const tips=[[46,136],[74,166],[110,178],[150,178],[186,166],[214,136]];
+    const bases=[[110,82],[116,84],[124,86],[136,86],[144,84],[150,82]];
+    const ctrls=['90 104, 54 116','100 118, 76 150','118 120, 110 156','142 120, 150 156','160 118, 184 150','170 104, 206 116'];
     const svcs=['menage','baby','jardin','demenagement','coiffure','animaux'];
     const arms=tips.map((t,i)=>`<path d="M${bases[i][0]} ${bases[i][1]} C ${ctrls[i]}, ${t[0]} ${t[1]}" stroke="#FF6A5B" stroke-width="13" stroke-linecap="round" fill="none"/>`).join('');
-    const pods=tips.map((t,i)=>`<g class="pod" style="--d:${i*90}ms"><circle cx="${t[0]}" cy="${t[1]}" r="19" fill="var(--teal-wash)" stroke="#FF6A5B" stroke-width="2"/><g transform="translate(${t[0]-11},${t[1]-11})" style="color:var(--teal-deep)">${I[svcs[i]]}</g></g>`).join('');
-    return `<svg class="octo" viewBox="0 0 260 236" width="100%" fill="none" aria-hidden="true">${arms}<g transform="translate(70,2)">${octoHead('happy')}</g>${pods}</svg>`;
+    const pods=tips.map((t,i)=>`<g class="pod" style="--d:${i*80}ms"><circle cx="${t[0]}" cy="${t[1]}" r="18" fill="var(--teal-wash)" stroke="#FF6A5B" stroke-width="2"/><g transform="translate(${t[0]-11},${t[1]-11})" style="color:var(--teal-deep)">${I[svcs[i]]}</g></g>`).join('');
+    return `<svg class="octo" viewBox="0 0 260 200" width="100%" fill="none" aria-hidden="true">${arms}<g transform="translate(70,2)">${octoHead('happy')}</g>${pods}</svg>`;
   }
+  // Zouti en petit (tête + 3 tentacules) — présence légère dans l'app. cls: 'bob'|'wave'
+  function octoMini(px,cls){
+    return `<svg class="octo-mini ${cls||'bob'}" viewBox="20 2 80 98" width="${px}" height="${Math.round(px*98/80)}" fill="none" aria-hidden="true">
+      <g stroke="#FF6A5B" stroke-width="10" stroke-linecap="round" fill="none"><path d="M46 79 C 40 91, 36 95, 30 95"/><path d="M60 81 L60 97"/><path d="M74 79 C 80 91, 84 95, 90 95"/></g>
+      ${octoHead('happy')}</svg>`;
+  }
+  // Ligne « Zouti dit… » (mascotte + message) pour ponctuer les écrans
+  function zoutiLine(txt){return `<div class="zouti-line">${octoMini(34,'wave')}<span>${txt}</span></div>`;}
+
+  /* Compte de démo persistant (maquette) : on garde nom/e-mail/secteur pour
+     illustrer « je reviens et je me connecte ». Le mot de passe n'est JAMAIS
+     stocké — l'écran de connexion se contente de le vérifier localement. */
+  function loadAccount(){try{const r=localStorage.getItem('tiservices_account');return r?JSON.parse(r):null;}catch(_){return null;}}
+  function saveAccount(a){try{localStorage.setItem('tiservices_account',JSON.stringify({name:a.name,email:a.email,zone:a.zone}));}catch(_){}}
   // Petite fête aux moments clés (mission remportée / prestation validée)
   function burstConfetti(){
     const scr=document.querySelector('.screen');if(!scr)return;
@@ -539,7 +561,7 @@
   ];
 
   const S={
-    persona:'client',clientNav:'home',proNav:'home',onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},
+    persona:'client',clientNav:'home',proNav:'home',onboarded:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:''},
     card:null,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,mission:null,draft:null,
     addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,
     concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,
@@ -587,7 +609,7 @@
     if(S.persona==='concierge'){if(S.concRetInv)return 'conc:retinv';if(S.concInvoice)return 'conc:inv:'+S.concInvoice;if(S.concForm)return 'conc:form:'+(S.concForm.id||'new');if(S.concClientView)return 'conc:cv:'+S.concClientView;if(S.concOrder)return 'conc:order:'+S.concOrder.step;if(S.concView)return 'conc:view:'+S.concView;return 'conc:'+S.concNav;}
     if(S.persona==='admin')return 'admin:'+S.admin.view+':'+(S.admin.sel||'');
     if(S.persona==='pro')return 'pro:'+S.proStatus+':'+S.proNav+':'+(S.mission?S.mission.status:'');
-    if(!S.onboarded)return 'onb:'+S.onbStep;
+    if(!S.onboarded)return S.authView==='login'?'login':'onb:'+S.onbStep;
     if(S.mission)return 'client:mission:'+S.mission.status;
     return 'client:'+S.clientNav;
   }
@@ -955,6 +977,7 @@
     return `<div class="navbar">${item('home',I.home,'Accueil',false)}${item('wallet',I.wallet,'Missions',act)}${item('profile',I.user,'Profil',false)}</div>`;
   }
   function clientOnboard(){
+    if(S.authView==='login')return loginView();
     if(S.onbStep===1)return onbInfos();
     return onbWelcome();
   }
@@ -972,35 +995,60 @@
       <p class="mini" style="text-align:center;margin-top:8px">Moi c'est <b style="color:var(--teal-deep)">${MASCOT}</b>, la pieuvre&nbsp;: un bras pour chaque besoin. 🐙</p>
       <button class="demobtn" data-act="show-pitch" style="margin-top:14px">${I.bolt} Découvrir Ti-Services en 15 s</button>
       <div class="stack" style="gap:13px;margin-top:18px">${benefits}</div>
+      ${S.account?`<div class="card" style="padding:13px 15px;margin-top:16px;display:flex;align-items:center;justify-content:space-between;gap:10px"><div class="row" style="gap:9px"><span class="benic">${I.user}</span><div><b style="font-size:13.5px">Bon retour, ${esc(S.account.name.split(' ')[0])}</b><div class="mini">${esc(S.account.email)}</div></div></div><button class="btn primary sm" data-act="show-login" style="width:auto;padding:9px 14px">Se connecter</button></div>`:''}
       <div class="footcta" style="position:static;background:none;padding:22px 0 0">
         <button class="btn primary" data-act="onb-start">Créer mon compte</button>
-        <p class="mini" style="text-align:center;margin-top:14px">Vous êtes un professionnel&nbsp;? <button class="linklike" data-act="go-artisan-signup">Rejoindre Ti-Services ›</button></p>
+        <p class="mini" style="text-align:center;margin-top:12px">Déjà un compte&nbsp;? <button class="linklike" data-act="show-login">Se connecter</button></p>
+        <p class="mini" style="text-align:center;margin-top:8px">Vous êtes un professionnel&nbsp;? <button class="linklike" data-act="go-artisan-signup">Rejoindre Ti-Services ›</button></p>
       </div></div>`;
   }
   function onbInfos(){
     const f=S.clientForm;
     const zones=ZONES.map(z=>`<button class="seg ${f.zone===z?'on':''}" data-czone="${z}">${z}</button>`).join('');
-    const ok=(f.name||'').trim().length>1;
+    const ok=(f.name||'').trim().length>1&&/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=6;
     return `<div class="pad"><div style="height:10px"></div>
       <button class="reset" data-act="onb-back0" style="margin:0 0 8px">← Retour</button>
       <span class="eyebrow">Créer mon compte</span>
       <div class="h-hello">Vos informations</div>
       <div class="card" style="padding:16px;margin-top:16px">
-        <div class="field"><label>Prénom &amp; nom</label><input class="txt" data-cf="name" value="${f.name}" placeholder="Ex. Camille Magras"></div>
-        <div class="field"><label>E-mail</label><input class="txt" data-cf="email" value="${f.email}" inputmode="email" placeholder="vous@exemple.com"></div>
-        <div class="field"><label>Votre secteur</label><div class="segs">${zones}</div></div>
+        <div class="field"><label>Prénom &amp; nom</label><input class="txt" data-cf="name" value="${esc(f.name)}" placeholder="Ex. Camille Magras"></div>
+        <div class="field"><label>E-mail</label><input class="txt" data-cf="email" value="${esc(f.email)}" inputmode="email" autocomplete="email" placeholder="vous@exemple.com"></div>
+        <div class="field"><label>Mot de passe</label><input class="txt" type="password" data-cf="password" value="${esc(f.password||'')}" autocomplete="new-password" placeholder="6 caractères minimum"><p class="mini" style="margin-top:5px">Il vous servira à vous reconnecter la prochaine fois.</p></div>
+        <div class="field" style="margin:0"><label>Votre secteur</label><div class="segs">${zones}</div></div>
       </div>
-      <div class="banner teal" style="margin-top:14px">${I.shield}<span><b>Aucune carte demandée maintenant.</b> Vous ne renseignez votre moyen de paiement qu'au moment de votre première réservation — et rien n'est débité tant que la prestation n'est pas validée.</span></div>
-      <div class="footcta" style="position:static;background:none;padding:18px 0 0">
-        <button class="btn primary" data-act="finish-onboard">${I.check} Créer mon compte</button>
-        <p class="mini" style="text-align:center;margin-top:10px">${I.lock} Sans engagement · aucune carte à cette étape.</p>
+      <div class="or-sep"><span>ou</span></div>
+      <button class="btn ghost" data-act="google-soon" style="opacity:.65"><svg width="17" height="17" viewBox="0 0 24 24"><path fill="#4285F4" d="M23 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.2a5.3 5.3 0 0 1-2.3 3.5v2.9h3.7C21.7 18.9 23 15.9 23 12.3z"/><path fill="#34A853" d="M12 24c3.1 0 5.7-1 7.6-2.8l-3.7-2.9c-1 .7-2.3 1.1-3.9 1.1-3 0-5.5-2-6.4-4.8H1.8v3C3.7 21.3 7.5 24 12 24z"/><path fill="#FBBC05" d="M5.6 14.3a7.2 7.2 0 0 1 0-4.6v-3H1.8a12 12 0 0 0 0 10.6z"/><path fill="#EA4335" d="M12 4.8c1.7 0 3.2.6 4.4 1.7l3.3-3.3C17.7 1.2 15.1 0 12 0 7.5 0 3.7 2.7 1.8 6.7l3.8 3c.9-2.8 3.4-4.9 6.4-4.9z"/></svg>&nbsp;Continuer avec Google <span class="chip grey" style="padding:2px 8px;margin-left:4px">bientôt</span></button>
+      <div class="footcta" style="position:static;background:none;padding:16px 0 0">
+        <button class="btn primary" data-act="finish-onboard"${ok?'':' disabled'}>${I.check} Créer mon compte</button>
+        <p class="mini" style="text-align:center;margin-top:10px">${I.lock} Aucune carte à cette étape — moyen de paiement demandé seulement à la 1ʳᵉ réservation.</p>
+        <p class="mini" style="text-align:center;margin-top:8px">Déjà un compte&nbsp;? <button class="linklike" data-act="show-login">Se connecter</button></p>
+      </div></div>`;
+  }
+  function loginView(){
+    const f=S.loginForm,acc=S.account;
+    const ok=/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=1;
+    return `<div class="pad"><div style="height:8px"></div>
+      <button class="reset" data-act="login-back" style="margin:0 0 6px">← Retour</button>
+      <div style="text-align:center">${octoMini(70,'wave')}<div style="font-family:var(--f-disp);font-weight:800;font-size:26px;letter-spacing:-.02em;margin-top:2px"><span style="color:var(--teal-deep)">Ti</span><span style="color:var(--ink)">-Services</span></div></div>
+      <div class="h-hello" style="text-align:center;margin-top:10px">${acc?'Bon retour '+esc(acc.name.split(' ')[0])+' !':'Content de vous revoir'}</div>
+      <p class="sub" style="text-align:center;margin-top:4px">Connectez-vous pour retrouver vos réservations.</p>
+      <div class="card" style="padding:16px;margin-top:16px">
+        <div class="field"><label>E-mail</label><input class="txt" data-lf="email" value="${esc(f.email||(acc?acc.email:''))}" inputmode="email" autocomplete="email" placeholder="vous@exemple.com"></div>
+        <div class="field" style="margin:0"><label>Mot de passe</label><input class="txt" type="password" data-lf="password" value="${esc(f.password||'')}" autocomplete="current-password" placeholder="Votre mot de passe"></div>
+      </div>
+      <div class="or-sep"><span>ou</span></div>
+      <button class="btn ghost" data-act="google-soon" style="opacity:.65"><svg width="17" height="17" viewBox="0 0 24 24"><path fill="#4285F4" d="M23 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.2a5.3 5.3 0 0 1-2.3 3.5v2.9h3.7C21.7 18.9 23 15.9 23 12.3z"/><path fill="#34A853" d="M12 24c3.1 0 5.7-1 7.6-2.8l-3.7-2.9c-1 .7-2.3 1.1-3.9 1.1-3 0-5.5-2-6.4-4.8H1.8v3C3.7 21.3 7.5 24 12 24z"/><path fill="#FBBC05" d="M5.6 14.3a7.2 7.2 0 0 1 0-4.6v-3H1.8a12 12 0 0 0 0 10.6z"/><path fill="#EA4335" d="M12 4.8c1.7 0 3.2.6 4.4 1.7l3.3-3.3C17.7 1.2 15.1 0 12 0 7.5 0 3.7 2.7 1.8 6.7l3.8 3c.9-2.8 3.4-4.9 6.4-4.9z"/></svg>&nbsp;Continuer avec Google <span class="chip grey" style="padding:2px 8px;margin-left:4px">bientôt</span></button>
+      <div class="footcta" style="position:static;background:none;padding:16px 0 0">
+        <button class="btn primary" data-act="do-login"${ok?'':' disabled'}>${I.lock} Se connecter</button>
+        <p class="mini" style="text-align:center;margin-top:10px">Pas encore de compte&nbsp;? <button class="linklike" data-act="login-to-signup">Créer un compte</button></p>
       </div></div>`;
   }
   function clientHome(){
     const cats=SERVICES.map(s=>`<button class="cat" data-svc="${s.id}"><div class="ic">${I[s.id]}</div><div class="nm">${s.nm}</div><div class="rt">dès <b>${s.rate} €</b>/h</div></button>`).join('');
-    return `<div class="pad"><div class="row between" style="margin-top:10px"><div><span class="eyebrow">${I.pin} Gustavia · Saint-Barth</span><div class="h-hello">Bonjour Camille 👋</div></div><div class="avatar">CM</div></div>
+    const first=((S.clientForm&&S.clientForm.name)||'Camille').trim().split(' ')[0];
+    return `<div class="pad"><div class="row between" style="margin-top:10px"><div><span class="eyebrow">${I.pin} ${(S.clientForm&&S.clientForm.zone)||'Gustavia'} · Saint-Barth</span><div class="h-hello">Bonjour ${esc(first)} 👋</div></div><div style="flex:none;margin-top:2px">${octoMini(52,'wave')}</div></div>
       <p class="sub" style="margin-top:2px">De quel service avez-vous besoin&nbsp;?</p><div class="cats">${cats}</div>
-      <div class="card" style="padding:14px;margin-top:16px"><div class="row"><span class="chip good">${I.bolt} À la demande</span></div><p class="sub" style="margin-top:9px;color:var(--ink-soft)">Un artisan vérifié accepte votre mission en quelques minutes. Le paiement est automatique&nbsp;: prélevé une fois la prestation réalisée. Aucun contact à gérer entre vous&nbsp;: Ti-Services garantit la prestation et le paiement.</p></div>
+      ${zoutiLine('Choisissez, '+esc(first)+' — je m’occupe de trouver le bon artisan et de sécuriser le paiement.')}
       <div style="height:16px"></div></div>${clientNavbar()}`;
   }
   function clientWallet(){
@@ -1039,7 +1087,8 @@
     const m=S.mission;
     return `<div class="pad"><div style="height:8px"></div><div style="text-align:center"><span class="eyebrow" style="justify-content:center">${m.svcName} · ${m.when} ${m.slot}</span><div class="h-hello">Recherche d'un artisan…</div>
       <p class="sub" style="margin-top:2px">Le premier artisan disponible sur votre créneau prend la mission.</p></div>
-      <div class="radar"><div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div><div class="core">${I.search}</div></div>
+      <div style="display:flex;justify-content:center;margin-top:6px">${octoMini(58,'bob')}</div>
+      <div class="radar" style="margin-top:2px"><div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div><div class="core">${I.search}</div></div>
       <div class="card" style="padding:14px;text-align:center"><p class="sub" style="margin:0"><b id="notif">…</b> artisans notifiés</p></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="demobtn" data-act="demo-go-pro">👷 Voir côté artisan pour accepter (démo)</button><button class="btn ghost" data-act="cancel-mission" style="margin-top:12px">Annuler la recherche</button></div></div>`;
   }
@@ -1069,7 +1118,8 @@
       <div class="receipt-line"><span>Réglé sur</span><b>${S.card.brand} ••••&nbsp;${S.card.last4}</b></div></div>
       <div class="banner coral" style="margin-top:14px">${I.shield}<span>${adj?'Vous ne pouvez refuser l’ajustement sans en informer Ti-Services, qui tranchera le désaccord.':'Un souci ? Signalez au lieu de valider — vous ne serez pas débité.'}</span></div>
       <div class="stack" style="margin-top:18px"><button class="btn good" data-act="confirm-done">${I.check} ${adj?'Valider '+m.finalHours+' h · '+eur(t.total):'Confirmer la prestation'}</button>
-      ${adj?`<button class="btn ghost sm" data-act="dispute-open">Je ne suis pas d’accord avec l’ajustement</button>`:`<button class="btn ghost sm" data-act="report-issue">Signaler un problème</button>`}</div></div>`;
+      ${adj?`<button class="btn ghost sm" data-act="dispute-open">Je ne suis pas d’accord avec l’ajustement</button>`:`<button class="btn ghost sm" data-act="report-issue">Signaler un problème</button>`}
+      <p class="mini" style="text-align:center;display:flex;align-items:center;justify-content:center;gap:5px">${I.clock} Sans action de votre part, la prestation est <b>validée automatiquement sous 24 h</b>.</p></div></div>`;
   }
   function clientDispute(){
     const m=S.mission,t=totals(m),agreed=m.rate*m.duration;
@@ -1131,7 +1181,7 @@
     const rf=S.rebookFreq||'hebdo';
     const rbChips=[['hebdo','Chaque semaine'],['bihebdo','Toutes les 2 sem.'],['mensuelle','Chaque mois']].map(f=>`<button class="seg ${rf===f[0]?'on':''}" data-act="rbfreq:${f[0]}">${f[1]}</button>`).join('');
     const rebookCard=(m.rating>=4)?`<div class="card" style="padding:16px;margin-top:12px"><b style="font-size:14.5px">🔁 Ça s'est bien passé&nbsp;? Reprogrammez avec ${p.nm.split(' ')[0]}</b><p class="mini" style="margin-top:3px">Le même artisan revient automatiquement à la fréquence choisie. Sans nouvelle recherche, annulable à tout moment.</p><div class="segs" style="margin-top:11px">${rbChips}</div><button class="btn primary sm" data-act="rebook" style="margin-top:12px">Reprogrammer ${freqInfo(rf).short}</button></div>`:'';
-    return `<div class="pad"><div class="paycap"><div class="checkmark">${I.bigcheck}</div><div><div class="h-hello" style="text-align:center">Merci&nbsp;!</div><p class="sub" style="text-align:center">Votre avis aide la communauté.</p></div></div>
+    return `<div class="pad"><div class="paycap" style="height:auto;padding-top:14px">${octoMini(72,'bob')}<div><div class="h-hello" style="text-align:center">Merci&nbsp;!</div><p class="sub" style="text-align:center">${MASCOT} vous remercie — votre avis aide la communauté.</p></div></div>
       <div class="card" style="padding:16px"><div class="row between"><b>${m.svcName}</b><span class="stars">${'★'.repeat(m.rating)}</span></div><div class="mini" style="margin-top:4px">${p.nm} · ${m.when}</div><hr class="dashed"><div class="receipt-line"><span>Réglé</span><b>${eur(t.total)}</b></div></div>
       ${factureCard()}
       ${rebookCard}
@@ -1492,7 +1542,12 @@
       case 'onb-start':S.onbStep=1;render();break;
       case 'onb-back0':S.onbStep=0;render();break;
       case 'onb-back1':S.onbStep=1;render();break;
-      case 'finish-onboard':if((S.clientForm.name||'').trim().length>1){S.onboarded=true;render();toast('Compte créé — bienvenue sur Ti-Services !');}else{toast('Entrez votre nom pour continuer');}break;
+      case 'finish-onboard':{const c=S.clientForm;if((c.name||'').trim().length>1&&/.+@.+\..+/.test(c.email||'')&&(c.password||'').length>=6){S.account={name:c.name.trim(),email:c.email.trim(),zone:c.zone};saveAccount(S.account);S.onboarded=true;S.authView=null;render();burstConfetti();toast('Compte créé 🐙 — bienvenue, '+c.name.trim().split(' ')[0]+' !');}else{toast('Nom, e-mail et mot de passe (6 car.) requis');}break;}
+      case 'show-login':S.authView='login';S.loginForm={email:(S.account?S.account.email:(S.clientForm.email||'')),password:''};render();break;
+      case 'login-back':S.authView=null;render();break;
+      case 'login-to-signup':S.authView=null;S.onbStep=1;render();break;
+      case 'do-login':{const f=S.loginForm;if(/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=1){const acc=S.account&&S.account.email===f.email.trim()?S.account:{name:(S.account?S.account.name:'Camille Magras'),email:f.email.trim(),zone:(S.account?S.account.zone:'Gustavia')};S.account=acc;S.clientForm={name:acc.name,email:acc.email,zone:acc.zone,password:''};S.onboarded=true;S.authView=null;render();toast('Content de vous revoir, '+acc.name.split(' ')[0]+' !');}else{toast('E-mail et mot de passe requis');}break;}
+      case 'google-soon':toast('Connexion Google — bientôt disponible');break;
       case 'cancel-mission':S.mission=null;S.clientNav='home';render();break;
       case 'confirm-done':finalizePaid(S.mission);render();burstConfetti();break;
       case 'show-pitch':S.showPitch=true;render();break;
@@ -1619,7 +1674,8 @@
   view.addEventListener('input',(e)=>{
     const t=e.target.closest('[data-cfg="notes"]');if(t&&S.draft)S.draft.notes=t.value;
     const pf=e.target.closest('[data-pf]');if(pf)S.proForm[pf.dataset.pf]=pf.value;
-    const cf=e.target.closest('[data-cf]');if(cf)S.clientForm[cf.dataset.cf]=cf.value;
+    const cf=e.target.closest('[data-cf]');if(cf){S.clientForm[cf.dataset.cf]=cf.value;const fb=document.querySelector('[data-act="finish-onboard"]');const c=S.clientForm;if(fb)fb.disabled=!((c.name||'').trim().length>1&&/.+@.+\..+/.test(c.email||'')&&(c.password||'').length>=6);}
+    const lf=e.target.closest('[data-lf]');if(lf){S.loginForm[lf.dataset.lf]=lf.value;const btn=document.querySelector('[data-act="do-login"]');if(btn)btn.disabled=!(/.+@.+\..+/.test(S.loginForm.email||'')&&(S.loginForm.password||'').length>=1);}
     const pr=e.target.closest('[data-prate]');if(pr){S.proForm.rate=+pr.value;const el=document.getElementById('prateVal');if(el)el.textContent=pr.value+' €/h';}
     const cd=e.target.closest('[data-cfdate]');if(cd&&S.draft){S.draft.dateISO=cd.value;S.draft.when=fmtDate(cd.value);renderConfig();}
     const ct=e.target.closest('[data-cftime]');if(ct&&S.draft&&ct.value){S.draft.slot=ct.value;}
@@ -1632,7 +1688,7 @@
     const fp=e.target.closest('[data-photoinput]');
     if(fp&&S.draft){const files=Array.from(fp.files||[]);if(!files.length)return;S.draft.photos=S.draft.photos||[];files.slice(0,6).forEach(f=>{try{S.draft.photos.push(URL.createObjectURL(f));}catch(_){}});fp.value='';renderConfig();}
   });
-  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,card:null,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,rebookFreq:'hebdo',showPitch:false,proHistory:PRO_HISTORY(),fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,onbStep:0,clientForm:{name:'',email:'',zone:'Gustavia'},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,proStatus:'approved',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{}}});render();toast('Scénario réinitialisé');});
+  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,card:null,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,rebookFreq:'hebdo',showPitch:false,proHistory:PRO_HISTORY(),fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:''},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,proStatus:'approved',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{}}});render();toast('Scénario réinitialisé');});
 
   /* ---------- PWA: install + service worker ---------- */
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
@@ -1679,7 +1735,7 @@
     if(S.payStep){if(S.payEdit&&S.card){S.payEdit=false;render();return;}S.payStep=false;S.payEdit=false;if(S.draft)renderConfig();else render();return;}
     if(S.draft){S.draft=null;render();return;}
     if(S.mission){const st=S.mission.status;if(st==='searching'){S.mission=null;S.clientNav='home';render();}else if(st==='paid'||st==='rated'){S.history.unshift(S.mission);S.mission=null;S.clientNav='home';render();}return;}
-    if(!S.onboarded){if(S.onbStep>0){S.onbStep--;render();}return;}
+    if(!S.onboarded){if(S.authView){S.authView=null;render();return;}if(S.onbStep>0){S.onbStep--;render();}return;}
     if(S.clientNav!=='home'){S.clientNav='home';render();return;}
   }
   function pushGuard(){try{history.pushState({app:1},'');}catch(e){}}
