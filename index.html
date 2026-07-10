@@ -403,6 +403,24 @@
 <script>
 "use strict";
 (function(){
+  /* ============ CONFIG DE MISE EN LIGNE — un seul endroit à changer ============
+     Tant qu'il n'y a pas de domaine, laisser siteUrl vide : l'app tourne sur
+     n'importe quelle adresse (GitHub Pages, *.web.app, domaine perso) car tous les
+     chemins sont relatifs. Le jour J : renseigner siteUrl (et firebase/adminEmail
+     pour la bêta). Aucune autre ligne à modifier. Voir DEPLOIEMENT.md. */
+  const CONFIG = {
+    appName: 'Ti-Services',
+    siteUrl: '',                          // ex. 'https://ti-services.fr' le moment venu
+    supportEmail: 'bonjour@ti-services.fr',
+    adminEmail: '',                       // compte admin (bêta Firebase)
+    firebase: null                        // objet firebaseConfig (bêta) — cf. DEPLOIEMENT.md
+  };
+  // Base des liens absolus (partage, parrainage, lien e-mail de connexion) :
+  // le domaine s'il est défini, sinon l'adresse courante — rien d'autre à changer.
+  function siteBase(){ return (CONFIG.siteUrl||'').replace(/\/+$/,'') || (location.origin + location.pathname.replace(/[^/]*$/,'')).replace(/\/+$/,''); }
+  try{ if(CONFIG.siteUrl){ const l=document.querySelector('link[rel="canonical"]')||document.head.appendChild(Object.assign(document.createElement('link'),{rel:'canonical'})); l.href=CONFIG.siteUrl; } }catch(e){}
+  window.TI_CONFIG = CONFIG;
+
   const I = {
     menage:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M19 5 15 9"/><path d="m13 7 4 4-7 7-4 1 1-4z"/><path d="M14 3l7 7"/></svg>',
     baby:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="3.2"/><path d="M6 21c0-3.5 2.7-6 6-6s6 2.5 6 6"/></svg>',
@@ -1682,7 +1700,7 @@
       case 'close-advantages':S.advantages=false;render();break;
       case 'open-referral':S.referral=true;render();break;
       case 'close-referral':S.referral=false;render();break;
-      case 'copy-referral':toast('Lien de parrainage copié — partagez-le (démo)');break;
+      case 'copy-referral':{const link=siteBase()+'/?parrain='+encodeURIComponent(S.referralCode);const share={title:CONFIG.appName,text:'Rejoins-moi sur '+CONFIG.appName+' à Saint-Barth',url:link};if(navigator.share){navigator.share(share).catch(()=>{});}else if(navigator.clipboard){navigator.clipboard.writeText(link).then(()=>toast('Lien de parrainage copié')).catch(()=>toast('Lien : '+link));}else{toast('Lien : '+link);}break;}
       case 'pay-back':S.payStep=false;S.payEdit=false;if(S.draft)renderConfig();else render();break;
       case 'pay-change':S.payEdit=true;render();break;
       case 'add-card':S.cardForm=true;render();break;
