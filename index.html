@@ -1511,7 +1511,34 @@
       ${isDemo()?`<p class="mini" style="text-align:center;margin-top:10px"><button class="linklike" data-act="demo-go-client">🧑 Voir l'espace client (démo)</button> · <button class="linklike" data-act="demo-go-admin">⚙︎ Admin (démo)</button></p>`:''}
       <div style="height:12px"></div></div>${proNavbar()}`;
   }
-  function apptPayout(a){if(a.amount!=null)return a.amount;const base=SERVICES.find(x=>x.id===a.svc).rate;return (a.rate||base)*a.duration;}
+  function apptPayout(a){if(a.amount!=null)return a.amount;const base=svcBase(a.svc);return (a.rate||base)*a.duration;}
+  // --- Export agenda (.ics) : ajout à Google / Apple Calendar depuis le téléphone ---
+  function apptStartDate(a){
+    const now=new Date();let dt;
+    if(a.dateISO&&/^\d{4}-\d{2}-\d{2}$/.test(a.dateISO)){dt=new Date(a.dateISO+'T00:00:00');}
+    else{const d=(a.day||'').toLowerCase();let off=0;
+      if(d.indexOf('demain')>=0)off=1;else if(d.indexOf('semaine prochaine')>=0)off=7;
+      else if(d.indexOf('2 semaines')>=0)off=14;else if(d.indexOf('3 semaines')>=0)off=21;
+      else if(d.indexOf('mois prochain')>=0)off=30;
+      dt=new Date(now.getFullYear(),now.getMonth(),now.getDate()+off);}
+    const m=/(\d{1,2}):(\d{2})/.exec(a.slot||'09:00');dt.setHours(m?+m[1]:9,m?+m[2]:0,0,0);return dt;
+  }
+  function icsStamp(d){const p=n=>String(n).padStart(2,'0');return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'T'+p(d.getHours())+p(d.getMinutes())+'00';}
+  function icsEsc(s){return String(s==null?'':s).replace(/([,;\\])/g,'\\$1').replace(/\r?\n/g,'\\n');}
+  function icsEvent(a){
+    const start=apptStartDate(a);const isDay=a.unit==='j';
+    const end=new Date(start.getTime()+(isDay?(a.duration||1)*86400000:(a.duration||1)*3600000));
+    const nm=svcNm(a.svc);
+    return ['BEGIN:VEVENT','UID:ti-'+(a.svc||'x')+'-'+icsStamp(start)+'@ti-services','DTSTAMP:'+icsStamp(new Date()),
+      'DTSTART:'+icsStamp(start),'DTEND:'+icsStamp(end),
+      'SUMMARY:'+icsEsc(nm+' · Ti-Services'),
+      'LOCATION:'+icsEsc((a.client?a.client+' · ':'')+(a.zone||'Saint-Barthélemy')),
+      'DESCRIPTION:'+icsEsc('Prestation '+nm+' pour '+(a.client||'un client')+'. Vous percevez '+eur(apptPayout(a))+'. Réservée via Ti-Services.'),
+      'BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:'+icsEsc('Prestation '+nm+' bientôt'),'TRIGGER:-PT1H','END:VALARM','END:VEVENT'];
+  }
+  function icsBuild(list){return ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Ti-Services//FR','CALSCALE:GREGORIAN','METHOD:PUBLISH']
+    .concat(list.flatMap(icsEvent)).concat(['END:VCALENDAR']).join('\r\n');}
+  function downloadIcs(text,name){try{const blob=new Blob([text],{type:'text/calendar;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name||'ti-services.ics';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>{try{URL.revokeObjectURL(url);}catch(_){}} ,1500);toast('Ajouté à votre agenda 📅');}catch(e){toast('Impossible d’ouvrir l’agenda');}}
   function apptCard(a){
     const s=SERVICES.find(x=>x.id===a.svc);
     const col={upcoming:'var(--teal)',live:'var(--coral)',tovalidate:'var(--warn)',done:'var(--good)'}[a.status];
@@ -1522,6 +1549,7 @@
         <div class="row between"><b style="font-size:14.5px">${s.nm}</b><span class="chip ${chip[0]}" style="padding:3px 9px">${chip[1]}</span></div>
         <div class="mini" style="margin-top:3px">${a.client} · ${I.pin} ${a.zone}</div>
         <div class="mini" style="margin-top:3px">Vous percevez <b style="color:var(--ink)">${eur(apptPayout(a))}</b></div>
+        ${a.status!=='done'?`<button class="btn ghost sm" data-act="ics:${S.agenda.indexOf(a)}" style="margin-top:9px;width:auto;padding:7px 12px">${I.cal} Ajouter à mon agenda</button>`:''}
       </div></div>`;
   }
   function apptList(){
@@ -1530,7 +1558,7 @@
     const totalUp=up.reduce((t,a)=>t+apptPayout(a),0);
     const summary=`<div class="card" style="padding:15px;margin-top:14px"><div class="row between">
       <div><div class="mini">À venir</div><b class="money" style="font-size:19px;font-family:var(--f-disp)">${up.length} prestation${up.length>1?'s':''}</b></div>
-      <div style="text-align:right"><div class="mini">Revenus à venir</div><b class="money" style="font-size:19px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(totalUp)}</b></div></div></div>`;
+      <div style="text-align:right"><div class="mini">Revenus à venir</div><b class="money" style="font-size:19px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(totalUp)}</b></div></div>${up.length?`<button class="btn ghost sm" data-act="ics-all" style="margin-top:12px">${I.cal} Ajouter tout à mon agenda (Google / Apple)</button>`:''}</div>`;
     if(!items.length)return summary+`<div class="card" style="padding:24px;margin-top:12px;text-align:center;color:var(--muted)">Aucune prestation réservée pour l’instant.<br>Vos missions acceptées apparaîtront ici.</div>`;
     const order=[],g={};
     items.forEach(a=>{if(!g[a.day]){g[a.day]=[];order.push(a.day);}g[a.day].push(a);});
@@ -1761,6 +1789,8 @@
     if(b.dataset.act&&b.dataset.act.indexOf('invoice:')===0){S.invoiceId=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('rbfreq:')===0){S.rebookFreq=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('rmphoto:')===0){const i=+b.dataset.act.split(':')[1];if(S.draft&&S.draft.photos){const u=S.draft.photos[i];if(u&&u.indexOf('blob:')===0){try{URL.revokeObjectURL(u);}catch(_){}}S.draft.photos.splice(i,1);renderConfig();}return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('ics:')===0){const i=+b.dataset.act.split(':')[1];const a=S.agenda[i];if(a)downloadIcs(icsBuild([a]),'ti-services-'+(a.svc||'rdv')+'.ics');return;}
+    if(b.dataset.act==='ics-all'){const up=S.agenda.filter(a=>a.status!=='done');if(up.length)downloadIcs(icsBuild(up),'ti-services-agenda.ics');return;}
     if(b.dataset.act&&b.dataset.act.indexOf('addr-edit:')===0){const a=S.addresses.find(x=>x.id===b.dataset.act.split(':')[1]);if(a){S.addrForm={id:a.id,label:a.label,address:a.address,zone:a.zone,geo:a.geo?{...a.geo}:null,access:a.access||''};render();}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('conc-view:')===0){S.concView=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('conc-invoice:')===0){S.concInvoice=b.dataset.act.split(':')[1];render();return;}
