@@ -667,7 +667,7 @@
     card:null,cardForm:false,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,mission:null,draft:null,
     addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,
     concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,
-    proPhoto:null,proStatus:'approved',proFounder:true,proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:'',photo:''},
+    proPhoto:null,proStatus:'approved',proFounder:true,proNotifPush:true,proNotifWa:true,proPhone:'0690 00 00 00',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:'',photo:''},
     proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],
     proHistory:PRO_HISTORY(),
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),
@@ -1503,6 +1503,14 @@
         ${isNew?`<p class="mini" style="margin-top:10px">Vos premières prestations bien notées feront grimper votre visibilité — à Saint-Barth, la réputation fait tout.</p>`:''}
       </div>
 
+      <div class="card" style="padding:16px;margin-top:12px">
+        <span class="eyebrow" style="color:var(--muted)">🔔 Alertes nouvelles demandes</span>
+        <div class="row between" style="margin-top:12px;align-items:center;gap:12px"><div><b style="font-size:14px">Notifications de l'app</b><div class="mini">Canal principal — instantané, même app fermée.</div></div><button class="switch" data-act="notif-push" style="background:${S.proNotifPush?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${S.proNotifPush?'25px':'3px'}"></span></button></div>
+        <div class="row between" style="margin-top:14px;align-items:center;gap:12px"><div><b style="font-size:14px">WhatsApp en secours</b><div class="mini">Si vous ratez la notif, une alerte WhatsApp vous renvoie vers l'app.</div></div><button class="switch" data-act="notif-wa" style="background:${S.proNotifWa?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${S.proNotifWa?'25px':'3px'}"></span></button></div>
+        ${S.proNotifWa?`<div class="field" style="margin-top:12px;margin-bottom:0"><label style="font-size:12.5px">Votre numéro WhatsApp</label><input class="txt" data-pphone value="${esc(S.proPhone||'')}" inputmode="tel" placeholder="Ex. 0690 00 00 00"></div>`:''}
+        <p class="mini" style="margin-top:10px">${I.lock} Votre numéro reste masqué aux clients — il ne sert qu'aux alertes Ti-Services.</p>
+      </div>
+
       ${(()=>{const n=S.agenda.find(a=>a.status!=='done');if(!n)return '';const s=SERVICES.find(x=>x.id===n.svc);return `<button class="card" style="padding:14px;margin-top:12px;width:100%;text-align:left;display:block" data-pnav="agenda"><div class="row between"><span class="eyebrow" style="color:var(--muted)">Prochaine prestation</span><span class="mini">Voir l'agenda ›</span></div><div class="row" style="gap:12px;margin-top:8px"><div class="appt-time"><b>${n.slot}</b><span class="mini">${durTxt({unit:n.unit},n.duration)}</span></div><div><b style="font-size:14.5px">${s.nm}</b><div class="mini">${n.day} · ${n.client}</div></div></div></button>`;})()}
 
       ${S.proOnline?`<div class="card" style="padding:16px;margin-top:12px;text-align:center;border-style:dashed"><div class="radar sm"><div class="ring r1"></div><div class="ring r2"></div><div class="core">${I.bolt}</div></div><p class="sub" style="margin:6px 0 0">En attente de nouvelles missions…</p>${isDemo()?`<p class="mini" style="margin-top:8px">Démo : côté <b>Client</b>, lancez une réservation pour recevoir une demande ici.</p>`:''}</div>`:''}
@@ -1539,6 +1547,10 @@
   function icsBuild(list){return ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Ti-Services//FR','CALSCALE:GREGORIAN','METHOD:PUBLISH']
     .concat(list.flatMap(icsEvent)).concat(['END:VCALENDAR']).join('\r\n');}
   function downloadIcs(text,name){try{const blob=new Blob([text],{type:'text/calendar;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name||'ti-services.ics';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>{try{URL.revokeObjectURL(url);}catch(_){}} ,1500);toast('Ajouté à votre agenda 📅');}catch(e){toast('Impossible d’ouvrir l’agenda');}}
+  // Notifications push : demande d'autorisation (le vrai envoi = Cloud Function FCM, Phase 2).
+  function requestPush(){try{if('Notification'in window&&typeof Notification.requestPermission==='function'){const r=Notification.requestPermission();if(r&&r.then){r.then(perm=>{S.proNotifPush=(perm==='granted');toast(perm==='granted'?'Notifications activées 🔔':'Autorisez les notifications dans les réglages du téléphone');render();});}else{S.proNotifPush=(r==='granted');}}else{toast('Notifications non disponibles sur cet appareil');}}catch(e){}}
+  // Deep link : une notif / un lien WhatsApp « Ouvrir Ti-Services » ouvre l'app sur l'espace Missions.
+  function handleDeepLink(){try{const q=new URLSearchParams(location.search);if(q.get('open')==='missions'||q.has('mission')){S.onboarded=true;S.persona='pro';if(S.proStatus!=='approved')S.proStatus='approved';S.proNav='home';return true;}}catch(e){}return false;}
   function apptCard(a){
     const s=SERVICES.find(x=>x.id===a.svc);
     const col={upcoming:'var(--teal)',live:'var(--coral)',tovalidate:'var(--warn)',done:'var(--good)'}[a.status];
@@ -1834,6 +1846,8 @@
       case 'show-client-invoice':S.clientInv=true;render();break;
       case 'close-client-invoice':S.clientInv=false;render();break;
       case 'toggle-online':S.proOnline=!S.proOnline;render();break;
+      case 'notif-push':{if(!S.proNotifPush){S.proNotifPush=true;requestPush();}else{S.proNotifPush=false;}render();break;}
+      case 'notif-wa':S.proNotifWa=!S.proNotifWa;render();break;
       case 'save-dispo':toast('Disponibilités enregistrées');break;
       case 'go-artisan-signup':S.persona='pro';S.proStatus='signup';S.proForm={name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:''};render();break;
       case 'back-to-client':S.persona='client';S.proStatus='approved';render();break;
@@ -1906,7 +1920,7 @@
       case 'toggle-mandat':S.proForm.mandat=!S.proForm.mandat;render();break;
       case 'pro-attach-insurance':S.proForm.insuranceDoc=true;render();toast('Attestation d’assurance ajoutée');break;
       case 'pro-submit':{const f=S.proForm;if(!f.cats.length){toast('Sélectionnez au moins un service');break;}if(f.cats.includes('autre')&&!(f.otherService||'').trim()){toast('Précisez le service « Autre » que vous proposez');break;}if(!/^\d{14}$/.test((f.siret||'').replace(/\s/g,''))){toast('Un SIRET valide (14 chiffres) est requis');break;}if(!f.insuranceDoc){toast('Joignez votre attestation d’assurance');break;}if(!f.mandat){toast('Acceptez le mandat de facturation pour continuer');break;}const rates={};f.cats.forEach(c=>{rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});const minRate=Math.min.apply(null,f.cats.map(c=>rates[c]));S.adminArtisans=S.adminArtisans.filter(x=>x.id!=='self');S.adminArtisans.unshift({id:'self',name:f.name||'Nouveau prestataire',status:'attente',type:'entreprise',cats:f.cats.slice(),other:(f.otherService||'').trim(),rates,rate:minRate,siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,rating:0,jobs:0,zone:'—',phone:f.phone||'',email:'',photo:f.photo||''});S.proStatus='pending';render();break;}
-      case 'pro-approve':{S.proStatus='approved';const f=S.proForm;if(f.photo)S.proPhoto=f.photo;if(f.name)S.proName=f.name;if(f.cats.length)S.proCats=f.cats.slice();const rates={};f.cats.forEach(c=>{rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});S.proRates=rates;if(f.cats.length)S.proRate=Math.min.apply(null,f.cats.map(c=>rates[c]));S.proStatusType='entreprise';S.proSiret=(f.siret||'').replace(/\s/g,'');S.proBio=f.bio||'';S.proInsured=!!f.insuranceDoc;if(f.insurer)S.proInsurer=f.insurer;
+      case 'pro-approve':{S.proStatus='approved';const f=S.proForm;if(f.photo)S.proPhoto=f.photo;if(f.name)S.proName=f.name;if(f.cats.length)S.proCats=f.cats.slice();const rates={};f.cats.forEach(c=>{rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});S.proRates=rates;if(f.cats.length)S.proRate=Math.min.apply(null,f.cats.map(c=>rates[c]));S.proStatusType='entreprise';S.proSiret=(f.siret||'').replace(/\s/g,'');S.proBio=f.bio||'';S.proInsured=!!f.insuranceDoc;if(f.insurer)S.proInsurer=f.insurer;if(f.phone)S.proPhone=f.phone;
         // Nouvel artisan = part de zéro : aucun historique ni agenda pré-rempli.
         S.proHistory=[];S.agenda=[];S.recurring=[];S.proEarnings=0;S.proJobsToday=0;S.proJobsTotal=0;S.mission=null;
         render();toast('Profil validé — bienvenue sur Ti-Services !');break;}
@@ -1965,6 +1979,7 @@
     const cd=e.target.closest('[data-cfdate]');if(cd&&S.draft){S.draft.dateISO=cd.value;S.draft.when=fmtDate(cd.value);renderConfig();}
     const ct=e.target.closest('[data-cftime]');if(ct&&S.draft&&ct.value){S.draft.slot=ct.value;}
     const am=e.target.closest('[data-addrmanual]');if(am&&S.draft){S.draft.address=am.value;}
+    const pph=e.target.closest('[data-pphone]');if(pph){S.proPhone=pph.value;}
     const af=e.target.closest('[data-af]');if(af&&S.addrForm){S.addrForm[af.dataset.af]=af.value;}
     const cf2=e.target.closest('[data-cf2]');if(cf2&&S.concForm){S.concForm[cf2.dataset.cf2]=cf2.value;}
     const cn=e.target.closest('[data-conc-notes]');if(cn&&S.concOrder){S.concOrder.notes=cn.value;}
@@ -1975,7 +1990,7 @@
     const ai=e.target.closest('[data-avatarinput]');
     if(ai&&ai.files&&ai.files[0]){let url='';try{url=URL.createObjectURL(ai.files[0]);}catch(_){}if(!url)return;if(ai.dataset.avatarinput==='client')S.clientForm.photo=url;else S.proForm.photo=url;ai.value='';render();}
   });
-  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,card:null,cardForm:false,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,proHistory:PRO_HISTORY(),fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,adminPrices:ADMIN_PRICES(),proPhoto:null,proStatus:'approved',proFounder:true,proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:'',photo:''}});render();toast('Scénario réinitialisé');});
+  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,card:null,cardForm:false,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,proHistory:PRO_HISTORY(),fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,adminPrices:ADMIN_PRICES(),proPhoto:null,proStatus:'approved',proFounder:true,proNotifPush:true,proNotifWa:true,proPhone:'0690 00 00 00',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:'',photo:''}});render();toast('Scénario réinitialisé');});
 
   /* ---------- PWA: install + service worker ---------- */
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
@@ -2085,6 +2100,7 @@
   async function fbGoogle(){ try{ await FB.a.signInWithPopup(FB.auth,new FB.a.GoogleAuthProvider()); }catch(e){ toast(fbErr(e)); } }
   function fbLogout(){ if(FB){ try{FB.a.signOut(FB.auth);}catch(_){} } }
 
+  handleDeepLink();
   render();
   initFirebase();
 })();
