@@ -1311,7 +1311,28 @@
       <div class="banner teal" style="margin-top:14px">${I.lock}<span>Paiement confié à <b>Mollie</b>, prestataire agréé (norme <b>PCI-DSS</b>). Vos données de carte sont chiffrées et transmises directement à Mollie&nbsp;: Ti-Services n'en conserve <b>jamais</b> le numéro ni le CVC — seulement les 4 derniers chiffres, pour l'affichage.</span></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-act="card-save">${I.lock} Enregistrer ma carte</button><p class="mini" style="text-align:center;margin-top:10px">Maquette — aucune donnée réelle n'est envoyée ni conservée.</p></div></div>`;
   }
-  function placeMission(){const d=S.draft;if(!d)return;if(S.avgOffers[d.svc]){S.avgOffers[d.svc].sum+=d.rate;S.avgOffers[d.svc].n++;}S.mission=d;S.draft=null;S.payStep=false;S.payEdit=false;startSearch();}
+  function placeMission(){const d=S.draft;if(!d)return;if(S.avgOffers[d.svc]){S.avgOffers[d.svc].sum+=d.rate;S.avgOffers[d.svc].n++;}S.mission=d;S.draft=null;S.payStep=false;S.payEdit=false;persistRequest(d);startSearch();}
+  // Étape 0 : la demande devient une fiche Firestore `requests/{id}` (vrais comptes uniquement).
+  // Sans adresse exacte ni GPS — révélés seulement à l'artisan qui accepte. Base des notifications.
+  function persistRequest(m){
+    try{
+      if(!(FB&&FB.auth&&FB.auth.currentUser))return; // démo / hors-ligne : aucune écriture
+      const t=totals(m),u=FB.auth.currentUser;
+      FB.f.addDoc(FB.f.collection(FB.db,'requests'),{
+        clientUid:u.uid,
+        clientName:(S.account&&S.account.name)||'',
+        status:'pending',
+        service:m.svc, serviceName:m.svcName,
+        zone:m.zone||'',
+        when:m.when||'', slot:m.slot||'',
+        unit:m.unit||'h', duration:m.duration||1,
+        rate:t.rate, boost:m.boost||0, total:t.total,
+        frequency:m.frequency||'ponctuelle',
+        notes:(m.notes||'').slice(0,500),
+        createdAt:FB.f.serverTimestamp()
+      }).then(function(ref){ m.reqId=ref.id; }).catch(function(e){ console.warn('requests write failed',e); });
+    }catch(e){ console.warn(e); }
+  }
   function clientPay(){
     const m=S.draft,t=totals(m);
     const recap=`<div class="card" style="padding:15px;margin-top:14px"><div class="row between"><b style="font-size:14px">${m.svcName}</b><b class="money">${eur(t.total)}</b></div><div class="mini" style="margin-top:3px">${m.when} · ${m.slot} · ${durTxt(m)} · ${m.zone}</div></div>`;
