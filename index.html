@@ -505,7 +505,8 @@
     eyeoff:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10.7 6.2A9.7 9.7 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 3.9M6.1 6.1A17 17 0 0 0 2 12s3.5 7 10 7a9.6 9.6 0 0 0 4-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/></svg>',
     share:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v13"/><path d="M8 7l4-4 4 4"/><path d="M5 12v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>',
     copy:'<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2.5"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>',
-    link:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/></svg>'
+    link:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/></svg>',
+    other:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8.5v7M8.5 12h7"/></svg>'
   };
   // QR-code de partage (statique, encode CONFIG.shareUrl) — généré avec segno. Régénérer si l'URL change.
   const QR_VB = 41;
@@ -599,6 +600,9 @@
     {id:'co1',clientName:'M. & Mme Hartley',svc:'menage',svcName:'Ménage',duration:3,rate:40,amount:120,when:'Hier',slot:'10:00',status:'paid',artisan:'Marie-Lou Cagan',retro:10,invNo:'2026-0039'}
   ];
   function svcBase(id){const s=SERVICES.find(x=>x.id===id);return s?s.rate:30;}
+  // Nom/icône d'une catégorie, y compris la catégorie « autre » (service hors liste).
+  function svcNm(id){if(id==='autre')return 'Autre service';const s=SERVICES.find(x=>x.id===id);return s?s.nm:id;}
+  function svcIco(id){return I[id]||I.other;}
   function svcFloor(id){const f=S.floors&&S.floors[id];return (f!=null)?f:Math.round(svcBase(id)*0.7);}
   function svcReco(id){const a=S.avgOffers&&S.avgOffers[id];return a?Math.round(a.sum/a.n):svcBase(id);}
   const ADMIN_ARTS=()=>[
@@ -663,7 +667,7 @@
     card:null,cardForm:false,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,mission:null,draft:null,
     addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,
     concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,
-    proPhoto:null,proStatus:'approved',proFounder:true,proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},photo:''},
+    proPhoto:null,proStatus:'approved',proFounder:true,proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:'',photo:''},
     proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],
     proHistory:PRO_HISTORY(),
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),
@@ -774,7 +778,7 @@
   /* ---------- CLIENT ---------- */
   /* ---------- ADMIN ---------- */
   function renderAdmin(){if(S.support&&S.mission)return supportChat();if(S.admin.view==='art')return adminFiche('art');if(S.admin.view==='cli')return adminFiche('cli');return adminHome();}
-  function catNames(cats){return cats.map(c=>{const s=SERVICES.find(x=>x.id===c);return s?s.nm:c;}).join(', ');}
+  function catNames(cats){return cats.map(svcNm).join(', ');}
   function inits(n){return n.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();}
   function adminHome(){
     const arts=S.adminArtisans,clis=S.adminClients;
@@ -786,6 +790,7 @@
     pendA.forEach(a=>q.push(`<div class="card" style="padding:14px;margin-top:10px;border-left:4px solid var(--warn)">
       <div class="row between"><b style="font-size:14.5px">${a.name}</b><span class="chip grey" style="padding:3px 9px">Artisan</span></div>
       <div class="mini" style="margin-top:3px">${a.type==='particulier'?'Particulier':'Entreprise'} · ${catNames(a.cats)} · ${a.rate} €/h</div>
+      ${(a.cats&&a.cats.includes('autre')&&a.other)?`<div class="banner teal" style="margin-top:7px">${I.other}<span>Service « Autre » proposé&nbsp;: <b>${esc(a.other)}</b> — à évaluer.</span></div>`:''}
       <div class="row" style="gap:6px;margin-top:7px;flex-wrap:wrap"><span class="chip ${a.siret?'good':'coral'}" style="padding:3px 9px">SIRET ${a.siret?'fourni':'manquant'}</span><span class="chip ${a.insured?'good':'coral'}" style="padding:3px 9px">Assurance ${a.insured?'OK':'manquante'}</span></div>
       <p class="mini" style="margin-top:9px;color:var(--muted)">Échangez avant de décider&nbsp;:</p>${contactRow(a)}
       <div class="row" style="gap:8px;margin-top:10px"><button class="btn good sm" data-adm="valid-art:${a.id}" ${(a.insured&&a.siret)?'':'disabled'}>Valider</button><button class="btn ghost sm" data-adm="rej-art:${a.id}">Refuser</button><button class="btn ghost sm" data-adm="art:${a.id}">Fiche</button></div>
@@ -1398,7 +1403,8 @@
   }
   function proSignup(){
     const f=S.proForm;
-    const cats=SERVICES.map(s=>`<button class="cat ${f.cats.includes(s.id)?'sel':''}" data-pcat="${s.id}"><div class="pick">${I.check}</div><div class="ic">${I[s.id]}</div><div class="nm">${s.nm}</div><div class="rt">dès ${s.rate} €/h</div></button>`).join('');
+    const cats=SERVICES.map(s=>`<button class="cat ${f.cats.includes(s.id)?'sel':''}" data-pcat="${s.id}"><div class="pick">${I.check}</div><div class="ic">${I[s.id]}</div><div class="nm">${s.nm}</div><div class="rt">dès ${s.rate} €/h</div></button>`).join('')
+      +`<button class="cat ${f.cats.includes('autre')?'sel':''}" data-pcat="autre"><div class="pick">${I.check}</div><div class="ic">${I.other}</div><div class="nm">Autre</div><div class="rt">à préciser</div></button>`;
     const benefitsPro=[
       [I.lock,'Paiement garanti sous 48 h',"Ti-Services encaisse et vous règle après chaque prestation validée. Fini les impayés et les relances."],
       [I.check,'Zéro paperasse',"Facture émise en votre nom (Factur-X), encaissement et suivi gérés automatiquement pour vous."],
@@ -1433,8 +1439,9 @@
       </div>
       <div class="field" style="margin-top:18px"><label>Quels services souhaitez-vous réaliser&nbsp;? (un ou plusieurs)</label></div>
       <div class="cats">${cats}</div>
+      ${f.cats.includes('autre')?`<div class="field" style="margin-top:12px"><label>Précisez votre service « Autre »</label><input class="txt" data-pf="otherService" value="${esc(f.otherService||'')}" placeholder="Ex. Vitrier, peintre, cours de plongée…"><p class="mini" style="margin-top:6px">Ce service sera examiné par Ti-Services avant d'être proposé aux clients.</p></div>`:''}
       ${f.cats.length?`<div class="card" style="padding:16px;margin-top:14px"><div class="eyebrow" style="color:var(--muted)">Votre tarif horaire, par service</div>
-        ${f.cats.map(id=>{const s=SERVICES.find(x=>x.id===id);const r=(f.rates&&f.rates[id]!=null)?f.rates[id]:svcBase(id);return `<div class="row between" style="margin-top:11px;align-items:center"><span class="sub" style="display:flex;align-items:center;gap:8px"><span style="display:inline-flex;width:26px;height:26px;border-radius:8px;background:var(--teal-wash);color:var(--teal-deep);align-items:center;justify-content:center">${I[id]}</span>${s.nm}</span><span class="row" style="gap:8px;align-items:center"><button class="btn ghost sm" style="width:34px;padding:6px 0" data-srate="${id}:down">−</button><b class="money" style="min-width:56px;text-align:center">${r} €/h</b><button class="btn ghost sm" style="width:34px;padding:6px 0" data-srate="${id}:up">+</button></span></div>`;}).join('')}
+        ${f.cats.map(id=>{const r=(f.rates&&f.rates[id]!=null)?f.rates[id]:svcBase(id);return `<div class="row between" style="margin-top:11px;align-items:center"><span class="sub" style="display:flex;align-items:center;gap:8px"><span style="display:inline-flex;width:26px;height:26px;border-radius:8px;background:var(--teal-wash);color:var(--teal-deep);align-items:center;justify-content:center">${svcIco(id)}</span>${svcNm(id)}</span><span class="row" style="gap:8px;align-items:center"><button class="btn ghost sm" style="width:34px;padding:6px 0" data-srate="${id}:down">−</button><b class="money" style="min-width:56px;text-align:center">${r} €/h</b><button class="btn ghost sm" style="width:34px;padding:6px 0" data-srate="${id}:up">+</button></span></div>`;}).join('')}
         <p class="mini" style="margin-top:10px">Chaque tarif sera validé par Ti-Services.</p></div>`:`<p class="mini" style="margin-top:10px;color:var(--muted)">Sélectionnez au moins un service pour fixer votre tarif horaire.</p>`}
       <div class="footcta" style="position:static;background:none;padding:18px 0 0">
         <button class="btn primary" data-act="pro-submit">Envoyer ma candidature</button>
@@ -1443,7 +1450,7 @@
   }
   function proPending(){
     const f=S.proForm;
-    const svc=f.cats.map(c=>SERVICES.find(s=>s.id===c).nm).join(' · ');
+    const svc=f.cats.map(svcNm).join(' · ');
     return `<div class="pad"><div style="height:12px"></div>
       <div class="paycap" style="height:auto;padding:12px 0 4px"><div class="checkmark" style="background:var(--teal)">${I.check}</div>
         <div><div class="h-hello" style="text-align:center">Candidature envoyée</div><p class="sub" style="text-align:center">Merci${f.name?' '+f.name:''} ! Nous étudions votre profil.</p></div></div>
@@ -1798,7 +1805,7 @@
       case 'close-client-invoice':S.clientInv=false;render();break;
       case 'toggle-online':S.proOnline=!S.proOnline;render();break;
       case 'save-dispo':toast('Disponibilités enregistrées');break;
-      case 'go-artisan-signup':S.persona='pro';S.proStatus='signup';S.proForm={name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{}};render();break;
+      case 'go-artisan-signup':S.persona='pro';S.proStatus='signup';S.proForm={name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:''};render();break;
       case 'back-to-client':S.persona='client';S.proStatus='approved';render();break;
       case 'start-demo':S.demoMode=true;S.onboarded=true;S.authView=null;S.persona='client';S.clientForm={name:'Camille Magras',email:'demo@ti-services.fr',zone:'Gustavia',password:'',password2:'',photo:''};S.account={name:'Camille Magras',email:'demo@ti-services.fr',zone:'Gustavia'};S.mission=null;S.draft=null;
         // Démo = compte de démonstration pré-rempli (villas côté client, artisan actif Marie-Lou).
@@ -1868,7 +1875,7 @@
       case 'print-invoice':window.print();break;
       case 'toggle-mandat':S.proForm.mandat=!S.proForm.mandat;render();break;
       case 'pro-attach-insurance':S.proForm.insuranceDoc=true;render();toast('Attestation d’assurance ajoutée');break;
-      case 'pro-submit':{const f=S.proForm;if(!f.cats.length){toast('Sélectionnez au moins un service');break;}if(!/^\d{14}$/.test((f.siret||'').replace(/\s/g,''))){toast('Un SIRET valide (14 chiffres) est requis');break;}if(!f.insuranceDoc){toast('Joignez votre attestation d’assurance');break;}if(!f.mandat){toast('Acceptez le mandat de facturation pour continuer');break;}const rates={};f.cats.forEach(c=>{rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});const minRate=Math.min.apply(null,f.cats.map(c=>rates[c]));S.adminArtisans=S.adminArtisans.filter(x=>x.id!=='self');S.adminArtisans.unshift({id:'self',name:f.name||'Nouveau prestataire',status:'attente',type:'entreprise',cats:f.cats.slice(),rates,rate:minRate,siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,rating:0,jobs:0,zone:'—',phone:f.phone||'',email:'',photo:f.photo||''});S.proStatus='pending';render();break;}
+      case 'pro-submit':{const f=S.proForm;if(!f.cats.length){toast('Sélectionnez au moins un service');break;}if(f.cats.includes('autre')&&!(f.otherService||'').trim()){toast('Précisez le service « Autre » que vous proposez');break;}if(!/^\d{14}$/.test((f.siret||'').replace(/\s/g,''))){toast('Un SIRET valide (14 chiffres) est requis');break;}if(!f.insuranceDoc){toast('Joignez votre attestation d’assurance');break;}if(!f.mandat){toast('Acceptez le mandat de facturation pour continuer');break;}const rates={};f.cats.forEach(c=>{rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});const minRate=Math.min.apply(null,f.cats.map(c=>rates[c]));S.adminArtisans=S.adminArtisans.filter(x=>x.id!=='self');S.adminArtisans.unshift({id:'self',name:f.name||'Nouveau prestataire',status:'attente',type:'entreprise',cats:f.cats.slice(),other:(f.otherService||'').trim(),rates,rate:minRate,siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,rating:0,jobs:0,zone:'—',phone:f.phone||'',email:'',photo:f.photo||''});S.proStatus='pending';render();break;}
       case 'pro-approve':{S.proStatus='approved';const f=S.proForm;if(f.photo)S.proPhoto=f.photo;if(f.name)S.proName=f.name;if(f.cats.length)S.proCats=f.cats.slice();const rates={};f.cats.forEach(c=>{rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});S.proRates=rates;if(f.cats.length)S.proRate=Math.min.apply(null,f.cats.map(c=>rates[c]));S.proStatusType='entreprise';S.proSiret=(f.siret||'').replace(/\s/g,'');S.proBio=f.bio||'';S.proInsured=!!f.insuranceDoc;if(f.insurer)S.proInsurer=f.insurer;
         // Nouvel artisan = part de zéro : aucun historique ni agenda pré-rempli.
         S.proHistory=[];S.agenda=[];S.recurring=[];S.proEarnings=0;S.proJobsToday=0;S.proJobsTotal=0;S.mission=null;
@@ -1938,7 +1945,7 @@
     const ai=e.target.closest('[data-avatarinput]');
     if(ai&&ai.files&&ai.files[0]){let url='';try{url=URL.createObjectURL(ai.files[0]);}catch(_){}if(!url)return;if(ai.dataset.avatarinput==='client')S.clientForm.photo=url;else S.proForm.photo=url;ai.value='';render();}
   });
-  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,card:null,cardForm:false,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,proHistory:PRO_HISTORY(),fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,adminPrices:ADMIN_PRICES(),proPhoto:null,proStatus:'approved',proFounder:true,proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},photo:''}});render();toast('Scénario réinitialisé');});
+  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,card:null,cardForm:false,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,proHistory:PRO_HISTORY(),fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,adminPrices:ADMIN_PRICES(),proPhoto:null,proStatus:'approved',proFounder:true,proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:'',photo:''}});render();toast('Scénario réinitialisé');});
 
   /* ---------- PWA: install + service worker ---------- */
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
