@@ -374,6 +374,7 @@
   .navbar button.on{color:var(--teal-deep)}
   .navbar .nb-ic{position:relative}
   .navbar .nb-badge{position:absolute;top:-4px;right:-8px;width:8px;height:8px;border-radius:50%;background:var(--coral)}
+  .navbar .nb-count{position:absolute;top:-7px;right:-12px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--coral);color:#fff;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;font-family:var(--f-num)}
 
   .receipt-line{display:flex;justify-content:space-between;font-size:13.5px;padding:6px 0;color:var(--ink-soft)}
   .receipt-line b{font-family:var(--f-num);font-variant-numeric:tabular-nums;color:var(--ink)}
@@ -804,8 +805,10 @@
   function adminNavbar(){
     const onHome=(S.admin.view==='home'&&!(S.support&&S.mission));
     const exitIco='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>';
-    return `<div class="navbar"><button data-adm="home" class="${onHome?'on':''}"><span class="nb-ic">${I.shield}</span>Console</button><button data-adm="quit"><span class="nb-ic">${exitIco}</span>Quitter</button></div>`;
+    const pend=adminPendingCount();
+    return `<div class="navbar"><button data-adm="home" class="${onHome?'on':''}"><span class="nb-ic">${I.shield}${pend?`<span class="nb-count">${pend}</span>`:''}</span>Console</button><button data-adm="quit"><span class="nb-ic">${exitIco}</span>Quitter</button></div>`;
   }
+  function adminPendingCount(){return ((S.adminArtisans||[]).filter(function(a){return a.status==='attente';}).length)+((S.adminClients||[]).filter(function(c){return c.status==='attente';}).length);}
   function catNames(cats){return cats.map(svcNm).join(', ');}
   function inits(n){return n.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();}
   function adminHome(){
@@ -841,6 +844,7 @@
     return `<div class="pad">
       <div class="row between" style="margin-top:10px"><div><span class="eyebrow">Console admin · Ti-Services</span><div class="h-hello">Tableau de bord</div></div><div class="avatar" style="background:linear-gradient(135deg,var(--ink),#000)">TS</div></div>
       <div class="row" style="gap:9px;margin-top:12px">${stat('En cours',allB.length,'réservations')}${stat('Artisans',validA,pendA.length+' en attente')}${stat('Clients',clis.length,pendC.length+' en attente')}</div>
+      ${(typeof Notification!=='undefined'&&Notification.permission!=='granted')?`<button class="banner teal" data-act="admin-notif" style="margin-top:10px;width:100%;text-align:left;cursor:pointer">${I.bolt}<span>Activez les <b>alertes de candidature</b> — soyez prévenu dès qu'un artisan postule, même en dehors de la console.</span></button>`:''}
       <div class="card" style="padding:14px;margin-top:10px"><div class="row between"><span class="sub">Commission ce mois</span><b class="money" style="font-size:18px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(S.adminCommission)}</b></div></div>
       <div style="height:16px"></div><span class="eyebrow">💶 Tarifs des prestations (prix fixes clients)</span>
       <div class="card" style="padding:14px;margin-top:10px">
@@ -1258,7 +1262,7 @@
         ${cml?`<div class="row between" style="margin-top:8px"><span class="sub">E-mail</span><b style="text-align:right;max-width:62%;word-break:break-all;font-weight:600">${esc(cml)}</b></div>`:''}
         <div class="row between" style="margin-top:8px"><span class="sub">Téléphone</span><b>${cph?esc(cph):'<span style="color:var(--muted);font-weight:500">à renseigner</span>'}</b></div>
         <div class="row between" style="margin-top:8px"><span class="sub">Secteur</span><b>${esc(czone)}</b></div></div>
-      ${isAdminAccount()?`<button class="card" data-act="go-admin" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block;border-left:4px solid var(--ink)"><div class="row between"><b style="font-size:14px">${I.shield}&nbsp;Console d'administration</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Ouvrir ›</span></div><p class="sub" style="margin-top:8px">Revenez au tableau de bord de gestion (candidatures, tarifs, réservations).</p></button>`:''}
+      ${isAdminAccount()?`<button class="card" data-act="go-admin" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block;border-left:4px solid var(--ink)"><div class="row between"><b style="font-size:14px">${I.shield}&nbsp;Console d'administration</b>${adminPendingCount()?`<span class="chip coral" style="padding:3px 10px">${adminPendingCount()} en attente</span>`:`<span class="mini" style="color:var(--teal-deep);font-weight:650">Ouvrir ›</span>`}</div><p class="sub" style="margin-top:8px">Revenez au tableau de bord de gestion (candidatures, tarifs, réservations).</p></button>`:''}
       <div class="card" style="padding:16px;margin-top:18px"><div class="row between"><span class="chip">${I.card} Moyen de paiement</span>${S.card?`<span class="chip good" style="padding:4px 10px">${I.check} Enregistré</span>`:''}</div>${S.card?`<div class="row between" style="margin-top:12px"><div class="row" style="gap:11px;align-items:center"><span class="benic">${I.card}</span><div><b>${S.card.brand} ••••&nbsp;${S.card.last4}</b><div class="mini">Expire ${S.card.exp||'08/28'}</div></div></div></div><div class="row" style="gap:8px;margin-top:12px"><button class="btn ghost sm" data-act="add-card">Modifier</button><button class="btn ghost sm" data-act="card-remove">Retirer</button></div><div class="banner teal" style="margin-top:12px">${I.shield}<span>Débit automatique après chaque prestation validée. Reçu à chaque fois — rien à gérer.</span></div>`:`<p class="mini" style="margin-top:10px">Facultatif — enregistrez une carte pour réserver plus vite la prochaine fois. Sinon, elle vous sera demandée à votre première réservation. Rien n'est débité tant qu'une prestation n'est pas validée.</p><button class="btn ghost sm" data-act="add-card" style="margin-top:12px">${I.card} Ajouter un moyen de paiement</button>`}</div>
       <div class="card" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">${I.pin}&nbsp;Mes adresses</b><button class="btn ghost sm" style="width:auto;padding:6px 12px" data-act="addr-new">＋ Ajouter</button></div>
         ${S.addresses.length?S.addresses.map(a=>`<button class="card" data-act="addr-edit:${a.id}" style="padding:12px;margin-top:9px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${a.label}${S.addrDefault===a.id?` <span class="chip" style="padding:2px 8px">Par défaut</span>`:''}</b>${a.geo?`<span class="chip good" style="padding:3px 9px">${I.pin} GPS</span>`:`<span class="chip coral" style="padding:3px 9px">GPS manquant</span>`}</div><div class="mini" style="margin-top:2px">${a.address} · ${a.zone}</div></button>`).join(''):`<p class="mini" style="margin-top:10px;color:var(--muted)">Aucune adresse enregistrée. Ajoutez vos villas avec leur point GPS permanent.</p>`}
@@ -2006,6 +2010,7 @@
       case 'pay-back':S.payStep=false;S.payEdit=false;if(S.draft)renderConfig();else render();break;
       case 'pay-change':S.payEdit=true;render();break;
       case 'go-admin':if(!isAdminAccount())break;S.persona='admin';S.admin={view:'home',sel:null};S.support=false;S.supportSide=null;S.profileForm=null;render();break;
+      case 'admin-notif':requestAdminPush();break;
       case 'edit-profile':{const zone=(S.account&&S.account.zone)||(S.clientForm&&S.clientForm.zone)||'Gustavia';S.profileForm={name:((S.account&&S.account.name)||(S.clientForm&&S.clientForm.name)||'').trim(),email:(S.account&&S.account.email)||(S.clientForm&&S.clientForm.email)||'',zone:zone,phone:(S.account&&S.account.phone)||'',photo:(S.account&&S.account.photo)||(S.clientForm&&S.clientForm.photo)||''};render();break;}
       case 'profile-cancel':S.profileForm=null;render();break;
       case 'save-profile':{const f=S.profileForm;if(!f||(f.name||'').trim().length<2){toast('Indiquez votre nom');break;}const nm=f.name.trim(),ph=(f.phone||'').trim(),pht=f.photo||'';S.account=Object.assign({},S.account,{name:nm,zone:f.zone,phone:ph,photo:pht});S.clientForm=Object.assign({},S.clientForm,{name:nm,zone:f.zone,photo:pht});saveAccount(S.account);if(FB&&FB.auth&&FB.auth.currentUser){try{FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{name:nm,zone:f.zone,phone:ph,photo:pht},{merge:true});}catch(_){}}S.profileForm=null;render();toast('Informations mises à jour');break;}
@@ -2239,13 +2244,36 @@
   // Console admin réelle : écrit le statut de l'artisan en base (validation, refus…).
   function adminWriteStatus(a,status){ if(FB&&a&&a.real&&a.uid){ try{ FB.f.updateDoc(FB.f.doc(FB.db,'artisans',a.uid),{status:status}); }catch(_){} } }
   // Charge les vrais artisans (Firestore) dans la console admin.
-  async function refreshAdminArtisans(){
-    try{ if(!FB)return; const snap=await FB.f.getDocs(FB.f.collection(FB.db,'artisans')); const list=[];
-      snap.forEach(function(d){ const a=d.data()||{}; const cats=Array.isArray(a.cats)?a.cats:[]; const rr=a.rates||{};
-        list.push({id:d.id,uid:d.id,real:true,name:a.name||'Artisan',status:a.status||'attente',type:'entreprise',cats:cats,other:a.other||'',rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,rating:0,jobs:0,zone:a.zone||'—',phone:a.phone||'',email:a.email||''}); });
-      S.adminArtisans=list; if(S.persona==='admin')render();
-    }catch(e){ console.warn('admin artisans load',e); }
+  // Écoute EN TEMPS RÉEL des dossiers artisans : la console se met à jour toute
+  // seule et l'admin est alerté dès qu'une nouvelle candidature arrive (tant que
+  // l'app est ouverte quelque part). Notification hors-app fermée = Cloud Function
+  // FCM/e-mail (Phase 2, nécessite le plan Blaze).
+  let adminArtUnsub=null, adminSeenPending=null;
+  function refreshAdminArtisans(){
+    if(!FB)return;
+    if(adminArtUnsub){try{adminArtUnsub();}catch(_){}adminArtUnsub=null;}
+    try{
+      adminArtUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'artisans'),function(snap){
+        const list=[],pending=new Set();
+        snap.forEach(function(d){ const a=d.data()||{}; const cats=Array.isArray(a.cats)?a.cats:[]; const rr=a.rates||{}; const st=a.status||'attente';
+          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Artisan',status:st,type:'entreprise',cats:cats,other:a.other||'',rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,rating:0,jobs:0,zone:a.zone||'—',phone:a.phone||'',email:a.email||''});
+          if(st==='attente')pending.add(d.id); });
+        S.adminArtisans=list;
+        // Ne notifie que les candidatures arrivées APRÈS la connexion (pas le stock initial).
+        if(adminSeenPending!==null){ pending.forEach(function(id){ if(!adminSeenPending.has(id)){ notifyAdminCandidature(list.find(function(x){return x.id===id;})); } }); }
+        adminSeenPending=pending;
+        if(S.persona==='admin')render();
+      },function(err){ console.warn('admin artisans snapshot',err); });
+    }catch(e){ console.warn('admin artisans listen',e); }
   }
+  // Alerte l'admin d'une nouvelle candidature : toast + notification système si autorisée.
+  function notifyAdminCandidature(a){
+    const nm=(a&&a.name)||'Un artisan';
+    toast('🔔 Nouvelle candidature — '+nm);
+    try{ if('Notification'in window&&Notification.permission==='granted'){ new Notification('Ti-Services — nouvelle candidature',{body:nm+' souhaite rejoindre Ti-Services. Ouvrez la console pour l’examiner.',icon:'./icon-192.png',tag:'ti-candidature'}); } }catch(_){}
+  }
+  // Demande à l'admin l'autorisation d'afficher les notifications système.
+  function requestAdminPush(){ try{ if('Notification'in window&&typeof Notification.requestPermission==='function'){ const r=Notification.requestPermission(); if(r&&r.then){ r.then(function(perm){ toast(perm==='granted'?'Alertes activées 🔔':'Autorisez les notifications dans les réglages du navigateur'); render(); }); } else { render(); } } else { toast('Notifications non disponibles sur cet appareil'); } }catch(e){} }
   async function fbLogin(f){ try{ await FB.a.signInWithEmailAndPassword(FB.auth,f.email.trim(),f.password); }catch(e){ toast(fbErr(e)); } }
   // Réinitialisation par e-mail. Message identique que le compte existe ou non
   // (on ne révèle pas si l'adresse est inscrite — bonne pratique de sécurité).
@@ -2255,7 +2283,7 @@
     toast('Si un compte existe, un lien de réinitialisation vient d’être envoyé à '+email+'.');
   }
   async function fbGoogle(){ try{ await FB.a.signInWithPopup(FB.auth,new FB.a.GoogleAuthProvider()); }catch(e){ toast(fbErr(e)); } }
-  function fbLogout(){ if(FB){ try{FB.a.signOut(FB.auth);}catch(_){} } }
+  function fbLogout(){ if(adminArtUnsub){try{adminArtUnsub();}catch(_){}adminArtUnsub=null;} adminSeenPending=null; if(FB){ try{FB.a.signOut(FB.auth);}catch(_){} } }
 
   handleDeepLink();
   render();
