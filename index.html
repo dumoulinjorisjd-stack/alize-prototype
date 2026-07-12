@@ -734,12 +734,30 @@
   const CONCIERGE_ORDERS=()=>[
     {id:'co1',clientName:'M. & Mme Hartley',svc:'menage',svcName:'Ménage',duration:3,rate:40,amount:120,when:'Hier',slot:'10:00',status:'paid',artisan:'Marie-Lou Cagan',retro:10,invNo:'2026-0039'}
   ];
-  function svcBase(id){const s=SERVICES.find(x=>x.id===id);return s?s.rate:30;}
+  // Catalogue complet = services de base + services « Autre » ajoutés par l'admin.
+  function allSvc(){return SERVICES.concat(S.customServices||[]);}
+  function findSvc(id){return allSvc().find(function(s){return s.id===id;});}
+  function svcBase(id){const s=findSvc(id);return s?s.rate:30;}
   // Nom/icône d'une catégorie, y compris la catégorie « autre » (service hors liste).
-  function svcNm(id){if(id==='autre')return 'Autre service';const s=SERVICES.find(x=>x.id===id);return s?s.nm:id;}
+  function svcNm(id){if(id==='autre')return 'Autre service';const s=findSvc(id);return s?s.nm:id;}
   // Libellé des services d'un artisan, avec le détail du service « Autre » proposé.
   function artSvcLabel(a){return (a&&a.cats?a.cats:[]).map(function(c){return c==='autre'?('Autre'+(a.other?' : '+a.other:'')):svcNm(c);}).join(', ');}
-  function svcIco(id){return I[id]||I.other;}
+  function svcIco(id){const s=findSvc(id);return (s&&s.custom)?I.other:(I[id]||I.other);}
+  // Ajoute un service « Autre » au catalogue (visible/réservable côté client).
+  function addCustomService(name,rate){
+    name=(name||'').trim(); if(!name)return;
+    if((S.customServices||[]).some(function(s){return s.nm.toLowerCase()===name.toLowerCase();})){toast('Déjà au catalogue');return;}
+    let base='c_'+name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'').slice(0,14);
+    if(!base||base==='c_')base='c_service';
+    let sid=base,n=2; while(findSvc(sid)){sid=base+n;n++;}
+    rate=Math.max(5,Math.round(rate||40));
+    S.customServices=(S.customServices||[]).concat([{id:sid,nm:name,rate:rate,custom:true}]);
+    if(!S.adminPrices)S.adminPrices=ADMIN_PRICES(); S.adminPrices[sid]=rate;
+    saveCatalog(); render(); toast('« '+name+' » ajouté au catalogue ✓');
+  }
+  // Persistance du catalogue partagé (settings/catalog) — écrit par l'admin, lu par tous.
+  function saveCatalog(){ try{ if(FB&&FB.auth&&FB.auth.currentUser){ FB.f.setDoc(FB.f.doc(FB.db,'settings','catalog'),{services:S.customServices||[]},{merge:true}); } }catch(_){} }
+  async function loadCatalog(){ try{ if(!FB)return; const snap=await FB.f.getDoc(FB.f.doc(FB.db,'settings','catalog')); if(snap.exists()){ const d=snap.data()||{}; if(Array.isArray(d.services)){ S.customServices=d.services.map(function(s){return {id:s.id,nm:s.nm,rate:s.rate,custom:true};}); render(); } } }catch(e){ console.warn('catalog load',e); } }
   function svcFloor(id){const f=S.floors&&S.floors[id];return (f!=null)?f:Math.round(svcBase(id)*0.7);}
   function svcReco(id){const a=S.avgOffers&&S.avgOffers[id];return a?Math.round(a.sum/a.n):svcBase(id);}
   const ADMIN_ARTS=()=>[
@@ -748,7 +766,8 @@
     {id:'a3',name:'Sabrina Théodore',status:'valide',type:'entreprise',cats:['baby'],rate:28,siret:'91802233400019',insured:true,rating:5.0,jobs:98,zone:'St-Jean',phone:'+590690334455',email:'s.theodore@example.com'},
     {id:'a4',name:'Kevin Questel',status:'attente',type:'entreprise',cats:['demenagement'],rate:45,siret:'88900112200013',insured:true,rating:0,jobs:0,zone:'Public',phone:'+590690445566',email:'k.questel@example.com'},
     {id:'a5',name:'Rosa Almeida',status:'attente',type:'entreprise',cats:['menage'],rate:30,siret:'90311145500027',insured:false,rating:0,jobs:0,zone:'Flamands',phone:'+590690556677',email:'rosa.almeida@example.com'},
-    {id:'a6',name:'Yannick Gréaux',status:'refuse',type:'entreprise',cats:['jardin'],rate:75,siret:'',insured:false,rating:0,jobs:0,zone:'Public',phone:'+590690667788',email:'y.greaux@example.com',reason:'SIRET et attestation d’assurance non fournis'}
+    {id:'a6',name:'Yannick Gréaux',status:'refuse',type:'entreprise',cats:['jardin'],rate:75,siret:'',insured:false,rating:0,jobs:0,zone:'Public',phone:'+590690667788',email:'y.greaux@example.com',reason:'SIRET et attestation d’assurance non fournis'},
+    {id:'a7',name:'Loïc Aubin',status:'attente',type:'entreprise',cats:['autre'],other:'Vitrier / miroitier',rate:50,rates:{autre:50},siret:'77712345600018',insured:true,rating:0,jobs:0,zone:'St-Jean',phone:'+590690778811',email:'loic.aubin@example.com'}
   ];
   const ADMIN_CLIS=()=>[
     {id:'c1',name:'Camille Magras',status:'valide',zone:'Gustavia',card:'Visa ••4242',bookings:7,phone:'+590690778899',email:'camille.magras@example.com'},
@@ -800,7 +819,7 @@
   ];
 
   const S={
-    persona:'client',clientNav:'home',proNav:'home',onboarded:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},
+    persona:'client',clientNav:'home',proNav:'home',customServices:[],onboarded:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},
     card:null,cardForm:false,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,mission:null,draft:null,
     addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,
     concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,
@@ -962,7 +981,7 @@
       <div class="card" style="padding:14px;margin-top:10px"><div class="row between"><span class="sub">Commission ce mois</span><b class="money" style="font-size:18px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(S.adminCommission)}</b></div></div>
       <div style="height:16px"></div><span class="eyebrow">💶 Tarifs des prestations (prix fixes clients)</span>
       <div class="card" style="padding:14px;margin-top:10px">
-        ${SERVICES.map(s=>{const px=(S.adminPrices&&S.adminPrices[s.id]!=null)?S.adminPrices[s.id]:s.rate;return `<div class="row between" style="align-items:center;margin-top:11px"><span class="sub" style="display:flex;align-items:center;gap:9px"><span style="display:inline-flex;width:28px;height:28px;border-radius:8px;background:var(--teal-wash);color:var(--teal-deep);align-items:center;justify-content:center">${I[s.id]}</span>${s.nm}</span><span class="row" style="gap:8px;align-items:center"><button class="btn ghost sm" style="width:36px;padding:6px 0" data-price="${s.id}:down">−</button><b class="money" style="min-width:66px;text-align:center">${px} €${s.id==='animaux'?'/j':'/h'}</b><button class="btn ghost sm" style="width:36px;padding:6px 0" data-price="${s.id}:up">+</button></span></div>`;}).join('')}
+        ${allSvc().map(s=>{const px=(S.adminPrices&&S.adminPrices[s.id]!=null)?S.adminPrices[s.id]:s.rate;return `<div class="row between" style="align-items:center;margin-top:11px"><span class="sub" style="display:flex;align-items:center;gap:9px"><span style="display:inline-flex;width:28px;height:28px;border-radius:8px;background:var(--teal-wash);color:var(--teal-deep);align-items:center;justify-content:center">${svcIco(s.id)}</span>${esc(s.nm)}${s.custom?` <span class="chip" style="padding:2px 7px">Ajouté</span>`:''}</span><span class="row" style="gap:8px;align-items:center"><button class="btn ghost sm" style="width:36px;padding:6px 0" data-price="${s.id}:down">−</button><b class="money" style="min-width:60px;text-align:center">${px} €${s.id==='animaux'?'/j':'/h'}</b><button class="btn ghost sm" style="width:36px;padding:6px 0" data-price="${s.id}:up">+</button>${s.custom?`<button class="btn ghost sm" style="width:34px;padding:6px 0" data-adm="delcat:${s.id}" aria-label="Retirer">🗑</button>`:''}</span></div>`;}).join('')}
         <p class="mini" style="margin-top:12px">Ces prix fixes sont ceux que voient les clients à la commande. La majoration « coupe-file » qu'un client ajoute s'applique <b>par-dessus</b> et revient à l'artisan.</p>
       </div>
       ${(S.mission&&S.mission.status==='disputed')?`<div style="height:16px"></div><span class="eyebrow" style="color:var(--coral-deep)">⚖️ Litige à arbitrer</span>
@@ -996,7 +1015,7 @@
       const a=S.adminArtisans.find(x=>x.id===S.admin.sel);if(!a)return adminHome();
       return `<div class="pad"><button class="reset" data-adm="home" style="margin:10px 0 6px">← Retour</button>
         <div class="row" style="gap:12px">${avatarPhoto(a.photo,inits(a.name),'lg')}<div><b style="font-size:18px;font-family:var(--f-disp)">${esc(a.name)}</b><div class="mini">Artisan · ${a.type==='particulier'?'Particulier':'Entreprise'} · ${a.zone}</div></div></div>
-        ${(a.cats&&a.cats.includes('autre')&&a.other)?`<div class="banner teal" style="margin-top:14px">${I.other}<span>Service « Autre » proposé&nbsp;: <b>${esc(a.other)}</b> — à évaluer avant validation.</span></div>`:''}
+        ${(a.cats&&a.cats.includes('autre')&&a.other)?`<div class="banner teal" style="margin-top:14px">${I.other}<span>Service « Autre » proposé&nbsp;: <b>${esc(a.other)}</b> — à évaluer avant validation.</span></div>${(S.customServices||[]).some(function(x){return x.nm.toLowerCase()===a.other.toLowerCase();})?`<p class="mini" style="margin-top:8px;color:var(--good)">${I.check} « ${esc(a.other)} » figure déjà au catalogue.</p>`:`<button class="btn ghost sm" data-adm="addcat:${a.id}" style="margin-top:9px;width:auto;padding:9px 14px">➕ Ajouter « ${esc(a.other)} » au catalogue</button>`}`:''}
         <div class="card" style="padding:16px;margin-top:12px">
           <div class="row between"><span class="sub">Statut</span><span class="chip ${acctChip(a.status)[0]}">${acctChip(a.status)[1]}</span></div><hr class="dashed">
           <div class="row between" style="align-items:flex-start"><span class="sub">Services</span><b style="text-align:right;max-width:62%">${esc(artSvcLabel(a))}</b></div>
@@ -1332,7 +1351,7 @@
       </div></div>`;
   }
   function clientHome(){
-    const cats=SERVICES.map(s=>`<button class="cat" data-svc="${s.id}"><div class="ic">${I[s.id]}</div><div class="nm">${s.nm}</div><div class="rt">dès <b>${s.rate} €</b>/h</div></button>`).join('');
+    const cats=allSvc().map(s=>`<button class="cat" data-svc="${s.id}"><div class="ic">${svcIco(s.id)}</div><div class="nm">${esc(s.nm)}</div><div class="rt">dès <b>${(S.adminPrices&&S.adminPrices[s.id]!=null?S.adminPrices[s.id]:s.rate)} €</b>/h</div></button>`).join('');
     const fullName=((S.account&&S.account.name)||(S.clientForm&&S.clientForm.name)||'').trim();
     const first=fullName?fullName.split(' ')[0]:'';
     const zone=(S.account&&S.account.zone)||(S.clientForm&&S.clientForm.zone)||'Gustavia';
@@ -1988,6 +2007,8 @@
       else if(act==='rej-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.status='refuse';if(!a.reason)a.reason=(!a.siret?'SIRET manquant. ':'')+(!a.insured?'Assurance manquante. ':'')||'Ne correspond pas aux critères Ti-Services';adminWriteStatus(a,'refuse');}S.admin.view='home';toast('Candidature refusée — conservée dans l’historique');}
       else if(act==='reexam-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.status='attente';adminWriteStatus(a,'attente');toast('Candidature remise en attente');}}
       else if(act==='valid-cli'){const cc=S.adminClients.find(x=>x.id===id);if(cc)cc.status='valide';toast('Client validé');}
+      else if(act==='addcat'){const a=S.adminArtisans.find(x=>x.id===id);if(a&&a.other){addCustomService(a.other,(a.rates&&a.rates.autre)||40);}}
+      else if(act==='delcat'){S.customServices=(S.customServices||[]).filter(function(s){return s.id!==id;});saveCatalog();toast('Service retiré du catalogue');}
       else if(act==='fidup'){const t=fidTiers().find(x=>x.key===id);if(t)t.pct=Math.min(30,t.pct+1);}
       else if(act==='fiddown'){const t=fidTiers().find(x=>x.key===id);if(t)t.pct=Math.max(1,t.pct-1);}
       else if(act==='floorup'){S.floors[id]=Math.min(200,svcFloor(id)+1);}
@@ -2008,7 +2029,7 @@
     if(b.dataset.concOff){const fl=svcFloor(S.concOrder.svc);S.concOrder.rate=Math.max(fl,S.concOrder.rate+(b.dataset.concOff==='up'?5:-5));render();return;}
     if(b.dataset.cf2zone){if(S.concForm)S.concForm.azone=b.dataset.cf2zone;render();return;}
     if(b.dataset.pf2zone){if(S.profileForm)S.profileForm.zone=b.dataset.pf2zone;render();return;}
-    if(b.dataset.svc){const svc=SERVICES.find(s=>s.id===b.dataset.svc);S.draft=newMission(svc);renderConfig();return;}
+    if(b.dataset.svc){const svc=findSvc(b.dataset.svc);if(!svc)return;S.draft=newMission(svc);renderConfig();return;}
     if(b.dataset.av){const[d,bl]=b.dataset.av.split(':');S.avail[d][bl]=S.avail[d][bl]?0:1;render();return;}
     if(b.dataset.atab){S.agendaTab=b.dataset.atab;render();return;}
     if(b.dataset.pcat){const c=b.dataset.pcat,i=S.proForm.cats.indexOf(c);S.proForm.rates=S.proForm.rates||{};if(i<0){S.proForm.cats.push(c);if(S.proForm.rates[c]==null)S.proForm.rates[c]=svcBase(c);}else{S.proForm.cats.splice(i,1);}render();return;}
@@ -2327,6 +2348,7 @@
       FB={app,auth:authM.getAuth(app),db:fsM.getFirestore(app),a:authM,f:fsM};
       authM.onAuthStateChanged(FB.auth,function(user){ if(user){loadUserProfile(user);} else if(S.onboarded){S.onboarded=false;S.mission=null;S.draft=null;S.persona='client';S.clientNav='home';render();} });
       render(); // rafraîchit l'écran (ex. bouton Google actif)
+      loadCatalog(); // catalogue partagé (services « Autre » ajoutés par l'admin)
     }catch(e){ console.warn('Firebase indisponible — mode démo',e); FB=null; }
   }
   async function loadUserProfile(user){
