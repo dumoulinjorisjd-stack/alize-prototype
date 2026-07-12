@@ -1100,6 +1100,7 @@
     if(S.support&&m)return supportChat();
     if(S.chat&&m)return chatScreen();
     if(S.cardForm)return clientCardEdit();
+    if(S.profileForm)return clientEditProfile();
     if(S.clientInv&&m)return clientInvoiceDoc();
     if(S.draft&&S.payStep)return clientPay();
     if(m){switch(m.status){
@@ -1224,8 +1225,14 @@
       </div></div>`;
   }
   function clientProfile(){
-    const cnm=(S.clientForm&&S.clientForm.name)||'Camille Magras';const czone=(S.clientForm&&S.clientForm.zone)||'Gustavia';
-    return `<div class="pad"><div style="height:12px"></div><div class="row" style="gap:14px">${avatarPhoto(S.account&&S.account.photo,inits(cnm),'lg')}<div><b style="font-size:18px;font-family:var(--f-disp)">${esc(cnm)}</b><div class="mini">${czone} · Saint-Barth</div></div></div>
+    const cnm=((S.account&&S.account.name)||(S.clientForm&&S.clientForm.name)||'').trim()||'Mon compte';
+    const cml=(S.account&&S.account.email)||(S.clientForm&&S.clientForm.email)||'';
+    const czone=(S.account&&S.account.zone)||(S.clientForm&&S.clientForm.zone)||'Gustavia';
+    return `<div class="pad"><div style="height:12px"></div><div class="row" style="gap:14px">${avatarPhoto(S.account&&S.account.photo,inits(cnm),'lg')}<div><b style="font-size:18px;font-family:var(--f-disp)">${esc(cnm)}</b><div class="mini">${esc(czone)} · Saint-Barth</div></div></div>
+      <div class="card" style="padding:16px;margin-top:18px"><div class="row between"><b style="font-size:14px">${I.user}&nbsp;Mes informations</b><button class="btn ghost sm" style="width:auto;padding:6px 12px" data-act="edit-profile">Modifier</button></div>
+        <div class="row between" style="margin-top:12px"><span class="sub">Prénom &amp; nom</span><b style="text-align:right;max-width:60%">${esc(cnm)}</b></div>
+        ${cml?`<div class="row between" style="margin-top:8px"><span class="sub">E-mail</span><b style="text-align:right;max-width:62%;word-break:break-all;font-weight:600">${esc(cml)}</b></div>`:''}
+        <div class="row between" style="margin-top:8px"><span class="sub">Secteur</span><b>${esc(czone)}</b></div></div>
       <div class="card" style="padding:16px;margin-top:18px"><div class="row between"><span class="chip">${I.card} Moyen de paiement</span>${S.card?`<span class="chip good" style="padding:4px 10px">${I.check} Enregistré</span>`:''}</div>${S.card?`<div class="row between" style="margin-top:12px"><div class="row" style="gap:11px;align-items:center"><span class="benic">${I.card}</span><div><b>${S.card.brand} ••••&nbsp;${S.card.last4}</b><div class="mini">Expire ${S.card.exp||'08/28'}</div></div></div></div><div class="row" style="gap:8px;margin-top:12px"><button class="btn ghost sm" data-act="add-card">Modifier</button><button class="btn ghost sm" data-act="card-remove">Retirer</button></div><div class="banner teal" style="margin-top:12px">${I.shield}<span>Débit automatique après chaque prestation validée. Reçu à chaque fois — rien à gérer.</span></div>`:`<p class="mini" style="margin-top:10px">Facultatif — enregistrez une carte pour réserver plus vite la prochaine fois. Sinon, elle vous sera demandée à votre première réservation. Rien n'est débité tant qu'une prestation n'est pas validée.</p><button class="btn ghost sm" data-act="add-card" style="margin-top:12px">${I.card} Ajouter un moyen de paiement</button>`}</div>
       <div class="card" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">${I.pin}&nbsp;Mes adresses</b><button class="btn ghost sm" style="width:auto;padding:6px 12px" data-act="addr-new">＋ Ajouter</button></div>
         ${S.addresses.length?S.addresses.map(a=>`<button class="card" data-act="addr-edit:${a.id}" style="padding:12px;margin-top:9px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${a.label}${S.addrDefault===a.id?` <span class="chip" style="padding:2px 8px">Par défaut</span>`:''}</b>${a.geo?`<span class="chip good" style="padding:3px 9px">${I.pin} GPS</span>`:`<span class="chip coral" style="padding:3px 9px">GPS manquant</span>`}</div><div class="mini" style="margin-top:2px">${a.address} · ${a.zone}</div></button>`).join(''):`<p class="mini" style="margin-top:10px;color:var(--muted)">Aucune adresse enregistrée. Ajoutez vos villas avec leur point GPS permanent.</p>`}
@@ -1234,6 +1241,20 @@
       <button class="card" data-act="open-share" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.share}&nbsp;Partager Ti-Services</b><span class="mini" style="color:var(--teal-deep);font-weight:650">QR &amp; lien ›</span></div><p class="sub" style="margin-top:8px">Un QR à faire flasher et un lien à envoyer — partagez l'app à vos voisins en un geste.</p></button>
       ${S.demoMode?`<div class="banner teal" style="margin-top:16px">${I.bolt}<span><b>Mode démonstration</b> — vous explorez librement tous les espaces. Ce n'est pas un vrai compte.</span></div><button class="btn ghost sm" data-act="exit-demo" style="margin-top:10px">Quitter la démo</button>`:(FB?`<button class="btn ghost sm" data-act="logout" style="margin-top:16px">Se déconnecter</button>`:'')}
       ${isDemo()?`<p class="mini" style="text-align:center;margin-top:14px">Explorer les autres espaces&nbsp;: <button class="linklike" data-act="demo-go-pro">👷 Artisan</button> · <button class="linklike" data-act="demo-go-concierge">🛎️ Conciergerie</button> · <button class="linklike" data-act="demo-go-admin">⚙︎ Admin</button></p>`:''}</div>${clientNavbar()}`;
+  }
+  function clientEditProfile(){
+    const f=S.profileForm;
+    const zones=ZONES.map(z=>`<button class="seg ${f.zone===z?'on':''}" data-pf2zone="${z}">${z}</button>`).join('');
+    const ok=(f.name||'').trim().length>1;
+    return `<div class="pad"><button class="reset" data-act="profile-cancel" style="margin:8px 0 2px">← Retour</button>
+      <span class="eyebrow">${I.user} Mon compte</span><div class="h-hello">Mes informations</div>
+      <p class="sub" style="margin-top:6px">Mettez à jour votre nom et votre secteur. L'e-mail sert d'identifiant de connexion.</p>
+      <div class="card" style="padding:16px;margin-top:14px">
+        <div class="field"><label>Prénom &amp; nom</label><input class="txt" data-pf2="name" value="${esc(f.name||'')}" placeholder="Ex. Joris Dumoulin"></div>
+        <div class="field"><label>E-mail (identifiant)</label><input class="txt" value="${esc(f.email||'')}" disabled style="opacity:.6"><p class="mini" style="margin-top:5px">Pour changer d'e-mail, contactez ${esc(CONFIG.supportEmail)}.</p></div>
+        <div class="field" style="margin:0"><label>Votre secteur</label><div class="segs">${zones}</div></div>
+      </div>
+      <div class="footcta" style="position:static;background:none;padding:16px 0 0"><button class="btn primary" data-act="save-profile"${ok?'':' disabled'}>${I.check} Enregistrer</button></div></div>`;
   }
   function clientAddrEdit(){
     const f=S.addrForm;const isNew=!f.id;
@@ -1796,7 +1817,7 @@
     S.mission=nm;S.clientNav='wallet';render();burstConfetti();toast('Reprogrammé avec '+(p?p.nm.split(' ')[0]:'votre artisan')+' · '+freqInfo(freq).short);
   }
   document.addEventListener('click',(e)=>{
-    const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pstatus],[data-cfg],[data-zone],[data-czone],[data-when],[data-offer],[data-boost],[data-price],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-conc-off],[data-cf2zone],[data-srate]');
+    const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pstatus],[data-cfg],[data-zone],[data-czone],[data-when],[data-offer],[data-boost],[data-price],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-conc-off],[data-cf2zone],[data-pf2zone],[data-srate]');
     if(!b)return;
     if(b.dataset.act==='pw-toggle'){const w=b.closest('.pw-wrap');const inp=w&&w.querySelector('input');if(inp){const reveal=inp.type==='password';inp.type=reveal?'text':'password';b.innerHTML=reveal?I.eyeoff:I.eye;}return;}
     if(b.dataset.persona){go(b.dataset.persona);return;}
@@ -1819,7 +1840,7 @@
       else if(act==='dispute-accept'){if(S.mission&&S.mission.status==='disputed'){finalizePaid(S.mission);toast('Modification validée — prestation réglée');}}
       else if(act==='dispute-revert'){if(S.mission&&S.mission.status==='disputed'){S.mission.finalHours=S.mission.duration;finalizePaid(S.mission);toast('Retour à l’accord initial — prestation réglée');}}
       render();return;}
-    if(b.dataset.cnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.invoiceId=null;S.addrForm=null;S.clientNav=b.dataset.cnav;render();return;}
+    if(b.dataset.cnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.invoiceId=null;S.addrForm=null;S.profileForm=null;S.clientNav=b.dataset.cnav;render();return;}
     if(b.dataset.pnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.invoiceId=null;S.proNav=b.dataset.pnav;render();return;}
     if(b.dataset.cnav2){S.concOrder=null;S.concView=null;S.concForm=null;S.concInvoice=null;S.concNav=b.dataset.cnav2;render();return;}
     if(b.dataset.concOc){const c=concClient(b.dataset.concOc);if(c&&c.authorized){S.concOrder.clientId=c.id;S.concOrder.step='service';render();}else{toast('La carte de ce client doit d’abord être autorisée');}return;}
@@ -1829,6 +1850,7 @@
     if(b.dataset.concDur){S.concOrder.duration=Math.max(1,Math.min(10,S.concOrder.duration+(b.dataset.concDur==='up'?1:-1)));render();return;}
     if(b.dataset.concOff){const fl=svcFloor(S.concOrder.svc);S.concOrder.rate=Math.max(fl,S.concOrder.rate+(b.dataset.concOff==='up'?5:-5));render();return;}
     if(b.dataset.cf2zone){if(S.concForm)S.concForm.azone=b.dataset.cf2zone;render();return;}
+    if(b.dataset.pf2zone){if(S.profileForm)S.profileForm.zone=b.dataset.pf2zone;render();return;}
     if(b.dataset.svc){const svc=SERVICES.find(s=>s.id===b.dataset.svc);S.draft=newMission(svc);renderConfig();return;}
     if(b.dataset.av){const[d,bl]=b.dataset.av.split(':');S.avail[d][bl]=S.avail[d][bl]?0:1;render();return;}
     if(b.dataset.atab){S.agendaTab=b.dataset.atab;render();return;}
@@ -1955,6 +1977,9 @@
       case 'copy-link':{const link=shareLink();if(navigator.clipboard){navigator.clipboard.writeText(link).then(()=>toast('Lien copié 🔗')).catch(()=>toast('Lien : '+link));}else{toast('Lien : '+link);}break;}
       case 'pay-back':S.payStep=false;S.payEdit=false;if(S.draft)renderConfig();else render();break;
       case 'pay-change':S.payEdit=true;render();break;
+      case 'edit-profile':{const zone=(S.account&&S.account.zone)||(S.clientForm&&S.clientForm.zone)||'Gustavia';S.profileForm={name:((S.account&&S.account.name)||(S.clientForm&&S.clientForm.name)||'').trim(),email:(S.account&&S.account.email)||(S.clientForm&&S.clientForm.email)||'',zone:zone};render();break;}
+      case 'profile-cancel':S.profileForm=null;render();break;
+      case 'save-profile':{const f=S.profileForm;if(!f||(f.name||'').trim().length<2){toast('Indiquez votre nom');break;}const nm=f.name.trim();S.account=Object.assign({},S.account,{name:nm,zone:f.zone});S.clientForm=Object.assign({},S.clientForm,{name:nm,zone:f.zone});saveAccount(S.account);if(FB&&FB.auth&&FB.auth.currentUser){try{FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{name:nm,zone:f.zone},{merge:true});}catch(_){}}S.profileForm=null;render();toast('Informations mises à jour');break;}
       case 'add-card':S.cardForm=true;render();break;
       case 'card-cancel':S.cardForm=false;render();break;
       case 'card-remove':S.card=null;S.cardForm=false;render();toast('Moyen de paiement retiré');break;
@@ -2025,6 +2050,7 @@
     const t=e.target.closest('[data-cfg="notes"]');if(t&&S.draft)S.draft.notes=t.value;
     const pf=e.target.closest('[data-pf]');if(pf)S.proForm[pf.dataset.pf]=pf.value;
     const cf=e.target.closest('[data-cf]');if(cf){S.clientForm[cf.dataset.cf]=cf.value;const fb=document.querySelector('[data-act="finish-onboard"]');const c=S.clientForm;if(fb)fb.disabled=!((c.name||'').trim().length>1&&/.+@.+\..+/.test(c.email||'')&&(c.password||'').length>=6&&c.password===c.password2);}
+    const pf2=e.target.closest('[data-pf2]');if(pf2&&S.profileForm){S.profileForm[pf2.dataset.pf2]=pf2.value;const sb=document.querySelector('[data-act="save-profile"]');if(sb)sb.disabled=!((S.profileForm.name||'').trim().length>1);}
     const lf=e.target.closest('[data-lf]');if(lf){S.loginForm[lf.dataset.lf]=lf.value;const btn=document.querySelector('[data-act="do-login"]');if(btn)btn.disabled=!(/.+@.+\..+/.test(S.loginForm.email||'')&&(S.loginForm.password||'').length>=1);}
     const pr=e.target.closest('[data-prate]');if(pr){S.proForm.rate=+pr.value;const el=document.getElementById('prateVal');if(el)el.textContent=pr.value+' €/h';}
     const cd=e.target.closest('[data-cfdate]');if(cd&&S.draft){S.draft.dateISO=cd.value;S.draft.when=fmtDate(cd.value);renderConfig();}
@@ -2130,7 +2156,12 @@
     try{
       const ref=FB.f.doc(FB.db,'users',user.uid);
       let data=null; try{ const snap=await FB.f.getDoc(ref); data=snap.exists()?snap.data():null; }catch(_){}
-      const name=(data&&data.name)||user.displayName||((user.email||'').split('@')[0]||'Client');
+      // À l'inscription, la fiche users peut ne pas encore être écrite (course avec
+      // onAuthStateChanged) : on garde le nom/secteur que l'utilisateur vient de saisir
+      // plutôt que de retomber sur le préfixe de l'e-mail.
+      const typedName=(S.clientForm&&(S.clientForm.name||'').trim())||'';
+      const typedZone=(S.clientForm&&(S.clientForm.zone||'').trim())||'';
+      const name=(data&&data.name)||user.displayName||typedName||((user.email||'').split('@')[0]||'Client');
       // Compte admin (identifié par l'e-mail) : console d'administration réelle.
       if((CONFIG.adminEmails||[]).map(function(e){return e.toLowerCase();}).indexOf((user.email||'').toLowerCase())>=0){
         S.account={name:'Ti-Services',email:user.email||'',uid:user.uid,role:'admin'};
@@ -2146,10 +2177,11 @@
         S.proStatus=(ad&&ad.status==='valide')?'approved':'pending';
         S.onboarded=true;S.authView=null;S.proNav='home';render();return;
       }
-      const zone=(data&&data.zone)||'Gustavia';
+      const zone=(data&&data.zone)||typedZone||'Gustavia';
+      const photo=(data&&data.photo)||(S.clientForm&&S.clientForm.photo)||'';
       if(!data){ try{ await FB.f.setDoc(ref,{name:name,email:user.email||'',zone:zone,role:'client',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){} }
-      S.account={name:name,email:user.email||'',zone:zone,uid:user.uid};
-      S.clientForm=Object.assign({},S.clientForm,{name:name,email:user.email||'',zone:zone,password:'',password2:''});
+      S.account={name:name,email:user.email||'',zone:zone,uid:user.uid,photo:photo};
+      S.clientForm=Object.assign({},S.clientForm,{name:name,email:user.email||'',zone:zone,photo:photo,password:'',password2:''});
       // Compte réel : on part de zéro (ou des données persistées si elles existent) — pas de villas de démo.
       S.addresses=(data&&Array.isArray(data.addresses))?data.addresses:[];S.addrDefault=(data&&data.addrDefault)||null;
       S.history=(data&&Array.isArray(data.history))?data.history:[];S.recurring=(data&&Array.isArray(data.recurring))?data.recurring:[];S.card=(data&&data.card)||null;
