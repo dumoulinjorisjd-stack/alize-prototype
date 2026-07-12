@@ -1333,6 +1333,22 @@
       }).then(function(ref){ m.reqId=ref.id; }).catch(function(e){ console.warn('requests write failed',e); });
     }catch(e){ console.warn(e); }
   }
+  // Le scénario de DÉMO (toutes les données pré-remplies). Utilisé par « Voir la démo ».
+  function seedDemo(){
+    S.addresses=ADDRESSES_INIT();S.addrDefault='ad1';S.history=[];S.recurring=[];S.card=null;
+    S.proStatus='approved';S.proName='Marie-Lou';S.proCats=['menage','jardin'];S.proRate=35;
+    S.proHistory=PRO_HISTORY();S.agenda=SEED_AGENDA.map(function(a){return Object.assign({},a);});
+    S.proEarnings=1284.50;S.proJobsToday=3;S.proJobsTotal=214;
+    S.adminArtisans=ADMIN_ARTS();S.adminClients=ADMIN_CLIS();S.adminBookings=ADMIN_BOOK();S.adminCommission=1240;
+    S.concClients=CONCIERGE_CLIENTS();S.concOrders=CONCIERGE_ORDERS();S.concEarn=640;
+  }
+  // La vraie BÊTA part de zéro : aucun client / artisan / historique de démo.
+  function blankAll(){
+    S.addresses=[];S.addrDefault=null;S.history=[];S.recurring=[];S.card=null;
+    S.proHistory=[];S.agenda=[];S.proEarnings=0;S.proJobsToday=0;S.proJobsTotal=0;
+    S.adminArtisans=[];S.adminClients=[];S.adminBookings=[];S.adminCommission=0;
+    S.concClients=[];S.concOrders=[];S.concEarn=0;
+  }
   function clientPay(){
     const m=S.draft,t=totals(m);
     const recap=`<div class="card" style="padding:15px;margin-top:14px"><div class="row between"><b style="font-size:14px">${m.svcName}</b><b class="money">${eur(t.total)}</b></div><div class="mini" style="margin-top:3px">${m.when} · ${m.slot} · ${durTxt(m)} · ${m.zone}</div></div>`;
@@ -1850,7 +1866,7 @@
       case 'login-to-signup':S.authView=null;S.onbStep=1;render();break;
       case 'do-login':{const f=S.loginForm;if(!(/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=1)){toast('E-mail et mot de passe requis');break;}if(FB){fbLogin(f);}else{const acc=S.account&&S.account.email===f.email.trim()?S.account:{name:(S.account?S.account.name:'Camille Magras'),email:f.email.trim(),zone:(S.account?S.account.zone:'Gustavia')};S.account=acc;S.clientForm={name:acc.name,email:acc.email,zone:acc.zone,password:''};S.onboarded=true;S.authView=null;render();toast('Content de vous revoir, '+acc.name.split(' ')[0]+' !');}break;}
       case 'google-soon':if(FB){fbGoogle();}else{toast('Connexion Google — bientôt disponible');}break;
-      case 'logout':S.demoMode=false;fbLogout();if(!FB){S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;render();}break;
+      case 'logout':S.demoMode=false;if(FB)blankAll();fbLogout();if(!FB){S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;render();}break;
       case 'cancel-mission':S.mission=null;S.clientNav='home';render();break;
       case 'confirm-done':finalizePaid(S.mission);render();burstConfetti();break;
       case 'show-pitch':S.showPitch=true;render();break;
@@ -1878,11 +1894,10 @@
       case 'go-artisan-signup':S.persona='pro';S.proStatus='signup';S.proForm={name:'',phone:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:''};render();break;
       case 'back-to-client':S.persona='client';S.proStatus='approved';render();break;
       case 'start-demo':S.demoMode=true;S.onboarded=true;S.authView=null;S.persona='client';S.clientForm={name:'Camille Magras',email:'demo@ti-services.fr',zone:'Gustavia',password:'',password2:'',photo:''};S.account={name:'Camille Magras',email:'demo@ti-services.fr',zone:'Gustavia'};S.mission=null;S.draft=null;
-        // Démo = compte de démonstration pré-rempli (villas côté client, artisan actif Marie-Lou).
-        S.addresses=ADDRESSES_INIT();S.addrDefault='ad1';S.history=[];S.recurring=[];S.card=null;
-        S.proStatus='approved';S.proName='Marie-Lou';S.proCats=['menage','jardin'];S.proRate=35;S.proHistory=PRO_HISTORY();S.agenda=SEED_AGENDA.map(a=>({...a}));S.proEarnings=1284.50;S.proJobsToday=3;S.proJobsTotal=214;
+        // Démo = scénario complet pré-rempli (client, artisan, admin, conciergerie).
+        seedDemo();
         render();toast('Mode démonstration 🐙 — explorez librement');break;
-      case 'exit-demo':S.demoMode=false;S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;S.draft=null;S.account=loadAccount();render();break;
+      case 'exit-demo':S.demoMode=false;if(FB)blankAll();S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;S.draft=null;S.account=loadAccount();render();break;
       case 'demo-go-pro':if(!isDemo())break;S.persona='pro';render();break;
       case 'demo-go-client':if(!isDemo())break;S.persona='client';render();break;
       case 'demo-go-admin':if(!isDemo())break;S.persona='admin';S.admin.view='home';S.admin.sel=null;render();break;
@@ -2093,6 +2108,7 @@
   async function initFirebase(){
     if(!CONFIG.firebase || window.__NOFB) return;
     S.account=null; // en mode réel l'identité vient de Firebase (pas du localStorage)
+    if(!S.demoMode) blankAll(); // vraie bêta : on part de zéro (les seeds ne servent qu'à la démo)
     try{
       const V='https://www.gstatic.com/firebasejs/10.12.5/';
       const [appM,authM,fsM]=await Promise.all([import(V+'firebase-app.js'),import(V+'firebase-auth.js'),import(V+'firebase-firestore.js')]);
