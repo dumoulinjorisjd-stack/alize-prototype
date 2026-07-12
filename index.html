@@ -586,6 +586,7 @@
   const TERMS_VERSION='1.0';
   const TERMS_DATE='12 juillet 2026';
   function chkbox(on){return `<span class="chkbox ${on?'on':''}">${on?I.check:''}</span>`;}
+  function fmtAcceptDate(d){try{return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});}catch(_){return '';}}
   const LEGAL_CGU=`
     <p class="warn">Modèle à faire valider par un professionnel du droit avant mise en ligne.</p>
     <h3>1. Éditeur & objet</h3>
@@ -651,9 +652,16 @@
   function legalView(){
     const map={cgu:['Conditions Générales d’Utilisation',LEGAL_CGU],cgv:['Conditions Générales de Vente',LEGAL_CGV],charte:['Charte de responsabilité de l’intervenant',LEGAL_CHARTE]};
     const d=map[S.legalView]||map.cgu;
+    // Rappel d'acceptation daté (côté artisan) : « Vous avez accepté … le … ».
+    let accepted='';
+    if(S.persona==='pro'&&S.proTermsAt){
+      const okDoc=(S.legalView==='charte')?S.proAcceptedCharte:(S.legalView==='cgu'||S.legalView==='cgv')?(S.proAcceptedTerms!==false):false;
+      if(okDoc){const what=(S.legalView==='charte')?'cette décharge':'ce document';accepted=`<div class="banner teal" style="margin-top:12px">${I.check}<span>Vous avez accepté ${what} le <b>${fmtAcceptDate(S.proTermsAt)}</b> (version ${S.proTermsVersion||TERMS_VERSION}).</span></div>`;}
+    }
     return `<div class="pad"><button class="reset" data-act="close-legal" style="margin:8px 0 2px">← Retour</button>
       <span class="eyebrow">${I.shield} Document légal</span><div class="h-hello" style="font-size:21px">${d[0]}</div>
       <p class="mini" style="margin-top:4px">Version ${TERMS_VERSION} · ${TERMS_DATE}</p>
+      ${accepted}
       <div class="legaldoc">${d[1]}</div><div style="height:24px"></div></div>`;
   }
   function legalFooter(role){
@@ -760,14 +768,15 @@
   async function loadCatalog(){ try{ if(!FB)return; const snap=await FB.f.getDoc(FB.f.doc(FB.db,'settings','catalog')); if(snap.exists()){ const d=snap.data()||{}; if(Array.isArray(d.services)){ S.customServices=d.services.map(function(s){return {id:s.id,nm:s.nm,rate:s.rate,custom:true};}); render(); } } }catch(e){ console.warn('catalog load',e); } }
   function svcFloor(id){const f=S.floors&&S.floors[id];return (f!=null)?f:Math.round(svcBase(id)*0.7);}
   function svcReco(id){const a=S.avgOffers&&S.avgOffers[id];return a?Math.round(a.sum/a.n):svcBase(id);}
+  const DEMO_ATTEST='data:image/png;base64,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';
   const ADMIN_ARTS=()=>[
-    {id:'a1',name:'Marie-Lou Cagan',status:'valide',type:'entreprise',cats:['menage','jardin'],rate:35,siret:'80412578900014',insured:true,rating:4.9,jobs:214,zone:'Gustavia',phone:'+590690112233',email:'marie-lou.cagan@example.com'},
+    {id:'a1',name:'Marie-Lou Cagan',status:'valide',type:'entreprise',cats:['menage','jardin'],rate:35,siret:'80412578900014',insured:true,insuranceUrl:DEMO_ATTEST,insurer:'AXA · Police 12345',rating:4.9,jobs:214,zone:'Gustavia',phone:'+590690112233',email:'marie-lou.cagan@example.com'},
     {id:'a2',name:'Jean-Phi Bernier',status:'valide',type:'entreprise',cats:['jardin'],rate:40,siret:'75212369800021',insured:true,rating:4.8,jobs:301,zone:'Lorient',phone:'+590690223344',email:'jp.bernier@example.com'},
     {id:'a3',name:'Sabrina Théodore',status:'valide',type:'entreprise',cats:['baby'],rate:28,siret:'91802233400019',insured:true,rating:5.0,jobs:98,zone:'St-Jean',phone:'+590690334455',email:'s.theodore@example.com'},
     {id:'a4',name:'Kevin Questel',status:'attente',type:'entreprise',cats:['demenagement'],rate:45,siret:'88900112200013',insured:true,rating:0,jobs:0,zone:'Public',phone:'+590690445566',email:'k.questel@example.com'},
     {id:'a5',name:'Rosa Almeida',status:'attente',type:'entreprise',cats:['menage'],rate:30,siret:'90311145500027',insured:false,rating:0,jobs:0,zone:'Flamands',phone:'+590690556677',email:'rosa.almeida@example.com'},
     {id:'a6',name:'Yannick Gréaux',status:'refuse',type:'entreprise',cats:['jardin'],rate:75,siret:'',insured:false,rating:0,jobs:0,zone:'Public',phone:'+590690667788',email:'y.greaux@example.com',reason:'SIRET et attestation d’assurance non fournis'},
-    {id:'a7',name:'Loïc Aubin',status:'attente',type:'entreprise',cats:['autre'],other:'Vitrier / miroitier',rate:50,rates:{autre:50},siret:'77712345600018',insured:true,rating:0,jobs:0,zone:'St-Jean',phone:'+590690778811',email:'loic.aubin@example.com'}
+    {id:'a7',name:'Loïc Aubin',status:'attente',type:'entreprise',cats:['autre'],other:'Vitrier / miroitier',rate:50,rates:{autre:50},siret:'77712345600018',insured:true,insuranceUrl:DEMO_ATTEST,insurer:'Groupama · Police 55221',rating:0,jobs:0,zone:'St-Jean',phone:'+590690778811',email:'loic.aubin@example.com'}
   ];
   const ADMIN_CLIS=()=>[
     {id:'c1',name:'Camille Magras',status:'valide',zone:'Gustavia',card:'Visa ••4242',bookings:7,phone:'+590690778899',email:'camille.magras@example.com'},
@@ -1537,6 +1546,7 @@
     S.proStatus='approved';S.proName='Marie-Lou';S.proCats=['menage','jardin'];S.proRate=35;
     S.proHistory=PRO_HISTORY();S.agenda=SEED_AGENDA.map(function(a){return Object.assign({},a);});
     S.proEarnings=1284.50;S.proJobsToday=3;S.proJobsTotal=214;
+    S.proInsured=true;S.proInsurer='AXA · Police 12345';S.proInsuranceUrl=DEMO_ATTEST;S.proAcceptedCharte=true;S.proAcceptedTerms=true;S.proTermsVersion=TERMS_VERSION;S.proTermsAt=new Date('2026-05-15T10:00:00');
     S.adminArtisans=ADMIN_ARTS();S.adminClients=ADMIN_CLIS();S.adminBookings=ADMIN_BOOK();S.adminCommission=1240;
     S.concClients=CONCIERGE_CLIENTS();S.concOrders=CONCIERGE_ORDERS();S.concEarn=640;
   }
@@ -1621,6 +1631,7 @@
   function renderPro(){
     if(S.proStatus==='signup')return proSignup();
     if(S.proStatus==='pending')return proPending();
+    if(S.proDocsView)return proDocs();
     if(S.advantages)return advantagesScreen();
     if(S.support&&S.mission)return supportChat();
     if(S.invoiceId)return proInvoice();
@@ -1632,6 +1643,28 @@
     if(S.proNav==='agenda')return proAgenda();
     if(S.proNav==='earnings')return proEarnings();
     return proHome();
+  }
+  function proDocs(){
+    const url=S.proInsuranceUrl||'';
+    const dateStr=S.proTermsAt?fmtAcceptDate(S.proTermsAt):'';
+    return `<div class="pad"><button class="reset" data-act="pro-docs-close" style="margin:8px 0 2px">← Retour</button>
+      <span class="eyebrow">${I.shield} Mes documents</span><div class="h-hello">Assurance & décharge</div>
+      <div class="card" style="padding:16px;margin-top:14px">
+        <div class="row between"><b style="font-size:14px">Attestation d'assurance RC</b><span class="chip ${S.proInsured?'good':'coral'}" style="padding:3px 9px">${S.proInsured?'Fournie':'Manquante'}</span></div>
+        ${S.proInsurer?`<div class="mini" style="margin-top:6px">Assureur&nbsp;: ${esc(S.proInsurer)}</div>`:''}
+        ${url?`<a class="btn ghost sm" href="${esc(url)}" target="_blank" rel="noopener" style="margin-top:11px;display:inline-flex;width:auto;padding:9px 14px">${I.other}&nbsp;Voir mon attestation</a>`:`<p class="mini" style="margin-top:8px;color:var(--muted)">Aucun document en ligne pour l'instant.</p>`}
+        <label class="btn ghost sm" style="margin-top:10px;cursor:pointer;display:inline-flex;width:auto;padding:9px 14px">📎&nbsp;${url?'Mettre à jour mon attestation':'Joindre mon attestation'}<input type="file" accept="image/*,application/pdf" data-proinsurance hidden></label>
+        <p class="mini" style="margin-top:8px">Gardez votre attestation à jour — Ti-Services peut la vérifier à tout moment. Elle reste conservée dans votre dossier.</p>
+      </div>
+      <div class="card" style="padding:16px;margin-top:12px">
+        <b style="font-size:14px">Documents Ti-Services</b>
+        ${(S.proAcceptedCharte&&dateStr)?`<div class="banner teal" style="margin-top:10px">${I.check}<span>Vous avez accepté la <b>décharge de responsabilité</b> le <b>${dateStr}</b>.</span></div>`:''}
+        <div class="stack" style="gap:8px;margin-top:12px">
+          <button class="btn ghost sm" data-act="view-charte">⚖️ Décharge de responsabilité (charte intervenant)</button>
+          <button class="btn ghost sm" data-act="view-cgu">Conditions Générales d'Utilisation</button>
+          <button class="btn ghost sm" data-act="view-cgv">Conditions Générales de Vente</button>
+        </div>
+      </div><div style="height:14px"></div></div>${proNavbar()}`;
   }
   function proNavbar(){
     const act=attention()==='pro';
@@ -1760,6 +1793,7 @@
 
       ${S.proOnline?`<div class="card" style="padding:16px;margin-top:12px;text-align:center;border-style:dashed"><div class="radar sm"><div class="ring r1"></div><div class="ring r2"></div><div class="core">${I.bolt}</div></div><p class="sub" style="margin:6px 0 0">En attente de nouvelles missions…</p>${isDemo()?`<p class="mini" style="margin-top:8px">Démo : côté <b>Client</b>, lancez une réservation pour recevoir une demande ici.</p>`:''}</div>`:''}
 
+      <button class="card" data-act="pro-docs" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.shield}&nbsp;Mes documents</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Assurance &amp; décharge ›</span></div><p class="sub" style="margin-top:8px">Mettez à jour votre attestation d'assurance et consultez la décharge de responsabilité que vous avez acceptée.</p></button>
       <p class="mini" style="text-align:center;margin-top:14px"><button class="linklike" data-act="show-advantages">${I.shield} Pourquoi passer par Ti-Services ›</button></p>
       ${isDemo()?`<p class="mini" style="text-align:center;margin-top:10px"><button class="linklike" data-act="demo-go-client">🧑 Voir l'espace client (démo)</button> · <button class="linklike" data-act="demo-go-admin">⚙︎ Admin (démo)</button></p>`:''}
       ${legalFooter('pro')}
@@ -2166,6 +2200,8 @@
       case 'view-cgv':S.legalView='cgv';render();break;
       case 'view-charte':S.legalView='charte';render();break;
       case 'close-legal':S.legalView=null;render();break;
+      case 'pro-docs':S.proDocsView=true;render();break;
+      case 'pro-docs-close':S.proDocsView=false;render();break;
       case 'toggle-cterms':S.clientForm.terms=!S.clientForm.terms;render();break;
       case 'toggle-pcgu':S.proForm.cgu=!S.proForm.cgu;render();break;
       case 'toggle-pcharte':S.proForm.charte=!S.proForm.charte;render();break;
@@ -2264,6 +2300,8 @@
     if(ins&&ins.files&&ins.files[0]){const file=ins.files[0];ins.value='';
       // Le fichier est gardé en mémoire ; l'envoi vers Storage se fait après création du compte.
       S.proForm.insuranceFile=file;S.proForm.insuranceDoc=true;S.proForm.insuranceName=(file.name||'attestation').slice(0,60);render();toast('Attestation jointe ✓');return;}
+    const pins=e.target.closest('[data-proinsurance]');
+    if(pins&&pins.files&&pins.files[0]){const file=pins.files[0];pins.value='';uploadProInsurance(file);return;}
   });
   document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,card:null,cardForm:false,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,proHistory:PRO_HISTORY(),fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,adminPrices:ADMIN_PRICES(),proPhoto:null,proStatus:'approved',proFounder:true,proNotifPush:true,proNotifWa:true,proPhone:'0690 00 00 00',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:'',photo:''}});render();toast('Scénario réinitialisé');});
 
@@ -2373,6 +2411,7 @@
         S.account={name:name,email:user.email||'',uid:user.uid,role:'artisan'};
         S.persona='pro'; S.proName=name; S.proPhone=(ad&&ad.phone)||(data&&data.phone)||'';
         if(ad&&Array.isArray(ad.cats)&&ad.cats.length){S.proCats=ad.cats.slice();const rr=ad.rates||{};S.proRate=Math.min.apply(null,ad.cats.map(c=>(rr[c]!=null?rr[c]:svcBase(c))));}
+        if(ad){ S.proInsured=!!ad.insured; S.proInsurer=ad.insurer||''; S.proInsuranceUrl=ad.insuranceUrl||''; S.proSiret=ad.siret||S.proSiret; S.proBio=ad.bio||''; S.proPhoto=ad.photo||S.proPhoto; S.proAcceptedCharte=!!ad.acceptedCharte; S.proAcceptedTerms=!!ad.acceptedTerms; S.proTermsVersion=ad.termsVersion||''; S.proTermsAt=(ad.termsAt&&ad.termsAt.toDate)?ad.termsAt.toDate():null; }
         S.proStatus=(ad&&ad.status==='valide')?'approved':'pending';
         S.onboarded=true;S.authView=null;S.proNav='home';render();
         if(typeof Notification!=='undefined'&&Notification.permission==='granted')registerPush('artisan');
@@ -2396,6 +2435,23 @@
       try{ await FB.f.setDoc(FB.f.doc(FB.db,'users',cred.user.uid),{name:c.name.trim(),email:c.email.trim(),zone:c.zone,photo:c.photo||'',role:'client',acceptedTerms:true,termsVersion:TERMS_VERSION,termsAt:FB.f.serverTimestamp(),createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
       burstConfetti(); toast('Compte créé 🐙 — bienvenue, '+c.name.trim().split(' ')[0]+' !');
     }catch(e){ toast(fbErr(e)); }
+  }
+  // Mise à jour de l'attestation d'assurance depuis l'espace artisan (compte existant).
+  async function uploadProInsurance(file){
+    if(!(FB&&FB.auth&&FB.auth.currentUser)){ S.proInsured=true; S.proInsuranceName=(file.name||'').slice(0,60); render(); toast('Attestation mise à jour (démo)'); return; }
+    try{
+      toast('Envoi de l’attestation…');
+      const uid=FB.auth.currentUser.uid;
+      const stM=await import('https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js');
+      const storage=stM.getStorage(FB.app);
+      const ext=((file.name||'').split('.').pop()||'').toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,5);
+      const sref=stM.ref(storage,'insurance/'+uid+'/attestation'+(ext?('.'+ext):''));
+      await stM.uploadBytes(sref,file,{contentType:file.type||'application/octet-stream'});
+      const url=await stM.getDownloadURL(sref);
+      S.proInsuranceUrl=url; S.proInsured=true;
+      try{ await FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{insuranceUrl:url,insured:true},{merge:true}); }catch(_){}
+      render(); toast('Attestation mise à jour ✓');
+    }catch(e){ console.warn('insurance update',e); toast('Échec de l’envoi — réessayez'); }
   }
   async function fbProSignup(f){
     try{
