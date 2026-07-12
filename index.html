@@ -1783,9 +1783,9 @@
       else if(act==='home'){S.admin.view='home';S.admin.sel=null;}
       else if(act==='art'){S.admin.view='art';S.admin.sel=id;}
       else if(act==='cli'){S.admin.view='cli';S.admin.sel=id;}
-      else if(act==='valid-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a&&a.insured&&a.siret){a.status='valide';toast('Artisan validé');}else{toast('Dossier incomplet (SIRET / assurance)');}}
-      else if(act==='rej-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.status='refuse';if(!a.reason)a.reason=(!a.siret?'SIRET manquant. ':'')+(!a.insured?'Assurance manquante. ':'')||'Ne correspond pas aux critères Ti-Services';}S.admin.view='home';toast('Candidature refusée — conservée dans l’historique');}
-      else if(act==='reexam-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.status='attente';toast('Candidature remise en attente');}}
+      else if(act==='valid-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a&&a.insured&&a.siret){a.status='valide';adminWriteStatus(a,'valide');toast('Artisan validé');}else{toast('Dossier incomplet (SIRET / assurance)');}}
+      else if(act==='rej-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.status='refuse';if(!a.reason)a.reason=(!a.siret?'SIRET manquant. ':'')+(!a.insured?'Assurance manquante. ':'')||'Ne correspond pas aux critères Ti-Services';adminWriteStatus(a,'refuse');}S.admin.view='home';toast('Candidature refusée — conservée dans l’historique');}
+      else if(act==='reexam-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.status='attente';adminWriteStatus(a,'attente');toast('Candidature remise en attente');}}
       else if(act==='valid-cli'){const cc=S.adminClients.find(x=>x.id===id);if(cc)cc.status='valide';toast('Client validé');}
       else if(act==='fidup'){const t=fidTiers().find(x=>x.key===id);if(t)t.pct=Math.min(30,t.pct+1);}
       else if(act==='fiddown'){const t=fidTiers().find(x=>x.key===id);if(t)t.pct=Math.max(1,t.pct-1);}
@@ -2107,6 +2107,12 @@
       const ref=FB.f.doc(FB.db,'users',user.uid);
       let data=null; try{ const snap=await FB.f.getDoc(ref); data=snap.exists()?snap.data():null; }catch(_){}
       const name=(data&&data.name)||user.displayName||((user.email||'').split('@')[0]||'Client');
+      // Compte admin (identifié par l'e-mail) : console d'administration réelle.
+      if((user.email||'').toLowerCase()===(CONFIG.adminEmail||'').toLowerCase()){
+        S.account={name:'Ti-Services',email:user.email||'',uid:user.uid,role:'admin'};
+        S.persona='admin';S.admin={view:'home',sel:null};S.onboarded=true;S.authView=null;render();
+        refreshAdminArtisans();return;
+      }
       // Compte artisan : on route vers l'espace pro (statut lu dans la fiche artisans).
       if((data&&data.role)==='artisan'){
         let ad=null; try{ const s2=await FB.f.getDoc(FB.f.doc(FB.db,'artisans',user.uid)); ad=s2.exists()?s2.data():null; }catch(_){}
@@ -2139,9 +2145,19 @@
       const uid=cred.user.uid;
       const rates={}; f.cats.forEach(function(c){rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});
       try{ await FB.f.setDoc(FB.f.doc(FB.db,'users',uid),{name:(f.name||'').trim(),email:f.email.trim(),role:'artisan',phone:f.phone||'',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
-      try{ await FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{name:(f.name||'').trim(),cats:f.cats.slice(),other:(f.otherService||'').trim(),rates:rates,siret:(f.siret||'').replace(/\s/g,''),phone:f.phone||'',status:'attente',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
+      try{ await FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{name:(f.name||'').trim(),cats:f.cats.slice(),other:(f.otherService||'').trim(),rates:rates,siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,insurer:f.insurer||'',phone:f.phone||'',status:'attente',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
       burstConfetti(); toast('Candidature envoyée 🐙 — compte créé, examen sous 48 h');
     }catch(e){ toast(fbErr(e)); }
+  }
+  // Console admin réelle : écrit le statut de l'artisan en base (validation, refus…).
+  function adminWriteStatus(a,status){ if(FB&&a&&a.real&&a.uid){ try{ FB.f.updateDoc(FB.f.doc(FB.db,'artisans',a.uid),{status:status}); }catch(_){} } }
+  // Charge les vrais artisans (Firestore) dans la console admin.
+  async function refreshAdminArtisans(){
+    try{ if(!FB)return; const snap=await FB.f.getDocs(FB.f.collection(FB.db,'artisans')); const list=[];
+      snap.forEach(function(d){ const a=d.data()||{}; const cats=Array.isArray(a.cats)?a.cats:[]; const rr=a.rates||{};
+        list.push({id:d.id,uid:d.id,real:true,name:a.name||'Artisan',status:a.status||'attente',type:'entreprise',cats:cats,other:a.other||'',rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,rating:0,jobs:0,zone:a.zone||'—',phone:a.phone||'',email:a.email||''}); });
+      S.adminArtisans=list; if(S.persona==='admin')render();
+    }catch(e){ console.warn('admin artisans load',e); }
   }
   async function fbLogin(f){ try{ await FB.a.signInWithEmailAndPassword(FB.auth,f.email.trim(),f.password); }catch(e){ toast(fbErr(e)); } }
   async function fbGoogle(){ try{ await FB.a.signInWithPopup(FB.auth,new FB.a.GoogleAuthProvider()); }catch(e){ toast(fbErr(e)); } }
