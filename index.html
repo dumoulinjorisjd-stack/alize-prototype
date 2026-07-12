@@ -847,7 +847,13 @@
     admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,adminPrices:ADMIN_PRICES(),
     avail:{lun:{m:1,a:1,s:0},mar:{m:1,a:1,s:0},mer:{m:1,a:1,s:1},jeu:{m:1,a:1,s:0},ven:{m:1,a:1,s:1},sam:{m:1,a:0,s:0},dim:{m:0,a:0,s:0}}
   };
-  function newMission(svc){const a=S.addresses.find(x=>x.id===S.addrDefault)||S.addresses[0]||null;const day=svc.id==='animaux';const px=(S.adminPrices&&S.adminPrices[svc.id]!=null)?S.adminPrices[svc.id]:svcBase(svc.id);return {svc:svc.id,svcName:svc.nm,unit:day?'j':'h',rate:day?DAY_RECO:px,boost:0,finalHours:null,disputeMsg:null,frequency:'ponctuelle',duration:day?2:3,zone:a?a.zone:'Gustavia',address:a?a.address:'',addressId:a?a.id:'__manual',geo:a?a.geo:null,access:a?(a.access||''):'',notes:'',photos:[],when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',slotMode:null,status:'draft',provider:null,rating:0,competitors:0,chat:[],support:{client:[],pro:[]}};}
+  function newMission(svc){const a=S.addresses.find(x=>x.id===S.addrDefault)||S.addresses[0]||null;const day=svc.id==='animaux';const px=(S.adminPrices&&S.adminPrices[svc.id]!=null)?S.adminPrices[svc.id]:svcBase(svc.id);return {svc:svc.id,svcName:svc.nm,unit:day?'j':'h',rate:day?DAY_RECO:px,boost:0,finalHours:null,disputeMsg:null,frequency:'ponctuelle',duration:day?2:3,zone:a?a.zone:'Gustavia',address:a?a.address:'',addressId:a?a.id:'__manual',geo:a?a.geo:null,access:a?(a.access||''):'',notes:'',photos:[],when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',slotMode:null,slotFlex:0,proposedSlot:null,status:'draft',provider:null,rating:0,competitors:0,chat:[],support:{client:[],pro:[]}};}
+  // Créneau souple : le client propose une heure ± une marge ; l'artisan précise.
+  function slotToMin(s){const p=(s||'0:0').split(':');return (+p[0])*60+(+p[1]||0);}
+  function minToSlot(mn){mn=((mn%1440)+1440)%1440;const h=Math.floor(mn/60),m=mn%60;return (h<10?'0':'')+h+':'+(m<10?'0':'')+m;}
+  function flexWindow(m){if(m.slotFlex==='day')return ['08:00','19:00'];const b=slotToMin(m.slot),d=Number(m.slotFlex)||0;return [minToSlot(b-d),minToSlot(b+d)];}
+  function flexTxt(m){if(!m.slotFlex)return '';if(m.slotFlex==='day')return 'dans la journée (8 h – 19 h)';const w=flexWindow(m);return 'entre '+w[0]+' et '+w[1];}
+  function proSlotList(m){const w=flexWindow(m);const start=slotToMin(w[0]),end=slotToMin(w[1]);const step=(m.slotFlex==='day')?60:30;const out=[];for(let t=start;t<=end;t+=step)out.push(minToSlot(t));return out;}
   function billHours(m){return (m.finalHours!=null)?m.finalHours:m.duration;}
   // Tarif fixe (admin) pour la prestation ; la majoration « coupe-file » s'ajoute par-dessus.
   function fixedRate(m){if(isDayU(m))return DAY_RECO;const p=S.adminPrices&&S.adminPrices[m.svc];return (p!=null)?p:svcBase(m.svc);}
@@ -1474,6 +1480,8 @@
     return `<div class="pad"><div style="height:8px"></div>
       <div class="row between"><span class="chip ${m.status==='pending'?'coral':'good'}">${m.status==='pending'?'En attente':'Confirmée'}</span><span class="mini">${m.svcName} · ${durTxt(m)}${(m.frequency&&m.frequency!=='ponctuelle')?' · 🔁 '+freqInfo(m.frequency).short:''}</span></div>
       <div class="h-hello" style="margin-top:8px;text-align:center">${head.t}</div><p class="sub" style="text-align:center">${head.d}</p>
+      ${(m.slotFlex&&m.status==='pending')?`<p class="mini" style="text-align:center;margin-top:4px">${I.clock} Créneau souhaité&nbsp;: ${m.when} · ${flexTxt(m)} — un artisan vous proposera une heure précise.</p>`:''}
+      ${(m.slotFlex&&m.proposedSlot&&m.status!=='pending')?`<div class="banner teal" style="margin-top:10px">${I.clock}<span>${p?esc(p.nm.split(' ')[0]):'L’artisan'} a confirmé son passage à <b>${m.slot}</b> (vous aviez laissé ${flexTxt(m)}).</span></div>`:''}
       ${m.status==='pending'?`<div class="card" style="padding:16px;margin-top:12px;text-align:center">${searchRadar(true)}<p class="sub" style="margin:0">Vous saurez qui intervient dès l'acceptation.</p></div>`:(p?`<div class="card" style="padding:14px;margin-top:12px"><div class="row" style="gap:12px"><div class="avatar">${p.ini}</div><div style="flex:1"><b style="font-size:15px">${p.nm}</b><div class="mini"><span class="stars">★</span> ${p.rating.toFixed(1)} · ${p.jobs} missions</div></div><div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">${p.founder?`<span class="chip founder-chip" style="padding:4px 9px">★ Fondateur</span>`:''}<span class="chip good" style="padding:4px 10px">${I.check} Vérifié · Assuré</span></div></div></div>`:'')}
       <div class="card" style="padding:16px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Suivi</div><div class="timeline" style="margin-top:12px">${tls}</div></div>
       ${p?`<button class="btn ghost sm" data-act="open-chat" style="margin-top:12px;justify-content:flex-start;gap:8px">${I.chat}&nbsp;Contacter ${p.nm.split(' ')[0]} (numéro masqué)${(m.chat&&m.chat.length)?` · ${m.chat.length}`:''}</button>`:''}
@@ -1538,7 +1546,7 @@
         status:'pending',
         service:m.svc, serviceName:m.svcName,
         zone:m.zone||'',
-        when:m.when||'', slot:m.slot||'',
+        when:m.when||'', slot:m.slot||'', slotFlex:(m.slotFlex||0),
         unit:m.unit||'h', duration:m.duration||1,
         rate:t.rate, boost:m.boost||0, total:t.total,
         frequency:m.frequency||'ponctuelle',
@@ -1880,20 +1888,25 @@
   }
   function proRequest(){
     const m=S.mission,t=totals(m);
+    const flexible=!!m.slotFlex;
+    const pslot=m.proposedSlot||m.slot;
+    const presets=flexible?proSlotList(m):[];
+    const customPro=flexible&&(m.proSlotMode==='pick'||(!!m.proposedSlot&&presets.indexOf(m.proposedSlot)<0));
     return `<div class="pad"><div style="height:6px"></div>
       <div class="compbar"><span class="live"></span>${I.flame}&nbsp;Au premier qui accepte · ${m.competitors} artisans notifiés</div>
       ${(m.frequency&&m.frequency!=='ponctuelle')?`<div class="banner teal" style="margin-top:10px">🔁<span><b>Prestation récurrente · ${freqInfo(m.frequency).short}</b> — revenu régulier avec le même client.</span></div>`:''}
       <div class="card reqcard" style="padding:18px;margin-top:12px"><svg class="ring-timer" viewBox="0 0 40 40"><circle class="bg" cx="20" cy="20" r="18"/><circle class="fg" cx="20" cy="20" r="18"/></svg>
         <div class="ic" style="width:44px;height:44px;border-radius:12px;background:var(--teal-wash);color:var(--teal-deep);display:flex;align-items:center;justify-content:center">${I[m.svc]}</div>
         <div class="h-hello" style="margin-top:12px">${m.svcName}</div>
-        <div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap"><span class="chip grey">${I.clock} ${m.when} · ${m.slot}</span><span class="chip grey">${durTxt(m)}</span></div>
+        <div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap"><span class="chip grey">${I.clock} ${m.when} · ${flexible?('souhait ~'+m.slot):m.slot}</span>${flexible?`<span class="chip" style="padding:3px 9px;background:var(--teal-wash);color:var(--teal-deep)">souple · ${flexTxt(m)}</span>`:''}<span class="chip grey">${durTxt(m)}</span></div>
         <hr class="dashed">
         <div class="row between"><span class="sub">Client</span><b>Camille M.</b></div>
         <div class="row between" style="margin-top:6px"><span class="sub">Secteur</span><b>${I.pin} ${m.zone}</b></div>
         ${m.notes?`<div style="margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Détail de la demande</div><p class="sub" style="margin-top:4px;color:var(--ink-soft)">${m.notes}</p></div>`:''}
         ${(m.photos&&m.photos.length)?`<div style="margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Photos du client</div><div class="thumbs" style="margin-top:6px">${m.photos.map(u=>`<div class="thumb"><img src="${u}" alt="Photo du client"></div>`).join('')}</div></div>`:''}<hr class="dashed">
         <div class="row between" style="align-items:flex-end"><div><span class="sub">Offre du client</span></div><div style="text-align:right"><b class="money" style="font-size:22px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(t.total)}</b><div class="mini">${t.rate} ${rateUnit(m)} × ${durTxt(m)}</div></div></div></div>
-      <div class="stack" style="margin-top:16px"><button class="btn accept" data-act="pro-accept">${I.flame} Accepter avant les autres</button><button class="btn ghost sm" data-act="pro-decline">Passer mon tour</button><p class="mini" style="text-align:center">L'adresse exacte s'affiche une fois la mission acceptée.</p></div></div>`;
+      ${flexible?`<div class="card" style="padding:16px;margin-top:12px"><div class="eyebrow" style="color:var(--teal-deep)">${I.clock} Proposez votre créneau précis</div><p class="mini" style="margin:6px 0 8px">Le client accepte ${flexTxt(m)}. Choisissez l'heure exacte à laquelle vous viendrez — elle lui sera confirmée.</p><div class="segs">${presets.map(s=>`<button class="seg ${(!customPro&&pslot===s)?'on':''}" data-proslot="${s}">${s}</button>`).join('')}<button class="seg ${customPro?'on':''}" data-proslot="__pick">Autre…</button></div>${customPro?`<input class="txt" type="time" data-proslottime step="900" min="${flexWindow(m)[0]}" max="${flexWindow(m)[1]}" style="margin-top:10px" value="${/^\d{2}:\d{2}$/.test(pslot)?pslot:''}">`:''}</div>`:''}
+      <div class="stack" style="margin-top:16px"><button class="btn accept" data-act="pro-accept">${I.flame} ${flexible?('Accepter · j\'arrive à '+pslot):'Accepter avant les autres'}</button><button class="btn ghost sm" data-act="pro-decline">Passer mon tour</button><p class="mini" style="text-align:center">L'adresse exacte s'affiche une fois la mission acceptée.</p></div></div>`;
   }
   function proActive(){
     const m=S.mission,t=totals(m);
@@ -2024,7 +2037,7 @@
     const old=S.mission;if(!old)return;const p=old.provider;
     S.history.unshift(old);
     const svc=SERVICES.find(s=>s.id===old.svc)||{id:old.svc,nm:old.svcName};
-    const nm=Object.assign(newMission(svc),{rate:old.rate,duration:old.duration,slot:old.slot,slotMode:old.slotMode,when:old.when,dateISO:old.dateISO,dateMode:old.dateMode,zone:old.zone,address:old.address,addressId:old.addressId,geo:old.geo?{...old.geo}:null,access:old.access,notes:old.notes,photos:(old.photos||[]).slice(),frequency:freq});
+    const nm=Object.assign(newMission(svc),{rate:old.rate,duration:old.duration,slot:old.slot,slotMode:old.slotMode,slotFlex:old.slotFlex||0,when:old.when,dateISO:old.dateISO,dateMode:old.dateMode,zone:old.zone,address:old.address,addressId:old.addressId,geo:old.geo?{...old.geo}:null,access:old.access,notes:old.notes,photos:(old.photos||[]).slice(),frequency:freq});
     nm.provider=p?Object.assign({},p):Object.assign({},PROVIDERS[nm.svc]||{});
     nm.status='accepted';
     const r=totals(nm).rate,amt=totals(nm).total,labels=occLabels(freq);
@@ -2035,7 +2048,7 @@
     S.mission=nm;S.clientNav='wallet';render();burstConfetti();toast('Reprogrammé avec '+(p?p.nm.split(' ')[0]:'votre artisan')+' · '+freqInfo(freq).short);
   }
   document.addEventListener('click',(e)=>{
-    const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pstatus],[data-cfg],[data-zone],[data-czone],[data-when],[data-offer],[data-boost],[data-price],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-conc-off],[data-cf2zone],[data-pf2zone],[data-srate]');
+    const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pstatus],[data-cfg],[data-zone],[data-czone],[data-when],[data-offer],[data-boost],[data-price],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-conc-off],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-proslot]');
     if(!b)return;
     if(b.dataset.act==='pw-toggle'){const w=b.closest('.pw-wrap');const inp=w&&w.querySelector('input');if(inp){const reveal=inp.type==='password';inp.type=reveal?'text':'password';b.innerHTML=reveal?I.eyeoff:I.eye;}return;}
     if(b.dataset.persona){go(b.dataset.persona);return;}
@@ -2083,6 +2096,8 @@
     if(b.dataset.addr){if(S.draft){const v=b.dataset.addr;if(v==='__manual'){S.draft.addressId='__manual';S.draft.address='';S.draft.geo=null;S.draft.access='';}else{const a=S.addresses.find(x=>x.id===v);if(a){S.draft.addressId=a.id;S.draft.address=a.address;S.draft.zone=a.zone;S.draft.geo=a.geo;S.draft.access=a.access||'';}}}renderConfig();return;}
     if(b.dataset.afzone){if(S.addrForm)S.addrForm.zone=b.dataset.afzone;render();return;}
     if(b.dataset.slot){if(S.draft){if(b.dataset.slot==='__pick'){S.draft.slotMode='pick';}else{S.draft.slotMode=null;S.draft.slot=b.dataset.slot;}}renderConfig();return;}
+    if(b.dataset.slotflex!=null){if(S.draft){const v=b.dataset.slotflex;S.draft.slotFlex=(v==='day')?'day':(+v);}renderConfig();return;}
+    if(b.dataset.proslot){if(S.mission){if(b.dataset.proslot==='__pick'){S.mission.proSlotMode='pick';}else{S.mission.proSlotMode=null;S.mission.proposedSlot=b.dataset.proslot;}}render();return;}
     if(b.dataset.czone){S.clientForm.zone=b.dataset.czone;render();return;}
     if(b.dataset.when){if(!S.draft)return;const v=b.dataset.when;if(v==='__pick'){S.draft.dateMode='pick';}else{S.draft.dateMode=null;S.draft.when=v;}renderConfig();return;}
     if(b.dataset.offer){if(!S.draft)return;const st=5;const fl=floorFor(S.draft);S.draft.rate=Math.max(fl,S.draft.rate+(b.dataset.offer==='up'?st:-st));renderConfig();return;}
@@ -2237,7 +2252,7 @@
         // Nouvel artisan = part de zéro : aucun historique ni agenda pré-rempli.
         S.proHistory=[];S.agenda=[];S.recurring=[];S.proEarnings=0;S.proJobsToday=0;S.proJobsTotal=0;S.mission=null;
         render();toast('Profil validé — bienvenue sur Ti-Services !');break;}
-      case 'pro-accept':{const m=S.mission;m.provider=Object.assign({},PROVIDERS[m.svc]);m.status='accepted';const r=totals(m).rate;const amt=totals(m).total;const freq=m.frequency||'ponctuelle';const labels=occLabels(freq);const entries=labels.map(d=>({day:d,slot:m.slot,svc:m.svc,client:'Camille M.',zone:m.zone,duration:m.duration,unit:m.unit,rate:r,amount:amt,status:'upcoming'}));m._appt=entries[0];entries.slice().reverse().forEach(e=>S.agenda.unshift(e));if(freq!=='ponctuelle'){S.recurring.unshift({svc:m.svc,svcName:m.svcName,short:freqInfo(freq).short,slot:m.slot,zone:m.zone});}if(!m.chat||!m.chat.length)m.chat=[{from:'pro',text:'Bonjour Camille ! Bien reçu votre demande, je serai là à '+m.slot+'. À tout à l’heure 👋'}];render();burstConfetti();toast(labels.length>1?'Prestation récurrente ajoutée à votre agenda !':'Mission remportée — ajoutée à votre agenda !');break;}
+      case 'pro-accept':{const m=S.mission;if(m.slotFlex&&m.proposedSlot){m.slot=m.proposedSlot;}m.provider=Object.assign({},PROVIDERS[m.svc]);m.status='accepted';const r=totals(m).rate;const amt=totals(m).total;const freq=m.frequency||'ponctuelle';const labels=occLabels(freq);const entries=labels.map(d=>({day:d,slot:m.slot,svc:m.svc,client:'Camille M.',zone:m.zone,duration:m.duration,unit:m.unit,rate:r,amount:amt,status:'upcoming'}));m._appt=entries[0];entries.slice().reverse().forEach(e=>S.agenda.unshift(e));if(freq!=='ponctuelle'){S.recurring.unshift({svc:m.svc,svcName:m.svcName,short:freqInfo(freq).short,slot:m.slot,zone:m.zone});}if(!m.chat||!m.chat.length)m.chat=[{from:'pro',text:'Bonjour Camille ! Bien reçu votre demande, je serai là à '+m.slot+'. À tout à l’heure 👋'}];render();burstConfetti();toast(labels.length>1?'Prestation récurrente ajoutée à votre agenda !':'Mission remportée — ajoutée à votre agenda !');break;}
       case 'pro-decline':S.mission.status='searching';render();setTimeout(()=>{if(S.mission&&S.mission.status==='searching'){S.mission.status='pending';render();}},1400);toast('Mission passée — proposée aux autres');break;
       case 'pro-advance':S.mission.status=b.dataset.to;if(S.mission._appt){if(b.dataset.to==='working')S.mission._appt.status='live';else if(b.dataset.to==='done_pro')S.mission._appt.status='tovalidate';}render();break;
       case 'pro-back-home':if(S.mission)S.history.unshift(S.mission);S.mission=null;S.proNav='home';render();break;
@@ -2254,7 +2269,8 @@
     paintView(`<div class="pad"><button class="reset" data-cfg="back" style="margin:8px 0 2px">← Retour</button><span class="eyebrow">${m.svcName}</span><div class="h-hello">Détails de la mission</div>
       ${m.svc==='animaux'?`<div class="field"><label>Mode de garde</label><div class="segs"><button class="seg ${isDayU(m)?'on':''}" data-cfg="unit-j">📅 À la journée</button><button class="seg ${!isDayU(m)?'on':''}" data-cfg="unit-h">${I.clock} À l'heure</button></div><p class="mini" style="margin-top:6px">Pour une garde sur plusieurs jours, choisissez « à la journée » — vous fixez les <b>dates</b>, pas les heures.</p></div>`:''}
       <div class="field"><label>${isDayU(m)?'Date de début':'Quand&nbsp;?'}</label><div class="segs"><button class="seg ${m.dateMode!=='pick'&&m.when==='Aujourd’hui'?'on':''}" data-when="Aujourd’hui">Aujourd'hui</button><button class="seg ${m.dateMode!=='pick'&&m.when==='Demain'?'on':''}" data-when="Demain">Demain</button><button class="seg ${m.dateMode==='pick'?'on':''}" data-when="__pick">Choisir…</button></div>${m.dateMode==='pick'?`<input class="txt" type="date" data-cfdate style="margin-top:10px" value="${m.dateISO||''}">`:''}</div>
-      <div class="field"><label>${isDayU(m)?'Heure de dépôt':'Heure'}</label><div class="segs">${slots}</div>${customTime?`<input class="txt" type="time" data-cftime step="900" style="margin-top:10px" value="${/^\d{2}:\d{2}$/.test(m.slot)?m.slot:''}">`:''}</div>
+      <div class="field"><label>${isDayU(m)?'Heure de dépôt':'Heure souhaitée'}</label><div class="segs">${slots}</div>${customTime?`<input class="txt" type="time" data-cftime step="900" style="margin-top:10px" value="${/^\d{2}:\d{2}$/.test(m.slot)?m.slot:''}">`:''}</div>
+      ${!isDayU(m)?`<div class="field"><label>Souplesse sur l'heure</label><div class="segs"><button class="seg ${(!m.slotFlex)?'on':''}" data-slotflex="0">Précise</button><button class="seg ${m.slotFlex===30?'on':''}" data-slotflex="30">± 30 min</button><button class="seg ${m.slotFlex===60?'on':''}" data-slotflex="60">± 1 h</button><button class="seg ${m.slotFlex===120?'on':''}" data-slotflex="120">± 2 h</button><button class="seg ${m.slotFlex==='day'?'on':''}" data-slotflex="day">Journée</button></div>${m.slotFlex?`<p class="mini" style="margin-top:6px">${I.clock} Vous laissez de la souplesse&nbsp;: l'artisan choisira un <b>créneau précis ${flexTxt(m)}</b> et vous le confirmera en acceptant — vos demandes sont acceptées plus vite.</p>`:`<p class="mini" style="margin-top:6px">Heure ferme. Astuce&nbsp;: un peu de souplesse fait accepter votre demande plus vite.</p>`}</div>`:''}
       <div class="field"><label>Fréquence</label><div class="segs">${FREQS.map(f=>`<button class="seg ${(m.frequency||'ponctuelle')===f.id?'on':''}" data-freq="${f.id}">${f.lbl}</button>`).join('')}</div>${(m.frequency&&m.frequency!=='ponctuelle')?`<p class="mini" style="margin-top:6px">🔁 Prestation régulière — le même artisan à chaque fois, annulable à tout moment.</p>`:''}</div>
       <div class="field"><label>Tarif ${isDayU(m)?'journalier':'horaire'} — prix fixe Ti-Services</label><div class="pricebox"><b class="money" style="font-size:22px;font-family:var(--f-disp)">${fixedRate(m)} ${rateUnit(m)}</b><span class="chip good" style="padding:3px 9px">${I.check} Prix fixe</span></div><p class="mini" style="margin-top:6px">Tarif défini par Ti-Services — pas de négociation, pas de surprise.</p></div>
       <div class="field"><label>Accélérer ma demande&nbsp;? (facultatif)</label><div class="segs">${[[0,'Standard'],[10,'Coupe-file +10%'],[20,'Express +20%']].map(([v,l])=>`<button class="seg ${(m.boost||0)===v?'on':''}" data-boost="${v}">${l}</button>`).join('')}</div><p class="mini" style="margin-top:6px">Comme un pourboire&nbsp;: une majoration facultative qui <b>revient à l'artisan</b> et fait <b>accepter votre demande plus vite</b>.${(m.boost||0)>0?` Majoration&nbsp;: <b style="color:var(--teal-deep)">+${eur(t.maj)}</b>.`:''}</p></div>
@@ -2292,6 +2308,7 @@
     const pr=e.target.closest('[data-prate]');if(pr){S.proForm.rate=+pr.value;const el=document.getElementById('prateVal');if(el)el.textContent=pr.value+' €/h';}
     const cd=e.target.closest('[data-cfdate]');if(cd&&S.draft){S.draft.dateISO=cd.value;S.draft.when=fmtDate(cd.value);renderConfig();}
     const ct=e.target.closest('[data-cftime]');if(ct&&S.draft&&ct.value){S.draft.slot=ct.value;}
+    const pt=e.target.closest('[data-proslottime]');if(pt&&S.mission&&pt.value){S.mission.proposedSlot=pt.value;S.mission.proSlotMode='pick';}
     const am=e.target.closest('[data-addrmanual]');if(am&&S.draft){S.draft.address=am.value;}
     const pph=e.target.closest('[data-pphone]');if(pph){S.proPhone=pph.value;}
     const af=e.target.closest('[data-af]');if(af&&S.addrForm){S.addrForm[af.dataset.af]=af.value;}
