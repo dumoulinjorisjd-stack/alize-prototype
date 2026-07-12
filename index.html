@@ -1652,9 +1652,9 @@
   /* ---------- ARTISAN ---------- */
   function renderPro(){
     if(S.proStatus==='signup')return proSignup();
-    if(S.proStatus==='pending')return proPending();
     if(S.proDocsView)return proDocs();
     if(S.proPayoutView)return proPayout();
+    if(S.proStatus==='pending')return proPending();
     if(S.advantages)return advantagesScreen();
     if(S.support&&S.mission)return supportChat();
     if(S.invoiceId)return proInvoice();
@@ -1765,19 +1765,32 @@
       </div></div>`;
   }
   function proPending(){
-    const f=S.proForm;
-    const svc=f.cats.map(svcNm).join(' · ');
+    const f=S.proForm||{};
+    const nm=(f.name||'').trim()||S.proName||'';
+    const cats=(f.cats&&f.cats.length)?f.cats:(S.proCats||[]);
+    const photo=f.photo||S.proPhoto||'';
+    const svc=cats.map(svcNm).join(' · ');
+    const insOk=S.proInsuranceStatus==='valide',insMissing=(S.proInsuranceStatus==='none'||!S.proInsuranceUrl);
     return `<div class="pad"><div style="height:12px"></div>
       <div class="paycap" style="height:auto;padding:12px 0 4px"><div class="checkmark" style="background:var(--teal)">${I.check}</div>
-        <div><div class="h-hello" style="text-align:center">Candidature envoyée</div><p class="sub" style="text-align:center">Merci${f.name?' '+f.name:''} ! Nous étudions votre profil.</p></div></div>
+        <div><div class="h-hello" style="text-align:center">Candidature envoyée</div><p class="sub" style="text-align:center">Merci${nm?' '+esc(nm):''} ! Nous étudions votre profil.</p></div></div>
       <div class="card" style="padding:16px;margin-top:6px">
         <div class="row between"><span class="chip" style="background:var(--warn);color:#fff">${I.clock} En cours d'examen</span><span class="mini">Réponse sous 48 h</span></div>
-        <p class="sub" style="margin-top:12px">Ti-Services vérifie votre identité et votre sérieux avant d'activer votre compte. L'équipe vous recontacte — comme un recrutement.</p>
-        ${f.photo?`<div class="row" style="gap:11px;align-items:center;margin-top:12px">${avatarPhoto(f.photo,inits(f.name||'Vous'),'')}<div><b style="font-size:14px">${esc(f.name||'Votre profil')}</b><div class="mini">${I.check} Photo de profil ajoutée — les clients verront votre visage</div></div></div>`:''}
-        ${svc?`<div class="mini" style="margin-top:10px">Services demandés&nbsp;: <b style="color:var(--ink)">${svc}</b></div>`:''}
+        <p class="sub" style="margin-top:12px">Ti-Services vérifie votre profil avant d'activer votre compte. <b>Vous serez prévenu par notification et par e-mail dès la validation</b> — l'app s'ouvrira alors automatiquement sur votre espace missions.</p>
+        ${photo?`<div class="row" style="gap:11px;align-items:center;margin-top:12px">${avatarPhoto(photo,inits(nm||'Vous'),'')}<div><b style="font-size:14px">${esc(nm||'Votre profil')}</b><div class="mini">${I.check} Photo ajoutée</div></div></div>`:''}
+        ${svc?`<div class="mini" style="margin-top:10px">Services demandés&nbsp;: <b style="color:var(--ink)">${esc(svc)}</b></div>`:''}
+      </div>
+      <div class="card" style="padding:16px;margin-top:12px">
+        <b style="font-size:14px">En attendant, complétez votre dossier</b>
+        <p class="mini" style="margin-top:4px;color:var(--muted)">Un dossier complet accélère votre validation.</p>
+        <div class="stack" style="gap:8px;margin-top:12px">
+          <button class="btn ${insMissing?'primary':'ghost'} sm" data-act="pro-docs">${I.shield} Mon attestation d'assurance${insOk?' ✓':insMissing?' — à joindre':' · à vérifier'}</button>
+          <button class="btn ${S.proIban?'ghost':'primary'} sm" data-act="pro-payout">${I.card} Mon RIB${S.proIban?' ✓':' — pour être payé'}</button>
+        </div>
       </div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0">
-        ${isDemo()?`<button class="btn primary" data-act="pro-approve">▶︎ Simuler : candidature validée</button><p class="mini" style="text-align:center;margin-top:10px">Démo — pour découvrir l'app artisan une fois le profil accepté.</p>`:`<p class="mini" style="text-align:center">Votre candidature sera examinée sous 48 h. Vous recevrez un e-mail dès l'activation.</p>`}
+        ${isDemo()?`<button class="btn primary" data-act="pro-approve">▶︎ Simuler : candidature validée</button><p class="mini" style="text-align:center;margin-top:10px">Démo — pour découvrir l'app artisan une fois le profil accepté.</p>`:`${FB?`<button class="btn ghost" data-act="logout">Se déconnecter</button>`:''}`}
+        ${legalFooter('pro')}
       </div></div>`;
   }
   // Demande ouverte (non pourvue) estimée dans les métiers/zone de l'artisan — moteur d'activation.
@@ -2473,6 +2486,7 @@
         S.proStatus=(ad&&ad.status==='valide')?'approved':'pending';
         S.onboarded=true;S.authView=null;S.proNav='home';render();
         if(typeof Notification!=='undefined'&&Notification.permission==='granted')registerPush('artisan');
+        subscribeProStatus(user.uid);
         return;
       }
       // Inscription artisan en cours : la fiche users (role: artisan) n'est peut-être
@@ -2480,6 +2494,7 @@
       if(signupAsArtisan&&(!data||data.role!=='client')){
         S.account={name:name,email:user.email||'',uid:user.uid,role:'artisan'};
         S.persona='pro';S.proName=name;S.proStatus='pending';S.onboarded=true;S.authView=null;S.proNav='home';render();
+        subscribeProStatus(user.uid);
         return;
       }
       const zone=(data&&data.zone)||typedZone||'Gustavia';
@@ -2537,6 +2552,8 @@
       try{ await FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{name:(f.name||'').trim(),cats:f.cats.slice(),other:(f.otherService||'').trim(),rates:rates,siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,insurer:f.insurer||'',insuranceUrl:insuranceUrl,insuranceStatus:'attente',phone:f.phone||'',photo:f.photo||'',bio:(f.bio||'').trim(),acceptedTerms:!!f.cgu,acceptedCharte:!!f.charte,acceptedMandat:!!f.mandat,termsVersion:TERMS_VERSION,termsAt:FB.f.serverTimestamp(),status:'attente',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
       S.account={name:(f.name||'').trim()||(f.email.trim().split('@')[0]),email:f.email.trim(),uid:uid,role:'artisan'};
       S.persona='pro'; S.proName=(f.name||'').trim(); S.proStatus='pending'; S.onboarded=true; S.authView=null; S.proNav='home';
+      S.proInsuranceStatus='attente'; S.proInsuranceUrl=insuranceUrl; S.proCats=f.cats.slice();
+      subscribeProStatus(uid);
       burstConfetti(); render(); toast('Candidature envoyée 🐙 — compte créé, examen sous 48 h');
     }catch(e){ toast(fbErr(e)); }finally{ signupAsArtisan=false; }
   }
@@ -2621,7 +2638,32 @@
     toast('Si un compte existe, un lien de réinitialisation vient d’être envoyé à '+email+'.');
   }
   async function fbGoogle(){ try{ await FB.a.signInWithPopup(FB.auth,new FB.a.GoogleAuthProvider()); }catch(e){ toast(fbErr(e)); } }
-  function fbLogout(){ if(adminArtUnsub){try{adminArtUnsub();}catch(_){}adminArtUnsub=null;} adminSeenPending=null; if(FB){ try{FB.a.signOut(FB.auth);}catch(_){} } }
+  // Écoute EN TEMPS RÉEL du dossier de l'artisan : dès que l'admin valide,
+  // l'app bascule toute seule sur l'espace missions (+ notification).
+  let proStatusUnsub=null;
+  function subscribeProStatus(uid){
+    if(!FB||!uid)return;
+    if(proStatusUnsub){try{proStatusUnsub();}catch(_){}proStatusUnsub=null;}
+    try{
+      proStatusUnsub=FB.f.onSnapshot(FB.f.doc(FB.db,'artisans',uid),function(snap){
+        if(!snap.exists())return;
+        const ad=snap.data()||{};
+        if(ad.insuranceStatus)S.proInsuranceStatus=ad.insuranceStatus;
+        const newStatus=(ad.status==='valide')?'approved':(ad.status==='refuse'?'refused':'pending');
+        const was=S.proStatus;
+        if(newStatus!==was){
+          S.proStatus=(newStatus==='refused')?'pending':newStatus;
+          if(newStatus==='approved'&&was==='pending'){
+            if(S.persona==='pro'){S.proNav='home';S.proDocsView=false;S.proPayoutView=false;}
+            toast('🎉 Inscription validée — bienvenue chez Ti-Services !');
+            try{ if('Notification'in window&&Notification.permission==='granted'){ new Notification('Ti-Services — inscription validée',{body:'Votre compte est activé. Vous pouvez recevoir des missions.',icon:'./icon-192.png',tag:'ti-approved'}); } }catch(_){}
+          }
+          if(S.persona==='pro')render();
+        }
+      },function(err){console.warn('pro status listen',err);});
+    }catch(e){console.warn(e);}
+  }
+  function fbLogout(){ if(adminArtUnsub){try{adminArtUnsub();}catch(_){}adminArtUnsub=null;} if(proStatusUnsub){try{proStatusUnsub();}catch(_){}proStatusUnsub=null;} adminSeenPending=null; if(FB){ try{FB.a.signOut(FB.auth);}catch(_){} } }
 
   handleDeepLink();
   render();

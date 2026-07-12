@@ -10,7 +10,7 @@
  *   firebase deploy --only functions
  * (nécessite le plan Blaze, déjà activé.)
  */
-const {onDocumentCreated} = require('firebase-functions/v2/firestore');
+const {onDocumentCreated, onDocumentUpdated} = require('firebase-functions/v2/firestore');
 const {setGlobalOptions} = require('firebase-functions/v2');
 const {initializeApp} = require('firebase-admin/app');
 const {getFirestore, FieldValue} = require('firebase-admin/firestore');
@@ -127,4 +127,62 @@ exports.notifyArtisansNewRequest = onDocumentCreated('requests/{reqId}', async (
     }
   });
   if (dels.length) await Promise.all(dels);
+});
+
+/**
+ * notifyArtisanApproved : quand l'admin fait passer un artisan à « valide »,
+ * prévient l'artisan par notification push ET met un e-mail en file d'envoi
+ * (collection `mail`, lue par l'extension Firebase « Trigger Email »).
+ */
+exports.notifyArtisanApproved = onDocumentUpdated('artisans/{artisanId}', async (event) => {
+  const before = (event.data && event.data.before && event.data.before.data()) || {};
+  const after = (event.data && event.data.after && event.data.after.data()) || {};
+  // On agit uniquement sur la transition -> « valide ».
+  if (before.status === 'valide' || after.status !== 'valide') return;
+
+  const uid = event.params.artisanId;
+  const db = getFirestore();
+  const name = (after.name || '').toString().slice(0, 60) || 'Bonjour';
+
+  // Adresse e-mail et jetons push depuis la fiche users.
+  let email = '';
+  let tokens = [];
+  try {
+    const u = await db.collection('users').doc(uid).get();
+    const ud = u.data() || {};
+    email = ud.email || '';
+    tokens = ud.pushTokens || [];
+  } catch (_) {}
+
+  // 1) Notification push (immédiate, sans configuration).
+  if (tokens.length) {
+    try {
+      await getMessaging().sendEachForMulticast({
+        tokens,
+        data: {
+          title: 'Inscription validée 🎉',
+          body: 'Votre compte Ti-Services est activé — vous pouvez recevoir des missions.',
+          url: './',
+        },
+        webpush: { fcmOptions: { link: '/' }, headers: { Urgency: 'high' } },
+      });
+    } catch (e) { console.warn('approve push', e); }
+  }
+
+  // 2) E-mail (mis en file dans la collection `mail` ; nécessite l'extension
+  //    « Trigger Email from Firestore » pour l'envoi réel).
+  if (email) {
+    try {
+      await db.collection('mail').add({
+        to: email,
+        message: {
+          subject: 'Votre inscription Ti-Services est validée 🎉',
+          html: '<p>Bonjour ' + name + ',</p>' +
+                '<p>Bonne nouvelle : votre inscription en tant qu\'artisan sur <b>Ti-Services</b> vient d\'être validée.</p>' +
+                '<p>Votre compte est désormais actif : vous pouvez recevoir des demandes de missions. Ouvrez l\'application pour commencer — elle s\'ouvrira automatiquement sur votre espace missions.</p>' +
+                '<p>À très vite,<br>L\'équipe Ti-Services</p>',
+        },
+      });
+    } catch (e) { console.warn('approve email queue', e); }
+  }
 });
