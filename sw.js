@@ -1,5 +1,5 @@
 /* Ti-Services — service worker (coquille hors-ligne) */
-const CACHE = 'ti-services-v94';
+const CACHE = 'ti-services-v95';
 const SHELL = [
   './',
   './index.html',
@@ -18,6 +18,31 @@ self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
+  );
+});
+
+// Notifications push (FCM Web Push) : affiche l'alerte même app fermée.
+self.addEventListener('push', (e) => {
+  let p = {};
+  try { p = e.data ? e.data.json() : {}; } catch (_) { try { p = { data: { body: e.data && e.data.text() } }; } catch (__) {} }
+  const src = p.data || p.notification || p || {};
+  const title = src.title || 'Ti-Services';
+  const body = src.body || '';
+  const url = src.url || (p.data && p.data.url) || './';
+  e.waitUntil(self.registration.showNotification(title, {
+    body, icon: './icon-192.png', badge: './icon-192.png',
+    data: { url }, tag: src.tag || 'ti-services', renotify: true
+  }));
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || './';
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((cs) => {
+      for (const c of cs) { if ('focus' in c) { try { c.navigate(url); } catch (_) {} return c.focus(); } }
+      return self.clients.openWindow(url);
+    })
   );
 });
 

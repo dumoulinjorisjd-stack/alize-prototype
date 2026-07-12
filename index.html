@@ -2202,7 +2202,7 @@
       if((CONFIG.adminEmails||[]).map(function(e){return e.toLowerCase();}).indexOf((user.email||'').toLowerCase())>=0){
         S.account={name:'Ti-Services',email:user.email||'',uid:user.uid,role:'admin'};
         S.persona='admin';S.admin={view:'home',sel:null};S.onboarded=true;S.authView=null;render();
-        refreshAdminArtisans();return;
+        refreshAdminArtisans();initAdminPush();return;
       }
       // Compte artisan : on route vers l'espace pro (statut lu dans la fiche artisans).
       if((data&&data.role)==='artisan'){
@@ -2272,8 +2272,28 @@
     toast('🔔 Nouvelle candidature — '+nm);
     try{ if('Notification'in window&&Notification.permission==='granted'){ new Notification('Ti-Services — nouvelle candidature',{body:nm+' souhaite rejoindre Ti-Services. Ouvrez la console pour l’examiner.',icon:'./icon-192.png',tag:'ti-candidature'}); } }catch(_){}
   }
-  // Demande à l'admin l'autorisation d'afficher les notifications système.
-  function requestAdminPush(){ try{ if('Notification'in window&&typeof Notification.requestPermission==='function'){ const r=Notification.requestPermission(); if(r&&r.then){ r.then(function(perm){ toast(perm==='granted'?'Alertes activées 🔔':'Autorisez les notifications dans les réglages du navigateur'); render(); }); } else { render(); } } else { toast('Notifications non disponibles sur cet appareil'); } }catch(e){} }
+  // Demande à l'admin l'autorisation d'afficher les notifications système, puis
+  // enregistre son jeton push (pour les alertes app fermée via Cloud Function).
+  function requestAdminPush(){ try{ if('Notification'in window&&typeof Notification.requestPermission==='function'){ const r=Notification.requestPermission(); if(r&&r.then){ r.then(function(perm){ if(perm==='granted'){ toast('Alertes activées 🔔'); initAdminPush(); } else { toast('Autorisez les notifications dans les réglages du navigateur'); } render(); }); } else { if(r==='granted')initAdminPush(); render(); } } else { toast('Notifications non disponibles sur cet appareil'); } }catch(e){} }
+  // Capte le jeton FCM du navigateur admin et l'enregistre dans Firestore
+  // (collection adminTokens). La Cloud Function y enverra les push app fermée.
+  let adminPushDone=false;
+  async function initAdminPush(){
+    try{
+      if(adminPushDone)return; if(!FB||!FB.auth||!FB.auth.currentUser)return;
+      if(!('Notification'in window)||Notification.permission!=='granted')return;
+      if(!('serviceWorker'in navigator)||!CONFIG.vapidKey)return;
+      const msgM=await import('https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging.js');
+      const reg=await navigator.serviceWorker.ready;
+      const messaging=msgM.getMessaging(FB.app);
+      const token=await msgM.getToken(messaging,{vapidKey:CONFIG.vapidKey,serviceWorkerRegistration:reg});
+      if(token){ adminPushDone=true;
+        try{ await FB.f.setDoc(FB.f.doc(FB.db,'adminTokens',token),{uid:FB.auth.currentUser.uid,email:FB.auth.currentUser.email||'',ua:(navigator.userAgent||'').slice(0,180),createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
+      }
+      // Message reçu app au premier plan : petit toast (le SW gère l'app fermée).
+      msgM.onMessage(messaging,function(payload){ const n=(payload&&(payload.data||payload.notification))||{}; toast('🔔 '+(n.title||'Ti-Services')+(n.body?' — '+n.body:'')); });
+    }catch(e){ console.warn('admin push init',e); }
+  }
   async function fbLogin(f){ try{ await FB.a.signInWithEmailAndPassword(FB.auth,f.email.trim(),f.password); }catch(e){ toast(fbErr(e)); } }
   // Réinitialisation par e-mail. Message identique que le compte existe ou non
   // (on ne révèle pas si l'adresse est inscrite — bonne pratique de sécurité).
