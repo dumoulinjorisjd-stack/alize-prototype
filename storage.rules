@@ -1,0 +1,29 @@
+rules_version = '2';
+
+// Ti-Services — règles Firebase Storage.
+// Attestations d'assurance : déposées par l'artisan, lisibles par lui-même et l'admin.
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email in ['ccs.dumoulin@gmail.com', 'contact@archipel-btp.com'];
+    }
+
+    match /insurance/{uid}/{file=**} {
+      // L'artisan téléverse SON attestation (PDF ou image, < 10 Mo).
+      allow write: if request.auth != null
+                   && request.auth.uid == uid
+                   && request.resource.size < 10 * 1024 * 1024
+                   && (request.resource.contentType.matches('image/.*')
+                       || request.resource.contentType == 'application/pdf');
+      // Lecture : le prestataire concerné ou l'admin.
+      allow read: if request.auth != null && (request.auth.uid == uid || isAdmin());
+    }
+
+    // Tout le reste est fermé par défaut.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
