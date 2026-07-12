@@ -587,6 +587,10 @@
   const TERMS_DATE='12 juillet 2026';
   function chkbox(on){return `<span class="chkbox ${on?'on':''}">${on?I.check:''}</span>`;}
   function fmtAcceptDate(d){try{return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});}catch(_){return '';}}
+  // RIB / IBAN de l'artisan (pour recevoir les paiements).
+  function normIban(s){return (s||'').replace(/\s/g,'').toUpperCase();}
+  function ibanValid(s){const v=normIban(s);return /^[A-Z]{2}[0-9]{2}[A-Z0-9]{10,30}$/.test(v);}
+  function maskIban(s){const v=normIban(s);if(v.length<8)return v;return v.slice(0,4)+' •••• '+v.slice(-4);}
   const LEGAL_CGU=`
     <p class="warn">Modèle à faire valider par un professionnel du droit avant mise en ligne.</p>
     <h3>1. Éditeur & objet</h3>
@@ -1562,7 +1566,7 @@
     S.addresses=ADDRESSES_INIT();S.addrDefault='ad1';S.history=[];S.recurring=[];S.card=null;
     S.proStatus='approved';S.proName='Marie-Lou';S.proCats=['menage','jardin'];S.proRate=35;
     S.proHistory=PRO_HISTORY();S.agenda=SEED_AGENDA.map(function(a){return Object.assign({},a);});
-    S.proEarnings=1284.50;S.proJobsToday=3;S.proJobsTotal=214;S.proRating=4.9;
+    S.proEarnings=1284.50;S.proJobsToday=3;S.proJobsTotal=214;S.proRating=4.9;S.proIban='FR7630006000011234567890189';S.proIbanHolder='Marie-Lou Cagan';S.proBic='AGRIFRPP';
     S.proInsured=true;S.proInsurer='AXA · Police 12345';S.proInsuranceUrl=DEMO_ATTEST;S.proInsuranceStatus='valide';S.proAcceptedCharte=true;S.proAcceptedTerms=true;S.proTermsVersion=TERMS_VERSION;S.proTermsAt=new Date('2026-05-15T10:00:00');
     S.adminArtisans=ADMIN_ARTS();S.adminClients=ADMIN_CLIS();S.adminBookings=ADMIN_BOOK();S.adminCommission=1240;
     S.concClients=CONCIERGE_CLIENTS();S.concOrders=CONCIERGE_ORDERS();S.concEarn=640;
@@ -1650,6 +1654,7 @@
     if(S.proStatus==='signup')return proSignup();
     if(S.proStatus==='pending')return proPending();
     if(S.proDocsView)return proDocs();
+    if(S.proPayoutView)return proPayout();
     if(S.advantages)return advantagesScreen();
     if(S.support&&S.mission)return supportChat();
     if(S.invoiceId)return proInvoice();
@@ -1684,6 +1689,21 @@
           <button class="btn ghost sm" data-act="view-cgv">Conditions Générales de Vente</button>
         </div>
       </div><div style="height:14px"></div></div>${proNavbar()}`;
+  }
+  function proPayout(){
+    const f=S.payoutForm||{};
+    const ibOk=ibanValid(f.iban);
+    const ok=(f.holder||'').trim().length>1&&ibOk;
+    return `<div class="pad"><button class="reset" data-act="pro-payout-close" style="margin:8px 0 2px">← Retour</button>
+      <span class="eyebrow">${I.card} Compte de versement</span><div class="h-hello">Votre RIB</div>
+      <p class="sub" style="margin-top:6px">C'est sur ce compte que Ti-Services vous <b>verse vos prestations</b>. Vos coordonnées bancaires restent confidentielles.</p>
+      <div class="card" style="padding:16px;margin-top:14px">
+        <div class="field"><label>Titulaire du compte</label><input class="txt" data-po="holder" value="${esc(f.holder||'')}" placeholder="Ex. Marie-Lou Cagan (ou raison sociale)"></div>
+        <div class="field"><label>IBAN</label><input class="txt" data-po="iban" value="${esc(f.iban||'')}" placeholder="FR76 3000 6000 0112 3456 7890 189" autocapitalize="characters">${(f.iban&&!ibOk)?`<p class="mini" style="margin-top:5px;color:var(--coral-deep)">IBAN invalide — vérifiez le format.</p>`:''}</div>
+        <div class="field" style="margin:0"><label>BIC (facultatif)</label><input class="txt" data-po="bic" value="${esc(f.bic||'')}" placeholder="Ex. AGRIFRPP" autocapitalize="characters"></div>
+      </div>
+      <div class="banner teal" style="margin-top:12px">${I.lock}<span>Coordonnées bancaires chiffrées, visibles uniquement par vous et Ti-Services (pour vous payer).</span></div>
+      <div class="footcta" style="position:static;background:none;padding:16px 0 0"><button class="btn primary" data-act="save-payout"${ok?'':' disabled'}>${I.check} Enregistrer mon RIB</button></div></div>`;
   }
   function proNavbar(){
     const act=attention()==='pro';
@@ -2010,7 +2030,9 @@
       ${fidCard()}
       <button class="card" data-act="open-interv" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.card}&nbsp;Mes interventions & factures</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Historique de vos prestations réalisées et leurs factures (établies automatiquement en votre nom).</p></button>
       <button class="card" data-act="open-referral" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.heart}&nbsp;Parrainer un artisan</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Gagnez un bonus pour chaque artisan que vous parrainez — et lui aussi.</p></button>
-      <div class="card" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">Compte de versement</b><span class="chip good">${I.check} Vérifié</span></div><div class="mini" style="margin-top:8px">IBAN ••••&nbsp;7788 · ${S.proStatusType==='particulier'?'Particulier':'Entreprise'} · SIRET ${S.proSiret?'••• '+S.proSiret.slice(-5):'vérifié'} ✓ · Assurance RC ${S.proInsured?'à jour ✓':'à fournir'}</div></div></div>${proNavbar()}`;
+      <div class="card" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">${I.card}&nbsp;Compte de versement (RIB)</b>${S.proIban?`<span class="chip good" style="padding:3px 9px">${I.check} Enregistré</span>`:`<span class="chip coral" style="padding:3px 9px">Requis</span>`}</div>
+        ${S.proIban?`<div class="mini" style="margin-top:8px">${esc(S.proIbanHolder||S.proName||'')} · IBAN ${maskIban(S.proIban)}</div><button class="btn ghost sm" data-act="pro-payout" style="margin-top:11px;width:auto;padding:9px 14px">Modifier mon RIB</button>`:`<p class="mini" style="margin-top:8px">Renseignez votre RIB pour <b>recevoir vos paiements</b>. Sans lui, aucun virement ne peut vous être envoyé.</p><button class="btn primary sm" data-act="pro-payout" style="margin-top:11px;width:auto;padding:9px 14px">${I.card} Ajouter mon RIB</button>`}
+      </div></div>${proNavbar()}`;
   }
   function proReferral(){
     const earned=S.filleuls.filter(f=>f.status==='valide').reduce((t,f)=>t+f.bonus,0);
@@ -2231,6 +2253,9 @@
       case 'close-legal':S.legalView=null;render();break;
       case 'pro-docs':S.proDocsView=true;render();break;
       case 'pro-docs-close':S.proDocsView=false;render();break;
+      case 'pro-payout':S.payoutForm={holder:(S.proIbanHolder||S.proName||''),iban:(S.proIban||''),bic:(S.proBic||'')};S.proPayoutView=true;render();break;
+      case 'pro-payout-close':S.proPayoutView=false;render();break;
+      case 'save-payout':{const f=S.payoutForm||{};if((f.holder||'').trim().length<2){toast('Indiquez le titulaire du compte');break;}if(!ibanValid(f.iban)){toast('IBAN invalide');break;}const ib=normIban(f.iban);S.proIban=ib;S.proIbanHolder=f.holder.trim();S.proBic=normIban(f.bic);if(FB&&FB.auth&&FB.auth.currentUser){try{FB.f.setDoc(FB.f.doc(FB.db,'artisans',FB.auth.currentUser.uid),{iban:ib,ibanHolder:f.holder.trim(),bic:normIban(f.bic)},{merge:true});}catch(_){}}S.proPayoutView=false;S.payoutForm=null;render();toast('RIB enregistré ✓');break;}
       case 'toggle-cterms':S.clientForm.terms=!S.clientForm.terms;render();break;
       case 'toggle-pcgu':S.proForm.cgu=!S.proForm.cgu;render();break;
       case 'toggle-pcharte':S.proForm.charte=!S.proForm.charte;render();break;
@@ -2250,7 +2275,7 @@
       case 'print-invoice':window.print();break;
       case 'toggle-mandat':S.proForm.mandat=!S.proForm.mandat;render();break;
       case 'pro-submit':{const f=S.proForm;if(!f.cats.length){toast('Sélectionnez au moins un service');break;}if(f.cats.includes('autre')&&!(f.otherService||'').trim()){toast('Précisez le service « Autre » que vous proposez');break;}if(!/.+@.+\..+/.test(f.email||'')){toast('Un e-mail valide est requis');break;}if((f.password||'').length<6||f.password!==f.password2){toast('Mot de passe : 6 caractères min., identiques');break;}if(!/^\d{14}$/.test((f.siret||'').replace(/\s/g,''))){toast('Un SIRET valide (14 chiffres) est requis');break;}if(!f.insuranceDoc){toast('Joignez votre attestation d’assurance');break;}if(!f.mandat){toast('Acceptez le mandat de facturation pour continuer');break;}if(!f.cgu){toast('Acceptez les CGU et les CGV pour continuer');break;}if(!f.charte){toast('Acceptez la charte de responsabilité de l’intervenant');break;}
-        if(FB){fbProSignup(f);break;} // vrai compte artisan Firebase
+        if(FB){signupAsArtisan=true;fbProSignup(f);break;} // vrai compte artisan Firebase
         const rates={};f.cats.forEach(c=>{rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});const minRate=Math.min.apply(null,f.cats.map(c=>rates[c]));S.adminArtisans=S.adminArtisans.filter(x=>x.id!=='self');S.adminArtisans.unshift({id:'self',name:f.name||'Nouveau prestataire',status:'attente',type:'entreprise',cats:f.cats.slice(),other:(f.otherService||'').trim(),rates,rate:minRate,siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,rating:0,jobs:0,zone:'—',phone:f.phone||'',email:f.email||'',photo:f.photo||''});S.proStatus='pending';render();break;}
       case 'pro-approve':{S.proStatus='approved';const f=S.proForm;if(f.photo)S.proPhoto=f.photo;if(f.name)S.proName=f.name;if(f.cats.length)S.proCats=f.cats.slice();const rates={};f.cats.forEach(c=>{rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});S.proRates=rates;if(f.cats.length)S.proRate=Math.min.apply(null,f.cats.map(c=>rates[c]));S.proStatusType='entreprise';S.proSiret=(f.siret||'').replace(/\s/g,'');S.proBio=f.bio||'';S.proInsured=!!f.insuranceDoc;if(f.insurer)S.proInsurer=f.insurer;if(f.phone)S.proPhone=f.phone;
         // Nouvel artisan = part de zéro : aucun historique ni agenda pré-rempli.
@@ -2316,6 +2341,7 @@
     const am=e.target.closest('[data-addrmanual]');if(am&&S.draft){S.draft.address=am.value;}
     const pph=e.target.closest('[data-pphone]');if(pph){S.proPhone=pph.value;}
     const af=e.target.closest('[data-af]');if(af&&S.addrForm){S.addrForm[af.dataset.af]=af.value;}
+    const po=e.target.closest('[data-po]');if(po&&S.payoutForm){S.payoutForm[po.dataset.po]=po.value;const sb=document.querySelector('[data-act="save-payout"]');if(sb)sb.disabled=!((S.payoutForm.holder||'').trim().length>1&&ibanValid(S.payoutForm.iban));}
     const cf2=e.target.closest('[data-cf2]');if(cf2&&S.concForm){S.concForm[cf2.dataset.cf2]=cf2.value;}
     const cn=e.target.closest('[data-conc-notes]');if(cn&&S.concOrder){S.concOrder.notes=cn.value;}
   });
@@ -2394,6 +2420,7 @@
      Actif seulement si CONFIG.firebase est renseigné (et hors tests: window.__NOFB).
      Sinon : mode démo inchangé (comptes en localStorage). */
   let FB=null;
+  let signupAsArtisan=false; // vrai pendant une inscription artisan (évite la création d'un compte client par la course onAuthStateChanged)
   function fbErr(e){const c=(e&&e.code)||'';return ({
     'auth/email-already-in-use':'Un compte existe déjà avec cet e-mail — connectez-vous.',
     'auth/invalid-email':'E-mail invalide.',
@@ -2442,10 +2469,17 @@
         S.account={name:name,email:user.email||'',uid:user.uid,role:'artisan'};
         S.persona='pro'; S.proName=name; S.proPhone=(ad&&ad.phone)||(data&&data.phone)||'';
         if(ad&&Array.isArray(ad.cats)&&ad.cats.length){S.proCats=ad.cats.slice();const rr=ad.rates||{};S.proRate=Math.min.apply(null,ad.cats.map(c=>(rr[c]!=null?rr[c]:svcBase(c))));}
-        if(ad){ S.proRating=ad.rating||0; S.proInsured=!!ad.insured; S.proInsurer=ad.insurer||''; S.proInsuranceUrl=ad.insuranceUrl||''; S.proInsuranceStatus=ad.insuranceStatus||(ad.status==='valide'&&ad.insured?'valide':(ad.insuranceUrl||ad.insured?'attente':'none')); S.proSiret=ad.siret||S.proSiret; S.proBio=ad.bio||''; S.proPhoto=ad.photo||S.proPhoto; S.proAcceptedCharte=!!ad.acceptedCharte; S.proAcceptedTerms=!!ad.acceptedTerms; S.proTermsVersion=ad.termsVersion||''; S.proTermsAt=(ad.termsAt&&ad.termsAt.toDate)?ad.termsAt.toDate():null; }
+        if(ad){ S.proRating=ad.rating||0; S.proIban=ad.iban||''; S.proIbanHolder=ad.ibanHolder||''; S.proBic=ad.bic||''; S.proInsured=!!ad.insured; S.proInsurer=ad.insurer||''; S.proInsuranceUrl=ad.insuranceUrl||''; S.proInsuranceStatus=ad.insuranceStatus||(ad.status==='valide'&&ad.insured?'valide':(ad.insuranceUrl||ad.insured?'attente':'none')); S.proSiret=ad.siret||S.proSiret; S.proBio=ad.bio||''; S.proPhoto=ad.photo||S.proPhoto; S.proAcceptedCharte=!!ad.acceptedCharte; S.proAcceptedTerms=!!ad.acceptedTerms; S.proTermsVersion=ad.termsVersion||''; S.proTermsAt=(ad.termsAt&&ad.termsAt.toDate)?ad.termsAt.toDate():null; }
         S.proStatus=(ad&&ad.status==='valide')?'approved':'pending';
         S.onboarded=true;S.authView=null;S.proNav='home';render();
         if(typeof Notification!=='undefined'&&Notification.permission==='granted')registerPush('artisan');
+        return;
+      }
+      // Inscription artisan en cours : la fiche users (role: artisan) n'est peut-être
+      // pas encore écrite → surtout NE PAS créer de compte client. On route vers l'espace pro.
+      if(signupAsArtisan&&(!data||data.role!=='client')){
+        S.account={name:name,email:user.email||'',uid:user.uid,role:'artisan'};
+        S.persona='pro';S.proName=name;S.proStatus='pending';S.onboarded=true;S.authView=null;S.proNav='home';render();
         return;
       }
       const zone=(data&&data.zone)||typedZone||'Gustavia';
@@ -2501,8 +2535,10 @@
         insuranceUrl=await stM.getDownloadURL(sref);
       }catch(e){ console.warn('insurance upload failed',e); } }
       try{ await FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{name:(f.name||'').trim(),cats:f.cats.slice(),other:(f.otherService||'').trim(),rates:rates,siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,insurer:f.insurer||'',insuranceUrl:insuranceUrl,insuranceStatus:'attente',phone:f.phone||'',photo:f.photo||'',bio:(f.bio||'').trim(),acceptedTerms:!!f.cgu,acceptedCharte:!!f.charte,acceptedMandat:!!f.mandat,termsVersion:TERMS_VERSION,termsAt:FB.f.serverTimestamp(),status:'attente',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
-      burstConfetti(); toast('Candidature envoyée 🐙 — compte créé, examen sous 48 h');
-    }catch(e){ toast(fbErr(e)); }
+      S.account={name:(f.name||'').trim()||(f.email.trim().split('@')[0]),email:f.email.trim(),uid:uid,role:'artisan'};
+      S.persona='pro'; S.proName=(f.name||'').trim(); S.proStatus='pending'; S.onboarded=true; S.authView=null; S.proNav='home';
+      burstConfetti(); render(); toast('Candidature envoyée 🐙 — compte créé, examen sous 48 h');
+    }catch(e){ toast(fbErr(e)); }finally{ signupAsArtisan=false; }
   }
   // Console admin réelle : écrit le statut de l'artisan en base (validation, refus…).
   function adminWriteStatus(a,status){ if(FB&&a&&a.real&&a.uid){ try{ FB.f.updateDoc(FB.f.doc(FB.db,'artisans',a.uid),{status:status}); }catch(_){} } }
