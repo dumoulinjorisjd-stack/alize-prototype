@@ -750,6 +750,11 @@
   function svcNm(id){if(id==='autre')return 'Autre service';const s=findSvc(id);return s?s.nm:id;}
   // Libellé des services d'un artisan, avec le détail du service « Autre » proposé.
   function artSvcLabel(a){return (a&&a.cats?a.cats:[]).map(function(c){return c==='autre'?('Autre'+(a.other?' : '+a.other:'')):svcNm(c);}).join(', ');}
+  // Statut de VALIDATION de l'attestation d'assurance (décidé par l'admin, pas
+  // automatique au dépôt). 'none' = aucun document, 'attente' = déposé à vérifier,
+  // 'valide' = approuvé par l'admin, 'refuse' = refusé.
+  function insStatus(a){ if(!a)return 'none'; if(a.insuranceStatus)return a.insuranceStatus; if(a.status==='valide'&&a.insured)return 'valide'; if(a.insuranceUrl||a.insured)return 'attente'; return 'none'; }
+  function insLabel(st){ return st==='valide'?['good','Validée']:st==='refuse'?['coral','Refusée']:st==='attente'?['grey','À vérifier']:['coral','Manquante']; }
   function svcIco(id){const s=findSvc(id);return (s&&s.custom)?I.other:(I[id]||I.other);}
   // Ajoute un service « Autre » au catalogue (visible/réservable côté client).
   function addCustomService(name,rate){
@@ -964,9 +969,10 @@
       <div class="row between" style="align-items:flex-start"><div class="row" style="gap:10px;align-items:center">${avatarPhoto(a.photo,inits(a.name||'A'),'')}<b style="font-size:14.5px">${esc(a.name)}</b></div><span class="chip grey" style="padding:3px 9px">Artisan</span></div>
       <div class="mini" style="margin-top:6px">${a.type==='particulier'?'Particulier':'Entreprise'} · ${esc(artSvcLabel(a))} · ${a.rate} €/h</div>
       ${(a.cats&&a.cats.includes('autre')&&a.other)?`<div class="banner teal" style="margin-top:7px">${I.other}<span>Service « Autre » proposé&nbsp;: <b>${esc(a.other)}</b> — à évaluer.</span></div>`:''}
-      <div class="row" style="gap:6px;margin-top:7px;flex-wrap:wrap"><span class="chip ${a.siret?'good':'coral'}" style="padding:3px 9px">SIRET ${a.siret?'fourni':'manquant'}</span><span class="chip ${a.insured?'good':'coral'}" style="padding:3px 9px">Assurance ${a.insured?'OK':'manquante'}</span></div>
+      <div class="row" style="gap:6px;margin-top:7px;flex-wrap:wrap"><span class="chip ${a.siret?'good':'coral'}" style="padding:3px 9px">SIRET ${a.siret?'fourni':'manquant'}</span>${(function(){const l=insLabel(insStatus(a));return `<span class="chip ${l[0]}" style="padding:3px 9px">Assurance ${l[1].toLowerCase()}</span>`;})()}</div>
       <p class="mini" style="margin-top:9px;color:var(--muted)">Échangez avant de décider&nbsp;:</p>${contactRow(a)}
-      <div class="row" style="gap:8px;margin-top:10px"><button class="btn good sm" data-adm="valid-art:${a.id}" ${(a.insured&&a.siret)?'':'disabled'}>Valider</button><button class="btn ghost sm" data-adm="rej-art:${a.id}">Refuser</button><button class="btn ghost sm" data-adm="art:${a.id}">Fiche</button></div>
+      <div class="row" style="gap:8px;margin-top:10px"><button class="btn good sm" data-adm="valid-art:${a.id}" ${(insStatus(a)==='valide'&&a.siret)?'':'disabled'}>Valider</button><button class="btn ghost sm" data-adm="rej-art:${a.id}">Refuser</button><button class="btn ghost sm" data-adm="art:${a.id}">Fiche</button></div>
+      ${(insStatus(a)!=='valide')?`<p class="mini" style="margin-top:6px;color:var(--muted)">Ouvrez la fiche pour vérifier et valider l'attestation avant d'accepter le prestataire.</p>`:''}
       ${!a.insured?`<p class="mini" style="margin-top:6px;color:var(--coral-deep)">Attestation d'assurance manquante — validation impossible.</p>`:''}</div>`));
     pendC.forEach(cc=>q.push(`<div class="card" style="padding:14px;margin-top:10px;border-left:4px solid var(--warn)">
       <div class="row between"><b style="font-size:14.5px">${cc.name}</b><span class="chip grey" style="padding:3px 9px">Client</span></div>
@@ -1030,14 +1036,15 @@
           <div class="row between" style="align-items:flex-start"><span class="sub">Services</span><b style="text-align:right;max-width:62%">${esc(artSvcLabel(a))}</b></div>
           <div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">Taux souhaité</span><b style="text-align:right;max-width:62%">${a.rates?Object.keys(a.rates).map(k=>{const s=SERVICES.find(x=>x.id===k);return (s?s.nm:k)+' '+a.rates[k]+' €/h';}).join('<br>'):a.rate+' €/h'}</b></div>
           <div class="row between" style="margin-top:6px"><span class="sub">SIRET</span><b class="money">${a.siret||'—'}</b></div>
-          <div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">Assurance RC</span><b style="text-align:right;max-width:62%;color:${a.insured?'var(--good)':'var(--coral-deep)'}">${a.insured?'Déclarée ✓':'Manquante'}${a.insurer?`<br><span style="color:var(--ink);font-weight:600">${esc(a.insurer)}</span>`:''}${a.insuranceUrl?`<br><a href="${esc(a.insuranceUrl)}" target="_blank" rel="noopener" style="color:var(--teal-deep);font-weight:700">${I.other} Voir l'attestation</a>`:`<br><span class="mini" style="color:var(--muted)">Attestation non jointe</span>`}</b></div>
+          <div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">Assurance RC</span><b style="text-align:right;max-width:62%">${(function(){const st=insStatus(a),l=insLabel(st);return `<span class="chip ${l[0]}" style="padding:3px 9px">${l[1]}</span>`;})()}${a.insurer?`<br><span style="color:var(--ink);font-weight:600;font-size:13px">${esc(a.insurer)}</span>`:''}${a.insuranceUrl?`<br><a href="${esc(a.insuranceUrl)}" target="_blank" rel="noopener" style="color:var(--teal-deep);font-weight:700">${I.other} Voir l'attestation</a>`:`<br><span class="mini" style="color:var(--muted)">Attestation non jointe</span>`}</b></div>
+          ${a.insuranceUrl?`<div class="row" style="gap:8px;margin-top:10px">${insStatus(a)!=='valide'?`<button class="btn good sm" data-adm="valid-ins:${a.id}">${I.check} Valider l'attestation</button>`:''}${insStatus(a)!=='refuse'?`<button class="btn ghost sm" data-adm="rej-ins:${a.id}">Refuser l'attestation</button>`:''}</div><p class="mini" style="margin-top:6px;color:var(--muted)">Ouvrez le document ci-dessus, puis validez ou refusez l'attestation. Rien n'est validé automatiquement.</p>`:''}
           ${a.bio?`<div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">Présentation</span><b style="text-align:right;max-width:62%;font-weight:500">${esc(a.bio)}</b></div>`:''}
           <div class="row between" style="margin-top:6px"><span class="sub">Note · missions</span><b>${a.rating?a.rating.toFixed(1)+' ★ · '+a.jobs:'—'}</b></div>
           <div class="row between" style="margin-top:6px"><span class="sub">Palier fidélité · commission</span><b><span class="chip" style="padding:2px 8px;background:${fidColor(fidFor(a.jobs).key)}22;color:${fidColor(fidFor(a.jobs).key)}">★ ${fidFor(a.jobs).nm}</span> ${fidFor(a.jobs).pct} %</b></div>
           ${a.status==='refuse'&&a.reason?`<hr class="dashed"><div class="row between"><span class="sub">Motif du refus</span><b style="color:var(--coral-deep);text-align:right;max-width:60%">${a.reason}</b></div>`:''}
         </div>
         <div class="card" style="padding:16px;margin-top:12px"><span class="eyebrow" style="color:var(--muted)">Contacter avant décision</span>${contactRow(a)}</div>
-        ${a.status==='attente'?`<div class="row" style="gap:8px;margin-top:14px"><button class="btn good" data-adm="valid-art:${a.id}" ${(a.insured&&a.siret)?'':'disabled'}>Valider le prestataire</button><button class="btn ghost" data-adm="rej-art:${a.id}">Refuser</button></div>${(!a.insured||!a.siret)?`<p class="mini" style="margin-top:8px;color:var(--coral-deep)">${!a.siret?'SIRET manquant. ':''}${!a.insured?'Assurance manquante. ':''}Validation impossible tant que le dossier n'est pas complet.</p>`:''}`:''}
+        ${a.status==='attente'?`<div class="row" style="gap:8px;margin-top:14px"><button class="btn good" data-adm="valid-art:${a.id}" ${(insStatus(a)==='valide'&&a.siret)?'':'disabled'}>Valider le prestataire</button><button class="btn ghost" data-adm="rej-art:${a.id}">Refuser</button></div>${(insStatus(a)!=='valide'||!a.siret)?`<p class="mini" style="margin-top:8px;color:var(--coral-deep)">${!a.siret?'SIRET manquant. ':''}${insStatus(a)==='none'?'Attestation d’assurance manquante. ':insStatus(a)==='attente'?'Attestation à vérifier et valider ci-dessus. ':insStatus(a)==='refuse'?'Attestation refusée. ':''}Validation du prestataire impossible tant que le dossier n'est pas complet.</p>`:''}`:''}
         ${a.status==='refuse'?`<div class="row" style="gap:8px;margin-top:14px"><button class="btn ghost" data-adm="reexam-art:${a.id}">Réexaminer la candidature</button></div>`:''}
       </div>`;
     }
@@ -1546,7 +1553,7 @@
     S.proStatus='approved';S.proName='Marie-Lou';S.proCats=['menage','jardin'];S.proRate=35;
     S.proHistory=PRO_HISTORY();S.agenda=SEED_AGENDA.map(function(a){return Object.assign({},a);});
     S.proEarnings=1284.50;S.proJobsToday=3;S.proJobsTotal=214;
-    S.proInsured=true;S.proInsurer='AXA · Police 12345';S.proInsuranceUrl=DEMO_ATTEST;S.proAcceptedCharte=true;S.proAcceptedTerms=true;S.proTermsVersion=TERMS_VERSION;S.proTermsAt=new Date('2026-05-15T10:00:00');
+    S.proInsured=true;S.proInsurer='AXA · Police 12345';S.proInsuranceUrl=DEMO_ATTEST;S.proInsuranceStatus='valide';S.proAcceptedCharte=true;S.proAcceptedTerms=true;S.proTermsVersion=TERMS_VERSION;S.proTermsAt=new Date('2026-05-15T10:00:00');
     S.adminArtisans=ADMIN_ARTS();S.adminClients=ADMIN_CLIS();S.adminBookings=ADMIN_BOOK();S.adminCommission=1240;
     S.concClients=CONCIERGE_CLIENTS();S.concOrders=CONCIERGE_ORDERS();S.concEarn=640;
   }
@@ -1650,8 +1657,9 @@
     return `<div class="pad"><button class="reset" data-act="pro-docs-close" style="margin:8px 0 2px">← Retour</button>
       <span class="eyebrow">${I.shield} Mes documents</span><div class="h-hello">Assurance & décharge</div>
       <div class="card" style="padding:16px;margin-top:14px">
-        <div class="row between"><b style="font-size:14px">Attestation d'assurance RC</b><span class="chip ${S.proInsured?'good':'coral'}" style="padding:3px 9px">${S.proInsured?'Fournie':'Manquante'}</span></div>
-        ${S.proInsurer?`<div class="mini" style="margin-top:6px">Assureur&nbsp;: ${esc(S.proInsurer)}</div>`:''}
+        ${(function(){const st=S.proInsuranceStatus||(S.proInsured?'attente':'none');const l=insLabel(st);return `<div class="row between"><b style="font-size:14px">Attestation d'assurance RC</b><span class="chip ${l[0]}" style="padding:3px 9px">${l[1]}</span></div>
+        ${st==='attente'?`<div class="banner teal" style="margin-top:10px">${I.clock}<span>Votre attestation est <b>en attente de vérification</b> par Ti-Services.</span></div>`:st==='valide'?`<div class="banner teal" style="margin-top:10px">${I.check}<span>Attestation <b>validée</b> par Ti-Services.</span></div>`:st==='refuse'?`<div class="banner coral" style="margin-top:10px">${I.shield}<span>Attestation <b>refusée</b> — merci de déposer une attestation valide.</span></div>`:''}`;})()}
+        ${S.proInsurer?`<div class="mini" style="margin-top:8px">Assureur&nbsp;: ${esc(S.proInsurer)}</div>`:''}
         ${url?`<a class="btn ghost sm" href="${esc(url)}" target="_blank" rel="noopener" style="margin-top:11px;display:inline-flex;width:auto;padding:9px 14px">${I.other}&nbsp;Voir mon attestation</a>`:`<p class="mini" style="margin-top:8px;color:var(--muted)">Aucun document en ligne pour l'instant.</p>`}
         <label class="btn ghost sm" style="margin-top:10px;cursor:pointer;display:inline-flex;width:auto;padding:9px 14px">📎&nbsp;${url?'Mettre à jour mon attestation':'Joindre mon attestation'}<input type="file" accept="image/*,application/pdf" data-proinsurance hidden></label>
         <p class="mini" style="margin-top:8px">Gardez votre attestation à jour — Ti-Services peut la vérifier à tout moment. Elle reste conservée dans votre dossier.</p>
@@ -2041,6 +2049,8 @@
       else if(act==='rej-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.status='refuse';if(!a.reason)a.reason=(!a.siret?'SIRET manquant. ':'')+(!a.insured?'Assurance manquante. ':'')||'Ne correspond pas aux critères Ti-Services';adminWriteStatus(a,'refuse');}S.admin.view='home';toast('Candidature refusée — conservée dans l’historique');}
       else if(act==='reexam-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.status='attente';adminWriteStatus(a,'attente');toast('Candidature remise en attente');}}
       else if(act==='valid-cli'){const cc=S.adminClients.find(x=>x.id===id);if(cc)cc.status='valide';toast('Client validé');}
+      else if(act==='valid-ins'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.insuranceStatus='valide';a.insured=true;adminWriteField(a,{insuranceStatus:'valide',insured:true});toast('Attestation validée ✓');}}
+      else if(act==='rej-ins'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.insuranceStatus='refuse';adminWriteField(a,{insuranceStatus:'refuse'});toast('Attestation refusée');}}
       else if(act==='addcat'){const a=S.adminArtisans.find(x=>x.id===id);if(a&&a.other){addCustomService(a.other,(a.rates&&a.rates.autre)||40);}}
       else if(act==='delcat'){S.customServices=(S.customServices||[]).filter(function(s){return s.id!==id;});saveCatalog();toast('Service retiré du catalogue');}
       else if(act==='fidup'){const t=fidTiers().find(x=>x.key===id);if(t)t.pct=Math.min(30,t.pct+1);}
@@ -2411,7 +2421,7 @@
         S.account={name:name,email:user.email||'',uid:user.uid,role:'artisan'};
         S.persona='pro'; S.proName=name; S.proPhone=(ad&&ad.phone)||(data&&data.phone)||'';
         if(ad&&Array.isArray(ad.cats)&&ad.cats.length){S.proCats=ad.cats.slice();const rr=ad.rates||{};S.proRate=Math.min.apply(null,ad.cats.map(c=>(rr[c]!=null?rr[c]:svcBase(c))));}
-        if(ad){ S.proInsured=!!ad.insured; S.proInsurer=ad.insurer||''; S.proInsuranceUrl=ad.insuranceUrl||''; S.proSiret=ad.siret||S.proSiret; S.proBio=ad.bio||''; S.proPhoto=ad.photo||S.proPhoto; S.proAcceptedCharte=!!ad.acceptedCharte; S.proAcceptedTerms=!!ad.acceptedTerms; S.proTermsVersion=ad.termsVersion||''; S.proTermsAt=(ad.termsAt&&ad.termsAt.toDate)?ad.termsAt.toDate():null; }
+        if(ad){ S.proInsured=!!ad.insured; S.proInsurer=ad.insurer||''; S.proInsuranceUrl=ad.insuranceUrl||''; S.proInsuranceStatus=ad.insuranceStatus||(ad.status==='valide'&&ad.insured?'valide':(ad.insuranceUrl||ad.insured?'attente':'none')); S.proSiret=ad.siret||S.proSiret; S.proBio=ad.bio||''; S.proPhoto=ad.photo||S.proPhoto; S.proAcceptedCharte=!!ad.acceptedCharte; S.proAcceptedTerms=!!ad.acceptedTerms; S.proTermsVersion=ad.termsVersion||''; S.proTermsAt=(ad.termsAt&&ad.termsAt.toDate)?ad.termsAt.toDate():null; }
         S.proStatus=(ad&&ad.status==='valide')?'approved':'pending';
         S.onboarded=true;S.authView=null;S.proNav='home';render();
         if(typeof Notification!=='undefined'&&Notification.permission==='granted')registerPush('artisan');
@@ -2448,9 +2458,9 @@
       const sref=stM.ref(storage,'insurance/'+uid+'/attestation'+(ext?('.'+ext):''));
       await stM.uploadBytes(sref,file,{contentType:file.type||'application/octet-stream'});
       const url=await stM.getDownloadURL(sref);
-      S.proInsuranceUrl=url; S.proInsured=true;
-      try{ await FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{insuranceUrl:url,insured:true},{merge:true}); }catch(_){}
-      render(); toast('Attestation mise à jour ✓');
+      S.proInsuranceUrl=url; S.proInsured=true; S.proInsuranceStatus='attente';
+      try{ await FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{insuranceUrl:url,insured:true,insuranceStatus:'attente'},{merge:true}); }catch(_){}
+      render(); toast('Attestation envoyée ✓ — en attente de vérification');
     }catch(e){ console.warn('insurance update',e); toast('Échec de l’envoi — réessayez'); }
   }
   async function fbProSignup(f){
@@ -2469,12 +2479,13 @@
         await stM.uploadBytes(sref,f.insuranceFile,{contentType:f.insuranceFile.type||'application/octet-stream'});
         insuranceUrl=await stM.getDownloadURL(sref);
       }catch(e){ console.warn('insurance upload failed',e); } }
-      try{ await FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{name:(f.name||'').trim(),cats:f.cats.slice(),other:(f.otherService||'').trim(),rates:rates,siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,insurer:f.insurer||'',insuranceUrl:insuranceUrl,phone:f.phone||'',photo:f.photo||'',bio:(f.bio||'').trim(),acceptedTerms:!!f.cgu,acceptedCharte:!!f.charte,acceptedMandat:!!f.mandat,termsVersion:TERMS_VERSION,termsAt:FB.f.serverTimestamp(),status:'attente',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
+      try{ await FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{name:(f.name||'').trim(),cats:f.cats.slice(),other:(f.otherService||'').trim(),rates:rates,siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,insurer:f.insurer||'',insuranceUrl:insuranceUrl,insuranceStatus:'attente',phone:f.phone||'',photo:f.photo||'',bio:(f.bio||'').trim(),acceptedTerms:!!f.cgu,acceptedCharte:!!f.charte,acceptedMandat:!!f.mandat,termsVersion:TERMS_VERSION,termsAt:FB.f.serverTimestamp(),status:'attente',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
       burstConfetti(); toast('Candidature envoyée 🐙 — compte créé, examen sous 48 h');
     }catch(e){ toast(fbErr(e)); }
   }
   // Console admin réelle : écrit le statut de l'artisan en base (validation, refus…).
   function adminWriteStatus(a,status){ if(FB&&a&&a.real&&a.uid){ try{ FB.f.updateDoc(FB.f.doc(FB.db,'artisans',a.uid),{status:status}); }catch(_){} } }
+  function adminWriteField(a,obj){ if(FB&&a&&a.real&&a.uid){ try{ FB.f.setDoc(FB.f.doc(FB.db,'artisans',a.uid),obj,{merge:true}); }catch(_){} } }
   // Charge les vrais artisans (Firestore) dans la console admin.
   // Écoute EN TEMPS RÉEL des dossiers artisans : la console se met à jour toute
   // seule et l'admin est alerté dès qu'une nouvelle candidature arrive (tant que
@@ -2488,7 +2499,7 @@
       adminArtUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'artisans'),function(snap){
         const list=[],pending=new Set();
         snap.forEach(function(d){ const a=d.data()||{}; const cats=Array.isArray(a.cats)?a.cats:[]; const rr=a.rates||{}; const st=a.status||'attente';
-          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Artisan',status:st,type:'entreprise',cats:cats,other:a.other||'',rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',bio:a.bio||'',photo:a.photo||'',rating:0,jobs:0,zone:a.zone||'—',phone:a.phone||'',email:a.email||''});
+          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Artisan',status:st,type:'entreprise',cats:cats,other:a.other||'',rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',rating:0,jobs:0,zone:a.zone||'—',phone:a.phone||'',email:a.email||''});
           if(st==='attente')pending.add(d.id); });
         S.adminArtisans=list;
         // Ne notifie que les candidatures arrivées APRÈS la connexion (pas le stock initial).
