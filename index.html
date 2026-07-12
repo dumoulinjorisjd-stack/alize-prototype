@@ -1173,7 +1173,8 @@
       <p class="sub" style="text-align:center;margin-top:4px">Connectez-vous pour retrouver vos réservations.</p>
       <div class="card" style="padding:16px;margin-top:16px">
         <div class="field"><label>E-mail</label><input class="txt" data-lf="email" value="${esc(f.email||(acc?acc.email:''))}" inputmode="email" autocomplete="email" placeholder="vous@exemple.com"></div>
-        <div class="field" style="margin:0"><label>Mot de passe</label><div class="pw-wrap"><input class="txt" type="password" data-lf="password" value="${esc(f.password||'')}" autocomplete="current-password" placeholder="Votre mot de passe"><button type="button" class="pw-eye" data-act="pw-toggle" aria-label="Afficher le mot de passe">${I.eye}</button></div></div>
+        <div class="field" style="margin:0"><label>Mot de passe</label><div class="pw-wrap"><input class="txt" type="password" data-lf="password" value="${esc(f.password||'')}" autocomplete="current-password" placeholder="Votre mot de passe"><button type="button" class="pw-eye" data-act="pw-toggle" aria-label="Afficher le mot de passe">${I.eye}</button></div>
+          <p class="mini" style="text-align:right;margin-top:8px"><button class="linklike" data-act="forgot-pw">Mot de passe oublié&nbsp;?</button></p></div>
       </div>
       <div class="or-sep"><span>ou</span></div>
       <button class="btn ghost" data-act="google-soon" style="opacity:.65"><svg width="17" height="17" viewBox="0 0 24 24"><path fill="#4285F4" d="M23 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.2a5.3 5.3 0 0 1-2.3 3.5v2.9h3.7C21.7 18.9 23 15.9 23 12.3z"/><path fill="#34A853" d="M12 24c3.1 0 5.7-1 7.6-2.8l-3.7-2.9c-1 .7-2.3 1.1-3.9 1.1-3 0-5.5-2-6.4-4.8H1.8v3C3.7 21.3 7.5 24 12 24z"/><path fill="#FBBC05" d="M5.6 14.3a7.2 7.2 0 0 1 0-4.6v-3H1.8a12 12 0 0 0 0 10.6z"/><path fill="#EA4335" d="M12 4.8c1.7 0 3.2.6 4.4 1.7l3.3-3.3C17.7 1.2 15.1 0 12 0 7.5 0 3.7 2.7 1.8 6.7l3.8 3c.9-2.8 3.4-4.9 6.4-4.9z"/></svg>&nbsp;Continuer avec Google ${FB?"":'<span class="chip grey" style="padding:2px 8px;margin-left:4px">bientôt</span>'}</button>
@@ -1865,6 +1866,7 @@
       case 'login-back':S.authView=null;render();break;
       case 'login-to-signup':S.authView=null;S.onbStep=1;render();break;
       case 'do-login':{const f=S.loginForm;if(!(/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=1)){toast('E-mail et mot de passe requis');break;}if(FB){fbLogin(f);}else{const acc=S.account&&S.account.email===f.email.trim()?S.account:{name:(S.account?S.account.name:'Camille Magras'),email:f.email.trim(),zone:(S.account?S.account.zone:'Gustavia')};S.account=acc;S.clientForm={name:acc.name,email:acc.email,zone:acc.zone,password:''};S.onboarded=true;S.authView=null;render();toast('Content de vous revoir, '+acc.name.split(' ')[0]+' !');}break;}
+      case 'forgot-pw':{const em=((S.loginForm&&S.loginForm.email)||(S.account&&S.account.email)||'').trim();if(!/.+@.+\..+/.test(em)){toast('Saisissez votre e-mail, puis « Mot de passe oublié ».');break;}if(FB){fbResetPassword(em);}else{toast('Un lien de réinitialisation vous serait envoyé par e-mail.');}break;}
       case 'google-soon':if(FB){fbGoogle();}else{toast('Connexion Google — bientôt disponible');}break;
       case 'logout':S.demoMode=false;if(FB)blankAll();fbLogout();if(!FB){S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;render();}break;
       case 'cancel-mission':S.mission=null;S.clientNav='home';render();break;
@@ -2176,6 +2178,13 @@
     }catch(e){ console.warn('admin artisans load',e); }
   }
   async function fbLogin(f){ try{ await FB.a.signInWithEmailAndPassword(FB.auth,f.email.trim(),f.password); }catch(e){ toast(fbErr(e)); } }
+  // Réinitialisation par e-mail. Message identique que le compte existe ou non
+  // (on ne révèle pas si l'adresse est inscrite — bonne pratique de sécurité).
+  async function fbResetPassword(email){
+    try{ await FB.a.sendPasswordResetEmail(FB.auth,email); }
+    catch(e){ const c=(e&&e.code)||''; if(c==='auth/invalid-email'||c==='auth/too-many-requests'){ toast(fbErr(e)); return; } }
+    toast('Si un compte existe, un lien de réinitialisation vient d’être envoyé à '+email+'.');
+  }
   async function fbGoogle(){ try{ await FB.a.signInWithPopup(FB.auth,new FB.a.GoogleAuthProvider()); }catch(e){ toast(fbErr(e)); } }
   function fbLogout(){ if(FB){ try{FB.a.signOut(FB.auth);}catch(_){} } }
 
