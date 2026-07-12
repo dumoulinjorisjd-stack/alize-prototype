@@ -854,6 +854,8 @@
   function flexWindow(m){if(m.slotFlex==='day')return ['08:00','19:00'];const b=slotToMin(m.slot),d=Number(m.slotFlex)||0;return [minToSlot(b-d),minToSlot(b+d)];}
   function flexTxt(m){if(!m.slotFlex)return '';if(m.slotFlex==='day')return 'dans la journée (8 h – 19 h)';const w=flexWindow(m);return 'entre '+w[0]+' et '+w[1];}
   function proSlotList(m){const w=flexWindow(m);const start=slotToMin(w[0]),end=slotToMin(w[1]);const step=(m.slotFlex==='day')?60:30;const out=[];for(let t=start;t<=end;t+=step)out.push(minToSlot(t));return out;}
+  // Borne l'heure proposée par l'artisan à la fenêtre acceptée par le client.
+  function clampSlot(m,s){if(!m.slotFlex||!/^\d{1,2}:\d{2}$/.test(s||''))return s;const w=flexWindow(m);return minToSlot(Math.max(slotToMin(w[0]),Math.min(slotToMin(w[1]),slotToMin(s))));}
   function billHours(m){return (m.finalHours!=null)?m.finalHours:m.duration;}
   // Tarif fixe (admin) pour la prestation ; la majoration « coupe-file » s'ajoute par-dessus.
   function fixedRate(m){if(isDayU(m))return DAY_RECO;const p=S.adminPrices&&S.adminPrices[m.svc];return (p!=null)?p:svcBase(m.svc);}
@@ -2252,7 +2254,7 @@
         // Nouvel artisan = part de zéro : aucun historique ni agenda pré-rempli.
         S.proHistory=[];S.agenda=[];S.recurring=[];S.proEarnings=0;S.proJobsToday=0;S.proJobsTotal=0;S.mission=null;
         render();toast('Profil validé — bienvenue sur Ti-Services !');break;}
-      case 'pro-accept':{const m=S.mission;if(m.slotFlex&&m.proposedSlot){m.slot=m.proposedSlot;}m.provider=Object.assign({},PROVIDERS[m.svc]);m.status='accepted';const r=totals(m).rate;const amt=totals(m).total;const freq=m.frequency||'ponctuelle';const labels=occLabels(freq);const entries=labels.map(d=>({day:d,slot:m.slot,svc:m.svc,client:'Camille M.',zone:m.zone,duration:m.duration,unit:m.unit,rate:r,amount:amt,status:'upcoming'}));m._appt=entries[0];entries.slice().reverse().forEach(e=>S.agenda.unshift(e));if(freq!=='ponctuelle'){S.recurring.unshift({svc:m.svc,svcName:m.svcName,short:freqInfo(freq).short,slot:m.slot,zone:m.zone});}if(!m.chat||!m.chat.length)m.chat=[{from:'pro',text:'Bonjour Camille ! Bien reçu votre demande, je serai là à '+m.slot+'. À tout à l’heure 👋'}];render();burstConfetti();toast(labels.length>1?'Prestation récurrente ajoutée à votre agenda !':'Mission remportée — ajoutée à votre agenda !');break;}
+      case 'pro-accept':{const m=S.mission;if(m.slotFlex&&m.proposedSlot){m.slot=clampSlot(m,m.proposedSlot);}m.provider=Object.assign({},PROVIDERS[m.svc]);m.status='accepted';const r=totals(m).rate;const amt=totals(m).total;const freq=m.frequency||'ponctuelle';const labels=occLabels(freq);const entries=labels.map(d=>({day:d,slot:m.slot,svc:m.svc,client:'Camille M.',zone:m.zone,duration:m.duration,unit:m.unit,rate:r,amount:amt,status:'upcoming'}));m._appt=entries[0];entries.slice().reverse().forEach(e=>S.agenda.unshift(e));if(freq!=='ponctuelle'){S.recurring.unshift({svc:m.svc,svcName:m.svcName,short:freqInfo(freq).short,slot:m.slot,zone:m.zone});}if(!m.chat||!m.chat.length)m.chat=[{from:'pro',text:'Bonjour Camille ! Bien reçu votre demande, je serai là à '+m.slot+'. À tout à l’heure 👋'}];render();burstConfetti();toast(labels.length>1?'Prestation récurrente ajoutée à votre agenda !':'Mission remportée — ajoutée à votre agenda !');break;}
       case 'pro-decline':S.mission.status='searching';render();setTimeout(()=>{if(S.mission&&S.mission.status==='searching'){S.mission.status='pending';render();}},1400);toast('Mission passée — proposée aux autres');break;
       case 'pro-advance':S.mission.status=b.dataset.to;if(S.mission._appt){if(b.dataset.to==='working')S.mission._appt.status='live';else if(b.dataset.to==='done_pro')S.mission._appt.status='tovalidate';}render();break;
       case 'pro-back-home':if(S.mission)S.history.unshift(S.mission);S.mission=null;S.proNav='home';render();break;
@@ -2308,7 +2310,7 @@
     const pr=e.target.closest('[data-prate]');if(pr){S.proForm.rate=+pr.value;const el=document.getElementById('prateVal');if(el)el.textContent=pr.value+' €/h';}
     const cd=e.target.closest('[data-cfdate]');if(cd&&S.draft){S.draft.dateISO=cd.value;S.draft.when=fmtDate(cd.value);renderConfig();}
     const ct=e.target.closest('[data-cftime]');if(ct&&S.draft&&ct.value){S.draft.slot=ct.value;}
-    const pt=e.target.closest('[data-proslottime]');if(pt&&S.mission&&pt.value){S.mission.proposedSlot=pt.value;S.mission.proSlotMode='pick';}
+    const pt=e.target.closest('[data-proslottime]');if(pt&&S.mission&&pt.value){S.mission.proposedSlot=clampSlot(S.mission,pt.value);S.mission.proSlotMode='pick';render();}
     const am=e.target.closest('[data-addrmanual]');if(am&&S.draft){S.draft.address=am.value;}
     const pph=e.target.closest('[data-pphone]');if(pph){S.proPhone=pph.value;}
     const af=e.target.closest('[data-af]');if(af&&S.addrForm){S.addrForm[af.dataset.af]=af.value;}
