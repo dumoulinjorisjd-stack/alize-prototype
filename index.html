@@ -214,6 +214,13 @@
   .trust{display:flex;gap:8px;margin-top:16px}
   .trust span{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;font-size:11px;font-weight:650;color:var(--ink-soft);background:var(--card);border:1px solid var(--hair);border-radius:13px;padding:11px 6px;text-align:center;line-height:1.25}
   .trust span svg{width:17px;height:17px;color:var(--teal-deep)}
+  .notifcta{display:flex;gap:12px;align-items:flex-start;padding:15px;margin-top:14px;border-radius:var(--r-md);background:linear-gradient(135deg,var(--teal-wash),var(--card));border:1.5px solid color-mix(in srgb,var(--teal) 42%,transparent);box-shadow:0 10px 26px -18px var(--shadow)}
+  .notifcta .nc-ic{flex:none;width:42px;height:42px;border-radius:12px;background:var(--teal);color:#fff;display:flex;align-items:center;justify-content:center;animation:ncbell 2.6s ease-in-out infinite}
+  @keyframes ncbell{0%,88%,100%{transform:rotate(0)}90%{transform:rotate(11deg)}94%{transform:rotate(-9deg)}97%{transform:rotate(5deg)}}
+  .notifcta .nc-body{display:flex;flex-direction:column;gap:2px;min-width:0}
+  .notifcta .nc-body b{font-size:14.5px}
+  .notifcta .nc-body>span{font-size:12.5px;color:var(--ink-soft);line-height:1.42}
+  .notifcta .nc-hint{color:var(--coral-deep);font-weight:600;margin-top:7px;font-size:12px}
   .linklike{color:var(--teal-deep);font-weight:700;text-decoration:underline;text-underline-offset:3px}
   .showcase{display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px;margin-top:16px}
   .sc-tile{display:flex;flex-direction:column;align-items:center;gap:7px;padding:13px 6px;border-radius:14px;background:var(--card);border:1px solid var(--hair);font-size:11.5px;font-weight:650;text-align:center;color:var(--ink-soft)}
@@ -547,6 +554,22 @@
   }
   // Ligne « Zouti dit… » (mascotte + message) pour ponctuer les écrans
   function zoutiLine(txt){return `<div class="zouti-line">${octoMini(34,'wave')}<span>${txt}</span></div>`;}
+  // Appel à l'action « activer les notifications » — mis en évidence tant que
+  // l'autorisation n'est pas accordée (pilier de l'app : missions / suivi).
+  function notifCTA(role){
+    if(typeof Notification==='undefined')return '';
+    if(Notification.permission==='granted')return '';
+    const bell='<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>';
+    const pro=(role==='pro');
+    const title=pro?'Activez les notifications':'Activez les notifications';
+    const body=pro
+      ?'C’est ainsi que les clients vous atteignent. Sans elles, vous ne verrez pas les nouvelles missions.'
+      :'Soyez prévenu à chaque étape : artisan trouvé, en route, prestation terminée.';
+    const denied=(Notification.permission==='denied');
+    return `<div class="notifcta"><div class="nc-ic">${bell}</div><div class="nc-body"><b>${title}</b><span>${body}</span>${denied
+      ?`<span class="nc-hint">Notifications bloquées sur cet appareil — réactivez-les dans les réglages de votre navigateur.</span>`
+      :`<button class="btn primary sm" data-act="enable-notif" style="margin-top:9px;width:auto;padding:9px 16px">Activer les notifications</button>`}</div></div>`;
+  }
   // Radar de recherche : Zouti au centre (à la place de la loupe), anneaux qui pulsent
   function searchRadar(sm){return `<div class="radar${sm?' sm':''}"><div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div><div class="core bare">${octoMini(sm?46:64,'bob')}</div></div>`;}
   // Avatar : photo de profil si disponible, sinon initiales
@@ -1225,6 +1248,7 @@
     const zone=(S.account&&S.account.zone)||(S.clientForm&&S.clientForm.zone)||'Gustavia';
     return `<div class="pad"><div class="row between" style="margin-top:10px"><div><span class="eyebrow">${I.pin} ${esc(zone)} · Saint-Barth</span><div class="h-hello">Bonjour${first?' '+esc(first):''} 👋</div></div><div class="row" style="gap:9px;align-items:center"><button class="iconbtn" data-act="open-share" aria-label="Partager Ti-Services" title="Partager">${I.share}</button>${avatarPhoto(S.account&&S.account.photo,inits(fullName||'Ti'),'')}</div></div>
       <p class="sub" style="margin-top:4px">De quel service avez-vous besoin&nbsp;?</p><div class="cats">${cats}</div>
+      ${notifCTA('client')}
       <div class="trust"><span>${I.shield}Artisans vérifiés</span><span>${I.lock}Assurance incluse</span><span>${I.check}Payé après la presta</span></div>
       ${zoutiLine('Choisissez'+(first?', '+esc(first):'')+' — je m’occupe de trouver le bon artisan.')}
       <div style="height:16px"></div></div>${clientNavbar()}`;
@@ -1584,6 +1608,7 @@
     const catNames=cats.map(c=>{const s=SERVICES.find(x=>x.id===c);return s?s.nm:c;}).slice(0,2).join(' · ');
     const d=openDemand();const isNew=(S.proJobsTotal||0)===0;
     return `<div class="pad"><div class="row between" style="margin-top:10px"><div><span class="eyebrow">Artisan · ${catNames} · dès ${S.proRate} €/h</span><div class="h-hello">${esc(S.proName||'Marie-Lou')}</div></div>${avatarPhoto(S.proPhoto,inits(S.proName||'Marie-Lou'),'')}</div>
+      ${notifCTA('pro')}
 
       <div class="card" style="padding:15px;margin-top:12px"><div class="row between"><div><b style="font-size:15px">${S.proOnline?'Vous êtes en ligne':'Hors ligne'}</b><div class="mini">${S.proOnline?'Vous recevez les missions près de vous':'Activez pour recevoir des missions'}</div></div><button class="switch" data-act="toggle-online" style="background:${S.proOnline?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${S.proOnline?'25px':'3px'}"></span></button></div></div>
 
@@ -2015,6 +2040,11 @@
       case 'pay-change':S.payEdit=true;render();break;
       case 'go-admin':if(!isAdminAccount())break;S.persona='admin';S.admin={view:'home',sel:null};S.support=false;S.supportSide=null;S.profileForm=null;render();break;
       case 'admin-notif':requestAdminPush();break;
+      case 'enable-notif':{
+        if(typeof Notification==='undefined'){toast('Notifications non disponibles sur cet appareil');break;}
+        if(typeof Notification.requestPermission!=='function'){toast('Notifications non disponibles sur cet appareil');break;}
+        const after=function(perm){ if(perm==='granted'){ toast('Notifications activées 🔔'); S.proNotifPush=true; if(FB){ if(isAdminAccount())initAdminPush(); else registerPush(S.persona==='pro'?'artisan':'client'); } } else { toast('Autorisez les notifications dans les réglages de votre navigateur'); } render(); };
+        const r=Notification.requestPermission(); if(r&&r.then){r.then(after);}else{after(r);} break;}
       case 'edit-profile':{const zone=(S.account&&S.account.zone)||(S.clientForm&&S.clientForm.zone)||'Gustavia';S.profileForm={name:((S.account&&S.account.name)||(S.clientForm&&S.clientForm.name)||'').trim(),email:(S.account&&S.account.email)||(S.clientForm&&S.clientForm.email)||'',zone:zone,phone:(S.account&&S.account.phone)||'',photo:(S.account&&S.account.photo)||(S.clientForm&&S.clientForm.photo)||''};render();break;}
       case 'profile-cancel':S.profileForm=null;render();break;
       case 'save-profile':{const f=S.profileForm;if(!f||(f.name||'').trim().length<2){toast('Indiquez votre nom');break;}const nm=f.name.trim(),ph=(f.phone||'').trim(),pht=f.photo||'';S.account=Object.assign({},S.account,{name:nm,zone:f.zone,phone:ph,photo:pht});S.clientForm=Object.assign({},S.clientForm,{name:nm,zone:f.zone,photo:pht});saveAccount(S.account);if(FB&&FB.auth&&FB.auth.currentUser){try{FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{name:nm,zone:f.zone,phone:ph,photo:pht},{merge:true});}catch(_){}}S.profileForm=null;render();toast('Informations mises à jour');break;}
@@ -2216,7 +2246,9 @@
         S.persona='pro'; S.proName=name; S.proPhone=(ad&&ad.phone)||(data&&data.phone)||'';
         if(ad&&Array.isArray(ad.cats)&&ad.cats.length){S.proCats=ad.cats.slice();const rr=ad.rates||{};S.proRate=Math.min.apply(null,ad.cats.map(c=>(rr[c]!=null?rr[c]:svcBase(c))));}
         S.proStatus=(ad&&ad.status==='valide')?'approved':'pending';
-        S.onboarded=true;S.authView=null;S.proNav='home';render();return;
+        S.onboarded=true;S.authView=null;S.proNav='home';render();
+        if(typeof Notification!=='undefined'&&Notification.permission==='granted')registerPush('artisan');
+        return;
       }
       const zone=(data&&data.zone)||typedZone||'Gustavia';
       const photo=(data&&data.photo)||(S.clientForm&&S.clientForm.photo)||'';
@@ -2227,6 +2259,7 @@
       S.addresses=(data&&Array.isArray(data.addresses))?data.addresses:[];S.addrDefault=(data&&data.addrDefault)||null;
       S.history=(data&&Array.isArray(data.history))?data.history:[];S.recurring=(data&&Array.isArray(data.recurring))?data.recurring:[];S.card=(data&&data.card)||null;
       S.onboarded=true;S.authView=null;S.cardForm=false;render();
+      if(typeof Notification!=='undefined'&&Notification.permission==='granted')registerPush('client');
     }catch(e){ console.warn(e); }
   }
   async function fbSignup(c){
@@ -2298,6 +2331,24 @@
       // Message reçu app au premier plan : petit toast (le SW gère l'app fermée).
       msgM.onMessage(messaging,function(payload){ const n=(payload&&(payload.data||payload.notification))||{}; toast('🔔 '+(n.title||'Ti-Services')+(n.body?' — '+n.body:'')); });
     }catch(e){ console.warn('admin push init',e); }
+  }
+  // Capte le jeton FCM d'un client/artisan et l'enregistre dans SA fiche users
+  // (champ pushTokens). Les futures Cloud Functions y enverront missions / suivi.
+  let pushRegDone=false;
+  async function registerPush(role){
+    try{
+      if(pushRegDone)return; if(!FB||!FB.auth||!FB.auth.currentUser)return;
+      if(!('Notification'in window)||Notification.permission!=='granted')return;
+      if(!('serviceWorker'in navigator)||!CONFIG.vapidKey)return;
+      const msgM=await import('https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging.js');
+      const reg=await navigator.serviceWorker.ready;
+      const messaging=msgM.getMessaging(FB.app);
+      const token=await msgM.getToken(messaging,{vapidKey:CONFIG.vapidKey,serviceWorkerRegistration:reg});
+      if(token){ pushRegDone=true;
+        try{ await FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{pushTokens:FB.f.arrayUnion(token),role:role,notifAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
+      }
+      msgM.onMessage(messaging,function(payload){ const n=(payload&&(payload.data||payload.notification))||{}; toast('🔔 '+(n.title||'Ti-Services')+(n.body?' — '+n.body:'')); });
+    }catch(e){ console.warn('push register',e); }
   }
   async function fbLogin(f){ try{ await FB.a.signInWithEmailAndPassword(FB.auth,f.email.trim(),f.password); }catch(e){ toast(fbErr(e)); } }
   // Réinitialisation par e-mail. Message identique que le compte existe ou non
