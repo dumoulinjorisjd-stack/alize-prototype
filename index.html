@@ -926,7 +926,7 @@
     proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proReqSlot:null,proReqPick:false,proMissions:[],proSkipped:[],proStmt:false,
     proHistory:PRO_HISTORY(),
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),
-    chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,
+    chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,delAcct:false,
     proJobsTotal:214,fidTiers:FID_TIERS.map(t=>({...t})),referralCode:'MARILOU-SBH',
     filleuls:[{name:'Kevin Questel',status:'valide',bonus:40},{name:'Rosa Almeida',status:'attente',bonus:0}],
     admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,adminPrices:ADMIN_PRICES(),
@@ -1476,6 +1476,7 @@
   function renderClient(){
     const m=S.mission;
     if(!S.onboarded)return clientOnboard();
+    if(S.delAcct)return deleteAccountView();
     if(S.share)return shareCard();
     if(S.addrForm)return clientAddrEdit();
     if(S.advantages)return advantagesScreen();
@@ -1604,10 +1605,14 @@
     const active=activeMissions();
     const totalSpent=done.reduce((t,h)=>t+totals(h).total,0);
     const activeCard=function(m){const sm=missionStatusMeta(m.status);const canDel=(m.status==='searching'||m.status==='pending');
-      const card=`<button class="card${canDel?' swipe-card':''}" data-follow="${m._id||''}" style="padding:14px;${canDel?'':'margin-top:9px;'}width:100%;text-align:left;display:block;border-left:4px solid ${sm.c==='good'?'var(--good)':'var(--coral)'}"><div class="row between"><b style="font-size:14.5px">${esc(m.svcName)}</b><span class="chip ${sm.c}" style="padding:3px 10px">${sm.l}</span></div><div class="mini" style="margin-top:3px">${esc(m.when||'')} · ${esc(m.slot||'')}${m.provider&&m.provider.nm?' · '+esc(m.provider.nm):''} · ${I.pin} ${esc(m.zone||'')}</div><div class="row between" style="margin-top:9px"><span class="mini" style="color:var(--muted)">${eur(totals(m).total)}</span><span class="mini" style="color:var(--teal-deep);font-weight:700">Suivre ›</span></div></button>`;
-      return canDel?`<div class="swipe-row"><button class="swipe-del" data-act="del-demand:${m._id||''}" aria-label="Supprimer la demande">${I.trash||'🗑'}&nbsp;Supprimer</button>${card}</div>`:card;};
+      const head=`<div class="row between"><b style="font-size:14.5px">${esc(m.svcName)}</b><span class="chip ${sm.c}" style="padding:3px 10px">${sm.l}</span></div><div class="mini" style="margin-top:3px">${esc(m.when||'')} · ${esc(m.slot||'')}${m.provider&&m.provider.nm?' · '+esc(m.provider.nm):''} · ${I.pin} ${esc(m.zone||'')}</div>`;
+      if(canDel){
+        const foot=`<div class="row between" style="margin-top:10px"><button class="linklike" data-act="del-demand:${m._id||''}" style="color:var(--coral-deep);font-weight:700">🗑 Supprimer</button><span class="mini" style="color:var(--teal-deep);font-weight:700">${eur(totals(m).total)} · Suivre ›</span></div>`;
+        return `<div class="swipe-row"><button class="swipe-del" data-act="del-demand:${m._id||''}" aria-label="Supprimer la demande">🗑&nbsp;Supprimer</button><div class="card swipe-card" data-follow="${m._id||''}" role="button" tabindex="0" style="padding:14px;text-align:left;border-left:4px solid var(--coral)">${head}${foot}</div></div>`;
+      }
+      return `<button class="card" data-follow="${m._id||''}" style="padding:14px;margin-top:9px;width:100%;text-align:left;display:block;border-left:4px solid ${sm.c==='good'?'var(--good)':'var(--coral)'}">${head}<div class="row between" style="margin-top:9px"><span class="mini" style="color:var(--muted)">${eur(totals(m).total)}</span><span class="mini" style="color:var(--teal-deep);font-weight:700">Suivre ›</span></div></button>`;};
     const hasSearching=active.some(m=>m.status==='searching'||m.status==='pending');
-    const activeBlock=active.length?`<div style="margin-top:16px"><div class="eyebrow" style="color:var(--teal-deep)">${I.bolt} En cours · ${active.length}</div>${active.map(activeCard).join('')}${hasSearching?`<p class="mini" style="margin-top:8px;color:var(--muted)">↤ Glissez une demande en recherche vers la gauche pour la supprimer.</p>`:''}</div>`:'';
+    const activeBlock=active.length?`<div style="margin-top:16px"><div class="eyebrow" style="color:var(--teal-deep)">${I.bolt} En cours · ${active.length}</div>${active.map(activeCard).join('')}${hasSearching?`<p class="mini" style="margin-top:8px;color:var(--muted)">Touchez <b>🗑 Supprimer</b> (ou glissez vers la gauche) pour retirer une demande en recherche.</p>`:''}</div>`:'';
     const newBtn=`<button class="btn ${active.length?'ghost':'primary'} sm" data-cnav="home" style="margin-top:14px">${I.search} Passer une nouvelle commande</button>`;
     const summary=`<div class="card" style="padding:15px;margin-top:14px"><div class="row between"><div><div class="mini">Terminées</div><b class="money" style="font-size:19px;font-family:var(--f-disp)">${done.length}</b></div><div style="text-align:right"><div class="mini">Total dépensé</div><b class="money" style="font-size:19px;font-family:var(--f-disp)">${eur(totalSpent)}</b></div></div></div>`;
     const list=done.length?`<div class="eyebrow" style="color:var(--muted);margin-top:18px">Historique</div>`+done.map(h=>{const t=totals(h);return `<div class="card" style="padding:14px;margin-top:10px"><div class="row" style="gap:11px"><div class="avatar" style="width:40px;height:40px;font-size:14px">${h.provider?h.provider.ini:'--'}</div><div style="flex:1"><div class="row between"><b style="font-size:14.5px">${h.svcName}</b><span class="money" style="font-weight:700">${eur(t.total)}</span></div><div class="mini" style="margin-top:2px">${h.when} · ${h.provider?h.provider.nm:''}</div></div></div><div class="row between" style="margin-top:10px"><span class="chip good" style="padding:4px 10px">${I.check} Bien exécuté &amp; réglé</span><span class="mini">Reçu envoyé</span></div></div>`;}).join(''):(active.length?'':`<div class="card" style="padding:24px;margin-top:12px;text-align:center;color:var(--muted)">Aucune prestation pour l’instant.<br>Vos réservations et reçus apparaîtront ici.</div>`);
@@ -1652,6 +1657,7 @@
       <button class="card" data-act="open-share" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.share}&nbsp;Partager Ti-Services</b><span class="mini" style="color:var(--teal-deep);font-weight:650">QR &amp; lien ›</span></div><p class="sub" style="margin-top:8px">Un QR à faire flasher et un lien à envoyer — partagez l'app à vos voisins en un geste.</p></button>
       ${S.demoMode?`<div class="banner teal" style="margin-top:16px">${I.bolt}<span><b>Mode démonstration</b> — vous explorez librement tous les espaces. Ce n'est pas un vrai compte.</span></div><button class="btn ghost sm" data-act="exit-demo" style="margin-top:10px">Quitter la démo</button>`:(FB?`<button class="btn ghost sm" data-act="logout" style="margin-top:16px">Se déconnecter</button>`:'')}
       ${isDemo()?`<p class="mini" style="text-align:center;margin-top:14px">Explorer les autres espaces&nbsp;: <button class="linklike" data-act="demo-go-pro">👷 Artisan</button> · <button class="linklike" data-act="demo-go-concierge">🛎️ Conciergerie</button> · <button class="linklike" data-act="demo-go-admin">⚙︎ Admin</button></p>`:''}
+      ${(!S.demoMode&&FB)?`<p class="mini" style="text-align:center;margin-top:16px"><button class="linklike" data-act="account-delete" style="color:var(--coral-deep)">Supprimer mon compte</button></p>`:''}
       ${legalFooter('client')}</div>${clientNavbar()}`;
   }
   function clientEditProfile(){
@@ -1928,6 +1934,7 @@
 
   /* ---------- ARTISAN ---------- */
   function renderPro(){
+    if(S.delAcct)return deleteAccountView();
     if(S.proStatus==='signup')return proSignup();
     if(S.proDocsView)return proDocs();
     if(S.proPayoutView)return proPayout();
@@ -2348,6 +2355,7 @@
       <button class="card" data-act="open-referral" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.heart}&nbsp;Parrainer un artisan</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Gagnez un bonus pour chaque artisan que vous parrainez — et lui aussi.</p></button>
       <p class="mini" style="text-align:center;margin-top:14px"><button class="linklike" data-act="show-advantages">${I.shield} Pourquoi passer par Ti-Services ›</button></p>
       ${S.demoMode?`<p class="mini" style="text-align:center;margin-top:12px"><button class="linklike" data-act="demo-go-client">🧑 Voir l'espace client (démo)</button> · <button class="linklike" data-act="demo-go-admin">⚙︎ Admin (démo)</button></p>`:(FB?`<button class="btn ghost sm" data-act="logout" style="margin-top:14px">Se déconnecter</button>`:'')}
+      ${(!S.demoMode&&FB)?`<p class="mini" style="text-align:center;margin-top:14px"><button class="linklike" data-act="account-delete" style="color:var(--coral-deep)">Supprimer mon compte</button></p>`:''}
       ${legalFooter('pro')}
       <div style="height:12px"></div></div>${proNavbar()}`;
   }
@@ -2510,6 +2518,9 @@
       case 'forgot-pw':{const em=((S.loginForm&&S.loginForm.email)||(S.account&&S.account.email)||'').trim();if(!/.+@.+\..+/.test(em)){toast('Saisissez votre e-mail, puis « Mot de passe oublié ».');break;}if(FB){fbResetPassword(em);}else{toast('Un lien de réinitialisation vous serait envoyé par e-mail.');}break;}
       case 'google-soon':if(FB){fbGoogle();}else{toast('Connexion Google — bientôt disponible');}break;
       case 'logout':S.demoMode=false;if(FB)blankAll();fbLogout();if(!FB){S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;S.missions=[];render();}break;
+      case 'account-delete':S.delAcct=true;render();break;
+      case 'account-delete-cancel':S.delAcct=false;render();break;
+      case 'account-delete-confirm':deleteAccountReal();break;
       case 'cancel-mission':cancelActiveRequest(S.mission);removeMission(S.mission);S.mission=null;S.clientNav='wallet';render();break;
       case 'confirm-done':pushMissionStatus(S.mission,{status:'paid',finalHours:billHours(S.mission)});finalizePaid(S.mission);render();burstConfetti();break;
       case 'show-pitch':S.showPitch=true;render();break;
@@ -3173,6 +3184,37 @@
       <p class="mini" style="margin-top:4px;color:var(--muted)">Le client a laissé de la souplesse (${flexTxt(r)}). Choisissez l'heure qui vous arrange — il l'accepte automatiquement.</p>
       <div class="segs" style="margin-top:10px">${btns}</div>${custom?`<input class="txt" type="time" data-proreqslottime step="900" min="${flexWindow(r)[0]}" max="${flexWindow(r)[1]}" style="margin-top:10px" value="${/^\d{2}:\d{2}$/.test(sel)?sel:''}">`:''}
       <div class="banner teal" style="margin-top:10px">${I.check}<span>Vous arriverez à <b>${esc(sel)}</b> — confirmé au client en acceptant.</span></div></div>`;
+  }
+  // Suppression de compte (droit à l'effacement — RGPD). Avertissement clair
+  // sur la perte définitive des données, puis suppression Firestore + Auth.
+  function deleteAccountView(){
+    const isPro=(S.persona==='pro');
+    return `<div class="pad"><button class="reset" data-act="account-delete-cancel" style="margin:8px 0 2px">← Retour</button>
+      <span class="eyebrow" style="color:var(--coral-deep)">${I.shield} Suppression du compte</span>
+      <div class="h-hello">Supprimer mon compte&nbsp;?</div>
+      <div class="banner coral" style="margin-top:14px">${I.shield}<span><b>Action définitive et irréversible.</b> En supprimant votre compte, vous perdez <b>toutes vos données</b> : profil${isPro?', dossier artisan, RIB, historique de missions et factures':', adresses, moyen de paiement, historique de réservations et reçus'}. Cette suppression <b>ne peut pas être annulée</b>.</span></div>
+      <div class="card" style="padding:16px;margin-top:12px"><p class="sub" style="margin:0">Conformément au RGPD, vous pouvez à tout moment demander l'effacement de vos données personnelles. ${isPro?'Les factures déjà émises peuvent être conservées par Ti-Services le temps légal (obligations comptables), sous forme archivée.':'Certaines données liées à des prestations passées peuvent être conservées de façon anonymisée pendant la durée légale.'}</p></div>
+      <p class="mini" style="margin-top:12px;color:var(--muted)">Vous pourrez recréer un compte plus tard, mais les données actuelles seront perdues.</p>
+      <div class="footcta" style="position:static;background:none;padding:18px 0 0">
+        <button class="btn" style="background:var(--coral-deep);color:#fff" data-act="account-delete-confirm">🗑 Supprimer définitivement mon compte</button>
+        <button class="btn ghost" data-act="account-delete-cancel" style="margin-top:10px">Annuler</button>
+      </div></div>`;
+  }
+  async function deleteAccountReal(){
+    // Démo / hors-ligne : simple réinitialisation locale.
+    if(!(FB&&FB.auth&&FB.auth.currentUser)){ if(FB)blankAll(); S.delAcct=false;S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;S.missions=[];S.account=null;render();toast('Compte supprimé');return; }
+    const u=FB.auth.currentUser,uid=u.uid,wasPro=(S.persona==='pro');
+    try{
+      try{ if(FB.f.deleteDoc)await FB.f.deleteDoc(FB.f.doc(FB.db,'users',uid)); }catch(_){}
+      if(wasPro){ try{ if(FB.f.deleteDoc)await FB.f.deleteDoc(FB.f.doc(FB.db,'artisans',uid)); }catch(_){} }
+      await u.delete();
+    }catch(e){
+      if(e&&e.code==='auth/requires-recent-login'){ toast('Reconnectez-vous, puis relancez la suppression'); S.delAcct=false; try{await FB.a.signOut(FB.auth);}catch(_){} return; }
+      console.warn('delete account',e); toast('Suppression impossible — réessayez'); return;
+    }
+    try{Object.keys(clientReqUnsubs).forEach(unsubClientRequest);}catch(_){}
+    if(FB)blankAll(); S.delAcct=false;S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;S.missions=[];S.proMissions=[];S.account=null;
+    render();toast('Votre compte a été supprimé');
   }
   function fbLogout(){ if(adminArtUnsub){try{adminArtUnsub();}catch(_){}adminArtUnsub=null;} if(proStatusUnsub){try{proStatusUnsub();}catch(_){}proStatusUnsub=null;} if(openReqUnsub){try{openReqUnsub();}catch(_){}openReqUnsub=null;} Object.keys(clientReqUnsubs).forEach(unsubClientRequest); adminSeenPending=null; if(FB){ try{FB.a.signOut(FB.auth);}catch(_){} } }
 
