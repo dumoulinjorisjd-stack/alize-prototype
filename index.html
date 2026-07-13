@@ -133,6 +133,8 @@
   body.standalone .screen{border-radius:0}
   body.standalone .notch{display:none}
   body.standalone .statusbar{height:calc(env(safe-area-inset-top) + 48px);align-items:flex-end;padding-bottom:6px}
+  /* App installée : la vraie barre d'état iOS/Android est déjà là — on masque l'heure factice. */
+  body.standalone #clock{display:none}
   body.standalone .view{inset:calc(env(safe-area-inset-top) + 48px) 0 0}
 
   .view{position:absolute;inset:34px 0 0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
@@ -503,11 +505,7 @@
       <div class="notch"></div>
       <div class="screen">
         <div class="statusbar">
-          <span id="clock">9:41</span>
-          <span class="icons">
-            <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor"><rect x="0" y="6" width="3" height="5" rx="1"/><rect x="4.5" y="4" width="3" height="7" rx="1"/><rect x="9" y="2" width="3" height="9" rx="1"/><rect x="13.5" y="0" width="3" height="11" rx="1"/></svg>
-            <svg width="24" height="12" viewBox="0 0 24 12" fill="none"><rect x="1" y="1" width="19" height="10" rx="3" stroke="currentColor" stroke-width="1.2" opacity=".5"/><rect x="2.5" y="2.5" width="14" height="7" rx="1.6" fill="currentColor"/><rect x="21" y="4" width="2" height="4" rx="1" fill="currentColor" opacity=".5"/></svg>
-          </span>
+          <span id="clock"></span>
         </div>
         <div class="view" id="view"></div>
         <button class="backfab" id="backfab" data-act="app-back" aria-label="Retour"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
@@ -2063,12 +2061,6 @@
       </div>`}
 
       <div class="card" style="padding:16px;margin-top:12px">
-        <div class="row between"><span class="eyebrow" style="color:var(--muted)">${I.wallet} Vos revenus</span><button class="linklike" data-pnav="earnings">Détail ›</button></div>
-        <div class="row between" style="margin-top:10px;align-items:flex-end"><div><div class="mini">Ce mois</div><b class="money" style="font-size:25px;font-family:var(--f-disp)">${eur(S.proEarnings)}</b></div><div style="text-align:right"><div class="mini">Missions</div><b class="money" style="font-size:18px;font-family:var(--f-disp)">${S.proJobsTotal}</b></div></div>
-        <div class="banner teal" style="margin-top:12px">${I.lock}<span><b>Paiement garanti</b> : réglé sous 48 h après chaque prestation validée — sans relance.</span></div>
-      </div>
-
-      <div class="card" style="padding:16px;margin-top:12px">
         <span class="eyebrow" style="color:var(--muted)">Votre note</span>
         <div class="row" style="gap:14px;margin-top:10px;align-items:center">
           <div><b class="money" style="font-size:24px;font-family:var(--f-disp)">${isNew?'Nouveau':(S.proRating?S.proRating.toFixed(1).replace('.',','):'4,9')}</b><div class="mini">${isNew?'première mission à décrocher':'<span class="stars">★</span> note moyenne · '+(S.proJobsTotal||0)+' avis'}</div></div>
@@ -2087,8 +2079,6 @@
       </div>
 
       ${(()=>{const n=S.agenda.find(a=>a.status!=='done');if(!n)return '';const s=SERVICES.find(x=>x.id===n.svc);return `<button class="card" style="padding:14px;margin-top:12px;width:100%;text-align:left;display:block" data-pnav="agenda"><div class="row between"><span class="eyebrow" style="color:var(--muted)">Prochaine prestation</span><span class="mini">Voir l'agenda ›</span></div><div class="row" style="gap:12px;margin-top:8px"><div class="appt-time"><b>${n.slot}</b><span class="mini">${durTxt({unit:n.unit},n.duration)}</span></div><div><b style="font-size:14.5px">${s.nm}</b><div class="mini">${n.day} · ${n.client}</div></div></div></button>`;})()}
-
-      ${S.proOnline?`<div class="card" style="padding:16px;margin-top:12px;text-align:center;border-style:dashed"><div class="radar sm"><div class="ring r1"></div><div class="ring r2"></div><div class="core">${I.bolt}</div></div><p class="sub" style="margin:6px 0 0">En attente de nouvelles missions…</p>${isDemo()?`<p class="mini" style="margin-top:8px">Démo : côté <b>Client</b>, lancez une réservation pour recevoir une demande ici.</p>`:''}</div>`:''}
 
       <button class="card" data-act="pro-docs" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.shield}&nbsp;Mes documents</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Assurance &amp; décharge ›</span></div><p class="sub" style="margin-top:8px">Mettez à jour votre attestation d'assurance et consultez la décharge de responsabilité que vous avez acceptée.</p></button>
       <p class="mini" style="text-align:center;margin-top:14px"><button class="linklike" data-act="show-advantages">${I.shield} Pourquoi passer par Ti-Services ›</button></p>
@@ -2661,6 +2651,8 @@
 
   /* ---------- PWA: install + service worker ---------- */
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
+  // Barre d'état : vraie heure (plus de « 9:41 » ni d'icônes factices).
+  (function(){const c=document.getElementById('clock');if(!c)return;const tick=function(){try{const d=new Date();c.textContent=d.getHours()+':'+String(d.getMinutes()).padStart(2,'0');}catch(_){}};tick();setInterval(tick,20000);})();
   // Mode ordinateur : au-delà de 1024 px, l'app passe en plein écran avec menu
   // latéral (le mobile n'est jamais affecté). Bascule dynamique au redimensionnement.
   (function(){
