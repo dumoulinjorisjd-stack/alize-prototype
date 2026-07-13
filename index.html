@@ -896,7 +896,7 @@
     addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,
     concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,
     proPhoto:null,proStatus:'approved',proFounder:true,proNotifPush:true,proNotifWa:true,proPhone:'0690 00 00 00',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:'',photo:''},
-    proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proMissions:[],
+    proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proMissions:[],proSkipped:[],
     proHistory:PRO_HISTORY(),
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),
     chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,
@@ -1746,7 +1746,7 @@
   }
   // Le scénario de DÉMO (toutes les données pré-remplies). Utilisé par « Voir la démo ».
   function seedDemo(){
-    S.addresses=ADDRESSES_INIT();S.addrDefault='ad1';S.history=[];S.recurring=[];S.card=null;S.missions=[];S.proMissions=[];S.proReqView=null;
+    S.addresses=ADDRESSES_INIT();S.addrDefault='ad1';S.history=[];S.recurring=[];S.card=null;S.missions=[];S.proMissions=[];S.proReqView=null;S.proSkipped=[];
     S.proStatus='approved';S.proName='Marie-Lou';S.proCats=['menage','jardin'];S.proRate=35;
     S.proHistory=PRO_HISTORY();S.agenda=SEED_AGENDA.map(function(a){return Object.assign({},a);});
     S.proEarnings=1284.50;S.proJobsToday=3;S.proJobsTotal=214;S.proRating=4.9;S.proIban='FR7630006000011234567890189';S.proIbanHolder='Marie-Lou Cagan';S.proBic='AGRIFRPP';
@@ -1756,7 +1756,7 @@
   }
   // La vraie BÊTA part de zéro : aucun client / artisan / historique de démo.
   function blankAll(){
-    S.addresses=[];S.addrDefault=null;S.history=[];S.recurring=[];S.card=null;S.mission=null;S.missions=[];S.proMissions=[];S.proReqView=null;
+    S.addresses=[];S.addrDefault=null;S.history=[];S.recurring=[];S.card=null;S.mission=null;S.missions=[];S.proMissions=[];S.proReqView=null;S.proSkipped=[];
     S.proHistory=[];S.agenda=[];S.proEarnings=0;S.proJobsToday=0;S.proJobsTotal=0;
     S.adminArtisans=[];S.adminClients=[];S.adminBookings=[];S.adminCommission=0;
     S.concClients=[];S.concOrders=[];S.concEarn=0;
@@ -2353,6 +2353,7 @@
     if(b.dataset.act&&b.dataset.act.indexOf('rbfreq:')===0){S.rebookFreq=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('reqview:')===0){S.proReqView=b.dataset.act.slice('reqview:'.length);render();return;}
     if(b.dataset.act==='reqview-close'){S.proReqView=null;render();return;}
+    if(b.dataset.act==='reqview-skip'){if(S.proReqView&&(S.proSkipped||[]).indexOf(S.proReqView)<0){S.proSkipped=S.proSkipped||[];S.proSkipped.push(S.proReqView);}S.proReqView=null;render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('promiss:')===0){const id=b.dataset.act.slice('promiss:'.length);const mm=(S.proMissions||[]).find(function(x){return (x._id||'')===id;});if(mm){S.mission=mm;S.proReqView=null;S.proNav='home';render();}return;}
     if(b.dataset.act==='promiss-back'){S.mission=null;render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('accept-req:')===0){acceptRequestReal(b.dataset.act.slice('accept-req:'.length));return;}
@@ -2969,7 +2970,8 @@
   // Bloc « missions disponibles » (vraies demandes) affiché à l'artisan validé.
   // Chaque carte ouvre la FICHE complète : l'artisan décide en connaissance de cause.
   function openRequestsBlock(){
-    const list=S.openRequests||[];
+    const skipped=S.proSkipped||[];
+    const list=(S.openRequests||[]).filter(function(r){return skipped.indexOf(r.id)<0;});
     if(!list.length)return `<div class="card" style="padding:18px;margin-top:12px;text-align:center;border-style:dashed"><div class="radar sm"><div class="ring r1"></div><div class="ring r2"></div><div class="core">${I.bolt}</div></div><p class="sub" style="margin:6px 0 0">Aucune mission disponible pour l'instant.</p><p class="mini" style="margin-top:4px">Vous serez notifié dès qu'une demande de votre zone arrive.</p></div>`;
     return `<div style="margin-top:12px"><span class="eyebrow" style="color:var(--teal-deep)">${I.flame} Missions disponibles · ${list.length}</span>${list.map(function(r){const win=reqWinTxt(r);return `<button class="card" data-act="reqview:${r.id}" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14.5px">${esc(r.serviceName||svcNm(r.service))}</b><b class="money" style="color:var(--teal-deep);font-family:var(--f-disp)">${eur(r.total||0)}</b></div><div class="mini" style="margin-top:4px">${I.pin} ${esc(r.zone||'')} · ${esc(r.when||'')} · ${esc(win)} · ${r.duration||1} ${r.unit==='j'?'j':'h'}</div>${r.boost?`<span class="chip" style="padding:2px 9px;background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.bolt} Coup de pouce +${r.boost}%</span>`:''}<div class="row between" style="margin-top:10px"><span class="mini" style="color:var(--muted)">${r.notes?'Détails du besoin fournis':'Voir la mission'}</span><span class="mini" style="color:var(--teal-deep);font-weight:700">Voir la fiche ›</span></div></button>`;}).join('')}</div>`;
   }
@@ -2998,8 +3000,8 @@
       <div class="card" style="padding:14px;margin-top:12px"><div class="row" style="gap:10px;align-items:flex-start"><span class="benic">${I.lock}</span><div><b style="font-size:13.5px">Adresse exacte masquée</b><p class="mini" style="margin-top:3px">L'adresse précise, le point GPS et les infos d'accès s'affichent <b>dès que vous acceptez</b> la mission.</p></div></div></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0">
         <button class="btn accept" data-act="accept-req:${r.id}">${I.flame} Accepter cette mission</button>
-        <button class="btn ghost" data-act="reqview-close" style="margin-top:10px">Pas cette fois</button>
-        <p class="mini" style="text-align:center;margin-top:10px">${I.bolt} Premier arrivé, premier servi — une autre mission attend peut-être.</p>
+        <button class="btn ghost" data-act="reqview-skip" style="margin-top:10px">Pas cette fois</button>
+        <p class="mini" style="text-align:center;margin-top:10px">${I.bolt} « Pas cette fois » retire la mission de votre liste — elle reste proposée aux autres artisans.</p>
       </div></div>`;
   }
   function fbLogout(){ if(adminArtUnsub){try{adminArtUnsub();}catch(_){}adminArtUnsub=null;} if(proStatusUnsub){try{proStatusUnsub();}catch(_){}proStatusUnsub=null;} if(openReqUnsub){try{openReqUnsub();}catch(_){}openReqUnsub=null;} Object.keys(clientReqUnsubs).forEach(unsubClientRequest); adminSeenPending=null; if(FB){ try{FB.a.signOut(FB.auth);}catch(_){} } }
