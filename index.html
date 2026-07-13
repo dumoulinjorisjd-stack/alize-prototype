@@ -943,6 +943,11 @@
     return `<div class="geomap ${m==='route'?'tall':''}"><div class="geomap-canvas" data-leafmap="${g.lat},${g.lng}" data-mapmode="${m}"${tg?` data-maptarget="${tg}"`:''}>${mapFallbackSvg()}</div><div class="geocoords">📍 ${g.lat}, ${g.lng}</div>${m==='edit'?`<div class="maphint">✋ Glissez le point pour l'ajuster</div>`:''}${m==='route'?`<div class="routeinfo">🧭 Calcul de l'itinéraire…</div>`:''}</div>`;
   }
   function haversineKm(a1,o1,a2,o2){const R=6371,dLa=(a2-a1)*Math.PI/180,dLo=(o2-o1)*Math.PI/180,s=Math.sin(dLa/2)**2+Math.cos(a1*Math.PI/180)*Math.cos(a2*Math.PI/180)*Math.sin(dLo/2)**2;return 2*R*Math.asin(Math.min(1,Math.sqrt(s)));}
+  // Guidage : on ouvre automatiquement l'app native du téléphone — Plans sur
+  // iOS (iPhone/iPad), Google Maps sur Android et le reste.
+  function isAppleOS(){try{return /iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);}catch(_){return false;}}
+  function navUrl(lat,lng){return isAppleOS()?('https://maps.apple.com/?daddr='+lat+','+lng+'&dirflg=d'):('https://www.google.com/maps/dir/?api=1&destination='+lat+','+lng+'&travelmode=driving');}
+  function navAppName(){return isAppleOS()?'Plans':'Google Maps';}
   // Chargement paresseux de Leaflet (une seule fois), depuis le CDN.
   let _leafletP=null;
   function ensureLeaflet(){
@@ -2184,11 +2189,8 @@
       ${(m.photos&&m.photos.length)?`<div class="card" style="padding:14px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Photos du client</div><div class="thumbs" style="margin-top:8px">${m.photos.map(u=>`<div class="thumb"><img src="${u}" alt="Photo du client"></div>`).join('')}</div></div>`:''}
       ${m.access?`<div class="card" style="padding:14px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">🔑 Infos d'accès</div><p class="sub" style="margin-top:6px;color:var(--ink-soft)">${esc(m.access)}</p></div>`:''}
       ${m.geo?`<div class="card" style="padding:14px;margin-top:12px"><div class="row between"><span class="chip">📍 Localisation du domicile</span><span class="mini" style="color:var(--muted)">Itinéraire ci-dessous</span></div>${miniMap(m.geo,'route')}
-        <div class="row" style="gap:8px;margin-top:12px">
-          <a class="btn primary sm" href="https://www.google.com/maps/dir/?api=1&destination=${m.geo.lat},${m.geo.lng}&travelmode=driving" target="_blank" rel="noopener" style="flex:1;justify-content:center">🧭 Google Maps</a>
-          <a class="btn ghost sm" href="https://maps.apple.com/?daddr=${m.geo.lat},${m.geo.lng}&dirflg=d" target="_blank" rel="noopener" style="flex:1;justify-content:center">Plans (Apple)</a>
-        </div>
-        <p class="mini" style="margin-top:8px;color:var(--muted)">Le trajet s'affiche ici sans quitter l'app. « Navigation » ouvre le guidage vocal de votre téléphone.</p></div>`:''}
+        <a class="btn primary sm" href="${navUrl(m.geo.lat,m.geo.lng)}" target="_blank" rel="noopener" style="margin-top:12px;justify-content:center">🧭 Lancer la navigation</a>
+        <p class="mini" style="margin-top:8px;color:var(--muted)">Le trajet s'affiche ici sans quitter l'app. « Lancer la navigation » ouvre le guidage vocal (${navAppName()}) de votre téléphone.</p></div>`:''}
       <button class="btn ghost sm" data-act="open-chat" style="margin-top:12px;justify-content:flex-start;gap:8px">${I.chat}&nbsp;Contacter le client (numéro masqué)${(m.chat&&m.chat.length)?` · ${m.chat.length}`:''}</button>
       <button class="btn ghost sm" data-act="open-support" style="margin-top:8px;justify-content:flex-start;gap:8px">${I.shield}&nbsp;Contacter Ti-Services (support)${(()=>{const th=(m.support&&m.support.pro)||[];return th.length?` · ${th.length}`:'';})()}</button>
       <div class="banner teal" style="margin-top:12px">${I.shield}<span>Paiement du client déjà sécurisé — versé dès qu'il valide la prestation.</span></div>
