@@ -1290,6 +1290,10 @@
     if(S.profileForm)return clientEditProfile();
     if(S.clientInv&&m)return clientInvoiceDoc();
     if(S.draft&&S.payStep)return clientPay();
+    // Réservations / Profil restent accessibles pendant une demande en cours :
+    // on revient à la demande via l'onglet Accueil (badge « en cours »).
+    if(S.clientNav==='wallet')return clientWallet();
+    if(S.clientNav==='profile')return clientProfile();
     if(m){switch(m.status){
       case 'searching':return clientSearching();
       case 'pending':case 'accepted':case 'working':return clientTracking();
@@ -1298,14 +1302,13 @@
       case 'paid':return clientReceipt(false);
       case 'rated':return clientReceipt(true);
     }}
-    if(S.clientNav==='wallet')return clientWallet();
-    if(S.clientNav==='profile')return clientProfile();
     return clientHome();
   }
+  function clientMissionActive(){return !!(S.mission&&['searching','pending','accepted','working','done_pro','disputed'].indexOf(S.mission.status)>=0);}
   function clientNavbar(){
     const act=attention()==='client';
-    const item=(id,ic,lbl,badge)=>`<button data-cnav="${id}" class="${S.clientNav===id&&!S.mission?'on':''}"><span class="nb-ic">${ic}${badge?'<span class="nb-badge"></span>':''}</span>${lbl}</button>`;
-    return `<div class="navbar">${item('home',I.home,'Accueil',false)}${item('wallet',I.wallet,'Réservations',act)}${item('profile',I.user,'Profil',false)}</div>`;
+    const item=(id,ic,lbl,badge)=>`<button data-cnav="${id}" class="${S.clientNav===id?'on':''}"><span class="nb-ic">${ic}${badge?'<span class="nb-badge"></span>':''}</span>${lbl}</button>`;
+    return `<div class="navbar">${item('home',I.home,'Accueil',clientMissionActive())}${item('wallet',I.wallet,'Réservations',act)}${item('profile',I.user,'Profil',false)}</div>`;
   }
   function clientOnboard(){
     if(S.authView==='login')return loginView();
@@ -1393,10 +1396,10 @@
   function clientWallet(){
     const done=S.history;
     const totalSpent=done.reduce((t,h)=>t+totals(h).total,0);
-    const summary=`<div class="card" style="padding:15px;margin-top:14px"><div class="row between"><div><div class="mini">Prestations réalisées</div><b class="money" style="font-size:19px;font-family:var(--f-disp)">${done.length}</b></div><div style="text-align:right"><div class="mini">Total dépensé</div><b class="money" style="font-size:19px;font-family:var(--f-disp)">${eur(totalSpent)}</b></div></div></div>`;
+    const summary=`<div class="card" style="padding:15px;margin-top:14px"><div class="row between"><div><div class="mini">Réservations</div><b class="money" style="font-size:19px;font-family:var(--f-disp)">${done.length}</b></div><div style="text-align:right"><div class="mini">Total dépensé</div><b class="money" style="font-size:19px;font-family:var(--f-disp)">${eur(totalSpent)}</b></div></div></div>`;
     const list=done.length?done.map(h=>{const t=totals(h);return `<div class="card" style="padding:14px;margin-top:10px"><div class="row" style="gap:11px"><div class="avatar" style="width:40px;height:40px;font-size:14px">${h.provider?h.provider.ini:'--'}</div><div style="flex:1"><div class="row between"><b style="font-size:14.5px">${h.svcName}</b><span class="money" style="font-weight:700">${eur(t.total)}</span></div><div class="mini" style="margin-top:2px">${h.when} · ${h.provider?h.provider.nm:''}</div></div></div><div class="row between" style="margin-top:10px"><span class="chip good" style="padding:4px 10px">${I.check} Bien exécuté &amp; réglé</span><span class="mini">Reçu envoyé</span></div></div>`;}).join(''):`<div class="card" style="padding:24px;margin-top:12px;text-align:center;color:var(--muted)">Aucune prestation pour l’instant.<br>Vos réservations et reçus apparaîtront ici.</div>`;
     const rec=S.recurring.length?`<div style="margin-top:16px"><div class="eyebrow" style="color:var(--muted)">Prestations régulières</div>${S.recurring.map(r=>`<div class="card" style="padding:13px;margin-top:8px"><div class="row between"><b style="font-size:14px">${r.svcName}</b><span class="chip" style="padding:3px 9px">🔁 ${r.short}</span></div><div class="row between" style="margin-top:3px"><span class="mini">${r.slot} · ${r.zone}</span><span class="chip good" style="padding:3px 9px">${I.check} Actif</span></div></div>`).join('')}</div>`:'';
-    return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">Mes réservations</span><div class="h-hello">Prestations réalisées</div>${summary}${rec}${list}<div style="height:6px"></div></div>${clientNavbar()}`;
+    return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">Historique</span><div class="h-hello">Mes réservations</div>${summary}${rec}${list}<div style="height:6px"></div></div>${clientNavbar()}`;
   }
   // Carte de partage : QR à flasher + lien + partage natif (aucun fichier à chercher).
   function shareCard(){
@@ -1475,7 +1478,8 @@
       <p class="sub" style="margin-top:2px">Le premier artisan disponible sur votre créneau prend la mission.</p></div>
       ${searchRadar(false)}
       <div class="card" style="padding:14px;text-align:center"><p class="sub" style="margin:0"><b id="notif">…</b> artisans notifiés</p></div>
-      <div class="footcta" style="position:static;background:none;padding:18px 0 0">${isDemo()?`<button class="demobtn" data-act="demo-go-pro">👷 Voir côté artisan pour accepter (démo)</button>`:''}<button class="btn ghost" data-act="cancel-mission" style="margin-top:12px">Annuler la recherche</button></div></div>`;
+      <div class="footcta" style="position:static;background:none;padding:18px 0 0">${isDemo()?`<button class="demobtn" data-act="demo-go-pro">👷 Voir côté artisan pour accepter (démo)</button>`:''}<button class="btn ghost" data-act="cancel-mission" style="margin-top:12px">Annuler la recherche</button></div>
+      <p class="mini" style="text-align:center;margin-top:10px;color:var(--muted)">Vous pouvez naviguer ailleurs — revenez ici via l'onglet <b>Accueil</b>.</p></div>${clientNavbar()}`;
   }
   function clientTracking(){
     const m=S.mission,t=totals(m),p=m.provider;
@@ -1493,7 +1497,8 @@
       ${p?`<button class="btn ghost sm" data-act="open-chat" style="margin-top:12px;justify-content:flex-start;gap:8px">${I.chat}&nbsp;Contacter ${p.nm.split(' ')[0]} (numéro masqué)${(m.chat&&m.chat.length)?` · ${m.chat.length}`:''}</button>`:''}
       <button class="btn ghost sm" data-act="open-support" style="margin-top:8px;justify-content:flex-start;gap:8px">${I.shield}&nbsp;Contacter Ti-Services (support)${(()=>{const th=(m.support&&m.support.client)||[];return th.length?` · ${th.length}`:'';})()}</button>
       <div class="est" style="background:var(--card-2);border-color:var(--hair)"><div class="line"><span>Montant garanti</span><b>${eur(t.total)}</b></div><div class="line"><span>Sur ${S.card.brand} ••••&nbsp;${S.card.last4}</span><b>bloqué</b></div><small>${I.shield} Rien à faire&nbsp;: débité automatiquement à la fin (jamais plus que ce montant), seulement si vous validez.</small></div>
-      ${m.status==='pending'?`<div class="footcta" style="position:static;background:none;padding:16px 0 0">${isDemo()?`<button class="demobtn" data-act="demo-go-pro">👷 Voir côté artisan (démo)</button>`:''}<button class="btn ghost" data-act="cancel-mission" style="margin-top:12px">Annuler la demande</button></div>`:'<div style="height:18px"></div>'}</div>`;
+      ${m.status==='pending'?`<div class="footcta" style="position:static;background:none;padding:16px 0 0">${isDemo()?`<button class="demobtn" data-act="demo-go-pro">👷 Voir côté artisan (démo)</button>`:''}<button class="btn ghost" data-act="cancel-mission" style="margin-top:12px">Annuler la demande</button></div>`:'<div style="height:18px"></div>'}
+      <p class="mini" style="text-align:center;margin-top:6px;color:var(--muted)">Vous pouvez naviguer ailleurs — revenez ici via l'onglet <b>Accueil</b>.</p></div>${clientNavbar()}`;
   }
   function clientConfirm(){
     const m=S.mission,t=totals(m),p=m.provider;
@@ -1562,7 +1567,7 @@
       });
       m.reqId=ref.id;
       // Détails privés (adresse exacte, GPS, accès) — révélés seulement à l'artisan assigné.
-      try{ await FB.f.setDoc(FB.f.doc(FB.db,'requests',ref.id,'private','details'),{address:m.address||'',zone:m.zone||'',geo:m.geo||null,access:m.access||'',clientPhone:(S.account&&S.account.phone)||''}); }catch(_){}
+      try{ await FB.f.setDoc(FB.f.doc(FB.db,'requests',ref.id,'private','details'),{address:m.address||'',zone:m.zone||'',geo:m.geo||null,access:m.access||'',clientPhone:(S.account&&S.account.phone)||'',clientName:first,clientPhoto:(S.account&&S.account.photo)||null}); }catch(_){}
       subscribeClientRequest(ref.id);
     }catch(e){ console.warn('requests write failed',e); }
   }
@@ -1970,13 +1975,15 @@
       ${flexible?`<div class="card" style="padding:16px;margin-top:12px"><div class="eyebrow" style="color:var(--teal-deep)">${I.clock} Proposez votre créneau précis</div><p class="mini" style="margin:6px 0 8px">Le client accepte ${flexTxt(m)}. Choisissez l'heure exacte à laquelle vous viendrez — elle lui sera confirmée.</p><div class="segs">${presets.map(s=>`<button class="seg ${(!customPro&&pslot===s)?'on':''}" data-proslot="${s}">${s}</button>`).join('')}<button class="seg ${customPro?'on':''}" data-proslot="__pick">Autre…</button></div>${customPro?`<input class="txt" type="time" data-proslottime step="900" min="${flexWindow(m)[0]}" max="${flexWindow(m)[1]}" style="margin-top:10px" value="${/^\d{2}:\d{2}$/.test(pslot)?pslot:''}">`:''}</div>`:''}
       <div class="stack" style="margin-top:16px"><button class="btn accept" data-act="pro-accept">${I.flame} ${flexible?('Accepter · j\'arrive à '+pslot):'Accepter avant les autres'}</button><button class="btn ghost sm" data-act="pro-decline">Passer mon tour</button><p class="mini" style="text-align:center">L'adresse exacte s'affiche une fois la mission acceptée.</p></div></div>`;
   }
+  function proClientName(m){const n=(m&&m.clientName||'').trim();if(n)return n;return isDemo()?'Camille M.':'Le client';}
+  function proClientPhoto(m){return (m&&m.clientPhoto)||(isDemo()?(S.account&&S.account.photo):null);}
   function proActive(){
     const m=S.mission,t=totals(m);
     const next={accepted:{lbl:'Démarrer la prestation',to:'working'},working:{lbl:'J’ai terminé la prestation',to:'done_pro'}}[m.status];
     const stLabel={accepted:'À venir · '+m.slot,working:'En cours'}[m.status];
     return `<div class="pad"><div style="height:8px"></div><div class="row between"><span class="chip good">${stLabel}</span><span class="mini">Mission remportée 🎉</span></div>
       <div class="h-hello" style="margin-top:8px">${m.svcName}</div>
-      <div class="card" style="padding:15px;margin-top:12px"><div class="row" style="gap:8px;flex-wrap:wrap"><span class="chip grey">${I.clock} ${m.slot}</span><span class="chip grey">${durTxt(m)}</span></div><div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px"><span class="chip grey">${I.pin} ${m.address}</span></div><hr class="dashed"><div class="row between"><span class="sub">Client</span><span class="row" style="gap:8px;align-items:center">${avatarPhoto(S.account&&S.account.photo,'CM','sm')}<b>Camille M.</b></span></div><div class="row between" style="margin-top:6px"><span class="sub">Vous percevez</span><b class="money" style="color:var(--teal-deep)">${eur(t.payout)}</b></div></div>
+      <div class="card" style="padding:15px;margin-top:12px"><div class="row" style="gap:8px;flex-wrap:wrap"><span class="chip grey">${I.clock} ${m.slot}</span><span class="chip grey">${durTxt(m)}</span></div><div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px"><span class="chip grey">${I.pin} ${m.address}</span></div><hr class="dashed"><div class="row between"><span class="sub">Client</span><span class="row" style="gap:8px;align-items:center">${avatarPhoto(proClientPhoto(m),inits(proClientName(m)),'sm')}<b>${esc(proClientName(m))}</b></span></div><div class="row between" style="margin-top:6px"><span class="sub">Vous percevez</span><b class="money" style="color:var(--teal-deep)">${eur(t.payout)}</b></div></div>
       ${(m.photos&&m.photos.length)?`<div class="card" style="padding:14px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Photos du client</div><div class="thumbs" style="margin-top:8px">${m.photos.map(u=>`<div class="thumb"><img src="${u}" alt="Photo du client"></div>`).join('')}</div></div>`:''}
       ${m.access?`<div class="card" style="padding:14px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">🔑 Infos d'accès</div><p class="sub" style="margin-top:6px;color:var(--ink-soft)">${esc(m.access)}</p></div>`:''}
       ${m.geo?`<div class="card" style="padding:14px;margin-top:12px"><div class="row between"><span class="chip">📍 Localisation du domicile</span><a class="chip good" style="padding:5px 11px;text-decoration:none" href="https://www.google.com/maps/search/?api=1&query=${m.geo.lat},${m.geo.lng}" target="_blank" rel="noopener">Itinéraire ›</a></div>${miniMap(m.geo)}</div>`:''}
@@ -2006,7 +2013,7 @@
       <div class="footcta" style="position:static;background:none;padding:16px 0 0">${isDemo()?`<button class="demobtn" data-act="demo-go-admin">⚙︎ Voir côté admin pour trancher (démo)</button>`:''}</div></div>`;
     return `<div class="pad"><div style="height:10px"></div><span class="eyebrow">En attente de validation</span><div class="h-hello">Prestation signalée terminée</div>
       <p class="sub">Le client confirme la prestation. Dès validation, ${eur(t.payout)} sont versés sur votre compte.</p>
-      <div class="card" style="padding:16px;margin-top:14px"><div class="radar sm"><div class="ring r1"></div><div class="ring r2"></div><div class="core">${I.clock}</div></div><p class="sub" style="text-align:center;margin:0">En attente de Camille M.…</p><p class="mini" style="text-align:center;margin-top:8px">Repassez côté client pour confirmer.</p></div><div class="footcta" style="position:static;background:none;padding:16px 0 0">${isDemo()?`<button class="demobtn" data-act="demo-go-client">🧑 Voir côté client pour valider (démo)</button>`:''}</div></div>`;
+      <div class="card" style="padding:16px;margin-top:14px"><div class="radar sm"><div class="ring r1"></div><div class="ring r2"></div><div class="core">${I.clock}</div></div><p class="sub" style="text-align:center;margin:0">En attente de ${esc(proClientName(m))}…</p><p class="mini" style="text-align:center;margin-top:8px">Repassez côté client pour confirmer.</p></div><div class="footcta" style="position:static;background:none;padding:16px 0 0">${isDemo()?`<button class="demobtn" data-act="demo-go-client">🧑 Voir côté client pour valider (démo)</button>`:''}</div></div>`;
   }
   function proPaid(){
     const m=S.mission,t=totals(m);
@@ -2091,6 +2098,9 @@
   function go(p){if(p)S.persona=p;render();}
   function startSearch(){
     const mine=S.mission;
+    // Mode réel : on n'invente pas de nombre d'artisans. On passe simplement en
+    // attente ; l'acceptation viendra d'un vrai artisan (subscribeClientRequest).
+    if(!isDemo()){ mine.status='pending'; mine.competitors=0; render(); return; }
     mine.status='searching';mine.competitors=3+Math.floor(availCount()/8);render();
     let n=0;const target=mine.competitors;const el=()=>document.getElementById('notif');if(el())el().textContent='0';
     const iv=setInterval(()=>{if(S.mission!==mine){clearInterval(iv);return;}n++;if(el())el().textContent=n;if(n>=target)clearInterval(iv);},260);
@@ -2157,7 +2167,7 @@
     if(b.dataset.srate){const parts=b.dataset.srate.split(':'),id=parts[0],dir=parts[1];S.proForm.rates=S.proForm.rates||{};const cur=(S.proForm.rates[id]!=null)?S.proForm.rates[id]:svcBase(id);S.proForm.rates[id]=Math.max(15,Math.min(100,cur+(dir==='up'?5:-5)));render();return;}
     if(b.dataset.pstatus){S.proForm.status=b.dataset.pstatus;render();return;}
     if(b.dataset.zone){if(S.draft)S.draft.zone=b.dataset.zone;renderConfig();return;}
-    if(b.dataset.addr){if(S.draft){const v=b.dataset.addr;if(v==='__manual'){if(S.draft.addressId!=='__manual'){S.draft.addressId='__manual';S.draft.address='';S.draft.geo=null;S.draft.access='';}}else{const a=S.addresses.find(x=>x.id===v);if(a){S.draft.addressId=a.id;S.draft.address=a.address;S.draft.zone=a.zone;S.draft.geo=a.geo;S.draft.access=a.access||'';}}}renderConfig();return;}
+    if(b.dataset.addr){if(S.draft){const v=b.dataset.addr;if(v==='__manual'){S.draft.addressId='__manual';S._focusAddr=true;if(!S.draft.address&&!S.draft.geo){S.draft.address='';S.draft.geo=null;S.draft.access='';}}else{const a=S.addresses.find(x=>x.id===v);if(a){S.draft.addressId=a.id;S.draft.address=a.address;S.draft.zone=a.zone;S.draft.geo=a.geo;S.draft.access=a.access||'';}}}renderConfig();return;}
     if(b.dataset.afzone){if(S.addrForm)S.addrForm.zone=b.dataset.afzone;render();return;}
     if(b.dataset.slot){if(S.draft){if(b.dataset.slot==='__pick'){S.draft.slotMode='pick';}else{S.draft.slotMode=null;S.draft.slot=b.dataset.slot;}}renderConfig();return;}
     if(b.dataset.slotflex!=null){if(S.draft){const v=b.dataset.slotflex;S.draft.slotFlex=(v==='day')?'day':(+v);}renderConfig();return;}
@@ -2353,16 +2363,19 @@
           <button class="addr-opt${m.addressId==='__manual'?' on':''}" data-addr="__manual"><b>＋ Autre adresse (ponctuelle)</b><div class="mini" style="margin-top:2px">Un lieu occasionnel, non enregistré</div></button>
         </div>`:''}
         ${m.addressId==='__manual'?`
-          ${!S.addresses.length?`<p class="mini" style="margin-top:4px;color:var(--muted)">Indiquez où l'artisan doit intervenir. Vous pourrez enregistrer cette adresse dans votre profil pour ne plus jamais la ressaisir.</p>`:''}
+          <div id="manualAddr"${S.addresses.length?' class="card" style="padding:14px;margin-top:10px;border:1.5px solid var(--teal-deep)"':''}>
+          <p class="mini" style="margin:0 0 4px;color:var(--muted)">${S.addresses.length?'📍 Nouvelle adresse pour cette prestation.':"Indiquez où l'artisan doit intervenir."} Vous pourrez l'enregistrer dans votre profil pour ne plus la ressaisir.</p>
           <div class="field" style="margin-top:12px"><label style="font-size:12.5px">Adresse / description du lieu</label><input class="txt" data-addrmanual value="${esc(m.address||'')}" placeholder="Ex. Villa des Amis, près de la plage de Saline"></div>
           <div class="field"><label style="font-size:12.5px">Secteur</label><div class="segs">${zones}</div></div>
           <button class="btn ghost sm" data-cfg="geoloc">📍 ${m.geo?'Actualiser le point GPS':'Enregistrer le point GPS'}</button>
           ${m.geo?miniMap(m.geo):`<p class="mini" style="margin-top:6px">À Saint-Barth, le point GPS est le repère le plus fiable — ajoutez-le pour que l'artisan trouve.</p>`}
           ${(m.geo&&(m.address||'').trim())?`<button class="btn ghost sm" data-cfg="addr-save-draft" style="margin-top:8px">${I.pin} Enregistrer cette adresse dans mon profil</button>`:''}
+          </div>
         `:`${m.geo?`<div class="banner teal" style="margin-top:10px">${I.pin}<span><b>Point GPS déjà enregistré</b> depuis votre fiche — rien à ressaisir.</span></div>${miniMap(m.geo)}`:`<p class="mini" style="margin-top:8px;color:var(--muted)">Cette adresse n'a pas de point GPS. Ajoutez-le dans votre profil pour ne plus jamais le ressaisir.</p>`}`}
       </div>
       <div class="est"><div class="line"><span>${m.svcName} · ${t.rate} ${rateUnit(m)} × ${durTxt(m)}</span><b>${eur(t.sub)}</b></div>${t.boost?`<div class="line"><span>${I.bolt} Priorité coupe-file (+${t.boost}%)</span><b>+${eur(t.maj)}</b></div>`:''}<div class="total"><span>${(m.frequency&&m.frequency!=='ponctuelle')?'Par prestation':'Total'}</span><b>${eur(t.total)}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité ${S.card?`(sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — séquestre agréé)`:`(moyen de paiement demandé juste après, via Mollie — séquestre agréé)`}. Aucun supplément sans votre accord.</small></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm">${I.search} Trouver un artisan · ${eur(t.total)}</button></div></div>`,'config');
+    if(S._focusAddr){S._focusAddr=false;setTimeout(function(){const el=document.getElementById('manualAddr');if(el){try{el.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){el.scrollIntoView();}const inp=el.querySelector('[data-addrmanual]');if(inp)try{inp.focus({preventScroll:true});}catch(_){}}},70);}
   }
   view.addEventListener('keydown',(e)=>{
     if(e.key==='Enter'&&e.target.id==='chatInput'){e.preventDefault();sendChat();view.scrollTop=view.scrollHeight;}
@@ -2719,7 +2732,7 @@
       await FB.f.updateDoc(FB.f.doc(FB.db,'requests',reqId),{status:'accepted',providerUid:uid,providerName:S.proName||'',acceptedSlot:acceptedSlot,acceptedAt:FB.f.serverTimestamp()});
       let det={};try{const s=await FB.f.getDoc(FB.f.doc(FB.db,'requests',reqId,'private','details'));det=s.exists()?s.data():{};}catch(_){}
       const base=findSvc(req.service)||{id:req.service,nm:req.serviceName||svcNm(req.service),rate:req.rate||svcBase(req.service)};
-      S.mission=Object.assign(newMission(base),{reqId:reqId,status:'accepted',svc:req.service,svcName:req.serviceName||svcNm(req.service),rate:req.rate,duration:req.duration||1,unit:req.unit||'h',when:req.when||'',slot:acceptedSlot,zone:req.zone||det.zone||'',address:det.address||'',geo:det.geo||null,access:det.access||'',boost:req.boost||0,provider:Object.assign({},PROVIDERS[req.service]||{},{nm:S.proName||'Vous'})});
+      S.mission=Object.assign(newMission(base),{reqId:reqId,status:'accepted',svc:req.service,svcName:req.serviceName||svcNm(req.service),rate:req.rate,duration:req.duration||1,unit:req.unit||'h',when:req.when||'',slot:acceptedSlot,zone:req.zone||det.zone||'',address:det.address||'',geo:det.geo||null,access:det.access||'',boost:req.boost||0,clientName:req.clientName||det.clientName||'',clientPhoto:det.clientPhoto||null,provider:Object.assign({},PROVIDERS[req.service]||{},{nm:S.proName||'Vous'})});
       S.proNav='home';render();burstConfetti();toast('Mission acceptée — à vous de jouer !');
     }catch(e){console.warn('accept failed',e);toast('Trop tard — cette mission vient d’être prise');}
   }
