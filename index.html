@@ -416,6 +416,45 @@
   .mini{font-size:11.5px;color:var(--muted);line-height:1.4}
   .reset{margin-top:4px;font-size:12.5px;color:var(--muted);text-decoration:underline;text-underline-offset:3px}
 
+  /* ============ MODE ORDINATEUR (grand écran) ============
+     Le mobile reste strictement identique : tout est sous body.desktop, activé
+     par JS au-delà de 1024 px. L'app remplit l'écran ; la barre d'onglets du bas
+     devient un menu latéral gauche ; le contenu est centré dans une colonne
+     confortable. La connexion mobile reste privilégiée (bandeau QR sur l'accueil). */
+  body.desktop{overflow:hidden}
+  body.desktop .wrap{display:block;max-width:100%;margin:0;padding:0}
+  body.desktop .brief{display:none}
+  body.desktop .stage{display:block;gap:0}
+  body.desktop #reset{display:none}
+  body.desktop .phone{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;border-radius:0;padding:0;box-shadow:none;background:var(--sand)}
+  body.desktop .screen{border-radius:0;background:var(--sand)}
+  body.desktop .notch,body.desktop .statusbar{display:none}
+  body.desktop .view{inset:0}
+  body.desktop .homefab{display:none!important}
+  /* wrapper direct de la vue (avec ou sans classe .anim selon le rendu) */
+  body.desktop .view>div{min-height:100dvh}
+  /* écrans à onglets : la navbar devient un rail latéral gauche */
+  body.desktop .view>div:has(>.navbar){display:grid;grid-template-columns:252px minmax(0,1fr)}
+  body.desktop .view>div:has(>.navbar)>.navbar{grid-column:1;grid-row:1;position:sticky;top:0;height:100dvh;flex-direction:column;justify-content:flex-start;align-items:stretch;gap:5px;border-top:none;border-right:1px solid var(--hair);padding:20px 14px;background:var(--card)}
+  body.desktop .view>div:has(>.navbar)>.navbar::before{content:'Ti-Services';display:block;font-family:var(--f-disp);font-weight:800;font-size:20px;letter-spacing:-.02em;color:var(--teal-deep);padding:6px 12px 18px}
+  body.desktop .navbar button{flex:0 0 auto;flex-direction:row;justify-content:flex-start;gap:13px;font-size:14.5px;font-weight:650;padding:12px 14px;border-radius:12px;color:var(--ink-soft)}
+  body.desktop .navbar button.on{background:var(--teal-wash);color:var(--teal-deep)}
+  body.desktop .navbar button:hover{background:var(--sand-2)}
+  body.desktop .view>div:has(>.navbar)>.pad{grid-column:2;grid-row:1;max-width:920px;width:100%;margin:0 auto;padding:34px 40px 72px}
+  /* écrans sans onglets (sous-pages, onboarding) : colonne centrée */
+  body.desktop .view>div:not(:has(>.navbar))>.pad{max-width:780px;margin:0 auto;padding:30px 40px 72px}
+  body.desktop .footcta{position:static;background:none;padding:18px 0 0;max-width:920px;margin-left:auto;margin-right:auto}
+  body.desktop .cats{grid-template-columns:repeat(3,1fr);gap:14px}
+  body.desktop .h-hello{font-size:30px}
+  body.desktop .geomap{height:280px}
+  /* invite « ouvrir sur mobile » : QR + explication, visible seulement sur grand écran */
+  .deskqr{display:none}
+  body.desktop .deskqr{display:flex;gap:16px;align-items:center;margin-top:16px;padding:16px 18px;border-radius:var(--r-md);background:var(--teal-wash);border:1px solid color-mix(in srgb,var(--teal) 26%,transparent)}
+  body.desktop .deskqr .qrbox{flex:none;width:104px;height:104px;background:#fff;border-radius:12px;padding:7px;box-shadow:0 8px 20px -12px var(--shadow)}
+  body.desktop .deskqr .qrbox svg{width:100%;height:100%;display:block}
+  body.desktop .deskqr b{font-size:15px}
+  body.desktop .deskqr p{margin:4px 0 0;font-size:13px;color:var(--ink-soft);line-height:1.5}
+
   @media (prefers-reduced-motion:reduce){*{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.05ms!important}}
 </style>
 </head>
@@ -1456,6 +1495,7 @@
     const zone=(S.account&&S.account.zone)||(S.clientForm&&S.clientForm.zone)||'Gustavia';
     return `<div class="pad"><div class="row between" style="margin-top:10px"><div><span class="eyebrow">${I.pin} ${esc(zone)} · Saint-Barth</span><div class="h-hello">Bonjour${first?' '+esc(first):''} 👋</div></div><div class="row" style="gap:9px;align-items:center"><button class="iconbtn" data-act="open-share" aria-label="Partager Ti-Services" title="Partager">${I.share}</button>${avatarPhoto(S.account&&S.account.photo,inits(fullName||'Ti'),'')}</div></div>
       <p class="sub" style="margin-top:4px">De quel service avez-vous besoin&nbsp;?</p><div class="cats">${cats}</div>
+      <div class="deskqr"><div class="qrbox">${qrSvg(90)}</div><div><b>📲 Encore plus pratique sur mobile</b><p>Scannez ce QR code pour ouvrir Ti-Services sur votre téléphone — notifications en temps réel, appareil photo, géolocalisation. Vous pouvez aussi commander directement ici.</p></div></div>
       ${notifCTA('client')}
       <div class="trust"><span>${I.shield}Artisans vérifiés</span><span>${I.lock}Assurance incluse</span><span>${I.check}Payé après la presta</span></div>
       ${zoutiLine('Choisissez'+(first?', '+esc(first):'')+' — je m’occupe de trouver le bon artisan.')}
@@ -2501,6 +2541,14 @@
 
   /* ---------- PWA: install + service worker ---------- */
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
+  // Mode ordinateur : au-delà de 1024 px, l'app passe en plein écran avec menu
+  // latéral (le mobile n'est jamais affecté). Bascule dynamique au redimensionnement.
+  (function(){
+    const mq=window.matchMedia('(min-width:1024px)');
+    const apply=function(){document.body.classList.toggle('desktop',mq.matches);};
+    apply();
+    if(mq.addEventListener)mq.addEventListener('change',apply);else if(mq.addListener)mq.addListener(apply);
+  })();
   let deferredPrompt=null;
   const installBtn=document.getElementById('installBtn');
   const installSteps=document.getElementById('installSteps');
