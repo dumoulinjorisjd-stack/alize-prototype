@@ -629,18 +629,23 @@
   // Appel à l'action « activer les notifications » — mis en évidence tant que
   // l'autorisation n'est pas accordée (pilier de l'app : missions / suivi).
   function notifCTA(role){
-    if(typeof Notification==='undefined')return '';
-    if(Notification.permission==='granted')return '';
     const bell='<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>';
     const pro=(role==='pro');
-    const title=pro?'Activez les notifications':'Activez les notifications';
+    const title='Activez les notifications';
     const body=pro
       ?'C’est ainsi que les clients vous atteignent. Sans elles, vous ne verrez pas les nouvelles missions.'
-      :'Soyez prévenu à chaque étape : artisan trouvé, en route, prestation terminée.';
+      :'Soyez prévenu à chaque étape : artisan trouvé, prestation démarrée, terminée.';
+    const wrap=function(inner){return `<div class="notifcta"><div class="nc-ic">${bell}</div><div class="nc-body"><b>${title}</b><span>${body}</span>${inner}</div></div>`;};
+    // API indisponible : typiquement iPhone tant que l'app n'est pas installée.
+    if(typeof Notification==='undefined'||typeof Notification.requestPermission!=='function'){
+      if(document.body.classList.contains('standalone'))return '';
+      return wrap(`<span class="nc-hint">📲 Sur iPhone, ajoutez d'abord Ti-Services à votre écran d'accueil (bouton <b>Partager</b> → « Sur l'écran d'accueil »), puis rouvrez l'app pour activer les notifications.</span>`);
+    }
+    if(Notification.permission==='granted')return '';
     const denied=(Notification.permission==='denied');
-    return `<div class="notifcta"><div class="nc-ic">${bell}</div><div class="nc-body"><b>${title}</b><span>${body}</span>${denied
-      ?`<span class="nc-hint">Notifications bloquées sur cet appareil — réactivez-les dans les réglages de votre navigateur.</span>`
-      :`<button class="btn primary sm" data-act="enable-notif" style="margin-top:9px;width:auto;padding:9px 16px">Activer les notifications</button>`}</div></div>`;
+    return wrap(denied
+      ?`<span class="nc-hint">Notifications bloquées sur cet appareil — réactivez-les dans les réglages de votre téléphone (Réglages → Ti-Services → Notifications).</span>`
+      :`<button class="btn primary sm" data-act="enable-notif" style="margin-top:9px;width:auto;padding:9px 16px">Activer les notifications</button>`);
   }
   // ————————————————————————————————————————————————————————————
   // Documents légaux. Version tracée à l'acceptation (preuve du consentement).
@@ -767,6 +772,9 @@
      stocké — l'écran de connexion se contente de le vérifier localement. */
   function loadAccount(){if(CONFIG.firebase&&!window.__NOFB)return null;try{const r=localStorage.getItem('tiservices_account');return r?JSON.parse(r):null;}catch(_){return null;}}
   function saveAccount(a){if(CONFIG.firebase&&!window.__NOFB)return;try{localStorage.setItem('tiservices_account',JSON.stringify({name:a.name,email:a.email,zone:a.zone}));}catch(_){}}
+  // Sauvegarde permanente (bêta) des données du compte client dans Firestore :
+  // adresses + moyen de paiement, rechargés à chaque connexion (loadUserProfile).
+  function saveClientCloud(){try{ if(FB&&FB.auth&&FB.auth.currentUser&&typeof isDemo==='function'&&!isDemo()){ FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{addresses:S.addresses||[],addrDefault:S.addrDefault||null,card:S.card||null},{merge:true}); } }catch(_){}}
   // Petite fête aux moments clés (mission remportée / prestation validée)
   function burstConfetti(){
     const scr=document.querySelector('.screen');if(!scr)return;
@@ -1262,7 +1270,7 @@
   function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
   function chatName(){return S.persona==='client'?(S.mission&&S.mission.provider?S.mission.provider.nm.split(' ')[0]:'votre artisan'):'Camille M.';}
   function chatInits(){return S.persona==='client'?(S.mission&&S.mission.provider?S.mission.provider.ini:'··'):'CM';}
-  function sendChat(){const el=document.getElementById('chatInput');if(!el||!S.mission)return;const v=el.value.trim();if(!v)return;S.mission.chat=S.mission.chat||[];S.mission.chat.push({from:S.persona,text:v});render();}
+  function sendChat(){const el=document.getElementById('chatInput');if(!el||!S.mission)return;const v=el.value.trim();if(!v)return;el.value='';const m=S.mission;const msg={from:S.persona,text:v,at:Date.now()};m.chat=m.chat||[];m.chat.push(msg);render();view.scrollTop=view.scrollHeight;if(FB&&m.reqId&&!isDemo()){try{FB.f.updateDoc(FB.f.doc(FB.db,'requests',m.reqId),{messages:FB.f.arrayUnion(msg)});}catch(_){}}}
   function sendSupport(){const el=document.getElementById('supportInput');if(!el||!S.mission)return;const v=el.value.trim();if(!v)return;const admin=(S.persona==='admin');const side=admin?(S.supportSide||'client'):S.persona;S.mission.support=S.mission.support||{client:[],pro:[]};if(!S.mission.support[side])S.mission.support[side]=[];S.mission.support[side].push({from:admin?'admin':side,text:v});render();view.scrollTop=view.scrollHeight;}
   function chatScreen(){
     const m=S.mission,other=chatName();
@@ -1604,7 +1612,7 @@
     const summary=`<div class="card" style="padding:15px;margin-top:14px"><div class="row between"><div><div class="mini">Terminées</div><b class="money" style="font-size:19px;font-family:var(--f-disp)">${done.length}</b></div><div style="text-align:right"><div class="mini">Total dépensé</div><b class="money" style="font-size:19px;font-family:var(--f-disp)">${eur(totalSpent)}</b></div></div></div>`;
     const list=done.length?`<div class="eyebrow" style="color:var(--muted);margin-top:18px">Historique</div>`+done.map(h=>{const t=totals(h);return `<div class="card" style="padding:14px;margin-top:10px"><div class="row" style="gap:11px"><div class="avatar" style="width:40px;height:40px;font-size:14px">${h.provider?h.provider.ini:'--'}</div><div style="flex:1"><div class="row between"><b style="font-size:14.5px">${h.svcName}</b><span class="money" style="font-weight:700">${eur(t.total)}</span></div><div class="mini" style="margin-top:2px">${h.when} · ${h.provider?h.provider.nm:''}</div></div></div><div class="row between" style="margin-top:10px"><span class="chip good" style="padding:4px 10px">${I.check} Bien exécuté &amp; réglé</span><span class="mini">Reçu envoyé</span></div></div>`;}).join(''):(active.length?'':`<div class="card" style="padding:24px;margin-top:12px;text-align:center;color:var(--muted)">Aucune prestation pour l’instant.<br>Vos réservations et reçus apparaîtront ici.</div>`);
     const rec=S.recurring.length?`<div style="margin-top:16px"><div class="eyebrow" style="color:var(--muted)">Prestations régulières</div>${S.recurring.map(r=>`<div class="card" style="padding:13px;margin-top:8px"><div class="row between"><b style="font-size:14px">${r.svcName}</b><span class="chip" style="padding:3px 9px">🔁 ${r.short}</span></div><div class="row between" style="margin-top:3px"><span class="mini">${r.slot} · ${r.zone}</span><span class="chip good" style="padding:3px 9px">${I.check} Actif</span></div></div>`).join('')}</div>`:'';
-    return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">${I.wallet} Mes réservations</span><div class="h-hello">${active.length?'Vos demandes en cours':'Mes réservations'}</div>${activeBlock}${newBtn}${summary}${rec}${list}<div style="height:6px"></div></div>${clientNavbar()}`;
+    return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">${I.wallet} Mes réservations</span><div class="h-hello">${active.length?'Vos demandes en cours':'Mes réservations'}</div>${active.length?notifCTA('client'):''}${activeBlock}${newBtn}${summary}${rec}${list}<div style="height:6px"></div></div>${clientNavbar()}`;
   }
   // Carte de partage : QR à flasher + lien + partage natif (aucun fichier à chercher).
   function shareCard(){
@@ -1783,25 +1791,45 @@
   // Le client écoute CHACUNE de ses demandes (plusieurs en parallèle possibles) :
   // dès qu'un artisan en accepte une, l'app met à jour la demande concernée.
   const clientReqUnsubs={};
-  function subscribeClientRequest(id){
+  // Notification locale (in-app / système si autorisée).
+  function notify(title,body,tag){try{ if('Notification'in window&&Notification.permission==='granted'){ new Notification(title||'Ti-Services',{body:body||'',icon:'./icon-192.png',tag:tag||'ti'}); } }catch(_){}}
+  // Écrit une mise à jour de la demande sur Firestore (bêta réelle uniquement).
+  function pushReqUpdate(m,patch){try{ if(FB&&FB.db&&FB.f.updateDoc&&m&&m.reqId&&!isDemo()){ FB.f.updateDoc(FB.f.doc(FB.db,'requests',m.reqId),patch); } }catch(_){}}
+  function pushMissionStatus(m,extra){pushReqUpdate(m,Object.assign({status:m.status},extra||{}));}
+  // Écoute temps réel d'une demande (statut + messages), pour LE CLIENT et L'ARTISAN.
+  function findMissionByReq(reqId){let m=(S.missions||[]).find(function(x){return x.reqId===reqId;});if(!m)m=(S.proMissions||[]).find(function(x){return x.reqId===reqId;});if(!m&&S.mission&&S.mission.reqId===reqId)m=S.mission;return m||null;}
+  function watchRequest(id){
     if(!FB||!id)return;
     unsubClientRequest(id);
     try{
       clientReqUnsubs[id]=FB.f.onSnapshot(FB.f.doc(FB.db,'requests',id),function(snap){
-        if(!snap.exists())return;
-        const r=snap.data()||{};
-        const m=(S.missions||[]).find(function(x){return x.reqId===id;})||((S.mission&&S.mission.reqId===id)?S.mission:null);
-        if(!m)return;
-        if(r.status==='accepted'&&m.status!=='accepted'&&m.status!=='working'&&m.status!=='done_pro'){
-          m.status='accepted';
-          m.provider=Object.assign({},PROVIDERS[m.svc]||{ini:'AR',rating:0,jobs:0},{nm:r.providerName||'Votre artisan',ini:inits(r.providerName||'Artisan')});
-          m.providerUid=r.providerUid||null;
-          if(r.acceptedSlot)m.slot=r.acceptedSlot;
-          if(S.persona==='client')render();burstConfetti();
-          try{ if('Notification'in window&&Notification.permission==='granted'){ new Notification('Ti-Services',{body:(r.providerName||'Un artisan')+' a accepté votre demande '+(m.svcName||'')+'.',icon:'./icon-192.png',tag:'ti-accepted-'+id}); } }catch(_){}
-        }
-      },function(err){console.warn('client request listen',err);});
+        if(!snap.exists()){const m=findMissionByReq(id);if(m){const i=(S.missions||[]).indexOf(m);if(i>=0)S.missions.splice(i,1);const j=(S.proMissions||[]).indexOf(m);if(j>=0)S.proMissions.splice(j,1);if(S.mission===m)S.mission=null;}unsubClientRequest(id);render();return;}
+        const r=snap.data()||{};const m=findMissionByReq(id);if(!m)return;
+        let touched=false;
+        // Infos artisan (vues côté client)
+        if(r.providerName){if(!m.provider||!m.providerUid||m.provider.nm==='Votre artisan'){m.provider=Object.assign({},PROVIDERS[m.svc]||{ini:'AR',rating:0,jobs:0},{nm:r.providerName,ini:inits(r.providerName)});}m.providerUid=r.providerUid||m.providerUid;}
+        if(r.acceptedSlot&&m.slot!==r.acceptedSlot){m.slot=r.acceptedSlot;if(r.slotFlex)m.proposedSlot=r.acceptedSlot;touched=true;}
+        if(r.finalHours!=null&&m.finalHours!==r.finalHours){m.finalHours=r.finalHours;touched=true;}
+        if(r.disputeMsg&&m.disputeMsg!==r.disputeMsg){m.disputeMsg=r.disputeMsg;touched=true;}
+        // Messagerie (stockée dans le doc de demande → lisible par client, artisan assigné, admin)
+        if(Array.isArray(r.messages)&&(m.chat||[]).length!==r.messages.length){m.chat=r.messages.slice().sort(function(a,b){return (a.at||0)-(b.at||0);});touched=true;}
+        // Statut (source de vérité serveur)
+        if(r.status&&r.status!==m.status){const old=m.status;m.status=r.status;touched=true;onRemoteStatus(m,old,r.status);}
+        if(touched){render();if((S.chat||S.support)&&S.mission===m)view.scrollTop=view.scrollHeight;}
+      },function(err){console.warn('watchRequest',err);});
     }catch(e){console.warn(e);}
+  }
+  // Rétro-compatibilité : anciens appels.
+  function subscribeClientRequest(id){watchRequest(id);}
+  function onRemoteStatus(m,oldS,newS){
+    if(S.persona==='client'){
+      if(newS==='accepted'){burstConfetti();notify('Ti-Services',(m.provider?m.provider.nm:'Un artisan')+' a accepté votre demande.','ti-'+m.reqId);}
+      else if(newS==='working')notify('Ti-Services','La prestation a démarré.','ti-'+m.reqId);
+      else if(newS==='done_pro')notify('Ti-Services','Prestation terminée — à confirmer.','ti-'+m.reqId);
+    }else if(S.persona==='pro'){
+      if(newS==='paid'){notify('Ti-Services','Le client a validé — vous êtes payé 🎉','ti-'+m.reqId);if(!m._paidCounted){m._paidCounted=true;S.proEarnings+=totals(m).payout;}}
+      else if(newS==='disputed')notify('Ti-Services','Le client conteste la durée déclarée.','ti-'+m.reqId);
+    }
   }
   function unsubClientRequest(id){if(clientReqUnsubs[id]){try{clientReqUnsubs[id]();}catch(_){}delete clientReqUnsubs[id];}}
   // Annulation d'une demande encore ouverte : suppression du doc Firestore + arrêt de l'écoute.
@@ -2483,7 +2511,7 @@
       case 'google-soon':if(FB){fbGoogle();}else{toast('Connexion Google — bientôt disponible');}break;
       case 'logout':S.demoMode=false;if(FB)blankAll();fbLogout();if(!FB){S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;S.missions=[];render();}break;
       case 'cancel-mission':cancelActiveRequest(S.mission);removeMission(S.mission);S.mission=null;S.clientNav='wallet';render();break;
-      case 'confirm-done':finalizePaid(S.mission);render();burstConfetti();break;
+      case 'confirm-done':pushMissionStatus(S.mission,{status:'paid',finalHours:billHours(S.mission)});finalizePaid(S.mission);render();burstConfetti();break;
       case 'show-pitch':S.showPitch=true;render();break;
       case 'pitch-start':S.showPitch=false;S.onbStep=1;render();break;
       case 'pitch-close':S.showPitch=false;render();break;
@@ -2492,10 +2520,10 @@
       case 'pro-finish-back':S.finishing=false;render();break;
       case 'finhours-up':S.mission.finalHours=Math.min(24,(S.mission.finalHours||S.mission.duration)+1);render();break;
       case 'finhours-down':S.mission.finalHours=Math.max(1,(S.mission.finalHours||S.mission.duration)-1);render();break;
-      case 'pro-finish-confirm':S.mission.status='done_pro';S.finishing=false;if(S.mission._appt)S.mission._appt.status='tovalidate';render();toast('Durée envoyée au client pour validation');break;
+      case 'pro-finish-confirm':S.mission.status='done_pro';S.finishing=false;if(S.mission._appt)S.mission._appt.status='tovalidate';pushMissionStatus(S.mission,{finalHours:(S.mission.finalHours!=null?S.mission.finalHours:S.mission.duration)});render();toast('Durée envoyée au client pour validation');break;
       case 'dispute-open':S.disputing=true;render();break;
       case 'dispute-cancel':S.disputing=false;render();break;
-      case 'dispute-send':{const el=document.getElementById('disputeMsg');const v=(el?el.value:'').trim();if(v.length<3){toast('Décrivez votre désaccord pour l’envoyer');break;}S.mission.disputeMsg=v;S.mission.status='disputed';S.disputing=false;render();toast('Désaccord transmis à Ti-Services');break;}
+      case 'dispute-send':{const el=document.getElementById('disputeMsg');const v=(el?el.value:'').trim();if(v.length<3){toast('Décrivez votre désaccord pour l’envoyer');break;}S.mission.disputeMsg=v;S.mission.status='disputed';S.disputing=false;pushMissionStatus(S.mission,{disputeMsg:v});render();toast('Désaccord transmis à Ti-Services');break;}
       case 'submit-rating':S.mission.status='rated';render();break;
       case 'new-mission':archiveMission(S.mission);S.mission=null;S.clientNav='home';render();break;
       case 'app-back':goBack();break;
@@ -2544,9 +2572,9 @@
       case 'addr-new':S.addrForm={id:null,label:'',address:'',zone:'Gustavia',geo:null,access:''};render();break;
       case 'addr-cancel':S.addrForm=null;render();break;
       case 'addr-geo':geolocate(g=>{if(S.addrForm){S.addrForm.geo=g;render();}});break;
-      case 'addr-default':if(S.addrForm&&S.addrForm.id){S.addrDefault=S.addrForm.id;toast('Adresse par défaut mise à jour');render();}break;
-      case 'addr-delete':if(S.addrForm&&S.addrForm.id){S.addresses=S.addresses.filter(x=>x.id!==S.addrForm.id);if(S.addrDefault===S.addrForm.id)S.addrDefault=(S.addresses[0]&&S.addresses[0].id)||null;S.addrForm=null;render();toast('Adresse supprimée');}break;
-      case 'addr-save':{const f=S.addrForm;if(!f)break;if(!(f.label||'').trim()){toast('Donnez un nom au lieu');break;}if(f.id){const a=S.addresses.find(x=>x.id===f.id);if(a){a.label=f.label;a.address=f.address;a.zone=f.zone;a.geo=f.geo;a.access=f.access||'';}}else{const id='ad'+Date.now();S.addresses.push({id,label:f.label,address:f.address,zone:f.zone,geo:f.geo,access:f.access||''});if(S.addresses.length===1)S.addrDefault=id;}S.addrForm=null;render();toast('Adresse enregistrée');break;}
+      case 'addr-default':if(S.addrForm&&S.addrForm.id){S.addrDefault=S.addrForm.id;saveClientCloud();toast('Adresse par défaut mise à jour');render();}break;
+      case 'addr-delete':if(S.addrForm&&S.addrForm.id){S.addresses=S.addresses.filter(x=>x.id!==S.addrForm.id);if(S.addrDefault===S.addrForm.id)S.addrDefault=(S.addresses[0]&&S.addresses[0].id)||null;S.addrForm=null;saveClientCloud();render();toast('Adresse supprimée');}break;
+      case 'addr-save':{const f=S.addrForm;if(!f)break;if(!(f.label||'').trim()){toast('Donnez un nom au lieu');break;}if(f.id){const a=S.addresses.find(x=>x.id===f.id);if(a){a.label=f.label;a.address=f.address;a.zone=f.zone;a.geo=f.geo;a.access=f.access||'';}}else{const id='ad'+Date.now();S.addresses.push({id,label:f.label,address:f.address,zone:f.zone,geo:f.geo,access:f.access||''});if(S.addresses.length===1)S.addrDefault=id;}S.addrForm=null;saveClientCloud();render();toast('Adresse enregistrée');break;}
       case 'open-support':S.support=true;render();view.scrollTop=view.scrollHeight;break;
       case 'close-support':S.support=false;if(S.persona==='admin')S.supportSide=null;render();break;
       case 'support-send':sendSupport();break;
@@ -2587,11 +2615,11 @@
       case 'save-profile':{const f=S.profileForm;if(!f||(f.name||'').trim().length<2){toast('Indiquez votre nom');break;}const nm=f.name.trim(),ph=(f.phone||'').trim(),pht=f.photo||'';S.account=Object.assign({},S.account,{name:nm,zone:f.zone,phone:ph,photo:pht});S.clientForm=Object.assign({},S.clientForm,{name:nm,zone:f.zone,photo:pht});saveAccount(S.account);if(FB&&FB.auth&&FB.auth.currentUser){try{FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{name:nm,zone:f.zone,phone:ph,photo:pht},{merge:true});}catch(_){}}S.profileForm=null;render();toast('Informations mises à jour');break;}
       case 'add-card':S.cardForm=true;render();break;
       case 'card-cancel':S.cardForm=false;render();break;
-      case 'card-remove':S.card=null;S.cardForm=false;render();toast('Moyen de paiement retiré');break;
-      case 'card-save':{const el=document.getElementById('pfCardNum'),ex=document.getElementById('pfCardExp');const num=(el?el.value:'').replace(/\D/g,'');let last4,brand;if(num.length>=4){last4=num.slice(-4);brand=/^(5[1-5]|2[2-7])/.test(num)?'Mastercard':(/^3[47]/.test(num)?'Amex':'Visa');}else if(S.card){last4=S.card.last4;brand=S.card.brand;}else{toast('Entrez un numéro de carte valide');break;}S.card={brand,last4,exp:(ex&&ex.value)||(S.card?S.card.exp:'08/28')};S.cardForm=false;render();toast('Moyen de paiement enregistré 🔒');break;}
+      case 'card-remove':S.card=null;S.cardForm=false;saveClientCloud();render();toast('Moyen de paiement retiré');break;
+      case 'card-save':{const el=document.getElementById('pfCardNum'),ex=document.getElementById('pfCardExp');const num=(el?el.value:'').replace(/\D/g,'');let last4,brand;if(num.length>=4){last4=num.slice(-4);brand=/^(5[1-5]|2[2-7])/.test(num)?'Mastercard':(/^3[47]/.test(num)?'Amex':'Visa');}else if(S.card){last4=S.card.last4;brand=S.card.brand;}else{toast('Entrez un numéro de carte valide');break;}S.card={brand,last4,exp:(ex&&ex.value)||(S.card?S.card.exp:'08/28')};S.cardForm=false;saveClientCloud();render();toast('Moyen de paiement enregistré 🔒');break;}
       case 'pay-canceledit':S.payEdit=false;render();break;
       case 'pay-confirm':placeMission();break;
-      case 'pay-save':{const el=document.getElementById('payCardNum'),ex=document.getElementById('payCardExp');const num=(el?el.value:'').replace(/\D/g,'');const last4=num.slice(-4)||'4242';const brand=/^(5[1-5]|2[2-7])/.test(num)?'Mastercard':(/^3[47]/.test(num)?'Amex':'Visa');S.card={brand,last4,exp:(ex&&ex.value)||'08/28'};placeMission();break;}
+      case 'pay-save':{const el=document.getElementById('payCardNum'),ex=document.getElementById('payCardExp');const num=(el?el.value:'').replace(/\D/g,'');const last4=num.slice(-4)||'4242';const brand=/^(5[1-5]|2[2-7])/.test(num)?'Mastercard':(/^3[47]/.test(num)?'Amex':'Visa');S.card={brand,last4,exp:(ex&&ex.value)||'08/28'};saveClientCloud();placeMission();break;}
       case 'open-interv':S.interv=true;render();break;
       case 'close-interv':S.interv=false;render();break;
       case 'open-statement':S.proStmt=true;render();break;
@@ -2608,7 +2636,7 @@
         render();toast('Profil validé — bienvenue sur Ti-Services !');break;}
       case 'pro-accept':{const m=S.mission;if(m.slotFlex&&m.proposedSlot){m.slot=clampSlot(m,m.proposedSlot);}m.provider=Object.assign({},PROVIDERS[m.svc]);m.status='accepted';const r=totals(m).rate;const amt=totals(m).total;const freq=m.frequency||'ponctuelle';const labels=occLabels(freq);const entries=labels.map(d=>({day:d,slot:m.slot,svc:m.svc,client:'Camille M.',zone:m.zone,duration:m.duration,unit:m.unit,rate:r,amount:amt,status:'upcoming'}));m._appt=entries[0];entries.slice().reverse().forEach(e=>S.agenda.unshift(e));if(freq!=='ponctuelle'){S.recurring.unshift({svc:m.svc,svcName:m.svcName,short:freqInfo(freq).short,slot:m.slot,zone:m.zone});}if(!m.chat||!m.chat.length)m.chat=[{from:'pro',text:'Bonjour Camille ! Bien reçu votre demande, je serai là à '+m.slot+'. À tout à l’heure 👋'}];proAddMission(m);render();burstConfetti();toast(labels.length>1?'Prestation récurrente ajoutée à votre agenda !':'Mission remportée — ajoutée à votre agenda !');break;}
       case 'pro-decline':S.mission.status='searching';render();setTimeout(()=>{if(S.mission&&S.mission.status==='searching'){S.mission.status='pending';render();}},1400);toast('Mission passée — proposée aux autres');break;
-      case 'pro-advance':S.mission.status=b.dataset.to;if(S.mission._appt){if(b.dataset.to==='working')S.mission._appt.status='live';else if(b.dataset.to==='done_pro')S.mission._appt.status='tovalidate';}render();break;
+      case 'pro-advance':S.mission.status=b.dataset.to;if(S.mission._appt){if(b.dataset.to==='working')S.mission._appt.status='live';else if(b.dataset.to==='done_pro')S.mission._appt.status='tovalidate';}pushMissionStatus(S.mission);render();break;
       case 'pro-back-home':if(S.mission){proRemoveMission(S.mission);S.history.unshift(S.mission);}S.mission=null;S.proNav='home';render();break;
     }
     paintPersona();
@@ -2880,6 +2908,8 @@
         const base=findSvc(r.service)||{id:r.service,nm:r.serviceName||svcNm(r.service),rate:r.rate||svcBase(r.service)};
         const m=Object.assign(newMission(base),{_id:'m'+docu.id,reqId:docu.id,status:r.status,svc:r.service,svcName:r.serviceName||svcNm(r.service),rate:r.rate,duration:r.duration||1,unit:r.unit||'h',when:r.when||'',slot:(r.acceptedSlot||r.slot||''),zone:r.zone||'',boost:r.boost||0,slotFlex:r.slotFlex||0,notes:r.notes||'',frequency:r.frequency||'ponctuelle'});
         if(r.providerUid){m.providerUid=r.providerUid;m.provider=Object.assign({},PROVIDERS[r.service]||{ini:'AR',jobs:0,rating:0},{nm:r.providerName||'Votre artisan',ini:inits(r.providerName||'Artisan')});}
+        if(r.finalHours!=null)m.finalHours=r.finalHours;if(r.disputeMsg)m.disputeMsg=r.disputeMsg;
+        if(Array.isArray(r.messages))m.chat=r.messages.slice().sort(function(a,b){return (a.at||0)-(b.at||0);});
         miss.push(m);
         subscribeClientRequest(docu.id);
       });
@@ -2900,9 +2930,10 @@
         let det={};try{const s=await FB.f.getDoc(FB.f.doc(FB.db,'requests',docu.id,'private','details'));det=s.exists()?s.data():{};}catch(_){}
         const base=findSvc(r.service)||{id:r.service,nm:r.serviceName||svcNm(r.service),rate:r.rate||svcBase(r.service)};
         const m=Object.assign(newMission(base),{_id:'pm'+docu.id,reqId:docu.id,status:r.status,svc:r.service,svcName:r.serviceName||svcNm(r.service),rate:r.rate,duration:r.duration||1,unit:r.unit||'h',when:r.when||'',slot:(r.acceptedSlot||r.slot||''),slotFlex:r.slotFlex||0,zone:r.zone||det.zone||'',address:det.address||'',geo:det.geo||null,access:det.access||'',boost:r.boost||0,notes:r.notes||'',photos:(r.photos||[]).slice(),clientName:r.clientName||det.clientName||'',clientPhoto:r.clientPhoto||det.clientPhoto||null,provider:Object.assign({},PROVIDERS[r.service]||{},{nm:S.proName||'Vous'})});
+        if(Array.isArray(r.messages))m.chat=r.messages.slice().sort(function(a,b){return (a.at||0)-(b.at||0);});
         miss.push(m);
       }
-      if(miss.length){S.proMissions=miss;if(S.persona==='pro'&&!S.mission)render();}
+      if(miss.length){S.proMissions=miss;miss.forEach(function(mm){watchRequest(mm.reqId);});if(S.persona==='pro'&&!S.mission)render();}
     }catch(e){console.warn('load pro missions',e);}
   }
   async function fbSignup(c){
@@ -3088,7 +3119,7 @@
       let det={};try{const s=await FB.f.getDoc(FB.f.doc(FB.db,'requests',reqId,'private','details'));det=s.exists()?s.data():{};}catch(_){}
       const base=findSvc(req.service)||{id:req.service,nm:req.serviceName||svcNm(req.service),rate:req.rate||svcBase(req.service)};
       S.mission=Object.assign(newMission(base),{reqId:reqId,status:'accepted',svc:req.service,svcName:req.serviceName||svcNm(req.service),rate:req.rate,duration:req.duration||1,unit:req.unit||'h',when:req.when||'',slot:acceptedSlot,slotFlex:req.slotFlex||0,proposedSlot:req.slotFlex?acceptedSlot:null,zone:req.zone||det.zone||'',address:det.address||'',geo:det.geo||null,access:det.access||'',boost:req.boost||0,notes:req.notes||'',photos:(req.photos||[]).slice(),clientName:req.clientName||det.clientName||'',clientPhoto:req.clientPhoto||det.clientPhoto||null,provider:Object.assign({},PROVIDERS[req.service]||{},{nm:S.proName||'Vous'})});
-      proAddMission(S.mission);S.proReqView=null;S.proReqSlot=null;S.proReqPick=false;S.proNav='home';render();burstConfetti();toast('Mission acceptée — à vous de jouer !');
+      proAddMission(S.mission);watchRequest(reqId);S.proReqView=null;S.proReqSlot=null;S.proReqPick=false;S.proNav='home';render();burstConfetti();toast('Mission acceptée — à vous de jouer !');
     }catch(e){console.warn('accept failed',e);toast('Trop tard — cette mission vient d’être prise');}
   }
   function reqWinTxt(r){return r.slotFlex?('vers '+r.slot+(r.slotFlex==='day'?' · dans la journée':' · créneau souple ±'+(r.slotFlex>=60?(r.slotFlex/60)+' h':r.slotFlex+' min'))):(r.slot||'');}
