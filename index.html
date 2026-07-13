@@ -774,7 +774,20 @@
   function saveAccount(a){if(CONFIG.firebase&&!window.__NOFB)return;try{localStorage.setItem('tiservices_account',JSON.stringify({name:a.name,email:a.email,zone:a.zone}));}catch(_){}}
   // Sauvegarde permanente (bêta) des données du compte client dans Firestore :
   // adresses + moyen de paiement, rechargés à chaque connexion (loadUserProfile).
-  function saveClientCloud(){try{ if(FB&&FB.auth&&FB.auth.currentUser&&typeof isDemo==='function'&&!isDemo()){ FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{addresses:S.addresses||[],addrDefault:S.addrDefault||null,card:S.card||null},{merge:true}); } }catch(_){}}
+  function saveClientCloud(){try{ if(FB&&FB.auth&&FB.auth.currentUser&&typeof isDemo==='function'&&!isDemo()){ FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{addresses:S.addresses||[],addrDefault:S.addrDefault||null,card:S.card||null,history:(S.history||[]).slice(0,50),recurring:S.recurring||[]},{merge:true}); } }catch(_){} cacheClientLocal(); }
+  // Cache local (par compte) : commande en cours + historique survivent au
+  // redémarrage instantanément, même avant/malgré le rechargement Firestore.
+  function clientCacheKey(uid){return 'ti_client_'+(uid||'anon');}
+  function cacheClientLocal(){try{ if(FB&&FB.auth&&FB.auth.currentUser&&typeof isDemo==='function'&&!isDemo()){ const uid=FB.auth.currentUser.uid; localStorage.setItem(clientCacheKey(uid),JSON.stringify({missions:(S.missions||[]),history:(S.history||[]).slice(0,50),addresses:S.addresses||[],addrDefault:S.addrDefault||null,card:S.card||null,recurring:S.recurring||[],ts:Date.now()})); } }catch(_){}}
+  function restoreClientLocal(uid){try{ const raw=localStorage.getItem(clientCacheKey(uid)); if(!raw)return; const d=JSON.parse(raw)||{};
+    if(Array.isArray(d.missions)&&d.missions.length&&!(S.missions&&S.missions.length)){S.missions=d.missions;d.missions.forEach(function(m){if(m&&m.reqId)watchRequest(m.reqId);});}
+    if(Array.isArray(d.history)&&d.history.length&&!(S.history&&S.history.length))S.history=d.history;
+    if(Array.isArray(d.addresses)&&!(S.addresses&&S.addresses.length))S.addresses=d.addresses;
+    if(d.addrDefault&&!S.addrDefault)S.addrDefault=d.addrDefault;
+    if(d.card&&!S.card)S.card=d.card;
+    if(Array.isArray(d.recurring)&&!(S.recurring&&S.recurring.length))S.recurring=d.recurring;
+  }catch(_){}}
+  function clearClientCache(){try{ if(FB&&FB.auth&&FB.auth.currentUser)localStorage.removeItem(clientCacheKey(FB.auth.currentUser.uid)); }catch(_){}}
   // Petite fête aux moments clés (mission remportée / prestation validée)
   function burstConfetti(){
     const scr=document.querySelector('.screen');if(!scr)return;
@@ -1508,7 +1521,7 @@
   function clientMissionActive(){return activeMissions().length>0;}
   // Sortir une demande du suivi (annulation) ou l'archiver (terminée → historique).
   function removeMission(m){const i=(S.missions||[]).indexOf(m);if(i>=0)S.missions.splice(i,1);}
-  function archiveMission(m){removeMission(m);if(m)S.history.unshift(m);}
+  function archiveMission(m){removeMission(m);if(m)S.history.unshift(m);if(S.persona==='client')saveClientCloud();}
   function cardTxt(){return S.card?(S.card.brand+' •••• '+S.card.last4):'votre moyen de paiement';}
   function clientNavbar(){
     const act=attention()==='client';const nb=activeMissions().length;
@@ -1763,7 +1776,7 @@
       <div class="banner teal" style="margin-top:14px">${I.lock}<span>Paiement confié à <b>Mollie</b>, prestataire agréé (norme <b>PCI-DSS</b>). Vos données de carte sont chiffrées et transmises directement à Mollie&nbsp;: Ti-Services n'en conserve <b>jamais</b> le numéro ni le CVC — seulement les 4 derniers chiffres, pour l'affichage.</span></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-act="card-save">${I.lock} Enregistrer ma carte</button><p class="mini" style="text-align:center;margin-top:10px">Maquette — aucune donnée réelle n'est envoyée ni conservée.</p></div></div>`;
   }
-  function placeMission(){const d=S.draft;if(!d)return;if(S.avgOffers[d.svc]){S.avgOffers[d.svc].sum+=d.rate;S.avgOffers[d.svc].n++;}d._id=d._id||('m'+Date.now());S.missions=S.missions||[];if(S.missions.indexOf(d)<0)S.missions.unshift(d);S.mission=d;S.draft=null;S.payStep=false;S.payEdit=false;S.clientNav='wallet';persistRequest(d);startSearch();}
+  function placeMission(){const d=S.draft;if(!d)return;if(S.avgOffers[d.svc]){S.avgOffers[d.svc].sum+=d.rate;S.avgOffers[d.svc].n++;}d._id=d._id||('m'+Date.now());S.missions=S.missions||[];if(S.missions.indexOf(d)<0)S.missions.unshift(d);S.mission=d;S.draft=null;S.payStep=false;S.payEdit=false;S.clientNav='wallet';persistRequest(d);startSearch();cacheClientLocal();}
   // Étape 0 : la demande devient une fiche Firestore `requests/{id}` (vrais comptes uniquement).
   // Sans adresse exacte ni GPS — révélés seulement à l'artisan qui accepte. Base des notifications.
   async function persistRequest(m){
@@ -1821,7 +1834,7 @@
         if(Array.isArray(r.messages)&&(m.chat||[]).length!==r.messages.length){m.chat=r.messages.slice().sort(function(a,b){return (a.at||0)-(b.at||0);});touched=true;}
         // Statut (source de vérité serveur)
         if(r.status&&r.status!==m.status){const old=m.status;m.status=r.status;touched=true;onRemoteStatus(m,old,r.status);}
-        if(touched){render();if((S.chat||S.support)&&S.mission===m)view.scrollTop=view.scrollHeight;}
+        if(touched){cacheClientLocal();render();if((S.chat||S.support)&&S.mission===m)view.scrollTop=view.scrollHeight;}
       },function(err){console.warn('watchRequest',err);});
     }catch(e){console.warn(e);}
   }
@@ -2450,7 +2463,7 @@
       else if(act==='dispute-accept'){if(S.mission&&S.mission.status==='disputed'){finalizePaid(S.mission);toast('Modification validée — prestation réglée');}}
       else if(act==='dispute-revert'){if(S.mission&&S.mission.status==='disputed'){S.mission.finalHours=S.mission.duration;finalizePaid(S.mission);toast('Retour à l’accord initial — prestation réglée');}}
       render();return;}
-    if(b.dataset.act&&b.dataset.act.indexOf('del-demand:')===0){const id=b.dataset.act.slice('del-demand:'.length);const m=(S.missions||[]).find(function(x){return (x._id||'')===id;});if(m){cancelActiveRequest(m);removeMission(m);if(S.mission===m)S.mission=null;toast('Demande supprimée');}render();return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('del-demand:')===0){const id=b.dataset.act.slice('del-demand:'.length);const m=(S.missions||[]).find(function(x){return (x._id||'')===id;});if(m){cancelActiveRequest(m);removeMission(m);if(S.mission===m)S.mission=null;cacheClientLocal();toast('Demande supprimée');}render();return;}
     if(b.dataset.follow){const orow=b.closest('.swipe-row');if(orow&&orow.classList.contains('open')){orow.classList.remove('open');return;}const mm=(S.missions||[]).find(function(x){return (x._id||'')===b.dataset.follow;});if(mm){S.mission=mm;S.clientNav='wallet';render();}return;}
     if(b.dataset.cnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.invoiceId=null;S.addrForm=null;S.profileForm=null;S.mission=null;S.clientNav=b.dataset.cnav;render();return;}
     if(b.dataset.pnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.proStmt=false;S.invoiceId=null;S.proNav=b.dataset.pnav;render();return;}
@@ -2517,7 +2530,7 @@
       case 'do-login':{const f=S.loginForm;if(!(/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=1)){toast('E-mail et mot de passe requis');break;}if(FB){fbLogin(f);}else{const acc=S.account&&S.account.email===f.email.trim()?S.account:{name:(S.account?S.account.name:'Camille Magras'),email:f.email.trim(),zone:(S.account?S.account.zone:'Gustavia')};S.account=acc;S.clientForm={name:acc.name,email:acc.email,zone:acc.zone,password:''};S.onboarded=true;S.authView=null;render();toast('Content de vous revoir, '+acc.name.split(' ')[0]+' !');}break;}
       case 'forgot-pw':{const em=((S.loginForm&&S.loginForm.email)||(S.account&&S.account.email)||'').trim();if(!/.+@.+\..+/.test(em)){toast('Saisissez votre e-mail, puis « Mot de passe oublié ».');break;}if(FB){fbResetPassword(em);}else{toast('Un lien de réinitialisation vous serait envoyé par e-mail.');}break;}
       case 'google-soon':if(FB){fbGoogle();}else{toast('Connexion Google — bientôt disponible');}break;
-      case 'logout':S.demoMode=false;if(FB)blankAll();fbLogout();if(!FB){S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;S.missions=[];render();}break;
+      case 'logout':S.demoMode=false;clearClientCache();if(FB)blankAll();fbLogout();if(!FB){S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;S.missions=[];render();}break;
       case 'account-delete':S.delAcct=true;render();break;
       case 'account-delete-cancel':S.delAcct=false;render();break;
       case 'account-delete-confirm':deleteAccountReal();break;
@@ -2896,9 +2909,10 @@
       if(!data){ try{ await FB.f.setDoc(ref,{name:name,email:user.email||'',zone:zone,role:'client',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){} }
       S.account={name:name,email:user.email||'',zone:zone,uid:user.uid,photo:photo,phone:(data&&data.phone)||''};
       S.clientForm=Object.assign({},S.clientForm,{name:name,email:user.email||'',zone:zone,photo:photo,password:'',password2:''});
-      // Compte réel : on part de zéro (ou des données persistées si elles existent) — pas de villas de démo.
-      S.addresses=(data&&Array.isArray(data.addresses))?data.addresses:[];S.addrDefault=(data&&data.addrDefault)||null;
-      S.history=(data&&Array.isArray(data.history))?data.history:[];S.recurring=(data&&Array.isArray(data.recurring))?data.recurring:[];S.card=(data&&data.card)||null;
+      // Cache local d'abord (instantané), puis les données Firestore prennent le relais.
+      restoreClientLocal(user.uid);
+      S.addresses=(data&&Array.isArray(data.addresses))?data.addresses:(S.addresses||[]);S.addrDefault=(data&&data.addrDefault)||S.addrDefault||null;
+      S.history=(data&&Array.isArray(data.history)&&data.history.length)?data.history:(S.history||[]);S.recurring=(data&&Array.isArray(data.recurring)&&data.recurring.length)?data.recurring:(S.recurring||[]);S.card=(data&&data.card)||S.card||null;
       S.onboarded=true;S.authView=null;S.cardForm=false;render();
       if(typeof Notification!=='undefined'&&Notification.permission==='granted')registerPush('client');
       loadActiveRequests(user.uid);
@@ -3204,6 +3218,7 @@
     // Démo / hors-ligne : simple réinitialisation locale.
     if(!(FB&&FB.auth&&FB.auth.currentUser)){ if(FB)blankAll(); S.delAcct=false;S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;S.missions=[];S.account=null;render();toast('Compte supprimé');return; }
     const u=FB.auth.currentUser,uid=u.uid,wasPro=(S.persona==='pro');
+    clearClientCache();
     try{
       try{ if(FB.f.deleteDoc)await FB.f.deleteDoc(FB.f.doc(FB.db,'users',uid)); }catch(_){}
       if(wasPro){ try{ if(FB.f.deleteDoc)await FB.f.deleteDoc(FB.f.doc(FB.db,'artisans',uid)); }catch(_){} }
