@@ -903,7 +903,7 @@
     addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,
     concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,
     proPhoto:null,proStatus:'approved',proFounder:true,proNotifPush:true,proNotifWa:true,proPhone:'0690 00 00 00',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:'',photo:''},
-    proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proMissions:[],proSkipped:[],
+    proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proMissions:[],proSkipped:[],proStmt:false,
     proHistory:PRO_HISTORY(),
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),
     chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,
@@ -1886,6 +1886,7 @@
     if(S.advantages)return advantagesScreen();
     if(S.support&&S.mission)return supportChat();
     if(S.invoiceId)return proInvoice();
+    if(S.proStmt)return proStatement();
     if(S.interv)return proInterventions();
     if(S.referral)return proReferral();
     if(S.chat&&S.mission)return chatScreen();
@@ -1894,6 +1895,7 @@
     if(m){if(m.status==='pending')return proRequest();if(m.status==='working'&&S.finishing)return proFinish();if(m.status==='accepted'||m.status==='working')return proActive();if(m.status==='done_pro'||m.status==='disputed')return proWaiting();if(m.status==='paid'||m.status==='rated')return proPaid();}
     if(S.proNav==='agenda')return proAgenda();
     if(S.proNav==='earnings')return proEarnings();
+    if(S.proNav==='account')return proAccount();
     return proHome();
   }
   function proDocs(){
@@ -1937,7 +1939,7 @@
   function proNavbar(){
     const act=attention()==='pro';
     const item=(id,ic,lbl,badge)=>`<button data-pnav="${id}" class="${S.proNav===id&&!S.mission?'on':''}"><span class="nb-ic">${ic}${badge?'<span class="nb-badge"></span>':''}</span>${lbl}</button>`;
-    return `<div class="navbar">${item('home',I.bolt,'Missions',act)}${item('agenda',I.cal,'Agenda',false)}${item('earnings',I.wallet,'Revenus',false)}</div>`;
+    return `<div class="navbar">${item('home',I.bolt,'Missions',act)}${item('agenda',I.cal,'Agenda',false)}${item('earnings',I.wallet,'Revenus',false)}${item('account',I.user,'Compte',false)}</div>`;
   }
   function proSignup(){
     const f=S.proForm;
@@ -2080,10 +2082,7 @@
 
       ${(()=>{const n=S.agenda.find(a=>a.status!=='done');if(!n)return '';const s=SERVICES.find(x=>x.id===n.svc);return `<button class="card" style="padding:14px;margin-top:12px;width:100%;text-align:left;display:block" data-pnav="agenda"><div class="row between"><span class="eyebrow" style="color:var(--muted)">Prochaine prestation</span><span class="mini">Voir l'agenda ›</span></div><div class="row" style="gap:12px;margin-top:8px"><div class="appt-time"><b>${n.slot}</b><span class="mini">${durTxt({unit:n.unit},n.duration)}</span></div><div><b style="font-size:14.5px">${s.nm}</b><div class="mini">${n.day} · ${n.client}</div></div></div></button>`;})()}
 
-      <button class="card" data-act="pro-docs" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.shield}&nbsp;Mes documents</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Assurance &amp; décharge ›</span></div><p class="sub" style="margin-top:8px">Mettez à jour votre attestation d'assurance et consultez la décharge de responsabilité que vous avez acceptée.</p></button>
-      <p class="mini" style="text-align:center;margin-top:14px"><button class="linklike" data-act="show-advantages">${I.shield} Pourquoi passer par Ti-Services ›</button></p>
-      ${isDemo()?`<p class="mini" style="text-align:center;margin-top:10px"><button class="linklike" data-act="demo-go-client">🧑 Voir l'espace client (démo)</button> · <button class="linklike" data-act="demo-go-admin">⚙︎ Admin (démo)</button></p>`:''}
-      ${legalFooter('pro')}
+      ${isDemo()?`<p class="mini" style="text-align:center;margin-top:14px"><button class="linklike" data-act="demo-go-client">🧑 Voir l'espace client (démo)</button> · <button class="linklike" data-act="demo-go-admin">⚙︎ Admin (démo)</button></p>`:''}
       <div style="height:12px"></div></div>${proNavbar()}`;
   }
   function apptPayout(a){if(a.amount!=null)return a.amount;const base=svcBase(a.svc);return (a.rate||base)*a.duration;}
@@ -2276,14 +2275,52 @@
       <div style="height:12px"></div></div>`;
   }
   function proEarnings(){
-    return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">Revenus</span><div class="h-hello">Ce mois-ci</div>
-      <div class="card" style="padding:18px;margin-top:12px"><div class="mini">Net perçu (juillet)</div><b class="money" style="font-size:30px;font-family:var(--f-disp)">${eur(S.proEarnings)}</b><div class="row between" style="margin-top:14px"><span class="sub">Missions réalisées</span><b>37</b></div><div class="row between" style="margin-top:6px"><span class="sub">Prochain virement</span><b>lun. 7 juil.</b></div></div>
-      ${fidCard()}
-      <button class="card" data-act="open-interv" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.card}&nbsp;Mes interventions & factures</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Historique de vos prestations réalisées et leurs factures (établies automatiquement en votre nom).</p></button>
-      <button class="card" data-act="open-referral" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.heart}&nbsp;Parrainer un artisan</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Gagnez un bonus pour chaque artisan que vous parrainez — et lui aussi.</p></button>
-      <div class="card" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">${I.card}&nbsp;Compte de versement (RIB)</b>${S.proIban?`<span class="chip good" style="padding:3px 9px">${I.check} Enregistré</span>`:`<span class="chip coral" style="padding:3px 9px">Requis</span>`}</div>
+    const nbDone=(S.proHistory||[]).length;
+    return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">${I.wallet} Revenus</span><div class="h-hello">Ce mois-ci</div>
+      <div class="card" style="padding:18px;margin-top:12px"><div class="mini">Net perçu (juillet)</div><b class="money" style="font-size:30px;font-family:var(--f-disp)">${eur(S.proEarnings)}</b><div class="row between" style="margin-top:14px"><span class="sub">Missions réalisées</span><b>${nbDone||37}</b></div><div class="row between" style="margin-top:6px"><span class="sub">Prochain virement</span><b>lun. 7 juil.</b></div></div>
+      <button class="card" data-act="open-interv" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.card}&nbsp;Mes factures par mission</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">La facture de chaque prestation réalisée, établie automatiquement en votre nom — à consulter ou télécharger.</p></button>
+      <button class="card" data-act="open-statement" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">📄&nbsp;Relevé mensuel</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Votre document récapitulatif du mois : toutes vos prestations et le total encaissé, à enregistrer pour votre comptabilité.</p></button>
+      <div class="banner teal" style="margin-top:12px">${I.lock}<span><b>Paiement garanti</b> : réglé sous 48 h après chaque prestation validée — sans relance.</span></div>
+      </div>${proNavbar()}`;
+  }
+  // Onglet « Mon compte » : tout ce qui n'est pas revenu/factures (RIB, statut,
+  // documents, parrainage, déconnexion).
+  function proAccount(){
+    const cats=(S.proCats&&S.proCats.length)?S.proCats:['menage'];
+    const catNames=cats.map(function(c){const s=SERVICES.find(x=>x.id===c);return s?s.nm:c;}).slice(0,3).join(' · ');
+    const insOk=S.proInsuranceStatus==='valide';
+    return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">${I.user} Mon compte</span>
+      <div class="row" style="gap:14px;margin-top:8px">${avatarPhoto(S.proPhoto,inits(S.proName||'Marie-Lou'),'lg')}<div><b style="font-size:18px;font-family:var(--f-disp)">${esc(S.proName||'Marie-Lou')}</b><div class="mini">${esc(catNames)} · dès ${S.proRate} €/h</div></div></div>
+      <div class="card" style="padding:16px;margin-top:16px"><div class="row between"><b style="font-size:14px">${I.card}&nbsp;Compte de versement (RIB)</b>${S.proIban?`<span class="chip good" style="padding:3px 9px">${I.check} Enregistré</span>`:`<span class="chip coral" style="padding:3px 9px">Requis</span>`}</div>
         ${S.proIban?`<div class="mini" style="margin-top:8px">${esc(S.proIbanHolder||S.proName||'')} · IBAN ${maskIban(S.proIban)}</div><button class="btn ghost sm" data-act="pro-payout" style="margin-top:11px;width:auto;padding:9px 14px">Modifier mon RIB</button>`:`<p class="mini" style="margin-top:8px">Renseignez votre RIB pour <b>recevoir vos paiements</b>. Sans lui, aucun virement ne peut vous être envoyé.</p><button class="btn primary sm" data-act="pro-payout" style="margin-top:11px;width:auto;padding:9px 14px">${I.card} Ajouter mon RIB</button>`}
-      </div></div>${proNavbar()}`;
+      </div>
+      <button class="card" data-act="pro-docs" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.shield}&nbsp;Mes documents</b>${insOk?`<span class="chip good" style="padding:3px 9px">${I.check} Assurance OK</span>`:`<span class="mini" style="color:var(--teal-deep);font-weight:650">Assurance &amp; décharge ›</span>`}</div><p class="sub" style="margin-top:8px">Attestation d'assurance et décharge de responsabilité acceptée.</p></button>
+      ${fidCard()}
+      <button class="card" data-act="open-referral" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.heart}&nbsp;Parrainer un artisan</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Gagnez un bonus pour chaque artisan que vous parrainez — et lui aussi.</p></button>
+      <p class="mini" style="text-align:center;margin-top:14px"><button class="linklike" data-act="show-advantages">${I.shield} Pourquoi passer par Ti-Services ›</button></p>
+      ${S.demoMode?`<p class="mini" style="text-align:center;margin-top:12px"><button class="linklike" data-act="demo-go-client">🧑 Voir l'espace client (démo)</button> · <button class="linklike" data-act="demo-go-admin">⚙︎ Admin (démo)</button></p>`:(FB?`<button class="btn ghost sm" data-act="logout" style="margin-top:14px">Se déconnecter</button>`:'')}
+      ${legalFooter('pro')}
+      <div style="height:12px"></div></div>${proNavbar()}`;
+  }
+  // Relevé mensuel imprimable (récapitulatif du mois).
+  function proStatement(){
+    const list=S.proHistory||[];const total=list.reduce((t,h)=>t+h.amount,0);
+    const rows=list.length?list.map(function(h){return `<tr><td>${fmtLong(h.dateISO)}</td><td>${svcName(h.svc)} — ${esc(h.client||'')}</td><td class="r">${durTxt({unit:h.unit},h.duration)}</td><td class="r">${eur(h.amount)}</td></tr>`;}).join(''):`<tr><td colspan="4" style="text-align:center;color:#888;padding:14px">Aucune prestation ce mois-ci.</td></tr>`;
+    return `<div class="pad">
+      <div class="row between noprint" style="margin-top:6px;gap:8px"><button class="reset" data-act="close-statement">← Retour</button><button class="btn primary" data-act="print-invoice" style="width:auto;padding:10px 16px">${I.card}&nbsp;Enregistrer / Imprimer</button></div>
+      <p class="mini noprint" style="text-align:center;color:var(--muted);margin-bottom:8px">${I.check} Relevé récapitulatif du mois — pour votre comptabilité.</p>
+      <div id="invoiceDoc"><div class="inv">
+        <div class="row between" style="align-items:flex-start"><div><h2>RELEVÉ MENSUEL</h2><div class="mut">Juillet 2026</div></div><div style="text-align:right"><div style="font-family:var(--f-disp);font-weight:800;font-size:16px;color:#151515">Ti-Services</div><div class="mut">Saint-Barthélemy</div></div></div>
+        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Prestataire</div><b>${S.proLegal}</b><div class="mut">${S.proStatusType==='particulier'?'Particulier':'Entreprise'} · ${S.proAddress}</div><div class="mut">SIRET ${S.proSiret||'—'}</div></div>
+        <table><thead><tr><th>Date</th><th>Prestation</th><th class="r">Durée</th><th class="r">Net</th></tr></thead>
+        <tbody>${rows}</tbody></table>
+        <div class="row between sec"><span class="mut">Total encaissé (${list.length} prestation${list.length>1?'s':''})</span><span class="tot">${eur(total)}</span></div>
+        <div class="legal">
+          TVA non applicable — Saint-Barthélemy (collectivité d'outre-mer, hors du champ de la TVA française).<br>
+          Relevé établi par Ti-Services au nom et pour le compte du prestataire (mandat de facturation accepté à l'inscription). Le détail figure sur chaque facture individuelle.
+        </div>
+      </div></div>
+      <div style="height:12px"></div></div>`;
   }
   function proReferral(){
     const earned=S.filleuls.filter(f=>f.status==='valide').reduce((t,f)=>t+f.bonus,0);
@@ -2359,7 +2396,7 @@
     if(b.dataset.act&&b.dataset.act.indexOf('del-demand:')===0){const id=b.dataset.act.slice('del-demand:'.length);const m=(S.missions||[]).find(function(x){return (x._id||'')===id;});if(m){cancelActiveRequest(m);removeMission(m);if(S.mission===m)S.mission=null;toast('Demande supprimée');}render();return;}
     if(b.dataset.follow){const orow=b.closest('.swipe-row');if(orow&&orow.classList.contains('open')){orow.classList.remove('open');return;}const mm=(S.missions||[]).find(function(x){return (x._id||'')===b.dataset.follow;});if(mm){S.mission=mm;S.clientNav='wallet';render();}return;}
     if(b.dataset.cnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.invoiceId=null;S.addrForm=null;S.profileForm=null;S.mission=null;S.clientNav=b.dataset.cnav;render();return;}
-    if(b.dataset.pnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.invoiceId=null;S.proNav=b.dataset.pnav;render();return;}
+    if(b.dataset.pnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.proStmt=false;S.invoiceId=null;S.proNav=b.dataset.pnav;render();return;}
     if(b.dataset.cnav2){S.concOrder=null;S.concView=null;S.concForm=null;S.concInvoice=null;S.concNav=b.dataset.cnav2;render();return;}
     if(b.dataset.concOc){const c=concClient(b.dataset.concOc);if(c&&c.authorized){S.concOrder.clientId=c.id;S.concOrder.step='service';render();}else{toast('La carte de ce client doit d’abord être autorisée');}return;}
     if(b.dataset.concOs){const s=SERVICES.find(x=>x.id===b.dataset.concOs);S.concOrder.svc=s.id;S.concOrder.svcName=s.nm;S.concOrder.rate=Math.max(svcFloor(s.id),svcReco(s.id));S.concOrder.duration=3;S.concOrder.when='Aujourd’hui';S.concOrder.slot='14:00';S.concOrder.notes='';S.concOrder.step='form';render();return;}
@@ -2535,6 +2572,8 @@
       case 'pay-save':{const el=document.getElementById('payCardNum'),ex=document.getElementById('payCardExp');const num=(el?el.value:'').replace(/\D/g,'');const last4=num.slice(-4)||'4242';const brand=/^(5[1-5]|2[2-7])/.test(num)?'Mastercard':(/^3[47]/.test(num)?'Amex':'Visa');S.card={brand,last4,exp:(ex&&ex.value)||'08/28'};placeMission();break;}
       case 'open-interv':S.interv=true;render();break;
       case 'close-interv':S.interv=false;render();break;
+      case 'open-statement':S.proStmt=true;render();break;
+      case 'close-statement':S.proStmt=false;render();break;
       case 'close-invoice':S.invoiceId=null;render();break;
       case 'print-invoice':window.print();break;
       case 'toggle-mandat':S.proForm.mandat=!S.proForm.mandat;render();break;
