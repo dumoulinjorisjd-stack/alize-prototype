@@ -277,6 +277,14 @@
   .homefab.show{display:flex;animation:pop .25s ease}
   .homefab:active{transform:scale(.92)}
   body.standalone .homefab{top:calc(env(safe-area-inset-top) + 54px)}
+  /* Bouton retour flottant — indispensable sur iPhone (PWA installée : ni bouton
+     navigateur ni geste de retour). Reste toujours atteignable même en scrollant. */
+  .backfab{position:absolute;top:42px;left:12px;z-index:56;height:38px;padding:0 14px 0 10px;border-radius:999px;background:var(--card);color:var(--ink);border:1px solid var(--hair);box-shadow:0 10px 24px -10px var(--shadow);display:none;align-items:center;gap:3px;font-size:13.5px;font-weight:650}
+  .backfab.show{display:inline-flex;animation:pop .2s ease}
+  .backfab:active{transform:scale(.94)}
+  .backfab svg{flex:none}
+  body.standalone .backfab{top:calc(env(safe-area-inset-top) + 52px)}
+  body.desktop .backfab{display:none!important}
   .photopick{display:flex;align-items:center;gap:13px;cursor:pointer;padding:2px 0 4px}
   .pp-ring{flex:none;width:62px;height:62px;border-radius:50%;border:2px dashed color-mix(in srgb,var(--teal) 45%,var(--hair));background:var(--teal-wash);display:flex;align-items:center;justify-content:center;overflow:hidden;color:var(--teal-deep)}
   .pp-img{width:100%;height:100%;background-size:cover;background-position:center}
@@ -493,6 +501,7 @@
           </span>
         </div>
         <div class="view" id="view"></div>
+        <button class="backfab" id="backfab" data-act="app-back" aria-label="Retour"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>Retour</button>
         <button class="homefab" id="homefab" data-act="go-home" aria-label="Retour à l'accueil"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg></button>
         <div class="toast" id="toast"></div>
       </div>
@@ -1015,7 +1024,29 @@
     view.innerHTML='<div'+(same?'':' class="anim"')+'>'+html+'</div>';
     view.scrollTop=same?top:0;_scr=key;updateHomeFab();mountMaps();
   }
-  function updateHomeFab(){const rb=document.getElementById('reset');if(rb)rb.style.display=isDemo()?'':'none';const f=document.getElementById('homefab');if(!f)return;const show=S.onboarded&&!S.authView&&!S.showPitch&&S.persona==='client'&&!!(S.mission||S.draft||S.chat||S.support||S.clientInv||S.advantages||S.addrForm||S.referral||S.share||S.interv||S.cardForm);f.classList.toggle('show',show);}
+  function updateHomeFab(){const rb=document.getElementById('reset');if(rb)rb.style.display=isDemo()?'':'none';const f=document.getElementById('homefab');if(f){const show=S.onboarded&&!S.authView&&!S.showPitch&&S.persona==='client'&&!!(S.mission||S.draft||S.chat||S.support||S.clientInv||S.advantages||S.addrForm||S.referral||S.share||S.interv||S.cardForm);f.classList.toggle('show',show);}updateBackFab();}
+  // Peut-on revenir en arrière depuis l'écran courant ? (mêmes cas que goBack)
+  function canGoBack(){
+    if(S.legalView||S.showPitch)return true;
+    if(!S.onboarded)return !!(S.authView||S.onbStep>0);
+    if(S.cardForm||S.clientInv||S.advantages||S.invoiceId||S.interv||S.referral||S.share||S.chat||S.support||S.addrForm||S.finishing||S.disputing||S.profileForm||S.draft||S.payStep)return true;
+    if(S.persona==='admin')return S.admin.view!=='home';
+    if(S.persona==='concierge')return !!(S.concRetInv||S.concInvoice||S.concForm||S.concClientView||S.concOrder||S.concView||S.concNav!=='home');
+    if(S.persona==='pro'){if(S.proDocsView||S.proPayoutView||S.proReqView||S.mission)return true;if(S.proStatus==='signup'||S.proStatus==='pending')return true;return S.proNav!=='home';}
+    if(S.mission)return true;
+    return S.clientNav!=='home';
+  }
+  // Bouton retour flottant : visible dès qu'un retour est possible ET que le
+  // bouton « ← » intégré à l'écran n'est pas (ou plus) à l'écran — indispensable
+  // sur iPhone où il n'existe ni bouton navigateur ni geste de retour.
+  function updateBackFab(){
+    const bf=document.getElementById('backfab');if(!bf)return;
+    if(document.body.classList.contains('desktop')){bf.classList.remove('show');return;}
+    const inlineNav=view.querySelector('.reset')||view.querySelector('.navbar');
+    const scrolled=view.scrollTop>34;
+    const show=canGoBack()&&(!inlineNav||scrolled);
+    bf.classList.toggle('show',show);
+  }
   function render(){if(S.legalView){paintView(legalView(),'legal:'+S.legalView);paintPersona();return;}if(S.showPitch){paintView(pitchView(),'pitch');paintPersona();return;}paintView((S.persona==='admin'?renderAdmin():(S.persona==='concierge'?renderConcierge():(S.persona==='client'?renderClient():renderPro()))),curScreen());paintPersona();}
 
   /* ---------- ÉCRAN VITRINE / PITCH (présentation à un nouvel arrivant) ---------- */
@@ -2367,6 +2398,7 @@
       case 'dispute-send':{const el=document.getElementById('disputeMsg');const v=(el?el.value:'').trim();if(v.length<3){toast('Décrivez votre désaccord pour l’envoyer');break;}S.mission.disputeMsg=v;S.mission.status='disputed';S.disputing=false;render();toast('Désaccord transmis à Ti-Services');break;}
       case 'submit-rating':S.mission.status='rated';render();break;
       case 'new-mission':archiveMission(S.mission);S.mission=null;S.clientNav='home';render();break;
+      case 'app-back':goBack();break;
       case 'go-home':S.mission=null;S.draft=null;S.payStep=false;S.payEdit=false;S.chat=false;S.support=false;S.clientInv=false;S.advantages=false;S.addrForm=null;S.referral=false;S.interv=false;S.invoiceId=null;S.finishing=false;S.disputing=false;S.persona='client';S.clientNav='home';render();break;
       case 'rebook':rebookRecurring(S.rebookFreq||'hebdo');break;
       case 'show-client-invoice':S.clientInv=true;render();break;
@@ -2519,6 +2551,7 @@
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm">${I.search} Trouver un artisan · ${eur(t.total)}</button></div></div>`,'config');
     if(S._focusAddr){S._focusAddr=false;setTimeout(function(){const el=document.getElementById('manualAddr');if(el){try{el.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){el.scrollIntoView();}const inp=el.querySelector('[data-addrmanual]');if(inp)try{inp.focus({preventScroll:true});}catch(_){}}},70);}
   }
+  view.addEventListener('scroll',function(){updateBackFab();},{passive:true});
   view.addEventListener('keydown',(e)=>{
     if(e.key==='Enter'&&e.target.id==='chatInput'){e.preventDefault();sendChat();view.scrollTop=view.scrollHeight;}
     if(e.key==='Enter'&&e.target.id==='supportInput'){e.preventDefault();sendSupport();}
@@ -2578,7 +2611,11 @@
 
   /* ---------- Bouton retour du téléphone : revient à l'écran précédent (ne quitte pas l'app) ---------- */
   function goBack(){
+    if(S.legalView){S.legalView=null;render();return;}
     if(S.showPitch){S.showPitch=false;render();return;}
+    if(S.profileForm){S.profileForm=null;render();return;}
+    if(S.proDocsView){S.proDocsView=false;render();return;}
+    if(S.proPayoutView){S.proPayoutView=false;render();return;}
     if(S.cardForm){S.cardForm=false;render();return;}
     if(S.clientInv){S.clientInv=false;render();return;}
     if(S.advantages){S.advantages=false;render();return;}
