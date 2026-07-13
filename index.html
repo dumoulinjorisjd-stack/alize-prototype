@@ -402,6 +402,11 @@
   .geomap.tall{height:280px}
   .routeinfo{position:absolute;right:8px;bottom:8px;background:var(--ink);color:#fff;font-size:12px;font-weight:700;padding:5px 10px;border-radius:9px;box-shadow:0 6px 16px -8px var(--shadow);z-index:600;pointer-events:none}
   .me-dot span{display:block;width:14px;height:14px;border-radius:50%;background:#2E7DF2;border:2.5px solid #fff;box-shadow:0 0 0 3px rgba(46,125,242,.3)}
+  /* Glisser-pour-supprimer une demande en recherche */
+  .swipe-row{position:relative;margin-top:9px;border-radius:var(--r-md);overflow:hidden}
+  .swipe-del{position:absolute;inset:0;width:100%;display:flex;align-items:center;justify-content:flex-end;gap:2px;padding:0 22px;background:var(--coral-deep);color:#fff;font-weight:750;font-size:14px;border-radius:var(--r-md)}
+  .swipe-card{position:relative;z-index:1;transition:transform .18s cubic-bezier(.4,0,.2,1);touch-action:pan-y}
+  .swipe-row.open .swipe-card{transform:translateX(-124px)}
 
   .navbar{position:sticky;bottom:0;margin-top:auto;display:flex;background:var(--card);border-top:1px solid var(--hair);padding:8px 0 calc(8px + env(safe-area-inset-bottom))}
   .navbar button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10.5px;font-weight:650;color:var(--muted);padding:3px}
@@ -1575,7 +1580,11 @@
     const done=S.history;
     const active=activeMissions();
     const totalSpent=done.reduce((t,h)=>t+totals(h).total,0);
-    const activeBlock=active.length?`<div style="margin-top:16px"><div class="eyebrow" style="color:var(--teal-deep)">${I.bolt} En cours · ${active.length}</div>${active.map(m=>{const sm=missionStatusMeta(m.status);return `<button class="card" data-follow="${m._id||''}" style="padding:14px;margin-top:9px;width:100%;text-align:left;display:block;border-left:4px solid ${sm.c==='good'?'var(--good)':'var(--coral)'}"><div class="row between"><b style="font-size:14.5px">${esc(m.svcName)}</b><span class="chip ${sm.c}" style="padding:3px 10px">${sm.l}</span></div><div class="mini" style="margin-top:3px">${esc(m.when||'')} · ${esc(m.slot||'')}${m.provider&&m.provider.nm?' · '+esc(m.provider.nm):''} · ${I.pin} ${esc(m.zone||'')}</div><div class="row between" style="margin-top:9px"><span class="mini" style="color:var(--muted)">${eur(totals(m).total)}</span><span class="mini" style="color:var(--teal-deep);font-weight:700">Suivre ›</span></div></button>`;}).join('')}</div>`:'';
+    const activeCard=function(m){const sm=missionStatusMeta(m.status);const canDel=(m.status==='searching'||m.status==='pending');
+      const card=`<button class="card${canDel?' swipe-card':''}" data-follow="${m._id||''}" style="padding:14px;${canDel?'':'margin-top:9px;'}width:100%;text-align:left;display:block;border-left:4px solid ${sm.c==='good'?'var(--good)':'var(--coral)'}"><div class="row between"><b style="font-size:14.5px">${esc(m.svcName)}</b><span class="chip ${sm.c}" style="padding:3px 10px">${sm.l}</span></div><div class="mini" style="margin-top:3px">${esc(m.when||'')} · ${esc(m.slot||'')}${m.provider&&m.provider.nm?' · '+esc(m.provider.nm):''} · ${I.pin} ${esc(m.zone||'')}</div><div class="row between" style="margin-top:9px"><span class="mini" style="color:var(--muted)">${eur(totals(m).total)}</span><span class="mini" style="color:var(--teal-deep);font-weight:700">Suivre ›</span></div></button>`;
+      return canDel?`<div class="swipe-row"><button class="swipe-del" data-act="del-demand:${m._id||''}" aria-label="Supprimer la demande">${I.trash||'🗑'}&nbsp;Supprimer</button>${card}</div>`:card;};
+    const hasSearching=active.some(m=>m.status==='searching'||m.status==='pending');
+    const activeBlock=active.length?`<div style="margin-top:16px"><div class="eyebrow" style="color:var(--teal-deep)">${I.bolt} En cours · ${active.length}</div>${active.map(activeCard).join('')}${hasSearching?`<p class="mini" style="margin-top:8px;color:var(--muted)">↤ Glissez une demande en recherche vers la gauche pour la supprimer.</p>`:''}</div>`:'';
     const newBtn=`<button class="btn ${active.length?'ghost':'primary'} sm" data-cnav="home" style="margin-top:14px">${I.search} Passer une nouvelle commande</button>`;
     const summary=`<div class="card" style="padding:15px;margin-top:14px"><div class="row between"><div><div class="mini">Terminées</div><b class="money" style="font-size:19px;font-family:var(--f-disp)">${done.length}</b></div><div style="text-align:right"><div class="mini">Total dépensé</div><b class="money" style="font-size:19px;font-family:var(--f-disp)">${eur(totalSpent)}</b></div></div></div>`;
     const list=done.length?`<div class="eyebrow" style="color:var(--muted);margin-top:18px">Historique</div>`+done.map(h=>{const t=totals(h);return `<div class="card" style="padding:14px;margin-top:10px"><div class="row" style="gap:11px"><div class="avatar" style="width:40px;height:40px;font-size:14px">${h.provider?h.provider.ini:'--'}</div><div style="flex:1"><div class="row between"><b style="font-size:14.5px">${h.svcName}</b><span class="money" style="font-weight:700">${eur(t.total)}</span></div><div class="mini" style="margin-top:2px">${h.when} · ${h.provider?h.provider.nm:''}</div></div></div><div class="row between" style="margin-top:10px"><span class="chip good" style="padding:4px 10px">${I.check} Bien exécuté &amp; réglé</span><span class="mini">Reçu envoyé</span></div></div>`;}).join(''):(active.length?'':`<div class="card" style="padding:24px;margin-top:12px;text-align:center;color:var(--muted)">Aucune prestation pour l’instant.<br>Vos réservations et reçus apparaîtront ici.</div>`);
@@ -2357,7 +2366,8 @@
       else if(act==='dispute-accept'){if(S.mission&&S.mission.status==='disputed'){finalizePaid(S.mission);toast('Modification validée — prestation réglée');}}
       else if(act==='dispute-revert'){if(S.mission&&S.mission.status==='disputed'){S.mission.finalHours=S.mission.duration;finalizePaid(S.mission);toast('Retour à l’accord initial — prestation réglée');}}
       render();return;}
-    if(b.dataset.follow){const mm=(S.missions||[]).find(function(x){return (x._id||'')===b.dataset.follow;});if(mm){S.mission=mm;S.clientNav='wallet';render();}return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('del-demand:')===0){const id=b.dataset.act.slice('del-demand:'.length);const m=(S.missions||[]).find(function(x){return (x._id||'')===id;});if(m){cancelActiveRequest(m);removeMission(m);if(S.mission===m)S.mission=null;toast('Demande supprimée');}render();return;}
+    if(b.dataset.follow){const orow=b.closest('.swipe-row');if(orow&&orow.classList.contains('open')){orow.classList.remove('open');return;}const mm=(S.missions||[]).find(function(x){return (x._id||'')===b.dataset.follow;});if(mm){S.mission=mm;S.clientNav='wallet';render();}return;}
     if(b.dataset.cnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.invoiceId=null;S.addrForm=null;S.profileForm=null;S.mission=null;S.clientNav=b.dataset.cnav;render();return;}
     if(b.dataset.pnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.invoiceId=null;S.proNav=b.dataset.pnav;render();return;}
     if(b.dataset.cnav2){S.concOrder=null;S.concView=null;S.concForm=null;S.concInvoice=null;S.concNav=b.dataset.cnav2;render();return;}
@@ -2593,6 +2603,24 @@
     if(S._focusAddr){S._focusAddr=false;setTimeout(function(){const el=document.getElementById('manualAddr');if(el){try{el.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){el.scrollIntoView();}const inp=el.querySelector('[data-addrmanual]');if(inp)try{inp.focus({preventScroll:true});}catch(_){}}},70);}
   }
   view.addEventListener('scroll',function(){updateBackFab();},{passive:true});
+  // Glisser-pour-supprimer (demandes en recherche) : swipe horizontal → révèle « Supprimer ».
+  let _sw=null;
+  view.addEventListener('touchstart',function(e){
+    const openRow=view.querySelector('.swipe-row.open');
+    const card=e.target.closest('.swipe-card');
+    if(openRow&&(!card||card.parentNode!==openRow))openRow.classList.remove('open');
+    if(!card){_sw=null;return;}
+    const t=e.touches[0];
+    _sw={card:card,row:card.parentNode,x:t.clientX,y:t.clientY,dx:0,drag:false,decided:false,wasOpen:card.parentNode.classList.contains('open')};
+  },{passive:true});
+  view.addEventListener('touchmove',function(e){
+    if(!_sw)return;const t=e.touches[0];const dx=t.clientX-_sw.x,dy=t.clientY-_sw.y;
+    if(!_sw.decided){if(Math.abs(dx)>7||Math.abs(dy)>7){_sw.decided=true;_sw.drag=Math.abs(dx)>Math.abs(dy)+2;}}
+    if(_sw.drag){e.preventDefault();const base=_sw.wasOpen?-124:0;const tx=Math.max(-140,Math.min(0,base+dx));_sw.dx=tx;_sw.card.style.transition='none';_sw.card.style.transform='translateX('+tx+'px)';}
+  },{passive:false});
+  function swEnd(){if(!_sw)return;const c=_sw.card,r=_sw.row;c.style.transition='';c.style.transform='';if(_sw.drag){if(_sw.dx<-60)r.classList.add('open');else r.classList.remove('open');}_sw=null;}
+  view.addEventListener('touchend',swEnd);
+  view.addEventListener('touchcancel',swEnd);
   view.addEventListener('keydown',(e)=>{
     if(e.key==='Enter'&&e.target.id==='chatInput'){e.preventDefault();sendChat();view.scrollTop=view.scrollHeight;}
     if(e.key==='Enter'&&e.target.id==='supportInput'){e.preventDefault();sendSupport();}
