@@ -1,0 +1,50 @@
+name: Déploiement Firebase (functions + règles)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'functions/**'
+      - 'firestore.rules'
+      - 'storage.rules'
+      - 'firestore.indexes.json'
+      - 'firebase.json'
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: "Cibles firebase deploy (--only)"
+        required: false
+        default: 'functions,firestore:rules,storage'
+
+concurrency:
+  group: firebase-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_ID: ti-service-e8ced
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Vérifier le secret
+        run: |
+          if [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then
+            echo "::error::Secret FIREBASE_SERVICE_ACCOUNT manquant."
+            exit 1
+          fi
+      - name: Écrire la clé
+        run: |
+          printf '%s' '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > "$RUNNER_TEMP/gcp-key.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/gcp-key.json" >> "$GITHUB_ENV"
+      - run: npm install -g firebase-tools
+      - working-directory: functions
+        run: npm install
+      - name: Déployer
+        run: |
+          TARGETS="${{ github.event.inputs.targets }}"
+          TARGETS="${TARGETS:-functions,firestore:rules,storage}"
+          firebase deploy --only "$TARGETS" --project "$PROJECT_ID" --non-interactive --force
