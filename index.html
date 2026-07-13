@@ -128,7 +128,7 @@
   body.standalone .brief{display:none}
   body.standalone .stage{gap:0}
   body.standalone .persona{position:fixed;top:calc(env(safe-area-inset-top) + 8px);left:50%;transform:translateX(-50%);z-index:80}
-  body.standalone .reset{position:fixed;bottom:calc(env(safe-area-inset-bottom) + 6px);left:50%;transform:translateX(-50%);z-index:80;background:var(--card);padding:6px 12px;border-radius:999px;border:1px solid var(--hair)}
+  body.standalone #reset{position:fixed;bottom:calc(env(safe-area-inset-bottom) + 6px);left:50%;transform:translateX(-50%);z-index:80;background:var(--card);padding:6px 12px;border-radius:999px;border:1px solid var(--hair)}
   body.standalone .phone{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;border-radius:0;padding:0;box-shadow:none}
   body.standalone .screen{border-radius:0}
   body.standalone .notch{display:none}
@@ -279,12 +279,13 @@
   body.standalone .homefab{top:calc(env(safe-area-inset-top) + 54px)}
   /* Bouton retour flottant — indispensable sur iPhone (PWA installée : ni bouton
      navigateur ni geste de retour). Reste toujours atteignable même en scrollant. */
-  .backfab{position:absolute;top:42px;left:12px;z-index:56;height:38px;padding:0 14px 0 10px;border-radius:999px;background:var(--card);color:var(--ink);border:1px solid var(--hair);box-shadow:0 10px 24px -10px var(--shadow);display:none;align-items:center;gap:3px;font-size:13.5px;font-weight:650}
-  .backfab.show{display:inline-flex;animation:pop .2s ease}
-  .backfab:active{transform:scale(.94)}
-  .backfab svg{flex:none}
+  .backfab{position:absolute;top:42px;left:12px;z-index:56;width:40px;height:40px;border-radius:50%;background:var(--card);color:var(--ink);border:1px solid var(--hair);box-shadow:0 10px 24px -10px var(--shadow);display:none;align-items:center;justify-content:center}
+  .backfab.show{display:flex;animation:pop .2s ease}
+  .backfab:active{transform:scale(.92)}
   body.standalone .backfab{top:calc(env(safe-area-inset-top) + 52px)}
   body.desktop .backfab{display:none!important}
+  /* réserve la place en haut quand le bouton retour occupe le sommet (écran sans « ← » intégré) */
+  body:not(.desktop) .view>.backpad{padding-top:48px}
   .photopick{display:flex;align-items:center;gap:13px;cursor:pointer;padding:2px 0 4px}
   .pp-ring{flex:none;width:62px;height:62px;border-radius:50%;border:2px dashed color-mix(in srgb,var(--teal) 45%,var(--hair));background:var(--teal-wash);display:flex;align-items:center;justify-content:center;overflow:hidden;color:var(--teal-deep)}
   .pp-img{width:100%;height:100%;background-size:cover;background-position:center}
@@ -504,7 +505,7 @@
           </span>
         </div>
         <div class="view" id="view"></div>
-        <button class="backfab" id="backfab" data-act="app-back" aria-label="Retour"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>Retour</button>
+        <button class="backfab" id="backfab" data-act="app-back" aria-label="Retour"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
         <button class="homefab" id="homefab" data-act="go-home" aria-label="Retour à l'accueil"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg></button>
         <div class="toast" id="toast"></div>
       </div>
@@ -1076,11 +1077,13 @@
   // sur iPhone où il n'existe ni bouton navigateur ni geste de retour.
   function updateBackFab(){
     const bf=document.getElementById('backfab');if(!bf)return;
-    if(document.body.classList.contains('desktop')){bf.classList.remove('show');return;}
-    const inlineNav=view.querySelector('.reset')||view.querySelector('.navbar');
+    const wrap=view.firstElementChild;
+    if(document.body.classList.contains('desktop')){bf.classList.remove('show');if(wrap)wrap.classList.remove('backpad');return;}
+    const noInline=!(view.querySelector('.reset')||view.querySelector('.navbar'));
     const scrolled=view.scrollTop>34;
-    const show=canGoBack()&&(!inlineNav||scrolled);
-    bf.classList.toggle('show',show);
+    const cgb=canGoBack();
+    bf.classList.toggle('show',cgb&&(noInline||scrolled));
+    if(wrap)wrap.classList.toggle('backpad',cgb&&noInline);
   }
   function render(){if(S.legalView){paintView(legalView(),'legal:'+S.legalView);paintPersona();return;}if(S.showPitch){paintView(pitchView(),'pitch');paintPersona();return;}paintView((S.persona==='admin'?renderAdmin():(S.persona==='concierge'?renderConcierge():(S.persona==='client'?renderClient():renderPro()))),curScreen());paintPersona();}
 
