@@ -398,6 +398,9 @@
   .maploading{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:11px;color:var(--muted);background:var(--card);padding:3px 9px;border-radius:8px;box-shadow:0 4px 12px -6px var(--shadow)}
   .maphint{position:absolute;right:8px;top:8px;background:var(--card);color:var(--ink);font-size:11px;font-weight:650;padding:4px 8px;border-radius:8px;box-shadow:0 6px 16px -8px var(--shadow);z-index:600;pointer-events:none}
   .geocoords{position:absolute;left:8px;bottom:8px;background:var(--card);color:var(--ink);font-family:var(--f-num);font-size:11.5px;font-weight:700;padding:4px 8px;border-radius:8px;box-shadow:0 6px 16px -8px var(--shadow);z-index:600;pointer-events:none}
+  .geomap.tall{height:280px}
+  .routeinfo{position:absolute;right:8px;bottom:8px;background:var(--ink);color:#fff;font-size:12px;font-weight:700;padding:5px 10px;border-radius:9px;box-shadow:0 6px 16px -8px var(--shadow);z-index:600;pointer-events:none}
+  .me-dot span{display:block;width:14px;height:14px;border-radius:50%;background:#2E7DF2;border:2.5px solid #fff;box-shadow:0 0 0 3px rgba(46,125,242,.3)}
 
   .navbar{position:sticky;bottom:0;margin-top:auto;display:flex;background:var(--card);border-top:1px solid var(--hair);padding:8px 0 calc(8px + env(safe-area-inset-bottom))}
   .navbar button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10.5px;font-weight:650;color:var(--muted);padding:3px}
@@ -936,9 +939,10 @@
   // target: 'addr' (S.addrForm) | 'draft' (S.draft) | 'ageo' (S.concForm) — pour l'édition.
   function miniMap(g,mode,target){
     if(!g||!isFinite(+g.lat)||!isFinite(+g.lng))return '';
-    const m=(mode==='edit')?'edit':'view';const tg=target||'';
-    return `<div class="geomap"><div class="geomap-canvas" data-leafmap="${g.lat},${g.lng}" data-mapmode="${m}"${tg?` data-maptarget="${tg}"`:''}>${mapFallbackSvg()}</div><div class="geocoords">📍 ${g.lat}, ${g.lng}</div>${m==='edit'?`<div class="maphint">✋ Glissez le point pour l'ajuster</div>`:''}</div>`;
+    const m=(mode==='edit')?'edit':(mode==='route'?'route':'view');const tg=target||'';
+    return `<div class="geomap ${m==='route'?'tall':''}"><div class="geomap-canvas" data-leafmap="${g.lat},${g.lng}" data-mapmode="${m}"${tg?` data-maptarget="${tg}"`:''}>${mapFallbackSvg()}</div><div class="geocoords">📍 ${g.lat}, ${g.lng}</div>${m==='edit'?`<div class="maphint">✋ Glissez le point pour l'ajuster</div>`:''}${m==='route'?`<div class="routeinfo">🧭 Calcul de l'itinéraire…</div>`:''}</div>`;
   }
+  function haversineKm(a1,o1,a2,o2){const R=6371,dLa=(a2-a1)*Math.PI/180,dLo=(o2-o1)*Math.PI/180,s=Math.sin(dLa/2)**2+Math.cos(a1*Math.PI/180)*Math.cos(a2*Math.PI/180)*Math.sin(dLo/2)**2;return 2*R*Math.asin(Math.min(1,Math.sqrt(s)));}
   // Chargement paresseux de Leaflet (une seule fois), depuis le CDN.
   let _leafletP=null;
   function ensureLeaflet(){
@@ -964,7 +968,7 @@
         try{
           const map=L.map(el,{zoomControl:true,attributionControl:false,scrollWheelZoom:true,dragging:true,tap:true}).setView([lat,lng],16);
           L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
-          const editable=el.getAttribute('data-mapmode')==='edit';
+          const mode=el.getAttribute('data-mapmode');const editable=mode==='edit';
           const marker=L.marker([lat,lng],{draggable:editable}).addTo(map);
           if(editable){
             const tg=el.getAttribute('data-maptarget');
@@ -972,6 +976,7 @@
             marker.on('dragend',function(){commit(marker.getLatLng());});
             map.on('click',function(e){commit(e.latlng);});
           }
+          if(mode==='route')drawRoute(L,map,lat,lng,el);
           setTimeout(function(){try{map.invalidateSize();}catch(_){}},80);
         }catch(_){el.innerHTML=mapFallbackSvg();}
       });
@@ -982,6 +987,31 @@
     else if(target==='draft'&&S.draft)S.draft.geo=g;
     else if(target==='ageo'&&S.concForm)S.concForm.ageo=g;
     const wrap=el.closest('.geomap');const c=wrap&&wrap.querySelector('.geocoords');if(c)c.textContent='📍 '+g.lat+', '+g.lng;
+  }
+  // Trace l'itinéraire depuis la position actuelle jusqu'à la destination (in-app,
+  // sans quitter). Route routière via OSRM ; repli sur un trait à vol d'oiseau.
+  function drawRoute(L,map,lat,lng,el){
+    const wrap=el.closest('.geomap');const info=wrap&&wrap.querySelector('.routeinfo');
+    const setInfo=function(t){if(info)info.textContent=t;};
+    if(!navigator.geolocation){setInfo('📍 Activez la localisation pour voir le trajet.');return;}
+    setInfo('🧭 Localisation…');
+    navigator.geolocation.getCurrentPosition(function(pos){
+      const flat=pos.coords.latitude,flng=pos.coords.longitude;
+      const meIcon=L.divIcon({className:'me-dot',html:'<span></span>',iconSize:[18,18]});
+      L.marker([flat,flng],{icon:meIcon,zIndexOffset:-100}).addTo(map);
+      const drawStraight=function(){const line=L.polyline([[flat,flng],[lat,lng]],{color:'#F26A4B',weight:4,opacity:.85,dashArray:'6 8'}).addTo(map);try{map.fitBounds(line.getBounds().pad(0.35));}catch(_){}setInfo('≈ '+haversineKm(flat,flng,lat,lng).toFixed(1)+' km à vol d’oiseau');};
+      let done=false;const guard=setTimeout(function(){if(!done){done=true;drawStraight();}},7000);
+      fetch('https://router.project-osrm.org/route/v1/driving/'+flng+','+flat+';'+lng+','+lat+'?overview=full&geometries=geojson')
+        .then(function(r){return r.json();})
+        .then(function(d){if(done)return;done=true;clearTimeout(guard);
+          if(d&&d.routes&&d.routes[0]&&d.routes[0].geometry){
+            const rte=d.routes[0];const coords=rte.geometry.coordinates.map(function(c){return [c[1],c[0]];});
+            const line=L.polyline(coords,{color:'#0E9E8E',weight:5,opacity:.85}).addTo(map);
+            try{map.fitBounds(line.getBounds().pad(0.2));}catch(_){}
+            setInfo('🚗 '+(rte.distance/1000).toFixed(1)+' km · '+Math.max(1,Math.round(rte.duration/60))+' min');
+          }else{drawStraight();}
+        }).catch(function(){if(done)return;done=true;clearTimeout(guard);drawStraight();});
+    },function(){setInfo('📍 Localisation refusée — appuyez sur « Navigation » pour le guidage.');},{enableHighAccuracy:true,timeout:8000,maximumAge:30000});
   }
   function geolocate(apply){const fb={lat:17.8962,lng:-62.8498};const set=(g)=>{apply(g);toast('Point GPS enregistré');};if(navigator.geolocation){toast('Localisation en cours…');navigator.geolocation.getCurrentPosition(p=>set({lat:+p.coords.latitude.toFixed(5),lng:+p.coords.longitude.toFixed(5)}),()=>set(fb),{enableHighAccuracy:true,timeout:6000,maximumAge:0});}else set(fb);}
   const availCount=()=>Object.values(S.avail).reduce((t,d)=>t+d.m+d.a+d.s,0);
@@ -2153,7 +2183,12 @@
       <div class="card" style="padding:15px;margin-top:12px"><div class="row" style="gap:8px;flex-wrap:wrap"><span class="chip grey">${I.clock} ${m.slot}</span><span class="chip grey">${durTxt(m)}</span></div><div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px"><span class="chip grey">${I.pin} ${m.address}</span></div><hr class="dashed"><div class="row between"><span class="sub">Client</span><span class="row" style="gap:8px;align-items:center">${avatarPhoto(proClientPhoto(m),inits(proClientName(m)),'sm')}<b>${esc(proClientName(m))}</b></span></div><div class="row between" style="margin-top:6px"><span class="sub">Vous percevez</span><b class="money" style="color:var(--teal-deep)">${eur(t.payout)}</b></div></div>
       ${(m.photos&&m.photos.length)?`<div class="card" style="padding:14px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Photos du client</div><div class="thumbs" style="margin-top:8px">${m.photos.map(u=>`<div class="thumb"><img src="${u}" alt="Photo du client"></div>`).join('')}</div></div>`:''}
       ${m.access?`<div class="card" style="padding:14px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">🔑 Infos d'accès</div><p class="sub" style="margin-top:6px;color:var(--ink-soft)">${esc(m.access)}</p></div>`:''}
-      ${m.geo?`<div class="card" style="padding:14px;margin-top:12px"><div class="row between"><span class="chip">📍 Localisation du domicile</span><a class="chip good" style="padding:5px 11px;text-decoration:none" href="https://www.google.com/maps/search/?api=1&query=${m.geo.lat},${m.geo.lng}" target="_blank" rel="noopener">Itinéraire ›</a></div>${miniMap(m.geo)}</div>`:''}
+      ${m.geo?`<div class="card" style="padding:14px;margin-top:12px"><div class="row between"><span class="chip">📍 Localisation du domicile</span><span class="mini" style="color:var(--muted)">Itinéraire ci-dessous</span></div>${miniMap(m.geo,'route')}
+        <div class="row" style="gap:8px;margin-top:12px">
+          <a class="btn primary sm" href="https://www.google.com/maps/dir/?api=1&destination=${m.geo.lat},${m.geo.lng}&travelmode=driving" target="_blank" rel="noopener" style="flex:1;justify-content:center">🧭 Navigation</a>
+          <a class="btn ghost sm" href="https://waze.com/ul?ll=${m.geo.lat},${m.geo.lng}&navigate=yes" target="_blank" rel="noopener" style="flex:1;justify-content:center">Waze</a>
+        </div>
+        <p class="mini" style="margin-top:8px;color:var(--muted)">Le trajet s'affiche ici sans quitter l'app. « Navigation » ouvre le guidage vocal de votre téléphone.</p></div>`:''}
       <button class="btn ghost sm" data-act="open-chat" style="margin-top:12px;justify-content:flex-start;gap:8px">${I.chat}&nbsp;Contacter le client (numéro masqué)${(m.chat&&m.chat.length)?` · ${m.chat.length}`:''}</button>
       <button class="btn ghost sm" data-act="open-support" style="margin-top:8px;justify-content:flex-start;gap:8px">${I.shield}&nbsp;Contacter Ti-Services (support)${(()=>{const th=(m.support&&m.support.pro)||[];return th.length?` · ${th.length}`:'';})()}</button>
       <div class="banner teal" style="margin-top:12px">${I.shield}<span>Paiement du client déjà sécurisé — versé dès qu'il valide la prestation.</span></div>
