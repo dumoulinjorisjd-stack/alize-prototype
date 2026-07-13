@@ -324,6 +324,7 @@
   .segs{display:flex;gap:8px;flex-wrap:wrap}
   .seg{padding:10px 13px;border-radius:12px;background:var(--card);border:1.5px solid var(--hair);font-size:13px;font-weight:600;color:var(--ink-soft);transition:all .15s}
   .seg.on{background:var(--ink);color:var(--sand);border-color:var(--ink)}
+  .seg.off{opacity:.38;text-decoration:line-through;cursor:not-allowed}
   .stepper{display:flex;align-items:center;gap:0;background:var(--card);border:1.5px solid var(--hair);border-radius:13px;width:fit-content;overflow:hidden}
   .stepper button{width:46px;height:46px;font-size:22px;font-weight:600;color:var(--teal-deep)}
   .stepper .val{min-width:74px;text-align:center;font-weight:700;font-family:var(--f-num);font-size:15px}
@@ -916,7 +917,12 @@
   // Créneau souple : le client propose une heure ± une marge ; l'artisan précise.
   function slotToMin(s){const p=(s||'0:0').split(':');return (+p[0])*60+(+p[1]||0);}
   function minToSlot(mn){mn=((mn%1440)+1440)%1440;const h=Math.floor(mn/60),m=mn%60;return (h<10?'0':'')+h+':'+(m<10?'0':'')+m;}
-  function flexWindow(m){if(m.slotFlex==='day')return ['08:00','19:00'];const b=slotToMin(m.slot),d=Number(m.slotFlex)||0;return [minToSlot(b-d),minToSlot(b+d)];}
+  // Heure/date courantes (réelles) — pour empêcher de réserver un créneau déjà passé.
+  function nowMin(){const d=new Date();return d.getHours()*60+d.getMinutes();}
+  function todayISO(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+  function isTodaySel(m){if(!m)return false;if(m.dateMode==='pick')return m.dateISO===todayISO();return m.when==='Aujourd’hui';}
+  function minSlotToday(m){return isTodaySel(m)?nowMin():-1;}
+  function flexWindow(m){let lo,hi;if(m.slotFlex==='day'){lo=480;hi=1140;}else{const b=slotToMin(m.slot),d=Number(m.slotFlex)||0;lo=b-d;hi=b+d;}const mm=minSlotToday(m);if(mm>=0)lo=Math.max(lo,mm);if(hi<lo)hi=lo;return [minToSlot(lo),minToSlot(hi)];}
   function flexTxt(m){if(!m.slotFlex)return '';if(m.slotFlex==='day')return 'dans la journée (8 h – 19 h)';const w=flexWindow(m);return 'entre '+w[0]+' et '+w[1];}
   function proSlotList(m){const w=flexWindow(m);const start=slotToMin(w[0]),end=slotToMin(w[1]);const step=(m.slotFlex==='day')?60:30;const out=[];for(let t=start;t<=end;t+=step)out.push(minToSlot(t));return out;}
   // Borne l'heure proposée par l'artisan à la fenêtre acceptée par le client.
@@ -2425,7 +2431,7 @@
     if(b.dataset.price){const [id,dir]=b.dataset.price.split(':');if(!S.adminPrices)S.adminPrices=ADMIN_PRICES();S.adminPrices[id]=Math.max(5,(S.adminPrices[id]!=null?S.adminPrices[id]:svcBase(id))+(dir==='up'?5:-5));render();return;}
     if(b.dataset.freq){if(!S.draft)return;S.draft.frequency=b.dataset.freq;renderConfig();return;}
     if(b.dataset.star){const n=+b.dataset.star;S.mission.rating=n;document.querySelectorAll('#rateStars button').forEach(x=>x.classList.toggle('lit',+x.dataset.star<=n));const rb=document.getElementById('rateBtn');if(rb)rb.disabled=false;return;}
-    if(b.dataset.cfg){const c=b.dataset.cfg;if(!S.draft)return;if(c==='back'){S.draft=null;render();}else if(c==='minus'){S.draft.duration=Math.max(1,S.draft.duration-1);renderConfig();}else if(c==='plus'){S.draft.duration=Math.min(isDayU(S.draft)?30:10,S.draft.duration+1);renderConfig();}else if(c==='unit-h'){S.draft.unit='h';S.draft.rate=(S.adminPrices&&S.adminPrices[S.draft.svc]!=null)?S.adminPrices[S.draft.svc]:svcBase(S.draft.svc);S.draft.duration=3;renderConfig();}else if(c==='unit-j'){S.draft.unit='j';S.draft.rate=DAY_RECO;S.draft.duration=2;renderConfig();}else if(c==='geoloc'){geolocate(g=>{if(S.draft){S.draft.geo=g;renderConfig();}});}else if(c==='addr-save-draft'){const d=S.draft;const id='ad'+Date.now();S.addresses.push({id,label:(d.address||'Adresse ponctuelle').slice(0,40),address:d.address,zone:d.zone,geo:d.geo});d.addressId=id;toast('Adresse enregistrée dans votre profil');renderConfig();}else if(c==='confirm'){S.payStep=true;S.payEdit=false;render();}return;}
+    if(b.dataset.cfg){const c=b.dataset.cfg;if(!S.draft)return;if(c==='back'){S.draft=null;render();}else if(c==='minus'){S.draft.duration=Math.max(1,S.draft.duration-1);renderConfig();}else if(c==='plus'){S.draft.duration=Math.min(isDayU(S.draft)?30:10,S.draft.duration+1);renderConfig();}else if(c==='unit-h'){S.draft.unit='h';S.draft.rate=(S.adminPrices&&S.adminPrices[S.draft.svc]!=null)?S.adminPrices[S.draft.svc]:svcBase(S.draft.svc);S.draft.duration=3;renderConfig();}else if(c==='unit-j'){S.draft.unit='j';S.draft.rate=DAY_RECO;S.draft.duration=2;renderConfig();}else if(c==='geoloc'){geolocate(g=>{if(S.draft){S.draft.geo=g;renderConfig();}});}else if(c==='addr-save-draft'){const d=S.draft;const id='ad'+Date.now();S.addresses.push({id,label:(d.address||'Adresse ponctuelle').slice(0,40),address:d.address,zone:d.zone,geo:d.geo});d.addressId=id;toast('Adresse enregistrée dans votre profil');renderConfig();}else if(c==='confirm'){const mm=minSlotToday(S.draft);if(mm>=0&&!S.draft.slotFlex&&slotToMin(S.draft.slot)<mm){toast('Choisissez une heure à venir');renderConfig();return;}S.payStep=true;S.payEdit=false;render();}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('invoice:')===0){S.invoiceId=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('rbfreq:')===0){S.rebookFreq=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('reqview:')===0){S.proReqView=b.dataset.act.slice('reqview:'.length);render();return;}
@@ -2595,13 +2601,16 @@
     const m=S.draft,t=totals(m);
     const zones=ZONES.map(z=>`<button class="seg ${m.zone===z?'on':''}" data-zone="${z}">${z}</button>`).join('');
     const presetSlots=['08:00','10:00','12:00','14:00','16:00'];
+    const minM=minSlotToday(m);
+    // Réservation pour aujourd'hui : on ne peut pas choisir une heure déjà passée.
+    if(minM>=0&&slotToMin(m.slot)<minM){const np=presetSlots.find(s=>slotToMin(s)>=minM);if(np){m.slot=np;m.slotMode=null;}else{let x=Math.ceil(minM/15)*15;if(x>1425)x=1425;m.slot=minToSlot(x);m.slotMode='pick';}}
     const customTime=m.slotMode==='pick'||!presetSlots.includes(m.slot);
-    const slots=presetSlots.map(s=>`<button class="seg ${(!customTime&&m.slot===s)?'on':''}" data-slot="${s}">${s}</button>`).join('')
+    const slots=presetSlots.map(s=>{const past=minM>=0&&slotToMin(s)<minM;return `<button class="seg ${(!customTime&&m.slot===s)?'on':''}${past?' off':''}"${past?' disabled':` data-slot="${s}"`}>${s}</button>`;}).join('')
       +`<button class="seg ${customTime?'on':''}" data-slot="__pick">Autre…</button>`;
     paintView(`<div class="pad"><button class="reset" data-cfg="back" style="margin:8px 0 2px">← Retour</button><span class="eyebrow">${m.svcName}</span><div class="h-hello">Détails de la mission</div>
       ${m.svc==='animaux'?`<div class="field"><label>Mode de garde</label><div class="segs"><button class="seg ${isDayU(m)?'on':''}" data-cfg="unit-j">📅 À la journée</button><button class="seg ${!isDayU(m)?'on':''}" data-cfg="unit-h">${I.clock} À l'heure</button></div><p class="mini" style="margin-top:6px">Pour une garde sur plusieurs jours, choisissez « à la journée » — vous fixez les <b>dates</b>, pas les heures.</p></div>`:''}
       <div class="field"><label>${isDayU(m)?'Date de début':'Quand&nbsp;?'}</label><div class="segs"><button class="seg ${m.dateMode!=='pick'&&m.when==='Aujourd’hui'?'on':''}" data-when="Aujourd’hui">Aujourd'hui</button><button class="seg ${m.dateMode!=='pick'&&m.when==='Demain'?'on':''}" data-when="Demain">Demain</button><button class="seg ${m.dateMode==='pick'?'on':''}" data-when="__pick">Choisir…</button></div>${m.dateMode==='pick'?`<input class="txt" type="date" data-cfdate style="margin-top:10px" value="${m.dateISO||''}">`:''}</div>
-      <div class="field"><label>${isDayU(m)?'Heure de dépôt':'Heure souhaitée'}</label><div class="segs">${slots}</div>${customTime?`<input class="txt" type="time" data-cftime step="900" style="margin-top:10px" value="${/^\d{2}:\d{2}$/.test(m.slot)?m.slot:''}">`:''}</div>
+      <div class="field"><label>${isDayU(m)?'Heure de dépôt':'Heure souhaitée'}</label><div class="segs">${slots}</div>${customTime?`<input class="txt" type="time" data-cftime step="900" ${minM>=0?`min="${minToSlot(minM)}"`:''} style="margin-top:10px" value="${/^\d{2}:\d{2}$/.test(m.slot)?m.slot:''}">`:''}${minM>=0?`<p class="mini" style="margin-top:6px;color:var(--muted)">Pour aujourd'hui, seules les heures à venir sont proposées.</p>`:''}</div>
       ${!isDayU(m)?`<div class="field"><label>Souplesse sur l'heure</label><div class="segs"><button class="seg ${(!m.slotFlex)?'on':''}" data-slotflex="0">Précise</button><button class="seg ${m.slotFlex===30?'on':''}" data-slotflex="30">± 30 min</button><button class="seg ${m.slotFlex===60?'on':''}" data-slotflex="60">± 1 h</button><button class="seg ${m.slotFlex===120?'on':''}" data-slotflex="120">± 2 h</button><button class="seg ${m.slotFlex==='day'?'on':''}" data-slotflex="day">Journée</button></div>${m.slotFlex?`<p class="mini" style="margin-top:6px">${I.clock} Vous laissez de la souplesse&nbsp;: l'artisan choisira un <b>créneau précis ${flexTxt(m)}</b> et vous le confirmera en acceptant — vos demandes sont acceptées plus vite.</p>`:`<p class="mini" style="margin-top:6px">Heure ferme. Astuce&nbsp;: un peu de souplesse fait accepter votre demande plus vite.</p>`}</div>`:''}
       <div class="field"><label>Fréquence</label><div class="segs">${FREQS.map(f=>`<button class="seg ${(m.frequency||'ponctuelle')===f.id?'on':''}" data-freq="${f.id}">${f.lbl}</button>`).join('')}</div>${(m.frequency&&m.frequency!=='ponctuelle')?`<p class="mini" style="margin-top:6px">🔁 Prestation régulière — le même artisan à chaque fois, annulable à tout moment.</p>`:''}</div>
       <div class="field"><label>Tarif ${isDayU(m)?'journalier':'horaire'} — prix fixe Ti-Services</label><div class="pricebox"><b class="money" style="font-size:22px;font-family:var(--f-disp)">${fixedRate(m)} ${rateUnit(m)}</b><span class="chip good" style="padding:3px 9px">${I.check} Prix fixe</span></div><p class="mini" style="margin-top:6px">Tarif défini par Ti-Services — pas de négociation, pas de surprise.</p></div>
@@ -2662,7 +2671,7 @@
     const lf=e.target.closest('[data-lf]');if(lf){S.loginForm[lf.dataset.lf]=lf.value;const btn=document.querySelector('[data-act="do-login"]');if(btn)btn.disabled=!(/.+@.+\..+/.test(S.loginForm.email||'')&&(S.loginForm.password||'').length>=1);}
     const pr=e.target.closest('[data-prate]');if(pr){S.proForm.rate=+pr.value;const el=document.getElementById('prateVal');if(el)el.textContent=pr.value+' €/h';}
     const cd=e.target.closest('[data-cfdate]');if(cd&&S.draft){S.draft.dateISO=cd.value;S.draft.when=fmtDate(cd.value);renderConfig();}
-    const ct=e.target.closest('[data-cftime]');if(ct&&S.draft&&ct.value){S.draft.slot=ct.value;}
+    const ct=e.target.closest('[data-cftime]');if(ct&&S.draft&&ct.value){let v=ct.value;const mm=minSlotToday(S.draft);if(mm>=0&&slotToMin(v)<mm){v=minToSlot(Math.ceil(mm/15)*15);ct.value=v;toast('Heure déjà passée — ajustée');}S.draft.slot=v;}
     const pt=e.target.closest('[data-proslottime]');if(pt&&S.mission&&pt.value){S.mission.proposedSlot=clampSlot(S.mission,pt.value);S.mission.proSlotMode='pick';render();}
     const am=e.target.closest('[data-addrmanual]');if(am&&S.draft){S.draft.address=am.value;}
     const pph=e.target.closest('[data-pphone]');if(pph){S.proPhone=pph.value;}
