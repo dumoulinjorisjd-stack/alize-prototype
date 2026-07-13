@@ -97,6 +97,18 @@ service cloud.firestore {
           || parent().clientUid == uid()
           || parent().providerUid == uid();
       }
+
+      // Détails privés (adresse exacte, GPS, accès) : créés par le client,
+      // lisibles seulement par le client, l'artisan ASSIGNÉ et l'admin
+      // (jamais par les artisans qui parcourent les demandes ouvertes).
+      match /private/{doc} {
+        function parent() {
+          return get(/databases/$(database)/documents/requests/$(reqId)).data;
+        }
+        allow create: if signedIn() && parent().clientUid == uid();
+        allow read:   if isAdmin() || parent().clientUid == uid() || parent().providerUid == uid();
+        allow update, delete: if isAdmin() || parent().clientUid == uid();
+      }
     }
   }
 }

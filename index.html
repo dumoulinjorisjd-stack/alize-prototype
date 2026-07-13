@@ -1542,14 +1542,15 @@
   function placeMission(){const d=S.draft;if(!d)return;if(S.avgOffers[d.svc]){S.avgOffers[d.svc].sum+=d.rate;S.avgOffers[d.svc].n++;}S.mission=d;S.draft=null;S.payStep=false;S.payEdit=false;persistRequest(d);startSearch();}
   // Étape 0 : la demande devient une fiche Firestore `requests/{id}` (vrais comptes uniquement).
   // Sans adresse exacte ni GPS — révélés seulement à l'artisan qui accepte. Base des notifications.
-  function persistRequest(m){
+  async function persistRequest(m){
     try{
       if(!(FB&&FB.auth&&FB.auth.currentUser))return; // démo / hors-ligne : aucune écriture
       const t=totals(m),u=FB.auth.currentUser;
-      FB.f.addDoc(FB.f.collection(FB.db,'requests'),{
+      const first=((S.account&&S.account.name)||'').trim().split(' ')[0]||'Client';
+      const ref=await FB.f.addDoc(FB.f.collection(FB.db,'requests'),{
         clientUid:u.uid,
-        clientName:(S.account&&S.account.name)||'',
-        status:'pending',
+        clientName:first,
+        status:'pending', providerUid:null, providerName:'',
         service:m.svc, serviceName:m.svcName,
         zone:m.zone||'',
         when:m.when||'', slot:m.slot||'', slotFlex:(m.slotFlex||0),
@@ -1558,8 +1559,32 @@
         frequency:m.frequency||'ponctuelle',
         notes:(m.notes||'').slice(0,500),
         createdAt:FB.f.serverTimestamp()
-      }).then(function(ref){ m.reqId=ref.id; }).catch(function(e){ console.warn('requests write failed',e); });
-    }catch(e){ console.warn(e); }
+      });
+      m.reqId=ref.id;
+      // Détails privés (adresse exacte, GPS, accès) — révélés seulement à l'artisan assigné.
+      try{ await FB.f.setDoc(FB.f.doc(FB.db,'requests',ref.id,'private','details'),{address:m.address||'',zone:m.zone||'',geo:m.geo||null,access:m.access||'',clientPhone:(S.account&&S.account.phone)||''}); }catch(_){}
+      subscribeClientRequest(ref.id);
+    }catch(e){ console.warn('requests write failed',e); }
+  }
+  // Le client écoute SA demande : dès qu'un artisan l'accepte, l'app affiche le vrai artisan.
+  let clientReqUnsub=null;
+  function subscribeClientRequest(id){
+    if(!FB||!id)return;
+    if(clientReqUnsub){try{clientReqUnsub();}catch(_){}clientReqUnsub=null;}
+    try{
+      clientReqUnsub=FB.f.onSnapshot(FB.f.doc(FB.db,'requests',id),function(snap){
+        if(!snap.exists())return;
+        const r=snap.data()||{};const m=S.mission;if(!m||m.reqId!==id)return;
+        if(r.status==='accepted'&&m.status!=='accepted'&&m.status!=='working'&&m.status!=='done_pro'){
+          m.status='accepted';
+          m.provider=Object.assign({},PROVIDERS[m.svc]||{ini:'AR',rating:0,jobs:0},{nm:r.providerName||'Votre artisan',ini:inits(r.providerName||'Artisan')});
+          m.providerUid=r.providerUid||null;
+          if(r.acceptedSlot)m.slot=r.acceptedSlot;
+          if(S.persona==='client')render();burstConfetti();
+          try{ if('Notification'in window&&Notification.permission==='granted'){ new Notification('Ti-Services',{body:(r.providerName||'Un artisan')+' a accepté votre demande.',icon:'./icon-192.png',tag:'ti-accepted'}); } }catch(_){}
+        }
+      },function(err){console.warn('client request listen',err);});
+    }catch(e){console.warn(e);}
   }
   // Le scénario de DÉMO (toutes les données pré-remplies). Utilisé par « Voir la démo ».
   function seedDemo(){
@@ -1811,12 +1836,12 @@
 
       <div class="card" style="padding:15px;margin-top:12px"><div class="row between"><div><b style="font-size:15px">${S.proOnline?'Vous êtes en ligne':'Hors ligne'}</b><div class="mini">${S.proOnline?'Vous recevez les missions près de vous':'Activez pour recevoir des missions'}</div></div><button class="switch" data-act="toggle-online" style="background:${S.proOnline?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${S.proOnline?'25px':'3px'}"></span></button></div></div>
 
-      <div class="card" style="padding:16px;margin-top:12px;background:var(--teal-wash);border:1.5px solid color-mix(in srgb,var(--teal) 32%,transparent)">
+      ${(FB&&!isDemo())?openRequestsBlock():`<div class="card" style="padding:16px;margin-top:12px;background:var(--teal-wash);border:1.5px solid color-mix(in srgb,var(--teal) 32%,transparent)">
         <span class="eyebrow" style="color:var(--teal-deep)">${I.bolt} Forte demande près de vous</span>
         <div style="margin-top:8px"><b style="font-size:23px;font-family:var(--f-disp)">${d.count} demandes</b> <span class="sub">non pourvues cette semaine</span></div>
         <div class="mini" style="margin-top:3px">${d.names} · Saint-Barth · <b style="color:var(--teal-deep)">~${d.amount.toLocaleString('fr-FR')} € de missions à prendre</b></div>
         ${S.proOnline?`<p class="mini" style="margin-top:10px">Restez en ligne : chaque demande de votre zone atterrit ici — premier arrivé, premier servi.</p>`:`<button class="btn primary sm" data-act="toggle-online" style="margin-top:12px;width:auto;padding:9px 16px">Passer en ligne pour en profiter</button>`}
-      </div>
+      </div>`}
 
       <div class="card" style="padding:16px;margin-top:12px">
         <div class="row between"><span class="eyebrow" style="color:var(--muted)">${I.wallet} Vos revenus</span><button class="linklike" data-pnav="earnings">Détail ›</button></div>
@@ -2147,6 +2172,7 @@
     if(b.dataset.cfg){const c=b.dataset.cfg;if(!S.draft)return;if(c==='back'){S.draft=null;render();}else if(c==='minus'){S.draft.duration=Math.max(1,S.draft.duration-1);renderConfig();}else if(c==='plus'){S.draft.duration=Math.min(isDayU(S.draft)?30:10,S.draft.duration+1);renderConfig();}else if(c==='unit-h'){S.draft.unit='h';S.draft.rate=(S.adminPrices&&S.adminPrices[S.draft.svc]!=null)?S.adminPrices[S.draft.svc]:svcBase(S.draft.svc);S.draft.duration=3;renderConfig();}else if(c==='unit-j'){S.draft.unit='j';S.draft.rate=DAY_RECO;S.draft.duration=2;renderConfig();}else if(c==='geoloc'){geolocate(g=>{if(S.draft){S.draft.geo=g;renderConfig();}});}else if(c==='addr-save-draft'){const d=S.draft;const id='ad'+Date.now();S.addresses.push({id,label:(d.address||'Adresse ponctuelle').slice(0,40),address:d.address,zone:d.zone,geo:d.geo});d.addressId=id;toast('Adresse enregistrée dans votre profil');renderConfig();}else if(c==='confirm'){S.payStep=true;S.payEdit=false;render();}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('invoice:')===0){S.invoiceId=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('rbfreq:')===0){S.rebookFreq=b.dataset.act.split(':')[1];render();return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('accept-req:')===0){acceptRequestReal(b.dataset.act.slice('accept-req:'.length));return;}
     if(b.dataset.act&&b.dataset.act.indexOf('rmphoto:')===0){const i=+b.dataset.act.split(':')[1];if(S.draft&&S.draft.photos){const u=S.draft.photos[i];if(u&&u.indexOf('blob:')===0){try{URL.revokeObjectURL(u);}catch(_){}}S.draft.photos.splice(i,1);renderConfig();}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('ics:')===0){const i=+b.dataset.act.split(':')[1];const a=S.agenda[i];if(a)downloadIcs(icsBuild([a]),'ti-services-'+(a.svc||'rdv')+'.ics');return;}
     if(b.dataset.act==='ics-all'){const up=S.agenda.filter(a=>a.status!=='done');if(up.length)downloadIcs(icsBuild(up),'ti-services-agenda.ics');return;}
@@ -2488,6 +2514,7 @@
         S.onboarded=true;S.authView=null;S.proNav='home';render();
         if(typeof Notification!=='undefined'&&Notification.permission==='granted')registerPush('artisan');
         subscribeProStatus(user.uid);
+        if(S.proStatus==='approved')subscribeOpenRequests();
         return;
       }
       // Inscription artisan en cours : la fiche users (role: artisan) n'est peut-être
@@ -2659,12 +2686,50 @@
             toast('🎉 Inscription validée — bienvenue chez Ti-Services !');
             try{ if('Notification'in window&&Notification.permission==='granted'){ new Notification('Ti-Services — inscription validée',{body:'Votre compte est activé. Vous pouvez recevoir des missions.',icon:'./icon-192.png',tag:'ti-approved'}); } }catch(_){}
           }
+          if(newStatus==='approved')subscribeOpenRequests();
           if(S.persona==='pro')render();
         }
       },function(err){console.warn('pro status listen',err);});
     }catch(e){console.warn(e);}
   }
-  function fbLogout(){ if(adminArtUnsub){try{adminArtUnsub();}catch(_){}adminArtUnsub=null;} if(proStatusUnsub){try{proStatusUnsub();}catch(_){}proStatusUnsub=null;} adminSeenPending=null; if(FB){ try{FB.a.signOut(FB.auth);}catch(_){} } }
+  // L'artisan validé écoute les demandes ouvertes (pending) de ses services.
+  let openReqUnsub=null;
+  function subscribeOpenRequests(){
+    if(!FB)return;
+    if(openReqUnsub){try{openReqUnsub();}catch(_){}openReqUnsub=null;}
+    try{
+      const q=FB.f.query(FB.f.collection(FB.db,'requests'),FB.f.where('status','==','pending'));
+      openReqUnsub=FB.f.onSnapshot(q,function(snap){
+        const cats=S.proCats||[];const list=[];
+        snap.forEach(function(d){const r=d.data()||{};if(!cats.length||cats.indexOf(r.service)>=0){list.push(Object.assign({id:d.id},r));}});
+        list.sort(function(a,b){return (b.boost||0)-(a.boost||0);});
+        S.openRequests=list;
+        if(S.persona==='pro'&&!S.mission)render();
+      },function(err){console.warn('open requests listen',err);});
+    }catch(e){console.warn(e);}
+  }
+  // L'artisan accepte une demande : « premier arrivé, premier servi » (la règle
+  // Firestore refuse la prise si la demande n'est plus « pending »).
+  async function acceptRequestReal(reqId){
+    if(!(FB&&FB.auth&&FB.auth.currentUser))return;
+    const req=(S.openRequests||[]).find(function(x){return x.id===reqId;});if(!req)return;
+    try{
+      const uid=FB.auth.currentUser.uid;
+      const acceptedSlot=req.slot||'';
+      await FB.f.updateDoc(FB.f.doc(FB.db,'requests',reqId),{status:'accepted',providerUid:uid,providerName:S.proName||'',acceptedSlot:acceptedSlot,acceptedAt:FB.f.serverTimestamp()});
+      let det={};try{const s=await FB.f.getDoc(FB.f.doc(FB.db,'requests',reqId,'private','details'));det=s.exists()?s.data():{};}catch(_){}
+      const base=findSvc(req.service)||{id:req.service,nm:req.serviceName||svcNm(req.service),rate:req.rate||svcBase(req.service)};
+      S.mission=Object.assign(newMission(base),{reqId:reqId,status:'accepted',svc:req.service,svcName:req.serviceName||svcNm(req.service),rate:req.rate,duration:req.duration||1,unit:req.unit||'h',when:req.when||'',slot:acceptedSlot,zone:req.zone||det.zone||'',address:det.address||'',geo:det.geo||null,access:det.access||'',boost:req.boost||0,provider:Object.assign({},PROVIDERS[req.service]||{},{nm:S.proName||'Vous'})});
+      S.proNav='home';render();burstConfetti();toast('Mission acceptée — à vous de jouer !');
+    }catch(e){console.warn('accept failed',e);toast('Trop tard — cette mission vient d’être prise');}
+  }
+  // Bloc « missions disponibles » (vraies demandes) affiché à l'artisan validé.
+  function openRequestsBlock(){
+    const list=S.openRequests||[];
+    if(!list.length)return `<div class="card" style="padding:18px;margin-top:12px;text-align:center;border-style:dashed"><div class="radar sm"><div class="ring r1"></div><div class="ring r2"></div><div class="core">${I.bolt}</div></div><p class="sub" style="margin:6px 0 0">Aucune demande pour l'instant.</p><p class="mini" style="margin-top:4px">Vous serez notifié dès qu'une demande de votre zone arrive.</p></div>`;
+    return `<div style="margin-top:12px"><span class="eyebrow" style="color:var(--teal-deep)">${I.flame} Missions disponibles · ${list.length}</span>${list.map(function(r){const win=r.slotFlex?('vers '+r.slot+(r.slotFlex==='day'?' · dans la journée':' · souple')):(r.slot||'');return `<div class="card" style="padding:14px;margin-top:10px"><div class="row between"><b style="font-size:14.5px">${esc(r.serviceName||svcNm(r.service))}</b><b class="money" style="color:var(--teal-deep);font-family:var(--f-disp)">${eur(r.total||0)}</b></div><div class="mini" style="margin-top:4px">${I.pin} ${esc(r.zone||'')} · ${esc(r.when||'')} · ${esc(win)} · ${r.duration||1} ${r.unit==='j'?'j':'h'}</div>${r.boost?`<span class="chip" style="padding:2px 9px;background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.bolt} Coupe-file +${r.boost}%</span>`:''}${r.notes?`<p class="mini" style="margin-top:7px;color:var(--ink-soft)">${esc(r.notes)}</p>`:''}<button class="btn accept sm" data-act="accept-req:${r.id}" style="margin-top:11px">${I.flame} Accepter cette mission</button></div>`;}).join('')}</div>`;
+  }
+  function fbLogout(){ if(adminArtUnsub){try{adminArtUnsub();}catch(_){}adminArtUnsub=null;} if(proStatusUnsub){try{proStatusUnsub();}catch(_){}proStatusUnsub=null;} if(openReqUnsub){try{openReqUnsub();}catch(_){}openReqUnsub=null;} if(clientReqUnsub){try{clientReqUnsub();}catch(_){}clientReqUnsub=null;} adminSeenPending=null; if(FB){ try{FB.a.signOut(FB.auth);}catch(_){} } }
 
   handleDeepLink();
   render();
