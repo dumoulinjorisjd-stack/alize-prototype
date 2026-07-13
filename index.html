@@ -750,6 +750,17 @@
       rd.onerror=function(){cb('');};rd.readAsDataURL(file);
     }catch(_){cb('');}
   }
+  // Photo de demande (réduite en data URL, donc transmissible à l'artisan).
+  function bookingPhotoDataUrl(file,cb){
+    try{
+      const rd=new FileReader();
+      rd.onload=function(){const img=new Image();img.onload=function(){
+        const max=1000;let w=img.width,h=img.height;const s=Math.min(1,max/Math.max(w,h)||1);w=Math.max(1,Math.round(w*s));h=Math.max(1,Math.round(h*s));
+        try{const cv=document.createElement('canvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(img,0,0,w,h);cb(cv.toDataURL('image/jpeg',0.6));}catch(_){cb('');}
+      };img.onerror=function(){cb('');};img.src=rd.result;};
+      rd.onerror=function(){cb('');};rd.readAsDataURL(file);
+    }catch(_){cb('');}
+  }
 
   /* Compte de démo persistant (maquette) : on garde nom/e-mail/secteur pour
      illustrer « je reviens et je me connecte ». Le mot de passe n'est JAMAIS
@@ -904,7 +915,7 @@
     addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,
     concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,
     proPhoto:null,proStatus:'approved',proFounder:true,proNotifPush:true,proNotifWa:true,proPhone:'0690 00 00 00',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:'',photo:''},
-    proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proMissions:[],proSkipped:[],proStmt:false,
+    proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proReqSlot:null,proReqPick:false,proMissions:[],proSkipped:[],proStmt:false,
     proHistory:PRO_HISTORY(),
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),
     chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,
@@ -1749,6 +1760,7 @@
       const ref=await FB.f.addDoc(FB.f.collection(FB.db,'requests'),{
         clientUid:u.uid,
         clientName:first,
+        clientPhoto:(S.account&&S.account.photo)||null,
         status:'pending', providerUid:null, providerName:'',
         service:m.svc, serviceName:m.svcName,
         zone:m.zone||'',
@@ -1760,6 +1772,9 @@
         createdAt:FB.f.serverTimestamp()
       });
       m.reqId=ref.id;
+      // Photos de la demande (transmises à l'artisan) — écriture isolée pour ne
+      // jamais faire échouer la demande si elles sont volumineuses.
+      if(m.photos&&m.photos.length){try{ await FB.f.updateDoc(FB.f.doc(FB.db,'requests',ref.id),{photos:m.photos.slice(0,4)}); }catch(_){}}
       // Détails privés (adresse exacte, GPS, accès) — révélés seulement à l'artisan assigné.
       try{ await FB.f.setDoc(FB.f.doc(FB.db,'requests',ref.id,'private','details'),{address:m.address||'',zone:m.zone||'',geo:m.geo||null,access:m.access||'',clientPhone:(S.account&&S.account.phone)||'',clientName:first,clientPhoto:(S.account&&S.account.photo)||null}); }catch(_){}
       subscribeClientRequest(ref.id);
@@ -2372,7 +2387,7 @@
     S.mission=nm;S.clientNav='wallet';render();burstConfetti();toast('Reprogrammé avec '+(p?p.nm.split(' ')[0]:'votre artisan')+' · '+freqInfo(freq).short);
   }
   document.addEventListener('click',(e)=>{
-    const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pstatus],[data-cfg],[data-zone],[data-czone],[data-when],[data-offer],[data-boost],[data-price],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-conc-off],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-proslot]');
+    const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pstatus],[data-cfg],[data-zone],[data-czone],[data-when],[data-offer],[data-boost],[data-price],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-conc-off],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-proslot],[data-proreqslot]');
     if(!b)return;
     if(b.dataset.act==='pw-toggle'){const w=b.closest('.pw-wrap');const inp=w&&w.querySelector('input');if(inp){const reveal=inp.type==='password';inp.type=reveal?'text':'password';b.innerHTML=reveal?I.eyeoff:I.eye;}return;}
     if(b.dataset.persona){go(b.dataset.persona);return;}
@@ -2434,7 +2449,8 @@
     if(b.dataset.cfg){const c=b.dataset.cfg;if(!S.draft)return;if(c==='back'){S.draft=null;render();}else if(c==='minus'){S.draft.duration=Math.max(1,S.draft.duration-1);renderConfig();}else if(c==='plus'){S.draft.duration=Math.min(isDayU(S.draft)?30:10,S.draft.duration+1);renderConfig();}else if(c==='unit-h'){S.draft.unit='h';S.draft.rate=(S.adminPrices&&S.adminPrices[S.draft.svc]!=null)?S.adminPrices[S.draft.svc]:svcBase(S.draft.svc);S.draft.duration=3;renderConfig();}else if(c==='unit-j'){S.draft.unit='j';S.draft.rate=DAY_RECO;S.draft.duration=2;renderConfig();}else if(c==='geoloc'){geolocate(g=>{if(S.draft){S.draft.geo=g;renderConfig();}});}else if(c==='addr-save-draft'){const d=S.draft;const id='ad'+Date.now();S.addresses.push({id,label:(d.address||'Adresse ponctuelle').slice(0,40),address:d.address,zone:d.zone,geo:d.geo});d.addressId=id;toast('Adresse enregistrée dans votre profil');renderConfig();}else if(c==='confirm'){const mm=minSlotToday(S.draft);if(mm>=0&&!S.draft.slotFlex&&slotToMin(S.draft.slot)<mm){toast('Choisissez une heure à venir');renderConfig();return;}S.payStep=true;S.payEdit=false;render();}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('invoice:')===0){S.invoiceId=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('rbfreq:')===0){S.rebookFreq=b.dataset.act.split(':')[1];render();return;}
-    if(b.dataset.act&&b.dataset.act.indexOf('reqview:')===0){S.proReqView=b.dataset.act.slice('reqview:'.length);render();return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('reqview:')===0){S.proReqView=b.dataset.act.slice('reqview:'.length);S.proReqSlot=null;S.proReqPick=false;render();return;}
+    if(b.dataset.proreqslot){if(b.dataset.proreqslot==='__pick'){S.proReqPick=true;}else{S.proReqPick=false;S.proReqSlot=b.dataset.proreqslot;}render();return;}
     if(b.dataset.act==='reqview-close'){S.proReqView=null;render();return;}
     if(b.dataset.act==='reqview-skip'){if(S.proReqView&&(S.proSkipped||[]).indexOf(S.proReqView)<0){S.proSkipped=S.proSkipped||[];S.proSkipped.push(S.proReqView);}S.proReqView=null;render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('promiss:')===0){const id=b.dataset.act.slice('promiss:'.length);const mm=(S.proMissions||[]).find(function(x){return (x._id||'')===id;});if(mm){S.mission=mm;S.proReqView=null;S.proNav='home';render();}return;}
@@ -2673,6 +2689,7 @@
     const cd=e.target.closest('[data-cfdate]');if(cd&&S.draft){S.draft.dateISO=cd.value;S.draft.when=fmtDate(cd.value);renderConfig();}
     const ct=e.target.closest('[data-cftime]');if(ct&&S.draft&&ct.value){let v=ct.value;const mm=minSlotToday(S.draft);if(mm>=0&&slotToMin(v)<mm){v=minToSlot(Math.ceil(mm/15)*15);ct.value=v;toast('Heure déjà passée — ajustée');}S.draft.slot=v;}
     const pt=e.target.closest('[data-proslottime]');if(pt&&S.mission&&pt.value){S.mission.proposedSlot=clampSlot(S.mission,pt.value);S.mission.proSlotMode='pick';render();}
+    const prt=e.target.closest('[data-proreqslottime]');if(prt&&prt.value){const r=(S.openRequests||[]).find(function(x){return x.id===S.proReqView;});if(r){S.proReqSlot=clampSlot(r,prt.value);render();}}
     const am=e.target.closest('[data-addrmanual]');if(am&&S.draft){S.draft.address=am.value;}
     const pph=e.target.closest('[data-pphone]');if(pph){S.proPhone=pph.value;}
     const af=e.target.closest('[data-af]');if(af&&S.addrForm){S.addrForm[af.dataset.af]=af.value;}
@@ -2682,7 +2699,7 @@
   });
   view.addEventListener('change',(e)=>{
     const fp=e.target.closest('[data-photoinput]');
-    if(fp&&S.draft){const files=Array.from(fp.files||[]);if(!files.length)return;S.draft.photos=S.draft.photos||[];files.slice(0,6).forEach(f=>{try{S.draft.photos.push(URL.createObjectURL(f));}catch(_){}});fp.value='';renderConfig();return;}
+    if(fp&&S.draft){const files=Array.from(fp.files||[]);if(!files.length)return;S.draft.photos=S.draft.photos||[];const room=Math.max(0,6-S.draft.photos.length);files.slice(0,room).forEach(f=>{bookingPhotoDataUrl(f,function(u){if(u&&S.draft){S.draft.photos.push(u);renderConfig();}});});fp.value='';renderConfig();return;}
     const ai=e.target.closest('[data-avatarinput]');
     if(ai&&ai.files&&ai.files[0]){const who=ai.dataset.avatarinput,file=ai.files[0];ai.value='';
       // Toutes les photos de profil sont réduites en data URL : légères et persistées en base.
@@ -2882,7 +2899,7 @@
         if(active.indexOf(r.status)<0)continue;
         let det={};try{const s=await FB.f.getDoc(FB.f.doc(FB.db,'requests',docu.id,'private','details'));det=s.exists()?s.data():{};}catch(_){}
         const base=findSvc(r.service)||{id:r.service,nm:r.serviceName||svcNm(r.service),rate:r.rate||svcBase(r.service)};
-        const m=Object.assign(newMission(base),{_id:'pm'+docu.id,reqId:docu.id,status:r.status,svc:r.service,svcName:r.serviceName||svcNm(r.service),rate:r.rate,duration:r.duration||1,unit:r.unit||'h',when:r.when||'',slot:(r.acceptedSlot||r.slot||''),zone:r.zone||det.zone||'',address:det.address||'',geo:det.geo||null,access:det.access||'',boost:r.boost||0,clientName:r.clientName||det.clientName||'',clientPhoto:det.clientPhoto||null,provider:Object.assign({},PROVIDERS[r.service]||{},{nm:S.proName||'Vous'})});
+        const m=Object.assign(newMission(base),{_id:'pm'+docu.id,reqId:docu.id,status:r.status,svc:r.service,svcName:r.serviceName||svcNm(r.service),rate:r.rate,duration:r.duration||1,unit:r.unit||'h',when:r.when||'',slot:(r.acceptedSlot||r.slot||''),slotFlex:r.slotFlex||0,zone:r.zone||det.zone||'',address:det.address||'',geo:det.geo||null,access:det.access||'',boost:r.boost||0,notes:r.notes||'',photos:(r.photos||[]).slice(),clientName:r.clientName||det.clientName||'',clientPhoto:r.clientPhoto||det.clientPhoto||null,provider:Object.assign({},PROVIDERS[r.service]||{},{nm:S.proName||'Vous'})});
         miss.push(m);
       }
       if(miss.length){S.proMissions=miss;if(S.persona==='pro'&&!S.mission)render();}
@@ -3066,12 +3083,12 @@
     const req=(S.openRequests||[]).find(function(x){return x.id===reqId;});if(!req)return;
     try{
       const uid=FB.auth.currentUser.uid;
-      const acceptedSlot=req.slot||'';
+      const acceptedSlot=req.slotFlex?clampSlot(req,S.proReqSlot||req.slot):(req.slot||'');
       await FB.f.updateDoc(FB.f.doc(FB.db,'requests',reqId),{status:'accepted',providerUid:uid,providerName:S.proName||'',acceptedSlot:acceptedSlot,acceptedAt:FB.f.serverTimestamp()});
       let det={};try{const s=await FB.f.getDoc(FB.f.doc(FB.db,'requests',reqId,'private','details'));det=s.exists()?s.data():{};}catch(_){}
       const base=findSvc(req.service)||{id:req.service,nm:req.serviceName||svcNm(req.service),rate:req.rate||svcBase(req.service)};
-      S.mission=Object.assign(newMission(base),{reqId:reqId,status:'accepted',svc:req.service,svcName:req.serviceName||svcNm(req.service),rate:req.rate,duration:req.duration||1,unit:req.unit||'h',when:req.when||'',slot:acceptedSlot,zone:req.zone||det.zone||'',address:det.address||'',geo:det.geo||null,access:det.access||'',boost:req.boost||0,clientName:req.clientName||det.clientName||'',clientPhoto:det.clientPhoto||null,provider:Object.assign({},PROVIDERS[req.service]||{},{nm:S.proName||'Vous'})});
-      proAddMission(S.mission);S.proReqView=null;S.proNav='home';render();burstConfetti();toast('Mission acceptée — à vous de jouer !');
+      S.mission=Object.assign(newMission(base),{reqId:reqId,status:'accepted',svc:req.service,svcName:req.serviceName||svcNm(req.service),rate:req.rate,duration:req.duration||1,unit:req.unit||'h',when:req.when||'',slot:acceptedSlot,slotFlex:req.slotFlex||0,proposedSlot:req.slotFlex?acceptedSlot:null,zone:req.zone||det.zone||'',address:det.address||'',geo:det.geo||null,access:det.access||'',boost:req.boost||0,notes:req.notes||'',photos:(req.photos||[]).slice(),clientName:req.clientName||det.clientName||'',clientPhoto:req.clientPhoto||det.clientPhoto||null,provider:Object.assign({},PROVIDERS[req.service]||{},{nm:S.proName||'Vous'})});
+      proAddMission(S.mission);S.proReqView=null;S.proReqSlot=null;S.proReqPick=false;S.proNav='home';render();burstConfetti();toast('Mission acceptée — à vous de jouer !');
     }catch(e){console.warn('accept failed',e);toast('Trop tard — cette mission vient d’être prise');}
   }
   function reqWinTxt(r){return r.slotFlex?('vers '+r.slot+(r.slotFlex==='day'?' · dans la journée':' · créneau souple ±'+(r.slotFlex>=60?(r.slotFlex/60)+' h':r.slotFlex+' min'))):(r.slot||'');}
@@ -3090,9 +3107,11 @@
     const r=(S.openRequests||[]).find(function(x){return x.id===reqId;});
     if(!r)return `<div class="pad"><button class="reset" data-act="reqview-close" style="margin:8px 0 2px">← Retour</button><div class="h-hello" style="margin-top:10px">Mission introuvable</div><p class="sub" style="margin-top:6px">Cette mission vient d'être prise ou annulée.</p><div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-act="reqview-close">Retour aux missions</button></div></div>`;
     const win=reqWinTxt(r);const dayU=(r.unit==='j');
+    const accLabel=r.slotFlex?(' · j’arrive à '+esc(clampSlot(r,S.proReqSlot||r.slot))):'';
     return `<div class="pad"><button class="reset" data-act="reqview-close" style="margin:8px 0 2px">← Missions disponibles</button>
       <span class="eyebrow" style="color:var(--teal-deep)">${I.flame} Mission à saisir</span>
       <div class="h-hello">${esc(r.serviceName||svcNm(r.service))}</div>
+      <div class="row" style="gap:11px;margin-top:10px;align-items:center">${avatarPhoto(r.clientPhoto,inits(r.clientName||'Client'),'sm')}<div><b style="font-size:14.5px">${esc(r.clientName||'Client')}</b><div class="mini">Client Ti-Services · ${esc(r.zone||'')}</div></div></div>
       <div class="card" style="padding:16px;margin-top:14px">
         <div class="row between"><span class="sub">Vous percevez</span><b class="money" style="font-size:22px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(r.total||0)}</b></div>
         ${r.boost?`<div class="banner teal" style="margin-top:10px">${I.bolt}<span>Le client a ajouté un <b>coup de pouce +${r.boost}%</b> — majoration qui vous revient et rend la mission prioritaire.</span></div>`:''}
@@ -3103,14 +3122,26 @@
         <div class="row between" style="margin-top:8px"><span class="sub">${dayU?'Durée':'Durée estimée'}</span><b>${r.duration||1} ${dayU?'j':'h'}</b></div>
         ${(r.frequency&&r.frequency!=='ponctuelle')?`<div class="row between" style="margin-top:8px"><span class="sub">Fréquence</span><b>🔁 ${esc(freqInfo(r.frequency).short)}</b></div>`:''}
       </div>
-      ${r.slotFlex?`<div class="banner teal" style="margin-top:12px">${I.clock}<span>Créneau <b>souple</b> : en acceptant, vous confirmez une heure précise ${r.slotFlex==='day'?'dans la journée':'autour de '+r.slot} — le client l'accepte automatiquement.</span></div>`:''}
+      ${r.slotFlex?flexProposalBlock(r):''}
+      ${(r.photos&&r.photos.length)?`<div class="card" style="padding:14px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">📷 Photos du client</div><div class="thumbs" style="margin-top:8px">${r.photos.map(function(u){return `<div class="thumb"><img src="${esc(u)}" alt="Photo de la demande"></div>`;}).join('')}</div></div>`:''}
       ${r.notes?`<div class="card" style="padding:16px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Le besoin du client</div><p class="sub" style="margin-top:6px;color:var(--ink-soft);white-space:pre-wrap">${esc(r.notes)}</p></div>`:''}
       <div class="card" style="padding:14px;margin-top:12px"><div class="row" style="gap:10px;align-items:flex-start"><span class="benic">${I.lock}</span><div><b style="font-size:13.5px">Adresse exacte masquée</b><p class="mini" style="margin-top:3px">L'adresse précise, le point GPS et les infos d'accès s'affichent <b>dès que vous acceptez</b> la mission.</p></div></div></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0">
-        <button class="btn accept" data-act="accept-req:${r.id}">${I.flame} Accepter cette mission</button>
+        <button class="btn accept" data-act="accept-req:${r.id}">${I.flame} Accepter${accLabel||' cette mission'}</button>
         <button class="btn ghost" data-act="reqview-skip" style="margin-top:10px">Pas cette fois</button>
         <p class="mini" style="text-align:center;margin-top:10px">${I.bolt} « Pas cette fois » retire la mission de votre liste — elle reste proposée aux autres artisans.</p>
       </div></div>`;
+  }
+  // Créneau souple : l'artisan propose une heure précise dans la fenêtre du client.
+  function flexProposalBlock(r){
+    const list=proSlotList(r);
+    let sel=S.proReqSlot||r.slot;sel=clampSlot(r,sel);
+    const custom=!!S.proReqPick||list.indexOf(sel)<0;
+    const btns=list.map(function(s){return `<button class="seg ${(!custom&&sel===s)?'on':''}" data-proreqslot="${s}">${s}</button>`;}).join('')+`<button class="seg ${custom?'on':''}" data-proreqslot="__pick">Autre…</button>`;
+    return `<div class="card" style="padding:16px;margin-top:12px"><b style="font-size:14px">${I.clock}&nbsp;Proposez votre heure de passage</b>
+      <p class="mini" style="margin-top:4px;color:var(--muted)">Le client a laissé de la souplesse (${flexTxt(r)}). Choisissez l'heure qui vous arrange — il l'accepte automatiquement.</p>
+      <div class="segs" style="margin-top:10px">${btns}</div>${custom?`<input class="txt" type="time" data-proreqslottime step="900" min="${flexWindow(r)[0]}" max="${flexWindow(r)[1]}" style="margin-top:10px" value="${/^\d{2}:\d{2}$/.test(sel)?sel:''}">`:''}
+      <div class="banner teal" style="margin-top:10px">${I.check}<span>Vous arriverez à <b>${esc(sel)}</b> — confirmé au client en acceptant.</span></div></div>`;
   }
   function fbLogout(){ if(adminArtUnsub){try{adminArtUnsub();}catch(_){}adminArtUnsub=null;} if(proStatusUnsub){try{proStatusUnsub();}catch(_){}proStatusUnsub=null;} if(openReqUnsub){try{openReqUnsub();}catch(_){}openReqUnsub=null;} Object.keys(clientReqUnsubs).forEach(unsubClientRequest); adminSeenPending=null; if(FB){ try{FB.a.signOut(FB.auth);}catch(_){} } }
 
