@@ -1006,9 +1006,9 @@
   ];
   /* Interventions déjà réalisées par l'artisan connecté (récap + factures). */
   const PRO_HISTORY=()=>[
-    {id:'h1',dateISO:'2026-07-05',svc:'menage',client:'Villa Bartolomé',clientFull:'SCI Bartolomé',clientZone:'Gustavia',duration:2,rate:35,amount:70,invNo:'2026-0042',paidVia:'carte'},
-    {id:'h2',dateISO:'2026-07-03',svc:'jardin',client:'Mme Laplace',clientFull:'Mme Laplace',clientZone:'St-Jean',duration:1,rate:40,amount:40,invNo:'2026-0041',paidVia:'carte'},
-    {id:'h3',dateISO:'2026-06-28',svc:'menage',client:'Villa Sereno',clientFull:'M. et Mme Brin',clientZone:'Flamands',duration:3,rate:35,amount:105,invNo:'2026-0040',paidVia:'carte'}
+    {id:'h1',dateISO:'2026-07-05',svc:'menage',client:'Villa Bartolomé',clientFull:'SCI Bartolomé',clientZone:'Gustavia',duration:2,rate:35,amount:70,commPct:10,commission:7,net:63,invNo:'2026-0042',paidVia:'carte'},
+    {id:'h2',dateISO:'2026-07-03',svc:'jardin',client:'Mme Laplace',clientFull:'Mme Laplace',clientZone:'St-Jean',duration:1,rate:40,amount:40,commPct:10,commission:4,net:36,invNo:'2026-0041',paidVia:'carte'},
+    {id:'h3',dateISO:'2026-06-28',svc:'menage',client:'Villa Sereno',clientFull:'M. et Mme Brin',clientZone:'Flamands',duration:3,rate:35,amount:105,commPct:10,commission:10.5,net:94.5,invNo:'2026-0040',paidVia:'carte'}
   ];
   const ADMIN_BOOK=()=>[
     {id:'b1',client:'Camille Magras',artisan:'Marie-Lou Cagan',svc:'menage',status:'working',amount:105,when:'Auj. 14:00'},
@@ -1062,7 +1062,7 @@
     addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,
     concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,
     proPhoto:null,proStatus:'approved',proFounder:true,proNotifPush:true,proNotifWa:true,proPhone:'0690 00 00 00',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:'',photo:''},
-    proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proReqSlot:null,proReqPick:false,proMissions:[],proSkipped:[],proConflict:null,proStmt:false,signupKind:null,concSignup:null,concStatus:'approved',adminConcierges:[],
+    proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proReqSlot:null,proReqPick:false,proMissions:[],proSkipped:[],proConflict:null,proStmt:false,commInvId:null,commStmt:false,signupKind:null,concSignup:null,concStatus:'approved',adminConcierges:[],
     proHistory:PRO_HISTORY(),
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),
     chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,histInvoice:null,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,delAcct:false,
@@ -1088,7 +1088,18 @@
   function billHours(m){return (m.finalHours!=null)?m.finalHours:m.duration;}
   // Tarif fixe (admin) pour la prestation ; la majoration « coup de pouce » s'ajoute par-dessus.
   function fixedRate(m){if(isDayU(m))return DAY_RECO;const p=S.adminPrices&&S.adminPrices[m.svc];return (p!=null)?p:svcBase(m.svc);}
-  function totals(m){const rate=fixedRate(m);const h=billHours(m);const sub=rate*h;const boost=m.boost||0;const maj=Math.round(sub*boost/100);const total=sub+maj;return {rate,sub,hours:h,boost,maj,commission:0,payout:total,total};}
+  // Taux de commission Ti-Services (barème de fidélité dégressif). Figé sur la mission
+  // au moment du règlement (m.commPct) pour rester stable dans l'historique/les factures.
+  function commPctFor(m){return (m&&m.commPct!=null)?m.commPct:fidFor(S.proJobsTotal||0).pct;}
+  function totals(m){const rate=fixedRate(m);const h=billHours(m);const sub=rate*h;const boost=m.boost||0;const maj=Math.round(sub*boost/100);const total=sub+maj;
+    // La commission Ti-Services porte sur la base (sub) ; la majoration « coup de pouce »
+    // revient intégralement à l'intervenant (CGV art. 2).
+    const commPct=commPctFor(m);const commission=Math.round(sub*commPct)/100;const payout=Math.round((total-commission)*100)/100;
+    return {rate,sub,hours:h,boost,maj,commPct,commission,payout,total};}
+  // Décompose une ligne d'historique : brut (prix payé par le client / vente au mandat),
+  // commission Ti-Services, net perçu par l'artisan. Rétrocompatible avec les anciennes
+  // lignes (sans commission → net = brut).
+  function histBreakdown(h){const gross=h?(h.amount||0):0;const pct=(h&&h.commPct!=null)?h.commPct:0;const commission=(h&&h.commission!=null)?h.commission:Math.round(gross*pct)/100;const net=(h&&h.net!=null)?h.net:Math.round((gross-commission)*100)/100;return {gross:gross,pct:pct,commission:commission,net:net};}
   /* Unité de réservation : heure (défaut) ou jour (garde d'animaux). */
   const DAY_RECO=35,DAY_FLOOR=20;
   function isDayU(m){return !!(m&&m.unit==='j');}
@@ -1097,7 +1108,7 @@
   function recoFor(m){return isDayU(m)?DAY_RECO:svcReco(m.svc);}
   function floorFor(m){return isDayU(m)?DAY_FLOOR:svcFloor(m.svc);}
   function endDateTxt(m){if(!isDayU(m))return '';let startISO=m.dateISO;if(!startISO){const d=new Date();if(m.when==='Demain')d.setDate(d.getDate()+1);startISO=d.toISOString().slice(0,10);}const d=new Date(startISO+'T00:00:00');const e=new Date(d);e.setDate(d.getDate()+Math.max(1,m.duration)-1);const f=(x)=>x.getDate()+'/'+(x.getMonth()+1);return f(d)+' → '+f(e);}
-  function finalizePaid(m){const tt=totals(m);m.status='paid';S.proEarnings+=tt.payout;if(m._appt){m._appt.status='done';m._appt.duration=billHours(m);m._appt.amount=tt.payout;}S.proHistory=S.proHistory||[];const seq='2026-'+String(43+S.proHistory.length).padStart(4,'0');m.invNo=seq;S.proHistory.unshift({id:'hm'+S.proHistory.length,dateISO:(m.dateISO||new Date().toISOString().slice(0,10)),svc:m.svc,client:'Camille M.',clientFull:'Camille Magras',clientZone:m.zone,duration:billHours(m),unit:m.unit,rate:tt.rate,amount:tt.payout,invNo:seq,paidVia:'carte'});}
+  function finalizePaid(m){if(m.commPct==null)m.commPct=fidFor(S.proJobsTotal||0).pct;const tt=totals(m);m.status='paid';S.proEarnings+=tt.payout;if(m._appt){m._appt.status='done';m._appt.duration=billHours(m);m._appt.amount=tt.total;}S.proHistory=S.proHistory||[];const seq='2026-'+String(43+S.proHistory.length).padStart(4,'0');m.invNo=seq;S.proHistory.unshift({id:'hm'+S.proHistory.length,dateISO:(m.dateISO||new Date().toISOString().slice(0,10)),svc:m.svc,client:'Camille M.',clientFull:'Camille Magras',clientZone:m.zone,duration:billHours(m),unit:m.unit,rate:tt.rate,amount:tt.total,commPct:tt.commPct,commission:tt.commission,net:tt.payout,invNo:seq,paidVia:'carte'});}
   const eur=(n)=>n.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
   const fmtDate=(iso)=>{if(!iso)return 'Aujourd’hui';const p=iso.split('-');return p[2]+'/'+p[1];};
   // Repli visuel (hors-ligne / carte non chargée) : petite carte stylisée.
@@ -2234,13 +2245,14 @@
   // Prestation validée par le client : on l'inscrit dans les revenus/missions de
   // l'artisan et on persiste (survit aux sessions et aux appareils).
   function recordProPaid(m){
+    if(m.commPct==null)m.commPct=fidFor(S.proJobsTotal||0).pct; // taux figé au règlement
     const t=totals(m);
-    S.proEarnings=(S.proEarnings||0)+t.payout;
+    S.proEarnings=Math.round(((S.proEarnings||0)+t.payout)*100)/100;
     S.proJobsTotal=(S.proJobsTotal||0)+1;
     S.proHistory=S.proHistory||[];
     const key=m.reqId||m._id;
     if(!S.proHistory.some(function(h){return key&&h.reqId===key;})){
-      S.proHistory.unshift({id:'hm'+(key||''+S.proHistory.length),reqId:key,dateISO:(m.dateISO||todayISO()),svc:m.svc,client:(m.clientName||'Client'),clientFull:(m.clientName||'Client'),clientZone:m.zone||'',duration:billHours(m),unit:m.unit||'h',rate:t.rate,amount:t.payout,invNo:m.invNo||('2026-'+String(1000+S.proHistory.length).padStart(4,'0')),paidVia:'carte'});
+      S.proHistory.unshift({id:'hm'+(key||''+S.proHistory.length),reqId:key,dateISO:(m.dateISO||todayISO()),svc:m.svc,client:(m.clientName||'Client'),clientFull:(m.clientName||'Client'),clientZone:m.zone||'',duration:billHours(m),unit:m.unit||'h',rate:t.rate,amount:t.total,commPct:t.commPct,commission:t.commission,net:t.payout,invNo:m.invNo||('2026-'+String(1000+S.proHistory.length).padStart(4,'0')),paidVia:'carte'});
     }
     saveProStats();
   }
@@ -2353,6 +2365,8 @@
     if(S.advantages)return advantagesScreen();
     if(S.support&&S.mission)return supportChat();
     if(S.invoiceId)return proInvoice();
+    if(S.commInvId)return proCommInvoice();
+    if(S.commStmt)return proCommStatement();
     if(S.proStmt)return proStatement();
     if(S.interv)return proInterventions();
     if(S.referral)return proReferral();
@@ -2750,7 +2764,7 @@
   function proPaid(){
     const m=S.mission,t=totals(m);
     return `<div class="pad"><div class="paycap"><div class="checkmark">${I.bigcheck}</div><div><div class="h-hello" style="text-align:center">Vous avez été payé</div><p class="sub" style="text-align:center">+${eur(t.payout)} versés sur votre compte</p></div></div>
-      <div class="card" style="padding:16px"><div class="eyebrow" style="color:var(--muted)">Détail du versement</div><div class="receipt-line" style="margin-top:8px"><span>${m.svcName} · ${durTxt(m)}</span><span class="mini">${m.when} · ${m.slot}</span></div><hr class="dashed"><div class="receipt-line"><span>Net perçu</span><b style="color:var(--good)">${eur(t.payout)}</b></div></div>
+      <div class="card" style="padding:16px"><div class="eyebrow" style="color:var(--muted)">Détail du versement</div><div class="receipt-line" style="margin-top:8px"><span>${m.svcName} · ${durTxt(m)}</span><span class="mini">${m.when} · ${m.slot}</span></div><hr class="dashed"><div class="receipt-line"><span>Prestation</span><b>${eur(t.total)}</b></div>${t.commission>0?`<div class="receipt-line"><span>Commission Ti-Services (${t.commPct}&nbsp;%)</span><b style="color:var(--muted)">−${eur(t.commission)}</b></div>`:''}<hr class="dashed"><div class="receipt-line"><span>Net perçu</span><b style="color:var(--good)">${eur(t.payout)}</b></div></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-act="pro-back-home">Retour aux missions</button></div></div>`;
   }
   function fidCard(){
@@ -2768,15 +2782,16 @@
   function fmtLong(iso){if(!iso)return '';const M=['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];const p=iso.split('-');if(p.length<3)return iso;return (+p[2])+' '+M[(+p[1])-1]+' '+p[0];}
   function proInterventions(){
     const list=S.proHistory||[];
-    const total=list.reduce((t,h)=>t+h.amount,0);
-    const rows=list.length?list.map(h=>`<div class="card interv-row"><div class="row between"><b style="font-size:14px">${svcName(h.svc)}</b><span class="money" style="font-weight:700">${eur(h.amount)}</span></div>
-      <div class="mini" style="margin-top:3px">${fmtLong(h.dateISO)} · ${h.client} · ${durTxt({unit:h.unit},h.duration)}</div>
-      <div class="row between" style="margin-top:10px;align-items:center"><span class="chip good" style="padding:3px 9px">${I.check} Réglée · Facture ${h.invNo}</span><button class="btn ghost sm" style="width:auto;padding:8px 14px" data-act="invoice:${h.id}">${I.card}&nbsp;Facture</button></div></div>`).join(''):`<div class="card" style="padding:24px;text-align:center;color:var(--muted);margin-top:12px">Aucune intervention réalisée pour l'instant.<br>Vos prestations terminées apparaîtront ici avec leur facture.</div>`;
+    const total=list.reduce((t,h)=>t+histBreakdown(h).net,0);
+    const rows=list.length?list.map(function(h){const b=histBreakdown(h);return `<div class="card interv-row"><div class="row between"><b style="font-size:14px">${svcName(h.svc)}</b><span class="money" style="font-weight:700">${eur(b.net)}</span></div>
+      <div class="mini" style="margin-top:3px">${fmtLong(h.dateISO)} · ${esc(h.client||'')} · ${durTxt({unit:h.unit},h.duration)}</div>
+      ${b.commission>0?`<div class="mini" style="margin-top:4px;color:var(--muted)">Prestation ${eur(b.gross)} · commission Ti-Services −${eur(b.commission)} (${b.pct}&nbsp;%)</div>`:''}
+      <div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap;align-items:center"><span class="chip good" style="padding:3px 9px">${I.check} Réglée · ${esc(h.invNo)}</span><button class="btn ghost sm" style="width:auto;padding:8px 12px" data-act="invoice:${h.id}">${I.card}&nbsp;Facture</button>${b.commission>0?`<button class="btn ghost sm" style="width:auto;padding:8px 12px" data-act="comm-invoice:${h.id}">${I.card}&nbsp;Commission</button>`:''}</div></div>`;}).join(''):`<div class="card" style="padding:24px;text-align:center;color:var(--muted);margin-top:12px">Aucune intervention réalisée pour l'instant.<br>Vos prestations terminées apparaîtront ici avec leur facture.</div>`;
     return `<div class="pad"><button class="reset" data-act="close-interv" style="margin:8px 0 2px">← Retour</button>
       <span class="eyebrow">${I.card} Comptabilité</span>
       <div class="h-hello">Mes interventions</div>
-      <div class="card" style="padding:15px;margin-top:12px"><div class="row between"><div><div class="mini">Interventions réalisées</div><b class="money" style="font-size:19px;font-family:var(--f-disp)">${list.length}</b></div><div style="text-align:right"><div class="mini">Total encaissé</div><b class="money" style="font-size:19px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(total)}</b></div></div></div>
-      <div class="banner teal" style="margin-top:12px">${I.shield}<span>Ti-Services établit vos factures <b>en votre nom et pour votre compte</b> (mandat de facturation) — une par prestation, plus un relevé mensuel. Rien à saisir.</span></div>
+      <div class="card" style="padding:15px;margin-top:12px"><div class="row between"><div><div class="mini">Interventions réalisées</div><b class="money" style="font-size:19px;font-family:var(--f-disp)">${list.length}</b></div><div style="text-align:right"><div class="mini">Net encaissé</div><b class="money" style="font-size:19px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(total)}</b></div></div></div>
+      <div class="banner teal" style="margin-top:12px">${I.shield}<span>Ti-Services établit vos factures de prestation <b>en votre nom et pour votre compte</b> (mandat de facturation). La <b>commission Ti-Services</b> fait l'objet d'une facture séparée, à votre nom — bouton « Commission ».</span></div>
       <div style="height:6px"></div>${rows}<div style="height:10px"></div></div>${proNavbar()}`;
   }
   function proInvoice(){
@@ -2803,11 +2818,14 @@
   }
   function proEarnings(){
     const nbDone=(S.proHistory||[]).length;
+    const totComm=(S.proHistory||[]).reduce(function(t,h){return t+histBreakdown(h).commission;},0);
+    const tier=fidFor(S.proJobsTotal||0);
     return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">${I.wallet} Revenus</span><div class="h-hello">Ce mois-ci</div>
-      <div class="card" style="padding:18px;margin-top:12px"><div class="mini">Net perçu (juillet)</div><b class="money" style="font-size:30px;font-family:var(--f-disp)">${eur(S.proEarnings)}</b><div class="row between" style="margin-top:14px"><span class="sub">Missions réalisées</span><b>${nbDone}</b></div>${nbDone?`<div class="row between" style="margin-top:6px"><span class="sub">Prochain virement</span><b>sous 48 h après validation</b></div>`:''}</div>
+      <div class="card" style="padding:18px;margin-top:12px"><div class="mini">Net perçu (juillet)</div><b class="money" style="font-size:30px;font-family:var(--f-disp)">${eur(S.proEarnings)}</b><div class="row between" style="margin-top:14px"><span class="sub">Missions réalisées</span><b>${nbDone}</b></div>${totComm>0?`<div class="row between" style="margin-top:6px"><span class="sub">Commission Ti-Services <span class="chip" style="padding:2px 8px;background:var(--teal-wash);color:var(--teal-deep)">${tier.nm} · ${tier.pct}&nbsp;%</span></span><b style="color:var(--muted)">−${eur(totComm)}</b></div>`:''}${nbDone?`<div class="row between" style="margin-top:6px"><span class="sub">Prochain virement</span><b>sous 48 h après validation</b></div>`:''}</div>
       ${nbDone?'':`<div class="card" style="padding:22px;margin-top:12px;text-align:center;color:var(--muted)">${octoMini(64,'wave')}<div style="margin-top:8px;font-weight:600;color:var(--ink-soft)">Pas encore de mission réglée</div><div style="margin-top:3px">Vos revenus et vos factures apparaîtront ici après votre première prestation validée.</div></div>`}
       <button class="card" data-act="open-interv" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.card}&nbsp;Mes factures par mission</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">La facture de chaque prestation réalisée, établie automatiquement en votre nom — à consulter ou télécharger.</p></button>
       <button class="card" data-act="open-statement" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">📄&nbsp;Relevé mensuel</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Votre document récapitulatif du mois : toutes vos prestations et le total encaissé, à enregistrer pour votre comptabilité.</p></button>
+      <button class="card" data-act="open-comm-statement" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">🧾&nbsp;Relevé de commissions Ti-Services</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Les commissions d'intermédiation prélevées ce mois, avec leurs factures — charge déductible pour votre comptabilité.</p></button>
       <div class="banner teal" style="margin-top:12px">${I.lock}<span><b>Paiement garanti</b> : réglé sous 48 h après chaque prestation validée — sans relance.</span></div>
       </div>${proNavbar()}`;
   }
@@ -2849,6 +2867,58 @@
         <div class="legal">
           TVA non applicable — Saint-Barthélemy (collectivité d'outre-mer, hors du champ de la TVA française).<br>
           Relevé établi par Ti-Services au nom et pour le compte du prestataire (mandat de facturation accepté à l'inscription). Le détail figure sur chaque facture individuelle.
+        </div>
+      </div></div>
+      <div style="height:12px"></div></div>`;
+  }
+  // FACTURE DE COMMISSION (Ti-Services → artisan) pour UNE prestation. C'est le pendant
+  // symétrique de la facture d'apport de la conciergerie : ici Ti-Services facture sa
+  // commission d'intermédiation à l'intervenant (retenue à la source sur le versement).
+  function proCommInvoice(){
+    const h=(S.proHistory||[]).find(x=>x.id===S.commInvId);
+    if(!h)return proInterventions();
+    const b=histBreakdown(h);const cno='C'+(h.invNo||'').replace(/[^0-9-]/g,'');
+    return `<div class="pad">
+      <div class="row between noprint" style="margin-top:6px;gap:8px"><button class="reset" data-act="close-comm-invoice">← Retour</button><button class="btn primary" data-act="print-invoice" style="width:auto;padding:10px 16px">${I.card}&nbsp;Enregistrer / Imprimer</button></div>
+      <p class="mini noprint" style="text-align:center;color:var(--muted);margin-bottom:8px">${I.check} Facture de commission Ti-Services — pour votre comptabilité (charge déductible).</p>
+      <div id="invoiceDoc"><div class="inv">
+        <div class="row between" style="align-items:flex-start"><div><h2>FACTURE DE COMMISSION</h2><div class="mut">N° ${cno||'C—'}</div><div class="mut">Date : ${fmtLong(h.dateISO)}</div></div><div style="text-align:right"><div style="font-family:var(--f-disp);font-weight:800;font-size:16px;color:#151515">Ti-Services</div><div class="mut">Plateforme d'intermédiation</div><div class="mut">Saint-Barthélemy</div></div></div>
+        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Émetteur</div><b>Ti-Services</b><div class="mut">Service d'intermédiation · Saint-Barthélemy</div></div>
+        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Facturé à · intervenant</div><b>${S.proLegal}</b><div class="mut">${S.proStatusType==='particulier'?'Particulier':'Entreprise'} · ${S.proAddress}</div><div class="mut">SIRET ${S.proSiret||'—'}</div></div>
+        <table><thead><tr><th>Objet</th><th class="r">Base</th><th class="r">Taux</th><th class="r">Montant</th></tr></thead>
+        <tbody><tr><td>Commission d'intermédiation — ${svcName(h.svc)} du ${fmtLong(h.dateISO)} (prestation ${esc(h.invNo)})</td><td class="r">${eur(b.gross)}</td><td class="r">${b.pct} %</td><td class="r">${eur(b.commission)}</td></tr></tbody></table>
+        <div class="row between sec"><span class="mut">Total commission</span><span class="tot">${eur(b.commission)}</span></div>
+        <div class="row between" style="margin-top:6px"><span class="mut">Retenue sur le versement de la prestation le ${fmtLong(h.dateISO)}</span><b style="color:#1c8f5f">Réglée</b></div>
+        <div class="row between" style="margin-top:6px"><span class="mut">Net versé à l'intervenant (prestation ${eur(b.gross)} − commission)</span><b>${eur(b.net)}</b></div>
+        <div class="legal">
+          TVA non applicable — Saint-Barthélemy (collectivité d'outre-mer, hors du champ de la TVA française).<br>
+          Commission d'intermédiation Ti-Services au titre de la mise en relation, prélevée sur le montant réglé par le client. Aucune commission n'est refacturée au client final.
+        </div>
+      </div></div>
+      <div style="height:12px"></div></div>`;
+  }
+  // RELEVÉ MENSUEL des commissions Ti-Services (récapitulatif de toutes les prestations
+  // du mois). Document de synthèse, en complément des factures de commission par mission.
+  function proCommStatement(){
+    const list=(S.proHistory||[]).map(function(h){return {h:h,b:histBreakdown(h)};}).filter(function(x){return x.b.commission>0;});
+    const totGross=list.reduce(function(t,x){return t+x.b.gross;},0);
+    const totComm=list.reduce(function(t,x){return t+x.b.commission;},0);
+    const totNet=list.reduce(function(t,x){return t+x.b.net;},0);
+    const rows=list.length?list.map(function(x){return `<tr><td>${fmtLong(x.h.dateISO)}</td><td>${svcName(x.h.svc)}</td><td class="r">${eur(x.b.gross)}</td><td class="r">${x.b.pct} %</td><td class="r">${eur(x.b.commission)}</td></tr>`;}).join(''):`<tr><td colspan="5" style="text-align:center;color:#888;padding:14px">Aucune commission ce mois-ci.</td></tr>`;
+    return `<div class="pad">
+      <div class="row between noprint" style="margin-top:6px;gap:8px"><button class="reset" data-act="close-comm-statement">← Retour</button><button class="btn primary" data-act="print-invoice" style="width:auto;padding:10px 16px">${I.card}&nbsp;Enregistrer / Imprimer</button></div>
+      <p class="mini noprint" style="text-align:center;color:var(--muted);margin-bottom:8px">${I.check} Relevé des commissions Ti-Services du mois — pour votre comptabilité.</p>
+      <div id="invoiceDoc"><div class="inv">
+        <div class="row between" style="align-items:flex-start"><div><h2>RELEVÉ DE COMMISSIONS</h2><div class="mut">Juillet 2026</div></div><div style="text-align:right"><div style="font-family:var(--f-disp);font-weight:800;font-size:16px;color:#151515">Ti-Services</div><div class="mut">Saint-Barthélemy</div></div></div>
+        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Intervenant</div><b>${S.proLegal}</b><div class="mut">${S.proStatusType==='particulier'?'Particulier':'Entreprise'} · SIRET ${S.proSiret||'—'}</div></div>
+        <table><thead><tr><th>Date</th><th>Prestation</th><th class="r">Base</th><th class="r">Taux</th><th class="r">Commission</th></tr></thead>
+        <tbody>${rows}</tbody></table>
+        <div class="row between sec"><span class="mut">Total commissions (${list.length} prestation${list.length>1?'s':''})</span><span class="tot">${eur(totComm)}</span></div>
+        <div class="row between" style="margin-top:6px"><span class="mut">Chiffre d'affaires prestations</span><b>${eur(totGross)}</b></div>
+        <div class="row between" style="margin-top:6px"><span class="mut">Net versé (CA − commissions)</span><b>${eur(totNet)}</b></div>
+        <div class="legal">
+          TVA non applicable — Saint-Barthélemy (collectivité d'outre-mer, hors du champ de la TVA française).<br>
+          Récapitulatif des commissions d'intermédiation Ti-Services prélevées sur les prestations réglées ce mois. Le détail figure sur chaque facture de commission.
         </div>
       </div></div>
       <div style="height:12px"></div></div>`;
@@ -2933,7 +3003,7 @@
     if(b.dataset.act&&b.dataset.act.indexOf('del-demand:')===0){const id=b.dataset.act.slice('del-demand:'.length);const m=(S.missions||[]).find(function(x){return (x._id||'')===id;});if(m){cancelActiveRequest(m);removeMission(m);if(S.mission===m)S.mission=null;cacheClientLocal();toast('Demande supprimée');}render();return;}
     if(b.dataset.follow){const orow=b.closest('.swipe-row');if(orow&&orow.classList.contains('open')){orow.classList.remove('open');return;}const mm=(S.missions||[]).find(function(x){return (x._id||'')===b.dataset.follow;});if(mm){S.mission=mm;S.clientNav='wallet';render();}return;}
     if(b.dataset.cnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.invoiceId=null;S.histInvoice=null;S.addrForm=null;S.profileForm=null;S.mission=null;S.clientNav=b.dataset.cnav;if(b.dataset.cnav==='wallet')refreshClientRequests();render();return;}
-    if(b.dataset.pnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.proStmt=false;S.invoiceId=null;S.proConflict=null;S.proNav=b.dataset.pnav;render();return;}
+    if(b.dataset.pnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.proStmt=false;S.commInvId=null;S.commStmt=false;S.invoiceId=null;S.proConflict=null;S.proNav=b.dataset.pnav;render();return;}
     if(b.dataset.cnav2){S.concOrder=null;S.concView=null;S.concForm=null;S.concInvoice=null;S.concNav=b.dataset.cnav2;render();return;}
     if(b.dataset.concOc){const c=concClient(b.dataset.concOc);if(c&&c.authorized){S.concOrder.clientId=c.id;S.concOrder.step='service';render();}else{toast('La carte de ce client doit d’abord être autorisée');}return;}
     if(b.dataset.concOs){const s=SERVICES.find(x=>x.id===b.dataset.concOs);S.concOrder.svc=s.id;S.concOrder.svcName=s.nm;S.concOrder.rate=Math.max(svcFloor(s.id),svcReco(s.id));S.concOrder.duration=3;S.concOrder.when='Aujourd’hui';S.concOrder.slot='14:00';S.concOrder.notes='';S.concOrder.step='form';render();return;}
@@ -2964,6 +3034,7 @@
     if(b.dataset.freq){if(!S.draft)return;S.draft.frequency=b.dataset.freq;renderConfig();return;}
     if(b.dataset.star){const n=+b.dataset.star;S.mission.rating=n;document.querySelectorAll('#rateStars button').forEach(x=>x.classList.toggle('lit',+x.dataset.star<=n));const rb=document.getElementById('rateBtn');if(rb)rb.disabled=false;return;}
     if(b.dataset.cfg){const c=b.dataset.cfg;if(!S.draft)return;if(c==='back'){S.draft=null;render();}else if(c==='minus'){S.draft.duration=Math.max(1,S.draft.duration-1);renderConfig();}else if(c==='plus'){S.draft.duration=Math.min(isDayU(S.draft)?30:10,S.draft.duration+1);renderConfig();}else if(c==='unit-h'){S.draft.unit='h';S.draft.rate=(S.adminPrices&&S.adminPrices[S.draft.svc]!=null)?S.adminPrices[S.draft.svc]:svcBase(S.draft.svc);S.draft.duration=3;renderConfig();}else if(c==='unit-j'){S.draft.unit='j';S.draft.rate=DAY_RECO;S.draft.duration=2;renderConfig();}else if(c==='geoloc'){geolocate(g=>{if(S.draft){S.draft.geo=g;renderConfig();}});}else if(c==='addr-save-draft'){const d=S.draft;const id='ad'+Date.now();S.addresses.push({id,label:(d.address||'Adresse ponctuelle').slice(0,40),address:d.address,zone:d.zone,geo:d.geo});d.addressId=id;toast('Adresse enregistrée dans votre profil');renderConfig();}else if(c==='confirm'){const mm=minSlotToday(S.draft);if(mm>=0&&!S.draft.slotFlex&&slotToMin(S.draft.slot)<mm){toast('Choisissez une heure à venir');renderConfig();return;}S.payStep=true;S.payEdit=false;render();}return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('comm-invoice:')===0){S.commInvId=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('invoice:')===0){S.invoiceId=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('histinv:')===0){const h=(S.history||[])[+b.dataset.act.split(':')[1]];if(h){S.histInvoice=h;render();}return;}
     if(b.dataset.act==='refresh-requests'){manualRefreshRequests();return;}
@@ -3134,6 +3205,9 @@
       case 'close-interv':S.interv=false;render();break;
       case 'open-statement':S.proStmt=true;render();break;
       case 'close-statement':S.proStmt=false;render();break;
+      case 'open-comm-statement':S.commStmt=true;render();break;
+      case 'close-comm-statement':S.commStmt=false;render();break;
+      case 'close-comm-invoice':S.commInvId=null;render();break;
       case 'close-invoice':S.invoiceId=null;render();break;
       case 'print-invoice':window.print();break;
       case 'toggle-mandat':S.proForm.mandat=!S.proForm.mandat;render();break;
