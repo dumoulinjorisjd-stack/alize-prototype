@@ -1034,7 +1034,7 @@
     addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,
     concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,
     proPhoto:null,proStatus:'approved',proFounder:true,proNotifPush:true,proNotifWa:true,proPhone:'0690 00 00 00',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:'',photo:''},
-    proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proReqSlot:null,proReqPick:false,proMissions:[],proSkipped:[],proStmt:false,
+    proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proReqSlot:null,proReqPick:false,proMissions:[],proSkipped:[],proConflict:null,proStmt:false,
     proHistory:PRO_HISTORY(),
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),
     chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,histInvoice:null,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,delAcct:false,
@@ -2014,7 +2014,18 @@
       <div class="banner teal" style="margin-top:14px">${I.lock}<span>Paiement confié à <b>Mollie</b>, prestataire agréé (norme <b>PCI-DSS</b>). Vos données de carte sont chiffrées et transmises directement à Mollie&nbsp;: Ti-Services n'en conserve <b>jamais</b> le numéro ni le CVC — seulement les 4 derniers chiffres, pour l'affichage.</span></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-act="card-save">${I.lock} Enregistrer ma carte</button><p class="mini" style="text-align:center;margin-top:10px">Maquette — aucune donnée réelle n'est envoyée ni conservée.</p></div></div>`;
   }
-  function placeMission(){const d=S.draft;if(!d)return;if(S.avgOffers[d.svc]){S.avgOffers[d.svc].sum+=d.rate;S.avgOffers[d.svc].n++;}d._id=d._id||('m'+Date.now());S.missions=S.missions||[];if(S.missions.indexOf(d)<0)S.missions.unshift(d);S.mission=d;S.draft=null;S.payStep=false;S.payEdit=false;S.clientNav='wallet';persistRequest(d);startSearch();cacheClientLocal();}
+  // Signature d'une demande : sert à empêcher tout doublon strictement identique.
+  function missionSig(m){return [m.svc,m.zone||'',m.when||'',m.slot||'',(m.slotFlex||0),m.unit||'h',m.duration||1,m.rate||0,(m.boost||0),m.frequency||'ponctuelle',(m.address||''),(m.notes||'').trim()].join('|');}
+  function placeMission(){const d=S.draft;if(!d)return;
+    // Anti-rebond : deux appuis trop rapprochés ne créent qu'une seule demande.
+    if(S._placing&&(Date.now()-S._placing)<1800){return;}
+    S._placing=Date.now();
+    // Garde-fou doublon : une demande active strictement identique existe déjà →
+    // on l'ouvre au lieu d'en créer une seconde (peu importe la cause : double
+    // appui, réseau lent, renvoi du même formulaire…).
+    const sig=missionSig(d);const dup=activeMissions().find(function(x){return missionSig(x)===sig;});
+    if(dup){S.mission=dup;S.draft=null;S.payStep=false;S.payEdit=false;S.clientNav='wallet';render();toast('Cette demande existe déjà — nous l’avons rouverte.');return;}
+    if(S.avgOffers[d.svc]){S.avgOffers[d.svc].sum+=d.rate;S.avgOffers[d.svc].n++;}d._id=d._id||('m'+Date.now());S.missions=S.missions||[];if(S.missions.indexOf(d)<0)S.missions.unshift(d);S.mission=d;S.draft=null;S.payStep=false;S.payEdit=false;S.clientNav='wallet';persistRequest(d);startSearch();cacheClientLocal();}
   // Étape 0 : la demande devient une fiche Firestore `requests/{id}` (vrais comptes uniquement).
   // Sans adresse exacte ni GPS — révélés seulement à l'artisan qui accepte. Base des notifications.
   async function persistRequest(m){
@@ -2223,6 +2234,7 @@
   function renderPro(){
     if(S.delAcct)return deleteAccountView();
     if(S.generalSupport)return generalSupportChat();
+    if(S.proConflict)return proConflictView();
     if(S.proStatus==='signup')return proSignup();
     if(S.proDocsView)return proDocs();
     if(S.proPayoutView)return proPayout();
@@ -2380,6 +2392,12 @@
   // Missions ACCEPTÉES par l'artisan, à réaliser (l'équivalent, côté artisan,
   // des « réservations » du client). Source : S.proMissions.
   function proAddMission(m){if(!m)return;m._id=m._id||('pm'+Date.now());S.proMissions=S.proMissions||[];const dup=S.proMissions.find(function(x){return x===m||(m.reqId&&x.reqId===m.reqId);});if(!dup)S.proMissions.unshift(m);}
+  // Conflit d'agenda : deux interventions qui se chevauchent le même jour.
+  // Jour = même libellé « quand » (Aujourd'hui / Demain / date). Fenêtre horaire =
+  // [début, début+durée] ; une garde « à la journée » occupe la journée entière.
+  function slotWindow(x,slot){const s=slotToMin(slot||x.slot||'0:0');if((x.unit||'h')==='j')return [0,1440];const dur=Math.max(1,(x.duration||1));return [s,s+dur*60];}
+  function dayKey(x){return (x.dateISO||x.when||'').trim();}
+  function proSlotConflict(req,acceptedSlot){const k=dayKey(req);if(!k)return null;const w1=slotWindow(req,acceptedSlot);return proActiveMissions().find(function(m){if(dayKey(m)!==k)return false;const w2=slotWindow(m,m.slot);return w1[0]<w2[1]&&w2[0]<w1[1];})||null;}
   function proRemoveMission(m){const i=(S.proMissions||[]).indexOf(m);if(i>=0)S.proMissions.splice(i,1);}
   function proActiveMissions(){return (S.proMissions||[]).filter(function(m){return ['accepted','working','done_pro','disputed'].indexOf(m.status)>=0;});}
   function proMissionMeta(st){return {accepted:{l:'À réaliser',c:'good'},working:{l:'En cours',c:'good'},done_pro:{l:'Validation client',c:'coral'},disputed:{l:'En médiation',c:'coral'}}[st]||{l:st,c:'grey'};}
@@ -2747,7 +2765,7 @@
     if(b.dataset.act&&b.dataset.act.indexOf('del-demand:')===0){const id=b.dataset.act.slice('del-demand:'.length);const m=(S.missions||[]).find(function(x){return (x._id||'')===id;});if(m){cancelActiveRequest(m);removeMission(m);if(S.mission===m)S.mission=null;cacheClientLocal();toast('Demande supprimée');}render();return;}
     if(b.dataset.follow){const orow=b.closest('.swipe-row');if(orow&&orow.classList.contains('open')){orow.classList.remove('open');return;}const mm=(S.missions||[]).find(function(x){return (x._id||'')===b.dataset.follow;});if(mm){S.mission=mm;S.clientNav='wallet';render();}return;}
     if(b.dataset.cnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.invoiceId=null;S.addrForm=null;S.profileForm=null;S.mission=null;S.clientNav=b.dataset.cnav;render();return;}
-    if(b.dataset.pnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.proStmt=false;S.invoiceId=null;S.proNav=b.dataset.pnav;render();return;}
+    if(b.dataset.pnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.proStmt=false;S.invoiceId=null;S.proConflict=null;S.proNav=b.dataset.pnav;render();return;}
     if(b.dataset.cnav2){S.concOrder=null;S.concView=null;S.concForm=null;S.concInvoice=null;S.concNav=b.dataset.cnav2;render();return;}
     if(b.dataset.concOc){const c=concClient(b.dataset.concOc);if(c&&c.authorized){S.concOrder.clientId=c.id;S.concOrder.step='service';render();}else{toast('La carte de ce client doit d’abord être autorisée');}return;}
     if(b.dataset.concOs){const s=SERVICES.find(x=>x.id===b.dataset.concOs);S.concOrder.svc=s.id;S.concOrder.svcName=s.nm;S.concOrder.rate=Math.max(svcFloor(s.id),svcReco(s.id));S.concOrder.duration=3;S.concOrder.when='Aujourd’hui';S.concOrder.slot='14:00';S.concOrder.notes='';S.concOrder.step='form';render();return;}
@@ -2786,7 +2804,14 @@
     if(b.dataset.act==='reqview-skip'){if(S.proReqView&&(S.proSkipped||[]).indexOf(S.proReqView)<0){S.proSkipped=S.proSkipped||[];S.proSkipped.push(S.proReqView);}S.proReqView=null;render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('promiss:')===0){const id=b.dataset.act.slice('promiss:'.length);const mm=(S.proMissions||[]).find(function(x){return (x._id||'')===id;});if(mm){S.mission=mm;S.proReqView=null;S.proNav='home';render();}return;}
     if(b.dataset.act==='promiss-back'){S.mission=null;render();return;}
-    if(b.dataset.act&&b.dataset.act.indexOf('accept-req:')===0){acceptRequestReal(b.dataset.act.slice('accept-req:'.length));return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('accept-req:')===0){
+      const rid=b.dataset.act.slice('accept-req:'.length);
+      const req=(S.openRequests||[]).find(function(x){return x.id===rid;});
+      if(req){const accSlot=req.slotFlex?clampSlot(req,S.proReqSlot||req.slot):(req.slot||'');const clash=proSlotConflict(req,accSlot);
+        if(clash){S.proConflict={reqId:rid,slot:accSlot,when:req.when||'',clashSlot:clash.slot||'',clashName:clash.svcName||svcNm(clash.svc)};render();return;}}
+      acceptRequestReal(rid);return;}
+    if(b.dataset.act==='conflict-accept'){const rid=S.proConflict&&S.proConflict.reqId;S.proConflict=null;render();if(rid)acceptRequestReal(rid);return;}
+    if(b.dataset.act==='conflict-skip'){const rid=S.proConflict&&S.proConflict.reqId;S.proConflict=null;if(rid&&(S.proSkipped||[]).indexOf(rid)<0){S.proSkipped=S.proSkipped||[];S.proSkipped.push(rid);}S.proReqView=null;render();toast('Mission passée — proposée aux autres artisans');return;}
     if(b.dataset.act&&b.dataset.act.indexOf('rmphoto:')===0){const i=+b.dataset.act.split(':')[1];if(S.draft&&S.draft.photos){const u=S.draft.photos[i];if(u&&u.indexOf('blob:')===0){try{URL.revokeObjectURL(u);}catch(_){}}S.draft.photos.splice(i,1);renderConfig();}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('ics:')===0){const i=+b.dataset.act.split(':')[1];const a=S.agenda[i];if(a)downloadIcs(icsBuild([a]),'ti-services-'+(a.svc||'rdv')+'.ics');return;}
     if(b.dataset.act==='ics-all'){const up=S.agenda.filter(a=>a.status!=='done');if(up.length)downloadIcs(icsBuild(up),'ti-services-agenda.ics');return;}
@@ -3106,6 +3131,7 @@
     if(S.finishing){S.finishing=false;render();return;}
     if(S.disputing){S.disputing=false;render();return;}
     if(S.persona==='pro'){
+      if(S.proConflict){S.proConflict=null;render();return;}
       if(S.proStatus==='pending'){S.proStatus='signup';render();return;}
       if(S.proStatus==='signup'){S.persona='client';S.proStatus='approved';render();return;}
       if(S.proReqView){S.proReqView=null;render();return;}
@@ -3475,6 +3501,21 @@
     const list=(S.openRequests||[]).filter(function(r){return skipped.indexOf(r.id)<0;});
     if(!list.length)return `<div class="card" style="padding:18px;margin-top:12px;text-align:center;border-style:dashed"><div class="radar sm"><div class="ring r1"></div><div class="ring r2"></div><div class="core">${I.bolt}</div></div><p class="sub" style="margin:6px 0 0">Aucune mission disponible pour l'instant.</p><p class="mini" style="margin-top:4px">Vous serez notifié dès qu'une demande de votre zone arrive.</p></div>`;
     return `<div style="margin-top:12px"><span class="eyebrow" style="color:var(--teal-deep)">${I.flame} Missions disponibles · ${list.length}</span>${list.map(function(r){const win=reqWinTxt(r);return `<button class="card" data-act="reqview:${r.id}" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14.5px">${esc(r.serviceName||svcNm(r.service))}</b><b class="money" style="color:var(--teal-deep);font-family:var(--f-disp)">${eur(r.total||0)}</b></div><div class="mini" style="margin-top:4px">${I.pin} ${esc(r.zone||'')} · ${esc(r.when||'')} · ${esc(win)} · ${r.duration||1} ${r.unit==='j'?'j':'h'}</div>${r.boost?`<span class="chip" style="padding:2px 9px;background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.bolt} Coup de pouce +${r.boost}%</span>`:''}<div class="row between" style="margin-top:10px"><span class="mini" style="color:var(--muted)">${r.notes?'Détails du besoin fournis':'Voir la mission'}</span><span class="mini" style="color:var(--teal-deep);font-weight:700">Voir la fiche ›</span></div></button>`;}).join('')}</div>`;
+  }
+  // Alerte de conflit d'agenda : l'artisan a déjà une intervention qui chevauche
+  // ce créneau. Il confirme explicitement qu'il peut assurer, sinon « passe son tour ».
+  function proConflictView(){
+    const c=S.proConflict||{};
+    return `<div class="pad"><div style="height:16px"></div>
+      <div class="paycap" style="height:auto;padding-top:6px"><div class="benic" style="width:58px;height:58px;background:var(--coral-wash);color:var(--coral-deep)">${I.warn}</div>
+        <div><div class="h-hello" style="text-align:center">Créneau déjà occupé</div>
+        <p class="sub" style="text-align:center;margin-top:6px">Vous avez déjà une intervention <b>${esc(c.when||'ce jour-là')}</b>${c.clashSlot?' vers <b>'+esc(c.clashSlot)+'</b>':''}${c.clashName?' — '+esc(c.clashName):''}.</p></div></div>
+      <div class="banner coral" style="margin-top:16px">${I.warn}<span>Cette nouvelle mission commence à <b>${esc(c.slot||'')}</b>, sur le même créneau. Êtes-vous réellement en mesure d'assurer <b>deux interventions à la même heure</b>&nbsp;?</span></div>
+      <div class="footcta" style="position:static;background:none;padding:20px 0 0">
+        <button class="btn accept" data-act="conflict-accept">${I.check} Oui, je peux assurer — je prends</button>
+        <button class="btn ghost" data-act="conflict-skip" style="margin-top:10px">Non — passer mon tour</button>
+        <p class="mini" style="text-align:center;margin-top:10px">${I.bolt} « Non » retire la mission de votre liste — elle reste proposée aux autres artisans.</p>
+      </div></div>`;
   }
   // Fiche complète d'une mission disponible — l'artisan voit tout AVANT d'accepter.
   // Les données confidentielles (adresse exacte, GPS, accès, identité) ne sont
