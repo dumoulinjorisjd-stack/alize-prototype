@@ -834,7 +834,8 @@
   // gonfler le document users (limite Firestore 1 Mo) et le cache localStorage.
   function histClean(m){if(!m||typeof m!=='object')return m;const h=Object.assign({},m);delete h.photos;delete h.clientPhoto;delete h.chat;delete h.support;return h;}
   function histSlim(arr){return (arr||[]).slice(0,50).map(histClean);}
-  function saveClientCloud(){try{ if(FB&&FB.auth&&FB.auth.currentUser&&typeof isDemo==='function'&&!isDemo()){ FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{addresses:S.addresses||[],addrDefault:S.addrDefault||null,card:S.card||null,history:histSlim(S.history),recurring:S.recurring||[]},{merge:true}); } }catch(_){} cacheClientLocal(); }
+  function fbErrTxt(e){return (e&&(e.code||e.message))||'erreur inconnue';}
+  function saveClientCloud(){try{ if(FB&&FB.auth&&FB.auth.currentUser&&typeof isDemo==='function'&&!isDemo()){ FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{addresses:S.addresses||[],addrDefault:S.addrDefault||null,card:S.card||null,history:histSlim(S.history),recurring:S.recurring||[]},{merge:true}).then(function(){S._lastSaveOk=true;}).catch(function(e){toast('⚠︎ Sauvegarde compte échouée : '+fbErrTxt(e));}); } }catch(e){toast('⚠︎ Sauvegarde compte : '+fbErrTxt(e));} cacheClientLocal(); }
   // Cache local (par compte) : commande en cours + historique survivent au
   // redémarrage instantanément, même avant/malgré le rechargement Firestore.
   function clientCacheKey(uid){return 'ti_client_'+(uid||'anon');}
@@ -2019,7 +2020,7 @@
       // Détails privés (adresse exacte, GPS, accès) — révélés seulement à l'artisan assigné.
       try{ await FB.f.setDoc(FB.f.doc(FB.db,'requests',ref.id,'private','details'),{address:m.address||'',zone:m.zone||'',geo:m.geo||null,access:m.access||'',clientPhone:(S.account&&S.account.phone)||'',clientName:first,clientPhoto:(S.account&&S.account.photo)||null}); }catch(_){}
       subscribeClientRequest(ref.id);
-    }catch(e){ console.warn('requests write failed',e); }
+    }catch(e){ console.warn('requests write failed',e); toast('⚠︎ Demande non enregistrée : '+fbErrTxt(e)); }
   }
   // Le client écoute CHACUNE de ses demandes (plusieurs en parallèle possibles) :
   // dès qu'un artisan en accepte une, l'app met à jour la demande concernée.
@@ -2896,7 +2897,7 @@
       case 'toggle-pcharte':S.proForm.charte=!S.proForm.charte;render();break;
       case 'edit-profile':{const zone=(S.account&&S.account.zone)||(S.clientForm&&S.clientForm.zone)||'Gustavia';S.profileForm={name:((S.account&&S.account.name)||(S.clientForm&&S.clientForm.name)||'').trim(),email:(S.account&&S.account.email)||(S.clientForm&&S.clientForm.email)||'',zone:zone,phone:(S.account&&S.account.phone)||'',photo:(S.account&&S.account.photo)||(S.clientForm&&S.clientForm.photo)||''};render();break;}
       case 'profile-cancel':S.profileForm=null;render();break;
-      case 'save-profile':{const f=S.profileForm;if(!f||(f.name||'').trim().length<2){toast('Indiquez votre nom');break;}const nm=f.name.trim(),ph=(f.phone||'').trim(),pht=f.photo||'';S.account=Object.assign({},S.account,{name:nm,zone:f.zone,phone:ph,photo:pht});S.clientForm=Object.assign({},S.clientForm,{name:nm,zone:f.zone,photo:pht});saveAccount(S.account);if(FB&&FB.auth&&FB.auth.currentUser){try{FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{name:nm,zone:f.zone,phone:ph,photo:pht},{merge:true});}catch(_){}}saveClientCloud();S.profileForm=null;render();toast('Informations mises à jour');break;}
+      case 'save-profile':{const f=S.profileForm;if(!f||(f.name||'').trim().length<2){toast('Indiquez votre nom');break;}const nm=f.name.trim(),ph=(f.phone||'').trim(),pht=f.photo||'';S.account=Object.assign({},S.account,{name:nm,zone:f.zone,phone:ph,photo:pht});S.clientForm=Object.assign({},S.clientForm,{name:nm,zone:f.zone,photo:pht});saveAccount(S.account);if(FB&&FB.auth&&FB.auth.currentUser){try{FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{name:nm,zone:f.zone,phone:ph,photo:pht},{merge:true}).then(function(){toast('Informations enregistrées ✓');}).catch(function(e){toast('⚠︎ Profil non enregistré : '+fbErrTxt(e));});}catch(e){toast('⚠︎ Profil : '+fbErrTxt(e));}}else{toast('Informations mises à jour');}saveClientCloud();S.profileForm=null;render();break;}
       case 'add-card':S.cardForm=true;render();break;
       case 'card-cancel':S.cardForm=false;render();break;
       case 'card-remove':S.card=null;S.cardForm=false;saveClientCloud();render();toast('Moyen de paiement retiré');break;
@@ -3134,7 +3135,7 @@
   async function loadUserProfile(user){
     try{
       const ref=FB.f.doc(FB.db,'users',user.uid);
-      let data=null; try{ const snap=await FB.f.getDoc(ref); data=snap.exists()?snap.data():null; }catch(_){}
+      let data=null; try{ const snap=await FB.f.getDoc(ref); data=snap.exists()?snap.data():null; }catch(e){ toast('⚠︎ Lecture du compte impossible : '+fbErrTxt(e)); }
       // À l'inscription, la fiche users peut ne pas encore être écrite (course avec
       // onAuthStateChanged) : on garde le nom/secteur que l'utilisateur vient de saisir
       // plutôt que de retomber sur le préfixe de l'e-mail.
@@ -3218,7 +3219,7 @@
           if(Array.isArray(r.messages))m.chat=r.messages.slice().sort(function(a,b){return (a.at||0)-(b.at||0);});
         });
         if(S.persona==='client'){cacheClientLocal();render();}
-      },function(err){console.warn('active requests listen',err);});
+      },function(err){console.warn('active requests listen',err);toast('⚠︎ Réservations non chargées : '+fbErrTxt(err));});
     }catch(e){console.warn('load active requests',e);}
   }
   // Recharge les missions ACCEPTÉES par l'artisan (à réaliser) après réouverture.
