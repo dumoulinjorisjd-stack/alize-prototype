@@ -3349,9 +3349,14 @@
         S.persona='admin';S.admin={view:'home',sel:null};S.onboarded=true;S.authView=null;render();
         refreshAdminArtisans();refreshAdminConcierges();initAdminPush();subscribeAdminThreads();subscribeAdminGeneralSupport();return;
       }
+      // Rôle déterminé de façon ROBUSTE : la fiche artisans / concierges fait foi, même
+      // si le champ role de la fiche users est absent ou incorrect — sinon un artisan
+      // pouvait basculer par erreur dans l'espace client (et s'y voir créer un compte
+      // client, verrouillant l'erreur).
+      let ad=null; try{ const sA=await FB.f.getDoc(FB.f.doc(FB.db,'artisans',user.uid)); ad=sA.exists()?sA.data():null; }catch(_){}
+      let cd=null; try{ const sC=await FB.f.getDoc(FB.f.doc(FB.db,'concierges',user.uid)); cd=sC.exists()?sC.data():null; }catch(_){}
       // Compte artisan : on route vers l'espace pro (statut lu dans la fiche artisans).
-      if((data&&data.role)==='artisan'){
-        let ad=null; try{ const s2=await FB.f.getDoc(FB.f.doc(FB.db,'artisans',user.uid)); ad=s2.exists()?s2.data():null; }catch(_){}
+      if((data&&data.role)==='artisan' || ad){
         S.account={name:name,email:user.email||'',uid:user.uid,role:'artisan'};
         S.persona='pro'; S.proName=name; S.proPhone=(ad&&ad.phone)||(data&&data.phone)||'';
         if(ad&&Array.isArray(ad.cats)&&ad.cats.length){S.proCats=ad.cats.slice();const rr=ad.rates||{};S.proRate=Math.min.apply(null,ad.cats.map(c=>(rr[c]!=null?rr[c]:svcBase(c))));}
@@ -3374,8 +3379,7 @@
       }
       // Compte conciergerie (mandataire) : espace concierge, données propres persistées
       // dans la fiche concierges. En attente tant que l'admin n'a pas validé.
-      if((data&&data.role)==='concierge'||(signupAsConcierge&&(!data||data.role!=='client'))){
-        let cd=null; try{ const s3=await FB.f.getDoc(FB.f.doc(FB.db,'concierges',user.uid)); cd=s3.exists()?s3.data():null; }catch(_){}
+      if((data&&data.role)==='concierge' || cd || (signupAsConcierge&&(!data||data.role!=='client'))){
         S.account={name:name,email:user.email||'',uid:user.uid,role:'concierge'};
         S.persona='concierge';S.concName=(cd&&cd.contact)||name;
         S.concStatus=(cd&&cd.status==='valide')?'approved':'pending';
@@ -3389,7 +3393,7 @@
       }
       const zone=(data&&data.zone)||typedZone||'Gustavia';
       const photo=(data&&data.photo)||(S.clientForm&&S.clientForm.photo)||'';
-      if(!data){ try{ await FB.f.setDoc(ref,{name:name,email:user.email||'',zone:zone,role:'client',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){} }
+      if(!data&&!ad&&!cd){ try{ await FB.f.setDoc(ref,{name:name,email:user.email||'',zone:zone,role:'client',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){} }
       S.account={name:name,email:user.email||'',zone:zone,uid:user.uid,photo:photo,phone:(data&&data.phone)||''};
       S.clientForm=Object.assign({},S.clientForm,{name:name,email:user.email||'',zone:zone,photo:photo,password:'',password2:''});
       // Cache local d'abord (instantané), puis les données Firestore prennent le relais.
