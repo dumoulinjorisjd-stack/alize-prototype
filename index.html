@@ -1062,7 +1062,7 @@
     addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,
     concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,
     proPhoto:null,proStatus:'approved',proFounder:true,proNotifPush:true,proNotifWa:true,proPhone:'0690 00 00 00',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:'',photo:''},
-    proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proReqSlot:null,proReqPick:false,proMissions:[],proSkipped:[],proConflict:null,proStmt:false,
+    proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proReqSlot:null,proReqPick:false,proMissions:[],proSkipped:[],proConflict:null,proStmt:false,signupKind:null,concSignup:null,concStatus:'approved',adminConcierges:[],
     proHistory:PRO_HISTORY(),
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),
     chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,histInvoice:null,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,delAcct:false,
@@ -1309,6 +1309,7 @@
   function adminHome(){
     const arts=S.adminArtisans,clis=S.adminClients;
     const pendA=arts.filter(a=>a.status==='attente'),pendC=clis.filter(c=>c.status==='attente');
+    const pendConc=(S.adminConcierges||[]).filter(c=>c.status==='attente');
     const live=(S.mission&&['pending','accepted','working','done_pro'].includes(S.mission.status))?1:0;
     const validA=arts.filter(a=>a.status==='valide').length;
     const stat=(lbl,val,sub)=>`<div class="card" style="padding:13px;flex:1;min-width:0"><div class="mini">${lbl}</div><b class="money" style="font-size:22px;font-family:var(--f-disp);display:block">${val}</b><div class="mini">${sub}</div></div>`;
@@ -1327,6 +1328,12 @@
       <div class="mini" style="margin-top:3px">${cc.zone} · ${cc.card}</div>
       <p class="mini" style="margin-top:9px;color:var(--muted)">Échangez avant de décider&nbsp;:</p>${contactRow(cc)}
       <div class="row" style="gap:8px;margin-top:10px"><button class="btn good sm" data-adm="valid-cli:${cc.id}">Valider</button><button class="btn ghost sm" data-adm="cli:${cc.id}">Fiche</button></div></div>`));
+    pendConc.forEach(cc=>q.push(`<div class="card" style="padding:14px;margin-top:10px;border-left:4px solid var(--warn)">
+      <div class="row between" style="align-items:flex-start"><div class="row" style="gap:10px;align-items:center"><span class="benic">${I.concierge}</span><b style="font-size:14.5px">${esc(cc.name)}</b></div><span class="chip grey" style="padding:3px 9px">Conciergerie</span></div>
+      <div class="mini" style="margin-top:6px">${cc.contact?esc(cc.contact)+' · ':''}${cc.phone?esc(cc.phone):''}</div>
+      <div class="row" style="gap:6px;margin-top:7px;flex-wrap:wrap"><span class="chip ${cc.siret?'good':'coral'}" style="padding:3px 9px">SIRET ${cc.siret?'fourni':'manquant'}</span>${cc.email?`<span class="chip" style="padding:3px 9px">${esc(cc.email)}</span>`:''}</div>
+      <div class="row" style="gap:8px;margin-top:10px"><button class="btn good sm" data-adm="valid-conc:${cc.id}" ${cc.siret?'':'disabled'}>Valider</button><button class="btn ghost sm" data-adm="rej-conc:${cc.id}">Refuser</button></div>
+      ${!cc.siret?`<p class="mini" style="margin-top:6px;color:var(--coral-deep)">SIRET manquant — validation impossible.</p>`:''}</div>`));
     const queue=q.length?q.join(''):`<div class="card" style="padding:18px;text-align:center;color:var(--muted);margin-top:10px">Aucune candidature en attente</div>`;
     const liveRow=live?[{client:'Camille Magras',artisan:(S.mission.provider?S.mission.provider.nm:'en recherche…'),svc:S.mission.svc,status:S.mission.status,amount:totals(S.mission).total,when:S.mission.when+' '+S.mission.slot}]:[];
     const allB=liveRow.concat(S.adminBookings);
@@ -1623,7 +1630,19 @@
         <div class="legal">TVA non applicable — Saint-Barthélemy (COM, hors du champ de la TVA française). Commission d'apport d'affaires au titre du contrat d'apporteur. Peut être établie par relevé d'auto-facturation (mandat). Aucune commission n'est refacturée au client final.</div>
       </div></div><div style="height:12px"></div></div>`;
   }
+  // Persistance des données conciergerie (clients, commandes, apport) dans sa fiche —
+  // survit aux sessions et aux appareils (mode réel uniquement).
+  function saveConcCloud(){try{ if(FB&&FB.auth&&FB.auth.currentUser&&typeof isDemo==='function'&&!isDemo()&&S.persona==='concierge'){ FB.f.setDoc(FB.f.doc(FB.db,'concierges',FB.auth.currentUser.uid),{clients:(S.concClients||[]),orders:(S.concOrders||[]),earn:S.concEarn||0},{merge:true}).catch(function(){}); } }catch(_){}}
+  function conciergePending(){
+    return `<div class="pad"><div style="height:14px"></div>
+      <div class="paycap" style="height:auto;padding-top:6px">${octoMini(72,'bob')}<div><div class="h-hello" style="text-align:center">Candidature en cours d'examen</div><p class="sub" style="text-align:center;margin-top:6px">Merci ${esc((S.concName||'').split(' ')[0]||'')}&nbsp;! Ti-Services vérifie votre conciergerie — activation sous 48 h.</p></div></div>
+      <div class="card" style="padding:16px;margin-top:16px"><div class="row" style="gap:11px;align-items:flex-start"><span class="benic">${I.shield}</span><div><b style="font-size:14px">Vérification en cours</b><p class="mini" style="margin-top:3px">Dès la validation, vous pourrez enregistrer vos clients, commander pour eux et suivre vos apports. Vous serez prévenu automatiquement.</p></div></div></div>
+      <div class="footcta" style="position:static;background:none;padding:18px 0 0">${isDemo()?`<button class="btn primary" data-act="conc-approve-demo">▶︎ Simuler : conciergerie validée</button>`:(FB?`<button class="btn ghost" data-act="logout">Se déconnecter</button>`:'')}</div></div>`;
+  }
   function renderConcierge(){
+    if(S.delAcct)return deleteAccountView();
+    if(S.generalSupport)return generalSupportChat();
+    if(S.concStatus==='pending')return conciergePending();
     if(S.concRetInv)return conciergeRetribInvoice();
     if(S.concForm)return conciergeClientForm();
     if(S.concClientView)return conciergeClientDetail();
@@ -1644,7 +1663,7 @@
       <div style="margin-top:14px"><button class="btn primary" data-act="conc-new">＋ Nouvelle commande</button></div>
       ${(()=>{const dv=orders.filter(o=>o.status==='issue');return dv.length?`<div style="height:16px"></div><span class="eyebrow" style="color:var(--coral-deep)">À traiter · exceptions · ${dv.length}</span>${dv.map(o=>{const sv=SERVICES.find(s=>s.id===o.svc);return `<div class="card" style="padding:13px;margin-top:9px;border-left:4px solid var(--coral)"><div class="row between"><b style="font-size:14px">${sv?sv.nm:o.svcName}</b><span class="chip coral" style="padding:3px 9px">Souci signalé</span></div><div class="mini" style="margin-top:3px">${o.clientName} · ${eur(o.amount)}</div><div class="row" style="gap:8px;margin-top:9px"><button class="btn good sm" style="width:auto;padding:8px 14px" data-act="conc-quickvalidate:${o.id}">${I.check} Valider</button><button class="btn ghost sm" style="width:auto;padding:8px 14px" data-act="conc-view:${o.id}">Détail</button></div></div>`;}).join('')}`:'';})()}
       <div style="height:16px"></div><span class="eyebrow">Commandes</span>${ordList}
-      <p class="mini" style="text-align:center;margin-top:16px"><button class="linklike" data-act="demo-go-client">${I.user} Quitter la conciergerie (démo)</button></p>
+      ${isDemo()?`<p class="mini" style="text-align:center;margin-top:16px"><button class="linklike" data-act="demo-go-client">${I.user} Quitter la conciergerie (démo)</button></p>`:(FB?`<button class="btn ghost sm" data-act="logout" style="margin-top:16px">Se déconnecter</button>`:'')}
       <div style="height:8px"></div></div>${conciergeNavbar()}`;
   }
   function conciergeClients(){
@@ -2194,7 +2213,7 @@
   function blankAll(){
     S.addresses=[];S.addrDefault=null;S.history=[];S.recurring=[];S.card=null;S.mission=null;S.missions=[];S.proMissions=[];S.proReqView=null;S.proSkipped=[];
     S.proHistory=[];S.agenda=[];S.proEarnings=0;S.proJobsToday=0;S.proJobsTotal=0;
-    S.adminArtisans=[];S.adminClients=[];S.adminBookings=[];S.adminCommission=0;
+    S.adminArtisans=[];S.adminClients=[];S.adminBookings=[];S.adminCommission=0;S.adminConcierges=[];
     S.concClients=[];S.concOrders=[];S.concEarn=0;
   }
   function clientPay(){
@@ -2273,7 +2292,7 @@
     if(S.delAcct)return deleteAccountView();
     if(S.generalSupport)return generalSupportChat();
     if(S.proConflict)return proConflictView();
-    if(S.proStatus==='signup')return proSignup();
+    if(S.proStatus==='signup'){ if(S.signupKind==='concierge')return conciergeSignup(); if(S.signupKind==='artisan')return proSignup(); return proTypeChoice(); }
     if(S.proDocsView)return proDocs();
     if(S.proPayoutView)return proPayout();
     if(S.proStatus==='pending')return proPending();
@@ -2334,6 +2353,52 @@
     const act=attention()==='pro';
     const item=(id,ic,lbl,badge)=>`<button data-pnav="${id}" class="${S.proNav===id&&!S.mission?'on':''}"><span class="nb-ic">${ic}${badge?'<span class="nb-badge"></span>':''}</span>${lbl}</button>`;
     return `<div class="navbar">${item('home',I.bolt,'Missions',act)}${item('agenda',I.cal,'Agenda',false)}${item('earnings',I.wallet,'Revenus',false)}${item('account',I.user,'Compte',false)}</div>`;
+  }
+  // Choix du type de compte professionnel : artisan (prestataire) ou conciergerie
+  // (mandataire qui commande pour ses clients). Les deux passent par une validation admin.
+  function proTypeChoice(){
+    return `<div class="pad"><div style="height:10px"></div>
+      <button class="reset" data-act="back-to-client" style="margin:0 0 8px">← Je suis un client</button>
+      <span class="eyebrow">Rejoindre Ti-Services</span>
+      <div class="h-hello">Vous êtes&nbsp;?</div>
+      <p class="sub" style="margin-top:6px">Deux façons de travailler avec Ti-Services à Saint-Barth.</p>
+      <button class="card" data-act="signup-kind:artisan" style="padding:18px;margin-top:16px;width:100%;text-align:left;display:block;border-left:4px solid var(--teal)">
+        <div class="row" style="gap:13px;align-items:center"><span class="benic">${I.hardhat}</span><div style="flex:1"><b style="font-size:15.5px">Artisan / Prestataire</b><div class="mini" style="margin-top:2px">Vous réalisez les prestations (ménage, jardinage, coiffure…). Vous recevez des missions et vous êtes payé.</div></div><span class="mini" style="color:var(--teal-deep);font-weight:700">Choisir ›</span></div>
+      </button>
+      <button class="card" data-act="signup-kind:concierge" style="padding:18px;margin-top:12px;width:100%;text-align:left;display:block;border-left:4px solid var(--teal-deep)">
+        <div class="row" style="gap:13px;align-items:center"><span class="benic">${I.concierge}</span><div style="flex:1"><b style="font-size:15.5px">Conciergerie</b><div class="mini" style="margin-top:2px">Vous commandez des prestations <b>pour le compte de vos clients</b> (villas, propriétaires). Chaque client règle avec sa carte, facture à son nom, et vous touchez une commission d'apport.</div></div><span class="mini" style="color:var(--teal-deep);font-weight:700">Choisir ›</span></div>
+      </button>
+      <p class="mini" style="text-align:center;margin-top:16px;color:var(--muted)">${I.shield} Les deux profils sont vérifiés par Ti-Services avant activation.</p>
+      </div>`;
+  }
+  // Inscription conciergerie (mandataire). Plus léger que l'artisan : pas de catalogue
+  // ni d'assurance de prestation — la structure est vérifiée puis activée par l'admin.
+  function conciergeSignup(){
+    const f=S.concSignup||{};
+    const ok=(f.name||'').trim().length>1&&/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=6&&f.password===f.password2&&(f.siret||'').replace(/\s/g,'').length>=9&&!!f.cgu&&!!f.mandat;
+    return `<div class="pad"><div style="height:10px"></div>
+      <button class="reset" data-act="conc-signup-back" style="margin:0 0 8px">← Retour</button>
+      <span class="eyebrow">${I.concierge} Rejoindre Ti-Services · Conciergerie</span>
+      <div class="h-hello">Votre conciergerie</div>
+      <p class="sub" style="margin-top:6px">Commandez pour vos clients, sans manipuler leurs coordonnées bancaires — chacun autorise sa carte via un lien sécurisé.</p>
+      <div class="banner coral" style="margin-top:14px">${I.shield}<span><b>Sur candidature</b> — réservé aux structures immatriculées. <b>SIRET obligatoire</b>. Profil vérifié avant activation.</span></div>
+      <div class="card" style="padding:16px;margin-top:14px">
+        <div class="field"><label>Nom de la conciergerie / raison sociale</label><input class="txt" data-csf="name" value="${esc(f.name||'')}" placeholder="Ex. Villa Services SBH"></div>
+        <div class="field"><label>SIRET</label><input class="txt" data-csf="siret" value="${esc(f.siret||'')}" inputmode="numeric" placeholder="14 chiffres"></div>
+        <div class="field"><label>Personne à contacter</label><input class="txt" data-csf="contact" value="${esc(f.contact||'')}" placeholder="Prénom & nom"></div>
+        <div class="field"><label>Téléphone</label><input class="txt" data-csf="phone" value="${esc(f.phone||'')}" inputmode="tel" placeholder="+590 690 ..."></div>
+        <div class="field"><label>E-mail (identifiant de connexion)</label><input class="txt" data-csf="email" value="${esc(f.email||'')}" inputmode="email" autocomplete="email" placeholder="contact@votre-conciergerie.com"></div>
+        <div class="field"><label>Mot de passe</label><div class="pw-wrap"><input class="txt" type="password" data-csf="password" value="${esc(f.password||'')}" autocomplete="new-password" placeholder="6 caractères minimum"><button type="button" class="pw-eye" data-act="pw-toggle" aria-label="Afficher">${I.eye}</button></div></div>
+        <div class="field" style="margin:0"><label>Confirmer le mot de passe</label><div class="pw-wrap"><input class="txt" type="password" data-csf="password2" value="${esc(f.password2||'')}" autocomplete="new-password" placeholder="Retapez"><button type="button" class="pw-eye" data-act="pw-toggle" aria-label="Afficher">${I.eye}</button></div>${(f.password2&&f.password!==f.password2)?`<p class="mini" style="margin-top:5px;color:var(--coral-deep)">Les mots de passe ne correspondent pas.</p>`:''}</div>
+      </div>
+      <div class="card" style="padding:16px;margin-top:12px">
+        <div class="chkline"><button data-act="conc-toggle-cgu" style="background:none;border:none;padding:0">${chkbox(f.cgu)}</button><span class="mini" style="line-height:1.5">J'ai lu et j'accepte les <button class="linklike" data-act="view-cgu">CGU</button> et les <button class="linklike" data-act="view-cgv">CGV</button> de Ti-Services.</span></div>
+        <div class="chkline" style="margin-top:12px"><button data-act="conc-toggle-mandat" style="background:none;border:none;padding:0">${chkbox(f.mandat)}</button><span class="mini" style="line-height:1.5">J'accepte le <b>mandat d'apport d'affaires</b> : je commande au nom et pour le compte de mes clients, chacun réglant avec sa propre carte.</span></div>
+      </div>
+      <div class="footcta" style="position:static;background:none;padding:16px 0 0">
+        <button class="btn primary" data-act="conc-submit"${ok?'':' disabled'}>${I.check} Envoyer ma candidature</button>
+        <p class="mini" style="text-align:center;margin-top:10px">${I.lock} Vérification sous 48 h. Vous serez prévenu dès l'activation.</p>
+      </div></div>`;
   }
   function proSignup(){
     const f=S.proForm;
@@ -2787,6 +2852,8 @@
       else if(act==='rej-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.status='refuse';if(!a.reason)a.reason=(!a.siret?'SIRET manquant. ':'')+(!a.insured?'Assurance manquante. ':'')||'Ne correspond pas aux critères Ti-Services';adminWriteStatus(a,'refuse');}S.admin.view='home';toast('Candidature refusée — conservée dans l’historique');}
       else if(act==='reexam-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.status='attente';adminWriteStatus(a,'attente');toast('Candidature remise en attente');}}
       else if(act==='valid-cli'){const cc=S.adminClients.find(x=>x.id===id);if(cc)cc.status='valide';toast('Client validé');}
+      else if(act==='valid-conc'){const c=(S.adminConcierges||[]).find(x=>x.id===id);if(c&&c.siret){c.status='valide';adminWriteConcStatus(c,'valide');toast('Conciergerie validée');}else{toast('SIRET manquant');}}
+      else if(act==='rej-conc'){const c=(S.adminConcierges||[]).find(x=>x.id===id);if(c){c.status='refuse';adminWriteConcStatus(c,'refuse');toast('Conciergerie refusée');}}
       else if(act==='valid-ins'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.insuranceStatus='valide';a.insured=true;adminWriteField(a,{insuranceStatus:'valide',insured:true});toast('Attestation validée ✓');}}
       else if(act==='rej-ins'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.insuranceStatus='refuse';adminWriteField(a,{insuranceStatus:'refuse'});toast('Attestation refusée');}}
       else if(act==='addcat'){const a=S.adminArtisans.find(x=>x.id===id);if(a&&a.other){addCustomService(a.other,(a.rates&&a.rates.autre)||40);}}
@@ -2837,6 +2904,7 @@
     if(b.dataset.act&&b.dataset.act.indexOf('histinv:')===0){const h=(S.history||[])[+b.dataset.act.split(':')[1]];if(h){S.histInvoice=h;render();}return;}
     if(b.dataset.act==='refresh-requests'){manualRefreshRequests();return;}
     if(b.dataset.act==='toggle-desktop'){toggleForceDesktop();return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('signup-kind:')===0){const k=b.dataset.act.split(':')[1];if(k==='concierge'){S.signupKind='concierge';S.concSignup={name:'',siret:'',contact:'',phone:'',email:'',password:'',password2:'',cgu:false,mandat:false};}else{S.signupKind='artisan';S.proForm={name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,cgu:false,charte:false,rates:{},otherService:'',photo:''};}render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('rbfreq:')===0){S.rebookFreq=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('reqview:')===0){S.proReqView=b.dataset.act.slice('reqview:'.length);S.proReqSlot=null;S.proReqPick=false;render();return;}
     if(b.dataset.proreqslot){if(b.dataset.proreqslot==='__pick'){S.proReqPick=true;}else{S.proReqPick=false;S.proReqSlot=b.dataset.proreqslot;}render();return;}
@@ -2861,7 +2929,7 @@
     if(b.dataset.act&&(b.dataset.act.indexOf('conc-client:')===0||b.dataset.act.indexOf('conc-client-edit:')===0)){const c=concClient(b.dataset.act.split(':')[1]);if(c){S.concClientView=null;S.concForm={id:c.id,name:c.name,email:c.email,phone:c.phone,alabel:c.addr?c.addr.label:'',aaddr:c.addr?c.addr.address:'',azone:c.addr?c.addr.zone:'Gustavia',ageo:c.addr?c.addr.geo:null,notes:c.notes||'',authorized:c.authorized,card:c.card};render();}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('conc-client-view:')===0){S.concClientView=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('conc-new-for:')===0){S.concClientView=null;S.concOrder={step:'service',clientId:b.dataset.act.split(':')[1]};render();return;}
-    if(b.dataset.act&&b.dataset.act.indexOf('conc-quickvalidate:')===0){const o=S.concOrders.find(x=>x.id===b.dataset.act.split(':')[1]);if(o&&(o.status==='done'||o.status==='issue')){o.status='paid';o.retro=Math.round(o.amount*S.retroRate/100);S.concEarn+=o.retro;o.invNo='2026-'+String(50+S.concOrders.length).padStart(4,'0');render();toast('Prestation réglée — facture au nom du client');}return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('conc-quickvalidate:')===0){const o=S.concOrders.find(x=>x.id===b.dataset.act.split(':')[1]);if(o&&(o.status==='done'||o.status==='issue')){o.status='paid';o.retro=Math.round(o.amount*S.retroRate/100);S.concEarn+=o.retro;o.invNo='2026-'+String(50+S.concOrders.length).padStart(4,'0');saveConcCloud();render();toast('Prestation réglée — facture au nom du client');}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('conc-reorder:')===0){const o=S.concOrders.find(x=>x.id===b.dataset.act.split(':')[1]);if(o){S.concClientView=null;S.concView=null;S.concOrder={step:'form',clientId:o.clientId,svc:o.svc,svcName:o.svcName,rate:o.rate,duration:o.duration,when:'Aujourd’hui',slot:o.slot,notes:o.notes||''};render();toast('Commande pré-remplie — ajustez puis validez');}return;}
     switch(b.dataset.act){
       case 'onb-start':S.onbStep=1;render();break;
@@ -2906,7 +2974,11 @@
       case 'notif-push':{if(!S.proNotifPush){S.proNotifPush=true;requestPush();}else{S.proNotifPush=false;}render();break;}
       case 'notif-wa':S.proNotifWa=!S.proNotifWa;render();break;
       case 'save-dispo':toast('Disponibilités enregistrées');break;
-      case 'go-artisan-signup':S.persona='pro';S.proStatus='signup';S.proForm={name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,cgu:false,charte:false,rates:{},otherService:'',photo:''};render();break;
+      case 'go-artisan-signup':S.persona='pro';S.proStatus='signup';S.signupKind=null;render();break;
+      case 'conc-signup-back':S.signupKind=null;render();break;
+      case 'conc-toggle-cgu':if(S.concSignup)S.concSignup.cgu=!S.concSignup.cgu;render();break;
+      case 'conc-toggle-mandat':if(S.concSignup)S.concSignup.mandat=!S.concSignup.mandat;render();break;
+      case 'conc-submit':{const f=S.concSignup||{};if(!((f.name||'').trim().length>1&&/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=6&&f.password===f.password2&&(f.siret||'').replace(/\s/g,'').length>=9&&f.cgu&&f.mandat)){toast('Complétez le formulaire (SIRET, e-mail, mot de passe, CGU, mandat).');break;}if(FB){signupAsConcierge=true;fbConciergeSignup(f);}else{S.persona='concierge';S.concStatus='pending';S.concName=(f.contact||f.name||'').trim();S.onboarded=true;S.concNav='home';render();toast('Candidature envoyée (démo)');}break;}
       case 'back-to-client':S.persona='client';S.proStatus='approved';render();break;
       case 'start-demo':S.demoMode=true;S.onboarded=true;S.authView=null;S.persona='client';S.clientForm={name:'Camille Magras',email:'demo@ti-services.fr',zone:'Gustavia',password:'',password2:'',photo:''};S.account={name:'Camille Magras',email:'demo@ti-services.fr',zone:'Gustavia'};S.mission=null;S.missions=[];S.draft=null;
         // Démo = scénario complet pré-rempli (client, artisan, admin, conciergerie).
@@ -2921,11 +2993,11 @@
       case 'conc-order-cancel':S.concOrder=null;render();break;
       case 'conc-order-back-client':S.concOrder.step='client';render();break;
       case 'conc-order-back-service':S.concOrder.step='service';render();break;
-      case 'conc-order-place':{const o=S.concOrder,c=concClient(o.clientId),id='co'+Date.now(),amount=o.rate*o.duration;S.concOrders.unshift({id,clientId:c.id,clientName:c.name,svc:o.svc,svcName:o.svcName,duration:o.duration,rate:o.rate,amount,when:o.when,slot:o.slot,notes:o.notes,accessNotes:c.notes||'',address:c.addr?c.addr.address:'',zone:c.addr?c.addr.zone:'',status:'searching',artisan:null,retro:0,invNo:null});S.concOrder=null;S.concView=id;render();setTimeout(()=>{const ord=S.concOrders.find(x=>x.id===id);if(ord&&ord.status==='searching'){ord.status='planned';ord.artisan='Marie-Lou Cagan';if(S.persona==='concierge')render();}},2600);break;}
+      case 'conc-order-place':{const o=S.concOrder,c=concClient(o.clientId),id='co'+Date.now(),amount=o.rate*o.duration;S.concOrders.unshift({id,clientId:c.id,clientName:c.name,svc:o.svc,svcName:o.svcName,duration:o.duration,rate:o.rate,amount,when:o.when,slot:o.slot,notes:o.notes,accessNotes:c.notes||'',address:c.addr?c.addr.address:'',zone:c.addr?c.addr.zone:'',status:'searching',artisan:null,retro:0,invNo:null});S.concOrder=null;S.concView=id;saveConcCloud();render();setTimeout(()=>{const ord=S.concOrders.find(x=>x.id===id);if(ord&&ord.status==='searching'){ord.status='planned';ord.artisan='Marie-Lou Cagan';saveConcCloud();if(S.persona==='concierge')render();}},2600);break;}
       case 'conc-view-back':S.concView=null;render();break;
-      case 'conc-order-done':{const o=S.concOrders.find(x=>x.id===S.concView);if(o){o.status='done';render();const id=o.id;setTimeout(()=>{const ord=S.concOrders.find(x=>x.id===id);if(ord&&ord.status==='done'){ord.status='paid';ord.retro=Math.round(ord.amount*S.retroRate/100);S.concEarn+=ord.retro;ord.invNo='2026-'+String(50+S.concOrders.length).padStart(4,'0');if(S.persona==='concierge')render();}},4000);}break;}
+      case 'conc-order-done':{const o=S.concOrders.find(x=>x.id===S.concView);if(o){o.status='done';saveConcCloud();render();const id=o.id;setTimeout(()=>{const ord=S.concOrders.find(x=>x.id===id);if(ord&&ord.status==='done'){ord.status='paid';ord.retro=Math.round(ord.amount*S.retroRate/100);S.concEarn+=ord.retro;ord.invNo='2026-'+String(50+S.concOrders.length).padStart(4,'0');saveConcCloud();if(S.persona==='concierge')render();}},4000);}break;}
       case 'conc-order-issue':{const o=S.concOrders.find(x=>x.id===S.concView);if(o&&o.status==='done'){o.status='issue';render();toast('Souci signalé à Ti-Services — validation automatique suspendue');}break;}
-      case 'conc-order-validate':{const o=S.concOrders.find(x=>x.id===S.concView);if(o){o.status='paid';o.retro=Math.round(o.amount*S.retroRate/100);S.concEarn+=o.retro;o.invNo='2026-'+String(50+S.concOrders.length).padStart(4,'0');render();toast('Prestation réglée — facture au nom du client');}break;}
+      case 'conc-order-validate':{const o=S.concOrders.find(x=>x.id===S.concView);if(o){o.status='paid';o.retro=Math.round(o.amount*S.retroRate/100);S.concEarn+=o.retro;o.invNo='2026-'+String(50+S.concOrders.length).padStart(4,'0');saveConcCloud();render();toast('Prestation réglée — facture au nom du client');}break;}
       case 'conc-invoice-back':S.concInvoice=null;render();break;
       case 'conc-retinv':S.concRetInv=true;render();break;
       case 'conc-retinv-back':S.concRetInv=false;render();break;
@@ -2934,8 +3006,8 @@
       case 'conc-client-cancel':S.concForm=null;render();break;
       case 'conc-auth':if(S.concForm){S.concForm.authorized=true;S.concForm.card={brand:'Visa',last4:'4242'};render();toast('Lien envoyé — carte autorisée par le client (démo)');}break;
       case 'conc-client-geo':geolocate(g=>{if(S.concForm){S.concForm.ageo=g;render();}});break;
-      case 'conc-client-save':{const f=S.concForm;if(!f)break;if(!(f.name||'').trim()){toast('Indiquez le nom du client');break;}const addr={label:f.alabel||f.name,address:f.aaddr,zone:f.azone,geo:f.ageo||null};if(f.id){const c=concClient(f.id);if(c){c.name=f.name;c.email=f.email;c.phone=f.phone;c.addr=addr;c.notes=f.notes||'';c.authorized=f.authorized;c.card=f.card;}}else{S.concClients.push({id:'cc'+Date.now(),name:f.name,email:f.email,phone:f.phone,addr,notes:f.notes||'',authorized:f.authorized,card:f.card});}S.concForm=null;render();toast('Client enregistré');break;}
-      case 'conc-client-delete':if(S.concForm&&S.concForm.id){S.concClients=S.concClients.filter(x=>x.id!==S.concForm.id);S.concForm=null;render();toast('Client supprimé');}break;
+      case 'conc-client-save':{const f=S.concForm;if(!f)break;if(!(f.name||'').trim()){toast('Indiquez le nom du client');break;}const addr={label:f.alabel||f.name,address:f.aaddr,zone:f.azone,geo:f.ageo||null};if(f.id){const c=concClient(f.id);if(c){c.name=f.name;c.email=f.email;c.phone=f.phone;c.addr=addr;c.notes=f.notes||'';c.authorized=f.authorized;c.card=f.card;}}else{S.concClients.push({id:'cc'+Date.now(),name:f.name,email:f.email,phone:f.phone,addr,notes:f.notes||'',authorized:f.authorized,card:f.card});}S.concForm=null;saveConcCloud();render();toast('Client enregistré');break;}
+      case 'conc-client-delete':if(S.concForm&&S.concForm.id){S.concClients=S.concClients.filter(x=>x.id!==S.concForm.id);S.concForm=null;saveConcCloud();render();toast('Client supprimé');}break;
       case 'open-chat':S.chat=true;render();view.scrollTop=view.scrollHeight;break;
       case 'close-chat':S.chat=false;render();break;
       case 'chat-send':sendChat();view.scrollTop=view.scrollHeight;break;
@@ -3008,6 +3080,7 @@
         // Nouvel artisan = part de zéro : aucun historique ni agenda pré-rempli.
         S.proHistory=[];S.agenda=[];S.recurring=[];S.proEarnings=0;S.proJobsToday=0;S.proJobsTotal=0;S.mission=null;
         render();toast('Profil validé — bienvenue sur Ti-Services !');break;}
+      case 'conc-approve-demo':S.concStatus='approved';render();toast('Conciergerie validée (démo)');break;
       case 'pro-accept':{const m=S.mission;if(m.slotFlex&&m.proposedSlot){m.slot=clampSlot(m,m.proposedSlot);}m.provider=Object.assign({},PROVIDERS[m.svc]);m.status='accepted';const r=totals(m).rate;const amt=totals(m).total;const freq=m.frequency||'ponctuelle';const labels=occLabels(freq);const entries=labels.map(d=>({day:d,slot:m.slot,svc:m.svc,client:'Camille M.',zone:m.zone,duration:m.duration,unit:m.unit,rate:r,amount:amt,status:'upcoming'}));m._appt=entries[0];entries.slice().reverse().forEach(e=>S.agenda.unshift(e));if(freq!=='ponctuelle'){S.recurring.unshift({svc:m.svc,svcName:m.svcName,short:freqInfo(freq).short,slot:m.slot,zone:m.zone});}if(!m.chat||!m.chat.length)m.chat=[{from:'pro',text:'Bonjour Camille ! Bien reçu votre demande, je serai là à '+m.slot+'. À tout à l’heure 👋'}];proAddMission(m);render();burstConfetti();toast(labels.length>1?'Prestation récurrente ajoutée à votre agenda !':'Mission remportée — ajoutée à votre agenda !');break;}
       case 'pro-decline':S.mission.status='searching';render();setTimeout(()=>{if(S.mission&&S.mission.status==='searching'){S.mission.status='pending';render();}},1400);toast('Mission passée — proposée aux autres');break;
       case 'pro-advance':S.mission.status=b.dataset.to;if(S.mission._appt){if(b.dataset.to==='working')S.mission._appt.status='live';else if(b.dataset.to==='done_pro')S.mission._appt.status='tovalidate';}pushMissionStatus(S.mission);render();break;
@@ -3087,6 +3160,7 @@
   view.addEventListener('input',(e)=>{
     const t=e.target.closest('[data-cfg="notes"]');if(t&&S.draft)S.draft.notes=t.value;
     const pf=e.target.closest('[data-pf]');if(pf)S.proForm[pf.dataset.pf]=pf.value;
+    const csf=e.target.closest('[data-csf]');if(csf&&S.concSignup){S.concSignup[csf.dataset.csf]=csf.value;const b2=document.querySelector('[data-act="conc-submit"]');const c=S.concSignup;if(b2)b2.disabled=!((c.name||'').trim().length>1&&/.+@.+\..+/.test(c.email||'')&&(c.password||'').length>=6&&c.password===c.password2&&(c.siret||'').replace(/\s/g,'').length>=9&&c.cgu&&c.mandat);}
     const cf=e.target.closest('[data-cf]');if(cf){S.clientForm[cf.dataset.cf]=cf.value;const fb=document.querySelector('[data-act="finish-onboard"]');const c=S.clientForm;if(fb)fb.disabled=!((c.name||'').trim().length>1&&/.+@.+\..+/.test(c.email||'')&&(c.password||'').length>=6&&c.password===c.password2&&!!c.terms);}
     const pf2=e.target.closest('[data-pf2]');if(pf2&&S.profileForm){S.profileForm[pf2.dataset.pf2]=pf2.value;const sb=document.querySelector('[data-act="save-profile"]');if(sb)sb.disabled=!((S.profileForm.name||'').trim().length>1);}
     const lf=e.target.closest('[data-lf]');if(lf){S.loginForm[lf.dataset.lf]=lf.value;const btn=document.querySelector('[data-act="do-login"]');if(btn)btn.disabled=!(/.+@.+\..+/.test(S.loginForm.email||'')&&(S.loginForm.password||'').length>=1);}
@@ -3208,6 +3282,7 @@
      Sinon : mode démo inchangé (comptes en localStorage). */
   let FB=null;
   let signupAsArtisan=false; // vrai pendant une inscription artisan (évite la création d'un compte client par la course onAuthStateChanged)
+  let signupAsConcierge=false; // idem pour une inscription conciergerie
   function fbErr(e){const c=(e&&e.code)||'';return ({
     'auth/email-already-in-use':'Un compte existe déjà avec cet e-mail — connectez-vous.',
     'auth/invalid-email':'E-mail invalide.',
@@ -3255,7 +3330,7 @@
       if((CONFIG.adminEmails||[]).map(function(e){return e.toLowerCase();}).indexOf((user.email||'').toLowerCase())>=0){
         S.account={name:'Ti-Services',email:user.email||'',uid:user.uid,role:'admin'};
         S.persona='admin';S.admin={view:'home',sel:null};S.onboarded=true;S.authView=null;render();
-        refreshAdminArtisans();initAdminPush();subscribeAdminThreads();subscribeAdminGeneralSupport();return;
+        refreshAdminArtisans();refreshAdminConcierges();initAdminPush();subscribeAdminThreads();subscribeAdminGeneralSupport();return;
       }
       // Compte artisan : on route vers l'espace pro (statut lu dans la fiche artisans).
       if((data&&data.role)==='artisan'){
@@ -3278,6 +3353,21 @@
         S.account={name:name,email:user.email||'',uid:user.uid,role:'artisan'};
         S.persona='pro';S.proName=name;S.proStatus='pending';S.onboarded=true;S.authView=null;S.proNav='home';render();
         subscribeProStatus(user.uid);
+        return;
+      }
+      // Compte conciergerie (mandataire) : espace concierge, données propres persistées
+      // dans la fiche concierges. En attente tant que l'admin n'a pas validé.
+      if((data&&data.role)==='concierge'||(signupAsConcierge&&(!data||data.role!=='client'))){
+        let cd=null; try{ const s3=await FB.f.getDoc(FB.f.doc(FB.db,'concierges',user.uid)); cd=s3.exists()?s3.data():null; }catch(_){}
+        S.account={name:name,email:user.email||'',uid:user.uid,role:'concierge'};
+        S.persona='concierge';S.concName=(cd&&cd.contact)||name;
+        S.concStatus=(cd&&cd.status==='valide')?'approved':'pending';
+        S.concClients=(cd&&Array.isArray(cd.clients))?cd.clients:[];
+        S.concOrders=(cd&&Array.isArray(cd.orders))?cd.orders:[];
+        S.concEarn=(cd&&cd.earn)||0;
+        S.onboarded=true;S.authView=null;S.concNav='home';S.concForm=null;S.concOrder=null;S.concView=null;render();
+        subscribeConcStatus(user.uid);
+        S.genSupport=(data&&Array.isArray(data.support))?data.support.slice():[];subscribeUserSupport(user.uid);
         return;
       }
       const zone=(data&&data.zone)||typedZone||'Gustavia';
@@ -3425,9 +3515,59 @@
       burstConfetti(); render(); toast('Candidature envoyée 🐙 — compte créé, examen sous 48 h');
     }catch(e){ toast(fbErr(e)); }finally{ signupAsArtisan=false; }
   }
+  async function fbConciergeSignup(f){
+    try{
+      const cred=await FB.a.createUserWithEmailAndPassword(FB.auth,f.email.trim(),f.password);
+      const uid=cred.user.uid; const nm=(f.name||'').trim();
+      try{ await FB.f.setDoc(FB.f.doc(FB.db,'users',uid),{name:nm,email:f.email.trim(),role:'concierge',phone:f.phone||'',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
+      try{ await FB.f.setDoc(FB.f.doc(FB.db,'concierges',uid),{name:nm,contact:(f.contact||'').trim(),siret:(f.siret||'').replace(/\s/g,''),phone:f.phone||'',email:f.email.trim(),acceptedTerms:!!f.cgu,acceptedMandat:!!f.mandat,termsVersion:TERMS_VERSION,termsAt:FB.f.serverTimestamp(),status:'attente',clients:[],orders:[],earn:0,createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
+      S.account={name:nm||(f.email.trim().split('@')[0]),email:f.email.trim(),uid:uid,role:'concierge'};
+      S.persona='concierge';S.concName=(f.contact||nm);S.concStatus='pending';S.onboarded=true;S.authView=null;S.concNav='home';
+      S.concClients=[];S.concOrders=[];S.concEarn=0;S.concForm=null;S.concOrder=null;S.concView=null;
+      subscribeConcStatus(uid);
+      burstConfetti();render();toast('Candidature envoyée 🐙 — compte créé, examen sous 48 h');
+    }catch(e){ toast(fbErr(e)); }finally{ signupAsConcierge=false; }
+  }
+  let concStatusUnsub=null;
+  function subscribeConcStatus(uid){
+    if(!FB||!uid)return;
+    if(concStatusUnsub){try{concStatusUnsub();}catch(_){}concStatusUnsub=null;}
+    try{
+      concStatusUnsub=FB.f.onSnapshot(FB.f.doc(FB.db,'concierges',uid),function(snap){
+        if(!snap.exists())return;
+        const cd=snap.data()||{};
+        const newStatus=(cd.status==='valide')?'approved':'pending';
+        const was=S.concStatus;
+        if(newStatus!==was){
+          S.concStatus=newStatus;
+          if(newStatus==='approved'&&was==='pending'){
+            toast('🎉 Conciergerie validée — bienvenue chez Ti-Services !');
+            try{ if('Notification'in window&&Notification.permission==='granted'){ new Notification('Ti-Services — conciergerie validée',{body:'Votre compte est activé.',icon:'./icon-192.png',tag:'ti-conc-approved'}); } }catch(_){}
+          }
+          if(S.persona==='concierge')render();
+        }
+      },function(err){ console.warn('conc status listen',err); });
+    }catch(e){ console.warn('conc status listen',e); }
+  }
   // Console admin réelle : écrit le statut de l'artisan en base (validation, refus…).
   function adminWriteStatus(a,status){ if(FB&&a&&a.real&&a.uid){ try{ FB.f.updateDoc(FB.f.doc(FB.db,'artisans',a.uid),{status:status}); }catch(_){} } }
   function adminWriteField(a,obj){ if(FB&&a&&a.real&&a.uid){ try{ FB.f.setDoc(FB.f.doc(FB.db,'artisans',a.uid),obj,{merge:true}); }catch(_){} } }
+  // Statut d'une conciergerie écrit en base par l'admin (validation / refus).
+  function adminWriteConcStatus(c,status){ if(FB&&c&&c.uid){ try{ FB.f.updateDoc(FB.f.doc(FB.db,'concierges',c.uid),{status:status}); }catch(_){} } }
+  // Écoute EN TEMPS RÉEL des dossiers conciergerie (console admin).
+  let adminConcUnsub=null;
+  function refreshAdminConcierges(){
+    if(!FB)return;
+    if(adminConcUnsub){try{adminConcUnsub();}catch(_){}adminConcUnsub=null;}
+    try{
+      adminConcUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'concierges'),function(snap){
+        const list=[];
+        snap.forEach(function(d){ const c=d.data()||{}; list.push({id:d.id,uid:d.id,real:true,name:c.name||'Conciergerie',contact:c.contact||'',siret:c.siret||'',phone:c.phone||'',email:c.email||'',status:c.status||'attente'}); });
+        S.adminConcierges=list;
+        if(S.persona==='admin')render();
+      },function(err){ console.warn('admin concierges snapshot',err); });
+    }catch(e){ console.warn('admin concierges listen',e); }
+  }
   // Charge les vrais artisans (Firestore) dans la console admin.
   // Écoute EN TEMPS RÉEL des dossiers artisans : la console se met à jour toute
   // seule et l'admin est alerté dès qu'une nouvelle candidature arrive (tant que
@@ -3679,7 +3819,7 @@
     if(FB)blankAll(); S.delAcct=false;S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;S.missions=[];S.proMissions=[];S.account=null;
     render();toast('Votre compte a été supprimé');
   }
-  function fbLogout(){ if(adminArtUnsub){try{adminArtUnsub();}catch(_){}adminArtUnsub=null;} if(proStatusUnsub){try{proStatusUnsub();}catch(_){}proStatusUnsub=null;} if(openReqUnsub){try{openReqUnsub();}catch(_){}openReqUnsub=null;} if(activeReqUnsub){try{activeReqUnsub();}catch(_){}activeReqUnsub=null;} Object.keys(clientReqUnsubs).forEach(unsubClientRequest); adminSeenPending=null; if(FB){ try{FB.a.signOut(FB.auth);}catch(_){} } }
+  function fbLogout(){ if(adminArtUnsub){try{adminArtUnsub();}catch(_){}adminArtUnsub=null;} if(proStatusUnsub){try{proStatusUnsub();}catch(_){}proStatusUnsub=null;} if(openReqUnsub){try{openReqUnsub();}catch(_){}openReqUnsub=null;} if(activeReqUnsub){try{activeReqUnsub();}catch(_){}activeReqUnsub=null;} if(concStatusUnsub){try{concStatusUnsub();}catch(_){}concStatusUnsub=null;} if(adminConcUnsub){try{adminConcUnsub();}catch(_){}adminConcUnsub=null;} Object.keys(clientReqUnsubs).forEach(unsubClientRequest); adminSeenPending=null; if(FB){ try{FB.a.signOut(FB.auth);}catch(_){} } }
 
   handleDeepLink();
   render();

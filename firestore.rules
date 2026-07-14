@@ -61,6 +61,21 @@ service cloud.firestore {
       allow delete: if isAdmin() || uid() == artisanId;
     }
 
+    // Dossiers conciergerie (mandataires) : créés par la structure (statut « attente »
+    // forcé), le statut ne peut être changé que par l'admin. Les données
+    // opérationnelles (clients, commandes, apport) sont écrites par la conciergerie
+    // elle-même, sans jamais modifier son propre statut.
+    match /concierges/{concId} {
+      allow read:   if isAdmin() || uid() == concId;
+      allow create: if uid() == concId
+                    && request.resource.data.status == 'attente';
+      allow update: if isAdmin()
+                    || (uid() == concId
+                        && request.resource.data.status == resource.data.status);
+      // Droit à l'effacement (RGPD) : la conciergerie peut supprimer son dossier.
+      allow delete: if isAdmin() || uid() == concId;
+    }
+
     // Demandes de prestation
     match /requests/{reqId} {
       function isClient()   { return signedIn() && resource.data.clientUid == uid(); }
