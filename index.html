@@ -1898,7 +1898,7 @@
     const summary=`<div class="card" style="padding:15px;margin-top:14px"><div class="row between"><div><div class="mini">Terminées</div><b class="money" style="font-size:19px;font-family:var(--f-disp)">${done.length}</b></div><div style="text-align:right"><div class="mini">Total dépensé</div><b class="money" style="font-size:19px;font-family:var(--f-disp)">${eur(totalSpent)}</b></div></div></div>`;
     const list=done.length?`<div class="eyebrow" style="color:var(--muted);margin-top:18px">Historique &amp; factures</div><p class="mini" style="color:var(--muted);margin-top:2px">Touchez une prestation pour revoir ou télécharger sa facture.</p>`+done.map((h,i)=>{const t=totals(h);return `<button class="card" data-act="histinv:${i}" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block"><div class="row" style="gap:11px"><div class="avatar" style="width:40px;height:40px;font-size:14px${h.provider&&h.provider.photo?`;background-image:url('${h.provider.photo}');background-size:cover;background-position:center;color:transparent`:''}">${h.provider?esc(h.provider.ini||'--'):'--'}</div><div style="flex:1"><div class="row between"><b style="font-size:14.5px">${esc(h.svcName||'Prestation')}</b><span class="money" style="font-weight:700">${eur(t.total)}</span></div><div class="mini" style="margin-top:2px">${esc(h.when||'')}${h.provider&&h.provider.nm?' · '+esc(h.provider.nm):''}</div></div></div><div class="row between" style="margin-top:10px"><span class="chip good" style="padding:4px 10px">${I.check} Bien exécuté &amp; réglé</span><span class="mini" style="color:var(--teal-deep);font-weight:700">${I.card} Voir ma facture ›</span></div></button>`;}).join(''):(active.length?'':`<div class="card" style="padding:26px 24px;margin-top:12px;text-align:center;color:var(--muted)">${octoMini(72,'wave')}<div style="margin-top:10px;font-weight:600;color:var(--ink-soft)">Aucune prestation pour l’instant</div><div style="margin-top:4px">Vos réservations et reçus apparaîtront ici.</div></div>`);
     const rec=S.recurring.length?`<div style="margin-top:16px"><div class="eyebrow" style="color:var(--muted)">Prestations régulières</div>${S.recurring.map(r=>`<div class="card" style="padding:13px;margin-top:8px"><div class="row between"><b style="font-size:14px">${r.svcName}</b><span class="chip" style="padding:3px 9px">${I.repeat} ${r.short}</span></div><div class="row between" style="margin-top:3px"><span class="mini">${r.slot} · ${r.zone}</span><span class="chip good" style="padding:3px 9px">${I.check} Actif</span></div></div>`).join('')}</div>`:'';
-    return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">${I.wallet} Mes réservations</span><div class="h-hello">${active.length?'Vos demandes en cours':'Mes réservations'}</div>${active.length?notifCTA('client'):''}${activeBlock}${newBtn}${summary}${rec}${list}<div style="height:6px"></div></div>${clientNavbar()}`;
+    return `<div class="pad"><div style="height:12px"></div><div class="row between" style="align-items:flex-start"><div><span class="eyebrow">${I.wallet} Mes réservations</span><div class="h-hello">${active.length?'Vos demandes en cours':'Mes réservations'}</div></div>${!isDemo()?`<button class="iconbtn" data-act="refresh-requests" aria-label="Rafraîchir mes réservations" title="Rafraîchir">${I.repeat}</button>`:''}</div>${active.length?notifCTA('client'):''}${activeBlock}${newBtn}${summary}${rec}${list}<div style="height:6px"></div></div>${clientNavbar()}`;
   }
   // Carte de partage : QR à flasher + lien + partage natif (aucun fichier à chercher).
   function shareCard(){
@@ -2834,6 +2834,7 @@
     if(b.dataset.cfg){const c=b.dataset.cfg;if(!S.draft)return;if(c==='back'){S.draft=null;render();}else if(c==='minus'){S.draft.duration=Math.max(1,S.draft.duration-1);renderConfig();}else if(c==='plus'){S.draft.duration=Math.min(isDayU(S.draft)?30:10,S.draft.duration+1);renderConfig();}else if(c==='unit-h'){S.draft.unit='h';S.draft.rate=(S.adminPrices&&S.adminPrices[S.draft.svc]!=null)?S.adminPrices[S.draft.svc]:svcBase(S.draft.svc);S.draft.duration=3;renderConfig();}else if(c==='unit-j'){S.draft.unit='j';S.draft.rate=DAY_RECO;S.draft.duration=2;renderConfig();}else if(c==='geoloc'){geolocate(g=>{if(S.draft){S.draft.geo=g;renderConfig();}});}else if(c==='addr-save-draft'){const d=S.draft;const id='ad'+Date.now();S.addresses.push({id,label:(d.address||'Adresse ponctuelle').slice(0,40),address:d.address,zone:d.zone,geo:d.geo});d.addressId=id;toast('Adresse enregistrée dans votre profil');renderConfig();}else if(c==='confirm'){const mm=minSlotToday(S.draft);if(mm>=0&&!S.draft.slotFlex&&slotToMin(S.draft.slot)<mm){toast('Choisissez une heure à venir');renderConfig();return;}S.payStep=true;S.payEdit=false;render();}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('invoice:')===0){S.invoiceId=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('histinv:')===0){const h=(S.history||[])[+b.dataset.act.split(':')[1]];if(h){S.histInvoice=h;render();}return;}
+    if(b.dataset.act==='refresh-requests'){manualRefreshRequests();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('rbfreq:')===0){S.rebookFreq=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('reqview:')===0){S.proReqView=b.dataset.act.slice('reqview:'.length);S.proReqSlot=null;S.proReqPick=false;render();return;}
     if(b.dataset.proreqslot){if(b.dataset.proreqslot==='__pick'){S.proReqPick=true;}else{S.proReqPick=false;S.proReqSlot=b.dataset.proreqslot;}render();return;}
@@ -3132,7 +3133,18 @@
   if(isiOS){installSteps.innerHTML='Sur iPhone&nbsp;: appuie sur <b>Partager</b> ⬆️ puis <b>« Sur l’écran d’accueil »</b>.';}
   window.addEventListener('beforeinstallprompt',(e)=>{e.preventDefault();deferredPrompt=e;installBtn.style.display='block';installSteps.textContent='Ton navigateur peut l’installer en un clic :';});
   installBtn.addEventListener('click',async()=>{if(!deferredPrompt)return;deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null;installBtn.style.display='none';});
-  if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').catch(()=>{});});}
+  if('serviceWorker' in navigator){window.addEventListener('load',()=>{
+    const hadController=!!navigator.serviceWorker.controller;let refreshing=false;
+    // Quand une NOUVELLE version prend le contrôle, on recharge une fois pour la
+    // servir (sinon l'app resterait bloquée sur l'ancien cache — ex. correctifs
+    // de synchro jamais appliqués sur le téléphone).
+    navigator.serviceWorker.addEventListener('controllerchange',()=>{ if(refreshing)return; refreshing=true; if(hadController)location.reload(); });
+    navigator.serviceWorker.register('sw.js').then(function(reg){
+      try{reg.update();}catch(_){}
+      // Vérifie les mises à jour au retour de l'app au premier plan.
+      document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'){try{reg.update();}catch(_){}} });
+    }).catch(()=>{});
+  });}
 
   /* ---------- Bouton retour du téléphone : revient à l'écran précédent (ne quitte pas l'app) ---------- */
   function goBack(){
@@ -3321,6 +3333,23 @@
   // Réservations), on relance l'écoute pour rattraper toute demande créée entre-temps
   // (ex. commande passée sur l'ordinateur pendant que le téléphone dormait).
   function refreshClientRequests(){try{ if(FB&&FB.auth&&FB.auth.currentUser&&S.persona==='client'&&typeof isDemo==='function'&&!isDemo()){ loadActiveRequests(FB.auth.currentUser.uid); } }catch(_){}}
+  // Rafraîchissement manuel + diagnostic : lecture ponctuelle des demandes du
+  // client (compte le résultat, remonte l'erreur éventuelle) puis (ré)établit
+  // l'écoute temps réel. Sert aussi à comprendre un souci de synchro.
+  async function manualRefreshRequests(){
+    if(isDemo()){toast('Mode démo — synchronisation indisponible');return;}
+    if(!(FB&&FB.auth&&FB.auth.currentUser)){toast('Reconnectez-vous pour synchroniser');return;}
+    toast('Synchronisation…');
+    try{
+      const uid=FB.auth.currentUser.uid;
+      const q=FB.f.query(FB.f.collection(FB.db,'requests'),FB.f.where('clientUid','==',uid));
+      const snap=await FB.f.getDocs(q);
+      const active=['pending','accepted','working','done_pro','disputed'];
+      let n=0;snap.forEach(function(d){if(active.indexOf((d.data()||{}).status)>=0)n++;});
+      loadActiveRequests(uid);
+      toast(n>0?(n+' réservation'+(n>1?'s':'')+' en cours synchronisée'+(n>1?'s':'')):'Aucune réservation en cours dans votre compte');
+    }catch(e){ toast('⚠︎ Synchro impossible : '+fbErrTxt(e)); }
+  }
   // Recharge les missions ACCEPTÉES par l'artisan (à réaliser) après réouverture.
   async function loadProMissions(uid){
     if(!(FB&&FB.db)||!uid)return;
