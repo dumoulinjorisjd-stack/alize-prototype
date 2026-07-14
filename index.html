@@ -2044,9 +2044,15 @@
   async function persistRequest(m){
     try{
       if(!(FB&&FB.auth&&FB.auth.currentUser))return; // démo / hors-ligne : aucune écriture
+      if(m.reqId)return; // déjà enregistrée : on n'écrit jamais deux fois la même demande
       const t=totals(m),u=FB.auth.currentUser;
       const first=((S.account&&S.account.name)||'').trim().split(' ')[0]||'Client';
-      const ref=await FB.f.addDoc(FB.f.collection(FB.db,'requests'),{
+      // Id généré AVANT l'écriture, et reqId posé de façon SYNCHRONE : ainsi l'écoute
+      // temps réel (loadActiveRequests) retrouve CETTE mission par son reqId au lieu
+      // d'en créer une seconde — c'était la cause du doublon systématique.
+      const ref=FB.f.doc(FB.f.collection(FB.db,'requests'));
+      m.reqId=ref.id;
+      await FB.f.setDoc(ref,{
         clientUid:u.uid,
         clientName:first,
         clientPhoto:(S.account&&S.account.photo)||null,
@@ -2060,14 +2066,13 @@
         notes:(m.notes||'').slice(0,500),
         createdAt:FB.f.serverTimestamp()
       });
-      m.reqId=ref.id;
       // Photos de la demande (transmises à l'artisan) — écriture isolée pour ne
       // jamais faire échouer la demande si elles sont volumineuses.
-      if(m.photos&&m.photos.length){try{ await FB.f.updateDoc(FB.f.doc(FB.db,'requests',ref.id),{photos:m.photos.slice(0,4)}); }catch(_){}}
+      if(m.photos&&m.photos.length){try{ await FB.f.updateDoc(ref,{photos:m.photos.slice(0,4)}); }catch(_){}}
       // Détails privés (adresse exacte, GPS, accès) — révélés seulement à l'artisan assigné.
       try{ await FB.f.setDoc(FB.f.doc(FB.db,'requests',ref.id,'private','details'),{address:m.address||'',zone:m.zone||'',geo:m.geo||null,access:m.access||'',clientPhone:(S.account&&S.account.phone)||'',clientName:first,clientPhoto:(S.account&&S.account.photo)||null}); }catch(_){}
       subscribeClientRequest(ref.id);
-    }catch(e){ console.warn('requests write failed',e); toast('⚠︎ Demande non enregistrée : '+fbErrTxt(e)); }
+    }catch(e){ console.warn('requests write failed',e); m.reqId=null; toast('⚠︎ Demande non enregistrée : '+fbErrTxt(e)); }
   }
   // Le client écoute CHACUNE de ses demandes (plusieurs en parallèle possibles) :
   // dès qu'un artisan en accepte une, l'app met à jour la demande concernée.
@@ -3286,6 +3291,8 @@
           if(r.finalHours!=null)m.finalHours=r.finalHours;if(r.disputeMsg)m.disputeMsg=r.disputeMsg;
           if(Array.isArray(r.messages))m.chat=r.messages.slice().sort(function(a,b){return (a.at||0)-(b.at||0);});
         });
+        // Filet anti-doublon : jamais deux missions partageant le même reqId.
+        const seen={};S.missions=S.missions.filter(function(x){if(!x.reqId)return true;if(seen[x.reqId])return false;seen[x.reqId]=1;return true;});
         if(S.persona==='client'){cacheClientLocal();render();}
       },function(err){console.warn('active requests listen',err);toast('⚠︎ Réservations non chargées : '+fbErrTxt(err));});
     }catch(e){console.warn('load active requests',e);}
