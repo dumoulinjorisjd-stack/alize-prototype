@@ -1239,13 +1239,14 @@
 
   /* ---------- CLIENT ---------- */
   /* ---------- ADMIN ---------- */
-  function renderAdmin(){if(S.support&&S.mission)return supportChat()+adminNavbar();let body;if(S.admin.view==='art')body=adminFiche('art');else if(S.admin.view==='cli')body=adminFiche('cli');else body=adminHome();return body+adminNavbar();}
+  function renderAdmin(){if(S.support&&S.mission)return supportChat()+adminNavbar();if(S.adminSupervise&&S.mission)return adminSupervise()+adminNavbar();let body;if(S.admin.view==='art')body=adminFiche('art');else if(S.admin.view==='cli')body=adminFiche('cli');else if(S.admin.view==='msg')body=adminMessagerie();else body=adminHome();return body+adminNavbar();}
   // Barre permanente de l'espace admin : retour à la console de gestion à tout moment.
   function adminNavbar(){
-    const onHome=(S.admin.view==='home'&&!(S.support&&S.mission));
+    const inMsg=(S.admin.view==='msg'||(S.support&&S.mission)||S.adminSupervise);
+    const onHome=(S.admin.view==='home'&&!inMsg);
     const exitIco='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>';
-    const pend=adminPendingCount();
-    return `<div class="navbar"><button data-adm="home" class="${onHome?'on':''}"><span class="nb-ic">${I.shield}${pend?`<span class="nb-count">${pend}</span>`:''}</span>Console</button><button data-adm="quit"><span class="nb-ic">${exitIco}</span>Quitter</button></div>`;
+    const pend=adminPendingCount();const sup=(typeof adminSupportPending==='function')?adminSupportPending():0;
+    return `<div class="navbar"><button data-adm="home" class="${onHome?'on':''}"><span class="nb-ic">${I.shield}${pend?`<span class="nb-count">${pend}</span>`:''}</span>Console</button><button data-adm="msg" class="${inMsg?'on':''}"><span class="nb-ic">${I.chat}${sup?`<span class="nb-count">${sup}</span>`:''}</span>Messagerie</button><button data-adm="quit"><span class="nb-ic">${exitIco}</span>Quitter</button></div>`;
   }
   function adminPendingCount(){return ((S.adminArtisans||[]).filter(function(a){return a.status==='attente';}).length)+((S.adminClients||[]).filter(function(c){return c.status==='attente';}).length);}
   function catNames(cats){return cats.map(svcNm).join(', ');}
@@ -1356,7 +1357,10 @@
   function chatName(){return S.persona==='client'?(S.mission&&S.mission.provider?S.mission.provider.nm.split(' ')[0]:'votre artisan'):'Camille M.';}
   function chatInits(){return S.persona==='client'?(S.mission&&S.mission.provider?S.mission.provider.ini:'··'):'CM';}
   function sendChat(){const el=document.getElementById('chatInput');if(!el||!S.mission)return;const v=el.value.trim();if(!v)return;el.value='';const m=S.mission;const msg={from:S.persona,text:v,at:Date.now()};m.chat=m.chat||[];m.chat.push(msg);render();view.scrollTop=view.scrollHeight;if(FB&&m.reqId&&!isDemo()){try{FB.f.updateDoc(FB.f.doc(FB.db,'requests',m.reqId),{messages:FB.f.arrayUnion(msg)});}catch(_){}}}
-  function sendSupport(){const el=document.getElementById('supportInput');if(!el||!S.mission)return;const v=el.value.trim();if(!v)return;const admin=(S.persona==='admin');const side=admin?(S.supportSide||'client'):S.persona;S.mission.support=S.mission.support||{client:[],pro:[]};if(!S.mission.support[side])S.mission.support[side]=[];S.mission.support[side].push({from:admin?'admin':side,text:v});render();view.scrollTop=view.scrollHeight;}
+  function sendSupport(){const el=document.getElementById('supportInput');if(!el||!S.mission)return;const v=el.value.trim();if(!v)return;el.value='';const admin=(S.persona==='admin');const side=admin?(S.supportSide||'client'):(S.persona==='pro'?'pro':'client');const m=S.mission;m.support=m.support||{client:[],pro:[]};if(!m.support[side])m.support[side]=[];const msg={from:admin?'admin':side,text:v,at:Date.now()};m.support[side].push(msg);render();view.scrollTop=view.scrollHeight;
+    // Persistance bêta : la messagerie support vit dans le document de la demande
+    // (supportClient / supportPro), lisible par le client/artisan concerné et l'admin.
+    if(FB&&m.reqId&&!isDemo()){try{const field=(side==='pro')?'supportPro':'supportClient';FB.f.updateDoc(FB.f.doc(FB.db,'requests',m.reqId),{[field]:FB.f.arrayUnion(msg)});}catch(_){}}}
   function chatScreen(){
     const m=S.mission,other=chatName();
     const msgs=m.chat||[];
@@ -1385,6 +1389,68 @@
       <div class="chatbar"><input id="supportInput" placeholder="${admin?'Répondre…':'Écrire à Ti-Services…'}" autocomplete="off" maxlength="500"><button class="btn primary" data-act="support-send">Envoyer</button></div>
       ${isDemo()?`<p class="mini" style="text-align:center;margin-top:12px"><button class="linklike" data-act="${admin?'support-to-user':'support-to-admin'}">${admin?(I.user+' Voir côté '+(side==='client'?'client':'artisan')+' (démo)'):(I.gear+' Voir la réception côté Ti-Services (démo)')}</button></p>`:''}
       <div style="height:6px"></div></div>`;
+  }
+  // ————— Messagerie ADMIN : boîte de réception (support) + supervision —————
+  // L'admin écoute TOUTES les demandes (droit de lecture admin). On construit une
+  // liste de conversations : messagerie support (client↔Ti-Services / artisan↔Ti-Services)
+  // à traiter, et discussions client↔artisan consultables (supervision).
+  let adminThreadsUnsub=null;
+  function subscribeAdminThreads(){
+    if(!(FB&&FB.db))return;
+    try{
+      if(adminThreadsUnsub){try{adminThreadsUnsub();}catch(_){}}
+      adminThreadsUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'requests'),function(snap){
+        const srt=function(a){return (a||[]).slice().sort(function(x,y){return (x.at||0)-(y.at||0);});};
+        const list=[];
+        snap.forEach(function(docu){
+          const r=docu.data()||{};
+          const chat=srt(r.messages),supC=srt(r.supportClient),supP=srt(r.supportPro);
+          if(!chat.length&&!supC.length&&!supP.length)return;
+          const lastAt=function(a){return a.length?(a[a.length-1].at||0):0;};
+          list.push({reqId:docu.id,clientName:r.clientName||'Client',providerName:r.providerName||'',providerUid:r.providerUid||'',clientUid:r.clientUid||'',svc:r.service,svcName:r.serviceName||svcNm(r.service),when:r.when||'',slot:r.acceptedSlot||r.slot||'',status:r.status||'',chat:chat,support:{client:supC,pro:supP},provider:r.providerName?{nm:r.providerName,ini:inits(r.providerName)}:null,ts:Math.max(lastAt(chat),lastAt(supC),lastAt(supP))});
+        });
+        list.sort(function(a,b){return b.ts-a.ts;});
+        S.adminThreads=list;
+        if(S.persona==='admin'&&!(S.support&&S.mission)&&!S.adminSupervise)render();
+      },function(err){console.warn('admin threads',err);});
+    }catch(e){console.warn('admin threads',e);}
+  }
+  // Nombre de fils support en attente de réponse de l'admin (dernier message ≠ admin).
+  function adminSupportPending(){return (S.adminThreads||[]).reduce(function(n,t){['client','pro'].forEach(function(s){const th=t.support[s];if(th&&th.length&&th[th.length-1].from!=='admin')n++;});return n;},0);}
+  function adminMessagerie(){
+    const threads=S.adminThreads||[];
+    const rows=threads.map(function(t){
+      const cP=t.support.client,pP=t.support.pro;
+      const cPend=cP.length&&cP[cP.length-1].from!=='admin',pPend=pP.length&&pP[pP.length-1].from!=='admin';
+      const btn=function(lbl,act,badge,pend){return `<button class="btn ghost sm" data-adm="${act}" style="justify-content:space-between">${lbl}${badge?`<span class="chip ${pend?'coral':'grey'}" style="padding:2px 8px">${badge}</span>`:''}</button>`;};
+      const acts=[];
+      if(t.chat.length)acts.push(btn(`${I.chat} Discussion client-artisan`,'supervise:'+t.reqId,String(t.chat.length),false));
+      acts.push(btn(`${I.support} Support ${esc(t.clientName)}`,'sup:'+t.reqId+':client',cP.length?String(cP.length):'',cPend));
+      if(t.providerName)acts.push(btn(`${I.support} Support ${esc(t.providerName)}`,'sup:'+t.reqId+':pro',pP.length?String(pP.length):'',pPend));
+      const sm=missionStatusMeta(t.status);
+      return `<div class="card" style="padding:14px;margin-top:10px;${(cPend||pPend)?'border-left:4px solid var(--coral)':''}">
+        <div class="row between"><b style="font-size:14.5px">${esc(t.svcName)}</b><span class="chip ${sm.c}" style="padding:3px 9px">${sm.l}</span></div>
+        <div class="mini" style="margin-top:3px">${esc(t.clientName)}${t.providerName?' · '+esc(t.providerName):' · en recherche'} · ${esc(t.when)} ${esc(t.slot)}</div>
+        <div class="stack" style="gap:7px;margin-top:11px">${acts.join('')}</div>
+      </div>`;
+    }).join('');
+    return `<div class="pad"><div style="height:12px"></div>
+      <span class="eyebrow">${I.chat} Messagerie</span><div class="h-hello">Conversations</div>
+      <p class="sub" style="margin-top:4px">Répondez au support des clients et des artisans, et supervisez les échanges client↔artisan.</p>
+      ${(typeof Notification!=='undefined'&&Notification.permission!=='granted')?`<button class="banner teal" data-act="admin-notif" style="margin-top:12px;width:100%;text-align:left;cursor:pointer">${I.bell}<span>Activez les notifications pour être alerté à chaque message support.</span></button>`:''}
+      ${threads.length?rows:`<div class="card" style="padding:22px;text-align:center;color:var(--muted);margin-top:12px">Aucune conversation pour l'instant.<br>Les messages support et les discussions apparaîtront ici.</div>`}
+      <div style="height:8px"></div></div>`;
+  }
+  // Supervision : lecture seule de la discussion client↔artisan par l'admin.
+  function adminSupervise(){
+    const m=S.mission;if(!m)return adminMessagerie();
+    const msgs=m.chat||[];
+    const list=msgs.length?msgs.map(function(x){return `<div class="bub ${x.from==='pro'?'them':'me'}" style="${x.from==='pro'?'':'background:var(--teal-wash);color:var(--ink)'}"><span style="display:block;font-size:10px;opacity:.6;margin-bottom:2px">${x.from==='pro'?esc((m.provider&&m.provider.nm)||'Artisan'):esc(m.clientName||'Client')}</span>${esc(x.text)}</div>`;}).join(''):`<p class="mini" style="text-align:center;color:var(--muted);margin:auto 0">Aucun message entre le client et l'artisan.</p>`;
+    return `<div class="pad"><button class="reset" data-adm="msg" style="margin:8px 0 2px">← Retour</button>
+      <div class="row" style="gap:11px;align-items:center;margin-top:2px"><div class="avatar" style="width:42px;height:42px;font-size:14px">${I.eye}</div><div style="flex:1"><b style="font-size:16px;font-family:var(--f-disp)">Supervision</b><div class="mini">${esc(m.clientName||'Client')} ↔ ${esc((m.provider&&m.provider.nm)||'artisan')}</div></div></div>
+      <div class="banner teal" style="margin-top:12px">${I.shield}<span>Lecture seule — discussion à propos de&nbsp;: <b>${esc(m.svcName)}</b> · ${esc(m.when)} ${esc(m.slot)}.</span></div>
+      <div class="chat-msgs">${list}</div>
+      <div style="height:10px"></div></div>`;
   }
   function advantagesScreen(){
     const pro=S.persona==='pro';
@@ -1924,6 +1990,23 @@
             if(incoming.length){const who=(mine==='pro')?(m.clientName||'Le client'):((m.provider&&m.provider.nm)||'Votre artisan');notify(who,String(incoming[incoming.length-1].text||'Nouveau message').slice(0,120),'ti-msg-'+m.reqId);}
           }
         }
+        // Messagerie support (client↔Ti-Services / artisan↔Ti-Services), stockée
+        // dans supportClient / supportPro du document de demande.
+        function syncSupport(field,side){
+          const arr=r[field]; if(!Array.isArray(arr))return;
+          m.support=m.support||{client:[],pro:[]};
+          const prev=(m.support[side]||[]).length;
+          if(prev===arr.length)return;
+          m.support[side]=arr.slice().sort(function(a,b){return (a.at||0)-(b.at||0);});
+          touched=true;
+          if(arr.length>prev){
+            const last=m.support[side][m.support[side].length-1]||{};
+            const forMe=(S.persona==='admin'&&last.from!=='admin')||(S.persona==='client'&&side==='client'&&last.from==='admin')||(S.persona==='pro'&&side==='pro'&&last.from==='admin');
+            if(forMe){const t=(S.persona==='admin')?('Support — '+(side==='client'?(m.clientName||'client'):((m.provider&&m.provider.nm)||'artisan'))):'Ti-Services · Support';notify(t,String(last.text||'').slice(0,120),'ti-sup-'+m.reqId+'-'+side);}
+          }
+        }
+        syncSupport('supportClient','client');
+        syncSupport('supportPro','pro');
         // Statut (source de vérité serveur)
         if(r.status&&r.status!==m.status){const old=m.status;m.status=r.status;touched=true;onRemoteStatus(m,old,r.status);}
         if(touched){cacheClientLocal();render();if((S.chat||S.support)&&S.mission===m)view.scrollTop=view.scrollHeight;}
@@ -2534,8 +2617,11 @@
     if(b.dataset.act==='pw-toggle'){const w=b.closest('.pw-wrap');const inp=w&&w.querySelector('input');if(inp){const reveal=inp.type==='password';inp.type=reveal?'text':'password';b.innerHTML=reveal?I.eyeoff:I.eye;}return;}
     if(b.dataset.persona){go(b.dataset.persona);return;}
     if(b.dataset.adm){const parts=b.dataset.adm.split(':'),act=parts[0],id=parts[1];
-      if(act==='quit'){S.persona='client';S.admin.view='home';S.admin.sel=null;S.support=false;S.supportSide=null;}
+      if(act==='quit'){S.persona='client';S.admin.view='home';S.admin.sel=null;S.support=false;S.supportSide=null;S.adminSupervise=false;}
       else if(act==='support'){S.support=true;S.supportSide=id;render();view.scrollTop=view.scrollHeight;return;}
+      else if(act==='msg'){S.admin.view='msg';S.support=false;S.supportSide=null;S.adminSupervise=false;S.mission=null;render();return;}
+      else if(act==='sup'){const th=(S.adminThreads||[]).find(function(x){return x.reqId===id;});if(th){S.mission=th;S.supportSide=(parts[2]==='pro'?'pro':'client');S.support=true;S.adminSupervise=false;S.admin.view='msg';watchRequest(th.reqId);render();view.scrollTop=view.scrollHeight;}return;}
+      else if(act==='supervise'){const th=(S.adminThreads||[]).find(function(x){return x.reqId===id;});if(th){S.mission=th;S.adminSupervise=true;S.support=false;S.admin.view='msg';watchRequest(th.reqId);render();view.scrollTop=view.scrollHeight;}return;}
       else if(act==='home'){S.admin.view='home';S.admin.sel=null;}
       else if(act==='art'){S.admin.view='art';S.admin.sel=id;}
       else if(act==='cli'){S.admin.view='cli';S.admin.sel=id;}
@@ -2908,6 +2994,7 @@
     }
     if(S.addrForm){S.addrForm=null;render();return;}
     if(S.support){S.support=false;if(S.persona==='admin')S.supportSide=null;render();return;}
+    if(S.adminSupervise){S.adminSupervise=false;render();return;}
     if(S.finishing){S.finishing=false;render();return;}
     if(S.disputing){S.disputing=false;render();return;}
     if(S.persona==='pro'){
@@ -2973,7 +3060,7 @@
       if((CONFIG.adminEmails||[]).map(function(e){return e.toLowerCase();}).indexOf((user.email||'').toLowerCase())>=0){
         S.account={name:'Ti-Services',email:user.email||'',uid:user.uid,role:'admin'};
         S.persona='admin';S.admin={view:'home',sel:null};S.onboarded=true;S.authView=null;render();
-        refreshAdminArtisans();initAdminPush();return;
+        refreshAdminArtisans();initAdminPush();subscribeAdminThreads();return;
       }
       // Compte artisan : on route vers l'espace pro (statut lu dans la fiche artisans).
       if((data&&data.role)==='artisan'){

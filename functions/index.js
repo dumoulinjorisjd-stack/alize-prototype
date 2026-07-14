@@ -249,3 +249,65 @@ exports.notifyNewMessage = onDocumentUpdated('requests/{reqId}', async (event) =
   });
   if (dels.length) await Promise.all(dels);
 });
+
+/**
+ * notifySupportMessage : messagerie SUPPORT (client↔Ti-Services, artisan↔Ti-Services),
+ * stockée dans supportClient / supportPro du document de demande.
+ *  - message d'un utilisateur (client/pro) -> push à l'admin (collection adminTokens) ;
+ *  - réponse de l'admin -> push à l'utilisateur concerné (clientUid / providerUid).
+ */
+async function pushMulticast(tokens, title, body, link, onInvalid) {
+  if (!tokens.length) return;
+  const res = await getMessaging().sendEachForMulticast({
+    tokens,
+    data: { title: title, body: body, url: '.' + (link || '/') },
+    webpush: { fcmOptions: { link: link || '/' }, headers: { Urgency: 'high' } },
+  });
+  if (onInvalid) {
+    const dels = [];
+    res.responses.forEach((r, i) => {
+      if (!r.success) {
+        const c = r.error && r.error.code;
+        if (c === 'messaging/registration-token-not-registered' ||
+            c === 'messaging/invalid-argument' ||
+            c === 'messaging/invalid-registration-token') {
+          dels.push(onInvalid(tokens[i]));
+        }
+      }
+    });
+    if (dels.length) await Promise.all(dels);
+  }
+}
+
+exports.notifySupportMessage = onDocumentUpdated('requests/{reqId}', async (event) => {
+  const before = (event.data && event.data.before && event.data.before.data()) || {};
+  const after = (event.data && event.data.after && event.data.after.data()) || {};
+  const db = getFirestore();
+
+  async function handle(field, userUidField, userNameField, fallbackName) {
+    const b = Array.isArray(before[field]) ? before[field] : [];
+    const a = Array.isArray(after[field]) ? after[field] : [];
+    if (a.length <= b.length) return;
+    const last = a[a.length - 1] || {};
+    const body = String(last.text || 'Nouveau message').slice(0, 140);
+    if (last.from === 'admin') {
+      // Réponse de l'admin -> notifier l'utilisateur concerné.
+      const uid = after[userUidField];
+      if (!uid) return;
+      let tokens = [];
+      try { const u = await db.collection('users').doc(uid).get(); tokens = (u.data() || {}).pushTokens || []; } catch (_) {}
+      await pushMulticast(tokens, 'Ti-Services · Support', body, '/',
+        (tok) => db.collection('users').doc(uid).update({ pushTokens: FieldValue.arrayRemove(tok) }));
+    } else {
+      // Message d'un utilisateur -> notifier l'admin.
+      let tokens = [];
+      try { const ts = await db.collection('adminTokens').get(); tokens = ts.docs.map((d) => d.id).filter(Boolean); } catch (_) {}
+      const who = (after[userNameField] || fallbackName || 'Un utilisateur').toString().slice(0, 60);
+      await pushMulticast(tokens, 'Support — ' + who, body, '/',
+        (tok) => db.collection('adminTokens').doc(tok).delete());
+    }
+  }
+
+  await handle('supportClient', 'clientUid', 'clientName', 'Client');
+  await handle('supportPro', 'providerUid', 'providerName', 'Artisan');
+});
