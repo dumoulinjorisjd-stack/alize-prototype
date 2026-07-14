@@ -186,3 +186,66 @@ exports.notifyArtisanApproved = onDocumentUpdated('artisans/{artisanId}', async 
     } catch (e) { console.warn('approve email queue', e); }
   }
 });
+
+/**
+ * notifyNewMessage : à chaque nouveau message dans la messagerie interne d'une
+ * demande (champ `messages` du document requests/{reqId}), envoie une
+ * notification push (FCM Web Push) au DESTINATAIRE — même application fermée,
+ * comme WhatsApp. La messagerie relie ainsi les échanges pro à l'application.
+ *
+ * Convention des messages : { from: 'client' | 'pro', text, at }.
+ *  - message du client  -> destinataire = l'artisan assigné (providerUid) ;
+ *  - message de l'artisan -> destinataire = le client (clientUid).
+ * Les jetons du destinataire sont lus dans users/{uid}.pushTokens.
+ */
+exports.notifyNewMessage = onDocumentUpdated('requests/{reqId}', async (event) => {
+  const before = (event.data && event.data.before && event.data.before.data()) || {};
+  const after = (event.data && event.data.after && event.data.after.data()) || {};
+  const bMsgs = Array.isArray(before.messages) ? before.messages : [];
+  const aMsgs = Array.isArray(after.messages) ? after.messages : [];
+  if (aMsgs.length <= bMsgs.length) return; // aucun nouveau message
+
+  const fresh = aMsgs.slice(bMsgs.length);
+  const last = fresh[fresh.length - 1] || {};
+  const from = last.from;
+  if (from !== 'client' && from !== 'pro') return;
+
+  // Destinataire = l'autre partie.
+  const recipientUid = (from === 'client') ? after.providerUid : after.clientUid;
+  if (!recipientUid) return;
+
+  const db = getFirestore();
+  let tokens = [];
+  try {
+    const u = await db.collection('users').doc(recipientUid).get();
+    tokens = (u.data() || {}).pushTokens || [];
+  } catch (_) {}
+  if (!tokens.length) { console.log('Message : aucun jeton pour le destinataire.'); return; }
+
+  const senderName = (from === 'client'
+    ? (after.clientName || 'Le client')
+    : (after.providerName || 'Votre artisan')).toString().slice(0, 60);
+  const body = (last.text || 'Nouveau message').toString().slice(0, 140);
+  // L'artisan travaille depuis l'espace Missions ; le client depuis ses réservations.
+  const link = (from === 'client') ? '/?open=missions' : '/';
+
+  const res = await getMessaging().sendEachForMulticast({
+    tokens,
+    data: { title: senderName, body: body, url: '.' + link },
+    webpush: { fcmOptions: { link: link }, headers: { Urgency: 'high' } },
+  });
+  console.log(`Push message : ${res.successCount}/${tokens.length}`);
+
+  const dels = [];
+  res.responses.forEach((rp, i) => {
+    if (!rp.success) {
+      const code = rp.error && rp.error.code;
+      if (code === 'messaging/registration-token-not-registered' ||
+          code === 'messaging/invalid-argument' ||
+          code === 'messaging/invalid-registration-token') {
+        dels.push(db.collection('users').doc(recipientUid).update({ pushTokens: FieldValue.arrayRemove(tokens[i]) }));
+      }
+    }
+  });
+  if (dels.length) await Promise.all(dels);
+});
