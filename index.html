@@ -829,11 +829,16 @@
   function saveAccount(a){if(CONFIG.firebase&&!window.__NOFB)return;try{localStorage.setItem('tiservices_account',JSON.stringify({name:a.name,email:a.email,zone:a.zone}));}catch(_){}}
   // Sauvegarde permanente (bêta) des données du compte client dans Firestore :
   // adresses + moyen de paiement, rechargés à chaque connexion (loadUserProfile).
-  function saveClientCloud(){try{ if(FB&&FB.auth&&FB.auth.currentUser&&typeof isDemo==='function'&&!isDemo()){ FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{addresses:S.addresses||[],addrDefault:S.addrDefault||null,card:S.card||null,history:(S.history||[]).slice(0,50),recurring:S.recurring||[]},{merge:true}); } }catch(_){} cacheClientLocal(); }
+  // Garde-fou : on allège une prestation avant archivage/persistance. Les photos
+  // (data-URL) et les fils de discussion sont inutiles à l'historique et feraient
+  // gonfler le document users (limite Firestore 1 Mo) et le cache localStorage.
+  function histClean(m){if(!m||typeof m!=='object')return m;const h=Object.assign({},m);delete h.photos;delete h.clientPhoto;delete h.chat;delete h.support;return h;}
+  function histSlim(arr){return (arr||[]).slice(0,50).map(histClean);}
+  function saveClientCloud(){try{ if(FB&&FB.auth&&FB.auth.currentUser&&typeof isDemo==='function'&&!isDemo()){ FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{addresses:S.addresses||[],addrDefault:S.addrDefault||null,card:S.card||null,history:histSlim(S.history),recurring:S.recurring||[]},{merge:true}); } }catch(_){} cacheClientLocal(); }
   // Cache local (par compte) : commande en cours + historique survivent au
   // redémarrage instantanément, même avant/malgré le rechargement Firestore.
   function clientCacheKey(uid){return 'ti_client_'+(uid||'anon');}
-  function cacheClientLocal(){try{ if(FB&&FB.auth&&FB.auth.currentUser&&typeof isDemo==='function'&&!isDemo()){ const uid=FB.auth.currentUser.uid; localStorage.setItem(clientCacheKey(uid),JSON.stringify({missions:(S.missions||[]),history:(S.history||[]).slice(0,50),addresses:S.addresses||[],addrDefault:S.addrDefault||null,card:S.card||null,recurring:S.recurring||[],ts:Date.now()})); } }catch(_){}}
+  function cacheClientLocal(){try{ if(FB&&FB.auth&&FB.auth.currentUser&&typeof isDemo==='function'&&!isDemo()){ const uid=FB.auth.currentUser.uid; localStorage.setItem(clientCacheKey(uid),JSON.stringify({missions:(S.missions||[]),history:histSlim(S.history),addresses:S.addresses||[],addrDefault:S.addrDefault||null,card:S.card||null,recurring:S.recurring||[],ts:Date.now()})); } }catch(_){}}
   function restoreClientLocal(uid){try{ const raw=localStorage.getItem(clientCacheKey(uid)); if(!raw)return; const d=JSON.parse(raw)||{};
     if(Array.isArray(d.missions)&&d.missions.length&&!(S.missions&&S.missions.length)){S.missions=d.missions;d.missions.forEach(function(m){if(m&&m.reqId)watchRequest(m.reqId);});}
     if(Array.isArray(d.history)&&d.history.length&&!(S.history&&S.history.length))S.history=d.history;
@@ -1659,7 +1664,7 @@
   function clientMissionActive(){return activeMissions().length>0;}
   // Sortir une demande du suivi (annulation) ou l'archiver (terminée → historique).
   function removeMission(m){const i=(S.missions||[]).indexOf(m);if(i>=0)S.missions.splice(i,1);}
-  function archiveMission(m){removeMission(m);if(m)S.history.unshift(m);if(S.persona==='client')saveClientCloud();}
+  function archiveMission(m){removeMission(m);if(m)S.history.unshift(histClean(m));if(S.persona==='client')saveClientCloud();}
   function cardTxt(){return S.card?(S.card.brand+' •••• '+S.card.last4):'votre moyen de paiement';}
   function clientNavbar(){
     const act=attention()==='client';const nb=activeMissions().length;
