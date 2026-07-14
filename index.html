@@ -647,6 +647,36 @@
       ?`<span class="nc-hint">Notifications bloquées sur cet appareil — réactivez-les dans les réglages de votre téléphone (Réglages → Ti-Services → Notifications).</span>`
       :`<button class="btn primary sm" data-act="enable-notif" style="margin-top:9px;width:auto;padding:9px 16px">Activer les notifications</button>`);
   }
+  // Carte « Notifications » PERMANENTE (profil / compte) : toujours visible, elle
+  // montre l'état réel (activées / à activer / bloquées / indisponible) et permet
+  // de les activer. Contrairement à notifCTA (bannière qui disparaît une fois
+  // l'autorisation accordée), on la retrouve toujours au même endroit.
+  function notifCard(role){
+    const bell='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>';
+    const pro=(role==='pro');
+    const desc=pro
+      ?'C’est ainsi que les clients vous atteignent : nouvelles missions, messages, rappels.'
+      :'Soyez prévenu à chaque étape : artisan trouvé, prestation démarrée, terminée, et messages de l’artisan.';
+    const apiOk=(typeof Notification!=='undefined'&&typeof Notification.requestPermission==='function');
+    let chip,inner;
+    if(apiOk&&Notification.permission==='granted'){
+      chip='<span class="chip good" style="padding:4px 10px">'+I.check+' Activées</span>';
+      inner='<p class="sub" style="margin-top:8px">'+desc+'</p>';
+    }else if(apiOk&&Notification.permission==='denied'){
+      chip='<span class="chip coral" style="padding:4px 10px">Bloquées</span>';
+      inner='<p class="sub" style="margin-top:8px">Notifications bloquées sur cet appareil. Réactivez-les dans les réglages&nbsp;: <b>Réglages → Ti-Services → Notifications</b> (ou dans les réglages de votre navigateur), puis revenez ici.</p>';
+    }else if(apiOk){
+      chip='<span class="chip coral" style="padding:4px 10px">À activer</span>';
+      inner='<p class="sub" style="margin-top:8px">'+desc+'</p><button class="btn primary sm" data-act="enable-notif" style="margin-top:10px;width:auto;padding:9px 16px">'+bell+'&nbsp;Activer les notifications</button>';
+    }else if(document.body.classList.contains('standalone')){
+      chip='<span class="chip grey" style="padding:4px 10px">Indisponible</span>';
+      inner='<p class="sub" style="margin-top:8px">Cet appareil ou ce navigateur ne prend pas en charge les notifications web.</p>';
+    }else{
+      chip='<span class="chip coral" style="padding:4px 10px">À activer</span>';
+      inner='<p class="sub" style="margin-top:8px">📲 Sur iPhone, ajoutez d’abord Ti-Services à votre écran d’accueil (bouton <b>Partager</b> → «&nbsp;Sur l’écran d’accueil&nbsp;»), puis rouvrez l’app depuis l’icône&nbsp;: le bouton d’activation apparaîtra ici.</p>';
+    }
+    return '<div class="card" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">'+bell+'&nbsp;Notifications</b>'+chip+'</div>'+inner+'</div>';
+  }
   // ————————————————————————————————————————————————————————————
   // Documents légaux. Version tracée à l'acceptation (preuve du consentement).
   // À FAIRE VALIDER PAR UN JURISTE avant lancement réel.
@@ -1661,6 +1691,7 @@
         ${cml?`<div class="row between" style="margin-top:8px"><span class="sub">E-mail</span><b style="text-align:right;max-width:62%;word-break:break-all;font-weight:600">${esc(cml)}</b></div>`:''}
         <div class="row between" style="margin-top:8px"><span class="sub">Téléphone</span><b>${cph?esc(cph):'<span style="color:var(--muted);font-weight:500">à renseigner</span>'}</b></div>
         <div class="row between" style="margin-top:8px"><span class="sub">Secteur</span><b>${esc(czone)}</b></div></div>
+      ${notifCard('client')}
       ${isAdminAccount()?`<button class="card" data-act="go-admin" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block;border-left:4px solid var(--ink)"><div class="row between"><b style="font-size:14px">${I.shield}&nbsp;Console d'administration</b>${adminPendingCount()?`<span class="chip coral" style="padding:3px 10px">${adminPendingCount()} en attente</span>`:`<span class="mini" style="color:var(--teal-deep);font-weight:650">Ouvrir ›</span>`}</div><p class="sub" style="margin-top:8px">Revenez au tableau de bord de gestion (candidatures, tarifs, réservations).</p></button>`:''}
       <div class="card" style="padding:16px;margin-top:18px"><div class="row between"><span class="chip">${I.card} Moyen de paiement</span>${S.card?`<span class="chip good" style="padding:4px 10px">${I.check} Enregistré</span>`:''}</div>${S.card?`<div class="row between" style="margin-top:12px"><div class="row" style="gap:11px;align-items:center"><span class="benic">${I.card}</span><div><b>${S.card.brand} ••••&nbsp;${S.card.last4}</b><div class="mini">Expire ${S.card.exp||'08/28'}</div></div></div></div><div class="row" style="gap:8px;margin-top:12px"><button class="btn ghost sm" data-act="add-card">Modifier</button><button class="btn ghost sm" data-act="card-remove">Retirer</button></div><div class="banner teal" style="margin-top:12px">${I.shield}<span>Débit automatique après chaque prestation validée. Reçu à chaque fois — rien à gérer.</span></div>`:`<p class="mini" style="margin-top:10px">Facultatif — enregistrez une carte pour réserver plus vite la prochaine fois. Sinon, elle vous sera demandée à votre première réservation. Rien n'est débité tant qu'une prestation n'est pas validée.</p><button class="btn ghost sm" data-act="add-card" style="margin-top:12px">${I.card} Ajouter un moyen de paiement</button>`}</div>
       <div class="card" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">${I.pin}&nbsp;Mes adresses</b><button class="btn ghost sm" style="width:auto;padding:6px 12px" data-act="addr-new">＋ Ajouter</button></div>
@@ -2364,6 +2395,7 @@
         ${S.proIban?`<div class="mini" style="margin-top:8px">${esc(S.proIbanHolder||S.proName||'')} · IBAN ${maskIban(S.proIban)}</div><button class="btn ghost sm" data-act="pro-payout" style="margin-top:11px;width:auto;padding:9px 14px">Modifier mon RIB</button>`:`<p class="mini" style="margin-top:8px">Renseignez votre RIB pour <b>recevoir vos paiements</b>. Sans lui, aucun virement ne peut vous être envoyé.</p><button class="btn primary sm" data-act="pro-payout" style="margin-top:11px;width:auto;padding:9px 14px">${I.card} Ajouter mon RIB</button>`}
       </div>
       <button class="card" data-act="pro-docs" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.shield}&nbsp;Mes documents</b>${insOk?`<span class="chip good" style="padding:3px 9px">${I.check} Assurance OK</span>`:`<span class="mini" style="color:var(--teal-deep);font-weight:650">Assurance &amp; décharge ›</span>`}</div><p class="sub" style="margin-top:8px">Attestation d'assurance et décharge de responsabilité acceptée.</p></button>
+      ${notifCard('pro')}
       ${fidCard()}
       <button class="card" data-act="open-referral" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.heart}&nbsp;Parrainer un artisan</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Gagnez un bonus pour chaque artisan que vous parrainez — et lui aussi.</p></button>
       <p class="mini" style="text-align:center;margin-top:14px"><button class="linklike" data-act="show-advantages">${I.shield} Pourquoi passer par Ti-Services ›</button></p>
