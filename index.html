@@ -1419,6 +1419,8 @@
   function chatName(){return S.persona==='client'?(S.mission&&S.mission.provider?S.mission.provider.nm.split(' ')[0]:'votre artisan'):'Camille M.';}
   function chatInits(){return S.persona==='client'?(S.mission&&S.mission.provider?S.mission.provider.ini:'··'):'CM';}
   function sendChat(){const el=document.getElementById('chatInput');if(!el||!S.mission)return;const v=el.value.trim();if(!v)return;el.value='';const m=S.mission;const msg={from:S.persona,text:v,at:Date.now()};m.chat=m.chat||[];m.chat.push(msg);render();view.scrollTop=view.scrollHeight;if(FB&&m.reqId&&!isDemo()){try{FB.f.updateDoc(FB.f.doc(FB.db,'requests',m.reqId),{messages:FB.f.arrayUnion(msg)});}catch(_){}}}
+  // Marque la conversation comme lue par le rôle courant (accusé « Lu » pour l'autre).
+  function markChatRead(){const m=S.mission;if(!m||(S.persona!=='client'&&S.persona!=='pro'))return;const field=(S.persona==='pro')?'readProAt':'readClientAt';const now=Date.now();m[field]=now;if(FB&&m.reqId&&!isDemo()){try{FB.f.updateDoc(FB.f.doc(FB.db,'requests',m.reqId),{[field]:now});}catch(_){}}}
   function sendSupport(){const el=document.getElementById('supportInput');if(!el||!S.mission)return;const v=el.value.trim();if(!v)return;el.value='';const admin=(S.persona==='admin');const side=admin?(S.supportSide||'client'):(S.persona==='pro'?'pro':'client');const m=S.mission;m.support=m.support||{client:[],pro:[]};if(!m.support[side])m.support[side]=[];const msg={from:admin?'admin':side,text:v,at:Date.now()};m.support[side].push(msg);render();view.scrollTop=view.scrollHeight;
     // Persistance bêta : la messagerie support vit dans le document de la demande
     // (supportClient / supportPro), lisible par le client/artisan concerné et l'admin.
@@ -1427,10 +1429,16 @@
     const m=S.mission,other=chatName();
     const msgs=m.chat||[];
     const list=msgs.length?msgs.map(x=>`<div class="bub ${x.from===S.persona?'me':'them'}">${esc(x.text)}</div>`).join(''):`<p class="mini" style="text-align:center;color:var(--muted);margin:auto 0">Démarrez la conversation. Vos coordonnées restent masquées.</p>`;
+    // Accusé de lecture sous mon dernier message : « Lu » si l'autre partie a ouvert
+    // la conversation après l'envoi, sinon « Envoyé ».
+    const otherReadAt=(S.persona==='pro')?(m.readClientAt||0):(m.readProAt||0);
+    let lastMine=null;for(let i=msgs.length-1;i>=0;i--){if(msgs[i].from===S.persona){lastMine=msgs[i];break;}}
+    const wasRead=lastMine&&otherReadAt>=(lastMine.at||0);
+    const readStatus=lastMine?`<div class="mini" style="align-self:flex-end;margin-top:-2px;font-weight:650;color:${wasRead?'var(--teal-deep)':'var(--muted)'}">${wasRead?'✓✓ Lu':'✓ Envoyé'}</div>`:'';
     return `<div class="pad"><button class="reset" data-act="close-chat" style="margin:8px 0 2px">← Retour</button>
       <div class="row" style="gap:11px;align-items:center;margin-top:2px"><div class="avatar" style="width:42px;height:42px;font-size:15px">${chatInits()}</div><div style="flex:1"><b style="font-size:16px;font-family:var(--f-disp)">${other}</b><div class="mini">${I.lock} Numéro masqué · via Ti-Services</div></div><span class="chip good" style="padding:4px 10px">${I.check} Vérifié</span></div>
       <div class="banner teal" style="margin-top:12px">${I.shield}<span>Vos numéros restent privés — messages et appels transitent par Ti-Services. La garantie et le paiement ne s'appliquent que si tout se passe dans l'app.</span></div>
-      <div class="chat-msgs">${list}</div>
+      <div class="chat-msgs">${list}${readStatus}</div>
       <button class="btn ghost sm" data-act="masked-call" style="margin-top:12px">${I.phone}&nbsp;Appeler (numéro masqué)</button>
       <div class="chatbar"><input id="chatInput" placeholder="Écrire à ${other}…" autocomplete="off" maxlength="500"><button class="btn primary" data-act="chat-send">Envoyer</button></div>
       <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--hair)"><p class="mini" style="margin-bottom:8px;color:var(--muted)">Un souci, un litige, une question sur cette prestation&nbsp;?</p>
@@ -2161,9 +2169,12 @@
           if(r.messages.length>prevLen){
             const mine=(S.persona==='pro')?'pro':'client';
             const incoming=m.chat.slice(prevLen).filter(function(x){return x&&x.from&&x.from!==mine;});
-            if(incoming.length){const who=(mine==='pro')?(m.clientName||'Le client'):((m.provider&&m.provider.nm)||'Votre artisan');const txt=String(incoming[incoming.length-1].text||'Nouveau message').slice(0,120);notify(who,txt,'ti-msg-'+m.reqId);if(prevLen>0&&!((S.chat||S.support)&&S.mission===m))toast(who+' · '+txt);}
+            if(incoming.length){const who=(mine==='pro')?(m.clientName||'Le client'):((m.provider&&m.provider.nm)||'Votre artisan');const txt=String(incoming[incoming.length-1].text||'Nouveau message').slice(0,120);notify(who,txt,'ti-msg-'+m.reqId);if(prevLen>0&&!((S.chat||S.support)&&S.mission===m))toast(who+' · '+txt);if(S.chat&&S.mission===m)markChatRead();}
           }
         }
+        // Accusés de lecture (« Lu ») synchronisés depuis la demande.
+        if(r.readClientAt!=null&&m.readClientAt!==r.readClientAt){m.readClientAt=r.readClientAt;touched=true;}
+        if(r.readProAt!=null&&m.readProAt!==r.readProAt){m.readProAt=r.readProAt;touched=true;}
         // Messagerie support (client↔Ti-Services / artisan↔Ti-Services), stockée
         // dans supportClient / supportPro du document de demande.
         function syncSupport(field,side){
@@ -3040,7 +3051,7 @@
       case 'conc-client-geo':geolocate(g=>{if(S.concForm){S.concForm.ageo=g;render();}});break;
       case 'conc-client-save':{const f=S.concForm;if(!f)break;if(!(f.name||'').trim()){toast('Indiquez le nom du client');break;}const addr={label:f.alabel||f.name,address:f.aaddr,zone:f.azone,geo:f.ageo||null};if(f.id){const c=concClient(f.id);if(c){c.name=f.name;c.email=f.email;c.phone=f.phone;c.addr=addr;c.notes=f.notes||'';c.authorized=f.authorized;c.card=f.card;}}else{S.concClients.push({id:'cc'+Date.now(),name:f.name,email:f.email,phone:f.phone,addr,notes:f.notes||'',authorized:f.authorized,card:f.card});}S.concForm=null;saveConcCloud();render();toast('Client enregistré');break;}
       case 'conc-client-delete':if(S.concForm&&S.concForm.id){S.concClients=S.concClients.filter(x=>x.id!==S.concForm.id);S.concForm=null;saveConcCloud();render();toast('Client supprimé');}break;
-      case 'open-chat':S.chat=true;render();view.scrollTop=view.scrollHeight;break;
+      case 'open-chat':S.chat=true;markChatRead();render();view.scrollTop=view.scrollHeight;break;
       case 'close-chat':S.chat=false;render();break;
       case 'chat-send':sendChat();view.scrollTop=view.scrollHeight;break;
       case 'masked-call':toast('Appel routé par Ti-Services — numéro réel masqué (démo)');break;
