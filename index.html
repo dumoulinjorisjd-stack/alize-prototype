@@ -1033,7 +1033,7 @@
     proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proReqSlot:null,proReqPick:false,proMissions:[],proSkipped:[],proStmt:false,
     proHistory:PRO_HISTORY(),
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),
-    chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,delAcct:false,
+    chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,histInvoice:null,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,delAcct:false,
     proJobsTotal:214,fidTiers:FID_TIERS.map(t=>({...t})),referralCode:'MARILOU-SBH',
     filleuls:[{name:'Kevin Questel',status:'valide',bonus:40},{name:'Rosa Almeida',status:'attente',bonus:0}],
     admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,adminPrices:ADMIN_PRICES(),
@@ -1171,6 +1171,7 @@
     if(S.clientInv&&S.mission)return 'client:cinv';
     if(S.advantages)return S.persona+':advantages';
     if(S.invoiceId)return S.persona+':invoice:'+S.invoiceId;
+    if(S.histInvoice)return 'client:histinv:'+(S.histInvoice.invNo||S.histInvoice._id||'');
     if(S.interv)return S.persona+':interv';
     if(S.referral)return S.persona+':referral';
     if(S.share)return S.persona+':share';
@@ -1195,12 +1196,12 @@
     view.innerHTML='<div'+(same?'':' class="anim"')+'>'+html+'</div>';
     view.scrollTop=same?top:0;_scr=key;updateHomeFab();mountMaps();
   }
-  function updateHomeFab(){const rb=document.getElementById('reset');if(rb)rb.style.display=isDemo()?'':'none';const f=document.getElementById('homefab');if(f){const show=S.onboarded&&!S.authView&&!S.showPitch&&S.persona==='client'&&!!(S.mission||S.draft||S.chat||S.support||S.clientInv||S.advantages||S.addrForm||S.referral||S.share||S.interv||S.cardForm);f.classList.toggle('show',show);}updateBackFab();}
+  function updateHomeFab(){const rb=document.getElementById('reset');if(rb)rb.style.display=isDemo()?'':'none';const f=document.getElementById('homefab');if(f){const show=S.onboarded&&!S.authView&&!S.showPitch&&S.persona==='client'&&!!(S.mission||S.draft||S.chat||S.support||S.clientInv||S.histInvoice||S.advantages||S.addrForm||S.referral||S.share||S.interv||S.cardForm);f.classList.toggle('show',show);}updateBackFab();}
   // Peut-on revenir en arrière depuis l'écran courant ? (mêmes cas que goBack)
   function canGoBack(){
     if(S.legalView||S.showPitch)return true;
     if(!S.onboarded)return !!(S.authView||S.onbStep>0);
-    if(S.cardForm||S.clientInv||S.advantages||S.invoiceId||S.interv||S.referral||S.share||S.chat||S.support||S.addrForm||S.finishing||S.disputing||S.profileForm||S.draft||S.payStep)return true;
+    if(S.cardForm||S.clientInv||S.histInvoice||S.advantages||S.invoiceId||S.interv||S.referral||S.share||S.chat||S.support||S.addrForm||S.finishing||S.disputing||S.profileForm||S.draft||S.payStep)return true;
     if(S.persona==='admin')return S.admin.view!=='home';
     if(S.persona==='concierge')return !!(S.concRetInv||S.concInvoice||S.concForm||S.concClientView||S.concOrder||S.concView||S.concNav!=='home');
     if(S.persona==='pro'){if(S.proDocsView||S.proPayoutView||S.proReqView||S.mission)return true;if(S.proStatus==='signup'||S.proStatus==='pending')return true;return S.proNav!=='home';}
@@ -1727,6 +1728,7 @@
     if(S.cardForm)return clientCardEdit();
     if(S.profileForm)return clientEditProfile();
     if(S.clientInv&&m)return clientInvoiceDoc();
+    if(S.histInvoice)return clientInvoiceDoc(S.histInvoice);
     if(S.draft&&S.payStep)return clientPay();
     if(S.clientNav==='profile')return clientProfile();
     // Les demandes en cours vivent dans « Mes réservations » : on peut en lancer
@@ -1858,7 +1860,7 @@
     const activeBlock=active.length?`<div style="margin-top:16px"><div class="eyebrow" style="color:var(--teal-deep)">${I.bolt} En cours · ${active.length}</div>${active.map(activeCard).join('')}${hasSearching?`<p class="mini" style="margin-top:8px;color:var(--muted)">Touchez <b>${I.trash} Supprimer</b> (ou glissez vers la gauche) pour retirer une demande en recherche.</p>`:''}</div>`:'';
     const newBtn=`<button class="btn ${active.length?'ghost':'primary'} sm" data-cnav="home" style="margin-top:14px">${I.search} Passer une nouvelle commande</button>`;
     const summary=`<div class="card" style="padding:15px;margin-top:14px"><div class="row between"><div><div class="mini">Terminées</div><b class="money" style="font-size:19px;font-family:var(--f-disp)">${done.length}</b></div><div style="text-align:right"><div class="mini">Total dépensé</div><b class="money" style="font-size:19px;font-family:var(--f-disp)">${eur(totalSpent)}</b></div></div></div>`;
-    const list=done.length?`<div class="eyebrow" style="color:var(--muted);margin-top:18px">Historique</div>`+done.map(h=>{const t=totals(h);return `<div class="card" style="padding:14px;margin-top:10px"><div class="row" style="gap:11px"><div class="avatar" style="width:40px;height:40px;font-size:14px">${h.provider?h.provider.ini:'--'}</div><div style="flex:1"><div class="row between"><b style="font-size:14.5px">${h.svcName}</b><span class="money" style="font-weight:700">${eur(t.total)}</span></div><div class="mini" style="margin-top:2px">${h.when} · ${h.provider?h.provider.nm:''}</div></div></div><div class="row between" style="margin-top:10px"><span class="chip good" style="padding:4px 10px">${I.check} Bien exécuté &amp; réglé</span><span class="mini">Reçu envoyé</span></div></div>`;}).join(''):(active.length?'':`<div class="card" style="padding:24px;margin-top:12px;text-align:center;color:var(--muted)">Aucune prestation pour l’instant.<br>Vos réservations et reçus apparaîtront ici.</div>`);
+    const list=done.length?`<div class="eyebrow" style="color:var(--muted);margin-top:18px">Historique &amp; factures</div><p class="mini" style="color:var(--muted);margin-top:2px">Touchez une prestation pour revoir ou télécharger sa facture.</p>`+done.map((h,i)=>{const t=totals(h);return `<button class="card" data-act="histinv:${i}" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block"><div class="row" style="gap:11px"><div class="avatar" style="width:40px;height:40px;font-size:14px">${h.provider?esc(h.provider.ini||'--'):'--'}</div><div style="flex:1"><div class="row between"><b style="font-size:14.5px">${esc(h.svcName||'Prestation')}</b><span class="money" style="font-weight:700">${eur(t.total)}</span></div><div class="mini" style="margin-top:2px">${esc(h.when||'')}${h.provider&&h.provider.nm?' · '+esc(h.provider.nm):''}</div></div></div><div class="row between" style="margin-top:10px"><span class="chip good" style="padding:4px 10px">${I.check} Bien exécuté &amp; réglé</span><span class="mini" style="color:var(--teal-deep);font-weight:700">${I.card} Voir ma facture ›</span></div></button>`;}).join(''):(active.length?'':`<div class="card" style="padding:24px;margin-top:12px;text-align:center;color:var(--muted)">Aucune prestation pour l’instant.<br>Vos réservations et reçus apparaîtront ici.</div>`);
     const rec=S.recurring.length?`<div style="margin-top:16px"><div class="eyebrow" style="color:var(--muted)">Prestations régulières</div>${S.recurring.map(r=>`<div class="card" style="padding:13px;margin-top:8px"><div class="row between"><b style="font-size:14px">${r.svcName}</b><span class="chip" style="padding:3px 9px">${I.repeat} ${r.short}</span></div><div class="row between" style="margin-top:3px"><span class="mini">${r.slot} · ${r.zone}</span><span class="chip good" style="padding:3px 9px">${I.check} Actif</span></div></div>`).join('')}</div>`:'';
     return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">${I.wallet} Mes réservations</span><div class="h-hello">${active.length?'Vos demandes en cours':'Mes réservations'}</div>${active.length?notifCTA('client'):''}${activeBlock}${newBtn}${summary}${rec}${list}<div style="height:6px"></div></div>${clientNavbar()}`;
   }
@@ -2191,15 +2193,15 @@
       ${rebookCard}
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn ghost" data-act="new-mission">Nouvelle réservation ponctuelle</button></div></div>`;
   }
-  function clientInvoiceDoc(){
-    const m=S.mission,t=totals(m),p=m.provider;const no=m.invNo||'2026-0198';const dt=fmtLong(m.dateISO||new Date().toISOString().slice(0,10));
+  function clientInvoiceDoc(mArg){
+    const m=mArg||S.mission,t=totals(m),p=m.provider;const no=m.invNo||'2026-0198';const dt=fmtLong(m.dateISO||new Date().toISOString().slice(0,10));
     return `<div class="pad">
       <div class="row between noprint" style="margin-top:6px;gap:8px"><button class="reset" data-act="close-client-invoice">← Retour</button><button class="btn primary" data-act="print-invoice" style="width:auto;padding:10px 16px">${I.card}&nbsp;Enregistrer / Imprimer</button></div>
       <p class="mini noprint" style="text-align:center;color:var(--muted);margin-bottom:8px">${I.check} Reçue par e-mail — votre justificatif de prestation.</p>
       <div id="invoiceDoc"><div class="inv">
         <div class="row between" style="align-items:flex-start"><div><h2>FACTURE</h2><div class="mut">N° ${no}</div><div class="mut">Date : ${dt}</div></div><div style="text-align:right"><div style="font-family:var(--f-disp);font-weight:800;font-size:16px;color:#151515">Ti-Services</div><div class="mut">Saint-Barthélemy</div></div></div>
         <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Prestataire</div><b>${p?p.nm:'Artisan Ti-Services'}</b><div class="mut">Artisan vérifié · Saint-Barthélemy</div></div>
-        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Client</div><b>${esc((S.clientForm&&S.clientForm.name)||'Camille Magras')}</b><div class="mut">${m.zone}, Saint-Barthélemy</div></div>
+        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Client</div><b>${esc((S.account&&S.account.name)||(S.clientForm&&S.clientForm.name)||'Client')}</b><div class="mut">${esc(m.zone||'Saint-Barthélemy')}${m.zone?', Saint-Barthélemy':''}</div></div>
         <table><thead><tr><th>Prestation</th><th class="r">Qté</th><th class="r">PU</th><th class="r">Total</th></tr></thead>
         <tbody><tr><td>${m.svcName} — prestation à domicile</td><td class="r">${durTxt(m,billHours(m))}</td><td class="r">${eur(t.rate)}</td><td class="r">${eur(t.total)}</td></tr></tbody></table>
         <div class="row between sec"><span class="mut">Total réglé</span><span class="tot">${eur(t.total)}</span></div>
@@ -2772,6 +2774,7 @@
     if(b.dataset.star){const n=+b.dataset.star;S.mission.rating=n;document.querySelectorAll('#rateStars button').forEach(x=>x.classList.toggle('lit',+x.dataset.star<=n));const rb=document.getElementById('rateBtn');if(rb)rb.disabled=false;return;}
     if(b.dataset.cfg){const c=b.dataset.cfg;if(!S.draft)return;if(c==='back'){S.draft=null;render();}else if(c==='minus'){S.draft.duration=Math.max(1,S.draft.duration-1);renderConfig();}else if(c==='plus'){S.draft.duration=Math.min(isDayU(S.draft)?30:10,S.draft.duration+1);renderConfig();}else if(c==='unit-h'){S.draft.unit='h';S.draft.rate=(S.adminPrices&&S.adminPrices[S.draft.svc]!=null)?S.adminPrices[S.draft.svc]:svcBase(S.draft.svc);S.draft.duration=3;renderConfig();}else if(c==='unit-j'){S.draft.unit='j';S.draft.rate=DAY_RECO;S.draft.duration=2;renderConfig();}else if(c==='geoloc'){geolocate(g=>{if(S.draft){S.draft.geo=g;renderConfig();}});}else if(c==='addr-save-draft'){const d=S.draft;const id='ad'+Date.now();S.addresses.push({id,label:(d.address||'Adresse ponctuelle').slice(0,40),address:d.address,zone:d.zone,geo:d.geo});d.addressId=id;toast('Adresse enregistrée dans votre profil');renderConfig();}else if(c==='confirm'){const mm=minSlotToday(S.draft);if(mm>=0&&!S.draft.slotFlex&&slotToMin(S.draft.slot)<mm){toast('Choisissez une heure à venir');renderConfig();return;}S.payStep=true;S.payEdit=false;render();}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('invoice:')===0){S.invoiceId=b.dataset.act.split(':')[1];render();return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('histinv:')===0){const h=(S.history||[])[+b.dataset.act.split(':')[1]];if(h){S.histInvoice=h;render();}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('rbfreq:')===0){S.rebookFreq=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('reqview:')===0){S.proReqView=b.dataset.act.slice('reqview:'.length);S.proReqSlot=null;S.proReqPick=false;render();return;}
     if(b.dataset.proreqslot){if(b.dataset.proreqslot==='__pick'){S.proReqPick=true;}else{S.proReqPick=false;S.proReqSlot=b.dataset.proreqslot;}render();return;}
@@ -2829,7 +2832,7 @@
       case 'go-home':S.mission=null;S.draft=null;S.payStep=false;S.payEdit=false;S.chat=false;S.support=false;S.clientInv=false;S.advantages=false;S.addrForm=null;S.referral=false;S.interv=false;S.invoiceId=null;S.finishing=false;S.disputing=false;S.persona='client';S.clientNav='home';render();break;
       case 'rebook':rebookRecurring(S.rebookFreq||'hebdo');break;
       case 'show-client-invoice':S.clientInv=true;render();break;
-      case 'close-client-invoice':S.clientInv=false;render();break;
+      case 'close-client-invoice':S.clientInv=false;S.histInvoice=null;render();break;
       case 'toggle-online':S.proOnline=!S.proOnline;render();break;
       case 'notif-push':{if(!S.proNotifPush){S.proNotifPush=true;requestPush();}else{S.proNotifPush=false;}render();break;}
       case 'notif-wa':S.proNotifWa=!S.proNotifWa;render();break;
@@ -3074,6 +3077,7 @@
     if(S.proPayoutView){S.proPayoutView=false;render();return;}
     if(S.cardForm){S.cardForm=false;render();return;}
     if(S.clientInv){S.clientInv=false;render();return;}
+    if(S.histInvoice){S.histInvoice=null;render();return;}
     if(S.advantages){S.advantages=false;render();return;}
     if(S.invoiceId){S.invoiceId=null;render();return;}
     if(S.interv){S.interv=false;render();return;}
