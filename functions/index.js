@@ -353,3 +353,47 @@ exports.notifyGeneralSupport = onDocumentUpdated('users/{uid}', async (event) =>
       (tok) => db.collection('adminTokens').doc(tok).delete());
   }
 });
+
+/**
+ * notifyClientStatus : prévient le CLIENT des étapes clés de SA demande —
+ *  - pending -> accepted : un artisan a accepté (« Artisan trouvé ») ;
+ *  - -> done_pro         : la prestation est terminée, à valider par le client.
+ * Le clic ouvre directement la réservation concernée (deep-link).
+ */
+exports.notifyClientStatus = onDocumentUpdated('requests/{reqId}', async (event) => {
+  const before = (event.data && event.data.before && event.data.before.data()) || {};
+  const after = (event.data && event.data.after && event.data.after.data()) || {};
+  const bStatus = before.status || '';
+  const aStatus = after.status || '';
+  if (bStatus === aStatus) return;
+
+  const clientUid = after.clientUid;
+  if (!clientUid) return;
+
+  const provider = (after.providerName || 'Un artisan').toString().slice(0, 60);
+  const svcName = (after.serviceName || 'votre prestation').toString().slice(0, 60);
+
+  let title = '';
+  let body = '';
+  if (bStatus === 'pending' && aStatus === 'accepted') {
+    title = 'Vos réservations · Artisan trouvé';
+    body = provider + ' a accepté votre demande de ' + svcName + '.';
+  } else if (aStatus === 'done_pro') {
+    title = 'Vos réservations · Prestation terminée';
+    body = provider + ' a terminé — validez pour finaliser.';
+  } else {
+    return; // autres transitions : pas de notification client
+  }
+
+  const db = getFirestore();
+  let tokens = [];
+  try {
+    const u = await db.collection('users').doc(clientUid).get();
+    tokens = (u.data() || {}).pushTokens || [];
+  } catch (_) {}
+  if (!tokens.length) { console.log('Statut client : aucun jeton pour ' + clientUid); return; }
+
+  await pushMulticast(tokens, title, body, '/?open=wallet&r=' + event.params.reqId,
+    (tok) => db.collection('users').doc(clientUid).update({ pushTokens: FieldValue.arrayRemove(tok) }));
+  console.log('Push statut client (' + aStatus + ') envoyé à ' + clientUid);
+});
