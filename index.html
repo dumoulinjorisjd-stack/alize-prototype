@@ -1244,7 +1244,7 @@
 
   /* ---------- CLIENT ---------- */
   /* ---------- ADMIN ---------- */
-  function renderAdmin(){if(S.support&&S.mission)return supportChat()+adminNavbar();if(S.adminSupervise&&S.mission)return adminSupervise()+adminNavbar();let body;if(S.admin.view==='art')body=adminFiche('art');else if(S.admin.view==='cli')body=adminFiche('cli');else if(S.admin.view==='msg')body=adminMessagerie();else body=adminHome();return body+adminNavbar();}
+  function renderAdmin(){if(S.support&&S.mission)return supportChat()+adminNavbar();if(S.generalSupport&&S.genUser)return generalSupportChat()+adminNavbar();if(S.adminSupervise&&S.mission)return adminSupervise()+adminNavbar();let body;if(S.admin.view==='art')body=adminFiche('art');else if(S.admin.view==='cli')body=adminFiche('cli');else if(S.admin.view==='msg')body=adminMessagerie();else body=adminHome();return body+adminNavbar();}
   // Barre permanente de l'espace admin : retour à la console de gestion à tout moment.
   function adminNavbar(){
     const inMsg=(S.admin.view==='msg'||(S.support&&S.mission)||S.adminSupervise);
@@ -1421,7 +1421,7 @@
     }catch(e){console.warn('admin threads',e);}
   }
   // Nombre de fils support en attente de réponse de l'admin (dernier message ≠ admin).
-  function adminSupportPending(){return (S.adminThreads||[]).reduce(function(n,t){['client','pro'].forEach(function(s){const th=t.support[s];if(th&&th.length&&th[th.length-1].from!=='admin')n++;});return n;},0);}
+  function adminSupportPending(){const m=(S.adminThreads||[]).reduce(function(n,t){['client','pro'].forEach(function(s){const th=t.support[s];if(th&&th.length&&th[th.length-1].from!=='admin')n++;});return n;},0);const g=(S.adminGeneral||[]).reduce(function(n,u){return n+((u.support.length&&u.support[u.support.length-1].from!=='admin')?1:0);},0);return m+g;}
   function adminMessagerie(){
     const threads=S.adminThreads||[];
     const rows=threads.map(function(t){
@@ -1439,11 +1439,20 @@
         <div class="stack" style="gap:7px;margin-top:11px">${acts.join('')}</div>
       </div>`;
     }).join('');
+    const gen=S.adminGeneral||[];
+    const genRows=gen.map(function(u){
+      const pend=u.support.length&&u.support[u.support.length-1].from!=='admin';
+      const last=u.support[u.support.length-1]||{};
+      return `<button class="card" data-adm="gensup:${u.uid}" style="padding:13px;margin-top:9px;width:100%;text-align:left;display:block;${pend?'border-left:4px solid var(--coral)':''}"><div class="row between"><b style="font-size:14px">${esc(u.name)}</b><span class="chip ${pend?'coral':'grey'}" style="padding:3px 9px">${u.role==='artisan'?'Artisan':'Client'}${pend?' · à répondre':''}</span></div><div class="mini" style="margin-top:4px;color:var(--ink-soft)">« ${esc(String(last.text||'')).slice(0,64)} »</div></button>`;
+    }).join('');
+    const nothing=!threads.length&&!gen.length;
     return `<div class="pad"><div style="height:12px"></div>
       <span class="eyebrow">${I.chat} Messagerie</span><div class="h-hello">Conversations</div>
-      <p class="sub" style="margin-top:4px">Répondez au support des clients et des artisans, et supervisez les échanges client↔artisan.</p>
+      <p class="sub" style="margin-top:4px">Répondez au support (général et par prestation) des clients et artisans, et supervisez les échanges client↔artisan.</p>
       ${(typeof Notification!=='undefined'&&Notification.permission!=='granted')?`<button class="banner teal" data-act="admin-notif" style="margin-top:12px;width:100%;text-align:left;cursor:pointer">${I.bell}<span>Activez les notifications pour être alerté à chaque message support.</span></button>`:''}
-      ${threads.length?rows:`<div class="card" style="padding:22px;text-align:center;color:var(--muted);margin-top:12px">Aucune conversation pour l'instant.<br>Les messages support et les discussions apparaîtront ici.</div>`}
+      ${gen.length?`<div style="height:14px"></div><span class="eyebrow" style="color:var(--muted)">${I.support} Support général</span>${genRows}`:''}
+      ${threads.length?`<div style="height:14px"></div><span class="eyebrow" style="color:var(--muted)">${I.wallet} Par prestation</span>${rows}`:''}
+      ${nothing?`<div class="card" style="padding:22px;text-align:center;color:var(--muted);margin-top:12px">Aucune conversation pour l'instant.<br>Les messages support et les discussions apparaîtront ici.</div>`:''}
       <div style="height:8px"></div></div>`;
   }
   // Supervision : lecture seule de la discussion client↔artisan par l'admin.
@@ -1456,6 +1465,65 @@
       <div class="banner teal" style="margin-top:12px">${I.shield}<span>Lecture seule — discussion à propos de&nbsp;: <b>${esc(m.svcName)}</b> · ${esc(m.when)} ${esc(m.slot)}.</span></div>
       <div class="chat-msgs">${list}</div>
       <div style="height:10px"></div></div>`;
+  }
+  // ————— Support GÉNÉRAL (hors réservation) : client/artisan ↔ Ti-Services —————
+  // Stocké dans users/{uid}.support. Pas de prestation associée → aucun bandeau
+  // « À propos de … ».
+  function sendGeneralSupport(){
+    const el=document.getElementById('gsupInput');if(!el)return;const v=el.value.trim();if(!v)return;el.value='';
+    const admin=(S.persona==='admin');
+    const msg={from:admin?'admin':(S.persona==='pro'?'pro':'client'),text:v,at:Date.now()};
+    if(admin){ if(!S.genUser)return; S.genUser.support=(S.genUser.support||[]).concat([msg]); render();view.scrollTop=view.scrollHeight;
+      if(FB&&!isDemo()){try{FB.f.updateDoc(FB.f.doc(FB.db,'users',S.genUser.uid),{support:FB.f.arrayUnion(msg)});}catch(_){}}
+    } else { S.genSupport=(S.genSupport||[]).concat([msg]); render();view.scrollTop=view.scrollHeight;
+      if(FB&&FB.auth&&FB.auth.currentUser&&!isDemo()){try{FB.f.updateDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{support:FB.f.arrayUnion(msg)});}catch(_){}}
+    }
+  }
+  function generalSupportChat(){
+    const admin=(S.persona==='admin');
+    const raw=admin?((S.genUser&&S.genUser.support)||[]):(S.genSupport||[]);
+    const thread=raw.slice().sort(function(a,b){return (a.at||0)-(b.at||0);});
+    const who=admin?((S.genUser&&S.genUser.name)||'Utilisateur'):'';
+    const roleLbl=admin?((S.genUser&&S.genUser.role==='artisan')?'Artisan':'Client'):'';
+    const list=thread.length?thread.map(function(x){const mine=admin?(x.from==='admin'):(x.from!=='admin');return `<div class="bub ${mine?'me':'them'}">${esc(x.text)}</div>`;}).join(''):`<p class="mini" style="text-align:center;color:var(--muted);margin:auto 0">${admin?'Aucun message pour l’instant.':'Une question sur votre compte ou l’application&nbsp;? Écrivez à Ti-Services.'}</p>`;
+    const back=admin?`data-adm="msg"`:`data-act="close-general-support"`;
+    return `<div class="pad"><button class="reset" ${back} style="margin:8px 0 2px">← Retour</button>
+      <div class="row" style="gap:11px;align-items:center;margin-top:2px"><div class="avatar" style="width:42px;height:42px;font-size:14px;background:linear-gradient(135deg,var(--teal),var(--teal-deep))">TS</div><div style="flex:1"><b style="font-size:16px;font-family:var(--f-disp)">Ti-Services · Support</b><div class="mini">${admin?('Support général · '+esc(who)+' ('+roleLbl+')'):'Assistance Ti-Services'}</div></div></div>
+      <div class="banner teal" style="margin-top:12px">${I.support}<span>${admin?'Question générale, hors réservation.':'Une question générale (compte, application, autre)&nbsp;? Écrivez-nous ici — ce n’est lié à aucune prestation.'}</span></div>
+      <div class="chat-msgs">${list}</div>
+      <div class="chatbar"><input id="gsupInput" placeholder="${admin?'Répondre…':'Écrire à Ti-Services…'}" autocomplete="off" maxlength="500"><button class="btn primary" data-act="gsup-send">Envoyer</button></div>
+      <div style="height:6px"></div></div>`;
+  }
+  // Écoute du support général de l'utilisateur connecté (client/artisan).
+  let userSupportUnsub=null;
+  function subscribeUserSupport(uid){
+    if(!(FB&&FB.db)||!uid)return;
+    try{ if(userSupportUnsub){try{userSupportUnsub();}catch(_){}}
+      userSupportUnsub=FB.f.onSnapshot(FB.f.doc(FB.db,'users',uid),function(snap){
+        const d=snap.exists()?(snap.data()||{}):{};
+        const arr=Array.isArray(d.support)?d.support.slice().sort(function(a,b){return (a.at||0)-(b.at||0);}):[];
+        const prev=(S.genSupport||[]).length;
+        if(prev===arr.length)return;
+        S.genSupport=arr;
+        if(arr.length>prev){const last=arr[arr.length-1]||{};if(last.from==='admin')notify('Ti-Services · Support',String(last.text||'').slice(0,120),'ti-gsup');}
+        if(S.generalSupport)render();
+      },function(err){console.warn('user support',err);});
+    }catch(e){console.warn(e);}
+  }
+  // Admin : écoute des supports généraux de tous les utilisateurs.
+  let adminGeneralUnsub=null;
+  function subscribeAdminGeneralSupport(){
+    if(!(FB&&FB.db))return;
+    try{ if(adminGeneralUnsub){try{adminGeneralUnsub();}catch(_){}}
+      adminGeneralUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'users'),function(snap){
+        const list=[];
+        snap.forEach(function(docu){const d=docu.data()||{};const sup=Array.isArray(d.support)?d.support.slice().sort(function(a,b){return (a.at||0)-(b.at||0);}):[];if(!sup.length)return;list.push({uid:docu.id,name:d.name||'Utilisateur',role:d.role||'client',support:sup,ts:sup[sup.length-1].at||0});});
+        list.sort(function(a,b){return b.ts-a.ts;});
+        S.adminGeneral=list;
+        if(S.genUser){const u=list.find(function(x){return x.uid===S.genUser.uid;});if(u){S.genUser=u;if(S.generalSupport&&S.persona==='admin')render();return;}}
+        if(S.persona==='admin'&&!(S.generalSupport&&S.genUser)&&!(S.support&&S.mission)&&!S.adminSupervise&&S.admin.view==='msg')render();
+      },function(err){console.warn('admin general support',err);});
+    }catch(e){console.warn(e);}
   }
   function advantagesScreen(){
     const pro=S.persona==='pro';
@@ -1633,6 +1701,7 @@
     const m=S.mission;
     if(!S.onboarded)return clientOnboard();
     if(S.delAcct)return deleteAccountView();
+    if(S.generalSupport)return generalSupportChat();
     if(S.share)return shareCard();
     if(S.addrForm)return clientAddrEdit();
     if(S.advantages)return advantagesScreen();
@@ -1805,6 +1874,7 @@
         <div class="row between" style="margin-top:8px"><span class="sub">Téléphone</span><b>${cph?esc(cph):'<span style="color:var(--muted);font-weight:500">à renseigner</span>'}</b></div>
         <div class="row between" style="margin-top:8px"><span class="sub">Secteur</span><b>${esc(czone)}</b></div></div>
       ${notifCard('client')}
+      <button class="card" data-act="open-general-support" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.support}&nbsp;Contacter Ti-Services</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Support ›</span></div><p class="sub" style="margin-top:8px">Une question sur votre compte ou l'application&nbsp;? Écrivez-nous — sans lien avec une réservation.</p></button>
       ${isAdminAccount()?`<button class="card" data-act="go-admin" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block;border-left:4px solid var(--ink)"><div class="row between"><b style="font-size:14px">${I.shield}&nbsp;Console d'administration</b>${adminPendingCount()?`<span class="chip coral" style="padding:3px 10px">${adminPendingCount()} en attente</span>`:`<span class="mini" style="color:var(--teal-deep);font-weight:650">Ouvrir ›</span>`}</div><p class="sub" style="margin-top:8px">Revenez au tableau de bord de gestion (candidatures, tarifs, réservations).</p></button>`:''}
       <div class="card" style="padding:16px;margin-top:18px"><div class="row between"><span class="chip">${I.card} Moyen de paiement</span>${S.card?`<span class="chip good" style="padding:4px 10px">${I.check} Enregistré</span>`:''}</div>${S.card?`<div class="row between" style="margin-top:12px"><div class="row" style="gap:11px;align-items:center"><span class="benic">${I.card}</span><div><b>${S.card.brand} ••••&nbsp;${S.card.last4}</b><div class="mini">Expire ${S.card.exp||'08/28'}</div></div></div></div><div class="row" style="gap:8px;margin-top:12px"><button class="btn ghost sm" data-act="add-card">Modifier</button><button class="btn ghost sm" data-act="card-remove">Retirer</button></div><div class="banner teal" style="margin-top:12px">${I.shield}<span>Débit automatique après chaque prestation validée. Reçu à chaque fois — rien à gérer.</span></div>`:`<p class="mini" style="margin-top:10px">Facultatif — enregistrez une carte pour réserver plus vite la prochaine fois. Sinon, elle vous sera demandée à votre première réservation. Rien n'est débité tant qu'une prestation n'est pas validée.</p><button class="btn ghost sm" data-act="add-card" style="margin-top:12px">${I.card} Ajouter un moyen de paiement</button>`}</div>
       <div class="card" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">${I.pin}&nbsp;Mes adresses</b><button class="btn ghost sm" style="width:auto;padding:6px 12px" data-act="addr-new">＋ Ajouter</button></div>
@@ -2128,6 +2198,7 @@
   /* ---------- ARTISAN ---------- */
   function renderPro(){
     if(S.delAcct)return deleteAccountView();
+    if(S.generalSupport)return generalSupportChat();
     if(S.proStatus==='signup')return proSignup();
     if(S.proDocsView)return proDocs();
     if(S.proPayoutView)return proPayout();
@@ -2545,6 +2616,7 @@
       </div>
       <button class="card" data-act="pro-docs" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.shield}&nbsp;Mes documents</b>${insOk?`<span class="chip good" style="padding:3px 9px">${I.check} Assurance OK</span>`:`<span class="mini" style="color:var(--teal-deep);font-weight:650">Assurance &amp; décharge ›</span>`}</div><p class="sub" style="margin-top:8px">Attestation d'assurance et décharge de responsabilité acceptée.</p></button>
       ${notifCard('pro')}
+      <button class="card" data-act="open-general-support" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.support}&nbsp;Contacter Ti-Services</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Support ›</span></div><p class="sub" style="margin-top:8px">Une question sur votre compte, un dossier, l'application&nbsp;? Écrivez-nous — sans lien avec une mission.</p></button>
       ${fidCard()}
       <button class="card" data-act="open-referral" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.heart}&nbsp;Parrainer un artisan</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Gagnez un bonus pour chaque artisan que vous parrainez — et lui aussi.</p></button>
       <p class="mini" style="text-align:center;margin-top:14px"><button class="linklike" data-act="show-advantages">${I.shield} Pourquoi passer par Ti-Services ›</button></p>
@@ -2622,11 +2694,12 @@
     if(b.dataset.act==='pw-toggle'){const w=b.closest('.pw-wrap');const inp=w&&w.querySelector('input');if(inp){const reveal=inp.type==='password';inp.type=reveal?'text':'password';b.innerHTML=reveal?I.eyeoff:I.eye;}return;}
     if(b.dataset.persona){go(b.dataset.persona);return;}
     if(b.dataset.adm){const parts=b.dataset.adm.split(':'),act=parts[0],id=parts[1];
-      if(act==='quit'){S.persona='client';S.admin.view='home';S.admin.sel=null;S.support=false;S.supportSide=null;S.adminSupervise=false;}
+      if(act==='quit'){S.persona='client';S.admin.view='home';S.admin.sel=null;S.support=false;S.supportSide=null;S.adminSupervise=false;S.generalSupport=false;S.genUser=null;}
       else if(act==='support'){S.support=true;S.supportSide=id;render();view.scrollTop=view.scrollHeight;return;}
-      else if(act==='msg'){S.admin.view='msg';S.support=false;S.supportSide=null;S.adminSupervise=false;S.mission=null;render();return;}
+      else if(act==='msg'){S.admin.view='msg';S.support=false;S.supportSide=null;S.adminSupervise=false;S.generalSupport=false;S.genUser=null;S.mission=null;render();return;}
       else if(act==='sup'){const th=(S.adminThreads||[]).find(function(x){return x.reqId===id;});if(th){S.mission=th;S.supportSide=(parts[2]==='pro'?'pro':'client');S.support=true;S.adminSupervise=false;S.admin.view='msg';watchRequest(th.reqId);render();view.scrollTop=view.scrollHeight;}return;}
       else if(act==='supervise'){const th=(S.adminThreads||[]).find(function(x){return x.reqId===id;});if(th){S.mission=th;S.adminSupervise=true;S.support=false;S.admin.view='msg';watchRequest(th.reqId);render();view.scrollTop=view.scrollHeight;}return;}
+      else if(act==='gensup'){const u=(S.adminGeneral||[]).find(function(x){return x.uid===id;});if(u){S.genUser=u;S.generalSupport=true;S.support=false;S.adminSupervise=false;S.admin.view='msg';render();view.scrollTop=view.scrollHeight;}return;}
       else if(act==='home'){S.admin.view='home';S.admin.sel=null;}
       else if(act==='art'){S.admin.view='art';S.admin.sel=id;}
       else if(act==='cli'){S.admin.view='cli';S.admin.sel=id;}
@@ -2786,6 +2859,9 @@
       case 'open-support':S.support=true;render();view.scrollTop=view.scrollHeight;break;
       case 'close-support':S.support=false;if(S.persona==='admin')S.supportSide=null;render();break;
       case 'support-send':sendSupport();break;
+      case 'open-general-support':S.generalSupport=true;render();view.scrollTop=view.scrollHeight;break;
+      case 'close-general-support':S.generalSupport=false;render();break;
+      case 'gsup-send':sendGeneralSupport();break;
       case 'support-to-admin':S.support=true;S.supportSide=(S.persona==='pro'?'pro':'client');S.persona='admin';S.admin.view='home';S.admin.sel=null;render();break;
       case 'support-to-user':{const side=S.supportSide||'client';S.support=false;S.supportSide=null;S.persona=(side==='pro'?'pro':'client');render();break;}
       case 'show-advantages':S.advantages=true;render();break;
@@ -2999,6 +3075,7 @@
     }
     if(S.addrForm){S.addrForm=null;render();return;}
     if(S.support){S.support=false;if(S.persona==='admin')S.supportSide=null;render();return;}
+    if(S.generalSupport){S.generalSupport=false;if(S.persona==='admin')S.genUser=null;render();return;}
     if(S.adminSupervise){S.adminSupervise=false;render();return;}
     if(S.finishing){S.finishing=false;render();return;}
     if(S.disputing){S.disputing=false;render();return;}
@@ -3065,7 +3142,7 @@
       if((CONFIG.adminEmails||[]).map(function(e){return e.toLowerCase();}).indexOf((user.email||'').toLowerCase())>=0){
         S.account={name:'Ti-Services',email:user.email||'',uid:user.uid,role:'admin'};
         S.persona='admin';S.admin={view:'home',sel:null};S.onboarded=true;S.authView=null;render();
-        refreshAdminArtisans();initAdminPush();subscribeAdminThreads();return;
+        refreshAdminArtisans();initAdminPush();subscribeAdminThreads();subscribeAdminGeneralSupport();return;
       }
       // Compte artisan : on route vers l'espace pro (statut lu dans la fiche artisans).
       if((data&&data.role)==='artisan'){
@@ -3078,6 +3155,7 @@
         S.onboarded=true;S.authView=null;S.proNav='home';render();
         if(typeof Notification!=='undefined'&&Notification.permission==='granted')registerPush('artisan');
         subscribeProStatus(user.uid);
+        S.genSupport=(data&&Array.isArray(data.support))?data.support.slice():[];subscribeUserSupport(user.uid);
         if(S.proStatus==='approved'){subscribeOpenRequests();loadProMissions(user.uid);}
         return;
       }
@@ -3100,6 +3178,7 @@
       S.history=(data&&Array.isArray(data.history)&&data.history.length)?data.history:(S.history||[]);S.recurring=(data&&Array.isArray(data.recurring)&&data.recurring.length)?data.recurring:(S.recurring||[]);S.card=(data&&data.card)||S.card||null;
       S.onboarded=true;S.authView=null;S.cardForm=false;render();
       if(typeof Notification!=='undefined'&&Notification.permission==='granted')registerPush('client');
+      S.genSupport=(data&&Array.isArray(data.support))?data.support.slice():[];subscribeUserSupport(user.uid);
       loadActiveRequests(user.uid);
     }catch(e){ console.warn(e); }
   }

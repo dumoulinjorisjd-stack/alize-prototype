@@ -311,3 +311,31 @@ exports.notifySupportMessage = onDocumentUpdated('requests/{reqId}', async (even
   await handle('supportClient', 'clientUid', 'clientName', 'Client');
   await handle('supportPro', 'providerUid', 'providerName', 'Artisan');
 });
+
+/**
+ * notifyGeneralSupport : support GÉNÉRAL (hors réservation), stocké dans
+ * users/{uid}.support. Message d'un utilisateur -> push à l'admin ; réponse de
+ * l'admin -> push à l'utilisateur.
+ */
+exports.notifyGeneralSupport = onDocumentUpdated('users/{uid}', async (event) => {
+  const before = (event.data && event.data.before && event.data.before.data()) || {};
+  const after = (event.data && event.data.after && event.data.after.data()) || {};
+  const b = Array.isArray(before.support) ? before.support : [];
+  const a = Array.isArray(after.support) ? after.support : [];
+  if (a.length <= b.length) return;
+  const last = a[a.length - 1] || {};
+  const body = String(last.text || 'Nouveau message').slice(0, 140);
+  const db = getFirestore();
+  const uid = event.params.uid;
+  if (last.from === 'admin') {
+    const tokens = after.pushTokens || [];
+    await pushMulticast(tokens, 'Ti-Services · Support', body, '/',
+      (tok) => db.collection('users').doc(uid).update({ pushTokens: FieldValue.arrayRemove(tok) }));
+  } else {
+    let tokens = [];
+    try { const ts = await db.collection('adminTokens').get(); tokens = ts.docs.map((d) => d.id).filter(Boolean); } catch (_) {}
+    const who = (after.name || 'Un utilisateur').toString().slice(0, 60);
+    await pushMulticast(tokens, 'Support général — ' + who, body, '/',
+      (tok) => db.collection('adminTokens').doc(tok).delete());
+  }
+});
