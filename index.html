@@ -1544,6 +1544,19 @@
       if(FB&&FB.auth&&FB.auth.currentUser&&!isDemo()){try{FB.f.updateDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{support:FB.f.arrayUnion(msg)});}catch(_){}}
     }
   }
+  // Accusés de lecture du support général : l'utilisateur marque les réponses admin
+  // comme lues (supReadUser) ; l'admin marque les messages de l'utilisateur comme lus
+  // (supReadAdmin). Les règles autorisent chacun à écrire ces champs sur la fiche visée.
+  function markGenSupportReadUser(){
+    if(!(FB&&FB.auth&&FB.auth.currentUser)||isDemo())return;
+    const now=Date.now();S.genSupReadUser=now;
+    try{FB.f.updateDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{supReadUser:now});}catch(_){}
+  }
+  function markGenSupportReadAdmin(){
+    if(!S.genUser||!(FB&&FB.db)||isDemo())return;
+    const now=Date.now();S.genUser.supReadAdmin=now;
+    try{FB.f.updateDoc(FB.f.doc(FB.db,'users',S.genUser.uid),{supReadAdmin:now});}catch(_){}
+  }
   function generalSupportChat(){
     const admin=(S.persona==='admin');
     const raw=admin?((S.genUser&&S.genUser.support)||[]):(S.genSupport||[]);
@@ -1551,11 +1564,17 @@
     const who=admin?((S.genUser&&S.genUser.name)||'Utilisateur'):'';
     const roleLbl=admin?((S.genUser&&S.genUser.role==='artisan')?'Artisan':'Client'):'';
     const list=thread.length?thread.map(function(x){const mine=admin?(x.from==='admin'):(x.from!=='admin');return `<div class="bub ${mine?'me':'them'}">${esc(x.text)}</div>`;}).join(''):`<p class="mini" style="text-align:center;color:var(--muted);margin:auto 0">${admin?'Aucun message pour l’instant.':'Une question sur votre compte ou l’application&nbsp;? Écrivez à Ti-Services.'}</p>`;
+    // Accusé de lecture sous mon dernier message : « Lu » si l'autre partie a ouvert la
+    // conversation après l'envoi, sinon « Envoyé ».
+    const otherReadAt=admin?((S.genUser&&S.genUser.supReadUser)||0):(S.genSupReadAdmin||0);
+    let lastMine=null;for(let i=thread.length-1;i>=0;i--){const isMine=admin?(thread[i].from==='admin'):(thread[i].from!=='admin');if(isMine){lastMine=thread[i];break;}}
+    const wasRead=lastMine&&otherReadAt>=(lastMine.at||0);
+    const readStatus=lastMine?`<div class="mini" style="align-self:flex-end;margin-top:-2px;font-weight:650;color:${wasRead?'var(--teal-deep)':'var(--muted)'}">${wasRead?'✓✓ Lu':'✓ Envoyé'}</div>`:'';
     const back=admin?`data-adm="msg"`:`data-act="close-general-support"`;
     return `<div class="pad"><button class="reset" ${back} style="margin:8px 0 2px">← Retour</button>
       <div class="row" style="gap:11px;align-items:center;margin-top:2px"><div class="avatar" style="width:42px;height:42px;font-size:14px;background:linear-gradient(135deg,var(--teal),var(--teal-deep))">TS</div><div style="flex:1"><b style="font-size:16px;font-family:var(--f-disp)">Ti-Services · Support</b><div class="mini">${admin?('Support général · '+esc(who)+' ('+roleLbl+')'):'Assistance Ti-Services'}</div></div></div>
       <div class="banner teal" style="margin-top:12px">${I.support}<span>${admin?'Question générale, hors réservation.':'Une question générale (compte, application, autre)&nbsp;? Écrivez-nous ici — ce n’est lié à aucune prestation.'}</span></div>
-      <div class="chat-msgs">${list}</div>
+      <div class="chat-msgs">${list}${readStatus}</div>
       <div class="chatbar"><input id="gsupInput" placeholder="${admin?'Répondre…':'Écrire à Ti-Services…'}" autocomplete="off" maxlength="500"><button class="btn primary" data-act="gsup-send">Envoyer</button></div>
       <div style="height:6px"></div></div>`;
   }
@@ -1568,9 +1587,11 @@
         const d=snap.exists()?(snap.data()||{}):{};
         const arr=Array.isArray(d.support)?d.support.slice().sort(function(a,b){return (a.at||0)-(b.at||0);}):[];
         const prev=(S.genSupport||[]).length;
-        if(prev===arr.length)return;
+        const prevRead=S.genSupReadAdmin||0;const newRead=d.supReadAdmin||0;
+        S.genSupReadAdmin=newRead;
+        if(prev===arr.length&&prevRead===newRead)return;
         S.genSupport=arr;
-        if(arr.length>prev){const last=arr[arr.length-1]||{};if(last.from==='admin'){const txt=String(last.text||'').slice(0,120);notify('Ti-Services · Support',txt,'ti-gsup');if(prev>0&&!S.generalSupport)toast('Ti-Services · '+txt);}}
+        if(arr.length>prev){const last=arr[arr.length-1]||{};if(last.from==='admin'){const txt=String(last.text||'').slice(0,120);if(S.generalSupport){markGenSupportReadUser();}else{notify('Ti-Services · Support',txt,'ti-gsup');if(prev>0)toast('Ti-Services · '+txt);}}}
         if(S.generalSupport)render();
       },function(err){console.warn('user support',err);});
     }catch(e){console.warn(e);}
@@ -1582,10 +1603,10 @@
     try{ if(adminGeneralUnsub){try{adminGeneralUnsub();}catch(_){}}
       adminGeneralUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'users'),function(snap){
         const list=[];
-        snap.forEach(function(docu){const d=docu.data()||{};const sup=Array.isArray(d.support)?d.support.slice().sort(function(a,b){return (a.at||0)-(b.at||0);}):[];if(!sup.length)return;list.push({uid:docu.id,name:d.name||'Utilisateur',role:d.role||'client',support:sup,ts:sup[sup.length-1].at||0});});
+        snap.forEach(function(docu){const d=docu.data()||{};const sup=Array.isArray(d.support)?d.support.slice().sort(function(a,b){return (a.at||0)-(b.at||0);}):[];if(!sup.length)return;list.push({uid:docu.id,name:d.name||'Utilisateur',role:d.role||'client',support:sup,supReadUser:d.supReadUser||0,supReadAdmin:d.supReadAdmin||0,ts:sup[sup.length-1].at||0});});
         list.sort(function(a,b){return b.ts-a.ts;});
         S.adminGeneral=list;
-        if(S.genUser){const u=list.find(function(x){return x.uid===S.genUser.uid;});if(u){S.genUser=u;if(S.generalSupport&&S.persona==='admin')render();return;}}
+        if(S.genUser){const u=list.find(function(x){return x.uid===S.genUser.uid;});if(u){const grew=(u.support||[]).length>((S.genUser.support||[]).length);S.genUser=u;if(S.generalSupport&&S.persona==='admin'){if(grew)markGenSupportReadAdmin();render();}return;}}
         if(S.persona==='admin'&&!(S.generalSupport&&S.genUser)&&!(S.support&&S.mission)&&!S.adminSupervise&&S.admin.view==='msg')render();
       },function(err){console.warn('admin general support',err);});
     }catch(e){console.warn(e);}
@@ -2886,7 +2907,7 @@
       else if(act==='msg'){S.admin.view='msg';S.support=false;S.supportSide=null;S.adminSupervise=false;S.generalSupport=false;S.genUser=null;S.mission=null;render();return;}
       else if(act==='sup'){const th=(S.adminThreads||[]).find(function(x){return x.reqId===id;});if(th){S.mission=th;S.supportSide=(parts[2]==='pro'?'pro':'client');S.support=true;S.adminSupervise=false;S.admin.view='msg';watchRequest(th.reqId);render();view.scrollTop=view.scrollHeight;}return;}
       else if(act==='supervise'){const th=(S.adminThreads||[]).find(function(x){return x.reqId===id;});if(th){S.mission=th;S.adminSupervise=true;S.support=false;S.admin.view='msg';watchRequest(th.reqId);render();view.scrollTop=view.scrollHeight;}return;}
-      else if(act==='gensup'){const u=(S.adminGeneral||[]).find(function(x){return x.uid===id;});if(u){S.genUser=u;S.generalSupport=true;S.support=false;S.adminSupervise=false;S.admin.view='msg';render();view.scrollTop=view.scrollHeight;}return;}
+      else if(act==='gensup'){const u=(S.adminGeneral||[]).find(function(x){return x.uid===id;});if(u){S.genUser=u;S.generalSupport=true;S.support=false;S.adminSupervise=false;S.admin.view='msg';markGenSupportReadAdmin();render();view.scrollTop=view.scrollHeight;}return;}
       else if(act==='home'){S.admin.view='home';S.admin.sel=null;}
       else if(act==='art'){S.admin.view='art';S.admin.sel=id;}
       else if(act==='cli'){S.admin.view='cli';S.admin.sel=id;}
@@ -3064,7 +3085,7 @@
       case 'open-support':S.support=true;render();view.scrollTop=view.scrollHeight;break;
       case 'close-support':S.support=false;if(S.persona==='admin')S.supportSide=null;render();break;
       case 'support-send':sendSupport();break;
-      case 'open-general-support':S.generalSupport=true;render();view.scrollTop=view.scrollHeight;break;
+      case 'open-general-support':S.generalSupport=true;markGenSupportReadUser();render();view.scrollTop=view.scrollHeight;break;
       case 'close-general-support':S.generalSupport=false;render();break;
       case 'gsup-send':sendGeneralSupport();break;
       case 'support-to-admin':S.support=true;S.supportSide=(S.persona==='pro'?'pro':'client');S.persona='admin';S.admin.view='home';S.admin.sel=null;render();break;
