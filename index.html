@@ -1938,6 +1938,7 @@
         <p class="mini" style="margin-top:10px;color:var(--muted)">À Saint-Barthélemy, le point GPS est le repère le plus fiable — enregistré une fois, réutilisé à chaque commande.</p></div>
       <button class="card" data-act="show-advantages" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">Garantie Ti-Services</b><span class="chip good">Active</span></div><p class="sub" style="margin-top:8px">Artisan absent ou travail non conforme&nbsp;? Vous n'êtes pas débité et on vous retrouve quelqu'un.</p><span class="mini" style="color:var(--teal-deep);font-weight:650;margin-top:8px;display:inline-block">Voir tous vos avantages ›</span></button>
       <button class="card" data-act="open-share" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.share}&nbsp;Partager Ti-Services</b><span class="mini" style="color:var(--teal-deep);font-weight:650">QR &amp; lien ›</span></div><p class="sub" style="margin-top:8px">Un QR à faire flasher et un lien à envoyer — partagez l'app à vos voisins en un geste.</p></button>
+      ${(window.innerWidth>=768)?`<div class="card" style="padding:16px;margin-top:12px"><div class="row between" style="gap:12px"><div class="row" style="gap:11px;align-items:center"><span class="benic">${I.gear}</span><div><b style="font-size:14px">Affichage ordinateur</b><div class="mini" style="margin-top:1px">Menu latéral et colonne large — pratique sur tablette et grand écran.</div></div></div><button class="btn ${forceDesktopPref()?'primary':'ghost'} sm" style="width:auto;padding:8px 14px;white-space:nowrap" data-act="toggle-desktop">${forceDesktopPref()?'✓ Activé':'Activer'}</button></div></div>`:''}
       ${S.demoMode?`<div class="banner teal" style="margin-top:16px">${I.bolt}<span><b>Mode démonstration</b> — vous explorez librement tous les espaces. Ce n'est pas un vrai compte.</span></div><button class="btn ghost sm" data-act="exit-demo" style="margin-top:10px">Quitter la démo</button>`:(FB?`<button class="btn ghost sm" data-act="logout" style="margin-top:16px">Se déconnecter</button>`:'')}
       ${isDemo()?`<p class="mini" style="text-align:center;margin-top:14px">Explorer les autres espaces&nbsp;: <button class="linklike" data-act="demo-go-pro">${I.hardhat} Artisan</button> · <button class="linklike" data-act="demo-go-concierge">${I.concierge} Conciergerie</button> · <button class="linklike" data-act="demo-go-admin">${I.gear} Admin</button></p>`:''}
       ${(!S.demoMode&&FB)?`<p class="mini" style="text-align:center;margin-top:16px"><button class="linklike" data-act="account-delete" style="color:var(--coral-deep)">Supprimer mon compte</button></p>`:''}
@@ -2835,6 +2836,7 @@
     if(b.dataset.act&&b.dataset.act.indexOf('invoice:')===0){S.invoiceId=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('histinv:')===0){const h=(S.history||[])[+b.dataset.act.split(':')[1]];if(h){S.histInvoice=h;render();}return;}
     if(b.dataset.act==='refresh-requests'){manualRefreshRequests();return;}
+    if(b.dataset.act==='toggle-desktop'){toggleForceDesktop();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('rbfreq:')===0){S.rebookFreq=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('reqview:')===0){S.proReqView=b.dataset.act.slice('reqview:'.length);S.proReqSlot=null;S.proReqPick=false;render();return;}
     if(b.dataset.proreqslot){if(b.dataset.proreqslot==='__pick'){S.proReqPick=true;}else{S.proReqPick=false;S.proReqSlot=b.dataset.proreqslot;}render();return;}
@@ -3120,12 +3122,12 @@
   (function(){const c=document.getElementById('clock');if(!c)return;const tick=function(){try{const d=new Date();c.textContent=d.getHours()+':'+String(d.getMinutes()).padStart(2,'0');}catch(_){}};tick();setInterval(tick,20000);})();
   // Mode ordinateur : au-delà de 1024 px, l'app passe en plein écran avec menu
   // latéral (le mobile n'est jamais affecté). Bascule dynamique au redimensionnement.
-  (function(){
-    const mq=window.matchMedia('(min-width:1024px)');
-    const apply=function(){document.body.classList.toggle('desktop',mq.matches);};
-    apply();
-    if(mq.addEventListener)mq.addEventListener('change',apply);else if(mq.addListener)mq.addListener(apply);
-  })();
+  const _deskMq=window.matchMedia('(min-width:1024px)');
+  function forceDesktopPref(){try{return localStorage.getItem('ti_forceDesktop')==='1';}catch(_){return false;}}
+  function applyDesktopMode(){document.body.classList.toggle('desktop',_deskMq.matches||forceDesktopPref());}
+  function toggleForceDesktop(){try{ if(forceDesktopPref())localStorage.removeItem('ti_forceDesktop'); else localStorage.setItem('ti_forceDesktop','1'); }catch(_){} applyDesktopMode(); if(typeof render==='function')render(); }
+  applyDesktopMode();
+  if(_deskMq.addEventListener)_deskMq.addEventListener('change',applyDesktopMode);else if(_deskMq.addListener)_deskMq.addListener(applyDesktopMode);
   let deferredPrompt=null;
   const installBtn=document.getElementById('installBtn');
   const installSteps=document.getElementById('installSteps');
@@ -3298,7 +3300,9 @@
   // propre écoute watchRequest).
   let activeReqUnsub=null;
   function loadActiveRequests(uid){
-    if(!(FB&&FB.db)||!uid)return;
+    // Sans session authentifiée, Firestore refuse la lecture (permission-denied) :
+    // inutile de tenter (et surtout de montrer une erreur alarmante à l'accueil).
+    if(!(FB&&FB.db&&FB.auth&&FB.auth.currentUser)||!uid)return;
     try{
       const q=FB.f.query(FB.f.collection(FB.db,'requests'),FB.f.where('clientUid','==',uid));
       if(activeReqUnsub){try{activeReqUnsub();}catch(_){}}
@@ -3325,7 +3329,7 @@
         // Filet anti-doublon : jamais deux missions partageant le même reqId.
         const seen={};S.missions=S.missions.filter(function(x){if(!x.reqId)return true;if(seen[x.reqId])return false;seen[x.reqId]=1;return true;});
         if(S.persona==='client'){cacheClientLocal();render();}
-      },function(err){console.warn('active requests listen',err);toast('⚠︎ Réservations non chargées : '+fbErrTxt(err));});
+      },function(err){console.warn('active requests listen',err);var c=(err&&err.code)||'';if(!/permission-denied|unauthenticated/i.test(c))toast('⚠︎ Réservations non chargées : '+fbErrTxt(err));});
     }catch(e){console.warn('load active requests',e);}
   }
   // Resynchronise les demandes du client. Sur mobile, l'écoute Firestore est souvent
