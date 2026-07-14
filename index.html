@@ -1505,7 +1505,7 @@
         const prev=(S.genSupport||[]).length;
         if(prev===arr.length)return;
         S.genSupport=arr;
-        if(arr.length>prev){const last=arr[arr.length-1]||{};if(last.from==='admin')notify('Ti-Services · Support',String(last.text||'').slice(0,120),'ti-gsup');}
+        if(arr.length>prev){const last=arr[arr.length-1]||{};if(last.from==='admin'){const txt=String(last.text||'').slice(0,120);notify('Ti-Services · Support',txt,'ti-gsup');if(prev>0&&!S.generalSupport)toast('Ti-Services · '+txt);}}
         if(S.generalSupport)render();
       },function(err){console.warn('user support',err);});
     }catch(e){console.warn(e);}
@@ -2062,7 +2062,7 @@
           if(r.messages.length>prevLen){
             const mine=(S.persona==='pro')?'pro':'client';
             const incoming=m.chat.slice(prevLen).filter(function(x){return x&&x.from&&x.from!==mine;});
-            if(incoming.length){const who=(mine==='pro')?(m.clientName||'Le client'):((m.provider&&m.provider.nm)||'Votre artisan');notify(who,String(incoming[incoming.length-1].text||'Nouveau message').slice(0,120),'ti-msg-'+m.reqId);}
+            if(incoming.length){const who=(mine==='pro')?(m.clientName||'Le client'):((m.provider&&m.provider.nm)||'Votre artisan');const txt=String(incoming[incoming.length-1].text||'Nouveau message').slice(0,120);notify(who,txt,'ti-msg-'+m.reqId);if(prevLen>0&&!((S.chat||S.support)&&S.mission===m))toast(who+' · '+txt);}
           }
         }
         // Messagerie support (client↔Ti-Services / artisan↔Ti-Services), stockée
@@ -2077,7 +2077,7 @@
           if(arr.length>prev){
             const last=m.support[side][m.support[side].length-1]||{};
             const forMe=(S.persona==='admin'&&last.from!=='admin')||(S.persona==='client'&&side==='client'&&last.from==='admin')||(S.persona==='pro'&&side==='pro'&&last.from==='admin');
-            if(forMe){const t=(S.persona==='admin')?('Support — '+(side==='client'?(m.clientName||'client'):((m.provider&&m.provider.nm)||'artisan'))):'Ti-Services · Support';notify(t,String(last.text||'').slice(0,120),'ti-sup-'+m.reqId+'-'+side);}
+            if(forMe){const t=(S.persona==='admin')?('Support — '+(side==='client'?(m.clientName||'client'):((m.provider&&m.provider.nm)||'artisan'))):'Ti-Services · Support';const txt=String(last.text||'').slice(0,120);notify(t,txt,'ti-sup-'+m.reqId+'-'+side);const viewing=(S.support&&S.mission===m&&(S.persona!=='admin'||S.supportSide===side));if(prev>0&&!viewing)toast(t+' · '+txt);}
           }
         }
         syncSupport('supportClient','client');
@@ -2896,7 +2896,7 @@
       case 'toggle-pcharte':S.proForm.charte=!S.proForm.charte;render();break;
       case 'edit-profile':{const zone=(S.account&&S.account.zone)||(S.clientForm&&S.clientForm.zone)||'Gustavia';S.profileForm={name:((S.account&&S.account.name)||(S.clientForm&&S.clientForm.name)||'').trim(),email:(S.account&&S.account.email)||(S.clientForm&&S.clientForm.email)||'',zone:zone,phone:(S.account&&S.account.phone)||'',photo:(S.account&&S.account.photo)||(S.clientForm&&S.clientForm.photo)||''};render();break;}
       case 'profile-cancel':S.profileForm=null;render();break;
-      case 'save-profile':{const f=S.profileForm;if(!f||(f.name||'').trim().length<2){toast('Indiquez votre nom');break;}const nm=f.name.trim(),ph=(f.phone||'').trim(),pht=f.photo||'';S.account=Object.assign({},S.account,{name:nm,zone:f.zone,phone:ph,photo:pht});S.clientForm=Object.assign({},S.clientForm,{name:nm,zone:f.zone,photo:pht});saveAccount(S.account);if(FB&&FB.auth&&FB.auth.currentUser){try{FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{name:nm,zone:f.zone,phone:ph,photo:pht},{merge:true});}catch(_){}}S.profileForm=null;render();toast('Informations mises à jour');break;}
+      case 'save-profile':{const f=S.profileForm;if(!f||(f.name||'').trim().length<2){toast('Indiquez votre nom');break;}const nm=f.name.trim(),ph=(f.phone||'').trim(),pht=f.photo||'';S.account=Object.assign({},S.account,{name:nm,zone:f.zone,phone:ph,photo:pht});S.clientForm=Object.assign({},S.clientForm,{name:nm,zone:f.zone,photo:pht});saveAccount(S.account);if(FB&&FB.auth&&FB.auth.currentUser){try{FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{name:nm,zone:f.zone,phone:ph,photo:pht},{merge:true});}catch(_){}}saveClientCloud();S.profileForm=null;render();toast('Informations mises à jour');break;}
       case 'add-card':S.cardForm=true;render();break;
       case 'card-cancel':S.cardForm=false;render();break;
       case 'card-remove':S.card=null;S.cardForm=false;saveClientCloud();render();toast('Moyen de paiement retiré');break;
@@ -3123,6 +3123,9 @@
       const [appM,authM,fsM]=await Promise.all([import(V+'firebase-app.js'),import(V+'firebase-auth.js'),import(V+'firebase-firestore.js')]);
       const app=appM.initializeApp(CONFIG.firebase);
       FB={app,auth:authM.getAuth(app),db:fsM.getFirestore(app),a:authM,f:fsM};
+      // Persistance locale explicite : la session doit survivre à la fermeture de
+      // l'app (sinon reconnexion forcée à chaque ouverture, et données « perdues »).
+      try{ if(authM.setPersistence&&authM.browserLocalPersistence)authM.setPersistence(FB.auth,authM.browserLocalPersistence).catch(function(){}); }catch(_){}
       authM.onAuthStateChanged(FB.auth,function(user){ if(user){loadUserProfile(user);} else if(S.onboarded){S.onboarded=false;S.mission=null;S.draft=null;S.persona='client';S.clientNav='home';render();} });
       render(); // rafraîchit l'écran (ex. bouton Google actif)
       loadCatalog(); // catalogue partagé (services « Autre » ajoutés par l'admin)
