@@ -39,9 +39,9 @@ exports.notifyAdminNewArtisan = onDocumentCreated('artisans/{artisanId}', async 
   const message = {
     tokens,
     data: {
-      title: 'Nouvelle candidature',
+      title: 'Console admin · Nouvelle candidature',
       body: name + ' souhaite rejoindre Ti-Services.',
-      url: './',
+      url: './?open=admin',
     },
     webpush: {
       fcmOptions: {link: '/'},
@@ -88,9 +88,16 @@ exports.notifyArtisansNewRequest = onDocumentCreated('requests/{reqId}', async (
     .map((d) => d.id);
   if (!uids.length) { console.log('Aucun artisan validé pour ce service.'); return; }
 
+  // Priorité : si le client a demandé un artisan précis, seul lui est notifié
+  // pendant la fenêtre de priorité (le repli vers tous les artisans après le délai
+  // est géré côté application, qui rend la demande visible à tous passé priorityUntil).
+  const preferred = r.preferredProviderUid;
+  const targetUids = preferred ? (uids.indexOf(preferred) >= 0 ? [preferred] : []) : uids;
+  if (!targetUids.length) { console.log('Artisan prioritaire indisponible — repli géré côté app.'); return; }
+
   // Jetons push de ces artisans (avec correspondance jeton -> uid pour le nettoyage).
   const tokenToUid = {};
-  await Promise.all(uids.map(async (uid) => {
+  await Promise.all(targetUids.map(async (uid) => {
     try {
       const u = await db.collection('users').doc(uid).get();
       ((u.data() || {}).pushTokens || []).forEach((tok) => { tokenToUid[tok] = uid; });
@@ -104,8 +111,10 @@ exports.notifyArtisansNewRequest = onDocumentCreated('requests/{reqId}', async (
   const message = {
     tokens,
     data: {
-      title: 'Nouvelle demande à prendre',
-      body: svcName + (zone ? ' · ' + zone : '') + ' — premier arrivé, premier servi.',
+      title: preferred ? 'Espace artisan · Mission pour vous' : 'Espace artisan · Nouvelle mission',
+      body: preferred
+        ? (svcName + (zone ? ' · ' + zone : '') + ' — demandée pour vous en priorité.')
+        : (svcName + (zone ? ' · ' + zone : '') + ' — premier arrivé, premier servi.'),
       url: './?open=missions',
     },
     webpush: { fcmOptions: { link: '/?open=missions' }, headers: { Urgency: 'high' } },
@@ -160,11 +169,11 @@ exports.notifyArtisanApproved = onDocumentUpdated('artisans/{artisanId}', async 
       await getMessaging().sendEachForMulticast({
         tokens,
         data: {
-          title: 'Inscription validée 🎉',
+          title: 'Espace artisan · Inscription validée 🎉',
           body: 'Votre compte Ti-Services est activé — vous pouvez recevoir des missions.',
-          url: './',
+          url: './?open=missions',
         },
-        webpush: { fcmOptions: { link: '/' }, headers: { Urgency: 'high' } },
+        webpush: { fcmOptions: { link: '/?open=missions' }, headers: { Urgency: 'high' } },
       });
     } catch (e) { console.warn('approve push', e); }
   }
@@ -226,12 +235,17 @@ exports.notifyNewMessage = onDocumentUpdated('requests/{reqId}', async (event) =
     ? (after.clientName || 'Le client')
     : (after.providerName || 'Votre artisan')).toString().slice(0, 60);
   const body = (last.text || 'Nouveau message').toString().slice(0, 140);
-  // L'artisan travaille depuis l'espace Missions ; le client depuis ses réservations.
-  const link = (from === 'client') ? '/?open=missions' : '/';
+  // L'artisan travaille depuis l'espace Missions ; le client depuis la réservation
+  // concernée (deep-link direct). Le titre indique l'espace visé (multi-comptes).
+  const link = (from === 'client')
+    ? '/?open=missions'
+    : ('/?open=wallet&r=' + event.params.reqId);
+  const spaceLabel = (from === 'client') ? 'Espace artisan' : 'Vos réservations';
+  const title = (spaceLabel + ' · ' + senderName).slice(0, 90);
 
   const res = await getMessaging().sendEachForMulticast({
     tokens,
-    data: { title: senderName, body: body, url: '.' + link },
+    data: { title: title, body: body, url: '.' + link },
     webpush: { fcmOptions: { link: link }, headers: { Urgency: 'high' } },
   });
   console.log(`Push message : ${res.successCount}/${tokens.length}`);
