@@ -1,0 +1,42 @@
+name: Déploiement Firebase PROD (t-service-prod)
+
+on:
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: "Cibles firebase deploy (--only)"
+        required: false
+        default: 'hosting,firestore:rules,functions'
+
+concurrency:
+  group: firebase-deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_ID: t-service-prod
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Vérifier le secret
+        run: |
+          if [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT_PROD }}" ]; then
+            echo "::error::Secret FIREBASE_SERVICE_ACCOUNT_PROD manquant."
+            exit 1
+          fi
+      - name: Écrire la clé
+        run: |
+          printf '%s' '${{ secrets.FIREBASE_SERVICE_ACCOUNT_PROD }}' > "$RUNNER_TEMP/gcp-key.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/gcp-key.json" >> "$GITHUB_ENV"
+      - run: npm install -g firebase-tools
+      - working-directory: functions
+        run: npm install
+      - name: Déployer
+        run: |
+          TARGETS="${{ github.event.inputs.targets }}"
+          TARGETS="${TARGETS:-hosting,firestore:rules,functions}"
+          firebase deploy --only "$TARGETS" --project "$PROJECT_ID" --non-interactive --force
