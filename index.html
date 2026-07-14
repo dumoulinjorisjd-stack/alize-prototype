@@ -2986,27 +2986,40 @@
       loadActiveRequests(user.uid);
     }catch(e){ console.warn(e); }
   }
-  // Recharge les demandes encore en cours du client (après réouverture de l'app) :
-  // elles réapparaissent dans « Mes réservations » et restent suivies en direct.
-  async function loadActiveRequests(uid){
+  // Recharge EN TEMPS RÉEL les demandes en cours du client (réouverture de l'app,
+  // nouvel appareil…). Source de vérité = Firestore : une demande enregistrée
+  // réapparaît toujours dans « Mes réservations », et se met à jour en direct.
+  // On n'écrase JAMAIS une demande locale pas encore persistée (sans reqId), et
+  // on ne supprime rien ici (la suppression d'une demande annulée passe par sa
+  // propre écoute watchRequest).
+  let activeReqUnsub=null;
+  function loadActiveRequests(uid){
     if(!(FB&&FB.db)||!uid)return;
     try{
       const q=FB.f.query(FB.f.collection(FB.db,'requests'),FB.f.where('clientUid','==',uid));
-      const snap=await FB.f.getDocs(q);
+      if(activeReqUnsub){try{activeReqUnsub();}catch(_){}}
       const active=['pending','accepted','working','done_pro','disputed'];
-      const miss=[];
-      snap.forEach(function(docu){
-        const r=docu.data()||{};
-        if(active.indexOf(r.status)<0)return;
-        const base=findSvc(r.service)||{id:r.service,nm:r.serviceName||svcNm(r.service),rate:r.rate||svcBase(r.service)};
-        const m=Object.assign(newMission(base),{_id:'m'+docu.id,reqId:docu.id,status:r.status,svc:r.service,svcName:r.serviceName||svcNm(r.service),rate:r.rate,duration:r.duration||1,unit:r.unit||'h',when:r.when||'',slot:(r.acceptedSlot||r.slot||''),zone:r.zone||'',boost:r.boost||0,slotFlex:r.slotFlex||0,notes:r.notes||'',frequency:r.frequency||'ponctuelle'});
-        if(r.providerUid){m.providerUid=r.providerUid;m.provider=Object.assign({},PROVIDERS[r.service]||{ini:'AR',jobs:0,rating:0},{nm:r.providerName||'Votre artisan',ini:inits(r.providerName||'Artisan')});}
-        if(r.finalHours!=null)m.finalHours=r.finalHours;if(r.disputeMsg)m.disputeMsg=r.disputeMsg;
-        if(Array.isArray(r.messages))m.chat=r.messages.slice().sort(function(a,b){return (a.at||0)-(b.at||0);});
-        miss.push(m);
-        subscribeClientRequest(docu.id);
-      });
-      if(miss.length){S.missions=miss;if(S.persona==='client')render();}
+      activeReqUnsub=FB.f.onSnapshot(q,function(snap){
+        S.missions=S.missions||[];
+        let changed=false;
+        snap.forEach(function(docu){
+          const r=docu.data()||{};
+          if(active.indexOf(r.status)<0)return;
+          let m=S.missions.find(function(x){return x.reqId===docu.id;});
+          if(!m){
+            const base=findSvc(r.service)||{id:r.service,nm:r.serviceName||svcNm(r.service),rate:r.rate||svcBase(r.service)};
+            m=Object.assign(newMission(base),{_id:'m'+docu.id,reqId:docu.id});
+            S.missions.unshift(m);
+            subscribeClientRequest(docu.id);
+            changed=true;
+          }
+          m.status=r.status;m.svc=r.service;m.svcName=r.serviceName||svcNm(r.service);m.rate=r.rate;m.duration=r.duration||1;m.unit=r.unit||'h';m.when=r.when||'';m.slot=r.acceptedSlot||r.slot||m.slot||'';m.zone=r.zone||m.zone||'';m.boost=r.boost||0;m.slotFlex=r.slotFlex||0;m.notes=r.notes||m.notes||'';m.frequency=r.frequency||m.frequency||'ponctuelle';
+          if(r.providerUid){m.providerUid=r.providerUid;if(!m.provider||m.provider.nm==='Votre artisan')m.provider=Object.assign({},PROVIDERS[r.service]||{ini:'AR',jobs:0,rating:0},{nm:r.providerName||'Votre artisan',ini:inits(r.providerName||'Artisan')});}
+          if(r.finalHours!=null)m.finalHours=r.finalHours;if(r.disputeMsg)m.disputeMsg=r.disputeMsg;
+          if(Array.isArray(r.messages))m.chat=r.messages.slice().sort(function(a,b){return (a.at||0)-(b.at||0);});
+        });
+        if(S.persona==='client'){cacheClientLocal();render();}
+      },function(err){console.warn('active requests listen',err);});
     }catch(e){console.warn('load active requests',e);}
   }
   // Recharge les missions ACCEPTÉES par l'artisan (à réaliser) après réouverture.
