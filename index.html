@@ -946,8 +946,25 @@
   function fidNext(jobs){for(const t of fidTiers()){if(jobs<t.min)return t;}return null;}
   function fidColor(key){return {bronze:'#B0743A',argent:'#8A93A6',or:'#D6A72E',platine:'#4FA6C0'}[key]||'var(--teal-deep)';}
   function digits(p){return (p||'').replace(/[^0-9]/g,'');}
+  // Numéro au format international SANS « + » pour wa.me (WhatsApp).
+  // WhatsApp refuse un numéro national (« 0628… » → « +0628… » invalide) : il faut
+  // l'indicatif pays. Heuristique locale : 0690/0691 → +590 (Saint-Barth / Guadeloupe),
+  // 06/07 (et autres) métropole → +33. Un numéro déjà en +indicatif ou 00indicatif est respecté.
+  function waNumber(p){
+    const raw=(p||'').trim();
+    let d=digits(raw);
+    if(!d)return '';
+    if(raw.charAt(0)==='+')return d;            // déjà +indicatif… → on garde tel quel
+    if(d.indexOf('00')===0)return d.slice(2);   // 00indicatif… → indicatif…
+    if(d.charAt(0)==='0'){                        // format national français
+      const rest=d.slice(1);
+      if(/^69[01]/.test(rest))return '590'+rest; // 0690/0691 = mobile Saint-Barth / Guadeloupe
+      return '33'+rest;                           // 06/07… = mobile métropole
+    }
+    return d;                                      // déjà international sans + (ex. 33…, 590…)
+  }
   function contactRow(p){return `<div class="contacts">`+
-    `<a class="btn ghost sm" href="https://wa.me/${digits(p.phone)}" target="_blank" rel="noopener">💬 WhatsApp</a>`+
+    `<a class="btn ghost sm" href="https://wa.me/${waNumber(p.phone)}" target="_blank" rel="noopener">💬 WhatsApp</a>`+
     `<a class="btn ghost sm" href="tel:${digits(p.phone)}">📞 Appeler</a>`+
     `<a class="btn ghost sm" href="mailto:${p.email||''}">✉️ E-mail</a></div>`;}
   const COMMISSION=0.15;
@@ -1293,7 +1310,7 @@
           <div class="row between" style="margin-top:6px"><span class="sub">Palier fidélité · commission</span><b><span class="chip" style="padding:2px 8px;background:${fidColor(fidFor(a.jobs).key)}22;color:${fidColor(fidFor(a.jobs).key)}">★ ${fidFor(a.jobs).nm}</span> ${fidFor(a.jobs).pct} %</b></div>
           ${a.status==='refuse'&&a.reason?`<hr class="dashed"><div class="row between"><span class="sub">Motif du refus</span><b style="color:var(--coral-deep);text-align:right;max-width:60%">${a.reason}</b></div>`:''}
         </div>
-        <div class="card" style="padding:16px;margin-top:12px"><span class="eyebrow" style="color:var(--muted)">Contacter avant décision</span>${contactRow(a)}</div>
+        <div class="card" style="padding:16px;margin-top:12px"><span class="eyebrow" style="color:var(--muted)">${a.status==='attente'?'Contacter avant décision':'Contacter l’artisan'}</span>${contactRow(a)}</div>
         ${a.status==='attente'?`<div class="row" style="gap:8px;margin-top:14px"><button class="btn good" data-adm="valid-art:${a.id}" ${(insStatus(a)==='valide'&&a.siret)?'':'disabled'}>Valider le prestataire</button><button class="btn ghost" data-adm="rej-art:${a.id}">Refuser</button></div>${(insStatus(a)!=='valide'||!a.siret)?`<p class="mini" style="margin-top:8px;color:var(--coral-deep)">${!a.siret?'SIRET manquant. ':''}${insStatus(a)==='none'?'Attestation d’assurance manquante. ':insStatus(a)==='attente'?'Attestation à vérifier et valider ci-dessus. ':insStatus(a)==='refuse'?'Attestation refusée. ':''}Validation du prestataire impossible tant que le dossier n'est pas complet.</p>`:''}`:''}
         ${a.status==='refuse'?`<div class="row" style="gap:8px;margin-top:14px"><button class="btn ghost" data-adm="reexam-art:${a.id}">Réexaminer la candidature</button></div>`:''}
       </div>`;
@@ -1764,7 +1781,7 @@
       <p class="mini" style="text-align:center;margin-top:6px;color:var(--muted)">Vous pouvez naviguer ailleurs — revenez ici via l'onglet <b>Accueil</b>.</p></div>${clientNavbar()}`;
   }
   function clientConfirm(){
-    const m=S.mission,t=totals(m),p=m.provider;
+    const m=S.mission,t=totals(m),p=m.provider||{nm:'Votre artisan',ini:'AR',jobs:0};
     const adj=(m.finalHours!=null&&m.finalHours!==m.duration);const agreed=m.rate*m.duration;const d=(m.finalHours||m.duration)-m.duration;
     return `<div class="pad"><div style="height:10px"></div><span class="eyebrow">Prestation terminée</span><div class="h-hello">${p.nm} a terminé</div>
       <p class="sub">${adj?'L’artisan a <b>ajusté la durée</b>. Vérifiez, puis validez l’ajustement — ou signalez votre désaccord.':'Vérifiez que tout est bon, puis confirmez. <b>Le paiement se fait tout seul.</b>'}</p>
@@ -1858,11 +1875,30 @@
         let touched=false;
         // Infos artisan (vues côté client)
         if(r.providerName){if(!m.provider||!m.providerUid||m.provider.nm==='Votre artisan'){m.provider=Object.assign({},PROVIDERS[m.svc]||{ini:'AR',rating:0,jobs:0},{nm:r.providerName,ini:inits(r.providerName)});}m.providerUid=r.providerUid||m.providerUid;}
+        if(r.providerUid&&!m.providerUid)m.providerUid=r.providerUid;
+        // Filet de sécurité : dès que la demande est prise en charge, le client DOIT
+        // avoir un artisan à afficher, même si son nom n'a pas encore été renseigné —
+        // sinon l'écran de validation (qui lit provider.nm) planterait et la
+        // réservation semblerait « disparaître ».
+        if(!m.provider&&['accepted','working','done_pro','disputed'].indexOf(r.status||m.status)>=0){
+          m.provider=Object.assign({},PROVIDERS[m.svc]||{ini:'AR',rating:0,jobs:0},{nm:r.providerName||'Votre artisan',ini:inits(r.providerName||'Votre artisan')});
+        }
         if(r.acceptedSlot&&m.slot!==r.acceptedSlot){m.slot=r.acceptedSlot;if(r.slotFlex)m.proposedSlot=r.acceptedSlot;touched=true;}
         if(r.finalHours!=null&&m.finalHours!==r.finalHours){m.finalHours=r.finalHours;touched=true;}
         if(r.disputeMsg&&m.disputeMsg!==r.disputeMsg){m.disputeMsg=r.disputeMsg;touched=true;}
         // Messagerie (stockée dans le doc de demande → lisible par client, artisan assigné, admin)
-        if(Array.isArray(r.messages)&&(m.chat||[]).length!==r.messages.length){m.chat=r.messages.slice().sort(function(a,b){return (a.at||0)-(b.at||0);});touched=true;}
+        if(Array.isArray(r.messages)&&(m.chat||[]).length!==r.messages.length){
+          const prevLen=(m.chat||[]).length;
+          m.chat=r.messages.slice().sort(function(a,b){return (a.at||0)-(b.at||0);});
+          touched=true;
+          // Notification à la réception d'un message de l'AUTRE partie (l'expéditeur
+          // ne se notifie pas lui-même : on filtre sur from !== mon rôle).
+          if(r.messages.length>prevLen){
+            const mine=(S.persona==='pro')?'pro':'client';
+            const incoming=m.chat.slice(prevLen).filter(function(x){return x&&x.from&&x.from!==mine;});
+            if(incoming.length){const who=(mine==='pro')?(m.clientName||'Le client'):((m.provider&&m.provider.nm)||'Votre artisan');notify(who,String(incoming[incoming.length-1].text||'Nouveau message').slice(0,120),'ti-msg-'+m.reqId);}
+          }
+        }
         // Statut (source de vérité serveur)
         if(r.status&&r.status!==m.status){const old=m.status;m.status=r.status;touched=true;onRemoteStatus(m,old,r.status);}
         if(touched){cacheClientLocal();render();if((S.chat||S.support)&&S.mission===m)view.scrollTop=view.scrollHeight;}
