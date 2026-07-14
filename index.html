@@ -2195,10 +2195,25 @@
       else if(newS==='working')notify('Ti-Services','La prestation a démarré.','ti-'+m.reqId);
       else if(newS==='done_pro')notify('Ti-Services','Prestation terminée — à confirmer.','ti-'+m.reqId);
     }else if(S.persona==='pro'){
-      if(newS==='paid'){notify('Ti-Services','Le client a validé — vous êtes payé 🎉','ti-'+m.reqId);if(!m._paidCounted){m._paidCounted=true;S.proEarnings+=totals(m).payout;}}
+      if(newS==='paid'){notify('Ti-Services','Le client a validé — vous êtes payé 🎉','ti-'+m.reqId);if(!m._paidCounted){m._paidCounted=true;recordProPaid(m);}}
       else if(newS==='disputed')notify('Ti-Services','Le client conteste la durée déclarée.','ti-'+m.reqId);
     }
   }
+  // Prestation validée par le client : on l'inscrit dans les revenus/missions de
+  // l'artisan et on persiste (survit aux sessions et aux appareils).
+  function recordProPaid(m){
+    const t=totals(m);
+    S.proEarnings=(S.proEarnings||0)+t.payout;
+    S.proJobsTotal=(S.proJobsTotal||0)+1;
+    S.proHistory=S.proHistory||[];
+    const key=m.reqId||m._id;
+    if(!S.proHistory.some(function(h){return key&&h.reqId===key;})){
+      S.proHistory.unshift({id:'hm'+(key||''+S.proHistory.length),reqId:key,dateISO:(m.dateISO||todayISO()),svc:m.svc,client:(m.clientName||'Client'),clientFull:(m.clientName||'Client'),clientZone:m.zone||'',duration:billHours(m),unit:m.unit||'h',rate:t.rate,amount:t.payout,invNo:m.invNo||('2026-'+String(1000+S.proHistory.length).padStart(4,'0')),paidVia:'carte'});
+    }
+    saveProStats();
+  }
+  // Persistance des revenus/missions de l'artisan dans sa fiche (mode réel).
+  function saveProStats(){try{ if(FB&&FB.auth&&FB.auth.currentUser&&typeof isDemo==='function'&&!isDemo()&&S.persona==='pro'){ FB.f.setDoc(FB.f.doc(FB.db,'artisans',FB.auth.currentUser.uid),{earnings:S.proEarnings||0,jobsTotal:S.proJobsTotal||0,history:(S.proHistory||[]).slice(0,60)},{merge:true}).catch(function(){}); } }catch(_){}}
   function unsubClientRequest(id){if(clientReqUnsubs[id]){try{clientReqUnsubs[id]();}catch(_){}delete clientReqUnsubs[id];}}
   // Annulation d'une demande encore ouverte : suppression du doc Firestore + arrêt de l'écoute.
   function cancelActiveRequest(m){
@@ -2757,7 +2772,8 @@
   function proEarnings(){
     const nbDone=(S.proHistory||[]).length;
     return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">${I.wallet} Revenus</span><div class="h-hello">Ce mois-ci</div>
-      <div class="card" style="padding:18px;margin-top:12px"><div class="mini">Net perçu (juillet)</div><b class="money" style="font-size:30px;font-family:var(--f-disp)">${eur(S.proEarnings)}</b><div class="row between" style="margin-top:14px"><span class="sub">Missions réalisées</span><b>${nbDone||37}</b></div><div class="row between" style="margin-top:6px"><span class="sub">Prochain virement</span><b>lun. 7 juil.</b></div></div>
+      <div class="card" style="padding:18px;margin-top:12px"><div class="mini">Net perçu (juillet)</div><b class="money" style="font-size:30px;font-family:var(--f-disp)">${eur(S.proEarnings)}</b><div class="row between" style="margin-top:14px"><span class="sub">Missions réalisées</span><b>${nbDone}</b></div>${nbDone?`<div class="row between" style="margin-top:6px"><span class="sub">Prochain virement</span><b>sous 48 h après validation</b></div>`:''}</div>
+      ${nbDone?'':`<div class="card" style="padding:22px;margin-top:12px;text-align:center;color:var(--muted)">${octoMini(64,'wave')}<div style="margin-top:8px;font-weight:600;color:var(--ink-soft)">Pas encore de mission réglée</div><div style="margin-top:3px">Vos revenus et vos factures apparaîtront ici après votre première prestation validée.</div></div>`}
       <button class="card" data-act="open-interv" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.card}&nbsp;Mes factures par mission</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">La facture de chaque prestation réalisée, établie automatiquement en votre nom — à consulter ou télécharger.</p></button>
       <button class="card" data-act="open-statement" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">📄&nbsp;Relevé mensuel</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Votre document récapitulatif du mois : toutes vos prestations et le total encaissé, à enregistrer pour votre comptabilité.</p></button>
       <div class="banner teal" style="margin-top:12px">${I.lock}<span><b>Paiement garanti</b> : réglé sous 48 h après chaque prestation validée — sans relance.</span></div>
@@ -3360,7 +3376,9 @@
         S.account={name:name,email:user.email||'',uid:user.uid,role:'artisan'};
         S.persona='pro'; S.proName=name; S.proPhone=(ad&&ad.phone)||(data&&data.phone)||'';
         if(ad&&Array.isArray(ad.cats)&&ad.cats.length){S.proCats=ad.cats.slice();const rr=ad.rates||{};S.proRate=Math.min.apply(null,ad.cats.map(c=>(rr[c]!=null?rr[c]:svcBase(c))));}
-        if(ad){ S.proRating=ad.rating||0; S.proIban=ad.iban||''; S.proIbanHolder=ad.ibanHolder||''; S.proBic=ad.bic||''; S.proInsured=!!ad.insured; S.proInsurer=ad.insurer||''; S.proInsuranceUrl=ad.insuranceUrl||''; S.proInsuranceStatus=ad.insuranceStatus||(ad.status==='valide'&&ad.insured?'valide':(ad.insuranceUrl||ad.insured?'attente':'none')); S.proSiret=ad.siret||S.proSiret; S.proBio=ad.bio||''; S.proPhoto=ad.photo||S.proPhoto; S.proAcceptedCharte=!!ad.acceptedCharte; S.proAcceptedTerms=!!ad.acceptedTerms; S.proTermsVersion=ad.termsVersion||''; S.proTermsAt=(ad.termsAt&&ad.termsAt.toDate)?ad.termsAt.toDate():null; }
+        if(ad){ S.proRating=ad.rating||0; S.proIban=ad.iban||''; S.proIbanHolder=ad.ibanHolder||''; S.proBic=ad.bic||''; S.proInsured=!!ad.insured; S.proInsurer=ad.insurer||''; S.proInsuranceUrl=ad.insuranceUrl||''; S.proInsuranceStatus=ad.insuranceStatus||(ad.status==='valide'&&ad.insured?'valide':(ad.insuranceUrl||ad.insured?'attente':'none')); S.proSiret=ad.siret||S.proSiret; S.proBio=ad.bio||''; S.proPhoto=ad.photo||S.proPhoto; S.proAcceptedCharte=!!ad.acceptedCharte; S.proAcceptedTerms=!!ad.acceptedTerms; S.proTermsVersion=ad.termsVersion||''; S.proTermsAt=(ad.termsAt&&ad.termsAt.toDate)?ad.termsAt.toDate():null;
+          // Revenus / missions réalisées, rechargés depuis la fiche (persistés à chaque paiement).
+          S.proEarnings=ad.earnings||0; S.proJobsTotal=ad.jobsTotal||0; S.proHistory=Array.isArray(ad.history)?ad.history:[]; }
         S.proStatus=(ad&&ad.status==='valide')?'approved':'pending';
         S.onboarded=true;S.authView=null;S.proNav='home';render();
         if(typeof Notification!=='undefined'&&Notification.permission==='granted')registerPush('artisan');
@@ -3486,7 +3504,20 @@
         if(Array.isArray(r.messages))m.chat=r.messages.slice().sort(function(a,b){return (a.at||0)-(b.at||0);});
         miss.push(m);
       }
-      if(miss.length){S.proMissions=miss;miss.forEach(function(mm){watchRequest(mm.reqId);});if(S.persona==='pro'&&!S.mission)render();}
+      // Réconciliation des prestations RÉGLÉES (éventuellement pendant que l'artisan
+      // était hors-ligne) : on les ajoute aux revenus/missions si elles manquent —
+      // dédoublonnage par reqId pour ne jamais compter deux fois.
+      S.proHistory=S.proHistory||[];let changed=false;
+      const known={};S.proHistory.forEach(function(h){if(h.reqId)known[h.reqId]=1;});
+      for(const docu of snap.docs){const r=docu.data()||{};
+        if((r.status!=='paid'&&r.status!=='rated')||known[docu.id])continue;
+        const dur=(r.finalHours!=null?r.finalHours:(r.duration||1));const amount=r.total||((r.rate||0)*dur);
+        S.proHistory.unshift({id:'hm'+docu.id,reqId:docu.id,dateISO:(r.dateISO||todayISO()),svc:r.service,client:(r.clientName||'Client'),clientFull:(r.clientName||'Client'),clientZone:r.zone||'',duration:dur,unit:r.unit||'h',rate:r.rate||0,amount:amount,invNo:r.invNo||('2026-'+String(1000+S.proHistory.length).padStart(4,'0')),paidVia:'carte'});
+        S.proEarnings=(S.proEarnings||0)+amount;S.proJobsTotal=(S.proJobsTotal||0)+1;known[docu.id]=1;changed=true;
+      }
+      if(changed)saveProStats();
+      if(miss.length){S.proMissions=miss;miss.forEach(function(mm){watchRequest(mm.reqId);});}
+      if((miss.length||changed)&&S.persona==='pro'&&!S.mission)render();
     }catch(e){console.warn('load pro missions',e);}
   }
   async function fbSignup(c){
