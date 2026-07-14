@@ -1000,6 +1000,16 @@
     {id:'c2',name:'Thomas Ledée',status:'valide',zone:'St-Jean',card:'Mastercard ••8890',bookings:3,phone:'+590690889900',email:'t.ledee@example.com'},
     {id:'c3',name:'Élodie Nihau',status:'attente',zone:'Flamands',card:'Carte à vérifier',bookings:0,phone:'+590690990011',email:'e.nihau@example.com'}
   ];
+  // Conciergeries (apporteurs d'affaires) côté admin, avec leurs apports du mois.
+  const ADMIN_CONC=()=>[
+    {id:'k1',name:'Conciergerie Alizés',contact:'Laura Bénani',siret:'88012345600018',phone:'+590690551122',email:'contact@alizes-conciergerie.com',status:'valide',earn:76.8,retroPaid:'',orders:[
+      {id:'ko1',clientName:'Villa Hartley',svcName:'Ménage',amount:480,retro:38.4,status:'paid',dateISO:'2026-07-06',invNo:'2026-0039'},
+      {id:'ko2',clientName:'M. Vanterpool',svcName:'Jardinage',amount:200,retro:16,status:'paid',dateISO:'2026-07-04',invNo:'2026-0037'},
+      {id:'ko3',clientName:'SCI Colombier',svcName:'Ménage',amount:280,retro:22.4,status:'paid',dateISO:'2026-07-01',invNo:'2026-0031'}]},
+    {id:'k2',name:'Villa Services SBH',contact:'Marc Questel',siret:'90233112400027',phone:'+590690662233',email:'hello@villaservices-sbh.com',status:'valide',earn:62.4,retroPaid:'',orders:[
+      {id:'ko4',clientName:'Villa Aurore',svcName:'Baby-sitting',amount:180,retro:14.4,status:'paid',dateISO:'2026-07-07',invNo:'2026-0044'},
+      {id:'ko5',clientName:'M. Ledée',svcName:'Ménage',amount:600,retro:48,status:'paid',dateISO:'2026-07-03',invNo:'2026-0038'}]}
+  ];
   /* Barème de commission dégressive (fidélité). Chiffres visibles UNIQUEMENT
      en admin — jamais côté client/artisan (règle : le % ne s'affiche pas,
      il figure dans les CGU). L'artisan voit un statut, pas un pourcentage. */
@@ -1065,7 +1075,7 @@
     persona:'client',clientNav:'home',proNav:'home',customServices:[],onboarded:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},
     card:null,cardForm:false,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,mission:null,missions:[],draft:null,
     addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,
-    concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,
+    concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,concRetroPaid:'',retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,
     proPhoto:null,proStatus:'approved',proFounder:true,proNotifPush:true,proNotifWa:true,proPhone:'0690 00 00 00',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:'',photo:''},
     proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proReqSlot:null,proReqPick:false,proMissions:[],proSkipped:[],proConflict:null,proStmt:false,commInvId:null,commStmt:false,signupKind:null,concSignup:null,concStatus:'approved',adminConcierges:[],
     proHistory:PRO_HISTORY(),
@@ -1119,6 +1129,18 @@
   }
   // Numéro de facture de commission mensuelle, stable par artisan et par période.
   function commInvNo(idOrUid){return 'TS-C-2026-07-'+String(idOrUid||'0000').replace(/[^A-Za-z0-9]/g,'').slice(-4).toUpperCase();}
+  // Consolidation mensuelle des apports d'une conciergerie : base de son relevé de
+  // rétribution (Ti-Services → concierge). Symétrique de commMonthly, sens inverse
+  // (la plateforme VERSE au lieu de retenir).
+  function concMonthly(c){
+    const orders=(c&&Array.isArray(c.orders)?c.orders:[]).filter(function(o){return o.status==='paid'&&(o.retro||0)>0;});
+    const round2=function(n){return Math.round(n*100)/100;};
+    const retro=round2(orders.reduce(function(t,o){return t+(o.retro||0);},0));
+    return {orders:orders,count:orders.length,
+      base:round2(orders.reduce(function(t,o){return t+(o.amount||0);},0)),
+      retro:retro||round2(c&&c.earn||0)};
+  }
+  function concRetInvNo(idOrUid){return 'TS-A-2026-07-'+String(idOrUid||'0000').replace(/[^A-Za-z0-9]/g,'').slice(-4).toUpperCase();}
   /* Unité de réservation : heure (défaut) ou jour (garde d'animaux). */
   const DAY_RECO=35,DAY_FLOOR=20;
   function isDayU(m){return !!(m&&m.unit==='j');}
@@ -1244,7 +1266,7 @@
     if(S.support)return S.persona+':support:'+(S.supportSide||S.persona);
     if(S.addrForm)return 'client:addr:'+(S.addrForm.id||'new');
     if(S.persona==='concierge'){if(S.concRetInv)return 'conc:retinv';if(S.concInvoice)return 'conc:inv:'+S.concInvoice;if(S.concForm)return 'conc:form:'+(S.concForm.id||'new');if(S.concClientView)return 'conc:cv:'+S.concClientView;if(S.concOrder)return 'conc:order:'+S.concOrder.step;if(S.concView)return 'conc:view:'+S.concView;return 'conc:'+S.concNav;}
-    if(S.persona==='admin')return 'admin:'+S.admin.view+':'+(S.admin.sel||'')+(S.admin.fact?':'+(S.admin.fact.mode||'')+':'+(S.admin.fact.art||'')+':'+(S.admin.fact.inv||''):'');
+    if(S.persona==='admin')return 'admin:'+S.admin.view+':'+(S.admin.sel||'')+(S.admin.fact?':'+(S.admin.fact.mode||'')+':'+(S.admin.fact.art||'')+':'+(S.admin.fact.conc||'')+':'+(S.admin.fact.inv||''):'');
     if(S.persona==='pro')return 'pro:'+S.proStatus+':'+S.proNav+':'+(S.mission?S.mission.status:'');
     if(!S.onboarded)return S.authView==='login'?'login':'onb:'+S.onbStep;
     if(S.mission)return 'client:mission:'+S.mission.status;
@@ -1434,7 +1456,40 @@
       </div>
       <div class="banner teal" style="margin-top:12px">${I.shield}<span>Chaque artisan reçoit <b>une facture de commission mensuelle</b> (une ligne par mission) — le standard. Les factures de prestation sont établies au mandat, en leur nom.</span></div>
       <div style="height:8px"></div><span class="eyebrow">Par artisan · ${groups.length}</span>${cards}
+      ${adminConcRetribSection(round2)}
       <div style="height:24px"></div></div>`;
+  }
+  // Section « Rétributions conciergerie » de la vue Factures : montant dû ce mois par
+  // apporteur, relevé d'auto-facturation, et suivi versé / à verser.
+  function adminConcInvoiceList(){return (S.adminConcierges||[]).filter(function(c){return c.status==='valide';}).map(function(c){return {c:c,m:concMonthly(c)};}).filter(function(x){return x.m.retro>0;});}
+  function adminConcRetribSection(round2){
+    const concs=adminConcInvoiceList();
+    const totRetro=round2(concs.reduce(function(t,x){return t+x.m.retro;},0));
+    const cards=concs.length?concs.map(function(x){const paid=(x.c.retroPaid===COMM_PERIOD);return `<div class="card" style="padding:14px;margin-top:10px">
+        <div class="row between"><b style="font-size:14.5px">${esc(x.c.name)}</b><span class="chip ${paid?'good':'coral'}" style="padding:3px 9px">${paid?'Versé':'À verser'}</span></div>
+        <div class="mini" style="margin-top:4px">${x.m.count} apport${x.m.count>1?'s':''} · base ${eur(x.m.base)} · rétribution <b>${eur(x.m.retro)}</b></div>
+        <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn ghost sm" style="width:auto;padding:8px 12px" data-adm="conc-retrib:${x.c.id}">${I.card}&nbsp;Relevé de rétribution</button>${paid?`<button class="btn ghost sm" style="width:auto;padding:8px 12px" data-adm="conc-unpay:${x.c.id}">Annuler « versé »</button>`:`<button class="btn good sm" style="width:auto;padding:8px 12px" data-adm="conc-pay:${x.c.id}">${I.check}&nbsp;Marquer versé</button>`}</div>
+      </div>`;}).join(''):`<div class="card" style="padding:18px;text-align:center;color:var(--muted);margin-top:10px">Aucune rétribution à verser ce mois.</div>`;
+    return `<div style="height:18px"></div><span class="eyebrow">Rétributions conciergerie · ${concs.length}</span>
+      <div class="banner teal" style="margin-top:8px">${I.concierge}<span>Les apporteurs sont payés <b>une fois par mois</b>&nbsp;: un virement groupé par conciergerie, contre un relevé d'auto-facturation généré par Ti-Services. À verser ce mois&nbsp;: <b>${eur(totRetro)}</b>.</span></div>${cards}`;
+  }
+  function adminFactConc(){return (S.adminConcierges||[]).find(function(c){return c.id===(S.admin.fact&&S.admin.fact.conc);});}
+  function adminConcRetribView(){
+    const c=adminFactConc();if(!c)return adminInvoices();
+    const m=concMonthly(c);const paid=(c.retroPaid===COMM_PERIOD);
+    const rows=m.count?m.orders.map(function(o){return `<tr><td>${fmtLong(o.dateISO)}</td><td>Apport — ${esc(o.svcName||'')} (${esc(o.clientName||'')})</td><td class="r">${eur(o.amount)}</td><td class="r">${eur(o.retro)}</td></tr>`;}).join(''):`<tr><td colspan="4" style="text-align:center;color:#888;padding:14px">Aucun apport.</td></tr>`;
+    return `<div class="pad">
+      <div class="row between noprint" style="margin-top:6px;gap:8px"><button class="reset" data-adm="fact-back">← Retour</button><button class="btn primary" data-act="print-invoice" style="width:auto;padding:10px 16px">${I.card}&nbsp;Enregistrer / Imprimer</button></div>
+      <p class="mini noprint" style="text-align:center;color:var(--muted);margin-bottom:8px">Relevé d'auto-facturation généré par Ti-Services au nom de la conciergerie (mandat). ${paid?'Réglé.':'À régler par virement mensuel.'}</p>
+      <div id="invoiceDoc"><div class="inv">
+        <div class="row between" style="align-items:flex-start"><div><h2>RELEVÉ DE RÉTRIBUTION</h2><div class="mut">N° ${concRetInvNo(c.uid||c.id)}</div><div class="mut">Commission d'apport · ${COMM_PERIOD}</div></div><div style="text-align:right"><div style="font-family:var(--f-disp);font-weight:800;font-size:16px;color:#151515">Ti-Services</div><div class="mut">Plateforme d'intermédiation</div><div class="mut">Saint-Barthélemy</div></div></div>
+        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Apporteur d'affaires · bénéficiaire</div><b>${esc(c.name)}</b><div class="mut">${c.contact?esc(c.contact)+' · ':''}SIRET ${c.siret||'—'}</div></div>
+        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Établi par (auto-facturation)</div><b>Ti-Services</b><div class="mut">Mandat d'auto-facturation · Saint-Barthélemy</div></div>
+        <table><thead><tr><th>Date</th><th>Objet</th><th class="r">Base</th><th class="r">Apport</th></tr></thead><tbody>${rows}</tbody></table>
+        <div class="row between sec"><span class="mut">Total dû par Ti-Services (${m.count} apport${m.count>1?'s':''})</span><span class="tot">${eur(m.retro)}</span></div>
+        <div class="row between" style="margin-top:6px"><span class="mut">Versement mensuel groupé</span><b style="color:${paid?'#1c8f5f':'#b26a00'}">${paid?'Versé':'À verser'}</b></div>
+        <div class="legal">TVA non applicable — Saint-Barthélemy (COM, hors du champ de la TVA française). Commission d'apport d'affaires au titre du contrat d'apporteur, établie par relevé d'auto-facturation (mandat). Aucune commission n'est refacturée au client final.</div>
+      </div></div><div style="height:12px"></div></div>`;
   }
   function adminCommInvoiceView(){
     const a=adminFactArt();if(!a)return adminInvoices();
@@ -1482,6 +1537,7 @@
     if(f.mode==='comm')return adminCommInvoiceView();
     if(f.mode==='doc')return adminArtInvoiceDoc();
     if(f.mode==='mandat')return adminArtInvoices();
+    if(f.mode==='conc')return adminConcRetribView();
     return adminInvoices();
   }
   function adminFiche(kind){
@@ -1894,7 +1950,7 @@
     const paid=S.concOrders.filter(o=>o.status==='paid');
     const rows=paid.length?paid.map(o=>`<div class="card" style="padding:13px;margin-top:9px"><div class="row between"><b style="font-size:14px">${o.svcName}</b><span class="money" style="color:var(--good);font-weight:700">+${eur(o.retro)}</span></div><div class="mini" style="margin-top:3px">${o.clientName} · ${o.when} · prestation ${eur(o.amount)}</div></div>`).join(''):`<div class="card" style="padding:20px;text-align:center;color:var(--muted);margin-top:10px">Aucune rétrocession pour l'instant.</div>`;
     return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">${I.wallet} Rétribution</span><div class="h-hello">Vos commissions d'apport</div>
-      <div class="card" style="padding:18px;margin-top:12px"><div class="mini">Rétrocessions ce mois</div><b class="money" style="font-size:30px;font-family:var(--f-disp)">${eur(S.concEarn)}</b><div class="mini" style="margin-top:6px">Taux d'apport&nbsp;: ${S.retroRate} % · versé par Ti-Services</div><button class="btn ghost sm" data-act="conc-retinv" style="margin-top:12px">${I.card} Éditer ma facture de rétribution (mensuelle)</button></div>
+      <div class="card" style="padding:18px;margin-top:12px"><div class="row between" style="align-items:flex-start"><div class="mini">Rétrocessions ce mois</div>${S.concRetroPaid?`<span class="chip good" style="padding:3px 9px">${I.check} Versé</span>`:`<span class="chip coral" style="padding:3px 9px">Versement en attente</span>`}</div><b class="money" style="font-size:30px;font-family:var(--f-disp)">${eur(S.concEarn)}</b><div class="mini" style="margin-top:6px">Taux d'apport&nbsp;: ${S.retroRate} % · ${S.concRetroPaid?'réglé par Ti-Services':'versé par Ti-Services en fin de mois'}</div><button class="btn ghost sm" data-act="conc-retinv" style="margin-top:12px">${I.card} Éditer ma facture de rétribution (mensuelle)</button></div>
       <div class="banner teal" style="margin-top:12px">${I.shield}<span>Vous êtes rémunéré par Ti-Services sur sa commission — <b>le prix du client ne change pas</b> et l'artisan perçoit la même chose. Versement mensuel, relevé d'auto-facturation.</span></div>
       <div style="height:16px"></div><span class="eyebrow">Détail des prestations réglées</span>${rows}
       <div style="height:8px"></div></div>${conciergeNavbar()}`;
@@ -2365,7 +2421,7 @@
     S.proHistory=PRO_HISTORY();S.agenda=SEED_AGENDA.map(function(a){return Object.assign({},a);});
     S.proEarnings=1284.50;S.proJobsToday=3;S.proJobsTotal=214;S.proRating=4.9;S.proIban='FR7630006000011234567890189';S.proIbanHolder='Marie-Lou Cagan';S.proBic='AGRIFRPP';
     S.proInsured=true;S.proInsurer='AXA · Police 12345';S.proInsuranceUrl=DEMO_ATTEST;S.proInsuranceStatus='valide';S.proAcceptedCharte=true;S.proAcceptedTerms=true;S.proTermsVersion=TERMS_VERSION;S.proTermsAt=new Date('2026-05-15T10:00:00');
-    S.adminArtisans=ADMIN_ARTS();S.adminClients=ADMIN_CLIS();S.adminBookings=ADMIN_BOOK();S.adminCommission=1240;
+    S.adminArtisans=ADMIN_ARTS();S.adminClients=ADMIN_CLIS();S.adminBookings=ADMIN_BOOK();S.adminCommission=1240;S.adminConcierges=ADMIN_CONC();
     S.concClients=CONCIERGE_CLIENTS();S.concOrders=CONCIERGE_ORDERS();S.concEarn=640;
   }
   // La vraie BÊTA part de zéro : aucun client / artisan / historique de démo.
@@ -3080,6 +3136,9 @@
       else if(act==='valid-cli'){const cc=S.adminClients.find(x=>x.id===id);if(cc)cc.status='valide';toast('Client validé');}
       else if(act==='valid-conc'){const c=(S.adminConcierges||[]).find(x=>x.id===id);if(c&&c.siret){c.status='valide';adminWriteConcStatus(c,'valide');toast('Conciergerie validée');}else{toast('SIRET manquant');}}
       else if(act==='rej-conc'){const c=(S.adminConcierges||[]).find(x=>x.id===id);if(c){c.status='refuse';adminWriteConcStatus(c,'refuse');toast('Conciergerie refusée');}}
+      else if(act==='conc-retrib'){S.admin.view='fact';S.admin.fact={conc:id,mode:'conc'};render();view.scrollTop=0;return;}
+      else if(act==='conc-pay'){const c=(S.adminConcierges||[]).find(x=>x.id===id);if(c){c.retroPaid=COMM_PERIOD;adminWriteConcRetro(c);toast('Rétribution marquée comme versée');}render();return;}
+      else if(act==='conc-unpay'){const c=(S.adminConcierges||[]).find(x=>x.id===id);if(c){c.retroPaid='';adminWriteConcRetro(c);toast('Statut « versé » annulé');}render();return;}
       else if(act==='valid-ins'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.insuranceStatus='valide';a.insured=true;adminWriteField(a,{insuranceStatus:'valide',insured:true});toast('Attestation validée ✓');}}
       else if(act==='rej-ins'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.insuranceStatus='refuse';adminWriteField(a,{insuranceStatus:'refuse'});toast('Attestation refusée');}}
       else if(act==='addcat'){const a=S.adminArtisans.find(x=>x.id===id);if(a&&a.other){addCustomService(a.other,(a.rates&&a.rates.autre)||40);}}
@@ -3603,6 +3662,7 @@
         S.concClients=(cd&&Array.isArray(cd.clients))?cd.clients:[];
         S.concOrders=(cd&&Array.isArray(cd.orders))?cd.orders:[];
         S.concEarn=(cd&&cd.earn)||0;
+        S.concRetroPaid=(cd&&cd.retroPaid)||'';
         S.onboarded=true;S.authView=null;S.concNav='home';S.concForm=null;S.concOrder=null;S.concView=null;render();
         subscribeConcStatus(user.uid);
         S.genSupport=(data&&Array.isArray(data.support))?data.support.slice():[];subscribeUserSupport(user.uid);
@@ -3805,14 +3865,20 @@
         const cd=snap.data()||{};
         const newStatus=(cd.status==='valide')?'approved':'pending';
         const was=S.concStatus;
+        const newPaid=cd.retroPaid||'';const wasPaid=S.concRetroPaid||'';
+        let changed=false;
         if(newStatus!==was){
-          S.concStatus=newStatus;
+          S.concStatus=newStatus;changed=true;
           if(newStatus==='approved'&&was==='pending'){
             toast('🎉 Conciergerie validée — bienvenue chez Ti-Services !');
             try{ if('Notification'in window&&Notification.permission==='granted'){ new Notification('Ti-Services — conciergerie validée',{body:'Votre compte est activé.',icon:'./icon-192.png',tag:'ti-conc-approved'}); } }catch(_){}
           }
-          if(S.persona==='concierge')render();
         }
+        if(newPaid!==wasPaid){
+          S.concRetroPaid=newPaid;changed=true;
+          if(newPaid&&!wasPaid){toast('💸 Votre rétribution du mois a été versée par Ti-Services');}
+        }
+        if(changed&&S.persona==='concierge')render();
       },function(err){ console.warn('conc status listen',err); });
     }catch(e){ console.warn('conc status listen',e); }
   }
@@ -3821,6 +3887,8 @@
   function adminWriteField(a,obj){ if(FB&&a&&a.real&&a.uid){ try{ FB.f.setDoc(FB.f.doc(FB.db,'artisans',a.uid),obj,{merge:true}); }catch(_){} } }
   // Statut d'une conciergerie écrit en base par l'admin (validation / refus).
   function adminWriteConcStatus(c,status){ if(FB&&c&&c.uid){ try{ FB.f.updateDoc(FB.f.doc(FB.db,'concierges',c.uid),{status:status}); }catch(_){} } }
+  // Marque (ou annule) le versement mensuel de la rétribution d'une conciergerie.
+  function adminWriteConcRetro(c){ if(FB&&c&&c.uid&&typeof isDemo==='function'&&!isDemo()){ try{ FB.f.updateDoc(FB.f.doc(FB.db,'concierges',c.uid),{retroPaid:c.retroPaid||''}); }catch(_){} } }
   // Écoute EN TEMPS RÉEL des dossiers conciergerie (console admin).
   let adminConcUnsub=null;
   function refreshAdminConcierges(){
@@ -3829,7 +3897,7 @@
     try{
       adminConcUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'concierges'),function(snap){
         const list=[];
-        snap.forEach(function(d){ const c=d.data()||{}; list.push({id:d.id,uid:d.id,real:true,name:c.name||'Conciergerie',contact:c.contact||'',siret:c.siret||'',phone:c.phone||'',email:c.email||'',status:c.status||'attente'}); });
+        snap.forEach(function(d){ const c=d.data()||{}; list.push({id:d.id,uid:d.id,real:true,name:c.name||'Conciergerie',contact:c.contact||'',siret:c.siret||'',phone:c.phone||'',email:c.email||'',status:c.status||'attente',orders:Array.isArray(c.orders)?c.orders:[],earn:c.earn||0,retroPaid:c.retroPaid||''}); });
         S.adminConcierges=list;
         if(S.persona==='admin')render();
       },function(err){ console.warn('admin concierges snapshot',err); });
