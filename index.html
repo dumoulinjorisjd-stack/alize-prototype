@@ -1002,11 +1002,11 @@
   ];
   // Conciergeries (apporteurs d'affaires) côté admin, avec leurs apports du mois.
   const ADMIN_CONC=()=>[
-    {id:'k1',name:'Conciergerie Alizés',contact:'Laura Bénani',siret:'88012345600018',phone:'+590690551122',email:'contact@alizes-conciergerie.com',status:'valide',earn:76.8,retroPaid:'',orders:[
+    {id:'k1',name:'Conciergerie Alizés',contact:'Laura Bénani',siret:'88012345600018',phone:'+590690551122',email:'contact@alizes-conciergerie.com',status:'valide',earn:76.8,retroPaid:'',iban:'FR7630006000011234567890189',ibanHolder:'Conciergerie Alizés',orders:[
       {id:'ko1',clientName:'Villa Hartley',svcName:'Ménage',amount:480,retro:38.4,status:'paid',dateISO:'2026-07-06',invNo:'2026-0039'},
       {id:'ko2',clientName:'M. Vanterpool',svcName:'Jardinage',amount:200,retro:16,status:'paid',dateISO:'2026-07-04',invNo:'2026-0037'},
       {id:'ko3',clientName:'SCI Colombier',svcName:'Ménage',amount:280,retro:22.4,status:'paid',dateISO:'2026-07-01',invNo:'2026-0031'}]},
-    {id:'k2',name:'Villa Services SBH',contact:'Marc Questel',siret:'90233112400027',phone:'+590690662233',email:'hello@villaservices-sbh.com',status:'valide',earn:62.4,retroPaid:'',orders:[
+    {id:'k2',name:'Villa Services SBH',contact:'Marc Questel',siret:'90233112400027',phone:'+590690662233',email:'hello@villaservices-sbh.com',status:'valide',earn:62.4,retroPaid:'',iban:'FR1420041010050500013M02606',ibanHolder:'Villa Services SBH',orders:[
       {id:'ko4',clientName:'Villa Aurore',svcName:'Baby-sitting',amount:180,retro:14.4,status:'paid',dateISO:'2026-07-07',invNo:'2026-0044'},
       {id:'ko5',clientName:'M. Ledée',svcName:'Ménage',amount:600,retro:48,status:'paid',dateISO:'2026-07-03',invNo:'2026-0038'}]}
   ];
@@ -1075,7 +1075,8 @@
     persona:'client',clientNav:'home',proNav:'home',customServices:[],onboarded:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},
     card:null,cardForm:false,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,mission:null,missions:[],draft:null,
     addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,
-    concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,concRetroPaid:'',retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,
+    concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,concRetroPaid:'',concIban:'',concIbanHolder:'',retroRate:8,
+    sepaIban:(function(){try{return localStorage.getItem('ts_sepa_iban')||'';}catch(_){return '';}})(),concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,
     proPhoto:null,proStatus:'approved',proFounder:true,proNotifPush:true,proNotifWa:true,proPhone:'0690 00 00 00',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:'',photo:''},
     proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proReqSlot:null,proReqPick:false,proMissions:[],proSkipped:[],proConflict:null,proStmt:false,commInvId:null,commStmt:false,signupKind:null,concSignup:null,concStatus:'approved',adminConcierges:[],
     proHistory:PRO_HISTORY(),
@@ -1141,6 +1142,44 @@
       retro:retro||round2(c&&c.earn||0)};
   }
   function concRetInvNo(idOrUid){return 'TS-A-2026-07-'+String(idOrUid||'0000').replace(/[^A-Za-z0-9]/g,'').slice(-4).toUpperCase();}
+  // ————— Virements SEPA (export bancaire groupé) —————
+  // Génère un fichier de virement SEPA (pain.001.001.03) à déposer sur la banque en
+  // une fois. Donneur d'ordre = compte Ti-Services (IBAN saisi par l'admin, S.sepaIban).
+  function xmlEsc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c];});}
+  function pad2(n){return (n<10?'0':'')+n;}
+  function sepaDateTime(d){return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate())+'T'+pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds());}
+  function sepaDate(d){return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate());}
+  function buildSepaCreditTransfer(payments,debtorName,debtorIban){
+    const now=new Date();const exec=new Date(now.getTime()+24*3600*1000);
+    const nb=payments.length;
+    const ctrl=payments.reduce(function(t,p){return t+p.amount;},0);
+    const ctrlS=(Math.round(ctrl*100)/100).toFixed(2);
+    const msgId='TS-'+now.getFullYear()+pad2(now.getMonth()+1)+pad2(now.getDate())+pad2(now.getHours())+pad2(now.getMinutes())+pad2(now.getSeconds());
+    const tx=payments.map(function(p,i){return '<CdtTrfTxInf>'+
+        '<PmtId><EndToEndId>'+xmlEsc((msgId+'-'+(i+1)).slice(0,35))+'</EndToEndId></PmtId>'+
+        '<Amt><InstdAmt Ccy="EUR">'+p.amount.toFixed(2)+'</InstdAmt></Amt>'+
+        '<CdtrAgt><FinInstnId><Othr><Id>NOTPROVIDED</Id></Othr></FinInstnId></CdtrAgt>'+
+        '<Cdtr><Nm>'+xmlEsc(p.name).slice(0,70)+'</Nm></Cdtr>'+
+        '<CdtrAcct><Id><IBAN>'+xmlEsc((p.iban||'').replace(/\s/g,''))+'</IBAN></Id></CdtrAcct>'+
+        '<RmtInf><Ustrd>'+xmlEsc(p.ref).slice(0,140)+'</Ustrd></RmtInf>'+
+      '</CdtTrfTxInf>';}).join('');
+    return '<?xml version="1.0" encoding="UTF-8"?>'+
+      '<Document xmlns="urn:iso:std:iso:20022:tech:xsd:pain.001.001.03">'+
+      '<CstmrCdtTrfInitn>'+
+        '<GrpHdr><MsgId>'+msgId+'</MsgId><CreDtTm>'+sepaDateTime(now)+'</CreDtTm><NbOfTxs>'+nb+'</NbOfTxs><CtrlSum>'+ctrlS+'</CtrlSum><InitgPty><Nm>'+xmlEsc(debtorName)+'</Nm></InitgPty></GrpHdr>'+
+        '<PmtInf><PmtInfId>'+msgId+'</PmtInfId><PmtMtd>TRF</PmtMtd><BtchBookg>false</BtchBookg><NbOfTxs>'+nb+'</NbOfTxs><CtrlSum>'+ctrlS+'</CtrlSum>'+
+          '<PmtTpInf><SvcLvl><Cd>SEPA</Cd></SvcLvl></PmtTpInf>'+
+          '<ReqdExctnDt>'+sepaDate(exec)+'</ReqdExctnDt>'+
+          '<Dbtr><Nm>'+xmlEsc(debtorName)+'</Nm></Dbtr>'+
+          '<DbtrAcct><Id><IBAN>'+xmlEsc((debtorIban||'').replace(/\s/g,''))+'</IBAN></Id></DbtrAcct>'+
+          '<DbtrAgt><FinInstnId><Othr><Id>NOTPROVIDED</Id></Othr></FinInstnId></DbtrAgt>'+
+          '<ChrgBr>SLEV</ChrgBr>'+tx+
+        '</PmtInf>'+
+      '</CstmrCdtTrfInitn></Document>';
+  }
+  function downloadTextFile(filename,content,mime){
+    try{const blob=new Blob([content],{type:mime||'text/plain'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();setTimeout(function(){try{document.body.removeChild(a);}catch(_){}URL.revokeObjectURL(url);},120);return true;}catch(e){console.warn('download',e);return false;}
+  }
   /* Unité de réservation : heure (défaut) ou jour (garde d'animaux). */
   const DAY_RECO=35,DAY_FLOOR=20;
   function isDayU(m){return !!(m&&m.unit==='j');}
@@ -1470,8 +1509,30 @@
         <div class="mini" style="margin-top:4px">${x.m.count} apport${x.m.count>1?'s':''} · base ${eur(x.m.base)} · rétribution <b>${eur(x.m.retro)}</b></div>
         <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn ghost sm" style="width:auto;padding:8px 12px" data-adm="conc-retrib:${x.c.id}">${I.card}&nbsp;Relevé de rétribution</button>${paid?`<button class="btn ghost sm" style="width:auto;padding:8px 12px" data-adm="conc-unpay:${x.c.id}">Annuler « versé »</button>`:`<button class="btn good sm" style="width:auto;padding:8px 12px" data-adm="conc-pay:${x.c.id}">${I.check}&nbsp;Marquer versé</button>`}</div>
       </div>`;}).join(''):`<div class="card" style="padding:18px;text-align:center;color:var(--muted);margin-top:10px">Aucune rétribution à verser ce mois.</div>`;
+    const due=concs.filter(function(x){return x.c.retroPaid!==COMM_PERIOD;});
+    const dueTot=round2(due.reduce(function(t,x){return t+x.m.retro;},0));
+    const sepaBlock=due.length?`<div class="card" style="padding:16px;margin-top:10px">
+        <b style="font-size:14px">${I.card}&nbsp;Virements du mois — export SEPA</b>
+        <p class="sub" style="margin-top:6px">Générez un fichier de virement unique (norme SEPA) pour les <b>${due.length}</b> rétribution${due.length>1?'s':''} à verser (<b>${eur(dueTot)}</b>), à déposer sur votre banque en une fois.</p>
+        <div class="field" style="margin-top:10px;margin-bottom:0"><label>IBAN Ti-Services (donneur d'ordre)</label><input class="txt" data-sepa value="${esc(S.sepaIban||'')}" placeholder="FR76 ... (compte qui émet les virements)" autocomplete="off">${(S.sepaIban&&!ibanValid(S.sepaIban))?`<p class="mini" style="margin-top:5px;color:var(--coral-deep)">IBAN incomplet ou invalide.</p>`:''}</div>
+        <button class="btn primary sm" data-adm="conc-sepa-export" style="margin-top:12px;width:auto;padding:9px 14px">${I.card}&nbsp;Exporter les virements (SEPA)</button></div>`:'';
     return `<div style="height:18px"></div><span class="eyebrow">Rétributions conciergerie · ${concs.length}</span>
-      <div class="banner teal" style="margin-top:8px">${I.concierge}<span>Les apporteurs sont payés <b>une fois par mois</b>&nbsp;: un virement groupé par conciergerie, contre un relevé d'auto-facturation généré par Ti-Services. À verser ce mois&nbsp;: <b>${eur(totRetro)}</b>.</span></div>${cards}`;
+      <div class="banner teal" style="margin-top:8px">${I.concierge}<span>Les apporteurs sont payés <b>une fois par mois</b>&nbsp;: un virement groupé par conciergerie, contre un relevé d'auto-facturation généré par Ti-Services. À verser ce mois&nbsp;: <b>${eur(totRetro)}</b>.</span></div>${sepaBlock}${cards}`;
+  }
+  // Génère et télécharge le fichier SEPA des rétributions concierge « à verser ».
+  function adminExportConcSepa(){
+    const debtorIban=(S.sepaIban||'').replace(/\s/g,'');
+    if(!ibanValid(debtorIban)){toast('Renseignez d’abord l’IBAN Ti-Services (donneur d’ordre)');return;}
+    const due=adminConcInvoiceList().filter(function(x){return x.c.retroPaid!==COMM_PERIOD&&x.m.retro>0;});
+    const withIban=due.filter(function(x){return x.c.iban&&ibanValid(x.c.iban);});
+    const without=due.filter(function(x){return !(x.c.iban&&ibanValid(x.c.iban));});
+    if(!withIban.length){toast(without.length?'Aucun IBAN valide — demandez leur RIB aux conciergeries':'Aucune rétribution à verser');return;}
+    const payments=withIban.map(function(x){return {name:x.c.ibanHolder||x.c.name,iban:x.c.iban,amount:x.m.retro,ref:('Retribution apport '+COMM_PERIOD+' - '+x.c.name).slice(0,140)};});
+    const xml=buildSepaCreditTransfer(payments,'Ti-Services',debtorIban);
+    const ok=downloadTextFile('virements-conciergerie-2026-07.xml',xml,'application/xml');
+    if(!ok){toast('Export impossible sur cet appareil');return;}
+    const warn=without.length?(' · '+without.length+' sans IBAN ignorée'+(without.length>1?'s':'')):'';
+    toast('Fichier SEPA généré — '+withIban.length+' virement'+(withIban.length>1?'s':'')+warn);
   }
   function adminFactConc(){return (S.adminConcierges||[]).find(function(c){return c.id===(S.admin.fact&&S.admin.fact.conc);});}
   function adminConcRetribView(){
@@ -1821,7 +1882,7 @@
   }
   // Persistance des données conciergerie (clients, commandes, apport) dans sa fiche —
   // survit aux sessions et aux appareils (mode réel uniquement).
-  function saveConcCloud(){try{ if(FB&&FB.auth&&FB.auth.currentUser&&typeof isDemo==='function'&&!isDemo()&&S.persona==='concierge'){ FB.f.setDoc(FB.f.doc(FB.db,'concierges',FB.auth.currentUser.uid),{clients:(S.concClients||[]),orders:(S.concOrders||[]),earn:S.concEarn||0},{merge:true}).catch(function(){}); } }catch(_){}}
+  function saveConcCloud(){try{ if(FB&&FB.auth&&FB.auth.currentUser&&typeof isDemo==='function'&&!isDemo()&&S.persona==='concierge'){ FB.f.setDoc(FB.f.doc(FB.db,'concierges',FB.auth.currentUser.uid),{clients:(S.concClients||[]),orders:(S.concOrders||[]),earn:S.concEarn||0,iban:S.concIban||'',ibanHolder:S.concIbanHolder||''},{merge:true}).catch(function(){}); } }catch(_){}}
   function conciergePending(){
     return `<div class="pad"><div style="height:14px"></div>
       <div class="paycap" style="height:auto;padding-top:6px">${octoMini(72,'bob')}<div><div class="h-hello" style="text-align:center">Candidature en cours d'examen</div><p class="sub" style="text-align:center;margin-top:6px">Merci ${esc((S.concName||'').split(' ')[0]||'')}&nbsp;! Ti-Services vérifie votre conciergerie — activation sous 48 h.</p></div></div>
@@ -1952,6 +2013,11 @@
     return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">${I.wallet} Rétribution</span><div class="h-hello">Vos commissions d'apport</div>
       <div class="card" style="padding:18px;margin-top:12px"><div class="row between" style="align-items:flex-start"><div class="mini">Rétrocessions ce mois</div>${S.concRetroPaid?`<span class="chip good" style="padding:3px 9px">${I.check} Versé</span>`:`<span class="chip coral" style="padding:3px 9px">Versement en attente</span>`}</div><b class="money" style="font-size:30px;font-family:var(--f-disp)">${eur(S.concEarn)}</b><div class="mini" style="margin-top:6px">Taux d'apport&nbsp;: ${S.retroRate} % · ${S.concRetroPaid?'réglé par Ti-Services':'versé par Ti-Services en fin de mois'}</div><button class="btn ghost sm" data-act="conc-retinv" style="margin-top:12px">${I.card} Éditer ma facture de rétribution (mensuelle)</button></div>
       <div class="banner teal" style="margin-top:12px">${I.shield}<span>Vous êtes rémunéré par Ti-Services sur sa commission — <b>le prix du client ne change pas</b> et l'artisan perçoit la même chose. Versement mensuel, relevé d'auto-facturation.</span></div>
+      <div class="card" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">${I.card}&nbsp;Pour être payé — votre RIB</b>${(S.concIban&&ibanValid(S.concIban))?`<span class="chip good" style="padding:3px 9px">${I.check} Enregistré</span>`:`<span class="chip coral" style="padding:3px 9px">Requis</span>`}</div>
+        <div class="field" style="margin-top:10px"><label>Titulaire du compte</label><input class="txt" data-cib="holder" value="${esc(S.concIbanHolder||'')}" placeholder="Raison sociale / nom"></div>
+        <div class="field" style="margin:0"><label>IBAN</label><input class="txt" data-cib="iban" value="${esc(S.concIban||'')}" placeholder="FR76 ..." autocomplete="off">${(S.concIban&&!ibanValid(S.concIban))?`<p class="mini" style="margin-top:5px;color:var(--coral-deep)">IBAN incomplet ou invalide.</p>`:''}</div>
+        <button class="btn ${(S.concIban&&ibanValid(S.concIban))?'ghost':'primary'} sm" data-act="conc-save-iban" style="margin-top:12px">${I.check} Enregistrer mon RIB</button>
+        <p class="mini" style="margin-top:8px;color:var(--muted)">Ti-Services y verse votre rétribution une fois par mois. Coordonnées privées, jamais visibles des clients.</p></div>
       <div style="height:16px"></div><span class="eyebrow">Détail des prestations réglées</span>${rows}
       <div style="height:8px"></div></div>${conciergeNavbar()}`;
   }
@@ -2422,7 +2488,7 @@
     S.proEarnings=1284.50;S.proJobsToday=3;S.proJobsTotal=214;S.proRating=4.9;S.proIban='FR7630006000011234567890189';S.proIbanHolder='Marie-Lou Cagan';S.proBic='AGRIFRPP';
     S.proInsured=true;S.proInsurer='AXA · Police 12345';S.proInsuranceUrl=DEMO_ATTEST;S.proInsuranceStatus='valide';S.proAcceptedCharte=true;S.proAcceptedTerms=true;S.proTermsVersion=TERMS_VERSION;S.proTermsAt=new Date('2026-05-15T10:00:00');
     S.adminArtisans=ADMIN_ARTS();S.adminClients=ADMIN_CLIS();S.adminBookings=ADMIN_BOOK();S.adminCommission=1240;S.adminConcierges=ADMIN_CONC();
-    S.concClients=CONCIERGE_CLIENTS();S.concOrders=CONCIERGE_ORDERS();S.concEarn=640;
+    S.concClients=CONCIERGE_CLIENTS();S.concOrders=CONCIERGE_ORDERS();S.concEarn=640;S.concIban='FR7630006000011234567890189';S.concIbanHolder='Conciergerie Alizés';
   }
   // La vraie BÊTA part de zéro : aucun client / artisan / historique de démo.
   function blankAll(){
@@ -3139,6 +3205,7 @@
       else if(act==='conc-retrib'){S.admin.view='fact';S.admin.fact={conc:id,mode:'conc'};render();view.scrollTop=0;return;}
       else if(act==='conc-pay'){const c=(S.adminConcierges||[]).find(x=>x.id===id);if(c){c.retroPaid=COMM_PERIOD;adminWriteConcRetro(c);toast('Rétribution marquée comme versée');}render();return;}
       else if(act==='conc-unpay'){const c=(S.adminConcierges||[]).find(x=>x.id===id);if(c){c.retroPaid='';adminWriteConcRetro(c);toast('Statut « versé » annulé');}render();return;}
+      else if(act==='conc-sepa-export'){adminExportConcSepa();return;}
       else if(act==='valid-ins'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.insuranceStatus='valide';a.insured=true;adminWriteField(a,{insuranceStatus:'valide',insured:true});toast('Attestation validée ✓');}}
       else if(act==='rej-ins'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.insuranceStatus='refuse';adminWriteField(a,{insuranceStatus:'refuse'});toast('Attestation refusée');}}
       else if(act==='addcat'){const a=S.adminArtisans.find(x=>x.id===id);if(a&&a.other){addCustomService(a.other,(a.rates&&a.rates.autre)||40);}}
@@ -3291,6 +3358,7 @@
       case 'conc-client-view-back':S.concClientView=null;render();break;
       case 'conc-client-new':S.concForm={id:null,name:'',email:'',phone:'',alabel:'',aaddr:'',azone:'Gustavia',authorized:false,card:null};render();break;
       case 'conc-client-cancel':S.concForm=null;render();break;
+      case 'conc-save-iban':{const iban=(S.concIban||'').replace(/\s/g,'');if(!ibanValid(iban)){toast('IBAN invalide — vérifiez la saisie');render();break;}S.concIban=iban;saveConcCloud();toast('RIB enregistré ✓');render();break;}
       case 'conc-auth':if(S.concForm){S.concForm.authorized=true;S.concForm.card={brand:'Visa',last4:'4242'};render();toast('Lien envoyé — carte autorisée par le client (démo)');}break;
       case 'conc-client-geo':geolocate(g=>{if(S.concForm){S.concForm.ageo=g;render();}});break;
       case 'conc-client-save':{const f=S.concForm;if(!f)break;if(!(f.name||'').trim()){toast('Indiquez le nom du client');break;}const addr={label:f.alabel||f.name,address:f.aaddr,zone:f.azone,geo:f.ageo||null};if(f.id){const c=concClient(f.id);if(c){c.name=f.name;c.email=f.email;c.phone=f.phone;c.addr=addr;c.notes=f.notes||'';c.authorized=f.authorized;c.card=f.card;}}else{S.concClients.push({id:'cc'+Date.now(),name:f.name,email:f.email,phone:f.phone,addr,notes:f.notes||'',authorized:f.authorized,card:f.card});}S.concForm=null;saveConcCloud();render();toast('Client enregistré');break;}
@@ -3466,6 +3534,8 @@
     const po=e.target.closest('[data-po]');if(po&&S.payoutForm){S.payoutForm[po.dataset.po]=po.value;const sb=document.querySelector('[data-act="save-payout"]');if(sb)sb.disabled=!((S.payoutForm.holder||'').trim().length>1&&ibanValid(S.payoutForm.iban));}
     const cf2=e.target.closest('[data-cf2]');if(cf2&&S.concForm){S.concForm[cf2.dataset.cf2]=cf2.value;}
     const cn=e.target.closest('[data-conc-notes]');if(cn&&S.concOrder){S.concOrder.notes=cn.value;}
+    const cib=e.target.closest('[data-cib]');if(cib){if(cib.dataset.cib==='iban')S.concIban=cib.value;else S.concIbanHolder=cib.value;}
+    const sip=e.target.closest('[data-sepa]');if(sip){S.sepaIban=sip.value;try{localStorage.setItem('ts_sepa_iban',sip.value);}catch(_){}}
   });
   view.addEventListener('change',(e)=>{
     const fp=e.target.closest('[data-photoinput]');
@@ -3663,6 +3733,7 @@
         S.concOrders=(cd&&Array.isArray(cd.orders))?cd.orders:[];
         S.concEarn=(cd&&cd.earn)||0;
         S.concRetroPaid=(cd&&cd.retroPaid)||'';
+        S.concIban=(cd&&cd.iban)||'';S.concIbanHolder=(cd&&cd.ibanHolder)||'';
         S.onboarded=true;S.authView=null;S.concNav='home';S.concForm=null;S.concOrder=null;S.concView=null;render();
         subscribeConcStatus(user.uid);
         S.genSupport=(data&&Array.isArray(data.support))?data.support.slice():[];subscribeUserSupport(user.uid);
@@ -3897,7 +3968,7 @@
     try{
       adminConcUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'concierges'),function(snap){
         const list=[];
-        snap.forEach(function(d){ const c=d.data()||{}; list.push({id:d.id,uid:d.id,real:true,name:c.name||'Conciergerie',contact:c.contact||'',siret:c.siret||'',phone:c.phone||'',email:c.email||'',status:c.status||'attente',orders:Array.isArray(c.orders)?c.orders:[],earn:c.earn||0,retroPaid:c.retroPaid||''}); });
+        snap.forEach(function(d){ const c=d.data()||{}; list.push({id:d.id,uid:d.id,real:true,name:c.name||'Conciergerie',contact:c.contact||'',siret:c.siret||'',phone:c.phone||'',email:c.email||'',status:c.status||'attente',orders:Array.isArray(c.orders)?c.orders:[],earn:c.earn||0,retroPaid:c.retroPaid||'',iban:c.iban||'',ibanHolder:c.ibanHolder||''}); });
         S.adminConcierges=list;
         if(S.persona==='admin')render();
       },function(err){ console.warn('admin concierges snapshot',err); });
