@@ -1779,7 +1779,7 @@
     const exitIco='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>';
     const pend=adminPendingCount();const sup=(typeof adminSupportPending==='function')?adminSupportPending():0;
     const onFact=(S.admin.view==='fact');
-    return `<div class="navbar"><button data-adm="home" class="${onHome?'on':''}"><span class="nb-ic">${I.shield}${pend?`<span class="nb-count">${pend}</span>`:''}</span>Console</button><button data-adm="msg" class="${inMsg?'on':''}"><span class="nb-ic">${I.chat}${sup?`<span class="nb-count">${sup}</span>`:''}</span>Messagerie</button><button data-adm="fact" class="${onFact?'on':''}"><span class="nb-ic">${I.card}</span>Factures</button><button data-adm="quit"><span class="nb-ic">${exitIco}</span>Quitter</button></div>`;
+    return `<div class="navbar"><button data-adm="home" class="${onHome?'on':''}"><span class="nb-ic">${I.shield}${pend?`<span class="nb-count">${pend}</span>`:''}</span>Console</button><button data-adm="msg" class="${inMsg?'on':''}"><span class="nb-ic">${I.chat}${sup?`<span class="nb-count">${sup}</span>`:''}</span>Messagerie</button><button data-adm="fact" class="${onFact?'on':''}"><span class="nb-ic">${I.card}</span>Factures</button><button data-adm="quit"><span class="nb-ic">${exitIco}</span>${(!isDemo()&&isAdminAccount())?'Déconnexion':'Quitter'}</button></div>`;
   }
   function adminPendingCount(){return ((S.adminArtisans||[]).filter(function(a){return a.status==='attente';}).length)+((S.adminClients||[]).filter(function(c){return c.status==='attente';}).length);}
   function catNames(cats){return cats.map(svcNm).join(', ');}
@@ -3855,7 +3855,11 @@
     if(b.dataset.act==='get-app'){showInstallGuide();return;}
     if(b.dataset.persona){go(b.dataset.persona);return;}
     if(b.dataset.adm){const parts=b.dataset.adm.split(':'),act=parts[0],id=parts[1];
-      if(act==='quit'){S.persona='client';S.admin.view='home';S.admin.sel=null;S.admin.fact=null;S.support=false;S.supportSide=null;S.adminSupervise=false;S.generalSupport=false;S.genUser=null;}
+      if(act==='quit'){
+        // Vrai compte admin (back-office) : « Quitter » = se déconnecter, jamais
+        // basculer dans l'espace client. En démo seulement, on explore les autres espaces.
+        if(!isDemo()&&isAdminAccount()){ S.demoMode=false;clearClientCache();S.support=false;S.supportSide=null;S.adminSupervise=false;S.generalSupport=false;S.genUser=null;if(FB)blankAll();fbLogout();if(!FB){S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;S.missions=[];}render();return; }
+        S.persona='client';S.admin.view='home';S.admin.sel=null;S.admin.fact=null;S.support=false;S.supportSide=null;S.adminSupervise=false;S.generalSupport=false;S.genUser=null;}
       else if(act==='support'){S.support=true;S.supportSide=id;render();view.scrollTop=view.scrollHeight;return;}
       else if(act==='msg'){S.admin.view='msg';S.admin.fact=null;S.support=false;S.supportSide=null;S.adminSupervise=false;S.generalSupport=false;S.genUser=null;S.mission=null;render();return;}
       else if(act==='sup'){const th=(S.adminThreads||[]).find(function(x){return x.reqId===id;});if(th){S.mission=th;S.supportSide=(parts[2]==='pro'?'pro':'client');S.support=true;S.adminSupervise=false;S.admin.view='msg';markSupportReadAdmin(th,S.supportSide);watchRequest(th.reqId);render();view.scrollTop=view.scrollHeight;}return;}
