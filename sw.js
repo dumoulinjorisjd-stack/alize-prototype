@@ -1,5 +1,5 @@
 /* Ti-Services — service worker (coquille hors-ligne) */
-const CACHE = 'ti-services-v188';
+const CACHE = 'ti-services-v189';
 const SHELL = [
   './',
   './index.html',
@@ -7,7 +7,8 @@ const SHELL = [
   './zouti-logo.svg',
   './icon.svg',
   './icon-192.png',
-  './icon-512.png'
+  './icon-512.png',
+  './badge-96.png'
 ];
 
 self.addEventListener('install', (e) => {
@@ -30,7 +31,9 @@ self.addEventListener('push', (e) => {
   const body = src.body || '';
   const url = src.url || (p.data && p.data.url) || './';
   e.waitUntil(self.registration.showNotification(title, {
-    body, icon: './icon-192.png', badge: './icon-192.png',
+    // icon = grande vignette couleur (le poulpe corail) ; badge = silhouette
+    // MONOCHROME transparente pour la barre d'état Android (sinon un carré blanc).
+    body, icon: './icon-192.png', badge: './badge-96.png',
     data: { url }, tag: src.tag || 'ti-services', renotify: true
   }));
 });
