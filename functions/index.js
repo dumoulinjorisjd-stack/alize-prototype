@@ -444,6 +444,26 @@ exports.settleCommission = onDocumentUpdated('requests/{reqId}', async (event) =
   const net = round2(gross - commission);
 
   const reqId = event.params.reqId;
+
+  // Numéro de facture SÉQUENTIEL par intervenant, attribué de façon ATOMIQUE par le
+  // serveur (transaction sur un compteur dédié). C.C.S, mandataire de facturation,
+  // garantit ainsi une numérotation continue, unique et sans doublon (art. 242 nonies A
+  // du CGI) — impossible à obtenir avec des compteurs locaux multi-appareils. Le compteur
+  // démarre à zéro tant qu'aucune facture n'a été émise (donc « remis à zéro » au
+  // lancement officiel une fois les données de test purgées).
+  let saleInvoiceNo = after.saleInvoiceNo || '';
+  if (!saleInvoiceNo) {
+    try {
+      saleInvoiceNo = await db.runTransaction(async (tx) => {
+        const cref = db.collection('counters').doc(providerUid);
+        const csnap = await tx.get(cref);
+        const seq = ((csnap.exists ? (csnap.data().saleSeq || 0) : 0)) + 1;
+        tx.set(cref, { saleSeq: seq, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        return (new Date()).getFullYear() + '-' + String(seq).padStart(4, '0');
+      });
+    } catch (e) { console.warn('settleCommission numbering', e); saleInvoiceNo = ''; }
+  }
+
   try {
     // 1) REGISTRE COMPTABLE IMMUABLE : un document par prestation réglée, écrit
     //    UNIQUEMENT par le serveur (les règles interdisent toute écriture client).
@@ -467,10 +487,11 @@ exports.settleCommission = onDocumentUpdated('requests/{reqId}', async (event) =
       commissionPct: pct,
       commissionAmount: commission, // revenu Ti-Services
       netAmount: net,             // net perçu par l'artisan
+      invNo: saleInvoiceNo,       // numéro de facture séquentiel (mandat, au nom de l'artisan)
       settledAt: FieldValue.serverTimestamp(),
     }, { merge: true });
 
-    // 2) Report des montants figés sur la demande (lecture pratique côté app).
+    // 2) Report des montants + numéro figés sur la demande (lecture pratique côté app).
     await event.data.after.ref.update({
       commissionSettled: true,
       commissionPct: pct,
@@ -478,6 +499,7 @@ exports.settleCommission = onDocumentUpdated('requests/{reqId}', async (event) =
       commissionAmount: commission,
       grossTotal: gross,
       netAmount: net,
+      saleInvoiceNo: saleInvoiceNo,
       settledAt: FieldValue.serverTimestamp(),
     });
     console.log('Commission figée + registre reqId=' + reqId +

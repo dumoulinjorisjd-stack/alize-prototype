@@ -3912,10 +3912,13 @@
         snap.forEach(function(docu){const r=docu.data()||{};
           if(r.status!=='paid'&&r.status!=='rated')return;
           const i=S.missions.findIndex(function(x){return x.reqId===docu.id;});const local=(i>=0)?S.missions[i]:null;if(i>=0)S.missions.splice(i,1);
-          if(inHist[docu.id])return;
+          // Numéro de facture attribué par le serveur (Cloud Function). On l'adopte, y
+          // compris pour une entrée déjà présente dont le numéro n'était pas encore figé.
+          const srvNo=r.saleInvoiceNo||r.invNo||'';
+          if(inHist[docu.id]){if(srvNo){const ex=S.history.find(function(h){return h.reqId===docu.id;});if(ex&&!ex.invNo){ex.invNo=srvNo;histChanged=true;}}return;}
           const dur=(r.finalHours!=null?r.finalHours:(r.duration||1));
           const prov=(local&&local.provider)?local.provider:Object.assign({},PROVIDERS[r.service]||{ini:'AR'},{nm:r.providerName||'Votre artisan',ini:inits(r.providerName||'Artisan')});
-          S.history.unshift({reqId:docu.id,svc:r.service,svcName:r.serviceName||svcNm(r.service),status:'paid',when:r.when||'',dateISO:r.dateISO||'',zone:r.zone||'',unit:r.unit||'h',duration:dur,finalHours:dur,rate:r.rate||0,boost:r.boost||0,invNo:r.invNo||'',provider:{nm:prov.nm,ini:prov.ini||inits(prov.nm||'AR')}});
+          S.history.unshift({reqId:docu.id,svc:r.service,svcName:r.serviceName||svcNm(r.service),status:'paid',when:r.when||'',dateISO:r.dateISO||'',zone:r.zone||'',unit:r.unit||'h',duration:dur,finalHours:dur,rate:r.rate||0,boost:r.boost||0,invNo:srvNo,provider:{nm:prov.nm,ini:prov.ini||inits(prov.nm||'AR')}});
           inHist[docu.id]=1;histChanged=true;
         });
         // Filet anti-doublon : jamais deux missions partageant le même reqId.
@@ -3971,10 +3974,17 @@
       S.proHistory=S.proHistory||[];let changed=false;
       const known={};S.proHistory.forEach(function(h){if(h.reqId)known[h.reqId]=1;});
       for(const docu of snap.docs){const r=docu.data()||{};
-        if((r.status!=='paid'&&r.status!=='rated')||known[docu.id])continue;
-        const dur=(r.finalHours!=null?r.finalHours:(r.duration||1));const amount=r.total||((r.rate||0)*dur);
-        S.proHistory.unshift({id:'hm'+docu.id,reqId:docu.id,dateISO:(r.dateISO||todayISO()),svc:r.service,client:(r.clientName||'Client'),clientFull:(r.clientName||'Client'),clientZone:r.zone||'',duration:dur,unit:r.unit||'h',rate:r.rate||0,amount:amount,invNo:r.invNo||('2026-'+String(1000+S.proHistory.length).padStart(4,'0')),paidVia:'carte'});
-        S.proEarnings=(S.proEarnings||0)+amount;S.proJobsTotal=(S.proJobsTotal||0)+1;known[docu.id]=1;changed=true;
+        if(r.status!=='paid'&&r.status!=='rated')continue;
+        const srvNo=r.saleInvoiceNo||r.invNo||'';
+        // Entrée déjà connue : on adopte simplement le numéro serveur s'il diffère
+        // (la numérotation officielle est celle attribuée par le serveur).
+        if(known[docu.id]){if(srvNo){const ex=S.proHistory.find(function(h){return h.reqId===docu.id;});if(ex&&ex.invNo!==srvNo){ex.invNo=srvNo;changed=true;}}continue;}
+        const dur=(r.finalHours!=null?r.finalHours:(r.duration||1));
+        const hasSrv=(r.commissionAmount!=null&&r.netAmount!=null);
+        const gross=(r.grossTotal!=null?r.grossTotal:(r.total||((r.rate||0)*dur)));
+        const commission=hasSrv?r.commissionAmount:0;const net=hasSrv?r.netAmount:gross;const cpct=hasSrv?(r.commissionPct||0):0;
+        S.proHistory.unshift({id:'hm'+docu.id,reqId:docu.id,dateISO:(r.dateISO||todayISO()),svc:r.service,client:(r.clientName||'Client'),clientFull:(r.clientName||'Client'),clientZone:r.zone||'',duration:dur,unit:r.unit||'h',rate:r.rate||0,amount:gross,commPct:cpct,commission:commission,net:net,invNo:srvNo||('2026-'+String(1000+S.proHistory.length).padStart(4,'0')),paidVia:'carte'});
+        S.proEarnings=Math.round(((S.proEarnings||0)+net)*100)/100;S.proJobsTotal=(S.proJobsTotal||0)+1;known[docu.id]=1;changed=true;
       }
       if(changed)saveProStats();
       if(miss.length){S.proMissions=miss;miss.forEach(function(mm){watchRequest(mm.reqId);});}
