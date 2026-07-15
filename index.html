@@ -2442,6 +2442,7 @@
       <button class="btn ghost sm" data-act="open-support" style="margin-top:8px;justify-content:flex-start;gap:8px">${I.shield}&nbsp;Contacter Ti-Services (support)${(()=>{const th=(m.support&&m.support.client)||[];return th.length?` · ${th.length}`:'';})()}</button>
       <div class="est" style="background:var(--card-2);border-color:var(--hair)"><div class="line"><span>Montant garanti</span><b>${eur(t.total)}</b></div><div class="line"><span>Sur ${cardTxt()}</span><b>${S.card?'bloqué':'à la validation'}</b></div><small>${I.shield} Rien à faire&nbsp;: débité automatiquement à la fin (jamais plus que ce montant), seulement si vous validez.</small></div>
       ${m.status==='pending'?`<div class="footcta" style="position:static;background:none;padding:16px 0 0">${isDemo()?`<button class="demobtn" data-act="demo-go-pro">${I.hardhat} Voir côté artisan (démo)</button>`:''}<button class="btn ghost" data-act="cancel-mission" style="margin-top:12px">Annuler la demande</button></div>`:'<div style="height:18px"></div>'}
+      ${m.status==='accepted'?`<div class="card" style="padding:14px;margin-top:12px;background:var(--card-2)"><p class="mini" style="text-align:center;margin:0">${S.clientNoShowAsk?`<span style="color:var(--coral-deep)">L'artisan ne s'est pas présenté&nbsp;? Nous <b>relançons aussitôt</b> la recherche auprès des autres artisans — et <b>vous ne payez rien</b> pour une absence.</span><br><button class="linklike" data-act="client-noshow-confirm" style="color:var(--coral-deep);font-weight:700;margin-top:6px;display:inline-block">Oui, relancer la recherche</button> &nbsp;·&nbsp; <button class="linklike" data-act="client-noshow-cancel">Annuler</button>`:`${I.clock} <button class="linklike" data-act="client-noshow" style="color:var(--muted)">L'artisan ne s'est pas présenté&nbsp;?</button>`}</p></div>`:''}
       <p class="mini" style="text-align:center;margin-top:6px;color:var(--muted)">Vous pouvez naviguer ailleurs — revenez ici via l'onglet <b>Accueil</b>.</p></div>${clientNavbar()}`;
   }
   function clientConfirm(){
@@ -3186,6 +3187,21 @@
   // Désistement artisan : la mission acceptée repart en recherche pour les autres
   // artisans (re-diffusion), et le client est prévenu. Concrétise l'engagement de
   // moyens « on relance la recherche » sans en faire une garantie.
+  // No-show signalé par le CLIENT : l'artisan s'était engagé mais ne s'est pas
+  // présenté. On rouvre la demande (elle repart aux AUTRES artisans, l'absent est
+  // exclu du re-broadcast côté serveur), le client n'est pas débité (le débit
+  // n'intervient qu'à la validation), et le serveur enregistre un manquement sur
+  // l'artisan (recordNoShow) — la source de vérité de l'artisan visé étant la fiche
+  // serveur (before.providerUid), non une valeur fournie par le client.
+  function clientNoShow(m){
+    if(!m)return;
+    const prev=m.providerUid||'';
+    pushReqUpdate(m,{status:'pending',providerUid:null,providerName:'',acceptedSlot:null,reopenedAt:Date.now(),noShowUid:prev,noShowAt:Date.now(),reopenedBy:'client'});
+    m.status='pending';m.provider=null;m.providerUid=null;m.acceptedSlot=null;
+    S.clientNoShowAsk=false;
+    toast('Recherche relancée — aucune absence ne vous est facturée');
+    render();
+  }
   function reopenMission(m){
     if(!m)return;
     pushReqUpdate(m,{status:'pending',providerUid:null,providerName:'',acceptedSlot:null,reopenedAt:Date.now()});
@@ -3579,6 +3595,9 @@
       case 'pro-reopen':S.proReopenAsk=true;render();break;
       case 'pro-reopen-cancel':S.proReopenAsk=false;render();break;
       case 'pro-reopen-confirm':reopenMission(S.mission);break;
+      case 'client-noshow':S.clientNoShowAsk=true;render();break;
+      case 'client-noshow-cancel':S.clientNoShowAsk=false;render();break;
+      case 'client-noshow-confirm':clientNoShow(S.mission);break;
       case 'show-pitch':S.showPitch=true;render();break;
       case 'pitch-start':S.showPitch=false;S.onbStep=1;render();break;
       case 'pitch-close':S.showPitch=false;render();break;

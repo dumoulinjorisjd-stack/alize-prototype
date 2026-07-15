@@ -624,6 +624,28 @@ exports.notifyReopenedRequest = onDocumentUpdated('requests/{reqId}', async (eve
 });
 
 /**
+ * recordNoShow : quand un CLIENT signale que l'artisan engagé ne s'est pas présenté
+ * (transition accepted -> pending avec reopenedBy='client'), on inscrit un manquement
+ * sur la fiche de l'artisan RÉELLEMENT assigné (before.providerUid, source de vérité —
+ * on n'utilise jamais une valeur fournie par le client pour désigner la victime).
+ * C'est un signal de fiabilité pour l'admin ; il n'entraîne pas de sanction automatique.
+ */
+exports.recordNoShow = onDocumentUpdated('requests/{reqId}', async (event) => {
+  const before = (event.data && event.data.before && event.data.before.data()) || {};
+  const after = (event.data && event.data.after && event.data.after.data()) || {};
+  if (!(before.status === 'accepted' && after.status === 'pending' && after.reopenedBy === 'client')) return;
+  const uid = before.providerUid;
+  if (!uid) return;
+  try {
+    await getFirestore().collection('artisans').doc(uid).set({
+      noShowCount: FieldValue.increment(1),
+      lastNoShowAt: FieldValue.serverTimestamp(),
+    }, {merge: true});
+    console.log('No-show enregistré artisan=' + uid + ' req=' + event.params.reqId);
+  } catch (e) { console.warn('recordNoShow', e); }
+});
+
+/**
  * mollieOnboardingStart : point d'entrée du parcours d'activation des paiements.
  * L'app y redirige l'artisan ; on renvoie (302) vers le parcours hébergé Mollie
  * (OAuth). `state` = uid de l'artisan pour le corréler au retour.
