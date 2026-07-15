@@ -397,3 +397,63 @@ exports.notifyClientStatus = onDocumentUpdated('requests/{reqId}', async (event)
     (tok) => db.collection('users').doc(clientUid).update({ pushTokens: FieldValue.arrayRemove(tok) }));
   console.log('Push statut client (' + aStatus + ') envoyé à ' + clientUid);
 });
+
+/**
+ * settleCommission : au moment où une demande passe à « paid », calcule et FIGE la
+ * commission Ti-Services CÔTÉ SERVEUR — source de vérité comptable, indépendante de
+ * l'appareil de l'artisan. Base = tarif (fixé par l'admin, non modifiable par l'artisan)
+ * × heures facturées ; la majoration « coup de pouce » revient à l'intervenant. Le taux
+ * suit le barème de fidélité selon le nombre de missions de l'artisan. Écrit une seule
+ * fois (idempotent via `commissionSettled`) sur la demande :
+ *   commissionPct, commissionBase, commissionAmount, grossTotal, netAmount.
+ */
+function commissionTierPct(jobsTotal) {
+  const n = Number(jobsTotal) || 0;
+  if (n >= 300) return 8;   // Platine
+  if (n >= 150) return 10;  // Or
+  if (n >= 50) return 12;   // Argent
+  return 15;                // Bronze
+}
+const round2 = (x) => Math.round((Number(x) || 0) * 100) / 100;
+
+exports.settleCommission = onDocumentUpdated('requests/{reqId}', async (event) => {
+  const before = (event.data && event.data.before && event.data.before.data()) || {};
+  const after = (event.data && event.data.after && event.data.after.data()) || {};
+  // On agit UNIQUEMENT sur la transition -> « paid », et une seule fois.
+  if (before.status === 'paid' || after.status !== 'paid') return;
+  if (after.commissionSettled) return;
+
+  const providerUid = after.providerUid;
+  if (!providerUid) { console.log('settleCommission : demande sans providerUid, ignorée.'); return; }
+
+  const rate = Number(after.rate) || 0;
+  const hours = (after.finalHours != null) ? Number(after.finalHours) : (Number(after.duration) || 0);
+  const base = round2(rate * hours);
+  const boost = Number(after.boost) || 0;
+  const gross = round2(base + round2(base * boost / 100));
+
+  const db = getFirestore();
+  let jobsTotal = 0;
+  try {
+    const a = await db.collection('artisans').doc(providerUid).get();
+    jobsTotal = (a.data() || {}).jobsTotal || 0;
+  } catch (_) {}
+
+  const pct = commissionTierPct(jobsTotal);
+  const commission = round2(base * pct / 100);
+  const net = round2(gross - commission);
+
+  try {
+    await event.data.after.ref.update({
+      commissionSettled: true,
+      commissionPct: pct,
+      commissionBase: base,
+      commissionAmount: commission,
+      grossTotal: gross,
+      netAmount: net,
+      settledAt: FieldValue.serverTimestamp(),
+    });
+    console.log('Commission figée reqId=' + event.params.reqId +
+      ' base=' + base + ' pct=' + pct + '% comm=' + commission + ' net=' + net);
+  } catch (e) { console.warn('settleCommission write', e); }
+});
