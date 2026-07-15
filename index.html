@@ -288,6 +288,7 @@
   .btn.accept{background:linear-gradient(180deg,var(--teal),var(--teal-deep));color:#fff;box-shadow:0 14px 26px -14px color-mix(in srgb,var(--teal) 78%,transparent)}
   .btn.ghost{background:var(--card);border:1.5px solid var(--hair);color:var(--ink)}
   .btn.good{background:linear-gradient(180deg,var(--good),#26855A);color:#fff}
+  .btn.coral{background:linear-gradient(180deg,var(--coral),var(--coral-deep));color:#fff}
   .btn.sm{padding:12px;font-size:14px;border-radius:13px}
   .btn:disabled{opacity:.45;pointer-events:none}
 
@@ -1057,7 +1058,9 @@
     <p>Lorsque le Client demande <b>expressément</b> que la prestation débute avant la fin de ce délai (notamment pour une intervention à une date proche), il est informé et reconnaît que&nbsp;: (i) il <b>renonce à son droit de rétractation</b> une fois la prestation <b>pleinement exécutée</b>&nbsp;; (ii) en cas de rétractation en cours d'exécution, il reste redevable du <b>montant correspondant à la part de prestation déjà réalisée</b>.</p>
     <p>Pour exercer son droit, le Client notifie sa décision par une <b>déclaration dénuée d'ambiguïté</b> (par e-mail à contact@ti-services.fr). Un <b>modèle de formulaire de rétractation</b> est disponible sur simple demande à cette adresse.</p>
     <h3>7. Annulation</h3>
-    <p>Le Client peut annuler une demande non encore acceptée sans frais. Les conditions d'annulation d'une prestation confirmée sont précisées dans l'application.</p>
+    <p><b>Avant acceptation.</b> Tant qu'aucun Intervenant n'a accepté la demande, le Client peut l'annuler à tout moment et <b>sans aucun frais</b>.</p>
+    <p><b>Après confirmation.</b> Dès qu'un Intervenant a accepté la demande, l'annulation reste <b>gratuite jusqu'à huit (8) heures avant</b> l'heure de rendez-vous convenue. <b>Toute annulation moins de 8 heures avant</b> le début prévu — ou l'absence du Client au rendez-vous — donne lieu à une <b>indemnité d'annulation égale à 50 % du montant de la prestation</b>, reversée à l'Intervenant en compensation du créneau qu'il avait réservé. <b>Ti-Services perçoit sa commission d'intermédiation habituelle sur cette indemnité</b>, dans les mêmes conditions que sur une prestation réalisée.</p>
+    <p>Aucune indemnité n'est due lorsque l'annulation résulte d'un manquement de l'Intervenant (absence, retard important, prestation non conforme)&nbsp;: dans ce cas, le Client n'est débité d'aucune somme.</p>
     <h3>8. Garantie Ti-Services & réclamations</h3>
     <p>En cas d'intervenant absent ou de prestation non conforme, <b>le Client n'est pas débité d'une prestation non réalisée</b> (garantie de paiement). Ti-Services met en œuvre ses <b>meilleurs efforts</b> pour proposer une solution — recherche d'un nouvel intervenant, médiation — <b>sans toutefois garantir la disponibilité d'un remplaçant</b>, la Plateforme n'étant pas l'employeur des Intervenants et ne pouvant en imposer la présence. Toute réclamation : contact@ti-services.fr.</p>
     <h3>9. Responsabilité</h3>
@@ -1405,6 +1408,28 @@
   function todayISO(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
   function isTodaySel(m){if(!m)return false;if(m.dateMode==='pick')return m.dateISO===todayISO();return m.when==='Aujourd’hui';}
   function minSlotToday(m){return isTodaySel(m)?nowMin():-1;}
+  // Horodatage (ms) du rendez-vous d'une mission, à partir de when/dateISO + slot.
+  function missionStartMs(m){
+    if(!m)return null;
+    const base=new Date();base.setHours(0,0,0,0);
+    if(m.dateMode==='pick'&&m.dateISO){const p=(''+m.dateISO).split('-');if(p.length===3){base.setFullYear(+p[0],(+p[1])-1,+p[2]);}}
+    else if(m.when==='Demain'){base.setDate(base.getDate()+1);}
+    // « Aujourd'hui » ou libellé par défaut : on reste sur la date du jour.
+    const mins=/^\d{1,2}:\d{2}$/.test(m.slot||'')?slotToMin(m.slot):12*60;
+    base.setMinutes(base.getMinutes()+mins);
+    return base.getTime();
+  }
+  function hoursUntilMission(m){const ms=missionStartMs(m);if(ms==null)return null;return (ms-Date.now())/3600000;}
+  // Politique d'annulation : gratuite avant acceptation ou à 8 h+ du rendez-vous ;
+  // sinon indemnité de 50 % de la prestation due à l'artisan (Ti-Services perçoit
+  // sa commission sur cette indemnité, comme sur une prestation réalisée).
+  function cancelPolicy(m){
+    if(!m||m.status==='searching'||m.status==='pending'||!m.provider){return {free:true,fee:0,pct:0};}
+    const h=hoursUntilMission(m);
+    if(h==null||h>=8){return {free:true,fee:0,pct:0,hours:h};}
+    const base=totals(m).total;
+    return {free:false,fee:Math.round(base*0.5*100)/100,pct:50,hours:h,base:base};
+  }
   function flexWindow(m){let lo,hi;if(m.slotFlex==='day'){lo=480;hi=1140;}else{const b=slotToMin(m.slot),d=Number(m.slotFlex)||0;lo=b-d;hi=b+d;}const mm=minSlotToday(m);if(mm>=0)lo=Math.max(lo,mm);if(hi<lo)hi=lo;return [minToSlot(lo),minToSlot(hi)];}
   function flexTxt(m){if(!m.slotFlex)return '';if(m.slotFlex==='day')return 'dans la journée (8 h – 19 h)';const w=flexWindow(m);return 'entre '+w[0]+' et '+w[1];}
   function proSlotList(m){const w=flexWindow(m);const start=slotToMin(w[0]),end=slotToMin(w[1]);const step=(m.slotFlex==='day')?60:30;const out=[];for(let t=start;t<=end;t+=step)out.push(minToSlot(t));return out;}
@@ -2711,13 +2736,26 @@
       <div class="stack" style="margin-top:16px"><button class="btn primary" data-act="addr-save">${I.check} Enregistrer</button>
       ${!isNew?`${S.addrDefault!==f.id?`<button class="btn ghost sm" data-act="addr-default">Définir comme adresse par défaut</button>`:''}<button class="btn ghost sm" data-act="addr-delete">Supprimer cette adresse</button>`:''}</div></div>`;
   }
+  // Carte de confirmation d'annulation : rappelle la règle des 8 h / 50 % avant d'agir.
+  function cancelConfirmCard(m){
+    if(!S.cancelAsk)return '';
+    const pol=cancelPolicy(m);const confirmed=!!(m&&m.provider);
+    const inner=pol.free
+      ? `<p class="mini" style="margin:0">Annulation <b>sans frais</b>${confirmed?' — vous êtes à plus de 8&nbsp;h du rendez-vous.':' — aucun artisan n\'a encore accepté votre demande.'}</p>`
+      : `<p class="mini" style="margin:0;color:var(--coral-deep)">Il reste <b>moins de 8&nbsp;h</b> avant le rendez-vous. Conformément aux CGV, une <b>indemnité d'annulation de 50&nbsp;% (${eur(pol.fee)})</b> revient à l'artisan pour le créneau qu'il a réservé — commission Ti-Services incluse.</p>`;
+    return `<div class="card" style="padding:16px;margin-top:14px;text-align:center">
+      <b style="font-size:14px">Annuler cette ${confirmed?'prestation':'demande'}&nbsp;?</b>
+      <div style="margin-top:8px">${inner}</div>
+      <div class="stack" style="margin-top:14px"><button class="btn ${pol.free?'primary':'coral'}" data-act="cancel-confirm">${pol.free?'Confirmer l\'annulation':'Annuler malgré l\'indemnité · '+eur(pol.fee)}</button><button class="btn ghost sm" data-act="cancel-dismiss">Revenir en arrière</button></div>
+    </div>`;
+  }
   function clientSearching(){
     const m=S.mission;
     return `<div class="pad"><div style="height:8px"></div><div style="text-align:center"><span class="eyebrow" style="justify-content:center">${m.svcName} · ${m.when} ${m.slot}</span><div class="h-hello">Recherche d'un artisan…</div>
       <p class="sub" style="margin-top:2px">Le premier artisan disponible sur votre créneau prend la mission.</p></div>
       ${searchRadar(false)}
       <div class="card" style="padding:14px;text-align:center"><p class="sub" style="margin:0"><b id="notif">…</b> artisans notifiés</p></div>
-      <div class="footcta" style="position:static;background:none;padding:18px 0 0">${isDemo()?`<button class="demobtn" data-act="demo-go-pro">${I.hardhat} Voir côté artisan pour accepter (démo)</button>`:''}<button class="btn ghost" data-act="cancel-mission" style="margin-top:12px">Annuler la recherche</button></div>
+      <div class="footcta" style="position:static;background:none;padding:18px 0 0">${isDemo()?`<button class="demobtn" data-act="demo-go-pro">${I.hardhat} Voir côté artisan pour accepter (démo)</button>`:''}${S.cancelAsk?cancelConfirmCard(m):`<button class="btn ghost" data-act="cancel-mission" style="margin-top:12px">Annuler la recherche</button>`}</div>
       <p class="mini" style="text-align:center;margin-top:10px;color:var(--muted)">Vous pouvez naviguer ailleurs — revenez ici via l'onglet <b>Accueil</b>.</p></div>${clientNavbar()}`;
   }
   function clientTracking(){
@@ -2736,8 +2774,9 @@
       ${p?`<button class="btn ghost sm" data-act="open-chat" style="margin-top:12px;justify-content:flex-start;gap:8px">${I.chat}&nbsp;Contacter ${esc(p.nm.split(' ')[0])} (numéro masqué)${(m.chat&&m.chat.length)?` · ${m.chat.length}`:''}</button>`:''}
       <button class="btn ghost sm" data-act="open-support" style="margin-top:8px;justify-content:flex-start;gap:8px">${I.shield}&nbsp;Contacter Ti-Services (support)${(()=>{const th=(m.support&&m.support.client)||[];return th.length?` · ${th.length}`:'';})()}</button>
       <div class="est" style="background:var(--card-2);border-color:var(--hair)"><div class="line"><span>Montant garanti</span><b>${eur(t.total)}</b></div><div class="line"><span>Sur ${cardTxt()}</span><b>${S.card?'bloqué':'à la validation'}</b></div><small>${I.shield} Rien à faire&nbsp;: débité automatiquement à la fin (jamais plus que ce montant), seulement si vous validez.</small></div>
-      ${m.status==='pending'?`<div class="footcta" style="position:static;background:none;padding:16px 0 0">${isDemo()?`<button class="demobtn" data-act="demo-go-pro">${I.hardhat} Voir côté artisan (démo)</button>`:''}<button class="btn ghost" data-act="cancel-mission" style="margin-top:12px">Annuler la demande</button></div>`:'<div style="height:18px"></div>'}
+      ${m.status==='pending'?`<div class="footcta" style="position:static;background:none;padding:16px 0 0">${isDemo()?`<button class="demobtn" data-act="demo-go-pro">${I.hardhat} Voir côté artisan (démo)</button>`:''}${S.cancelAsk?cancelConfirmCard(m):`<button class="btn ghost" data-act="cancel-mission" style="margin-top:12px">Annuler la demande</button>`}</div>`:'<div style="height:18px"></div>'}
       ${m.status==='accepted'?`<div class="card" style="padding:14px;margin-top:12px;background:var(--card-2)"><p class="mini" style="text-align:center;margin:0">${S.clientNoShowAsk?`<span style="color:var(--coral-deep)">L'artisan ne s'est pas présenté&nbsp;? Nous <b>relançons aussitôt</b> la recherche auprès des autres artisans — et <b>vous ne payez rien</b> pour une absence.</span><br><button class="linklike" data-act="client-noshow-confirm" style="color:var(--coral-deep);font-weight:700;margin-top:6px;display:inline-block">Oui, relancer la recherche</button> &nbsp;·&nbsp; <button class="linklike" data-act="client-noshow-cancel">Annuler</button>`:`${I.clock} <button class="linklike" data-act="client-noshow" style="color:var(--muted)">L'artisan ne s'est pas présenté&nbsp;?</button>`}</p></div>`:''}
+      ${m.status==='accepted'?`<div style="text-align:center;margin-top:12px">${S.cancelAsk?cancelConfirmCard(m):`<button class="linklike" data-act="cancel-mission" style="color:var(--muted)">Annuler la prestation</button><p class="mini" style="margin-top:6px;color:var(--muted)">Gratuit jusqu'à 8&nbsp;h avant le rendez-vous — au-delà, une indemnité de 50&nbsp;% revient à l'artisan (voir CGV).</p>`}</div>`:''}
       <p class="mini" style="text-align:center;margin-top:6px;color:var(--muted)">Vous pouvez naviguer ailleurs — revenez ici via l'onglet <b>Accueil</b>.</p></div>${clientNavbar()}`;
   }
   function clientConfirm(){
@@ -3064,7 +3103,7 @@
   }
   function clientPay(){
     const m=S.draft,t=totals(m);
-    const recap=`<div class="card" style="padding:15px;margin-top:14px"><div class="row between"><b style="font-size:14px">${m.svcName}</b><b class="money">${eur(t.total)}</b></div><div class="mini" style="margin-top:3px">${m.when} · ${m.slot} · ${durTxt(m)} · ${m.zone}</div></div>`;
+    const recap=`<div class="card" style="padding:15px;margin-top:14px"><div class="row between"><b style="font-size:14px">${m.svcName}</b><b class="money">${eur(t.total)}</b></div><div class="mini" style="margin-top:3px">${m.when} · ${m.slot} · ${durTxt(m)} · ${m.zone}</div><hr class="dashed"><p class="mini" style="margin:0;color:var(--muted)">${I.clock} Annulation gratuite jusqu'à 8&nbsp;h avant le rendez-vous. Passé ce délai, une indemnité de 50&nbsp;% est due à l'artisan (voir CGV).</p></div>`;
     const reassure=`<div class="banner teal" style="margin-top:14px">${I.shield}<span><b>Aucun débit maintenant.</b> Simple empreinte bancaire — vous n'êtes prélevé qu'après avoir validé la prestation, jamais plus que ${eur(t.total)}. Séquestre opéré par Mollie (établissement agréé).</span></div>`;
     if(S.card&&!S.payEdit){
       return `<div class="pad"><button class="reset" data-act="pay-back" style="margin:8px 0 2px">← Retour</button>
@@ -3903,8 +3942,8 @@
       else if(act==='dispute-revert'){if(S.mission&&S.mission.status==='disputed'){S.mission.finalHours=S.mission.duration;finalizePaid(S.mission);toast('Retour à l’accord initial — prestation réglée');}}
       render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('del-demand:')===0){const id=b.dataset.act.slice('del-demand:'.length);const m=(S.missions||[]).find(function(x){return (x._id||'')===id;});if(m){cancelActiveRequest(m);removeMission(m);if(S.mission===m)S.mission=null;cacheClientLocal();toast('Demande supprimée');}render();return;}
-    if(b.dataset.follow){const orow=b.closest('.swipe-row');if(orow&&orow.classList.contains('open')){orow.classList.remove('open');return;}const mm=(S.missions||[]).find(function(x){return (x._id||'')===b.dataset.follow;});if(mm){S.mission=mm;S.clientNav='wallet';render();}return;}
-    if(b.dataset.cnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.invoiceId=null;S.histInvoice=null;S.addrForm=null;S.profileForm=null;S.mission=null;S.clientNav=b.dataset.cnav;if(b.dataset.cnav==='wallet')refreshClientRequests();render();return;}
+    if(b.dataset.follow){const orow=b.closest('.swipe-row');if(orow&&orow.classList.contains('open')){orow.classList.remove('open');return;}const mm=(S.missions||[]).find(function(x){return (x._id||'')===b.dataset.follow;});if(mm){S.mission=mm;S.cancelAsk=false;S.clientNav='wallet';render();}return;}
+    if(b.dataset.cnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.invoiceId=null;S.histInvoice=null;S.addrForm=null;S.profileForm=null;S.mission=null;S.cancelAsk=false;S.clientNav=b.dataset.cnav;if(b.dataset.cnav==='wallet')refreshClientRequests();render();return;}
     if(b.dataset.pnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.proStmt=false;S.commInvId=null;S.commStmt=false;S.invoiceId=null;S.proConflict=null;S.proNav=b.dataset.pnav;render();return;}
     if(b.dataset.cnav2){S.concOrder=null;S.concView=null;S.concForm=null;S.concInvoice=null;S.concNav=b.dataset.cnav2;render();return;}
     if(b.dataset.concOc){const c=concClient(b.dataset.concOc);if(c&&c.authorized){S.concOrder.clientId=c.id;S.concOrder.step='service';render();}else{toast('La carte de ce client doit d’abord être autorisée');}return;}
@@ -3988,7 +4027,9 @@
       case 'account-delete':S.delAcct=true;render();break;
       case 'account-delete-cancel':S.delAcct=false;render();break;
       case 'account-delete-confirm':deleteAccountReal();break;
-      case 'cancel-mission':cancelActiveRequest(S.mission);removeMission(S.mission);S.mission=null;S.clientNav='wallet';render();break;
+      case 'cancel-mission':S.cancelAsk=true;render();break;
+      case 'cancel-dismiss':S.cancelAsk=false;render();break;
+      case 'cancel-confirm':S.cancelAsk=false;cancelActiveRequest(S.mission);removeMission(S.mission);S.mission=null;S.clientNav='wallet';render();break;
       case 'confirm-done':pushMissionStatus(S.mission,{status:'paid',finalHours:billHours(S.mission)});finalizePaid(S.mission);render();burstConfetti();break;
       case 'pro-reopen':S.proReopenAsk=true;render();break;
       case 'pro-reopen-cancel':S.proReopenAsk=false;render();break;
