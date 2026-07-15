@@ -1188,6 +1188,50 @@
     const out=[];(S.adminArtisans||[]).forEach(function(a){(a.history||[]).forEach(function(h){const b=histBreakdown(h);if(b.commission>0)out.push({dateISO:h.dateISO,reqId:h.reqId||h.invNo||'',clientName:h.clientFull||h.client||'',providerName:a.name,service:h.svc,serviceName:svcName(h.svc),base:b.gross,commissionPct:b.pct,commissionAmount:b.commission,netAmount:b.net,grossTotal:b.gross});});});return out;
   }
   function csvCell(v){v=String(v==null?'':v);return /[";\n\r]/.test(v)?('"'+v.replace(/"/g,'""')+'"'):v;}
+  // ————— Sauvegarde mensuelle détenue par l'utilisateur —————
+  // Chaque utilisateur télécharge une copie de SES factures / données comptables.
+  // Ti-Services conserve sa propre comptabilité (obligation légale), mais l'utilisateur
+  // reste responsable de garder ses justificatifs : on l'y invite chaque mois.
+  function currentPeriodKey(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
+  function backupStoreKey(){const uid=(FB&&FB.auth&&FB.auth.currentUser&&FB.auth.currentUser.uid)||'anon';return 'ts_backup_'+uid;}
+  function lastBackupPeriod(){try{return localStorage.getItem(backupStoreKey())||'';}catch(_){return '';}}
+  function markBackupDone(){try{localStorage.setItem(backupStoreKey(),currentPeriodKey());}catch(_){}}
+  function backupDue(){return lastBackupPeriod()!==currentPeriodKey();}
+  function myBackupData(){
+    const num=function(n){return (Math.round((Number(n)||0)*100)/100).toFixed(2).replace('.',',');};
+    if(S.persona==='pro'){
+      const rows=[['Date','Service','Client','Durée','Brut (€)','Commission Ti-Services (€)','Net perçu (€)','N° facture']];
+      (S.proHistory||[]).forEach(function(h){const b=histBreakdown(h);rows.push([h.dateISO||'',svcName(h.svc),h.clientFull||h.client||'',durTxt({unit:h.unit},h.duration),num(b.gross),num(b.commission),num(b.net),h.invNo||'']);});
+      return {name:'sauvegarde-factures-artisan',rows:rows};
+    }
+    if(S.persona==='concierge'){
+      const rows=[['Date','Service','Client','Montant client (€)','Votre apport (€)','N° facture']];
+      (S.concOrders||[]).filter(function(o){return o.status==='paid';}).forEach(function(o){rows.push([o.dateISO||'',o.svcName||'',o.clientName||'',num(o.amount),num(o.retro),o.invNo||'']);});
+      return {name:'sauvegarde-apports-conciergerie',rows:rows};
+    }
+    const rows=[['Date','Service','Prestataire','Montant réglé (€)','N° facture']];
+    (S.history||[]).forEach(function(h){const t=totals(h);rows.push([h.dateISO||'',h.svcName||svcName(h.svc),(h.provider&&h.provider.nm)||'',num(t.total),h.invNo||'']);});
+    return {name:'sauvegarde-factures-client',rows:rows};
+  }
+  function downloadMyBackup(){
+    const d=myBackupData();
+    if(d.rows.length<=1){toast('Aucune facture à sauvegarder pour l’instant');return;}
+    const csv=d.rows.map(function(r){return r.map(csvCell).join(';');}).join('\r\n');
+    const ok=downloadTextFile(d.name+'-'+currentPeriodKey()+'.csv','﻿'+csv,'text/csv;charset=utf-8');
+    if(ok){markBackupDone();toast('Sauvegarde téléchargée ✓ — conservez ce fichier');render();}
+    else toast('Téléchargement impossible sur cet appareil');
+  }
+  // Carte « Sauvegarde de mes factures » + décharge de responsabilité, insérée dans les
+  // écrans « compte » de chaque rôle. Rappel mensuel tant que la sauvegarde n'est pas faite.
+  function backupCard(){
+    if(isDemo())return '';
+    const due=backupDue();
+    return `<div class="card" style="padding:16px;margin-top:12px${due?';border-left:4px solid var(--coral)':''}">
+      <div class="row between"><b style="font-size:14px">${I.card}&nbsp;Sauvegarde de mes factures</b>${due?`<span class="chip coral" style="padding:3px 9px">À faire ce mois</span>`:`<span class="chip good" style="padding:3px 9px">${I.check} À jour</span>`}</div>
+      <p class="sub" style="margin-top:8px">Téléchargez chaque mois une copie de toutes vos factures et données comptables, et conservez-la. <b>Vous êtes seul responsable de la conservation de vos justificatifs.</b> Ti-Services fournit l'outil mais ne garantit pas la conservation de vos données au-delà de ses propres obligations légales.</p>
+      <button class="btn ${due?'primary':'ghost'} sm" data-act="download-backup" style="margin-top:10px">${I.card}&nbsp;Télécharger ma sauvegarde (CSV)</button>
+    </div>`;
+  }
   function adminExportAccounting(){
     const num=function(n){return (Math.round((Number(n)||0)*100)/100).toFixed(2).replace('.',',');};
     const led=adminCommissionLedger();
@@ -2065,6 +2109,7 @@
         <div class="field" style="margin:0"><label>IBAN</label><input class="txt" data-cib="iban" value="${esc(S.concIban||'')}" placeholder="FR76 ..." autocomplete="off">${(S.concIban&&!ibanValid(S.concIban))?`<p class="mini" style="margin-top:5px;color:var(--coral-deep)">IBAN incomplet ou invalide.</p>`:''}</div>
         <button class="btn ${(S.concIban&&ibanValid(S.concIban))?'ghost':'primary'} sm" data-act="conc-save-iban" style="margin-top:12px">${I.check} Enregistrer mon RIB</button>
         <p class="mini" style="margin-top:8px;color:var(--muted)">Ti-Services y verse votre rétribution une fois par mois. Coordonnées privées, jamais visibles des clients.</p></div>
+      ${backupCard()}
       <div style="height:16px"></div><span class="eyebrow">Détail des prestations réglées</span>${rows}
       <div style="height:8px"></div></div>${conciergeNavbar()}`;
   }
@@ -2252,6 +2297,7 @@
         <div class="row between" style="margin-top:8px"><span class="sub">Secteur</span><b>${esc(czone)}</b></div></div>
       ${notifCard('client')}
       <button class="card" data-act="open-general-support" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.support}&nbsp;Contacter Ti-Services</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Support ›</span></div><p class="sub" style="margin-top:8px">Une question sur votre compte ou l'application&nbsp;? Écrivez-nous — sans lien avec une réservation.</p></button>
+      ${backupCard()}
       ${isAdminAccount()?`<button class="card" data-act="go-admin" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block;border-left:4px solid var(--ink)"><div class="row between"><b style="font-size:14px">${I.shield}&nbsp;Console d'administration</b>${adminPendingCount()?`<span class="chip coral" style="padding:3px 10px">${adminPendingCount()} en attente</span>`:`<span class="mini" style="color:var(--teal-deep);font-weight:650">Ouvrir ›</span>`}</div><p class="sub" style="margin-top:8px">Revenez au tableau de bord de gestion (candidatures, tarifs, réservations).</p></button>`:''}
       <div class="card" style="padding:16px;margin-top:18px"><div class="row between"><span class="chip">${I.card} Moyen de paiement</span>${S.card?`<span class="chip good" style="padding:4px 10px">${I.check} Enregistré</span>`:''}</div>${S.card?`<div class="row between" style="margin-top:12px"><div class="row" style="gap:11px;align-items:center"><span class="benic">${I.card}</span><div><b>${S.card.brand} ••••&nbsp;${S.card.last4}</b><div class="mini">Expire ${S.card.exp||'08/28'}</div></div></div></div><div class="row" style="gap:8px;margin-top:12px"><button class="btn ghost sm" data-act="add-card">Modifier</button><button class="btn ghost sm" data-act="card-remove">Retirer</button></div><div class="banner teal" style="margin-top:12px">${I.shield}<span>Débit automatique après chaque prestation validée. Reçu à chaque fois — rien à gérer.</span></div>`:`<p class="mini" style="margin-top:10px">Facultatif — enregistrez une carte pour réserver plus vite la prochaine fois. Sinon, elle vous sera demandée à votre première réservation. Rien n'est débité tant qu'une prestation n'est pas validée.</p><button class="btn ghost sm" data-act="add-card" style="margin-top:12px">${I.card} Ajouter un moyen de paiement</button>`}</div>
       <div class="card" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">${I.pin}&nbsp;Mes adresses</b><button class="btn ghost sm" style="width:auto;padding:6px 12px" data-act="addr-new">＋ Ajouter</button></div>
@@ -3105,6 +3151,7 @@
       <button class="card" data-act="pro-docs" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.shield}&nbsp;Mes documents</b>${insOk?`<span class="chip good" style="padding:3px 9px">${I.check} Assurance OK</span>`:`<span class="mini" style="color:var(--teal-deep);font-weight:650">Assurance &amp; décharge ›</span>`}</div><p class="sub" style="margin-top:8px">Attestation d'assurance et décharge de responsabilité acceptée.</p></button>
       ${notifCard('pro')}
       <button class="card" data-act="open-general-support" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.support}&nbsp;Contacter Ti-Services</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Support ›</span></div><p class="sub" style="margin-top:8px">Une question sur votre compte, un dossier, l'application&nbsp;? Écrivez-nous — sans lien avec une mission.</p></button>
+      ${backupCard()}
       ${fidCard()}
       <button class="card" data-act="open-referral" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.heart}&nbsp;Parrainer un artisan</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Gagnez un bonus pour chaque artisan que vous parrainez — et lui aussi.</p></button>
       <p class="mini" style="text-align:center;margin-top:14px"><button class="linklike" data-act="show-advantages">${I.shield} Pourquoi passer par Ti-Services ›</button></p>
@@ -3348,6 +3395,7 @@
       case 'forgot-pw':{const em=((S.loginForm&&S.loginForm.email)||(S.account&&S.account.email)||'').trim();if(!/.+@.+\..+/.test(em)){toast('Saisissez votre e-mail, puis « Mot de passe oublié ».');break;}if(FB){fbResetPassword(em);}else{toast('Un lien de réinitialisation vous serait envoyé par e-mail.');}break;}
       case 'google-soon':if(FB){fbGoogle();}else{toast('Connexion Google — bientôt disponible');}break;
       case 'logout':S.demoMode=false;clearClientCache();if(FB)blankAll();fbLogout();if(!FB){S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;S.missions=[];render();}break;
+      case 'download-backup':downloadMyBackup();break;
       case 'account-delete':S.delAcct=true;render();break;
       case 'account-delete-cancel':S.delAcct=false;render();break;
       case 'account-delete-confirm':deleteAccountReal();break;
@@ -4256,9 +4304,10 @@
     return `<div class="pad"><button class="reset" data-act="account-delete-cancel" style="margin:8px 0 2px">← Retour</button>
       <span class="eyebrow" style="color:var(--coral-deep)">${I.shield} Suppression du compte</span>
       <div class="h-hello">Supprimer mon compte&nbsp;?</div>
-      <div class="banner coral" style="margin-top:14px">${I.shield}<span><b>Action définitive et irréversible.</b> En supprimant votre compte, vous perdez <b>toutes vos données</b> : profil${isPro?', dossier artisan, RIB, historique de missions et factures':', adresses, moyen de paiement, historique de réservations et reçus'}. Cette suppression <b>ne peut pas être annulée</b>.</span></div>
-      <div class="card" style="padding:16px;margin-top:12px"><p class="sub" style="margin:0">Conformément au RGPD, vous pouvez à tout moment demander l'effacement de vos données personnelles. ${isPro?'Les factures déjà émises peuvent être conservées par Ti-Services le temps légal (obligations comptables), sous forme archivée.':'Certaines données liées à des prestations passées peuvent être conservées de façon anonymisée pendant la durée légale.'}</p></div>
-      <p class="mini" style="margin-top:12px;color:var(--muted)">Vous pourrez recréer un compte plus tard, mais les données actuelles seront perdues.</p>
+      <div class="banner coral" style="margin-top:14px">${I.shield}<span><b>Action définitive et irréversible.</b> En supprimant votre compte, votre profil et vos données personnelles${isPro?' (dossier artisan, RIB)':' (adresses, moyen de paiement)'} sont effacés. <b>Cette suppression ne peut pas être annulée</b> — Ti-Services ne peut restaurer aucun compte.</span></div>
+      ${isDemo()?'':`<div class="card" style="padding:16px;margin-top:12px${backupDue()?';border-left:4px solid var(--coral)':''}"><b style="font-size:14px">${I.card}&nbsp;Sauvegardez d'abord vos factures</b><p class="sub" style="margin-top:6px">Une fois le compte supprimé, <b>vous ne pourrez plus récupérer vos factures depuis l'application</b>. Téléchargez votre copie maintenant — vous en êtes responsable.</p><button class="btn primary sm" data-act="download-backup" style="margin-top:10px">${I.card}&nbsp;Télécharger ma sauvegarde (CSV)</button></div>`}
+      <div class="card" style="padding:16px;margin-top:12px"><p class="sub" style="margin:0">Conformément au RGPD, vous pouvez à tout moment demander l'effacement de vos données personnelles. Toutefois, les <b>factures et pièces comptables</b> déjà émises sont <b>conservées par Ti-Services de façon archivée pendant la durée légale</b> (obligations comptables et fiscales) — cette conservation prime sur le droit à l'effacement.</p></div>
+      <p class="mini" style="margin-top:12px;color:var(--muted)">Vous pourrez recréer un compte plus tard, mais les données de ce compte ne seront plus accessibles.</p>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0">
         <button class="btn" style="background:var(--coral-deep);color:#fff" data-act="account-delete-confirm">${I.trash} Supprimer définitivement mon compte</button>
         <button class="btn ghost" data-act="account-delete-cancel" style="margin-top:10px">Annuler</button>
