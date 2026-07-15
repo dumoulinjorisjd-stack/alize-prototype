@@ -74,12 +74,14 @@ service cloud.firestore {
       allow create: if uid() == concId
                     && request.resource.data.status == 'attente';
       // La conciergerie écrit ses données opérationnelles sans toucher à son statut ;
-      // le marqueur de versement (retroPaid) reste écrit par l'admin seul — sinon une
-      // conciergerie pourrait s'afficher « versée » à tort.
+      // le marqueur de versement (retroPaid) ET la rétribution cumulée (earn) restent
+      // écrits par le serveur/l'admin seuls — sinon une conciergerie pourrait s'afficher
+      // « versée » à tort ou gonfler sa rétribution.
       allow update: if isAdmin()
                     || (uid() == concId
                         && request.resource.data.status == resource.data.status
-                        && request.resource.data.get('retroPaid', '') == resource.data.get('retroPaid', ''));
+                        && request.resource.data.get('retroPaid', '') == resource.data.get('retroPaid', '')
+                        && request.resource.data.get('earn', 0) == resource.data.get('earn', 0));
       // Droit à l'effacement (RGPD) : la conciergerie peut supprimer son dossier.
       allow delete: if isAdmin() || uid() == concId;
     }

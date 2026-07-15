@@ -583,6 +583,37 @@ exports.settleCommission = onDocumentUpdated('requests/{reqId}', async (event) =
     console.log('Commission figée + registre reqId=' + reqId +
       ' base=' + base + ' pct=' + pct + '% comm=' + commission + ' net=' + net);
 
+    // 2 bis) APPORT CONCIERGERIE : si la demande vient d'une conciergerie (mandataire),
+    //    on reverse une commission d'apport (retroRate % de la base), PRÉLEVÉE SUR LA
+    //    MARGE Ti-Services (le prix client ne change pas). On l'inscrit au registre
+    //    (charge), on la reporte sur la demande (lue par la conciergerie) et on cumule
+    //    sur la fiche conciergerie — source de vérité serveur de sa rétribution.
+    if (after.viaConcierge && after.conciergeUid) {
+      try {
+        // Taux d'apport OFFICIEL depuis settings/config (jamais la valeur envoyée par
+        // la conciergerie, qui pourrait être gonflée). Repli sur 8 % par défaut.
+        let retroRate = 8;
+        try {
+          const cfg = await db.collection('settings').doc('config').get();
+          const rr = cfg.exists && cfg.data() ? cfg.data().retroRate : null;
+          if (typeof rr === 'number') retroRate = rr;
+        } catch (_) {}
+        const retro = round2(base * retroRate / 100);
+        await db.collection('ledger').doc(reqId + '_retro').set({
+          type: 'retro', reqId: reqId,
+          conciergeUid: after.conciergeUid,
+          clientUid: after.conciergeUid,   // = partie « cliente » de la demande (lecture)
+          conciergeName: (after.conciergeName || '').toString().slice(0, 80),
+          base: base, retroRate: retroRate, retroAmount: retro,
+          settledAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+        await event.data.after.ref.update({ retro: retro, retroRate: retroRate });
+        await db.collection('concierges').doc(after.conciergeUid)
+          .set({ earn: FieldValue.increment(retro) }, { merge: true });
+        console.log('Apport conciergerie reqId=' + reqId + ' retro=' + retro + ' (' + retroRate + '%)');
+      } catch (e) { console.warn('settleCommission retro', e); }
+    }
+
     // 3) VERSEMENT MOLLIE (le cas échéant) : route le NET vers l'organisation de
     //    l'artisan et garde la commission sur le solde plateforme. Inerte tant que
     //    Mollie n'est pas configuré ou que le paiement est simulé (pas de molliePaymentId).
