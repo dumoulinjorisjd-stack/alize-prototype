@@ -658,7 +658,9 @@ exports.mollieOnboardingStart = onRequest((req, res) => {
   if (!mollieOAuthConfigured()) { res.status(503).json({error: 'Mollie non configuré', message: 'Compte Mollie Connect à ouvrir + secrets à définir.'}); return; }
   const uid = (req.query.uid || req.query.state || '').toString();
   if (!uid) { res.status(400).json({error: 'uid manquant'}); return; }
-  const redirectUri = (req.query.redirect_uri || (APP_URL.replace(/\/$/, '') + '/mollieOnboardingReturn')).toString();
+  // redirect_uri FIGÉ côté serveur (jamais depuis la requête) : sinon un attaquant
+  // pourrait détourner le code OAuth vers son propre domaine.
+  const redirectUri = APP_URL.replace(/\/$/, '') + '/mollieOnboardingReturn';
   const scope = ['onboarding.read', 'onboarding.write', 'organizations.read', 'payments.read', 'payments.write', 'profiles.read'].join(' ');
   const url = MOLLIE_AUTHORIZE +
     '?client_id=' + encodeURIComponent(process.env.MOLLIE_CLIENT_ID) +
