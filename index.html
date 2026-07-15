@@ -585,6 +585,14 @@
 <script>
 "use strict";
 (function(){
+  /* ============================================================================
+   * Ti-Services® — application propriétaire éditée par C.C.S (SAS).
+   * © 2026 C.C.S. Tous droits réservés.
+   * Code, design, marque et base de données protégés. Toute reproduction,
+   * représentation, adaptation, décompilation, extraction ou réutilisation,
+   * totale ou partielle, sans autorisation écrite de C.C.S, est interdite et
+   * sanctionnée (CPI art. L122-4, L335-2, L342-1 ; directive 2009/24/CE).
+   * ========================================================================== */
   /* ============ CONFIG DE MISE EN LIGNE — un seul endroit à changer ============
      Tant qu'il n'y a pas de domaine, laisser siteUrl vide : l'app tourne sur
      n'importe quelle adresse (GitHub Pages, *.web.app, domaine perso) car tous les
@@ -624,7 +632,11 @@
       ? 'BHqlwv57a9-InEBlxm8uqAJ8I0W_QwlIA4vl_taz97K8jmqaPpI8VVVX5cwvRgw5fvQeQiLk6KR1L77JDyDF28k'
       : 'BF5FjXN6inC8J7Wqn_kmP2g56pq5f2jTROLRekYFwWSWaWOKS1wfP20vTnMl0xipZpzC1YVuKuzUKDAGkTaqeb0',
     // Clés publiques du client web (non secrètes) — sécurité = règles Firestore + domaines autorisés.
-    firebase: IS_PROD ? FB_PROD : FB_BETA
+    firebase: IS_PROD ? FB_PROD : FB_BETA,
+    // Clé de site App Check (reCAPTCHA v3 / Enterprise). Renseignée, elle fait que
+    // le backend n'accepte QUE les requêtes venant de l'app officielle enregistrée
+    // (protection anti-copie côté serveur). Vide = App Check inactif.
+    appCheckSiteKey: ''
   };
   // Base des liens absolus (partage, parrainage, lien e-mail de connexion) :
   // le domaine s'il est défini, sinon l'adresse courante — rien d'autre à changer.
@@ -637,6 +649,34 @@
   function shareLink(){ const b=shareBase(); return b+(b.includes('?')?'&':'?')+'v='+OG_V; }
   try{ if(CONFIG.siteUrl){ const l=document.querySelector('link[rel="canonical"]')||document.head.appendChild(Object.assign(document.createElement('link'),{rel:'canonical'})); l.href=CONFIG.siteUrl; } }catch(e){}
   window.TI_CONFIG = CONFIG;
+  // Garde-domaine (dissuasif) : si l'app est servie hors des domaines officiels,
+  // on affiche un bandeau « copie non officielle ». NON bloquant — n'altère aucune
+  // fonction. La vraie protection contre l'usage du backend par une copie est côté
+  // serveur (App Check + restriction des clés + domaines Auth autorisés).
+  function tiOfficialHost(h){
+    h=(h||'').toLowerCase();
+    if(!h||h==='localhost'||h==='127.0.0.1')return true;
+    if(/(^|\.)ti-services\.fr$/.test(h))return true;
+    if(/\.web\.app$|\.firebaseapp\.com$/.test(h))return true;
+    if(h==='dumoulinjorisjd-stack.github.io')return true;
+    return false;
+  }
+  try{
+    if(location.protocol!=='file:' && !window.__NOFB && !tiOfficialHost(location.hostname)){
+      console.warn('Ti-Services © C.C.S — copie non officielle détectée ('+location.hostname+').');
+      window.addEventListener('DOMContentLoaded',function(){
+        try{
+          var b=document.createElement('div');
+          b.textContent='Copie non officielle — l’application authentique Ti-Services est sur ti-services.fr (© C.C.S).';
+          b.style.cssText='position:fixed;left:0;right:0;top:0;z-index:99999;background:#231E33;color:#fff;font:600 12.5px/1.4 -apple-system,system-ui,sans-serif;padding:9px 42px 9px 14px;text-align:center';
+          var x=document.createElement('button');x.textContent='×';x.setAttribute('aria-label','Fermer');
+          x.style.cssText='position:absolute;right:10px;top:5px;background:none;border:none;color:#fff;font-size:18px;line-height:1;cursor:pointer';
+          x.onclick=function(){b.remove();};
+          b.appendChild(x);document.body.appendChild(b);
+        }catch(e){}
+      });
+    }
+  }catch(e){}
   // Mode démo (outil marketing, libre) vs vraie bêta (rôles cloisonnés).
   // Démo = bouton explicite « Voir la démo », OU build sans Firebase, OU tests.
   function isDemo(){ return !!(S.demoMode || !CONFIG.firebase || window.__NOFB); }
@@ -785,7 +825,7 @@
   // ————————————————————————————————————————————————————————————
   // Documents légaux. Version tracée à l'acceptation (preuve du consentement).
   // À FAIRE VALIDER PAR UN JURISTE avant lancement réel.
-  const TERMS_VERSION='1.1';
+  const TERMS_VERSION='1.2';
   const TERMS_DATE='15 juillet 2026';
   function chkbox(on){return `<span class="chkbox ${on?'on':''}">${on?I.check:''}</span>`;}
   function fmtAcceptDate(d){try{return d.toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});}catch(_){return '';}}
@@ -818,7 +858,9 @@
     <p>La Plateforme s'efforce d'assurer un service fiable mais ne garantit pas une disponibilité ininterrompue. En sa qualité d'intermédiaire, <b>Ti-Services n'est pas responsable de l'exécution, de la qualité, ni des conséquences des prestations</b> réalisées par les Intervenants, sans préjudice des droits impératifs reconnus aux consommateurs.</p>
     <h3>9. Suspension / résiliation</h3>
     <p>Ti-Services peut suspendre ou clôturer un compte en cas de manquement aux présentes, notamment en cas de fraude, de comportement dangereux ou d'atteinte à la sécurité des personnes ou des biens.</p>
-    <h3>10. Droit applicable</h3>
+    <h3>10. Propriété intellectuelle</h3>
+    <p>L'application Ti-Services — son code, son architecture, son interface, ses contenus, sa marque et sa base de données — est la propriété exclusive de C.C.S et est protégée par le Code de la propriété intellectuelle. Toute <b>reproduction, représentation, adaptation, traduction, décompilation, extraction ou réutilisation</b>, totale ou partielle, par quelque procédé que ce soit, sans autorisation écrite préalable de C.C.S, est interdite et engage la responsabilité civile et pénale de son auteur (art. L122-4, L335-2 et L342-1 du CPI). L'<b>extraction et la réutilisation systématiques</b> du contenu de la base de données (annonces, coordonnées, données de la Plateforme), notamment par aspiration automatisée (scraping), sont également prohibées.</p>
+    <h3>11. Droit applicable</h3>
     <p>Les présentes sont régies par le droit français. À défaut de résolution amiable, les tribunaux compétents seront saisis conformément à la loi.</p>`;
   const LEGAL_CGV=`
     <p class="warn">Modèle à faire valider par un professionnel du droit avant mise en ligne.</p>
@@ -881,7 +923,8 @@
       <div class="legaldoc">${d[1]}</div><div style="height:24px"></div></div>`;
   }
   function legalFooter(role){
-    return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted)">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button>${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>`;
+    return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted)">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button>${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
+    <p class="mini" style="text-align:center;margin-top:6px;color:var(--muted)">© 2026 C.C.S — Ti-Services®. Tous droits réservés.</p>`;
   }
   // Radar de recherche : Zouti au centre (à la place de la loupe), anneaux qui pulsent
   function searchRadar(sm){return `<div class="radar${sm?' sm':''}"><div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div><div class="core bare">${octoMini(sm?46:64,'bob')}</div></div>`;}
@@ -3995,6 +4038,10 @@
       const V='https://www.gstatic.com/firebasejs/10.12.5/';
       const [appM,authM,fsM]=await Promise.all([import(V+'firebase-app.js'),import(V+'firebase-auth.js'),import(V+'firebase-firestore.js')]);
       const app=appM.initializeApp(CONFIG.firebase);
+      // App Check : le backend (Firestore/Functions/Storage) n'accepte que les
+      // requêtes attestées comme venant de l'app officielle → une copie du front
+      // ne peut pas utiliser notre infrastructure. Inerte tant que la clé est vide.
+      try{ if(CONFIG.appCheckSiteKey){ const acM=await import(V+'firebase-app-check.js'); acM.initializeAppCheck(app,{provider:new acM.ReCaptchaV3Provider(CONFIG.appCheckSiteKey),isTokenAutoRefreshEnabled:true}); } }catch(_){}
       FB={app,auth:authM.getAuth(app),db:fsM.getFirestore(app),a:authM,f:fsM};
       // Persistance locale explicite : la session doit survivre à la fermeture de
       // l'app (sinon reconnexion forcée à chaque ouverture, et données « perdues »).
