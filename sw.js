@@ -1,5 +1,5 @@
 /* Ti-Services — service worker (coquille hors-ligne) */
-const CACHE = 'ti-services-v214';
+const CACHE = 'ti-services-v215';
 const SHELL = [
   './',
   './index.html',
@@ -8,7 +8,11 @@ const SHELL = [
   './icon.svg',
   './icon-192.png',
   './icon-512.png',
-  './badge-96.png'
+  './badge-96.png',
+  './icon-180-beta.png',
+  './icon-192-beta.png',
+  './icon-512-beta.png',
+  './icon-maskable-512-beta.png'
 ];
 
 self.addEventListener('install', (e) => {
