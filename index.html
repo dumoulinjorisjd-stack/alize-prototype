@@ -577,10 +577,33 @@
   @media (prefers-color-scheme:dark){.welcome-bg .wglow{opacity:.6}}
   :root[data-theme="dark"] .welcome-bg .wglow{opacity:.6}
 
+  /* ——— Écran de lancement (splash) ——— */
+  #splash{position:fixed;inset:0;z-index:9998;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:15px;background:var(--lagoon,#F7F5EF);transition:opacity .5s ease}
+  #splash.hide{opacity:0;pointer-events:none}
+  #splash .splogo{filter:drop-shadow(0 18px 34px rgba(42,35,64,.26));animation:sp-rise .72s cubic-bezier(.2,.75,.3,1) both}
+  #splash .splogo svg{display:block;border-radius:22px}
+  #splash .spword{font-family:var(--f-disp,system-ui);font-weight:800;font-size:27px;letter-spacing:-.02em;animation:sp-fade .55s .15s both}
+  #splash .spword b{color:var(--teal-deep,#E1503F)}
+  #splash .spword span{color:var(--ink,#241C2E)}
+  #splash .spload{display:flex;gap:6px;margin-top:2px;animation:sp-fade .5s .3s both}
+  #splash .spload span{width:7px;height:7px;border-radius:50%;background:var(--teal,#FF6A5B);animation:sp-bounce 1s infinite ease-in-out}
+  #splash .spload span:nth-child(2){animation-delay:.15s}
+  #splash .spload span:nth-child(3){animation-delay:.3s}
+  @keyframes sp-rise{from{opacity:0;transform:translateY(14px) scale(.82)}to{opacity:1;transform:none}}
+  @keyframes sp-fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  @keyframes sp-bounce{0%,100%{transform:translateY(0);opacity:.4}50%{transform:translateY(-6px);opacity:1}}
+  @media (prefers-reduced-motion:reduce){#splash .splogo,#splash .spword,#splash .spload,#splash .spload span{animation:none!important}}
+
   @media (prefers-reduced-motion:reduce){*{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.05ms!important}}
 </style>
 </head>
 <body>
+<div id="splash" aria-hidden="true">
+  <div class="splogo"><svg viewBox="0 0 34 34" width="98" height="98" fill="none"><rect width="34" height="34" rx="9" fill="#2A2340"/><g stroke-linecap="round" fill="none"><g stroke="#241C2E" stroke-width="4.4"><path d="M10 22 C7 26 6 28 4 28"/><path d="M14 24 C13 28 14 30 12 31"/><path d="M20 24 C21 28 20 30 22 31"/><path d="M24 22 C27 26 28 28 30 28"/></g><g stroke="#FF6A5B" stroke-width="3"><path d="M10 22 C7 26 6 28 4 28"/><path d="M14 24 C13 28 14 30 12 31"/><path d="M20 24 C21 28 20 30 22 31"/><path d="M24 22 C27 26 28 28 30 28"/></g></g><path d="M17 4 C11 4 8.5 9 8.5 13.5 C8.5 20 11.5 25 17 25 C22.5 25 25.5 20 25.5 13.5 C25.5 9 23 4 17 4 Z" fill="#FF6A5B" stroke="#241C2E" stroke-width="1.5"/><ellipse cx="14" cy="13" rx="1.15" ry="1.6" fill="#241C2E"/><ellipse cx="20" cy="13" rx="1.15" ry="1.6" fill="#241C2E"/><path d="M14.6 16 Q17 18.4 19.4 16" stroke="#241C2E" stroke-width="1" fill="none" stroke-linecap="round"/></svg></div>
+  <div class="spword"><b>Ti</b><span>-Services</span></div>
+  <div class="spload"><span></span><span></span><span></span></div>
+</div>
+<script>setTimeout(function(){var s=document.getElementById('splash');if(s){s.classList.add('hide');setTimeout(function(){if(s&&s.parentNode)s.parentNode.removeChild(s);},600);}},2600);</script>
 <div class="wrap">
   <aside class="brief">
     <div class="logo">
@@ -806,6 +829,19 @@
   // Zouti en petit — même logo décliné. cls: 'bob'|'wave'
   function octoMini(px,cls){
     return `<img class="octo-mini ${cls||'bob'}" src="${ZOUTI_LOGO}" alt="Zouti" aria-hidden="true" width="${px}" height="${Math.round(px*90/83)}">`;
+  }
+  // ————— Retour haptique —————
+  // Petite vibration native au toucher (API Vibration : Android/Chrome ; Safari iOS ne
+  // l'expose pas, appel simplement ignoré). Respecte « animations réduites ». 'light' =
+  // tapotement de confirmation ; 'success' = geste décisif (valider, réserver, payer…).
+  const RE_HAPTIC_KEY=/valid|confirm|reserv|pay|book|submit|send|finish|accept|activate|noshow-confirm|rate|do-login|save|create|delete|rej-|dispute/i;
+  let _hapticOff=false;
+  try{ _hapticOff=!!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches); }catch(_){}
+  function haptic(kind){
+    try{
+      if(_hapticOff||!('vibrate'in navigator))return;
+      navigator.vibrate(kind==='success'?[10,28,16]:(kind==='warn'?[22,50,22]:7));
+    }catch(_){}
   }
   // Ligne « Zouti dit… » (mascotte + message) pour ponctuer les écrans
   function zoutiLine(txt){return `<div class="zouti-line">${octoMini(34,'wave')}<span>${txt}</span></div>`;}
@@ -1122,7 +1158,7 @@
       {dateISO:'2026-07-05',svc:'menage',client:'Villa Bartolomé',clientFull:'SCI Bartolomé',clientZone:'Gustavia',duration:2,unit:'h',rate:35,amount:70,commPct:10,commission:7,net:63,invNo:'2026-0042',paidVia:'carte'},
       {dateISO:'2026-07-03',svc:'jardin',client:'Mme Laplace',clientFull:'Mme Laplace',clientZone:'St-Jean',duration:1,unit:'h',rate:40,amount:40,commPct:10,commission:4,net:36,invNo:'2026-0041',paidVia:'carte'},
       {dateISO:'2026-06-28',svc:'menage',client:'Villa Sereno',clientFull:'M. et Mme Brin',clientZone:'Flamands',duration:3,unit:'h',rate:35,amount:105,commPct:10,commission:10.5,net:94.5,invNo:'2026-0040',paidVia:'carte'}]},
-    {id:'a2',name:'Jean-Phi Bernier',status:'valide',type:'entreprise',cats:['jardin'],rate:40,siret:'75212369800021',insured:true,rating:4.8,jobs:301,zone:'Lorient',phone:'+590690223344',email:'jp.bernier@example.com',history:[
+    {id:'a2',name:'Jean-Phi Bernier',status:'valide',type:'entreprise',cats:['jardin'],rate:40,siret:'75212369800021',insured:true,rating:4.8,jobs:301,zone:'Lorient',phone:'+590690223344',email:'jp.bernier@example.com',noShowCount:1,lastNoShowAt:Date.parse('2026-07-11'),history:[
       {dateISO:'2026-07-08',svc:'jardin',client:'Villa Aurore',clientFull:'SCI Aurore',clientZone:'Lorient',duration:2,unit:'h',rate:40,amount:80,commPct:8,commission:6.4,net:73.6,invNo:'2026-0055',paidVia:'carte'},
       {dateISO:'2026-07-02',svc:'jardin',client:'M. Ledée',clientFull:'Thomas Ledée',clientZone:'St-Jean',duration:3,unit:'h',rate:40,amount:120,commPct:8,commission:9.6,net:110.4,invNo:'2026-0054',paidVia:'carte'}]},
     {id:'a3',name:'Sabrina Théodore',status:'valide',type:'entreprise',cats:['baby'],rate:28,siret:'91802233400019',insured:true,rating:5.0,jobs:98,zone:'St-Jean',phone:'+590690334455',email:'s.theodore@example.com'},
@@ -1650,7 +1686,7 @@
     const allB=liveRow.concat(S.adminBookings);
     const bookings=allB.map(bk=>{const st=bkStatus(bk.status);const sv=SERVICES.find(s=>s.id===bk.svc);return `<div class="card" style="padding:13px;margin-top:9px"><div class="row between"><b style="font-size:14px">${sv?sv.nm:bk.svc}</b><span class="chip ${st[0]}" style="padding:3px 9px">${st[1]}</span></div><div class="mini" style="margin-top:3px">${esc(bk.client)} → ${esc(bk.artisan)} · ${bk.when}</div><div class="mini" style="margin-top:2px">${eur(bk.amount)}</div></div>`;}).join('');
     const activeArts=arts.filter(a=>a.status!=='refuse'),refA=arts.filter(a=>a.status==='refuse');
-    const artList=activeArts.map(a=>{const c=acctChip(a.status);return `<button class="card" style="padding:12px;margin-top:8px;width:100%;text-align:left;display:block" data-adm="art:${a.id}"><div class="row between"><b style="font-size:14px">${a.name}</b><span class="chip ${c[0]}" style="padding:3px 9px">${c[1]}</span></div><div class="mini" style="margin-top:2px">${catNames(a.cats)} · ${a.rate} €/h · ${a.zone}</div></button>`;}).join('');
+    const artList=activeArts.map(a=>{const c=acctChip(a.status);return `<button class="card" style="padding:12px;margin-top:8px;width:100%;text-align:left;display:block" data-adm="art:${a.id}"><div class="row between"><b style="font-size:14px">${a.name}</b><span class="row" style="gap:6px;align-items:center">${(a.noShowCount||0)>0?`<span class="chip coral" style="padding:3px 9px">${I.clock} ${a.noShowCount}</span>`:''}<span class="chip ${c[0]}" style="padding:3px 9px">${c[1]}</span></span></div><div class="mini" style="margin-top:2px">${catNames(a.cats)} · ${a.rate} €/h · ${a.zone}</div></button>`;}).join('');
     const cliList=clis.map(cc=>{const c=acctChip(cc.status);return `<button class="card" style="padding:12px;margin-top:8px;width:100%;text-align:left;display:block" data-adm="cli:${cc.id}"><div class="row between"><b style="font-size:14px">${cc.name}</b><span class="chip ${c[0]}" style="padding:3px 9px">${c[1]}</span></div><div class="mini" style="margin-top:2px">${cc.zone} · ${cc.bookings} réservations</div></button>`;}).join('');
     const refList=refA.map(a=>`<div class="card" style="padding:12px;margin-top:8px;border-left:4px solid var(--hair)"><div class="row between"><b style="font-size:14px">${a.name}</b><span class="chip grey" style="padding:3px 9px">Refusé</span></div><div class="mini" style="margin-top:2px">${catNames(a.cats)} · ${a.zone}</div>${a.reason?`<p class="mini" style="margin-top:5px;color:var(--coral-deep)">Motif&nbsp;: ${a.reason}</p>`:''}${contactRow(a)}<div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost sm" data-adm="reexam-art:${a.id}">Réexaminer</button><button class="btn ghost sm" data-adm="art:${a.id}">Fiche</button></div></div>`).join('');
     const sm=S.mission;const supBlocks=[];
@@ -1683,6 +1719,9 @@
       <div style="height:16px"></div><span class="eyebrow">Tarifs planchers par service</span>
       <div class="card" style="padding:14px;margin-top:10px"><p class="mini" style="margin:0 0 4px;color:var(--muted)">Montant horaire minimum que le client peut proposer, par service. En dessous, l'offre est refusée. Le client voit ce minimum dans le formulaire.</p>
       ${SERVICES.map(s=>`<div class="row between" style="margin-top:10px;align-items:center"><span class="sub" style="display:flex;align-items:center;gap:8px"><span style="display:inline-flex;width:26px;height:26px;border-radius:8px;background:var(--teal-wash);color:var(--teal-deep);align-items:center;justify-content:center">${I[s.id]}</span>${s.nm}</span><span class="row" style="gap:8px;align-items:center"><button class="btn ghost sm" style="width:36px;padding:7px 0" data-adm="floordown:${s.id}">−</button><b class="money" style="min-width:58px;text-align:center">${svcFloor(s.id)} €/h</b><button class="btn ghost sm" style="width:36px;padding:7px 0" data-adm="floorup:${s.id}">+</button></span></div>`).join('')}</div>
+      ${(function(){const ns=activeArts.filter(a=>(a.noShowCount||0)>0).sort((x,y)=>(y.noShowCount||0)-(x.noShowCount||0));return ns.length?`<div style="height:16px"></div><span class="eyebrow" style="color:var(--coral-deep)">${I.clock} Fiabilité · absences signalées · ${ns.length}</span>
+      <p class="mini" style="margin:6px 0 2px;color:var(--muted)">Missions où un client a signalé que l'artisan engagé ne s'est pas présenté. Signal de fiabilité — <b>aucune sanction automatique</b>, à vous d'apprécier.</p>
+      ${ns.map(a=>`<button class="card" data-adm="art:${a.id}" style="padding:13px;margin-top:8px;width:100%;text-align:left;display:block;border-left:4px solid var(--coral)"><div class="row between"><b style="font-size:14px">${esc(a.name)}</b><span class="chip coral" style="padding:3px 9px">${a.noShowCount} absence${a.noShowCount>1?'s':''}</span></div><div class="mini" style="margin-top:2px">${catNames(a.cats)} · ${a.zone}${a.lastNoShowAt?' · dernière : '+new Date(a.lastNoShowAt).toLocaleDateString('fr-FR'):''}</div></button>`).join('')}`:'';})()}
       <div style="height:16px"></div><span class="eyebrow">Candidatures à traiter${q.length?' · '+q.length:''}</span>${queue}
       <div style="height:18px"></div><span class="eyebrow">Réservations en cours · ${allB.length}</span><p class="mini" style="margin:6px 0 2px;color:var(--muted)">Cycle&nbsp;: Recherche d'artisan → Acceptée → En cours → À valider par le client → Réglée → Terminée.</p>${bookings}
       <div style="height:18px"></div><span class="eyebrow">Fiches artisans · ${activeArts.length}</span>${artList}
@@ -1860,6 +1899,7 @@
           ${a.insuranceUrl?`<div class="row" style="gap:8px;margin-top:10px">${insStatus(a)!=='valide'?`<button class="btn good sm" data-adm="valid-ins:${a.id}">${I.check} Valider l'attestation</button>`:''}${insStatus(a)!=='refuse'?`<button class="btn ghost sm" data-adm="rej-ins:${a.id}">Refuser l'attestation</button>`:''}</div><p class="mini" style="margin-top:6px;color:var(--muted)">Ouvrez le document ci-dessus, puis validez ou refusez l'attestation. Rien n'est validé automatiquement.</p>`:''}
           ${a.bio?`<div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">Présentation</span><b style="text-align:right;max-width:62%;font-weight:500">${esc(a.bio)}</b></div>`:''}
           <div class="row between" style="margin-top:6px"><span class="sub">Note · missions</span><b>${a.rating?a.rating.toFixed(1)+' '+I.star+' · '+a.jobs:'—'}</b></div>
+          <div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">Fiabilité · présence</span><b style="text-align:right;max-width:62%">${(a.noShowCount||0)>0?`<span class="chip coral" style="padding:2px 8px">${I.clock} ${a.noShowCount} absence${a.noShowCount>1?'s':''} signalée${a.noShowCount>1?'s':''}</span>${a.lastNoShowAt?`<br><span class="mini" style="color:var(--muted)">Dernière&nbsp;: ${new Date(a.lastNoShowAt).toLocaleDateString('fr-FR')}</span>`:''}`:`<span class="chip good" style="padding:2px 8px">${I.check} Aucun manquement</span>`}</b></div>
           <div class="row between" style="margin-top:6px"><span class="sub">Palier fidélité · commission</span><b><span class="chip" style="padding:2px 8px;background:${fidColor(fidFor(a.jobs).key)}22;color:${fidColor(fidFor(a.jobs).key)}">${I.star} ${fidFor(a.jobs).nm}</span> ${fidFor(a.jobs).pct} %</b></div>
           ${a.status==='refuse'&&a.reason?`<hr class="dashed"><div class="row between"><span class="sub">Motif du refus</span><b style="color:var(--coral-deep);text-align:right;max-width:60%">${a.reason}</b></div>`:''}
         </div>
@@ -3669,6 +3709,9 @@
   document.addEventListener('click',(e)=>{
     const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-offer],[data-boost],[data-price],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-conc-off],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-prefart],[data-proslot],[data-proreqslot]');
     if(!b)return;
+    // Retour haptique (Android/Chrome ; ignoré ailleurs) : tapotement léger sur toute
+    // action, vibration « validation » plus marquée sur les gestes décisifs.
+    haptic(RE_HAPTIC_KEY.test((b.dataset.act||'')+' '+(b.dataset.adm||''))?'success':'light');
     if(b.dataset.act==='pw-toggle'){const w=b.closest('.pw-wrap');const inp=w&&w.querySelector('input');if(inp){const reveal=inp.type==='password';inp.type=reveal?'text':'password';b.innerHTML=reveal?I.eyeoff:I.eye;}return;}
     if(b.dataset.persona){go(b.dataset.persona);return;}
     if(b.dataset.adm){const parts=b.dataset.adm.split(':'),act=parts[0],id=parts[1];
@@ -4521,7 +4564,7 @@
       adminArtUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'artisans'),function(snap){
         const list=[],pending=new Set();
         snap.forEach(function(d){ const a=d.data()||{}; const cats=Array.isArray(a.cats)?a.cats:[]; const rr=a.rates||{}; const st=a.status||'attente';
-          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Artisan',status:st,type:'entreprise',cats:cats,other:a.other||'',rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||''});
+          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Artisan',status:st,type:'entreprise',cats:cats,other:a.other||'',rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,lastNoShowAt:(a.lastNoShowAt&&a.lastNoShowAt.toDate)?a.lastNoShowAt.toDate().getTime():0});
           if(st==='attente')pending.add(d.id); });
         S.adminArtisans=list;
         // Ne notifie que les candidatures arrivées APRÈS la connexion (pas le stock initial).
@@ -4772,6 +4815,9 @@
 
   handleDeepLink();
   render();
+  // Écran de lancement : laissé visible le temps de l'animation, puis fondu enchaîné
+  // vers l'app déjà peinte (fondu instantané si l'utilisateur a réduit les animations).
+  (function(){var sp=document.getElementById('splash');if(!sp)return;var kill=function(){sp.classList.add('hide');setTimeout(function(){if(sp&&sp.parentNode)sp.parentNode.removeChild(sp);},560);};if(_hapticOff){kill();return;}setTimeout(kill,720);})();
   initFirebase();
   // Retour de l'app au premier plan (mobile) : on resynchronise les demandes du
   // client, car l'écoute Firestore a pu être suspendue en arrière-plan.
