@@ -34,10 +34,18 @@ setGlobalOptions({region: 'europe-west1', maxInstances: 5});
  *     donc changer la commission d'un artisan ne demande AUCUNE config chez Mollie.
  *
  * ÉTAT : le code ci-dessous est prêt mais INERTE tant que les secrets ne sont pas
- * configurés (compte Mollie Connect à ouvrir). Sans secret, tout est un no-op sûr :
- *   firebase functions:secrets:set MOLLIE_CLIENT_ID
- *   firebase functions:secrets:set MOLLIE_CLIENT_SECRET
- *   firebase functions:secrets:set MOLLIE_ACCESS_TOKEN     (jeton d'organisation plateforme)
+ * configurés (compte Mollie Connect à ouvrir). Sans secret, process.env.MOLLIE_* est
+ * indéfini → mollie*Configured() renvoie false → tout est un no-op sûr. Pour ACTIVER
+ * (après ouverture du compte Mollie Connect) :
+ *   1) firebase functions:secrets:set MOLLIE_CLIENT_ID
+ *      firebase functions:secrets:set MOLLIE_CLIENT_SECRET
+ *      firebase functions:secrets:set MOLLIE_ACCESS_TOKEN   (jeton d'organisation plateforme)
+ *   2) déclarer ces secrets sur les fonctions concernées, ex. :
+ *      onRequest({secrets:['MOLLIE_CLIENT_ID','MOLLIE_CLIENT_SECRET']}, ...)  (start/return)
+ *      settleCommission → {secrets:['MOLLIE_ACCESS_TOKEN']}
+ *   NB : ne PAS déclarer un secret inexistant, sinon le déploiement échoue — c'est
+ *   pourquoi les déclarations `secrets` sont volontairement absentes tant que Mollie
+ *   n'est pas ouvert.
  * ========================================================================== */
 const MOLLIE_AUTHORIZE = 'https://my.mollie.com/oauth2/authorize';
 const MOLLIE_TOKEN = 'https://api.mollie.com/oauth2/tokens';
@@ -624,7 +632,7 @@ exports.notifyReopenedRequest = onDocumentUpdated('requests/{reqId}', async (eve
  * passer l'uid en clair, et vérifier l'authentification de l'appelant. Inerte tant
  * que MOLLIE_CLIENT_ID/SECRET ne sont pas configurés.
  */
-exports.mollieOnboardingStart = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET']}, (req, res) => {
+exports.mollieOnboardingStart = onRequest((req, res) => {
   if (!mollieOAuthConfigured()) { res.status(503).json({error: 'Mollie non configuré', message: 'Compte Mollie Connect à ouvrir + secrets à définir.'}); return; }
   const uid = (req.query.uid || req.query.state || '').toString();
   if (!uid) { res.status(400).json({error: 'uid manquant'}); return; }
@@ -645,7 +653,7 @@ exports.mollieOnboardingStart = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE
  * (mollieOrgId + mollieStatus). Puis on renvoie l'artisan dans l'app.
  * Inerte tant que Mollie n'est pas configuré.
  */
-exports.mollieOnboardingReturn = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET']}, async (req, res) => {
+exports.mollieOnboardingReturn = onRequest(async (req, res) => {
   if (!mollieOAuthConfigured()) { res.status(503).json({error: 'Mollie non configuré'}); return; }
   const code = (req.query.code || '').toString();
   const uid = (req.query.state || '').toString();
