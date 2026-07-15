@@ -11,6 +11,7 @@
  * (nécessite le plan Blaze, déjà activé.)
  */
 const {onDocumentCreated, onDocumentUpdated} = require('firebase-functions/v2/firestore');
+const {onRequest} = require('firebase-functions/v2/https');
 const {setGlobalOptions} = require('firebase-functions/v2');
 const {initializeApp} = require('firebase-admin/app');
 const {getFirestore, FieldValue} = require('firebase-admin/firestore');
@@ -18,6 +19,52 @@ const {getMessaging} = require('firebase-admin/messaging');
 
 initializeApp();
 setGlobalOptions({region: 'europe-west1', maxInstances: 5});
+
+/* ============================================================================
+ * MOLLIE CONNECT — activation des paiements artisans + versement automatique.
+ *
+ * PRINCIPE (vérifié sur la doc Mollie « Connect for Marketplaces ») :
+ *  1) L'artisan s'onboarde une fois via le parcours hébergé Mollie (OAuth). Mollie
+ *     vérifie son identité + IBAN (obligation DSP2/LCB-FT) et nous renvoie l'id de
+ *     son organisation connectée (mollieOrgId), stocké sur sa fiche `artisans`.
+ *  2) À chaque prestation réglée, on crée une « route » sur le paiement Mollie qui
+ *     verse le NET (commission déjà déduite) à l'organisation de l'artisan ; le
+ *     reste demeure sur le solde Ti-Services = notre commission. Le pourcentage
+ *     vit chez NOUS (barème de fidélité) : Mollie applique le montant qu'on envoie,
+ *     donc changer la commission d'un artisan ne demande AUCUNE config chez Mollie.
+ *
+ * ÉTAT : le code ci-dessous est prêt mais INERTE tant que les secrets ne sont pas
+ * configurés (compte Mollie Connect à ouvrir). Sans secret, tout est un no-op sûr :
+ *   firebase functions:secrets:set MOLLIE_CLIENT_ID
+ *   firebase functions:secrets:set MOLLIE_CLIENT_SECRET
+ *   firebase functions:secrets:set MOLLIE_ACCESS_TOKEN     (jeton d'organisation plateforme)
+ * ========================================================================== */
+const MOLLIE_AUTHORIZE = 'https://my.mollie.com/oauth2/authorize';
+const MOLLIE_TOKEN = 'https://api.mollie.com/oauth2/tokens';
+const MOLLIE_API = 'https://api.mollie.com/v2';
+const APP_URL = process.env.APP_URL || 'https://ti-services.web.app';
+function mollieOAuthConfigured() { return !!(process.env.MOLLIE_CLIENT_ID && process.env.MOLLIE_CLIENT_SECRET); }
+function mollieApiConfigured() { return !!process.env.MOLLIE_ACCESS_TOKEN; }
+
+// Crée une route de versement du NET vers l'organisation Mollie de l'artisan, en
+// gardant la commission sur le solde plateforme. No-op tant que Mollie n'est pas
+// configuré ou que le paiement n'a pas d'identifiant Mollie (paiements simulés).
+async function mollieRouteNet(molliePaymentId, orgId, netAmount, label) {
+  if (!mollieApiConfigured() || !molliePaymentId || !orgId || !(netAmount > 0)) return false;
+  try {
+    const res = await fetch(MOLLIE_API + '/payments/' + encodeURIComponent(molliePaymentId) + '/routes', {
+      method: 'POST',
+      headers: {'Authorization': 'Bearer ' + process.env.MOLLIE_ACCESS_TOKEN, 'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        amount: {currency: 'EUR', value: netAmount.toFixed(2)},
+        description: (label || 'Prestation Ti-Services').toString().slice(0, 100),
+        destination: {type: 'organization', organizationId: orgId},
+      }),
+    });
+    if (!res.ok) { console.warn('mollieRouteNet HTTP', res.status, await res.text()); return false; }
+    return true;
+  } catch (e) { console.warn('mollieRouteNet', e); return false; }
+}
 
 exports.notifyAdminNewArtisan = onDocumentCreated('artisans/{artisanId}', async (event) => {
   const snap = event.data;
@@ -504,6 +551,18 @@ exports.settleCommission = onDocumentUpdated('requests/{reqId}', async (event) =
     });
     console.log('Commission figée + registre reqId=' + reqId +
       ' base=' + base + ' pct=' + pct + '% comm=' + commission + ' net=' + net);
+
+    // 3) VERSEMENT MOLLIE (le cas échéant) : route le NET vers l'organisation de
+    //    l'artisan et garde la commission sur le solde plateforme. Inerte tant que
+    //    Mollie n'est pas configuré ou que le paiement est simulé (pas de molliePaymentId).
+    try {
+      const orgId = after.mollieOrgId || (await db.collection('artisans').doc(providerUid).get()).get('mollieOrgId');
+      if (orgId && after.molliePaymentId) {
+        const routed = await mollieRouteNet(after.molliePaymentId, orgId, net,
+          'Ti-Services · ' + (after.serviceName || after.service || 'prestation') + ' · ' + saleInvoiceNo);
+        if (routed) await event.data.after.ref.update({molliePayout: 'routed'});
+      }
+    } catch (e) { console.warn('settleCommission route', e); }
   } catch (e) { console.warn('settleCommission write', e); }
 });
 
@@ -554,4 +613,62 @@ exports.notifyReopenedRequest = onDocumentUpdated('requests/{reqId}', async (eve
         (t) => db.collection('users').doc(clientUid).update({ pushTokens: FieldValue.arrayRemove(t) }));
     }
   } catch (e) { console.warn('reopen notify client', e); }
+});
+
+/**
+ * mollieOnboardingStart : point d'entrée du parcours d'activation des paiements.
+ * L'app y redirige l'artisan ; on renvoie (302) vers le parcours hébergé Mollie
+ * (OAuth). `state` = uid de l'artisan pour le corréler au retour.
+ *
+ * SÉCURITÉ : en production, signer `state` (jeton à usage unique) plutôt que de
+ * passer l'uid en clair, et vérifier l'authentification de l'appelant. Inerte tant
+ * que MOLLIE_CLIENT_ID/SECRET ne sont pas configurés.
+ */
+exports.mollieOnboardingStart = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET']}, (req, res) => {
+  if (!mollieOAuthConfigured()) { res.status(503).json({error: 'Mollie non configuré', message: 'Compte Mollie Connect à ouvrir + secrets à définir.'}); return; }
+  const uid = (req.query.uid || req.query.state || '').toString();
+  if (!uid) { res.status(400).json({error: 'uid manquant'}); return; }
+  const redirectUri = (req.query.redirect_uri || (APP_URL.replace(/\/$/, '') + '/mollieOnboardingReturn')).toString();
+  const scope = ['onboarding.read', 'onboarding.write', 'organizations.read', 'payments.read', 'payments.write', 'profiles.read'].join(' ');
+  const url = MOLLIE_AUTHORIZE +
+    '?client_id=' + encodeURIComponent(process.env.MOLLIE_CLIENT_ID) +
+    '&redirect_uri=' + encodeURIComponent(redirectUri) +
+    '&state=' + encodeURIComponent(uid) +
+    '&scope=' + encodeURIComponent(scope) +
+    '&response_type=code&approval_prompt=auto';
+  res.redirect(302, url);
+});
+
+/**
+ * mollieOnboardingReturn : retour du parcours Mollie. On échange le `code` contre un
+ * jeton, on lit l'organisation connectée de l'artisan et on l'enregistre sur sa fiche
+ * (mollieOrgId + mollieStatus). Puis on renvoie l'artisan dans l'app.
+ * Inerte tant que Mollie n'est pas configuré.
+ */
+exports.mollieOnboardingReturn = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET']}, async (req, res) => {
+  if (!mollieOAuthConfigured()) { res.status(503).json({error: 'Mollie non configuré'}); return; }
+  const code = (req.query.code || '').toString();
+  const uid = (req.query.state || '').toString();
+  if (!code || !uid) { res.redirect(302, APP_URL); return; }
+  try {
+    const redirectUri = APP_URL.replace(/\/$/, '') + '/mollieOnboardingReturn';
+    const basic = Buffer.from(process.env.MOLLIE_CLIENT_ID + ':' + process.env.MOLLIE_CLIENT_SECRET).toString('base64');
+    const tokRes = await fetch(MOLLIE_TOKEN, {
+      method: 'POST',
+      headers: {'Authorization': 'Basic ' + basic, 'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'grant_type=authorization_code&code=' + encodeURIComponent(code) + '&redirect_uri=' + encodeURIComponent(redirectUri),
+    });
+    if (!tokRes.ok) { console.warn('mollie token', tokRes.status, await tokRes.text()); res.redirect(302, APP_URL + '?mollie=error'); return; }
+    const tok = await tokRes.json();
+    // Lit l'organisation connectée avec le jeton d'accès obtenu.
+    const orgRes = await fetch(MOLLIE_API + '/organizations/me', {headers: {'Authorization': 'Bearer ' + tok.access_token}});
+    const org = orgRes.ok ? await orgRes.json() : {};
+    const orgId = org.id || '';
+    await getFirestore().collection('artisans').doc(uid).set({
+      mollieOrgId: orgId,
+      mollieStatus: orgId ? 'active' : 'pending',
+      mollieOnboardedAt: FieldValue.serverTimestamp(),
+    }, {merge: true});
+    res.redirect(302, APP_URL + '?mollie=' + (orgId ? 'active' : 'pending'));
+  } catch (e) { console.warn('mollieOnboardingReturn', e); res.redirect(302, APP_URL + '?mollie=error'); }
 });

@@ -1436,7 +1436,7 @@
     if(S.cardForm||S.clientInv||S.histInvoice||S.advantages||S.invoiceId||S.interv||S.referral||S.share||S.chat||S.support||S.addrForm||S.finishing||S.disputing||S.profileForm||S.draft||S.payStep)return true;
     if(S.persona==='admin')return S.admin.view!=='home';
     if(S.persona==='concierge')return !!(S.concRetInv||S.concInvoice||S.concForm||S.concClientView||S.concOrder||S.concView||S.concNav!=='home');
-    if(S.persona==='pro'){if(S.proDocsView||S.proPayoutView||S.proReqView||S.mission)return true;if(S.proStatus==='signup'||S.proStatus==='pending')return true;return S.proNav!=='home';}
+    if(S.persona==='pro'){if(S.proDocsView||S.proPayoutView||S.proMollieView||S.proReqView||S.mission)return true;if(S.proStatus==='signup'||S.proStatus==='pending')return true;return S.proNav!=='home';}
     if(S.mission)return true;
     return S.clientNav!=='home';
   }
@@ -2644,6 +2644,22 @@
   // Persistance des revenus/missions de l'artisan dans sa fiche (mode réel).
   function saveProStats(){try{ if(FB&&FB.auth&&FB.auth.currentUser&&typeof isDemo==='function'&&!isDemo()&&S.persona==='pro'){ FB.f.setDoc(FB.f.doc(FB.db,'artisans',FB.auth.currentUser.uid),{earnings:S.proEarnings||0,jobsTotal:S.proJobsTotal||0,history:(S.proHistory||[]).slice(0,500)},{merge:true}).catch(function(){}); } }catch(_){}}
   function unsubClientRequest(id){if(clientReqUnsubs[id]){try{clientReqUnsubs[id]();}catch(_){}delete clientReqUnsubs[id];}}
+  // Enregistre l'état d'activation Mollie de l'artisan (persisté sur sa fiche hors démo).
+  function setMollieStatus(status){
+    S.proMollie=status;
+    try{ if(FB&&FB.auth&&FB.auth.currentUser&&typeof isDemo==='function'&&!isDemo()&&S.persona==='pro'){ FB.f.setDoc(FB.f.doc(FB.db,'artisans',FB.auth.currentUser.uid),{mollieStatus:status},{merge:true}).catch(function(){}); } }catch(_){}
+    render();
+  }
+  // Lance le parcours d'activation des paiements. En bêta, Mollie Connect n'est pas
+  // encore raccordé : on ouvre le parcours en mode simulé (statut « en vérification »).
+  // BRANCHEMENT RÉEL (quand le compte Mollie Connect est ouvert + secrets configurés) :
+  // rediriger vers l'endpoint serveur qui renvoie l'URL OAuth de Mollie (hosted
+  // onboarding), en pré-remplissant l'identité déjà connue —
+  //   window.location.href = urlOnboardingMollie;   // obtenue via mollieOnboardingStart
+  function startMollieOnboarding(){
+    setMollieStatus('pending');
+    toast('Ouverture du parcours Mollie (simulé en bêta)');
+  }
   // Annulation d'une demande encore ouverte : suppression du doc Firestore + arrêt de l'écoute.
   function cancelActiveRequest(m){
     if(!m)return;const id=m.reqId;if(!id)return;
@@ -2655,7 +2671,7 @@
     S.addresses=ADDRESSES_INIT();S.addrDefault='ad1';S.history=[];S.recurring=[];S.card=null;S.missions=[];S.proMissions=[];S.proReqView=null;S.proSkipped=[];
     S.proStatus='approved';S.proName='Marie-Lou';S.proCats=['menage','jardin'];S.proRate=35;
     S.proHistory=PRO_HISTORY();S.agenda=SEED_AGENDA.map(function(a){return Object.assign({},a);});
-    S.proEarnings=1284.50;S.proJobsToday=3;S.proJobsTotal=214;S.proRating=4.9;S.proIban='FR7630006000011234567890189';S.proIbanHolder='Marie-Lou Cagan';S.proBic='AGRIFRPP';
+    S.proEarnings=1284.50;S.proJobsToday=3;S.proJobsTotal=214;S.proRating=4.9;S.proIban='FR7630006000011234567890189';S.proIbanHolder='Marie-Lou Cagan';S.proBic='AGRIFRPP';S.proMollie='none';
     S.proInsured=true;S.proInsurer='AXA · Police 12345';S.proInsuranceUrl=DEMO_ATTEST;S.proInsuranceStatus='valide';S.proAcceptedCharte=true;S.proAcceptedTerms=true;S.proTermsVersion=TERMS_VERSION;S.proTermsAt=new Date('2026-05-15T10:00:00');
     S.adminArtisans=ADMIN_ARTS();S.adminClients=ADMIN_CLIS();S.adminBookings=ADMIN_BOOK();S.adminCommission=1240;S.adminConcierges=ADMIN_CONC();
     S.concClients=CONCIERGE_CLIENTS();S.concOrders=CONCIERGE_ORDERS();S.concEarn=640;S.concIban='FR7630006000011234567890189';S.concIbanHolder='Conciergerie Alizés';S.concLegal='Conciergerie Alizés';S.concSiret='88012345600018';S.concAddress='Gustavia, 97133 Saint-Barthélemy';
@@ -2746,6 +2762,7 @@
     if(S.proConflict)return proConflictView();
     if(S.proStatus==='signup'){ if(S.signupKind==='concierge')return conciergeSignup(); if(S.signupKind==='artisan')return proSignup(); return proTypeChoice(); }
     if(S.proDocsView)return proDocs();
+    if(S.proMollieView)return proMollieActivate();
     if(S.proPayoutView)return proPayout();
     if(S.proStatus==='pending')return proPending();
     if(S.advantages)return advantagesScreen();
@@ -2787,6 +2804,58 @@
           <button class="btn ghost sm" data-act="view-cgv">Conditions Générales de Vente</button>
         </div>
       </div><div style="height:14px"></div></div>${proNavbar()}`;
+  }
+  // État d'activation des paiements Mollie : 'none' (à activer) | 'pending'
+  // (dossier en cours de vérification chez Mollie) | 'active' (l'artisan est payé
+  // automatiquement, net de commission, sans nous faire de virement).
+  function mollieState(){return S.proMollie||'none';}
+  // Écran d'activation des paiements. Objectif : que la démarche paraisse un
+  // simple bouton (« Activer mes paiements ») et non une corvée administrative.
+  // Ti-Services pré-remplit l'identité déjà connue ; Mollie collecte l'IBAN et la
+  // pièce d'identité sur son parcours sécurisé (obligation légale DSP2/LCB-FT).
+  function proMollieActivate(){
+    const st=mollieState();
+    const idRow=`<div class="card" style="padding:15px;margin-top:12px">
+        <div class="eyebrow" style="color:var(--muted)">Transmis automatiquement à Mollie</div>
+        <div class="stack" style="gap:7px;margin-top:9px">
+          <div class="row between"><span class="sub">Nom / raison sociale</span><b style="font-size:13.5px">${esc(S.proLegal||S.proName||'—')}</b></div>
+          <div class="row between"><span class="sub">Statut</span><b style="font-size:13.5px">${S.proStatusType==='particulier'?'Particulier':'Entreprise'}</b></div>
+          <div class="row between"><span class="sub">Adresse</span><b style="font-size:13.5px;text-align:right;max-width:60%">${esc(S.proAddress||'—')}</b></div>
+          <div class="row between"><span class="sub">SIRET</span><b style="font-size:13.5px">${esc(S.proSiret||'—')}</b></div>
+        </div>
+        <p class="mini" style="margin-top:10px">Vous n'aurez qu'à ajouter votre <b>IBAN</b> et une <b>pièce d'identité</b> sur le parcours sécurisé de Mollie — jamais transmis à Ti-Services.</p>
+      </div>`;
+    let body;
+    if(st==='active'){
+      body=`<div class="card" style="padding:20px;margin-top:14px;text-align:center">
+        <div style="width:60px;height:60px;border-radius:50%;background:var(--good-wash);color:var(--good);display:flex;align-items:center;justify-content:center;margin:0 auto 10px">${I.check}</div>
+        <b style="font-size:16px;font-family:var(--f-disp)">Paiements activés</b>
+        <p class="sub" style="margin-top:6px">Vous êtes réglé <b>automatiquement</b> après chaque prestation validée — le montant net (commission déjà déduite) arrive directement sur votre compte. <b>Aucun virement à nous faire.</b></p>
+      </div>
+      <div class="banner teal" style="margin-top:12px">${I.lock}<span>Encaissement opéré par <b>Mollie</b>, établissement de paiement agréé (norme PCI-DSS).</span></div>`;
+    } else if(st==='pending'){
+      body=`<div class="card" style="padding:20px;margin-top:14px;text-align:center">
+        <div style="width:60px;height:60px;border-radius:50%;background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn);display:flex;align-items:center;justify-content:center;margin:0 auto 10px">${I.clock}</div>
+        <b style="font-size:16px;font-family:var(--f-disp)">Vérification en cours</b>
+        <p class="sub" style="margin-top:6px">Mollie vérifie votre dossier (identité, IBAN). C'est en général rapide. Vous pourrez recevoir vos paiements dès la validation — vous serez prévenu.</p>
+      </div>
+      ${idRow}
+      ${(S.demoMode||isDemo())?`<button class="btn ghost sm" data-act="mollie-sim-approve" style="margin-top:12px">🧪 Simuler la validation Mollie (démo)</button>`:''}`;
+    } else {
+      body=`<p class="sub" style="margin-top:6px">Activez vos paiements pour être réglé <b>automatiquement</b> après chaque prestation. C'est <b>une seule fois</b>, en quelques minutes.</p>
+      <div class="stack" style="gap:10px;margin-top:14px">
+        <div class="advcard card"><div class="ai">${I.bolt}</div><div><div class="at">Versé automatiquement</div><div class="ad">Votre gain net (commission déduite) arrive seul, sans que vous ayez à nous facturer ni à faire de virement.</div></div></div>
+        <div class="advcard card"><div class="ai">${I.lock}</div><div><div class="at">Sécurisé par Mollie</div><div class="ad">Établissement de paiement agréé. Vos coordonnées bancaires vont à Mollie, jamais à Ti-Services.</div></div></div>
+        <div class="advcard card"><div class="ai">${I.check}</div><div><div class="at">Rapide, une seule fois</div><div class="ad">On a déjà pré-rempli votre identité. Il reste l'IBAN et une pièce — puis c'est fait pour de bon.</div></div></div>
+      </div>
+      ${idRow}
+      <div class="footcta" style="position:static;background:none;padding:16px 0 0"><button class="btn primary" data-act="mollie-start">${I.lock} Continuer vers Mollie →</button></div>
+      <p class="mini" style="text-align:center;margin-top:8px;color:var(--muted)">La vérification d'identité est exigée par la loi (DSP2) pour tout encaissement.</p>`;
+    }
+    return `<div class="pad"><button class="reset" data-act="pro-mollie-close" style="margin:8px 0 2px">← Retour</button>
+      <span class="eyebrow">${I.card} Mes paiements</span><div class="h-hello">${st==='active'?'Paiements automatiques':'Activer mes paiements'}</div>
+      ${body}
+      <div style="height:14px"></div></div>`;
   }
   function proPayout(){
     const f=S.payoutForm||{};
@@ -2972,6 +3041,10 @@
     const d=openDemand();const isNew=(S.proJobsTotal||0)===0;
     return `<div class="pad"><div class="row between" style="margin-top:10px"><div><span class="eyebrow">Artisan · ${catNames} · dès ${S.proRate} €/h</span><div class="h-hello">${esc(S.proName||'Marie-Lou')}</div></div>${avatarPhoto(S.proPhoto,inits(S.proName||'Marie-Lou'),'')}</div>
       ${notifCTA('pro')}
+
+      ${mollieState()!=='active'?`<button class="card" data-act="pro-mollie" style="padding:15px;margin-top:12px;width:100%;text-align:left;display:block;background:linear-gradient(135deg,var(--teal-wash),var(--card));border:1.5px solid color-mix(in srgb,var(--teal) 40%,transparent)">
+        <div class="row between"><b style="font-size:14.5px">${I.card}&nbsp;${mollieState()==='pending'?'Activation de vos paiements en cours':'Activez vos paiements'}</b><span class="chip ${mollieState()==='pending'?'warn':'coral'}" style="padding:3px 9px">${mollieState()==='pending'?'En vérification':'À faire'}</span></div>
+        <p class="sub" style="margin-top:7px">${mollieState()==='pending'?'Mollie vérifie votre dossier — vous serez réglé automatiquement dès la validation.':'Pour être payé automatiquement après chaque prestation. Deux minutes, une seule fois — on a déjà pré-rempli votre identité.'}</p></button>`:''}
 
       <div class="card" style="padding:15px;margin-top:12px"><div class="row between"><div><b style="font-size:15px">${S.proOnline?'Vous êtes en ligne':'Hors ligne'}</b><div class="mini">${S.proOnline?'Vous recevez les missions près de vous':'Activez pour recevoir des missions'}</div></div><button class="switch" data-act="toggle-online" style="background:${S.proOnline?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${S.proOnline?'25px':'3px'}"></span></button></div></div>
 
@@ -3241,9 +3314,12 @@
     const insOk=S.proInsuranceStatus==='valide';
     return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">${I.user} Mon compte</span>
       <div class="row" style="gap:14px;margin-top:8px">${avatarPhoto(S.proPhoto,inits(S.proName||'Marie-Lou'),'lg')}<div><b style="font-size:18px;font-family:var(--f-disp)">${esc(S.proName||'Marie-Lou')}</b><div class="mini">${esc(catNames)} · dès ${S.proRate} €/h</div></div></div>
-      <div class="card" style="padding:16px;margin-top:16px"><div class="row between"><b style="font-size:14px">${I.card}&nbsp;Compte de versement (RIB)</b>${S.proIban?`<span class="chip good" style="padding:3px 9px">${I.check} Enregistré</span>`:`<span class="chip coral" style="padding:3px 9px">Requis</span>`}</div>
-        ${S.proIban?`<div class="mini" style="margin-top:8px">${esc(S.proIbanHolder||S.proName||'')} · IBAN ${maskIban(S.proIban)}</div><button class="btn ghost sm" data-act="pro-payout" style="margin-top:11px;width:auto;padding:9px 14px">Modifier mon RIB</button>`:`<p class="mini" style="margin-top:8px">Renseignez votre RIB pour <b>recevoir vos paiements</b>. Sans lui, aucun virement ne peut vous être envoyé.</p><button class="btn primary sm" data-act="pro-payout" style="margin-top:11px;width:auto;padding:9px 14px">${I.card} Ajouter mon RIB</button>`}
-      </div>
+      ${(function(){const st=mollieState();const badge=st==='active'?`<span class="chip good" style="padding:3px 9px">${I.check} Actif</span>`:st==='pending'?`<span class="chip warn" style="padding:3px 9px">${I.clock} En vérification</span>`:`<span class="chip coral" style="padding:3px 9px">À activer</span>`;
+      return `<div class="card" style="padding:16px;margin-top:16px"><div class="row between"><b style="font-size:14px">${I.card}&nbsp;Recevoir mes paiements</b>${badge}</div>
+        ${st==='active'?`<p class="mini" style="margin-top:8px">Vous êtes réglé automatiquement, net de commission, après chaque prestation. Aucun virement à nous faire.</p><button class="btn ghost sm" data-act="pro-mollie" style="margin-top:11px;width:auto;padding:9px 14px">Voir mes paiements</button>`
+        :st==='pending'?`<p class="mini" style="margin-top:8px">Votre dossier est <b>en cours de vérification</b> chez Mollie. Vous serez payé dès la validation.</p><button class="btn ghost sm" data-act="pro-mollie" style="margin-top:11px;width:auto;padding:9px 14px">Suivre l'activation</button>`
+        :`<p class="mini" style="margin-top:8px">Activez vos paiements en quelques minutes pour être réglé <b>automatiquement</b> après chaque prestation. Sécurisé par Mollie.</p><button class="btn primary sm" data-act="pro-mollie" style="margin-top:11px;width:auto;padding:9px 14px">${I.lock} Activer mes paiements</button>`}
+      </div>`;})()}
       <button class="card" data-act="pro-docs" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.shield}&nbsp;Mes documents</b>${insOk?`<span class="chip good" style="padding:3px 9px">${I.check} Assurance OK</span>`:`<span class="mini" style="color:var(--teal-deep);font-weight:650">Assurance &amp; décharge ›</span>`}</div><p class="sub" style="margin-top:8px">Attestation d'assurance et décharge de responsabilité acceptée.</p></button>
       ${notifCard('pro')}
       <button class="card" data-act="open-general-support" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.support}&nbsp;Contacter Ti-Services</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Support ›</span></div><p class="sub" style="margin-top:8px">Une question sur votre compte, un dossier, l'application&nbsp;? Écrivez-nous — sans lien avec une mission.</p></button>
@@ -3603,6 +3679,10 @@
       case 'close-legal':S.legalView=null;render();break;
       case 'pro-docs':S.proDocsView=true;render();break;
       case 'pro-docs-close':S.proDocsView=false;render();break;
+      case 'pro-mollie':S.proMollieView=true;render();break;
+      case 'pro-mollie-close':S.proMollieView=false;render();break;
+      case 'mollie-start':startMollieOnboarding();break;
+      case 'mollie-sim-approve':setMollieStatus('active');toast('Paiements activés ✓');break;
       case 'pro-payout':S.payoutForm={holder:(S.proIbanHolder||S.proName||''),iban:(S.proIban||''),bic:(S.proBic||'')};S.proPayoutView=true;render();break;
       case 'pro-payout-close':S.proPayoutView=false;render();break;
       case 'save-payout':{const f=S.payoutForm||{};if((f.holder||'').trim().length<2){toast('Indiquez le titulaire du compte');break;}if(!ibanValid(f.iban)){toast('IBAN invalide');break;}const ib=normIban(f.iban);S.proIban=ib;S.proIbanHolder=f.holder.trim();S.proBic=normIban(f.bic);if(FB&&FB.auth&&FB.auth.currentUser){try{FB.f.setDoc(FB.f.doc(FB.db,'artisans',FB.auth.currentUser.uid),{iban:ib,ibanHolder:f.holder.trim(),bic:normIban(f.bic)},{merge:true});}catch(_){}}S.proPayoutView=false;S.payoutForm=null;render();toast('RIB enregistré ✓');break;}
@@ -3822,6 +3902,7 @@
       if(S.proConflict){S.proConflict=null;render();return;}
       if(S.proStatus==='pending'){S.proStatus='signup';render();return;}
       if(S.proStatus==='signup'){S.persona='client';S.proStatus='approved';render();return;}
+      if(S.proMollieView){S.proMollieView=false;render();return;}
       if(S.proReqView){S.proReqView=null;render();return;}
       if(S.mission){S.persona='client';render();return;}
       if(S.proNav!=='home'){S.proNav='home';render();return;}
@@ -3906,7 +3987,7 @@
         // (et non les valeurs par défaut de démonstration).
         S.proLegal=(ad&&(ad.legalName||ad.name))||name; S.proAddress=(ad&&ad.address)||S.proAddress; S.proStatusType=(ad&&ad.statusType)||S.proStatusType;
         if(ad&&Array.isArray(ad.cats)&&ad.cats.length){S.proCats=ad.cats.slice();const rr=ad.rates||{};S.proRate=Math.min.apply(null,ad.cats.map(c=>(rr[c]!=null?rr[c]:svcBase(c))));}
-        if(ad){ S.proRating=ad.rating||0; S.proIban=ad.iban||''; S.proIbanHolder=ad.ibanHolder||''; S.proBic=ad.bic||''; S.proInsured=!!ad.insured; S.proInsurer=ad.insurer||''; S.proInsuranceUrl=ad.insuranceUrl||''; S.proInsuranceStatus=ad.insuranceStatus||(ad.status==='valide'&&ad.insured?'valide':(ad.insuranceUrl||ad.insured?'attente':'none')); S.proSiret=ad.siret||S.proSiret; S.proBio=ad.bio||''; S.proPhoto=ad.photo||S.proPhoto; S.proAcceptedCharte=!!ad.acceptedCharte; S.proAcceptedTerms=!!ad.acceptedTerms; S.proTermsVersion=ad.termsVersion||''; S.proTermsAt=(ad.termsAt&&ad.termsAt.toDate)?ad.termsAt.toDate():null;
+        if(ad){ S.proRating=ad.rating||0; S.proIban=ad.iban||''; S.proIbanHolder=ad.ibanHolder||''; S.proBic=ad.bic||''; S.proInsured=!!ad.insured; S.proInsurer=ad.insurer||''; S.proInsuranceUrl=ad.insuranceUrl||''; S.proInsuranceStatus=ad.insuranceStatus||(ad.status==='valide'&&ad.insured?'valide':(ad.insuranceUrl||ad.insured?'attente':'none')); S.proSiret=ad.siret||S.proSiret; S.proBio=ad.bio||''; S.proPhoto=ad.photo||S.proPhoto; S.proAcceptedCharte=!!ad.acceptedCharte; S.proAcceptedTerms=!!ad.acceptedTerms; S.proTermsVersion=ad.termsVersion||''; S.proTermsAt=(ad.termsAt&&ad.termsAt.toDate)?ad.termsAt.toDate():null; S.proMollie=ad.mollieStatus||'none'; S.proMollieOrgId=ad.mollieOrgId||'';
           // Revenus / missions réalisées, rechargés depuis la fiche (persistés à chaque paiement).
           S.proEarnings=ad.earnings||0; S.proJobsTotal=ad.jobsTotal||0; S.proHistory=Array.isArray(ad.history)?ad.history:[]; }
         S.proStatus=(ad&&ad.status==='valide')?'approved':'pending';
