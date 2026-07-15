@@ -1558,9 +1558,30 @@
   // Vue d'ensemble : par artisan, la facture de commission mensuelle consolidée
   // (Ti-Services → artisan) + l'accès à ses factures de prestation (mandat).
   function adminInvoiceArts(){return (S.adminArtisans||[]).map(function(a){return {a:a,c:commMonthly(a.history)};}).filter(function(x){return x.c.count>0;});}
+  // Regroupe le REGISTRE serveur (source de vérité) par artisan. Utilisé en priorité :
+  // les chiffres affichés viennent alors du serveur, pas de l'historique local (qui peut
+  // être vide ou d'un ancien format). Repli sur les historiques si le registre est vide.
+  function adminLedgerGroups(){
+    const by={},r2=function(n){return Math.round(n*100)/100;};
+    (S.adminLedger||[]).forEach(function(e){if(!((e.commissionAmount||0)>0))return;const k=e.providerUid||e.providerName||e.reqId;if(!by[k])by[k]={id:e.providerUid||k,uid:e.providerUid||'',name:e.providerName||'Artisan',entries:[],gross:0,comm:0,net:0};const g=by[k];g.entries.push(e);g.gross+=(e.grossTotal||e.base||0);g.comm+=(e.commissionAmount||0);g.net+=(e.netAmount||0);});
+    return Object.keys(by).map(function(k){const g=by[k];return {a:{id:g.id,uid:g.uid,name:g.name},c:{count:g.entries.length,gross:r2(g.gross),comm:r2(g.comm),net:r2(g.net)},entries:g.entries};});
+  }
+  // Groupes affichés : registre serveur si disponible, sinon repli sur les historiques.
+  function adminCommissionGroups(){const lg=adminLedgerGroups();return lg.length?lg:adminInvoiceArts();}
+  // Lignes normalisées d'un artisan (pour ses factures) : registre serveur d'abord,
+  // sinon son historique. Renvoie {name,uid,siret,type,lines[],comm,gross,net,count}.
+  function adminArtLines(artId){
+    const g=adminLedgerGroups().find(function(x){return x.a.id===artId;});
+    if(g){const doc=(S.adminArtisans||[]).find(function(x){return x.id===artId||x.uid===artId;});
+      return {name:g.a.name,uid:g.a.uid||artId,siret:(doc&&doc.siret)||'',type:(doc&&doc.type)||'entreprise',comm:g.c.comm,gross:g.c.gross,net:g.c.net,count:g.c.count,
+        lines:g.entries.map(function(e){return {invNo:e.invNo||'',dateISO:e.dateISO||'',svc:e.service,svcName:e.serviceName||svcName(e.service),client:e.clientName||'',clientZone:'',unit:e.unit||'h',duration:e.hours||0,rate:e.rate||0,gross:e.grossTotal||e.base||0,pct:e.commissionPct||0,commission:e.commissionAmount||0,net:e.netAmount||0};})};}
+    const a=adminFactArt();if(!a)return null;const c=commMonthly(a.history);
+    return {name:a.name,uid:a.uid||a.id,siret:a.siret||'',type:a.type||'entreprise',comm:c.comm,gross:c.gross,net:c.net,count:c.count,
+      lines:c.list.map(function(x){return {invNo:x.h.invNo||'',dateISO:x.h.dateISO||'',svc:x.h.svc,svcName:svcName(x.h.svc),client:x.h.clientFull||x.h.client||'',clientZone:x.h.clientZone||'',unit:x.h.unit||'h',duration:x.h.duration||0,rate:x.h.rate||0,gross:x.b.gross,pct:x.b.pct,commission:x.b.commission,net:x.b.net};})};
+  }
   function adminFactArt(){return (S.adminArtisans||[]).find(function(a){return a.id===(S.admin.fact&&S.admin.fact.art);});}
   function adminInvoices(){
-    const groups=adminInvoiceArts();const round2=function(n){return Math.round(n*100)/100;};
+    const groups=adminCommissionGroups();const round2=function(n){return Math.round(n*100)/100;};
     const totComm=round2(groups.reduce(function(t,x){return t+x.c.comm;},0));
     const totGross=round2(groups.reduce(function(t,x){return t+x.c.gross;},0));
     const cards=groups.length?groups.map(function(x){return `<div class="card" style="padding:14px;margin-top:10px">
@@ -1642,43 +1663,40 @@
       </div></div><div style="height:12px"></div></div>`;
   }
   function adminCommInvoiceView(){
-    const a=adminFactArt();if(!a)return adminInvoices();
-    const c=commMonthly(a.history);
-    const rows=c.count?c.list.map(function(x){return `<tr><td>${fmtLong(x.h.dateISO)}</td><td>${svcName(x.h.svc)} — ${esc(x.h.client||'')}</td><td class="r">${eur(x.b.gross)}</td><td class="r">${x.b.pct} %</td><td class="r">${eur(x.b.commission)}</td></tr>`;}).join(''):`<tr><td colspan="5" style="text-align:center;color:#888;padding:14px">Aucune commission.</td></tr>`;
+    const d=adminArtLines(S.admin.fact&&S.admin.fact.art);if(!d)return adminInvoices();
+    const rows=d.count?d.lines.map(function(x){return `<tr><td>${fmtLong(x.dateISO)}</td><td>${esc(x.svcName)} — ${esc(x.client||'')}</td><td class="r">${eur(x.gross)}</td><td class="r">${x.pct} %</td><td class="r">${eur(x.commission)}</td></tr>`;}).join(''):`<tr><td colspan="5" style="text-align:center;color:#888;padding:14px">Aucune commission.</td></tr>`;
     return `<div class="pad">
       <div class="row between noprint" style="margin-top:6px;gap:8px"><button class="reset" data-adm="fact-back">← Retour</button><button class="btn primary" data-act="print-invoice" style="width:auto;padding:10px 16px">${I.card}&nbsp;Enregistrer / Imprimer</button></div>
       <div id="invoiceDoc"><div class="inv">
-        <div class="row between" style="align-items:flex-start"><div><h2>FACTURE DE COMMISSION</h2><div class="mut">N° ${commInvNo(a.uid||a.id)}</div><div class="mut">${COMM_PERIOD}</div></div><div style="text-align:right"><div style="font-family:var(--f-disp);font-weight:800;font-size:16px;color:#151515">Ti-Services</div><div class="mut">Plateforme d'intermédiation</div>${ccsHead()}</div></div>
-        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Facturé à · intervenant</div><b>${esc(a.name)}</b><div class="mut">${a.type==='particulier'?'Particulier':'Entreprise'} · SIRET ${esc(a.siret||'—')}</div></div>
+        <div class="row between" style="align-items:flex-start"><div><h2>FACTURE DE COMMISSION</h2><div class="mut">N° ${commInvNo(d.uid)}</div><div class="mut">${COMM_PERIOD}</div></div><div style="text-align:right"><div style="font-family:var(--f-disp);font-weight:800;font-size:16px;color:#151515">Ti-Services</div><div class="mut">Plateforme d'intermédiation</div>${ccsHead()}</div></div>
+        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Facturé à · intervenant</div><b>${esc(d.name)}</b><div class="mut">${d.type==='particulier'?'Particulier':'Entreprise'} · SIRET ${esc(d.siret||'—')}</div></div>
         <table><thead><tr><th>Date</th><th>Prestation</th><th class="r">Base</th><th class="r">Taux</th><th class="r">Commission</th></tr></thead><tbody>${rows}</tbody></table>
-        <div class="row between sec"><span class="mut">Total commission (${c.count} mission${c.count>1?'s':''})</span><span class="tot">${eur(c.comm)}</span></div>
-        <div class="row between" style="margin-top:6px"><span class="mut">CA prestations</span><b>${eur(c.gross)}</b></div>
-        <div class="row between" style="margin-top:6px"><span class="mut">Net versé à l'intervenant</span><b>${eur(c.net)}</b></div>
+        <div class="row between sec"><span class="mut">Total commission (${d.count} mission${d.count>1?'s':''})</span><span class="tot">${eur(d.comm)}</span></div>
+        <div class="row between" style="margin-top:6px"><span class="mut">CA prestations</span><b>${eur(d.gross)}</b></div>
+        <div class="row between" style="margin-top:6px"><span class="mut">Net versé à l'intervenant</span><b>${eur(d.net)}</b></div>
         <div class="legal">TVA non applicable — Saint-Barthélemy (COM, hors du champ de la TVA française). Facture de commission d'intermédiation Ti-Services regroupant les prestations réglées sur la période, prélevée par retenue sur les versements. Aucune commission n'est refacturée au client final.<br>${b2bTerms()}<br>Ti-Services est un service édité par ${ccsInline()}.</div>
       </div></div><div style="height:12px"></div></div>`;
   }
   function adminArtInvoices(){
-    const a=adminFactArt();if(!a)return adminInvoices();
-    const list=a.history||[];
-    const rows=list.length?list.map(function(h){const b=histBreakdown(h);return `<button class="card" style="padding:13px;margin-top:9px;width:100%;text-align:left;display:block" data-adm="fact-doc:${a.id}:${h.invNo}"><div class="row between"><b style="font-size:14px">${svcName(h.svc)}</b><span class="money" style="font-weight:700">${eur(b.gross)}</span></div><div class="mini" style="margin-top:3px">${fmtLong(h.dateISO)} · ${esc(h.client||'')} · Facture ${esc(h.invNo)}</div></button>`;}).join(''):`<div class="card" style="padding:18px;text-align:center;color:var(--muted);margin-top:9px">Aucune facture.</div>`;
+    const d=adminArtLines(S.admin.fact&&S.admin.fact.art);if(!d)return adminInvoices();
+    const rows=d.lines.length?d.lines.map(function(x){return `<button class="card" style="padding:13px;margin-top:9px;width:100%;text-align:left;display:block" data-adm="fact-doc:${S.admin.fact.art}:${esc(x.invNo)}"><div class="row between"><b style="font-size:14px">${esc(x.svcName)}</b><span class="money" style="font-weight:700">${eur(x.gross)}</span></div><div class="mini" style="margin-top:3px">${fmtLong(x.dateISO)} · ${esc(x.client||'')} · Facture ${esc(x.invNo||'—')}</div></button>`;}).join(''):`<div class="card" style="padding:18px;text-align:center;color:var(--muted);margin-top:9px">Aucune facture.</div>`;
     return `<div class="pad"><button class="reset" data-adm="fact-back" style="margin:10px 0 6px">← Retour</button>
-      <span class="eyebrow">Factures prestations (mandat)</span><div class="h-hello">${esc(a.name)}</div>
+      <span class="eyebrow">Factures prestations (mandat)</span><div class="h-hello">${esc(d.name)}</div>
       <p class="sub" style="margin-top:6px">Factures établies par Ti-Services au nom et pour le compte de l'artisan.</p>${rows}
       <div style="height:24px"></div></div>`;
   }
   function adminArtInvoiceDoc(){
-    const a=adminFactArt();if(!a)return adminInvoices();
-    const h=(a.history||[]).find(function(x){return x.invNo===(S.admin.fact&&S.admin.fact.inv);});if(!h)return adminArtInvoices();
-    const b=histBreakdown(h);
+    const d=adminArtLines(S.admin.fact&&S.admin.fact.art);if(!d)return adminInvoices();
+    const x=d.lines.find(function(l){return l.invNo===(S.admin.fact&&S.admin.fact.inv);});if(!x)return adminArtInvoices();
     return `<div class="pad">
-      <div class="row between noprint" style="margin-top:6px;gap:8px"><button class="reset" data-adm="fact-mandat:${a.id}">← Retour</button><button class="btn primary" data-act="print-invoice" style="width:auto;padding:10px 16px">${I.card}&nbsp;Enregistrer / Imprimer</button></div>
+      <div class="row between noprint" style="margin-top:6px;gap:8px"><button class="reset" data-adm="fact-mandat:${S.admin.fact.art}">← Retour</button><button class="btn primary" data-act="print-invoice" style="width:auto;padding:10px 16px">${I.card}&nbsp;Enregistrer / Imprimer</button></div>
       <div id="invoiceDoc"><div class="inv">
-        <div class="row between" style="align-items:flex-start"><div><h2>FACTURE</h2><div class="mut">N° ${esc(h.invNo)}</div><div class="mut">Date : ${fmtLong(h.dateISO)}</div></div><div style="text-align:right"><div style="font-family:var(--f-disp);font-weight:800;font-size:16px;color:#151515">Ti-Services</div>${ccsHead()}</div></div>
-        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Prestataire</div><b>${esc(a.name)}</b><div class="mut">${a.type==='particulier'?'Particulier':'Entreprise'} · SIRET ${esc(a.siret||'—')}</div></div>
-        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Client</div><b>${esc(h.clientFull||h.client||'Client')}</b><div class="mut">${esc(h.clientZone||'Saint-Barthélemy')}, Saint-Barthélemy</div></div>
+        <div class="row between" style="align-items:flex-start"><div><h2>FACTURE</h2><div class="mut">N° ${esc(x.invNo||'—')}</div><div class="mut">Date : ${fmtLong(x.dateISO)}</div></div><div style="text-align:right"><div style="font-family:var(--f-disp);font-weight:800;font-size:16px;color:#151515">Ti-Services</div>${ccsHead()}</div></div>
+        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Prestataire</div><b>${esc(d.name)}</b><div class="mut">${d.type==='particulier'?'Particulier':'Entreprise'} · SIRET ${esc(d.siret||'—')}</div></div>
+        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Client</div><b>${esc(x.client||'Client')}</b><div class="mut">${esc(x.clientZone||'Saint-Barthélemy')}, Saint-Barthélemy</div></div>
         <table><thead><tr><th>Prestation</th><th class="r">Qté</th><th class="r">PU</th><th class="r">Total</th></tr></thead>
-        <tbody><tr><td>${svcName(h.svc)} — prestation à domicile</td><td class="r">${durTxt({unit:h.unit},h.duration)}</td><td class="r">${eur(h.rate)}</td><td class="r">${eur(b.gross)}</td></tr></tbody></table>
-        <div class="row between sec"><span class="mut">Total réglé</span><span class="tot">${eur(b.gross)}</span></div>
+        <tbody><tr><td>${esc(x.svcName)} — prestation à domicile</td><td class="r">${durTxt({unit:x.unit},x.duration)}</td><td class="r">${eur(x.rate)}</td><td class="r">${eur(x.gross)}</td></tr></tbody></table>
+        <div class="row between sec"><span class="mut">Total réglé</span><span class="tot">${eur(x.gross)}</span></div>
         <div class="legal">TVA non applicable — Saint-Barthélemy (COM). Facture établie par Ti-Services au nom et pour le compte du prestataire (mandat de facturation, art. 289 du CGI).</div>
       </div></div><div style="height:12px"></div></div>`;
   }
@@ -1792,7 +1810,7 @@
     if(!(FB&&FB.db))return;
     try{ if(adminLedgerUnsub){try{adminLedgerUnsub();}catch(_){}}
       adminLedgerUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'ledger'),function(snap){
-        const list=[];snap.forEach(function(d){const e=d.data()||{};if((e.commissionAmount||0)>0)list.push({id:d.id,reqId:e.reqId||d.id,dateISO:(e.settledAt&&e.settledAt.toDate)?e.settledAt.toDate().toISOString().slice(0,10):'',clientName:e.clientName||'',providerName:e.providerName||'',service:e.service||'',serviceName:e.serviceName||'',base:e.base||0,commissionPct:e.commissionPct||0,commissionAmount:e.commissionAmount||0,netAmount:e.netAmount||0,grossTotal:e.grossTotal||0});});
+        const list=[];snap.forEach(function(d){const e=d.data()||{};if((e.commissionAmount||0)>0)list.push({id:d.id,reqId:e.reqId||d.id,invNo:e.invNo||'',providerUid:e.providerUid||'',clientUid:e.clientUid||'',dateISO:(e.settledAt&&e.settledAt.toDate)?e.settledAt.toDate().toISOString().slice(0,10):'',clientName:e.clientName||'',providerName:e.providerName||'',service:e.service||'',serviceName:e.serviceName||'',unit:e.unit||'h',hours:e.hours||0,rate:e.rate||0,base:e.base||0,commissionPct:e.commissionPct||0,commissionAmount:e.commissionAmount||0,netAmount:e.netAmount||0,grossTotal:e.grossTotal||0});});
         list.sort(function(a,b){return (b.dateISO||'').localeCompare(a.dateISO||'');});
         S.adminLedger=list;
         if(S.persona==='admin'&&S.admin.view==='fact'&&!(S.admin.fact))render();
