@@ -1364,7 +1364,7 @@
   function recoFor(m){return isDayU(m)?DAY_RECO:svcReco(m.svc);}
   function floorFor(m){return isDayU(m)?DAY_FLOOR:svcFloor(m.svc);}
   function endDateTxt(m){if(!isDayU(m))return '';let startISO=m.dateISO;if(!startISO){const d=new Date();if(m.when==='Demain')d.setDate(d.getDate()+1);startISO=d.toISOString().slice(0,10);}const d=new Date(startISO+'T00:00:00');const e=new Date(d);e.setDate(d.getDate()+Math.max(1,m.duration)-1);const f=(x)=>x.getDate()+'/'+(x.getMonth()+1);return f(d)+' → '+f(e);}
-  function finalizePaid(m){if(m.commPct==null)m.commPct=fidFor(S.proJobsTotal||0).pct;const tt=totals(m);m.status='paid';S.proEarnings+=tt.payout;if(m._appt){m._appt.status='done';m._appt.duration=billHours(m);m._appt.amount=tt.total;}S.proHistory=S.proHistory||[];const seq='2026-'+String(43+S.proHistory.length).padStart(4,'0');m.invNo=seq;S.proHistory.unshift({id:'hm'+S.proHistory.length,dateISO:(m.dateISO||new Date().toISOString().slice(0,10)),svc:m.svc,client:'Camille M.',clientFull:'Camille Magras',clientZone:m.zone,duration:billHours(m),unit:m.unit,rate:tt.rate,amount:tt.total,commPct:tt.commPct,commission:tt.commission,net:tt.payout,invNo:seq,paidVia:'carte'});}
+  function finalizePaid(m){if(m.commPct==null)m.commPct=fidFor(S.proJobsTotal||0).pct;const tt=totals(m);m.status='paid';S.proEarnings+=tt.payout;if(m._appt){m._appt.status='done';m._appt.duration=billHours(m);m._appt.amount=tt.total;}S.proHistory=S.proHistory||[];const seq='2026-'+String(43+S.proHistory.length).padStart(4,'0');m.invNo=seq;const cliN=(m.clientName||m.client||(isDemo()?'Camille M.':((S.account&&S.account.name)||'Client')));S.proHistory.unshift({id:'hm'+S.proHistory.length,dateISO:(m.dateISO||new Date().toISOString().slice(0,10)),svc:m.svc,client:cliN,clientFull:cliN,clientZone:m.zone,duration:billHours(m),unit:m.unit,rate:tt.rate,amount:tt.total,commPct:tt.commPct,commission:tt.commission,net:tt.payout,invNo:seq,paidVia:'carte'});}
   const eur=(n)=>n.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
   const fmtDate=(iso)=>{if(!iso)return 'Aujourd’hui';const p=iso.split('-');return p[2]+'/'+p[1];};
   // Repli visuel (hors-ligne / carte non chargée) : petite carte stylisée.
@@ -2637,14 +2637,14 @@
         const r=snap.data()||{};const m=findMissionByReq(id);if(!m)return;
         let touched=false;
         // Infos artisan (vues côté client)
-        if(r.providerName){if(!m.provider||!m.providerUid||m.provider.nm==='Votre artisan'){m.provider=Object.assign({},PROVIDERS[m.svc]||{ini:'AR',rating:0,jobs:0},{nm:r.providerName,ini:inits(r.providerName)});}m.providerUid=r.providerUid||m.providerUid;}
+        if(r.providerName){if(!m.provider||!m.providerUid||m.provider.nm==='Votre artisan'){m.provider={nm:r.providerName,ini:inits(r.providerName),rating:0,jobs:(r.providerJobs||0),founder:!!r.providerFounder};}m.providerUid=r.providerUid||m.providerUid;}
         if(r.providerUid&&!m.providerUid)m.providerUid=r.providerUid;
         // Filet de sécurité : dès que la demande est prise en charge, le client DOIT
         // avoir un artisan à afficher, même si son nom n'a pas encore été renseigné —
         // sinon l'écran de validation (qui lit provider.nm) planterait et la
         // réservation semblerait « disparaître ».
         if(!m.provider&&['accepted','working','done_pro','disputed'].indexOf(r.status||m.status)>=0){
-          m.provider=Object.assign({},PROVIDERS[m.svc]||{ini:'AR',rating:0,jobs:0},{nm:r.providerName||'Votre artisan',ini:inits(r.providerName||'Votre artisan')});
+          m.provider={nm:r.providerName||'Votre artisan',ini:inits(r.providerName||'Votre artisan'),rating:0,jobs:(r.providerJobs||0),founder:!!r.providerFounder};
         }
         if(r.acceptedSlot&&m.slot!==r.acceptedSlot){m.slot=r.acceptedSlot;if(r.slotFlex)m.proposedSlot=r.acceptedSlot;touched=true;}
         if(r.finalHours!=null&&m.finalHours!==r.finalHours){m.finalHours=r.finalHours;touched=true;}
@@ -2758,6 +2758,18 @@
     S.proHistory=[];S.agenda=[];S.proEarnings=0;S.proJobsToday=0;S.proJobsTotal=0;
     S.adminArtisans=[];S.adminClients=[];S.adminBookings=[];S.adminCommission=0;S.adminConcierges=[];
     S.concClients=[];S.concOrders=[];S.concEarn=0;
+    // Identité artisan : AUCUNE valeur de démo ne doit subsister (elle serait
+    // affichée/facturée à la place des vraies données). Tout part à blanc ; la fiche
+    // réelle est ensuite chargée depuis Firestore (loadUserProfile).
+    S.proName='';S.proLegal='';S.proAddress='';S.proSiret='';S.proStatusType='entreprise';S.proCats=[];S.proBio='';S.proPhone='';S.proPhoto=null;
+    S.proInsured=false;S.proInsurer='';S.proInsuranceUrl='';S.proInsuranceStatus='none';
+    S.proFounder=false;S.proOnline=false;S.proRating=0;S.proStatus='pending';
+    S.proMollie='none';S.proMollieOrgId='';S.proIban='';S.proIbanHolder='';S.proBic='';
+    S.proAcceptedCharte=false;S.proAcceptedTerms=false;S.proTermsVersion='';S.proTermsAt=null;
+    // Identité conciergerie.
+    S.concStatus='pending';S.concIban='';S.concIbanHolder='';S.concLegal='';S.concSiret='';S.concAddress='';
+    // Parrainage : pas le code de démo (« MARILOU-SBH ») ni de faux filleuls.
+    S.referralCode='';S.filleuls=[];
   }
   function clientPay(){
     const m=S.draft,t=totals(m);
@@ -3115,7 +3127,7 @@
     const cats=(S.proCats&&S.proCats.length)?S.proCats:['menage'];
     const catNames=cats.map(c=>{const s=SERVICES.find(x=>x.id===c);return s?s.nm:c;}).slice(0,2).join(' · ');
     const d=openDemand();const isNew=(S.proJobsTotal||0)===0;
-    return `<div class="pad"><div class="row between" style="margin-top:10px"><div><span class="eyebrow">Artisan · ${catNames} · dès ${S.proRate} €/h</span><div class="h-hello">${esc(S.proName||'Marie-Lou')}</div></div>${avatarPhoto(S.proPhoto,inits(S.proName||'Marie-Lou'),'')}</div>
+    return `<div class="pad"><div class="row between" style="margin-top:10px"><div><span class="eyebrow">Artisan · ${catNames} · dès ${S.proRate} €/h</span><div class="h-hello">${esc(S.proName||'Mon compte')}</div></div>${avatarPhoto(S.proPhoto,inits(S.proName||'Mon compte'),'')}</div>
       ${notifCTA('pro')}
 
       ${mollieState()!=='active'?`<button class="card" data-act="pro-mollie" style="padding:15px;margin-top:12px;width:100%;text-align:left;display:block;background:linear-gradient(135deg,var(--teal-wash),var(--card));border:1.5px solid color-mix(in srgb,var(--teal) 40%,transparent)">
@@ -3404,7 +3416,7 @@
     const catNames=cats.map(function(c){const s=SERVICES.find(x=>x.id===c);return s?s.nm:c;}).slice(0,3).join(' · ');
     const insOk=S.proInsuranceStatus==='valide';
     return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">${I.user} Mon compte</span>
-      <div class="row" style="gap:14px;margin-top:8px">${avatarPhoto(S.proPhoto,inits(S.proName||'Marie-Lou'),'lg')}<div><b style="font-size:18px;font-family:var(--f-disp)">${esc(S.proName||'Marie-Lou')}</b><div class="mini">${esc(catNames)} · dès ${S.proRate} €/h</div></div></div>
+      <div class="row" style="gap:14px;margin-top:8px">${avatarPhoto(S.proPhoto,inits(S.proName||'Mon compte'),'lg')}<div><b style="font-size:18px;font-family:var(--f-disp)">${esc(S.proName||'Mon compte')}</b><div class="mini">${esc(catNames)} · dès ${S.proRate} €/h</div></div></div>
       
       <div class="eyebrow" style="margin:26px 4px 6px;color:var(--muted)">Compte</div>
       ${(function(){const st=mollieState();const badge=st==='active'?`<span class="chip good" style="padding:3px 9px">${I.check} Actif</span>`:st==='pending'?`<span class="chip warn" style="padding:3px 9px">${I.clock} En vérification</span>`:`<span class="chip coral" style="padding:3px 9px">À activer</span>`;
@@ -3721,9 +3733,9 @@
       case 'conc-order-cancel':S.concOrder=null;render();break;
       case 'conc-order-back-client':S.concOrder.step='client';render();break;
       case 'conc-order-back-service':S.concOrder.step='service';render();break;
-      case 'conc-order-place':{const o=S.concOrder,c=concClient(o.clientId),id='co'+Date.now(),amount=o.rate*o.duration;S.concOrders.unshift({id,clientId:c.id,clientName:c.name,svc:o.svc,svcName:o.svcName,duration:o.duration,rate:o.rate,amount,when:o.when,slot:o.slot,notes:o.notes,accessNotes:c.notes||'',address:c.addr?c.addr.address:'',zone:c.addr?c.addr.zone:'',status:'searching',artisan:null,retro:0,invNo:null});S.concOrder=null;S.concView=id;saveConcCloud();render();setTimeout(()=>{const ord=S.concOrders.find(x=>x.id===id);if(ord&&ord.status==='searching'){ord.status='planned';ord.artisan='Marie-Lou Cagan';saveConcCloud();if(S.persona==='concierge')render();}},2600);break;}
+      case 'conc-order-place':{const o=S.concOrder,c=concClient(o.clientId),id='co'+Date.now(),amount=o.rate*o.duration;S.concOrders.unshift({id,clientId:c.id,clientName:c.name,svc:o.svc,svcName:o.svcName,duration:o.duration,rate:o.rate,amount,when:o.when,slot:o.slot,notes:o.notes,accessNotes:c.notes||'',address:c.addr?c.addr.address:'',zone:c.addr?c.addr.zone:'',status:'searching',artisan:null,retro:0,invNo:null});S.concOrder=null;S.concView=id;saveConcCloud();render();if(isDemo())setTimeout(()=>{const ord=S.concOrders.find(x=>x.id===id);if(ord&&ord.status==='searching'){ord.status='planned';ord.artisan='Marie-Lou Cagan';saveConcCloud();if(S.persona==='concierge')render();}},2600);break;}
       case 'conc-view-back':S.concView=null;render();break;
-      case 'conc-order-done':{const o=S.concOrders.find(x=>x.id===S.concView);if(o){o.status='done';saveConcCloud();render();const id=o.id;setTimeout(()=>{const ord=S.concOrders.find(x=>x.id===id);if(ord&&ord.status==='done'){ord.status='paid';ord.retro=Math.round(ord.amount*S.retroRate/100);S.concEarn+=ord.retro;ord.invNo='2026-'+String(50+S.concOrders.length).padStart(4,'0');saveConcCloud();if(S.persona==='concierge')render();}},4000);}break;}
+      case 'conc-order-done':{const o=S.concOrders.find(x=>x.id===S.concView);if(o){o.status='done';saveConcCloud();render();const id=o.id;if(isDemo())setTimeout(()=>{const ord=S.concOrders.find(x=>x.id===id);if(ord&&ord.status==='done'){ord.status='paid';ord.retro=Math.round(ord.amount*S.retroRate/100);S.concEarn+=ord.retro;ord.invNo='2026-'+String(50+S.concOrders.length).padStart(4,'0');saveConcCloud();if(S.persona==='concierge')render();}},4000);}break;}
       case 'conc-order-issue':{const o=S.concOrders.find(x=>x.id===S.concView);if(o&&o.status==='done'){o.status='issue';render();toast('Souci signalé à Ti-Services — validation automatique suspendue');}break;}
       case 'conc-order-validate':{const o=S.concOrders.find(x=>x.id===S.concView);if(o){o.status='paid';o.retro=Math.round(o.amount*S.retroRate/100);S.concEarn+=o.retro;o.invNo='2026-'+String(50+S.concOrders.length).padStart(4,'0');saveConcCloud();render();toast('Prestation réglée — facture au nom du client');}break;}
       case 'conc-invoice-back':S.concInvoice=null;render();break;
@@ -3733,7 +3745,7 @@
       case 'conc-client-new':S.concForm={id:null,name:'',email:'',phone:'',alabel:'',aaddr:'',azone:'Gustavia',authorized:false,card:null};render();break;
       case 'conc-client-cancel':S.concForm=null;render();break;
       case 'conc-save-iban':{const iban=(S.concIban||'').replace(/\s/g,'');if(!ibanValid(iban)){toast('IBAN invalide — vérifiez la saisie');render();break;}S.concIban=iban;saveConcCloud();toast('RIB enregistré ✓');render();break;}
-      case 'conc-auth':if(S.concForm){S.concForm.authorized=true;S.concForm.card={brand:'Visa',last4:'4242'};render();toast('Lien envoyé — carte autorisée par le client (démo)');}break;
+      case 'conc-auth':if(S.concForm){ if(isDemo()){S.concForm.authorized=true;S.concForm.card={brand:'Visa',last4:'4242'};toast('Lien envoyé — carte autorisée par le client (démo)');} else { toast('Lien d’autorisation envoyé au client'); } render();}break;
       case 'conc-client-geo':geolocate(g=>{if(S.concForm){S.concForm.ageo=g;render();}});break;
       case 'conc-client-save':{const f=S.concForm;if(!f)break;if(!(f.name||'').trim()){toast('Indiquez le nom du client');break;}const addr={label:f.alabel||f.name,address:f.aaddr,zone:f.azone,geo:f.ageo||null};if(f.id){const c=concClient(f.id);if(c){c.name=f.name;c.email=f.email;c.phone=f.phone;c.addr=addr;c.notes=f.notes||'';c.authorized=f.authorized;c.card=f.card;}}else{S.concClients.push({id:'cc'+Date.now(),name:f.name,email:f.email,phone:f.phone,addr,notes:f.notes||'',authorized:f.authorized,card:f.card});}S.concForm=null;saveConcCloud();render();toast('Client enregistré');break;}
       case 'conc-client-delete':if(S.concForm&&S.concForm.id){S.concClients=S.concClients.filter(x=>x.id!==S.concForm.id);S.concForm=null;saveConcCloud();render();toast('Client supprimé');}break;
@@ -4062,6 +4074,12 @@
       loadPrices();  // grille de prix officielle (source de vérité du contrôle serveur)
     }catch(e){ console.warn('Firebase indisponible — mode démo',e); FB=null; }
   }
+  // Code de parrainage RÉEL et stable, dérivé du nom + uid (jamais le code de démo).
+  function genReferralCode(name,uid){
+    const base=(((name||'').trim().split(/\s+/)[0])||'TI').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,8)||'TI';
+    const suf=((uid||'').replace(/[^a-zA-Z0-9]/g,'').slice(-4)||'0000').toUpperCase();
+    return base+'-'+suf;
+  }
   async function loadUserProfile(user){
     try{
       const ref=FB.f.doc(FB.db,'users',user.uid);
@@ -4072,6 +4090,7 @@
       const typedName=(S.clientForm&&(S.clientForm.name||'').trim())||'';
       const typedZone=(S.clientForm&&(S.clientForm.zone||'').trim())||'';
       const name=(data&&data.name)||user.displayName||typedName||((user.email||'').split('@')[0]||'Client');
+      S.referralCode=genReferralCode(name,user.uid); // code réel du compte (pas la démo)
       // Compte admin (identifié par l'e-mail) : console d'administration réelle.
       if((CONFIG.adminEmails||[]).map(function(e){return e.toLowerCase();}).indexOf((user.email||'').toLowerCase())>=0){
         S.account={name:'Ti-Services',email:user.email||'',uid:user.uid,role:'admin'};
@@ -4090,9 +4109,9 @@
         S.persona='pro'; S.proName=name; S.proPhone=(ad&&ad.phone)||(data&&data.phone)||'';
         // Identité affichée sur les factures : nom légal + adresse RÉELS de l'artisan
         // (et non les valeurs par défaut de démonstration).
-        S.proLegal=(ad&&(ad.legalName||ad.name))||name; S.proAddress=(ad&&ad.address)||S.proAddress; S.proStatusType=(ad&&ad.statusType)||S.proStatusType;
+        S.proLegal=(ad&&(ad.legalName||ad.name))||name; S.proAddress=(ad&&ad.address)||''; S.proStatusType=(ad&&ad.statusType)||'entreprise';
         if(ad&&Array.isArray(ad.cats)&&ad.cats.length){S.proCats=ad.cats.slice();const rr=ad.rates||{};S.proRate=Math.min.apply(null,ad.cats.map(c=>(rr[c]!=null?rr[c]:svcBase(c))));}
-        if(ad){ S.proRating=ad.rating||0; S.proIban=ad.iban||''; S.proIbanHolder=ad.ibanHolder||''; S.proBic=ad.bic||''; S.proInsured=!!ad.insured; S.proInsurer=ad.insurer||''; S.proInsuranceUrl=ad.insuranceUrl||''; S.proInsuranceStatus=ad.insuranceStatus||(ad.status==='valide'&&ad.insured?'valide':(ad.insuranceUrl||ad.insured?'attente':'none')); S.proSiret=ad.siret||S.proSiret; S.proBio=ad.bio||''; S.proPhoto=ad.photo||S.proPhoto; S.proAcceptedCharte=!!ad.acceptedCharte; S.proAcceptedTerms=!!ad.acceptedTerms; S.proTermsVersion=ad.termsVersion||''; S.proTermsAt=(ad.termsAt&&ad.termsAt.toDate)?ad.termsAt.toDate():null; S.proMollie=ad.mollieStatus||'none'; S.proMollieOrgId=ad.mollieOrgId||'';
+        if(ad){ S.proRating=ad.rating||0; S.proIban=ad.iban||''; S.proIbanHolder=ad.ibanHolder||''; S.proBic=ad.bic||''; S.proInsured=!!ad.insured; S.proInsurer=ad.insurer||''; S.proInsuranceUrl=ad.insuranceUrl||''; S.proInsuranceStatus=ad.insuranceStatus||(ad.status==='valide'&&ad.insured?'valide':(ad.insuranceUrl||ad.insured?'attente':'none')); S.proSiret=ad.siret||''; S.proBio=ad.bio||''; S.proPhoto=ad.photo||S.proPhoto; S.proAcceptedCharte=!!ad.acceptedCharte; S.proAcceptedTerms=!!ad.acceptedTerms; S.proTermsVersion=ad.termsVersion||''; S.proTermsAt=(ad.termsAt&&ad.termsAt.toDate)?ad.termsAt.toDate():null; S.proMollie=ad.mollieStatus||'none'; S.proMollieOrgId=ad.mollieOrgId||'';
           // Revenus / missions réalisées, rechargés depuis la fiche (persistés à chaque paiement).
           S.proEarnings=ad.earnings||0; S.proJobsTotal=ad.jobsTotal||0; S.proHistory=Array.isArray(ad.history)?ad.history:[]; }
         S.proStatus=(ad&&ad.status==='valide')?'approved':'pending';
@@ -4173,7 +4192,7 @@
             changed=true;
           }
           m.status=r.status;m.svc=r.service;m.svcName=r.serviceName||svcNm(r.service);m.rate=r.rate;m.duration=r.duration||1;m.unit=r.unit||'h';m.when=r.when||'';m.slot=r.acceptedSlot||r.slot||m.slot||'';m.zone=r.zone||m.zone||'';m.boost=r.boost||0;m.slotFlex=r.slotFlex||0;m.notes=r.notes||m.notes||'';m.frequency=r.frequency||m.frequency||'ponctuelle';
-          if(r.providerUid){m.providerUid=r.providerUid;if(!m.provider||m.provider.nm==='Votre artisan')m.provider=Object.assign({},PROVIDERS[r.service]||{ini:'AR',jobs:0,rating:0},{nm:r.providerName||'Votre artisan',ini:inits(r.providerName||'Artisan')});}
+          if(r.providerUid){m.providerUid=r.providerUid;if(!m.provider||m.provider.nm==='Votre artisan')m.provider={nm:r.providerName||'Votre artisan',ini:inits(r.providerName||'Artisan'),rating:0,jobs:(r.providerJobs||0),founder:!!r.providerFounder};}
           if(r.finalHours!=null)m.finalHours=r.finalHours;if(r.disputeMsg)m.disputeMsg=r.disputeMsg;
           if(Array.isArray(r.messages))m.chat=r.messages.slice().sort(function(a,b){return (a.at||0)-(b.at||0);});
         });
@@ -4525,7 +4544,7 @@
     try{
       const uid=FB.auth.currentUser.uid;
       const acceptedSlot=req.slotFlex?clampSlot(req,S.proReqSlot||req.slot):(req.slot||'');
-      await FB.f.updateDoc(FB.f.doc(FB.db,'requests',reqId),{status:'accepted',providerUid:uid,providerName:S.proName||'',acceptedSlot:acceptedSlot,acceptedAt:FB.f.serverTimestamp()});
+      await FB.f.updateDoc(FB.f.doc(FB.db,'requests',reqId),{status:'accepted',providerUid:uid,providerName:S.proName||'',providerJobs:(S.proJobsTotal||0),providerFounder:!!S.proFounder,acceptedSlot:acceptedSlot,acceptedAt:FB.f.serverTimestamp()});
       let det={};try{const s=await FB.f.getDoc(FB.f.doc(FB.db,'requests',reqId,'private','details'));det=s.exists()?s.data():{};}catch(_){}
       const base=findSvc(req.service)||{id:req.service,nm:req.serviceName||svcNm(req.service),rate:req.rate||svcBase(req.service)};
       S.mission=Object.assign(newMission(base),{reqId:reqId,status:'accepted',svc:req.service,svcName:req.serviceName||svcNm(req.service),rate:req.rate,duration:req.duration||1,unit:req.unit||'h',when:req.when||'',slot:acceptedSlot,slotFlex:req.slotFlex||0,proposedSlot:req.slotFlex?acceptedSlot:null,zone:req.zone||det.zone||'',address:det.address||'',geo:det.geo||null,access:det.access||'',boost:req.boost||0,notes:req.notes||'',photos:(req.photos||[]).slice(),clientName:req.clientName||det.clientName||'',clientPhoto:req.clientPhoto||det.clientPhoto||null,provider:Object.assign({},PROVIDERS[req.service]||{},{nm:S.proName||'Vous'})});
