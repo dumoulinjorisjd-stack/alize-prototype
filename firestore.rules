@@ -107,6 +107,21 @@ service cloud.firestore {
       function isClient()   { return signedIn() && resource.data.clientUid == uid(); }
       function isProvider() { return signedIn() && resource.data.providerUid == uid(); }
 
+      // Ensemble des champs modifiés par une mise à jour.
+      function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+      // Champs CALCULÉS PAR LE SERVEUR (settleCommission) : aucun client ne les écrit.
+      // Le montant, la commission, le net, le n° de facture… viennent du registre serveur.
+      function serverKeys() {
+        return ['grossTotal','netAmount','commissionAmount','commissionPct','commissionBase',
+                'saleInvoiceNo','commissionSettled','settledAt','molliePaymentId','molliePayout'];
+      }
+      // TERMES DU CONTRAT, figés dès l'acceptation : le tarif €/h, la majoration, l'unité,
+      // le service et l'estimation convenue ne changent plus. Seule la DURÉE RÉELLE
+      // (finalHours) peut bouger — déclarée par l'artisan, validée par le client.
+      function contractKeys() {
+        return ['rate','boost','unit','service','serviceName','duration','clientUid'];
+      }
+
       // Lecture : client propriétaire, prestataire assigné, tout artisan validé
       // (pour découvrir les demandes ouvertes à accepter), admin.
       allow read: if isAdmin() || isClient() || isProvider() || isValidArtisan();
@@ -116,18 +131,37 @@ service cloud.firestore {
                     && request.resource.data.clientUid == uid()
                     && request.resource.data.status == 'pending';
 
-      // Mise à jour :
-      //  - admin : tout ;
-      //  - client propriétaire : suivi / annulation / validation de sa demande ;
-      //  - prestataire assigné : avancement des statuts ;
-      //  - « premier arrivé » : un artisan validé prend une demande encore pending.
+      // Mise à jour — chaque rôle ne peut toucher QUE ce qui le concerne, et JAMAIS
+      // les champs financiers calculés par le serveur (intégrité de la commission).
       allow update: if isAdmin()
-        || isClient()
-        || isProvider()
+
+        // « Premier arrivé » : un artisan validé prend une demande encore pending.
+        // Il s'assigne, sans toucher aux montants ni aux termes du contrat.
         || (isValidArtisan()
             && resource.data.status == 'pending'
             && request.resource.data.status == 'accepted'
-            && request.resource.data.providerUid == uid());
+            && request.resource.data.providerUid == uid()
+            && !changed().hasAny(serverKeys())
+            && !changed().hasAny(contractKeys()))
+
+        // CLIENT propriétaire : il suit, VALIDE, conteste, annule ou relance (no-show).
+        // Il ne fixe NI le tarif, NI la durée réelle (finalHours), NI les montants serveur.
+        // Il peut au plus libérer le prestataire (providerUid -> null lors d'une relance).
+        || (isClient()
+            && !changed().hasAny(serverKeys())
+            && !changed().hasAny(contractKeys())
+            && !changed().hasAny(['finalHours'])
+            && (request.resource.data.get('providerUid', null) == resource.data.get('providerUid', null)
+                || request.resource.data.get('providerUid', null) == null))
+
+        // PRESTATAIRE assigné : il fait avancer la mission et DÉCLARE la durée réelle
+        // (finalHours) — le seul levier d'ajustement légitime. Jamais le tarif ni les
+        // montants. Il peut se désister (providerUid -> null).
+        || (isProvider()
+            && !changed().hasAny(serverKeys())
+            && !changed().hasAny(contractKeys())
+            && (request.resource.data.get('providerUid', null) == resource.data.get('providerUid', null)
+                || request.resource.data.get('providerUid', null) == null));
 
       // Le client ne peut supprimer que SA demande encore « pending » (annulation avant
       // acceptation). Une demande acceptée / en cours / réglée est une pièce comptable :
