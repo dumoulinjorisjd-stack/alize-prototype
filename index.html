@@ -2331,7 +2331,10 @@
         <div class="field"><label>Prénom &amp; nom</label><input class="txt" data-pf2="name" value="${esc(f.name||'')}" placeholder="Ex. Joris Dumoulin"></div>
         <div class="field"><label>E-mail (identifiant)</label><input class="txt" value="${esc(f.email||'')}" disabled style="opacity:.6"><p class="mini" style="margin-top:5px">Pour changer d'e-mail, contactez ${esc(CONFIG.supportEmail)}.</p></div>
         <div class="field"><label>Téléphone</label><input class="txt" data-pf2="phone" value="${esc(f.phone||'')}" inputmode="tel" autocomplete="tel" placeholder="Ex. 0690 00 00 00"></div>
-        <div class="field" style="margin:0"><label>Votre secteur</label><div class="segs">${zones}</div></div>
+        <div class="field"><label>Votre secteur</label><div class="segs">${zones}</div></div>
+        <div class="field" style="margin:0;padding-top:12px;border-top:1px solid var(--hair)"><div class="chkline"><button type="button" data-act="toggle-pro-buyer" style="background:none;border:none;padding:0">${chkbox(!!f.isPro)}</button><span class="mini" style="line-height:1.5">Je réserve <b>pour une entreprise</b> — facturation professionnelle (raison sociale et SIRET sur mes factures).</span></div>
+        ${f.isPro?`<div class="field" style="margin-top:12px;margin-bottom:10px"><label>Raison sociale</label><input class="txt" data-pf2="company" value="${esc(f.company||'')}" placeholder="Nom de votre entreprise"></div>
+        <div class="field" style="margin:0"><label>SIRET</label><input class="txt" data-pf2="siret" value="${esc(f.siret||'')}" inputmode="numeric" placeholder="14 chiffres">${(f.siret&&f.siret.replace(/\s/g,'').length&&f.siret.replace(/\s/g,'').length!==14)?`<p class="mini" style="margin-top:5px;color:var(--coral-deep)">Le SIRET comporte 14 chiffres.</p>`:''}</div>`:''}</div>
       </div>
       <div class="footcta" style="position:static;background:none;padding:16px 0 0"><button class="btn primary" data-act="save-profile"${ok?'':' disabled'}>${I.check} Enregistrer</button></div></div>`;
   }
@@ -2655,7 +2658,7 @@
       <div id="invoiceDoc"><div class="inv">
         <div class="row between" style="align-items:flex-start"><div><h2>FACTURE</h2><div class="mut">N° ${no}</div><div class="mut">Date : ${dt}</div></div><div style="text-align:right"><div style="font-family:var(--f-disp);font-weight:800;font-size:16px;color:#151515">Ti-Services</div>${ccsHead()}</div></div>
         <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Prestataire</div><b>${p?p.nm:'Artisan Ti-Services'}</b><div class="mut">Artisan vérifié · Saint-Barthélemy</div></div>
-        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Client</div><b>${esc((S.account&&S.account.name)||(S.clientForm&&S.clientForm.name)||'Client')}</b><div class="mut">${esc(m.zone||'Saint-Barthélemy')}${m.zone?', Saint-Barthélemy':''}</div></div>
+        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Client</div>${(S.account&&S.account.isPro&&S.account.company)?`<b>${esc(S.account.company)}</b><div class="mut">${esc((S.account&&S.account.name)||'')}</div>${S.account.siret?`<div class="mut">SIRET ${esc(S.account.siret)}</div>`:''}<div class="mut">${esc(m.zone||'Saint-Barthélemy')}${m.zone?', Saint-Barthélemy':''}</div>`:`<b>${esc((S.account&&S.account.name)||(S.clientForm&&S.clientForm.name)||'Client')}</b><div class="mut">${esc(m.zone||'Saint-Barthélemy')}${m.zone?', Saint-Barthélemy':''}</div>`}</div>
         <table><thead><tr><th>Prestation</th><th class="r">Qté</th><th class="r">PU</th><th class="r">Total</th></tr></thead>
         <tbody><tr><td>${m.svcName} — prestation à domicile</td><td class="r">${durTxt(m,billHours(m))}</td><td class="r">${eur(t.rate)}</td><td class="r">${eur(t.total)}</td></tr></tbody></table>
         <div class="row between sec"><span class="mut">Total réglé</span><span class="tot">${eur(t.total)}</span></div>
@@ -3519,9 +3522,10 @@
       case 'toggle-cterms':S.clientForm.terms=!S.clientForm.terms;render();break;
       case 'toggle-pcgu':S.proForm.cgu=!S.proForm.cgu;render();break;
       case 'toggle-pcharte':S.proForm.charte=!S.proForm.charte;render();break;
-      case 'edit-profile':{const zone=(S.account&&S.account.zone)||(S.clientForm&&S.clientForm.zone)||'Gustavia';S.profileForm={name:((S.account&&S.account.name)||(S.clientForm&&S.clientForm.name)||'').trim(),email:(S.account&&S.account.email)||(S.clientForm&&S.clientForm.email)||'',zone:zone,phone:(S.account&&S.account.phone)||'',photo:(S.account&&S.account.photo)||(S.clientForm&&S.clientForm.photo)||''};render();break;}
+      case 'edit-profile':{const zone=(S.account&&S.account.zone)||(S.clientForm&&S.clientForm.zone)||'Gustavia';S.profileForm={name:((S.account&&S.account.name)||(S.clientForm&&S.clientForm.name)||'').trim(),email:(S.account&&S.account.email)||(S.clientForm&&S.clientForm.email)||'',zone:zone,phone:(S.account&&S.account.phone)||'',photo:(S.account&&S.account.photo)||(S.clientForm&&S.clientForm.photo)||'',isPro:!!(S.account&&S.account.isPro),company:(S.account&&S.account.company)||'',siret:(S.account&&S.account.siret)||''};render();break;}
+      case 'toggle-pro-buyer':if(S.profileForm){S.profileForm.isPro=!S.profileForm.isPro;render();}break;
       case 'profile-cancel':S.profileForm=null;render();break;
-      case 'save-profile':{const f=S.profileForm;if(!f||(f.name||'').trim().length<2){toast('Indiquez votre nom');break;}const nm=f.name.trim(),ph=(f.phone||'').trim(),pht=f.photo||'';S.account=Object.assign({},S.account,{name:nm,zone:f.zone,phone:ph,photo:pht});S.clientForm=Object.assign({},S.clientForm,{name:nm,zone:f.zone,photo:pht});saveAccount(S.account);if(FB&&FB.auth&&FB.auth.currentUser){try{FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{name:nm,zone:f.zone,phone:ph,photo:pht},{merge:true}).then(function(){toast('Informations enregistrées ✓');}).catch(function(e){toast('⚠︎ Profil non enregistré : '+fbErrTxt(e));});}catch(e){toast('⚠︎ Profil : '+fbErrTxt(e));}}else{toast('Informations mises à jour');}saveClientCloud();S.profileForm=null;render();break;}
+      case 'save-profile':{const f=S.profileForm;if(!f||(f.name||'').trim().length<2){toast('Indiquez votre nom');break;}const isPro=!!f.isPro;const company=isPro?(f.company||'').trim():'';const siret=isPro?(f.siret||'').replace(/\s/g,''):'';if(isPro&&siret&&siret.length!==14){toast('SIRET invalide (14 chiffres)');break;}const nm=f.name.trim(),ph=(f.phone||'').trim(),pht=f.photo||'';S.account=Object.assign({},S.account,{name:nm,zone:f.zone,phone:ph,photo:pht,isPro:isPro,company:company,siret:siret});S.clientForm=Object.assign({},S.clientForm,{name:nm,zone:f.zone,photo:pht});saveAccount(S.account);if(FB&&FB.auth&&FB.auth.currentUser){try{FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{name:nm,zone:f.zone,phone:ph,photo:pht,isPro:isPro,company:company,siret:siret},{merge:true}).then(function(){toast('Informations enregistrées ✓');}).catch(function(e){toast('⚠︎ Profil non enregistré : '+fbErrTxt(e));});}catch(e){toast('⚠︎ Profil : '+fbErrTxt(e));}}else{toast('Informations mises à jour');}saveClientCloud();S.profileForm=null;render();break;}
       case 'add-card':S.cardForm=true;render();break;
       case 'card-cancel':S.cardForm=false;render();break;
       case 'card-remove':S.card=null;S.cardForm=false;saveClientCloud();render();toast('Moyen de paiement retiré');break;
@@ -3850,7 +3854,7 @@
       const zone=(data&&data.zone)||typedZone||'Gustavia';
       const photo=(data&&data.photo)||(S.clientForm&&S.clientForm.photo)||'';
       if(!data&&!ad&&!cd){ try{ await FB.f.setDoc(ref,{name:name,email:user.email||'',zone:zone,role:'client',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){} }
-      S.account={name:name,email:user.email||'',zone:zone,uid:user.uid,photo:photo,phone:(data&&data.phone)||''};
+      S.account={name:name,email:user.email||'',zone:zone,uid:user.uid,photo:photo,phone:(data&&data.phone)||'',isPro:!!(data&&data.isPro),company:(data&&data.company)||'',siret:(data&&data.siret)||''};
       S.clientForm=Object.assign({},S.clientForm,{name:name,email:user.email||'',zone:zone,photo:photo,password:'',password2:''});
       // Cache local d'abord (instantané), puis les données Firestore prennent le relais.
       restoreClientLocal(user.uid);
