@@ -500,6 +500,27 @@ exports.settleCommission = onDocumentUpdated('requests/{reqId}', async (event) =
 
   const reqId = event.params.reqId;
 
+  // CONTRÔLE DU TARIF contre la grille officielle (settings/prices). Le tarif est figé
+  // dès l'acceptation (règles), mais il pourrait avoir été manipulé à la CRÉATION
+  // (collusion client/artisan pour réduire l'assiette de commission). On ne touche PAS
+  // aux montants — le client a payé le tarif affiché — mais on POSE UN INDICATEUR pour
+  // l'admin quand le tarif est nettement sous la grille (> 10 %).
+  let rateExpected = null; let rateFlag = false;
+  try {
+    if ((after.unit || 'h') === 'h' && after.service) {
+      const ps = await db.collection('settings').doc('prices').get();
+      const grid = (ps.exists && ps.data() && ps.data().prices) || {};
+      const off = grid[after.service];
+      if (typeof off === 'number' && off > 0) {
+        rateExpected = off;
+        if (rate < off * 0.9) rateFlag = true;
+      }
+    }
+  } catch (e) { console.warn('settleCommission price check', e); }
+  if (rateFlag) {
+    console.warn('Tarif sous la grille reqId=' + reqId + ' déclaré=' + rate + ' attendu=' + rateExpected);
+  }
+
   // Numéro de facture SÉQUENTIEL par intervenant, attribué de façon ATOMIQUE par le
   // serveur (transaction sur un compteur dédié). C.C.S, mandataire de facturation,
   // garantit ainsi une numérotation continue, unique et sans doublon (art. 242 nonies A
@@ -543,6 +564,8 @@ exports.settleCommission = onDocumentUpdated('requests/{reqId}', async (event) =
       commissionAmount: commission, // revenu Ti-Services
       netAmount: net,             // net perçu par l'artisan
       invNo: saleInvoiceNo,       // numéro de facture séquentiel (mandat, au nom de l'artisan)
+      rateExpected: rateExpected, // tarif attendu (grille officielle), pour audit
+      rateFlag: rateFlag,         // true si tarif nettement sous la grille → à vérifier
       settledAt: FieldValue.serverTimestamp(),
     }, { merge: true });
 
