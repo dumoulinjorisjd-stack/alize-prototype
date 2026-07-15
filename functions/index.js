@@ -443,7 +443,34 @@ exports.settleCommission = onDocumentUpdated('requests/{reqId}', async (event) =
   const commission = round2(base * pct / 100);
   const net = round2(gross - commission);
 
+  const reqId = event.params.reqId;
   try {
+    // 1) REGISTRE COMPTABLE IMMUABLE : un document par prestation réglée, écrit
+    //    UNIQUEMENT par le serveur (les règles interdisent toute écriture client).
+    //    C'est la source de vérité inviolable pour la comptabilité — aucune manip,
+    //    mise à jour ou suppression côté client ne peut l'altérer ni la perdre.
+    await db.collection('ledger').doc(reqId).set({
+      type: 'commission',
+      reqId: reqId,
+      clientUid: after.clientUid || null,
+      clientName: (after.clientName || '').toString().slice(0, 80),
+      providerUid: providerUid,
+      providerName: (after.providerName || '').toString().slice(0, 80),
+      service: after.service || '',
+      serviceName: (after.serviceName || '').toString().slice(0, 80),
+      unit: after.unit || 'h',
+      hours: hours,
+      rate: rate,
+      base: base,
+      boost: boost,
+      grossTotal: gross,          // réglé par le client
+      commissionPct: pct,
+      commissionAmount: commission, // revenu Ti-Services
+      netAmount: net,             // net perçu par l'artisan
+      settledAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+
+    // 2) Report des montants figés sur la demande (lecture pratique côté app).
     await event.data.after.ref.update({
       commissionSettled: true,
       commissionPct: pct,
@@ -453,7 +480,7 @@ exports.settleCommission = onDocumentUpdated('requests/{reqId}', async (event) =
       netAmount: net,
       settledAt: FieldValue.serverTimestamp(),
     });
-    console.log('Commission figée reqId=' + event.params.reqId +
+    console.log('Commission figée + registre reqId=' + reqId +
       ' base=' + base + ' pct=' + pct + '% comm=' + commission + ' net=' + net);
   } catch (e) { console.warn('settleCommission write', e); }
 });

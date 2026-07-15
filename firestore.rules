@@ -84,6 +84,17 @@ service cloud.firestore {
       allow delete: if isAdmin() || uid() == concId;
     }
 
+    // Registre comptable IMMUABLE (source de vérité). Écrit UNIQUEMENT par le serveur
+    // (Cloud Function via l'Admin SDK, qui contourne ces règles) : aucun client ne peut
+    // créer, modifier ni supprimer une écriture — donc rien ne se perd par bug ou manip.
+    // Lecture : l'admin, plus la partie concernée (artisan / client) pour ses propres pièces.
+    match /ledger/{entryId} {
+      allow read:  if isAdmin()
+                   || (signedIn() && resource.data.providerUid == uid())
+                   || (signedIn() && resource.data.clientUid == uid());
+      allow write: if false;
+    }
+
     // Demandes de prestation
     match /requests/{reqId} {
       function isClient()   { return signedIn() && resource.data.clientUid == uid(); }
@@ -111,7 +122,11 @@ service cloud.firestore {
             && request.resource.data.status == 'accepted'
             && request.resource.data.providerUid == uid());
 
-      allow delete: if isAdmin() || isClient();
+      // Le client ne peut supprimer que SA demande encore « pending » (annulation avant
+      // acceptation). Une demande acceptée / en cours / réglée est une pièce comptable :
+      // seul l'admin peut l'effacer (RGPD). Les commissions restent de toute façon dans
+      // le registre immuable `ledger`, hors de portée du client.
+      allow delete: if isAdmin() || (isClient() && resource.data.status == 'pending');
 
       // Messagerie : réservée au client, au prestataire assigné et à l'admin.
       match /messages/{msgId} {
