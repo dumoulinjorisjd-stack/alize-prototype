@@ -850,6 +850,10 @@
   function isDemo(){ return !!(S.demoMode || !CONFIG.firebase || window.__NOFB); }
   // Le compte connecté est-il administrateur ? (rôle ou e-mail dans la liste admin)
   function isAdminAccount(){ if(!S.account)return false; if(S.account.role==='admin')return true; const e=(S.account.email||'').toLowerCase(); return (CONFIG.adminEmails||[]).map(function(x){return x.toLowerCase();}).indexOf(e)>=0; }
+  // Vrai compte artisan (créé côté Firebase), par opposition à une inscription en cours
+  // ou au mode démo. Un artisan réel ne doit JAMAIS retomber dans l'interface client
+  // via le bouton retour : son compte a un rôle fixe.
+  function isRealArtisan(){ return !isDemo() && !!(S.account && S.account.role==='artisan'); }
 
   const I = {
     menage:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M19 5 15 9"/><path d="m13 7 4 4-7 7-4 1 1-4z"/><path d="M14 3l7 7"/></svg>',
@@ -1744,7 +1748,7 @@
     if(S.cardForm||S.clientInv||S.histInvoice||S.advantages||S.invoiceId||S.interv||S.referral||S.share||S.chat||S.support||S.addrForm||S.finishing||S.disputing||S.profileForm||S.draft||S.payStep)return true;
     if(S.persona==='admin')return S.admin.view!=='home';
     if(S.persona==='concierge')return !!(S.concRetInv||S.concInvoice||S.concForm||S.concClientView||S.concOrder||S.concView||S.concNav!=='home');
-    if(S.persona==='pro'){if(S.proDocsView||S.proPayoutView||S.proMollieView||S.proReqView||S.mission)return true;if(S.proStatus==='signup'||S.proStatus==='pending')return true;return S.proNav!=='home';}
+    if(S.persona==='pro'){if(S.proDocsView||S.proPayoutView||S.proMollieView||S.proReqView||S.mission)return true;if(S.proStatus==='pending')return !isRealArtisan();if(S.proStatus==='signup')return true;return S.proNav!=='home';}
     if(S.mission)return true;
     return S.clientNav!=='home';
   }
@@ -4401,12 +4405,15 @@
     if(S.disputing){S.disputing=false;render();return;}
     if(S.persona==='pro'){
       if(S.proConflict){S.proConflict=null;render();return;}
-      if(S.proStatus==='pending'){S.proStatus='signup';render();return;}
-      if(S.proStatus==='signup'){S.persona='client';S.proStatus='approved';render();return;}
+      // Artisan RÉEL : le retour reste dans l'espace pro — jamais de bascule vers le
+      // client (sinon un artisan validé se retrouve à tort dans l'interface client).
+      if(S.proStatus==='pending'){if(isRealArtisan())return;S.proStatus='signup';render();return;}
+      if(S.proStatus==='signup'){if(isRealArtisan())return;S.persona='client';S.proStatus='approved';render();return;}
       if(S.proMollieView){S.proMollieView=false;render();return;}
       if(S.proReqView){S.proReqView=null;render();return;}
-      if(S.mission){S.persona='client';render();return;}
+      if(S.mission){if(isRealArtisan()){S.mission=null;S.proNav='home';render();return;}S.persona='client';render();return;}
       if(S.proNav!=='home'){S.proNav='home';render();return;}
+      if(isRealArtisan())return;
       S.persona='client';render();return;
     }
     if(S.payStep){if(S.payEdit&&S.card){S.payEdit=false;render();return;}S.payStep=false;S.payEdit=false;if(S.draft)renderConfig();else render();return;}
