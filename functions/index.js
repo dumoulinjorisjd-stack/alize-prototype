@@ -506,3 +506,52 @@ exports.settleCommission = onDocumentUpdated('requests/{reqId}', async (event) =
       ' base=' + base + ' pct=' + pct + '% comm=' + commission + ' net=' + net);
   } catch (e) { console.warn('settleCommission write', e); }
 });
+
+/**
+ * notifyReopenedRequest : quand un artisan se désiste d'une mission acceptée, la demande
+ * repasse en « pending ». On re-notifie les autres artisans validés du service (sauf
+ * celui qui s'est désisté) ET on prévient le client que la recherche est relancée.
+ * Concrétise l'engagement « on relance la recherche » — sans en faire une garantie.
+ */
+exports.notifyReopenedRequest = onDocumentUpdated('requests/{reqId}', async (event) => {
+  const before = (event.data && event.data.before && event.data.before.data()) || {};
+  const after = (event.data && event.data.after && event.data.after.data()) || {};
+  const wasActive = ['accepted', 'working', 'done_pro'].indexOf(before.status) >= 0;
+  if (!(wasActive && after.status === 'pending')) return;
+
+  const db = getFirestore();
+  const svc = after.service;
+  const exclude = before.providerUid || '';
+
+  // 1) Re-notifier les artisans validés du service (hors celui qui s'est désisté).
+  try {
+    const artsSnap = await db.collection('artisans').where('status', '==', 'valide').get();
+    const uids = artsSnap.docs
+      .filter((d) => { const c = (d.data() || {}).cats || []; return (!svc || c.indexOf(svc) >= 0) && d.id !== exclude; })
+      .map((d) => d.id);
+    const tokenToUid = {};
+    await Promise.all(uids.map(async (uid) => {
+      try { const u = await db.collection('users').doc(uid).get(); ((u.data() || {}).pushTokens || []).forEach((t) => { tokenToUid[t] = uid; }); } catch (_) {}
+    }));
+    const tokens = Object.keys(tokenToUid);
+    if (tokens.length) {
+      const svcName = (after.serviceName || 'Une mission').toString().slice(0, 60);
+      const zone = (after.zone || '').toString().slice(0, 40);
+      await pushMulticast(tokens, 'Espace artisan · Mission de nouveau disponible',
+        svcName + (zone ? ' · ' + zone : '') + ' — un créneau se libère, à saisir.', '/?open=missions',
+        (t) => db.collection('users').doc(tokenToUid[t]).update({ pushTokens: FieldValue.arrayRemove(t) }));
+    }
+  } catch (e) { console.warn('reopen notify artisans', e); }
+
+  // 2) Prévenir le client que la recherche est relancée.
+  try {
+    const clientUid = after.clientUid;
+    if (clientUid) {
+      const u = await db.collection('users').doc(clientUid).get();
+      const tokens = (u.data() || {}).pushTokens || [];
+      await pushMulticast(tokens, 'Vos réservations · Recherche relancée',
+        'Votre artisan s\'est désisté — nous cherchons un nouvel intervenant.', '/?open=wallet&r=' + event.params.reqId,
+        (t) => db.collection('users').doc(clientUid).update({ pushTokens: FieldValue.arrayRemove(t) }));
+    }
+  } catch (e) { console.warn('reopen notify client', e); }
+});
