@@ -2650,8 +2650,10 @@
       <div style="height:16px"></div></div>${clientNavbar()}`;
   }
   function missionStatusMeta(st){return {searching:{l:'Recherche en cours',c:'coral'},pending:{l:'En attente d’un artisan',c:'coral'},accepted:{l:'Artisan trouvé',c:'good'},working:{l:'Prestation en cours',c:'good'},done_pro:{l:'À confirmer',c:'coral'},disputed:{l:'En médiation',c:'coral'}}[st]||{l:st,c:'grey'};}
+  // Historique dédupliqué des prestations terminées (source des cartes « Refaire »).
+  function doneHistory(){const seen={},out=[];(S.history||[]).forEach(function(h){const k=h&&h.reqId;if(k){if(seen[k])return;seen[k]=1;}out.push(h);});return out;}
   function clientWallet(){
-    const done=(function(){const seen={},out=[];(S.history||[]).forEach(function(h){const k=h&&h.reqId;if(k){if(seen[k])return;seen[k]=1;}out.push(h);});return out;})();
+    const done=doneHistory();
     const active=activeMissions();
     const activeCard=function(m){const sm=missionStatusMeta(m.status);const canDel=(m.status==='searching'||m.status==='pending');
       const chip=`<span class="chip ${sm.c}" style="padding:3px 10px">${canDel?'<span class="srch-dot" style="margin-right:6px"></span>':''}${sm.l}</span>`;
@@ -2668,7 +2670,7 @@
     const activeBlock=active.length?`<div style="margin-top:16px"><div class="eyebrow" style="color:var(--teal-deep)">${I.bolt} En cours · ${active.length}</div>${active.map(activeCard).join('')}</div>`:'';
     const newBtn=`<button class="btn ${active.length?'ghost':'primary'} sm" data-cnav="home" style="margin-top:14px">${I.search} Passer une nouvelle commande</button>`;
     const summary=`<div class="card" style="padding:15px;margin-top:14px"><div class="row" style="gap:12px;align-items:center"><span class="benic">${I.check}</span><div><div class="mini">Prestations terminées</div><b class="money" style="font-size:19px;font-family:var(--f-disp)">${done.length}</b></div></div></div>`;
-    const list=done.length?`<div class="eyebrow" style="color:var(--muted);margin-top:18px">Historique &amp; factures</div><p class="mini" style="color:var(--muted);margin-top:2px">Touchez une prestation pour revoir ou télécharger sa facture.</p>`+done.map((h,i)=>{const t=totals(h);return `<button class="card" data-act="histinv:${i}" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block"><div class="row" style="gap:11px"><div class="avatar" style="width:40px;height:40px;font-size:14px${h.provider&&h.provider.photo?`;background-image:url('${h.provider.photo}');background-size:cover;background-position:center;color:transparent`:''}">${h.provider?esc(h.provider.ini||'--'):'--'}</div><div style="flex:1"><div class="row between"><b style="font-size:14.5px">${esc(h.svcName||'Prestation')}</b><span class="money" style="font-weight:700">${eur(t.total)}</span></div><div class="mini" style="margin-top:2px">${esc(h.when||'')}${h.provider&&h.provider.nm?' · '+esc(h.provider.nm):''}</div></div></div><div class="row between" style="margin-top:10px"><span class="chip good" style="padding:4px 10px">${I.check} Bien exécuté &amp; réglé</span><span class="mini" style="color:var(--teal-deep);font-weight:700">${I.card} Voir ma facture ›</span></div></button>`;}).join(''):(active.length?'':`<div class="card" style="padding:26px 24px;margin-top:12px;text-align:center;color:var(--muted)">${octoMini(72,'wave')}<div style="margin-top:10px;font-weight:600;color:var(--ink-soft)">Aucune prestation pour l’instant</div><div style="margin-top:4px">Vos réservations et reçus apparaîtront ici.</div></div>`);
+    const list=done.length?`<div class="eyebrow" style="color:var(--muted);margin-top:18px">Historique &amp; factures</div><p class="mini" style="color:var(--muted);margin-top:2px">Touchez une prestation pour sa facture, ou « Refaire » pour recommander la même.</p>`+done.map((h,i)=>{const t=totals(h);return `<div class="card" style="padding:14px;margin-top:10px"><button data-act="histinv:${i}" style="width:100%;text-align:left;background:none;border:none;padding:0;display:block;cursor:pointer"><div class="row" style="gap:11px"><div class="avatar" style="width:40px;height:40px;font-size:14px${h.provider&&h.provider.photo?`;background-image:url('${h.provider.photo}');background-size:cover;background-position:center;color:transparent`:''}">${h.provider?esc(h.provider.ini||'--'):'--'}</div><div style="flex:1"><div class="row between"><b style="font-size:14.5px">${esc(h.svcName||'Prestation')}</b><span class="money" style="font-weight:700">${eur(t.total)}</span></div><div class="mini" style="margin-top:2px">${esc(h.when||'')}${h.provider&&h.provider.nm?' · '+esc(h.provider.nm):''}</div></div></div><div class="row between" style="margin-top:10px"><span class="chip good" style="padding:4px 10px">${I.check} Bien exécuté &amp; réglé</span><span class="mini" style="color:var(--teal-deep);font-weight:700">${I.card} Voir ma facture ›</span></div></button><button class="btn ghost sm" data-act="renew:${i}" style="margin-top:11px">${I.repeat} Refaire${h.provider&&h.provider.nm?' avec '+esc(h.provider.nm.split(' ')[0]):''}</button></div>`;}).join(''):(active.length?'':`<div class="card" style="padding:26px 24px;margin-top:12px;text-align:center;color:var(--muted)">${octoMini(72,'wave')}<div style="margin-top:10px;font-weight:600;color:var(--ink-soft)">Aucune prestation pour l’instant</div><div style="margin-top:4px">Vos réservations et reçus apparaîtront ici.</div></div>`);
     const rec=S.recurring.length?`<div style="margin-top:16px"><div class="eyebrow" style="color:var(--muted)">Prestations régulières</div>${S.recurring.map(r=>`<div class="card" style="padding:13px;margin-top:8px"><div class="row between"><b style="font-size:14px">${r.svcName}</b><span class="chip" style="padding:3px 9px">${I.repeat} ${r.short}</span></div><div class="row between" style="margin-top:3px"><span class="mini">${r.slot} · ${r.zone}</span><span class="chip good" style="padding:3px 9px">${I.check} Actif</span></div></div>`).join('')}</div>`:'';
     return `<div class="pad"><div style="height:12px"></div><div class="row between" style="align-items:flex-start"><div><span class="eyebrow">${I.wallet} Mes réservations</span><div class="h-hello">${active.length?'Vos demandes en cours':'Mes réservations'}</div></div>${!isDemo()?`<button class="iconbtn" data-act="refresh-requests" aria-label="Rafraîchir mes réservations" title="Rafraîchir">${I.repeat}</button>`:''}</div>${active.length?notifCTA('client'):''}${activeBlock}${newBtn}${summary}${rec}${list}<div style="height:6px"></div></div>${clientNavbar()}`;
   }
@@ -3162,9 +3164,7 @@
       <p class="sub" style="text-align:center;margin:18px 0 10px">Comment s'est passée la prestation&nbsp;?</p><div class="rate-stars" id="rateStars">${[1,2,3,4,5].map(n=>`<button data-star="${n}">★</button>`).join('')}</div>
       <p class="mini" style="text-align:center;margin-top:6px;color:var(--muted)">${I.lock} Votre note est confidentielle — elle aide Ti-Services à veiller à la qualité du service. Elle n'est pas publiée.</p>
       <div class="footcta" style="position:static;background:none;padding:6px 0 0"><button class="btn primary" data-act="submit-rating" id="rateBtn" disabled>Envoyer mon avis</button></div></div>`;}
-    const rf=S.rebookFreq||'hebdo';
-    const rbChips=[['hebdo','Chaque semaine'],['bihebdo','Toutes les 2 sem.'],['mensuelle','Chaque mois']].map(f=>`<button class="seg ${rf===f[0]?'on':''}" data-act="rbfreq:${f[0]}">${f[1]}</button>`).join('');
-    const rebookCard=(m.rating>=4)?`<div class="card" style="padding:16px;margin-top:12px"><b style="font-size:14.5px">🔁 Ça s'est bien passé&nbsp;? Reprogrammez avec ${esc(p.nm.split(' ')[0])}</b><p class="mini" style="margin-top:3px">Le même artisan revient automatiquement à la fréquence choisie. Sans nouvelle recherche, annulable à tout moment.</p><div class="segs" style="margin-top:11px">${rbChips}</div><button class="btn primary sm" data-act="rebook" style="margin-top:12px">Reprogrammer ${freqInfo(rf).short}</button></div>`:'';
+    const rebookCard=(m.rating>=4)?`<div class="card" style="padding:16px;margin-top:12px"><b style="font-size:14.5px">🔁 Ça s'est bien passé&nbsp;? Refaites appel à ${esc(p.nm.split(' ')[0])}</b><p class="mini" style="margin-top:3px">On pré-remplit une nouvelle demande avec les mêmes informations et <b>${esc(p.nm.split(' ')[0])}</b> déjà sélectionné — vous n'avez qu'à vérifier la date et confirmer.</p><button class="btn primary sm" data-act="renew-mission" style="margin-top:12px">${I.repeat} Refaire cette prestation</button></div>`:'';
     return `<div class="pad"><div class="paycap" style="height:auto;padding-top:14px">${octoMini(72,'bob')}<div><div class="h-hello" style="text-align:center">Merci&nbsp;!</div><p class="sub" style="text-align:center">${MASCOT} vous remercie — votre retour aide Ti-Services à veiller à la qualité.</p></div></div>
       <div class="card" style="padding:16px"><div class="row between"><b>${m.svcName}</b><span class="chip good" style="padding:4px 10px">${I.check} Terminée</span></div><div class="mini" style="margin-top:4px">${esc(p.nm)} · ${m.when}</div><hr class="dashed"><div class="receipt-line"><span>Réglé</span><b>${eur(t.total)}</b></div></div>
       ${factureCard()}
@@ -3897,22 +3897,21 @@
     const iv=setInterval(()=>{if(S.mission!==mine){clearInterval(iv);return;}n++;if(el())el().textContent=n;if(n>=target)clearInterval(iv);},260);
     setTimeout(()=>{clearInterval(iv);if(S.mission!==mine||mine.status!=='searching')return;mine.status='pending';render();if(S.persona!=='pro')toast(mine.competitors+' artisans ont reçu votre demande');},2600);
   }
-  /* Reprogrammer une prestation réussie, en récurrent, avec le même artisan — sans nouvelle recherche. */
-  function rebookRecurring(freq){
-    const old=S.mission;if(!old)return;const p=old.provider;
-    archiveMission(old);
-    const svc=SERVICES.find(s=>s.id===old.svc)||{id:old.svc,nm:old.svcName};
-    const nm=Object.assign(newMission(svc),{rate:old.rate,duration:old.duration,slot:old.slot,slotMode:old.slotMode,slotFlex:old.slotFlex||0,when:old.when,dateISO:old.dateISO,dateMode:old.dateMode,zone:old.zone,address:old.address,addressId:old.addressId,geo:old.geo?{...old.geo}:null,access:old.access,notes:old.notes,photos:(old.photos||[]).slice(),frequency:freq});
-    nm.provider=p?Object.assign({},p):Object.assign({},PROVIDERS[nm.svc]||{});
-    nm.status='accepted';
-    const r=totals(nm).rate,amt=totals(nm).total,labels=occLabels(freq);
-    const cliNm=((S.account&&S.account.name)||'Client');
-    const entries=labels.map(d=>({day:d,slot:nm.slot,svc:nm.svc,client:cliNm,zone:nm.zone,duration:nm.duration,unit:nm.unit,rate:r,amount:amt,status:'upcoming'}));
-    nm._appt=entries[0];entries.slice().reverse().forEach(e=>S.agenda.unshift(e));
-    if(freq!=='ponctuelle')S.recurring.unshift({svc:nm.svc,svcName:nm.svcName,short:freqInfo(freq).short,slot:nm.slot,zone:nm.zone});
-    nm.chat=[{from:'pro',text:'Ravi de reprendre du service chez vous ! Je reviens '+freqInfo(freq).short+', à '+nm.slot+' 👋'}];
-    nm._id='m'+Date.now();S.missions=S.missions||[];S.missions.unshift(nm);
-    S.mission=nm;S.clientNav='wallet';saveClientCloud();render();burstConfetti();toast('Reprogrammé avec '+(p?p.nm.split(' ')[0]:'votre artisan')+' · '+freqInfo(freq).short);
+  /* Refaire une prestation passée : pré-remplit une NOUVELLE commande (tous les champs
+     modifiables), avec le même prestataire pré-sélectionné. Pas de recherche automatique —
+     le client vérifie/ajuste puis confirme normalement. src : mission (historique ou en cours). */
+  function renewMission(src){
+    const old=src||S.mission;if(!old)return;const p=old.provider;
+    const svc=SERVICES.find(s=>s.id===old.svc)||{id:old.svc,nm:old.svcName||svcNm(old.svc)};
+    const nm=Object.assign(newMission(svc),{rate:old.rate,duration:old.duration||1,unit:old.unit||'h',slot:old.slot,slotMode:old.slotMode||null,slotFlex:old.slotFlex||0,boost:old.boost||0,zone:old.zone,address:old.address,addressId:old.addressId,geo:old.geo?{...old.geo}:null,access:old.access,notes:old.notes,photos:(old.photos||[]).slice(),frequency:'ponctuelle'});
+    // Prestataire déjà connu → pré-sélectionné en priorité (le client peut le changer).
+    if(old.providerUid){nm.preferredUid=old.providerUid;nm.preferredName=p?p.nm:'';}
+    // Nouvelle prestation → on repart d'aujourd'hui (jamais une date passée).
+    nm.when='Aujourd’hui';nm.dateMode=null;nm.dateISO='';
+    // Si la mission source est terminée et encore ouverte, on l'archive.
+    if(S.mission&&S.mission===old&&(old.status==='paid'||old.status==='rated'))archiveMission(old);
+    S.mission=null;S.draft=nm;S.payStep=false;S.payEdit=false;S.clientNav='home';renderConfig();
+    toast('Prestation pré-remplie — vérifiez, ajustez, puis confirmez');
   }
   document.addEventListener('click',(e)=>{
     const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-offer],[data-boost],[data-price],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-conc-off],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-prefart],[data-proslot],[data-proreqslot]');
@@ -4005,7 +4004,8 @@
     if(b.dataset.cfg){const c=b.dataset.cfg;if(!S.draft)return;if(c==='back'){S.draft=null;render();}else if(c==='minus'){S.draft.duration=Math.max(1,S.draft.duration-1);renderConfig();}else if(c==='plus'){S.draft.duration=Math.min(isDayU(S.draft)?30:10,S.draft.duration+1);renderConfig();}else if(c==='unit-h'){S.draft.unit='h';S.draft.rate=(S.adminPrices&&S.adminPrices[S.draft.svc]!=null)?S.adminPrices[S.draft.svc]:svcBase(S.draft.svc);S.draft.duration=3;renderConfig();}else if(c==='unit-j'){S.draft.unit='j';S.draft.rate=DAY_RECO;S.draft.duration=2;renderConfig();}else if(c==='geoloc'){geolocate(g=>{if(S.draft){S.draft.geo=g;renderConfig();}});}else if(c==='addr-save-draft'){const d=S.draft;const id='ad'+Date.now();S.addresses.push({id,label:(d.address||'Adresse ponctuelle').slice(0,40),address:d.address,zone:d.zone,geo:d.geo,access:d.access||''});d.addressId=id;if(S.addresses.length===1)S.addrDefault=id;saveClientCloud();toast('Adresse enregistrée dans votre profil');renderConfig();}else if(c==='confirm'){const mm=minSlotToday(S.draft);if(mm>=0&&!S.draft.slotFlex&&slotToMin(S.draft.slot)<mm){toast('Choisissez une heure à venir');renderConfig();return;}S.payStep=true;S.payEdit=false;render();}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('comm-invoice:')===0){S.commInvId=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('invoice:')===0){S.invoiceId=b.dataset.act.split(':')[1];render();return;}
-    if(b.dataset.act&&b.dataset.act.indexOf('histinv:')===0){const h=(S.history||[])[+b.dataset.act.split(':')[1]];if(h){S.histInvoice=h;render();}return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('histinv:')===0){const h=doneHistory()[+b.dataset.act.split(':')[1]];if(h){S.histInvoice=h;render();}return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('renew:')===0){const h=doneHistory()[+b.dataset.act.split(':')[1]];if(h)renewMission(h);return;}
     if(b.dataset.act==='refresh-requests'){manualRefreshRequests();return;}
     if(b.dataset.act==='toggle-desktop'){toggleForceDesktop();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('signup-kind:')===0){const k=b.dataset.act.split(':')[1];if(k==='concierge'){S.signupKind='concierge';S.concSignup={name:'',siret:'',contact:'',phone:'',email:'',password:'',password2:'',cgu:false,mandat:false};}else{S.signupKind='artisan';S.proForm={name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,cgu:false,charte:false,rates:{},otherService:'',photo:''};}render();return;}
@@ -4084,7 +4084,7 @@
       case 'new-mission':archiveMission(S.mission);S.mission=null;S.clientNav='home';render();break;
       case 'app-back':goBack();break;
       case 'go-home':S.mission=null;S.draft=null;S.payStep=false;S.payEdit=false;S.chat=false;S.support=false;S.clientInv=false;S.advantages=false;S.addrForm=null;S.referral=false;S.interv=false;S.invoiceId=null;S.finishing=false;S.disputing=false;S.persona='client';S.clientNav='home';render();break;
-      case 'rebook':rebookRecurring(S.rebookFreq||'hebdo');break;
+      case 'renew-mission':renewMission();break;
       case 'show-client-invoice':S.clientInv=true;render();break;
       case 'close-client-invoice':S.clientInv=false;S.histInvoice=null;render();break;
       case 'toggle-online':S.proOnline=!S.proOnline;saveProSettings();render();break;
@@ -4225,7 +4225,8 @@
   function hourOptions(m){const minM=minSlotToday(m);const out=[];for(let t=7*60;t<=20*60;t+=30){out.push({s:minToSlot(t),past:(minM>=0&&t<minM)});}return out;}
   function renderConfig(){
     const m=S.draft,t=totals(m);
-    const zones=ZONES.map(z=>`<button class="seg ${m.zone===z?'on':''}" data-zone="${z}">${z}</button>`).join('');
+    // Secteur de l'adresse ponctuelle : menu déroulant (page plus courte que 18 boutons).
+    const zoneSelect=`<select class="txt" data-cfgzone>${ZONES.map(z=>`<option value="${esc(z)}"${m.zone===z?' selected':''}>${esc(z)}</option>`).join('')}</select>`;
     // Jour : jamais de date passée. On borne à aujourd'hui, et si plus aucune heure
     // n'est disponible aujourd'hui, on bascule le jour au lendemain.
     if(!/^\d{4}-\d{2}-\d{2}$/.test(m.dateISO||'')){const d0=new Date();if(m.when==='Demain')d0.setDate(d0.getDate()+1);m.dateISO=dayIso(d0);}
@@ -4248,7 +4249,6 @@
       <div class="field"><label>${isDayU(m)?'Heure de dépôt':'Heure souhaitée'}</label>${dayFlex?`<p class="mini" style="margin:2px 0 0;color:var(--muted)">${I.clock} ${m.slotFlex==='week'?'Vous laissez toute la semaine — l’artisan vous proposera un jour et une heure de passage.':'Vous laissez toute la journée — l’artisan choisit son heure de passage (8 h – 19 h).'}</p>`:`${hourSelect}${isToday?`<p class="mini" style="margin-top:6px;color:var(--muted)">Pour aujourd'hui, seules les heures à venir sont proposées.</p>`:''}`}</div>
       ${!isDayU(m)?`<div class="field"><label>Souplesse sur le créneau</label><div class="segs"><button class="seg ${(!m.slotFlex)?'on':''}" data-slotflex="0">Précise</button><button class="seg ${m.slotFlex===60?'on':''}" data-slotflex="60">± 1 h</button><button class="seg ${m.slotFlex===120?'on':''}" data-slotflex="120">± 2 h</button><button class="seg ${m.slotFlex==='day'?'on':''}" data-slotflex="day">Journée</button><button class="seg ${m.slotFlex==='week'?'on':''}" data-slotflex="week">Semaine</button></div>${m.slotFlex?`<p class="mini" style="margin-top:6px">${I.clock} Vous laissez de la souplesse&nbsp;: l'artisan choisira un <b>créneau précis ${flexTxt(m)}</b> et vous le confirmera en acceptant — vos demandes sont acceptées plus vite.</p>`:`<p class="mini" style="margin-top:6px">Heure ferme. Astuce&nbsp;: un peu de souplesse fait accepter votre demande plus vite.</p>`}</div>`:''}
       ${pastArtisans().length?`<div class="field"><label>Un artisan en particulier&nbsp;?</label><div class="segs"><button class="seg ${!m.preferredUid?'on':''}" data-prefart="">Peu importe</button>${pastArtisans().map(a=>`<button class="seg ${m.preferredUid===a.uid?'on':''}" data-prefart="${esc(a.uid)}" data-prefnm="${esc(a.nm)}">${esc(a.nm.split(' ')[0])}</button>`).join('')}</div>${m.preferredUid?`<p class="mini" style="margin-top:6px">${I.clock} <b>${esc((m.preferredName||'').split(' ')[0])}</b> est prévenu en priorité. Sans réponse sous 10&nbsp;min, votre demande s'ouvre aux autres artisans — vous n'êtes jamais bloqué.</p>`:`<p class="mini" style="margin-top:6px;color:var(--muted)">Redemandez un artisan que vous avez déjà eu, ou laissez « Peu importe » et le premier disponible prend la mission.</p>`}</div>`:''}
-      <div class="field"><label>Fréquence</label><div class="segs">${FREQS.map(f=>`<button class="seg ${(m.frequency||'ponctuelle')===f.id?'on':''}" data-freq="${f.id}">${f.lbl}</button>`).join('')}</div>${(m.frequency&&m.frequency!=='ponctuelle')?`<p class="mini" style="margin-top:6px">${I.repeat} Prestation régulière — le même artisan à chaque fois, annulable à tout moment.</p>`:''}</div>
       <div class="field"><label>Tarif ${isDayU(m)?'journalier':'horaire'} — prix fixe Ti-Services</label><div class="pricebox"><b class="money" style="font-size:22px;font-family:var(--f-disp)">${fixedRate(m)} ${rateUnit(m)}</b><span class="chip good" style="padding:3px 9px">${I.check} Prix fixe</span></div><p class="mini" style="margin-top:6px">Tarif défini par Ti-Services — pas de négociation, pas de surprise.</p></div>
       <div class="field"><label>Coup de pouce&nbsp;? (facultatif)</label><div class="segs">${[[0,'Standard'],[10,'+10%'],[20,'+20%'],[30,'+30%'],[50,'+50%'],[100,'+100%']].map(([v,l])=>`<button class="seg ${(m.boost||0)===v?'on':''}" data-boost="${v}">${l}</button>`).join('')}</div><p class="mini" style="margin-top:6px">Comme un pourboire&nbsp;: une majoration facultative qui <b>revient à l'artisan</b> et fait <b>accepter votre demande plus vite</b>.${(m.boost||0)>0?` Coup de pouce&nbsp;: <b style="color:var(--teal-deep)">+${eur(t.maj)}</b>.`:''}</p></div>
       <div class="field"><label>${isDayU(m)?'Nombre de jours':'Durée estimée'}</label><div class="stepper"><button data-cfg="minus">−</button><span class="val">${durTxt(m)}</span><button data-cfg="plus">+</button></div>${isDayU(m)?`<p class="mini" style="margin-top:6px">📅 Du ${endDateTxt(m)} · ${durTxt(m)} de garde</p>`:''}</div>
@@ -4265,14 +4265,14 @@
           <div id="manualAddr"${S.addresses.length?' class="card" style="padding:14px;margin-top:10px;border:1.5px solid var(--teal-deep)"':''}>
           <p class="mini" style="margin:0 0 4px;color:var(--muted)">${S.addresses.length?'📍 Nouvelle adresse pour cette prestation.':"Indiquez où l'artisan doit intervenir."} Vous pourrez l'enregistrer dans votre profil pour ne plus la ressaisir.</p>
           <div class="field" style="margin-top:12px"><label style="font-size:12.5px">Adresse / description du lieu</label><input class="txt" data-addrmanual value="${esc(m.address||'')}" placeholder="Ex. Villa des Amis, près de la plage de Saline"></div>
-          <div class="field"><label style="font-size:12.5px">Secteur</label><div class="segs">${zones}</div></div>
+          <div class="field"><label style="font-size:12.5px">Secteur</label>${zoneSelect}</div>
           <button class="btn ghost sm" data-cfg="geoloc">📍 ${m.geo?'Actualiser le point GPS':'Enregistrer le point GPS'}</button>
           ${m.geo?miniMap(m.geo,'edit','draft'):`<p class="mini" style="margin-top:6px">À Saint-Barth, le point GPS est le repère le plus fiable — ajoutez-le pour que l'artisan trouve.</p>`}
           ${(m.geo&&(m.address||'').trim())?`<button class="btn ghost sm" data-cfg="addr-save-draft" style="margin-top:8px">${I.pin} Enregistrer cette adresse dans mon profil</button>`:''}
           </div>
         `:`${m.geo?`<div class="banner teal" style="margin-top:10px">${I.pin}<span><b>Point GPS déjà enregistré</b> depuis votre fiche — rien à ressaisir.</span></div>${miniMap(m.geo)}`:`<p class="mini" style="margin-top:8px;color:var(--muted)">Cette adresse n'a pas de point GPS. Ajoutez-le dans votre profil pour ne plus jamais le ressaisir.</p>`}`}
       </div>
-      <div class="est"><div class="line"><span>${m.svcName} · ${t.rate} ${rateUnit(m)} × ${durTxt(m)}</span><b>${eur(t.sub)}</b></div>${t.boost?`<div class="line"><span>${I.bolt} Coup de pouce (+${t.boost}%)</span><b>+${eur(t.maj)}</b></div>`:''}<div class="total"><span>${(m.frequency&&m.frequency!=='ponctuelle')?'Par prestation':'Total'}</span><b>${eur(t.total)}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité ${S.card?`(sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — séquestre agréé)`:`(moyen de paiement demandé juste après, via Mollie — séquestre agréé)`}. Aucun supplément sans votre accord.</small></div>
+      <div class="est"><div class="line"><span>${m.svcName} · ${t.rate} ${rateUnit(m)} × ${durTxt(m)}</span><b>${eur(t.sub)}</b></div>${t.boost?`<div class="line"><span>${I.bolt} Coup de pouce (+${t.boost}%)</span><b>+${eur(t.maj)}</b></div>`:''}<div class="total"><span>Total</span><b>${eur(t.total)}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité ${S.card?`(sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — séquestre agréé)`:`(moyen de paiement demandé juste après, via Mollie — séquestre agréé)`}. Aucun supplément sans votre accord.</small></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm">${I.search} Trouver un artisan · ${eur(t.total)}</button></div></div>`,'config');
     if(S._focusAddr){S._focusAddr=false;setTimeout(function(){const el=document.getElementById('manualAddr');if(el){try{el.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){el.scrollIntoView();}const inp=el.querySelector('[data-addrmanual]');if(inp)try{inp.focus({preventScroll:true});}catch(_){}}},70);}
   }
@@ -4326,6 +4326,8 @@
     if(dcy&&S.draft){S.draft.dateISO=dcy.value;S.draft.dateMode='pick';S.draft.when=dayLabelFor(dcy.value);renderConfig();return;}
     const dch=e.target.closest('[data-cfhour]');
     if(dch&&S.draft){S.draft.slot=dch.value;S.draft.slotMode=null;renderConfig();return;}
+    const dcz=e.target.closest('[data-cfgzone]');
+    if(dcz&&S.draft){S.draft.zone=dcz.value;renderConfig();return;}
     const fp=e.target.closest('[data-photoinput]');
     if(fp&&S.draft){const files=Array.from(fp.files||[]);if(!files.length)return;S.draft.photos=S.draft.photos||[];const room=Math.max(0,6-S.draft.photos.length);files.slice(0,room).forEach(f=>{bookingPhotoDataUrl(f,function(u){if(u&&S.draft){S.draft.photos.push(u);renderConfig();}});});fp.value='';renderConfig();return;}
     const ai=e.target.closest('[data-avatarinput]');
