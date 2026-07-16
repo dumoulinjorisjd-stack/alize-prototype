@@ -433,7 +433,8 @@
   .stepper{display:flex;align-items:center;gap:0;background:var(--card);border:1.5px solid var(--hair);border-radius:13px;width:fit-content;overflow:hidden}
   .stepper button{width:46px;height:46px;font-size:22px;font-weight:600;color:var(--teal-deep)}
   .stepper .val{min-width:74px;text-align:center;font-weight:700;font-family:var(--f-num);font-size:15px}
-  textarea,input.txt{width:100%;padding:13px;border-radius:12px;border:1.5px solid var(--hair);background:var(--card);color:var(--ink);font-family:inherit;font-size:16px;resize:none}
+  textarea,input.txt,select.txt{width:100%;padding:13px;border-radius:12px;border:1.5px solid var(--hair);background:var(--card);color:var(--ink);font-family:inherit;font-size:16px;resize:none}
+  select.txt{appearance:none;-webkit-appearance:none;cursor:pointer;padding-right:40px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center}
   textarea:focus,input.txt:focus{border-color:var(--teal);outline:none}
 
   .est{margin-top:16px;padding:15px;border-radius:var(--r-md);background:var(--teal-wash);border:1px solid color-mix(in srgb,var(--teal) 30%,transparent)}
@@ -1740,7 +1741,7 @@
     view.innerHTML='<div'+(same?'':' class="anim"')+'>'+html+'</div>';
     view.scrollTop=same?top:0;_scr=key;updateHomeFab();mountMaps();
   }
-  function updateHomeFab(){const rb=document.getElementById('reset');if(rb)rb.style.display=isDemo()?'':'none';const f=document.getElementById('homefab');if(f){const show=S.onboarded&&!S.authView&&!S.showPitch&&S.persona==='client'&&!!(S.mission||S.draft||S.chat||S.support||S.clientInv||S.histInvoice||S.advantages||S.addrForm||S.referral||S.share||S.interv||S.cardForm);f.classList.toggle('show',show);}updateBackFab();}
+  function updateHomeFab(){const rb=document.getElementById('reset');if(rb)rb.style.display=isDemo()?'':'none';const f=document.getElementById('homefab');if(f){const show=S.onboarded&&!S.authView&&!S.showPitch&&S.persona==='client'&&!!(S.mission||S.draft||S.chat||S.support||S.clientInv||S.histInvoice||S.advantages||S.addrForm||S.referral||S.interv||S.cardForm);f.classList.toggle('show',show);}updateBackFab();}
   // Peut-on revenir en arrière depuis l'écran courant ? (mêmes cas que goBack)
   function canGoBack(){
     if(S.legalView||S.showPitch)return true;
@@ -2573,7 +2574,7 @@
   }
   function onbInfos(){
     const f=S.clientForm;
-    const zones=ZONES.map(z=>`<button class="seg ${f.zone===z?'on':''}" data-czone="${z}">${z}</button>`).join('');
+    const zoneOpts=ZONES.map(z=>`<option value="${esc(z)}"${f.zone===z?' selected':''}>${esc(z)}</option>`).join('');
     const ok=(f.name||'').trim().length>1&&/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=6&&f.password===f.password2&&!!f.terms;
     return `<div class="pad"><div style="height:10px"></div>
       <button class="reset" data-act="onb-back0" style="margin:0 0 8px">← Retour</button>
@@ -2585,7 +2586,7 @@
         <div class="field"><label>E-mail</label><input class="txt" data-cf="email" value="${esc(f.email)}" inputmode="email" autocomplete="email" placeholder="vous@exemple.com"></div>
         <div class="field"><label>Mot de passe</label><div class="pw-wrap"><input class="txt" type="password" data-cf="password" value="${esc(f.password||'')}" autocomplete="new-password" placeholder="6 caractères minimum"><button type="button" class="pw-eye" data-act="pw-toggle" aria-label="Afficher le mot de passe">${I.eye}</button></div></div>
         <div class="field"><label>Confirmer le mot de passe</label><div class="pw-wrap"><input class="txt" type="password" data-cf="password2" value="${esc(f.password2||'')}" autocomplete="new-password" placeholder="Retapez votre mot de passe"><button type="button" class="pw-eye" data-act="pw-toggle" aria-label="Afficher le mot de passe">${I.eye}</button></div>${(f.password2&&f.password!==f.password2)?`<p class="mini" style="margin-top:5px;color:var(--coral-deep)">Les mots de passe ne correspondent pas.</p>`:''}</div>
-        <div class="field"><label>Votre secteur</label><div class="segs">${zones}</div></div>
+        <div class="field"><label>Votre secteur</label><select class="txt" data-cf="zone">${zoneOpts}</select></div>
         <div class="field" style="margin:16px 0 0"><div class="chkline"><button data-act="toggle-cterms" aria-label="Accepter les conditions" style="background:none;border:none;padding:0">${chkbox(f.terms)}</button><span class="mini" style="line-height:1.5">J'ai lu et j'accepte les <button class="linklike" data-act="view-cgu">CGU</button> et les <button class="linklike" data-act="view-cgv">CGV</button> de Ti-Services.</span></div></div>
       </div>
       <div class="or-sep"><span>ou</span></div>
@@ -2654,20 +2655,18 @@
   }
   // Carte de partage : QR à flasher + lien + partage natif (aucun fichier à chercher).
   function shareCard(){
-    const url=shareLink();const disp=shareBase().replace(/^https?:\/\//,'').replace(/\?.*$/,'').replace(/\/+$/,'');
     return `<div class="pad"><button class="reset" data-act="close-share" style="margin:8px 0 2px">← Retour</button>
       <div class="sharecard">
         <div class="sc-glow"></div>
         <div class="sc-head">${octoMini(58,'wave')}<div class="sc-brand"><span style="color:var(--teal-deep)">Ti</span><span style="color:var(--ink)">-Services</span></div></div>
         <div class="sc-tag">Un pro de confiance, à la demande — à&nbsp;Saint-Barth.</div>
         <div class="sc-qr">${qrSvg(184)}</div>
-        <div class="sc-scan">${I.bolt} Flashez le code pour ouvrir l'app</div>
-        <a class="sc-link" href="${url}" target="_blank" rel="noopener">${I.link}<span>${esc(disp)}</span></a>
+        <div class="sc-scan">${I.bolt} Flashez le code pour installer l'app</div>
       </div>
       <div class="footcta" style="position:static;background:none;padding:16px 0 0">
         <button class="btn primary" data-act="share-link">${I.share} Partager</button>
         <button class="btn ghost" data-act="copy-link" style="margin-top:10px">${I.copy} Copier le lien</button>
-        <p class="mini" style="text-align:center;margin-top:12px">${I.lock} Le lien ouvre Ti-Services directement — rien à installer.</p>
+        <p class="mini" style="text-align:center;margin-top:12px">${I.lock} Le lien mène à l'installation de Ti-Services sur le téléphone.</p>
       </div></div>`;
   }
   function clientProfile(){
