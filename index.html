@@ -208,8 +208,17 @@
   body.standalone .stage{gap:0}
   body.standalone .persona{position:fixed;top:calc(env(safe-area-inset-top) + 8px);left:50%;transform:translateX(-50%);z-index:80}
   body.standalone #reset{position:fixed;bottom:calc(env(safe-area-inset-bottom) + 6px);left:50%;transform:translateX(-50%);z-index:80;background:var(--card);padding:6px 12px;border-radius:999px;border:1px solid var(--hair)}
-  body.standalone .phone{width:100vw;max-width:100vw;height:var(--app-h,100dvh);max-height:var(--app-h,100dvh);border-radius:0;padding:0;box-shadow:none}
-  body.standalone .screen{border-radius:0}
+  body.standalone .phone{width:100vw;max-width:100vw;height:var(--app-h,100svh);max-height:var(--app-h,100svh);border-radius:0;padding:0;box-shadow:none}
+  /* CRUCIAL (barre d'onglets Android) : .screen porte transform:translateZ(0) pour la
+     maquette, mais un transform RÉ-ANCRE tout position:fixed sur .screen au lieu du
+     viewport. En plein écran (app installée / ordinateur), on le retire : la barre
+     d'onglets fixe se colle au bas du viewport RÉEL et reste visible en permanence,
+     même si la hauteur calculée de l'app est momentanément fausse. */
+  body.standalone .screen{border-radius:0;transform:none}
+  /* Verrou anti-glissement : la page ne peut JAMAIS défiler d'un bloc (c'est ce qui
+     tronquait le haut ou cachait la barre d'onglets). Seul .view défile, à l'intérieur. */
+  html:has(>body.standalone),html:has(>body.desktop){height:100%;overflow:hidden}
+  body.standalone,body.desktop{height:var(--app-h,100svh);min-height:0;overflow:hidden}
   body.standalone .notch{display:none}
   /* App installée : la vraie barre d'état iOS/Android est déjà là. On réserve JUSTE la
      zone sûre (encoche/barre système), avec un minimum de 28px si l'appareil ne la
@@ -609,8 +618,8 @@
   body.desktop .brief{display:none}
   body.desktop .stage{display:block;gap:0}
   body.desktop #reset{display:none}
-  body.desktop .phone{width:100vw;max-width:100vw;height:var(--app-h,100dvh);max-height:var(--app-h,100dvh);border-radius:0;padding:0;box-shadow:none;background:var(--sand)}
-  body.desktop .screen{border-radius:0;background:var(--sand)}
+  body.desktop .phone{width:100vw;max-width:100vw;height:var(--app-h,100svh);max-height:var(--app-h,100svh);border-radius:0;padding:0;box-shadow:none;background:var(--sand)}
+  body.desktop .screen{border-radius:0;background:var(--sand);transform:none}
   /* Ordinateur & tablette : pas de « hero » corail en fondu (trop présent sur grand écran). */
   body.desktop .welcome-bg{display:none}
   body.desktop #splash{background:var(--sand)}
@@ -4529,24 +4538,31 @@
   /* ---------- PWA: install + service worker ---------- */
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
   // ——— Hauteur d'application fiable (correctif barre d'onglets « repliée » Android) ———
-  // Sur Android, 100dvh ne se recalcule pas toujours après la fermeture du clavier
-  // (typiquement après la connexion) ni au retour d'arrière-plan : la barre d'onglets
-  // fixe, ancrée dans .screen (qui porte un transform), reste alors mal positionnée /
-  // repliée. On pilote donc la hauteur via --app-h = window.innerHeight (viewport de
-  // mise en page, stable vis-à-vis du clavier), recalculée à chaque événement utile.
+  // Historique : 100dvh (viewport DYNAMIQUE) sur-estime la hauteur quand les barres
+  // système/navigateur sont susceptibles de se replier — l'app devenait plus haute que
+  // la zone visible, la page glissait d'un bloc : soit le haut tronqué, soit la barre
+  // d'onglets sous le bord. On mesure désormais 100svh (viewport MINIMAL garanti,
+  // toutes barres affichées) : l'app tient TOUJOURS entière — haut complet ET barre
+  // d'onglets visibles — et comme rien ne dépasse, plus aucun glissement possible.
+  // Ceinture + bretelles : en plein écran, .screen n'a plus de transform, donc la
+  // barre (position:fixed) est de toute façon ancrée au bas du viewport réel.
   var _appHRaf=0,_hProbe=null;
   function setAppHeight(){
     if(_appHRaf)return;
     _appHRaf=requestAnimationFrame(function(){_appHRaf=0;
-      // On mesure la VRAIE hauteur 100dvh (pleine, bord à bord — comme avant) via une
-      // sonde cachée, plutôt que window.innerHeight qui, sur certains Android, exclut la
-      // zone de gestes et laissait un vide sous la barre. On la relit à chaque événement,
-      // ce qui force le recalcul et évite la barre « repliée » après le clavier.
-      if(!_hProbe){_hProbe=document.createElement('div');_hProbe.setAttribute('aria-hidden','true');_hProbe.style.cssText='position:fixed;left:0;top:0;width:0;height:100dvh;visibility:hidden;pointer-events:none;z-index:-1';(document.body||document.documentElement).appendChild(_hProbe);}
+      // Sonde cachée en 100svh, relue à chaque événement (redimensionnement, clavier,
+      // retour d'arrière-plan…) : le recalcul est forcé, jamais de valeur périmée.
+      if(!_hProbe){_hProbe=document.createElement('div');_hProbe.setAttribute('aria-hidden','true');_hProbe.style.cssText='position:fixed;left:0;top:0;width:0;height:100svh;visibility:hidden;pointer-events:none;z-index:-1';(document.body||document.documentElement).appendChild(_hProbe);}
       var h=Math.round(_hProbe.getBoundingClientRect().height)||window.innerHeight||0;
       if(h>0)document.documentElement.style.setProperty('--app-h',h+'px');
+      // En plein écran, le document ne doit JAMAIS rester décalé : overflow:hidden
+      // bloque le doigt mais pas un défilement PROGRAMMÉ (ex. autofocus d'un champ à
+      // la connexion, qui recentre la page et « repliait » la barre). On recale à 0.
+      if((document.body.classList.contains('standalone')||document.body.classList.contains('desktop'))&&(window.scrollY||window.scrollX))window.scrollTo(0,0);
     });
   }
+  // Tout décalage du document en plein écran est immédiatement annulé.
+  window.addEventListener('scroll',function(){if(document.body&&(document.body.classList.contains('standalone')||document.body.classList.contains('desktop'))&&(window.scrollY||window.scrollX))window.scrollTo(0,0);},{passive:true});
   setAppHeight();
   window.addEventListener('resize',setAppHeight);
   window.addEventListener('orientationchange',function(){setAppHeight();setTimeout(setAppHeight,250);setTimeout(setAppHeight,600);});
