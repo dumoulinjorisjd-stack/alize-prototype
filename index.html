@@ -1398,7 +1398,7 @@
 
   const S={
     persona:'client',clientNav:'home',proNav:'home',customServices:[],onboarded:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},
-    card:null,cardForm:false,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,mission:null,missions:[],draft:null,
+    card:null,cardForm:false,payStep:false,payEdit:false,paySaveCard:true,finishing:false,disputing:false,support:false,supportSide:null,mission:null,missions:[],draft:null,
     addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,
     concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,concRetroPaid:'',concIban:'',concIbanHolder:'',concLegal:'',concSiret:'',concAddress:'',retroRate:8,founderTaken:0,
     sepaIban:(function(){try{return localStorage.getItem('ts_sepa_iban')||'';}catch(_){return '';}})(),concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,
@@ -3148,9 +3148,10 @@
         <div class="row between"><span class="chip">${I.card} Carte de paiement</span><span class="chip good" style="padding:4px 9px">${I.lock} Chiffré</span></div>
         <div class="field"><label>Numéro de carte</label><input class="txt" id="payCardNum" value="4242 4242 4242 4242" inputmode="numeric"></div>
         <div class="row" style="gap:11px;margin-top:11px"><div style="flex:1"><label style="font-size:12.5px;font-weight:650;color:var(--ink-soft)">Expiration</label><input class="txt" id="payCardExp" value="08/28" style="margin-top:7px"></div><div style="flex:1"><label style="font-size:12.5px;font-weight:650;color:var(--ink-soft)">CVC</label><input class="txt" value="•••" style="margin-top:7px"></div></div>
+        <div class="chkline" style="margin-top:14px"><button data-act="toggle-savecard" aria-label="Enregistrer ma carte" style="background:none;border:none;padding:0">${chkbox(S.paySaveCard!==false)}</button><span class="mini" style="line-height:1.5">Enregistrer cette carte pour mes prochaines commandes.<br><span style="color:var(--muted)">${S.paySaveCard!==false?'Vous n’aurez plus à la ressaisir.':'Elle ne sera pas conservée — vous la retaperez à chaque commande.'}</span></span></div>
       </div>
       ${reassure}
-      <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-act="pay-save">${I.lock} Enregistrer &amp; trouver un artisan · ${eur(t.total)}</button><p class="mini" style="text-align:center;margin-top:10px">Maquette — aucune donnée réelle envoyée.</p></div></div>`;
+      <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-act="pay-save">${I.lock} ${S.paySaveCard!==false?'Enregistrer &amp; trouver':'Trouver'} un artisan · ${eur(t.total)}</button><p class="mini" style="text-align:center;margin-top:10px">Maquette — aucune donnée réelle envoyée${S.paySaveCard!==false?' ni conservée':''}.</p></div></div>`;
   }
   function factureCard(){
     const email=(S.clientForm&&S.clientForm.email&&S.clientForm.email.trim())||'votre e-mail';
@@ -4187,7 +4188,11 @@
       case 'card-save':{const el=document.getElementById('pfCardNum'),ex=document.getElementById('pfCardExp');const num=(el?el.value:'').replace(/\D/g,'');let last4,brand;if(num.length>=4){last4=num.slice(-4);brand=/^(5[1-5]|2[2-7])/.test(num)?'Mastercard':(/^3[47]/.test(num)?'Amex':'Visa');}else if(S.card){last4=S.card.last4;brand=S.card.brand;}else{toast('Entrez un numéro de carte valide');break;}S.card={brand,last4,exp:(ex&&ex.value)||(S.card?S.card.exp:'08/28')};S.cardForm=false;saveClientCloud();render();toast('Moyen de paiement enregistré 🔒');break;}
       case 'pay-canceledit':S.payEdit=false;render();break;
       case 'pay-confirm':placeMission();break;
-      case 'pay-save':{const el=document.getElementById('payCardNum'),ex=document.getElementById('payCardExp');const num=(el?el.value:'').replace(/\D/g,'');const last4=num.slice(-4)||'4242';const brand=/^(5[1-5]|2[2-7])/.test(num)?'Mastercard':(/^3[47]/.test(num)?'Amex':'Visa');S.card={brand,last4,exp:(ex&&ex.value)||'08/28'};saveClientCloud();placeMission();break;}
+      case 'toggle-savecard':S.paySaveCard=(S.paySaveCard===false);render();break;
+      case 'pay-save':{const el=document.getElementById('payCardNum'),ex=document.getElementById('payCardExp');const num=(el?el.value:'').replace(/\D/g,'');const last4=num.slice(-4)||'4242';const brand=/^(5[1-5]|2[2-7])/.test(num)?'Mastercard':(/^3[47]/.test(num)?'Amex':'Visa');const cardObj={brand,last4,exp:(ex&&ex.value)||'08/28'};
+        if(S.paySaveCard!==false){ S.card=cardObj; saveClientCloud(); }
+        else { S.card=null; } // carte à usage unique : jamais conservée
+        placeMission();break;}
       case 'open-interv':S.interv=true;render();break;
       case 'close-interv':S.interv=false;render();break;
       case 'open-statement':S.proStmt=true;render();break;
