@@ -520,6 +520,23 @@
   .appt{display:flex;gap:13px;padding:13px;border-radius:14px;background:var(--card);border:1px solid var(--hair);border-left:4px solid var(--teal);box-shadow:0 8px 22px -20px var(--shadow);margin-bottom:9px}
   .appt-time{width:50px;flex:none;display:flex;flex-direction:column;gap:1px}
   .appt-time b{font-family:var(--f-num);font-size:15px;font-weight:800;font-variant-numeric:tabular-nums}
+  /* Agenda mensuel artisan */
+  .cal-head{display:flex;align-items:center;justify-content:space-between;margin-top:16px}
+  .cal-head b{font-family:var(--f-disp);font-size:16px}
+  .cal-nav{width:36px;height:36px;border-radius:11px;border:1px solid var(--hair);background:var(--card);font-size:19px;line-height:1;color:var(--ink);display:flex;align-items:center;justify-content:center;cursor:pointer}
+  .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:12px}
+  .cal-dow{text-align:center;font-size:11px;font-weight:800;color:var(--muted);padding-bottom:2px}
+  .cal-cell{aspect-ratio:1/1;min-height:40px;border:1.5px solid transparent;border-radius:11px;background:var(--card-2);display:flex;flex-direction:column;align-items:center;gap:2px;padding:5px 0 0;position:relative;cursor:pointer}
+  .cal-cell.empty{background:transparent;border:none;cursor:default}
+  .cal-cell.has{background:var(--card);border-color:var(--hair)}
+  .cal-cell.today{border-color:var(--coral);background:var(--coral-wash)}
+  .cal-cell.sel{border-color:var(--teal-deep);box-shadow:0 0 0 1.5px var(--teal-deep)}
+  .cal-num{font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums}
+  .cal-dots{display:flex;gap:2px;flex-wrap:wrap;justify-content:center;max-width:92%}
+  .cal-dot{width:6px;height:6px;border-radius:50%;display:inline-block}
+  .cal-dot.u{background:var(--teal)} .cal-dot.t{background:var(--coral)} .cal-dot.d{background:var(--good)}
+  .cal-legend{display:flex;gap:16px;justify-content:center;margin-top:11px;font-size:11px;color:var(--muted)}
+  .cal-legend span{display:inline-flex;align-items:center;gap:5px}
   .geomap{margin-top:10px;border-radius:14px;overflow:hidden;border:1px solid var(--hair);position:relative;height:200px}
   .geomap-canvas{position:absolute;inset:0}
   .geomap-canvas svg{width:100%;height:100%;display:block}
@@ -1400,12 +1417,23 @@
   const COMMISSION=0.15;
   const DAYS=[['lun','Lun'],['mar','Mar'],['mer','Mer'],['jeu','Jeu'],['ven','Ven'],['sam','Sam'],['dim','Dim']];
   const BLOCKS=[['m','Matin'],['a','Après-m.'],['s','Soir']];
-  const SEED_AGENDA=[
-    {day:'Aujourd’hui',slot:'09:00',svc:'menage',client:'Villa Bartolomé',zone:'Gustavia',duration:2,status:'done'},
-    {day:'Aujourd’hui',slot:'16:30',svc:'jardin',client:'Mme Laplace',zone:'St-Jean',duration:1,status:'upcoming'},
-    {day:'Demain',slot:'08:30',svc:'menage',client:'Villa Sereno',zone:'Flamands',duration:3,status:'upcoming'},
-    {day:'Vendredi 11',slot:'09:00',svc:'baby',client:'M. Brin',zone:'Lorient',duration:3,status:'upcoming'}
-  ];
+  // Prestations de démonstration réparties sur le mois en cours (dates réelles) :
+  // interventions passées, du jour et futures, pour illustrer la charge de travail.
+  const SEED_AGENDA=(function(){
+    const t=new Date();t.setHours(0,0,0,0);
+    const iso=function(off){const d=new Date(t);d.setDate(d.getDate()+off);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
+    return [
+      {dateISO:iso(-12),slot:'09:00',svc:'menage',client:'Villa Aurore',zone:'Gustavia',duration:3,status:'done'},
+      {dateISO:iso(-6),slot:'14:00',svc:'jardin',client:'M. Vanterpool',zone:'Saline',duration:2,status:'done'},
+      {dateISO:iso(-2),slot:'10:00',svc:'menage',client:'SCI Colombier',zone:'Colombier',duration:2,status:'done'},
+      {dateISO:iso(0),slot:'09:00',svc:'menage',client:'Villa Bartolomé',zone:'Gustavia',duration:2,status:'done'},
+      {dateISO:iso(0),slot:'16:30',svc:'jardin',client:'Mme Laplace',zone:'St-Jean',duration:1,status:'upcoming'},
+      {dateISO:iso(1),slot:'08:30',svc:'menage',client:'Villa Sereno',zone:'Flamands',duration:3,status:'upcoming'},
+      {dateISO:iso(3),slot:'09:00',svc:'baby',client:'M. Brin',zone:'Lorient',duration:3,status:'upcoming'},
+      {dateISO:iso(8),slot:'13:00',svc:'menage',client:'Villa Hartley',zone:'Toiny',duration:4,status:'upcoming'},
+      {dateISO:iso(15),slot:'10:30',svc:'jardin',client:'M. Ledée',zone:'Vitet',duration:2,status:'upcoming'}
+    ];
+  })();
 
   const S={
     persona:'client',clientNav:'home',proNav:'home',customServices:[],onboarded:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},
@@ -3641,10 +3669,68 @@
       <div class="card" style="padding:14px;margin-top:16px"><div class="row between"><span class="sub"><b class="money" style="color:var(--ink)">${availCount()}</b> créneaux actifs / semaine</span><span class="chip good">${I.check} À jour</span></div></div>
       <div style="margin-top:14px"><button class="btn primary" data-act="save-dispo">Enregistrer mes disponibilités</button></div>`;
   }
+  // ---- Agenda mensuel de l'artisan : vue calendrier + récapitulatif ----
+  const FR_MONTHS=['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+  const FR_DOW_SHORT=['dim.','lun.','mar.','mer.','jeu.','ven.','sam.'];
+  function isoToDate(iso){const p=(iso||'').split('-');return new Date(+p[0],(+p[1]||1)-1,+p[2]||1);}
+  function isoOf(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+  // Résout la date d'une prestation : dateISO si présent, sinon d'après le libellé (jour).
+  function apptISO(a){
+    if(a&&/^\d{4}-\d{2}-\d{2}$/.test(a.dateISO||''))return a.dateISO;
+    const lab=((a&&a.day)||'').toLowerCase();const t=new Date();t.setHours(0,0,0,0);
+    if(lab.indexOf('aujour')>=0)return isoOf(t);
+    if(lab.indexOf('demain')>=0){const d=new Date(t);d.setDate(d.getDate()+1);return isoOf(d);}
+    if(lab.indexOf('hier')>=0){const d=new Date(t);d.setDate(d.getDate()-1);return isoOf(d);}
+    return isoOf(t);
+  }
+  function frDayLabel(iso){const d=isoToDate(iso),t=new Date();t.setHours(0,0,0,0);const diff=Math.round((d-t)/86400000);if(diff===0)return 'Aujourd’hui';if(diff===1)return 'Demain';if(diff===-1)return 'Hier';return FR_DOW_SHORT[d.getDay()]+' '+d.getDate()+' '+FR_MONTHS[d.getMonth()].slice(0,4)+'.';}
+  function curMonthKey(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
+  function monthShift(key,delta){const p=(key||curMonthKey()).split('-');let y=+p[0],m=(+p[1]-1)+delta;y+=Math.floor(m/12);m=((m%12)+12)%12;return y+'-'+String(m+1).padStart(2,'0');}
+  function proAgendaMonth(){
+    const monthKey=S.agendaMonth||curMonthKey();
+    const parts=monthKey.split('-'),Y=+parts[0],M=+parts[1];
+    const first=new Date(Y,M-1,1);
+    const startDow=(first.getDay()+6)%7; // lundi = 0
+    const daysInMonth=new Date(Y,M,0).getDate();
+    const todayIso=todayISO();
+    // Regroupe les prestations par jour du mois affiché.
+    const byDay={};
+    (S.agenda||[]).forEach(function(a){const iso=apptISO(a);if(iso.slice(0,7)===monthKey){(byDay[iso]=byDay[iso]||[]).push(a);}});
+    Object.keys(byDay).forEach(function(k){byDay[k].sort(function(a,b){return (a.slot||'').localeCompare(b.slot||'');});});
+    const title=FR_MONTHS[M-1].charAt(0).toUpperCase()+FR_MONTHS[M-1].slice(1)+' '+Y;
+    const dow=['L','M','M','J','V','S','D'].map(function(d){return `<div class="cal-dow">${d}</div>`;}).join('');
+    let cells='';
+    for(let i=0;i<startDow;i++)cells+=`<div class="cal-cell empty"></div>`;
+    for(let day=1;day<=daysInMonth;day++){
+      const iso=Y+'-'+String(M).padStart(2,'0')+'-'+String(day).padStart(2,'0');
+      const list=byDay[iso]||[];
+      const isToday=(iso===todayIso),sel=(S.agendaSel===iso);
+      const dots=list.slice(0,3).map(function(a){const c=(a.status==='done')?'d':(iso<todayIso?'d':(iso===todayIso?'t':'u'));return `<span class="cal-dot ${c}"></span>`;}).join('');
+      cells+=`<button class="cal-cell${isToday?' today':''}${sel?' sel':''}${list.length?' has':''}" data-agday="${iso}"><span class="cal-num">${day}</span>${dots?`<span class="cal-dots">${dots}</span>`:''}</button>`;
+    }
+    // Récapitulatif : compteurs du mois + liste (jour sélectionné, sinon tout le mois).
+    const monthAppts=Object.keys(byDay).sort().reduce(function(acc,k){return acc.concat(byDay[k].map(function(a){return {a:a,iso:k};}));},[]);
+    const past=monthAppts.filter(function(x){return x.a.status==='done'||x.iso<todayIso;}).length;
+    const future=monthAppts.length-past;
+    const stat=`<div class="card" style="padding:14px;margin-top:14px"><div class="row between"><div><div class="mini">Ce mois-ci</div><b class="money" style="font-size:18px;font-family:var(--f-disp)">${monthAppts.length} intervention${monthAppts.length>1?'s':''}</b></div><div style="text-align:right;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"><span class="chip good" style="padding:3px 9px">${past} passée${past>1?'s':''}</span><span class="chip" style="padding:3px 9px;background:var(--teal-wash);color:var(--teal-deep)">${future} à venir</span></div></div></div>`;
+    const selIso=(S.agendaSel&&S.agendaSel.slice(0,7)===monthKey)?S.agendaSel:null;
+    let recap;
+    if(selIso){
+      const l=byDay[selIso]||[];
+      recap=`<div style="margin-top:14px"><div class="row between" style="margin-bottom:9px"><b style="font-size:13.5px;font-family:var(--f-disp)">${frDayLabel(selIso)}</b><button class="linklike mini" data-agday="">↩ Tout le mois</button></div>${l.length?l.map(apptCard).join(''):`<div class="card" style="padding:18px;text-align:center;color:var(--muted)">Aucune intervention ce jour-là.</div>`}</div>`;
+    }else{
+      const keys=Object.keys(byDay).sort();
+      recap=keys.length?keys.map(function(k){return `<div style="margin-top:16px"><div class="row between" style="margin-bottom:9px"><b style="font-size:13px;font-family:var(--f-disp)">${frDayLabel(k)}</b><span class="mini">${byDay[k].length} RDV</span></div>${byDay[k].map(apptCard).join('')}</div>`;}).join(''):`<div class="card" style="padding:22px;margin-top:14px;text-align:center;color:var(--muted)">Aucune intervention ce mois-ci.<br>Vos missions acceptées apparaîtront ici.</div>`;
+    }
+    return `<div class="cal-head"><button class="cal-nav" data-agmonth="prev">‹</button><b>${title}</b><button class="cal-nav" data-agmonth="next">›</button></div>
+      <div class="cal">${dow}${cells}</div>
+      <div class="cal-legend"><span><span class="cal-dot u"></span>À venir</span><span><span class="cal-dot t"></span>Aujourd’hui</span><span><span class="cal-dot d"></span>Passée</span></div>
+      ${stat}${recap}<div style="height:6px"></div>`;
+  }
   function proAgenda(){
     const tab=S.agendaTab;
-    const seg=`<div class="segs" style="margin-top:8px"><button class="seg ${tab==='presta'?'on':''}" data-atab="presta">Prestations</button><button class="seg ${tab==='dispo'?'on':''}" data-atab="dispo">Disponibilités</button></div>`;
-    return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">${I.cal} Mon agenda</span><div class="h-hello">${tab==='dispo'?'Mes disponibilités':'Prestations réservées'}</div>${seg}${tab==='dispo'?dispoGrid():apptList()}</div>${proNavbar()}`;
+    const seg=`<div class="segs" style="margin-top:8px"><button class="seg ${tab==='presta'?'on':''}" data-atab="presta">Agenda</button><button class="seg ${tab==='dispo'?'on':''}" data-atab="dispo">Disponibilités</button></div>`;
+    return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">${I.cal} Mon agenda</span><div class="h-hello">${tab==='dispo'?'Mes disponibilités':'Mon planning du mois'}</div>${seg}${tab==='dispo'?dispoGrid():proAgendaMonth()}</div>${proNavbar()}`;
   }
   function proRequest(){
     const m=S.mission,t=totals(m);
@@ -3965,7 +4051,7 @@
     toast('Prestation pré-remplie — vérifiez, ajustez, puis confirmez');
   }
   document.addEventListener('click',(e)=>{
-    const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-offer],[data-boost],[data-price],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-conc-off],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-prefart],[data-proslot],[data-proreqslot]');
+    const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-offer],[data-boost],[data-price],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-conc-off],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-prefart],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday]');
     if(!b)return;
     // Retour haptique (Android/Chrome ; ignoré ailleurs) : tapotement léger sur toute
     // action, vibration « validation » plus marquée sur les gestes décisifs.
@@ -4034,6 +4120,8 @@
     if(b.dataset.svc){const svc=findSvc(b.dataset.svc);if(!svc)return;S.draft=newMission(svc);renderConfig();return;}
     if(b.dataset.av){const[d,bl]=b.dataset.av.split(':');S.avail[d][bl]=S.avail[d][bl]?0:1;render();return;}
     if(b.dataset.atab){S.agendaTab=b.dataset.atab;render();return;}
+    if(b.dataset.agmonth){S.agendaMonth=monthShift(S.agendaMonth||curMonthKey(),b.dataset.agmonth==='next'?1:-1);S.agendaSel='';render();return;}
+    if(b.dataset.agday!=null){S.agendaSel=b.dataset.agday||'';render();return;}
     if(b.dataset.pcat){const c=b.dataset.pcat,i=S.proForm.cats.indexOf(c);S.proForm.rates=S.proForm.rates||{};if(i<0){S.proForm.cats.push(c);if(S.proForm.rates[c]==null)S.proForm.rates[c]=svcBase(c);}else{S.proForm.cats.splice(i,1);}render();return;}
     if(b.dataset.pstatustype){if(S.proForm)S.proForm.statusType=b.dataset.pstatustype;render();return;}
     if(b.dataset.srate){const parts=b.dataset.srate.split(':'),id=parts[0],dir=parts[1];S.proForm.rates=S.proForm.rates||{};const cur=(S.proForm.rates[id]!=null)?S.proForm.rates[id]:svcBase(id);S.proForm.rates[id]=Math.max(15,Math.min(100,cur+(dir==='up'?5:-5)));render();return;}
@@ -4264,7 +4352,7 @@
         S.proHistory=[];S.agenda=[];S.recurring=[];S.proEarnings=0;S.proJobsToday=0;S.proJobsTotal=0;S.mission=null;
         render();toast('Profil validé — bienvenue sur Ti-Services !');break;}
       case 'conc-approve-demo':S.concStatus='approved';render();toast('Conciergerie validée (démo)');break;
-      case 'pro-accept':{const m=S.mission;if(m.slotFlex&&m.proposedSlot){m.slot=clampSlot(m,m.proposedSlot);}m.provider=Object.assign({},PROVIDERS[m.svc],m.preferredName?{nm:m.preferredName,ini:inits(m.preferredName)}:{});m.status='accepted';const r=totals(m).rate;const amt=totals(m).total;const freq=m.frequency||'ponctuelle';const labels=occLabels(freq);const cli=proClientName(m);const entries=labels.map(d=>({day:d,slot:m.slot,svc:m.svc,client:cli,zone:m.zone,duration:m.duration,unit:m.unit,rate:r,amount:amt,status:'upcoming'}));m._appt=entries[0];entries.slice().reverse().forEach(e=>S.agenda.unshift(e));if(freq!=='ponctuelle'){S.recurring.unshift({svc:m.svc,svcName:m.svcName,short:freqInfo(freq).short,slot:m.slot,zone:m.zone});}if(!m.chat||!m.chat.length)m.chat=[{from:'pro',text:'Bonjour '+(cli.split(' ')[0])+' ! Bien reçu votre demande, je serai là à '+m.slot+'. À tout à l’heure 👋'}];proAddMission(m);render();burstConfetti();toast(labels.length>1?'Prestation récurrente ajoutée à votre agenda !':'Mission remportée — ajoutée à votre agenda !');break;}
+      case 'pro-accept':{const m=S.mission;if(m.slotFlex&&m.proposedSlot){m.slot=clampSlot(m,m.proposedSlot);}m.provider=Object.assign({},PROVIDERS[m.svc],m.preferredName?{nm:m.preferredName,ini:inits(m.preferredName)}:{});m.status='accepted';const r=totals(m).rate;const amt=totals(m).total;const freq=m.frequency||'ponctuelle';const labels=occLabels(freq);const cli=proClientName(m);const entries=labels.map(d=>({day:d,dateISO:(m.dateISO||apptISO({day:(m.when||d)})),slot:m.slot,svc:m.svc,client:cli,zone:m.zone,duration:m.duration,unit:m.unit,rate:r,amount:amt,status:'upcoming'}));m._appt=entries[0];entries.slice().reverse().forEach(e=>S.agenda.unshift(e));if(freq!=='ponctuelle'){S.recurring.unshift({svc:m.svc,svcName:m.svcName,short:freqInfo(freq).short,slot:m.slot,zone:m.zone});}if(!m.chat||!m.chat.length)m.chat=[{from:'pro',text:'Bonjour '+(cli.split(' ')[0])+' ! Bien reçu votre demande, je serai là à '+m.slot+'. À tout à l’heure 👋'}];proAddMission(m);render();burstConfetti();toast(labels.length>1?'Prestation récurrente ajoutée à votre agenda !':'Mission remportée — ajoutée à votre agenda !');break;}
       case 'pro-decline':{const dm=S.mission;
         // Demande DIRIGÉE (renouvellement / choix précis) : l'artisan demandé décline →
         // la main revient au client (démo : on bascule côté client pour qu'il décide).
