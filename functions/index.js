@@ -540,10 +540,13 @@ exports.settleCommission = onDocumentUpdated('requests/{reqId}', async (event) =
   // l'admin quand le tarif est nettement sous la grille (> 10 %).
   let rateExpected = null; let rateFlag = false;
   try {
-    if ((after.unit || 'h') === 'h' && after.service) {
+    if (after.service) {
       const ps = await db.collection('settings').doc('prices').get();
       const grid = (ps.exists && ps.data() && ps.data().prices) || {};
-      const off = grid[after.service];
+      // Facturation à la journée (garde d'animaux) → tarif journalier « <svc>_j » ;
+      // sinon tarif horaire « <svc> ».
+      const key = ((after.unit || 'h') === 'j') ? (after.service + '_j') : after.service;
+      const off = grid[key];
       if (typeof off === 'number' && off > 0) {
         rateExpected = off;
         if (rate < off * 0.9) rateFlag = true;
