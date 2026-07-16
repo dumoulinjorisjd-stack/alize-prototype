@@ -3769,6 +3769,12 @@
       <button class="card" data-act="open-referral" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.heart}&nbsp;Parrainer un artisan</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Gagnez un bonus pour chaque artisan que vous parrainez — et lui aussi.</p></button>
       <p class="mini" style="text-align:center;margin-top:14px"><button class="linklike" data-act="show-advantages">${I.shield} Pourquoi passer par Ti-Services ›</button></p>
       
+      ${(!S.demoMode&&FB)?`<div class="eyebrow" style="margin:26px 4px 6px;color:var(--muted)">Besoin d'un service&nbsp;?</div>
+      <div class="card" style="padding:16px;margin-top:8px"><div class="row between"><b style="font-size:14px">${I.user}&nbsp;Réserver pour vous-même</b></div>
+        <p class="sub" style="margin-top:8px">Votre compte artisan et un compte client sont <b>séparés</b>. Pour commander une prestation en tant que client, utilisez un compte client avec une <b>autre adresse e-mail</b>. Vous y basculez en vous connectant&nbsp;; votre espace artisan reste intact.</p>
+        <button class="btn ghost sm" data-act="pro-use-client" style="margin-top:11px;width:auto;padding:9px 14px">${I.user} Aller à mon compte client</button>
+      </div>`:''}
+
       <div class="eyebrow" style="margin:26px 4px 6px;color:var(--muted)">Aide & réglages</div>
       ${notifCard('pro')}
       <button class="card" data-act="open-general-support" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.support}&nbsp;Contacter Ti-Services</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Support ›</span></div><p class="sub" style="margin-top:8px">Une question sur votre compte, un dossier, l'application&nbsp;? Écrivez-nous — sans lien avec une mission.</p></button>
@@ -4027,6 +4033,10 @@
       case 'forgot-pw':{const em=((S.loginForm&&S.loginForm.email)||(S.account&&S.account.email)||'').trim();if(!/.+@.+\..+/.test(em)){toast('Saisissez votre e-mail, puis « Mot de passe oublié ».');break;}if(FB){fbResetPassword(em);}else{toast('Un lien de réinitialisation vous serait envoyé par e-mail.');}break;}
       case 'google-soon':if(FB){fbGoogle();}else{toast('Connexion Google — bientôt disponible');}break;
       case 'logout':S.demoMode=false;clearClientCache();if(FB)blankAll();fbLogout();if(!FB){S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;S.missions=[];render();}break;
+      // Un artisan qui veut commander un service pour lui-même utilise un compte
+      // CLIENT séparé (autre e-mail). On le déconnecte de l'espace artisan et on
+      // ouvre directement l'écran de connexion client.
+      case 'pro-use-client':S.demoMode=false;clearClientCache();S._wantClientLogin=true;if(FB)blankAll();fbLogout();if(!FB){S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;S.missions=[];S._wantClientLogin=false;S.authView='login';S.loginForm={email:'',password:''};render();}toast('Déconnecté de l’espace artisan — connectez-vous à votre compte client');break;
       case 'download-backup':downloadMyBackup();break;
       case 'account-delete':S.delAcct=true;render();break;
       case 'account-delete-cancel':S.delAcct=false;render();break;
@@ -4460,7 +4470,7 @@
       // Persistance locale explicite : la session doit survivre à la fermeture de
       // l'app (sinon reconnexion forcée à chaque ouverture, et données « perdues »).
       try{ if(authM.setPersistence&&authM.browserLocalPersistence)await authM.setPersistence(FB.auth,authM.browserLocalPersistence); }catch(_){}
-      authM.onAuthStateChanged(FB.auth,function(user){ if(user){loadUserProfile(user);} else if(S.onboarded){S.onboarded=false;S.mission=null;S.draft=null;S.persona='client';S.clientNav='home';render();} });
+      authM.onAuthStateChanged(FB.auth,function(user){ if(user){loadUserProfile(user);} else if(S.onboarded){S.onboarded=false;S.mission=null;S.draft=null;S.persona='client';S.clientNav='home';if(S._wantClientLogin){S._wantClientLogin=false;S.authView='login';S.loginForm={email:'',password:''};} render();} });
       // Connexion Google par redirection (PWA mobile) : au retour, il FAUT récupérer
       // le résultat, sinon l'utilisateur revient sur l'accueil sans être connecté.
       // onAuthStateChanged prend le relais ; ici on surface surtout les erreurs.
