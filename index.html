@@ -410,6 +410,15 @@
   .pp-plus{font-size:25px;font-weight:700;line-height:1}
   .pp-txt{display:flex;flex-direction:column;gap:1px} .pp-txt b{font-size:14px}
   .pp-hint{font-size:12px;color:var(--muted);margin-top:2px}
+  /* Choix « appareil photo / galerie » au clic sur le + (avatar) */
+  .sheet-back{position:fixed;inset:0;z-index:9000;background:rgba(30,24,44,.42);display:flex;align-items:flex-end;justify-content:center;animation:sheetfade .16s ease}
+  .sheet{width:100%;max-width:440px;background:var(--card,#fff);border-radius:20px 20px 0 0;padding:10px 12px calc(12px + env(safe-area-inset-bottom));box-shadow:0 -10px 40px rgba(30,24,44,.28);animation:sheetup .2s cubic-bezier(.2,.8,.2,1)}
+  .sheet-h{text-align:center;font-size:12.5px;font-weight:700;color:var(--muted);padding:10px 0 8px}
+  .sheet-btn{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;padding:15px;border:none;background:var(--card-2,#f4f1ee);color:var(--ink);font-size:15.5px;font-weight:700;border-radius:14px;margin-top:8px;cursor:pointer}
+  .sheet-btn svg{width:20px;height:20px}
+  .sheet-btn.cancel{background:transparent;color:var(--muted);font-weight:600}
+  @keyframes sheetup{from{transform:translateY(100%)}to{transform:translateY(0)}}
+  @keyframes sheetfade{from{opacity:0}to{opacity:1}}
   .pp-actions{display:flex;gap:7px;margin-top:7px;flex-wrap:wrap}
   .pp-btn{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:650;padding:7px 11px;border-radius:10px;background:var(--teal-wash);color:var(--teal-deep);cursor:pointer;border:1px solid transparent;white-space:nowrap}
   .pp-btn.ghost{background:var(--card);border:1px solid var(--hair);color:var(--ink-soft)}
@@ -1183,7 +1192,26 @@
   // Avatar : photo de profil si disponible, sinon initiales
   function avatarPhoto(photo,initials,cls){return photo?`<div class="avatar ${cls||''}" style="background-image:url('${photo}');background-size:cover;background-position:center;color:transparent">${initials}</div>`:`<div class="avatar ${cls||''}">${initials}</div>`;}
   // Sélecteur de photo de profil (création de compte client / artisan). who: 'client'|'pro'
-  function photoPicker(current,who){return `<label class="photopick"><span class="pp-ring">${current?`<span class="pp-img" style="background-image:url('${current}')"></span>`:`<span class="pp-plus">＋</span>`}</span><div class="pp-txt"><b>${current?'Photo ajoutée ✓':'Ajouter une photo'}</b><span class="pp-hint">${current?'Appuyez pour la changer':'Appuyez : appareil photo ou galerie'}</span></div><input type="file" accept="image/*" data-avatarinput="${who}" hidden></label>`;}
+  // Sélecteur de photo de profil : un seul « + ». Au clic, on propose le CHOIX
+  // (appareil photo OU galerie) via une feuille d'action — pas de deuxième icône.
+  // Deux inputs cachés (caméra avec capture / galerie sans capture) partagent le
+  // même gestionnaire data-avatarinput ; on déclenche celui choisi dans le geste.
+  function photoPicker(current,who){return `<div class="photopick" data-act="photopick:${who}" role="button" tabindex="0"><span class="pp-ring">${current?`<span class="pp-img" style="background-image:url('${current}')"></span>`:`<span class="pp-plus">＋</span>`}</span><div class="pp-txt"><b>${current?'Photo ajoutée ✓':'Ajouter une photo'}</b><span class="pp-hint">${current?'Appuyez pour la changer':'Appareil photo ou galerie'}</span></div><input type="file" accept="image/*" capture="user" data-avatarinput="${who}" data-pcam hidden><input type="file" accept="image/*" data-avatarinput="${who}" data-pgal hidden></div>`;}
+  // Feuille d'action « Ajouter une photo » : déclenchée au clic sur le +.
+  function openPhotoSheet(who){
+    const old=document.getElementById('photosheet');if(old)old.remove();
+    const wrap=document.createElement('div');wrap.id='photosheet';wrap.className='sheet-back';
+    wrap.innerHTML=`<div class="sheet"><div class="sheet-h">Ajouter une photo</div><button class="sheet-btn" data-psheet="cam">${I.camera} Prendre une photo</button><button class="sheet-btn" data-psheet="gal">${I.image} Choisir dans la galerie</button><button class="sheet-btn cancel" data-psheet="x">Annuler</button></div>`;
+    document.body.appendChild(wrap);
+    wrap.addEventListener('click',function(ev){
+      if(ev.target===wrap){wrap.remove();return;}
+      const b=ev.target.closest('[data-psheet]');if(!b)return;
+      const k=b.dataset.psheet;
+      const inp=(k!=='x')?document.querySelector('[data-avatarinput="'+who+'"][data-'+(k==='cam'?'pcam':'pgal')+']'):null;
+      wrap.remove(); // ferme la feuille d'abord, puis déclenche le sélecteur (dans le geste)
+      if(inp)inp.click();
+    });
+  }
   // Réduit une image à un petit data URL (≈256 px, JPEG) : léger, persistable en base.
   function avatarDataUrl(file,cb){
     try{
@@ -4051,10 +4079,16 @@
   document.addEventListener('click',(e)=>{
     const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-offer],[data-boost],[data-price],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-conc-off],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-prefart],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday]');
     if(!b)return;
+    // Un clic ISSU d'un <input type=file> (notamment déclenché par programme, ex. la
+    // feuille « appareil photo / galerie ») remonte jusqu'ici : on ne le traite pas
+    // comme une action, sinon il rouvrirait la feuille en boucle. Le fichier choisi
+    // est géré séparément par l'écouteur « change ».
+    if(e.target&&e.target.tagName==='INPUT'&&e.target.type==='file')return;
     // Retour haptique (Android/Chrome ; ignoré ailleurs) : tapotement léger sur toute
     // action, vibration « validation » plus marquée sur les gestes décisifs.
     haptic(RE_HAPTIC_KEY.test((b.dataset.act||'')+' '+(b.dataset.adm||''))?'success':'light');
     if(b.dataset.act==='pw-toggle'){const w=b.closest('.pw-wrap');const inp=w&&w.querySelector('input');if(inp){const reveal=inp.type==='password';inp.type=reveal?'text':'password';b.innerHTML=reveal?I.eyeoff:I.eye;}return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('photopick:')===0){openPhotoSheet(b.dataset.act.slice('photopick:'.length));return;}
     // Vitrine (panneau de partage) : « Créer mon compte » / « Installer » ouvrent la
     // feuille d'installation adaptée au navigateur (au lieu de la simulation de téléphone).
     if(b.dataset.act==='get-app'){showInstallGuide();return;}
