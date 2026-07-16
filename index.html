@@ -4195,23 +4195,39 @@
     }
     paintPersona();
   });
+  // ——— Menus déroulants « jour » et « heure » de la commande ———
+  const _WD=['dim.','lun.','mar.','mer.','jeu.','ven.','sam.'];
+  const _MO=['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];
+  function dayIso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+  // Options de jour : d'aujourd'hui à +30 jours — aucune date passée n'est proposée.
+  function dayOptions(){const out=[];const base=new Date();base.setHours(0,0,0,0);for(let i=0;i<30;i++){const d=new Date(base);d.setDate(base.getDate()+i);const iso=dayIso(d);const lbl=i===0?'Aujourd’hui':(i===1?'Demain':(_WD[d.getDay()]+' '+d.getDate()+' '+_MO[d.getMonth()]));out.push({iso:iso,lbl:lbl});}return out;}
+  function dayLabelFor(iso){const o=dayOptions().find(function(x){return x.iso===iso;});return o?o.lbl:iso;}
+  // Options d'heure : 07 h → 20 h par pas de 30 min ; les heures déjà passées
+  // (pour aujourd'hui) sont marquées « past » pour être désactivées.
+  function hourOptions(m){const minM=minSlotToday(m);const out=[];for(let t=7*60;t<=20*60;t+=30){out.push({s:minToSlot(t),past:(minM>=0&&t<minM)});}return out;}
   function renderConfig(){
     const m=S.draft,t=totals(m);
     const zones=ZONES.map(z=>`<button class="seg ${m.zone===z?'on':''}" data-zone="${z}">${z}</button>`).join('');
-    const presetSlots=['08:00','10:00','12:00','14:00','16:00'];
-    const minM=minSlotToday(m);
-    // Réservation pour aujourd'hui : on ne peut pas choisir une heure déjà passée.
-    if(minM>=0&&slotToMin(m.slot)<minM){const np=presetSlots.find(s=>slotToMin(s)>=minM);if(np){m.slot=np;m.slotMode=null;}else{let x=Math.ceil(minM/15)*15;if(x>1425)x=1425;m.slot=minToSlot(x);m.slotMode='pick';}}
-    const customTime=m.slotMode==='pick'||!presetSlots.includes(m.slot);
-    // « Journée » : l'artisan choisit lui-même l'heure → le choix d'heure précise
-    // n'a plus de sens, on le grise pour que ce soit logique.
+    // Jour : jamais de date passée. On borne à aujourd'hui, et si plus aucune heure
+    // n'est disponible aujourd'hui, on bascule le jour au lendemain.
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(m.dateISO||'')){const d0=new Date();if(m.when==='Demain')d0.setDate(d0.getDate()+1);m.dateISO=dayIso(d0);}
+    if(m.dateISO<todayISO())m.dateISO=todayISO();
+    m.dateMode='pick';
+    // « Journée » : l'artisan choisit lui-même l'heure → le choix précis n'a plus de sens.
     const dayFlex=(m.slotFlex==='day')&&!isDayU(m);
-    const slots=presetSlots.map(s=>{const past=minM>=0&&slotToMin(s)<minM;const dis=past||dayFlex;return `<button class="seg ${(!customTime&&m.slot===s)?'on':''}${dis?' off':''}"${dis?' disabled':` data-slot="${s}"`}>${s}</button>`;}).join('')
-      +`<button class="seg ${customTime?'on':''}${dayFlex?' off':''}"${dayFlex?' disabled':` data-slot="__pick"`}>Autre…</button>`;
+    let hOpts=hourOptions(m);
+    if(m.dateISO===todayISO()&&!hOpts.some(o=>!o.past)){const d1=new Date();d1.setDate(d1.getDate()+1);m.dateISO=dayIso(d1);hOpts=hourOptions(m);}
+    m.when=dayLabelFor(m.dateISO);
+    m.slotMode=null;
+    const firstAvail=hOpts.find(o=>!o.past);
+    if(!hOpts.some(o=>o.s===m.slot&&!o.past)&&firstAvail)m.slot=firstAvail.s;
+    const isToday=(m.dateISO===todayISO());
+    const daySelect=`<select class="txt" data-cfday>${dayOptions().map(o=>`<option value="${o.iso}"${m.dateISO===o.iso?' selected':''}>${esc(o.lbl)}</option>`).join('')}</select>`;
+    const hourSelect=`<select class="txt" data-cfhour${dayFlex?' disabled':''}>${hOpts.map(o=>`<option value="${o.s}"${o.past?' disabled':''}${m.slot===o.s?' selected':''}>${o.s}</option>`).join('')}</select>`;
     paintView(`<div class="pad"><button class="reset" data-cfg="back" style="margin:8px 0 2px">← Retour</button><span class="eyebrow">${m.svcName}</span><div class="h-hello" style="padding-right:54px">Détails de la mission</div>
       ${m.svc==='animaux'?`<div class="field"><label>Mode de garde</label><div class="segs"><button class="seg ${isDayU(m)?'on':''}" data-cfg="unit-j">📅 À la journée</button><button class="seg ${!isDayU(m)?'on':''}" data-cfg="unit-h">${I.clock} À l'heure</button></div><p class="mini" style="margin-top:6px">Pour une garde sur plusieurs jours, choisissez « à la journée » — vous fixez les <b>dates</b>, pas les heures.</p></div>`:''}
-      <div class="field"><label>${isDayU(m)?'Date de début':'Quand&nbsp;?'}</label><div class="segs"><button class="seg ${m.dateMode!=='pick'&&m.when==='Aujourd’hui'?'on':''}" data-when="Aujourd’hui">Aujourd'hui</button><button class="seg ${m.dateMode!=='pick'&&m.when==='Demain'?'on':''}" data-when="Demain">Demain</button><button class="seg ${m.dateMode==='pick'?'on':''}" data-when="__pick">Choisir…</button></div>${m.dateMode==='pick'?`<input class="txt" type="date" data-cfdate style="margin-top:10px" value="${m.dateISO||''}">`:''}</div>
-      <div class="field"><label>${isDayU(m)?'Heure de dépôt':'Heure souhaitée'}</label><div class="segs">${slots}</div>${(customTime&&!dayFlex)?`<input class="txt" type="time" data-cftime step="900" ${minM>=0?`min="${minToSlot(minM)}"`:''} style="margin-top:10px" value="${/^\d{2}:\d{2}$/.test(m.slot)?m.slot:''}">`:''}${dayFlex?`<p class="mini" style="margin-top:6px;color:var(--muted)">${I.clock} Vous laissez toute la journée — l'artisan choisit son heure de passage (8 h – 19 h).</p>`:(minM>=0?`<p class="mini" style="margin-top:6px;color:var(--muted)">Pour aujourd'hui, seules les heures à venir sont proposées.</p>`:'')}</div>
+      <div class="field"><label>${isDayU(m)?'Date de début':'Quand&nbsp;?'}</label>${daySelect}</div>
+      <div class="field"><label>${isDayU(m)?'Heure de dépôt':'Heure souhaitée'}</label>${dayFlex?`<p class="mini" style="margin:2px 0 0;color:var(--muted)">${I.clock} Vous laissez toute la journée — l'artisan choisit son heure de passage (8 h – 19 h).</p>`:`${hourSelect}${isToday?`<p class="mini" style="margin-top:6px;color:var(--muted)">Pour aujourd'hui, seules les heures à venir sont proposées.</p>`:''}`}</div>
       ${!isDayU(m)?`<div class="field"><label>Souplesse sur l'heure</label><div class="segs"><button class="seg ${(!m.slotFlex)?'on':''}" data-slotflex="0">Précise</button><button class="seg ${m.slotFlex===30?'on':''}" data-slotflex="30">± 30 min</button><button class="seg ${m.slotFlex===60?'on':''}" data-slotflex="60">± 1 h</button><button class="seg ${m.slotFlex===120?'on':''}" data-slotflex="120">± 2 h</button><button class="seg ${m.slotFlex==='day'?'on':''}" data-slotflex="day">Journée</button></div>${m.slotFlex?`<p class="mini" style="margin-top:6px">${I.clock} Vous laissez de la souplesse&nbsp;: l'artisan choisira un <b>créneau précis ${flexTxt(m)}</b> et vous le confirmera en acceptant — vos demandes sont acceptées plus vite.</p>`:`<p class="mini" style="margin-top:6px">Heure ferme. Astuce&nbsp;: un peu de souplesse fait accepter votre demande plus vite.</p>`}</div>`:''}
       ${pastArtisans().length?`<div class="field"><label>Un artisan en particulier&nbsp;?</label><div class="segs"><button class="seg ${!m.preferredUid?'on':''}" data-prefart="">Peu importe</button>${pastArtisans().map(a=>`<button class="seg ${m.preferredUid===a.uid?'on':''}" data-prefart="${esc(a.uid)}" data-prefnm="${esc(a.nm)}">${esc(a.nm.split(' ')[0])}</button>`).join('')}</div>${m.preferredUid?`<p class="mini" style="margin-top:6px">${I.clock} <b>${esc((m.preferredName||'').split(' ')[0])}</b> est prévenu en priorité. Sans réponse sous 10&nbsp;min, votre demande s'ouvre aux autres artisans — vous n'êtes jamais bloqué.</p>`:`<p class="mini" style="margin-top:6px;color:var(--muted)">Redemandez un artisan que vous avez déjà eu, ou laissez « Peu importe » et le premier disponible prend la mission.</p>`}</div>`:''}
       <div class="field"><label>Fréquence</label><div class="segs">${FREQS.map(f=>`<button class="seg ${(m.frequency||'ponctuelle')===f.id?'on':''}" data-freq="${f.id}">${f.lbl}</button>`).join('')}</div>${(m.frequency&&m.frequency!=='ponctuelle')?`<p class="mini" style="margin-top:6px">${I.repeat} Prestation régulière — le même artisan à chaque fois, annulable à tout moment.</p>`:''}</div>
@@ -4287,6 +4303,11 @@
     const sip=e.target.closest('[data-sepa]');if(sip){S.sepaIban=sip.value;try{localStorage.setItem('ts_sepa_iban',sip.value);}catch(_){}}
   });
   view.addEventListener('change',(e)=>{
+    // Menus déroulants jour / heure de la commande.
+    const dcy=e.target.closest('[data-cfday]');
+    if(dcy&&S.draft){S.draft.dateISO=dcy.value;S.draft.dateMode='pick';S.draft.when=dayLabelFor(dcy.value);renderConfig();return;}
+    const dch=e.target.closest('[data-cfhour]');
+    if(dch&&S.draft){S.draft.slot=dch.value;S.draft.slotMode=null;renderConfig();return;}
     const fp=e.target.closest('[data-photoinput]');
     if(fp&&S.draft){const files=Array.from(fp.files||[]);if(!files.length)return;S.draft.photos=S.draft.photos||[];const room=Math.max(0,6-S.draft.photos.length);files.slice(0,room).forEach(f=>{bookingPhotoDataUrl(f,function(u){if(u&&S.draft){S.draft.photos.push(u);renderConfig();}});});fp.value='';renderConfig();return;}
     const ai=e.target.closest('[data-avatarinput]');
