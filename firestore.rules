@@ -56,11 +56,16 @@ service cloud.firestore {
     // le statut ne peut être changé que par l'admin.
     match /artisans/{artisanId} {
       allow read:   if isAdmin() || uid() == artisanId;
+      // Le statut « fondateur » est attribué UNIQUEMENT par le serveur (Cloud Function
+      // assignFounderSpot, via l'Admin SDK) : l'artisan ne peut ni se l'octroyer à la
+      // création, ni le modifier ensuite — sinon on contournerait le quota des 12 places.
       allow create: if uid() == artisanId
-                    && request.resource.data.status == 'attente';
+                    && request.resource.data.status == 'attente'
+                    && request.resource.data.get('founder', false) == false;
       allow update: if isAdmin()
                     || (uid() == artisanId
-                        && request.resource.data.status == resource.data.status);
+                        && request.resource.data.status == resource.data.status
+                        && request.resource.data.get('founder', false) == resource.data.get('founder', false));
       // Droit à l'effacement (RGPD) : l'artisan peut supprimer son propre dossier.
       allow delete: if isAdmin() || uid() == artisanId;
     }

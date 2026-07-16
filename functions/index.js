@@ -123,6 +123,39 @@ exports.notifyAdminNewArtisan = onDocumentCreated('artisans/{artisanId}', async 
 });
 
 /**
+ * assignFounderSpot : programme « Artisan Fondateur ». Les FOUNDER_TOTAL premières
+ * candidatures reçoivent automatiquement le statut fondateur. Le compteur est tenu
+ * côté serveur (settings/stats.founderTaken) dans une TRANSACTION atomique — impossible
+ * de dépasser le total, quelle que soit la simultanéité des inscriptions. Le champ
+ * founder de la fiche artisan est positionné true/false par le serveur (jamais le client).
+ */
+const FOUNDER_TOTAL = 12;
+exports.assignFounderSpot = onDocumentCreated('artisans/{artisanId}', async (event) => {
+  const snap = event.data;
+  if (!snap) return;
+  const db = getFirestore();
+  const statsRef = db.doc('settings/stats');
+  try {
+    await db.runTransaction(async (tx) => {
+      const cur = await tx.get(snap.ref);
+      // Fiche disparue entre-temps, ou statut fondateur déjà tranché : on ne retouche pas.
+      if (!cur.exists) return;
+      if (typeof (cur.data() || {}).founder === 'boolean') return;
+      const st = await tx.get(statsRef);
+      const taken = (st.exists && Number(st.data().founderTaken)) || 0;
+      if (taken < FOUNDER_TOTAL) {
+        tx.set(statsRef, {founderTaken: taken + 1}, {merge: true});
+        tx.set(snap.ref, {founder: true}, {merge: true});
+      } else {
+        tx.set(snap.ref, {founder: false}, {merge: true});
+      }
+    });
+  } catch (e) {
+    console.error('assignFounderSpot', e);
+  }
+});
+
+/**
  * notifyArtisansNewRequest : à chaque nouvelle demande client « pending »,
  * notifie par push tous les artisans validés proposant le service demandé
  * (premier arrivé, premier servi). Les jetons sont lus dans users/{uid}.pushTokens.
