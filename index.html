@@ -4332,12 +4332,17 @@
   // fixe, ancrée dans .screen (qui porte un transform), reste alors mal positionnée /
   // repliée. On pilote donc la hauteur via --app-h = window.innerHeight (viewport de
   // mise en page, stable vis-à-vis du clavier), recalculée à chaque événement utile.
-  var _appHRaf=0;
+  var _appHRaf=0,_hProbe=null;
   function setAppHeight(){
     if(_appHRaf)return;
     _appHRaf=requestAnimationFrame(function(){_appHRaf=0;
-      var h=window.innerHeight||(window.visualViewport&&window.visualViewport.height)||0;
-      if(h>0)document.documentElement.style.setProperty('--app-h',Math.round(h)+'px');
+      // On mesure la VRAIE hauteur 100dvh (pleine, bord à bord — comme avant) via une
+      // sonde cachée, plutôt que window.innerHeight qui, sur certains Android, exclut la
+      // zone de gestes et laissait un vide sous la barre. On la relit à chaque événement,
+      // ce qui force le recalcul et évite la barre « repliée » après le clavier.
+      if(!_hProbe){_hProbe=document.createElement('div');_hProbe.setAttribute('aria-hidden','true');_hProbe.style.cssText='position:fixed;left:0;top:0;width:0;height:100dvh;visibility:hidden;pointer-events:none;z-index:-1';(document.body||document.documentElement).appendChild(_hProbe);}
+      var h=Math.round(_hProbe.getBoundingClientRect().height)||window.innerHeight||0;
+      if(h>0)document.documentElement.style.setProperty('--app-h',h+'px');
     });
   }
   setAppHeight();
