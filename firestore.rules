@@ -144,10 +144,25 @@ service cloud.firestore {
 
         // « Premier arrivé » : un artisan validé prend une demande encore pending.
         // Il s'assigne, sans toucher aux montants ni aux termes du contrat.
+        // Demande DIRIGÉE (directed) : seul l'artisan précisément demandé peut la prendre.
         || (isValidArtisan()
             && resource.data.status == 'pending'
             && request.resource.data.status == 'accepted'
             && request.resource.data.providerUid == uid()
+            && (resource.data.get('directed', false) == false
+                || resource.data.get('preferredProviderUid', '') == uid())
+            && !changed().hasAny(serverKeys())
+            && !changed().hasAny(contractKeys()))
+
+        // Demande DIRIGÉE déclinée : l'artisan PRÉCISÉMENT demandé refuse (pending -> declined).
+        // Il ne s'assigne pas, ne touche ni aux montants ni au contrat. Le client décidera
+        // ensuite d'ouvrir la demande à tous les artisans ou de l'annuler.
+        || (isValidArtisan()
+            && resource.data.status == 'pending'
+            && resource.data.get('directed', false) == true
+            && resource.data.get('preferredProviderUid', '') == uid()
+            && request.resource.data.status == 'declined'
+            && request.resource.data.get('providerUid', null) == null
             && !changed().hasAny(serverKeys())
             && !changed().hasAny(contractKeys()))
 
@@ -174,7 +189,7 @@ service cloud.firestore {
       // acceptation). Une demande acceptée / en cours / réglée est une pièce comptable :
       // seul l'admin peut l'effacer (RGPD). Les commissions restent de toute façon dans
       // le registre immuable `ledger`, hors de portée du client.
-      allow delete: if isAdmin() || (isClient() && resource.data.status == 'pending');
+      allow delete: if isAdmin() || (isClient() && (resource.data.status == 'pending' || resource.data.status == 'declined'));
 
       // Messagerie : réservée au client, au prestataire assigné et à l'admin.
       match /messages/{msgId} {

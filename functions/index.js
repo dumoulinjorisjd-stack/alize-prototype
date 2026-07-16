@@ -176,12 +176,13 @@ exports.notifyArtisansNewRequest = onDocumentCreated('requests/{reqId}', async (
     .map((d) => d.id);
   if (!uids.length) { console.log('Aucun artisan validé pour ce service.'); return; }
 
-  // Priorité : si le client a demandé un artisan précis, seul lui est notifié
-  // pendant la fenêtre de priorité (le repli vers tous les artisans après le délai
-  // est géré côté application, qui rend la demande visible à tous passé priorityUntil).
+  // Demande DIRIGÉE : si le client a demandé un artisan précis (choix / renouvellement),
+  // SEUL cet artisan est notifié — la demande ne tombe jamais dans la recherche standard
+  // tant qu'il n'a pas décliné. Le repli vers tous les artisans n'a lieu qu'ensuite, si le
+  // client rouvre la demande (declined -> pending, géré par notifyReopenedRequest).
   const preferred = r.preferredProviderUid;
   const targetUids = preferred ? (uids.indexOf(preferred) >= 0 ? [preferred] : []) : uids;
-  if (!targetUids.length) { console.log('Artisan prioritaire indisponible — repli géré côté app.'); return; }
+  if (!targetUids.length) { console.log('Artisan demandé indisponible (aucun jeton ou non validé).'); return; }
 
   // Jetons push de ces artisans (avec correspondance jeton -> uid pour le nettoyage).
   const tokenToUid = {};
@@ -469,6 +470,12 @@ exports.notifyClientStatus = onDocumentUpdated('requests/{reqId}', async (event)
   } else if (aStatus === 'done_pro') {
     title = 'Vos réservations · Prestation terminée';
     body = provider + ' a terminé — validez pour finaliser.';
+  } else if (bStatus === 'pending' && aStatus === 'declined') {
+    // L'artisan PRÉCISÉMENT demandé (demande dirigée) a décliné : le client doit
+    // décider de la suite (proposer à tous les artisans, ou annuler).
+    const who = (after.declinedName || after.preferredProviderName || 'Votre artisan').toString().slice(0, 60);
+    title = 'Vos réservations · Artisan indisponible';
+    body = who + ' n\'est pas disponible pour ' + svcName + ' — à vous de décider.';
   } else {
     return; // autres transitions : pas de notification client
   }
@@ -674,11 +681,15 @@ exports.notifyReopenedRequest = onDocumentUpdated('requests/{reqId}', async (eve
   const before = (event.data && event.data.before && event.data.before.data()) || {};
   const after = (event.data && event.data.after && event.data.after.data()) || {};
   const wasActive = ['accepted', 'working', 'done_pro'].indexOf(before.status) >= 0;
-  if (!(wasActive && after.status === 'pending')) return;
+  // Une demande DIRIGÉE déclinée que le client rouvre à tous (declined -> pending)
+  // doit aussi être diffusée au pool — mais SANS prévenir le client (c'est lui qui l'a
+  // rouverte volontairement). On exclut du push l'artisan qui vient de décliner.
+  const wasDeclined = before.status === 'declined';
+  if (!((wasActive || wasDeclined) && after.status === 'pending')) return;
 
   const db = getFirestore();
   const svc = after.service;
-  const exclude = before.providerUid || '';
+  const exclude = wasDeclined ? (before.declinedBy || '') : (before.providerUid || '');
 
   // 1) Re-notifier les artisans validés du service (hors celui qui s'est désisté).
   try {
@@ -700,9 +711,10 @@ exports.notifyReopenedRequest = onDocumentUpdated('requests/{reqId}', async (eve
     }
   } catch (e) { console.warn('reopen notify artisans', e); }
 
-  // 2) Prévenir le client que la recherche est relancée.
+  // 2) Prévenir le client que la recherche est relancée — uniquement en cas de
+  //    désistement d'un artisan engagé (pas quand le client ouvre lui-même à tous).
   try {
-    const clientUid = after.clientUid;
+    const clientUid = wasActive ? after.clientUid : null;
     if (clientUid) {
       const u = await db.collection('users').doc(clientUid).get();
       const tokens = (u.data() || {}).pushTokens || [];

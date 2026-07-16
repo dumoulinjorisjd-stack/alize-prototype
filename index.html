@@ -2553,6 +2553,7 @@
     if(S.clientNav==='wallet'){
       if(m){switch(m.status){
         case 'searching':return clientSearching();
+        case 'declined':return clientDeclined();
         case 'pending':case 'accepted':case 'working':return clientTracking();
         case 'done_pro':return S.disputing?clientDispute():clientConfirm();
         case 'disputed':return clientDisputed();
@@ -2564,7 +2565,7 @@
     return clientHome();
   }
   // Toutes les demandes actives (recherche → en cours). Source de vérité = S.missions.
-  function activeMissions(){return (S.missions||[]).filter(function(m){return ['searching','pending','accepted','working','done_pro','disputed'].indexOf(m.status)>=0;});}
+  function activeMissions(){return (S.missions||[]).filter(function(m){return ['searching','declined','pending','accepted','working','done_pro','disputed'].indexOf(m.status)>=0;});}
   function clientMissionActive(){return activeMissions().length>0;}
   // Sortir une demande du suivi (annulation) ou l'archiver (terminée → historique).
   function removeMission(m){const i=(S.missions||[]).indexOf(m);if(i>=0)S.missions.splice(i,1);}
@@ -2660,7 +2661,7 @@
       ${zoutiLine('Choisissez'+(first?', '+esc(first):'')+' — je m’occupe de trouver le bon artisan.')}
       <div style="height:16px"></div></div>${clientNavbar()}`;
   }
-  function missionStatusMeta(st){return {searching:{l:'Recherche en cours',c:'coral'},pending:{l:'En attente d’un artisan',c:'coral'},accepted:{l:'Artisan trouvé',c:'good'},working:{l:'Prestation en cours',c:'good'},done_pro:{l:'À confirmer',c:'coral'},disputed:{l:'En médiation',c:'coral'}}[st]||{l:st,c:'grey'};}
+  function missionStatusMeta(st){return {searching:{l:'Recherche en cours',c:'coral'},declined:{l:'Artisan indisponible',c:'coral'},pending:{l:'En attente d’un artisan',c:'coral'},accepted:{l:'Artisan trouvé',c:'good'},working:{l:'Prestation en cours',c:'good'},done_pro:{l:'À confirmer',c:'coral'},disputed:{l:'En médiation',c:'coral'}}[st]||{l:st,c:'grey'};}
   // Historique dédupliqué des prestations terminées (source des cartes « Refaire »).
   function doneHistory(){const seen={},out=[];(S.history||[]).forEach(function(h){const k=h&&h.reqId;if(k){if(seen[k])return;seen[k]=1;}out.push(h);});return out;}
   function clientWallet(){
@@ -2797,7 +2798,9 @@
     const steps=[{t:'Demande envoyée',d:m.when+' · '+m.slot},{t:'Mission acceptée',d:p?esc(p.nm):''},{t:m.status==='working'?'Prestation en cours':'Prestation à venir',d:m.duration+' h · '+m.slot},{t:'Terminée',d:'à confirmer par vous'}];
     const activeIdx={pending:1,accepted:2,working:2}[m.status];
     const tls=steps.map((s,idx)=>{let cls;if(idx<activeIdx)cls='done';else if(idx===activeIdx)cls='active';else cls='future';const bead=cls==='done'?I.check:(cls==='active'?'':(idx+1));return `<div class="tl ${cls}"><div class="marker"><div class="bead">${bead}</div><div class="stem"></div></div><div class="lbl"><div class="t">${s.t}</div><div class="d">${s.d}</div></div></div>`;}).join('');
-    const head={pending:{t:'En attente d’acceptation',d:'Les artisans disponibles regardent votre demande'},accepted:{t:'Mission acceptée',d:(p?esc(p.nm):'')+' interviendra à '+m.slot},working:{t:'Prestation en cours',d:'Travail en cours à votre domicile'}}[m.status];
+    let head={pending:{t:'En attente d’acceptation',d:'Les artisans disponibles regardent votre demande'},accepted:{t:'Mission acceptée',d:(p?esc(p.nm):'')+' interviendra à '+m.slot},working:{t:'Prestation en cours',d:'Travail en cours à votre domicile'}}[m.status];
+    // Demande dirigée en attente : c'est un seul artisan précis qui répond, pas le pool.
+    if(m.status==='pending'&&m.preferredUid){const who=(m.preferredName||'Votre artisan').split(' ')[0];head={t:'En attente de '+esc(who),d:esc(m.preferredName||'Votre artisan')+' a reçu votre demande — vous serez prévenu dès sa réponse.'};}
     return `<div class="pad"><div style="height:8px"></div>
       <div class="row between"><span class="chip ${m.status==='pending'?'coral':'good'}">${m.status==='pending'?'En attente':'Confirmée'}</span><span class="mini">${m.svcName} · ${durTxt(m)}${(m.frequency&&m.frequency!=='ponctuelle')?' · '+I.repeat+' '+freqInfo(m.frequency).short:''}</span></div>
       <div class="h-hello" style="margin-top:8px;text-align:center">${head.t}</div><p class="sub" style="text-align:center">${head.d}</p>
@@ -2812,6 +2815,35 @@
       ${m.status==='accepted'?`<div class="card" style="padding:14px;margin-top:12px;background:var(--card-2)"><p class="mini" style="text-align:center;margin:0">${S.clientNoShowAsk?`<span style="color:var(--coral-deep)">L'artisan ne s'est pas présenté&nbsp;? Nous <b>relançons aussitôt</b> la recherche auprès des autres artisans — et <b>vous ne payez rien</b> pour une absence.</span><br><button class="linklike" data-act="client-noshow-confirm" style="color:var(--coral-deep);font-weight:700;margin-top:6px;display:inline-block">Oui, relancer la recherche</button> &nbsp;·&nbsp; <button class="linklike" data-act="client-noshow-cancel">Annuler</button>`:`${I.clock} <button class="linklike" data-act="client-noshow" style="color:var(--muted)">L'artisan ne s'est pas présenté&nbsp;?</button>`}</p></div>`:''}
       ${m.status==='accepted'?`<div style="text-align:center;margin-top:12px">${S.cancelAsk?cancelConfirmCard(m):`<button class="linklike" data-act="cancel-mission" style="color:var(--muted)">Annuler la prestation</button><p class="mini" style="margin-top:6px;color:var(--muted)">Gratuit jusqu'à 8&nbsp;h avant le rendez-vous — au-delà, une indemnité de 50&nbsp;% revient à l'artisan (voir CGV).</p>`}</div>`:''}
       <p class="mini" style="text-align:center;margin-top:6px;color:var(--muted)">Vous pouvez naviguer ailleurs — revenez ici via l'onglet <b>Accueil</b>.</p></div>${clientNavbar()}`;
+  }
+  // Écran de DÉCISION : l'artisan précisément demandé (renouvellement / choix) a
+  // décliné. Le client tranche : ouvrir la demande à tous les artisans, ou l'annuler.
+  function clientDeclined(){
+    const m=S.mission;const full=m.preferredName||'Votre artisan';const who=full.split(' ')[0];
+    return `<div class="pad"><div style="height:8px"></div>
+      <div class="row between"><span class="chip coral">Indisponible</span><span class="mini">${m.svcName} · ${durTxt(m)}</span></div>
+      <div class="h-hello" style="margin-top:10px;text-align:center">${esc(who)} n'est pas disponible</div>
+      <p class="sub" style="text-align:center;margin-top:6px">Vous aviez demandé <b>${esc(full)}</b> précisément — il vient de décliner cette prestation. Rien ne vous a été débité.</p>
+      <div class="card" style="padding:16px;margin-top:16px"><div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="background:var(--teal-wash);color:var(--teal-deep)">${I.flame}</span><div><b style="font-size:14.5px">Proposer à tous les artisans&nbsp;?</b><p class="mini" style="margin-top:4px">Votre demande devient une demande classique&nbsp;: le premier artisan disponible de votre secteur pourra la prendre — comme une commande normale.</p></div></div></div>
+      <div class="footcta" style="position:static;background:none;padding:18px 0 0">
+        <button class="btn primary" data-act="client-open-standard">${I.flame} Proposer à tous les artisans</button>
+        <button class="btn ghost" data-act="client-cancel-declined" style="margin-top:10px">Annuler ma demande</button>
+        <p class="mini" style="text-align:center;margin-top:10px;color:var(--muted)">${I.shield} Aucune carte n'est débitée tant qu'une prestation n'est pas validée.</p>
+      </div></div>${clientNavbar()}`;
+  }
+  // Ouvre à TOUS les artisans une demande dirigée déclinée : elle perd son artisan
+  // réservé et devient une demande classique (recherche standard / « aléatoire »).
+  function openToStandard(m){
+    if(!m)return;
+    m.preferredUid=null;m.preferredName='';m.directed=false;m.provider=null;m.providerUid=null;
+    if(!isDemo()){
+      m.status='pending';
+      pushReqUpdate(m,{status:'pending',directed:false,preferredProviderUid:null,preferredProviderName:'',declinedBy:null,declinedName:'',reopenedAt:Date.now()});
+      render();toast('Demande ouverte à tous les artisans');
+    }else{
+      startSearch(); // relance la simulation de recherche standard (démo)
+      toast('Demande ouverte à tous les artisans');
+    }
   }
   function clientConfirm(){
     const m=S.mission,t=totals(m),p=m.provider||{nm:'Votre artisan',ini:'AR',jobs:0};
@@ -2864,7 +2896,6 @@
   // Artisans déjà eus par le client (issus de l'historique) — sert à en redemander un
   // en priorité, SANS jamais exposer l'annuaire complet des artisans.
   function pastArtisans(){const seen={},out=[];(S.history||[]).forEach(function(h){const uid=h&&h.providerUid;if(uid&&h.provider&&h.provider.nm&&!seen[uid]){seen[uid]=1;out.push({uid:uid,nm:h.provider.nm,ini:h.provider.ini||inits(h.provider.nm)});}});return out;}
-  const PRIORITY_WINDOW_MS=10*60*1000; // 10 min de priorité avant repli sur le pool ouvert
   function placeMission(){const d=S.draft;if(!d)return;
     // Anti-rebond : deux appuis trop rapprochés ne créent qu'une seule demande.
     if(S._placing&&(Date.now()-S._placing)<1800){return;}
@@ -2902,7 +2933,9 @@
         notes:(m.notes||'').slice(0,500),
         preferredProviderUid:m.preferredUid||null,
         preferredProviderName:m.preferredName||'',
-        priorityUntil:m.preferredUid?(Date.now()+PRIORITY_WINDOW_MS):null,
+        // Demande DIRIGÉE : adressée à un seul artisan (choix précis / renouvellement).
+        // Elle ne tombe jamais dans la recherche standard tant qu'il n'a pas décliné.
+        directed:!!m.preferredUid,
         createdAt:FB.f.serverTimestamp()
       });
       // Photos de la demande (transmises à l'artisan) — écriture isolée pour ne
@@ -3062,6 +3095,9 @@
       else if(newS==='done_pro')notify('Ti-Services','Prestation terminée — à confirmer.','ti-'+m.reqId);
       // L'artisan s'est désisté : la demande repasse en recherche pour les autres.
       else if(newS==='pending'&&['accepted','working','done_pro'].indexOf(oldS)>=0){m.provider=null;m.providerUid=null;notify('Ti-Services','Votre artisan s’est désisté — nous relançons la recherche d’un intervenant.','ti-'+m.reqId);toast('Artisan désisté — recherche relancée');}
+      // L'artisan PRÉCISÉMENT demandé a décliné : le client décide de la suite
+      // (proposer à tous les artisans, ou annuler).
+      else if(newS==='declined'){m.provider=null;m.providerUid=null;notify('Ti-Services',((m.preferredName||'Votre artisan').split(' ')[0])+' n’est pas disponible — à vous de décider.','ti-'+m.reqId);toast('Artisan indisponible — à vous de décider');}
     }else if(S.persona==='pro'){
       if(newS==='paid'){notify('Ti-Services','Le client a validé — vous êtes payé 🎉','ti-'+m.reqId);if(!m._paidCounted){m._paidCounted=true;recordProPaid(m);}}
       else if(newS==='disputed')notify('Ti-Services','Le client conteste la durée déclarée.','ti-'+m.reqId);
@@ -3904,6 +3940,9 @@
     // Mode réel : on n'invente pas de nombre d'artisans. On passe simplement en
     // attente ; l'acceptation viendra d'un vrai artisan (subscribeClientRequest).
     if(!isDemo()){ mine.status='pending'; mine.competitors=0; render(); return; }
+    // Demande dirigée vers UN artisan précis : aucune diffusion au pool — on attend
+    // simplement sa réponse (acceptation / refus), comme une demande classique côté artisan.
+    if(mine.preferredUid){ mine.status='pending'; mine.competitors=0; render(); return; }
     mine.status='searching';mine.competitors=3+Math.floor(availCount()/8);render();
     let n=0;const target=mine.competitors;const el=()=>document.getElementById('notif');if(el())el().textContent='0';
     const iv=setInterval(()=>{if(S.mission!==mine){clearInterval(iv);return;}n++;if(el())el().textContent=n;if(n>=target)clearInterval(iv);},260);
@@ -4034,6 +4073,9 @@
       if(req){const accSlot=req.slotFlex?clampSlot(req,S.proReqSlot||req.slot):(req.slot||'');const clash=proSlotConflict(req,accSlot);
         if(clash){S.proConflict={reqId:rid,slot:accSlot,when:req.when||'',clashSlot:clash.slot||'',clashName:clash.svcName||svcNm(clash.svc)};render();return;}}
       acceptRequestReal(rid);return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('decline-req:')===0){declineRequestReal(b.dataset.act.slice('decline-req:'.length));return;}
+    if(b.dataset.act==='client-open-standard'){openToStandard(S.mission);return;}
+    if(b.dataset.act==='client-cancel-declined'){const m=S.mission;if(m){cancelActiveRequest(m);removeMission(m);}S.mission=null;S.clientNav='wallet';render();toast('Demande annulée');return;}
     if(b.dataset.act==='conflict-accept'){const rid=S.proConflict&&S.proConflict.reqId;S.proConflict=null;render();if(rid)acceptRequestReal(rid);return;}
     if(b.dataset.act==='conflict-skip'){const rid=S.proConflict&&S.proConflict.reqId;S.proConflict=null;if(rid&&(S.proSkipped||[]).indexOf(rid)<0){S.proSkipped=S.proSkipped||[];S.proSkipped.push(rid);}S.proReqView=null;render();toast('Mission passée — proposée aux autres artisans');return;}
     if(b.dataset.act&&b.dataset.act.indexOf('rmphoto:')===0){const i=+b.dataset.act.split(':')[1];if(S.draft&&S.draft.photos){const u=S.draft.photos[i];if(u&&u.indexOf('blob:')===0){try{URL.revokeObjectURL(u);}catch(_){}}S.draft.photos.splice(i,1);renderConfig();}return;}
@@ -4222,8 +4264,12 @@
         S.proHistory=[];S.agenda=[];S.recurring=[];S.proEarnings=0;S.proJobsToday=0;S.proJobsTotal=0;S.mission=null;
         render();toast('Profil validé — bienvenue sur Ti-Services !');break;}
       case 'conc-approve-demo':S.concStatus='approved';render();toast('Conciergerie validée (démo)');break;
-      case 'pro-accept':{const m=S.mission;if(m.slotFlex&&m.proposedSlot){m.slot=clampSlot(m,m.proposedSlot);}m.provider=Object.assign({},PROVIDERS[m.svc]);m.status='accepted';const r=totals(m).rate;const amt=totals(m).total;const freq=m.frequency||'ponctuelle';const labels=occLabels(freq);const cli=proClientName(m);const entries=labels.map(d=>({day:d,slot:m.slot,svc:m.svc,client:cli,zone:m.zone,duration:m.duration,unit:m.unit,rate:r,amount:amt,status:'upcoming'}));m._appt=entries[0];entries.slice().reverse().forEach(e=>S.agenda.unshift(e));if(freq!=='ponctuelle'){S.recurring.unshift({svc:m.svc,svcName:m.svcName,short:freqInfo(freq).short,slot:m.slot,zone:m.zone});}if(!m.chat||!m.chat.length)m.chat=[{from:'pro',text:'Bonjour '+(cli.split(' ')[0])+' ! Bien reçu votre demande, je serai là à '+m.slot+'. À tout à l’heure 👋'}];proAddMission(m);render();burstConfetti();toast(labels.length>1?'Prestation récurrente ajoutée à votre agenda !':'Mission remportée — ajoutée à votre agenda !');break;}
-      case 'pro-decline':S.mission.status='searching';render();setTimeout(()=>{if(S.mission&&S.mission.status==='searching'){S.mission.status='pending';render();}},1400);toast('Mission passée — proposée aux autres');break;
+      case 'pro-accept':{const m=S.mission;if(m.slotFlex&&m.proposedSlot){m.slot=clampSlot(m,m.proposedSlot);}m.provider=Object.assign({},PROVIDERS[m.svc],m.preferredName?{nm:m.preferredName,ini:inits(m.preferredName)}:{});m.status='accepted';const r=totals(m).rate;const amt=totals(m).total;const freq=m.frequency||'ponctuelle';const labels=occLabels(freq);const cli=proClientName(m);const entries=labels.map(d=>({day:d,slot:m.slot,svc:m.svc,client:cli,zone:m.zone,duration:m.duration,unit:m.unit,rate:r,amount:amt,status:'upcoming'}));m._appt=entries[0];entries.slice().reverse().forEach(e=>S.agenda.unshift(e));if(freq!=='ponctuelle'){S.recurring.unshift({svc:m.svc,svcName:m.svcName,short:freqInfo(freq).short,slot:m.slot,zone:m.zone});}if(!m.chat||!m.chat.length)m.chat=[{from:'pro',text:'Bonjour '+(cli.split(' ')[0])+' ! Bien reçu votre demande, je serai là à '+m.slot+'. À tout à l’heure 👋'}];proAddMission(m);render();burstConfetti();toast(labels.length>1?'Prestation récurrente ajoutée à votre agenda !':'Mission remportée — ajoutée à votre agenda !');break;}
+      case 'pro-decline':{const dm=S.mission;
+        // Demande DIRIGÉE (renouvellement / choix précis) : l'artisan demandé décline →
+        // la main revient au client (démo : on bascule côté client pour qu'il décide).
+        if(dm&&dm.preferredUid&&!dm.provider){dm.status='declined';S.persona='client';S.clientNav='wallet';render();toast('Vous avez décliné — le client décide de la suite');break;}
+        dm.status='searching';render();setTimeout(()=>{if(S.mission&&S.mission.status==='searching'){S.mission.status='pending';render();}},1400);toast('Mission passée — proposée aux autres');break;}
       case 'pro-advance':S.mission.status=b.dataset.to;if(S.mission._appt){if(b.dataset.to==='working')S.mission._appt.status='live';else if(b.dataset.to==='done_pro')S.mission._appt.status='tovalidate';}pushMissionStatus(S.mission);render();break;
       case 'pro-back-home':if(S.mission){proRemoveMission(S.mission);S.history.unshift(S.mission);}S.mission=null;S.proNav='home';render();break;
     }
@@ -4264,7 +4310,7 @@
       <div class="field"><label>${isDayU(m)?'Date de début':'Quand&nbsp;?'}</label>${daySelect}</div>
       <div class="field"><label>${isDayU(m)?'Heure de dépôt':'Heure souhaitée'}</label>${dayFlex?`<p class="mini" style="margin:2px 0 0;color:var(--muted)">${I.clock} ${m.slotFlex==='week'?'Vous laissez toute la semaine — l’artisan vous proposera un jour et une heure de passage.':'Vous laissez toute la journée — l’artisan choisit son heure de passage (8 h – 19 h).'}</p>`:`${hourSelect}${isToday?`<p class="mini" style="margin-top:6px;color:var(--muted)">Pour aujourd'hui, seules les heures à venir sont proposées.</p>`:''}`}</div>
       ${!isDayU(m)?`<div class="field"><label>Souplesse sur le créneau</label><div class="segs"><button class="seg ${(!m.slotFlex)?'on':''}" data-slotflex="0">Précise</button><button class="seg ${m.slotFlex===60?'on':''}" data-slotflex="60">± 1 h</button><button class="seg ${m.slotFlex===120?'on':''}" data-slotflex="120">± 2 h</button><button class="seg ${m.slotFlex==='day'?'on':''}" data-slotflex="day">Journée</button><button class="seg ${m.slotFlex==='week'?'on':''}" data-slotflex="week">Semaine</button></div>${m.slotFlex?`<p class="mini" style="margin-top:6px">${I.clock} Vous laissez de la souplesse&nbsp;: l'artisan choisira un <b>créneau précis ${flexTxt(m)}</b> et vous le confirmera en acceptant — vos demandes sont acceptées plus vite.</p>`:`<p class="mini" style="margin-top:6px">Heure ferme. Astuce&nbsp;: un peu de souplesse fait accepter votre demande plus vite.</p>`}</div>`:''}
-      ${pastArtisans().length?`<div class="field"><label>Un artisan en particulier&nbsp;?</label><div class="segs"><button class="seg ${!m.preferredUid?'on':''}" data-prefart="">Peu importe</button>${pastArtisans().map(a=>`<button class="seg ${m.preferredUid===a.uid?'on':''}" data-prefart="${esc(a.uid)}" data-prefnm="${esc(a.nm)}">${esc(a.nm.split(' ')[0])}</button>`).join('')}</div>${m.preferredUid?`<p class="mini" style="margin-top:6px">${I.clock} <b>${esc((m.preferredName||'').split(' ')[0])}</b> est prévenu en priorité. Sans réponse sous 10&nbsp;min, votre demande s'ouvre aux autres artisans — vous n'êtes jamais bloqué.</p>`:`<p class="mini" style="margin-top:6px;color:var(--muted)">Redemandez un artisan que vous avez déjà eu, ou laissez « Peu importe » et le premier disponible prend la mission.</p>`}</div>`:''}
+      ${pastArtisans().length?`<div class="field"><label>Un artisan en particulier&nbsp;?</label><div class="segs"><button class="seg ${!m.preferredUid?'on':''}" data-prefart="">Peu importe</button>${pastArtisans().map(a=>`<button class="seg ${m.preferredUid===a.uid?'on':''}" data-prefart="${esc(a.uid)}" data-prefnm="${esc(a.nm)}">${esc(a.nm.split(' ')[0])}</button>`).join('')}</div>${m.preferredUid?`<p class="mini" style="margin-top:6px">${I.clock} Votre demande est adressée <b>uniquement à ${esc((m.preferredName||'').split(' ')[0])}</b>, qui l'accepte ou la décline. S'il n'est pas disponible, vous pourrez la proposer à tous les artisans — vous n'êtes jamais bloqué.</p>`:`<p class="mini" style="margin-top:6px;color:var(--muted)">Redemandez un artisan que vous avez déjà eu, ou laissez « Peu importe » et le premier disponible prend la mission.</p>`}</div>`:''}
       <div class="field"><label>Tarif ${isDayU(m)?'journalier':'horaire'} — prix fixe Ti-Services</label><div class="pricebox"><b class="money" style="font-size:22px;font-family:var(--f-disp)">${fixedRate(m)} ${rateUnit(m)}</b><span class="chip good" style="padding:3px 9px">${I.check} Prix fixe</span></div><p class="mini" style="margin-top:6px">Tarif défini par Ti-Services — pas de négociation, pas de surprise.</p></div>
       <div class="field"><label>Coup de pouce&nbsp;? (facultatif)</label><div class="segs">${[[0,'Standard'],[10,'+10%'],[20,'+20%'],[30,'+30%'],[50,'+50%'],[100,'+100%']].map(([v,l])=>`<button class="seg ${(m.boost||0)===v?'on':''}" data-boost="${v}">${l}</button>`).join('')}</div><p class="mini" style="margin-top:6px">Comme un pourboire&nbsp;: une majoration facultative qui <b>revient à l'artisan</b> et fait <b>accepter votre demande plus vite</b>.${(m.boost||0)>0?` Coup de pouce&nbsp;: <b style="color:var(--teal-deep)">+${eur(t.maj)}</b>.`:''}</p></div>
       <div class="field"><label>${isDayU(m)?'Nombre de jours':'Durée estimée'}</label><div class="stepper"><button data-cfg="minus">−</button><span class="val">${durTxt(m)}</span><button data-cfg="plus">+</button></div>${isDayU(m)?`<p class="mini" style="margin-top:6px">📅 Du ${endDateTxt(m)} · ${durTxt(m)} de garde</p>`:''}</div>
@@ -5022,12 +5068,13 @@
       const q=FB.f.query(FB.f.collection(FB.db,'requests'),FB.f.where('status','==','pending'));
       openReqUnsub=FB.f.onSnapshot(q,function(snap){
         const cats=S.proCats||[];const list=[];
-        const myUid=(FB.auth&&FB.auth.currentUser)?FB.auth.currentUser.uid:'';const now=Date.now();
+        const myUid=(FB.auth&&FB.auth.currentUser)?FB.auth.currentUser.uid:'';
         snap.forEach(function(d){const r=d.data()||{};
           if(cats.length&&cats.indexOf(r.service)<0)return;
-          // Priorité : pendant la fenêtre, seul l'artisan demandé voit la mission.
-          // Passé le délai (priorityUntil), elle s'ouvre à tous (repli automatique).
-          if(r.preferredProviderUid&&r.preferredProviderUid!==myUid&&r.priorityUntil&&now<r.priorityUntil)return;
+          // Demande dirigée vers un artisan précis (choix / renouvellement) : lui seul
+          // la voit. Pas de repli automatique — elle ne s'ouvre aux autres que si le
+          // client le décide APRÈS un refus de l'artisan demandé.
+          if(r.directed&&r.preferredProviderUid&&r.preferredProviderUid!==myUid)return;
           list.push(Object.assign({id:d.id},r));});
         // Les missions demandées en priorité pour MOI passent en tête.
         list.sort(function(a,b){const ap=(a.preferredProviderUid&&a.preferredProviderUid===myUid)?1:0,bp=(b.preferredProviderUid&&b.preferredProviderUid===myUid)?1:0;if(ap!==bp)return bp-ap;return (b.boost||0)-(a.boost||0);});
@@ -5051,6 +5098,19 @@
       proAddMission(S.mission);watchRequest(reqId);S.proReqView=null;S.proReqSlot=null;S.proReqPick=false;S.proNav='home';render();burstConfetti();toast('Mission acceptée — à vous de jouer !');
     }catch(e){console.warn('accept failed',e);toast('Trop tard — cette mission vient d’être prise');}
   }
+  // L'artisan PRÉCISÉMENT demandé (renouvellement / choix client) décline une demande
+  // dirigée : elle passe en « declined » — elle sort de tous les fils, et c'est le CLIENT
+  // qui décide ensuite de la proposer à tous les artisans ou de l'annuler.
+  async function declineRequestReal(reqId){
+    if(!(FB&&FB.auth&&FB.auth.currentUser))return;
+    const uid=FB.auth.currentUser.uid;
+    try{
+      await FB.f.updateDoc(FB.f.doc(FB.db,'requests',reqId),{status:'declined',declinedBy:uid,declinedName:S.proName||'',declinedAt:FB.f.serverTimestamp()});
+      if(S.proReqView===reqId)S.proReqView=null;
+      S.openRequests=(S.openRequests||[]).filter(function(x){return x.id!==reqId;});
+      S.proNav='home';render();toast('Demande déclinée — le client est prévenu');
+    }catch(e){console.warn('decline failed',e);toast('Action impossible : '+fbErrTxt(e));}
+  }
   function reqWinTxt(r){return r.slotFlex?(r.slotFlex==='week'?('cette semaine · '+r.slot):('vers '+r.slot+(r.slotFlex==='day'?' · dans la journée':' · créneau souple ±'+(r.slotFlex>=60?(r.slotFlex/60)+' h':r.slotFlex+' min')))):(r.slot||'');}
   // Bloc « missions disponibles » (vraies demandes) affiché à l'artisan validé.
   // Chaque carte ouvre la FICHE complète : l'artisan décide en connaissance de cause.
@@ -5059,7 +5119,7 @@
     const list=(S.openRequests||[]).filter(function(r){return skipped.indexOf(r.id)<0;});
     if(!list.length)return `<div class="card" style="padding:18px;margin-top:12px;text-align:center;border-style:dashed"><div class="radar sm"><div class="ring r1"></div><div class="ring r2"></div><div class="core">${I.bolt}</div></div><p class="sub" style="margin:6px 0 0">Aucune mission disponible pour l'instant.</p><p class="mini" style="margin-top:4px">Vous serez notifié dès qu'une demande de votre zone arrive.</p></div>`;
     const myUid=(FB&&FB.auth&&FB.auth.currentUser)?FB.auth.currentUser.uid:'';
-    return `<div style="margin-top:12px"><span class="eyebrow" style="color:var(--teal-deep)">${I.flame} Missions disponibles · ${list.length}</span>${list.map(function(r){const win=reqWinTxt(r);const forMe=(r.preferredProviderUid&&r.preferredProviderUid===myUid);return `<button class="card" data-act="reqview:${r.id}" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block${forMe?';border-left:4px solid var(--teal-deep)':''}"><div class="row between"><b style="font-size:14.5px">${esc(r.serviceName||svcNm(r.service))}</b><b class="money" style="color:var(--teal-deep);font-family:var(--f-disp)">${eur(r.total||0)}</b></div>${forMe?`<span class="chip" style="padding:2px 9px;background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.star} Demandée pour vous en priorité</span>`:''}<div class="mini" style="margin-top:4px">${I.pin} ${esc(r.zone||'')} · ${esc(r.when||'')} · ${esc(win)} · ${r.duration||1} ${r.unit==='j'?'j':'h'}</div>${r.boost?`<span class="chip" style="padding:2px 9px;background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.bolt} Coup de pouce +${r.boost}%</span>`:''}<div class="row between" style="margin-top:10px"><span class="mini" style="color:var(--muted)">${r.notes?'Détails du besoin fournis':'Voir la mission'}</span><span class="mini" style="color:var(--teal-deep);font-weight:700">Voir la fiche ›</span></div></button>`;}).join('')}</div>`;
+    return `<div style="margin-top:12px"><span class="eyebrow" style="color:var(--teal-deep)">${I.flame} Missions disponibles · ${list.length}</span>${list.map(function(r){const win=reqWinTxt(r);const forMe=(r.preferredProviderUid&&r.preferredProviderUid===myUid);return `<button class="card" data-act="reqview:${r.id}" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block${forMe?';border-left:4px solid var(--teal-deep)':''}"><div class="row between"><b style="font-size:14.5px">${esc(r.serviceName||svcNm(r.service))}</b><b class="money" style="color:var(--teal-deep);font-family:var(--f-disp)">${eur(r.total||0)}</b></div>${forMe?`<span class="chip" style="padding:2px 9px;background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.star} Demande réservée pour vous</span>`:''}<div class="mini" style="margin-top:4px">${I.pin} ${esc(r.zone||'')} · ${esc(r.when||'')} · ${esc(win)} · ${r.duration||1} ${r.unit==='j'?'j':'h'}</div>${r.boost?`<span class="chip" style="padding:2px 9px;background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.bolt} Coup de pouce +${r.boost}%</span>`:''}<div class="row between" style="margin-top:10px"><span class="mini" style="color:var(--muted)">${r.notes?'Détails du besoin fournis':'Voir la mission'}</span><span class="mini" style="color:var(--teal-deep);font-weight:700">Voir la fiche ›</span></div></button>`;}).join('')}</div>`;
   }
   // Alerte de conflit d'agenda : l'artisan a déjà une intervention qui chevauche
   // ce créneau. Il confirme explicitement qu'il peut assurer, sinon « passe son tour ».
@@ -5083,6 +5143,8 @@
     const r=(S.openRequests||[]).find(function(x){return x.id===reqId;});
     if(!r)return `<div class="pad"><button class="reset" data-act="reqview-close" style="margin:8px 0 2px">← Retour</button><div class="h-hello" style="margin-top:10px">Mission introuvable</div><p class="sub" style="margin-top:6px">Cette mission vient d'être prise ou annulée.</p><div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-act="reqview-close">Retour aux missions</button></div></div>`;
     const win=reqWinTxt(r);const dayU=(r.unit==='j');
+    const myUid=(FB&&FB.auth&&FB.auth.currentUser)?FB.auth.currentUser.uid:'';
+    const directedMe=!!(r.directed&&r.preferredProviderUid&&myUid&&r.preferredProviderUid===myUid);
     const accLabel=r.slotFlex?(' · j’arrive à '+esc(clampSlot(r,S.proReqSlot||r.slot))):'';
     return `<div class="pad"><button class="reset" data-act="reqview-close" style="margin:8px 0 2px">← Missions disponibles</button>
       <span class="eyebrow" style="color:var(--teal-deep)">${I.flame} Mission à saisir</span>
@@ -5104,8 +5166,11 @@
       <div class="card" style="padding:14px;margin-top:12px"><div class="row" style="gap:10px;align-items:flex-start"><span class="benic">${I.lock}</span><div><b style="font-size:13.5px">Adresse exacte masquée</b><p class="mini" style="margin-top:3px">L'adresse précise, le point GPS et les infos d'accès s'affichent <b>dès que vous acceptez</b> la mission.</p></div></div></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0">
         <button class="btn accept" data-act="accept-req:${r.id}">${I.flame} Accepter${accLabel||' cette mission'}</button>
-        <button class="btn ghost" data-act="reqview-skip" style="margin-top:10px">Pas cette fois</button>
-        <p class="mini" style="text-align:center;margin-top:10px">${I.bolt} « Pas cette fois » retire la mission de votre liste — elle reste proposée aux autres artisans.</p>
+        ${directedMe
+          ? `<button class="btn ghost" data-act="decline-req:${r.id}" style="margin-top:10px">Je ne suis pas disponible</button>
+             <p class="mini" style="text-align:center;margin-top:10px">${I.shield} Cette demande vous est <b>réservée</b> par le client. Si vous déclinez, il choisira de la proposer (ou non) aux autres artisans.</p>`
+          : `<button class="btn ghost" data-act="reqview-skip" style="margin-top:10px">Pas cette fois</button>
+             <p class="mini" style="text-align:center;margin-top:10px">${I.bolt} « Pas cette fois » retire la mission de votre liste — elle reste proposée aux autres artisans.</p>`}
       </div></div>`;
   }
   // Créneau souple : l'artisan propose une heure précise dans la fenêtre du client.
