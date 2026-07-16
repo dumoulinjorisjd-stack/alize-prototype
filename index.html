@@ -197,7 +197,7 @@
   body.standalone .stage{gap:0}
   body.standalone .persona{position:fixed;top:calc(env(safe-area-inset-top) + 8px);left:50%;transform:translateX(-50%);z-index:80}
   body.standalone #reset{position:fixed;bottom:calc(env(safe-area-inset-bottom) + 6px);left:50%;transform:translateX(-50%);z-index:80;background:var(--card);padding:6px 12px;border-radius:999px;border:1px solid var(--hair)}
-  body.standalone .phone{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;border-radius:0;padding:0;box-shadow:none}
+  body.standalone .phone{width:100vw;max-width:100vw;height:var(--app-h,100dvh);max-height:var(--app-h,100dvh);border-radius:0;padding:0;box-shadow:none}
   body.standalone .screen{border-radius:0}
   body.standalone .notch{display:none}
   /* App installée : la vraie barre d'état iOS/Android est déjà là. On réserve JUSTE la
@@ -572,7 +572,7 @@
   body.desktop .brief{display:none}
   body.desktop .stage{display:block;gap:0}
   body.desktop #reset{display:none}
-  body.desktop .phone{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;border-radius:0;padding:0;box-shadow:none;background:var(--sand)}
+  body.desktop .phone{width:100vw;max-width:100vw;height:var(--app-h,100dvh);max-height:var(--app-h,100dvh);border-radius:0;padding:0;box-shadow:none;background:var(--sand)}
   body.desktop .screen{border-radius:0;background:var(--sand)}
   /* Ordinateur & tablette : pas de « hero » corail en fondu (trop présent sur grand écran). */
   body.desktop .welcome-bg{display:none}
@@ -4326,6 +4326,28 @@
 
   /* ---------- PWA: install + service worker ---------- */
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
+  // ——— Hauteur d'application fiable (correctif barre d'onglets « repliée » Android) ———
+  // Sur Android, 100dvh ne se recalcule pas toujours après la fermeture du clavier
+  // (typiquement après la connexion) ni au retour d'arrière-plan : la barre d'onglets
+  // fixe, ancrée dans .screen (qui porte un transform), reste alors mal positionnée /
+  // repliée. On pilote donc la hauteur via --app-h = window.innerHeight (viewport de
+  // mise en page, stable vis-à-vis du clavier), recalculée à chaque événement utile.
+  var _appHRaf=0;
+  function setAppHeight(){
+    if(_appHRaf)return;
+    _appHRaf=requestAnimationFrame(function(){_appHRaf=0;
+      var h=window.innerHeight||(window.visualViewport&&window.visualViewport.height)||0;
+      if(h>0)document.documentElement.style.setProperty('--app-h',Math.round(h)+'px');
+    });
+  }
+  setAppHeight();
+  window.addEventListener('resize',setAppHeight);
+  window.addEventListener('orientationchange',function(){setAppHeight();setTimeout(setAppHeight,250);setTimeout(setAppHeight,600);});
+  window.addEventListener('pageshow',setAppHeight);
+  window.addEventListener('focus',setAppHeight);
+  document.addEventListener('visibilitychange',function(){if(!document.hidden)setAppHeight();});
+  if(window.visualViewport){window.visualViewport.addEventListener('resize',setAppHeight);}
+  setTimeout(setAppHeight,300);setTimeout(setAppHeight,1000);
   // Barre d'état : vraie heure (plus de « 9:41 » ni d'icônes factices).
   (function(){const c=document.getElementById('clock');if(!c)return;const tick=function(){try{const d=new Date();c.textContent=d.getHours()+':'+String(d.getMinutes()).padStart(2,'0');}catch(_){}};tick();setInterval(tick,20000);})();
   // Mode ordinateur : au-delà de 1024 px, l'app passe en plein écran avec menu
