@@ -1024,6 +1024,7 @@
     bricolage:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 7l3-3 3 3-3 3z"/><path d="M14.5 9.5 5 19l-2 2"/><path d="m9 4 3 3"/></svg>',
     cuisine:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3v6"/><path d="M11 3v6a2 2 0 0 1-4 0"/><path d="M9 9v12"/><path d="M17 3c-1.5 0-3 2-3 5s1.5 4 3 4v9"/></svg>',
     demenagement:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l9-4 9 4-9 4-9-4z"/><path d="M3 8v8l9 4 9-4V8"/><path d="M12 12v8"/></svg>',
+    colis:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4 7.5 4.2"/><path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>',
     info:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M2 20h20"/></svg>',
     animaux:'<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="11" r="1.7"/><circle cx="10" cy="7.5" r="1.7"/><circle cx="14" cy="7.5" r="1.7"/><circle cx="18" cy="11" r="1.7"/><path d="M12 12.5c-2.8 0-4.8 1.9-4.8 3.8 0 1.6 1.6 2.2 4.8 2.2s4.8-.6 4.8-2.2c0-1.9-2-3.8-4.8-3.8z"/></svg>',
     coiffure:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="7" r="3"/><circle cx="6" cy="17" r="3"/><path d="M8.1 8.9 20 17M8.1 15.1 20 7"/></svg>',
@@ -1418,8 +1419,13 @@
     {id:'menage',nm:'Ménage',rate:35},{id:'baby',nm:'Baby-sitting',rate:28},
     {id:'jardin',nm:'Jardinage',rate:40},{id:'demenagement',nm:'Déménagement',rate:45},
     {id:'coiffure',nm:'Coiffure',rate:45},{id:'animaux',nm:'Garde d’animaux',rate:25},
-    {id:'massage',nm:'Massage',rate:60}
+    {id:'massage',nm:'Massage',rate:60},
+    // Forfait (pas de tarif horaire) : un retrait = un prix fixe, plusieurs objets inclus.
+    {id:'colis',nm:'Colis & courrier',rate:20,forfait:true}
   ];
+  // Bureaux de poste de Saint-Barth (sert au regroupement des retraits en une tournée).
+  const POSTES=['Gustavia','Lorient','Saint-Jean'];
+  function isForfaitSvc(id){const s=findSvc(id);return !!(s&&s.forfait);}
   const ZONES=['Gustavia','Anse des Cayes','Colombier','Corossol','Flamands','Gouverneur','Grand Cul-de-Sac','Grand Fond','Lorient','Lurin','Marigot','Petit Cul-de-Sac','Pointe Milou','Public','St-Jean','Saline','Toiny','Vitet'];
   // Qualifications garde d'enfants demandées à l'inscription (déclaratif, contrôlé
   // par l'admin à la validation — PSC1 recommandé, aucun diplôme obligatoire).
@@ -1501,7 +1507,7 @@
   function svcIco(id){const s=findSvc(id);return (s&&s.custom)?I.other:(I[id]||I.other);}
   // Teinte propre à chaque service : la grille d'accueil devient plus vivante et
   // plus rapide à scanner. color-mix rend le fond doux et fonctionne en clair/sombre.
-  const SVC_COLORS={menage:'#3B82F6',baby:'#EC6FA6',jardin:'#12A268',demenagement:'#8B5CF6',coiffure:'#E8863B',animaux:'#0EA5A5',massage:'#C0873B'};
+  const SVC_COLORS={menage:'#3B82F6',baby:'#EC6FA6',jardin:'#12A268',demenagement:'#8B5CF6',coiffure:'#E8863B',animaux:'#0EA5A5',massage:'#C0873B',colis:'#B45309'};
   function svcColor(id){return SVC_COLORS[id]||'var(--teal-deep)';}
   // Ajoute un service « Autre » au catalogue (visible/réservable côté client).
   function addCustomService(name,rate){
@@ -1667,13 +1673,21 @@
     admin:{view:'home',sel:null,fact:null},adminLedger:[],adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,adminPrices:ADMIN_PRICES(),
     avail:{lun:{m:1,a:1,s:0},mar:{m:1,a:1,s:0},mer:{m:1,a:1,s:1},jeu:{m:1,a:1,s:0},ven:{m:1,a:1,s:1},sam:{m:1,a:0,s:0},dim:{m:0,a:0,s:0}}
   };
-  function newMission(svc){const a=S.addresses.find(x=>x.id===S.addrDefault)||S.addresses[0]||null;const day=svc.id==='animaux';const px=(S.adminPrices&&S.adminPrices[svc.id]!=null)?S.adminPrices[svc.id]:svcBase(svc.id);return {svc:svc.id,svcName:svc.nm,unit:day?'j':'h',rate:day?DAY_RECO:px,boost:0,finalHours:null,disputeMsg:null,frequency:'ponctuelle',duration:day?2:3,zone:a?a.zone:'Gustavia',address:a?a.address:'',addressId:a?a.id:'__manual',geo:a?a.geo:null,access:a?(a.access||''):'',notes:'',photos:[],when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',slotMode:null,slotFlex:0,proposedSlot:null,status:'draft',provider:null,rating:0,competitors:0,chat:[],support:{client:[],pro:[]}};}
+  function newMission(svc){const a=S.addresses.find(x=>x.id===S.addrDefault)||S.addresses[0]||null;const day=svc.id==='animaux';const forf=svc.id==='colis';const px=(S.adminPrices&&S.adminPrices[svc.id]!=null)?S.adminPrices[svc.id]:svcBase(svc.id);const m={svc:svc.id,svcName:svc.nm,unit:forf?'forfait':(day?'j':'h'),rate:day?DAY_RECO:px,boost:0,finalHours:null,disputeMsg:null,frequency:'ponctuelle',duration:forf?1:(day?2:3),zone:a?a.zone:'Gustavia',address:a?a.address:'',addressId:a?a.id:'__manual',geo:a?a.geo:null,access:a?(a.access||''):'',notes:'',photos:[],when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',slotMode:null,slotFlex:0,proposedSlot:null,status:'draft',provider:null,rating:0,competitors:0,chat:[],support:{client:[],pro:[]}};
+    // Prestation « Colis & courrier » : pas d'heure précise mais une FENÊTRE de dates,
+    // un bureau de poste, et le dossier de retrait par un tiers (procuration + pièces).
+    if(forf){m.poste='Gustavia';m.dateFrom=todayISO();m.dateTo=isoPlusDays(7);m.colis={recipient:'',idFront:null,idBack:null,items:[{type:'recommande',num:'',photo:null}],deadline:'',mainPropreAck:false,signed:false,signedAt:null};}
+    return m;}
   // Créneau souple : le client propose une heure ± une marge ; l'artisan précise.
   function slotToMin(s){const p=(s||'0:0').split(':');return (+p[0])*60+(+p[1]||0);}
   function minToSlot(mn){mn=((mn%1440)+1440)%1440;const h=Math.floor(mn/60),m=mn%60;return (h<10?'0':'')+h+':'+(m<10?'0':'')+m;}
   // Heure/date courantes (réelles) — pour empêcher de réserver un créneau déjà passé.
   function nowMin(){const d=new Date();return d.getHours()*60+d.getMinutes();}
   function todayISO(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+  function isoPlusDays(n){const d=new Date();d.setDate(d.getDate()+(n||0));return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+  function fmtShort(iso){if(!iso||!/^\d{4}-\d{2}-\d{2}$/.test(iso))return '';const p=iso.split('-');return (+p[2])+'/'+(+p[1]);}
+  const COLIS_TYPES=[['recommande','Recommandé'],['colis','Colis'],['suivi','Lettre suivie'],['autre','Autre']];
+  function colisTypeLabel(t){const x=COLIS_TYPES.find(function(c){return c[0]===t;});return x?x[1]:'Objet';}
   function isTodaySel(m){if(!m)return false;if(m.dateMode==='pick')return m.dateISO===todayISO();return m.when==='Aujourd’hui';}
   function minSlotToday(m){return isTodaySel(m)?nowMin():-1;}
   // Horodatage (ms) du rendez-vous d'une mission, à partir de when/dateISO + slot.
@@ -1705,7 +1719,8 @@
   function proSlotList(m){const w=flexWindow(m);const start=slotToMin(w[0]),end=slotToMin(w[1]);const step=(m.slotFlex==='day'||m.slotFlex==='week')?60:30;const out=[];for(let t=start;t<=end;t+=step)out.push(minToSlot(t));return out;}
   // Borne l'heure proposée par l'artisan à la fenêtre acceptée par le client.
   function clampSlot(m,s){if(!m.slotFlex||!/^\d{1,2}:\d{2}$/.test(s||''))return s;const w=flexWindow(m);return minToSlot(Math.max(slotToMin(w[0]),Math.min(slotToMin(w[1]),slotToMin(s))));}
-  function billHours(m){return (m.finalHours!=null)?m.finalHours:m.duration;}
+  function isForfait(m){return !!(m&&m.unit==='forfait');}
+  function billHours(m){return (m.finalHours!=null)?m.finalHours:(isForfait(m)?1:m.duration);}
   // Tarif fixe (admin) pour la prestation ; la majoration « coup de pouce » s'ajoute par-dessus.
   // Prix fixe client. Pour un service facturé à la journée (garde d'animaux), le tarif
   // JOURNALIER est réglable par l'admin sous la clé « <svc>_j » ; sinon le tarif HORAIRE
@@ -1877,8 +1892,8 @@
   /* Unité de réservation : heure (défaut) ou jour (garde d'animaux). */
   const DAY_RECO=35;
   function isDayU(m){return !!(m&&m.unit==='j');}
-  function durTxt(m,n){n=(n==null?m.duration:n);return n+' '+(isDayU(m)?(n>1?'jours':'jour'):'h');}
-  function rateUnit(m){return '€/'+(isDayU(m)?'jour':'h');}
+  function durTxt(m,n){if(isForfait(m))return 'forfait';n=(n==null?m.duration:n);return n+' '+(isDayU(m)?(n>1?'jours':'jour'):'h');}
+  function rateUnit(m){return isForfait(m)?'€':('€/'+(isDayU(m)?'jour':'h'));}
   function recoFor(m){return isDayU(m)?fixedRate(m):svcReco(m.svc);}
   function endDateTxt(m){if(!isDayU(m))return '';let startISO=m.dateISO;if(!startISO){const d=new Date();if(m.when==='Demain')d.setDate(d.getDate()+1);startISO=d.toISOString().slice(0,10);}const d=new Date(startISO+'T00:00:00');const e=new Date(d);e.setDate(d.getDate()+Math.max(1,m.duration)-1);const f=(x)=>x.getDate()+'/'+(x.getMonth()+1);return f(d)+' → '+f(e);}
   function finalizePaid(m){if(m.commPct==null)m.commPct=myCommPct();const tt=totals(m);m.status='paid';S.proEarnings+=tt.payout;if(m._appt){m._appt.status='done';m._appt.duration=billHours(m);m._appt.amount=tt.total;}S.proHistory=S.proHistory||[];const seq='2026-'+String(43+S.proHistory.length).padStart(4,'0');m.invNo=seq;const cliN=(m.clientName||m.client||(isDemo()?'Camille M.':((S.account&&S.account.name)||'Client')));S.proHistory.unshift({id:'hm'+S.proHistory.length,dateISO:(m.dateISO||new Date().toISOString().slice(0,10)),svc:m.svc,client:cliN,clientFull:cliN,clientZone:m.zone,duration:billHours(m),unit:m.unit,rate:tt.rate,amount:tt.total,commPct:tt.commPct,commission:tt.commission,net:tt.payout,invNo:seq,paidVia:'carte'});}
@@ -2805,6 +2820,7 @@
     if(S.share)return shareCard();
     if(S.addrForm)return clientAddrEdit();
     if(S.advantages)return advantagesScreen();
+    if(S.colisProc&&m)return colisProcuration(m);
     if(S.support&&m)return supportChat();
     if(S.chat&&m)return chatScreen();
     if(S.cardForm)return clientCardEdit();
@@ -2915,7 +2931,7 @@
       </div></div>`;
   }
   function clientHome(){
-    const cats=allSvc().map(s=>{const c=svcColor(s.id);return `<button class="cat" data-svc="${s.id}"><div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${svcIco(s.id)}</div><div class="nm">${esc(s.nm)}</div><div class="rt">dès <b>${(S.adminPrices&&S.adminPrices[s.id]!=null?S.adminPrices[s.id]:s.rate)} €</b>/h</div></button>`;}).join('');
+    const cats=allSvc().map(s=>{const c=svcColor(s.id);const px=(S.adminPrices&&S.adminPrices[s.id]!=null?S.adminPrices[s.id]:s.rate);return `<button class="cat" data-svc="${s.id}"><div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${svcIco(s.id)}</div><div class="nm">${esc(s.nm)}</div><div class="rt">${isForfaitSvc(s.id)?`<b>${px} €</b> forfait`:`dès <b>${px} €</b>/h`}</div></button>`;}).join('');
     const fullName=((S.account&&S.account.name)||(S.clientForm&&S.clientForm.name)||'').trim();
     const first=fullName?fullName.split(' ')[0]:'';
     const zone=(S.account&&S.account.zone)||(S.clientForm&&S.clientForm.zone)||'Gustavia';
@@ -3095,6 +3111,7 @@
       ${(m.slotFlex&&m.status==='pending')?`<p class="mini" style="text-align:center;margin-top:4px">${I.clock} Créneau souhaité&nbsp;: ${m.when} · ${flexTxt(m)} — un artisan vous proposera une heure précise.</p>`:''}
       ${(m.slotFlex&&m.proposedSlot&&m.status!=='pending')?`<div class="banner teal" style="margin-top:10px">${I.clock}<span>${p?esc(p.nm.split(' ')[0]):'L’artisan'} a confirmé son passage à <b>${m.slot}</b> (vous aviez laissé ${flexTxt(m)}).</span></div>`:''}
       ${m.status==='pending'?`<div class="card" style="padding:16px;margin-top:12px;text-align:center">${searchRadar(true)}<p class="sub" style="margin:0">Vous saurez qui intervient dès l'acceptation.</p></div>`:((m.svc==='baby'&&p)?babyConfirmBlock(m):(p?`<div class="card provider-pop" style="padding:14px;margin-top:12px"><div class="row" style="gap:12px">${avatarFounder(m.providerPhoto,p.ini,'',p.founder)}<div style="flex:1"><b style="font-size:15px">${esc(p.nm)}</b><div class="mini">${p.jobs} missions réalisées · ${I.pin} ${m.zone}</div></div><div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">${p.founder?`<span class="chip founder-chip" style="padding:4px 9px">${I.star} Fondateur</span>`:''}<span class="chip good" style="padding:4px 10px">${I.check} Vérifié · Assuré</span></div></div></div>`:''))}
+      ${(m.svc==='colis'&&p)?colisDossier(m,false):''}
       <div class="card" style="padding:16px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Suivi</div><div class="timeline" style="margin-top:12px">${tls}</div></div>
       ${p?`<button class="btn ghost sm" data-act="open-chat" style="margin-top:12px;justify-content:flex-start;gap:8px">${I.chat}&nbsp;Contacter ${esc(p.nm.split(' ')[0])} (numéro masqué)${(m.chat&&m.chat.length)?` · ${m.chat.length}`:''}</button>`:''}
       <button class="btn ghost sm" data-act="open-support" style="margin-top:8px;justify-content:flex-start;gap:8px">${I.shield}&nbsp;Contacter Ti-Services (support)${(()=>{const th=(m.support&&m.support.client)||[];return th.length?` · ${th.length}`:'';})()}</button>
@@ -3224,13 +3241,20 @@
         // Demande DIRIGÉE : adressée à un seul artisan (choix précis / renouvellement).
         // Elle ne tombe jamais dans la recherche standard tant qu'il n'a pas décliné.
         directed:!!m.preferredUid,
+        // Colis & courrier : méta NON sensibles (bureau, fenêtre de dates, nb d'objets, statut
+        // procuration). Les pièces sensibles (identité, avis, destinataire) vont en privé.
+        poste:(m.svc==='colis')?(m.poste||''):null,
+        dateFrom:(m.svc==='colis')?(m.dateFrom||''):null,
+        dateTo:(m.svc==='colis')?(m.dateTo||''):null,
+        colisCount:(m.svc==='colis'&&m.colis)?((m.colis.items||[]).length):null,
+        colisSigned:false,
         createdAt:FB.f.serverTimestamp()
       });
       // Photos de la demande (transmises à l'artisan) — écriture isolée pour ne
       // jamais faire échouer la demande si elles sont volumineuses.
       if(m.photos&&m.photos.length){try{ await FB.f.updateDoc(ref,{photos:m.photos.slice(0,4)}); }catch(_){}}
       // Détails privés (adresse exacte, GPS, accès) — révélés seulement à l'artisan assigné.
-      try{ await FB.f.setDoc(FB.f.doc(FB.db,'requests',ref.id,'private','details'),{address:m.address||'',zone:m.zone||'',geo:m.geo||null,access:m.access||'',clientPhone:(S.account&&S.account.phone)||'',clientName:first,clientPhoto:(S.account&&S.account.photo)||null}); }catch(_){}
+      try{ await FB.f.setDoc(FB.f.doc(FB.db,'requests',ref.id,'private','details'),{address:m.address||'',zone:m.zone||'',geo:m.geo||null,access:m.access||'',clientPhone:(S.account&&S.account.phone)||'',clientName:first,clientPhoto:(S.account&&S.account.photo)||null,colis:(m.svc==='colis'&&m.colis)?{recipient:m.colis.recipient||'',idFront:m.colis.idFront||null,idBack:m.colis.idBack||null,items:(m.colis.items||[]).map(function(it){return {type:it.type,num:it.num||'',photo:it.photo||null};}),deadline:m.colis.deadline||'',mainPropreAck:!!m.colis.mainPropreAck,poste:m.poste||'',dateFrom:m.dateFrom||'',dateTo:m.dateTo||''}:null}); }catch(_){}
       subscribeClientRequest(ref.id);
     }catch(e){ console.warn('requests write failed',e); m.reqId=null; toast('⚠︎ Demande non enregistrée : '+fbErrTxt(e)); }
   }
@@ -3331,6 +3355,7 @@
         if(r.providerBio!=null&&m.providerBio!==r.providerBio){m.providerBio=r.providerBio;touched=true;}
         if(Array.isArray(r.providerDiplomas))m.providerDiplomas=r.providerDiplomas;
         if(r.clientConfirmed!=null&&m.clientConfirmed!==r.clientConfirmed){m.clientConfirmed=r.clientConfirmed;touched=true;}
+        if(r.colisSigned!=null&&m.colis&&m.colis.signed!==r.colisSigned){m.colis.signed=r.colisSigned;m.colis.signedAt=m.colis.signedAt||r.colisSignedAt||Date.now();touched=true;}
         // Filet de sécurité : dès que la demande est prise en charge, le client DOIT
         // avoir un artisan à afficher, même si son nom n'a pas encore été renseigné —
         // sinon l'écran de validation (qui lit provider.nm) planterait et la
@@ -3565,6 +3590,8 @@
     if(S.proStmt)return proStatement();
     if(S.interv)return proInterventions();
     if(S.referral)return proReferral();
+    if(S.colisTournee)return colisTournee();
+    if(S.colisProc&&S.mission)return colisProcuration(S.mission);
     if(S.chat&&S.mission)return chatScreen();
     const m=S.mission;
     if(!m&&S.proReqView)return proReqFiche(S.proReqView);
@@ -3726,7 +3753,7 @@
   function proSignup(){
     const f=S.proForm;
     const ok=proSignupOk(f);
-    const cats=SERVICES.map(s=>`<button class="cat ${f.cats.includes(s.id)?'sel':''}" data-pcat="${s.id}"><div class="pick">${I.check}</div><div class="ic">${I[s.id]}</div><div class="nm">${s.nm}</div><div class="rt">dès ${s.rate} €/h</div></button>`).join('')
+    const cats=SERVICES.map(s=>`<button class="cat ${f.cats.includes(s.id)?'sel':''}" data-pcat="${s.id}"><div class="pick">${I.check}</div><div class="ic">${I[s.id]}</div><div class="nm">${s.nm}</div><div class="rt">${s.forfait?s.rate+' € forfait':'dès '+s.rate+' €/h'}</div></button>`).join('')
       +`<button class="cat ${f.cats.includes('autre')?'sel':''}" data-pcat="autre"><div class="pick">${I.check}</div><div class="ic">${I.other}</div><div class="nm">Autre</div><div class="rt">à préciser</div></button>`;
     const benefitsPro=[
       [I.lock,'Paiement garanti sous 48 h',"Ti-Services encaisse et vous règle après chaque prestation validée. Fini les impayés et les relances."],
@@ -4015,7 +4042,7 @@
       <div class="card reqcard" style="padding:18px;margin-top:12px"><svg class="ring-timer" viewBox="0 0 40 40"><circle class="bg" cx="20" cy="20" r="18"/><circle class="fg" cx="20" cy="20" r="18"/></svg>
         <div class="ic" style="width:44px;height:44px;border-radius:12px;background:var(--teal-wash);color:var(--teal-deep);display:flex;align-items:center;justify-content:center">${I[m.svc]}</div>
         <div class="h-hello" style="margin-top:12px">${m.svcName}</div>
-        <div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap"><span class="chip grey">${I.clock} ${m.when} · ${flexible?('souhait ~'+m.slot):m.slot}</span>${flexible?`<span class="chip" style="padding:3px 9px;background:var(--teal-wash);color:var(--teal-deep)">souple · ${flexTxt(m)}</span>`:''}<span class="chip grey">${durTxt(m)}</span></div>
+        <div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap">${m.svc==='colis'?`<span class="chip grey">${I.pin} La Poste · ${esc(m.poste||'')}</span><span class="chip grey">${I.cal} ${fmtShort(m.dateFrom)} → ${fmtShort(m.dateTo)}</span><span class="chip grey">${(m.colis&&m.colis.items?m.colis.items.length:1)} objet(s)</span>`:`<span class="chip grey">${I.clock} ${m.when} · ${flexible?('souhait ~'+m.slot):m.slot}</span>${flexible?`<span class="chip" style="padding:3px 9px;background:var(--teal-wash);color:var(--teal-deep)">souple · ${flexTxt(m)}</span>`:''}<span class="chip grey">${durTxt(m)}</span>`}</div>
         <hr class="dashed">
         <div class="row between"><span class="sub">Client</span><b>${esc(proClientName(m))}</b></div>
         <div class="row between" style="margin-top:6px"><span class="sub">Secteur</span><b>${I.pin} ${m.zone}</b></div>
@@ -4058,6 +4085,68 @@
     toast('Mission relâchée — la demande repart aux autres artisans');
     render();
   }
+  // Fenêtre de dates lisible d'un retrait colis.
+  function colisWindow(m){return (fmtLong(m.dateFrom)||'')+' → '+(fmtLong(m.dateTo)||'');}
+  function datesOverlap(a,b){return (a.dateFrom||'')<=(b.dateTo||'zzzz')&&(b.dateFrom||'')<=(a.dateTo||'zzzz');}
+  // Autres retraits du prestataire au MÊME bureau, sur une période compatible → tournée.
+  function colisSameBureau(m){return (S.proMissions||[]).filter(function(x){return x.svc==='colis'&&x.poste===m.poste&&['accepted','working'].indexOf(x.status)>=0&&datesOverlap(x,m);});}
+  function colisTourneeBanner(m){
+    const grp=colisSameBureau(m);
+    if(grp.length<2)return '';
+    return `<div class="banner teal" style="margin-top:10px">${I.repeat}<span><b>${grp.length} retraits à La Poste · ${esc(m.poste)}</b> sur des périodes qui se recoupent — faites-les en un seul passage. <button class="linklike" data-act="colis-tournee" style="font-weight:700">Voir la tournée ›</button></span></div>`;
+  }
+  function colisTournee(){
+    const m=S.mission;const grp=m?colisSameBureau(m):[];
+    // Créneau commun = intersection des fenêtres (au plus tard des débuts → au plus tôt des fins).
+    const from=grp.reduce(function(a,x){return x.dateFrom>a?x.dateFrom:a;},'0000');
+    const to=grp.reduce(function(a,x){return x.dateTo<a?x.dateTo:a;},'9999');
+    const rows=grp.map(function(x){const c=x.colis||{};return `<button class="card" data-act="colis-open:${x._id||''}" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${esc(c.recipient||proClientName(x))}</b><span class="chip ${x.status==='working'?'good':'grey'}" style="padding:3px 9px">${(c.items||[]).length} objet${(c.items||[]).length>1?'s':''}</span></div><div class="mini" style="margin-top:3px">${I.cal} ${colisWindow(x)}${c.signed?` · ${I.check} procuration signée`:` · procuration en attente`}</div></button>`;}).join('');
+    return `<div class="pad"><button class="reset" data-act="colis-tournee-close" style="margin:8px 0 2px">← Retour</button>
+      <span class="eyebrow" style="color:var(--teal-deep)">${I.repeat} Tournée retrait</span>
+      <div class="h-hello">La Poste · ${esc(m?m.poste:'')}</div>
+      <p class="sub" style="margin-top:4px">${grp.length} retraits à regrouper en un seul passage.</p>
+      <div class="card" style="padding:14px;margin-top:12px;background:var(--teal-wash);border:1.5px solid color-mix(in srgb,var(--teal) 30%,transparent)"><div class="row between"><span class="sub">Créneau commun</span><b>${(from<=to)?(fmtShort(from)+' → '+fmtShort(to)):'à ajuster (fenêtres disjointes)'}</b></div><p class="mini" style="margin-top:6px">Passez une fois dans ce créneau et retirez tous les plis. Munissez-vous de <b>votre pièce d'identité</b> et des dossiers de chaque destinataire.</p></div>
+      ${rows}
+      <div style="height:12px"></div></div>${proNavbar()}`;
+  }
+  // Fiche de retrait (prestataire) OU rappel (client) pour une prestation colis.
+  function colisDossier(m,forPro){
+    const c=m.colis||{};
+    const items=(c.items||[]).map(function(it){return `<div class="row between" style="margin-top:8px;align-items:center"><div><b style="font-size:13px">${colisTypeLabel(it.type)}</b>${it.num?`<div class="mini">N° ${esc(it.num)}</div>`:''}</div>${it.photo?`<img src="${it.photo}" alt="Avis de passage" style="width:52px;height:52px;object-fit:cover;border-radius:8px;border:1px solid var(--hair)">`:''}</div>`;}).join('');
+    return `<div class="card" style="padding:16px;margin-top:12px">
+      <div class="eyebrow" style="color:var(--teal-deep)">${I.shield} Fiche de retrait</div>
+      <div class="row between" style="margin-top:10px"><span class="sub">${I.pin} Bureau</span><b>La Poste · ${esc(m.poste||'')}</b></div>
+      <div class="row between" style="margin-top:6px"><span class="sub">${I.cal} À retirer entre</span><b style="text-align:right;max-width:60%">${colisWindow(m)}</b></div>
+      ${c.deadline?`<div class="row between" style="margin-top:6px"><span class="sub">${I.clock} Avant le</span><b style="color:var(--coral-deep)">${fmtLong(c.deadline)}</b></div>`:''}
+      <div class="row between" style="margin-top:6px"><span class="sub">Destinataire</span><b>${esc(c.recipient||'')}</b></div>
+      <hr class="dashed"><div class="eyebrow" style="color:var(--muted)">Objets · ${(c.items||[]).length}</div>${items}
+      ${forPro?`<hr class="dashed"><div class="eyebrow" style="color:var(--muted)">À présenter au guichet</div>
+      <div class="stack" style="gap:7px;margin-top:8px">
+        <div class="row" style="gap:8px;align-items:flex-start"><span style="color:var(--good);flex:none">${I.check}</span><span class="mini">Avis de passage (fournis ci-dessus)</span></div>
+        <div class="row" style="gap:8px;align-items:flex-start"><span style="color:${c.signed?'var(--good)':'var(--coral-deep)'};flex:none">${c.signed?I.check:I.clock}</span><span class="mini">Procuration signée ${c.signed?'✓':'— en attente de signature du client'}</span></div>
+        <div class="row" style="gap:8px;align-items:flex-start"><span style="color:var(--good);flex:none">${I.check}</span><span class="mini">Copie de la pièce d'identité du destinataire</span></div>
+        <div class="row" style="gap:8px;align-items:flex-start"><span style="color:var(--coral-deep);flex:none">${I.user}</span><span class="mini"><b>Votre propre pièce d'identité</b> — à emporter (originale)</span></div>
+      </div>
+      <div class="thumbs" style="margin-top:10px">${c.idFront?`<div class="thumb"><img src="${c.idFront}" alt="Pièce d'identité recto"></div>`:''}${c.idBack?`<div class="thumb"><img src="${c.idBack}" alt="Pièce d'identité verso"></div>`:''}</div>
+      <button class="btn ghost sm" data-act="colis-proc" style="margin-top:10px;width:auto;padding:9px 14px">${I.card} Voir la procuration</button>`
+      :`${c.signed?`<div class="banner teal" style="margin-top:12px">${I.check}<span>Procuration <b>signée</b> — votre prestataire a tout le nécessaire.</span></div>`:`<div class="banner coral" style="margin-top:12px">${I.clock}<span><b>Signez la procuration</b> pour que le prestataire puisse retirer votre pli.</span></div><button class="btn primary" data-act="colis-sign" style="margin-top:10px">${I.check} Signer la procuration</button>`}`}
+    </div>`;
+  }
+  // Document « procuration » (mandat de retrait), consultable/imprimable, signé électroniquement.
+  function colisProcuration(m){
+    const c=m.colis||{};const p=m.provider||{};
+    const proNm=p.nm||m.providerName||'le prestataire mandaté par Ti-Services';
+    return `<div class="pad"><button class="reset" data-act="colis-proc-close" style="margin:8px 0 2px">← Retour</button>
+      <p class="mini noprint" style="text-align:center;color:var(--muted);margin:6px 0 8px">${I.check} Procuration de retrait — à présenter au guichet avec les pièces d'identité.</p>
+      <div id="invoiceDoc"><div class="inv">
+        <div class="row between" style="align-items:flex-start"><div><h2>PROCURATION</h2><div class="mut">Retrait de courrier / colis par un tiers</div></div><div style="text-align:right"><div style="font-family:var(--f-disp);font-weight:800;font-size:16px;color:#151515">Ti-Services</div>${ccsHead()}</div></div>
+        <div class="sec"><p>Je soussigné(e) <b>${esc(c.recipient||'—')}</b>, destinataire, donne procuration à <b>${esc(proNm)}</b> pour retirer en mon nom, au bureau de poste de <b>${esc(m.poste||'—')}</b>, le(s) pli(s) et colis désignés ci-dessous.</p></div>
+        <table><thead><tr><th>Type</th><th>N° d'avis</th></tr></thead><tbody>${(c.items||[]).map(function(it){return `<tr><td>${colisTypeLabel(it.type)}</td><td>${esc(it.num||'—')}</td></tr>`;}).join('')||'<tr><td colspan="2" style="text-align:center;color:#888;padding:12px">—</td></tr>'}</tbody></table>
+        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Pièces jointes</div><b>Copie de la pièce d'identité du destinataire</b><div class="mut">Le mandataire présentera sa propre pièce d'identité originale.</div></div>
+        <div class="row between sec" style="align-items:flex-end"><div><div class="mut">Fait à Saint-Barthélemy</div><div class="mut">Période&nbsp;: ${fmtShort(m.dateFrom)} → ${fmtShort(m.dateTo)}</div></div><div style="text-align:right">${c.signed?`<div style="font-family:var(--f-disp);font-size:18px;color:#151515">✍ ${esc(c.recipient||'')}</div><div class="mut">Signé électroniquement via Ti-Services<br>${c.signedAt?new Date(c.signedAt).toLocaleDateString('fr-FR'):''}</div>`:'<div class="mut">Signature en attente</div>'}</div></div>
+        <div class="legal">Procuration établie via Ti-Services (mise en relation). Certains plis « à remettre en main propre » ne peuvent être retirés par un tiers. Document valable pour la période indiquée. ${ccsInline?ccsInline():''}</div>
+      </div></div><div style="height:12px"></div></div>`;
+  }
   function proActive(){
     const m=S.mission,t=totals(m);
     const next={accepted:{lbl:'Démarrer la prestation',to:'working'},working:{lbl:'J’ai terminé la prestation',to:'done_pro'}}[m.status];
@@ -4065,7 +4154,8 @@
     return `<div class="pad"><button class="reset" data-act="promiss-back" style="margin:8px 0 2px">← Mes missions</button><div class="row between"><span class="chip good">${stLabel}</span><span class="mini">Mission remportée 🎉</span></div>
       <div class="h-hello" style="margin-top:8px">${m.svcName}</div>
       ${(m.svc==='baby'&&m.status==='accepted')?(m.clientConfirmed?`<div class="banner teal" style="margin-top:10px">${I.check}<span><b>Garde confirmée par le client</b> — il a validé après votre échange.</span></div>`:`<div class="banner teal" style="margin-top:10px">${I.phone}<span>Le client voit votre profil (photo, diplômes, présentation) et peut <b>vous appeler pour faire connaissance</b> avant de confirmer la garde — soyez joignable.</span></div>`):''}
-      <div class="card" style="padding:15px;margin-top:12px"><div class="row" style="gap:8px;flex-wrap:wrap"><span class="chip grey">${I.clock} ${m.slot}</span><span class="chip grey">${durTxt(m)}</span></div><div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px"><span class="chip grey">${I.pin} ${esc(m.address)}</span></div><hr class="dashed"><div class="row between"><span class="sub">Client</span><span class="row" style="gap:8px;align-items:center">${avatarPhoto(proClientPhoto(m),inits(proClientName(m)),'sm')}<b>${esc(proClientName(m))}</b></span></div><div class="row between" style="margin-top:6px"><span class="sub">Vous percevez</span><b class="money" style="color:var(--teal-deep)">${eur(t.payout)}</b></div></div>
+      ${m.svc==='colis'?`${colisTourneeBanner(m)}${colisDossier(m,true)}<div class="card" style="padding:15px;margin-top:12px"><div class="row between"><span class="sub">Livrer à</span><b style="text-align:right;max-width:60%">${esc(proClientName(m))} · ${esc(m.address||'')}</b></div><div class="row between" style="margin-top:6px"><span class="sub">Vous percevez</span><b class="money" style="color:var(--teal-deep)">${eur(t.payout)}</b></div></div>`
+      :`<div class="card" style="padding:15px;margin-top:12px"><div class="row" style="gap:8px;flex-wrap:wrap"><span class="chip grey">${I.clock} ${m.slot}</span><span class="chip grey">${durTxt(m)}</span></div><div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px"><span class="chip grey">${I.pin} ${esc(m.address)}</span></div><hr class="dashed"><div class="row between"><span class="sub">Client</span><span class="row" style="gap:8px;align-items:center">${avatarPhoto(proClientPhoto(m),inits(proClientName(m)),'sm')}<b>${esc(proClientName(m))}</b></span></div><div class="row between" style="margin-top:6px"><span class="sub">Vous percevez</span><b class="money" style="color:var(--teal-deep)">${eur(t.payout)}</b></div></div>`}
       ${(m.photos&&m.photos.length)?`<div class="card" style="padding:14px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Photos du client</div><div class="thumbs" style="margin-top:8px">${m.photos.map(u=>`<div class="thumb"><img src="${u}" alt="Photo du client"></div>`).join('')}</div></div>`:''}
       ${m.access?`<div class="card" style="padding:14px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">${I.key} Infos d'accès</div><p class="sub" style="margin-top:6px;color:var(--ink-soft)">${esc(m.access)}</p></div>`:''}
       ${m.geo?`<div class="card" style="padding:14px;margin-top:12px"><div class="row between"><span class="chip">📍 Localisation du domicile</span><span class="mini" style="color:var(--muted)">Itinéraire ci-dessous</span></div>${miniMap(m.geo,'route')}
@@ -4337,7 +4427,7 @@
     toast('Prestation pré-remplie — vérifiez, ajustez, puis confirmez');
   }
   document.addEventListener('click',(e)=>{
-    const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pdip],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-prefart],[data-babypick],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday]');
+    const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pdip],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday]');
     if(!b)return;
     // Un clic ISSU d'un <input type=file> (notamment déclenché par programme, ex. la
     // feuille « appareil photo / galerie ») remonte jusqu'ici : on ne le traite pas
@@ -4435,6 +4525,15 @@
       if(!isDemo()){pushReqUpdate(m,{status:'pending',providerUid:null,providerName:'',acceptedSlot:null,clientConfirmed:false,directed:!!uid,preferredProviderUid:uid,preferredProviderName:nm,reopenedAt:Date.now(),reopenedBy:'client-choice'});render();}
       else{if(uid){m.competitors=0;render();}else{startSearch();}}
       toast(uid?('Demande adressée à '+(nm.split(' ')[0]||'votre choix')):'Demande ouverte à toutes les baby-sitters');return;}
+    // ——— Commande colis : bureau, type d'objet, ajout/suppression d'objets, cases à cocher ———
+    if(b.dataset.poste){if(S.draft){S.draft.poste=b.dataset.poste;}renderConfig();return;}
+    if(b.dataset.colisitemtype){const parts=b.dataset.colisitemtype.split(':'),idx=+parts[0],ty=parts[1];if(S.draft&&S.draft.colis&&S.draft.colis.items[idx]){S.draft.colis.items[idx].type=ty;}renderConfig();return;}
+    if(b.dataset.act==='colis-additem'){if(S.draft&&S.draft.colis){S.draft.colis.items.push({type:'recommande',num:'',photo:null});}renderConfig();return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('colis-rmitem:')===0){const i=+b.dataset.act.split(':')[1];if(S.draft&&S.draft.colis&&S.draft.colis.items.length>1){S.draft.colis.items.splice(i,1);}renderConfig();return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('colis-rmitemphoto:')===0){const i=+b.dataset.act.split(':')[1];if(S.draft&&S.draft.colis&&S.draft.colis.items[i]){S.draft.colis.items[i].photo=null;}renderConfig();return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('colis-rmid:')===0){const who=b.dataset.act.split(':')[1];if(S.draft&&S.draft.colis){if(who==='front')S.draft.colis.idFront=null;else S.draft.colis.idBack=null;}renderConfig();return;}
+    if(b.dataset.act==='colis-mainpropre'){if(S.draft&&S.draft.colis){S.draft.colis.mainPropreAck=!S.draft.colis.mainPropreAck;}renderConfig();return;}
+    if(b.dataset.act==='colis-consent'){if(S.draft&&S.draft.colis){S.draft.colis.consent=!S.draft.colis.consent;}renderConfig();return;}
     if(b.dataset.proslot){if(S.mission){if(b.dataset.proslot==='__pick'){S.mission.proSlotMode='pick';}else{S.mission.proSlotMode=null;S.mission.proposedSlot=b.dataset.proslot;}}render();return;}
     if(b.dataset.czone){S.clientForm.zone=b.dataset.czone;render();return;}
     if(b.dataset.when){if(!S.draft)return;const v=b.dataset.when;if(v==='__pick'){S.draft.dateMode='pick';}else{S.draft.dateMode=null;S.draft.when=v;}renderConfig();return;}
@@ -4442,7 +4541,18 @@
     if(b.dataset.price){const [id,dir]=b.dataset.price.split(':');if(!S.adminPrices)S.adminPrices=ADMIN_PRICES();const cur=(S.adminPrices[id]!=null)?S.adminPrices[id]:(/_j$/.test(id)?DAY_RECO:svcBase(id));S.adminPrices[id]=Math.max(5,cur+(dir==='up'?1:-1));savePrices();render();return;}
     if(b.dataset.freq){if(!S.draft)return;S.draft.frequency=b.dataset.freq;renderConfig();return;}
     if(b.dataset.star){const n=+b.dataset.star;S.mission.rating=n;document.querySelectorAll('#rateStars button').forEach(x=>x.classList.toggle('lit',+x.dataset.star<=n));const rb=document.getElementById('rateBtn');if(rb)rb.disabled=false;return;}
-    if(b.dataset.cfg){const c=b.dataset.cfg;if(!S.draft)return;if(c==='back'){S.draft=null;render();}else if(c==='minus'){S.draft.duration=Math.max(1,S.draft.duration-1);renderConfig();}else if(c==='plus'){S.draft.duration=Math.min(isDayU(S.draft)?30:10,S.draft.duration+1);renderConfig();}else if(c==='unit-h'){S.draft.unit='h';S.draft.rate=(S.adminPrices&&S.adminPrices[S.draft.svc]!=null)?S.adminPrices[S.draft.svc]:svcBase(S.draft.svc);S.draft.duration=3;renderConfig();}else if(c==='unit-j'){S.draft.unit='j';S.draft.rate=DAY_RECO;S.draft.duration=2;renderConfig();}else if(c==='geoloc'){geolocate(g=>{if(S.draft){S.draft.geo=g;renderConfig();}});}else if(c==='addr-save-draft'){const d=S.draft;if(!(d.address||'').trim()){toast('Indiquez d’abord l’adresse');renderConfig();return;}const id='ad'+Date.now();S.addresses.push({id,label:((d.addrLabel||'').trim()||d.address||'Adresse ponctuelle').slice(0,40),address:d.address,zone:d.zone,geo:d.geo,access:d.access||''});d.addressId=id;if(S.addresses.length===1)S.addrDefault=id;saveClientCloud();toast(d.geo?'Adresse enregistrée dans votre profil':'Adresse enregistrée — pensez à ajouter le point GPS');renderConfig();}else if(c==='confirm'){const mm=minSlotToday(S.draft);if(mm>=0&&!S.draft.slotFlex&&slotToMin(S.draft.slot)<mm){toast('Choisissez une heure à venir');renderConfig();return;}S.payStep=true;S.payEdit=false;render();}return;}
+    if(b.dataset.cfg){const c=b.dataset.cfg;if(!S.draft)return;if(c==='back'){S.draft=null;render();}else if(c==='minus'){S.draft.duration=Math.max(1,S.draft.duration-1);renderConfig();}else if(c==='plus'){S.draft.duration=Math.min(isDayU(S.draft)?30:10,S.draft.duration+1);renderConfig();}else if(c==='unit-h'){S.draft.unit='h';S.draft.rate=(S.adminPrices&&S.adminPrices[S.draft.svc]!=null)?S.adminPrices[S.draft.svc]:svcBase(S.draft.svc);S.draft.duration=3;renderConfig();}else if(c==='unit-j'){S.draft.unit='j';S.draft.rate=DAY_RECO;S.draft.duration=2;renderConfig();}else if(c==='geoloc'){geolocate(g=>{if(S.draft){S.draft.geo=g;renderConfig();}});}else if(c==='addr-save-draft'){const d=S.draft;if(!(d.address||'').trim()){toast('Indiquez d’abord l’adresse');renderConfig();return;}const id='ad'+Date.now();S.addresses.push({id,label:((d.addrLabel||'').trim()||d.address||'Adresse ponctuelle').slice(0,40),address:d.address,zone:d.zone,geo:d.geo,access:d.access||''});d.addressId=id;if(S.addresses.length===1)S.addrDefault=id;saveClientCloud();toast(d.geo?'Adresse enregistrée dans votre profil':'Adresse enregistrée — pensez à ajouter le point GPS');renderConfig();}else if(c==='confirm'){
+      // Colis : validation du dossier de retrait par un tiers avant paiement.
+      if(S.draft.svc==='colis'){const cc=S.draft.colis||{};
+        if(!(cc.recipient||'').trim()){toast('Indiquez le nom du destinataire');renderConfig();return;}
+        if(!cc.idFront||!cc.idBack){toast('Ajoutez la pièce d’identité du destinataire (recto et verso)');renderConfig();return;}
+        if(!(cc.items&&cc.items.length&&cc.items.some(function(x){return x.photo;}))){toast('Ajoutez au moins la photo d’un avis de passage');renderConfig();return;}
+        if(!cc.mainPropreAck){toast('Cochez la case « pas à remettre en main propre »');renderConfig();return;}
+        if(!cc.consent){toast('Cochez l’autorisation de transmettre les documents');renderConfig();return;}
+        if(!S.draft.dateFrom||!S.draft.dateTo||S.draft.dateTo<S.draft.dateFrom){toast('Vérifiez la fenêtre de dates');renderConfig();return;}
+        if(cc.deadline&&S.draft.dateTo>cc.deadline){toast('La fin de fenêtre dépasse la date limite de l’avis');renderConfig();return;}
+        S.payStep=true;S.payEdit=false;render();return;}
+      const mm=minSlotToday(S.draft);if(mm>=0&&!S.draft.slotFlex&&slotToMin(S.draft.slot)<mm){toast('Choisissez une heure à venir');renderConfig();return;}S.payStep=true;S.payEdit=false;render();}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('comm-invoice:')===0){S.commInvId=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('invoice:')===0){S.invoiceId=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('histinv:')===0){const h=doneHistory()[+b.dataset.act.split(':')[1]];if(h){S.histInvoice=h;render();}return;}
@@ -4467,6 +4577,13 @@
     if(b.dataset.act==='client-open-standard'){openToStandard(S.mission);return;}
     // Garde d'enfants : après l'appel, le client CONFIRME la garde…
     if(b.dataset.act==='baby-confirm'){const m=S.mission;if(!m)return;m.clientConfirmed=true;S.babyRepick=false;pushReqUpdate(m,{clientConfirmed:true,clientConfirmedAt:Date.now()});render();toast('Garde confirmée ✓');return;}
+    // ——— Colis : signature de la procuration, ouverture du document, tournée ———
+    if(b.dataset.act==='colis-sign'){const m=S.mission;if(m&&m.colis){m.colis.signed=true;m.colis.signedAt=Date.now();pushReqUpdate(m,{colisSigned:true,colisSignedAt:Date.now()});render();toast('Procuration signée ✓');}return;}
+    if(b.dataset.act==='colis-proc'){S.colisProc=true;render();return;}
+    if(b.dataset.act==='colis-proc-close'){S.colisProc=false;render();return;}
+    if(b.dataset.act==='colis-tournee'){S.colisTournee=true;render();return;}
+    if(b.dataset.act==='colis-tournee-close'){S.colisTournee=false;render();return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('colis-open:')===0){const id=b.dataset.act.split(':')[1];const mm=(S.proMissions||[]).find(function(x){return x._id===id;});if(mm){S.mission=mm;S.colisTournee=false;render();}return;}
     // …ou déplie le choix d'une autre baby-sitter.
     if(b.dataset.act==='baby-switch'){S.babyRepick=!S.babyRepick;render();return;}
     if(b.dataset.act==='client-cancel-declined'){const m=S.mission;if(m){cancelActiveRequest(m);removeMission(m);}S.mission=null;S.clientNav='wallet';render();toast('Demande annulée');return;}
@@ -4679,8 +4796,59 @@
   // Options d'heure : 07 h → 20 h par pas de 30 min ; les heures déjà passées
   // (pour aujourd'hui) sont marquées « past » pour être désactivées.
   function hourOptions(m){const minM=minSlotToday(m);const out=[];for(let t=7*60;t<=20*60;t+=30){out.push({s:minToSlot(t),past:(minM>=0&&t<minM)});}return out;}
+  // ——— Commande « Colis & courrier » : fenêtre de dates + dossier de retrait par un tiers ———
+  function renderColisConfig(m){
+    const t=totals(m);
+    const c=m.colis||(m.colis={recipient:'',idFront:null,idBack:null,items:[{type:'recommande',num:'',photo:null}],deadline:'',mainPropreAck:false,consent:false});
+    const zoneSelect=`<select class="txt" data-cfgzone>${ZONES.map(z=>`<option value="${esc(z)}"${m.zone===z?' selected':''}>${esc(z)}</option>`).join('')}</select>`;
+    const idBox=(url,who)=>url?`<div class="thumb"><img src="${url}" alt="Pièce d'identité"><button data-act="colis-rmid:${who}" aria-label="Retirer">×</button></div>`:`<label class="thumb add"><span>${I.camera}</span><span>${who==='front'?'Recto':'Verso'}</span><input type="file" accept="image/*" data-colisid="${who}" hidden></label>`;
+    const items=c.items.map((it,i)=>`<div class="card" style="padding:13px;margin-top:10px">
+      <div class="row between"><b style="font-size:13px">Objet ${i+1}</b>${c.items.length>1?`<button class="linklike mini" data-act="colis-rmitem:${i}" style="color:var(--muted)">Retirer</button>`:''}</div>
+      <div class="segs" style="margin-top:8px;flex-wrap:wrap">${COLIS_TYPES.map(ct=>`<button class="seg ${it.type===ct[0]?'on':''}" data-colisitemtype="${i}:${ct[0]}">${ct[1]}</button>`).join('')}</div>
+      <div class="field" style="margin-top:10px;margin-bottom:0"><input class="txt" data-colisitemnum="${i}" value="${esc(it.num||'')}" placeholder="N° d'avis de passage (facultatif)"></div>
+      <div class="thumbs" style="margin-top:10px">${it.photo?`<div class="thumb"><img src="${it.photo}" alt="Avis de passage"><button data-act="colis-rmitemphoto:${i}" aria-label="Retirer">×</button></div>`:`<label class="thumb add"><span>${I.camera}</span><span>Avis</span><input type="file" accept="image/*" data-colisitemphoto="${i}" hidden></label>`}</div>
+    </div>`).join('');
+    paintView(`<div class="pad"><button class="reset" data-cfg="back" style="margin:8px 0 2px">← Retour</button>
+      <span class="eyebrow" style="color:var(--teal-deep)">${svcIco('colis')} ${esc(m.svcName)}</span>
+      <div class="h-hello" style="padding-right:54px">Récupérer un colis / courrier</div>
+      <p class="sub" style="margin-top:4px">Un prestataire vérifié retire votre pli à La Poste et vous l'apporte. On réunit les documents exigés pour un retrait par un tiers.</p>
+
+      <div class="field" style="margin-top:16px"><label>Bureau de poste</label><div class="segs">${POSTES.map(p=>`<button class="seg ${m.poste===p?'on':''}" data-poste="${esc(p)}">${esc(p)}</button>`).join('')}</div></div>
+
+      <div class="field"><label>À retirer entre…</label>
+        <div class="row" style="gap:8px"><input class="txt" type="date" data-colisfrom min="${todayISO()}" value="${m.dateFrom||todayISO()}" style="flex:1;min-width:0"><span style="align-self:center;color:var(--muted)">→</span><input class="txt" type="date" data-colisto min="${m.dateFrom||todayISO()}" value="${m.dateTo||isoPlusDays(7)}" style="flex:1;min-width:0"></div>
+        <p class="mini" style="margin-top:5px">Pas d'heure précise : le prestataire passe quand il le peut dans cette période.</p></div>
+
+      <div class="field"><label>Date limite sur l'avis <span style="font-weight:500;color:var(--muted)">(si indiquée)</span></label><input class="txt" type="date" data-colisdeadline min="${todayISO()}" value="${c.deadline||''}"><p class="mini" style="margin-top:5px">${I.clock} Les recommandés sont gardés ~15 jours — gardez la fin de fenêtre avant cette date.</p></div>
+
+      <div class="card" style="padding:16px;margin-top:14px"><div class="eyebrow" style="color:var(--muted)">${I.shield} Retrait par un tiers — documents</div>
+        <div class="field" style="margin-top:12px"><label>Nom du destinataire (comme sur le pli)</label><input class="txt" data-colisrecipient value="${esc(c.recipient||'')}" placeholder="Ex. Camille Magras"></div>
+        <label style="font-size:12px;font-weight:650">Pièce d'identité du destinataire — recto &amp; verso</label>
+        <div class="thumbs" style="margin-top:8px">${idBox(c.idFront,'front')}${idBox(c.idBack,'back')}</div>
+        <p class="mini" style="margin-top:6px">${I.lock} Transmise au seul prestataire retenu, puis supprimée après le retrait.</p>
+      </div>
+
+      <div style="margin-top:14px"><div class="eyebrow" style="color:var(--muted)">Objets à retirer</div>${items}
+        <button class="btn ghost sm" data-act="colis-additem" style="margin-top:10px;width:auto;padding:9px 14px">${I.plus} Ajouter un objet</button></div>
+
+      <div class="field" style="margin-top:16px"><label>Où vous livrer&nbsp;?</label>
+        <div class="stack" style="gap:8px">${S.addresses.map(a=>`<button class="addr-opt${m.addressId===a.id?' on':''}" data-addr="${a.id}"><div class="row between"><b>${esc(a.label)}</b>${a.geo?`<span class="chip good" style="padding:2px 8px">${I.pin} GPS</span>`:''}</div><div class="mini" style="margin-top:2px">${esc(a.address)} · ${a.zone}</div></button>`).join('')}
+        <button class="addr-opt${m.addressId==='__manual'?' on':''}" data-addr="__manual"><b>＋ Autre adresse</b></button></div>
+        ${m.addressId==='__manual'?`<div class="card" style="padding:14px;margin-top:10px"><div class="field" style="margin-top:0"><input class="txt" data-addrmanual value="${esc(m.address||'')}" placeholder="Adresse de livraison"></div><div class="field" style="margin-bottom:0"><label style="font-size:12px">Secteur</label>${zoneSelect}</div></div>`:''}
+      </div>
+
+      <div class="card" style="padding:14px;margin-top:16px">
+        <button data-act="colis-mainpropre" style="background:none;border:none;padding:0;width:100%;text-align:left;display:flex;gap:11px;align-items:flex-start">${chkbox(c.mainPropreAck)}<span class="mini" style="line-height:1.45">Ce pli <b>n'est pas « à remettre en main propre »</b> (acte d'huissier, pli judiciaire) — ceux-ci ne sont pas retirables par un tiers.</span></button>
+        <button data-act="colis-consent" style="background:none;border:none;padding:0;width:100%;text-align:left;display:flex;gap:11px;align-items:flex-start;margin-top:12px">${chkbox(c.consent)}<span class="mini" style="line-height:1.45">J'autorise Ti-Services à transmettre ces documents au prestataire retenu ; je signerai la procuration dès qu'il sera désigné.</span></button>
+      </div>
+
+      <div class="est"><div class="total"><span>Forfait retrait</span><b>${eur(t.total)}</b></div><small>${I.shield} Prix fixe, quel que soit le nombre d'objets. Débité seulement après la remise, à votre validation.</small></div>
+      <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm">${I.search} Trouver un prestataire · ${eur(t.total)}</button></div>
+    </div>`,'config');
+  }
   function renderConfig(){
     const m=S.draft,t=totals(m);
+    if(m&&m.svc==='colis'){renderColisConfig(m);return;}
     // Secteur de l'adresse ponctuelle : menu déroulant (page plus courte que 18 boutons).
     const zoneSelect=`<select class="txt" data-cfgzone>${ZONES.map(z=>`<option value="${esc(z)}"${m.zone===z?' selected':''}>${esc(z)}</option>`).join('')}</select>`;
     // Jour : jamais de date passée. On borne à aujourd'hui, et si plus aucune heure
@@ -4776,6 +4944,14 @@
     const pt=e.target.closest('[data-proslottime]');if(pt&&S.mission&&pt.value){S.mission.proposedSlot=clampSlot(S.mission,pt.value);S.mission.proSlotMode='pick';render();}
     const prt=e.target.closest('[data-proreqslottime]');if(prt&&prt.value){const r=(S.openRequests||[]).find(function(x){return x.id===S.proReqView;});if(r){S.proReqSlot=clampSlot(r,prt.value);render();}}
     const am=e.target.closest('[data-addrmanual]');if(am&&S.draft){S.draft.address=am.value;const sb=document.querySelector('[data-cfg="addr-save-draft"]');if(sb)sb.disabled=!am.value.trim();}
+    // Colis : champs texte/date (pas de re-render pour ne pas perdre le focus de saisie).
+    if(S.draft&&S.draft.colis){const cc=S.draft.colis;
+      const cr=e.target.closest('[data-colisrecipient]');if(cr)cc.recipient=cr.value;
+      const cn=e.target.closest('[data-colisitemnum]');if(cn){const i=+cn.dataset.colisitemnum;if(cc.items[i])cc.items[i].num=cn.value;}
+      const cf=e.target.closest('[data-colisfrom]');if(cf)S.draft.dateFrom=cf.value;
+      const ct=e.target.closest('[data-colisto]');if(ct)S.draft.dateTo=ct.value;
+      const cd=e.target.closest('[data-colisdeadline]');if(cd)cc.deadline=cd.value;
+    }
     const al=e.target.closest('[data-addrlabel]');if(al&&S.draft){S.draft.addrLabel=al.value;}
     const aa=e.target.closest('[data-addraccess]');if(aa&&S.draft){S.draft.access=aa.value;}
     const af=e.target.closest('[data-af]');if(af&&S.addrForm){S.addrForm[af.dataset.af]=af.value;}
@@ -4798,6 +4974,12 @@
     if(dcz&&S.draft){S.draft.zone=dcz.value;renderConfig();return;}
     const fp=e.target.closest('[data-photoinput]');
     if(fp&&S.draft){const files=Array.from(fp.files||[]);if(!files.length)return;S.draft.photos=S.draft.photos||[];const room=Math.max(0,6-S.draft.photos.length);files.slice(0,room).forEach(f=>{bookingPhotoDataUrl(f,function(u){if(u&&S.draft){S.draft.photos.push(u);renderConfig();}});});fp.value='';renderConfig();return;}
+    // Colis : dates (change), pièce d'identité (recto/verso) et photos d'avis de passage.
+    const cfd=e.target.closest('[data-colisfrom]');if(cfd&&S.draft){S.draft.dateFrom=cfd.value;renderConfig();return;}
+    const ctd=e.target.closest('[data-colisto]');if(ctd&&S.draft){S.draft.dateTo=ctd.value;renderConfig();return;}
+    const cdl=e.target.closest('[data-colisdeadline]');if(cdl&&S.draft&&S.draft.colis){S.draft.colis.deadline=cdl.value;renderConfig();return;}
+    const cid=e.target.closest('[data-colisid]');if(cid&&S.draft&&S.draft.colis){const f=(cid.files||[])[0];const who=cid.dataset.colisid;cid.value='';if(f)bookingPhotoDataUrl(f,function(u){if(u&&S.draft&&S.draft.colis){if(who==='front')S.draft.colis.idFront=u;else S.draft.colis.idBack=u;renderConfig();}});return;}
+    const cip=e.target.closest('[data-colisitemphoto]');if(cip&&S.draft&&S.draft.colis){const f=(cip.files||[])[0];const i=+cip.dataset.colisitemphoto;cip.value='';if(f)bookingPhotoDataUrl(f,function(u){if(u&&S.draft&&S.draft.colis&&S.draft.colis.items[i]){S.draft.colis.items[i].photo=u;renderConfig();}});return;}
     const ai=e.target.closest('[data-avatarinput]');
     if(ai&&ai.files&&ai.files[0]){const who=ai.dataset.avatarinput,file=ai.files[0];ai.value='';
       // Toutes les photos de profil sont réduites en data URL : légères et persistées en base.
@@ -5527,6 +5709,8 @@
       let det={};try{const s=await FB.f.getDoc(FB.f.doc(FB.db,'requests',reqId,'private','details'));det=s.exists()?s.data():{};}catch(_){}
       const base=findSvc(req.service)||{id:req.service,nm:req.serviceName||svcNm(req.service),rate:req.rate||svcBase(req.service)};
       S.mission=Object.assign(newMission(base),{reqId:reqId,status:'accepted',svc:req.service,svcName:req.serviceName||svcNm(req.service),rate:req.rate,duration:req.duration||1,unit:req.unit||'h',when:req.when||'',slot:acceptedSlot,slotFlex:req.slotFlex||0,proposedSlot:req.slotFlex?acceptedSlot:null,zone:req.zone||det.zone||'',address:det.address||'',geo:det.geo||null,access:det.access||'',boost:req.boost||0,notes:req.notes||'',photos:(req.photos||[]).slice(),clientName:req.clientName||det.clientName||'',clientPhoto:req.clientPhoto||det.clientPhoto||null,provider:Object.assign({},PROVIDERS[req.service]||{},{nm:S.proName||'Vous'})});
+      // Colis : reprend la fenêtre de dates + le dossier de retrait (pièces privées).
+      if(req.service==='colis'){S.mission.poste=req.poste||det.poste||'';S.mission.dateFrom=req.dateFrom||det.dateFrom||'';S.mission.dateTo=req.dateTo||det.dateTo||'';if(det.colis){S.mission.colis=Object.assign({signed:!!req.colisSigned},det.colis);}}
       proAddMission(S.mission);watchRequest(reqId);S.proReqView=null;S.proReqSlot=null;S.proReqPick=false;S.proNav='home';render();burstConfetti();toast('Mission acceptée — à vous de jouer !');
     }catch(e){console.warn('accept failed',e);toast('Trop tard — cette mission vient d’être prise');}
   }
@@ -5592,9 +5776,12 @@
         ${r.boost?`<div class="banner teal" style="margin-top:10px">${I.bolt}<span>Le client a ajouté un <b>coup de pouce +${r.boost}%</b> — majoration qui vous revient et rend la mission prioritaire.</span></div>`:''}
         <hr class="dashed">
         <div class="row between"><span class="sub">${I.pin} Secteur</span><b>${esc(r.zone||'—')}</b></div>
-        <div class="row between" style="margin-top:8px"><span class="sub">${I.cal} Quand</span><b>${esc(r.when||'—')}</b></div>
+        ${r.service==='colis'?`<div class="row between" style="margin-top:8px"><span class="sub">${I.pin} Bureau</span><b>La Poste · ${esc(r.poste||'—')}</b></div>
+        <div class="row between" style="margin-top:8px;align-items:flex-start"><span class="sub">${I.cal} À retirer entre</span><b style="text-align:right;max-width:58%">${(fmtLong(r.dateFrom)||'')+' → '+(fmtLong(r.dateTo)||'')}</b></div>
+        <div class="row between" style="margin-top:8px"><span class="sub">Objets</span><b>${r.colisCount||1}</b></div>`
+        :`<div class="row between" style="margin-top:8px"><span class="sub">${I.cal} Quand</span><b>${esc(r.when||'—')}</b></div>
         <div class="row between" style="margin-top:8px"><span class="sub">${I.clock} ${dayU?'Dépôt':'Heure'}</span><b>${esc(win||'—')}</b></div>
-        <div class="row between" style="margin-top:8px"><span class="sub">${dayU?'Durée':'Durée estimée'}</span><b>${r.duration||1} ${dayU?'j':'h'}</b></div>
+        <div class="row between" style="margin-top:8px"><span class="sub">${dayU?'Durée':'Durée estimée'}</span><b>${r.duration||1} ${dayU?'j':'h'}</b></div>`}
         ${(r.frequency&&r.frequency!=='ponctuelle')?`<div class="row between" style="margin-top:8px"><span class="sub">Fréquence</span><b>${I.repeat} ${esc(freqInfo(r.frequency).short)}</b></div>`:''}
       </div>
       ${r.slotFlex?flexProposalBlock(r):''}
