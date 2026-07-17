@@ -405,6 +405,11 @@
   .cat .rt{font-size:12px;color:var(--muted);margin-top:2px}
   .cat .rt b{color:var(--ink);font-family:var(--f-num)}
   .cat .cat-more{position:absolute;top:13px;right:12px;color:var(--muted);opacity:.55}
+  /* Service pas encore ouvert (aucun pro validé) : grisé, « Bientôt » */
+  .cat.soon{opacity:.82;background:var(--sand)}
+  .cat.soon .ic{filter:grayscale(.55)}
+  .cat.soon .nm{color:var(--muted)}
+  .cat .soon-badge{position:absolute;top:11px;right:11px;font-size:9.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;background:var(--hair);color:var(--ink-soft);padding:2px 8px;border-radius:999px}
   /* Menu d'actes (métiers à l'acte) : liste cochable + quantité, prix fixes */
   .actlist{display:flex;flex-direction:column;gap:8px;margin-top:8px}
   .actrow{display:flex;align-items:stretch;gap:8px}
@@ -1752,6 +1757,22 @@
   // Persistance du catalogue partagé (settings/catalog) — écrit par l'admin, lu par tous.
   function saveCatalog(){ try{ if(FB&&FB.auth&&FB.auth.currentUser){ FB.f.setDoc(FB.f.doc(FB.db,'settings','catalog'),{services:S.customServices||[],catalog:S.adminCatalog||{}},{merge:true}); } }catch(_){} }
   async function loadCatalog(){ try{ if(!FB)return; const snap=await FB.f.getDoc(FB.f.doc(FB.db,'settings','catalog')); if(snap.exists()){ const d=snap.data()||{}; if(Array.isArray(d.services)){ S.customServices=d.services.map(function(s){return {id:s.id,nm:s.nm,rate:s.rate,custom:true};}); } if(d.catalog&&typeof d.catalog==='object'){ S.adminCatalog=d.catalog; } render(); } }catch(e){ console.warn('catalog load',e); } }
+  // — DISPONIBILITÉ DES SERVICES —
+  // Un service n'est proposé au client (sur le site DÉFINITIF/prod) que s'il existe au
+  // moins un artisan VALIDÉ qui le propose — sinon « Bientôt disponible » (pas de vide).
+  // Les clients ne peuvent pas lire la collection artisans (règles) : c'est l'admin qui
+  // recalcule la liste des services actifs et l'écrit dans settings/availability (lisible
+  // par tous). Recalcul à chaque validation/refus d'artisan.
+  function activeServicesFromArtisans(){ const set={}; (S.adminArtisans||[]).forEach(function(a){ if(a&&a.status==='valide'&&Array.isArray(a.cats)){ a.cats.forEach(function(c){ if(c)set[c]=1; }); } }); return Object.keys(set); }
+  function saveAvailability(){ try{ if(FB&&FB.auth&&FB.auth.currentUser){ FB.f.setDoc(FB.f.doc(FB.db,'settings','availability'),{services:activeServicesFromArtisans(),updatedAt:FB.f.serverTimestamp()}); } }catch(_){} }
+  async function loadAvailability(){ try{ if(!FB)return; const snap=await FB.f.getDoc(FB.f.doc(FB.db,'settings','availability')); const d=snap.exists()?(snap.data()||{}):{}; S.availableServices=Array.isArray(d.services)?d.services.slice():[]; render(); }catch(e){ console.warn('availability load',e); } }
+  // Service réservable ? Sur la BÊTA on ne bloque rien (tests). Sur le site définitif,
+  // il faut au moins un artisan validé (liste settings/availability). Tant qu'elle n'est
+  // pas chargée (null), on grise par prudence côté prod (évite de tomber dans le vide).
+  // Le blocage « Bientôt disponible » ne s'applique que sur le site définitif (prod).
+  function gatingOn(){ return IS_PROD || !!(S&&S.forceGate); }
+  function svcAvailable(id){ if(!gatingOn())return true; return !!(S.availableServices&&S.availableServices.indexOf(id)>=0); }
+  function catAvailable(cat){ if(!gatingOn())return true; return !!(cat&&cat.subs&&cat.subs.some(function(id){return svcAvailable(id);})); }
   // Copie éditable de la grille d'un métier dans S.adminCatalog (à partir de la grille
   // par défaut si l'admin n'y a jamais touché) — pour modifier prix / actes sans perdre
   // le catalogue de référence.
@@ -3182,8 +3203,8 @@
       </div></div>`;
   }
   function clientHome(){
-    const svcTile=function(s){const c=svcColor(s.id);const px=(S.adminPrices&&S.adminPrices[s.id]!=null?S.adminPrices[s.id]:s.rate);const rt=isForfaitSvc(s.id)?`<b>${px} €</b> forfait`:(isCatalogForfait(s.id)?`à partir de <b>${minActPrice(s.id)} €</b>`:`dès <b>${px} €</b>/h`);return `<button class="cat" data-svc="${s.id}"><div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${svcIco(s.id)}</div><div class="nm">${esc(s.nm)}</div><div class="rt">${rt}</div></button>`;};
-    const catTile=function(cat){const c=svcColor(cat.id);return `<button class="cat" data-catopen="${cat.id}"><span class="cat-more">${I.chevron}</span><div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[cat.id]||I.other}</div><div class="nm">${esc(cat.nm)}</div><div class="rt">${cat.subs.length} prestations ›</div></button>`;};
+    const svcTile=function(s){const soon=!svcAvailable(s.id);const c=soon?'#9a94a6':svcColor(s.id);const px=(S.adminPrices&&S.adminPrices[s.id]!=null?S.adminPrices[s.id]:s.rate);const rt=soon?'<span style="color:var(--muted)">Bientôt disponible</span>':(isForfaitSvc(s.id)?`<b>${px} €</b> forfait`:(isCatalogForfait(s.id)?`à partir de <b>${minActPrice(s.id)} €</b>`:`dès <b>${px} €</b>/h`));return `<button class="cat${soon?' soon':''}" ${soon?'data-act="svc-soon"':`data-svc="${s.id}"`}>${soon?'<span class="soon-badge">Bientôt</span>':''}<div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${svcIco(s.id)}</div><div class="nm">${esc(s.nm)}</div><div class="rt">${rt}</div></button>`;};
+    const catTile=function(cat){const soon=!catAvailable(cat);const c=soon?'#9a94a6':svcColor(cat.id);return `<button class="cat${soon?' soon':''}" ${soon?'data-act="svc-soon"':`data-catopen="${cat.id}"`}>${soon?'<span class="soon-badge">Bientôt</span>':`<span class="cat-more">${I.chevron}</span>`}<div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[cat.id]||I.other}</div><div class="nm">${esc(cat.nm)}</div><div class="rt">${soon?'<span style="color:var(--muted)">Bientôt disponible</span>':cat.subs.length+' prestations ›'}</div></button>`;};
     // Vue « sous-catégorie » : on a ouvert une catégorie (ex. Beauté) → liste ses prestations.
     const catView=S.catView?CATEGORIES.find(function(c){return c.id===S.catView;}):null;
     if(catView){
@@ -4769,8 +4790,8 @@
       else if(act==='home'){S.admin.view='home';S.admin.sel=null;S.admin.fact=null;}
       else if(act==='art'){S.admin.view='art';S.admin.sel=id;}
       else if(act==='cli'){S.admin.view='cli';S.admin.sel=id;}
-      else if(act==='valid-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a&&a.insured&&a.siret){a.status='valide';adminWriteStatus(a,'valide');toast('Artisan validé');}else{toast('Dossier incomplet (SIRET / assurance)');}}
-      else if(act==='rej-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.status='refuse';if(!a.reason)a.reason=(!a.siret?'SIRET manquant. ':'')+(!a.insured?'Assurance manquante. ':'')||'Ne correspond pas aux critères Ti-Services';adminWriteStatus(a,'refuse');}S.admin.view='home';toast('Candidature refusée — conservée dans l’historique');}
+      else if(act==='valid-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a&&a.insured&&a.siret){a.status='valide';adminWriteStatus(a,'valide');saveAvailability();toast('Artisan validé');}else{toast('Dossier incomplet (SIRET / assurance)');}}
+      else if(act==='rej-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.status='refuse';if(!a.reason)a.reason=(!a.siret?'SIRET manquant. ':'')+(!a.insured?'Assurance manquante. ':'')||'Ne correspond pas aux critères Ti-Services';adminWriteStatus(a,'refuse');saveAvailability();}S.admin.view='home';toast('Candidature refusée — conservée dans l’historique');}
       else if(act==='reexam-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.status='attente';adminWriteStatus(a,'attente');toast('Candidature remise en attente');}}
       else if(act==='valid-cli'){const cc=S.adminClients.find(x=>x.id===id);if(cc)cc.status='valide';toast('Client validé');}
       else if(act==='valid-conc'){const c=(S.adminConcierges||[]).find(x=>x.id===id);if(c&&c.siret){c.status='valide';adminWriteConcStatus(c,'valide');toast('Conciergerie validée');}else{toast('SIRET manquant');}}
@@ -4804,7 +4825,7 @@
     if(b.dataset.cf2zone){if(S.concForm)S.concForm.azone=b.dataset.cf2zone;render();return;}
     if(b.dataset.pf2zone){if(S.profileForm)S.profileForm.zone=b.dataset.pf2zone;render();return;}
     if(b.dataset.catopen){S.catView=b.dataset.catopen;render();return;}
-    if(b.dataset.svc){const svc=findSvc(b.dataset.svc);if(!svc)return;S.catView=null;S.draft=newMission(svc);renderConfig();return;}
+    if(b.dataset.svc){if(!svcAvailable(b.dataset.svc)){toast('Bientôt disponible');return;}const svc=findSvc(b.dataset.svc);if(!svc)return;S.catView=null;S.draft=newMission(svc);renderConfig();return;}
     // Menu d'actes (métiers à l'acte) : cocher / décocher une prestation.
     if(b.dataset.actpick){const m=S.draft;if(!m)return;m.acts=m.acts||[];const id=b.dataset.actpick;const i=m.acts.findIndex(function(a){return a.id===id;});if(i>=0){m.acts.splice(i,1);}else{const a=actInfo(m.svc,id);if(a)m.acts.push({id:a.id,nm:a.nm,price:a.price,qty:1});}renderConfig();return;}
     if(b.dataset.actqty){const m=S.draft;if(!m)return;const parts=b.dataset.actqty.split(':');const id=parts[0],dir=parts[1];const a=(m.acts||[]).find(function(x){return x.id===id;});if(a){if(dir==='up')a.qty=(a.qty||1)+1;else{a.qty=(a.qty||1)-1;if(a.qty<1)m.acts=m.acts.filter(function(x){return x.id!==id;});}}renderConfig();return;}
@@ -5029,6 +5050,7 @@
       case 'open-share':S.persona='client';S.share=true;render();break;
       case 'close-share':S.share=false;render();break;
       case 'cat-back':S.catView=null;render();break;
+      case 'svc-soon':toast('Bientôt disponible — nous validons un pro pour ce service.');break;
       case 'share-link':{const link=shareLink();const data={title:CONFIG.appName,text:'Ti-Services — un pro de confiance à la demande à Saint-Barth 🐙',url:link};if(navigator.share){navigator.share(data).catch(()=>{});}else if(navigator.clipboard){navigator.clipboard.writeText(link).then(()=>toast('Lien copié — collez-le où vous voulez')).catch(()=>toast('Lien : '+link));}else{toast('Lien : '+link);}break;}
       case 'copy-link':{const link=shareLink();if(navigator.clipboard){navigator.clipboard.writeText(link).then(()=>toast('Lien copié 🔗')).catch(()=>toast('Lien : '+link));}else{toast('Lien : '+link);}break;}
       case 'pay-back':S.payStep=false;S.payEdit=false;if(S.draft)renderConfig();else render();break;
@@ -5659,6 +5681,7 @@
       try{ if(authM.getRedirectResult){ await authM.getRedirectResult(FB.auth); } }catch(e){ toast(fbErr(e)); }
       render(); // rafraîchit l'écran (ex. bouton Google actif)
       loadCatalog(); // catalogue partagé (services « Autre » ajoutés par l'admin)
+      loadAvailability(); // services actifs (au moins un artisan validé) — grise le reste en prod
       loadPrices();  // grille de prix officielle (source de vérité du contrôle serveur)
       loadConfig();  // taux d'apport conciergerie officiel
       loadStats();   // compteur du programme fondateur (places restantes)
@@ -6010,6 +6033,9 @@
           list.push({id:d.id,uid:d.id,real:true,name:a.name||'Artisan',status:st,type:'entreprise',cats:cats,other:a.other||'',rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,founderSince:(a.founderSince&&a.founderSince.toMillis)?a.founderSince.toMillis():(typeof a.founderSince==='number'?a.founderSince:null),founderGross:Number(a.founderGross)||0,rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,lastNoShowAt:(a.lastNoShowAt&&a.lastNoShowAt.toDate)?a.lastNoShowAt.toDate().getTime():0});
           if(st==='attente')pending.add(d.id); });
         S.adminArtisans=list;
+        // Recalcule la liste des services actifs (au moins un artisan validé) et la publie
+        // dans settings/availability — c'est ce que lisent les clients pour griser le reste.
+        saveAvailability();
         // Ne notifie que les candidatures arrivées APRÈS la connexion (pas le stock initial).
         if(adminSeenPending!==null){ pending.forEach(function(id){ if(!adminSeenPending.has(id)){ notifyAdminCandidature(list.find(function(x){return x.id===id;})); } }); }
         adminSeenPending=pending;
