@@ -4079,7 +4079,21 @@
   function proSignup(){
     const f=S.proForm;
     const ok=proSignupOk(f);
-    const cats=SERVICES.map(s=>`<button class="cat ${f.cats.includes(s.id)?'sel':''}" data-pcat="${s.id}"><div class="pick">${I.check}</div><div class="ic">${I[s.id]}</div><div class="nm">${s.nm}</div><div class="rt">${s.forfait?s.rate+' € forfait':'dès '+s.rate+' €/h'}</div></button>`).join('')
+    // Sélection des services : MÊME organisation en catégories / sous-catégories que
+    // l'accueil client (CATEGORIES + HOME_ORDER). Les catégories (Beauté, Dépannage,
+    // Sport) s'ouvrent en accordéon pour révéler leurs prestations ; l'artisan coche
+    // celles qu'il réalise (multi-sélection). Les services sans catégorie et « Autre »
+    // restent des tuiles directes.
+    const psvc=function(id){const s=findSvc(id);if(!s)return '';const on=f.cats.includes(s.id);const c=svcColor(s.id);const px=(S.adminPrices&&S.adminPrices[s.id]!=null?S.adminPrices[s.id]:s.rate);const rt=isForfaitSvc(s.id)?`${px} € forfait`:(isCatalogForfait(s.id)?`dès ${minActPrice(s.id)} €`:`dès ${px} €/h`);return `<button class="cat ${on?'sel':''}" data-pcat="${s.id}"><div class="pick">${I.check}</div><div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[s.id]||svcIco(s.id)}</div><div class="nm">${esc(s.nm)}</div><div class="rt">${rt}</div></button>`;};
+    const pcatCount=function(cat){return cat.subs.filter(function(id){return f.cats.includes(id);}).length;};
+    const pcatTile=function(cat){const open=f.openCat===cat.id;const n=pcatCount(cat);const c=svcColor(cat.id);return `<button class="cat" data-pcatopen="${cat.id}" style="${open?'border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-wash)':''}"><span class="cat-more" style="${open?'transform:rotate(90deg)':''}">${I.chevron}</span><div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[cat.id]||I.other}</div><div class="nm">${esc(cat.nm)}</div><div class="rt">${n?`<b style="color:var(--teal-deep)">${n} sélectionnée${n>1?'s':''}</b>`:cat.subs.length+' prestations ›'}</div></button>`;};
+    const cats=homeItems().map(function(it){
+      if(it.type==='svc')return psvc(it.svc.id);
+      const cat=it.cat,tile=pcatTile(cat);
+      if(f.openCat!==cat.id)return tile;
+      const subs=cat.subs.map(function(id){return psvc(id);}).join('');
+      return tile+`<div style="grid-column:1/-1;background:var(--sand-2);border-radius:14px;padding:11px;margin:0 0 2px"><div class="mini" style="color:var(--muted);margin:0 2px 8px">${esc(cat.nm)} — cochez les prestations que vous réalisez</div><div class="cats" style="margin-top:0">${subs}</div></div>`;
+    }).join('')
       +`<button class="cat ${f.cats.includes('autre')?'sel':''}" data-pcat="autre"><div class="pick">${I.check}</div><div class="ic">${I.other}</div><div class="nm">Autre</div><div class="rt">à préciser</div></button>`;
     const benefitsPro=[
       [I.lock,'Paiement garanti sous 48 h',"Ti-Services encaisse et vous règle après chaque prestation validée. Fini les impayés et les relances."],
@@ -4788,7 +4802,7 @@
     toast('Prestation pré-remplie — vérifiez, ajustez, puis confirmez');
   }
   document.addEventListener('click',(e)=>{
-    const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actqty],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pdip],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday]');
+    const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actqty],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday]');
     if(!b)return;
     // Un clic ISSU d'un <input type=file> (notamment déclenché par programme, ex. la
     // feuille « appareil photo / galerie ») remonte jusqu'ici : on ne le traite pas
@@ -4870,6 +4884,7 @@
     if(b.dataset.atab){S.agendaTab=b.dataset.atab;render();return;}
     if(b.dataset.agmonth){S.agendaMonth=monthShift(S.agendaMonth||curMonthKey(),b.dataset.agmonth==='next'?1:-1);S.agendaSel='';render();return;}
     if(b.dataset.agday!=null){S.agendaSel=b.dataset.agday||'';render();return;}
+    if(b.dataset.pcatopen){if(S.proForm)S.proForm.openCat=(S.proForm.openCat===b.dataset.pcatopen)?null:b.dataset.pcatopen;render();return;}
     if(b.dataset.pcat){const c=b.dataset.pcat,i=S.proForm.cats.indexOf(c);S.proForm.rates=S.proForm.rates||{};if(i<0){S.proForm.cats.push(c);if(S.proForm.rates[c]==null)S.proForm.rates[c]=(S.adminPrices&&S.adminPrices[c]!=null)?S.adminPrices[c]:svcBase(c);}else{S.proForm.cats.splice(i,1);}render();return;}
     if(b.dataset.pstatustype){if(S.proForm)S.proForm.statusType=b.dataset.pstatustype;render();return;}
     if(b.dataset.srate){const parts=b.dataset.srate.split(':'),id=parts[0],dir=parts[1];S.proForm.rates=S.proForm.rates||{};const plat=(S.adminPrices&&S.adminPrices[id]!=null)?S.adminPrices[id]:svcBase(id);const cur=(S.proForm.rates[id]!=null)?S.proForm.rates[id]:plat;S.proForm.rates[id]=Math.max(5,Math.min(200,cur+(dir==='up'?1:-1)));render();return;}
