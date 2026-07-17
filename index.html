@@ -1584,6 +1584,12 @@
   function fidFor(jobs){let cur=fidTiers()[0];for(const t of fidTiers()){if(jobs>=t.min)cur=t;}return cur;}
   function fidNext(jobs){for(const t of fidTiers()){if(jobs<t.min)return t;}return null;}
   function fidColor(key){return {bronze:'#B0743A',argent:'#8A93A6',or:'#D6A72E',platine:'#4FA6C0'}[key]||'var(--teal-deep)';}
+  // Parrainage : chaque filleul validé crédite l'équivalent de 5 missions vers le
+  // statut de fidélité (le gain n'est PAS de l'argent, mais un statut qui monte plus vite).
+  const REF_CREDIT=5;
+  function refValidated(){return (S.filleuls||[]).filter(function(f){return f.status==='valide';}).length;}
+  function refMissions(){return refValidated()*REF_CREDIT;}
+  function statusJobs(){return (S.proJobsTotal||0)+refMissions();}
   function digits(p){return (p||'').replace(/[^0-9]/g,'');}
   // Numéro au format international SANS « + » pour wa.me (WhatsApp).
   // WhatsApp refuse un numéro national (« 0628… » → « +0628… » invalide) : il faut
@@ -4071,7 +4077,7 @@
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-act="pro-back-home">Retour aux missions</button></div></div>`;
   }
   function fidCard(){
-    const jobs=S.proJobsTotal,tier=fidFor(jobs),next=fidNext(jobs),col=fidColor(tier.key);
+    const jobs=statusJobs(),rm=refMissions(),tier=fidFor(jobs),next=fidNext(jobs),col=fidColor(tier.key);
     let prog='';
     if(next){const span=next.min-tier.min,done=Math.max(0,Math.min(span,jobs-tier.min));const pc=Math.round(done/span*100);
       prog=`<div style="height:9px;border-radius:999px;background:var(--sand-2);margin-top:12px;overflow:hidden"><div style="height:100%;width:${pc}%;border-radius:999px;background:${col}"></div></div>
@@ -4079,7 +4085,7 @@
     }else{prog=`<p class="mini" style="margin-top:10px">🎉 Statut maximum atteint — vous conservez la plus grande part possible de chaque prestation.</p>`;}
     return `<div class="card" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">Statut fidélité</b><span class="chip" style="padding:4px 11px;background:${col}22;color:${col}">★ ${tier.nm}</span></div>
       <p class="sub" style="margin-top:8px">Plus vous enchaînez les missions via Ti-Services, plus la commission baisse&nbsp;: vous gardez davantage sur chaque prestation.</p>
-      <div class="row between" style="margin-top:8px"><span class="mini">${jobs} missions au total</span>${next?`<span class="mini">Prochain&nbsp;: ${next.nm}</span>`:''}</div>${prog}</div>`;
+      <div class="row between" style="margin-top:8px"><span class="mini">${jobs} missions au total${rm?` · dont ${rm} par parrainage`:''}</span>${next?`<span class="mini">Prochain&nbsp;: ${next.nm}</span>`:''}</div>${prog}</div>`;
   }
   function svcName(id){const s=SERVICES.find(x=>x.id===id);return s?s.nm:id;}
   function fmtLong(iso){if(!iso)return '';const M=['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];const p=iso.split('-');if(p.length<3)return iso;return (+p[2])+' '+M[(+p[1])-1]+' '+p[0];}
@@ -4161,7 +4167,7 @@
       
       <div class="eyebrow" style="margin:26px 4px 6px;color:var(--muted)">Avantages</div>
       ${fidCard()}
-      <button class="card" data-act="open-referral" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.heart}&nbsp;Parrainer un artisan</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Gagnez un bonus pour chaque artisan que vous parrainez — et lui aussi.</p></button>
+      <button class="card" data-act="open-referral" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.heart}&nbsp;Parrainer un artisan</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">+5 missions vers votre statut par artisan parrainé et validé.</p></button>
       <p class="mini" style="text-align:center;margin-top:14px"><button class="linklike" data-act="show-advantages">${I.shield} Pourquoi passer par Ti-Services ›</button></p>
       
       <div class="eyebrow" style="margin:26px 4px 6px;color:var(--muted)">Aide & réglages</div>
@@ -4250,17 +4256,16 @@
       <div style="height:12px"></div></div>`;
   }
   function proReferral(){
-    const earned=S.filleuls.filter(f=>f.status==='valide').reduce((t,f)=>t+f.bonus,0);
-    const pending=S.filleuls.filter(f=>f.status==='attente').length;
-    const list=S.filleuls.length?S.filleuls.map(f=>`<div class="card" style="padding:13px;margin-top:9px"><div class="row between"><b style="font-size:14px">${f.name}</b><span class="chip ${f.status==='valide'?'good':'coral'}" style="padding:3px 9px">${f.status==='valide'?I.check+' Validé · +'+eur(f.bonus):'En attente'}</span></div></div>`).join(''):emptyState('Aucun filleul pour l’instant','Partagez votre code : vous gagnez 40 € par artisan parrainé et validé.');
+    const pending=(S.filleuls||[]).filter(f=>f.status==='attente').length;
+    const gained=refMissions();
+    const list=S.filleuls.length?S.filleuls.map(f=>`<div class="card" style="padding:13px;margin-top:9px"><div class="row between"><b style="font-size:14px">${esc(f.name)}</b><span class="chip ${f.status==='valide'?'good':'coral'}" style="padding:3px 9px">${f.status==='valide'?I.check+' Validé · +'+REF_CREDIT+' missions':'En attente'}</span></div></div>`).join(''):emptyState('Aucun filleul pour l’instant','Chaque artisan parrainé et validé vous crédite 5 missions vers votre statut.');
     return `<div class="pad"><button class="reset" data-act="close-referral" style="margin:8px 0 2px">← Retour</button>
       <span class="eyebrow">${I.heart} Parrainage</span>
-      <div class="h-hello">Parrainez, gagnez ensemble</div>
-      <p class="sub" style="margin-top:6px">Vous gagnez <b>40 €</b> par artisan parrainé et validé — et votre filleul reçoit <b>40 €</b> à sa première mission.</p>
+      <div class="h-hello">Parrainez, montez plus vite</div>
+      <p class="sub" style="margin-top:6px">Chaque artisan parrainé et validé fait grimper votre statut de <b>5 missions</b>.</p>
       <div class="card" style="padding:18px;margin-top:14px;text-align:center"><div class="mini">Votre code de parrainage</div><b class="money" style="font-size:24px;font-family:var(--f-disp);letter-spacing:1.5px;display:block;margin-top:4px">${S.referralCode}</b><button class="btn primary" data-act="copy-referral" style="margin-top:12px">${I.chat} Partager mon lien</button></div>
-      <div class="row" style="gap:11px;margin-top:12px"><div class="card" style="padding:14px;flex:1"><div class="mini">Bonus gagnés</div><b class="money" style="font-size:20px;font-family:var(--f-disp)">${eur(earned)}</b></div><div class="card" style="padding:14px;flex:1"><div class="mini">Filleuls</div><b class="money" style="font-size:20px;font-family:var(--f-disp)">${S.filleuls.length}</b><div class="mini">${pending} en attente</div></div></div>
+      <div class="row" style="gap:11px;margin-top:12px"><div class="card" style="padding:14px;flex:1"><div class="mini">Missions gagnées</div><b class="money" style="font-size:20px;font-family:var(--f-disp)">+${gained}</b></div><div class="card" style="padding:14px;flex:1"><div class="mini">Filleuls</div><b class="money" style="font-size:20px;font-family:var(--f-disp)">${S.filleuls.length}</b><div class="mini">${pending} en attente</div></div></div>
       <div style="height:16px"></div><span class="eyebrow">Mes filleuls</span>${list}
-      <div class="banner teal" style="margin-top:14px">${I.shield}<span>Le bonus est versé une fois le filleul validé et sa première mission réalisée dans l'app.</span></div>
       <div style="height:10px"></div></div>${proNavbar()}`;
   }
 
