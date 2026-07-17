@@ -509,6 +509,9 @@ function commissionTierPct(jobsTotal) {
   if (n >= 50) return 12;   // Argent
   return 15;                // Bronze
 }
+// Artisan Fondateur : commission réduite aux seuls frais bancaires (≈ frais Mollie).
+// Doit rester aligné avec FOUNDER_COMM_PCT côté client (public/index.html).
+const FOUNDER_COMM_PCT = 3;
 const round2 = (x) => Math.round((Number(x) || 0) * 100) / 100;
 
 exports.settleCommission = onDocumentUpdated('requests/{reqId}', async (event) => {
@@ -528,13 +531,16 @@ exports.settleCommission = onDocumentUpdated('requests/{reqId}', async (event) =
   const gross = round2(base + round2(base * boost / 100));
 
   const db = getFirestore();
-  let jobsTotal = 0;
+  let jobsTotal = 0; let isFounder = false;
   try {
-    const a = await db.collection('artisans').doc(providerUid).get();
-    jobsTotal = (a.data() || {}).jobsTotal || 0;
+    const a = (await db.collection('artisans').doc(providerUid).get()).data() || {};
+    jobsTotal = a.jobsTotal || 0;
+    isFounder = !!a.founder;
   } catch (_) {}
 
-  const pct = commissionTierPct(jobsTotal);
+  // Artisan Fondateur : commission réduite aux seuls frais bancaires — jamais le taux
+  // Bronze. Prime sur le palier de fidélité (aligné sur FOUNDER_COMM_PCT côté client).
+  const pct = isFounder ? FOUNDER_COMM_PCT : commissionTierPct(jobsTotal);
   const commission = round2(base * pct / 100);
   const net = round2(gross - commission);
 

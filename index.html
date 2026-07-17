@@ -1570,6 +1570,11 @@
     {key:'or',nm:'Or',min:150,pct:10},
     {key:'platine',nm:'Platine',min:300,pct:8}
   ];
+  // Artisan Fondateur : commission réduite aux seuls frais bancaires (≈ frais Mollie).
+  // Prime sur le palier de fidélité — un fondateur ne paie JAMAIS le taux Bronze.
+  const FOUNDER_COMM_PCT=3;
+  // Taux de commission réel d'un artisan : le taux fondateur s'il l'est, sinon son palier de fidélité (selon le nombre de missions).
+  function artisanPct(founder,jobs){return founder?FOUNDER_COMM_PCT:fidFor(jobs||0).pct;}
   /* Interventions déjà réalisées par l'artisan connecté (récap + factures). */
   const PRO_HISTORY=()=>[
     {id:'h1',dateISO:'2026-07-05',svc:'menage',client:'Villa Bartolomé',clientFull:'SCI Bartolomé',clientZone:'Gustavia',duration:2,rate:35,amount:70,commPct:10,commission:7,net:63,invNo:'2026-0042',paidVia:'carte'},
@@ -1701,7 +1706,7 @@
   function fixedRate(m){if(isDayU(m)){const pj=S.adminPrices&&S.adminPrices[m.svc+'_j'];return (pj!=null)?pj:DAY_RECO;}const p=S.adminPrices&&S.adminPrices[m.svc];return (p!=null)?p:svcBase(m.svc);}
   // Taux de commission Ti-Services (barème de fidélité dégressif). Figé sur la mission
   // au moment du règlement (m.commPct) pour rester stable dans l'historique/les factures.
-  function commPctFor(m){return (m&&m.commPct!=null)?m.commPct:fidFor(S.proJobsTotal||0).pct;}
+  function commPctFor(m){return (m&&m.commPct!=null)?m.commPct:artisanPct(S.proFounder,S.proJobsTotal||0);}
   function totals(m){const rate=fixedRate(m);const h=billHours(m);const sub=rate*h;const boost=m.boost||0;const maj=Math.round(sub*boost/100);const total=sub+maj;
     // La commission Ti-Services porte sur la base (sub) ; la majoration « coup de pouce »
     // revient intégralement à l'intervenant (CGV art. 2).
@@ -1710,7 +1715,7 @@
   // Net RÉEL que l'artisan percevra pour une demande ouverte (commission déjà déduite) —
   // affiché AVANT l'acceptation pour qu'il décide en connaissance de cause. On ne montre
   // jamais à l'artisan le prix payé par le client (et jamais au client le net de l'artisan).
-  function reqPayout(r){const sub=(Number(r.rate)||0)*(Number(r.duration)||1);const maj=Math.round(sub*((r.boost||0))/100);const gross=sub+maj;const pct=fidFor(S.proJobsTotal||0).pct;const commission=Math.round(sub*pct)/100;return Math.round((gross-commission)*100)/100;}
+  function reqPayout(r){const sub=(Number(r.rate)||0)*(Number(r.duration)||1);const maj=Math.round(sub*((r.boost||0))/100);const gross=sub+maj;const pct=artisanPct(S.proFounder,S.proJobsTotal||0);const commission=Math.round(sub*pct)/100;return Math.round((gross-commission)*100)/100;}
   // Décompose une ligne d'historique : brut (prix payé par le client / vente au mandat),
   // commission Ti-Services, net perçu par l'artisan. Rétrocompatible avec les anciennes
   // lignes (sans commission → net = brut).
@@ -1869,7 +1874,7 @@
   function rateUnit(m){return '€/'+(isDayU(m)?'jour':'h');}
   function recoFor(m){return isDayU(m)?fixedRate(m):svcReco(m.svc);}
   function endDateTxt(m){if(!isDayU(m))return '';let startISO=m.dateISO;if(!startISO){const d=new Date();if(m.when==='Demain')d.setDate(d.getDate()+1);startISO=d.toISOString().slice(0,10);}const d=new Date(startISO+'T00:00:00');const e=new Date(d);e.setDate(d.getDate()+Math.max(1,m.duration)-1);const f=(x)=>x.getDate()+'/'+(x.getMonth()+1);return f(d)+' → '+f(e);}
-  function finalizePaid(m){if(m.commPct==null)m.commPct=fidFor(S.proJobsTotal||0).pct;const tt=totals(m);m.status='paid';S.proEarnings+=tt.payout;if(m._appt){m._appt.status='done';m._appt.duration=billHours(m);m._appt.amount=tt.total;}S.proHistory=S.proHistory||[];const seq='2026-'+String(43+S.proHistory.length).padStart(4,'0');m.invNo=seq;const cliN=(m.clientName||m.client||(isDemo()?'Camille M.':((S.account&&S.account.name)||'Client')));S.proHistory.unshift({id:'hm'+S.proHistory.length,dateISO:(m.dateISO||new Date().toISOString().slice(0,10)),svc:m.svc,client:cliN,clientFull:cliN,clientZone:m.zone,duration:billHours(m),unit:m.unit,rate:tt.rate,amount:tt.total,commPct:tt.commPct,commission:tt.commission,net:tt.payout,invNo:seq,paidVia:'carte'});}
+  function finalizePaid(m){if(m.commPct==null)m.commPct=artisanPct(S.proFounder,S.proJobsTotal||0);const tt=totals(m);m.status='paid';S.proEarnings+=tt.payout;if(m._appt){m._appt.status='done';m._appt.duration=billHours(m);m._appt.amount=tt.total;}S.proHistory=S.proHistory||[];const seq='2026-'+String(43+S.proHistory.length).padStart(4,'0');m.invNo=seq;const cliN=(m.clientName||m.client||(isDemo()?'Camille M.':((S.account&&S.account.name)||'Client')));S.proHistory.unshift({id:'hm'+S.proHistory.length,dateISO:(m.dateISO||new Date().toISOString().slice(0,10)),svc:m.svc,client:cliN,clientFull:cliN,clientZone:m.zone,duration:billHours(m),unit:m.unit,rate:tt.rate,amount:tt.total,commPct:tt.commPct,commission:tt.commission,net:tt.payout,invNo:seq,paidVia:'carte'});}
   const eur=(n)=>n.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
   const fmtDate=(iso)=>{if(!iso)return 'Aujourd’hui';const p=iso.split('-');return p[2]+'/'+p[1];};
   // Repli visuel (hors-ligne / carte non chargée) : petite carte stylisée.
@@ -2347,7 +2352,7 @@
           ${a.bio?`<div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">Présentation</span><b style="text-align:right;max-width:62%;font-weight:500">${esc(a.bio)}</b></div>`:''}
           <div class="row between" style="margin-top:6px"><span class="sub">Note · missions</span><b>${a.rating?a.rating.toFixed(1)+' '+I.star+' · '+a.jobs:'—'}</b></div>
           <div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">Fiabilité · présence</span><b style="text-align:right;max-width:62%">${(a.noShowCount||0)>0?`<span class="chip coral" style="padding:2px 8px">${I.clock} ${a.noShowCount} absence${a.noShowCount>1?'s':''} signalée${a.noShowCount>1?'s':''}</span>${a.lastNoShowAt?`<br><span class="mini" style="color:var(--muted)">Dernière&nbsp;: ${new Date(a.lastNoShowAt).toLocaleDateString('fr-FR')}</span>`:''}`:`<span class="chip good" style="padding:2px 8px">${I.check} Aucun manquement</span>`}</b></div>
-          <div class="row between" style="margin-top:6px"><span class="sub">Palier fidélité · commission</span><b><span class="chip" style="padding:2px 8px;background:${fidColor(fidFor(a.jobs).key)}22;color:${fidColor(fidFor(a.jobs).key)}">${I.star} ${fidFor(a.jobs).nm}</span> ${fidFor(a.jobs).pct} %</b></div>
+          <div class="row between" style="margin-top:6px"><span class="sub">Palier fidélité · commission</span><b>${a.founder?`<span class="chip founder-chip" style="padding:2px 8px">${I.star} Fondateur</span> ${FOUNDER_COMM_PCT} %`:`<span class="chip" style="padding:2px 8px;background:${fidColor(fidFor(a.jobs).key)}22;color:${fidColor(fidFor(a.jobs).key)}">${I.star} ${fidFor(a.jobs).nm}</span> ${fidFor(a.jobs).pct} %`}</b></div>
           ${a.status==='refuse'&&a.reason?`<hr class="dashed"><div class="row between"><span class="sub">Motif du refus</span><b style="color:var(--coral-deep);text-align:right;max-width:60%">${a.reason}</b></div>`:''}
         </div>
         <div class="card" style="padding:16px;margin-top:12px"><span class="eyebrow" style="color:var(--muted)">${a.status==='attente'?'Contacter avant décision':'Contacter l’artisan'}</span>${contactRow(a)}</div>
@@ -3389,7 +3394,7 @@
   // Prestation validée par le client : on l'inscrit dans les revenus/missions de
   // l'artisan et on persiste (survit aux sessions et aux appareils).
   function recordProPaid(m){
-    if(m.commPct==null)m.commPct=fidFor(S.proJobsTotal||0).pct; // taux figé au règlement
+    if(m.commPct==null)m.commPct=artisanPct(S.proFounder,S.proJobsTotal||0); // taux figé au règlement
     const t=totals(m);
     S.proEarnings=Math.round(((S.proEarnings||0)+t.payout)*100)/100;
     S.proJobsTotal=(S.proJobsTotal||0)+1;
@@ -4096,6 +4101,13 @@
   }
   function fidCard(){
     const jobs=statusJobs(),rm=refMissions(),tier=fidFor(jobs),next=fidNext(jobs),col=fidColor(tier.key);
+    // Fondateur : son avantage (commission réduite aux frais bancaires) prime sur le
+    // palier de fidélité — on l'affiche à part, sans le laisser croire qu'il est « Bronze ».
+    if(S.proFounder){
+      return `<div class="card founder" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">Statut fidélité</b><span class="chip founder-chip" style="padding:4px 11px">${I.star} Fondateur</span></div>
+        <p class="sub" style="margin-top:8px">En tant que <b>Fondateur</b>, vous conservez la <b>quasi-totalité</b> de chaque prestation.</p>
+        <div class="row between" style="margin-top:8px"><span class="mini">${jobs} missions au total${rm?` · dont ${rm} par parrainage`:''}</span></div></div>`;
+    }
     let prog='';
     if(next){const span=next.min-tier.min,done=Math.max(0,Math.min(span,jobs-tier.min));const pc=Math.round(done/span*100);
       prog=`<div style="height:9px;border-radius:999px;background:var(--sand-2);margin-top:12px;overflow:hidden"><div style="height:100%;width:${pc}%;border-radius:999px;background:${col}"></div></div>
@@ -5351,7 +5363,7 @@
       adminArtUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'artisans'),function(snap){
         const list=[],pending=new Set();
         snap.forEach(function(d){ const a=d.data()||{}; const cats=Array.isArray(a.cats)?a.cats:[]; const rr=a.rates||{}; const st=a.status||'attente';
-          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Artisan',status:st,type:'entreprise',cats:cats,other:a.other||'',rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,lastNoShowAt:(a.lastNoShowAt&&a.lastNoShowAt.toDate)?a.lastNoShowAt.toDate().getTime():0});
+          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Artisan',status:st,type:'entreprise',cats:cats,other:a.other||'',rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,lastNoShowAt:(a.lastNoShowAt&&a.lastNoShowAt.toDate)?a.lastNoShowAt.toDate().getTime():0});
           if(st==='attente')pending.add(d.id); });
         S.adminArtisans=list;
         // Ne notifie que les candidatures arrivées APRÈS la connexion (pas le stock initial).
