@@ -235,13 +235,23 @@
      apparaître un vide sous le corail en haut. */
   .view{position:absolute;inset:34px 0 0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:none}
   .view>div{min-height:100%;display:flex;flex-direction:column}
+  /* Bandeau de marque permanent : rappelle « Ti-Services » (bicolore, comme la
+     vitrine) en haut de chaque écran de l'app. Collé en haut du .view, il reste
+     visible pendant le défilement. Masqué en desktop (le rail latéral porte déjà
+     la marque) et sur la vitrine / l'onboarding (marque déjà présente en grand). */
+  .brandbar{position:sticky;top:0;z-index:30;flex:none;display:flex;align-items:center;justify-content:center;gap:6px;height:42px;background:var(--sand);border-bottom:1px solid color-mix(in srgb,var(--hair) 55%,transparent)}
+  .brandbar .bb-octo{width:21px;height:auto;flex:none;filter:drop-shadow(0 3px 6px rgba(226,80,63,.16))}
+  .brandbar .bb-word{font-family:var(--f-disp);font-weight:800;font-size:17px;letter-spacing:-.02em;line-height:1}
+  .brandbar .bb-word b{color:var(--teal-deep)}
+  .brandbar .bb-word i{font-style:normal;color:var(--ink)}
+  body.desktop .brandbar{display:none}
   .view::-webkit-scrollbar{width:0}
   .pad{padding:6px 18px 26px}
   /* L'animation de transition porte sur le CONTENU (.pad…), jamais sur la barre
      d'onglets : un transform sur le conteneur parent « désancre » un position:fixed
      et fait sauter la barre à chaque changement d'onglet. En excluant .navbar, la
      barre reste parfaitement figée (sensation native). */
-  .anim>:not(.navbar){animation:slidein .34s cubic-bezier(.22,.61,.36,1)}
+  .anim>:not(.navbar):not(.brandbar){animation:slidein .34s cubic-bezier(.22,.61,.36,1)}
   @keyframes slidein{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 
   /* ============ UI PRIMITIVES ============ */
@@ -1929,9 +1939,15 @@
   /* Anime uniquement lors d'un vrai changement d'écran ; les mises à jour
      sur place (toggles de segments, étoiles…) ne rejouent pas le slidein
      et conservent la position de défilement — plus de clignotement. */
+  // Bandeau de marque (bicolore) rappelé en haut de chaque écran de l'app.
+  // Écarté de la vitrine, de l'onboarding et du login (la marque y figure déjà en grand).
+  function brandBarHtml(key){
+    if(!key||key==='pitch'||key==='login'||key.indexOf('onb:')===0)return '';
+    return '<div class="brandbar" aria-hidden="true"><img class="bb-octo" src="./zouti-logo.svg" alt="" width="21" height="23"><span class="bb-word"><b>Ti</b><i>-Services</i></span></div>';
+  }
   function paintView(html,key){
     const same=(key===_scr);const top=view.scrollTop;
-    view.innerHTML='<div'+(same?'':' class="anim"')+'>'+html+'</div>';
+    view.innerHTML='<div'+(same?'':' class="anim"')+'>'+brandBarHtml(key)+html+'</div>';
     view.scrollTop=same?top:0;_scr=key;updateHomeFab();mountMaps();
   }
   function updateHomeFab(){const rb=document.getElementById('reset');if(rb)rb.style.display=isDemo()?'':'none';const f=document.getElementById('homefab');if(f){const show=S.onboarded&&!S.authView&&!S.showPitch&&S.persona==='client'&&!!(S.mission||S.draft||S.chat||S.support||S.clientInv||S.histInvoice||S.advantages||S.addrForm||S.referral||S.interv||S.cardForm);f.classList.toggle('show',show);}updateBackFab();}
