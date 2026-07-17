@@ -4184,14 +4184,16 @@
       <p class="mini" style="text-align:center;margin-top:14px"><button class="linklike" data-act="show-advantages">${I.shield} Pourquoi passer par Ti-Services ›</button></p>
       
       <div class="eyebrow" style="margin:26px 4px 6px;color:var(--muted)">Aide & réglages</div>
-      ${notifCard('pro')}
-      <div class="card" style="padding:16px;margin-top:12px">
+      ${(function(){
+        const napi=(typeof Notification!=='undefined'&&typeof Notification.requestPermission==='function');
+        const nDenied=napi&&Notification.permission==='denied';
+        const pushEff=!!S.proNotifPush&&!nDenied;
+        return `<div class="card" style="padding:16px;margin-top:12px">
         <span class="eyebrow" style="color:var(--muted)">🔔 Alertes nouvelles demandes</span>
-        <div class="row between" style="margin-top:12px;align-items:center;gap:12px"><div><b style="font-size:14px">Notifications de l'app</b><div class="mini">Canal principal — instantané, même app fermée.</div></div><button class="switch" data-act="notif-push" style="background:${S.proNotifPush?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${S.proNotifPush?'25px':'3px'}"></span></button></div>
-        <div class="row between" style="margin-top:14px;align-items:center;gap:12px"><div><b style="font-size:14px">WhatsApp en secours</b><div class="mini">Si vous ratez la notif, une alerte WhatsApp vous renvoie vers l'app.</div></div><button class="switch" data-act="notif-wa" style="background:${S.proNotifWa?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${S.proNotifWa?'25px':'3px'}"></span></button></div>
+        <div class="row between" style="margin-top:12px;align-items:center;gap:12px"><div><b style="font-size:14px">Notifications de l'app</b>${nDenied?`<div class="mini" style="color:var(--coral-deep)">Bloquées sur l'appareil — réactivez-les dans les réglages du téléphone.</div>`:''}</div><button class="switch" data-act="notif-push" style="background:${pushEff?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${pushEff?'25px':'3px'}"></span></button></div>
+        <div class="row between" style="margin-top:14px;align-items:center;gap:12px"><div><b style="font-size:14px">WhatsApp en secours</b></div><button class="switch" data-act="notif-wa" style="background:${S.proNotifWa?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${S.proNotifWa?'25px':'3px'}"></span></button></div>
         ${S.proNotifWa?`<div class="field" style="margin-top:12px;margin-bottom:0"><label style="font-size:12px">Votre numéro WhatsApp (indicatif obligatoire)</label>${phoneCombo('wa',S.proPhone)}</div>`:''}
-        <p class="mini" style="margin-top:10px">${I.lock} Votre numéro reste masqué aux clients — il ne sert qu'aux alertes Ti-Services.</p>
-      </div>
+      </div>`;})()}
       <button class="card" data-act="open-general-support" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.support}&nbsp;Contacter Ti-Services</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Support ›</span></div><p class="sub" style="margin-top:8px">Une question sur votre compte, un dossier, l'application&nbsp;? Écrivez-nous — sans lien avec une mission.</p></button>
       ${backupCard()}
       ${S.demoMode?`<p class="mini" style="text-align:center;margin-top:12px"><button class="linklike" data-act="demo-go-client">${I.user} Voir l'espace client (démo)</button> · <button class="linklike" data-act="demo-go-admin">⚙︎ Admin (démo)</button></p>`:(FB?`<button class="btn ghost sm" data-act="logout" style="margin-top:14px">Se déconnecter</button>`:'')}
@@ -4509,7 +4511,7 @@
       case 'show-client-invoice':S.clientInv=true;render();break;
       case 'close-client-invoice':S.clientInv=false;S.histInvoice=null;render();break;
       case 'toggle-online':S.proOnline=!S.proOnline;saveProSettings();render();break;
-      case 'notif-push':{if(!S.proNotifPush){S.proNotifPush=true;requestPush();}else{S.proNotifPush=false;}saveProSettings();render();break;}
+      case 'notif-push':{const napi=(typeof Notification!=='undefined'&&typeof Notification.requestPermission==='function');if(napi&&Notification.permission==='denied'){toast('Notifications bloquées — réactivez-les dans les réglages du téléphone');break;}if(!S.proNotifPush){S.proNotifPush=true;requestPush();}else{S.proNotifPush=false;}saveProSettings();render();break;}
       case 'notif-wa':S.proNotifWa=!S.proNotifWa;saveProSettings();render();break;
       case 'save-dispo':saveProSettings();toast('Disponibilités enregistrées');break;
       case 'go-artisan-signup':S.persona='pro';S.proStatus='signup';S.signupKind=null;render();break;
