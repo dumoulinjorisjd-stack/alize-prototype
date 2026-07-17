@@ -842,7 +842,7 @@
   <div class="spword"><b>Ti</b><span>-Services</span></div>
   <div class="spload"><span></span><span></span><span></span></div>
 </div>
-<script>setTimeout(function(){var s=document.getElementById('splash');if(s){s.classList.add('hide');setTimeout(function(){if(s&&s.parentNode)s.parentNode.removeChild(s);},600);}},2600);</script>
+<script>setTimeout(function(){var s=document.getElementById('splash');if(s){s.classList.add('hide');setTimeout(function(){if(s&&s.parentNode)s.parentNode.removeChild(s);},600);}},6000);</script>
 <div class="wrap">
   <aside class="brief">
     <div class="brand">
@@ -1432,25 +1432,6 @@
     if(!pf||!nm)return;
     const num=(nm.value||'').trim();
     setPhoneVal(key,num?(pf.value+' '+num):'');
-  }
-  // Baby-sitters de démonstration (mode démo) — en réel, l'annuaire vient de
-  // settings/sitters, maintenu par la Cloud Function syncSitterDirectory.
-  const DEMO_SITTERS=[
-    {uid:'demo-sit-1',name:'Sabrina Théodore',photo:'',jobs:98,rating:5.0,founder:true,bio:'Maman de deux enfants, 10 ans d’expérience en garde d’enfants à Saint-Barth.',diplomas:['PSC1 (premiers secours)','CAP AEPE / Petite enfance']},
-    {uid:'demo-sit-2',name:'Laura Magras',photo:'',jobs:41,rating:4.8,founder:false,bio:'Animatrice périscolaire, disponible soirs et week-ends.',diplomas:['BAFA','PSC1 (premiers secours)']},
-    {uid:'demo-sit-3',name:'Chloé Brin',photo:'',jobs:12,rating:4.9,founder:false,bio:'Étudiante sérieuse, je garde des enfants depuis 3 ans.',diplomas:['Expérience seule (sans diplôme)']}
-  ];
-  // Annuaire des baby-sitters validées : S.sitters (null = pas encore chargé).
-  function loadSitters(){
-    if(S.sitters!=null)return;
-    if(isDemo()){S.sitters=DEMO_SITTERS.slice();return;}
-    S.sitters=[];// évite les rechargements concurrents ; rempli à l'arrivée du doc
-    try{
-      FB.f.getDoc(FB.f.doc(FB.db,'settings','sitters')).then(function(s){
-        S.sitters=(s.exists()&&Array.isArray((s.data()||{}).list))?s.data().list:[];
-        if(S.draft&&S.draft.svc==='baby')renderConfig();else render();
-      }).catch(function(){});
-    }catch(_){}
   }
   // Prix fixes par prestation, définis dans la console admin (ce que voit le client).
   const ADMIN_PRICES=()=>SERVICES.reduce((o,s)=>{o[s.id]=s.rate;return o;},{});
@@ -3043,9 +3024,9 @@
       <div class="stack" style="margin-top:12px;gap:8px">
         ${tel?`<a class="btn primary" href="tel:${tel}" style="text-decoration:none">${I.phone} Appeler ${esc(first)}</a>`:''}
         <button class="btn good" data-act="baby-confirm">${I.check} Confirmer la garde avec ${esc(first)}</button>
-        <button class="btn ghost sm" data-act="baby-switch">${S.babyRepick?'Fermer le choix':'Choisir une autre baby-sitter'}</button>
+        <button class="btn ghost sm" data-act="baby-switch">${S.babyRepick?'Non, garder '+esc(first):'Ne pas confirmer'}</button>
       </div>
-      ${S.babyRepick?`<div class="field" style="margin-top:12px;margin-bottom:0"><label>Qui souhaitez-vous à la place&nbsp;?</label><div class="stack" style="gap:8px">${sitterCards(null,'data-babypick',m.providerUid)}<button class="addr-opt" data-babypick=""><b style="font-size:14px">${I.bolt} Peu importe</b><div class="mini" style="margin-top:2px">Rouvrir la demande à toutes les baby-sitters disponibles.</div></button></div><p class="mini" style="margin-top:6px;color:var(--muted)">${esc(first)} sera libérée sans pénalité — votre demande repart vers votre nouveau choix.</p></div>`:''}
+      ${S.babyRepick?`<div class="card" style="padding:14px;margin-top:12px;background:var(--card-2);text-align:center"><p class="mini" style="margin:0">${esc(first)} sera libérée <b>sans pénalité</b> et votre demande repartira vers les autres baby-sitters disponibles.</p><button class="btn coral sm" data-babypick="" style="margin-top:10px">Oui, relancer la recherche</button></div>`:''}
     </div>`;
   }
   function clientTracking(){
@@ -4390,7 +4371,7 @@
     if(b.dataset.afzone){if(S.addrForm)S.addrForm.zone=b.dataset.afzone;render();return;}
     if(b.dataset.slot){if(S.draft){if(b.dataset.slot==='__pick'){S.draft.slotMode='pick';}else{S.draft.slotMode=null;S.draft.slot=b.dataset.slot;}}renderConfig();return;}
     if(b.dataset.slotflex!=null){if(S.draft){const v=b.dataset.slotflex;S.draft.slotFlex=(v==='day'||v==='week')?v:(+v);}renderConfig();return;}
-    if(b.dataset.prefart!=null){if(S.draft){S.draft.preferredUid=b.dataset.prefart||null;S.draft.preferredName=b.dataset.prefnm||'';const sit=(S.sitters||[]).find(function(x){return x.uid===S.draft.preferredUid;});S.draft.preferredPhoto=sit?(sit.photo||null):null;}renderConfig();return;}
+    if(b.dataset.prefart!=null){if(S.draft){S.draft.preferredUid=b.dataset.prefart||null;S.draft.preferredName=b.dataset.prefnm||'';}renderConfig();return;}
     // Garde d'enfants : le client, non convaincu après l'appel, redirige sa demande
     // vers une AUTRE baby-sitter (ou la rouvre à toutes). Libération sans no-show
     // (reopenedBy:'client-choice' — recordNoShow ne vise que 'client').
@@ -4433,7 +4414,7 @@
     // Garde d'enfants : après l'appel, le client CONFIRME la garde…
     if(b.dataset.act==='baby-confirm'){const m=S.mission;if(!m)return;m.clientConfirmed=true;S.babyRepick=false;pushReqUpdate(m,{clientConfirmed:true,clientConfirmedAt:Date.now()});render();toast('Garde confirmée ✓');return;}
     // …ou déplie le choix d'une autre baby-sitter.
-    if(b.dataset.act==='baby-switch'){S.babyRepick=!S.babyRepick;if(S.babyRepick)loadSitters();render();return;}
+    if(b.dataset.act==='baby-switch'){S.babyRepick=!S.babyRepick;render();return;}
     if(b.dataset.act==='client-cancel-declined'){const m=S.mission;if(m){cancelActiveRequest(m);removeMission(m);}S.mission=null;S.clientNav='wallet';render();toast('Demande annulée');return;}
     if(b.dataset.act==='conflict-accept'){const rid=S.proConflict&&S.proConflict.reqId;S.proConflict=null;render();if(rid)acceptRequestReal(rid);return;}
     if(b.dataset.act==='conflict-skip'){const rid=S.proConflict&&S.proConflict.reqId;S.proConflict=null;if(rid&&(S.proSkipped||[]).indexOf(rid)<0){S.proSkipped=S.proSkipped||[];S.proSkipped.push(rid);}S.proReqView=null;render();toast('Mission passée — proposée aux autres artisans');return;}
@@ -4623,7 +4604,7 @@
         S.proHistory=[];S.agenda=[];S.recurring=[];S.proEarnings=0;S.proJobsToday=0;S.proJobsTotal=0;S.mission=null;
         render();toast('Profil validé — bienvenue sur Ti-Services !');break;}
       case 'conc-approve-demo':S.concStatus='approved';render();toast('Conciergerie validée (démo)');break;
-      case 'pro-accept':{const m=S.mission;if(m.slotFlex&&m.proposedSlot){m.slot=clampSlot(m,m.proposedSlot);}m.provider=Object.assign({},PROVIDERS[m.svc],m.preferredName?{nm:m.preferredName,ini:inits(m.preferredName)}:{});if(m.svc==='baby'){const ds=DEMO_SITTERS.find(x=>x.uid===m.preferredUid)||DEMO_SITTERS.find(x=>x.name===m.provider.nm)||DEMO_SITTERS[0];m.providerPhone='0690 27 90 00';m.providerBio=ds.bio;m.providerDiplomas=ds.diplomas.slice();m.providerPhoto=ds.photo||null;m.clientConfirmed=false;}m.status='accepted';const r=totals(m).rate;const amt=totals(m).total;const freq=m.frequency||'ponctuelle';const labels=occLabels(freq);const cli=proClientName(m);const entries=labels.map(d=>({day:d,dateISO:(m.dateISO||apptISO({day:(m.when||d)})),slot:m.slot,svc:m.svc,client:cli,zone:m.zone,duration:m.duration,unit:m.unit,rate:r,amount:amt,status:'upcoming'}));m._appt=entries[0];entries.slice().reverse().forEach(e=>S.agenda.unshift(e));if(freq!=='ponctuelle'){S.recurring.unshift({svc:m.svc,svcName:m.svcName,short:freqInfo(freq).short,slot:m.slot,zone:m.zone});}if(!m.chat||!m.chat.length)m.chat=[{from:'pro',text:'Bonjour '+(cli.split(' ')[0])+' ! Bien reçu votre demande, je serai là à '+m.slot+'. À tout à l’heure 👋'}];proAddMission(m);render();burstConfetti();toast(labels.length>1?'Prestation récurrente ajoutée à votre agenda !':'Mission remportée — ajoutée à votre agenda !');break;}
+      case 'pro-accept':{const m=S.mission;if(m.slotFlex&&m.proposedSlot){m.slot=clampSlot(m,m.proposedSlot);}m.provider=Object.assign({},PROVIDERS[m.svc],m.preferredName?{nm:m.preferredName,ini:inits(m.preferredName)}:{});if(m.svc==='baby'){m.providerPhone='0690 27 90 00';m.providerBio='Maman de deux enfants, 10 ans d’expérience en garde d’enfants à Saint-Barth.';m.providerDiplomas=['PSC1 (premiers secours)','CAP AEPE / Petite enfance'];m.clientConfirmed=false;}m.status='accepted';const r=totals(m).rate;const amt=totals(m).total;const freq=m.frequency||'ponctuelle';const labels=occLabels(freq);const cli=proClientName(m);const entries=labels.map(d=>({day:d,dateISO:(m.dateISO||apptISO({day:(m.when||d)})),slot:m.slot,svc:m.svc,client:cli,zone:m.zone,duration:m.duration,unit:m.unit,rate:r,amount:amt,status:'upcoming'}));m._appt=entries[0];entries.slice().reverse().forEach(e=>S.agenda.unshift(e));if(freq!=='ponctuelle'){S.recurring.unshift({svc:m.svc,svcName:m.svcName,short:freqInfo(freq).short,slot:m.slot,zone:m.zone});}if(!m.chat||!m.chat.length)m.chat=[{from:'pro',text:'Bonjour '+(cli.split(' ')[0])+' ! Bien reçu votre demande, je serai là à '+m.slot+'. À tout à l’heure 👋'}];proAddMission(m);render();burstConfetti();toast(labels.length>1?'Prestation récurrente ajoutée à votre agenda !':'Mission remportée — ajoutée à votre agenda !');break;}
       case 'pro-decline':{const dm=S.mission;
         // Demande DIRIGÉE (renouvellement / choix précis) : l'artisan demandé décline →
         // la main revient au client (démo : on bascule côté client pour qu'il décide).
@@ -4644,25 +4625,6 @@
   // Options d'heure : 07 h → 20 h par pas de 30 min ; les heures déjà passées
   // (pour aujourd'hui) sont marquées « past » pour être désactivées.
   function hourOptions(m){const minM=minSlotToday(m);const out=[];for(let t=7*60;t<=20*60;t+=30){out.push({s:minToSlot(t),past:(minM>=0&&t<minM)});}return out;}
-  // Cartes de choix d'une baby-sitter (photo + nom + expérience + diplômes).
-  // selUid = sélection courante ; act = attribut data-* posé sur chaque carte.
-  function sitterCards(selUid,act,excludeUid){
-    const list=(S.sitters||[]).filter(function(s){return s.uid!==excludeUid;});
-    return list.map(function(s){
-      const dips=(s.diplomas||[]).length?(s.diplomas||[]).map(function(d){return esc(d.split(' (')[0]);}).join(' · '):'';
-      return `<button class="addr-opt${selUid===s.uid?' on':''}" ${act}="${esc(s.uid)}" data-prefnm="${esc(s.name)}"><div class="row" style="gap:11px;align-items:center">${avatarPhoto(s.photo,inits(s.name),'sm')}<div style="flex:1;min-width:0"><div class="row between"><b style="font-size:14px">${esc(s.name)}</b>${s.founder?`<span class="chip founder-chip" style="padding:2px 8px">${I.star} Fondatrice</span>`:''}</div><div class="mini" style="margin-top:2px">${s.jobs?s.jobs+' garde'+(s.jobs>1?'s':'')+' réalisée'+(s.jobs>1?'s':''):'Nouvelle sur Ti-Services'}${s.rating?' · '+s.rating.toFixed(1)+' '+I.star:''}</div>${dips?`<div class="mini" style="margin-top:2px;color:var(--teal-deep)">${I.check} ${dips}</div>`:''}</div></div></button>`;
-    }).join('');
-  }
-  // Choix de la baby-sitter dès la PREMIÈRE commande : nom + photo + qualifications.
-  // La demande devient DIRIGÉE vers la personne choisie (acceptation / refus classique).
-  function babySitterBlock(m){
-    loadSitters();
-    const list=S.sitters||[];
-    if(!list.length)return '';
-    return `<div class="field"><label>Choisissez votre baby-sitter</label>
-      <div class="stack" style="gap:8px"><button class="addr-opt${!m.preferredUid?' on':''}" data-prefart=""><b style="font-size:14px">${I.bolt} Peu importe</b><div class="mini" style="margin-top:2px">La première baby-sitter disponible prend la garde.</div></button>${sitterCards(m.preferredUid,'data-prefart')}</div>
-      ${m.preferredUid?`<p class="mini" style="margin-top:6px">${I.clock} Votre demande est adressée <b>uniquement à ${esc((m.preferredName||'').split(' ')[0])}</b>, qui l'accepte ou la décline. Après son acceptation, vous pourrez <b>l'appeler</b> pour faire connaissance avant de confirmer.</p>`:`<p class="mini" style="margin-top:6px;color:var(--muted)">Quel que soit votre choix, vous verrez le profil complet et pourrez appeler la baby-sitter avant de confirmer la garde.</p>`}</div>`;
-  }
   function renderConfig(){
     const m=S.draft,t=totals(m);
     // Secteur de l'adresse ponctuelle : menu déroulant (page plus courte que 18 boutons).
@@ -4688,7 +4650,8 @@
       <div class="field"><label>${isDayU(m)?'Date de début':'Quand&nbsp;?'}</label>${daySelect}</div>
       <div class="field"><label>${isDayU(m)?'Heure de dépôt':'Heure souhaitée'}</label>${dayFlex?`<p class="mini" style="margin:2px 0 0;color:var(--muted)">${I.clock} ${m.slotFlex==='week'?'Vous laissez toute la semaine — l’artisan vous proposera un jour et une heure de passage.':'Vous laissez toute la journée — l’artisan choisit son heure de passage (8 h – 19 h).'}</p>`:`${hourSelect}${isToday?`<p class="mini" style="margin-top:6px;color:var(--muted)">Pour aujourd'hui, seules les heures à venir sont proposées.</p>`:''}`}</div>
       ${!isDayU(m)?`<div class="field"><label>Souplesse sur le créneau</label><div class="segs"><button class="seg ${(!m.slotFlex)?'on':''}" data-slotflex="0">Précise</button><button class="seg ${m.slotFlex===60?'on':''}" data-slotflex="60">± 1 h</button><button class="seg ${m.slotFlex===120?'on':''}" data-slotflex="120">± 2 h</button><button class="seg ${m.slotFlex==='day'?'on':''}" data-slotflex="day">Journée</button><button class="seg ${m.slotFlex==='week'?'on':''}" data-slotflex="week">Semaine</button></div>${m.slotFlex?`<p class="mini" style="margin-top:6px">${I.clock} Vous laissez de la souplesse&nbsp;: l'artisan choisira un <b>créneau précis ${flexTxt(m)}</b> et vous le confirmera en acceptant — vos demandes sont acceptées plus vite.</p>`:`<p class="mini" style="margin-top:6px">Heure ferme. Astuce&nbsp;: un peu de souplesse fait accepter votre demande plus vite.</p>`}</div>`:''}
-      ${m.svc==='baby'?babySitterBlock(m):(pastArtisans().length?`<div class="field"><label>Un artisan en particulier&nbsp;?</label><div class="segs"><button class="seg ${!m.preferredUid?'on':''}" data-prefart="">Peu importe</button>${pastArtisans().map(a=>`<button class="seg ${m.preferredUid===a.uid?'on':''}" data-prefart="${esc(a.uid)}" data-prefnm="${esc(a.nm)}">${esc(a.nm.split(' ')[0])}</button>`).join('')}</div>${m.preferredUid?`<p class="mini" style="margin-top:6px">${I.clock} Votre demande est adressée <b>uniquement à ${esc((m.preferredName||'').split(' ')[0])}</b>, qui l'accepte ou la décline. S'il n'est pas disponible, vous pourrez la proposer à tous les artisans — vous n'êtes jamais bloqué.</p>`:`<p class="mini" style="margin-top:6px;color:var(--muted)">Redemandez un artisan que vous avez déjà eu, ou laissez « Peu importe » et le premier disponible prend la mission.</p>`}</div>`:'')}
+      ${pastArtisans().length?`<div class="field"><label>Un artisan en particulier&nbsp;?</label><div class="segs"><button class="seg ${!m.preferredUid?'on':''}" data-prefart="">Peu importe</button>${pastArtisans().map(a=>`<button class="seg ${m.preferredUid===a.uid?'on':''}" data-prefart="${esc(a.uid)}" data-prefnm="${esc(a.nm)}">${esc(a.nm.split(' ')[0])}</button>`).join('')}</div>${m.preferredUid?`<p class="mini" style="margin-top:6px">${I.clock} Votre demande est adressée <b>uniquement à ${esc((m.preferredName||'').split(' ')[0])}</b>, qui l'accepte ou la décline. S'il n'est pas disponible, vous pourrez la proposer à tous les artisans — vous n'êtes jamais bloqué.</p>`:`<p class="mini" style="margin-top:6px;color:var(--muted)">Redemandez un artisan que vous avez déjà eu, ou laissez « Peu importe » et le premier disponible prend la mission.</p>`}</div>`:''}
+      ${m.svc==='baby'?`<p class="mini" style="margin-top:6px">${I.shield} La baby-sitter qui accepte vous sera présentée (photo, diplômes, présentation) et <b>vous pourrez l'appeler</b> avant de confirmer la garde.</p>`:''}
       <div class="field"><label>Tarif ${isDayU(m)?'journalier':'horaire'} — prix fixe Ti-Services</label><div class="pricebox"><b class="money" style="font-size:22px;font-family:var(--f-disp)">${fixedRate(m)} ${rateUnit(m)}</b><span class="chip good" style="padding:3px 9px">${I.check} Prix fixe</span></div><p class="mini" style="margin-top:6px">Tarif défini par Ti-Services — pas de négociation, pas de surprise.</p></div>
       <div class="field"><label>Coup de pouce&nbsp;? (facultatif)</label><div class="segs">${[[0,'Standard'],[10,'+10%'],[20,'+20%'],[30,'+30%'],[50,'+50%'],[100,'+100%']].map(([v,l])=>`<button class="seg ${(m.boost||0)===v?'on':''}" data-boost="${v}">${l}</button>`).join('')}</div><p class="mini" style="margin-top:6px">Comme un pourboire&nbsp;: une majoration facultative qui <b>revient à l'artisan</b> et fait <b>accepter votre demande plus vite</b>.${(m.boost||0)>0?` Coup de pouce&nbsp;: <b style="color:var(--teal-deep)">+${eur(t.maj)}</b>.`:''}</p></div>
       <div class="field"><label>${isDayU(m)?'Nombre de jours':'Durée estimée'}</label><div class="stepper"><button data-cfg="minus">−</button><span class="val">${durTxt(m)}</span><button data-cfg="plus">+</button></div>${isDayU(m)?`<p class="mini" style="margin-top:6px">📅 Du ${endDateTxt(m)} · ${durTxt(m)} de garde</p>`:''}</div>
@@ -4995,7 +4958,10 @@
       // Persistance locale explicite : la session doit survivre à la fermeture de
       // l'app (sinon reconnexion forcée à chaque ouverture, et données « perdues »).
       try{ if(authM.setPersistence&&authM.browserLocalPersistence)await authM.setPersistence(FB.auth,authM.browserLocalPersistence); }catch(_){}
-      authM.onAuthStateChanged(FB.auth,function(user){ if(user){loadUserProfile(user);} else if(S.onboarded){S.onboarded=false;S.mission=null;S.draft=null;S.persona='client';S.clientNav='home';if(S._wantClientLogin){S._wantClientLogin=false;S.authView='login';S.loginForm={email:'',password:''};} render();} });
+      authM.onAuthStateChanged(FB.auth,function(user){
+        if(user){ loadUserProfile(user).finally(function(){try{window.__killSplash&&window.__killSplash();}catch(_){}}); }
+        else { if(S.onboarded){S.onboarded=false;S.mission=null;S.draft=null;S.persona='client';S.clientNav='home';if(S._wantClientLogin){S._wantClientLogin=false;S.authView='login';S.loginForm={email:'',password:''};}} render(); try{window.__killSplash&&window.__killSplash();}catch(_){} }
+      });
       // Connexion Google par redirection (PWA mobile) : au retour, il FAUT récupérer
       // le résultat, sinon l'utilisateur revient sur l'accueil sans être connecté.
       // onAuthStateChanged prend le relais ; ici on surface surtout les erreurs.
@@ -5005,7 +4971,7 @@
       loadPrices();  // grille de prix officielle (source de vérité du contrôle serveur)
       loadConfig();  // taux d'apport conciergerie officiel
       loadStats();   // compteur du programme fondateur (places restantes)
-    }catch(e){ console.warn('Firebase indisponible — mode démo',e); FB=null; }
+    }catch(e){ console.warn('Firebase indisponible — mode démo',e); FB=null; try{window.__killSplash&&window.__killSplash();}catch(_){} }
   }
   // Code de parrainage RÉEL et stable, dérivé du nom + uid (jamais le code de démo).
   function genReferralCode(name,uid){
@@ -5639,7 +5605,16 @@
   render();
   // Écran de lancement : laissé visible le temps de l'animation, puis fondu enchaîné
   // vers l'app déjà peinte (fondu instantané si l'utilisateur a réduit les animations).
-  (function(){var sp=document.getElementById('splash');if(!sp)return;var kill=function(){sp.classList.add('hide');setTimeout(function(){if(sp&&sp.parentNode)sp.parentNode.removeChild(sp);},560);};if(_hapticOff){kill();return;}setTimeout(kill,720);})();
+  // Écran de lancement : masqué après l'animation en mode démo. En mode réel, on le
+  // GARDE jusqu'à la résolution de l'authentification (loadUserProfile / déconnexion) —
+  // sinon un profil par défaut (« Marie-Lou ») apparaît brièvement avant le vrai profil.
+  (function(){var sp=document.getElementById('splash');if(!sp)return;
+    window.__killSplash=function(){if(!sp)return;sp.classList.add('hide');var s=sp;sp=null;setTimeout(function(){if(s&&s.parentNode)s.parentNode.removeChild(s);},560);};
+    var realMode=!!(CONFIG.firebase&&!window.__NOFB);
+    if(realMode){setTimeout(window.__killSplash,5000);/* filet de sécurité */}
+    else if(_hapticOff){window.__killSplash();}
+    else{setTimeout(window.__killSplash,720);}
+  })();
   initFirebase();
   // Retour de l'app au premier plan (mobile) : on resynchronise les demandes du
   // client, car l'écoute Firestore a pu être suspendue en arrière-plan.
