@@ -145,7 +145,8 @@ exports.assignFounderSpot = onDocumentCreated('artisans/{artisanId}', async (eve
       const taken = (st.exists && Number(st.data().founderTaken)) || 0;
       if (taken < FOUNDER_TOTAL) {
         tx.set(statsRef, {founderTaken: taken + 1}, {merge: true});
-        tx.set(snap.ref, {founder: true}, {merge: true});
+        // founderSince démarre la fenêtre d'avantage (3 mois / 2 000 €).
+        tx.set(snap.ref, {founder: true, founderSince: FieldValue.serverTimestamp()}, {merge: true});
       } else {
         tx.set(snap.ref, {founder: false}, {merge: true});
       }
@@ -509,9 +510,12 @@ function commissionTierPct(jobsTotal) {
   if (n >= 50) return 12;   // Argent
   return 15;                // Bronze
 }
-// Artisan Fondateur : commission réduite aux seuls frais bancaires (≈ frais Mollie).
-// Doit rester aligné avec FOUNDER_COMM_PCT côté client (public/index.html).
+// Artisan Fondateur : commission réduite aux seuls frais bancaires (≈ frais Mollie),
+// pendant une fenêtre limitée (3 mois OU 2 000 € de prestations). Ces trois constantes
+// doivent rester alignées avec public/index.html.
 const FOUNDER_COMM_PCT = 3;
+const FOUNDER_DAYS = 90;
+const FOUNDER_GROSS_CAP = 2000;
 const round2 = (x) => Math.round((Number(x) || 0) * 100) / 100;
 
 exports.settleCommission = onDocumentUpdated('requests/{reqId}', async (event) => {
@@ -531,16 +535,24 @@ exports.settleCommission = onDocumentUpdated('requests/{reqId}', async (event) =
   const gross = round2(base + round2(base * boost / 100));
 
   const db = getFirestore();
-  let jobsTotal = 0; let isFounder = false;
+  let jobsTotal = 0; let isFounder = false; let founderSinceMs = null; let founderGross = 0;
   try {
     const a = (await db.collection('artisans').doc(providerUid).get()).data() || {};
     jobsTotal = a.jobsTotal || 0;
     isFounder = !!a.founder;
+    founderGross = Number(a.founderGross) || 0;
+    founderSinceMs = (a.founderSince && a.founderSince.toMillis) ? a.founderSince.toMillis() : (typeof a.founderSince === 'number' ? a.founderSince : null);
   } catch (_) {}
 
-  // Artisan Fondateur : commission réduite aux seuls frais bancaires — jamais le taux
-  // Bronze. Prime sur le palier de fidélité (aligné sur FOUNDER_COMM_PCT côté client).
-  const pct = isFounder ? FOUNDER_COMM_PCT : commissionTierPct(jobsTotal);
+  // Artisan Fondateur : commission réduite aux seuls frais bancaires (jamais Bronze),
+  // MAIS uniquement pendant la fenêtre d'avantage — 3 mois OU 2 000 € de prestations
+  // (au premier des deux atteint), puis commission standard (palier de fidélité).
+  // La prestation qui franchit le plafond bénéficie encore du taux fondateur ; on cumule
+  // ensuite le CA dans founderGross pour couper l'avantage aux suivantes.
+  const withinTime = (founderSinceMs == null) ? true : (Date.now() - founderSinceMs < FOUNDER_DAYS * 86400000);
+  const withinGross = founderGross < FOUNDER_GROSS_CAP;
+  const founderActive = isFounder && withinTime && withinGross;
+  const pct = founderActive ? FOUNDER_COMM_PCT : commissionTierPct(jobsTotal);
   const commission = round2(base * pct / 100);
   const net = round2(gross - commission);
 
@@ -631,6 +643,16 @@ exports.settleCommission = onDocumentUpdated('requests/{reqId}', async (event) =
     });
     console.log('Commission figée + registre reqId=' + reqId +
       ' base=' + base + ' pct=' + pct + '% comm=' + commission + ' net=' + net);
+
+    // Cumul du CA fondateur (pour couper l'avantage à 2 000 €) + démarrage de la fenêtre
+    // si elle n'a pas encore de date (fondateurs créés avant l'automatisation).
+    if (isFounder) {
+      try {
+        const upd = { founderGross: FieldValue.increment(gross) };
+        if (founderSinceMs == null) upd.founderSince = FieldValue.serverTimestamp();
+        await db.collection('artisans').doc(providerUid).set(upd, { merge: true });
+      } catch (e) { console.warn('founderGross update', e); }
+    }
 
     // 2 bis) APPORT CONCIERGERIE : si la demande vient d'une conciergerie (mandataire),
     //    on reverse une commission d'apport (retroRate % de la base), PRÉLEVÉE SUR LA

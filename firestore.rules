@@ -62,10 +62,15 @@ service cloud.firestore {
       allow create: if uid() == artisanId
                     && request.resource.data.status == 'attente'
                     && request.resource.data.get('founder', false) == false;
+      // La fenêtre d'avantage fondateur (founderSince = date de départ, founderGross = CA
+      // cumulé qui coupe l'avantage à 2 000 €) est tenue par le SERVEUR seul : l'artisan
+      // ne peut ni la remettre à zéro ni la décaler pour prolonger son taux réduit.
       allow update: if isAdmin()
                     || (uid() == artisanId
                         && request.resource.data.status == resource.data.status
-                        && request.resource.data.get('founder', false) == resource.data.get('founder', false));
+                        && request.resource.data.get('founder', false) == resource.data.get('founder', false)
+                        && request.resource.data.get('founderGross', 0) == resource.data.get('founderGross', 0)
+                        && request.resource.data.get('founderSince', null) == resource.data.get('founderSince', null));
       // Droit à l'effacement (RGPD) : l'artisan peut supprimer son propre dossier.
       allow delete: if isAdmin() || uid() == artisanId;
     }
