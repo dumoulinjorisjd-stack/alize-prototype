@@ -10,7 +10,7 @@
  *   firebase deploy --only functions
  * (nécessite le plan Blaze, déjà activé.)
  */
-const {onDocumentCreated, onDocumentUpdated} = require('firebase-functions/v2/firestore');
+const {onDocumentCreated, onDocumentUpdated, onDocumentWritten} = require('firebase-functions/v2/firestore');
 const {onRequest} = require('firebase-functions/v2/https');
 const {setGlobalOptions} = require('firebase-functions/v2');
 const {initializeApp} = require('firebase-admin/app');
@@ -296,6 +296,46 @@ exports.notifyArtisanApproved = onDocumentUpdated('artisans/{artisanId}', async 
  *  - message de l'artisan -> destinataire = le client (clientUid).
  * Les jetons du destinataire sont lus dans users/{uid}.pushTokens.
  */
+/**
+ * syncSitterDirectory : maintient l'annuaire PUBLIC des baby-sitters validées
+ * (settings/sitters), lu par les clients au moment de commander une garde
+ * d'enfants — le client choisit sa baby-sitter (nom + photo) dès la première
+ * prestation. Reconstruit à chaque écriture d'un dossier artisan : seuls les
+ * dossiers `valide` proposant le service `baby` y figurent, avec un profil
+ * réduit (jamais de SIRET, téléphone, IBAN ni e-mail — le téléphone n'est
+ * transmis qu'à l'ACCEPTATION, dans le document de demande).
+ */
+exports.syncSitterDirectory = onDocumentWritten('artisans/{artisanId}', async (event) => {
+  const beforeD = (event.data && event.data.before && event.data.before.exists) ? (event.data.before.data() || {}) : null;
+  const afterD = (event.data && event.data.after && event.data.after.exists) ? (event.data.after.data() || {}) : null;
+  // Ne reconstruire que si un champ visible de l'annuaire a pu changer.
+  const watched = (d) => d ? JSON.stringify([d.status, d.cats, d.name, d.photo, d.bio, d.diplomas, d.jobsTotal, d.founder]) : '';
+  if (watched(beforeD) === watched(afterD)) return;
+  const db = getFirestore();
+  try {
+    const snap = await db.collection('artisans').where('status', '==', 'valide').get();
+    const list = [];
+    snap.forEach((d) => {
+      const a = d.data() || {};
+      if (!Array.isArray(a.cats) || a.cats.indexOf('baby') < 0) return;
+      list.push({
+        uid: d.id,
+        name: (a.name || 'Baby-sitter').toString().slice(0, 60),
+        photo: (typeof a.photo === 'string' && a.photo.length < 90000) ? a.photo : '',
+        jobs: a.jobsTotal || 0,
+        rating: a.rating || 0,
+        founder: !!a.founder,
+        bio: (a.bio || '').toString().slice(0, 240),
+        diplomas: Array.isArray(a.diplomas) ? a.diplomas.slice(0, 8) : [],
+      });
+    });
+    // Les plus expérimentées d'abord ; l'annuaire reste petit (30 max, doc < 1 Mo).
+    list.sort((x, y) => (y.jobs || 0) - (x.jobs || 0));
+    await db.collection('settings').doc('sitters').set({list: list.slice(0, 30), updatedAt: FieldValue.serverTimestamp()});
+    console.log('Annuaire baby-sitters mis à jour : ' + list.length + ' profil(s).');
+  } catch (e) { console.warn('syncSitterDirectory', e); }
+});
+
 exports.notifyNewMessage = onDocumentUpdated('requests/{reqId}', async (event) => {
   const before = (event.data && event.data.before && event.data.before.data()) || {};
   const after = (event.data && event.data.after && event.data.after.data()) || {};
@@ -692,11 +732,15 @@ exports.notifyReopenedRequest = onDocumentUpdated('requests/{reqId}', async (eve
   const exclude = wasDeclined ? (before.declinedBy || '') : (before.providerUid || '');
 
   // 1) Re-notifier les artisans validés du service (hors celui qui s'est désisté).
+  //    Demande re-DIRIGÉE (le client a choisi une autre baby-sitter après l'appel) :
+  //    SEULE la personne nouvellement demandée est notifiée — jamais le pool.
   try {
     const artsSnap = await db.collection('artisans').where('status', '==', 'valide').get();
-    const uids = artsSnap.docs
+    let uids = artsSnap.docs
       .filter((d) => { const c = (d.data() || {}).cats || []; return (!svc || c.indexOf(svc) >= 0) && d.id !== exclude; })
       .map((d) => d.id);
+    const preferred = after.directed ? (after.preferredProviderUid || '') : '';
+    if (preferred) uids = uids.indexOf(preferred) >= 0 ? [preferred] : [];
     const tokenToUid = {};
     await Promise.all(uids.map(async (uid) => {
       try { const u = await db.collection('users').doc(uid).get(); ((u.data() || {}).pushTokens || []).forEach((t) => { tokenToUid[t] = uid; }); } catch (_) {}
@@ -712,9 +756,10 @@ exports.notifyReopenedRequest = onDocumentUpdated('requests/{reqId}', async (eve
   } catch (e) { console.warn('reopen notify artisans', e); }
 
   // 2) Prévenir le client que la recherche est relancée — uniquement en cas de
-  //    désistement d'un artisan engagé (pas quand le client ouvre lui-même à tous).
+  //    désistement d'un artisan engagé (pas quand le client ouvre lui-même à tous,
+  //    ni quand il change volontairement de baby-sitter : reopenedBy='client-choice').
   try {
-    const clientUid = wasActive ? after.clientUid : null;
+    const clientUid = (wasActive && after.reopenedBy !== 'client-choice') ? after.clientUid : null;
     if (clientUid) {
       const u = await db.collection('users').doc(clientUid).get();
       const tokens = (u.data() || {}).pushTokens || [];

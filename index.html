@@ -1404,6 +1404,28 @@
     {id:'massage',nm:'Massage',rate:60}
   ];
   const ZONES=['Gustavia','Anse des Cayes','Colombier','Corossol','Flamands','Gouverneur','Grand Cul-de-Sac','Grand Fond','Lorient','Lurin','Marigot','Petit Cul-de-Sac','Pointe Milou','Public','St-Jean','Saline','Toiny','Vitet'];
+  // Qualifications garde d'enfants demandées à l'inscription (déclaratif, contrôlé
+  // par l'admin à la validation — PSC1 recommandé, aucun diplôme obligatoire).
+  const BABY_DIPLOMAS=['PSC1 (premiers secours)','CAP AEPE / Petite enfance','BAFA','Auxiliaire de puériculture','Autre diplôme','Expérience seule (sans diplôme)'];
+  // Baby-sitters de démonstration (mode démo) — en réel, l'annuaire vient de
+  // settings/sitters, maintenu par la Cloud Function syncSitterDirectory.
+  const DEMO_SITTERS=[
+    {uid:'demo-sit-1',name:'Sabrina Théodore',photo:'',jobs:98,rating:5.0,founder:true,bio:'Maman de deux enfants, 10 ans d’expérience en garde d’enfants à Saint-Barth.',diplomas:['PSC1 (premiers secours)','CAP AEPE / Petite enfance']},
+    {uid:'demo-sit-2',name:'Laura Magras',photo:'',jobs:41,rating:4.8,founder:false,bio:'Animatrice périscolaire, disponible soirs et week-ends.',diplomas:['BAFA','PSC1 (premiers secours)']},
+    {uid:'demo-sit-3',name:'Chloé Brin',photo:'',jobs:12,rating:4.9,founder:false,bio:'Étudiante sérieuse, je garde des enfants depuis 3 ans.',diplomas:['Expérience seule (sans diplôme)']}
+  ];
+  // Annuaire des baby-sitters validées : S.sitters (null = pas encore chargé).
+  function loadSitters(){
+    if(S.sitters!=null)return;
+    if(isDemo()){S.sitters=DEMO_SITTERS.slice();return;}
+    S.sitters=[];// évite les rechargements concurrents ; rempli à l'arrivée du doc
+    try{
+      FB.f.getDoc(FB.f.doc(FB.db,'settings','sitters')).then(function(s){
+        S.sitters=(s.exists()&&Array.isArray((s.data()||{}).list))?s.data().list:[];
+        if(S.draft&&S.draft.svc==='baby')renderConfig();else render();
+      }).catch(function(){});
+    }catch(_){}
+  }
   // Prix fixes par prestation, définis dans la console admin (ce que voit le client).
   const ADMIN_PRICES=()=>SERVICES.reduce((o,s)=>{o[s.id]=s.rate;return o;},{});
   const PROVIDERS={
@@ -2271,6 +2293,7 @@
           <div class="row between"><span class="sub">Statut</span><span class="chip ${acctChip(a.status)[0]}">${acctChip(a.status)[1]}</span></div><hr class="dashed">
           <div class="row between" style="align-items:flex-start"><span class="sub">Services</span><b style="text-align:right;max-width:62%">${esc(artSvcLabel(a))}</b></div>
           <div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">Taux souhaité</span><b style="text-align:right;max-width:62%">${a.rates?Object.keys(a.rates).map(k=>{const s=SERVICES.find(x=>x.id===k);const nm=s?s.nm:k;const plat=(S.adminPrices&&S.adminPrices[k]!=null)?S.adminPrices[k]:svcBase(k);const r=a.rates[k];const diff=r!==plat;return nm+' <span style="color:'+(diff?'var(--coral-deep)':'var(--good)')+'">'+r+' €/h</span>'+(diff?'<br><span class="mini" style="color:var(--muted);font-weight:500">Prix Ti-Services&nbsp;: '+plat+' €/h</span>':'');}).join('<br>'):a.rate+' €/h'}</b></div>
+          ${(a.cats&&a.cats.includes('baby'))?`<div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">Diplômes garde d'enfants</span><b style="text-align:right;max-width:62%">${(a.diplomas&&a.diplomas.length)?a.diplomas.map(d=>esc(d==='Autre diplôme'&&a.diplomaOther?'Autre : '+a.diplomaOther:d)).join('<br>'):'<span style="color:var(--coral-deep)">Non renseignés</span>'}</b></div>${(a.diplomas&&a.diplomas.length&&!a.diplomas.some(d=>/PSC1/.test(d)))?`<p class="mini" style="margin-top:4px;color:var(--coral-deep)">${I.shield} PSC1 (premiers secours) non déclaré — recommandé pour la garde d'enfants. Vérifiez les justificatifs avant validation.</p>`:''}`:''}
           <div class="row between" style="margin-top:6px"><span class="sub">SIRET</span><b class="money">${esc(a.siret||'—')}</b></div>
           <div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">Assurance RC</span><b style="text-align:right;max-width:62%">${(function(){const st=insStatus(a),l=insLabel(st);return `<span class="chip ${l[0]}" style="padding:3px 9px">${l[1]}</span>`;})()}${a.insurer?`<br><span style="color:var(--ink);font-weight:600;font-size:13px">${esc(a.insurer)}</span>`:''}${a.insuranceUrl?`<br><a href="${esc(a.insuranceUrl)}" target="_blank" rel="noopener" style="color:var(--teal-deep);font-weight:700">${I.other} Voir l'attestation</a>`:`<br><span class="mini" style="color:var(--muted)">Attestation non jointe</span>`}</b></div>
           ${a.insuranceUrl?`<div class="row" style="gap:8px;margin-top:10px">${insStatus(a)!=='valide'?`<button class="btn good sm" data-adm="valid-ins:${a.id}">${I.check} Valider l'attestation</button>`:''}${insStatus(a)!=='refuse'?`<button class="btn ghost sm" data-adm="rej-ins:${a.id}">Refuser l'attestation</button>`:''}</div><p class="mini" style="margin-top:6px;color:var(--muted)">Ouvrez le document ci-dessus, puis validez ou refusez l'attestation. Rien n'est validé automatiquement.</p>`:''}
@@ -2977,6 +3000,28 @@
       <div class="footcta" style="position:static;background:none;padding:18px 0 0">${isDemo()?`<button class="demobtn" data-act="demo-go-pro">${I.hardhat} Voir côté artisan pour accepter (démo)</button>`:''}${S.cancelAsk?cancelConfirmCard(m):`<button class="btn ghost" data-act="cancel-mission" style="margin-top:12px">Annuler la recherche</button>`}</div>
       <p class="mini" style="text-align:center;margin-top:10px;color:var(--muted)">Vous pouvez naviguer ailleurs — revenez ici via l'onglet <b>Accueil</b>.</p></div>${clientNavbar()}`;
   }
+  // Garde d'enfants — à l'ACCEPTATION : le client voit le profil complet de la
+  // baby-sitter, peut l'APPELER via l'app, puis CONFIRME la garde (ou change).
+  function babyConfirmBlock(m){
+    const p=m.provider||{};const first=(p.nm||'Votre baby-sitter').split(' ')[0];
+    const dips=(m.providerDiplomas||[]);
+    const tel=digits(m.providerPhone||'');
+    const profile=`<div class="row" style="gap:12px;margin-top:10px;align-items:center">${avatarPhoto(m.providerPhoto,p.ini||inits(p.nm||'BS'),'lg')}<div style="flex:1;min-width:0"><b style="font-size:16px;font-family:var(--f-disp)">${esc(p.nm||'Votre baby-sitter')}</b><div class="mini" style="margin-top:2px">${p.jobs?p.jobs+' garde'+(p.jobs>1?'s':'')+' réalisée'+(p.jobs>1?'s':''):'Nouvelle sur Ti-Services'}${p.founder?' · '+I.star+' Fondatrice':''}</div></div><span class="chip good" style="padding:4px 10px">${I.check} Vérifiée</span></div>
+      ${dips.length?`<div class="mini" style="margin-top:9px;color:var(--teal-deep)">${I.check} ${dips.map(esc).join(' · ')}</div>`:''}
+      ${m.providerBio?`<p class="sub" style="margin-top:8px;color:var(--ink-soft)">«&nbsp;${esc(m.providerBio)}&nbsp;»</p>`:''}`;
+    if(m.clientConfirmed)return `<div class="card provider-pop" style="padding:16px;margin-top:12px">${profile}<div class="banner teal" style="margin-top:12px">${I.check}<span><b>Garde confirmée</b> avec ${esc(first)} — à ${esc(m.slot)}. ${tel?`Besoin de la rappeler&nbsp;? <a href="tel:${tel}" style="color:var(--teal-deep);font-weight:700">${esc(m.providerPhone)}</a>`:''}</span></div></div>`;
+    return `<div class="card provider-pop" style="padding:16px;margin-top:12px">
+      <div class="eyebrow" style="color:var(--teal-deep)">${I.baby} Faites connaissance avant de confirmer</div>
+      ${profile}
+      <p class="mini" style="margin-top:10px;color:var(--muted)">${esc(first)} a accepté votre demande. <b>Appelez-la pour échanger</b> sur la garde (enfants, habitudes, consignes), puis confirmez — ou choisissez quelqu'un d'autre. Rien n'est débité avant la prestation.</p>
+      <div class="stack" style="margin-top:12px;gap:8px">
+        ${tel?`<a class="btn primary" href="tel:${tel}" style="text-decoration:none">${I.phone} Appeler ${esc(first)}</a>`:''}
+        <button class="btn good" data-act="baby-confirm">${I.check} Confirmer la garde avec ${esc(first)}</button>
+        <button class="btn ghost sm" data-act="baby-switch">${S.babyRepick?'Fermer le choix':'Choisir une autre baby-sitter'}</button>
+      </div>
+      ${S.babyRepick?`<div class="field" style="margin-top:12px;margin-bottom:0"><label>Qui souhaitez-vous à la place&nbsp;?</label><div class="stack" style="gap:8px">${sitterCards(null,'data-babypick',m.providerUid)}<button class="addr-opt" data-babypick=""><b style="font-size:14px">${I.bolt} Peu importe</b><div class="mini" style="margin-top:2px">Rouvrir la demande à toutes les baby-sitters disponibles.</div></button></div><p class="mini" style="margin-top:6px;color:var(--muted)">${esc(first)} sera libérée sans pénalité — votre demande repart vers votre nouveau choix.</p></div>`:''}
+    </div>`;
+  }
   function clientTracking(){
     const m=S.mission,t=totals(m),p=m.provider;
     const steps=[{t:'Demande envoyée',d:m.when+' · '+m.slot},{t:'Mission acceptée',d:p?esc(p.nm):''},{t:m.status==='working'?'Prestation en cours':'Prestation à venir',d:m.duration+' h · '+m.slot},{t:'Terminée',d:'à confirmer par vous'}];
@@ -2990,7 +3035,7 @@
       <div class="h-hello" style="margin-top:8px;text-align:center">${head.t}</div><p class="sub" style="text-align:center">${head.d}</p>
       ${(m.slotFlex&&m.status==='pending')?`<p class="mini" style="text-align:center;margin-top:4px">${I.clock} Créneau souhaité&nbsp;: ${m.when} · ${flexTxt(m)} — un artisan vous proposera une heure précise.</p>`:''}
       ${(m.slotFlex&&m.proposedSlot&&m.status!=='pending')?`<div class="banner teal" style="margin-top:10px">${I.clock}<span>${p?esc(p.nm.split(' ')[0]):'L’artisan'} a confirmé son passage à <b>${m.slot}</b> (vous aviez laissé ${flexTxt(m)}).</span></div>`:''}
-      ${m.status==='pending'?`<div class="card" style="padding:16px;margin-top:12px;text-align:center">${searchRadar(true)}<p class="sub" style="margin:0">Vous saurez qui intervient dès l'acceptation.</p></div>`:(p?`<div class="card provider-pop" style="padding:14px;margin-top:12px"><div class="row" style="gap:12px"><div class="avatar">${p.ini}</div><div style="flex:1"><b style="font-size:15px">${esc(p.nm)}</b><div class="mini">${p.jobs} missions réalisées · ${I.pin} ${m.zone}</div></div><div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">${p.founder?`<span class="chip founder-chip" style="padding:4px 9px">${I.star} Fondateur</span>`:''}<span class="chip good" style="padding:4px 10px">${I.check} Vérifié · Assuré</span></div></div></div>`:'')}
+      ${m.status==='pending'?`<div class="card" style="padding:16px;margin-top:12px;text-align:center">${searchRadar(true)}<p class="sub" style="margin:0">Vous saurez qui intervient dès l'acceptation.</p></div>`:((m.svc==='baby'&&p)?babyConfirmBlock(m):(p?`<div class="card provider-pop" style="padding:14px;margin-top:12px"><div class="row" style="gap:12px">${avatarPhoto(m.providerPhoto,p.ini,'')}<div style="flex:1"><b style="font-size:15px">${esc(p.nm)}</b><div class="mini">${p.jobs} missions réalisées · ${I.pin} ${m.zone}</div></div><div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">${p.founder?`<span class="chip founder-chip" style="padding:4px 9px">${I.star} Fondateur</span>`:''}<span class="chip good" style="padding:4px 10px">${I.check} Vérifié · Assuré</span></div></div></div>`:''))}
       <div class="card" style="padding:16px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Suivi</div><div class="timeline" style="margin-top:12px">${tls}</div></div>
       ${p?`<button class="btn ghost sm" data-act="open-chat" style="margin-top:12px;justify-content:flex-start;gap:8px">${I.chat}&nbsp;Contacter ${esc(p.nm.split(' ')[0])} (numéro masqué)${(m.chat&&m.chat.length)?` · ${m.chat.length}`:''}</button>`:''}
       <button class="btn ghost sm" data-act="open-support" style="margin-top:8px;justify-content:flex-start;gap:8px">${I.shield}&nbsp;Contacter Ti-Services (support)${(()=>{const th=(m.support&&m.support.client)||[];return th.length?` · ${th.length}`:'';})()}</button>
@@ -3220,6 +3265,13 @@
         // Infos artisan (vues côté client)
         if(r.providerName){if(!m.provider||!m.providerUid||m.provider.nm==='Votre artisan'){m.provider={nm:r.providerName,ini:inits(r.providerName),rating:0,jobs:(r.providerJobs||0),founder:!!r.providerFounder};}m.providerUid=r.providerUid||m.providerUid;}
         if(r.providerUid&&!m.providerUid)m.providerUid=r.providerUid;
+        // Profil transmis à l'acceptation (photo pour tous ; téléphone/bio/diplômes
+        // pour la garde d'enfants — appel + confirmation avant engagement).
+        if(r.providerPhoto&&m.providerPhoto!==r.providerPhoto){m.providerPhoto=r.providerPhoto;touched=true;}
+        if(r.providerPhone!=null&&m.providerPhone!==r.providerPhone){m.providerPhone=r.providerPhone;touched=true;}
+        if(r.providerBio!=null&&m.providerBio!==r.providerBio){m.providerBio=r.providerBio;touched=true;}
+        if(Array.isArray(r.providerDiplomas))m.providerDiplomas=r.providerDiplomas;
+        if(r.clientConfirmed!=null&&m.clientConfirmed!==r.clientConfirmed){m.clientConfirmed=r.clientConfirmed;touched=true;}
         // Filet de sécurité : dès que la demande est prise en charge, le client DOIT
         // avoir un artisan à afficher, même si son nom n'a pas encore été renseigné —
         // sinon l'écran de validation (qui lit provider.nm) planterait et la
@@ -3581,7 +3633,7 @@
   // rendu (état du bouton), l'écouteur « input » (mise à jour en direct) et le
   // gestionnaire d'envoi. Tout champ marqué * doit être renseigné pour débloquer l'envoi.
   function concSignupOk(f){f=f||{};return (f.name||'').trim().length>1&&(f.siret||'').replace(/\s/g,'').length>=9&&(f.address||'').trim().length>1&&(f.contact||'').trim().length>1&&(f.phone||'').trim().length>=6&&/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=6&&f.password===f.password2&&!!f.cgu&&!!f.mandat;}
-  function proSignupOk(f){f=f||{};const siret=(f.siret||'').replace(/\s/g,'');return (f.name||'').trim().length>1&&(f.phone||'').trim().length>=6&&/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=6&&f.password===f.password2&&/^\d{14}$/.test(siret)&&(f.address||'').trim().length>1&&(f.insurer||'').trim().length>1&&!!f.insuranceDoc&&!!(f.cats&&f.cats.length)&&(!f.cats.includes('autre')||(f.otherService||'').trim())&&!!f.mandat&&!!f.cgu&&!!f.charte;}
+  function proSignupOk(f){f=f||{};const siret=(f.siret||'').replace(/\s/g,'');return (f.name||'').trim().length>1&&(f.phone||'').trim().length>=6&&/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=6&&f.password===f.password2&&/^\d{14}$/.test(siret)&&(f.address||'').trim().length>1&&(f.insurer||'').trim().length>1&&!!f.insuranceDoc&&!!(f.cats&&f.cats.length)&&(!f.cats.includes('autre')||(f.otherService||'').trim())&&(!f.cats.includes('baby')||!!(f.diplomas&&f.diplomas.length))&&!!f.mandat&&!!f.cgu&&!!f.charte;}
   const RQ='<span class="req">*</span>';
   function conciergeSignup(){
     const f=S.concSignup||{};
@@ -3662,6 +3714,11 @@
         <p class="mini" style="margin-top:4px">Le <b>prix actuellement pratiqué sur Ti-Services</b> est pré-rempli. Vous pouvez proposer un tarif différent&nbsp;: il sera examiné à la validation de votre profil.</p>
         ${f.cats.map(id=>{const plat=(S.adminPrices&&S.adminPrices[id]!=null)?S.adminPrices[id]:svcBase(id);const r=(f.rates&&f.rates[id]!=null)?f.rates[id]:plat;const diff=r!==plat;return `<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--hair)"><div class="row between" style="align-items:center"><span class="sub" style="display:flex;align-items:center;gap:8px"><span style="display:inline-flex;width:26px;height:26px;border-radius:8px;background:var(--teal-wash);color:var(--teal-deep);align-items:center;justify-content:center">${svcIco(id)}</span>${svcNm(id)}</span><span class="row" style="gap:8px;align-items:center"><button class="btn ghost sm" style="width:34px;padding:6px 0" data-srate="${id}:down">−</button><b class="money" style="min-width:56px;text-align:center">${r} €/h</b><button class="btn ghost sm" style="width:34px;padding:6px 0" data-srate="${id}:up">+</button></span></div><div class="mini" style="margin-top:4px">Prix Ti-Services actuel&nbsp;: <b>${plat} €/h</b>${diff?` · <span style="color:var(--coral-deep);font-weight:700">vous proposez ${r} €/h</span>`:` · <span style="color:var(--good);font-weight:700">✓ vous suivez ce prix</span>`}</div></div>`;}).join('')}
         <p class="mini" style="margin-top:12px">Chaque tarif sera validé par Ti-Services.</p></div>`:`<p class="mini" style="margin-top:10px;color:var(--muted)">Sélectionnez au moins un service pour fixer votre tarif horaire.</p>`}
+      ${f.cats.includes('baby')?`<div class="card" style="padding:16px;margin-top:14px"><div class="eyebrow" style="color:var(--muted)">${I.baby} Garde d'enfants — diplômes &amp; qualifications${RQ}</div>
+        <p class="mini" style="margin-top:4px">Aucun diplôme n'est légalement obligatoire pour la garde occasionnelle, mais le <b>PSC1 (premiers secours)</b> est fortement recommandé. Vos déclarations sont <b>contrôlées par Ti-Services</b> à la validation — des justificatifs pourront vous être demandés.</p>
+        <div class="segs" style="margin-top:10px;flex-wrap:wrap">${BABY_DIPLOMAS.map(d=>`<button class="seg ${(f.diplomas||[]).includes(d)?'on':''}" data-pdip="${esc(d)}">${esc(d)}</button>`).join('')}</div>
+        ${(f.diplomas||[]).includes('Autre diplôme')?`<div class="field" style="margin-top:10px;margin-bottom:0"><input class="txt" data-pf="diplomaOther" value="${esc(f.diplomaOther||'')}" placeholder="Précisez votre diplôme (ex. CAP AEPE en cours, BEP sanitaire…)"></div>`:''}
+        ${(f.diplomas||[]).length?'':'<p class="mini" style="margin-top:8px;color:var(--coral-deep)">Sélectionnez au moins une option (« Expérience seule » si vous n’avez pas de diplôme).</p>'}</div>`:''}
       <div class="card" style="padding:16px;margin-top:14px">
         <div class="chkline" style="margin-top:16px"><button data-act="toggle-pcgu" aria-label="Accepter les conditions" style="background:none;border:none;padding:0">${chkbox(f.cgu)}</button><span class="mini" style="line-height:1.5">${RQ} J'ai lu et j'accepte les <button class="linklike" data-act="view-cgu">CGU</button> et les <button class="linklike" data-act="view-cgv">CGV</button> de Ti-Services.</span></div>
         <div class="chkline" style="margin-top:13px"><button data-act="toggle-pcharte" aria-label="Accepter la charte" style="background:none;border:none;padding:0">${chkbox(f.charte)}</button><span class="mini" style="line-height:1.5">${RQ} J'ai lu et j'accepte la <button class="linklike" data-act="view-charte">Charte de responsabilité de l'intervenant</button>. Je reconnais être <b>seul responsable des dommages, de la casse et des vols</b> survenant lors de mes interventions, disposer d'une <b>assurance RC professionnelle</b>, et que <b>Ti-Services n'est pas responsable</b> à ce titre.</span></div>
@@ -3967,6 +4024,7 @@
     const stLabel={accepted:'À venir · '+m.slot,working:'En cours'}[m.status];
     return `<div class="pad"><button class="reset" data-act="promiss-back" style="margin:8px 0 2px">← Mes missions</button><div class="row between"><span class="chip good">${stLabel}</span><span class="mini">Mission remportée 🎉</span></div>
       <div class="h-hello" style="margin-top:8px">${m.svcName}</div>
+      ${(m.svc==='baby'&&m.status==='accepted')?(m.clientConfirmed?`<div class="banner teal" style="margin-top:10px">${I.check}<span><b>Garde confirmée par le client</b> — il a validé après votre échange.</span></div>`:`<div class="banner teal" style="margin-top:10px">${I.phone}<span>Le client voit votre profil (photo, diplômes, présentation) et peut <b>vous appeler pour faire connaissance</b> avant de confirmer la garde — soyez joignable.</span></div>`):''}
       <div class="card" style="padding:15px;margin-top:12px"><div class="row" style="gap:8px;flex-wrap:wrap"><span class="chip grey">${I.clock} ${m.slot}</span><span class="chip grey">${durTxt(m)}</span></div><div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px"><span class="chip grey">${I.pin} ${esc(m.address)}</span></div><hr class="dashed"><div class="row between"><span class="sub">Client</span><span class="row" style="gap:8px;align-items:center">${avatarPhoto(proClientPhoto(m),inits(proClientName(m)),'sm')}<b>${esc(proClientName(m))}</b></span></div><div class="row between" style="margin-top:6px"><span class="sub">Vous percevez</span><b class="money" style="color:var(--teal-deep)">${eur(t.payout)}</b></div></div>
       ${(m.photos&&m.photos.length)?`<div class="card" style="padding:14px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Photos du client</div><div class="thumbs" style="margin-top:8px">${m.photos.map(u=>`<div class="thumb"><img src="${u}" alt="Photo du client"></div>`).join('')}</div></div>`:''}
       ${m.access?`<div class="card" style="padding:14px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">${I.key} Infos d'accès</div><p class="sub" style="margin-top:6px;color:var(--ink-soft)">${esc(m.access)}</p></div>`:''}
@@ -4225,7 +4283,7 @@
     toast('Prestation pré-remplie — vérifiez, ajustez, puis confirmez');
   }
   document.addEventListener('click',(e)=>{
-    const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-prefart],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday]');
+    const b=e.target.closest('[data-act],[data-svc],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pdip],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-prefart],[data-babypick],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday]');
     if(!b)return;
     // Un clic ISSU d'un <input type=file> (notamment déclenché par programme, ex. la
     // feuille « appareil photo / galerie ») remonte jusqu'ici : on ne le traite pas
@@ -4302,13 +4360,23 @@
     if(b.dataset.pcat){const c=b.dataset.pcat,i=S.proForm.cats.indexOf(c);S.proForm.rates=S.proForm.rates||{};if(i<0){S.proForm.cats.push(c);if(S.proForm.rates[c]==null)S.proForm.rates[c]=(S.adminPrices&&S.adminPrices[c]!=null)?S.adminPrices[c]:svcBase(c);}else{S.proForm.cats.splice(i,1);}render();return;}
     if(b.dataset.pstatustype){if(S.proForm)S.proForm.statusType=b.dataset.pstatustype;render();return;}
     if(b.dataset.srate){const parts=b.dataset.srate.split(':'),id=parts[0],dir=parts[1];S.proForm.rates=S.proForm.rates||{};const plat=(S.adminPrices&&S.adminPrices[id]!=null)?S.adminPrices[id]:svcBase(id);const cur=(S.proForm.rates[id]!=null)?S.proForm.rates[id]:plat;S.proForm.rates[id]=Math.max(5,Math.min(200,cur+(dir==='up'?1:-1)));render();return;}
+    if(b.dataset.pdip){const d=b.dataset.pdip;S.proForm.diplomas=S.proForm.diplomas||[];const i=S.proForm.diplomas.indexOf(d);if(i<0)S.proForm.diplomas.push(d);else S.proForm.diplomas.splice(i,1);render();return;}
     if(b.dataset.pstatus){S.proForm.status=b.dataset.pstatus;render();return;}
     if(b.dataset.zone){if(S.draft)S.draft.zone=b.dataset.zone;renderConfig();return;}
     if(b.dataset.addr){if(S.draft){const v=b.dataset.addr;if(v==='__manual'){S.draft.addressId='__manual';S._focusAddr=true;if(!S.draft.address&&!S.draft.geo){S.draft.address='';S.draft.geo=null;S.draft.access='';}}else{const a=S.addresses.find(x=>x.id===v);if(a){S.draft.addressId=a.id;S.draft.address=a.address;S.draft.zone=a.zone;S.draft.geo=a.geo;S.draft.access=a.access||'';}}}renderConfig();return;}
     if(b.dataset.afzone){if(S.addrForm)S.addrForm.zone=b.dataset.afzone;render();return;}
     if(b.dataset.slot){if(S.draft){if(b.dataset.slot==='__pick'){S.draft.slotMode='pick';}else{S.draft.slotMode=null;S.draft.slot=b.dataset.slot;}}renderConfig();return;}
     if(b.dataset.slotflex!=null){if(S.draft){const v=b.dataset.slotflex;S.draft.slotFlex=(v==='day'||v==='week')?v:(+v);}renderConfig();return;}
-    if(b.dataset.prefart!=null){if(S.draft){S.draft.preferredUid=b.dataset.prefart||null;S.draft.preferredName=b.dataset.prefnm||'';}renderConfig();return;}
+    if(b.dataset.prefart!=null){if(S.draft){S.draft.preferredUid=b.dataset.prefart||null;S.draft.preferredName=b.dataset.prefnm||'';const sit=(S.sitters||[]).find(function(x){return x.uid===S.draft.preferredUid;});S.draft.preferredPhoto=sit?(sit.photo||null):null;}renderConfig();return;}
+    // Garde d'enfants : le client, non convaincu après l'appel, redirige sa demande
+    // vers une AUTRE baby-sitter (ou la rouvre à toutes). Libération sans no-show
+    // (reopenedBy:'client-choice' — recordNoShow ne vise que 'client').
+    if(b.dataset.babypick!=null){const m=S.mission;if(!m)return;const uid=b.dataset.babypick||null;const nm=b.dataset.prefnm||'';
+      S.babyRepick=false;m.status='pending';m.provider=null;m.providerUid=null;m.acceptedSlot=null;m.clientConfirmed=false;
+      m.preferredUid=uid;m.preferredName=nm;m.directed=!!uid;m.providerPhone='';m.providerBio='';m.providerDiplomas=[];m.providerPhoto=null;
+      if(!isDemo()){pushReqUpdate(m,{status:'pending',providerUid:null,providerName:'',acceptedSlot:null,clientConfirmed:false,directed:!!uid,preferredProviderUid:uid,preferredProviderName:nm,reopenedAt:Date.now(),reopenedBy:'client-choice'});render();}
+      else{if(uid){m.competitors=0;render();}else{startSearch();}}
+      toast(uid?('Demande adressée à '+(nm.split(' ')[0]||'votre choix')):'Demande ouverte à toutes les baby-sitters');return;}
     if(b.dataset.proslot){if(S.mission){if(b.dataset.proslot==='__pick'){S.mission.proSlotMode='pick';}else{S.mission.proSlotMode=null;S.mission.proposedSlot=b.dataset.proslot;}}render();return;}
     if(b.dataset.czone){S.clientForm.zone=b.dataset.czone;render();return;}
     if(b.dataset.when){if(!S.draft)return;const v=b.dataset.when;if(v==='__pick'){S.draft.dateMode='pick';}else{S.draft.dateMode=null;S.draft.when=v;}renderConfig();return;}
@@ -4339,6 +4407,10 @@
       acceptRequestReal(rid);return;}
     if(b.dataset.act&&b.dataset.act.indexOf('decline-req:')===0){declineRequestReal(b.dataset.act.slice('decline-req:'.length));return;}
     if(b.dataset.act==='client-open-standard'){openToStandard(S.mission);return;}
+    // Garde d'enfants : après l'appel, le client CONFIRME la garde…
+    if(b.dataset.act==='baby-confirm'){const m=S.mission;if(!m)return;m.clientConfirmed=true;S.babyRepick=false;pushReqUpdate(m,{clientConfirmed:true,clientConfirmedAt:Date.now()});render();toast('Garde confirmée ✓');return;}
+    // …ou déplie le choix d'une autre baby-sitter.
+    if(b.dataset.act==='baby-switch'){S.babyRepick=!S.babyRepick;if(S.babyRepick)loadSitters();render();return;}
     if(b.dataset.act==='client-cancel-declined'){const m=S.mission;if(m){cancelActiveRequest(m);removeMission(m);}S.mission=null;S.clientNav='wallet';render();toast('Demande annulée');return;}
     if(b.dataset.act==='conflict-accept'){const rid=S.proConflict&&S.proConflict.reqId;S.proConflict=null;render();if(rid)acceptRequestReal(rid);return;}
     if(b.dataset.act==='conflict-skip'){const rid=S.proConflict&&S.proConflict.reqId;S.proConflict=null;if(rid&&(S.proSkipped||[]).indexOf(rid)<0){S.proSkipped=S.proSkipped||[];S.proSkipped.push(rid);}S.proReqView=null;render();toast('Mission passée — proposée aux autres artisans');return;}
@@ -4520,7 +4592,7 @@
       case 'close-invoice':S.invoiceId=null;render();break;
       case 'print-invoice':window.print();break;
       case 'toggle-mandat':S.proForm.mandat=!S.proForm.mandat;render();break;
-      case 'pro-submit':{const f=S.proForm;if((f.name||'').trim().length<2){toast('Indiquez votre nom / raison sociale');break;}if((f.phone||'').trim().length<6){toast('Indiquez un numéro de téléphone');break;}if(!f.cats.length){toast('Sélectionnez au moins un service');break;}if(f.cats.includes('autre')&&!(f.otherService||'').trim()){toast('Précisez le service « Autre » que vous proposez');break;}if(!/.+@.+\..+/.test(f.email||'')){toast('Un e-mail valide est requis');break;}if((f.password||'').length<6||f.password!==f.password2){toast('Mot de passe : 6 caractères min., identiques');break;}if(!/^\d{14}$/.test((f.siret||'').replace(/\s/g,''))){toast('Un SIRET valide (14 chiffres) est requis');break;}if(!(f.address||'').trim()){toast('Indiquez votre adresse professionnelle (obligatoire sur les factures)');break;}if(!(f.insurer||'').trim()){toast('Indiquez votre assureur & n° de police');break;}if(!f.insuranceDoc){toast('Joignez votre attestation d’assurance');break;}if(!f.mandat){toast('Acceptez le mandat de facturation pour continuer');break;}if(!f.cgu){toast('Acceptez les CGU et les CGV pour continuer');break;}if(!f.charte){toast('Acceptez la charte de responsabilité de l’intervenant');break;}
+      case 'pro-submit':{const f=S.proForm;if((f.name||'').trim().length<2){toast('Indiquez votre nom / raison sociale');break;}if((f.phone||'').trim().length<6){toast('Indiquez un numéro de téléphone');break;}if(!f.cats.length){toast('Sélectionnez au moins un service');break;}if(f.cats.includes('autre')&&!(f.otherService||'').trim()){toast('Précisez le service « Autre » que vous proposez');break;}if(f.cats.includes('baby')&&!(f.diplomas&&f.diplomas.length)){toast('Garde d’enfants : indiquez vos diplômes (ou « Expérience seule »)');break;}if(!/.+@.+\..+/.test(f.email||'')){toast('Un e-mail valide est requis');break;}if((f.password||'').length<6||f.password!==f.password2){toast('Mot de passe : 6 caractères min., identiques');break;}if(!/^\d{14}$/.test((f.siret||'').replace(/\s/g,''))){toast('Un SIRET valide (14 chiffres) est requis');break;}if(!(f.address||'').trim()){toast('Indiquez votre adresse professionnelle (obligatoire sur les factures)');break;}if(!(f.insurer||'').trim()){toast('Indiquez votre assureur & n° de police');break;}if(!f.insuranceDoc){toast('Joignez votre attestation d’assurance');break;}if(!f.mandat){toast('Acceptez le mandat de facturation pour continuer');break;}if(!f.cgu){toast('Acceptez les CGU et les CGV pour continuer');break;}if(!f.charte){toast('Acceptez la charte de responsabilité de l’intervenant');break;}
         if(FB){signupAsArtisan=true;fbProSignup(f);break;} // vrai compte artisan Firebase
         const rates={};f.cats.forEach(c=>{rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});const minRate=Math.min.apply(null,f.cats.map(c=>rates[c]));S.adminArtisans=S.adminArtisans.filter(x=>x.id!=='self');S.adminArtisans.unshift({id:'self',name:f.name||'Nouveau prestataire',status:'attente',type:'entreprise',cats:f.cats.slice(),other:(f.otherService||'').trim(),rates,rate:minRate,siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,rating:0,jobs:0,zone:'—',phone:f.phone||'',email:f.email||'',photo:f.photo||''});S.proStatus='pending';render();break;}
       case 'pro-approve':{S.proStatus='approved';const f=S.proForm;if(f.photo)S.proPhoto=f.photo;if(f.name)S.proName=f.name;if(f.cats.length)S.proCats=f.cats.slice();const rates={};f.cats.forEach(c=>{rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});S.proRates=rates;if(f.cats.length)S.proRate=Math.min.apply(null,f.cats.map(c=>rates[c]));S.proStatusType='entreprise';S.proSiret=(f.siret||'').replace(/\s/g,'');S.proBio=f.bio||'';S.proInsured=!!f.insuranceDoc;if(f.insurer)S.proInsurer=f.insurer;if(f.phone)S.proPhone=f.phone;
@@ -4528,7 +4600,7 @@
         S.proHistory=[];S.agenda=[];S.recurring=[];S.proEarnings=0;S.proJobsToday=0;S.proJobsTotal=0;S.mission=null;
         render();toast('Profil validé — bienvenue sur Ti-Services !');break;}
       case 'conc-approve-demo':S.concStatus='approved';render();toast('Conciergerie validée (démo)');break;
-      case 'pro-accept':{const m=S.mission;if(m.slotFlex&&m.proposedSlot){m.slot=clampSlot(m,m.proposedSlot);}m.provider=Object.assign({},PROVIDERS[m.svc],m.preferredName?{nm:m.preferredName,ini:inits(m.preferredName)}:{});m.status='accepted';const r=totals(m).rate;const amt=totals(m).total;const freq=m.frequency||'ponctuelle';const labels=occLabels(freq);const cli=proClientName(m);const entries=labels.map(d=>({day:d,dateISO:(m.dateISO||apptISO({day:(m.when||d)})),slot:m.slot,svc:m.svc,client:cli,zone:m.zone,duration:m.duration,unit:m.unit,rate:r,amount:amt,status:'upcoming'}));m._appt=entries[0];entries.slice().reverse().forEach(e=>S.agenda.unshift(e));if(freq!=='ponctuelle'){S.recurring.unshift({svc:m.svc,svcName:m.svcName,short:freqInfo(freq).short,slot:m.slot,zone:m.zone});}if(!m.chat||!m.chat.length)m.chat=[{from:'pro',text:'Bonjour '+(cli.split(' ')[0])+' ! Bien reçu votre demande, je serai là à '+m.slot+'. À tout à l’heure 👋'}];proAddMission(m);render();burstConfetti();toast(labels.length>1?'Prestation récurrente ajoutée à votre agenda !':'Mission remportée — ajoutée à votre agenda !');break;}
+      case 'pro-accept':{const m=S.mission;if(m.slotFlex&&m.proposedSlot){m.slot=clampSlot(m,m.proposedSlot);}m.provider=Object.assign({},PROVIDERS[m.svc],m.preferredName?{nm:m.preferredName,ini:inits(m.preferredName)}:{});if(m.svc==='baby'){const ds=DEMO_SITTERS.find(x=>x.uid===m.preferredUid)||DEMO_SITTERS.find(x=>x.name===m.provider.nm)||DEMO_SITTERS[0];m.providerPhone='0690 27 90 00';m.providerBio=ds.bio;m.providerDiplomas=ds.diplomas.slice();m.providerPhoto=ds.photo||null;m.clientConfirmed=false;}m.status='accepted';const r=totals(m).rate;const amt=totals(m).total;const freq=m.frequency||'ponctuelle';const labels=occLabels(freq);const cli=proClientName(m);const entries=labels.map(d=>({day:d,dateISO:(m.dateISO||apptISO({day:(m.when||d)})),slot:m.slot,svc:m.svc,client:cli,zone:m.zone,duration:m.duration,unit:m.unit,rate:r,amount:amt,status:'upcoming'}));m._appt=entries[0];entries.slice().reverse().forEach(e=>S.agenda.unshift(e));if(freq!=='ponctuelle'){S.recurring.unshift({svc:m.svc,svcName:m.svcName,short:freqInfo(freq).short,slot:m.slot,zone:m.zone});}if(!m.chat||!m.chat.length)m.chat=[{from:'pro',text:'Bonjour '+(cli.split(' ')[0])+' ! Bien reçu votre demande, je serai là à '+m.slot+'. À tout à l’heure 👋'}];proAddMission(m);render();burstConfetti();toast(labels.length>1?'Prestation récurrente ajoutée à votre agenda !':'Mission remportée — ajoutée à votre agenda !');break;}
       case 'pro-decline':{const dm=S.mission;
         // Demande DIRIGÉE (renouvellement / choix précis) : l'artisan demandé décline →
         // la main revient au client (démo : on bascule côté client pour qu'il décide).
@@ -4549,6 +4621,25 @@
   // Options d'heure : 07 h → 20 h par pas de 30 min ; les heures déjà passées
   // (pour aujourd'hui) sont marquées « past » pour être désactivées.
   function hourOptions(m){const minM=minSlotToday(m);const out=[];for(let t=7*60;t<=20*60;t+=30){out.push({s:minToSlot(t),past:(minM>=0&&t<minM)});}return out;}
+  // Cartes de choix d'une baby-sitter (photo + nom + expérience + diplômes).
+  // selUid = sélection courante ; act = attribut data-* posé sur chaque carte.
+  function sitterCards(selUid,act,excludeUid){
+    const list=(S.sitters||[]).filter(function(s){return s.uid!==excludeUid;});
+    return list.map(function(s){
+      const dips=(s.diplomas||[]).length?(s.diplomas||[]).map(function(d){return esc(d.split(' (')[0]);}).join(' · '):'';
+      return `<button class="addr-opt${selUid===s.uid?' on':''}" ${act}="${esc(s.uid)}" data-prefnm="${esc(s.name)}"><div class="row" style="gap:11px;align-items:center">${avatarPhoto(s.photo,inits(s.name),'sm')}<div style="flex:1;min-width:0"><div class="row between"><b style="font-size:14px">${esc(s.name)}</b>${s.founder?`<span class="chip founder-chip" style="padding:2px 8px">${I.star} Fondatrice</span>`:''}</div><div class="mini" style="margin-top:2px">${s.jobs?s.jobs+' garde'+(s.jobs>1?'s':'')+' réalisée'+(s.jobs>1?'s':''):'Nouvelle sur Ti-Services'}${s.rating?' · '+s.rating.toFixed(1)+' '+I.star:''}</div>${dips?`<div class="mini" style="margin-top:2px;color:var(--teal-deep)">${I.check} ${dips}</div>`:''}</div></div></button>`;
+    }).join('');
+  }
+  // Choix de la baby-sitter dès la PREMIÈRE commande : nom + photo + qualifications.
+  // La demande devient DIRIGÉE vers la personne choisie (acceptation / refus classique).
+  function babySitterBlock(m){
+    loadSitters();
+    const list=S.sitters||[];
+    if(!list.length)return '';
+    return `<div class="field"><label>Choisissez votre baby-sitter</label>
+      <div class="stack" style="gap:8px"><button class="addr-opt${!m.preferredUid?' on':''}" data-prefart=""><b style="font-size:14px">${I.bolt} Peu importe</b><div class="mini" style="margin-top:2px">La première baby-sitter disponible prend la garde.</div></button>${sitterCards(m.preferredUid,'data-prefart')}</div>
+      ${m.preferredUid?`<p class="mini" style="margin-top:6px">${I.clock} Votre demande est adressée <b>uniquement à ${esc((m.preferredName||'').split(' ')[0])}</b>, qui l'accepte ou la décline. Après son acceptation, vous pourrez <b>l'appeler</b> pour faire connaissance avant de confirmer.</p>`:`<p class="mini" style="margin-top:6px;color:var(--muted)">Quel que soit votre choix, vous verrez le profil complet et pourrez appeler la baby-sitter avant de confirmer la garde.</p>`}</div>`;
+  }
   function renderConfig(){
     const m=S.draft,t=totals(m);
     // Secteur de l'adresse ponctuelle : menu déroulant (page plus courte que 18 boutons).
@@ -4574,7 +4665,7 @@
       <div class="field"><label>${isDayU(m)?'Date de début':'Quand&nbsp;?'}</label>${daySelect}</div>
       <div class="field"><label>${isDayU(m)?'Heure de dépôt':'Heure souhaitée'}</label>${dayFlex?`<p class="mini" style="margin:2px 0 0;color:var(--muted)">${I.clock} ${m.slotFlex==='week'?'Vous laissez toute la semaine — l’artisan vous proposera un jour et une heure de passage.':'Vous laissez toute la journée — l’artisan choisit son heure de passage (8 h – 19 h).'}</p>`:`${hourSelect}${isToday?`<p class="mini" style="margin-top:6px;color:var(--muted)">Pour aujourd'hui, seules les heures à venir sont proposées.</p>`:''}`}</div>
       ${!isDayU(m)?`<div class="field"><label>Souplesse sur le créneau</label><div class="segs"><button class="seg ${(!m.slotFlex)?'on':''}" data-slotflex="0">Précise</button><button class="seg ${m.slotFlex===60?'on':''}" data-slotflex="60">± 1 h</button><button class="seg ${m.slotFlex===120?'on':''}" data-slotflex="120">± 2 h</button><button class="seg ${m.slotFlex==='day'?'on':''}" data-slotflex="day">Journée</button><button class="seg ${m.slotFlex==='week'?'on':''}" data-slotflex="week">Semaine</button></div>${m.slotFlex?`<p class="mini" style="margin-top:6px">${I.clock} Vous laissez de la souplesse&nbsp;: l'artisan choisira un <b>créneau précis ${flexTxt(m)}</b> et vous le confirmera en acceptant — vos demandes sont acceptées plus vite.</p>`:`<p class="mini" style="margin-top:6px">Heure ferme. Astuce&nbsp;: un peu de souplesse fait accepter votre demande plus vite.</p>`}</div>`:''}
-      ${pastArtisans().length?`<div class="field"><label>Un artisan en particulier&nbsp;?</label><div class="segs"><button class="seg ${!m.preferredUid?'on':''}" data-prefart="">Peu importe</button>${pastArtisans().map(a=>`<button class="seg ${m.preferredUid===a.uid?'on':''}" data-prefart="${esc(a.uid)}" data-prefnm="${esc(a.nm)}">${esc(a.nm.split(' ')[0])}</button>`).join('')}</div>${m.preferredUid?`<p class="mini" style="margin-top:6px">${I.clock} Votre demande est adressée <b>uniquement à ${esc((m.preferredName||'').split(' ')[0])}</b>, qui l'accepte ou la décline. S'il n'est pas disponible, vous pourrez la proposer à tous les artisans — vous n'êtes jamais bloqué.</p>`:`<p class="mini" style="margin-top:6px;color:var(--muted)">Redemandez un artisan que vous avez déjà eu, ou laissez « Peu importe » et le premier disponible prend la mission.</p>`}</div>`:''}
+      ${m.svc==='baby'?babySitterBlock(m):(pastArtisans().length?`<div class="field"><label>Un artisan en particulier&nbsp;?</label><div class="segs"><button class="seg ${!m.preferredUid?'on':''}" data-prefart="">Peu importe</button>${pastArtisans().map(a=>`<button class="seg ${m.preferredUid===a.uid?'on':''}" data-prefart="${esc(a.uid)}" data-prefnm="${esc(a.nm)}">${esc(a.nm.split(' ')[0])}</button>`).join('')}</div>${m.preferredUid?`<p class="mini" style="margin-top:6px">${I.clock} Votre demande est adressée <b>uniquement à ${esc((m.preferredName||'').split(' ')[0])}</b>, qui l'accepte ou la décline. S'il n'est pas disponible, vous pourrez la proposer à tous les artisans — vous n'êtes jamais bloqué.</p>`:`<p class="mini" style="margin-top:6px;color:var(--muted)">Redemandez un artisan que vous avez déjà eu, ou laissez « Peu importe » et le premier disponible prend la mission.</p>`}</div>`:'')}
       <div class="field"><label>Tarif ${isDayU(m)?'journalier':'horaire'} — prix fixe Ti-Services</label><div class="pricebox"><b class="money" style="font-size:22px;font-family:var(--f-disp)">${fixedRate(m)} ${rateUnit(m)}</b><span class="chip good" style="padding:3px 9px">${I.check} Prix fixe</span></div><p class="mini" style="margin-top:6px">Tarif défini par Ti-Services — pas de négociation, pas de surprise.</p></div>
       <div class="field"><label>Coup de pouce&nbsp;? (facultatif)</label><div class="segs">${[[0,'Standard'],[10,'+10%'],[20,'+20%'],[30,'+30%'],[50,'+50%'],[100,'+100%']].map(([v,l])=>`<button class="seg ${(m.boost||0)===v?'on':''}" data-boost="${v}">${l}</button>`).join('')}</div><p class="mini" style="margin-top:6px">Comme un pourboire&nbsp;: une majoration facultative qui <b>revient à l'artisan</b> et fait <b>accepter votre demande plus vite</b>.${(m.boost||0)>0?` Coup de pouce&nbsp;: <b style="color:var(--teal-deep)">+${eur(t.maj)}</b>.`:''}</p></div>
       <div class="field"><label>${isDayU(m)?'Nombre de jours':'Durée estimée'}</label><div class="stepper"><button data-cfg="minus">−</button><span class="val">${durTxt(m)}</span><button data-cfg="plus">+</button></div>${isDayU(m)?`<p class="mini" style="margin-top:6px">📅 Du ${endDateTxt(m)} · ${durTxt(m)} de garde</p>`:''}</div>
@@ -4926,7 +5017,7 @@
         // (et non les valeurs par défaut de démonstration).
         S.proLegal=(ad&&(ad.legalName||ad.name))||name; S.proAddress=(ad&&ad.address)||''; S.proStatusType=(ad&&ad.statusType)||'entreprise';
         if(ad&&Array.isArray(ad.cats)&&ad.cats.length){S.proCats=ad.cats.slice();const rr=ad.rates||{};S.proRate=Math.min.apply(null,ad.cats.map(c=>(rr[c]!=null?rr[c]:svcBase(c))));}
-        if(ad){ S.proFounder=!!ad.founder; S.proRating=ad.rating||0; S.proIban=ad.iban||''; S.proIbanHolder=ad.ibanHolder||''; S.proBic=ad.bic||''; S.proInsured=!!ad.insured; S.proInsurer=ad.insurer||''; S.proInsuranceUrl=ad.insuranceUrl||''; S.proInsuranceStatus=ad.insuranceStatus||(ad.status==='valide'&&ad.insured?'valide':(ad.insuranceUrl||ad.insured?'attente':'none')); S.proSiret=ad.siret||''; S.proBio=ad.bio||''; S.proPhoto=ad.photo||S.proPhoto; S.proAcceptedCharte=!!ad.acceptedCharte; S.proAcceptedTerms=!!ad.acceptedTerms; S.proTermsVersion=ad.termsVersion||''; S.proTermsAt=(ad.termsAt&&ad.termsAt.toDate)?ad.termsAt.toDate():null; S.proMollie=ad.mollieStatus||'none'; S.proMollieOrgId=ad.mollieOrgId||'';
+        if(ad){ S.proFounder=!!ad.founder; S.proRating=ad.rating||0; S.proIban=ad.iban||''; S.proIbanHolder=ad.ibanHolder||''; S.proBic=ad.bic||''; S.proInsured=!!ad.insured; S.proInsurer=ad.insurer||''; S.proInsuranceUrl=ad.insuranceUrl||''; S.proInsuranceStatus=ad.insuranceStatus||(ad.status==='valide'&&ad.insured?'valide':(ad.insuranceUrl||ad.insured?'attente':'none')); S.proSiret=ad.siret||''; S.proBio=ad.bio||''; S.proDiplomas=Array.isArray(ad.diplomas)?ad.diplomas:[]; S.proDiplomaOther=ad.diplomaOther||''; S.proPhoto=ad.photo||S.proPhoto; S.proAcceptedCharte=!!ad.acceptedCharte; S.proAcceptedTerms=!!ad.acceptedTerms; S.proTermsVersion=ad.termsVersion||''; S.proTermsAt=(ad.termsAt&&ad.termsAt.toDate)?ad.termsAt.toDate():null; S.proMollie=ad.mollieStatus||'none'; S.proMollieOrgId=ad.mollieOrgId||'';
           // Revenus / missions réalisées, rechargés depuis la fiche (persistés à chaque paiement).
           S.proEarnings=ad.earnings||0; S.proJobsTotal=ad.jobsTotal||0; S.proHistory=Array.isArray(ad.history)?ad.history:[];
           // Réglages persistés (disponibilités, en ligne, préférences de notif).
@@ -5019,6 +5110,7 @@
           }
           m.status=r.status;m.svc=r.service;m.svcName=r.serviceName||svcNm(r.service);m.rate=r.rate;m.duration=r.duration||1;m.unit=r.unit||'h';m.when=r.when||'';m.slot=r.acceptedSlot||r.slot||m.slot||'';m.zone=r.zone||m.zone||'';m.boost=r.boost||0;m.slotFlex=r.slotFlex||0;m.notes=r.notes||m.notes||'';m.frequency=r.frequency||m.frequency||'ponctuelle';
           if(r.providerUid){m.providerUid=r.providerUid;if(!m.provider||m.provider.nm==='Votre artisan')m.provider={nm:r.providerName||'Votre artisan',ini:inits(r.providerName||'Artisan'),rating:0,jobs:(r.providerJobs||0),founder:!!r.providerFounder};}
+          if(r.providerPhoto)m.providerPhoto=r.providerPhoto;if(r.providerPhone!=null)m.providerPhone=r.providerPhone;if(r.providerBio!=null)m.providerBio=r.providerBio;if(Array.isArray(r.providerDiplomas))m.providerDiplomas=r.providerDiplomas;if(r.clientConfirmed!=null)m.clientConfirmed=r.clientConfirmed;
           if(r.finalHours!=null)m.finalHours=r.finalHours;if(r.disputeMsg)m.disputeMsg=r.disputeMsg;
           if(Array.isArray(r.messages))m.chat=r.messages.slice().sort(function(a,b){return (a.at||0)-(b.at||0);});
         });
@@ -5149,7 +5241,7 @@
         await stM.uploadBytes(sref,f.insuranceFile,{contentType:f.insuranceFile.type||'application/octet-stream'});
         insuranceUrl=await stM.getDownloadURL(sref);
       }catch(e){ console.warn('insurance upload failed',e); } }
-      try{ await FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{name:(f.name||'').trim(),legalName:(f.name||'').trim(),address:(f.address||'').trim(),statusType:f.statusType||'entreprise',cats:f.cats.slice(),other:(f.otherService||'').trim(),rates:rates,siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,insurer:f.insurer||'',insuranceUrl:insuranceUrl,insuranceStatus:'attente',phone:f.phone||'',photo:f.photo||'',bio:(f.bio||'').trim(),acceptedTerms:!!f.cgu,acceptedCharte:!!f.charte,acceptedMandat:!!f.mandat,termsVersion:TERMS_VERSION,termsAt:FB.f.serverTimestamp(),status:'attente',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
+      try{ await FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{name:(f.name||'').trim(),legalName:(f.name||'').trim(),address:(f.address||'').trim(),statusType:f.statusType||'entreprise',cats:f.cats.slice(),other:(f.otherService||'').trim(),rates:rates,diplomas:(f.diplomas||[]).slice(),diplomaOther:(f.diplomaOther||'').trim(),siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,insurer:f.insurer||'',insuranceUrl:insuranceUrl,insuranceStatus:'attente',phone:f.phone||'',photo:f.photo||'',bio:(f.bio||'').trim(),acceptedTerms:!!f.cgu,acceptedCharte:!!f.charte,acceptedMandat:!!f.mandat,termsVersion:TERMS_VERSION,termsAt:FB.f.serverTimestamp(),status:'attente',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
       S.account={name:(f.name||'').trim()||(f.email.trim().split('@')[0]),email:f.email.trim(),uid:uid,role:'artisan'};
       S.persona='pro'; S.proName=(f.name||'').trim(); S.proStatus='pending'; S.onboarded=true; S.authView=null; S.proNav='home';
       S.proInsuranceStatus='attente'; S.proInsuranceUrl=insuranceUrl; S.proCats=f.cats.slice();
@@ -5231,7 +5323,7 @@
       adminArtUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'artisans'),function(snap){
         const list=[],pending=new Set();
         snap.forEach(function(d){ const a=d.data()||{}; const cats=Array.isArray(a.cats)?a.cats:[]; const rr=a.rates||{}; const st=a.status||'attente';
-          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Artisan',status:st,type:'entreprise',cats:cats,other:a.other||'',rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,lastNoShowAt:(a.lastNoShowAt&&a.lastNoShowAt.toDate)?a.lastNoShowAt.toDate().getTime():0});
+          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Artisan',status:st,type:'entreprise',cats:cats,other:a.other||'',rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,lastNoShowAt:(a.lastNoShowAt&&a.lastNoShowAt.toDate)?a.lastNoShowAt.toDate().getTime():0});
           if(st==='attente')pending.add(d.id); });
         S.adminArtisans=list;
         // Ne notifie que les candidatures arrivées APRÈS la connexion (pas le stock initial).
@@ -5379,7 +5471,12 @@
     try{
       const uid=FB.auth.currentUser.uid;
       const acceptedSlot=req.slotFlex?clampSlot(req,S.proReqSlot||req.slot):(req.slot||'');
-      await FB.f.updateDoc(FB.f.doc(FB.db,'requests',reqId),{status:'accepted',providerUid:uid,providerName:S.proName||'',providerJobs:(S.proJobsTotal||0),providerFounder:!!S.proFounder,acceptedSlot:acceptedSlot,acceptedAt:FB.f.serverTimestamp()});
+      const acc={status:'accepted',providerUid:uid,providerName:S.proName||'',providerJobs:(S.proJobsTotal||0),providerFounder:!!S.proFounder,providerPhoto:S.proPhoto||null,acceptedSlot:acceptedSlot,acceptedAt:FB.f.serverTimestamp()};
+      // Garde d'enfants : le client voit le PROFIL COMPLET et peut APPELER la
+      // baby-sitter (via l'app) avant de confirmer — on transmet téléphone,
+      // présentation et diplômes dès l'acceptation.
+      if(req.service==='baby'){acc.providerPhone=S.proPhone||'';acc.providerBio=S.proBio||'';acc.providerDiplomas=(S.proDiplomas||[]).slice(0,8);acc.clientConfirmed=false;}
+      await FB.f.updateDoc(FB.f.doc(FB.db,'requests',reqId),acc);
       let det={};try{const s=await FB.f.getDoc(FB.f.doc(FB.db,'requests',reqId,'private','details'));det=s.exists()?s.data():{};}catch(_){}
       const base=findSvc(req.service)||{id:req.service,nm:req.serviceName||svcNm(req.service),rate:req.rate||svcBase(req.service)};
       S.mission=Object.assign(newMission(base),{reqId:reqId,status:'accepted',svc:req.service,svcName:req.serviceName||svcNm(req.service),rate:req.rate,duration:req.duration||1,unit:req.unit||'h',when:req.when||'',slot:acceptedSlot,slotFlex:req.slotFlex||0,proposedSlot:req.slotFlex?acceptedSlot:null,zone:req.zone||det.zone||'',address:det.address||'',geo:det.geo||null,access:det.access||'',boost:req.boost||0,notes:req.notes||'',photos:(req.photos||[]).slice(),clientName:req.clientName||det.clientName||'',clientPhoto:req.clientPhoto||det.clientPhoto||null,provider:Object.assign({},PROVIDERS[req.service]||{},{nm:S.proName||'Vous'})});
