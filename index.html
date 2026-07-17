@@ -187,6 +187,27 @@
   .ig-or{text-align:center;font-size:12px;color:var(--muted);margin:13px 0}
   .ig-note{font-size:12px;color:var(--ink-soft);background:var(--teal-wash);border-radius:12px;padding:11px 13px;margin:16px 0 0;line-height:1.45}
   .ig-note b{color:var(--teal-deep)}
+  /* Guide visuel : badge appareil/navigateur, cartes illustrées, alerte in-app */
+  .ig-badge-browser{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:650;color:var(--ink-soft);background:var(--sand);border:1px solid var(--hair);border-radius:999px;padding:5px 12px 5px 8px;margin:0 0 14px}
+  .ig-intro{font-size:13.5px;color:var(--ink-soft);line-height:1.5;margin:0 0 14px}
+  .ig-intro b{color:var(--ink)}
+  .ig-cards{display:flex;flex-direction:column;gap:11px}
+  .ig-card{display:flex;gap:12px;align-items:center;background:var(--sand);border:1px solid var(--hair);border-radius:16px;padding:12px 13px}
+  .ig-card .ig-n{margin-top:0}
+  .ig-glyph{flex:none;width:50px;height:50px;border-radius:14px;background:#fff;border:1px solid var(--hair);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 10px -7px rgba(0,0,0,.4)}
+  .ig-glyph svg,.ig-glyph img{display:block}
+  .ig-txt{flex:1;min-width:0;font-size:13.5px;color:var(--ink-soft);line-height:1.4}
+  .ig-txt b{color:var(--ink)}
+  .ig-txt .ig-sub{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+  .ig-phone{display:block;margin:2px auto 6px;width:132px;height:auto}
+  .ig-cap{text-align:center;font-size:12.5px;font-weight:650;color:#007AFF;margin:0 0 14px}
+  .ig-warn{display:flex;gap:11px;align-items:flex-start;background:#FFF3E0;border:1px solid #F3C583;border-radius:16px;padding:13px 14px;margin:0 0 14px;color:#8a4b12;font-size:13px;line-height:1.45}
+  .ig-warn b{color:#7a3f0c}
+  .ig-warn svg{flex:none;color:#C77A1E}
+  @media(prefers-color-scheme:dark){.ig-glyph{background:#f3f0ee}.ig-warn{background:#3a2a12;border-color:#6b4a1e;color:#f5d9ad}.ig-warn b{color:#ffe6bf}}
+  :root[data-theme="dark"] .ig-glyph{background:#f3f0ee}
+  :root[data-theme="dark"] .ig-warn{background:#3a2a12;border-color:#6b4a1e;color:#f5d9ad}
+  :root[data-theme="light"] .ig-glyph{background:#fff}
 
   /* ============ STAGE ============ */
   .stage{display:flex;flex-direction:column;align-items:center;gap:16px}
@@ -5300,39 +5321,109 @@
     const ua=navigator.userAgent||'';
     const ios=/iphone|ipad|ipod/i.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints>1);
     const android=/android/i.test(ua);
-    const iosOtherBrowser = ios && /(CriOS|FxiOS|EdgiOS|OPiOS)/i.test(ua); // Chrome/Firefox/Edge/Opera iOS
-    return {ios,android,iosOtherBrowser,ua};
+    const desktop=!ios&&!android;
+    // Navigateur reconnu (pour afficher le bon logo et les bons libellés).
+    let browser='other';
+    if(/SamsungBrowser/i.test(ua)) browser='samsung';
+    else if(/FxiOS|Firefox/i.test(ua)) browser='firefox';
+    else if(/EdgiOS|Edg/i.test(ua)) browser='edge';
+    else if(/CriOS/i.test(ua)) browser='chrome';
+    else if(/OPiOS|OPR|Opera/i.test(ua)) browser='opera';
+    else if(ios){ browser=/Safari/i.test(ua)?'safari':'other'; }
+    else if(/Chrome\//i.test(ua)) browser='chrome';
+    else if(/Safari/i.test(ua)) browser='safari';
+    // Navigateur INTÉGRÉ à une app (Instagram, WhatsApp, Messenger…) : impossible
+    // d'installer une PWA depuis là — il FAUT d'abord ouvrir dans Safari/Chrome.
+    // C'est le blocage le plus fréquent quand on clique un lien reçu par message.
+    const inApp=/(FBAN|FBAV|FB_IAB|Instagram|Line\/|Snapchat|Pinterest|WhatsApp|MicroMessenger|WeChat|TikTok|musical_ly|Twitter|GSA)/i.test(ua)
+      || (ios && /AppleWebKit/i.test(ua) && !/Safari|CriOS|FxiOS|EdgiOS|OPiOS/i.test(ua) && !window.matchMedia('(display-mode: standalone)').matches);
+    const iosOtherBrowser = ios && browser!=='safari';
+    return {ios,android,desktop,browser,inApp,iosOtherBrowser,ua};
   }
   const isiOS=detectPlatform().ios;
   if(isiOS&&installSteps){installSteps.innerHTML='iPhone&nbsp;: <b>Partager</b> ⬆︎ → <b>«&nbsp;Sur l’écran d’accueil&nbsp;»</b>.';}
   // On mémorise l'invite native (Android/Chrome) pour la déclencher depuis la feuille.
   window.addEventListener('beforeinstallprompt',(e)=>{e.preventDefault();deferredPrompt=e;});
   // Feuille « Installer l'application » : instructions selon le navigateur reconnu.
+  // Glyphes fidèles aux vraies icônes des systèmes (aident à reconnaître le bouton).
+  const IG_GLYPH={
+    // Bouton « Partager » iOS (carré ouvert + flèche vers le haut) — bleu iOS.
+    share:'<svg width="30" height="30" viewBox="0 0 48 48" fill="none" stroke="#007AFF" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M24 5V29"/><path d="M16.5 12.5 24 5l7.5 7.5"/><path d="M15 19h-2a5 5 0 0 0-5 5v13a5 5 0 0 0 5 5h22a5 5 0 0 0 5-5V24a5 5 0 0 0-5-5h-2"/></svg>',
+    // Ligne « Sur l'écran d'accueil » (carré arrondi + plus) — sombre comme sur iOS.
+    addhome:'<svg width="30" height="30" viewBox="0 0 48 48" fill="none" stroke="#1c1c1e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="30" height="30" rx="8"/><path d="M24 17v14M17 24h14"/></svg>',
+    // Menu « ⋮ » (Android/Chrome) et « ••• » (barres d'app).
+    dots:'<svg width="26" height="26" viewBox="0 0 24 24" fill="#1c1c1e"><circle cx="12" cy="5" r="2.1"/><circle cx="12" cy="12" r="2.1"/><circle cx="12" cy="19" r="2.1"/></svg>',
+    dotsH:'<svg width="26" height="26" viewBox="0 0 24 24" fill="#1c1c1e"><circle cx="5" cy="12" r="2.1"/><circle cx="12" cy="12" r="2.1"/><circle cx="19" cy="12" r="2.1"/></svg>',
+    // Icône « Installer » de la barre d'adresse (ordinateur).
+    install:'<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#1477E6" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M12 8v5m0 0 2.4-2.4M12 13l-2.4-2.4M8 21h8"/></svg>',
+    app:'<img src="./zouti-logo.svg" width="34" height="34" alt="">'
+  };
+  // Logos des navigateurs (dessins reconnaissables — pas d'appel réseau).
+  const IG_LOGO={
+    safari:'<svg width="20" height="20" viewBox="0 0 48 48"><defs><linearGradient id="igsf" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3CADF5"/><stop offset="1" stop-color="#1477E6"/></linearGradient></defs><circle cx="24" cy="24" r="22" fill="url(#igsf)"/><path d="M24 24 33 15 27 27Z" fill="#F1503F"/><path d="M24 24 15 33 21 21Z" fill="#fff"/><circle cx="24" cy="24" r="1.7" fill="#fff"/></svg>',
+    chrome:'<svg width="20" height="20" viewBox="0 0 48 48"><path d="M24 24 4.95 13A22 22 0 0 1 43.05 13Z" fill="#EA4335"/><path d="M24 24 43.05 13A22 22 0 0 1 24 46Z" fill="#FBBC05"/><path d="M24 24 24 46A22 22 0 0 1 4.95 13Z" fill="#34A853"/><circle cx="24" cy="24" r="9.4" fill="#fff"/><circle cx="24" cy="24" r="7" fill="#4285F4"/></svg>',
+    firefox:'<svg width="20" height="20" viewBox="0 0 48 48"><circle cx="24" cy="24" r="21" fill="#FF7139"/><path d="M38 15c-3-6-9-8-14-7 8 0 12 6 12 12 0 7-6 11-12 11-5 0-9-3-9-8 0-3 2-6 6-6-3-1-7 1-8 5-1-3 0-8 4-11-6 1-11 7-11 15 0 9 8 15 16 15 9 0 17-7 17-17 0-5-1-9-1-9z" fill="#FFC748"/></svg>',
+    edge:'<svg width="20" height="20" viewBox="0 0 48 48"><circle cx="24" cy="24" r="21" fill="#0C88DA"/><path d="M6 27c1-9 9-16 18-16 7 0 12 4 12 9 0 4-3 6-6 6H16c0 6 6 10 13 10 4 0 7-1 9-3-3 8-11 12-19 10C10 41 4 34 6 27z" fill="#33D17A"/></svg>',
+    samsung:'<svg width="20" height="20" viewBox="0 0 48 48"><circle cx="24" cy="24" r="21" fill="#7A5CFF"/><circle cx="24" cy="24" r="8" fill="#fff"/></svg>',
+    opera:'<svg width="20" height="20" viewBox="0 0 48 48"><circle cx="24" cy="24" r="21" fill="#EE1B2E"/><ellipse cx="24" cy="24" rx="9" ry="13" fill="#fff"/></svg>',
+    other:''
+  };
+  const IG_BROWSER_NAME={safari:'Safari',chrome:'Chrome',firefox:'Firefox',edge:'Edge',samsung:'Samsung Internet',opera:'Opera',other:'votre navigateur'};
+  // Petite illustration : un téléphone avec le bouton Partager mis en évidence,
+  // en HAUT (Chrome iOS) ou en BAS (Safari) — pour montrer OÙ regarder.
+  function igPhone(pos){
+    const y = pos==='top' ? 30 : 214;
+    return `<svg class="ig-phone" viewBox="0 0 150 244" role="img" aria-label="Emplacement du bouton Partager">
+      <rect x="37" y="4" width="76" height="236" rx="17" fill="var(--card)" stroke="var(--hair)" stroke-width="2"/>
+      <rect x="44" y="16" width="62" height="212" rx="7" fill="var(--sand)"/>
+      <rect x="44" y="${pos==='top'?16:206}" width="62" height="22" rx="6" fill="color-mix(in srgb, var(--ink) 7%, var(--card))"/>
+      <svg x="63" y="${y-11}" width="22" height="22" viewBox="0 0 48 48" fill="none" stroke="#007AFF" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M24 5V29"/><path d="M16.5 12.5 24 5l7.5 7.5"/><path d="M15 19h-2a5 5 0 0 0-5 5v13a5 5 0 0 0 5 5h22a5 5 0 0 0 5-5V24a5 5 0 0 0-5-5h-2"/></svg>
+      <circle cx="74" cy="${y}" r="14" fill="none" stroke="#007AFF" stroke-width="2.4"><animate attributeName="r" values="12;18;12" dur="1.7s" repeatCount="indefinite"/><animate attributeName="stroke-opacity" values="1;0;1" dur="1.7s" repeatCount="indefinite"/></circle>
+    </svg>`;
+  }
   function showInstallGuide(){
     const pf=detectPlatform();
+    const bname=IG_BROWSER_NAME[pf.browser]||'votre navigateur';
+    const blogo=IG_LOGO[pf.browser]||'';
+    const card=(n,glyph,txt)=>`<div class="ig-card"><span class="ig-n">${n}</span><span class="ig-glyph">${glyph}</span><div class="ig-txt">${txt}</div></div>`;
     let body='';
-    if(pf.ios){
-      body=`<ol class="ig-steps">
-        <li><span class="ig-n">1</span><div>Touchez <b>Partager</b> <span class="ig-ic">⬆︎</span> ${pf.iosOtherBrowser?'dans la barre du navigateur':'(barre du bas de Safari)'}</div></li>
-        <li><span class="ig-n">2</span><div>Faites défiler, puis choisissez <b>«&nbsp;Sur l’écran d’accueil&nbsp;»</b></div></li>
-        <li><span class="ig-n">3</span><div>Touchez <b>Ajouter</b> — Ti-Services s’ouvre alors comme une vraie application.</div></li>
-      </ol>${pf.iosOtherBrowser?`<p class="ig-note">Le plus simple&nbsp;: ouvrez ce lien dans <b>Safari</b> pour l’installer.</p>`:''}`;
+    if(pf.inApp){
+      // Navigateur intégré (Instagram, WhatsApp…) : on NE PEUT PAS installer ici.
+      const openStep = pf.ios
+        ? card('1',IG_GLYPH.dots,`Touchez le menu <b>•••</b> ou <b>⋯</b> (en haut à droite), puis <b>« Ouvrir dans Safari »</b>&nbsp;${IG_LOGO.safari}`)
+        : card('1',IG_GLYPH.dots,`Touchez le menu <b>⋮</b>, puis <b>« Ouvrir dans le navigateur »</b> (Chrome)&nbsp;${IG_LOGO.chrome}`);
+      body=`<div class="ig-warn">${I.shield}<div>Vous avez ouvert Ti-Services <b>à l'intérieur d'une autre application</b> (Instagram, WhatsApp, Messenger…). D'ici, l'installation est impossible — ouvrez d'abord dans ${pf.ios?'<b>Safari</b>':'<b>votre navigateur</b>'}, c'est très simple&nbsp;:</div></div>
+        <div class="ig-cards">${openStep}${card('2',IG_GLYPH.app,`Une fois dans ${pf.ios?'Safari':'le navigateur'}, retouchez <b>« Installer l'application »</b> — les étapes s'afficheront.`)}</div>`;
+    } else if(pf.ios){
+      const whereSub = pf.browser==='safari'
+        ? `<span class="ig-sub">👇 tout en bas de l'écran</span>`
+        : `<span class="ig-sub">en haut à droite de la barre</span>`;
+      body=`<p class="ig-intro">En <b>3 gestes</b>, Ti-Services s'installe comme une vraie application et s'ouvre en <b>plein écran</b>, sans barre de navigateur.${pf.browser!=='safari'?` <b>Astuce&nbsp;:</b> c'est encore plus simple dans Safari ${IG_LOGO.safari}.`:''}</p>
+        ${igPhone(pf.browser==='safari'?'bottom':'top')}
+        <p class="ig-cap">Le bouton <b>Partager</b> est ${pf.browser==='safari'?'en bas':'en haut'} 👆</p>
+        <div class="ig-cards">
+          ${card('1',IG_GLYPH.share,`Touchez le bouton <b>Partager</b>${whereSub}`)}
+          ${card('2',IG_GLYPH.addhome,`Faites défiler la liste, puis touchez <b>« Sur l'écran d'accueil »</b>`)}
+          ${card('3',IG_GLYPH.app,`Touchez <b>Ajouter</b> (en haut à droite) — l'icône Ti-Services apparaît sur votre écran. Ouvrez-la&nbsp;: c'est prêt&nbsp;! 🎉`)}
+        </div>`;
     } else if(pf.android){
-      body=`${deferredPrompt?`<button class="ig-cta" id="igInstall">Installer maintenant</button><p class="ig-or">ou manuellement&nbsp;:</p>`:''}
-        <ol class="ig-steps">
-          <li><span class="ig-n">1</span><div>Ouvrez le <b>menu ⋮</b> (en haut à droite du navigateur)</div></li>
-          <li><span class="ig-n">2</span><div>Touchez <b>«&nbsp;Installer l’application&nbsp;»</b> ou <b>«&nbsp;Ajouter à l’écran d’accueil&nbsp;»</b></div></li>
-        </ol>`;
+      body=`${deferredPrompt?`<button class="ig-cta" id="igInstall">${I.install} Installer maintenant</button><p class="ig-or">ou à la main&nbsp;:</p>`:`<p class="ig-intro">En <b>2 gestes</b>, Ti-Services s'installe comme une vraie application.</p>`}
+        <div class="ig-cards">
+          ${card('1',IG_GLYPH.dots,`Ouvrez le <b>menu ⋮</b> en haut à droite ${blogo}`)}
+          ${card('2',IG_GLYPH.app,`Touchez <b>« Installer l'application »</b> puis <b>Installer</b> — l'icône apparaît sur votre écran d'accueil.`)}
+        </div>`;
     } else {
-      body=`${deferredPrompt?`<button class="ig-cta" id="igInstall">Installer l’application</button><p class="ig-or">ou&nbsp;:</p>`:''}
-        <ol class="ig-steps">
-          <li><span class="ig-n">1</span><div>Cliquez sur l’icône <b>Installer</b> <span class="ig-ic">⊕</span> dans la barre d’adresse</div></li>
-          <li><span class="ig-n">2</span><div>Confirmez — l’app s’ouvre en plein écran. Ti-Services fonctionne aussi très bien sur ordinateur.</div></li>
-        </ol>`;
+      body=`${deferredPrompt?`<button class="ig-cta" id="igInstall">Installer l'application</button><p class="ig-or">ou&nbsp;:</p>`:''}
+        <div class="ig-cards">
+          ${card('1',IG_GLYPH.install,`Cliquez sur l'icône <b>Installer</b> à droite de la <b>barre d'adresse</b>`)}
+          ${card('2',IG_GLYPH.app,`Confirmez — Ti-Services s'ouvre en plein écran. (Il marche aussi très bien dans le navigateur.)`)}
+        </div>`;
     }
+    const deviceLine = pf.inApp ? '' : `<span class="ig-badge-browser">${blogo||I.install} ${pf.ios?'Sur iPhone':pf.android?'Sur Android':'Sur ordinateur'}${pf.browser!=='other'?' · '+bname:''}</span>`;
     const wrap=document.createElement('div'); wrap.className='ig-back'; wrap.setAttribute('role','dialog'); wrap.setAttribute('aria-label','Installer Ti-Services');
     wrap.innerHTML=`<div class="ig-sheet"><button class="ig-x" aria-label="Fermer">×</button>
       <div class="ig-head"><img src="./zouti-logo.svg" alt="" width="46" height="50"><div><b>Installer Ti-Services</b><span>Pour créer votre compte et commander en un geste.</span></div></div>
+      ${deviceLine}
       ${body}</div>`;
     document.body.appendChild(wrap);
     haptic('light');
