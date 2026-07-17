@@ -541,6 +541,15 @@
   .avatar{width:46px;height:46px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:16px;background:linear-gradient(135deg,var(--teal),var(--teal-deep));font-family:var(--f-disp)}
   .avatar.lg{width:64px;height:64px;font-size:22px}
   .avatar.sm{width:32px;height:32px;font-size:12px}
+  /* Sceau « fondateur vérifié » façon badge officiel (Instagram) : pastille dorée à
+     coche blanche, posée en bas à droite de la photo. */
+  .av-wrap{position:relative;display:inline-flex;flex:none}
+  .av-seal{position:absolute;right:-2px;bottom:-2px;width:19px;height:19px;border-radius:50%;background:linear-gradient(145deg,#FCD253,#E0A400);display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px var(--card),0 2px 5px rgba(0,0,0,.22)}
+  .av-wrap:has(.avatar.sm) .av-seal{width:14px;height:14px;right:-3px;bottom:-3px}
+  .av-wrap:has(.avatar.lg) .av-seal{width:24px;height:24px}
+  .av-seal svg{width:11px;height:11px;color:#fff;stroke-width:3.4}
+  .av-wrap:has(.avatar.sm) .av-seal svg{width:9px;height:9px}
+  .av-wrap:has(.avatar.lg) .av-seal svg{width:14px;height:14px}
   .stars{color:var(--warn);font-size:13px;letter-spacing:1px}
 
   .timeline{margin:6px 0 0;padding:2px 0}
@@ -1316,6 +1325,8 @@
   function searchRadar(sm){return `<div class="radar${sm?' sm':''}"><div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div><div class="core bare">${octoMini(sm?46:64,'bob')}</div></div>`;}
   // Avatar : photo de profil si disponible, sinon initiales
   function avatarPhoto(photo,initials,cls){return photo?`<div class="avatar ${cls||''}" style="background-image:url('${photo}');background-size:cover;background-position:center;color:transparent">${initials}</div>`:`<div class="avatar ${cls||''}">${initials}</div>`;}
+  // Avatar avec sceau doré « fondateur vérifié » (badge officiel) si founder=true.
+  function avatarFounder(photo,initials,cls,founder){const av=avatarPhoto(photo,initials,cls);return founder?`<span class="av-wrap">${av}<span class="av-seal" title="Fondateur vérifié" aria-label="Fondateur vérifié">${I.check}</span></span>`:av;}
   // Sélecteur de photo de profil (création de compte client / artisan). who: 'client'|'pro'
   // Sélecteur de photo de profil : un seul « + ». Au clic, on propose le CHOIX
   // (appareil photo OU galerie) via une feuille d'action — pas de deuxième icône.
@@ -2004,7 +2015,12 @@
     bf.classList.toggle('show',cgb&&(noInline||scrolled));
     if(wrap)wrap.classList.toggle('backpad',cgb&&noInline);
   }
-  function render(){if(S.legalView){paintView(legalView(),'legal:'+S.legalView);paintPersona();return;}if(S.showPitch){paintView(pitchView(),'pitch');paintPersona();return;}paintView((S.persona==='admin'?renderAdmin():(S.persona==='concierge'?renderConcierge():(S.persona==='client'?renderClient():renderPro()))),curScreen());paintPersona();try{requestAnimationFrame(function(){applyFieldValidity();});}catch(_){applyFieldValidity();}}
+  function render(){if(S.legalView){paintView(legalView(),'legal:'+S.legalView);paintPersona();return;}if(S.showPitch){paintView(pitchView(),'pitch');paintPersona();return;}
+    // Panneau de commande (renderConfig) : peint HORS routeur. On le rétablit ici pour
+    // qu'un render() externe — instantané Firestore, retour au premier plan après le
+    // sélecteur de photo — NE renvoie PAS le client à l'accueil en perdant sa commande.
+    if(S.persona==='client'&&S.draft&&!S.payStep&&!S.share&&!S.addrForm&&!S.advantages&&!S.support&&!S.chat&&!S.cardForm&&!S.profileForm&&!S.clientInv&&!S.histInvoice&&!S.delAcct&&!S.generalSupport){renderConfig();paintPersona();try{requestAnimationFrame(function(){applyFieldValidity();});}catch(_){applyFieldValidity();}return;}
+    paintView((S.persona==='admin'?renderAdmin():(S.persona==='concierge'?renderConcierge():(S.persona==='client'?renderClient():renderPro()))),curScreen());paintPersona();try{requestAnimationFrame(function(){applyFieldValidity();});}catch(_){applyFieldValidity();}}
 
   /* ---------- ÉCRAN VITRINE / PITCH (présentation à un nouvel arrivant) ---------- */
   function pitchView(){
@@ -3013,7 +3029,7 @@
     const p=m.provider||{};const first=(p.nm||'Votre baby-sitter').split(' ')[0];
     const dips=(m.providerDiplomas||[]);
     const tel=digits(m.providerPhone||'');
-    const profile=`<div class="row" style="gap:12px;margin-top:10px;align-items:center">${avatarPhoto(m.providerPhoto,p.ini||inits(p.nm||'BS'),'lg')}<div style="flex:1;min-width:0"><b style="font-size:16px;font-family:var(--f-disp)">${esc(p.nm||'Votre baby-sitter')}</b><div class="mini" style="margin-top:2px">${p.jobs?p.jobs+' garde'+(p.jobs>1?'s':'')+' réalisée'+(p.jobs>1?'s':''):'Nouvelle sur Ti-Services'}${p.founder?' · '+I.star+' Fondatrice':''}</div></div><span class="chip good" style="padding:4px 10px">${I.check} Vérifiée</span></div>
+    const profile=`<div class="row" style="gap:12px;margin-top:10px;align-items:center">${avatarFounder(m.providerPhoto,p.ini||inits(p.nm||'BS'),'lg',p.founder)}<div style="flex:1;min-width:0"><b style="font-size:16px;font-family:var(--f-disp)">${esc(p.nm||'Votre baby-sitter')}</b><div class="mini" style="margin-top:2px">${p.jobs?p.jobs+' garde'+(p.jobs>1?'s':'')+' réalisée'+(p.jobs>1?'s':''):'Nouvelle sur Ti-Services'}${p.founder?' · '+I.star+' Fondatrice':''}</div></div><span class="chip good" style="padding:4px 10px">${I.check} Vérifiée</span></div>
       ${dips.length?`<div class="mini" style="margin-top:9px;color:var(--teal-deep)">${I.check} ${dips.map(esc).join(' · ')}</div>`:''}
       ${m.providerBio?`<p class="sub" style="margin-top:8px;color:var(--ink-soft)">«&nbsp;${esc(m.providerBio)}&nbsp;»</p>`:''}`;
     if(m.clientConfirmed)return `<div class="card provider-pop" style="padding:16px;margin-top:12px">${profile}<div class="banner teal" style="margin-top:12px">${I.check}<span><b>Garde confirmée</b> avec ${esc(first)} — à ${esc(m.slot)}. ${tel?`Besoin de la rappeler&nbsp;? <a href="tel:${tel}" style="color:var(--teal-deep);font-weight:700">${esc(m.providerPhone)}</a>`:''}</span></div></div>`;
@@ -3042,7 +3058,7 @@
       <div class="h-hello" style="margin-top:8px;text-align:center">${head.t}</div><p class="sub" style="text-align:center">${head.d}</p>
       ${(m.slotFlex&&m.status==='pending')?`<p class="mini" style="text-align:center;margin-top:4px">${I.clock} Créneau souhaité&nbsp;: ${m.when} · ${flexTxt(m)} — un artisan vous proposera une heure précise.</p>`:''}
       ${(m.slotFlex&&m.proposedSlot&&m.status!=='pending')?`<div class="banner teal" style="margin-top:10px">${I.clock}<span>${p?esc(p.nm.split(' ')[0]):'L’artisan'} a confirmé son passage à <b>${m.slot}</b> (vous aviez laissé ${flexTxt(m)}).</span></div>`:''}
-      ${m.status==='pending'?`<div class="card" style="padding:16px;margin-top:12px;text-align:center">${searchRadar(true)}<p class="sub" style="margin:0">Vous saurez qui intervient dès l'acceptation.</p></div>`:((m.svc==='baby'&&p)?babyConfirmBlock(m):(p?`<div class="card provider-pop" style="padding:14px;margin-top:12px"><div class="row" style="gap:12px">${avatarPhoto(m.providerPhoto,p.ini,'')}<div style="flex:1"><b style="font-size:15px">${esc(p.nm)}</b><div class="mini">${p.jobs} missions réalisées · ${I.pin} ${m.zone}</div></div><div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">${p.founder?`<span class="chip founder-chip" style="padding:4px 9px">${I.star} Fondateur</span>`:''}<span class="chip good" style="padding:4px 10px">${I.check} Vérifié · Assuré</span></div></div></div>`:''))}
+      ${m.status==='pending'?`<div class="card" style="padding:16px;margin-top:12px;text-align:center">${searchRadar(true)}<p class="sub" style="margin:0">Vous saurez qui intervient dès l'acceptation.</p></div>`:((m.svc==='baby'&&p)?babyConfirmBlock(m):(p?`<div class="card provider-pop" style="padding:14px;margin-top:12px"><div class="row" style="gap:12px">${avatarFounder(m.providerPhoto,p.ini,'',p.founder)}<div style="flex:1"><b style="font-size:15px">${esc(p.nm)}</b><div class="mini">${p.jobs} missions réalisées · ${I.pin} ${m.zone}</div></div><div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">${p.founder?`<span class="chip founder-chip" style="padding:4px 9px">${I.star} Fondateur</span>`:''}<span class="chip good" style="padding:4px 10px">${I.check} Vérifié · Assuré</span></div></div></div>`:''))}
       <div class="card" style="padding:16px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Suivi</div><div class="timeline" style="margin-top:12px">${tls}</div></div>
       ${p?`<button class="btn ghost sm" data-act="open-chat" style="margin-top:12px;justify-content:flex-start;gap:8px">${I.chat}&nbsp;Contacter ${esc(p.nm.split(' ')[0])} (numéro masqué)${(m.chat&&m.chat.length)?` · ${m.chat.length}`:''}</button>`:''}
       <button class="btn ghost sm" data-act="open-support" style="margin-top:8px;justify-content:flex-start;gap:8px">${I.shield}&nbsp;Contacter Ti-Services (support)${(()=>{const th=(m.support&&m.support.client)||[];return th.length?` · ${th.length}`:'';})()}</button>
@@ -3794,40 +3810,24 @@
     const cats=(S.proCats&&S.proCats.length)?S.proCats:['menage'];
     const catNames=cats.map(c=>{const s=SERVICES.find(x=>x.id===c);return s?s.nm:c;}).slice(0,2).join(' · ');
     const d=openDemand();const isNew=(S.proJobsTotal||0)===0;
-    return `<div class="pad"><div class="row between" style="margin-top:10px"><div><span class="eyebrow">Artisan · ${catNames} · dès ${S.proRate} €/h</span><div class="h-hello">${esc(S.proName||'Mon compte')}</div></div>${avatarPhoto(S.proPhoto,inits(S.proName||'Mon compte'),'')}</div>
+    const online=S.proOnline;
+    return `<div class="pad"><div class="row between" style="margin-top:10px"><div><span class="eyebrow">Artisan · ${catNames} · dès ${S.proRate} €/h</span><div class="h-hello">Mes missions</div></div>${avatarFounder(S.proPhoto,inits(S.proName||'Mon compte'),'',S.proFounder)}</div>
       ${notifCTA('pro')}
 
-      ${mollieState()!=='active'?`<button class="card" data-act="pro-mollie" style="padding:15px;margin-top:12px;width:100%;text-align:left;display:block;background:linear-gradient(135deg,var(--teal-wash),var(--card));border:1.5px solid color-mix(in srgb,var(--teal) 40%,transparent)">
-        <div class="row between"><b style="font-size:14px">${I.card}&nbsp;${mollieState()==='pending'?'Activation de vos paiements en cours':'Activez vos paiements'}</b><span class="chip ${mollieState()==='pending'?'warn':'coral'}" style="padding:3px 9px">${mollieState()==='pending'?'En vérification':'À faire'}</span></div></button>`:''}
-
-      <div class="card" style="padding:15px;margin-top:12px"><div class="row between"><div><b style="font-size:15px">${S.proOnline?'Vous êtes en ligne':'Hors ligne'}</b><div class="mini">${S.proOnline?'Vous recevez les missions près de vous':'Activez pour recevoir des missions'}</div></div><button class="switch" data-act="toggle-online" style="background:${S.proOnline?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${S.proOnline?'25px':'3px'}"></span></button></div></div>
+      <div class="card" style="padding:14px;margin-top:12px;${online?'':'border:1.5px solid color-mix(in srgb,var(--coral) 45%,transparent)'}"><div class="row between"><div><b style="font-size:15px">${online?'Vous êtes en ligne':'Hors ligne'}</b><div class="mini">${online?'Vous recevez les missions de votre zone':'Activez pour recevoir des missions'}</div></div><button class="switch" data-act="toggle-online" style="background:${online?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${online?'25px':'3px'}"></span></button></div></div>
 
       ${proTodoBlock()}
 
-      ${(FB&&!isDemo())?openRequestsBlock():`<div class="card" style="padding:16px;margin-top:12px;background:var(--teal-wash);border:1.5px solid color-mix(in srgb,var(--teal) 32%,transparent)">
-        <span class="eyebrow" style="color:var(--teal-deep)">${I.bolt} Forte demande près de vous</span>
-        <div style="margin-top:8px"><b style="font-size:23px;font-family:var(--f-disp)">${d.count} demandes</b> <span class="sub">non pourvues cette semaine</span></div>
+      ${(FB&&!isDemo())?openRequestsBlock():`<div style="margin-top:14px"><span class="eyebrow" style="color:var(--teal-deep)">${I.flame} Missions disponibles</span>
+        <div class="card" style="padding:16px;margin-top:10px;background:var(--teal-wash);border:1.5px solid color-mix(in srgb,var(--teal) 32%,transparent)">
+        <div><b style="font-size:23px;font-family:var(--f-disp)">${d.count} demandes</b> <span class="sub">non pourvues cette semaine</span></div>
         <div class="mini" style="margin-top:3px">${d.names} · Saint-Barth · <b style="color:var(--teal-deep)">~${d.amount.toLocaleString('fr-FR')} € de missions à prendre</b></div>
-        ${S.proOnline?`<p class="mini" style="margin-top:10px">Restez en ligne : chaque demande de votre zone atterrit ici — premier arrivé, premier servi.</p>`:`<button class="btn primary sm" data-act="toggle-online" style="margin-top:12px;width:auto;padding:9px 16px">Passer en ligne pour en profiter</button>`}
-      </div>`}
+        ${online?`<p class="mini" style="margin-top:10px">Restez en ligne : chaque demande de votre zone atterrit ici — premier arrivé, premier servi.</p>`:`<button class="btn primary sm" data-act="toggle-online" style="margin-top:12px;width:auto;padding:9px 16px">Passer en ligne pour en profiter</button>`}
+      </div></div>`}
 
-      <div class="card" style="padding:16px;margin-top:12px">
-        <span class="eyebrow" style="color:var(--muted)">Votre statut</span>
-        <div class="row" style="gap:14px;margin-top:10px;align-items:center">
-          <div><b class="money" style="font-size:24px;font-family:var(--f-disp)">${isNew?'Nouveau':(S.proRating?S.proRating.toFixed(1).replace('.',','):'4,9')}</b><div class="mini">${isNew?'bienvenue sur Ti-Services':'<span class="stars">★</span> note moyenne · '+(S.proJobsTotal||0)+' avis'}</div></div>
-          <div style="flex:1;display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap">${S.proFounder?`<span class="chip founder-chip" style="padding:4px 9px">${I.star} Fondateur</span>`:''}<span class="chip good" style="padding:4px 9px">${I.check} Vérifié</span><span class="chip" style="padding:4px 9px">${I.shield} Assuré</span></div>
-        </div>
-      </div>
+      ${mollieState()!=='active'?`<button class="card" data-act="pro-mollie" style="padding:13px 15px;margin-top:14px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:13px">${I.card}&nbsp;${mollieState()==='pending'?'Activation des paiements en cours':'Activez vos paiements pour être réglé'}</b><span class="chip ${mollieState()==='pending'?'warn':'coral'}" style="padding:3px 9px">${mollieState()==='pending'?'En vérification':'À faire'}</span></div><p class="mini" style="margin-top:5px;color:var(--muted)">Réglé automatiquement après chaque prestation — à configurer une fois.</p></button>`:''}
 
-      <div class="card" style="padding:16px;margin-top:12px">
-        <span class="eyebrow" style="color:var(--muted)">🔔 Alertes nouvelles demandes</span>
-        <div class="row between" style="margin-top:12px;align-items:center;gap:12px"><div><b style="font-size:14px">Notifications de l'app</b><div class="mini">Canal principal — instantané, même app fermée.</div></div><button class="switch" data-act="notif-push" style="background:${S.proNotifPush?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${S.proNotifPush?'25px':'3px'}"></span></button></div>
-        <div class="row between" style="margin-top:14px;align-items:center;gap:12px"><div><b style="font-size:14px">WhatsApp en secours</b><div class="mini">Si vous ratez la notif, une alerte WhatsApp vous renvoie vers l'app.</div></div><button class="switch" data-act="notif-wa" style="background:${S.proNotifWa?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${S.proNotifWa?'25px':'3px'}"></span></button></div>
-        ${S.proNotifWa?`<div class="field" style="margin-top:12px;margin-bottom:0"><label style="font-size:12px">Votre numéro WhatsApp (indicatif obligatoire)</label>${phoneCombo('wa',S.proPhone)}</div>`:''}
-        <p class="mini" style="margin-top:10px">${I.lock} Votre numéro reste masqué aux clients — il ne sert qu'aux alertes Ti-Services.</p>
-      </div>
-
-      ${isDemo()?`<p class="mini" style="text-align:center;margin-top:14px"><button class="linklike" data-act="demo-go-client">${I.user} Voir l'espace client (démo)</button> · <button class="linklike" data-act="demo-go-admin">⚙︎ Admin (démo)</button></p>`:''}
+      ${isDemo()?`<p class="mini" style="text-align:center;margin-top:16px"><button class="linklike" data-act="demo-go-client">${I.user} Voir l'espace client (démo)</button> · <button class="linklike" data-act="demo-go-admin">⚙︎ Admin (démo)</button></p>`:''}
       <div style="height:12px"></div></div>${proNavbar()}`;
   }
   function apptPayout(a){if(a.amount!=null)return a.amount;const base=svcBase(a.svc);return (a.rate||base)*a.duration;}
@@ -4138,10 +4138,18 @@
   function proAccount(){
     const cats=(S.proCats&&S.proCats.length)?S.proCats:['menage'];
     const catNames=cats.map(function(c){const s=SERVICES.find(x=>x.id===c);return s?s.nm:c;}).slice(0,3).join(' · ');
-    const insOk=S.proInsuranceStatus==='valide';
+    const insOk=S.proInsuranceStatus==='valide';const isNew=(S.proJobsTotal||0)===0;
     return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">${I.user} Mon compte</span>
-      <div class="row" style="gap:14px;margin-top:8px">${avatarPhoto(S.proPhoto,inits(S.proName||'Mon compte'),'lg')}<div><b style="font-size:18px;font-family:var(--f-disp)">${esc(S.proName||'Mon compte')}</b><div class="mini">${esc(catNames)} · dès ${S.proRate} €/h</div></div></div>
-      
+      <div class="row" style="gap:14px;margin-top:8px">${avatarFounder(S.proPhoto,inits(S.proName||'Mon compte'),'lg',S.proFounder)}<div><b style="font-size:18px;font-family:var(--f-disp)">${esc(S.proName||'Mon compte')}</b><div class="mini">${esc(catNames)} · dès ${S.proRate} €/h</div></div></div>
+
+      <div class="card" style="padding:16px;margin-top:16px">
+        <span class="eyebrow" style="color:var(--muted)">Votre statut</span>
+        <div class="row" style="gap:14px;margin-top:10px;align-items:center">
+          <div><b class="money" style="font-size:24px;font-family:var(--f-disp)">${isNew?'Nouveau':(S.proRating?S.proRating.toFixed(1).replace('.',','):'4,9')}</b><div class="mini">${isNew?'bienvenue sur Ti-Services':'<span class="stars">★</span> note moyenne · '+(S.proJobsTotal||0)+' avis'}</div></div>
+          <div style="flex:1;display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap">${S.proFounder?`<span class="chip founder-chip" style="padding:4px 9px">${I.star} Fondateur</span>`:''}<span class="chip good" style="padding:4px 9px">${I.check} Vérifié</span><span class="chip" style="padding:4px 9px">${I.shield} Assuré</span></div>
+        </div>
+      </div>
+
       <div class="eyebrow" style="margin:26px 4px 6px;color:var(--muted)">Compte</div>
       ${(function(){const st=mollieState();const badge=st==='active'?`<span class="chip good" style="padding:3px 9px">${I.check} Actif</span>`:st==='pending'?`<span class="chip warn" style="padding:3px 9px">${I.clock} En vérification</span>`:`<span class="chip coral" style="padding:3px 9px">À activer</span>`;
       return `<div class="card" style="padding:16px;margin-top:16px"><div class="row between"><b style="font-size:14px">${I.card}&nbsp;Recevoir mes paiements</b>${badge}</div>
@@ -4164,6 +4172,13 @@
 
       <div class="eyebrow" style="margin:26px 4px 6px;color:var(--muted)">Aide & réglages</div>
       ${notifCard('pro')}
+      <div class="card" style="padding:16px;margin-top:12px">
+        <span class="eyebrow" style="color:var(--muted)">🔔 Alertes nouvelles demandes</span>
+        <div class="row between" style="margin-top:12px;align-items:center;gap:12px"><div><b style="font-size:14px">Notifications de l'app</b><div class="mini">Canal principal — instantané, même app fermée.</div></div><button class="switch" data-act="notif-push" style="background:${S.proNotifPush?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${S.proNotifPush?'25px':'3px'}"></span></button></div>
+        <div class="row between" style="margin-top:14px;align-items:center;gap:12px"><div><b style="font-size:14px">WhatsApp en secours</b><div class="mini">Si vous ratez la notif, une alerte WhatsApp vous renvoie vers l'app.</div></div><button class="switch" data-act="notif-wa" style="background:${S.proNotifWa?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${S.proNotifWa?'25px':'3px'}"></span></button></div>
+        ${S.proNotifWa?`<div class="field" style="margin-top:12px;margin-bottom:0"><label style="font-size:12px">Votre numéro WhatsApp (indicatif obligatoire)</label>${phoneCombo('wa',S.proPhone)}</div>`:''}
+        <p class="mini" style="margin-top:10px">${I.lock} Votre numéro reste masqué aux clients — il ne sert qu'aux alertes Ti-Services.</p>
+      </div>
       <button class="card" data-act="open-general-support" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.support}&nbsp;Contacter Ti-Services</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Support ›</span></div><p class="sub" style="margin-top:8px">Une question sur votre compte, un dossier, l'application&nbsp;? Écrivez-nous — sans lien avec une mission.</p></button>
       ${backupCard()}
       ${S.demoMode?`<p class="mini" style="text-align:center;margin-top:12px"><button class="linklike" data-act="demo-go-client">${I.user} Voir l'espace client (démo)</button> · <button class="linklike" data-act="demo-go-admin">⚙︎ Admin (démo)</button></p>`:(FB?`<button class="btn ghost sm" data-act="logout" style="margin-top:14px">Se déconnecter</button>`:'')}
