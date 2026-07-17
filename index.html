@@ -303,9 +303,10 @@
   .inv .mut{color:#7b7686}
   .inv .sec{margin-top:16px}
   .inv table{width:100%;border-collapse:collapse;margin-top:14px}
-  .inv thead th{background:#F26A4B;color:#fff;text-transform:uppercase;font-size:10px;letter-spacing:.06em;padding:9px 10px}
+  .inv thead th{background:#F26A4B;color:#fff;text-transform:uppercase;font-size:10px;letter-spacing:.04em;padding:9px 7px}
   .inv thead th:first-child{border-radius:8px 0 0 8px} .inv thead th:last-child{border-radius:0 8px 8px 0}
-  .inv th,.inv td{text-align:left;padding:11px 10px;font-size:12px}
+  .inv th,.inv td{text-align:left;padding:10px 7px;font-size:12px;overflow-wrap:anywhere}
+  #invoiceDoc{max-width:100%;overflow-x:hidden}
   .inv tbody td{border-bottom:1px solid #efedf4}
   .inv td.r,.inv th.r{text-align:right}
   .inv .tot{font-weight:800;font-size:16px;color:#151515}
@@ -1925,13 +1926,15 @@
   }
   // Trace l'itinéraire depuis la position actuelle jusqu'à la destination (in-app,
   // sans quitter). Route routière via OSRM ; repli sur un trait à vol d'oiseau.
+  // Position de l'appareil mise en cache (localStorage) : accordée UNE fois, réutilisée
+  // ensuite — l'artisan n'a plus la fenêtre système « autoriser la position » à chaque
+  // ouverture d'une mission. Le guidage réel passe de toute façon par « Navigation ».
+  function geoCacheGet(){try{const r=localStorage.getItem('ts_geo');if(!r)return null;const o=JSON.parse(r);if(o&&isFinite(+o.lat)&&isFinite(+o.lng))return o;}catch(_){}return null;}
+  function geoCacheSet(lat,lng){try{localStorage.setItem('ts_geo',JSON.stringify({lat:+(+lat).toFixed(5),lng:+(+lng).toFixed(5),at:Date.now()}));}catch(_){}}
   function drawRoute(L,map,lat,lng,el){
     const wrap=el.closest('.geomap');const info=wrap&&wrap.querySelector('.routeinfo');
     const setInfo=function(t){if(info)info.textContent=t;};
-    if(!navigator.geolocation){setInfo('📍 Activez la localisation pour voir le trajet.');return;}
-    setInfo('🧭 Localisation…');
-    navigator.geolocation.getCurrentPosition(function(pos){
-      const flat=pos.coords.latitude,flng=pos.coords.longitude;
+    const render=function(flat,flng){
       const meIcon=L.divIcon({className:'me-dot',html:'<span></span>',iconSize:[18,18]});
       L.marker([flat,flng],{icon:meIcon,zIndexOffset:-100}).addTo(map);
       const drawStraight=function(){const line=L.polyline([[flat,flng],[lat,lng]],{color:'#F26A4B',weight:4,opacity:.85,dashArray:'6 8'}).addTo(map);try{map.fitBounds(line.getBounds().pad(0.35));}catch(_){}setInfo('≈ '+haversineKm(flat,flng,lat,lng).toFixed(1)+' km à vol d’oiseau');};
@@ -1946,7 +1949,13 @@
             setInfo('🚗 '+(rte.distance/1000).toFixed(1)+' km · '+Math.max(1,Math.round(rte.duration/60))+' min');
           }else{drawStraight();}
         }).catch(function(){if(done)return;done=true;clearTimeout(guard);drawStraight();});
-    },function(){setInfo('📍 Localisation refusée — appuyez sur « Navigation » pour le guidage.');},{enableHighAccuracy:true,timeout:8000,maximumAge:30000});
+    };
+    // Réutilise la position déjà connue : aucune nouvelle demande d'autorisation.
+    const cached=geoCacheGet();
+    if(cached){render(cached.lat,cached.lng);return;}
+    if(!navigator.geolocation){setInfo('📍 Appuyez sur « Navigation » pour le guidage.');return;}
+    setInfo('🧭 Localisation…');
+    navigator.geolocation.getCurrentPosition(function(pos){geoCacheSet(pos.coords.latitude,pos.coords.longitude);render(pos.coords.latitude,pos.coords.longitude);},function(){setInfo('📍 Appuyez sur « Navigation » pour le guidage.');},{enableHighAccuracy:true,timeout:8000,maximumAge:600000});
   }
   function geolocate(apply){const fb={lat:17.8962,lng:-62.8498};const set=(g)=>{apply(g);toast('Point GPS enregistré');};if(navigator.geolocation){toast('Localisation en cours…');navigator.geolocation.getCurrentPosition(p=>set({lat:+p.coords.latitude.toFixed(5),lng:+p.coords.longitude.toFixed(5)}),()=>set(fb),{enableHighAccuracy:true,timeout:6000,maximumAge:0});}else set(fb);}
   const availCount=()=>Object.values(S.avail).reduce((t,d)=>t+d.m+d.a+d.s,0);
@@ -4084,7 +4093,7 @@
       <p class="mini" style="margin-top:7px">Plus que <b>${next.min-jobs} missions</b> pour atteindre le statut <b>${next.nm}</b> — et conserver une part encore plus grande de chaque prestation.</p>`;
     }else{prog=`<p class="mini" style="margin-top:10px">🎉 Statut maximum atteint — vous conservez la plus grande part possible de chaque prestation.</p>`;}
     return `<div class="card" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">Statut fidélité</b><span class="chip" style="padding:4px 11px;background:${col}22;color:${col}">★ ${tier.nm}</span></div>
-      <p class="sub" style="margin-top:8px">Plus vous enchaînez les missions via Ti-Services, plus la commission baisse&nbsp;: vous gardez davantage sur chaque prestation.</p>
+      <p class="sub" style="margin-top:8px">Plus vous enchaînez les missions via Ti-Services, plus vous gardez une <b>grande part</b> de chaque prestation.</p>
       <div class="row between" style="margin-top:8px"><span class="mini">${jobs} missions au total${rm?` · dont ${rm} par parrainage`:''}</span>${next?`<span class="mini">Prochain&nbsp;: ${next.nm}</span>`:''}</div>${prog}</div>`;
   }
   function svcName(id){const s=SERVICES.find(x=>x.id===id);return s?s.nm:id;}
@@ -4131,7 +4140,7 @@
     const totComm=(S.proHistory||[]).reduce(function(t,h){return t+histBreakdown(h).commission;},0);
     const tier=fidFor(S.proJobsTotal||0);
     return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">${I.wallet} Revenus</span><div class="h-hello">Ce mois-ci</div>
-      <div class="card" style="padding:18px;margin-top:12px"><div class="mini">Net perçu (juillet)</div><b class="money" style="font-size:30px;font-family:var(--f-disp)">${eur(S.proEarnings)}</b><div class="row between" style="margin-top:14px"><span class="sub">Missions réalisées</span><b>${nbDone}</b></div>${totComm>0?`<div class="row between" style="margin-top:6px"><span class="sub">Commission Ti-Services <span class="chip" style="padding:2px 8px;background:var(--teal-wash);color:var(--teal-deep)">${tier.nm} · ${tier.pct}&nbsp;%</span></span><b style="color:var(--muted)">−${eur(totComm)}</b></div>`:''}${nbDone?`<div class="row between" style="margin-top:6px"><span class="sub">Prochain virement</span><b>sous 48 h après validation</b></div>`:''}</div>
+      <div class="card" style="padding:18px;margin-top:12px"><div class="mini">Net perçu (juillet)</div><b class="money" style="font-size:30px;font-family:var(--f-disp)">${eur(S.proEarnings)}</b><div class="row between" style="margin-top:14px"><span class="sub">Missions réalisées</span><b>${nbDone}</b></div>${nbDone?`<div class="row between" style="margin-top:6px"><span class="sub">Prochain virement</span><b>sous 48 h après validation</b></div>`:''}</div>
       ${nbDone?'':`<div class="card" style="padding:22px;margin-top:12px;text-align:center;color:var(--muted)">${octoMini(64,'wave')}<div style="margin-top:8px;font-weight:600;color:var(--ink-soft)">Pas encore de mission réglée</div><div style="margin-top:3px">Vos revenus et vos factures apparaîtront ici après votre première prestation validée.</div></div>`}
       <button class="card" data-act="open-interv" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.card}&nbsp;Mes factures par mission</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">La facture de chaque prestation réalisée, établie automatiquement en votre nom — à consulter ou télécharger.</p></button>
       <button class="card" data-act="open-statement" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">📄&nbsp;Relevé mensuel</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Votre document récapitulatif du mois : toutes vos prestations et le total encaissé, à enregistrer pour votre comptabilité.</p></button>
@@ -4150,10 +4159,7 @@
 
       <div class="card" style="padding:16px;margin-top:16px">
         <span class="eyebrow" style="color:var(--muted)">Votre statut</span>
-        <div class="row" style="gap:14px;margin-top:10px;align-items:center">
-          <div><b class="money" style="font-size:24px;font-family:var(--f-disp)">${isNew?'Nouveau':(S.proRating?S.proRating.toFixed(1).replace('.',','):'4,9')}</b><div class="mini">${isNew?'bienvenue sur Ti-Services':'<span class="stars">★</span> note moyenne · '+(S.proJobsTotal||0)+' avis'}</div></div>
-          <div style="flex:1;display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap">${S.proFounder?`<span class="chip founder-chip" style="padding:4px 9px">${I.star} Fondateur</span>`:''}<span class="chip good" style="padding:4px 9px">${I.check} Vérifié</span><span class="chip" style="padding:4px 9px">${I.shield} Assuré</span></div>
-        </div>
+        <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap">${S.proFounder?`<span class="chip founder-chip" style="padding:5px 11px">${I.star} Fondateur</span>`:''}<span class="chip good" style="padding:5px 11px">${I.check} Vérifié</span><span class="chip" style="padding:5px 11px">${I.shield} Assuré</span></div>
       </div>
 
       <div class="eyebrow" style="margin:26px 4px 6px;color:var(--muted)">Compte</div>
@@ -4234,14 +4240,14 @@
   // Document fiscal officiel — le relevé mensuel EST la facture (standard plateformes).
   function proCommStatement(){
     const c=commMonthly(S.proHistory);
-    const rows=c.count?c.list.map(function(x){return `<tr><td>${fmtLong(x.h.dateISO)}</td><td>${svcName(x.h.svc)} — ${esc(x.h.client||'')}</td><td class="r">${eur(x.b.gross)}</td><td class="r">${x.b.pct} %</td><td class="r">${eur(x.b.commission)}</td></tr>`;}).join(''):`<tr><td colspan="5" style="text-align:center;color:#888;padding:14px">Aucune commission ce mois-ci.</td></tr>`;
+    const rows=c.count?c.list.map(function(x){return `<tr><td>${fmtLong(x.h.dateISO)}</td><td>${svcName(x.h.svc)} — ${esc(x.h.client||'')}</td><td class="r">${eur(x.b.commission)}</td></tr>`;}).join(''):`<tr><td colspan="3" style="text-align:center;color:#888;padding:14px">Aucune commission ce mois-ci.</td></tr>`;
     return `<div class="pad">
       <div class="row between noprint" style="margin-top:6px;gap:8px"><button class="reset" data-act="close-comm-statement">← Retour</button><button class="btn primary" data-act="print-invoice" style="width:auto;padding:10px 16px">${I.card}&nbsp;Enregistrer / Imprimer</button></div>
       <p class="mini noprint" style="text-align:center;color:var(--muted);margin-bottom:8px">${I.check} Facture de commission mensuelle Ti-Services — pour votre comptabilité (charge déductible).</p>
       <div id="invoiceDoc"><div class="inv">
         <div class="row between" style="align-items:flex-start"><div><h2>FACTURE DE COMMISSION</h2><div class="mut">N° ${commInvNo(FB&&FB.auth&&FB.auth.currentUser?FB.auth.currentUser.uid:(S.proSiret||'DEMO'))}</div><div class="mut">${COMM_PERIOD}</div></div><div style="text-align:right"><div style="font-family:var(--f-disp);font-weight:800;font-size:16px;color:#151515">Ti-Services</div><div class="mut">Plateforme d'intermédiation</div>${ccsHead()}</div></div>
         <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Facturé à · intervenant</div><b>${S.proLegal}</b><div class="mut">${S.proStatusType==='particulier'?'Particulier':'Entreprise'} · SIRET ${S.proSiret||'—'}</div></div>
-        <table><thead><tr><th>Date</th><th>Prestation</th><th class="r">Base</th><th class="r">Taux</th><th class="r">Commission</th></tr></thead>
+        <table><thead><tr><th>Date</th><th>Prestation</th><th class="r">Commission</th></tr></thead>
         <tbody>${rows}</tbody></table>
         <div class="row between sec"><span class="mut">Total commission (${c.count} mission${c.count>1?'s':''})</span><span class="tot">${eur(c.comm)}</span></div>
         <div class="row between" style="margin-top:6px"><span class="mut">Chiffre d'affaires prestations</span><b>${eur(c.gross)}</b></div>
