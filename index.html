@@ -4284,6 +4284,9 @@
   // Réglages artisan (disponibilités, en ligne, préférences de notif, n° WhatsApp) :
   // persistés sur la fiche artisans/{uid} pour survivre à une réinstallation.
   function saveProSettings(){ try{ if(FB&&FB.auth&&FB.auth.currentUser&&!isDemo()){ FB.f.setDoc(FB.f.doc(FB.db,'artisans',FB.auth.currentUser.uid),{avail:S.avail,online:!!S.proOnline,notifPush:!!S.proNotifPush,notifWa:!!S.proNotifWa,phone:S.proPhone||''},{merge:true}).catch(function(e){toast('⚠︎ Réglages non enregistrés : '+fbErrTxt(e));}); } }catch(_){} }
+  // Photo de profil de l'artisan modifiée depuis « Mon compte » : persistée sur sa fiche
+  // (et sur son compte users pour l'affichage) ; en démo, on garde juste l'aperçu local.
+  function saveProPhoto(d){ try{ if(FB&&FB.auth&&FB.auth.currentUser&&!isDemo()){ const uid=FB.auth.currentUser.uid; FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{photo:d||''},{merge:true}).then(function(){toast('Photo de profil mise à jour ✓');}).catch(function(e){toast('⚠︎ Photo non enregistrée : '+fbErrTxt(e));}); try{ FB.f.setDoc(FB.f.doc(FB.db,'users',uid),{photo:d||''},{merge:true}); }catch(_){} } else { toast('Photo de profil mise à jour ✓'); } }catch(_){} }
   // Désistement artisan : la mission acceptée repart en recherche pour les autres
   // artisans (re-diffusion), et le client est prévenu. Concrétise l'engagement de
   // moyens « on relance la recherche » sans en faire une garantie.
@@ -4500,7 +4503,14 @@
     const catNames=cats.map(function(c){const s=SERVICES.find(x=>x.id===c);return s?s.nm:c;}).slice(0,3).join(' · ');
     const insOk=S.proInsuranceStatus==='valide';const isNew=(S.proJobsTotal||0)===0;
     return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">${I.user} Mon compte</span>
-      <div class="row" style="gap:14px;margin-top:8px">${avatarFounder(S.proPhoto,inits(S.proName||'Mon compte'),'lg',S.proFounder)}<div><b style="font-size:18px;font-family:var(--f-disp)">${esc(S.proName||'Mon compte')}</b><div class="mini">${esc(catNames)} · dès ${S.proRate} €/h</div></div></div>
+      <div class="row" style="gap:14px;margin-top:8px;align-items:center">
+        <button data-act="photopick:proPhoto" aria-label="Changer ma photo de profil" style="position:relative;background:none;border:none;padding:0;flex:none;line-height:0;border-radius:50%">
+          ${avatarFounder(S.proPhoto,inits(S.proName||'Mon compte'),'lg',S.proFounder)}
+          <span aria-hidden="true" style="position:absolute;left:-2px;bottom:-2px;width:26px;height:26px;border-radius:50%;background:var(--teal-deep);display:flex;align-items:center;justify-content:center;border:2px solid var(--card);box-shadow:0 2px 6px -2px rgba(0,0,0,.4)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.2"/></svg></span>
+        </button>
+        <div><b style="font-size:18px;font-family:var(--f-disp)">${esc(S.proName||'Mon compte')}</b><div class="mini">${esc(catNames)} · dès ${S.proRate} €/h</div><button class="linklike" data-act="photopick:proPhoto" style="font-size:12px;font-weight:650;color:var(--teal-deep);margin-top:3px">${S.proPhoto?'Changer ma photo':'Ajouter une photo'}</button></div>
+      </div>
+      <input type="file" accept="image/*" capture="user" data-avatarinput="proPhoto" data-pcam hidden><input type="file" accept="image/*" data-avatarinput="proPhoto" data-pgal hidden>
 
       <div class="card" style="padding:16px;margin-top:16px">
         <span class="eyebrow" style="color:var(--muted)">Votre statut</span>
@@ -5284,7 +5294,7 @@
     const ai=e.target.closest('[data-avatarinput]');
     if(ai&&ai.files&&ai.files[0]){const who=ai.dataset.avatarinput,file=ai.files[0];ai.value='';
       // Toutes les photos de profil sont réduites en data URL : légères et persistées en base.
-      avatarDataUrl(file,function(d){ if(!d)return; if(who==='profile'){ if(S.profileForm)S.profileForm.photo=d; } else if(who==='client'){ S.clientForm.photo=d; } else { S.proForm.photo=d; } render(); });
+      avatarDataUrl(file,function(d){ if(!d)return; if(who==='profile'){ if(S.profileForm)S.profileForm.photo=d; } else if(who==='client'){ S.clientForm.photo=d; } else if(who==='proPhoto'){ S.proPhoto=d; saveProPhoto(d); } else { S.proForm.photo=d; } render(); });
       return;}
     const ins=e.target.closest('[data-insurancefile]');
     if(ins&&ins.files&&ins.files[0]){const file=ins.files[0];ins.value='';
