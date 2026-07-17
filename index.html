@@ -2501,6 +2501,33 @@
       lines:c.list.map(function(x){return {invNo:x.h.invNo||'',dateISO:x.h.dateISO||'',svc:x.h.svc,svcName:svcName(x.h.svc),client:x.h.clientFull||x.h.client||'',clientZone:x.h.clientZone||'',unit:x.h.unit||'h',duration:x.h.duration||0,rate:x.h.rate||0,gross:x.b.gross,pct:x.b.pct,commission:x.b.commission,net:x.b.net};})};
   }
   function adminFactArt(){return (S.adminArtisans||[]).find(function(a){return a.id===(S.admin.fact&&S.admin.fact.art);});}
+  // Recherche transversale d'une facture de prestation (tout l'historique) par N°,
+  // client, artisan ou service — pour en retrouver une précise et la retransmettre.
+  // Rend UNIQUEMENT la liste de résultats (rafraîchie sans re-render → garde le focus).
+  function factSearchResultsHtml(){
+    const q=(S.admin.factQ||'').trim().toLowerCase();
+    if(q.length<2)return '';
+    const all=adminCommissionLedger();
+    const hits=all.filter(function(e){
+      return String(e.invNo||'').toLowerCase().indexOf(q)>=0
+        || String(e.clientName||'').toLowerCase().indexOf(q)>=0
+        || String(e.providerName||'').toLowerCase().indexOf(q)>=0
+        || String(e.serviceName||svcName(e.service)||'').toLowerCase().indexOf(q)>=0;
+    });
+    if(!hits.length)return `<div class="card" style="padding:15px;text-align:center;color:var(--muted);margin-top:9px">Aucune facture ne correspond à «&nbsp;${esc(S.admin.factQ)}&nbsp;».</div>`;
+    const cap=hits.slice(0,40);
+    const rows=cap.map(function(e){
+      const provid=e.providerUid||e.providerName||e.reqId||'';
+      const gross=e.grossTotal||e.base||0;
+      return `<button class="card" style="padding:13px;margin-top:9px;width:100%;text-align:left;display:block" data-adm="fact-doc:${esc(provid)}:${esc(e.invNo||'')}">
+        <div class="row between"><b style="font-size:14px">${esc(e.serviceName||svcName(e.service))}</b><span class="money" style="font-weight:700">${eur(gross)}</span></div>
+        <div class="mini" style="margin-top:3px">Facture ${esc(e.invNo||'—')} · ${e.dateISO?fmtLong(e.dateISO):'—'} · ${esc(e.clientName||'')} · ${esc(e.providerName||'')}</div>
+        <div class="mini" style="margin-top:2px;color:var(--muted)">commission ${eur(e.commissionAmount||0)} · net ${eur(e.netAmount||0)}</div>
+      </button>`;
+    }).join('');
+    const more=hits.length>cap.length?`<p class="mini" style="text-align:center;color:var(--muted);margin-top:8px">${hits.length-cap.length} autre${hits.length-cap.length>1?'s':''} résultat${hits.length-cap.length>1?'s':''} — précisez la recherche.</p>`:'';
+    return `<div class="mini" style="margin-top:10px;color:var(--muted)">${hits.length} facture${hits.length>1?'s':''} trouvée${hits.length>1?'s':''}</div>${rows}${more}`;
+  }
   function adminInvoices(){
     const groups=adminCommissionGroups();const round2=function(n){return Math.round(n*100)/100;};
     const totComm=round2(groups.reduce(function(t,x){return t+x.c.comm;},0));
@@ -2512,9 +2539,14 @@
       </div>`;}).join(''):`<div class="card" style="padding:20px;text-align:center;color:var(--muted);margin-top:10px">Aucune prestation réglée ce mois — les factures apparaîtront ici.</div>`;
     return `<div class="pad">
       <div class="row between" style="margin-top:10px"><div><span class="eyebrow">Console admin · Factures</span><div class="h-hello">Factures &amp; commissions</div></div><div class="avatar" style="background:linear-gradient(135deg,var(--ink),#000)">TS</div></div>
-      <div class="mini" style="margin-top:4px;color:var(--muted)">${COMM_PERIOD}</div>
+      <div class="mini" style="margin-top:4px;color:var(--muted)">Tout l'historique — chaque facture reste accessible et retrouvable.</div>
+      <div class="card" style="padding:13px;margin-top:12px">
+        <label class="mini" style="display:block;margin-bottom:6px;color:var(--muted)">Retrouver une facture de prestation</label>
+        <input class="txt" data-factq value="${esc(S.admin.factQ||'')}" placeholder="N° de facture, client, artisan ou service…" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <div id="factSearchResults">${factSearchResultsHtml()}</div>
+      </div>
       <div class="row" style="gap:9px;margin-top:12px">
-        <div class="card" style="padding:13px;flex:1;min-width:0"><div class="mini">Commission Ti-Services</div><b class="money" style="font-size:20px;font-family:var(--f-disp);display:block;color:var(--teal-deep)">${eur(totComm)}</b><div class="mini">ce mois</div></div>
+        <div class="card" style="padding:13px;flex:1;min-width:0"><div class="mini">Commission Ti-Services</div><b class="money" style="font-size:20px;font-family:var(--f-disp);display:block;color:var(--teal-deep)">${eur(totComm)}</b><div class="mini">cumul</div></div>
         <div class="card" style="padding:13px;flex:1;min-width:0"><div class="mini">CA prestations</div><b class="money" style="font-size:20px;font-family:var(--f-disp);display:block">${eur(totGross)}</b><div class="mini">reversé aux artisans</div></div>
       </div>
       <div class="banner teal" style="margin-top:12px">${I.shield}<span>Chaque artisan reçoit <b>une facture de commission mensuelle</b> (une ligne par mission) — le standard. Les factures de prestation sont établies au mandat, en leur nom.</span></div>
@@ -5364,6 +5396,9 @@
     const cn=e.target.closest('[data-conc-notes]');if(cn&&S.concOrder){S.concOrder.notes=cn.value;}
     const cib=e.target.closest('[data-cib]');if(cib){if(cib.dataset.cib==='iban')S.concIban=cib.value;else S.concIbanHolder=cib.value;}
     const sip=e.target.closest('[data-sepa]');if(sip){S.sepaIban=sip.value;try{localStorage.setItem('ts_sepa_iban',sip.value);}catch(_){}}
+    // Recherche de facture (console admin) : on rafraîchit seulement la liste de
+    // résultats, sans re-render, pour conserver le focus dans le champ.
+    const fq=e.target.closest('[data-factq]');if(fq){S.admin.factQ=fq.value;const box=document.getElementById('factSearchResults');if(box)box.innerHTML=factSearchResultsHtml();}
   });
   view.addEventListener('change',(e)=>{
     // Indicatif téléphonique : recompose la valeur complète à chaque changement.
