@@ -1631,6 +1631,10 @@
   // Sous-total forfait d'une mission à l'acte (somme des actes cochés × quantité), ou null
   // si la mission n'est pas de type « catalogue » (on retombe alors sur le tarif horaire).
   function forfaitSub(m){if(!m||!m.acts)return null;return m.acts.reduce(function(t,a){return t+(Number(a.price)||0)*(a.qty||1);},0);}
+  // Forfait de déplacement : sous ce seuil de commande (prestations « à l'acte »), on
+  // ajoute un forfait pour couvrir le déplacement du prestataire. Au-dessus, c'est offert.
+  const TRAVEL_MIN=50, TRAVEL_FEE=20;
+  function travelFeeFor(sub,hasActs){return (hasActs&&sub>0&&sub<TRAVEL_MIN)?TRAVEL_FEE:0;}
   const PROVIDERS={
     menage:{nm:'Marie-Lou Cagan',ini:'ML',rating:4.9,jobs:214,founder:true},
     baby:{nm:'Sabrina Théodore',ini:'ST',rating:5.0,jobs:98,founder:true},
@@ -1918,15 +1922,18 @@
   // Taux de commission Ti-Services (barème de fidélité dégressif). Figé sur la mission
   // au moment du règlement (m.commPct) pour rester stable dans l'historique/les factures.
   function commPctFor(m){return (m&&m.commPct!=null)?m.commPct:myCommPct();}
-  function totals(m){const rate=fixedRate(m);const h=billHours(m);const fs=forfaitSub(m);const sub=(fs!=null)?fs:rate*h;const boost=m.boost||0;const maj=Math.round(sub*boost/100);const total=sub+maj;
+  function totals(m){const rate=fixedRate(m);const h=billHours(m);const fs=forfaitSub(m);const sub=(fs!=null)?fs:rate*h;const boost=m.boost||0;const maj=Math.round(sub*boost/100);
+    // Forfait de déplacement sous le seuil (prestations à l'acte uniquement) — offert au-delà.
+    const travel=travelFeeFor(sub,!!(m&&m.acts));
+    const total=sub+maj+travel;
     // La commission Ti-Services porte sur la base (sub) ; la majoration « coup de pouce »
-    // revient intégralement à l'intervenant (CGV art. 2).
+    // ET le forfait de déplacement reviennent intégralement à l'intervenant (CGV art. 2).
     const commPct=commPctFor(m);const commission=Math.round(sub*commPct)/100;const payout=Math.round((total-commission)*100)/100;
-    return {rate,sub,hours:h,boost,maj,commPct,commission,payout,total};}
+    return {rate,sub,hours:h,boost,maj,travel,commPct,commission,payout,total};}
   // Net RÉEL que l'artisan percevra pour une demande ouverte (commission déjà déduite) —
   // affiché AVANT l'acceptation pour qu'il décide en connaissance de cause. On ne montre
   // jamais à l'artisan le prix payé par le client (et jamais au client le net de l'artisan).
-  function reqPayout(r){let sub;if(r.acts&&r.acts.length){sub=r.acts.reduce(function(t,a){return t+(Number(a.price)||0)*(a.qty||1);},0);}else if(r.forfaitTotal!=null){sub=Number(r.forfaitTotal)||0;}else{sub=(Number(r.rate)||0)*(Number(r.duration)||1);}const maj=Math.round(sub*((r.boost||0))/100);const gross=sub+maj;const pct=myCommPct();const commission=Math.round(sub*pct)/100;return Math.round((gross-commission)*100)/100;}
+  function reqPayout(r){let sub;const hasActs=!!(r.acts&&r.acts.length);if(hasActs){sub=r.acts.reduce(function(t,a){return t+(Number(a.price)||0)*(a.qty||1);},0);}else if(r.forfaitTotal!=null){sub=Number(r.forfaitTotal)||0;}else{sub=(Number(r.rate)||0)*(Number(r.duration)||1);}const maj=Math.round(sub*((r.boost||0))/100);const travel=travelFeeFor(sub,hasActs);const gross=sub+maj+travel;const pct=myCommPct();const commission=Math.round(sub*pct)/100;return Math.round((gross-commission)*100)/100;}
   // Décompose une ligne d'historique : brut (prix payé par le client / vente au mandat),
   // commission Ti-Services, net perçu par l'artisan. Rétrocompatible avec les anciennes
   // lignes (sans commission → net = brut).
@@ -2085,7 +2092,7 @@
   function rateUnit(m){return isForfait(m)?'€':('€/'+(isDayU(m)?'jour':'h'));}
   function recoFor(m){return isDayU(m)?fixedRate(m):svcReco(m.svc);}
   function endDateTxt(m){if(!isDayU(m))return '';let startISO=m.dateISO;if(!startISO){const d=new Date();if(m.when==='Demain')d.setDate(d.getDate()+1);startISO=d.toISOString().slice(0,10);}const d=new Date(startISO+'T00:00:00');const e=new Date(d);e.setDate(d.getDate()+Math.max(1,m.duration)-1);const f=(x)=>x.getDate()+'/'+(x.getMonth()+1);return f(d)+' → '+f(e);}
-  function finalizePaid(m){if(m.commPct==null)m.commPct=myCommPct();const tt=totals(m);m.status='paid';S.proEarnings+=tt.payout;if(m._appt){m._appt.status='done';m._appt.duration=billHours(m);m._appt.amount=tt.total;}S.proHistory=S.proHistory||[];const seq='2026-'+String(43+S.proHistory.length).padStart(4,'0');m.invNo=seq;const cliN=(m.clientName||m.client||(isDemo()?'Camille M.':((S.account&&S.account.name)||'Client')));S.proHistory.unshift({id:'hm'+S.proHistory.length,dateISO:(m.dateISO||new Date().toISOString().slice(0,10)),svc:m.svc,client:cliN,clientFull:cliN,clientZone:m.zone,duration:billHours(m),unit:m.unit,acts:(m.acts&&m.acts.length)?m.acts.map(function(a){return {id:a.id,nm:a.nm,price:a.price,qty:a.qty||1};}):null,rate:tt.rate,amount:tt.total,commPct:tt.commPct,commission:tt.commission,net:tt.payout,invNo:seq,paidVia:'carte'});}
+  function finalizePaid(m){if(m.commPct==null)m.commPct=myCommPct();const tt=totals(m);m.status='paid';S.proEarnings+=tt.payout;if(m._appt){m._appt.status='done';m._appt.duration=billHours(m);m._appt.amount=tt.total;}S.proHistory=S.proHistory||[];const seq='2026-'+String(43+S.proHistory.length).padStart(4,'0');m.invNo=seq;const cliN=(m.clientName||m.client||(isDemo()?'Camille M.':((S.account&&S.account.name)||'Client')));S.proHistory.unshift({id:'hm'+S.proHistory.length,dateISO:(m.dateISO||new Date().toISOString().slice(0,10)),svc:m.svc,client:cliN,clientFull:cliN,clientZone:m.zone,duration:billHours(m),unit:m.unit,acts:(m.acts&&m.acts.length)?m.acts.map(function(a){return {id:a.id,nm:a.nm,price:a.price,qty:a.qty||1};}):null,travel:tt.travel||0,rate:tt.rate,amount:tt.total,commPct:tt.commPct,commission:tt.commission,net:tt.payout,invNo:seq,paidVia:'carte'});}
   const eur=(n)=>n.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
   const fmtDate=(iso)=>{if(!iso)return 'Aujourd’hui';const p=iso.split('-');return p[2]+'/'+p[1];};
   // Repli visuel (hors-ligne / carte non chargée) : petite carte stylisée.
@@ -3652,7 +3659,7 @@
     S.proHistory=S.proHistory||[];
     const key=m.reqId||m._id;
     if(!S.proHistory.some(function(h){return key&&h.reqId===key;})){
-      S.proHistory.unshift({id:'hm'+(key||''+S.proHistory.length),reqId:key,dateISO:(m.dateISO||todayISO()),svc:m.svc,client:(m.clientName||'Client'),clientFull:(m.clientName||'Client'),clientZone:m.zone||'',duration:billHours(m),unit:m.unit||'h',acts:(m.acts&&m.acts.length)?m.acts.map(function(a){return {id:a.id,nm:a.nm,price:a.price,qty:a.qty||1};}):null,rate:t.rate,amount:t.total,commPct:t.commPct,commission:t.commission,net:t.payout,invNo:m.invNo||('2026-'+String(1000+S.proHistory.length).padStart(4,'0')),paidVia:'carte'});
+      S.proHistory.unshift({id:'hm'+(key||''+S.proHistory.length),reqId:key,dateISO:(m.dateISO||todayISO()),svc:m.svc,client:(m.clientName||'Client'),clientFull:(m.clientName||'Client'),clientZone:m.zone||'',duration:billHours(m),unit:m.unit||'h',acts:(m.acts&&m.acts.length)?m.acts.map(function(a){return {id:a.id,nm:a.nm,price:a.price,qty:a.qty||1};}):null,travel:t.travel||0,rate:t.rate,amount:t.total,commPct:t.commPct,commission:t.commission,net:t.payout,invNo:m.invNo||('2026-'+String(1000+S.proHistory.length).padStart(4,'0')),paidVia:'carte'});
     }
     saveProStats();
   }
@@ -3776,7 +3783,7 @@
           <div class="inv-party"><div class="inv-lbl">Facturé à</div>${(S.account&&S.account.isPro&&S.account.company)?`<b>${esc(S.account.company)}</b><div class="mut">${esc((S.account&&S.account.name)||'')}</div>${S.account.siret?`<div class="mut">SIRET ${esc(S.account.siret)}</div>`:''}<div class="mut">${esc(m.zone||'')}${m.zone?', ':''}Saint-Barthélemy</div>`:`<b>${esc((S.account&&S.account.name)||(S.clientForm&&S.clientForm.name)||'Client')}</b><div class="mut">${esc(m.zone||'')}${m.zone?', ':''}Saint-Barthélemy</div>`}</div>
         </div>
         <table><thead><tr><th>Prestation</th><th class="r">Qté</th><th class="r">Prix unit.</th><th class="r">Total</th></tr></thead>
-        <tbody>${(m.acts&&m.acts.length)?m.acts.map(function(a){return `<tr><td><b style="color:#2A2340">${esc(a.nm)}</b><div class="mut" style="font-size:11px">${esc(m.svcName)} · ${dt}</div></td><td class="r">${a.qty||1}</td><td class="r">${eur(a.price)}</td><td class="r"><b>${eur((a.price||0)*(a.qty||1))}</b></td></tr>`;}).join('')+(t.boost?`<tr><td><b style="color:#2A2340">Coup de pouce</b><div class="mut" style="font-size:11px">Majoration +${t.boost}%</div></td><td class="r">1</td><td class="r">${eur(t.maj)}</td><td class="r"><b>${eur(t.maj)}</b></td></tr>`:''):`<tr><td><b style="color:#2A2340">${esc(m.svcName)}</b><div class="mut" style="font-size:11px">Prestation à domicile · ${dt}</div></td><td class="r">${durTxt(m,billHours(m))}</td><td class="r">${eur(t.rate)}</td><td class="r"><b>${eur(t.total)}</b></td></tr>`}</tbody></table>
+        <tbody>${(m.acts&&m.acts.length)?m.acts.map(function(a){return `<tr><td><b style="color:#2A2340">${esc(a.nm)}</b><div class="mut" style="font-size:11px">${esc(m.svcName)} · ${dt}</div></td><td class="r">${a.qty||1}</td><td class="r">${eur(a.price)}</td><td class="r"><b>${eur((a.price||0)*(a.qty||1))}</b></td></tr>`;}).join('')+(t.boost?`<tr><td><b style="color:#2A2340">Coup de pouce</b><div class="mut" style="font-size:11px">Majoration +${t.boost}%</div></td><td class="r">1</td><td class="r">${eur(t.maj)}</td><td class="r"><b>${eur(t.maj)}</b></td></tr>`:'')+(t.travel?`<tr><td><b style="color:#2A2340">Forfait de déplacement</b><div class="mut" style="font-size:11px">Commande inférieure à ${TRAVEL_MIN} €</div></td><td class="r">1</td><td class="r">${eur(t.travel)}</td><td class="r"><b>${eur(t.travel)}</b></td></tr>`:''):`<tr><td><b style="color:#2A2340">${esc(m.svcName)}</b><div class="mut" style="font-size:11px">Prestation à domicile · ${dt}</div></td><td class="r">${durTxt(m,billHours(m))}</td><td class="r">${eur(t.rate)}</td><td class="r"><b>${eur(t.total)}</b></td></tr>`}</tbody></table>
         <div class="inv-total-box">
           <div class="row"><span class="lbl">Total réglé</span><span class="amt">${eur(t.total)}</span></div>
           <div class="inv-total-sub">Réglé par carte bancaire via Ti-Services (séquestre agréé Mollie) le ${dt}. Aucun solde dû.</div>
@@ -4461,7 +4468,7 @@
         <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Prestataire</div><b>${S.proLegal}</b><div class="mut">${S.proStatusType==='particulier'?'Particulier':'Entreprise'} · ${S.proAddress}</div><div class="mut">SIRET ${S.proSiret||'—'} · Assurance RC ${S.proInsurer||'—'}</div></div>
         <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Client</div><b>${h.clientFull}</b><div class="mut">${h.clientZone}, Saint-Barthélemy</div></div>
         <table><thead><tr><th>Prestation</th><th class="r">Qté</th><th class="r">PU</th><th class="r">Total</th></tr></thead>
-        <tbody>${(h.acts&&h.acts.length)?h.acts.map(function(a){return `<tr><td>${esc(a.nm)} — ${esc(svcName(h.svc))}</td><td class="r">${a.qty||1}</td><td class="r">${eur(a.price)}</td><td class="r">${eur((a.price||0)*(a.qty||1))}</td></tr>`;}).join(''):`<tr><td>${svcName(h.svc)} — prestation à domicile</td><td class="r">${durTxt({unit:h.unit},h.duration)}</td><td class="r">${eur(h.rate)}</td><td class="r">${eur(h.amount)}</td></tr>`}</tbody></table>
+        <tbody>${(h.acts&&h.acts.length)?h.acts.map(function(a){return `<tr><td>${esc(a.nm)} — ${esc(svcName(h.svc))}</td><td class="r">${a.qty||1}</td><td class="r">${eur(a.price)}</td><td class="r">${eur((a.price||0)*(a.qty||1))}</td></tr>`;}).join('')+(h.travel?`<tr><td>Forfait de déplacement</td><td class="r">1</td><td class="r">${eur(h.travel)}</td><td class="r">${eur(h.travel)}</td></tr>`:''):`<tr><td>${svcName(h.svc)} — prestation à domicile</td><td class="r">${durTxt({unit:h.unit},h.duration)}</td><td class="r">${eur(h.rate)}</td><td class="r">${eur(h.amount)}</td></tr>`}</tbody></table>
         <div class="row between sec"><span class="mut">Total net à payer</span><span class="tot">${eur(h.amount)}</span></div>
         <div class="row between" style="margin-top:6px"><span class="mut">Réglé par ${h.paidVia==='carte'?'carte bancaire':'virement'} via Ti-Services le ${fmtLong(h.dateISO)}</span><b style="color:#1c8f5f">Payé</b></div>
         <div class="legal">
@@ -5102,7 +5109,7 @@
     const zoneSelect=`<select class="txt" data-cfgzone>${ZONES.map(z=>`<option value="${esc(z)}"${m.zone===z?' selected':''}>${esc(z)}</option>`).join('')}</select>`;
     // Menu des actes de la grille : coche + quantité, total ferme en direct.
     const pickOf=id=>m.acts.find(a=>a.id===id);
-    const actRows=catalogFor(m.svc).map(a=>{const p=pickOf(a.id);return `<div class="actrow${p?' on':''}"><button class="actmain" data-actpick="${esc(a.id)}"><span class="actck">${p?I.check:''}</span><span class="actnm">${esc(a.nm)}</span><span class="actpr">${a.price} €</span></button>${p?`<div class="actqty"><button data-actqty="${esc(a.id)}:down" aria-label="Moins">−</button><span>${p.qty}</span><button data-actqty="${esc(a.id)}:up" aria-label="Plus">＋</button></div>`:''}</div>`;}).join('');
+    const actRows=catalogFor(m.svc).map(a=>{const p=pickOf(a.id);return `<div class="actrow${p?' on':''}"><button class="actmain" data-actpick="${esc(a.id)}"><span class="actck">${p?I.check:''}</span><span class="actnm">${esc(a.nm)}</span><span class="actpr">${a.price} €</span></button></div>`;}).join('');
     const nSel=m.acts.length;
     const c=svcColor(m.svc);
     paintView(`<div class="pad"><button class="reset" data-cfg="back" style="margin:8px 0 2px">← Retour</button>
@@ -5111,7 +5118,7 @@
       <p class="sub" style="margin-top:4px">Composez votre commande — prix fixes Ti-Services, total ferme.</p>
 
       <div class="field" style="margin-top:14px"><label>Choisissez vos prestations</label><div class="actlist">${actRows}</div>
-        <p class="mini" style="margin-top:8px">Cochez une ou plusieurs prestations. Le total est ferme, sans négociation ni surprise.</p></div>
+        <p class="mini" style="margin-top:8px">Cochez une ou plusieurs prestations. Le total est ferme, sans négociation ni surprise.<br>${I.pin} Déplacement <b>offert dès ${TRAVEL_MIN} €</b> de prestation — sinon forfait de ${TRAVEL_FEE} €.</p></div>
 
       <div class="field"><label>Quand&nbsp;?</label>${daySelect}</div>
       <div class="field"><label>Heure souhaitée</label>${dayFlex?`<p class="mini" style="margin:2px 0 0;color:var(--muted)">${I.clock} ${m.slotFlex==='week'?'Vous laissez toute la semaine — le pro vous proposera un jour et une heure.':'Vous laissez toute la journée — le pro choisit son heure (8 h – 19 h).'}</p>`:`${hourSelect}${isToday?`<p class="mini" style="margin-top:6px;color:var(--muted)">Pour aujourd'hui, seules les heures à venir sont proposées.</p>`:''}`}</div>
@@ -5133,7 +5140,7 @@
         ${m.addressId==='__manual'?`<div class="card" style="padding:14px;margin-top:10px"><div class="field" style="margin-top:0"><label style="font-size:12px">Adresse / description du lieu</label><input class="txt" data-addrmanual value="${esc(m.address||'')}" placeholder="Ex. Villa des Amis, Saline"></div><div class="field"><label style="font-size:12px">Secteur</label>${zoneSelect}</div><div class="field"><label style="font-size:12px">Point GPS</label><button class="btn ghost sm" data-cfg="geoloc">📍 ${m.geo?'Actualiser le point GPS':'Enregistrer le point GPS'}</button>${m.geo?miniMap(m.geo,'edit','draft'):''}</div><div class="field" style="margin-bottom:0"><label style="font-size:12px">${I.key} Infos d'accès</label><textarea rows="2" data-addraccess placeholder="Ex. Code portail 4521 · clé sous le pot">${esc(m.access||'')}</textarea></div></div>`:`${m.geo?miniMap(m.geo):''}`}
       </div>
 
-      <div class="est">${nSel?m.acts.map(a=>`<div class="line"><span>${esc(a.nm)}${a.qty>1?' × '+a.qty:''}</span><b>${eur(a.price*a.qty)}</b></div>`).join(''):`<div class="line"><span style="color:var(--muted)">Aucune prestation sélectionnée</span><b>—</b></div>`}${t.boost?`<div class="line"><span>${I.bolt} Coup de pouce (+${t.boost}%)</span><b>+${eur(t.maj)}</b></div>`:''}<div class="total"><span>Total</span><b>${nSel?eur(t.total):'—'}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité${S.card?` (sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — séquestre agréé)`:` (moyen de paiement demandé juste après, via Mollie)`}. Aucun supplément sans votre accord.</small></div>
+      <div class="est">${nSel?m.acts.map(a=>`<div class="line"><span>${esc(a.nm)}</span><b>${eur(a.price*(a.qty||1))}</b></div>`).join(''):`<div class="line"><span style="color:var(--muted)">Aucune prestation sélectionnée</span><b>—</b></div>`}${t.boost?`<div class="line"><span>${I.bolt} Coup de pouce (+${t.boost}%)</span><b>+${eur(t.maj)}</b></div>`:''}${t.travel?`<div class="line"><span>${I.pin} Forfait déplacement</span><b>+${eur(t.travel)}</b></div>`:''}${(nSel&&!t.travel)?`<div class="line"><span style="color:var(--good)">${I.check} Déplacement offert</span><b style="color:var(--good)">0 €</b></div>`:''}<div class="total"><span>Total</span><b>${nSel?eur(t.total):'—'}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité${S.card?` (sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — séquestre agréé)`:` (moyen de paiement demandé juste après, via Mollie)`}. Aucun supplément sans votre accord.</small></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm"${nSel?'':' disabled'}>${I.search} Trouver un pro${nSel?' · '+eur(t.total):''}</button>${nSel?'':`<p class="mini" style="text-align:center;margin-top:8px;color:var(--muted)">Cochez au moins une prestation pour continuer.</p>`}</div>
     </div>`,'config');
   }
