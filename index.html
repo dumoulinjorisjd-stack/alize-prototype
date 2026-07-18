@@ -2348,6 +2348,8 @@
   function initLang(){try{var s=localStorage.getItem('ts_lang');if(s==='en'||s==='fr')return s;}catch(_){}try{return /^en\b/i.test(navigator.language||'')?'en':'fr';}catch(_){}return 'fr';}
   function setLang(l){S.lang=(l==='en')?'en':'fr';try{localStorage.setItem('ts_lang',S.lang);}catch(_){}try{document.documentElement.lang=S.lang;}catch(_){}render();}
   // Repli par motif pour les chaînes avec nombre/interpolation (ex. « 4 prestations › »).
+  var MO_EN={'janvier':'January','février':'February','fevrier':'February','mars':'March','avril':'April','mai':'May','juin':'June','juillet':'July','août':'August','aout':'August','septembre':'September','octobre':'October','novembre':'November','décembre':'December','decembre':'December'};
+  var TIER_EN={'bronze':'Bronze','argent':'Silver','or':'Gold','platine':'Platinum','diamant':'Diamond'};
   var T_RE=[
     [/^(\d+)\s+prestations?\s*›?$/i,'$1 services ›'],
     [/^(\d+)\s+prestations?\s+terminées?$/i,'$1 completed services'],
@@ -2359,7 +2361,15 @@
     [/^Refaire(.*)$/,'Rebook$1'],
     [/^Missions à réaliser · (\d+)$/,'Jobs to do · $1'],
     [/^En cours · (\d+)$/,'In progress · $1'],
-    [/^Missions disponibles · (\d+)$/,'Available jobs · $1']
+    [/^Missions disponibles · (\d+)$/,'Available jobs · $1'],
+    [/^(\d+)\s+à venir$/i,'$1 upcoming'],
+    [/^(\d+)\s+passées?$/i,'$1 past'],
+    [/^(\d+)\s+missions?\s+au total$/i,'$1 jobs total'],
+    [/^Net perçu \(([^)]+)\)$/i,function(_,m){return 'Net received ('+(MO_EN[m.trim().toLowerCase()]||m)+')';}],
+    [/^Prochain : (.+)$/i,function(_,t){return 'Next: '+(TIER_EN[t.trim().toLowerCase()]||t);}],
+    [/^★ (.+)$/,function(m,t){var e=TIER_EN[t.trim().toLowerCase()];return e?'★ '+e:m;}],
+    [/^([A-Za-zÀ-ÿ]+)\s+(\d{4})$/,function(m,mo,y){var e=MO_EN[mo.toLowerCase()];return e?e+' '+y:m;}],
+    [/^(.+?)\s*·\s*dès (\d+)\s*€\/h$/i,function(_,head,price){var segs=head.split(/\s*·\s*/).map(function(seg){return seg.split(/,\s*/).map(function(c){c=c.trim();return EN_DICT[c]||c;}).join(', ');});return segs.join(' · ')+' · from '+price+' €/h';}]
   ];
   function trOne(v){var k=(''+v);var kt=k.trim();if(!kt)return v;
     // Normalise les espaces insécables (typographie FR : « ? », « : », « » ») pour la recherche.
@@ -2461,7 +2471,69 @@
     "Encaissement, reçus et suivi automatiques. Vous vous concentrez sur le métier.":"Automatic collection, receipts and tracking. You focus on the craft.",
     "Fidélité récompensée":"Loyalty rewarded",
     "Plus vous enchaînez les missions via l’app, plus votre commission baisse. Le direct vous fait perdre tout ça.":"The more jobs you do through the app, the lower your commission. Going direct makes you lose all that.",
-    "Garantie de paiement, assurance et assistance en cas d’imprévu ne s’appliquent qu’aux missions réservées dans Ti-Services.":"Payment guarantee, insurance and support only apply to jobs booked in Ti-Services."
+    "Garantie de paiement, assurance et assistance en cas d’imprévu ne s’appliquent qu’aux missions réservées dans Ti-Services.":"Payment guarantee, insurance and support only apply to jobs booked in Ti-Services.",
+    // Guide d'installation (QR / notifications)
+    "BÊTA":"BETA",
+    "Scannez ce QR code pour ouvrir Ti-Services sur votre téléphone — notifications en temps réel, appareil photo, géolocalisation. Vous pouvez aussi commander directement ici.":"Scan this QR code to open Ti-Services on your phone — real-time notifications, camera, geolocation. You can also order directly here.",
+    "Activez les notifications":"Enable notifications",
+    "Soyez prévenu à chaque étape : artisan trouvé, prestation démarrée, terminée.":"Get notified at every step: pro found, service started, completed.",
+    "Notifications bloquées sur cet appareil — réactivez-les dans les réglages de votre téléphone (Réglages → Ti-Services → Notifications).":"Notifications blocked on this device — re-enable them in your phone settings (Settings → Ti-Services → Notifications).",
+    "Choisissez — je m’occupe de trouver le bon artisan.":"Choose — I'll handle finding the right pro.",
+    // Profil client — moyens de paiement, adresses, partage, réglages
+    "Facultatif — enregistrez une carte pour réserver plus vite la prochaine fois. Sinon, elle vous sera demandée à votre première réservation. Rien n'est débité tant qu'une prestation n'est pas validée.":"Optional — save a card to book faster next time. Otherwise you'll be asked at your first booking. Nothing is charged until a service is approved.",
+    "Ajouter un moyen de paiement":"Add a payment method",
+    "Aucune adresse enregistrée. Ajoutez vos villas avec leur point GPS permanent.":"No saved address. Add your villas with their permanent GPS point.",
+    "À Saint-Barthélemy, le point GPS est le repère le plus fiable — enregistré une fois, réutilisé à chaque commande.":"In Saint-Barthélemy, the GPS point is the most reliable marker — saved once, reused for every order.",
+    "Artisan absent ou travail non conforme ? Vous n'êtes pas débité, et Ti-Services relance la recherche pour vous proposer une solution.":"Pro didn't show or work not up to standard? You're not charged, and Ti-Services restarts the search to offer you a solution.",
+    "Un QR à faire flasher et un lien à envoyer — partagez l'app à vos voisins en un geste.":"A QR to scan and a link to send — share the app with your neighbors in one move.",
+    "Bloquées":"Blocked",
+    "Réactivez-les dans les réglages :":"Re-enable them in settings:",
+    "Réglages → Ti-Services → Notifications":"Settings → Ti-Services → Notifications",
+    "Menu latéral et colonne large — pratique sur tablette et grand écran.":"Side menu and wide column — handy on tablet and large screens.",
+    "© 2026 C.C.S — Ti-Services™. Tous droits réservés.":"© 2026 C.C.S — Ti-Services™. All rights reserved.",
+    // Réservations client — état vide
+    "Aucune prestation pour l’instant":"No service yet",
+    "Vos réservations et reçus apparaîtront ici.":"Your bookings and receipts will appear here.",
+    // Espace artisan — gains, factures, statut fidélité
+    "Pas encore de mission réglée":"No settled job yet",
+    "Vos revenus et vos factures apparaîtront ici après votre première prestation validée.":"Your income and invoices will appear here after your first approved service.",
+    "Mes factures par mission":"My invoices by job",
+    "La facture de chaque prestation réalisée, établie automatiquement en votre nom — à consulter ou télécharger.":"The invoice for each completed service, generated automatically in your name — to view or download.",
+    "📄 Relevé mensuel":"📄 Monthly statement",
+    "Votre document récapitulatif du mois : toutes vos prestations et le total encaissé, à enregistrer pour votre comptabilité.":"Your monthly summary document: all your services and the total collected, to keep for your accounting.",
+    "🧾 Facture de commission (mensuelle)":"🧾 Commission invoice (monthly)",
+    "Votre facture de commission Ti-Services du mois, une ligne par mission — charge déductible pour votre comptabilité.":"Your monthly Ti-Services commission invoice, one line per job — a deductible expense for your accounting.",
+    "Paiement garanti":"Guaranteed payment",
+    ": réglé sous 48 h après chaque prestation validée — sans relance.":": paid within 48h after each approved service — no chasing.",
+    "Prochain virement":"Next payout",
+    "sous 48 h après validation":"within 48h after approval",
+    // Agenda artisan
+    "À venir":"Upcoming",
+    "Passée":"Past",
+    "Aucune intervention ce mois-ci":"No jobs this month",
+    "Naviguez d’un mois à l’autre, ou restez en ligne pour recevoir de nouvelles missions.":"Move from one month to the next, or stay online to receive new jobs.",
+    // Compte artisan — paiements, assurance, statut, parrainage
+    "À activer":"To activate",
+    "Activez vos paiements en quelques minutes pour être réglé":"Activate your payments in a few minutes to get paid",
+    "après chaque prestation. Sécurisé par Mollie.":"after each service. Secured by Mollie.",
+    "Assurance & décharge ›":"Insurance & waiver ›",
+    "Attestation d'assurance et décharge de responsabilité acceptée.":"Insurance certificate and liability waiver accepted.",
+    "Plus vous enchaînez les missions via Ti-Services, plus vous gardez une":"The more jobs you do through Ti-Services, the more you keep a",
+    "grande part":"large share",
+    "de chaque prestation.":"of each service.",
+    "pour atteindre le statut":"to reach the status",
+    "— et conserver une part encore plus grande de chaque prestation.":"— and keep an even larger share of each service.",
+    "🎉 Statut maximum atteint — vous conservez la plus grande part possible de chaque prestation.":"🎉 Top status reached — you keep the largest possible share of each service.",
+    "Statut fidélité":"Loyalty status",
+    "Argent":"Silver",
+    "Or":"Gold",
+    "Platine":"Platinum","Artisan":"Pro",
+    "BIENTÔT":"SOON",
+    "Parrainer un artisan":"Refer a pro",
+    "Parrainez d'autres artisans et faites grimper votre statut. Fonctionnalité à venir.":"Refer other pros and boost your status. Feature coming soon.",
+    "Pourquoi passer par Ti-Services ›":"Why use Ti-Services ›",
+    "Bloquées sur l'appareil — réactivez-les dans les réglages du téléphone.":"Blocked on this device — re-enable them in your phone settings.",
+    "Votre numéro WhatsApp (indicatif obligatoire)":"Your WhatsApp number (country code required)"
   };
   // Bandeau de marque (bicolore) rappelé en haut de chaque écran de l'app.
   // Écarté de la vitrine, de l'onboarding et du login (la marque y figure déjà en grand).
