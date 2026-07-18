@@ -2350,6 +2350,7 @@
   // Repli par motif pour les chaînes avec nombre/interpolation (ex. « 4 prestations › »).
   var MO_EN={'janvier':'January','février':'February','fevrier':'February','mars':'March','avril':'April','mai':'May','juin':'June','juillet':'July','août':'August','aout':'August','septembre':'September','octobre':'October','novembre':'November','décembre':'December','decembre':'December'};
   var TIER_EN={'bronze':'Bronze','argent':'Silver','or':'Gold','platine':'Platinum','diamant':'Diamond'};
+  var DOW_EN={'lun':'Mon','mar':'Tue','mer':'Wed','jeu':'Thu','ven':'Fri','sam':'Sat','dim':'Sun'};
   var T_RE=[
     [/^(\d+)\s+prestations?\s*›?$/i,'$1 services ›'],
     [/^(\d+)\s+prestations?\s+terminées?$/i,'$1 completed services'],
@@ -2371,7 +2372,13 @@
     [/^([A-Za-zÀ-ÿ]+)\s+(\d{4})$/,function(m,mo,y){var e=MO_EN[mo.toLowerCase()];return e?e+' '+y:m;}],
     [/^(.+?)\s*·\s*dès (\d+)\s*€\/h$/i,function(_,head,price){var segs=head.split(/\s*·\s*/).map(function(seg){return seg.split(/,\s*/).map(function(c){c=c.trim();return EN_DICT[c]||c;}).join(', ');});return segs.join(' · ')+' · from '+price+' €/h';}],
     [/^dès (\d+)\s*€\/h$/i,'from $1 €/h'],
-    [/^dès (\d+)\s*€$/i,'from $1 €']
+    [/^dès (\d+)\s*€$/i,'from $1 €'],
+    [/^(lun|mar|mer|jeu|ven|sam|dim)\.\s+(\d{1,2})\s+([A-Za-zÀ-ÿ]+)$/i,function(m,dw,d,mo){var M=MO_EN[mo.toLowerCase()];return M?(DOW_EN[dw.toLowerCase()]+' '+d+' '+M.slice(0,3)):m;}],
+    [/^(.+?) · (\d+) €\/([hj]) × (\d+)\s*([hj])$/i,function(m,cat,rate,u1,dur,u2){return (EN_DICT[cat.trim()]||cat)+' · '+rate+' €/'+u1+' × '+dur+' '+u2;}],
+    [/^Trouver un artisan · (.+)$/i,'Find a pro · $1'],
+    [/^Enregistrer & trouver un artisan · (.+)$/i,'Save & find a pro · $1'],
+    [/^Simple empreinte bancaire — vous n'êtes prélevé qu'après avoir validé la prestation, jamais plus que (.+?)\. Encaissement pour compte via Mollie \(établissement agréé\)\.$/,function(m,amt){return "Simple card hold \u2014 you're only charged after approving the service, never more than "+amt+". Collected on the provider's behalf via Mollie (licensed institution).";}],
+    [/^: ce montant est le maximum débité \(sur (.+?), via Mollie — encaissement agréé\)\. Aucun supplément sans votre accord\.$/,function(m,card){return ": this amount is the maximum charged (on "+card+", via Mollie \u2014 licensed collection). No extra charge without your consent.";}]
   ];
   function trOne(v){var k=(''+v);var kt=k.trim();if(!kt)return v;
     // Normalise les espaces insécables (typographie FR : « ? », « : », « » ») pour la recherche.
@@ -2620,7 +2627,30 @@
     "Vous serez prévenu par notification et par e-mail dès la validation":"You'll be notified by push and email as soon as it's approved",
     "— l'app s'ouvrira alors automatiquement sur votre espace missions.":"— the app will then open automatically on your jobs space.",
     "Votre attestation d'assurance":"Your insurance certificate",
-    "Sans attestation d'assurance RC, votre candidature ne peut pas être validée.":"Without a liability insurance certificate, your application cannot be approved."
+    "Sans attestation d'assurance RC, votre candidature ne peut pas être validée.":"Without a liability insurance certificate, your application cannot be approved.",
+    // Tunnel de commande (créneau, tarif, coup de pouce, description, adresse, récap, paiement)
+    "Pour aujourd'hui, seules les heures à venir sont proposées.":"For today, only upcoming times are offered.",
+    "Heure ferme. Astuce : un peu de souplesse fait accepter votre demande plus vite.":"Fixed time. Tip: a little flexibility gets your request accepted faster.",
+    "Tarif défini par Ti-Services — pas de négociation, pas de surprise.":"Rate set by Ti-Services — no negotiation, no surprises.",
+    "Comme un pourboire : une majoration facultative qui":"Like a tip: an optional boost that",
+    "revient à l'artisan":"goes to the pro",
+    "accepter votre demande plus vite":"get your request accepted faster",
+    "Plus la description est précise, plus l'artisan accepte vite et au juste tarif.":"The more precise the description, the faster the pro accepts and at the right price.",
+    "Une photo vaut mille mots — montrez":"A picture is worth a thousand words — show",
+    "les pièces ou les zones à nettoyer":"the rooms or areas to clean",
+    "pour que l'artisan cerne mieux le travail (et son juste tarif).":"so the pro better understands the work (and its fair price).",
+    "Indiquez où l'artisan doit intervenir. Mêmes informations que dans votre profil — enregistrez-la en bas pour ne plus la ressaisir.":"Enter where the pro should work. Same info as in your profile — save it below so you don't re-enter it.",
+    "Adresse / description du lieu":"Address / place description",
+    "À Saint-Barth, le point GPS est le repère le plus fiable — ajoutez-le pour que l'artisan trouve.":"In Saint-Barth, the GPS point is the most reliable marker — add it so the pro can find you.",
+    "Infos d'accès (transmises à l'artisan)":"Access info (shared with the pro)",
+    "Enregistrer cette adresse dans mon profil":"Save this address to my profile",
+    "Une fois enregistrée, vous la retrouverez d'un geste à chaque commande (ajoutez le point GPS pour que l’artisan trouve à coup sûr).":"Once saved, you'll find it in one tap for every order (add the GPS point so the pro finds you for sure).",
+    "Ex. Villa Colibri":"e.g. Villa Colibri",
+    "Ex. Villa des Amis, près de la plage de Saline":"e.g. Villa des Amis, near Saline beach",
+    "Ex. Code portail 4521 · chat à la maison · clé sous le pot":"e.g. Gate code 4521 · cat at home · key under the pot",
+    "Paiement":"Payment",
+    "Carte de paiement":"Payment card",
+    ": ce montant est le maximum débité (moyen de paiement demandé juste après, via Mollie — encaissement agréé). Aucun supplément sans votre accord.":": this amount is the maximum charged (payment method requested right after, via Mollie — licensed collection). No extra charge without your consent."
   };
   // Bandeau de marque (bicolore) rappelé en haut de chaque écran de l'app.
   // Écarté de la vitrine, de l'onboarding et du login (la marque y figure déjà en grand).
@@ -5698,7 +5728,7 @@
         ${m.addressId==='__manual'?`<div class="card" style="padding:14px;margin-top:10px"><div class="field" style="margin-top:0"><label style="font-size:12px">Adresse / description du lieu</label><input class="txt" data-addrmanual value="${esc(m.address||'')}" placeholder="Ex. Villa des Amis, Saline"></div><div class="field"><label style="font-size:12px">Secteur</label>${zoneSelect}</div><div class="field"><label style="font-size:12px">Point GPS</label><button class="btn ghost sm" data-cfg="geoloc">📍 ${m.geo?'Actualiser le point GPS':'Enregistrer le point GPS'}</button>${m.geo?miniMap(m.geo,'edit','draft'):''}</div><div class="field" style="margin-bottom:0"><label style="font-size:12px">${I.key} Infos d'accès</label><textarea rows="2" data-addraccess placeholder="Ex. Code portail 4521 · clé sous le pot">${esc(m.access||'')}</textarea></div></div>`:`${m.geo?miniMap(m.geo):''}`}
       </div>
 
-      <div class="est">${nSel?m.acts.map(a=>`<div class="line"><span>${esc(a.nm)}</span><b>${eur(a.price*(a.qty||1))}</b></div>`).join(''):`<div class="line"><span style="color:var(--muted)">Aucune prestation sélectionnée</span><b>—</b></div>`}${t.boost?`<div class="line"><span>${I.bolt} Coup de pouce (+${t.boost}%)</span><b>+${eur(t.maj)}</b></div>`:''}${t.travel?`<div class="line"><span>${I.pin} Forfait déplacement</span><b>+${eur(t.travel)}</b></div>`:''}${(nSel&&!t.travel)?`<div class="line"><span style="color:var(--good)">${I.check} Déplacement offert</span><b style="color:var(--good)">0 €</b></div>`:''}<div class="total"><span>Total</span><b>${nSel?eur(t.total):'—'}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité${S.card?` (sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — séquestre agréé)`:` (moyen de paiement demandé juste après, via Mollie)`}. Aucun supplément sans votre accord.</small></div>
+      <div class="est">${nSel?m.acts.map(a=>`<div class="line"><span>${esc(a.nm)}</span><b>${eur(a.price*(a.qty||1))}</b></div>`).join(''):`<div class="line"><span style="color:var(--muted)">Aucune prestation sélectionnée</span><b>—</b></div>`}${t.boost?`<div class="line"><span>${I.bolt} Coup de pouce (+${t.boost}%)</span><b>+${eur(t.maj)}</b></div>`:''}${t.travel?`<div class="line"><span>${I.pin} Forfait déplacement</span><b>+${eur(t.travel)}</b></div>`:''}${(nSel&&!t.travel)?`<div class="line"><span style="color:var(--good)">${I.check} Déplacement offert</span><b style="color:var(--good)">0 €</b></div>`:''}<div class="total"><span>Total</span><b>${nSel?eur(t.total):'—'}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité${S.card?` (sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — encaissement agréé)`:` (moyen de paiement demandé juste après, via Mollie)`}. Aucun supplément sans votre accord.</small></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm"${nSel?'':' disabled'}>${I.search} Trouver un pro${nSel?' · '+eur(t.total):''}</button>${nSel?'':`<p class="mini" style="text-align:center;margin-top:8px;color:var(--muted)">Cochez au moins une prestation pour continuer.</p>`}</div>
     </div>`,'config');
   }
@@ -5759,7 +5789,7 @@
           </div>
         `:`${m.geo?`<div class="banner teal" style="margin-top:10px">${I.pin}<span><b>Point GPS déjà enregistré</b> depuis votre fiche — rien à ressaisir.</span></div>${miniMap(m.geo)}`:`<p class="mini" style="margin-top:8px;color:var(--muted)">Cette adresse n'a pas de point GPS. Ajoutez-le dans votre profil pour ne plus jamais le ressaisir.</p>`}`}
       </div>
-      <div class="est"><div class="line"><span>${m.svcName} · ${t.rate} ${rateUnit(m)} × ${durTxt(m)}</span><b>${eur(t.sub)}</b></div>${t.boost?`<div class="line"><span>${I.bolt} Coup de pouce (+${t.boost}%)</span><b>+${eur(t.maj)}</b></div>`:''}<div class="total"><span>Total</span><b>${eur(t.total)}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité ${S.card?`(sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — séquestre agréé)`:`(moyen de paiement demandé juste après, via Mollie — séquestre agréé)`}. Aucun supplément sans votre accord.</small></div>
+      <div class="est"><div class="line"><span>${m.svcName} · ${t.rate} ${rateUnit(m)} × ${durTxt(m)}</span><b>${eur(t.sub)}</b></div>${t.boost?`<div class="line"><span>${I.bolt} Coup de pouce (+${t.boost}%)</span><b>+${eur(t.maj)}</b></div>`:''}<div class="total"><span>Total</span><b>${eur(t.total)}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité ${S.card?`(sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — encaissement agréé)`:`(moyen de paiement demandé juste après, via Mollie — encaissement agréé)`}. Aucun supplément sans votre accord.</small></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm">${I.search} Trouver un artisan · ${eur(t.total)}</button></div></div>`,'config');
     if(S._focusAddr){S._focusAddr=false;setTimeout(function(){const el=document.getElementById('manualAddr');if(el){try{el.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){el.scrollIntoView();}const inp=el.querySelector('[data-addrmanual]');if(inp)try{inp.focus({preventScroll:true});}catch(_){}}},70);}
   }
