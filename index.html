@@ -1953,6 +1953,7 @@
   })();
 
   const S={
+    lang:initLang(),
     persona:'client',clientNav:'home',proNav:'home',customServices:[],onboarded:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},
     card:null,cardForm:false,payStep:false,payEdit:false,paySaveCard:true,finishing:false,disputing:false,support:false,supportSide:null,mission:null,missions:[],draft:null,
     addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,
@@ -2331,6 +2332,57 @@
   /* Anime uniquement lors d'un vrai changement d'écran ; les mises à jour
      sur place (toggles de segments, étoiles…) ne rejouent pas le slidein
      et conservent la position de défilement — plus de clignotement. */
+  /* ————————————————— i18n FR ⇄ EN —————————————————
+     L'app est écrite en français. Pour la clientèle anglophone (forte à Saint-Barth),
+     on traduit le RENDU à la volée : après chaque paintView, un dictionnaire FR→EN est
+     appliqué aux nœuds texte + attributs (placeholder, title, aria-label, alt). Détection
+     auto de la langue du navigateur, bascule manuelle mémorisée. Déploiement par lots :
+     les clés absentes du dictionnaire restent simplement en français (aucune casse). */
+  function initLang(){try{var s=localStorage.getItem('ts_lang');if(s==='en'||s==='fr')return s;}catch(_){}try{return /^en\b/i.test(navigator.language||'')?'en':'fr';}catch(_){}return 'fr';}
+  function setLang(l){S.lang=(l==='en')?'en':'fr';try{localStorage.setItem('ts_lang',S.lang);}catch(_){}try{document.documentElement.lang=S.lang;}catch(_){}render();}
+  // Repli par motif pour les chaînes avec nombre/interpolation (ex. « 4 prestations › »).
+  var T_RE=[
+    [/^(\d+)\s+prestations?\s*›?$/i,'$1 services ›'],
+    [/^(\d+)\s+prestations?\s+terminées?$/i,'$1 completed services'],
+    [/^Historique & factures · (\d+)$/i,'History & invoices · $1'],
+    [/^Bonjour(.*)$/,'Hello$1'],
+    [/^Bon retour(.*)$/,'Welcome back$1']
+  ];
+  function trOne(v){var k=(''+v);var kt=k.trim();if(!kt)return v;
+    // Normalise les espaces insécables (typographie FR : « ? », « : », « » ») pour la recherche.
+    var norm=kt.replace(/[\u00A0\u202F\u2009]/g,' ');
+    var e=EN_DICT[kt];if(e==null&&norm!==kt)e=EN_DICT[norm];
+    if(e==null){for(var i=0;i<T_RE.length;i++){if(T_RE[i][0].test(norm)){e=norm.replace(T_RE[i][0],T_RE[i][1]);break;}}}
+    if(e==null)return v;var lead=(k.match(/^\s*/)||[''])[0],trail=(k.match(/\s*$/)||[''])[0];return lead+e+trail;}
+  function i18nApply(root){if(!root||S.lang!=='en')return;
+    try{
+      var w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,null),nodes=[],n;
+      while(n=w.nextNode())nodes.push(n);
+      nodes.forEach(function(t){var p=t.parentNode;if(p&&/^(SCRIPT|STYLE|TEXTAREA)$/.test(p.nodeName))return;var nv=trOne(t.nodeValue);if(nv!==t.nodeValue)t.nodeValue=nv;});
+      ['placeholder','title','aria-label','alt'].forEach(function(attr){
+        root.querySelectorAll('['+attr+']').forEach(function(el){var cur=el.getAttribute(attr),nv=trOne(cur);if(nv!==cur)el.setAttribute(attr,nv);});
+      });
+    }catch(e){console.warn('i18n',e);}
+  }
+  var EN_DICT={
+    // Navigation
+    "Accueil":"Home","Réservations":"Bookings","Profil":"Profile","Mes missions":"My jobs","Gains":"Earnings","Agenda":"Schedule","Disponibilités":"Availability","Mon compte":"My account",
+    // Boutons / actions courants
+    "← Retour":"← Back","Retour":"Back","Passer une nouvelle commande":"Place a new order","Se connecter":"Log in","Se déconnecter":"Log out","Annuler":"Cancel","Enregistrer":"Save","Continuer":"Continue","Envoyer":"Send","Fermer":"Close","Partager":"Share","Copier le lien":"Copy link","Rafraîchir":"Refresh","Suivre ›":"Track ›","Ouvrir ›":"Open ›",
+    // Accueil client
+    "De quel service avez-vous besoin ?":"What service do you need?","Mes réservations":"My bookings","Vos demandes en cours":"Your active requests","Historique & factures":"History & invoices","Voir ma facture ›":"View my invoice ›",
+    // Bandeaux de confiance
+    "Artisans vérifiés":"Verified pros","Intervenants assurés":"Insured providers","Payé après la presta":"Pay after service","Artisans vérifiés & assurés":"Verified & insured pros","Vérifié":"Verified","Paiement sécurisé":"Secure payment","100% Saint-Barth":"100% Saint-Barth",
+    // Catégories & services (catalogue)
+    "Ménage":"Cleaning","Baby-sitting":"Babysitting","Beauté":"Beauty","Dépannage & entretien":"Repairs & upkeep","Sport":"Sports","Déménagement":"Moving","Garde d’animaux":"Pet sitting","Massage":"Massage","Colis & courrier":"Parcels & mail","Coiffure":"Hairdressing","Manucure":"Manicure","Épilation":"Waxing","Maquillage":"Makeup","Jardinage":"Gardening","Jardin":"Gardening","Piscine":"Pool","Plomberie":"Plumbing","Électricité":"Electrical","Deck":"Deck","Coach sportif":"Personal trainer","Cours de natation":"Swimming lessons","Cours de tennis":"Tennis lessons","Autre":"Other",
+    // Prix / petites unités (nœuds séparés)
+    "dès":"from","/h":"/hr","forfait":"flat rate","à partir de":"from","Bientôt":"Soon","Bientôt disponible":"Coming soon","Prix fixe":"Fixed price",
+    // Page d'accueil / bienvenue (funnel d'acquisition)
+    "Un pro de confiance, à la demande.":"A trusted pro, on demand.","Un artisan vérifié chez vous en quelques minutes.":"A verified pro at your door in minutes.","Découvrir Ti-Services en 15 s ›":"Discover Ti-Services in 15s ›","Créer mon compte — c'est gratuit":"Create my account — it's free","Installer l'application":"Install the app","Installez l'app pour créer votre compte et commander en un geste.":"Install the app to create your account and order in one tap.",
+    "Artisans vérifiés et assurés":"Verified & insured pros","SIRET, assurance responsabilité civile et avis de la communauté contrôlés avant l’activation de chaque profil.":"Business registration, liability insurance and community reviews checked before each profile is activated.","Réglé par carte, débité seulement après la prestation validée — aucun impayé, aucune espèce à gérer.":"Paid by card, charged only after you approve the job — no unpaid bills, no cash to handle.","À la demande":"On demand","Un pro de confiance quand vous en avez besoin, en quelques minutes.":"A trusted pro whenever you need one, in minutes.","Gratuit, sans abonnement":"Free, no subscription","Aucun frais d’inscription ni abonnement — vous ne payez que la prestation.":"No sign-up fee, no subscription — you only pay for the service.",
+    // Divers récurrents
+    "Prestations terminées":"Completed services","Bien exécuté & réglé":"Done & paid","Recherche en cours":"Searching…","En attente d’un artisan":"Waiting for a pro","Artisan trouvé":"Pro found","Prestation en cours":"Service in progress","À confirmer":"To confirm","Terminée":"Completed","Supprimer":"Delete","Annulée":"Cancelled"
+  };
   // Bandeau de marque (bicolore) rappelé en haut de chaque écran de l'app.
   // Écarté de la vitrine, de l'onboarding et du login (la marque y figure déjà en grand).
   function brandBarHtml(key){
@@ -2346,6 +2398,7 @@
   function paintView(html,key){
     const same=(key===_scr);const keepScroll=same||(scrollGroup(key)===scrollGroup(_scr));const top=view.scrollTop;
     view.innerHTML='<div'+(same?'':' class="anim"')+'>'+brandBarHtml(key)+html+'</div>';
+    i18nApply(view);
     view.scrollTop=keepScroll?top:0;_scr=key;updateHomeFab();mountMaps();
     // iOS : retire la suggestion « Préremplir le contact » (barre du clavier) sur les
     // champs de texte libre où elle n'a aucun sens. Les vrais champs de contact
@@ -2380,7 +2433,7 @@
     bf.classList.toggle('show',cgb&&(noInline||scrolled));
     if(wrap)wrap.classList.toggle('backpad',cgb&&noInline);
   }
-  function render(){if(S.legalView){paintView(legalView(),'legal:'+S.legalView);paintPersona();return;}if(S.showPitch){paintView(pitchView(),'pitch');paintPersona();return;}
+  function render(){try{if(document.documentElement.lang!==S.lang)document.documentElement.lang=S.lang;}catch(_){}if(S.legalView){paintView(legalView(),'legal:'+S.legalView);paintPersona();return;}if(S.showPitch){paintView(pitchView(),'pitch');paintPersona();return;}
     // Panneau de commande (renderConfig) : peint HORS routeur. On le rétablit ici pour
     // qu'un render() externe — instantané Firestore, retour au premier plan après le
     // sélecteur de photo — NE renvoie PAS le client à l'accueil en perdant sa commande.
@@ -3223,6 +3276,7 @@
       <div style="text-align:center;margin-top:2px">
         <div style="font-family:var(--f-disp);font-weight:800;font-size:31px;letter-spacing:-.02em"><span style="color:var(--teal-deep)">Ti</span><span style="color:var(--ink)">-Services</span>${betaTag()}</div>
         <div class="eyebrow" style="justify-content:center;margin-top:5px">${I.pin} Saint-Barthélemy</div>
+        <div class="segs" style="display:inline-flex;margin-top:12px"><button class="seg ${S.lang!=='en'?'on':''}" data-act="lang-fr">Français</button><button class="seg ${S.lang==='en'?'on':''}" data-act="lang-en">English</button></div>
       </div>
       <div class="h-hello welcome-title">Un pro de confiance, à la demande.</div>
       <p class="sub welcome-sub" style="margin-top:6px;text-align:center">Un artisan vérifié chez vous en quelques minutes.</p>
@@ -5127,6 +5181,8 @@
       case 'client-noshow':S.clientNoShowAsk=true;render();break;
       case 'client-noshow-cancel':S.clientNoShowAsk=false;render();break;
       case 'client-noshow-confirm':clientNoShow(S.mission);break;
+      case 'lang-fr':setLang('fr');break;
+      case 'lang-en':setLang('en');break;
       case 'show-pitch':S.showPitch=true;render();break;
       case 'pitch-start':S.showPitch=false;S.onbStep=1;render();break;
       case 'pitch-close':S.showPitch=false;render();break;
