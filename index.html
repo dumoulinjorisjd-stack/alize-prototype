@@ -1960,6 +1960,12 @@
     `<a class="btn ghost sm" href="https://wa.me/${waNumber(p.phone)}" target="_blank" rel="noopener">${I.whatsapp} WhatsApp</a>`+
     `<a class="btn ghost sm" href="tel:${telClean(p.phone)}">${I.phone} Appeler</a>`+
     `<a class="btn ghost sm" href="mailto:${p.email||''}">${I.mail} E-mail</a></div>`;}
+  // Âge du prestataire : mineurs refusés à l'inscription ; côté client on n'affiche
+  // qu'une TRANCHE d'âge (jamais la date exacte) — minimisation des données.
+  function ageFromBirth(b){if(!b)return null;var d=new Date(b);if(isNaN(d.getTime()))return null;var t=new Date();var a=t.getFullYear()-d.getFullYear();var mo=t.getMonth()-d.getMonth();if(mo<0||(mo===0&&t.getDate()<d.getDate()))a--;return a;}
+  function isAdult(b){var a=ageFromBirth(b);return a!=null&&a>=18;}
+  function ageBand(b){var a=ageFromBirth(b);if(a==null||a<18)return '';if(a<25)return '18-24 ans';if(a<35)return '25-34 ans';if(a<45)return '35-44 ans';if(a<55)return '45-54 ans';if(a<65)return '55-64 ans';return '65 ans et +';}
+  function maxBirth(){var t=new Date();var y=t.getFullYear()-18;return y+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0');}
   const COMMISSION=0.15;
   const DAYS=[['lun','Lun'],['mar','Mar'],['mer','Mer'],['jeu','Jeu'],['ven','Ven'],['sam','Sam'],['dim','Dim']];
   const BLOCKS=[['m','Matin'],['a','Après-m.'],['s','Soir']];
@@ -2413,6 +2419,7 @@
     [/^de prestation — sinon forfait de (\d+)\s*€\.$/i,'of service — otherwise a $1 € flat fee.'],
     [/^(\d+)\s*€\/jour$/i,'$1 €/day'],
     [/^(\d+)\s+jours?$/i,'$1 days'],
+    [/^(\d+)-(\d+) ans$/i,'$1-$2 yrs'],
     [/^(.+?) · (\d+) €\/jour × (\d+) jours?$/i,function(m,cat,rate,d){return (EN_DICT[cat.trim()]||cat)+' · '+rate+' €/day × '+d+' days';}],
     [/^📅 Du (.+?) → (.+?) · (\d+) jours? de garde$/i,function(m,a,bb,d){return '📅 From '+a+' to '+bb+' · '+d+' days of care';}]
   ];
@@ -2460,6 +2467,18 @@
     "Créer mon compte":"Create my account","Créer mon compte — c'est gratuit":"Create my account — it's free","Créer un compte":"Create an account","Vos informations":"Your details","Mot de passe":"Password","Confirmer le mot de passe":"Confirm password","Votre secteur":"Your area","Mot de passe oublié ?":"Forgot password?","Content de vous revoir":"Good to see you again","Connectez-vous pour retrouver vos réservations.":"Log in to find your bookings.","Pas encore de compte ?":"No account yet?","Déjà un compte ?":"Already have an account?","Les mots de passe ne correspondent pas.":"Passwords don't match.","✓ Les mots de passe correspondent":"✓ Passwords match","ou":"or","Continuer avec Google":"Continue with Google","6 caractères minimum":"6 characters minimum","Votre mot de passe":"Your password","Retapez votre mot de passe":"Re-type your password","Afficher le mot de passe":"Show password","Afficher":"Show","bientôt":"soon","politique de confidentialité":"privacy policy",
     // Suivi de mission
     "Demande envoyée":"Request sent","Mission acceptée":"Job accepted","Prestation à venir":"Service upcoming","à confirmer par vous":"to confirm by you","En attente d’acceptation":"Awaiting acceptance","Les artisans disponibles regardent votre demande":"Available pros are reviewing your request","Travail en cours à votre domicile":"Work in progress at your home","Montant garanti":"Guaranteed amount","bloqué":"held","à la validation":"on approval","Annuler la demande":"Cancel request","Annuler la prestation":"Cancel service","Aucun débit maintenant.":"No charge now.","Vous avez été payé":"You've been paid","Prestation terminée":"Service completed","Confirmer la prestation":"Confirm service","Signaler un problème":"Report a problem","Contacter Ti-Services (support)":"Contact Ti-Services (support)","Recherche en cours…":"Searching…",
+    "Date de naissance":"Date of birth",
+    "Réservé aux personnes majeures. Une tranche d'âge (ex. 25-34 ans) est indiquée aux clients — jamais votre date exacte.":"Adults only. An age range (e.g. 25-34 yrs) is shown to clients — never your exact date.",
+    "L'inscription est réservée aux personnes majeures (18 ans et plus).":"Sign-up is for adults only (18 and over).",
+    "Justificatifs de diplôme":"Diploma proof",
+    "(recommandé, facultatif)":"(recommended, optional)",
+    "📎 Joindre un diplôme (PDF/photo)":"📎 Attach a diploma (PDF/photo)",
+    "Transmettre vos justificatifs accélère la validation — non obligatoire.":"Sharing your proof speeds up approval — not required.",
+    "Attestation retirée":"Certificate removed",
+    "Justificatif joint ✓":"Proof attached ✓",
+    "Indiquez votre date de naissance":"Enter your date of birth",
+    "Inscription réservée aux personnes majeures (18 ans et plus).":"Sign-up is for adults only (18 and over).",
+    "65 ans et +":"65+ yrs",
     "Vient de rejoindre Ti-Services":"Just joined Ti-Services",
     "On sollicite les artisans de votre zone.":"We're reaching out to pros in your area.",
     // Paiement / commande
@@ -3150,6 +3169,18 @@
     "Signaler un problème":"Comunicar um problema",
     "Contacter Ti-Services (support)":"Contactar a Ti-Services (apoio)",
     "Recherche en cours…":"A procurar…",
+    "Date de naissance":"Data de nascimento",
+    "Réservé aux personnes majeures. Une tranche d'âge (ex. 25-34 ans) est indiquée aux clients — jamais votre date exacte.":"Reservado a maiores de idade. Uma faixa etária (ex.: 25-34 anos) é mostrada aos clientes — nunca a sua data exata.",
+    "L'inscription est réservée aux personnes majeures (18 ans et plus).":"A inscrição é reservada a maiores de idade (18 anos ou mais).",
+    "Justificatifs de diplôme":"Comprovativos de diploma",
+    "(recommandé, facultatif)":"(recomendado, facultativo)",
+    "📎 Joindre un diplôme (PDF/photo)":"📎 Anexar um diploma (PDF/foto)",
+    "Transmettre vos justificatifs accélère la validation — non obligatoire.":"Enviar os seus comprovativos acelera a validação — não obrigatório.",
+    "Attestation retirée":"Comprovativo removido",
+    "Justificatif joint ✓":"Comprovativo anexado ✓",
+    "Indiquez votre date de naissance":"Indique a sua data de nascimento",
+    "Inscription réservée aux personnes majeures (18 ans et plus).":"A inscrição é reservada a maiores de idade (18 anos ou mais).",
+    "65 ans et +":"65+ anos",
     "Vient de rejoindre Ti-Services":"Acabou de aderir à Ti-Services",
     "On sollicite les artisans de votre zone.":"Estamos a contactar os profissionais da sua zona.",
     "Cochez au moins une prestation pour continuer.":"Selecione pelo menos um serviço para continuar.",
@@ -3690,6 +3721,7 @@
     [/^de prestation — sinon forfait de (\d+)\s*€\.$/i,'de serviço — caso contrário, taxa fixa de $1 €.'],
     [/^(\d+)\s*€\/jour$/i,'$1 €/dia'],
     [/^(\d+)\s+jours?$/i,'$1 dias'],
+    [/^(\d+)-(\d+) ans$/i,'$1-$2 anos'],
     [/^(.+?) · (\d+) €\/jour × (\d+) jours?$/i,function(m,cat,rate,d){return (PT_DICT[cat.trim()]||cat)+' · '+rate+' €/dia × '+d+' dias';}],
     [/^📅 Du (.+?) → (.+?) · (\d+) jours? de garde$/i,function(m,a,bb,d){return '📅 De '+a+' a '+bb+' · '+d+' dias de cuidado';}]
   ];
@@ -4820,7 +4852,7 @@
     const p=m.provider||{};const first=(p.nm||'Votre baby-sitter').split(' ')[0];
     const dips=(m.providerDiplomas||[]);
     const tel=telClean(m.providerPhone||'');
-    const profile=`<div class="row" style="gap:12px;margin-top:10px;align-items:center">${avatarFounder(m.providerPhoto,p.ini||inits(p.nm||'BS'),'lg',p.founder)}<div style="flex:1;min-width:0"><b style="font-size:16px;font-family:var(--f-disp)">${esc(p.nm||'Votre baby-sitter')}</b><div class="mini" style="margin-top:2px">${[p.jobs?(p.jobs+' garde'+(p.jobs>1?'s':'')+' réalisée'+(p.jobs>1?'s':'')):null,p.founder?(I.star+' Ambassadeur'):null].filter(Boolean).join(' · ')}</div></div><span class="chip good" style="padding:4px 10px">${I.check} Vérifié</span></div>
+    const profile=`<div class="row" style="gap:12px;margin-top:10px;align-items:center">${avatarFounder(m.providerPhoto,p.ini||inits(p.nm||'BS'),'lg',p.founder)}<div style="flex:1;min-width:0"><b style="font-size:16px;font-family:var(--f-disp)">${esc(p.nm||'Votre baby-sitter')}</b><div class="mini" style="margin-top:2px">${[p.jobs?(p.jobs+' garde'+(p.jobs>1?'s':'')+' réalisée'+(p.jobs>1?'s':'')):null,m.providerAgeBand?esc(m.providerAgeBand):null,p.founder?(I.star+' Ambassadeur'):null].filter(Boolean).join(' · ')}</div></div><span class="chip good" style="padding:4px 10px">${I.check} Vérifié</span></div>
       ${dips.length?`<div class="mini" style="margin-top:9px;color:var(--teal-deep)">${I.check} ${dips.map(esc).join(' · ')}</div>`:''}
       ${m.providerBio?`<p class="sub" style="margin-top:8px;color:var(--ink-soft)">«&nbsp;${esc(m.providerBio)}&nbsp;»</p>`:''}`;
     if(m.clientConfirmed)return `<div class="card provider-pop" style="padding:16px;margin-top:12px">${profile}<div class="banner teal" style="margin-top:12px">${I.check}<span><b>Garde confirmée</b> avec ${esc(first)} — à ${esc(m.slot)}. ${tel?`Besoin de rappeler ${esc(first)}&nbsp;? <a href="tel:${tel}" style="color:var(--teal-deep);font-weight:700">${esc(m.providerPhone)}</a>`:''}</span></div></div>`;
@@ -5099,7 +5131,7 @@
         if(r.providerLegal!=null&&m.providerLegal!==r.providerLegal){m.providerLegal=r.providerLegal;touched=true;}
         if(r.providerSiret!=null&&m.providerSiret!==r.providerSiret){m.providerSiret=r.providerSiret;touched=true;}
         if(r.providerAddress!=null&&m.providerAddress!==r.providerAddress){m.providerAddress=r.providerAddress;touched=true;}
-        if(r.providerStatusType!=null&&m.providerStatusType!==r.providerStatusType){m.providerStatusType=r.providerStatusType;touched=true;}
+        if(r.providerStatusType!=null&&m.providerStatusType!==r.providerStatusType){m.providerStatusType=r.providerStatusType;touched=true;}if(r.providerAgeBand!=null&&m.providerAgeBand!==r.providerAgeBand){m.providerAgeBand=r.providerAgeBand;touched=true;}
         if(Array.isArray(r.providerDiplomas))m.providerDiplomas=r.providerDiplomas;
         if(r.clientConfirmed!=null&&m.clientConfirmed!==r.clientConfirmed){m.clientConfirmed=r.clientConfirmed;touched=true;}
         if(r.colisSigned!=null&&m.colis&&m.colis.signed!==r.colisSigned){m.colis.signed=r.colisSigned;m.colis.signedAt=m.colis.signedAt||r.colisSignedAt||Date.now();touched=true;}
@@ -5475,7 +5507,7 @@
   // rendu (état du bouton), l'écouteur « input » (mise à jour en direct) et le
   // gestionnaire d'envoi. Tout champ marqué * doit être renseigné pour débloquer l'envoi.
   function concSignupOk(f){f=f||{};return (f.name||'').trim().length>1&&(f.siret||'').replace(/\s/g,'').length>=9&&(f.address||'').trim().length>1&&(f.contact||'').trim().length>1&&(f.phone||'').trim().length>=6&&/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=6&&f.password===f.password2&&!!f.cgu&&!!f.mandat;}
-  function proSignupOk(f){f=f||{};const siret=(f.siret||'').replace(/\s/g,'');return (f.name||'').trim().length>1&&(f.phone||'').trim().length>=6&&/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=6&&f.password===f.password2&&/^\d{14}$/.test(siret)&&(f.address||'').trim().length>1&&(f.insurer||'').trim().length>1&&!!f.insuranceDoc&&!!(f.cats&&f.cats.length)&&(!f.cats.includes('autre')||(f.otherService||'').trim())&&(!f.cats.includes('baby')||!!(f.diplomas&&f.diplomas.length))&&!!f.mandat&&!!f.cgu&&!!f.charte&&!!f.acceptsGrille;}
+  function proSignupOk(f){f=f||{};const siret=(f.siret||'').replace(/\s/g,'');return (f.name||'').trim().length>1&&(f.phone||'').trim().length>=6&&/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=6&&f.password===f.password2&&/^\d{14}$/.test(siret)&&(f.address||'').trim().length>1&&(f.insurer||'').trim().length>1&&!!f.insuranceDoc&&!!(f.cats&&f.cats.length)&&(!f.cats.includes('autre')||(f.otherService||'').trim())&&(!f.cats.includes('baby')||!!(f.diplomas&&f.diplomas.length))&&!!f.mandat&&!!f.cgu&&!!f.charte&&!!f.acceptsGrille&&isAdult(f.birth);}
   const RQ='<span class="req">*</span>';
   function conciergeSignup(){
     const f=S.concSignup||{};
@@ -5560,7 +5592,8 @@
         <div class="field"><label>Adresse professionnelle (siège)${RQ}</label><input class="txt" data-pf="address" data-v="text" value="${esc(f.address||'')}" placeholder="Ex. Gustavia, 97133 Saint-Barthélemy"><p class="mini" style="margin-top:5px">Figure sur vos factures (mention légale obligatoire).</p></div>
         <div class="field"><label>Forme juridique</label><div class="segs"><button class="seg ${f.statusType!=='micro'&&f.statusType!=='particulier'?'on':''}" data-pstatustype="entreprise">Société</button><button class="seg ${f.statusType==='micro'?'on':''}" data-pstatustype="micro">Micro-entreprise / EI</button></div></div>
         <div class="field"><label>Présentation / expérience</label><textarea rows="3" data-pf="bio" placeholder="Votre expérience, vos spécialités, votre zone…">${esc(f.bio)}</textarea></div>
-        <div class="field"><label>Assurance responsabilité civile${RQ}</label><input class="txt" data-pf="insurer" data-v="text" value="${esc(f.insurer)}" placeholder="Assureur &amp; n° de police (ex. AXA 12345)"><label class="btn ghost sm" style="margin-top:8px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:auto;padding:9px 14px">${f.insuranceDoc?'✓ '+esc(f.insuranceName||'Attestation jointe'):'📎 Joindre mon attestation (PDF/photo)'}<input type="file" accept="image/*,application/pdf" data-insurancefile hidden></label><p class="mini" style="margin-top:6px">Joignez votre attestation d'assurance RC en cours de validité (PDF ou photo). Elle sera vérifiée par Ti-Services.</p></div>
+        <div class="field"><label>Date de naissance${RQ}</label><input class="txt" type="date" data-pf="birth" value="${esc(f.birth||'')}" max="${maxBirth()}"><p class="mini" style="margin-top:5px">Réservé aux personnes majeures. Une <b>tranche d'âge</b> (ex.&nbsp;25-34&nbsp;ans) est indiquée aux clients — jamais votre date exacte.</p>${(f.birth&&!isAdult(f.birth))?`<p class="mini" style="margin-top:5px;color:var(--coral-deep)">L'inscription est réservée aux personnes majeures (18&nbsp;ans et plus).</p>`:''}</div>
+        <div class="field"><label>Assurance responsabilité civile${RQ}</label><input class="txt" data-pf="insurer" data-v="text" value="${esc(f.insurer)}" placeholder="Assureur &amp; n° de police (ex. AXA 12345)"><label class="btn ghost sm" style="margin-top:8px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:auto;padding:9px 14px">${f.insuranceDoc?'✓ '+esc(f.insuranceName||'Attestation jointe'):'📎 Joindre mon attestation (PDF/photo)'}<input type="file" accept="image/*,application/pdf" data-insurancefile hidden></label>${f.insuranceDoc?`<button class="linklike" data-act="rm-insurance" style="margin-left:12px;color:var(--coral-deep);font-weight:700">Retirer</button>`:''}<p class="mini" style="margin-top:6px">Joignez votre attestation d'assurance RC en cours de validité (PDF ou photo). Elle sera vérifiée par Ti-Services.</p></div>
         <div class="field"><label>Facturation${RQ}</label><button data-act="toggle-mandat" style="background:none;border:none;padding:0;width:100%;text-align:left;display:flex;gap:11px;align-items:flex-start"><span style="flex:none;width:22px;height:22px;border-radius:7px;border:2px solid ${f.mandat?'var(--good)':'var(--hair)'};background:${f.mandat?'var(--good)':'transparent'};color:#fff;display:flex;align-items:center;justify-content:center;margin-top:1px">${f.mandat?I.check:''}</span><span class="mini" style="line-height:1.45">J'autorise Ti-Services à <b>établir mes factures en mon nom et pour mon compte</b> (mandat de facturation, art. 289 du CGI) — une facture par prestation, automatiquement. Je reste responsable de mes obligations fiscales.</span></button></div>
       </div>
       <div class="field" style="margin-top:18px"><label>Quels services souhaitez-vous réaliser&nbsp;? (un ou plusieurs)${RQ}</label></div>
@@ -5574,6 +5607,7 @@
         <p class="mini" style="margin-top:4px">Aucun diplôme n'est légalement obligatoire pour la garde occasionnelle, mais le <b>PSC1 (premiers secours)</b> est fortement recommandé. Vos déclarations sont <b>contrôlées par Ti-Services</b> à la validation — des justificatifs pourront vous être demandés.</p>
         <div class="segs" style="margin-top:10px;flex-wrap:wrap">${BABY_DIPLOMAS.map(d=>`<button class="seg ${(f.diplomas||[]).includes(d)?'on':''}" data-pdip="${esc(d)}">${esc(d)}</button>`).join('')}</div>
         ${(f.diplomas||[]).includes('Autre diplôme')?`<div class="field" style="margin-top:10px;margin-bottom:0"><input class="txt" data-pf="diplomaOther" value="${esc(f.diplomaOther||'')}" placeholder="Précisez votre diplôme (ex. CAP AEPE en cours, BEP sanitaire…)"></div>`:''}
+        ${(f.diplomas||[]).some(function(d){return d!=='Expérience seule (sans diplôme)';})?`<div class="field" style="margin-top:10px;margin-bottom:0"><label style="font-size:12px">Justificatifs de diplôme <span style="font-weight:500;color:var(--muted)">(recommandé, facultatif)</span></label><label class="btn ghost sm" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:auto;padding:9px 14px">📎 Joindre un diplôme (PDF/photo)<input type="file" accept="image/*,application/pdf" multiple data-diplomafile hidden></label>${(f.diplomaDocs&&f.diplomaDocs.length)?`<div class="stack" style="gap:6px;margin-top:8px">${f.diplomaDocs.map(function(d,i){return `<div class=\"row between\" style=\"gap:8px;align-items:center\"><span class=\"mini\" style=\"min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap\">${I.check} ${esc(d.name)}</span><button class=\"linklike\" data-act=\"rm-diploma:${i}\" style=\"color:var(--coral-deep);flex:none\">Retirer</button></div>`;}).join('')}</div>`:''}<p class="mini" style="margin-top:6px;color:var(--muted)">Transmettre vos justificatifs accélère la validation — non obligatoire.</p></div>`:''}
         ${(f.diplomas||[]).length?'':'<p class="mini" style="margin-top:8px;color:var(--coral-deep)">Sélectionnez au moins une option (« Expérience seule » si vous n’avez pas de diplôme).</p>'}</div>`:''}
       <div class="card" style="padding:16px;margin-top:14px">
         <div class="chkline" style="margin-top:16px"><button data-act="toggle-pcgu" aria-label="Accepter les conditions" style="background:none;border:none;padding:0">${chkbox(f.cgu)}</button><span class="mini" style="line-height:1.5">${RQ} J'ai lu et j'accepte les <button class="linklike" data-act="view-cgu">CGU</button> et les <button class="linklike" data-act="view-cgv">CGV</button> de Ti-Services.</span></div>
@@ -6406,6 +6440,7 @@
     if(b.dataset.act&&b.dataset.act.indexOf('renew:')===0){const h=doneHistory()[+b.dataset.act.split(':')[1]];if(h)renewMission(h);return;}
     if(b.dataset.act==='refresh-requests'){manualRefreshRequests();return;}
     if(b.dataset.act==='toggle-desktop'){toggleForceDesktop();return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('rm-diploma:')===0){const i=+b.dataset.act.split(':')[1];if(S.proForm&&S.proForm.diplomaDocs)S.proForm.diplomaDocs.splice(i,1);render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('signup-kind:')===0){const k=b.dataset.act.split(':')[1];if(k==='concierge'){S.signupKind='concierge';S.concSignup={name:'',siret:'',contact:'',phone:'',email:'',password:'',password2:'',cgu:false,mandat:false};}else{S.signupKind='artisan';S.proForm={name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,cgu:false,charte:false,rates:{},otherService:'',photo:''};}render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('rbfreq:')===0){S.rebookFreq=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('reqview:')===0){S.proReqView=b.dataset.act.slice('reqview:'.length);S.proReqSlot=null;S.proReqPick=false;render();return;}
@@ -6561,6 +6596,7 @@
       case 'close-chat':S.chat=false;render();break;
       case 'chat-send':sendChat();view.scrollTop=view.scrollHeight;break;
       case 'masked-call':toast('Échangez ici par message — l’appel à numéro masqué arrive bientôt.');break;
+      case 'rm-insurance':if(S.proForm){S.proForm.insuranceFile=null;S.proForm.insuranceDoc=false;S.proForm.insuranceName='';}render();toast('Attestation retirée');break;
       case 'addr-new':S.addrForm={id:null,label:'',address:'',zone:'Gustavia',geo:null,access:''};render();break;
       case 'addr-cancel':S.addrForm=null;render();break;
       case 'addr-geo':geolocate(g=>{if(S.addrForm){S.addrForm.geo=g;render();}});break;
@@ -6639,15 +6675,15 @@
       case 'print-invoice':printInvoice();break;
       case 'toggle-mandat':S.proForm.mandat=!S.proForm.mandat;render();break;
       case 'toggle-grille':S.proForm.acceptsGrille=!S.proForm.acceptsGrille;render();break;
-      case 'pro-submit':{const f=S.proForm;if((f.name||'').trim().length<2){toast('Indiquez votre nom / raison sociale');break;}if((f.phone||'').trim().length<6){toast('Indiquez un numéro de téléphone');break;}if(!f.cats.length){toast('Sélectionnez au moins un service');break;}if(f.cats.includes('autre')&&!(f.otherService||'').trim()){toast('Précisez le service « Autre » que vous proposez');break;}if(f.cats.includes('baby')&&!(f.diplomas&&f.diplomas.length)){toast('Garde d’enfants : indiquez vos diplômes (ou « Expérience seule »)');break;}if(!/.+@.+\..+/.test(f.email||'')){toast('Un e-mail valide est requis');break;}if((f.password||'').length<6||f.password!==f.password2){toast('Mot de passe : 6 caractères min., identiques');break;}if(!/^\d{14}$/.test((f.siret||'').replace(/\s/g,''))){toast('Un SIRET valide (14 chiffres) est requis');break;}if(!(f.address||'').trim()){toast('Indiquez votre adresse professionnelle (obligatoire sur les factures)');break;}if(!(f.insurer||'').trim()){toast('Indiquez votre assureur & n° de police');break;}if(!f.insuranceDoc){toast('Joignez votre attestation d’assurance');break;}if(!f.mandat){toast('Acceptez le mandat de facturation pour continuer');break;}if(!f.cgu){toast('Acceptez les CGU et les CGV pour continuer');break;}if(!f.charte){toast('Acceptez la charte de responsabilité de l’intervenant');break;}
+      case 'pro-submit':{const f=S.proForm;if((f.name||'').trim().length<2){toast('Indiquez votre nom / raison sociale');break;}if(!f.birth){toast('Indiquez votre date de naissance');break;}if(!isAdult(f.birth)){toast('Inscription réservée aux personnes majeures (18 ans et plus).');break;}if((f.phone||'').trim().length<6){toast('Indiquez un numéro de téléphone');break;}if(!f.cats.length){toast('Sélectionnez au moins un service');break;}if(f.cats.includes('autre')&&!(f.otherService||'').trim()){toast('Précisez le service « Autre » que vous proposez');break;}if(f.cats.includes('baby')&&!(f.diplomas&&f.diplomas.length)){toast('Garde d’enfants : indiquez vos diplômes (ou « Expérience seule »)');break;}if(!/.+@.+\..+/.test(f.email||'')){toast('Un e-mail valide est requis');break;}if((f.password||'').length<6||f.password!==f.password2){toast('Mot de passe : 6 caractères min., identiques');break;}if(!/^\d{14}$/.test((f.siret||'').replace(/\s/g,''))){toast('Un SIRET valide (14 chiffres) est requis');break;}if(!(f.address||'').trim()){toast('Indiquez votre adresse professionnelle (obligatoire sur les factures)');break;}if(!(f.insurer||'').trim()){toast('Indiquez votre assureur & n° de police');break;}if(!f.insuranceDoc){toast('Joignez votre attestation d’assurance');break;}if(!f.mandat){toast('Acceptez le mandat de facturation pour continuer');break;}if(!f.cgu){toast('Acceptez les CGU et les CGV pour continuer');break;}if(!f.charte){toast('Acceptez la charte de responsabilité de l’intervenant');break;}
         if(FB){signupAsArtisan=true;fbProSignup(f);break;} // vrai compte artisan Firebase
         const rates={};f.cats.forEach(c=>{rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});const minRate=Math.min.apply(null,f.cats.map(c=>rates[c]));S.adminArtisans=S.adminArtisans.filter(x=>x.id!=='self');S.adminArtisans.unshift({id:'self',name:f.name||'Nouveau prestataire',status:'attente',type:'entreprise',cats:f.cats.slice(),other:(f.otherService||'').trim(),rates,rate:minRate,siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,rating:0,jobs:0,zone:'—',phone:f.phone||'',email:f.email||'',photo:f.photo||''});S.proStatus='pending';render();break;}
-      case 'pro-approve':{S.proStatus='approved';const f=S.proForm;if(f.photo)S.proPhoto=f.photo;if(f.name)S.proName=f.name;if(f.cats.length)S.proCats=f.cats.slice();const rates={};f.cats.forEach(c=>{rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});S.proRates=rates;if(f.cats.length)S.proRate=Math.min.apply(null,f.cats.map(c=>rates[c]));S.proStatusType='entreprise';S.proSiret=(f.siret||'').replace(/\s/g,'');S.proBio=f.bio||'';S.proInsured=!!f.insuranceDoc;if(f.insurer)S.proInsurer=f.insurer;if(f.phone)S.proPhone=f.phone;
+      case 'pro-approve':{S.proStatus='approved';const f=S.proForm;S.proBirth=f.birth||S.proBirth;if(f.photo)S.proPhoto=f.photo;if(f.name)S.proName=f.name;if(f.cats.length)S.proCats=f.cats.slice();const rates={};f.cats.forEach(c=>{rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});S.proRates=rates;if(f.cats.length)S.proRate=Math.min.apply(null,f.cats.map(c=>rates[c]));S.proStatusType='entreprise';S.proSiret=(f.siret||'').replace(/\s/g,'');S.proBio=f.bio||'';S.proInsured=!!f.insuranceDoc;if(f.insurer)S.proInsurer=f.insurer;if(f.phone)S.proPhone=f.phone;
         // Nouvel artisan = part de zéro : aucun historique ni agenda pré-rempli.
         S.proHistory=[];S.agenda=[];S.recurring=[];S.proEarnings=0;S.proJobsToday=0;S.proJobsTotal=0;S.mission=null;
         render();toast('Profil validé — bienvenue sur Ti-Services !');break;}
       case 'conc-approve-demo':S.concStatus='approved';render();toast('Conciergerie validée (démo)');break;
-      case 'pro-accept':{const m=S.mission;if(m.slotFlex&&m.proposedSlot){m.slot=clampSlot(m,m.proposedSlot);}m.provider=Object.assign({},PROVIDERS[m.svc],m.preferredName?{nm:m.preferredName,ini:inits(m.preferredName)}:{});if(m.svc==='baby'){m.providerPhone='0690 27 90 00';m.providerBio='Maman de deux enfants, 10 ans d’expérience en garde d’enfants à Saint-Barth.';m.providerDiplomas=['PSC1 (premiers secours)','CAP AEPE / Petite enfance'];m.clientConfirmed=false;}m.status='accepted';const r=totals(m).rate;const amt=totals(m).total;const freq=m.frequency||'ponctuelle';const labels=occLabels(freq);const cli=proClientName(m);const entries=labels.map(d=>({day:d,dateISO:(m.dateISO||apptISO({day:(m.when||d)})),slot:m.slot,svc:m.svc,client:cli,zone:m.zone,duration:m.duration,unit:m.unit,rate:r,amount:amt,status:'upcoming'}));m._appt=entries[0];entries.slice().reverse().forEach(e=>S.agenda.unshift(e));if(freq!=='ponctuelle'){S.recurring.unshift({svc:m.svc,svcName:m.svcName,short:freqInfo(freq).short,slot:m.slot,zone:m.zone});}if(!m.chat||!m.chat.length)m.chat=[{from:'pro',text:'Bonjour '+(cli.split(' ')[0])+' ! Bien reçu votre demande, je serai là à '+m.slot+'. À tout à l’heure 👋'}];proAddMission(m);render();burstConfetti();toast(labels.length>1?'Prestation récurrente ajoutée à votre agenda !':'Mission remportée — ajoutée à votre agenda !');break;}
+      case 'pro-accept':{const m=S.mission;if(m.slotFlex&&m.proposedSlot){m.slot=clampSlot(m,m.proposedSlot);}m.provider=Object.assign({},PROVIDERS[m.svc],m.preferredName?{nm:m.preferredName,ini:inits(m.preferredName)}:{});if(m.svc==='baby'){m.providerPhone='0690 27 90 00';m.providerBio='Maman de deux enfants, 10 ans d’expérience en garde d’enfants à Saint-Barth.';m.providerDiplomas=['PSC1 (premiers secours)','CAP AEPE / Petite enfance'];m.providerAgeBand=ageBand(S.proBirth)||'25-34 ans';m.clientConfirmed=false;}m.status='accepted';const r=totals(m).rate;const amt=totals(m).total;const freq=m.frequency||'ponctuelle';const labels=occLabels(freq);const cli=proClientName(m);const entries=labels.map(d=>({day:d,dateISO:(m.dateISO||apptISO({day:(m.when||d)})),slot:m.slot,svc:m.svc,client:cli,zone:m.zone,duration:m.duration,unit:m.unit,rate:r,amount:amt,status:'upcoming'}));m._appt=entries[0];entries.slice().reverse().forEach(e=>S.agenda.unshift(e));if(freq!=='ponctuelle'){S.recurring.unshift({svc:m.svc,svcName:m.svcName,short:freqInfo(freq).short,slot:m.slot,zone:m.zone});}if(!m.chat||!m.chat.length)m.chat=[{from:'pro',text:'Bonjour '+(cli.split(' ')[0])+' ! Bien reçu votre demande, je serai là à '+m.slot+'. À tout à l’heure 👋'}];proAddMission(m);render();burstConfetti();toast(labels.length>1?'Prestation récurrente ajoutée à votre agenda !':'Mission remportée — ajoutée à votre agenda !');break;}
       case 'pro-decline':{const dm=S.mission;
         // Demande DIRIGÉE (renouvellement / choix précis) : l'artisan demandé décline →
         // la main revient au client (démo : on bascule côté client pour qu'il décide).
@@ -6930,6 +6966,8 @@
     if(ins&&ins.files&&ins.files[0]){const file=ins.files[0];ins.value='';
       // Le fichier est gardé en mémoire ; l'envoi vers Storage se fait après création du compte.
       S.proForm.insuranceFile=file;S.proForm.insuranceDoc=true;S.proForm.insuranceName=(file.name||'attestation').slice(0,60);render();toast('Attestation jointe ✓');return;}
+    const dipf=e.target.closest('[data-diplomafile]');
+    if(dipf&&dipf.files&&dipf.files.length){S.proForm.diplomaDocs=S.proForm.diplomaDocs||[];Array.from(dipf.files).forEach(function(file){S.proForm.diplomaDocs.push({name:(file.name||'diplôme').slice(0,60),file:file});});dipf.value='';render();toast('Justificatif joint ✓');return;}
     const pins=e.target.closest('[data-proinsurance]');
     if(pins&&pins.files&&pins.files[0]){const file=pins.files[0];pins.value='';uploadProInsurance(file);return;}
   });
@@ -7726,7 +7764,7 @@
       const acc={status:'accepted',providerUid:uid,providerName:S.proName||'',providerJobs:(S.proJobsTotal||0),providerFounder:!!S.proFounder,providerPhoto:S.proPhoto||null,
         // Identité légale du prestataire — mentions obligatoires de la facture émise en son nom
         // (mandat de facturation, art. 242 nonies A CGI) : raison sociale, SIRET, adresse, statut.
-        providerLegal:S.proLegal||S.proName||'',providerSiret:S.proSiret||'',providerAddress:S.proAddress||'',providerStatusType:S.proStatusType||'entreprise',
+        providerLegal:S.proLegal||S.proName||'',providerSiret:S.proSiret||'',providerAddress:S.proAddress||'',providerStatusType:S.proStatusType||'entreprise',providerAgeBand:ageBand(S.proBirth)||'',
         acceptedSlot:acceptedSlot,acceptedAt:FB.f.serverTimestamp()};
       // Garde d'enfants : le client voit le PROFIL COMPLET et peut APPELER la
       // baby-sitter (via l'app) avant de confirmer — on transmet téléphone,
