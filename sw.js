@@ -1,5 +1,5 @@
 /* Ti-Services — service worker (coquille hors-ligne) */
-const CACHE = 'ti-services-v328';
+const CACHE = 'ti-services-v329';
 const SHELL = [
   './',
   './index.html',
@@ -16,7 +16,17 @@ const SHELL = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // PAS de skipWaiting automatique : une nouvelle version reste « en attente »
+  // jusqu'à ce que l'utilisateur l'accepte (bouton « mettre à jour »). Objectif :
+  // ne JAMAIS recharger l'app en plein milieu d'une saisie (inscription, commande…),
+  // ce qui faisait perdre le formulaire et renvoyait à l'écran de démarrage.
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)));
+});
+
+// La page peut demander l'activation immédiate de la nouvelle version (au clic
+// sur « mettre à jour »). Alors seulement on prend la main → rechargement contrôlé.
+self.addEventListener('message', (e) => {
+  if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('activate', (e) => {

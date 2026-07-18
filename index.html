@@ -2724,6 +2724,8 @@
     "Réglez et échangez dans l'app : la garantie et le paiement Ti-Services ne s'appliquent que si tout s'y passe.":"Pay and chat in the app: the Ti-Services guarantee and payment only apply if everything happens here.",
     "Démarrez la conversation.":"Start the conversation.",
     "Appeler":"Call",
+    "Nouvelle version — mettre à jour":"New version — update",
+    "Mise à jour…":"Updating…",
     "Un souci, un litige, une question sur cette prestation ?":"An issue, a dispute, a question about this service?",
     "Reçue par e-mail — votre justificatif de prestation.":"Received by email — your proof of service.",
     "Services à la demande · Saint-Barthélemy":"On-demand services · Saint-Barthélemy",
@@ -3437,6 +3439,8 @@
     "Réglez et échangez dans l'app : la garantie et le paiement Ti-Services ne s'appliquent que si tout s'y passe.":"Pague e converse na aplicação: a garantia e o pagamento Ti-Services só se aplicam se tudo decorrer aqui.",
     "Démarrez la conversation.":"Inicie a conversa.",
     "Appeler":"Ligar",
+    "Nouvelle version — mettre à jour":"Nova versão — atualizar",
+    "Mise à jour…":"A atualizar…",
     "Un souci, un litige, une question sur cette prestation ?":"Um problema, um litígio, uma questão sobre este serviço?",
     "Reçue par e-mail — votre justificatif de prestation.":"Recebida por e-mail — o seu comprovativo de serviço.",
     "Services à la demande · Saint-Barthélemy":"Serviços a pedido · Saint-Barthélemy",
@@ -7163,15 +7167,40 @@
     if(ii&&deferredPrompt){ ii.addEventListener('click',async()=>{ try{ deferredPrompt.prompt(); const r=await deferredPrompt.userChoice; deferredPrompt=null; if(r&&r.outcome==='accepted'){ close(); } }catch(_){} }); }
     requestAnimationFrame(()=>wrap.classList.add('show'));
   }
+  // Pastille discrète « mettre à jour » : proposée quand une nouvelle version est
+  // prête. On NE recharge JAMAIS l'app tout seul — c'est l'utilisateur qui décide,
+  // pour ne pas interrompre une saisie en cours (inscription, commande…).
+  function showUpdatePill(reg){
+    if(document.getElementById('swUpdate'))return;
+    const el=document.createElement('button');
+    el.id='swUpdate';el.type='button';
+    el.textContent=(typeof trOne==='function')?trOne('Nouvelle version — mettre à jour'):'Nouvelle version — mettre à jour';
+    el.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:calc(74px + env(safe-area-inset-bottom));z-index:2147483000;background:var(--ink,#231E33);color:#fff;border:none;border-radius:999px;padding:11px 18px;font:600 13px/1.1 system-ui,-apple-system,sans-serif;box-shadow:0 10px 28px rgba(0,0,0,.24);cursor:pointer;max-width:88vw';
+    el.addEventListener('click',function(){
+      el.textContent=(typeof trOne==='function')?trOne('Mise à jour…'):'Mise à jour…';el.disabled=true;
+      try{ if(reg&&reg.waiting){reg.waiting.postMessage({type:'SKIP_WAITING'});} else {location.reload();} }
+      catch(_){ location.reload(); }
+    });
+    document.body.appendChild(el);
+  }
   if('serviceWorker' in navigator){window.addEventListener('load',()=>{
     const hadController=!!navigator.serviceWorker.controller;let refreshing=false;
-    // Quand une NOUVELLE version prend le contrôle, on recharge une fois pour la
-    // servir (sinon l'app resterait bloquée sur l'ancien cache — ex. correctifs
-    // de synchro jamais appliqués sur le téléphone).
+    // Le rechargement n'a lieu QUE lorsque la nouvelle version prend la main après
+    // acceptation explicite (postMessage SKIP_WAITING ci-dessus) — jamais à l'improviste.
+    // Le garde hadController évite le rechargement parasite à la toute 1ʳᵉ installation.
     navigator.serviceWorker.addEventListener('controllerchange',()=>{ if(refreshing)return; refreshing=true; if(hadController)location.reload(); });
     navigator.serviceWorker.register('sw.js').then(function(reg){
+      // Une version déjà en attente au chargement ? On propose la mise à jour.
+      if(reg.waiting&&navigator.serviceWorker.controller)showUpdatePill(reg);
+      reg.addEventListener('updatefound',function(){
+        const nw=reg.installing;if(!nw)return;
+        nw.addEventListener('statechange',function(){
+          // « installed » avec un contrôleur déjà présent = mise à jour prête (pas 1ʳᵉ install).
+          if(nw.state==='installed'&&navigator.serviceWorker.controller)showUpdatePill(reg);
+        });
+      });
       try{reg.update();}catch(_){}
-      // Vérifie les mises à jour au retour de l'app au premier plan.
+      // Vérifie les mises à jour au retour au premier plan (sans rien interrompre).
       document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'){try{reg.update();}catch(_){}} });
     }).catch(()=>{});
   });}
