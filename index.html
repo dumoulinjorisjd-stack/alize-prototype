@@ -1956,6 +1956,15 @@
     }
     return '+'+d;
   }
+  // Divulgation des numéros : uniquement quand la mise en relation est actée DES
+  // DEUX CÔTÉS. Le client a fait sa demande (côté 1) et l'artisan a accepté (côté 2)
+  // → pour la garde d'enfants, il faut EN PLUS la confirmation explicite du client.
+  function bothAccepted(m){
+    if(!m)return false;
+    if(m.status!=='accepted'&&m.status!=='working'&&m.status!=='done')return false;
+    if(m.svc==='baby')return !!m.clientConfirmed;
+    return true;
+  }
   function contactRow(p){return `<div class="contacts">`+
     `<a class="btn ghost sm" href="https://wa.me/${waNumber(p.phone)}" target="_blank" rel="noopener">${I.whatsapp} WhatsApp</a>`+
     `<a class="btn ghost sm" href="tel:${telClean(p.phone)}">${I.phone} Appeler</a>`+
@@ -4157,7 +4166,9 @@
     if(FB&&m.reqId&&!isDemo()){try{const field=(side==='pro')?'supportPro':'supportClient';FB.f.updateDoc(FB.f.doc(FB.db,'requests',m.reqId),{[field]:FB.f.arrayUnion(msg)});}catch(_){}}}
   function chatScreen(){
     const m=S.mission,other=chatName();
-    const otherPhone=(S.persona==='pro')?(m.clientPhone||''):(m.providerPhone||'');
+    // Le numéro n'apparaît qu'une fois la mission actée des deux côtés (cf. bothAccepted).
+    const reveal=bothAccepted(m);
+    const otherPhone=reveal?((S.persona==='pro')?(m.clientPhone||''):(m.providerPhone||'')):'';
     const tel=telClean(otherPhone);
     const msgs=m.chat||[];
     const list=msgs.length?msgs.map(x=>`<div class="bub ${x.from===S.persona?'me':'them'}">${esc(x.text)}</div>`).join(''):`<p class="mini" style="text-align:center;color:var(--muted);margin:auto 0">Démarrez la conversation.</p>`;
@@ -4859,9 +4870,9 @@
     return `<div class="card provider-pop" style="padding:16px;margin-top:12px">
       <div class="eyebrow" style="color:var(--teal-deep)">${I.baby} Faites connaissance avant de confirmer</div>
       ${profile}
-      <p class="mini" style="margin-top:10px;color:var(--muted)">${esc(first)} a accepté votre demande. <b>Appelez pour échanger</b> sur la garde (enfants, habitudes, consignes), puis confirmez — ou choisissez quelqu'un d'autre. Rien n'est débité avant la prestation.</p>
+      <p class="mini" style="margin-top:10px;color:var(--muted)">${esc(first)} a accepté votre demande. <b>Échangez par message</b> sur la garde (enfants, habitudes, consignes), puis confirmez — ou choisissez quelqu'un d'autre. Son numéro sera partagé une fois la garde confirmée. Rien n'est débité avant la prestation.</p>
       <div class="stack" style="margin-top:12px;gap:8px">
-        ${tel?`<a class="btn primary" href="tel:${tel}" style="text-decoration:none">${I.phone} Appeler ${esc(first)}</a>`:''}
+        <button class="btn primary" data-act="open-chat">${I.chat} Contacter ${esc(first)}</button>
         <button class="btn good" data-act="baby-confirm">${I.check} Confirmer la garde avec ${esc(first)}</button>
         <button class="btn ghost sm" data-act="baby-switch">${S.babyRepick?'Non, garder '+esc(first):'Ne pas confirmer'}</button>
       </div>
@@ -4881,7 +4892,7 @@
       <div class="h-hello" style="margin-top:8px;text-align:center">${head.t}</div><p class="sub" style="text-align:center">${head.d}</p>
       ${(m.slotFlex&&m.status==='pending')?`<p class="mini" style="text-align:center;margin-top:4px">${I.clock} Créneau souhaité&nbsp;: ${m.when} · ${flexTxt(m)} — un artisan vous proposera une heure précise.</p>`:''}
       ${(m.slotFlex&&m.proposedSlot&&m.status!=='pending')?`<div class="banner teal" style="margin-top:10px">${I.clock}<span>${p?esc(p.nm.split(' ')[0]):'L’artisan'} a confirmé son passage à <b>${m.slot}</b> (vous aviez laissé ${flexTxt(m)}).</span></div>`:''}
-      ${m.status==='pending'?`<div class="card" style="padding:16px;margin-top:12px;text-align:center">${searchRadar(true)}<p class="sub" style="margin:0">Vous saurez qui intervient dès l'acceptation.</p></div>`:((m.svc==='baby'&&p)?babyConfirmBlock(m):(p?`<div class="card provider-pop" style="padding:14px;margin-top:12px"><div class="row" style="gap:12px">${avatarFounder(m.providerPhoto,p.ini,'',p.founder)}<div style="flex:1"><b style="font-size:15px">${esc(p.nm)}</b><div class="mini">${p.jobs} missions réalisées · ${I.pin} ${m.zone}</div></div><div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">${p.founder?`<span class="chip founder-chip" style="padding:4px 9px">${I.star} Ambassadeur</span>`:''}<span class="chip good" style="padding:4px 10px">${I.check} Vérifié · Assuré</span></div></div></div>`:''))}
+      ${m.status==='pending'?(m.preferredUid?`<div class="card" style="padding:16px;margin-top:12px"><div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="background:var(--teal-wash);color:var(--teal-deep)">${I.clock}</span><div><b style="font-size:14px">Demande réservée à ${esc((m.preferredName||'votre artisan').split(' ')[0])}</b><p class="mini" style="margin-top:4px">Votre demande est adressée <b>uniquement à ${esc(m.preferredName||'votre artisan')}</b> — pas aux autres artisans, puisque vous l'avez choisi. L'attente est normale&nbsp;: elle dure tant qu'il n'a pas encore répondu. Dès qu'il accepte ou décline, vous êtes prévenu.</p></div></div></div>`:`<div class="card" style="padding:16px;margin-top:12px;text-align:center">${searchRadar(true)}<p class="sub" style="margin:0">Vous saurez qui intervient dès l'acceptation.</p></div>`):((m.svc==='baby'&&p)?babyConfirmBlock(m):(p?`<div class="card provider-pop" style="padding:14px;margin-top:12px"><div class="row" style="gap:12px">${avatarFounder(m.providerPhoto,p.ini,'',p.founder)}<div style="flex:1"><b style="font-size:15px">${esc(p.nm)}</b><div class="mini">${p.jobs} missions réalisées · ${I.pin} ${m.zone}</div></div><div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">${p.founder?`<span class="chip founder-chip" style="padding:4px 9px">${I.star} Ambassadeur</span>`:''}<span class="chip good" style="padding:4px 10px">${I.check} Vérifié · Assuré</span></div></div></div>`:''))}
       ${(m.svc==='colis'&&p)?colisDossier(m,false):''}
       <div class="card" style="padding:16px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Suivi</div><div class="timeline" style="margin-top:12px">${tls}</div></div>
       ${p?`<button class="btn ghost sm" data-act="open-chat" style="margin-top:12px;justify-content:flex-start;gap:8px">${I.chat}&nbsp;Contacter ${esc(p.nm.split(' ')[0])}${(m.chat&&m.chat.length)?` · ${m.chat.length}`:''}</button>`:''}
@@ -6016,7 +6027,7 @@
     const stLabel={accepted:'À venir · '+m.slot,working:'En cours'}[m.status];
     return `<div class="pad"><button class="reset" data-act="promiss-back" style="margin:8px 0 2px">← Mes missions</button><div class="row between"><span class="chip good">${stLabel}</span><span class="mini">Mission remportée 🎉</span></div>
       <div class="h-hello" style="margin-top:8px">${m.svcName}</div>
-      ${(m.svc==='baby'&&m.status==='accepted')?(m.clientConfirmed?`<div class="banner teal" style="margin-top:10px">${I.check}<span><b>Garde confirmée par le client</b> — il a validé après votre échange.</span></div>`:`<div class="banner teal" style="margin-top:10px">${I.phone}<span>Le client voit votre profil (photo, diplômes, présentation) et peut <b>vous appeler pour faire connaissance</b> avant de confirmer la garde — soyez joignable.</span></div>`):''}
+      ${(m.svc==='baby'&&m.status==='accepted')?(m.clientConfirmed?`<div class="banner teal" style="margin-top:10px">${I.check}<span><b>Garde confirmée par le client</b> — il a validé après votre échange.</span></div>`:`<div class="banner teal" style="margin-top:10px">${I.chat}<span>Le client voit votre profil (photo, diplômes, présentation) et peut <b>vous contacter par message</b> pour faire connaissance avant de confirmer la garde. Vos numéros seront partagés une fois la garde confirmée.</span></div>`):''}
       ${m.svc==='colis'?`${colisTourneeBanner(m)}${colisDossier(m,true)}<div class="card" style="padding:15px;margin-top:12px"><div class="row between"><span class="sub">Livrer à</span><b style="text-align:right;max-width:60%">${esc(proClientName(m))} · ${esc(m.address||'')}</b></div><div class="row between" style="margin-top:6px"><span class="sub">Vous percevez</span><b class="money" style="color:var(--teal-deep)">${eur(t.payout)}</b></div></div>`
       :`<div class="card" style="padding:15px;margin-top:12px"><div class="row" style="gap:8px;flex-wrap:wrap"><span class="chip grey">${I.clock} ${m.slot}</span>${(m.acts&&m.acts.length)?'':`<span class="chip grey">${durTxt(m)}</span>`}</div><div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px"><span class="chip grey">${I.pin} ${esc(m.address)}</span></div>${(m.acts&&m.acts.length)?`<div class="row between" style="margin-top:10px;align-items:flex-start"><span class="sub">Prestations</span><b style="text-align:right;max-width:60%">${m.acts.map(function(a){return esc(a.nm)+((a.qty||1)>1?' ×'+a.qty:'');}).join('<br>')}</b></div>`:''}<hr class="dashed"><div class="row between"><span class="sub">Client</span><span class="row" style="gap:8px;align-items:center">${avatarPhoto(proClientPhoto(m),inits(proClientName(m)),'sm')}<b>${esc(proClientName(m))}</b></span></div><div class="row between" style="margin-top:6px"><span class="sub">Vous percevez</span><b class="money" style="color:var(--teal-deep)">${eur(t.payout)}</b></div></div>`}
       ${(m.photos&&m.photos.length)?`<div class="card" style="padding:14px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Photos du client</div><div class="thumbs" style="margin-top:8px">${m.photos.map(u=>`<div class="thumb"><img src="${u}" alt="Photo du client"></div>`).join('')}</div></div>`:''}
@@ -7734,10 +7745,24 @@
     setTimeout(function(){if(S._openReqLoading){S._openReqLoading=false;if(S.persona==='pro'&&!S.mission)render();}},7000);
     try{
       const q=FB.f.query(FB.f.collection(FB.db,'requests'),FB.f.where('status','==','pending'));
+      const firstSnap=!S._openReqSeen;S._openReqSeen=S._openReqSeen||{};
       openReqUnsub=FB.f.onSnapshot(q,function(snap){
         S._openReqLoading=false;
         const cats=S.proCats||[];const list=[];
         const myUid=(FB.auth&&FB.auth.currentUser)?FB.auth.currentUser.uid:'';
+        // Demande DIRIGÉE nouvellement adressée à MOI : notification spéciale — elle
+        // sort de la file « aléatoire », le client m'a choisi précisément.
+        try{snap.docChanges().forEach(function(ch){
+          if(ch.type!=='added')return;
+          const r=ch.doc.data()||{};const id=ch.doc.id;
+          if(!(r.directed&&r.preferredProviderUid&&myUid&&r.preferredProviderUid===myUid))return;
+          if(cats.length&&cats.indexOf(r.service)<0)return;
+          if(S._openReqSeen[id])return;S._openReqSeen[id]=1;
+          if(firstSnap)return;// pas de rafale au chargement initial
+          const rid=id,who=(r.clientName||'Un client');
+          notify('Demande réservée pour vous',who+' vous demande directement pour '+(r.serviceName||svcNm(r.service))+' — hors file d’attente.','ti-directed-'+id,function(){S.persona='pro';S.mission=null;S.proReqView=rid;S.proNav='home';render();});
+          if(S.persona==='pro')toast(who+' vous demande directement · '+(r.serviceName||svcNm(r.service)));
+        });}catch(_){}
         snap.forEach(function(d){const r=d.data()||{};
           if(cats.length&&cats.indexOf(r.service)<0)return;
           // Demande dirigée vers un artisan précis (choix / renouvellement) : lui seul
@@ -7833,9 +7858,10 @@
     const directedMe=!!(r.directed&&r.preferredProviderUid&&myUid&&r.preferredProviderUid===myUid);
     const accLabel=r.slotFlex?(' · j’arrive à '+esc(clampSlot(r,S.proReqSlot||r.slot))):'';
     return `<div class="pad"><button class="reset" data-act="reqview-close" style="margin:8px 0 2px">← Missions disponibles</button>
-      <span class="eyebrow" style="color:var(--teal-deep)">${I.flame} Mission à saisir</span>
+      <span class="eyebrow" style="color:var(--teal-deep)">${directedMe?I.star+' Demande réservée pour vous':I.flame+' Mission à saisir'}</span>
       <div class="h-hello">${esc(r.serviceName||svcNm(r.service))}</div>
       <div class="row" style="gap:11px;margin-top:10px;align-items:center">${avatarPhoto(r.clientPhoto,inits(r.clientName||'Client'),'sm')}<div><b style="font-size:14px">${esc(r.clientName||'Client')}</b><div class="mini">Client Ti-Services · ${esc(r.zone||'')}</div></div></div>
+      ${directedMe?`<div class="banner teal" style="margin-top:12px">${I.star}<span><b>${esc(r.clientName||'Ce client')} vous a demandé personnellement.</b> Cette demande ne passe pas par la file d’attente habituelle — elle vous est adressée à vous seul, parce que vous avez déjà travaillé ensemble. Vous êtes le premier informé.</span></div>`:''}
       <div class="card" style="padding:16px;margin-top:14px">
         <div class="row between"><span class="sub">Vous percevez</span><b class="money" style="font-size:22px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(reqPayout(r))}</b></div>
         <p class="mini" style="margin-top:4px;color:var(--muted)">Montant net que vous touchez pour cette mission — versé après la prestation.</p>
