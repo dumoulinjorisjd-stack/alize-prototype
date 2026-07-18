@@ -2295,10 +2295,16 @@
     if(!key||key==='pitch'||key==='login'||key.indexOf('onb:')===0)return '';
     return '<div class="brandbar" aria-hidden="true"><img class="bb-octo" src="./zouti-logo.svg" alt="" width="30" height="33"><span class="bb-word"><b>Ti</b><i>-Services</i>'+betaTag()+'</span></div>';
   }
+  // Écran « de fond » pour la conservation du défilement : on ignore le suffixe de
+  // STATUT (accepted/working/paid…) de la clé, pour qu'un simple changement d'état de
+  // la mission (côté client ou pro) NE fasse PAS remonter la page en haut — on reste
+  // là où on était. Une vraie navigation (autre onglet, autre écran) réinitialise.
+  const _statusSuffix={'':1,pending:1,searching:1,accepted:1,working:1,done_pro:1,disputed:1,paid:1,rated:1,declined:1};
+  function scrollGroup(k){if(!k)return k;const i=k.lastIndexOf(':');return (i>0&&_statusSuffix[k.slice(i+1)])?k.slice(0,i):k;}
   function paintView(html,key){
-    const same=(key===_scr);const top=view.scrollTop;
+    const same=(key===_scr);const keepScroll=same||(scrollGroup(key)===scrollGroup(_scr));const top=view.scrollTop;
     view.innerHTML='<div'+(same?'':' class="anim"')+'>'+brandBarHtml(key)+html+'</div>';
-    view.scrollTop=same?top:0;_scr=key;updateHomeFab();mountMaps();
+    view.scrollTop=keepScroll?top:0;_scr=key;updateHomeFab();mountMaps();
     // iOS : retire la suggestion « Préremplir le contact » (barre du clavier) sur les
     // champs de texte libre où elle n'a aucun sens. Les vrais champs de contact
     // (e-mail, téléphone, mot de passe) gardent l'auto-remplissage natif.
@@ -3391,7 +3397,7 @@
       ${searchRadar(false)}
       <div class="card" style="padding:14px;text-align:center"><p class="sub" style="margin:0"><b id="notif">…</b> artisans notifiés</p></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0">${isDemo()?`<button class="demobtn" data-act="demo-go-pro">${I.hardhat} Voir côté artisan pour accepter (démo)</button>`:''}${S.cancelAsk?cancelConfirmCard(m):`<button class="btn ghost" data-act="cancel-mission" style="margin-top:12px">Annuler la recherche</button>`}</div>
-      <p class="mini" style="text-align:center;margin-top:10px;color:var(--muted)">Vous pouvez naviguer ailleurs — revenez ici via l'onglet <b>Accueil</b>.</p></div>${clientNavbar()}`;
+      </div>${clientNavbar()}`;
   }
   // Garde d'enfants — à l'ACCEPTATION : le client voit le profil complet de la
   // baby-sitter, peut l'APPELER via l'app, puis CONFIRME la garde (ou change).
@@ -3437,7 +3443,7 @@
       ${m.status==='pending'?`<div class="footcta" style="position:static;background:none;padding:16px 0 0">${isDemo()?`<button class="demobtn" data-act="demo-go-pro">${I.hardhat} Voir côté artisan (démo)</button>`:''}${S.cancelAsk?cancelConfirmCard(m):`<button class="btn ghost" data-act="cancel-mission" style="margin-top:12px">Annuler la demande</button>`}</div>`:'<div style="height:18px"></div>'}
       ${m.status==='accepted'?`<div class="card" style="padding:14px;margin-top:12px;background:var(--card-2)"><p class="mini" style="text-align:center;margin:0">${S.clientNoShowAsk?`<span style="color:var(--coral-deep)">L'artisan ne s'est pas présenté&nbsp;? Nous <b>relançons aussitôt</b> la recherche auprès des autres artisans — et <b>vous ne payez rien</b> pour une absence.</span><br><button class="linklike" data-act="client-noshow-confirm" style="color:var(--coral-deep);font-weight:700;margin-top:6px;display:inline-block">Oui, relancer la recherche</button> &nbsp;·&nbsp; <button class="linklike" data-act="client-noshow-cancel">Annuler</button>`:`${I.clock} <button class="linklike" data-act="client-noshow" style="color:var(--muted)">L'artisan ne s'est pas présenté&nbsp;?</button>`}</p></div>`:''}
       ${m.status==='accepted'?`<div style="text-align:center;margin-top:12px">${S.cancelAsk?cancelConfirmCard(m):`<button class="linklike" data-act="cancel-mission" style="color:var(--muted)">Annuler la prestation</button><p class="mini" style="margin-top:6px;color:var(--muted)">Gratuit jusqu'à 8&nbsp;h avant le rendez-vous — au-delà, une indemnité de 50&nbsp;% revient à l'artisan (voir CGV).</p>`}</div>`:''}
-      <p class="mini" style="text-align:center;margin-top:6px;color:var(--muted)">Vous pouvez naviguer ailleurs — revenez ici via l'onglet <b>Accueil</b>.</p></div>${clientNavbar()}`;
+      </div>${clientNavbar()}`;
   }
   // Écran de DÉCISION : l'artisan précisément demandé (renouvellement / choix) a
   // décliné. Le client tranche : ouvrir la demande à tous les artisans, ou l'annuler.
