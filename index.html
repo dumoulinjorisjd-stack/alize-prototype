@@ -314,6 +314,7 @@
   body.desktop .brandbar{display:none}
   .view::-webkit-scrollbar{width:0}
   .pad{padding:6px 18px 26px}
+  .cfghead{display:flex;align-items:center;gap:10px;margin-top:6px}
   /* L'animation de transition porte sur le CONTENU (.pad…), jamais sur la barre
      d'onglets : un transform sur le conteneur parent « désancre » un position:fixed
      et fait sauter la barre à chaque changement d'onglet. En excluant .navbar, la
@@ -3698,7 +3699,7 @@
       view.querySelectorAll('input:not([autocomplete])').forEach(function(i){var t=(i.getAttribute('type')||'text').toLowerCase();if(t==='email'||t==='tel'||t==='password')return;i.setAttribute('autocomplete','off');});
     }catch(_){}
   }
-  function updateHomeFab(){const rb=document.getElementById('reset');if(rb)rb.style.display=isDemo()?'':'none';const f=document.getElementById('homefab');if(f){const show=S.onboarded&&!S.authView&&!S.showPitch&&S.persona==='client'&&!!(S.mission||S.draft||S.chat||S.support||S.clientInv||S.histInvoice||S.advantages||S.addrForm||S.referral||S.interv||S.cardForm);f.classList.toggle('show',show);}updateBackFab();}
+  function updateHomeFab(){const rb=document.getElementById('reset');if(rb)rb.style.display=isDemo()?'':'none';const f=document.getElementById('homefab');if(f){const show=S.onboarded&&!S.authView&&!S.showPitch&&S.persona==='client'&&!!(S.mission||S.draft||S.chat||S.support||S.clientInv||S.histInvoice||S.advantages||S.addrForm||S.referral||S.interv||S.cardForm)&&!(S.draft&&!S.payStep);f.classList.toggle('show',show);}updateBackFab();}
   // Peut-on revenir en arrière depuis l'écran courant ? (mêmes cas que goBack)
   function canGoBack(){
     if(S.legalView||S.showPitch)return true;
@@ -6659,9 +6660,8 @@
       <div class="field" style="margin-top:10px;margin-bottom:0"><input class="txt" data-colisitemnum="${i}" value="${esc(it.num||'')}" placeholder="N° d'avis de passage (facultatif)"></div>
       <div class="thumbs" style="margin-top:10px">${it.photo?`<div class="thumb"><img src="${it.photo}" alt="Avis de passage"><button data-act="colis-rmitemphoto:${i}" aria-label="Retirer">×</button></div>`:`<label class="thumb add"><span>${I.camera}</span><span>Avis</span><input type="file" accept="image/*" data-colisitemphoto="${i}" hidden></label>`}</div>
     </div>`).join('');
-    paintView(`<div class="pad"><button class="reset" data-cfg="back" style="margin:8px 0 2px">← Retour</button>
-      <span class="eyebrow" style="color:var(--teal-deep)">${svcIco('colis')} ${esc(m.svcName)}</span>
-      <div class="h-hello" style="padding-right:54px">Récupérer un colis / courrier</div>
+    paintView(`<div class="pad"><div class="cfghead"><button class="reset" data-cfg="back">← Retour</button><span class="eyebrow" style="flex:1;justify-content:center;color:var(--teal-deep)">${svcIco('colis')} ${esc(m.svcName)}</span><button class="iconbtn" data-act="go-home" aria-label="Accueil" title="Accueil"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg></button></div>
+      <div class="h-hello">Récupérer un colis / courrier</div>
       <p class="sub" style="margin-top:4px">Un prestataire vérifié retire votre pli à La Poste et vous l'apporte. On réunit les documents exigés pour un retrait par un tiers.</p>
 
       <div class="field" style="margin-top:16px"><label>Bureau de poste</label><div class="segs">${POSTES.map(p=>`<button class="seg ${m.poste===p?'on':''}" data-poste="${esc(p)}">${esc(p)}</button>`).join('')}</div></div>
@@ -6722,9 +6722,8 @@
     const actRows=catalogFor(m.svc).map(a=>{const p=pickOf(a.id);return `<div class="actrow${p?' on':''}"><button class="actmain" data-actpick="${esc(a.id)}"><span class="actck">${p?I.check:''}</span><span class="actnm">${esc(a.nm)}</span><span class="actpr">${a.price} €</span></button></div>`;}).join('');
     const nSel=m.acts.length;
     const c=svcColor(m.svc);
-    paintView(`<div class="pad"><button class="reset" data-cfg="back" style="margin:8px 0 2px">← Retour</button>
-      <span class="eyebrow" style="color:${c}">${svcIco(m.svc)} ${esc(m.svcName)}</span>
-      <div class="h-hello" style="padding-right:54px">Votre prestation</div>
+    paintView(`<div class="pad"><div class="cfghead"><button class="reset" data-cfg="back">← Retour</button><span class="eyebrow" style="flex:1;justify-content:center;color:${c}">${svcIco(m.svc)} ${esc(m.svcName)}</span><button class="iconbtn" data-act="go-home" aria-label="Accueil" title="Accueil"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg></button></div>
+      <div class="h-hello">Votre prestation</div>
       <p class="sub" style="margin-top:4px">Composez votre commande — prix fixes Ti-Services, total ferme.</p>
 
       <div class="field" style="margin-top:14px"><label>Choisissez vos prestations</label><div class="actlist">${actRows}</div>
@@ -6778,7 +6777,7 @@
     const isToday=(m.dateISO===todayISO());
     const daySelect=`<select class="txt" data-cfday>${dayOptions().map(o=>`<option value="${o.iso}"${m.dateISO===o.iso?' selected':''}>${esc(o.lbl)}</option>`).join('')}</select>`;
     const hourSelect=`<select class="txt" data-cfhour${dayFlex?' disabled':''}>${hOpts.map(o=>`<option value="${o.s}"${o.past?' disabled':''}${m.slot===o.s?' selected':''}>${o.s}</option>`).join('')}</select>`;
-    paintView(`<div class="pad"><button class="reset" data-cfg="back" style="margin:8px 0 2px">← Retour</button><span class="eyebrow">${m.svcName}</span><div class="h-hello" style="padding-right:54px">Détails de la mission</div>
+    paintView(`<div class="pad"><div class="cfghead"><button class="reset" data-cfg="back">← Retour</button><span class="eyebrow" style="flex:1;justify-content:center">${m.svcName}</span><button class="iconbtn" data-act="go-home" aria-label="Accueil" title="Accueil"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg></button></div><div class="h-hello">Détails de la mission</div>
       ${m.svc==='animaux'?`<div class="field"><label>Mode de garde</label><div class="segs"><button class="seg ${isDayU(m)?'on':''}" data-cfg="unit-j">📅 À la journée</button><button class="seg ${!isDayU(m)?'on':''}" data-cfg="unit-h">${I.clock} À l'heure</button></div><p class="mini" style="margin-top:6px">Pour une garde sur plusieurs jours, choisissez « à la journée » — vous fixez les <b>dates</b>, pas les heures.</p></div>`:''}
       <div class="field"><label>${isDayU(m)?'Date de début':'Quand&nbsp;?'}</label>${daySelect}</div>
       <div class="field"><label>${isDayU(m)?'Heure de dépôt':'Heure souhaitée'}</label>${dayFlex?`<p class="mini" style="margin:2px 0 0;color:var(--muted)">${I.clock} ${m.slotFlex==='week'?'Vous laissez toute la semaine — l’artisan vous proposera un jour et une heure de passage.':'Vous laissez toute la journée — l’artisan choisit son heure de passage (8 h – 19 h).'}</p>`:`${hourSelect}${isToday?`<p class="mini" style="margin-top:6px;color:var(--muted)">Pour aujourd'hui, seules les heures à venir sont proposées.</p>`:''}`}</div>
