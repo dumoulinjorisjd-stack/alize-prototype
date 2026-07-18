@@ -3157,7 +3157,7 @@
     return clientHome();
   }
   // Toutes les demandes actives (recherche → en cours). Source de vérité = S.missions.
-  function activeMissions(){return (S.missions||[]).filter(function(m){return ['searching','declined','pending','accepted','working','done_pro','disputed'].indexOf(m.status)>=0;});}
+  function activeMissions(){return (S.missions||[]).filter(function(m){return ['searching','declined','pending','accepted','working','done_pro','disputed','cancelled'].indexOf(m.status)>=0;});}
   function clientMissionActive(){return activeMissions().length>0;}
   // Sortir une demande du suivi (annulation) ou l'archiver (terminée → historique).
   function removeMission(m){const i=(S.missions||[]).indexOf(m);if(i>=0)S.missions.splice(i,1);}
@@ -3273,7 +3273,14 @@
   function clientWallet(){
     const done=doneHistory();
     const active=activeMissions();
-    const activeCard=function(m){const sm=missionStatusMeta(m.status);const canDel=(m.status==='searching'||m.status==='pending');
+    const activeCard=function(m){
+      if(m.status==='cancelled'){
+        const fee=(m.cancelFee!=null)?m.cancelFee:Math.round(totals(m).total*0.5*100)/100;
+        const info=m.feeDecision==='applied'?{t:`Indemnité de 50 % appliquée · ${eur(fee)}`,c:'coral'}:m.feeDecision==='waived'?{t:'Sans indemnité — geste de l’artisan',c:'good'}:{t:'Annulée — l’artisan décide de l’indemnité',c:'grey'};
+        const decided=(m.feeDecision==='applied'||m.feeDecision==='waived');
+        return `<div class="card" style="padding:14px;margin-top:9px;border-left:4px solid var(--hair)"><div class="row between"><b style="font-size:14px">${esc(m.svcName||svcNm(m.svc))}</b><span class="chip" style="padding:3px 10px;background:var(--sand-2);color:var(--muted)">Annulée</span></div><div class="mini" style="margin-top:3px">${esc(m.when||'')} · ${esc(m.slot||'')}${m.provider&&m.provider.nm?' · '+esc(m.provider.nm):''}</div><div class="row between" style="margin-top:9px"><span class="mini" style="color:var(--${info.c==='coral'?'coral-deep':info.c==='good'?'good':'muted'})">${info.t}</span>${decided?`<button class="linklike" data-act="dismiss-mission:${m._id||''}" style="color:var(--muted)">Retirer</button>`:''}</div></div>`;
+      }
+      const sm=missionStatusMeta(m.status);const canDel=(m.status==='searching'||m.status==='pending');
       const chip=`<span class="chip ${sm.c}" style="padding:3px 10px">${canDel?'<span class="srch-dot" style="margin-right:6px"></span>':''}${sm.l}</span>`;
       const head=`<div class="row between"><b style="font-size:14px">${esc(m.svcName)}</b>${chip}</div><div class="mini" style="margin-top:3px">${esc(m.when||'')} · ${esc(m.slot||'')}${m.provider&&m.provider.nm?' · '+esc(m.provider.nm):''} · ${I.pin} ${esc(m.zone||'')}</div>`;
       // Indicateur permanent « recherche active » : rassure l'utilisateur que
@@ -3698,6 +3705,14 @@
         if(r.acceptedSlot&&m.slot!==r.acceptedSlot){m.slot=r.acceptedSlot;if(r.slotFlex)m.proposedSlot=r.acceptedSlot;touched=true;}
         if(r.finalHours!=null&&m.finalHours!==r.finalHours){m.finalHours=r.finalHours;touched=true;}
         if(r.disputeMsg&&m.disputeMsg!==r.disputeMsg){m.disputeMsg=r.disputeMsg;touched=true;}
+        // Annulation tardive : montant de l'indemnité + décision de l'artisan.
+        if(r.lateCancel!=null&&m.lateCancel!==r.lateCancel){m.lateCancel=r.lateCancel;touched=true;}
+        if(r.cancelFee!=null&&m.cancelFee!==r.cancelFee){m.cancelFee=r.cancelFee;touched=true;}
+        if(r.feeDecision!=null&&m.feeDecision!==r.feeDecision){const was=m.feeDecision;m.feeDecision=r.feeDecision;touched=true;
+          if(S.persona==='client'&&was==='pending'&&(r.feeDecision==='applied'||r.feeDecision==='waived')){
+            if(r.feeDecision==='applied')notify('Ti-Services','Indemnité d’annulation de 50 % appliquée par l’artisan.','ti-'+m.reqId);
+            else notify('Ti-Services','L’artisan a renoncé à l’indemnité — geste commercial.','ti-'+m.reqId);
+          }}
         // Messagerie (stockée dans le doc de demande → lisible par client, artisan assigné, admin)
         if(Array.isArray(r.messages)&&(m.chat||[]).length!==r.messages.length){
           const prevLen=(m.chat||[]).length;
@@ -3753,6 +3768,7 @@
     }else if(S.persona==='pro'){
       if(newS==='paid'){notify('Ti-Services','Le client a validé — vous êtes payé 🎉','ti-'+m.reqId);if(!m._paidCounted){m._paidCounted=true;recordProPaid(m);}}
       else if(newS==='disputed')notify('Ti-Services','Le client conteste la durée déclarée.','ti-'+m.reqId);
+      else if(newS==='cancelled'){if(!(S.proMissions||[]).some(function(x){return x===m;}))proAddMission(m);notify('Ti-Services','Annulation tardive d’un client — à vous de décider de l’indemnité.','ti-'+m.reqId);toast('Annulation tardive — décidez de l’indemnité');}
     }
   }
   // Prestation validée par le client : on l'inscrit dans les revenus/missions de
@@ -3927,7 +3943,7 @@
     if(S.chat&&S.mission)return chatScreen();
     const m=S.mission;
     if(!m&&S.proReqView)return proReqFiche(S.proReqView);
-    if(m){if(m.status==='pending')return proRequest();if(m.status==='working'&&S.finishing)return proFinish();if(m.status==='accepted'||m.status==='working')return proActive();if(m.status==='done_pro'||m.status==='disputed')return proWaiting();if(m.status==='paid'||m.status==='rated')return proPaid();}
+    if(m){if(m.status==='cancelled'&&m.feeDecision!=='applied'&&m.feeDecision!=='waived')return proCancelDecision(m);if(m.status==='pending')return proRequest();if(m.status==='working'&&S.finishing)return proFinish();if(m.status==='accepted'||m.status==='working')return proActive();if(m.status==='done_pro'||m.status==='disputed')return proWaiting();if(m.status==='paid'||m.status==='rated')return proPaid();}
     if(S.proNav==='agenda')return proAgenda();
     if(S.proNav==='earnings')return proEarnings();
     if(S.proNav==='account')return proAccount();
@@ -4208,8 +4224,39 @@
   function dayKey(x){return (x.dateISO||x.when||'').trim();}
   function proSlotConflict(req,acceptedSlot){const k=dayKey(req);if(!k)return null;const w1=slotWindow(req,acceptedSlot);return proActiveMissions().find(function(m){if(dayKey(m)!==k)return false;const w2=slotWindow(m,m.slot);return w1[0]<w2[1]&&w2[0]<w1[1];})||null;}
   function proRemoveMission(m){const i=(S.proMissions||[]).indexOf(m);if(i>=0)S.proMissions.splice(i,1);}
-  function proActiveMissions(){return (S.proMissions||[]).filter(function(m){return ['accepted','working','done_pro','disputed'].indexOf(m.status)>=0;});}
-  function proMissionMeta(st){return {accepted:{l:'À réaliser',c:'good'},working:{l:'En cours',c:'good'},done_pro:{l:'Validation client',c:'coral'},disputed:{l:'En médiation',c:'coral'}}[st]||{l:st,c:'grey'};}
+  function proActiveMissions(){return (S.proMissions||[]).filter(function(m){return ['accepted','working','done_pro','disputed'].indexOf(m.status)>=0||(m.status==='cancelled'&&m.feeDecision==='pending');});}
+  function proMissionMeta(st){return {accepted:{l:'À réaliser',c:'good'},working:{l:'En cours',c:'good'},done_pro:{l:'Validation client',c:'coral'},disputed:{l:'En médiation',c:'coral'},cancelled:{l:'Annulation à trancher',c:'coral'}}[st]||{l:st,c:'grey'};}
+  // Indemnité d'annulation retenue : montant + net dus à l'artisan (commission déduite).
+  function cancelFeeCalc(m){const fee=(m.cancelFee!=null)?m.cancelFee:Math.round(totals(m).total*0.5*100)/100;const pct=(m.commPct!=null)?m.commPct:myCommPct();const commission=Math.round(fee*pct)/100;const net=Math.round((fee-commission)*100)/100;return {fee:fee,pct:pct,commission:commission,net:net};}
+  // Décision de l'artisan sur une annulation tardive : appliquer l'indemnité (50 %) ou
+  // y renoncer. C'est SON choix — Ti-Services ne l'impose pas.
+  function proCancelDecision(m){
+    const c=cancelFeeCalc(m);
+    return `<div class="pad"><button class="reset" data-act="pro-cancel-back" style="margin:8px 0 2px">← Retour</button>
+      <span class="eyebrow" style="color:var(--coral-deep)">${I.clock} Annulation tardive</span>
+      <div class="h-hello">Le client a annulé à moins de 8 h</div>
+      <p class="sub" style="margin-top:6px"><b>${esc(m.clientName||'Le client')}</b> a annulé « ${esc(m.svcName||svcNm(m.svc))} » (${esc(m.when||'')}${m.slot?' · '+esc(m.slot):''}) à moins de 8 h du rendez-vous. Vous aviez réservé ce créneau.</p>
+      <div class="card" style="padding:16px;margin-top:14px">
+        <div class="row between"><span class="sub">Indemnité d'annulation (50 %)</span><b>${eur(c.fee)}</b></div>
+        <div class="row between" style="margin-top:6px"><span class="sub">Commission Ti-Services (${c.pct} %)</span><b style="color:var(--muted)">−${eur(c.commission)}</b></div>
+        <hr class="dashed" style="margin:10px 0"><div class="row between"><span class="sub"><b>Vous percevez</b></span><b class="money" style="font-size:18px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(c.net)}</b></div>
+      </div>
+      <p class="mini" style="margin-top:10px;color:var(--muted)">C'est <b>votre choix</b>&nbsp;: appliquer l'indemnité pour le créneau bloqué, ou y renoncer en geste commercial pour ce client.</p>
+      <div class="footcta" style="position:static;background:none;padding:16px 0 0">
+        <button class="btn primary" data-act="apply-cancelfee">${I.check} Appliquer l'indemnité · ${eur(c.net)}</button>
+        <button class="btn ghost" data-act="waive-cancelfee" style="margin-top:10px">Renoncer (geste commercial)</button>
+      </div><div style="height:12px"></div></div>${proNavbar()}`;
+  }
+  // Inscrit l'indemnité perçue dans l'historique/les gains de l'artisan (comme une
+  // prestation, mais marquée « indemnité »).
+  function recordCancelFee(m){
+    const c=cancelFeeCalc(m);const key=m.reqId||m._id;
+    S.proEarnings=Math.round(((S.proEarnings||0)+c.net)*100)/100;
+    S.proHistory=S.proHistory||[];
+    if(!S.proHistory.some(function(h){return key&&h.reqId===key&&h.cancelFee;})){
+      S.proHistory.unshift({id:'cf'+(key||S.proHistory.length),reqId:key,dateISO:todayISO(),svc:m.svc,client:(m.clientName||'Client'),clientFull:(m.clientName||'Client'),clientZone:m.zone||'',cancelFee:true,duration:0,unit:m.unit||'h',amount:c.fee,commPct:c.pct,commission:c.commission,net:c.net,invNo:m.invNo||('IND-'+String(1000+S.proHistory.length)),paidVia:'indemnité'});
+    }
+  }
   function proTodoBlock(){
     const list=proActiveMissions();
     if(!list.length)return '';
@@ -4870,6 +4917,7 @@
       else if(act==='dispute-revert'){if(S.mission&&S.mission.status==='disputed'){S.mission.finalHours=S.mission.duration;finalizePaid(S.mission);toast('Retour à l’accord initial — prestation réglée');}}
       render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('del-demand:')===0){const id=b.dataset.act.slice('del-demand:'.length);const m=(S.missions||[]).find(function(x){return (x._id||'')===id;});if(m){cancelActiveRequest(m);removeMission(m);if(S.mission===m)S.mission=null;cacheClientLocal();toast('Demande supprimée');}render();return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('dismiss-mission:')===0){const id=b.dataset.act.slice('dismiss-mission:'.length);const m=(S.missions||[]).find(function(x){return (x._id||'')===id;});if(m){removeMission(m);if(S.mission===m)S.mission=null;cacheClientLocal();}render();return;}
     if(b.dataset.follow){const orow=b.closest('.swipe-row');if(orow&&orow.classList.contains('open')){orow.classList.remove('open');return;}const mm=(S.missions||[]).find(function(x){return (x._id||'')===b.dataset.follow;});if(mm){S.mission=mm;S.cancelAsk=false;S.clientNav='wallet';render();}return;}
     if(b.dataset.cnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.invoiceId=null;S.histInvoice=null;S.addrForm=null;S.profileForm=null;S.mission=null;S.cancelAsk=false;S.catView=null;S.clientNav=b.dataset.cnav;if(b.dataset.cnav==='wallet')refreshClientRequests();render();return;}
     if(b.dataset.pnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.proStmt=false;S.commInvId=null;S.commStmt=false;S.invoiceId=null;S.proConflict=null;S.proNav=b.dataset.pnav;render();return;}
@@ -5015,7 +5063,21 @@
       case 'account-delete-confirm':deleteAccountReal();break;
       case 'cancel-mission':S.cancelAsk=true;render();break;
       case 'cancel-dismiss':S.cancelAsk=false;render();break;
-      case 'cancel-confirm':S.cancelAsk=false;cancelActiveRequest(S.mission);removeMission(S.mission);S.mission=null;S.clientNav='wallet';render();break;
+      case 'cancel-confirm':{const m=S.mission;S.cancelAsk=false;const pol=cancelPolicy(m);
+        if(m&&!pol.free&&m.provider){
+          // Annulation TARDIVE (< 8 h) : on NE supprime PAS — l'artisan décidera d'appliquer
+          // ou non l'indemnité de 50 %. La demande reste, statut « cancelled », en attente.
+          m.status='cancelled';m.lateCancel=true;m.cancelFee=pol.fee;m.feeBase=pol.base;m.feeDecision='pending';m.cancelledAt=Date.now();
+          if(!isDemo())pushReqUpdate(m,{status:'cancelled',lateCancel:true,cancelFee:pol.fee,feeBase:pol.base,feeDecision:'pending',cancelledAt:Date.now()});
+          else{const c=Object.assign({},m);c._id='pm'+Date.now();proAddMission(c);} // démo : décision testable côté artisan
+          cacheClientLocal();S.mission=null;S.clientNav='wallet';render();toast('Annulée — l’artisan décide de l’indemnité');
+        } else {
+          cancelActiveRequest(m);removeMission(m);S.mission=null;S.clientNav='wallet';render();
+        }
+        break;}
+      case 'pro-cancel-back':S.mission=null;S.proNav='home';render();break;
+      case 'apply-cancelfee':{const m=S.mission;if(m&&m.status==='cancelled'){const c=cancelFeeCalc(m);m.feeDecision='applied';m.feeDecidedAt=Date.now();if(!isDemo())pushReqUpdate(m,{feeDecision:'applied',feeDecidedAt:Date.now()});recordCancelFee(m);const j=(S.proMissions||[]).indexOf(m);if(j>=0)S.proMissions.splice(j,1);S.mission=null;S.proNav='home';render();toast('Indemnité appliquée · +'+eur(c.net));}break;}
+      case 'waive-cancelfee':{const m=S.mission;if(m&&m.status==='cancelled'){m.feeDecision='waived';m.feeDecidedAt=Date.now();if(!isDemo())pushReqUpdate(m,{feeDecision:'waived',feeDecidedAt:Date.now()});const j=(S.proMissions||[]).indexOf(m);if(j>=0)S.proMissions.splice(j,1);S.mission=null;S.proNav='home';render();toast('Vous avez renoncé à l’indemnité');}break;}
       case 'confirm-done':pushMissionStatus(S.mission,{status:'paid',finalHours:billHours(S.mission)});finalizePaid(S.mission);render();burstConfetti();break;
       case 'pro-reopen':S.proReopenAsk=true;render();break;
       case 'pro-reopen-cancel':S.proReopenAsk=false;render();break;
