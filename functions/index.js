@@ -73,6 +73,77 @@ async function mollieRouteNet(molliePaymentId, orgId, netAmount, label) {
     return true;
   } catch (e) { console.warn('mollieRouteNet', e); return false; }
 }
+/* ============================================================================
+ * WHATSAPP BUSINESS CLOUD API — alerte directe à l'artisan (officiel, Meta).
+ *
+ * POURQUOI : les notifications push (FCM) ne suffisent pas toujours (PWA iOS
+ * fermée, jeton expiré). Un message WhatsApp arrive de façon fiable. On l'envoie
+ * en PLUS du push, surtout pour les demandes DIRIGÉES (un client redemande un
+ * artisan précis) — l'artisan doit être prévenu à coup sûr.
+ *
+ * ÉTAT : prêt mais INERTE tant que les secrets ne sont pas configurés (même
+ * logique que Mollie). Sans secret, whatsAppConfigured() renvoie false → no-op.
+ *
+ * POUR ACTIVER (compte Meta WhatsApp Business à ouvrir) :
+ *   1) Créer un numéro WhatsApp Business + un token permanent + récupérer le
+ *      Phone Number ID dans Meta Business Manager (developers.facebook.com).
+ *   2) Faire APPROUVER un modèle (template) de message, ex. « nouvelle_demande »,
+ *      langue « fr », catégorie UTILITY, avec 2 variables de corps :
+ *        {{1}} = intitulé de la prestation, {{2}} = secteur (ou « pour vous »).
+ *      Exemple de corps :
+ *        « Ti-Services : nouvelle demande {{1}} · {{2}}. Ouvrez l'app pour
+ *          accepter avant les autres. »
+ *   3) Recueillir l'OPT-IN de l'artisan (case notifWa déjà présente à
+ *      l'inscription / réglages) — obligatoire (politique WhatsApp + RGPD).
+ *   4) firebase functions:secrets:set WHATSAPP_TOKEN
+ *      firebase functions:secrets:set WHATSAPP_PHONE_ID
+ *      (optionnel) firebase functions:secrets:set WHATSAPP_TEMPLATE
+ *   5) Déclarer les secrets sur la fonction notifyArtisansNewRequest, ex. :
+ *        onDocumentCreated({document:'requests/{reqId}',
+ *          secrets:['WHATSAPP_TOKEN','WHATSAPP_PHONE_ID','WHATSAPP_TEMPLATE']}, ...)
+ *      NB : ne PAS déclarer un secret inexistant (le déploiement échouerait) —
+ *      c'est pourquoi la déclaration est absente tant que le compte n'est pas ouvert.
+ * ========================================================================== */
+const WA_GRAPH = 'https://graph.facebook.com/v20.0';
+function whatsAppConfigured() { return !!(process.env.WHATSAPP_TOKEN && process.env.WHATSAPP_PHONE_ID); }
+// Numéro au format international SANS « + » (attendu par l'API). Gère le 0 de
+// tête (numéro national) : 0690… → 590690…, sinon indicatif France 33.
+function waIntl(phone) {
+  let d = (phone || '').toString().replace(/[^\d+]/g, '');
+  const hadPlus = d.charAt(0) === '+';
+  d = d.replace(/\D/g, '');
+  if (d.indexOf('00') === 0) d = d.slice(2);
+  else if (!hadPlus && d.charAt(0) === '0') { const rest = d.slice(1); d = (/^69[01]/.test(rest) ? '590' : '33') + rest; }
+  return d.length >= 8 ? d : '';
+}
+// Envoi best-effort d'un message modèle WhatsApp. No-op sûr si non configuré.
+async function sendWhatsAppTemplate(toPhone, param1, param2) {
+  if (!whatsAppConfigured()) return false;
+  const to = waIntl(toPhone);
+  if (!to) return false;
+  const template = process.env.WHATSAPP_TEMPLATE || 'nouvelle_demande';
+  try {
+    const res = await fetch(WA_GRAPH + '/' + encodeURIComponent(process.env.WHATSAPP_PHONE_ID) + '/messages', {
+      method: 'POST',
+      headers: {'Authorization': 'Bearer ' + process.env.WHATSAPP_TOKEN, 'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to,
+        type: 'template',
+        template: {
+          name: template,
+          language: {code: 'fr'},
+          components: [{type: 'body', parameters: [
+            {type: 'text', text: (param1 || 'prestation').toString().slice(0, 60)},
+            {type: 'text', text: (param2 || 'Saint-Barth').toString().slice(0, 60)},
+          ]}],
+        },
+      }),
+    });
+    if (!res.ok) { console.warn('sendWhatsAppTemplate HTTP', res.status, await res.text()); return false; }
+    return true;
+  } catch (e) { console.warn('sendWhatsAppTemplate', e); return false; }
+}
 
 exports.notifyAdminNewArtisan = onDocumentCreated('artisans/{artisanId}', async (event) => {
   const snap = event.data;
@@ -184,6 +255,23 @@ exports.notifyArtisansNewRequest = onDocumentCreated('requests/{reqId}', async (
   const preferred = r.preferredProviderUid;
   const targetUids = preferred ? (uids.indexOf(preferred) >= 0 ? [preferred] : []) : uids;
   if (!targetUids.length) { console.log('Artisan demandé indisponible (aucun jeton ou non validé).'); return; }
+
+  const svcNm = (r.serviceName || 'Nouvelle prestation').toString().slice(0, 60);
+  const secteur = (r.zone || 'Saint-Barth').toString().slice(0, 40);
+
+  // Alerte WhatsApp (officielle) EN PLUS du push — surtout pour une demande dirigée,
+  // où l'artisan choisi doit être prévenu à coup sûr. No-op tant que WhatsApp n'est
+  // pas configuré. On n'écrit qu'aux artisans ayant coché l'opt-in WhatsApp (notifWa).
+  if (whatsAppConfigured()) {
+    const artById = {};
+    artsSnap.docs.forEach((d) => { artById[d.id] = d.data() || {}; });
+    await Promise.all(targetUids.map(async (uid) => {
+      const a = artById[uid] || {};
+      if (!a.notifWa || !a.phone) return;
+      try { await sendWhatsAppTemplate(a.phone, svcNm, preferred ? 'demande réservée pour vous' : secteur); }
+      catch (_) {}
+    }));
+  }
 
   // Jetons push de ces artisans (avec correspondance jeton -> uid pour le nettoyage).
   const tokenToUid = {};
