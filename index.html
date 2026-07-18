@@ -2348,7 +2348,7 @@
   function initLang(){try{var s=localStorage.getItem('ts_lang');if(s==='en'||s==='fr')return s;}catch(_){}try{return /^en\b/i.test(navigator.language||'')?'en':'fr';}catch(_){}return 'fr';}
   function setLang(l){S.lang=(l==='en')?'en':'fr';try{localStorage.setItem('ts_lang',S.lang);}catch(_){}try{document.documentElement.lang=S.lang;}catch(_){}render();}
   // Repli par motif pour les chaînes avec nombre/interpolation (ex. « 4 prestations › »).
-  var MO_EN={'janvier':'January','février':'February','fevrier':'February','mars':'March','avril':'April','mai':'May','juin':'June','juillet':'July','août':'August','aout':'August','septembre':'September','octobre':'October','novembre':'November','décembre':'December','decembre':'December'};
+  var MO_EN={'janvier':'January','février':'February','fevrier':'February','mars':'March','avril':'April','mai':'May','juin':'June','juillet':'July','août':'August','aout':'August','septembre':'September','octobre':'October','novembre':'November','décembre':'December','decembre':'December','janv':'January','févr':'February','fevr':'February','avr':'April','juil':'July','sept':'September','oct':'October','nov':'November','déc':'December','dec':'December'};
   var TIER_EN={'bronze':'Bronze','argent':'Silver','or':'Gold','platine':'Platinum','diamant':'Diamond'};
   var DOW_EN={'lun':'Mon','mar':'Tue','mer':'Wed','jeu':'Thu','ven':'Fri','sam':'Sat','dim':'Sun'};
   var T_RE=[
@@ -2378,7 +2378,15 @@
     [/^Trouver un artisan · (.+)$/i,'Find a pro · $1'],
     [/^Enregistrer & trouver un artisan · (.+)$/i,'Save & find a pro · $1'],
     [/^Simple empreinte bancaire — vous n'êtes prélevé qu'après avoir validé la prestation, jamais plus que (.+?)\. Encaissement pour compte via Mollie \(établissement agréé\)\.$/,function(m,amt){return "Simple card hold \u2014 you're only charged after approving the service, never more than "+amt+". Collected on the provider's behalf via Mollie (licensed institution).";}],
-    [/^: ce montant est le maximum débité \(sur (.+?), via Mollie — encaissement agréé\)\. Aucun supplément sans votre accord\.$/,function(m,card){return ": this amount is the maximum charged (on "+card+", via Mollie \u2014 licensed collection). No extra charge without your consent.";}]
+    [/^: ce montant est le maximum débité \(sur (.+?), via Mollie — encaissement agréé\)\. Aucun supplément sans votre accord\.$/,function(m,card){return ": this amount is the maximum charged (on "+card+", via Mollie \u2014 licensed collection). No extra charge without your consent.";}],
+    [/^Écrire à (.+?)…$/i,'Message $1…'],
+    [/^À venir · (.+)$/i,'Upcoming · $1'],
+    [/^\+(.+?) versés sur votre compte$/i,'+$1 paid to your account'],
+    [/^(.+?) · (\d+)\s*h$/i,function(m,cat,n){var e=EN_DICT[cat.trim()];return e?e+' · '+n+' h':m;}],
+    [/^Le client confirme la prestation\. Dès validation, (.+?) sont versés sur votre compte\.$/,function(m,amt){return 'The client is confirming the service. Once approved, '+amt+' is paid to your account.';}],
+    [/^Vous serez prévenu dès que (.+?) aura confirmé depuis son application — le versement suit aussitôt\.$/,function(m,who){return "You'll be notified as soon as "+who+" confirms from their app — payment follows right after.";}],
+    [/^Prestation à domicile · (\d{1,2}) ([A-Za-zÀ-ÿ]+)\.? (\d{4})$/,function(m,d,mo,y){var M=MO_EN[mo.toLowerCase()];return M?('Home service · '+M+' '+d+', '+y):m;}],
+    [/^Réglé par carte bancaire le (\d{1,2}) ([A-Za-zÀ-ÿ]+)\.? (\d{4}) — encaissement pour compte du prestataire via Mollie, établissement de paiement agréé\. Aucun solde dû\.$/,function(m,d,mo,y){var M=MO_EN[mo.toLowerCase()];return M?('Paid by card on '+M+' '+d+', '+y+' — collected on the provider’s behalf via Mollie, a licensed payment institution. No balance due.'):m;}]
   ];
   function trOne(v){var k=(''+v);var kt=k.trim();if(!kt)return v;
     // Normalise les espaces insécables (typographie FR : « ? », « : », « » ») pour la recherche.
@@ -2650,7 +2658,40 @@
     "Ex. Code portail 4521 · chat à la maison · clé sous le pot":"e.g. Gate code 4521 · cat at home · key under the pot",
     "Paiement":"Payment",
     "Carte de paiement":"Payment card",
-    ": ce montant est le maximum débité (moyen de paiement demandé juste après, via Mollie — encaissement agréé). Aucun supplément sans votre accord.":": this amount is the maximum charged (payment method requested right after, via Mollie — licensed collection). No extra charge without your consent."
+    ": ce montant est le maximum débité (moyen de paiement demandé juste après, via Mollie — encaissement agréé). Aucun supplément sans votre accord.":": this amount is the maximum charged (payment method requested right after, via Mollie — licensed collection). No extra charge without your consent.",
+    // Suivi, messagerie, facture client, écrans artisan (mission → versement)
+    "Numéro masqué · via Ti-Services":"Masked number · via Ti-Services",
+    "Vos numéros restent privés — messages et appels transitent par Ti-Services. La garantie et le paiement ne s'appliquent que si tout se passe dans l'app.":"Your numbers stay private — messages and calls go through Ti-Services. The guarantee and payment only apply if everything happens in the app.",
+    "Démarrez la conversation. Vos coordonnées restent masquées.":"Start the conversation. Your contact details stay masked.",
+    "Appeler (numéro masqué)":"Call (masked number)",
+    "Un souci, un litige, une question sur cette prestation ?":"An issue, a dispute, a question about this service?",
+    "Reçue par e-mail — votre justificatif de prestation.":"Received by email — your proof of service.",
+    "Services à la demande · Saint-Barthélemy":"On-demand services · Saint-Barthélemy",
+    "FACTURE":"INVOICE",
+    "✓ PAYÉE":"✓ PAID",
+    "Facturé à":"Billed to",
+    "Prestation":"Service",
+    "Qté":"Qty",
+    "Total réglé":"Total paid",
+    "TVA non applicable — Saint-Barthélemy (collectivité d'outre-mer, hors du champ de la TVA française).":"VAT not applicable — Saint-Barthélemy (overseas collectivity, outside the scope of French VAT).",
+    "Facture établie par Ti-Services au nom et pour le compte du prestataire, en vertu d'un mandat de facturation (art. 289 du CGI).":"Invoice issued by Ti-Services in the name and on behalf of the provider, under a billing mandate (art. 289 of the CGI).",
+    "Document remis au client à titre de justificatif de la prestation réglée.":"Document given to the client as proof of the paid service.",
+    "Ti-Services est un service édité par C.C.S — SAS au capital de 500 €, SIRET 933 820 664 00011, Carrefour des 4 Chemins Marigot, 97133 Saint-Barthélemy.":"Ti-Services is a service published by C.C.S — a SAS with share capital of €500, SIRET 933 820 664 00011, Carrefour des 4 Chemins Marigot, 97133 Saint-Barthélemy.",
+    "Mission remportée 🎉":"Job won 🎉",
+    "Contacter le client (numéro masqué)":"Contact the client (masked number)",
+    "Paiement du client déjà sécurisé — versé dès qu'il valide la prestation.":"Client's payment already secured — released as soon as they approve the service.",
+    "Démarrer la prestation":"Start the service",
+    "Je ne peux plus assurer cette mission":"I can no longer take this job",
+    "Fin de prestation":"End of service",
+    "Confirmer la durée réelle":"Confirm the actual duration",
+    "Indiquez le nombre d'heures réellement passées. Le client validera cette durée avant le règlement.":"Enter the number of hours actually spent. The client will approve this duration before payment.",
+    "Heures réellement passées":"Hours actually spent",
+    "Montant final":"Final amount",
+    "Envoyer au client pour validation":"Send to client for approval",
+    "Prestation signalée terminée":"Service marked as completed",
+    "Détail du versement":"Payment breakdown",
+    "Net perçu":"Net received",
+    "Retour aux missions":"Back to jobs"
   };
   // Bandeau de marque (bicolore) rappelé en haut de chaque écran de l'app.
   // Écarté de la vitrine, de l'onboarding et du login (la marque y figure déjà en grand).
