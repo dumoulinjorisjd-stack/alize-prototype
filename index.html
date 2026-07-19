@@ -2106,6 +2106,14 @@
     if(purged){try{cacheClientLocal();}catch(_){}}
     return purged;
   }
+  // Persistance du « passer » (artisan) : mémorisé sur la fiche artisan (skippedRequests)
+  // → au redémarrage, la mission passée ne réapparaît pas dans le fil « Missions disponibles ».
+  function persistSkip(rid){
+    if(!rid)return;
+    S.proSkipped=S.proSkipped||[];
+    if(S.proSkipped.indexOf(rid)<0)S.proSkipped.push(rid);
+    if(FB&&FB.auth&&FB.auth.currentUser&&!isDemo()){try{FB.f.updateDoc(FB.f.doc(FB.db,'artisans',FB.auth.currentUser.uid),{skippedRequests:FB.f.arrayUnion(rid)});}catch(_){}}
+  }
   // Politique d'annulation : gratuite avant acceptation ou à 8 h+ du rendez-vous ;
   // sinon indemnité de 50 % de la prestation due à l'artisan (Ti-Services perçoit
   // sa commission sur cette indemnité, comme sur une prestation réalisée).
@@ -2467,7 +2475,7 @@
     [/^Bon retour(.*)$/,'Welcome back$1'],
     [/^Trouver un pro(.*)$/,'Find a pro$1'],
     [/^Refaire(.*)$/,'Rebook$1'],
-    [/^Missions à réaliser · (\d+)$/,'Jobs to do · $1'],
+    [/^Missions en cours · (\d+)$/,'Ongoing jobs · $1'],
     [/^En cours · (\d+)$/,'In progress · $1'],
     [/^Missions disponibles · (\d+)$/,'Available jobs · $1'],
     [/^(\d+)\s+à venir$/i,'$1 upcoming'],
@@ -3855,7 +3863,7 @@
     [/^Bon retour(.*)$/,'Bem-vindo de volta$1'],
     [/^Trouver un pro(.*)$/,'Encontrar um profissional$1'],
     [/^Refaire(.*)$/,'Repetir$1'],
-    [/^Missions à réaliser · (\d+)$/,'Serviços a realizar · $1'],
+    [/^Missions en cours · (\d+)$/,'Serviços em curso · $1'],
     [/^En cours · (\d+)$/,'Em curso · $1'],
     [/^Missions disponibles · (\d+)$/,'Serviços disponíveis · $1'],
     [/^(\d+)\s+à venir$/i,'$1 próximos'],
@@ -5494,9 +5502,9 @@
       else if(newS==='done_pro')notify('Ti-Services','Prestation terminée — à confirmer.','ti-'+m.reqId);
       // L'artisan s'est désisté : la demande repasse en recherche pour les autres.
       else if(newS==='pending'&&['accepted','working','done_pro'].indexOf(oldS)>=0){m.provider=null;m.providerUid=null;notify('Ti-Services','Votre artisan s’est désisté — nous relançons la recherche d’un intervenant.','ti-'+m.reqId);toast('Artisan désisté — recherche relancée');}
-      // L'artisan PRÉCISÉMENT demandé a décliné : le client décide de la suite
-      // (proposer à tous les artisans, ou annuler).
-      else if(newS==='declined'){m.provider=null;m.providerUid=null;notify('Ti-Services',((m.preferredName||'Votre artisan').split(' ')[0])+' n’est pas disponible — à vous de décider.','ti-'+m.reqId);toast('Artisan indisponible — à vous de décider');}
+      // L'artisan PRÉCISÉMENT demandé a décliné : la demande repart AUTOMATIQUEMENT
+      // dans la recherche générale (proposée à tous les artisans de la zone).
+      else if(newS==='declined'){const who=((m.preferredName||m.provider&&m.provider.nm||'Votre artisan')+'').split(' ')[0];m.provider=null;m.providerUid=null;openToStandard(m);notify('Ti-Services',who+' n’est pas disponible — votre demande est proposée à tous les artisans.','ti-'+m.reqId);}
     }else if(S.persona==='pro'){
       if(newS==='paid'){notify('Ti-Services','Le client a validé — vous êtes payé 🎉','ti-'+m.reqId);if(!m._paidCounted){m._paidCounted=true;recordProPaid(m);}}
       else if(newS==='disputed')notify('Ti-Services','Le client conteste la durée déclarée.','ti-'+m.reqId);
@@ -5801,6 +5809,30 @@
   // gestionnaire d'envoi. Tout champ marqué * doit être renseigné pour débloquer l'envoi.
   function concSignupOk(f){f=f||{};return (f.name||'').trim().length>1&&(f.siret||'').replace(/\s/g,'').length>=9&&(f.address||'').trim().length>1&&(f.contact||'').trim().length>1&&(f.phone||'').trim().length>=6&&/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=6&&f.password===f.password2&&!!f.cgu&&!!f.mandat;}
   function proSignupOk(f){f=f||{};const siret=(f.siret||'').replace(/\s/g,'');return (f.name||'').trim().length>1&&(f.phone||'').trim().length>=6&&/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=6&&f.password===f.password2&&/^\d{14}$/.test(siret)&&(f.address||'').trim().length>1&&(f.insurer||'').trim().length>1&&!!f.insuranceDoc&&!!(f.cats&&f.cats.length)&&(!f.cats.includes('autre')||(f.otherService||'').trim())&&(!f.cats.includes('baby')||!!(f.diplomas&&f.diplomas.length))&&!!f.mandat&&!!f.cgu&&!!f.charte&&!!f.acceptsGrille&&isAdult(f.birth);}
+  // Liste ce qu'il reste à fournir pour valider la candidature — affiché sous le bouton
+  // (désactivé) pour que l'artisan sache exactement quel champ ou document manque.
+  function proMissing(f){f=f||{};const m=[];const siret=(f.siret||'').replace(/\s/g,'');
+    if((f.name||'').trim().length<2)m.push('nom / raison sociale');
+    if(!f.birth||!isAdult(f.birth))m.push('date de naissance (majeur·e)');
+    if((f.phone||'').trim().length<6)m.push('téléphone');
+    if(!(f.cats&&f.cats.length))m.push('au moins un métier');
+    if(f.cats&&f.cats.includes('autre')&&!(f.otherService||'').trim())m.push('préciser le service « Autre »');
+    if(f.cats&&f.cats.includes('baby')&&!(f.diplomas&&f.diplomas.length))m.push('diplômes garde d’enfants');
+    if(!/.+@.+\..+/.test(f.email||''))m.push('e-mail valide');
+    if((f.password||'').length<6||f.password!==f.password2)m.push('mot de passe (6 caractères, identiques)');
+    if(!/^\d{14}$/.test(siret))m.push('SIRET (14 chiffres)');
+    if(!(f.address||'').trim())m.push('adresse professionnelle');
+    if(!(f.insurer||'').trim())m.push('assureur & n° de police');
+    if(!f.insuranceDoc)m.push('attestation d’assurance');
+    if(!f.mandat)m.push('accepter le mandat de facturation');
+    if(!f.cgu)m.push('accepter les CGU / CGV');
+    if(!f.charte)m.push('accepter la charte de l’intervenant');
+    if(!f.acceptsGrille)m.push('accepter la grille tarifaire');
+    return m;
+  }
+  // Met à jour en direct l'état du bouton + la liste des éléments manquants (sans re-render,
+  // pour préserver le focus des champs texte).
+  function refreshProSubmit(){const f=S.proForm;if(!f)return;const ok=proSignupOk(f);const btn=document.querySelector('[data-act="pro-submit"]');if(btn)btn.disabled=!ok;const el=document.getElementById('proMissing');if(el){el.style.display=ok?'none':'';el.textContent=ok?'':('Pour valider, il reste à fournir : '+proMissing(f).join(' · ')+'.');}}
   const RQ='<span class="req">*</span>';
   function conciergeSignup(){
     const f=S.concSignup||{};
@@ -5908,7 +5940,8 @@
       </div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0">
         <button class="btn primary" data-act="pro-submit"${ok?'':' disabled'}>Envoyer ma candidature</button>
-        <p class="mini" style="text-align:center;margin-top:10px">${ok?'Candidature soumise à validation de Ti-Services (SIRET, assurance &amp; tarif vérifiés).':'Renseignez tous les champs obligatoires (marqués <span class="req">*</span>) pour envoyer.'}</p>
+        <p class="mini" id="proMissing" style="text-align:center;margin-top:10px;color:var(--coral-deep);${ok?'display:none':''}">${ok?'':'Pour valider, il reste à fournir : '+proMissing(f).join(' · ')+'.'}</p>
+        <p class="mini" style="text-align:center;margin-top:8px">${ok?'Candidature soumise à validation de Ti-Services (SIRET, assurance &amp; tarif vérifiés).':'Renseignez tous les champs obligatoires (marqués <span class="req">*</span>) pour envoyer.'}</p>
       </div></div>`;
   }
   function proPending(){
@@ -5995,7 +6028,7 @@
   function proTodoBlock(){
     const list=proActiveMissions();
     if(!list.length)return '';
-    return `<div style="margin-top:14px"><span class="eyebrow" style="color:var(--teal-deep)">${I.check} Missions à réaliser · ${list.length}</span>${list.map(function(m){const sm=proMissionMeta(m.status);return `<button class="card" data-act="promiss:${m._id||''}" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block;border-left:4px solid ${sm.c==='good'?'var(--good)':'var(--coral)'}"><div class="row between"><b style="font-size:14px">${esc(m.svcName||svcNm(m.svc))}</b><span class="chip ${sm.c}" style="padding:3px 10px">${sm.l}</span></div><div class="mini" style="margin-top:3px">${I.pin} ${esc(m.zone||'')} · ${esc(m.when||'')} · ${esc(m.slot||'')} · ${m.duration||1} ${m.unit==='j'?'j':'h'}</div><div class="row between" style="margin-top:9px"><span class="mini" style="color:var(--muted)">Vous percevez ${eur(totals(m).payout)}</span><span class="mini" style="color:var(--teal-deep);font-weight:700">Ouvrir ›</span></div></button>`;}).join('')}</div>`;
+    return `<div style="margin-top:14px"><span class="eyebrow" style="color:var(--teal-deep)">${I.check} Missions en cours · ${list.length}</span>${list.map(function(m){const sm=proMissionMeta(m.status);return `<button class="card" data-act="promiss:${m._id||''}" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block;border-left:4px solid ${sm.c==='good'?'var(--good)':'var(--coral)'}"><div class="row between"><b style="font-size:14px">${esc(m.svcName||svcNm(m.svc))}</b><span class="chip ${sm.c}" style="padding:3px 10px">${sm.l}</span></div><div class="mini" style="margin-top:3px">${I.pin} ${esc(m.zone||'')} · ${esc(m.when||'')} · ${esc(m.slot||'')} · ${m.duration||1} ${m.unit==='j'?'j':'h'}</div><div class="row between" style="margin-top:9px"><span class="mini" style="color:var(--muted)">Vous percevez ${eur(totals(m).payout)}</span><span class="mini" style="color:var(--teal-deep);font-weight:700">Ouvrir ›</span></div></button>`;}).join('')}</div>`;
   }
   function proHome(){
     const cats=(S.proCats&&S.proCats.length)?S.proCats:['menage'];
@@ -6821,10 +6854,10 @@
     if(b.dataset.act&&b.dataset.act.indexOf('reqview:')===0){const orow=b.closest('.swipe-row');if(orow&&orow.classList.contains('open')){orow.classList.remove('open');return;}S.proReqView=b.dataset.act.slice('reqview:'.length);S.proReqSlot=null;S.proReqPick=false;render();return;}
     // « Passer » depuis le fil (glisser pour révéler) : retire la mission de la liste
     // de l'artisan (proSkipped) — même effet que « Pas cette fois » dans la fiche.
-    if(b.dataset.act&&b.dataset.act.indexOf('pro-skip:')===0){const rid=b.dataset.act.slice('pro-skip:'.length);if(rid&&(S.proSkipped||[]).indexOf(rid)<0){S.proSkipped=S.proSkipped||[];S.proSkipped.push(rid);}render();toast('Mission passée — proposée aux autres artisans');return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('pro-skip:')===0){persistSkip(b.dataset.act.slice('pro-skip:'.length));render();toast('Mission passée — proposée aux autres artisans');return;}
     if(b.dataset.proreqslot){if(b.dataset.proreqslot==='__pick'){S.proReqPick=true;}else{S.proReqPick=false;S.proReqSlot=b.dataset.proreqslot;}render();return;}
     if(b.dataset.act==='reqview-close'){S.proReqView=null;render();return;}
-    if(b.dataset.act==='reqview-skip'){if(S.proReqView&&(S.proSkipped||[]).indexOf(S.proReqView)<0){S.proSkipped=S.proSkipped||[];S.proSkipped.push(S.proReqView);}S.proReqView=null;render();return;}
+    if(b.dataset.act==='reqview-skip'){persistSkip(S.proReqView);S.proReqView=null;render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('promiss:')===0){const id=b.dataset.act.slice('promiss:'.length);const mm=(S.proMissions||[]).find(function(x){return (x._id||'')===id;});if(mm){S.mission=mm;S.proReqView=null;S.proNav='home';render();}return;}
     if(b.dataset.act==='promiss-back'){S.mission=null;render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('accept-req:')===0){
@@ -6848,7 +6881,7 @@
     if(b.dataset.act==='baby-switch'){S.babyRepick=!S.babyRepick;render();return;}
     if(b.dataset.act==='client-cancel-declined'){const m=S.mission;if(m){cancelActiveRequest(m);removeMission(m);}S.mission=null;S.clientNav='wallet';render();toast('Demande annulée');return;}
     if(b.dataset.act==='conflict-accept'){const rid=S.proConflict&&S.proConflict.reqId;S.proConflict=null;render();if(rid)acceptRequestReal(rid);return;}
-    if(b.dataset.act==='conflict-skip'){const rid=S.proConflict&&S.proConflict.reqId;S.proConflict=null;if(rid&&(S.proSkipped||[]).indexOf(rid)<0){S.proSkipped=S.proSkipped||[];S.proSkipped.push(rid);}S.proReqView=null;render();toast('Mission passée — proposée aux autres artisans');return;}
+    if(b.dataset.act==='conflict-skip'){const rid=S.proConflict&&S.proConflict.reqId;S.proConflict=null;persistSkip(rid);S.proReqView=null;render();toast('Mission passée — proposée aux autres artisans');return;}
     if(b.dataset.act&&b.dataset.act.indexOf('rmphoto:')===0){const i=+b.dataset.act.split(':')[1];if(S.draft&&S.draft.photos){const u=S.draft.photos[i];if(u&&u.indexOf('blob:')===0){try{URL.revokeObjectURL(u);}catch(_){}}S.draft.photos.splice(i,1);renderConfig();}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('ics:')===0){const i=+b.dataset.act.split(':')[1];const a=S.agenda[i];if(a)downloadIcs(icsBuild([a]),'ti-services-'+(a.svc||'rdv')+'.ics');return;}
     if(b.dataset.act==='ics-all'){const up=S.agenda.filter(a=>a.status!=='done');if(up.length)downloadIcs(icsBuild(up),'ti-services-agenda.ics');return;}
@@ -7228,7 +7261,7 @@
       <div class="field"><label>${isDayU(m)?'Date de début':'Quand&nbsp;?'}</label>${daySelect}</div>
       <div class="field"><label>${isDayU(m)?'Heure de dépôt':'Heure souhaitée'}</label>${dayFlex?`<p class="mini" style="margin:2px 0 0;color:var(--muted)">${I.clock} ${m.slotFlex==='week'?'Vous laissez toute la semaine — l’artisan vous proposera un jour et une heure de passage.':'Vous laissez toute la journée — l’artisan choisit son heure de passage.'}</p>`:`${hourSelect}`}</div>
       ${!isDayU(m)?`<div class="field"><label>Souplesse sur le créneau</label><div class="segs"><button class="seg ${(!m.slotFlex)?'on':''}" data-slotflex="0">Précise</button><button class="seg ${m.slotFlex===60?'on':''}" data-slotflex="60">± 1 h</button><button class="seg ${m.slotFlex===120?'on':''}" data-slotflex="120">± 2 h</button><button class="seg ${m.slotFlex==='day'?'on':''}" data-slotflex="day">Journée</button><button class="seg ${m.slotFlex==='week'?'on':''}" data-slotflex="week">Semaine</button></div>${m.slotFlex?`<p class="mini" style="margin-top:6px">${I.clock} L'artisan confirmera un <b>créneau précis ${flexTxt(m)}</b> en acceptant.</p>`:''}</div>`:''}
-      ${pastArtisans().length?`<div class="field"><label>Un artisan en particulier&nbsp;?</label><div class="segs"><button class="seg ${!m.preferredUid?'on':''}" data-prefart="">Peu importe</button>${pastArtisans().map(a=>`<button class="seg ${m.preferredUid===a.uid?'on':''}" data-prefart="${esc(a.uid)}" data-prefnm="${esc(a.nm)}">${esc(a.nm.split(' ')[0])}</button>`).join('')}</div>${m.preferredUid?`<p class="mini" style="margin-top:6px">${I.clock} Adressée <b>uniquement à ${esc((m.preferredName||'').split(' ')[0])}</b>. S'il décline, vous pourrez la proposer à tous les artisans.</p>`:''}</div>`:''}
+      ${pastArtisans().length?`<div class="field"><label>Un artisan en particulier&nbsp;?</label><div class="segs"><button class="seg ${!m.preferredUid?'on':''}" data-prefart="">Peu importe</button>${pastArtisans().map(a=>`<button class="seg ${m.preferredUid===a.uid?'on':''}" data-prefart="${esc(a.uid)}" data-prefnm="${esc(a.nm)}">${esc(a.nm.split(' ')[0])}</button>`).join('')}</div>${m.preferredUid?`<p class="mini" style="margin-top:6px">${I.clock} Adressée <b>uniquement à ${esc((m.preferredName||'').split(' ')[0])}</b>. S'il ne l'accepte pas, elle est automatiquement proposée à tous les artisans — vous n'êtes jamais bloqué.</p>`:''}</div>`:''}
       ${m.svc==='baby'?`<p class="mini" style="margin-top:6px">${I.shield} La baby-sitter qui accepte vous sera présentée (photo, diplômes, présentation) et <b>vous pourrez l'appeler</b> avant de confirmer la garde.</p>`:''}
       <div class="field"><label>Tarif ${isDayU(m)?'journalier':'horaire'} — prix fixe Ti-Services</label><div class="pricebox"><b class="money" style="font-size:22px;font-family:var(--f-disp)">${fixedRate(m)} ${rateUnit(m)}</b><span class="chip good" style="padding:3px 9px">${I.check} Prix fixe</span></div></div>
       <div class="field"><label>${isDayU(m)?'Nombre de jours':'Durée estimée'}</label><div class="stepper"><button data-cfg="minus">−</button><span class="val">${durTxt(m)}</span><button data-cfg="plus">+</button></div>${isDayU(m)?`<p class="mini" style="margin-top:6px">📅 Du ${endDateTxt(m)} · ${durTxt(m)} de garde</p>`:''}</div>
@@ -7290,14 +7323,14 @@
     // Validation verte en direct sur les champs obligatoires (data-v).
     if(e.target&&e.target.matches&&e.target.matches('input.txt[data-v]')){e.target.classList.toggle('vok',fieldValidV(e.target.getAttribute('data-v'),e.target.value));}
     // Téléphone composé (indicatif + numéro) : recompose la valeur complète dans l'état.
-    const pnum=e.target.closest('[data-phonenum]');if(pnum){readPhoneCombo(pnum.dataset.phonenum);const pb0=document.querySelector('[data-act="pro-submit"]');if(pb0&&S.proForm)pb0.disabled=!proSignupOk(S.proForm);const cb0=document.querySelector('[data-act="conc-submit"]');if(cb0&&S.concSignup)cb0.disabled=!concSignupOk(S.concSignup);}
+    const pnum=e.target.closest('[data-phonenum]');if(pnum){readPhoneCombo(pnum.dataset.phonenum);if(S.proForm)refreshProSubmit();const cb0=document.querySelector('[data-act="conc-submit"]');if(cb0&&S.concSignup)cb0.disabled=!concSignupOk(S.concSignup);}
     const t=e.target.closest('[data-cfg="notes"]');if(t&&S.draft)S.draft.notes=t.value;
     // Pourboire libre : on met à jour le montant sans re-render (préserve le focus/curseur) ;
     // le total est recalculé à la validation. On tolère la virgule décimale française.
     const tc=e.target.closest('[data-tipcustom]');if(tc&&S.mission){const v=parseFloat(String(tc.value).replace(',','.'));S.mission.tip=(isFinite(v)&&v>0)?Math.round(v*100)/100:0;const bb=document.querySelector('[data-act="confirm-done"]');if(bb){const tt=totals(S.mission);bb.innerHTML=`${I.check} Confirmer la prestation${tt.tip?'<span> · '+eur(tt.total)+'</span>':''}`;i18nApply(bb);}}
     const pao=e.target.closest('[data-paother]');if(pao&&S.proAddForm){S.proAddForm.other=pao.value;const sb=document.querySelector('[data-act="pro-add-submit"]');if(sb){const f=S.proAddForm;sb.disabled=!(f.cats.length>0&&f.assur&&(f.cats.indexOf('autre')<0||(f.other||'').trim()));}}
     const wi=e.target.closest('[data-wish]');if(wi){S.wishText=wi.value;S.wishSent=false;const wb=document.querySelector('[data-act="wish-send"]');if(wb)wb.disabled=!wi.value.trim();}
-    const pf=e.target.closest('[data-pf]');if(pf){S.proForm[pf.dataset.pf]=pf.value;const pb=document.querySelector('[data-act="pro-submit"]');if(pb)pb.disabled=!proSignupOk(S.proForm);}
+    const pf=e.target.closest('[data-pf]');if(pf){S.proForm[pf.dataset.pf]=pf.value;refreshProSubmit();}
     const csf=e.target.closest('[data-csf]');if(csf&&S.concSignup){S.concSignup[csf.dataset.csf]=csf.value;const b2=document.querySelector('[data-act="conc-submit"]');if(b2)b2.disabled=!concSignupOk(S.concSignup);}
     const cf=e.target.closest('[data-cf]');if(cf){S.clientForm[cf.dataset.cf]=cf.value;const fb=document.querySelector('[data-act="finish-onboard"]');const c=S.clientForm;if(fb)fb.disabled=!((c.name||'').trim().length>1&&/.+@.+\..+/.test(c.email||'')&&(c.password||'').length>=6&&c.password===c.password2&&!!c.terms);}
     const pf2=e.target.closest('[data-pf2]');if(pf2&&S.profileForm){S.profileForm[pf2.dataset.pf2]=pf2.value;const sb=document.querySelector('[data-act="save-profile"]');if(sb)sb.disabled=!((S.profileForm.name||'').trim().length>1);}
@@ -7333,7 +7366,7 @@
   view.addEventListener('change',(e)=>{
     // Indicatif téléphonique : recompose la valeur complète à chaque changement.
     const ppfx=e.target.closest('[data-phonepfx]');
-    if(ppfx){readPhoneCombo(ppfx.dataset.phonepfx);if(ppfx.dataset.phonepfx==='wa')saveProSettings();const pb1=document.querySelector('[data-act="pro-submit"]');if(pb1&&S.proForm)pb1.disabled=!proSignupOk(S.proForm);const cb1=document.querySelector('[data-act="conc-submit"]');if(cb1&&S.concSignup)cb1.disabled=!concSignupOk(S.concSignup);return;}
+    if(ppfx){readPhoneCombo(ppfx.dataset.phonepfx);if(ppfx.dataset.phonepfx==='wa')saveProSettings();if(S.proForm)refreshProSubmit();const cb1=document.querySelector('[data-act="conc-submit"]');if(cb1&&S.concSignup)cb1.disabled=!concSignupOk(S.concSignup);return;}
     // Menus déroulants jour / heure de la commande.
     const dcy=e.target.closest('[data-cfday]');
     if(dcy&&S.draft){S.draft.dateISO=dcy.value;S.draft.dateMode='pick';S.draft.when=dayLabelFor(dcy.value);renderConfig();return;}
@@ -7724,7 +7757,7 @@
         // (et non les valeurs par défaut de démonstration).
         S.proLegal=(ad&&(ad.legalName||ad.name))||name; S.proAddress=(ad&&ad.address)||''; S.proStatusType=(ad&&ad.statusType)||'entreprise';
         if(ad&&Array.isArray(ad.cats)&&ad.cats.length){S.proCats=ad.cats.slice();const rr=ad.rates||{};S.proRate=Math.min.apply(null,ad.cats.map(c=>(rr[c]!=null?rr[c]:svcBase(c))));}
-        if(ad){S.proPendingCats=Array.isArray(ad.pendingCats)?ad.pendingCats.slice():[];S.proPendingOther=ad.pendingOther||'';}
+        if(ad){S.proPendingCats=Array.isArray(ad.pendingCats)?ad.pendingCats.slice():[];S.proPendingOther=ad.pendingOther||'';S.proSkipped=Array.isArray(ad.skippedRequests)?ad.skippedRequests.slice():[];}
         if(ad){ S.proFounder=!!ad.founder; S.proFounderSince=(ad.founderSince&&ad.founderSince.toMillis)?ad.founderSince.toMillis():(typeof ad.founderSince==='number'?ad.founderSince:null); S.proFounderGross=Number(ad.founderGross)||0; S.proRating=ad.rating||0; S.proIban=ad.iban||''; S.proIbanHolder=ad.ibanHolder||''; S.proBic=ad.bic||''; S.proInsured=!!ad.insured; S.proInsurer=ad.insurer||''; S.proInsuranceUrl=ad.insuranceUrl||''; S.proInsuranceStatus=ad.insuranceStatus||(ad.status==='valide'&&ad.insured?'valide':(ad.insuranceUrl||ad.insured?'attente':'none')); S.proSiret=ad.siret||''; S.proBio=ad.bio||''; S.proDiplomas=Array.isArray(ad.diplomas)?ad.diplomas:[]; S.proDiplomaOther=ad.diplomaOther||''; S.proPhoto=ad.photo||S.proPhoto; S.proAcceptedCharte=!!ad.acceptedCharte; S.proAcceptedTerms=!!ad.acceptedTerms; S.proTermsVersion=ad.termsVersion||''; S.proTermsAt=(ad.termsAt&&ad.termsAt.toDate)?ad.termsAt.toDate():null; S.proMollie=ad.mollieStatus||'none'; S.proMollieOrgId=ad.mollieOrgId||'';
           // Revenus / missions réalisées, rechargés depuis la fiche (persistés à chaque paiement).
           S.proEarnings=ad.earnings||0; S.proJobsTotal=ad.jobsTotal||0; S.proHistory=Array.isArray(ad.history)?ad.history:[];
@@ -8237,14 +8270,20 @@
   // L'artisan PRÉCISÉMENT demandé (renouvellement / choix client) décline une demande
   // dirigée : elle passe en « declined » — elle sort de tous les fils, et c'est le CLIENT
   // qui décide ensuite de la proposer à tous les artisans ou de l'annuler.
+  // Refus d'une demande DIRIGÉE (réservée à cet artisan) : elle repart automatiquement
+  // dans la demande GÉNÉRALE (proposée à tous les artisans de la zone). L'artisan qui
+  // décline ne la revoit pas (persistSkip).
   async function declineRequestReal(reqId){
     if(!(FB&&FB.auth&&FB.auth.currentUser))return;
     const uid=FB.auth.currentUser.uid;
     try{
+      // pending -> declined (conforme aux règles) ; le CLIENT rouvre ensuite
+      // automatiquement à tous les artisans (write autorisé côté client).
       await FB.f.updateDoc(FB.f.doc(FB.db,'requests',reqId),{status:'declined',declinedBy:uid,declinedName:S.proName||'',declinedAt:FB.f.serverTimestamp()});
+      persistSkip(reqId);
       if(S.proReqView===reqId)S.proReqView=null;
       S.openRequests=(S.openRequests||[]).filter(function(x){return x.id!==reqId;});
-      S.proNav='home';render();toast('Demande déclinée — le client est prévenu');
+      S.proNav='home';render();toast('Demande déclinée — proposée à tous les artisans');
     }catch(e){console.warn('decline failed',e);toast('Action impossible : '+fbErrTxt(e));}
   }
   function reqWinTxt(r){return r.slotFlex?(r.slotFlex==='week'?('cette semaine · '+r.slot):('vers '+r.slot+(r.slotFlex==='day'?' · dans la journée':' · créneau souple ±'+(r.slotFlex>=60?(r.slotFlex/60)+' h':r.slotFlex+' min')))):(r.slot||'');}
@@ -8313,7 +8352,7 @@
         <button class="btn accept" data-act="accept-req:${r.id}">${I.flame} Accepter${accLabel||' cette mission'}</button>
         ${directedMe
           ? `<button class="btn ghost" data-act="decline-req:${r.id}" style="margin-top:10px">Je ne suis pas disponible</button>
-             <p class="mini" style="text-align:center;margin-top:10px">${I.shield} Cette demande vous est <b>réservée</b> par le client. Si vous déclinez, il choisira de la proposer (ou non) aux autres artisans.</p>`
+             <p class="mini" style="text-align:center;margin-top:10px">${I.shield} Cette demande vous est <b>réservée</b> — vous seul la voyez pour l'instant. Si vous ne l'acceptez pas, elle est <b>automatiquement proposée à l'ensemble des artisans</b>.</p>`
           : `<button class="btn ghost" data-act="reqview-skip" style="margin-top:10px">Pas cette fois</button>
              <p class="mini" style="text-align:center;margin-top:10px">${I.bolt} « Pas cette fois » retire la mission de votre liste — elle reste proposée aux autres artisans.</p>`}
       </div></div>`;
