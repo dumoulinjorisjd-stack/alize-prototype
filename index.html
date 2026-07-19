@@ -6265,13 +6265,22 @@
       window.print();
     }catch(_){ try{window.print();}catch(__){toast('Impression indisponible ici — ouvrez la facture dans Safari.');} }
   }
-  // Téléchargement DIRECT de la facture en PDF (sans passer par l'écran d'aperçu).
-  // On construit le document hors-écran à partir du même rendu, on l'ouvre dans une
-  // fenêtre qui sait « Enregistrer en PDF » (partage/Fichiers sur mobile, Enregistrer
-  // au format PDF sur ordinateur), puis on déclenche l'édition. Aucune dépendance.
-  function downloadInvoicePdf(m){
+  // base64 → Blob → vrai téléchargement de fichier (.pdf enregistré dans « Fichiers »
+  // / le dossier de téléchargement, sans boîte d'impression). Sur iOS PWA, le clic
+  // ouvre le PDF dans le lecteur système d'où l'on peut « Partager / Enregistrer ».
+  function downloadB64Pdf(b64,name){
+    const bin=atob(b64);const len=bin.length;const arr=new Uint8Array(len);
+    for(let i=0;i<len;i++)arr[i]=bin.charCodeAt(i);
+    const blob=new Blob([arr],{type:'application/pdf'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download=name||'Facture-Ti-Services.pdf';a.rel='noopener';
+    document.body.appendChild(a);a.click();
+    setTimeout(function(){try{URL.revokeObjectURL(url);a.remove();}catch(_){}} ,2000);
+  }
+  // Repli (démo / hors-ligne) : on ouvre un document imprimable — la seule voie
+  // possible sans serveur pour obtenir un PDF (« Enregistrer au format PDF »).
+  function printInvoiceFallback(m){
     try{
-      if(!m){toast('Facture introuvable');return;}
       const tmp=document.createElement('div');tmp.style.cssText='position:absolute;left:-9999px;top:0;width:420px';
       tmp.innerHTML=clientInvoiceDoc(m);document.body.appendChild(tmp);
       const doc=tmp.querySelector('#invoiceDoc');const html=doc?doc.outerHTML:'';tmp.remove();
@@ -6287,6 +6296,24 @@
       }
       toast('Autorisez l’ouverture de la fenêtre pour enregistrer le PDF.');
     }catch(_){ toast('Édition PDF indisponible ici — ouvrez la facture dans Safari.'); }
+  }
+  // Téléchargement DIRECT de la facture en PDF : un VRAI fichier .pdf, sans boîte
+  // d'impression. En mode réel on demande au serveur (fonction invoicePdf) le même
+  // document vectoriel que celui envoyé par e-mail, puis on l'enregistre. En démo /
+  // hors-ligne (aucune demande enregistrée), on retombe sur l'aperçu imprimable.
+  async function downloadInvoicePdf(m){
+    if(!m){toast('Facture introuvable');return;}
+    const rid=(m.reqId||'').trim();
+    if(FB&&FB.functions&&FB.fn&&FB.auth&&FB.auth.currentUser&&!isDemo()&&rid){
+      try{
+        toast('Préparation du PDF…');
+        const call=FB.fn.httpsCallable(FB.functions,'invoicePdf');
+        const res=await call({reqId:rid});
+        const d=(res&&res.data)||{};
+        if(d.pdf){ downloadB64Pdf(d.pdf,d.filename); toast('Facture enregistrée ✓'); return; }
+      }catch(e){ console.warn('invoicePdf',e); /* repli impression ci-dessous */ }
+    }
+    printInvoiceFallback(m);
   }
   // Photo de profil de l'artisan modifiée depuis « Mon compte » : persistée sur sa fiche
   // (et sur son compte users pour l'affichage) ; en démo, on garde juste l'aperçu local.
@@ -7716,13 +7743,13 @@
     if(!S.demoMode) blankAll(); // vraie bêta : on part de zéro (les seeds ne servent qu'à la démo)
     try{
       const V='https://www.gstatic.com/firebasejs/10.12.5/';
-      const [appM,authM,fsM]=await Promise.all([import(V+'firebase-app.js'),import(V+'firebase-auth.js'),import(V+'firebase-firestore.js')]);
+      const [appM,authM,fsM,fnM]=await Promise.all([import(V+'firebase-app.js'),import(V+'firebase-auth.js'),import(V+'firebase-firestore.js'),import(V+'firebase-functions.js')]);
       const app=appM.initializeApp(CONFIG.firebase);
       // App Check : le backend (Firestore/Functions/Storage) n'accepte que les
       // requêtes attestées comme venant de l'app officielle → une copie du front
       // ne peut pas utiliser notre infrastructure. Inerte tant que la clé est vide.
       try{ if(CONFIG.appCheckSiteKey){ const acM=await import(V+'firebase-app-check.js'); acM.initializeAppCheck(app,{provider:new acM.ReCaptchaV3Provider(CONFIG.appCheckSiteKey),isTokenAutoRefreshEnabled:true}); } }catch(_){}
-      FB={app,auth:authM.getAuth(app),db:fsM.getFirestore(app),a:authM,f:fsM};
+      FB={app,auth:authM.getAuth(app),db:fsM.getFirestore(app),a:authM,f:fsM,fn:fnM,functions:fnM.getFunctions(app,'europe-west1')};
       // Persistance locale explicite : la session doit survivre à la fermeture de
       // l'app (sinon reconnexion forcée à chaque ouverture, et données « perdues »).
       try{ if(authM.setPersistence&&authM.browserLocalPersistence)await authM.setPersistence(FB.auth,authM.browserLocalPersistence); }catch(_){}

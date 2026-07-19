@@ -11,7 +11,7 @@
  * (nécessite le plan Blaze, déjà activé.)
  */
 const {onDocumentCreated, onDocumentUpdated} = require('firebase-functions/v2/firestore');
-const {onRequest} = require('firebase-functions/v2/https');
+const {onRequest, onCall, HttpsError} = require('firebase-functions/v2/https');
 const {setGlobalOptions} = require('firebase-functions/v2');
 const {initializeApp} = require('firebase-admin/app');
 const {getFirestore, FieldValue} = require('firebase-admin/firestore');
@@ -1135,6 +1135,46 @@ exports.emailClientInvoice = onDocumentUpdated('requests/{reqId}', async (event)
     await event.data.after.ref.update({ invoiceEmailed: true, invoiceEmailedAt: FieldValue.serverTimestamp() });
     console.log('Facture client envoyée à ' + email + ' (n° ' + invNo + ', ' + total + ' €)');
   } catch (e) { console.warn('emailClientInvoice send', e); }
+});
+
+/* Téléchargement à la demande de la facture PDF (bouton « Télécharger le PDF » de
+ * l'app). On régénère EXACTEMENT le même document vectoriel que celui envoyé par
+ * e-mail, à partir de la demande figée dans Firestore — donc un vrai fichier .pdf,
+ * sans passer par la boîte d'impression du navigateur. Réservé au client concerné,
+ * au prestataire assigné et à l'admin. */
+exports.invoicePdf = onCall(async (request) => {
+  const uid = request.auth && request.auth.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Connexion requise.');
+  const reqId = String((request.data && request.data.reqId) || '').trim();
+  if (!reqId) throw new HttpsError('invalid-argument', 'Facture introuvable.');
+  const db = getFirestore();
+  const snap = await db.collection('requests').doc(reqId).get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Facture introuvable.');
+  const r = snap.data() || {};
+  const email = (request.auth.token && request.auth.token.email) || '';
+  const admin = !!email && email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+  if (r.clientUid !== uid && r.providerUid !== uid && !admin) {
+    throw new HttpsError('permission-denied', 'Accès refusé.');
+  }
+  const { lines, total } = invoiceLines(r);
+  const invNo = r.saleInvoiceNo || r.invNo || ('2026-' + reqId.slice(-4));
+  const dateStr = frDate(r.settledAt);
+  let clientName = r.clientName || 'Client'; let company = ''; let csiret = '';
+  try {
+    const u = (await db.collection('users').doc(r.clientUid).get()).data() || {};
+    if (u.name) clientName = u.name;
+    if (u.isPro) { company = u.company || ''; csiret = u.siret || ''; }
+  } catch (_) {}
+  let pdf = '';
+  try {
+    pdf = await buildInvoicePdf({
+      invNo, dateStr,
+      provider: { legal: r.providerLegal || r.providerName || 'Artisan Ti-Services', address: r.providerAddress || '', siret: r.providerSiret || '' },
+      client: { name: clientName, company, siret: csiret, zone: r.zone || '' },
+      lines, total,
+    });
+  } catch (e) { console.warn('invoicePdf build', e); throw new HttpsError('internal', 'Génération du PDF impossible.'); }
+  return { pdf, invNo, filename: 'Facture-Ti-Services-' + invNo + '.pdf' };
 });
 
 /* ============================================================================
