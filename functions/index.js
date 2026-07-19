@@ -1097,5 +1097,64 @@ exports.emailClientInvoice = onDocumentUpdated('requests/{reqId}', async (event)
   } catch (e) { console.warn('emailClientInvoice send', e); }
 });
 
+/* ============================================================================
+ * E-MAIL DE BIENVENUE — à la création d'un compte CLIENT, un e-mail soigné,
+ * à la charte Ti-Services, souhaite la bienvenue et confirme l'inscription.
+ * (Les artisans / conciergerie ont leur propre parcours d'e-mails.)
+ * ========================================================================== */
+function welcomeHtml(first) {
+  const app = APP_URL;
+  const feats = [
+    ['✅', 'Vérifiés &amp; assurés', 'SIRET et responsabilité civile contrôlés avant chaque activation de profil.'],
+    ['🔒', 'Paiement sécurisé', 'Débité seulement après la prestation validée — jamais plus que le montant annoncé.'],
+    ['🐙', '100% Saint-Barth', 'Des intervenants locaux, à la demande, chez vous en quelques minutes.'],
+  ].map((x) => '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:12px"><tr>' +
+    '<td width="34" valign="top" style="font-size:18px;line-height:1">' + x[0] + '</td>' +
+    '<td><b style="font-size:14px;color:#231E33">' + x[1] + '</b><div style="font-size:13px;color:#6b6577;margin-top:2px;line-height:1.5">' + x[2] + '</div></td></tr></table>').join('');
+  return '' +
+  '<div style="margin:0;padding:0;background:#FBF7F4;font-family:-apple-system,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;color:#231E33">' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FBF7F4;padding:24px 12px">' +
+      '<tr><td align="center">' +
+        '<table role="presentation" width="520" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%;background:#ffffff;border-radius:18px;overflow:hidden">' +
+          '<tr><td style="height:6px;background:linear-gradient(90deg,#FF6A5B,#FF9F54)"></td></tr>' +
+          '<tr><td style="padding:26px 30px 6px">' +
+            '<div style="font-size:24px;font-weight:800;letter-spacing:-.02em"><span style="color:#FF6A5B">Ti</span><span style="color:#231E33">-Services</span></div>' +
+            '<div style="font-size:12px;color:#8a8494;margin-top:2px">Services à la demande · Saint-Barthélemy</div>' +
+          '</td></tr>' +
+          '<tr><td style="padding:14px 30px 0">' +
+            '<h1 style="font-size:22px;margin:8px 0 0;color:#231E33">Bienvenue ' + escHtmlS(first) + '&nbsp;! 🐙</h1>' +
+            '<p style="font-size:15px;line-height:1.6;color:#4a4556;margin:12px 0 0">Votre compte <b>Ti-Services</b> est créé — votre inscription est confirmée. Vous pouvez dès maintenant réserver un artisan ou un intervenant de confiance, où que vous soyez à Saint-Barth.</p>' +
+          '</td></tr>' +
+          '<tr><td style="padding:20px 30px 0">' + feats + '</td></tr>' +
+          '<tr><td align="center" style="padding:6px 30px 28px">' +
+            '<a href="' + app + '" style="display:inline-block;background:#FF6A5B;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:13px 28px;border-radius:12px;margin-top:8px">Ouvrir Ti-Services</a>' +
+          '</td></tr>' +
+          '<tr><td style="padding:16px 30px;border-top:1px solid #efeae4;background:#FBF7F4">' +
+            '<div style="font-size:12px;color:#8a8494;line-height:1.6">À très vite,<br>L\'équipe Ti-Services<br>' +
+            '<span style="color:#b0aab8">Service édité par C.C.S — Construction Conseils et Services, SAS · Saint-Barthélemy</span></div>' +
+          '</td></tr>' +
+        '</table>' +
+      '</td></tr>' +
+    '</table>' +
+  '</div>';
+}
+
+exports.welcomeClientEmail = onDocumentCreated('users/{uid}', async (event) => {
+  const snap = event.data; if (!snap) return;
+  const u = snap.data() || {};
+  // Seulement les clients (les artisans/conciergerie ont leurs propres e-mails).
+  if (u.role && u.role !== 'client') return;
+  const email = u.email || '';
+  if (!email) return;
+  const first = String(u.name || '').trim().split(' ')[0] || 'à bord';
+  try {
+    await getFirestore().collection('mail').add({
+      to: email,
+      message: { subject: 'Bienvenue sur Ti-Services 🐙', html: welcomeHtml(first) },
+    });
+    console.log('E-mail de bienvenue mis en file pour ' + email);
+  } catch (e) { console.warn('welcomeClientEmail', e); }
+});
+
 // Export interne pour les tests unitaires (inerte en production : TI_TEST non défini).
-if (process.env.TI_TEST) { module.exports.__test = { buildInvoicePdf, invoiceLines, eurTxt, frDate }; }
+if (process.env.TI_TEST) { module.exports.__test = { buildInvoicePdf, invoiceLines, eurTxt, frDate, welcomeHtml }; }
