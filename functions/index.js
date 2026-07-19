@@ -620,7 +620,10 @@ exports.settleCommission = onDocumentUpdated('requests/{reqId}', async (event) =
   const hours = (after.finalHours != null) ? Number(after.finalHours) : (Number(after.duration) || 0);
   const base = round2(rate * hours);
   const boost = Number(after.boost) || 0;
-  const gross = round2(base + round2(base * boost / 100));
+  // Pourboire laissé par le client à la validation : versé EN TOTALITÉ à l'artisan
+  // (aucune commission Ti-Services). Il s'ajoute donc au brut ET au net.
+  const tip = Math.max(0, round2(Number(after.tip) || 0));
+  const gross = round2(base + round2(base * boost / 100) + tip);
 
   const db = getFirestore();
   let jobsTotal = 0; let isFounder = false; let founderSinceMs = null; let founderGross = 0;
@@ -708,6 +711,7 @@ exports.settleCommission = onDocumentUpdated('requests/{reqId}', async (event) =
       rate: rate,
       base: base,
       boost: boost,
+      tip: tip,                   // pourboire — 100 % artisan, hors commission
       grossTotal: gross,          // réglé par le client
       commissionPct: pct,
       commissionAmount: commission, // revenu Ti-Services
@@ -976,7 +980,10 @@ function invoiceLines(r) {
   if (maj > 0) lines.push({ label: 'Coup de pouce +' + boost + '%', qty: '1', unit: eurTxt(maj), total: maj });
   const travel = (acts && acts.length && sub > 0 && sub < 50) ? 20 : 0;
   if (travel > 0) lines.push({ label: 'Forfait de déplacement', qty: '1', unit: eurTxt(travel), total: travel });
-  return { lines, total: Math.round((sub + maj + travel) * 100) / 100 };
+  // Pourboire (facultatif, laissé à la validation) — reversé intégralement à l'artisan.
+  const tip = Math.max(0, Math.round((Number(r.tip) || 0) * 100) / 100);
+  if (tip > 0) lines.push({ label: 'Pourboire', qty: '1', unit: eurTxt(tip), total: tip });
+  return { lines, total: Math.round((sub + maj + travel + tip) * 100) / 100 };
 }
 function wrapPdf(page, font, size, color, text, x, y, maxW, lh) {
   const words = String(text).split(' ');

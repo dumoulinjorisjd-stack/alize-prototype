@@ -2090,11 +2090,14 @@
   function totals(m){const rate=fixedRate(m);const h=billHours(m);const fs=forfaitSub(m);const sub=(fs!=null)?fs:rate*h;const boost=m.boost||0;const maj=Math.round(sub*boost/100);
     // Forfait de déplacement sous le seuil (prestations à l'acte uniquement) — offert au-delà.
     const travel=travelFeeFor(sub,!!(m&&m.acts));
-    const total=sub+maj+travel;
-    // La commission Ti-Services porte sur la base (sub) ; la majoration « coup de pouce »
-    // ET le forfait de déplacement reviennent intégralement à l'intervenant (CGV art. 2).
+    // Pourboire (facultatif) laissé par le client APRÈS validation de la prestation — façon
+    // Uber : basé sur la satisfaction, versé en totalité à l'intervenant (aucune commission).
+    const tip=Math.max(0,Math.round((Number(m.tip)||0)*100)/100);
+    const total=sub+maj+travel+tip;
+    // La commission Ti-Services porte sur la base (sub) ; la majoration éventuelle, le forfait
+    // de déplacement ET le pourboire reviennent intégralement à l'intervenant (CGV art. 2).
     const commPct=commPctFor(m);const commission=Math.round(sub*commPct)/100;const payout=Math.round((total-commission)*100)/100;
-    return {rate,sub,hours:h,boost,maj,travel,commPct,commission,payout,total};}
+    return {rate,sub,hours:h,boost,maj,travel,tip,commPct,commission,payout,total};}
   // Net RÉEL que l'artisan percevra pour une demande ouverte (commission déjà déduite) —
   // affiché AVANT l'acceptation pour qu'il décide en connaissance de cause. On ne montre
   // jamais à l'artisan le prix payé par le client (et jamais au client le net de l'artisan).
@@ -2257,7 +2260,7 @@
   function rateUnit(m){return isForfait(m)?'€':('€/'+(isDayU(m)?'jour':'h'));}
   function recoFor(m){return isDayU(m)?fixedRate(m):svcReco(m.svc);}
   function endDateTxt(m){if(!isDayU(m))return '';let startISO=m.dateISO;if(!startISO){const d=new Date();if(m.when==='Demain')d.setDate(d.getDate()+1);startISO=d.toISOString().slice(0,10);}const d=new Date(startISO+'T00:00:00');const e=new Date(d);e.setDate(d.getDate()+Math.max(1,m.duration)-1);const f=(x)=>x.getDate()+'/'+(x.getMonth()+1);return f(d)+' → '+f(e);}
-  function finalizePaid(m){if(m.commPct==null)m.commPct=myCommPct();const tt=totals(m);m.status='paid';S.proEarnings+=tt.payout;if(m._appt){m._appt.status='done';m._appt.duration=billHours(m);m._appt.amount=tt.total;}S.proHistory=S.proHistory||[];const seq='2026-'+String(43+S.proHistory.length).padStart(4,'0');m.invNo=seq;const cliN=(m.clientName||m.client||(isDemo()?'Camille M.':((S.account&&S.account.name)||'Client')));S.proHistory.unshift({id:'hm'+S.proHistory.length,dateISO:(m.dateISO||new Date().toISOString().slice(0,10)),svc:m.svc,client:cliN,clientFull:cliN,clientZone:m.zone,duration:billHours(m),unit:m.unit,acts:(m.acts&&m.acts.length)?m.acts.map(function(a){return {id:a.id,nm:a.nm,price:a.price,qty:a.qty||1};}):null,travel:tt.travel||0,rate:tt.rate,amount:tt.total,commPct:tt.commPct,commission:tt.commission,net:tt.payout,invNo:seq,paidVia:'carte'});}
+  function finalizePaid(m){if(m.commPct==null)m.commPct=myCommPct();const tt=totals(m);m.status='paid';S.proEarnings+=tt.payout;if(m._appt){m._appt.status='done';m._appt.duration=billHours(m);m._appt.amount=tt.total;}S.proHistory=S.proHistory||[];const seq='2026-'+String(43+S.proHistory.length).padStart(4,'0');m.invNo=seq;const cliN=(m.clientName||m.client||(isDemo()?'Camille M.':((S.account&&S.account.name)||'Client')));S.proHistory.unshift({id:'hm'+S.proHistory.length,dateISO:(m.dateISO||new Date().toISOString().slice(0,10)),svc:m.svc,client:cliN,clientFull:cliN,clientZone:m.zone,duration:billHours(m),unit:m.unit,acts:(m.acts&&m.acts.length)?m.acts.map(function(a){return {id:a.id,nm:a.nm,price:a.price,qty:a.qty||1};}):null,travel:tt.travel||0,tip:tt.tip||0,rate:tt.rate,amount:tt.total,commPct:tt.commPct,commission:tt.commission,net:tt.payout,invNo:seq,paidVia:'carte'});}
   const eur=(n)=>n.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
   const fmtDate=(iso)=>{if(!iso)return 'Aujourd’hui';const p=iso.split('-');return p[2]+'/'+p[1];};
   // Repli visuel (hors-ligne / carte non chargée) : petite carte stylisée.
@@ -2470,6 +2473,16 @@
     }catch(e){console.warn('i18n',e);}
   }
   var EN_DICT={
+    "💛 Pourboire du client":"💛 Tip from the client",
+    "💛 Remercier votre artisan ?":"💛 Thank your pro?",
+    "Un pourboire facultatif, versé en totalité à l'artisan — vous décidez selon votre satisfaction.":"An optional tip, paid in full to the pro — you decide based on how satisfied you are.",
+    "Aucun":"None",
+    "Montant du pourboire (€)":"Tip amount (€)",
+    "💛 Pourboire (à l’artisan)":"💛 Tip (to the pro)",
+    "Total (débit auto)":"Total (auto-charge)",
+    "💛 dont pourboire (artisan)":"💛 incl. tip (pro)",
+    "Pourboire":"Tip",
+    "Reversé intégralement à l’artisan":"Paid in full to the pro",
     // Navigation
     "Accueil":"Home","Réservations":"Bookings","Profil":"Profile","Mes missions":"My jobs","Gains":"Earnings","Agenda":"Schedule","Disponibilités":"Availability","Mon compte":"My account",
     // Boutons / actions courants
@@ -3018,6 +3031,17 @@
   var TIER_PT={'bronze':'Bronze','argent':'Prata','or':'Ouro','platine':'Platina','diamant':'Diamante'};
   var DOW_PT={'lun':'Seg','mar':'Ter','mer':'Qua','jeu':'Qui','ven':'Sex','sam':'Sáb','dim':'Dom'};
   var PT_DICT={
+    "💛 Pourboire du client":"💛 Gorjeta do cliente",
+    "💛 Remercier votre artisan ?":"💛 Agradecer ao seu profissional?",
+    "Un pourboire facultatif, versé en totalité à l'artisan — vous décidez selon votre satisfaction.":"Uma gorjeta opcional, paga integralmente ao profissional — decide consoante a sua satisfação.",
+    "Aucun":"Nenhum",
+    "Prestation":"Serviço",
+    "Montant du pourboire (€)":"Valor da gorjeta (€)",
+    "💛 Pourboire (à l’artisan)":"💛 Gorjeta (ao profissional)",
+    "Total (débit auto)":"Total (débito automático)",
+    "💛 dont pourboire (artisan)":"💛 inclui gorjeta (profissional)",
+    "Pourboire":"Gorjeta",
+    "Reversé intégralement à l’artisan":"Pago integralmente ao profissional",
     "Accueil":"Início",
     "Réservations":"Reservas",
     "Profil":"Perfil",
@@ -5058,16 +5082,30 @@
       toast('Demande ouverte à tous les artisans');
     }
   }
+  // Carte « pourboire » présentée à la validation (façon Uber) : montants préréglés + libre.
+  // Le pourboire est versé EN TOTALITÉ à l'artisan (aucune commission Ti-Services).
+  function tipCard(m){
+    const cur=Math.max(0,Math.round((Number(m.tip)||0)*100)/100);const custom=!!m._tipCustom;
+    const presets=[0,3,5,10];const isPreset=presets.indexOf(cur)>=0;
+    return `<div class="card" style="padding:16px;margin-top:14px">
+      <b style="font-size:14px">💛 Remercier votre artisan&nbsp;?</b>
+      <p class="mini" style="margin-top:4px">Un pourboire facultatif, versé en totalité à l'artisan — vous décidez selon votre satisfaction.</p>
+      <div class="segs" style="margin-top:10px">${presets.map(function(v){return `<button class="seg ${(!custom&&cur===v)?'on':''}" data-tip="${v}">${v===0?'Aucun':('+ '+v+' €')}</button>`;}).join('')}<button class="seg ${custom?'on':''}" data-tip="custom">Autre</button></div>
+      ${custom?`<div class="field" style="margin:10px 0 0"><input class="txt" inputmode="decimal" data-tipcustom value="${(cur||!isPreset)&&cur?cur:''}" placeholder="Montant du pourboire (€)"></div>`:''}
+    </div>`;
+  }
   function clientConfirm(){
     const m=S.mission,t=totals(m),p=m.provider||{nm:'Votre artisan',ini:'AR',jobs:0};
     const adj=(m.finalHours!=null&&m.finalHours!==m.duration);const agreed=m.rate*m.duration;const d=(m.finalHours||m.duration)-m.duration;
     return `<div class="pad"><div style="height:10px"></div><span class="eyebrow">Prestation terminée</span><div class="h-hello">${esc(p.nm)} a terminé</div>
       <p class="sub">${adj?'L’artisan a <b>ajusté la durée</b>. Vérifiez, puis validez l’ajustement — ou signalez votre désaccord.':'Vérifiez que tout est bon, puis confirmez. <b>Le paiement se fait tout seul.</b>'}</p>
       <div class="card" style="padding:16px;margin-top:16px"><div class="row" style="gap:12px"><div class="avatar">${p.ini}</div><div style="flex:1"><b style="font-size:15px">${m.svcName}</b><div class="mini">${durTxt(m,billHours(m))} · ${m.when} · ${m.slot}</div></div></div><hr class="dashed">
-      ${adj?`<div class="receipt-line"><span>Estimation convenue</span><span class="mini">${durTxt(m)} · ${eur(agreed)}</span></div><div class="receipt-line"><span>${isDayU(m)?'Jours déclarés':'Durée déclarée'} par l’artisan</span><b>${durTxt(m,m.finalHours)}</b></div><div class="receipt-line"><span>Montant ajusté (${d>0?'+':''}${d} ${isDayU(m)?'j':'h'})</span><b class="money" style="color:${d>0?'var(--coral-deep)':'var(--good)'}">${eur(t.total)}</b></div>`:`<div class="receipt-line"><span>Montant (débit auto)</span><b>${eur(t.total)}</b></div>`}
+      ${adj?`<div class="receipt-line"><span>Estimation convenue</span><span class="mini">${durTxt(m)} · ${eur(agreed)}</span></div><div class="receipt-line"><span>${isDayU(m)?'Jours déclarés':'Durée déclarée'} par l’artisan</span><b>${durTxt(m,m.finalHours)}</b></div><div class="receipt-line"><span>Montant ajusté (${d>0?'+':''}${d} ${isDayU(m)?'j':'h'})</span><b class="money" style="color:${d>0?'var(--coral-deep)':'var(--good)'}">${eur(t.total)}</b></div>`:(t.tip?`<div class="receipt-line"><span>Prestation</span><b>${eur(t.total-t.tip)}</b></div><div class="receipt-line"><span>💛 Pourboire (à l’artisan)</span><b>${eur(t.tip)}</b></div><div class="receipt-line"><span><b>Total (débit auto)</b></span><b>${eur(t.total)}</b></div>`:`<div class="receipt-line"><span>Montant (débit auto)</span><b>${eur(t.total)}</b></div>`)}
+      ${(adj&&t.tip)?`<div class="receipt-line"><span>💛 dont pourboire (artisan)</span><b>${eur(t.tip)}</b></div>`:''}
       <div class="receipt-line"><span>Réglé sur</span><b>${cardTxt()}</b></div></div>
       <div class="banner coral" style="margin-top:14px">${I.shield}<span>${adj?'Vous ne pouvez refuser l’ajustement sans en informer Ti-Services, qui tranchera le désaccord.':'Un souci ? Signalez au lieu de valider — vous ne serez pas débité.'}</span></div>
-      <div class="stack" style="margin-top:18px"><button class="btn good" data-act="confirm-done">${I.check} ${adj?'Valider '+m.finalHours+' h · '+eur(t.total):'Confirmer la prestation'}</button>
+      ${tipCard(m)}
+      <div class="stack" style="margin-top:18px"><button class="btn good" data-act="confirm-done">${I.check} ${adj?'Valider '+m.finalHours+' h · '+eur(t.total):('Confirmer la prestation'+(t.tip?'<span> · '+eur(t.total)+'</span>':''))}</button>
       ${adj?`<button class="btn ghost sm" data-act="dispute-open">Je ne suis pas d’accord avec l’ajustement</button>`:`<button class="btn ghost sm" data-act="report-issue">Signaler un problème</button>`}
       ${(adj&&d>0)
         ? `<p class="mini" style="text-align:center;display:flex;align-items:center;justify-content:center;gap:5px">${I.shield} Cet ajustement <b>à la hausse</b> demande <b>votre validation</b> — pas de validation automatique, et rien n'est débité au-delà de l'accord sans votre feu vert.</p>`
@@ -5482,7 +5520,7 @@
           <div class="inv-party"><div class="inv-lbl">Facturé à</div>${(S.account&&S.account.isPro&&S.account.company)?`<b>${esc(S.account.company)}</b><div class="mut">${esc((S.account&&S.account.name)||'')}</div>${S.account.siret?`<div class="mut">SIRET ${esc(S.account.siret)}</div>`:''}<div class="mut">${esc(m.zone||'')}${m.zone?', ':''}Saint-Barthélemy</div>`:`<b>${esc((S.account&&S.account.name)||(S.clientForm&&S.clientForm.name)||'Client')}</b><div class="mut">${esc(m.zone||'')}${m.zone?', ':''}Saint-Barthélemy</div>`}</div>
         </div>
         <table><thead><tr><th>Prestation</th><th class="r">Qté</th><th class="r">Prix unit.</th><th class="r">Total</th></tr></thead>
-        <tbody>${(m.acts&&m.acts.length)?m.acts.map(function(a){return `<tr><td><b style="color:#2A2340">${esc(a.nm)}</b><div class="mut" style="font-size:11px">${esc(m.svcName)} · ${dt}</div></td><td class="r">${a.qty||1}</td><td class="r">${eur(a.price)}</td><td class="r"><b>${eur((a.price||0)*(a.qty||1))}</b></td></tr>`;}).join('')+(t.boost?`<tr><td><b style="color:#2A2340">Coup de pouce</b><div class="mut" style="font-size:11px">Majoration +${t.boost}%</div></td><td class="r">1</td><td class="r">${eur(t.maj)}</td><td class="r"><b>${eur(t.maj)}</b></td></tr>`:'')+(t.travel?`<tr><td><b style="color:#2A2340">Forfait de déplacement</b><div class="mut" style="font-size:11px">Commande inférieure à ${TRAVEL_MIN} €</div></td><td class="r">1</td><td class="r">${eur(t.travel)}</td><td class="r"><b>${eur(t.travel)}</b></td></tr>`:''):`<tr><td><b style="color:#2A2340">${esc(m.svcName)}</b><div class="mut" style="font-size:11px">Prestation à domicile · ${dt}</div></td><td class="r">${durTxt(m,billHours(m))}</td><td class="r">${eur(t.rate)}</td><td class="r"><b>${eur(t.total)}</b></td></tr>`}</tbody></table>
+        <tbody>${(m.acts&&m.acts.length)?m.acts.map(function(a){return `<tr><td><b style="color:#2A2340">${esc(a.nm)}</b><div class="mut" style="font-size:11px">${esc(m.svcName)} · ${dt}</div></td><td class="r">${a.qty||1}</td><td class="r">${eur(a.price)}</td><td class="r"><b>${eur((a.price||0)*(a.qty||1))}</b></td></tr>`;}).join('')+(t.boost?`<tr><td><b style="color:#2A2340">Coup de pouce</b><div class="mut" style="font-size:11px">Majoration +${t.boost}%</div></td><td class="r">1</td><td class="r">${eur(t.maj)}</td><td class="r"><b>${eur(t.maj)}</b></td></tr>`:'')+(t.travel?`<tr><td><b style="color:#2A2340">Forfait de déplacement</b><div class="mut" style="font-size:11px">Commande inférieure à ${TRAVEL_MIN} €</div></td><td class="r">1</td><td class="r">${eur(t.travel)}</td><td class="r"><b>${eur(t.travel)}</b></td></tr>`:'')+(t.tip?`<tr><td><b style="color:#2A2340">Pourboire</b><div class="mut" style="font-size:11px">Reversé intégralement à l’artisan</div></td><td class="r">1</td><td class="r">${eur(t.tip)}</td><td class="r"><b>${eur(t.tip)}</b></td></tr>`:''):`<tr><td><b style="color:#2A2340">${esc(m.svcName)}</b><div class="mut" style="font-size:11px">Prestation à domicile · ${dt}</div></td><td class="r">${durTxt(m,billHours(m))}</td><td class="r">${eur(t.rate)}</td><td class="r"><b>${eur(t.total-t.tip)}</b></td></tr>`+(t.tip?`<tr><td><b style="color:#2A2340">Pourboire</b><div class="mut" style="font-size:11px">Reversé intégralement à l’artisan</div></td><td class="r">1</td><td class="r">${eur(t.tip)}</td><td class="r"><b>${eur(t.tip)}</b></td></tr>`:'')}</tbody></table>
         <div class="inv-total-box">
           <div class="row"><span class="lbl">Total réglé</span><span class="amt">${eur(t.total)}</span></div>
           <div class="inv-total-sub">Réglé par carte bancaire le ${dt} — encaissement pour compte du prestataire via Mollie, établissement de paiement agréé. Aucun solde dû.</div>
@@ -6217,7 +6255,7 @@
   function proPaid(){
     const m=S.mission,t=totals(m);
     return `<div class="pad"><div class="paycap"><div class="checkmark">${I.bigcheck}</div><div><div class="h-hello" style="text-align:center">Vous avez été payé</div><p class="sub" style="text-align:center">+${eur(t.payout)} versés sur votre compte</p></div></div>
-      <div class="card" style="padding:16px"><div class="eyebrow" style="color:var(--muted)">Détail du versement</div><div class="receipt-line" style="margin-top:8px"><span>${m.svcName} · ${durTxt(m)}</span><span class="mini">${m.when} · ${m.slot}</span></div><hr class="dashed"><div class="receipt-line"><span>Prestation</span><b>${eur(t.total)}</b></div>${t.commission>0?`<div class="receipt-line"><span>Commission Ti-Services (${t.commPct}&nbsp;%)</span><b style="color:var(--muted)">−${eur(t.commission)}</b></div>`:''}<hr class="dashed"><div class="receipt-line"><span>Net perçu</span><b style="color:var(--good)">${eur(t.payout)}</b></div></div>
+      <div class="card" style="padding:16px"><div class="eyebrow" style="color:var(--muted)">Détail du versement</div><div class="receipt-line" style="margin-top:8px"><span>${m.svcName} · ${durTxt(m)}</span><span class="mini">${m.when} · ${m.slot}</span></div><hr class="dashed"><div class="receipt-line"><span>Prestation</span><b>${eur(t.total-t.tip)}</b></div>${t.tip?`<div class="receipt-line"><span>💛 Pourboire du client</span><b style="color:var(--good)">+${eur(t.tip)}</b></div>`:''}${t.commission>0?`<div class="receipt-line"><span>Commission Ti-Services (${t.commPct}&nbsp;%)</span><b style="color:var(--muted)">−${eur(t.commission)}</b></div>`:''}<hr class="dashed"><div class="receipt-line"><span>Net perçu</span><b style="color:var(--good)">${eur(t.payout)}</b></div></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-act="pro-back-home">Retour aux missions</button></div></div>`;
   }
   function fidCard(){
@@ -6459,7 +6497,7 @@
     toast('Prestation pré-remplie — vérifiez, ajustez, puis confirmez');
   }
   document.addEventListener('click',(e)=>{
-    const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actqty],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday]');
+    const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actqty],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday],[data-tip]');
     if(!b)return;
     // Un clic ISSU d'un <input type=file> (notamment déclenché par programme, ex. la
     // feuille « appareil photo / galerie ») remonte jusqu'ici : on ne le traite pas
@@ -6576,6 +6614,8 @@
     if(b.dataset.czone){S.clientForm.zone=b.dataset.czone;render();return;}
     if(b.dataset.when){if(!S.draft)return;const v=b.dataset.when;if(v==='__pick'){S.draft.dateMode='pick';}else{S.draft.dateMode=null;S.draft.when=v;}renderConfig();return;}
     if(b.dataset.boost!=null){if(S.draft){S.draft.boost=+b.dataset.boost;renderConfig();}return;}
+    // Pourboire à la validation : montants préréglés ou saisie libre (« Autre »).
+    if(b.dataset.tip!=null){const m=S.mission;if(m){const v=b.dataset.tip;if(v==='custom'){m._tipCustom=true;}else{m._tipCustom=false;m.tip=Math.max(0,+v||0);}render();}return;}
     if(b.dataset.price){const [id,dir]=b.dataset.price.split(':');if(!S.adminPrices)S.adminPrices=ADMIN_PRICES();const cur=(S.adminPrices[id]!=null)?S.adminPrices[id]:(/_j$/.test(id)?DAY_RECO:svcBase(id));S.adminPrices[id]=Math.max(5,cur+(dir==='up'?1:-1));savePrices();render();return;}
     // Grille catalogue (admin) : prix d'un acte, retrait, ajout.
     if(b.dataset.actprice){const p=b.dataset.actprice.split(':');const svc=p[0],aid=p[1],dir=p[2];const arr=ensureCatalogCopy(svc);const a=arr.find(function(x){return x.id===aid;});if(a){a.price=Math.max(5,(Number(a.price)||0)+(dir==='up'?5:-5));saveCatalog();render();}return;}
@@ -6691,7 +6731,7 @@
       case 'pro-cancel-back':S.mission=null;S.proNav='home';render();break;
       case 'apply-cancelfee':{const m=S.mission;if(m&&m.status==='cancelled'){const c=cancelFeeCalc(m);m.feeDecision='applied';m.feeDecidedAt=Date.now();if(!isDemo())pushReqUpdate(m,{feeDecision:'applied',feeDecidedAt:Date.now()});recordCancelFee(m);const j=(S.proMissions||[]).indexOf(m);if(j>=0)S.proMissions.splice(j,1);S.mission=null;S.proNav='home';render();toast('Indemnité appliquée · +'+eur(c.net));}break;}
       case 'waive-cancelfee':{const m=S.mission;if(m&&m.status==='cancelled'){m.feeDecision='waived';m.feeDecidedAt=Date.now();if(!isDemo())pushReqUpdate(m,{feeDecision:'waived',feeDecidedAt:Date.now()});const j=(S.proMissions||[]).indexOf(m);if(j>=0)S.proMissions.splice(j,1);S.mission=null;S.proNav='home';render();toast('Vous avez renoncé à l’indemnité');}break;}
-      case 'confirm-done':pushMissionStatus(S.mission,{status:'paid',finalHours:billHours(S.mission)});finalizePaid(S.mission);render();burstConfetti();break;
+      case 'confirm-done':{const _tt=totals(S.mission);pushMissionStatus(S.mission,{status:'paid',finalHours:billHours(S.mission),tip:_tt.tip||0,total:_tt.total});finalizePaid(S.mission);render();burstConfetti();break;}
       case 'pro-reopen':S.proReopenAsk=true;render();break;
       case 'pro-reopen-cancel':S.proReopenAsk=false;render();break;
       case 'pro-reopen-confirm':reopenMission(S.mission);break;
@@ -6960,7 +7000,6 @@
 
       ${pastArtisans().length?`<div class="field"><label>Un pro en particulier&nbsp;?</label><div class="segs"><button class="seg ${!m.preferredUid?'on':''}" data-prefart="">Peu importe</button>${pastArtisans().map(a=>`<button class="seg ${m.preferredUid===a.uid?'on':''}" data-prefart="${esc(a.uid)}" data-prefnm="${esc(a.nm)}">${esc(a.nm.split(' ')[0])}</button>`).join('')}</div></div>`:''}
 
-      <div class="field"><label>Coup de pouce&nbsp;? (facultatif)</label>${boostSelect(m,[0,10,20,30,50])}<p class="mini" style="margin-top:6px">Comme un pourboire&nbsp;: une majoration facultative qui <b>revient au pro</b>.${(m.boost||0)>0?` Coup de pouce&nbsp;: <b style="color:var(--teal-deep)">+${eur(t.maj)}</b>.`:''}</p></div>
 
       <div class="field"><label>Précisions (facultatif)</label><textarea rows="3" data-cfg="notes" placeholder="${PLACEHOLDERS[m.svc]||'Précisez votre demande…'}">${esc(m.notes)}</textarea></div>
       <div class="field"><label>Photos (facultatif)</label>
@@ -6974,7 +7013,7 @@
         ${m.addressId==='__manual'?`<div class="card" style="padding:14px;margin-top:10px"><div class="field" style="margin-top:0"><label style="font-size:12px">Adresse / description du lieu</label><input class="txt" data-addrmanual value="${esc(m.address||'')}" placeholder="Ex. Villa des Amis, Saline"></div><div class="field"><label style="font-size:12px">Secteur</label>${zoneSelect}</div><div class="field"><label style="font-size:12px">Point GPS</label><button class="btn ghost sm" data-cfg="geoloc">📍 ${m.geo?'Actualiser le point GPS':'Enregistrer le point GPS'}</button>${m.geo?miniMap(m.geo,'edit','draft'):''}</div><div class="field" style="margin-bottom:0"><label style="font-size:12px">${I.key} Infos d'accès</label><textarea rows="2" data-addraccess placeholder="Ex. Code portail 4521 · clé sous le pot">${esc(m.access||'')}</textarea></div></div>`:''}
       </div>
 
-      <div class="est">${nSel?m.acts.map(a=>`<div class="line"><span>${esc(a.nm)}</span><b>${eur(a.price*(a.qty||1))}</b></div>`).join(''):`<div class="line"><span style="color:var(--muted)">Aucune prestation sélectionnée</span><b>—</b></div>`}${t.boost?`<div class="line"><span>${I.bolt} Coup de pouce (+${t.boost}%)</span><b>+${eur(t.maj)}</b></div>`:''}${t.travel?`<div class="line"><span>${I.pin} Forfait déplacement</span><b>+${eur(t.travel)}</b></div>`:''}${(nSel&&!t.travel)?`<div class="line"><span style="color:var(--good)">${I.check} Déplacement offert</span><b style="color:var(--good)">0 €</b></div>`:''}<div class="total"><span>Total</span><b>${nSel?eur(t.total):'—'}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité${S.card?` (sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — encaissement agréé)`:` (moyen de paiement demandé juste après, via Mollie)`}. Aucun supplément sans votre accord.</small></div>
+      <div class="est">${nSel?m.acts.map(a=>`<div class="line"><span>${esc(a.nm)}</span><b>${eur(a.price*(a.qty||1))}</b></div>`).join(''):`<div class="line"><span style="color:var(--muted)">Aucune prestation sélectionnée</span><b>—</b></div>`}${t.travel?`<div class="line"><span>${I.pin} Forfait déplacement</span><b>+${eur(t.travel)}</b></div>`:''}${(nSel&&!t.travel)?`<div class="line"><span style="color:var(--good)">${I.check} Déplacement offert</span><b style="color:var(--good)">0 €</b></div>`:''}<div class="total"><span>Total</span><b>${nSel?eur(t.total):'—'}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité${S.card?` (sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — encaissement agréé)`:` (moyen de paiement demandé juste après, via Mollie)`}. Aucun supplément sans votre accord.</small></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm"${nSel?'':' disabled'}>${I.search} Trouver un pro${nSel?' · '+eur(t.total):''}</button>${nSel?'':`<p class="mini" style="text-align:center;margin-top:8px;color:var(--muted)">Cochez au moins une prestation pour continuer.</p>`}</div>
     </div>`,'config');
   }
@@ -7010,7 +7049,6 @@
       ${pastArtisans().length?`<div class="field"><label>Un artisan en particulier&nbsp;?</label><div class="segs"><button class="seg ${!m.preferredUid?'on':''}" data-prefart="">Peu importe</button>${pastArtisans().map(a=>`<button class="seg ${m.preferredUid===a.uid?'on':''}" data-prefart="${esc(a.uid)}" data-prefnm="${esc(a.nm)}">${esc(a.nm.split(' ')[0])}</button>`).join('')}</div>${m.preferredUid?`<p class="mini" style="margin-top:6px">${I.clock} Adressée <b>uniquement à ${esc((m.preferredName||'').split(' ')[0])}</b>. S'il décline, vous pourrez la proposer à tous les artisans.</p>`:''}</div>`:''}
       ${m.svc==='baby'?`<p class="mini" style="margin-top:6px">${I.shield} La baby-sitter qui accepte vous sera présentée (photo, diplômes, présentation) et <b>vous pourrez l'appeler</b> avant de confirmer la garde.</p>`:''}
       <div class="field"><label>Tarif ${isDayU(m)?'journalier':'horaire'} — prix fixe Ti-Services</label><div class="pricebox"><b class="money" style="font-size:22px;font-family:var(--f-disp)">${fixedRate(m)} ${rateUnit(m)}</b><span class="chip good" style="padding:3px 9px">${I.check} Prix fixe</span></div></div>
-      <div class="field"><label>Coup de pouce&nbsp;? (facultatif)</label>${boostSelect(m,[0,10,20,30,50,100])}<p class="mini" style="margin-top:6px">Comme un pourboire&nbsp;: une majoration facultative qui <b>revient à l'artisan</b>.${(m.boost||0)>0?` Coup de pouce&nbsp;: <b style="color:var(--teal-deep)">+${eur(t.maj)}</b>.`:''}</p></div>
       <div class="field"><label>${isDayU(m)?'Nombre de jours':'Durée estimée'}</label><div class="stepper"><button data-cfg="minus">−</button><span class="val">${durTxt(m)}</span><button data-cfg="plus">+</button></div>${isDayU(m)?`<p class="mini" style="margin-top:6px">📅 Du ${endDateTxt(m)} · ${durTxt(m)} de garde</p>`:''}</div>
       <div class="field"><label>Décrivez votre besoin</label><textarea rows="3" data-cfg="notes" placeholder="${PLACEHOLDERS[m.svc]||'Décrivez précisément la prestation…'}">${esc(m.notes)}</textarea></div>
       <div class="field"><label>Photos (facultatif)</label>
@@ -7035,7 +7073,7 @@
           </div>
         `:`${m.geo?`<div class="banner teal" style="margin-top:10px">${I.pin}<span><b>Point GPS déjà enregistré</b> depuis votre fiche.</span></div>`:`<p class="mini" style="margin-top:8px;color:var(--muted)">Cette adresse n'a pas de point GPS — ajoutez-le dans votre profil.</p>`}`}
       </div>
-      <div class="est"><div class="line"><span>${m.svcName} · ${t.rate} ${rateUnit(m)} × ${durTxt(m)}</span><b>${eur(t.sub)}</b></div>${t.boost?`<div class="line"><span>${I.bolt} Coup de pouce (+${t.boost}%)</span><b>+${eur(t.maj)}</b></div>`:''}<div class="total"><span>Total</span><b>${eur(t.total)}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité ${S.card?`(sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — encaissement agréé)`:`(moyen de paiement demandé juste après, via Mollie — encaissement agréé)`}. Aucun supplément sans votre accord.</small></div>
+      <div class="est"><div class="line"><span>${m.svcName} · ${t.rate} ${rateUnit(m)} × ${durTxt(m)}</span><b>${eur(t.sub)}</b></div><div class="total"><span>Total</span><b>${eur(t.total)}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité ${S.card?`(sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — encaissement agréé)`:`(moyen de paiement demandé juste après, via Mollie — encaissement agréé)`}. Aucun supplément sans votre accord.</small></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm">${I.search} Trouver un artisan · ${eur(t.total)}</button></div></div>`,'config');
     if(S._focusAddr){S._focusAddr=false;setTimeout(function(){const el=document.getElementById('manualAddr');if(el){try{el.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){el.scrollIntoView();}const inp=el.querySelector('[data-addrmanual]');if(inp)try{inp.focus({preventScroll:true});}catch(_){}}},70);}
   }
@@ -7072,6 +7110,9 @@
     // Téléphone composé (indicatif + numéro) : recompose la valeur complète dans l'état.
     const pnum=e.target.closest('[data-phonenum]');if(pnum){readPhoneCombo(pnum.dataset.phonenum);const pb0=document.querySelector('[data-act="pro-submit"]');if(pb0&&S.proForm)pb0.disabled=!proSignupOk(S.proForm);const cb0=document.querySelector('[data-act="conc-submit"]');if(cb0&&S.concSignup)cb0.disabled=!concSignupOk(S.concSignup);}
     const t=e.target.closest('[data-cfg="notes"]');if(t&&S.draft)S.draft.notes=t.value;
+    // Pourboire libre : on met à jour le montant sans re-render (préserve le focus/curseur) ;
+    // le total est recalculé à la validation. On tolère la virgule décimale française.
+    const tc=e.target.closest('[data-tipcustom]');if(tc&&S.mission){const v=parseFloat(String(tc.value).replace(',','.'));S.mission.tip=(isFinite(v)&&v>0)?Math.round(v*100)/100:0;const bb=document.querySelector('[data-act="confirm-done"]');if(bb){const tt=totals(S.mission);bb.innerHTML=`${I.check} Confirmer la prestation${tt.tip?'<span> · '+eur(tt.total)+'</span>':''}`;i18nApply(bb);}}
     const pf=e.target.closest('[data-pf]');if(pf){S.proForm[pf.dataset.pf]=pf.value;const pb=document.querySelector('[data-act="pro-submit"]');if(pb)pb.disabled=!proSignupOk(S.proForm);}
     const csf=e.target.closest('[data-csf]');if(csf&&S.concSignup){S.concSignup[csf.dataset.csf]=csf.value;const b2=document.querySelector('[data-act="conc-submit"]');if(b2)b2.disabled=!concSignupOk(S.concSignup);}
     const cf=e.target.closest('[data-cf]');if(cf){S.clientForm[cf.dataset.cf]=cf.value;const fb=document.querySelector('[data-act="finish-onboard"]');const c=S.clientForm;if(fb)fb.disabled=!((c.name||'').trim().length>1&&/.+@.+\..+/.test(c.email||'')&&(c.password||'').length>=6&&c.password===c.password2&&!!c.terms);}
@@ -7589,7 +7630,7 @@
             subscribeClientRequest(docu.id);
             changed=true;
           }
-          m.status=r.status;m.svc=r.service;m.svcName=r.serviceName||svcNm(r.service);m.rate=r.rate;m.duration=r.duration||1;m.unit=r.unit||'h';m.when=r.when||'';m.slot=r.acceptedSlot||r.slot||m.slot||'';m.zone=r.zone||m.zone||'';m.boost=r.boost||0;m.slotFlex=r.slotFlex||0;m.notes=r.notes||m.notes||'';m.frequency=r.frequency||m.frequency||'ponctuelle';
+          m.status=r.status;m.svc=r.service;m.svcName=r.serviceName||svcNm(r.service);m.rate=r.rate;m.duration=r.duration||1;m.unit=r.unit||'h';m.when=r.when||'';m.slot=r.acceptedSlot||r.slot||m.slot||'';m.zone=r.zone||m.zone||'';m.boost=r.boost||0;m.tip=r.tip||0;m.slotFlex=r.slotFlex||0;m.notes=r.notes||m.notes||'';m.frequency=r.frequency||m.frequency||'ponctuelle';
           if(r.providerUid){m.providerUid=r.providerUid;if(!m.provider||m.provider.nm==='Votre artisan')m.provider={nm:r.providerName||'Votre artisan',ini:inits(r.providerName||'Artisan'),rating:0,jobs:(r.providerJobs||0),founder:!!r.providerFounder};}
           if(r.providerPhoto)m.providerPhoto=r.providerPhoto;if(r.providerPhone!=null)m.providerPhone=r.providerPhone;if(r.providerBio!=null)m.providerBio=r.providerBio;if(Array.isArray(r.providerDiplomas))m.providerDiplomas=r.providerDiplomas;if(r.clientConfirmed!=null)m.clientConfirmed=r.clientConfirmed;
           if(r.finalHours!=null)m.finalHours=r.finalHours;if(r.disputeMsg)m.disputeMsg=r.disputeMsg;
@@ -7609,7 +7650,7 @@
           if(inHist[docu.id]){if(srvNo){const ex=S.history.find(function(h){return h.reqId===docu.id;});if(ex&&!ex.invNo){ex.invNo=srvNo;histChanged=true;}}return;}
           const dur=(r.finalHours!=null?r.finalHours:(r.duration||1));
           const prov=(local&&local.provider)?local.provider:Object.assign({},PROVIDERS[r.service]||{ini:'AR'},{nm:r.providerName||'Votre artisan',ini:inits(r.providerName||'Artisan')});
-          S.history.unshift({reqId:docu.id,svc:r.service,svcName:r.serviceName||svcNm(r.service),status:'paid',when:r.when||'',dateISO:r.dateISO||'',zone:r.zone||'',unit:r.unit||'h',duration:dur,finalHours:dur,rate:r.rate||0,boost:r.boost||0,invNo:srvNo,provider:{nm:prov.nm,ini:prov.ini||inits(prov.nm||'AR')},providerLegal:r.providerLegal||'',providerSiret:r.providerSiret||'',providerAddress:r.providerAddress||'',providerStatusType:r.providerStatusType||''});
+          S.history.unshift({reqId:docu.id,svc:r.service,svcName:r.serviceName||svcNm(r.service),status:'paid',when:r.when||'',dateISO:r.dateISO||'',zone:r.zone||'',unit:r.unit||'h',duration:dur,finalHours:dur,rate:r.rate||0,boost:r.boost||0,tip:r.tip||0,acts:(r.acts&&r.acts.length)?r.acts.map(function(a){return {id:a.id,nm:a.nm,price:a.price,qty:a.qty||1};}):null,invNo:srvNo,provider:{nm:prov.nm,ini:prov.ini||inits(prov.nm||'AR')},providerLegal:r.providerLegal||'',providerSiret:r.providerSiret||'',providerAddress:r.providerAddress||'',providerStatusType:r.providerStatusType||''});
           inHist[docu.id]=1;histChanged=true;
         });
         // Filet anti-doublon : jamais deux missions partageant le même reqId.
@@ -7655,7 +7696,7 @@
         if(active.indexOf(r.status)<0)continue;
         let det={};try{const s=await FB.f.getDoc(FB.f.doc(FB.db,'requests',docu.id,'private','details'));det=s.exists()?s.data():{};}catch(_){}
         const base=findSvc(r.service)||{id:r.service,nm:r.serviceName||svcNm(r.service),rate:r.rate||svcBase(r.service)};
-        const m=Object.assign(newMission(base),{_id:'pm'+docu.id,reqId:docu.id,status:r.status,svc:r.service,svcName:r.serviceName||svcNm(r.service),rate:r.rate,duration:r.duration||1,unit:r.unit||'h',acts:r.acts||null,when:r.when||'',slot:(r.acceptedSlot||r.slot||''),slotFlex:r.slotFlex||0,zone:r.zone||det.zone||'',address:det.address||'',geo:det.geo||null,access:det.access||'',boost:r.boost||0,notes:r.notes||'',photos:(r.photos||[]).slice(),clientName:r.clientName||det.clientName||'',clientPhoto:r.clientPhoto||det.clientPhoto||null,provider:Object.assign({},PROVIDERS[r.service]||{},{nm:S.proName||'Vous'})});
+        const m=Object.assign(newMission(base),{_id:'pm'+docu.id,reqId:docu.id,status:r.status,svc:r.service,svcName:r.serviceName||svcNm(r.service),rate:r.rate,duration:r.duration||1,unit:r.unit||'h',acts:r.acts||null,when:r.when||'',slot:(r.acceptedSlot||r.slot||''),slotFlex:r.slotFlex||0,zone:r.zone||det.zone||'',address:det.address||'',geo:det.geo||null,access:det.access||'',boost:r.boost||0,tip:r.tip||0,notes:r.notes||'',photos:(r.photos||[]).slice(),clientName:r.clientName||det.clientName||'',clientPhoto:r.clientPhoto||det.clientPhoto||null,provider:Object.assign({},PROVIDERS[r.service]||{},{nm:S.proName||'Vous'})});
         if(Array.isArray(r.messages))m.chat=r.messages.slice().sort(function(a,b){return (a.at||0)-(b.at||0);});
         miss.push(m);
       }
