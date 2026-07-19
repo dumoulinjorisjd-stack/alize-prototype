@@ -286,10 +286,10 @@
   /* Verrou anti-glissement : la page ne peut JAMAIS défiler d'un bloc (c'est ce qui
      tronquait le haut ou cachait la barre d'onglets). Seul .view défile, à l'intérieur. */
   html:has(>body.standalone),html:has(>body.desktop){height:100%;overflow:hidden}
-  /* Fond = surface de l'app (et non le bleu lagon de la vitrine) : si la hauteur
-     mesurée est un poil plus courte que l'écran réel, la zone découverte se fond
-     dans le contenu au lieu d'afficher une bande contrastée sous la barre d'onglets.
-     Ne change AUCUNE dimension → n'altère pas le calage Android existant. */
+  /* Hauteur de l'app pilotée par --app-h (sonde JS = MAX(100svh, innerHeight) : le
+     plancher 100svh protège Android d'une app trop haute ; innerHeight comble la
+     sous-estimation iPhone qui laissait une bande vide en bas, visible dès le splash).
+     Repli 100svh avant l'exécution du JS. Fond = surface de l'app par sécurité. */
   body.standalone,body.desktop{height:var(--app-h,100svh);min-height:0;overflow:hidden;background:var(--sand)}
   body.standalone .notch{display:none}
   /* App installée : la vraie barre d'état iOS/Android est déjà là. On réserve JUSTE la
@@ -7468,7 +7468,14 @@
       // Sonde cachée en 100svh, relue à chaque événement (redimensionnement, clavier,
       // retour d'arrière-plan…) : le recalcul est forcé, jamais de valeur périmée.
       if(!_hProbe){_hProbe=document.createElement('div');_hProbe.setAttribute('aria-hidden','true');_hProbe.style.cssText='position:fixed;left:0;top:0;width:0;height:100svh;visibility:hidden;pointer-events:none;z-index:-1';(document.body||document.documentElement).appendChild(_hProbe);}
-      var h=Math.round(_hProbe.getBoundingClientRect().height)||window.innerHeight||0;
+      // On garde 100svh comme PLANCHER (viewport minimal garanti → protège Android d'une
+      // app trop haute quand les barres système se replient), MAIS on relève à au moins
+      // window.innerHeight : sur iPhone, 100svh sous-estimait la hauteur réelle et
+      // laissait une bande vide (~1 cm) en bas, visible dès le splash. innerHeight reflète
+      // la zone réellement visible (jamais sur-estimée comme 100dvh) → pas de régression
+      // Android. Un éventuel dépassement passe sous la barre d'onglets (overflow:hidden).
+      var probe=Math.round(_hProbe.getBoundingClientRect().height)||0;
+      var h=Math.max(probe, window.innerHeight||0);
       if(h>0)document.documentElement.style.setProperty('--app-h',h+'px');
       // En plein écran, le document ne doit JAMAIS rester décalé : overflow:hidden
       // bloque le doigt mais pas un défilement PROGRAMMÉ (ex. autofocus d'un champ à
