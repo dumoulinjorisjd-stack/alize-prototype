@@ -6104,11 +6104,11 @@
         <div class="row between"><b style="font-size:14px;display:inline-flex;align-items:center;gap:7px"><span class="svc-dot" style="background:${svcColor(a.svc)}"></span>${s.nm}</b><span class="chip ${chip[0]}" style="padding:3px 9px">${chip[1]}</span></div>
         <div class="mini" style="margin-top:3px">${esc(a.client)} · ${I.pin} ${a.zone}</div>
         <div class="mini" style="margin-top:3px">Vous percevez <b style="color:var(--ink)">${eur(apptPayout(a))}</b></div>
-        ${a.status!=='done'?`<button class="btn ghost sm" data-act="ics:${S.agenda.indexOf(a)}" style="margin-top:9px;width:auto;padding:7px 12px">${I.cal} Ajouter à mon agenda</button>`:''}
+        ${a.status!=='done'?`<button class="btn ghost sm" data-act="ics:${(S._agAppts||[]).indexOf(a)}" style="margin-top:9px;width:auto;padding:7px 12px">${I.cal} Ajouter à mon agenda</button>`:''}
       </div></div>`;
   }
   function apptList(){
-    const items=S.agenda;
+    const items=proAgendaAppts();
     const up=items.filter(a=>a.status!=='done');
     const totalUp=up.reduce((t,a)=>t+apptPayout(a),0);
     const summary=`<div class="card" style="padding:15px;margin-top:14px"><div class="row between">
@@ -6145,6 +6145,28 @@
   function frDayLabel(iso){const d=isoToDate(iso),t=new Date();t.setHours(0,0,0,0);const diff=Math.round((d-t)/86400000);if(diff===0)return 'Aujourd’hui';if(diff===1)return 'Demain';if(diff===-1)return 'Hier';return FR_DOW_SHORT[d.getDay()]+' '+d.getDate()+' '+FR_MONTHS[d.getMonth()].slice(0,4)+'.';}
   function curMonthKey(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
   function monthShift(key,delta){const p=(key||curMonthKey()).split('-');let y=+p[0],m=(+p[1]-1)+delta;y+=Math.floor(m/12);m=((m%12)+12)%12;return y+'-'+String(m+1).padStart(2,'0');}
+  // Rendez-vous de l'agenda artisan. En DÉMO : la liste seed (S.agenda). En RÉEL :
+  // dérivée des missions acceptées/en cours (S.proMissions) et passées (S.proHistory)
+  // — ainsi le planning se met à jour tout seul, sans dépendre d'une liste mock vide.
+  function proAgendaAppts(){
+    let out;
+    if(isDemo()){out=(S.agenda||[]);}
+    else{
+      out=[];
+      (S.proMissions||[]).forEach(function(m){
+        if(['accepted','working','done_pro','disputed'].indexOf(m.status)<0)return;
+        const iso=(/^\d{4}-\d{2}-\d{2}$/.test(m.dateISO||''))?m.dateISO:apptISO({day:m.when});
+        const t=totals(m);
+        out.push({day:frDayLabel(iso),dateISO:iso,slot:m.slot||'',svc:m.svc,client:m.clientName||'Client',zone:m.zone||'',duration:billHours(m),unit:m.unit,rate:t.rate,amount:t.total,status:(m.status==='working'?'live':(m.status==='done_pro'?'tovalidate':'upcoming'))});
+      });
+      (S.proHistory||[]).forEach(function(h){
+        const iso=(/^\d{4}-\d{2}-\d{2}$/.test(h.dateISO||''))?h.dateISO:'';
+        out.push({day:iso?frDayLabel(iso):'',dateISO:iso,slot:h.slot||'',svc:h.svc,client:h.client||h.clientFull||'Client',zone:h.clientZone||h.zone||'',duration:h.duration,unit:h.unit,rate:h.rate,amount:h.amount,status:'done'});
+      });
+    }
+    S._agAppts=out;
+    return out;
+  }
   function proAgendaMonth(){
     const monthKey=S.agendaMonth||curMonthKey();
     const parts=monthKey.split('-'),Y=+parts[0],M=+parts[1];
@@ -6154,7 +6176,7 @@
     const todayIso=todayISO();
     // Regroupe les prestations par jour du mois affiché.
     const byDay={};
-    (S.agenda||[]).forEach(function(a){const iso=apptISO(a);if(iso.slice(0,7)===monthKey){(byDay[iso]=byDay[iso]||[]).push(a);}});
+    proAgendaAppts().forEach(function(a){const iso=apptISO(a);if(iso.slice(0,7)===monthKey){(byDay[iso]=byDay[iso]||[]).push(a);}});
     Object.keys(byDay).forEach(function(k){byDay[k].sort(function(a,b){return (a.slot||'').localeCompare(b.slot||'');});});
     const title=FR_MONTHS[M-1].charAt(0).toUpperCase()+FR_MONTHS[M-1].slice(1)+' '+Y;
     const dow=['L','M','M','J','V','S','D'].map(function(d){return `<div class="cal-dow">${d}</div>`;}).join('');
@@ -6883,8 +6905,8 @@
     if(b.dataset.act==='conflict-accept'){const rid=S.proConflict&&S.proConflict.reqId;S.proConflict=null;render();if(rid)acceptRequestReal(rid);return;}
     if(b.dataset.act==='conflict-skip'){const rid=S.proConflict&&S.proConflict.reqId;S.proConflict=null;persistSkip(rid);S.proReqView=null;render();toast('Mission passée — proposée aux autres artisans');return;}
     if(b.dataset.act&&b.dataset.act.indexOf('rmphoto:')===0){const i=+b.dataset.act.split(':')[1];if(S.draft&&S.draft.photos){const u=S.draft.photos[i];if(u&&u.indexOf('blob:')===0){try{URL.revokeObjectURL(u);}catch(_){}}S.draft.photos.splice(i,1);renderConfig();}return;}
-    if(b.dataset.act&&b.dataset.act.indexOf('ics:')===0){const i=+b.dataset.act.split(':')[1];const a=S.agenda[i];if(a)downloadIcs(icsBuild([a]),'ti-services-'+(a.svc||'rdv')+'.ics');return;}
-    if(b.dataset.act==='ics-all'){const up=S.agenda.filter(a=>a.status!=='done');if(up.length)downloadIcs(icsBuild(up),'ti-services-agenda.ics');return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('ics:')===0){const i=+b.dataset.act.split(':')[1];const a=(S._agAppts||S.agenda||[])[i];if(a)downloadIcs(icsBuild([a]),'ti-services-'+(a.svc||'rdv')+'.ics');return;}
+    if(b.dataset.act==='ics-all'){const up=(S._agAppts||S.agenda||[]).filter(a=>a.status!=='done');if(up.length)downloadIcs(icsBuild(up),'ti-services-agenda.ics');return;}
     if(b.dataset.act&&b.dataset.act.indexOf('addr-edit:')===0){const a=S.addresses.find(x=>x.id===b.dataset.act.split(':')[1]);if(a){S.addrForm={id:a.id,label:a.label,address:a.address,zone:a.zone,geo:a.geo?{...a.geo}:null,access:a.access||''};render();}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('conc-view:')===0){S.concView=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('conc-invoice:')===0){S.concInvoice=b.dataset.act.split(':')[1];render();return;}
@@ -7919,7 +7941,7 @@
         if(active.indexOf(r.status)<0)continue;
         let det={};try{const s=await FB.f.getDoc(FB.f.doc(FB.db,'requests',docu.id,'private','details'));det=s.exists()?s.data():{};}catch(_){}
         const base=findSvc(r.service)||{id:r.service,nm:r.serviceName||svcNm(r.service),rate:r.rate||svcBase(r.service)};
-        const m=Object.assign(newMission(base),{_id:'pm'+docu.id,reqId:docu.id,status:r.status,svc:r.service,svcName:r.serviceName||svcNm(r.service),rate:r.rate,duration:r.duration||1,unit:r.unit||'h',acts:r.acts||null,when:r.when||'',slot:(r.acceptedSlot||r.slot||''),slotFlex:r.slotFlex||0,zone:r.zone||det.zone||'',address:det.address||'',geo:det.geo||null,access:det.access||'',boost:r.boost||0,tip:r.tip||0,notes:r.notes||'',photos:(r.photos||[]).slice(),clientName:r.clientName||det.clientName||'',clientPhoto:r.clientPhoto||det.clientPhoto||null,provider:Object.assign({},PROVIDERS[r.service]||{},{nm:S.proName||'Vous'})});
+        const m=Object.assign(newMission(base),{_id:'pm'+docu.id,reqId:docu.id,status:r.status,svc:r.service,svcName:r.serviceName||svcNm(r.service),rate:r.rate,duration:r.duration||1,unit:r.unit||'h',dateISO:r.dateISO||'',acts:r.acts||null,when:r.when||'',slot:(r.acceptedSlot||r.slot||''),slotFlex:r.slotFlex||0,zone:r.zone||det.zone||'',address:det.address||'',geo:det.geo||null,access:det.access||'',boost:r.boost||0,tip:r.tip||0,notes:r.notes||'',photos:(r.photos||[]).slice(),clientName:r.clientName||det.clientName||'',clientPhoto:r.clientPhoto||det.clientPhoto||null,provider:Object.assign({},PROVIDERS[r.service]||{},{nm:S.proName||'Vous'})});
         if(Array.isArray(r.messages))m.chat=r.messages.slice().sort(function(a,b){return (a.at||0)-(b.at||0);});
         miss.push(m);
       }
