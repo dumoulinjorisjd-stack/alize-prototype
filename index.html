@@ -2025,7 +2025,7 @@
     proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proReqSlot:null,proReqPick:false,proMissions:[],proSkipped:[],proConflict:null,proStmt:false,commInvId:null,commStmt:false,signupKind:null,concSignup:null,concStatus:'approved',adminConcierges:[],
     proHistory:PRO_HISTORY(),
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),
-    chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,histInvoice:null,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,delAcct:false,
+    chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,histInvoice:null,histCat:null,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,delAcct:false,
     proJobsTotal:214,fidTiers:FID_TIERS.map(t=>({...t})),referralCode:'MARILOU-SBH',
     filleuls:[{name:'Kevin Questel',status:'valide',bonus:40},{name:'Rosa Almeida',status:'attente',bonus:0}],
     admin:{view:'home',sel:null,fact:null},adminLedger:[],adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,adminPrices:ADMIN_PRICES(),
@@ -4974,6 +4974,31 @@
       ${guestCTAs()}
       <div style="height:16px"></div></div>${clientNavbar()}`;
   }
+  // Carte d'une prestation passée (facture + « Refaire »). `i` = index dans
+  // doneHistory() pour que les actions histinv:/renew: restent valides.
+  function histCard(h,i){const t=totals(h);return `<div class="card" style="padding:14px;margin-top:10px"><button data-act="histinv:${i}" style="width:100%;text-align:left;background:none;border:none;padding:0;display:block;cursor:pointer"><div class="row" style="gap:11px"><div class="avatar" style="width:40px;height:40px;font-size:14px${h.provider&&h.provider.photo?`;background-image:url('${h.provider.photo}');background-size:cover;background-position:center;color:transparent`:''}">${h.provider?esc(h.provider.ini||'--'):'--'}</div><div style="flex:1"><div class="row between"><b style="font-size:14px">${esc(h.svcName||'Prestation')}</b><span class="money" style="font-weight:700">${eur(t.total)}</span></div><div class="mini" style="margin-top:2px">${esc(h.when||'')}${h.provider&&h.provider.nm?' · '+esc(h.provider.nm):''}</div></div></div><div class="row between" style="margin-top:10px"><span class="chip good" style="padding:4px 10px">${I.check} Bien exécuté &amp; réglé</span><span class="mini" style="color:var(--teal-deep);font-weight:700">${I.card} Voir ma facture ›</span></div></button><button class="btn ghost sm" data-act="renew:${i}" style="margin-top:11px">${I.repeat} Refaire${h.provider&&h.provider.nm?' avec '+esc(h.provider.nm.split(' ')[0]):''}</button></div>`;}
+  // Historique replié en 2 niveaux (évite une liste interminable) :
+  //  1) tuiles de CATÉGORIES (type de prestation) ;
+  //  2) au clic, prestations de la catégorie RANGÉES PAR PRESTATAIRE.
+  function clientHistoryBlock(done){
+    const idx=new Map();done.forEach(function(h,i){idx.set(h,i);});
+    if(!S.histCat){
+      const cats={};
+      done.forEach(function(h){const k=h.svc||'autre';(cats[k]=cats[k]||{svc:k,items:[],total:0});cats[k].items.push(h);cats[k].total+=totals(h).total;});
+      const arr=Object.keys(cats).map(function(k){return cats[k];}).sort(function(a,b){return b.items.length-a.items.length;});
+      return `<div class="eyebrow" style="color:var(--muted);margin-top:18px">Historique &amp; factures · ${done.length}</div>`+
+        arr.map(function(c){const col=SVC_COLORS[c.svc]||'#12A268';return `<button class="card" data-act="histcat:${esc(c.svc)}" style="width:100%;text-align:left;padding:14px;margin-top:10px;display:block"><div class="row" style="gap:12px;align-items:center"><span style="width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex:none;background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${svcIco(c.svc)}</span><div style="flex:1"><div class="row between"><b style="font-size:15px">${esc(svcNm(c.svc))}</b><span class="chip" style="padding:3px 9px">${c.items.length}</span></div><div class="mini" style="margin-top:2px">${c.items.length} prestation${c.items.length>1?'s':''} · ${eur(c.total)}</div></div><span class="mini" style="color:var(--teal-deep);font-weight:700">›</span></div></button>`;}).join('');
+    }
+    const cat=S.histCat;
+    const items=done.filter(function(h){return (h.svc||'autre')===cat;});
+    if(!items.length){S.histCat=null;return clientHistoryBlock(done);}
+    const provs={};
+    items.forEach(function(h){const p=h.provider||{};const key=h.providerUid||p.nm||'—';(provs[key]=provs[key]||{nm:p.nm||'Prestataire',ini:p.ini||inits(p.nm||'--'),photo:p.photo||'',items:[]});provs[key].items.push(h);});
+    const parr=Object.keys(provs).map(function(k){return provs[k];}).sort(function(a,b){return b.items.length-a.items.length;});
+    const header=`<div class="row between" style="margin-top:18px;align-items:center"><button class="reset" data-act="histcat-back" style="font-weight:700">← Catégories</button><span class="eyebrow" style="color:var(--muted)">${esc(svcNm(cat))} · ${items.length}</span></div>`;
+    const body=parr.map(function(p){const ph=`<div class="row" style="gap:10px;align-items:center;margin-top:16px"><div class="avatar" style="width:34px;height:34px;font-size:13px${p.photo?`;background-image:url('${p.photo}');background-size:cover;background-position:center;color:transparent`:''}">${esc(p.ini||'--')}</div><b style="font-size:14px;flex:1">${esc(p.nm)}</b><span class="chip" style="padding:2px 9px">${p.items.length}</span></div>`;return ph+p.items.map(function(h){return histCard(h,idx.get(h));}).join('');}).join('');
+    return header+body;
+  }
   function clientWallet(){
     const done=doneHistory();
     const active=activeMissions();
@@ -4999,7 +5024,7 @@
     const activeBlock=active.length?`<div style="margin-top:16px"><div class="eyebrow" style="color:var(--teal-deep)">${I.bolt} En cours · ${active.length}</div>${active.map(activeCard).join('')}</div>`:'';
     const newBtn=`<button class="btn ${active.length?'ghost':'primary'} sm" data-cnav="home" style="margin-top:14px">${I.search} Passer une nouvelle commande</button>`;
     const summary='';
-    const list=done.length?`<div class="eyebrow" style="color:var(--muted);margin-top:18px">Historique &amp; factures · ${done.length}</div>`+done.map((h,i)=>{const t=totals(h);return `<div class="card" style="padding:14px;margin-top:10px"><button data-act="histinv:${i}" style="width:100%;text-align:left;background:none;border:none;padding:0;display:block;cursor:pointer"><div class="row" style="gap:11px"><div class="avatar" style="width:40px;height:40px;font-size:14px${h.provider&&h.provider.photo?`;background-image:url('${h.provider.photo}');background-size:cover;background-position:center;color:transparent`:''}">${h.provider?esc(h.provider.ini||'--'):'--'}</div><div style="flex:1"><div class="row between"><b style="font-size:14px">${esc(h.svcName||'Prestation')}</b><span class="money" style="font-weight:700">${eur(t.total)}</span></div><div class="mini" style="margin-top:2px">${esc(h.when||'')}${h.provider&&h.provider.nm?' · '+esc(h.provider.nm):''}</div></div></div><div class="row between" style="margin-top:10px"><span class="chip good" style="padding:4px 10px">${I.check} Bien exécuté &amp; réglé</span><span class="mini" style="color:var(--teal-deep);font-weight:700">${I.card} Voir ma facture ›</span></div></button><button class="btn ghost sm" data-act="renew:${i}" style="margin-top:11px">${I.repeat} Refaire${h.provider&&h.provider.nm?' avec '+esc(h.provider.nm.split(' ')[0]):''}</button></div>`;}).join(''):(active.length?'':(S._clientReqLoading?`<div style="margin-top:12px">${reqSkeleton(2)}</div>`:`<div class="card" style="padding:26px 24px;margin-top:12px;text-align:center;color:var(--muted)"><div style="display:flex;justify-content:center">${octoMini(72,'wave')}</div><div style="margin-top:10px;font-weight:600;color:var(--ink-soft)">Aucune prestation pour l’instant</div><div style="margin-top:4px">Vos réservations et reçus apparaîtront ici.</div></div>`));
+    const list=done.length?clientHistoryBlock(done):(active.length?'':(S._clientReqLoading?`<div style="margin-top:12px">${reqSkeleton(2)}</div>`:`<div class="card" style="padding:26px 24px;margin-top:12px;text-align:center;color:var(--muted)"><div style="display:flex;justify-content:center">${octoMini(72,'wave')}</div><div style="margin-top:10px;font-weight:600;color:var(--ink-soft)">Aucune prestation pour l’instant</div><div style="margin-top:4px">Vos réservations et reçus apparaîtront ici.</div></div>`));
     const rec=S.recurring.length?`<div style="margin-top:16px"><div class="eyebrow" style="color:var(--muted)">Prestations régulières</div>${S.recurring.map(r=>`<div class="card" style="padding:13px;margin-top:8px"><div class="row between"><b style="font-size:14px">${r.svcName}</b><span class="chip" style="padding:3px 9px">${I.repeat} ${r.short}</span></div><div class="row between" style="margin-top:3px"><span class="mini">${r.slot} · ${r.zone}</span><span class="chip good" style="padding:3px 9px">${I.check} Actif</span></div></div>`).join('')}</div>`:'';
     return `<div class="pad"><div style="height:12px"></div><div class="row between" style="align-items:flex-start"><div><span class="eyebrow">${I.wallet} Mes réservations</span><div class="h-hello">${active.length?'Vos demandes en cours':'Mes réservations'}</div></div><div class="row" style="gap:9px;align-items:center">${!isDemo()?`<button class="iconbtn" data-act="refresh-requests" aria-label="Rafraîchir mes réservations" title="Rafraîchir">${I.repeat}</button>`:''}${avatarPhoto(S.account&&S.account.photo,inits(((S.account&&S.account.name)||(S.clientForm&&S.clientForm.name)||'Ti')),'')}</div></div>${active.length?notifCTA('client'):''}${activeBlock}${newBtn}${summary}${rec}${list}<div style="height:6px"></div></div>${clientNavbar()}`;
   }
@@ -6816,7 +6841,7 @@
     if(b.dataset.act&&b.dataset.act.indexOf('del-demand:')===0){const id=b.dataset.act.slice('del-demand:'.length);const m=(S.missions||[]).find(function(x){return (x._id||'')===id;});if(m){cancelActiveRequest(m);removeMission(m);if(S.mission===m)S.mission=null;cacheClientLocal();toast('Demande supprimée');}render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('dismiss-mission:')===0){const id=b.dataset.act.slice('dismiss-mission:'.length);const m=(S.missions||[]).find(function(x){return (x._id||'')===id;});if(m){removeMission(m);if(S.mission===m)S.mission=null;cacheClientLocal();}render();return;}
     if(b.dataset.follow){const orow=b.closest('.swipe-row');if(orow&&orow.classList.contains('open')){orow.classList.remove('open');return;}const mm=(S.missions||[]).find(function(x){return (x._id||'')===b.dataset.follow;});if(mm){S.mission=mm;S.cancelAsk=false;S.clientNav='wallet';render();}return;}
-    if(b.dataset.cnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.invoiceId=null;S.histInvoice=null;S.addrForm=null;S.profileForm=null;S.mission=null;S.cancelAsk=false;S.catView=null;S.clientNav=b.dataset.cnav;if(b.dataset.cnav==='wallet')refreshClientRequests();render();return;}
+    if(b.dataset.cnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.invoiceId=null;S.histInvoice=null;S.histCat=null;S.addrForm=null;S.profileForm=null;S.mission=null;S.cancelAsk=false;S.catView=null;S.clientNav=b.dataset.cnav;if(b.dataset.cnav==='wallet')refreshClientRequests();render();return;}
     if(b.dataset.pnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.proStmt=false;S.commInvId=null;S.commStmt=false;S.invoiceId=null;S.proConflict=null;S.proNav=b.dataset.pnav;render();return;}
     if(b.dataset.cnav2){S.concOrder=null;S.concView=null;S.concForm=null;S.concInvoice=null;S.concNav=b.dataset.cnav2;render();return;}
     if(b.dataset.concOc){const c=concClient(b.dataset.concOc);if(c&&c.authorized){S.concOrder.clientId=c.id;S.concOrder.step='service';render();}else{toast('La carte de ce client doit d’abord être autorisée');}return;}
@@ -6894,6 +6919,8 @@
       const mm=minSlotToday(S.draft);if(mm>=0&&!S.draft.slotFlex&&slotToMin(S.draft.slot)<mm){toast('Choisissez une heure à venir');renderConfig();return;}proceedToPay();}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('comm-invoice:')===0){S.commInvId=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('invoice:')===0){S.invoiceId=b.dataset.act.split(':')[1];render();return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('histcat:')===0){S.histCat=b.dataset.act.split(':')[1]||null;render();try{view.scrollTop=0;}catch(_){}return;}
+    if(b.dataset.act==='histcat-back'){S.histCat=null;render();try{view.scrollTop=0;}catch(_){}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('histinv:')===0){const h=doneHistory()[+b.dataset.act.split(':')[1]];if(h)downloadInvoicePdf(h);return;}
     if(b.dataset.act&&b.dataset.act.indexOf('renew:')===0){const h=doneHistory()[+b.dataset.act.split(':')[1]];if(h)renewMission(h);return;}
     if(b.dataset.act==='refresh-requests'){manualRefreshRequests();return;}
@@ -7687,6 +7714,7 @@
     if(S.referral){S.referral=false;render();return;}
     if(S.share){S.share=false;render();return;}
     if(S.chat){S.chat=false;render();return;}
+    if(S.histCat&&S.persona==='client'&&S.clientNav==='wallet'){S.histCat=null;render();return;}
     if(S.persona==='admin'){if(S.admin.view==='fact'&&S.admin.fact){S.admin.fact=null;render();return;}if(S.admin.view!=='home'){S.admin.view='home';S.admin.sel=null;S.admin.fact=null;render();}else{S.persona='client';render();}return;}
     if(S.persona==='concierge'){
       if(S.concRetInv){S.concRetInv=false;render();return;}
