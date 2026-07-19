@@ -434,6 +434,10 @@
 
   .stack{display:flex;flex-direction:column;gap:13px}
   .footcta{position:sticky;bottom:0;padding:14px 18px calc(14px + env(safe-area-inset-bottom));background:linear-gradient(to top,var(--sand) 62%,transparent);margin-top:auto}
+  .sigwrap{position:relative;background:#fff;border:1.5px solid var(--hair);border-radius:16px;margin-top:14px;overflow:hidden;touch-action:none}
+  .sigcanvas{display:block;width:100%;height:210px;touch-action:none;cursor:crosshair;background:#fff}
+  .sigbase{position:absolute;left:22px;right:22px;bottom:46px;border-bottom:1.5px dashed var(--muted);pointer-events:none}
+  .sig-clear{position:absolute;top:10px;right:10px;background:var(--sand);border:1px solid var(--hair);border-radius:999px;padding:6px 13px;font-size:12px;font-weight:700;color:var(--ink-soft);cursor:pointer}
 
   .cats{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:14px}
   .cat{padding:15px 14px;text-align:center;border-radius:var(--r-md);background:var(--card);border:1px solid var(--hair);box-shadow:0 1px 2px -1px var(--shadow),0 10px 22px -20px var(--shadow);transition:transform .16s,border-color .2s,box-shadow .22s;position:relative;overflow:hidden}
@@ -2025,7 +2029,7 @@
     proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proReqSlot:null,proReqPick:false,proMissions:[],proSkipped:[],proConflict:null,proStmt:false,commInvId:null,commStmt:false,signupKind:null,concSignup:null,concStatus:'approved',adminConcierges:[],
     proHistory:PRO_HISTORY(),
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),
-    chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,histInvoice:null,histCat:null,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,delAcct:false,
+    chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,histInvoice:null,histCat:null,signPad:false,colisProc:false,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,delAcct:false,
     proJobsTotal:214,fidTiers:FID_TIERS.map(t=>({...t})),referralCode:'MARILOU-SBH',
     filleuls:[{name:'Kevin Questel',status:'valide',bonus:40},{name:'Rosa Almeida',status:'attente',bonus:0}],
     admin:{view:'home',sel:null,fact:null},adminLedger:[],adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,adminPrices:ADMIN_PRICES(),
@@ -2351,6 +2355,25 @@
       }catch(e){rej(e);}
     });
     return _leafletP;
+  }
+  // Après chaque rendu : active le tracé au doigt / stylet sur le canevas de signature.
+  function mountSignPads(){
+    const cvs=view.querySelector('canvas[data-signpad]:not([data-sigready])');
+    if(!cvs)return;
+    cvs.setAttribute('data-sigready','1');
+    const ctx=cvs.getContext('2d');
+    // Résolution physique (hi-dpi) pour un trait net ; on cale la taille sur l'affichage.
+    const rect=cvs.getBoundingClientRect();const dpr=Math.min(window.devicePixelRatio||1,3);
+    cvs.width=Math.max(1,Math.round(rect.width*dpr));cvs.height=Math.max(1,Math.round(rect.height*dpr));
+    ctx.scale(dpr,dpr);ctx.lineWidth=2.6;ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='#1c1830';
+    let drawing=false,last=null;
+    function pos(e){const r=cvs.getBoundingClientRect();const t=(e.touches&&e.touches[0])||e;return {x:t.clientX-r.left,y:t.clientY-r.top};}
+    function start(e){e.preventDefault();drawing=true;last=pos(e);}
+    function move(e){if(!drawing)return;e.preventDefault();const p=pos(e);ctx.beginPath();ctx.moveTo(last.x,last.y);ctx.lineTo(p.x,p.y);ctx.stroke();last=p;cvs.setAttribute('data-dirty','1');}
+    function end(){drawing=false;}
+    if(window.PointerEvent){cvs.addEventListener('pointerdown',start);cvs.addEventListener('pointermove',move);window.addEventListener('pointerup',end);}
+    else{cvs.addEventListener('mousedown',start);cvs.addEventListener('mousemove',move);window.addEventListener('mouseup',end);cvs.addEventListener('touchstart',start,{passive:false});cvs.addEventListener('touchmove',move,{passive:false});cvs.addEventListener('touchend',end);}
+    S._sigCanvas=cvs;
   }
   // Après chaque rendu : monte une vraie carte dans chaque conteneur [data-leafmap].
   function mountMaps(){
@@ -3921,7 +3944,7 @@
     const same=(key===_scr);const keepScroll=same||(scrollGroup(key)===scrollGroup(_scr));const top=view.scrollTop;
     view.innerHTML='<div'+(same?'':' class="anim"')+'>'+brandBarHtml(key)+html+'</div>';
     i18nApply(view);
-    view.scrollTop=keepScroll?top:0;_scr=key;updateHomeFab();mountMaps();
+    view.scrollTop=keepScroll?top:0;_scr=key;updateHomeFab();mountMaps();mountSignPads();
     // iOS : retire la suggestion « Préremplir le contact » (barre du clavier) sur les
     // champs de texte libre où elle n'a aucun sens. Les vrais champs de contact
     // (e-mail, téléphone, mot de passe) gardent l'auto-remplissage natif.
@@ -4781,6 +4804,7 @@
     if(S.share)return shareCard();
     if(S.addrForm)return clientAddrEdit();
     if(S.advantages)return advantagesScreen();
+    if(S.signPad&&m)return colisSignPad(m);
     if(S.colisProc&&m)return colisProcuration(m);
     if(S.support&&m)return supportChat();
     if(S.chat&&m)return chatScreen();
@@ -5466,6 +5490,7 @@
         if(Array.isArray(r.providerDiplomas))m.providerDiplomas=r.providerDiplomas;
         if(r.clientConfirmed!=null&&m.clientConfirmed!==r.clientConfirmed){m.clientConfirmed=r.clientConfirmed;touched=true;}
         if(r.colisSigned!=null&&m.colis&&m.colis.signed!==r.colisSigned){m.colis.signed=r.colisSigned;m.colis.signedAt=m.colis.signedAt||r.colisSignedAt||Date.now();touched=true;}
+        if(r.colisSignature&&m.colis&&!m.colis.signature){m.colis.signature=r.colisSignature;touched=true;}
         // Filet de sécurité : dès que la demande est prise en charge, le client DOIT
         // avoir un artisan à afficher, même si son nom n'a pas encore été renseigné —
         // sinon l'écran de validation (qui lit provider.nm) planterait et la
@@ -6424,6 +6449,19 @@
       :`${c.signed?`<div class="banner teal" style="margin-top:12px">${I.check}<span>Procuration <b>signée</b> — votre prestataire a tout le nécessaire.</span></div>`:`<div class="banner coral" style="margin-top:12px">${I.clock}<span><b>Signez la procuration</b> pour que le prestataire puisse retirer votre pli.</span></div><button class="btn primary" data-act="colis-sign" style="margin-top:10px">${I.check} Signer la procuration</button>`}`}
     </div>`;
   }
+  // Pavé de SIGNATURE MANUSCRITE : le client trace sa signature au doigt / stylet sur un
+  // canevas (une vraie signature, pas une case cochée). Capturée en PNG puis apposée sur
+  // la procuration. Le tracé est initialisé après rendu par mountSignPads().
+  function colisSignPad(m){
+    const c=m.colis||{};const proNm=(m.provider&&m.provider.nm)||m.providerName||'mon prestataire';
+    return `<div class="pad"><button class="reset" data-act="sign-cancel" style="margin:8px 0 2px">← Retour</button>
+      <span class="eyebrow" style="color:var(--teal-deep)">${I.shield} Signature de la procuration</span>
+      <div class="h-hello" style="margin-top:6px">Signez avec votre doigt</div>
+      <p class="sub" style="margin-top:6px">Je soussigné(e) <b>${esc(c.recipient||(S.account&&S.account.name)||'')}</b> donne procuration à <b>${esc(proNm)}</b> pour retirer mon pli à La&nbsp;Poste · ${esc(m.poste||'')}. Tracez votre signature dans le cadre.</p>
+      <div class="sigwrap"><canvas data-signpad class="sigcanvas"></canvas><div class="sigbase"></div><button class="sig-clear" data-act="sign-clear" type="button">Effacer</button></div>
+      <p class="mini" style="text-align:center;margin-top:8px;color:var(--muted)">${I.lock} Signature horodatée, apposée électroniquement via Ti-Services.</p>
+      <div class="footcta" style="position:static;background:none;padding:16px 0 0"><button class="btn primary" data-act="sign-confirm">${I.check} Valider ma signature</button></div></div>`;
+  }
   // Document « procuration » (mandat de retrait), consultable/imprimable, signé électroniquement.
   function colisProcuration(m){
     const c=m.colis||{};const p=m.provider||{};
@@ -6435,7 +6473,7 @@
         <div class="sec"><p>Je soussigné(e) <b>${esc(c.recipient||'—')}</b>, destinataire, donne procuration à <b>${esc(proNm)}</b> pour retirer en mon nom, au bureau de poste de <b>${esc(m.poste||'—')}</b>, le(s) pli(s) et colis désignés ci-dessous.</p></div>
         <table><thead><tr><th>Type</th><th>N° d'avis</th></tr></thead><tbody>${(c.items||[]).map(function(it){return `<tr><td>${colisTypeLabel(it.type)}</td><td>${esc(it.num||'—')}</td></tr>`;}).join('')||'<tr><td colspan="2" style="text-align:center;color:#888;padding:12px">—</td></tr>'}</tbody></table>
         <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Pièces jointes</div><b>Copie de la pièce d'identité du destinataire</b><div class="mut">Le mandataire présentera sa propre pièce d'identité originale.</div></div>
-        <div class="row between sec" style="align-items:flex-end"><div><div class="mut">Fait à Saint-Barthélemy</div><div class="mut">Période&nbsp;: ${fmtShort(m.dateFrom)} → ${fmtShort(m.dateTo)}</div></div><div style="text-align:right">${c.signed?`<div style="font-family:var(--f-disp);font-size:18px;color:#151515">✍ ${esc(c.recipient||'')}</div><div class="mut">Signé électroniquement via Ti-Services<br>${c.signedAt?new Date(c.signedAt).toLocaleDateString('fr-FR'):''}</div>`:'<div class="mut">Signature en attente</div>'}</div></div>
+        <div class="row between sec" style="align-items:flex-end"><div><div class="mut">Fait à Saint-Barthélemy</div><div class="mut">Période&nbsp;: ${fmtShort(m.dateFrom)} → ${fmtShort(m.dateTo)}</div></div><div style="text-align:right">${c.signed?`${c.signature?`<img src="${c.signature}" alt="Signature du destinataire" style="height:58px;max-width:210px;object-fit:contain;display:block;margin-left:auto">`:`<div style="font-family:var(--f-disp);font-size:18px;color:#151515">✍ ${esc(c.recipient||'')}</div>`}<div class="mut">Signé électroniquement via Ti-Services<br>${c.signedAt?new Date(c.signedAt).toLocaleDateString('fr-FR'):''}</div>`:'<div class="mut">Signature en attente</div>'}</div></div>
         <div class="legal">Procuration établie via Ti-Services (mise en relation). Certains plis « à remettre en main propre » ne peuvent être retirés par un tiers. Document valable pour la période indiquée. ${ccsInline?ccsInline():''}</div>
       </div></div><div style="height:12px"></div></div>`;
   }
@@ -6864,7 +6902,7 @@
     if(b.dataset.act&&b.dataset.act.indexOf('del-demand:')===0){const id=b.dataset.act.slice('del-demand:'.length);const m=(S.missions||[]).find(function(x){return (x._id||'')===id;});if(m){cancelActiveRequest(m);removeMission(m);if(S.mission===m)S.mission=null;cacheClientLocal();toast('Demande supprimée');}render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('dismiss-mission:')===0){const id=b.dataset.act.slice('dismiss-mission:'.length);const m=(S.missions||[]).find(function(x){return (x._id||'')===id;});if(m){removeMission(m);if(S.mission===m)S.mission=null;cacheClientLocal();}render();return;}
     if(b.dataset.follow){const orow=b.closest('.swipe-row');if(orow&&orow.classList.contains('open')){orow.classList.remove('open');return;}const mm=(S.missions||[]).find(function(x){return (x._id||'')===b.dataset.follow;});if(mm){S.mission=mm;S.cancelAsk=false;S.clientNav='wallet';render();}return;}
-    if(b.dataset.cnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.invoiceId=null;S.histInvoice=null;S.histCat=null;S.addrForm=null;S.profileForm=null;S.mission=null;S.cancelAsk=false;S.catView=null;S.clientNav=b.dataset.cnav;if(b.dataset.cnav==='wallet')refreshClientRequests();render();return;}
+    if(b.dataset.cnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.invoiceId=null;S.histInvoice=null;S.histCat=null;S.signPad=false;S.colisProc=false;S._sigCanvas=null;S.addrForm=null;S.profileForm=null;S.mission=null;S.cancelAsk=false;S.catView=null;S.clientNav=b.dataset.cnav;if(b.dataset.cnav==='wallet')refreshClientRequests();render();return;}
     if(b.dataset.pnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.proStmt=false;S.commInvId=null;S.commStmt=false;S.invoiceId=null;S.proConflict=null;S.proNav=b.dataset.pnav;render();return;}
     if(b.dataset.cnav2){S.concOrder=null;S.concView=null;S.concForm=null;S.concInvoice=null;S.concNav=b.dataset.cnav2;render();return;}
     if(b.dataset.concOc){const c=concClient(b.dataset.concOc);if(c&&c.authorized){S.concOrder.clientId=c.id;S.concOrder.step='service';render();}else{toast('La carte de ce client doit d’abord être autorisée');}return;}
@@ -6971,7 +7009,10 @@
     // Garde d'enfants : après l'appel, le client CONFIRME la garde…
     if(b.dataset.act==='baby-confirm'){const m=S.mission;if(!m)return;m.clientConfirmed=true;S.babyRepick=false;pushReqUpdate(m,{clientConfirmed:true,clientConfirmedAt:Date.now()});render();toast('Garde confirmée ✓');return;}
     // ——— Colis : signature de la procuration, ouverture du document, tournée ———
-    if(b.dataset.act==='colis-sign'){const m=S.mission;if(m&&m.colis){m.colis.signed=true;m.colis.signedAt=Date.now();pushReqUpdate(m,{colisSigned:true,colisSignedAt:Date.now()});render();toast('Procuration signée ✓');}return;}
+    if(b.dataset.act==='colis-sign'){S.signPad=true;S._sigCanvas=null;render();return;}
+    if(b.dataset.act==='sign-cancel'){S.signPad=false;S._sigCanvas=null;render();return;}
+    if(b.dataset.act==='sign-clear'){const cv=S._sigCanvas;if(cv){const cx=cv.getContext('2d');cx.clearRect(0,0,cv.width,cv.height);cv.removeAttribute('data-dirty');}return;}
+    if(b.dataset.act==='sign-confirm'){const cv=S._sigCanvas;if(!cv||!cv.getAttribute('data-dirty')){toast('Tracez d’abord votre signature');return;}let data='';try{data=cv.toDataURL('image/png');}catch(_){}const m=S.mission;if(m&&m.colis){m.colis.signed=true;m.colis.signedAt=Date.now();m.colis.signature=data;pushReqUpdate(m,{colisSigned:true,colisSignedAt:Date.now(),colisSignature:data});}S.signPad=false;S._sigCanvas=null;render();toast('Procuration signée ✓');return;}
     if(b.dataset.act==='colis-proc'){S.colisProc=true;render();return;}
     if(b.dataset.act==='colis-proc-close'){S.colisProc=false;render();return;}
     if(b.dataset.act==='colis-tournee'){S.colisTournee=true;render();return;}
@@ -7731,6 +7772,8 @@
     if(S.cardForm){S.cardForm=false;render();return;}
     if(S.clientInv){S.clientInv=false;render();return;}
     if(S.histInvoice){S.histInvoice=null;render();return;}
+    if(S.signPad){S.signPad=false;S._sigCanvas=null;render();return;}
+    if(S.colisProc){S.colisProc=false;render();return;}
     if(S.advantages){S.advantages=false;render();return;}
     if(S.invoiceId){S.invoiceId=null;render();return;}
     if(S.interv){S.interv=false;render();return;}
@@ -8027,7 +8070,9 @@
         if(active.indexOf(r.status)<0)continue;
         let det={};try{const s=await FB.f.getDoc(FB.f.doc(FB.db,'requests',docu.id,'private','details'));det=s.exists()?s.data():{};}catch(_){}
         const base=findSvc(r.service)||{id:r.service,nm:r.serviceName||svcNm(r.service),rate:r.rate||svcBase(r.service)};
-        const m=Object.assign(newMission(base),{_id:'pm'+docu.id,reqId:docu.id,status:r.status,svc:r.service,svcName:r.serviceName||svcNm(r.service),rate:r.rate,duration:r.duration||1,unit:r.unit||'h',dateISO:r.dateISO||'',acts:r.acts||null,when:r.when||'',slot:(r.acceptedSlot||r.slot||''),slotFlex:r.slotFlex||0,zone:r.zone||det.zone||'',address:det.address||'',geo:det.geo||null,access:det.access||'',boost:r.boost||0,tip:r.tip||0,notes:r.notes||'',photos:(r.photos||[]).slice(),clientName:r.clientName||det.clientName||'',clientPhoto:r.clientPhoto||det.clientPhoto||null,provider:Object.assign({},PROVIDERS[r.service]||{},{nm:S.proName||'Vous'})});
+        const m=Object.assign(newMission(base),{_id:'pm'+docu.id,reqId:docu.id,status:r.status,svc:r.service,svcName:r.serviceName||svcNm(r.service),rate:r.rate,duration:r.duration||1,unit:r.unit||'h',dateISO:r.dateISO||'',acts:r.acts||null,when:r.when||'',slot:(r.acceptedSlot||r.slot||''),slotFlex:r.slotFlex||0,zone:r.zone||det.zone||'',address:det.address||'',geo:det.geo||null,access:det.access||'',boost:r.boost||0,tip:r.tip||0,notes:r.notes||'',photos:(r.photos||[]).slice(),clientName:r.clientName||det.clientName||'',clientPhoto:r.clientPhoto||det.clientPhoto||null,clientPhone:r.clientPhone||det.clientPhone||'',provider:Object.assign({},PROVIDERS[r.service]||{},{nm:S.proName||'Vous'})});
+        // Colis : reprendre le dossier de retrait + l'état de signature (survivent au rechargement).
+        if(r.service==='colis'){m.poste=r.poste||det.poste||'';m.dateFrom=r.dateFrom||det.dateFrom||'';m.dateTo=r.dateTo||det.dateTo||'';if(det.colis)m.colis=Object.assign({},det.colis,{signed:!!r.colisSigned,signedAt:r.colisSignedAt||(det.colis&&det.colis.signedAt)||null,signature:r.colisSignature||(det.colis&&det.colis.signature)||''});}
         if(Array.isArray(r.messages))m.chat=r.messages.slice().sort(function(a,b){return (a.at||0)-(b.at||0);});
         miss.push(m);
       }
@@ -8378,7 +8423,7 @@
       const base=findSvc(req.service)||{id:req.service,nm:req.serviceName||svcNm(req.service),rate:req.rate||svcBase(req.service)};
       S.mission=Object.assign(newMission(base),{reqId:reqId,status:'accepted',svc:req.service,svcName:req.serviceName||svcNm(req.service),rate:req.rate,duration:req.duration||1,unit:req.unit||'h',acts:req.acts||null,when:req.when||'',slot:acceptedSlot,slotFlex:req.slotFlex||0,proposedSlot:req.slotFlex?acceptedSlot:null,zone:req.zone||det.zone||'',address:det.address||'',geo:det.geo||null,access:det.access||'',boost:req.boost||0,notes:req.notes||'',photos:(req.photos||[]).slice(),clientName:req.clientName||det.clientName||'',clientPhoto:req.clientPhoto||det.clientPhoto||null,clientPhone:det.clientPhone||'',provider:Object.assign({},PROVIDERS[req.service]||{},{nm:S.proName||'Vous'})});
       // Colis : reprend la fenêtre de dates + le dossier de retrait (pièces privées).
-      if(req.service==='colis'){S.mission.poste=req.poste||det.poste||'';S.mission.dateFrom=req.dateFrom||det.dateFrom||'';S.mission.dateTo=req.dateTo||det.dateTo||'';if(det.colis){S.mission.colis=Object.assign({signed:!!req.colisSigned},det.colis);}}
+      if(req.service==='colis'){S.mission.poste=req.poste||det.poste||'';S.mission.dateFrom=req.dateFrom||det.dateFrom||'';S.mission.dateTo=req.dateTo||det.dateTo||'';if(det.colis){S.mission.colis=Object.assign({},det.colis,{signed:!!req.colisSigned,signedAt:req.colisSignedAt||(det.colis&&det.colis.signedAt)||null,signature:req.colisSignature||(det.colis&&det.colis.signature)||''});}}
       proAddMission(S.mission);watchRequest(reqId);S._accepting=null;S.proReqView=null;S.proReqSlot=null;S.proReqPick=false;S.proNav='home';render();burstConfetti();toast('Mission acceptée — à vous de jouer !');
     }catch(e){console.warn('accept failed',e);S._accepting=null;S.proReqView=null;S.proReqSlot=null;S.proReqPick=false;S.proNav='home';render();toast('Trop tard — cette mission vient d’être prise');}
   }
