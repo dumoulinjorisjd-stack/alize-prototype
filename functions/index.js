@@ -375,6 +375,39 @@ exports.notifyArtisanApproved = onDocumentUpdated('artisans/{artisanId}', async 
 });
 
 /**
+ * notifyServiceAddition : un artisan DÉJÀ inscrit a demandé à proposer un nouveau
+ * métier (ajout dans `pendingCats`). On alerte l'admin par e-mail pour qu'il valide
+ * ou refuse depuis la console. Tant que l'admin n'a pas déplacé le métier dans `cats`
+ * (lui seul le peut, cf. règles), il n'est ni matché ni visible côté client.
+ */
+const ADMIN_EMAIL = 'contact@ti-services.fr';
+exports.notifyServiceAddition = onDocumentUpdated('artisans/{artisanId}', async (event) => {
+  const before = (event.data && event.data.before && event.data.before.data()) || {};
+  const after = (event.data && event.data.after && event.data.after.data()) || {};
+  const bp = Array.isArray(before.pendingCats) ? before.pendingCats : [];
+  const ap = Array.isArray(after.pendingCats) ? after.pendingCats : [];
+  const added = ap.filter((c) => bp.indexOf(c) < 0);
+  if (!added.length) return;
+
+  const db = getFirestore();
+  const name = (after.name || 'Un artisan').toString().slice(0, 80);
+  const labels = added.map((c) => (c === 'autre'
+    ? ('Autre : ' + (after.pendingOther || '').toString().slice(0, 80))
+    : c)).join(', ');
+  try {
+    await db.collection('mail').add({
+      to: ADMIN_EMAIL,
+      message: {
+        subject: 'Ti-Services · Métier à valider — ' + name,
+        html: '<p><b>' + name + '</b> demande à proposer un nouveau métier sur Ti-Services :</p>' +
+              '<p style="font-size:16px"><b>' + labels + '</b></p>' +
+              '<p>Ouvrez la console admin, puis la fiche de l\'artisan, pour vérifier (assurance — et diplômes pour la garde d\'enfants) et <b>valider</b> ou <b>refuser</b> le métier. Tant qu\'il n\'est pas validé, il n\'est pas proposé aux clients.</p>',
+      },
+    });
+  } catch (e) { console.warn('service add notify', e); }
+});
+
+/**
  * notifyNewMessage : à chaque nouveau message dans la messagerie interne d'une
  * demande (champ `messages` du document requests/{reqId}), envoie une
  * notification push (FCM Web Push) au DESTINATAIRE — même application fermée,

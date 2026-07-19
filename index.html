@@ -2018,7 +2018,7 @@
     addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,
     concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,concRetroPaid:'',concIban:'',concIbanHolder:'',concLegal:'',concSiret:'',concAddress:'',retroRate:8,founderTaken:0,
     sepaIban:(function(){try{return localStorage.getItem('ts_sepa_iban')||'';}catch(_){return '';}})(),concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,
-    proPhoto:null,proStatus:'approved',proFounder:true,proNotifPush:true,proNotifWa:true,proPhone:'0690 00 00 00',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:'',photo:''},
+    proPhoto:null,proStatus:'approved',proFounder:true,proNotifPush:true,proNotifWa:true,proPhone:'0690 00 00 00',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proPendingCats:[],proPendingOther:'',proAddView:false,proAddForm:null,proForm:{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:'',photo:''},
     proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proReqSlot:null,proReqPick:false,proMissions:[],proSkipped:[],proConflict:null,proStmt:false,commInvId:null,commStmt:false,signupKind:null,concSignup:null,concStatus:'approved',adminConcierges:[],
     proHistory:PRO_HISTORY(),
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),
@@ -2473,6 +2473,11 @@
     }catch(e){console.warn('i18n',e);}
   }
   var EN_DICT={
+    "Mes métiers":"My trades",
+    "Ajouter":"Add",
+    "Ajouter un métier":"Add a trade",
+    "Un nouveau service ?":"A new service?",
+    "Envoyer pour validation":"Submit for review",
     "💛 Pourboire du client":"💛 Tip from the client",
     "💛 Remercier votre artisan ?":"💛 Thank your pro?",
     "Un pourboire facultatif, versé en totalité à l'artisan — vous décidez selon votre satisfaction.":"An optional tip, paid in full to the pro — you decide based on how satisfied you are.",
@@ -3031,6 +3036,11 @@
   var TIER_PT={'bronze':'Bronze','argent':'Prata','or':'Ouro','platine':'Platina','diamant':'Diamante'};
   var DOW_PT={'lun':'Seg','mar':'Ter','mer':'Qua','jeu':'Qui','ven':'Sex','sam':'Sáb','dim':'Dom'};
   var PT_DICT={
+    "Mes métiers":"Os meus ofícios",
+    "Ajouter":"Adicionar",
+    "Ajouter un métier":"Adicionar um ofício",
+    "Un nouveau service ?":"Um novo serviço?",
+    "Envoyer pour validation":"Enviar para validação",
     "💛 Pourboire du client":"💛 Gorjeta do cliente",
     "💛 Remercier votre artisan ?":"💛 Agradecer ao seu profissional?",
     "Un pourboire facultatif, versé en totalité à l'artisan — vous décidez selon votre satisfaction.":"Uma gorjeta opcional, paga integralmente ao profissional — decide consoante a sua satisfação.",
@@ -3856,7 +3866,7 @@
     if(S.cardForm||S.clientInv||S.histInvoice||S.advantages||S.invoiceId||S.interv||S.referral||S.share||S.chat||S.support||S.addrForm||S.finishing||S.disputing||S.profileForm||S.draft||S.payStep)return true;
     if(S.persona==='admin')return S.admin.view!=='home';
     if(S.persona==='concierge')return !!(S.concRetInv||S.concInvoice||S.concForm||S.concClientView||S.concOrder||S.concView||S.concNav!=='home');
-    if(S.persona==='pro'){if(S.proDocsView||S.proPayoutView||S.proMollieView||S.proReqView||S.mission)return true;if(S.proStatus==='pending')return !isRealArtisan();if(S.proStatus==='signup')return true;return S.proNav!=='home';}
+    if(S.persona==='pro'){if(S.proAddView||S.proDocsView||S.proPayoutView||S.proMollieView||S.proReqView||S.mission)return true;if(S.proStatus==='pending')return !isRealArtisan();if(S.proStatus==='signup')return true;return S.proNav!=='home';}
     if(S.mission)return true;
     return S.clientNav!=='home';
   }
@@ -4222,6 +4232,11 @@
           <div class="row between" style="margin-top:6px"><span class="sub">Palier fidélité · commission</span><b>${founderActiveFor(a)?`<span class="chip founder-chip" style="padding:2px 8px">${I.star} Ambassadeur</span> ${FOUNDER_COMM_PCT} %`:`${a.founder?`<span class="chip" style="padding:2px 8px;background:var(--hair);color:var(--muted)">${I.star} Ambassadeur — expiré</span> `:''}<span class="chip" style="padding:2px 8px;background:${fidColor(fidFor(a.jobs).key)}22;color:${fidColor(fidFor(a.jobs).key)}">${I.star} ${fidFor(a.jobs).nm}</span> ${fidFor(a.jobs).pct} %`}</b></div>
           ${a.status==='refuse'&&a.reason?`<hr class="dashed"><div class="row between"><span class="sub">Motif du refus</span><b style="color:var(--coral-deep);text-align:right;max-width:60%">${a.reason}</b></div>`:''}
         </div>
+        ${(a.pendingCats&&a.pendingCats.length)?`<div class="card" style="padding:16px;margin-top:12px;border-left:4px solid var(--warn)">
+          <span class="eyebrow" style="color:var(--warn)">${I.clock} Métiers à valider</span>
+          <p class="mini" style="margin-top:6px">L'artisan demande à proposer ${a.pendingCats.length>1?'ces nouveaux métiers':'ce nouveau métier'}. Vérifiez l'assurance (et les diplômes pour la garde d'enfants) avant de valider.</p>
+          ${a.pendingCats.map(function(sv){const lbl=sv==='autre'?('Autre'+(a.pendingOther?' : '+esc(a.pendingOther):'')):esc(svcNm(sv));return `<div class="row between" style="margin-top:11px;align-items:center;gap:8px"><b style="font-size:14px;display:flex;gap:7px;align-items:center">${sv==='autre'?I.other:svcIco(sv)} ${lbl}</b><span class="row" style="gap:6px;flex:none"><button class="btn good sm" data-adm="valcat:${a.id}:${sv}" style="width:auto;padding:7px 12px">${I.check} Valider</button><button class="btn ghost sm" data-adm="refcat:${a.id}:${sv}" style="width:auto;padding:7px 12px">Refuser</button></span></div>`;}).join('')}
+        </div>`:''}
         <div class="card" style="padding:16px;margin-top:12px"><span class="eyebrow" style="color:var(--muted)">${a.status==='attente'?'Contacter avant décision':'Contacter l’artisan'}</span>${contactRow(a)}</div>
         ${a.status==='attente'?`<div class="row" style="gap:8px;margin-top:14px"><button class="btn good" data-adm="valid-art:${a.id}" ${(insStatus(a)==='valide'&&a.siret)?'':'disabled'}>Valider le prestataire</button><button class="btn ghost" data-adm="rej-art:${a.id}">Refuser</button></div>${(insStatus(a)!=='valide'||!a.siret)?`<p class="mini" style="margin-top:8px;color:var(--coral-deep)">${!a.siret?'SIRET manquant. ':''}${insStatus(a)==='none'?'Attestation d’assurance manquante. ':insStatus(a)==='attente'?'Attestation à vérifier et valider ci-dessus. ':insStatus(a)==='refuse'?'Attestation refusée. ':''}Validation du prestataire impossible tant que le dossier n'est pas complet.</p>`:''}`:''}
         ${a.status==='refuse'?`<div class="row" style="gap:8px;margin-top:14px"><button class="btn ghost" data-adm="reexam-art:${a.id}">Réexaminer la candidature</button></div>`:''}
@@ -5444,7 +5459,7 @@
     // Identité artisan : AUCUNE valeur de démo ne doit subsister (elle serait
     // affichée/facturée à la place des vraies données). Tout part à blanc ; la fiche
     // réelle est ensuite chargée depuis Firestore (loadUserProfile).
-    S.proName='';S.proLegal='';S.proAddress='';S.proSiret='';S.proStatusType='entreprise';S.proCats=[];S.proBio='';S.proPhone='';S.proPhoto=null;
+    S.proName='';S.proLegal='';S.proAddress='';S.proSiret='';S.proStatusType='entreprise';S.proCats=[];S.proPendingCats=[];S.proPendingOther='';S.proAddView=false;S.proAddForm=null;S.proBio='';S.proPhone='';S.proPhoto=null;
     S.proInsured=false;S.proInsurer='';S.proInsuranceUrl='';S.proInsuranceStatus='none';
     S.proFounder=false;S.proOnline=false;S.proRating=0;S.proStatus='pending';
     S.proMollie='none';S.proMollieOrgId='';S.proIban='';S.proIbanHolder='';S.proBic='';
@@ -5541,6 +5556,7 @@
     if(S.generalSupport)return generalSupportChat();
     if(S.proConflict)return proConflictView();
     if(S.proStatus==='signup'){ if(S.signupKind==='concierge')return conciergeSignup(); if(S.signupKind==='artisan')return proSignup(); return proTypeChoice(); }
+    if(S.proAddView)return proAddService();
     if(S.proDocsView)return proDocs();
     if(S.proMollieView)return proMollieActivate();
     if(S.proPayoutView)return proPayout();
@@ -6328,6 +6344,46 @@
       <div class="banner teal" style="margin-top:12px">${I.lock}<span><b>Paiement garanti</b> : réglé sous 48 h après chaque prestation validée — sans relance.</span></div>
       </div>${proNavbar()}`;
   }
+  // Ajout d'un métier par un artisan déjà inscrit. Le choix part en « pendingCats »
+  // (validation admin obligatoire) : il n'affecte ni le matching ni la visibilité
+  // client tant que Ti-Services ne l'a pas validé. Prix fixes imposés, comme à l'inscription.
+  function proAddService(){
+    const f=S.proAddForm||(S.proAddForm={cats:[],other:'',assur:false});
+    const owned=(S.proCats||[]).concat(S.proPendingCats||[]);
+    const avail=SERVICES.filter(function(s){return owned.indexOf(s.id)<0;});
+    const svcCard=function(s){const on=f.cats.indexOf(s.id)>=0;const c=svcColor(s.id);const forf=isCatalogForfait(s.id);const px=(S.adminPrices&&S.adminPrices[s.id]!=null?S.adminPrices[s.id]:s.rate);const rt=isForfaitSvc(s.id)?`${px} € forfait`:(forf?`dès ${minActPrice(s.id)} €`:`dès ${px} €/h`);
+      return `<button class="cat ${on?'sel':''}" data-pac="${s.id}"><div class="pick">${I.check}</div><div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[s.id]||svcIco(s.id)}</div><div class="nm">${esc(s.nm)}</div><div class="rt">${rt}</div></button>`;};
+    const otherOn=f.cats.indexOf('autre')>=0;const nSel=f.cats.length;
+    const canSubmit=nSel>0&&f.assur&&(!otherOn||(f.other||'').trim());
+    return `<div class="pad"><button class="reset" data-act="pro-add-back" style="margin:10px 0 6px">← Retour</button>
+      <span class="eyebrow">${I.plus} Ajouter un métier</span><div class="h-hello">Un nouveau service&nbsp;?</div>
+      <p class="sub" style="margin-top:6px">Choisissez le(s) métier(s) que vous voulez proposer. Chaque ajout est <b>vérifié par Ti-Services</b> avant d'être proposé aux clients.</p>
+      <div class="cats" style="margin-top:14px">${avail.map(svcCard).join('')}<button class="cat ${otherOn?'sel':''}" data-pac="autre"><div class="pick">${I.check}</div><div class="ic">${I.other}</div><div class="nm">Autre</div><div class="rt">à préciser</div></button></div>
+      ${otherOn?`<div class="field" style="margin-top:12px"><label>Précisez votre service « Autre »</label><input class="txt" data-paother value="${esc(f.other||'')}" placeholder="Ex. Vitrier, peintre, cours de plongée…"><p class="mini" style="margin-top:6px">Ce service sera examiné par Ti-Services avant d'être proposé aux clients.</p></div>`:''}
+      ${nSel?`<div class="card" style="padding:14px;margin-top:14px"><div class="eyebrow" style="color:var(--muted)">Prix fixes Ti-Services</div>${(f.cats.filter(function(id){return id!=='autre';}).map(function(id){const forf=isCatalogForfait(id);const plat=(S.adminPrices&&S.adminPrices[id]!=null)?S.adminPrices[id]:svcBase(id);return `<div class="row between" style="margin-top:8px"><span class="sub" style="display:flex;gap:8px;align-items:center">${svcIco(id)} ${esc(svcNm(id))}</span><b>${forf?('dès '+minActPrice(id)+' €'):(id==='colis'?(plat+' € / retrait'):(plat+' €/h'))}</b></div>`;}).join(''))||`<p class="mini" style="margin-top:6px;color:var(--muted)">Le service « Autre » sera tarifé par Ti-Services après examen.</p>`}</div>`:''}
+      <label style="display:flex;gap:10px;margin-top:16px;align-items:flex-start;cursor:pointer"><input type="checkbox" data-act="pro-add-assur" ${f.assur?'checked':''} style="margin-top:3px;flex:none"><span class="mini">Je certifie que mon <b>assurance responsabilité civile professionnelle couvre</b> ce(s) métier(s), et j'accepte les <b>prix fixes</b> Ti-Services.</span></label>
+      <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-act="pro-add-submit" ${canSubmit?'':'disabled'}>${I.check} Envoyer pour validation${nSel?'<span> ('+nSel+')</span>':''}</button><p class="mini" style="text-align:center;margin-top:10px;color:var(--muted)">Ti-Services est notifié et vérifie chaque ajout.</p></div>
+    </div>`;
+  }
+  // Envoi de la demande d'ajout de métier : écrit UNIQUEMENT dans pendingCats (jamais
+  // dans cats). L'admin est notifié (Cloud Function) et devra valider avant activation.
+  async function submitAddServices(){
+    const f=S.proAddForm;if(!f||!f.cats.length)return;
+    const sel=f.cats.slice();
+    const other=(f.cats.indexOf('autre')>=0)?(f.other||'').trim():'';
+    const cur=(S.proPendingCats||[]).slice();
+    sel.forEach(function(id){if(cur.indexOf(id)<0)cur.push(id);});
+    S.proPendingCats=cur; if(other)S.proPendingOther=other;
+    if(FB&&FB.auth&&FB.auth.currentUser&&!isDemo()){
+      try{
+        const patch={pendingCats:FB.f.arrayUnion.apply(null,sel),pendingAt:FB.f.serverTimestamp()};
+        if(other)patch.pendingOther=other;
+        await FB.f.updateDoc(FB.f.doc(FB.db,'artisans',FB.auth.currentUser.uid),patch);
+      }catch(e){console.warn('addServices',e);}
+    }
+    S.proAddView=false;S.proAddForm=null;render();
+    toast('Métier(s) envoyé(s) pour validation — Ti-Services vérifie votre demande.');
+  }
   // Onglet « Mon compte » : tout ce qui n'est pas revenu/factures (RIB, statut,
   // documents, parrainage, déconnexion).
   function proAccount(){
@@ -6347,6 +6403,15 @@
       <div class="card" style="padding:16px;margin-top:16px">
         <span class="eyebrow" style="color:var(--muted)">Votre statut</span>
         <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap">${S.proFounder?`<span class="chip founder-chip" style="padding:5px 11px">${I.star} Ambassadeur</span>`:''}<span class="chip good" style="padding:5px 11px">${I.check} Vérifié</span><span class="chip" style="padding:5px 11px">${I.shield} Assuré</span></div>
+      </div>
+
+      <div class="card" style="padding:16px;margin-top:16px">
+        <div class="row between" style="align-items:center"><b style="font-size:14px"><span aria-hidden="true">🛠️</span> Mes métiers</b><button class="btn ghost sm" data-act="pro-add-service" style="width:auto;padding:8px 13px">${I.plus} Ajouter</button></div>
+        <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap">
+          ${cats.map(function(c){return `<span class="chip good" style="padding:5px 11px">${I.check} ${esc(svcNm(c))}</span>`;}).join('')}
+          ${(S.proPendingCats||[]).map(function(c){return `<span class="chip warn" style="padding:5px 11px">${I.clock} ${esc(c==='autre'?('Autre'+(S.proPendingOther?' : '+S.proPendingOther:'')):svcNm(c))}</span>`;}).join('')}
+        </div>
+        ${(S.proPendingCats||[]).length?`<p class="mini" style="margin-top:11px">${I.shield} En attente de validation par Ti-Services — proposé aux clients une fois vérifié.</p>`:`<p class="mini" style="margin-top:11px;color:var(--muted)">Ajoutez un métier à tout moment. Chaque ajout est vérifié par Ti-Services avant d'être proposé aux clients.</p>`}
       </div>
 
       <div class="eyebrow" style="margin:26px 4px 6px;color:var(--muted)">Compte</div>
@@ -6497,7 +6562,7 @@
     toast('Prestation pré-remplie — vérifiez, ajustez, puis confirmez');
   }
   document.addEventListener('click',(e)=>{
-    const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actqty],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday],[data-tip]');
+    const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actqty],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday],[data-tip],[data-pac]');
     if(!b)return;
     // Un clic ISSU d'un <input type=file> (notamment déclenché par programme, ex. la
     // feuille « appareil photo / galerie ») remonte jusqu'ici : on ne le traite pas
@@ -6539,6 +6604,10 @@
       else if(act==='valid-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a&&a.insured&&a.siret){a.status='valide';adminWriteStatus(a,'valide');saveAvailability();toast('Artisan validé');}else{toast('Dossier incomplet (SIRET / assurance)');}}
       else if(act==='rej-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.status='refuse';if(!a.reason)a.reason=(!a.siret?'SIRET manquant. ':'')+(!a.insured?'Assurance manquante. ':'')||'Ne correspond pas aux critères Ti-Services';adminWriteStatus(a,'refuse');saveAvailability();}S.admin.view='home';toast('Candidature refusée — conservée dans l’historique');}
       else if(act==='reexam-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.status='attente';adminWriteStatus(a,'attente');toast('Candidature remise en attente');}}
+      // Validation d'un métier ajouté par l'artisan : on le déplace de pendingCats vers cats
+      // (seul l'admin peut écrire cats). Le métier devient alors visible/matchable côté client.
+      else if(act==='valcat'){const a=S.adminArtisans.find(x=>x.id===id);const sv=parts[2];if(a&&sv){if(!Array.isArray(a.cats))a.cats=[];if(a.cats.indexOf(sv)<0)a.cats.push(sv);a.pendingCats=(a.pendingCats||[]).filter(function(x){return x!==sv;});if(sv==='autre'&&a.pendingOther)a.other=a.pendingOther;adminWriteAddCat(a,sv);saveAvailability();toast('Métier validé — désormais proposé aux clients');}}
+      else if(act==='refcat'){const a=S.adminArtisans.find(x=>x.id===id);const sv=parts[2];if(a&&sv){a.pendingCats=(a.pendingCats||[]).filter(function(x){return x!==sv;});adminWriteRefuseCat(a,sv);toast('Métier refusé');}}
       else if(act==='valid-cli'){const cc=S.adminClients.find(x=>x.id===id);if(cc)cc.status='valide';toast('Client validé');}
       else if(act==='valid-conc'){const c=(S.adminConcierges||[]).find(x=>x.id===id);if(c&&c.siret){c.status='valide';adminWriteConcStatus(c,'valide');toast('Conciergerie validée');}else{toast('SIRET manquant');}}
       else if(act==='rej-conc'){const c=(S.adminConcierges||[]).find(x=>x.id===id);if(c){c.status='refuse';adminWriteConcStatus(c,'refuse');toast('Conciergerie refusée');}}
@@ -6616,6 +6685,8 @@
     if(b.dataset.boost!=null){if(S.draft){S.draft.boost=+b.dataset.boost;renderConfig();}return;}
     // Pourboire à la validation : montants préréglés ou saisie libre (« Autre »).
     if(b.dataset.tip!=null){const m=S.mission;if(m){const v=b.dataset.tip;if(v==='custom'){m._tipCustom=true;}else{m._tipCustom=false;m.tip=Math.max(0,+v||0);}render();}return;}
+    // Ajout de métier (artisan) : coche/décoche un service dans le formulaire d'ajout.
+    if(b.dataset.pac){const f=S.proAddForm;if(f){const id=b.dataset.pac,i=f.cats.indexOf(id);if(i>=0)f.cats.splice(i,1);else f.cats.push(id);render();}return;}
     if(b.dataset.price){const [id,dir]=b.dataset.price.split(':');if(!S.adminPrices)S.adminPrices=ADMIN_PRICES();const cur=(S.adminPrices[id]!=null)?S.adminPrices[id]:(/_j$/.test(id)?DAY_RECO:svcBase(id));S.adminPrices[id]=Math.max(5,cur+(dir==='up'?1:-1));savePrices();render();return;}
     // Grille catalogue (admin) : prix d'un acte, retrait, ajout.
     if(b.dataset.actprice){const p=b.dataset.actprice.split(':');const svc=p[0],aid=p[1],dir=p[2];const arr=ensureCatalogCopy(svc);const a=arr.find(function(x){return x.id===aid;});if(a){a.price=Math.max(5,(Number(a.price)||0)+(dir==='up'?5:-5));saveCatalog();render();}return;}
@@ -6847,6 +6918,10 @@
       case 'close-legal':S.legalView=null;render();break;
       case 'pro-docs':S.proDocsView=true;render();break;
       case 'pro-docs-close':S.proDocsView=false;render();break;
+      case 'pro-add-service':S.proAddForm={cats:[],other:'',assur:false};S.proAddView=true;render();break;
+      case 'pro-add-back':S.proAddView=false;render();break;
+      case 'pro-add-assur':if(S.proAddForm){S.proAddForm.assur=!S.proAddForm.assur;render();}break;
+      case 'pro-add-submit':submitAddServices();break;
       case 'pro-mollie':S.proMollieView=true;render();break;
       case 'pro-mollie-close':S.proMollieView=false;render();break;
       case 'mollie-start':startMollieOnboarding();break;
@@ -7113,6 +7188,7 @@
     // Pourboire libre : on met à jour le montant sans re-render (préserve le focus/curseur) ;
     // le total est recalculé à la validation. On tolère la virgule décimale française.
     const tc=e.target.closest('[data-tipcustom]');if(tc&&S.mission){const v=parseFloat(String(tc.value).replace(',','.'));S.mission.tip=(isFinite(v)&&v>0)?Math.round(v*100)/100:0;const bb=document.querySelector('[data-act="confirm-done"]');if(bb){const tt=totals(S.mission);bb.innerHTML=`${I.check} Confirmer la prestation${tt.tip?'<span> · '+eur(tt.total)+'</span>':''}`;i18nApply(bb);}}
+    const pao=e.target.closest('[data-paother]');if(pao&&S.proAddForm){S.proAddForm.other=pao.value;const sb=document.querySelector('[data-act="pro-add-submit"]');if(sb){const f=S.proAddForm;sb.disabled=!(f.cats.length>0&&f.assur&&(f.cats.indexOf('autre')<0||(f.other||'').trim()));}}
     const pf=e.target.closest('[data-pf]');if(pf){S.proForm[pf.dataset.pf]=pf.value;const pb=document.querySelector('[data-act="pro-submit"]');if(pb)pb.disabled=!proSignupOk(S.proForm);}
     const csf=e.target.closest('[data-csf]');if(csf&&S.concSignup){S.concSignup[csf.dataset.csf]=csf.value;const b2=document.querySelector('[data-act="conc-submit"]');if(b2)b2.disabled=!concSignupOk(S.concSignup);}
     const cf=e.target.closest('[data-cf]');if(cf){S.clientForm[cf.dataset.cf]=cf.value;const fb=document.querySelector('[data-act="finish-onboard"]');const c=S.clientForm;if(fb)fb.disabled=!((c.name||'').trim().length>1&&/.+@.+\..+/.test(c.email||'')&&(c.password||'').length>=6&&c.password===c.password2&&!!c.terms);}
@@ -7401,6 +7477,7 @@
     if(S.legalView){S.legalView=null;render();return;}
     if(S.showPitch){S.showPitch=false;render();return;}
     if(S.profileForm){S.profileForm=null;render();return;}
+    if(S.proAddView){S.proAddView=false;render();return;}
     if(S.proDocsView){S.proDocsView=false;render();return;}
     if(S.proPayoutView){S.proPayoutView=false;render();return;}
     if(S.cardForm){S.cardForm=false;render();return;}
@@ -7539,6 +7616,7 @@
         // (et non les valeurs par défaut de démonstration).
         S.proLegal=(ad&&(ad.legalName||ad.name))||name; S.proAddress=(ad&&ad.address)||''; S.proStatusType=(ad&&ad.statusType)||'entreprise';
         if(ad&&Array.isArray(ad.cats)&&ad.cats.length){S.proCats=ad.cats.slice();const rr=ad.rates||{};S.proRate=Math.min.apply(null,ad.cats.map(c=>(rr[c]!=null?rr[c]:svcBase(c))));}
+        if(ad){S.proPendingCats=Array.isArray(ad.pendingCats)?ad.pendingCats.slice():[];S.proPendingOther=ad.pendingOther||'';}
         if(ad){ S.proFounder=!!ad.founder; S.proFounderSince=(ad.founderSince&&ad.founderSince.toMillis)?ad.founderSince.toMillis():(typeof ad.founderSince==='number'?ad.founderSince:null); S.proFounderGross=Number(ad.founderGross)||0; S.proRating=ad.rating||0; S.proIban=ad.iban||''; S.proIbanHolder=ad.ibanHolder||''; S.proBic=ad.bic||''; S.proInsured=!!ad.insured; S.proInsurer=ad.insurer||''; S.proInsuranceUrl=ad.insuranceUrl||''; S.proInsuranceStatus=ad.insuranceStatus||(ad.status==='valide'&&ad.insured?'valide':(ad.insuranceUrl||ad.insured?'attente':'none')); S.proSiret=ad.siret||''; S.proBio=ad.bio||''; S.proDiplomas=Array.isArray(ad.diplomas)?ad.diplomas:[]; S.proDiplomaOther=ad.diplomaOther||''; S.proPhoto=ad.photo||S.proPhoto; S.proAcceptedCharte=!!ad.acceptedCharte; S.proAcceptedTerms=!!ad.acceptedTerms; S.proTermsVersion=ad.termsVersion||''; S.proTermsAt=(ad.termsAt&&ad.termsAt.toDate)?ad.termsAt.toDate():null; S.proMollie=ad.mollieStatus||'none'; S.proMollieOrgId=ad.mollieOrgId||'';
           // Revenus / missions réalisées, rechargés depuis la fiche (persistés à chaque paiement).
           S.proEarnings=ad.earnings||0; S.proJobsTotal=ad.jobsTotal||0; S.proHistory=Array.isArray(ad.history)?ad.history:[];
@@ -7813,6 +7891,9 @@
   }
   // Console admin réelle : écrit le statut de l'artisan en base (validation, refus…).
   function adminWriteStatus(a,status){ if(FB&&a&&a.real&&a.uid){ try{ FB.f.updateDoc(FB.f.doc(FB.db,'artisans',a.uid),{status:status}); }catch(_){} } }
+  // Validation admin d'un métier ajouté : cats += sv, pendingCats -= sv (admin seul).
+  function adminWriteAddCat(a,sv){ if(FB&&a&&a.real&&a.uid){ try{ const patch={cats:FB.f.arrayUnion(sv),pendingCats:FB.f.arrayRemove(sv)}; if(sv==='autre'&&a.pendingOther)patch.other=a.pendingOther; FB.f.updateDoc(FB.f.doc(FB.db,'artisans',a.uid),patch); }catch(_){} } }
+  function adminWriteRefuseCat(a,sv){ if(FB&&a&&a.real&&a.uid){ try{ FB.f.updateDoc(FB.f.doc(FB.db,'artisans',a.uid),{pendingCats:FB.f.arrayRemove(sv)}); }catch(_){} } }
   function adminWriteField(a,obj){ if(FB&&a&&a.real&&a.uid){ try{ FB.f.setDoc(FB.f.doc(FB.db,'artisans',a.uid),obj,{merge:true}); }catch(_){} } }
   // Statut d'une conciergerie écrit en base par l'admin (validation / refus).
   function adminWriteConcStatus(c,status){ if(FB&&c&&c.uid){ try{ FB.f.updateDoc(FB.f.doc(FB.db,'concierges',c.uid),{status:status}); }catch(_){} } }
@@ -7845,7 +7926,7 @@
       adminArtUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'artisans'),function(snap){
         const list=[],pending=new Set();
         snap.forEach(function(d){ const a=d.data()||{}; const cats=Array.isArray(a.cats)?a.cats:[]; const rr=a.rates||{}; const st=a.status||'attente';
-          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Artisan',status:st,type:'entreprise',cats:cats,other:a.other||'',rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,founderSince:(a.founderSince&&a.founderSince.toMillis)?a.founderSince.toMillis():(typeof a.founderSince==='number'?a.founderSince:null),founderGross:Number(a.founderGross)||0,rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,lastNoShowAt:(a.lastNoShowAt&&a.lastNoShowAt.toDate)?a.lastNoShowAt.toDate().getTime():0});
+          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Artisan',status:st,type:'entreprise',cats:cats,other:a.other||'',pendingCats:Array.isArray(a.pendingCats)?a.pendingCats:[],pendingOther:a.pendingOther||'',rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,founderSince:(a.founderSince&&a.founderSince.toMillis)?a.founderSince.toMillis():(typeof a.founderSince==='number'?a.founderSince:null),founderGross:Number(a.founderGross)||0,rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,lastNoShowAt:(a.lastNoShowAt&&a.lastNoShowAt.toDate)?a.lastNoShowAt.toDate().getTime():0});
           if(st==='attente')pending.add(d.id); });
         S.adminArtisans=list;
         // Recalcule la liste des services actifs (au moins un artisan validé) et la publie
