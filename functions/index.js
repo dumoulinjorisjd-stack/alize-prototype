@@ -650,8 +650,16 @@ exports.settleCommission = onDocumentUpdated('requests/{reqId}', async (event) =
   if (!providerUid) { console.log('settleCommission : demande sans providerUid, ignorée.'); return; }
 
   const rate = Number(after.rate) || 0;
-  const hours = (after.finalHours != null) ? Number(after.finalHours) : (Number(after.duration) || 0);
-  const base = round2(rate * hours);
+  // Base = montant de la prestation. Prestation À L'ACTE (catalogue) : somme des actes.
+  // Forfait sans acte : le prix fixe (1×). Sinon horaire : tarif × heures facturées.
+  const acts = Array.isArray(after.acts) ? after.acts : null;
+  let base;
+  if (acts && acts.length) {
+    base = round2(acts.reduce((t, a) => t + (Number(a.price) || 0) * (Number(a.qty) || 1), 0));
+  } else {
+    const hours = (after.unit === 'forfait') ? 1 : ((after.finalHours != null) ? Number(after.finalHours) : (Number(after.duration) || 1));
+    base = round2(rate * hours);
+  }
   const boost = Number(after.boost) || 0;
   // Pourboire laissé par le client à la validation : versé EN TOTALITÉ à l'artisan
   // (aucune commission Ti-Services). Il s'ajoute donc au brut ET au net.
@@ -1004,9 +1012,10 @@ function invoiceLines(r) {
     });
   } else {
     const rate = Number(r.rate) || 0;
-    const hours = (r.finalHours != null) ? Number(r.finalHours) : (Number(r.duration) || 1);
+    const forfait = r.unit === 'forfait';
+    const hours = forfait ? 1 : ((r.finalHours != null) ? Number(r.finalHours) : (Number(r.duration) || 1));
     const dayU = r.unit === 'j';
-    lines.push({ label: r.serviceName || 'Prestation', qty: hours + (dayU ? ' j' : ' h'), unit: eurTxt(rate), total: rate * hours });
+    lines.push({ label: r.serviceName || 'Prestation', qty: forfait ? 'forfait' : (hours + (dayU ? ' j' : ' h')), unit: eurTxt(rate), total: rate * hours });
     sub += rate * hours;
   }
   const maj = Math.round(sub * boost / 100);

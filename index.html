@@ -1746,7 +1746,7 @@
   function minActPrice(id){const c=catalogFor(id);return c.length?Math.min.apply(null,c.map(function(a){return Number(a.price)||0;})):0;}
   // Sous-total forfait d'une mission à l'acte (somme des actes cochés × quantité), ou null
   // si la mission n'est pas de type « catalogue » (on retombe alors sur le tarif horaire).
-  function forfaitSub(m){if(!m||!m.acts)return null;return m.acts.reduce(function(t,a){return t+(Number(a.price)||0)*(a.qty||1);},0);}
+  function forfaitSub(m){if(!m||!m.acts||!m.acts.length)return null;return m.acts.reduce(function(t,a){return t+(Number(a.price)||0)*(a.qty||1);},0);}
   // Forfait de déplacement : sous ce seuil de commande (prestations « à l'acte »), on
   // ajoute un forfait pour couvrir le déplacement du prestataire. Au-dessus, c'est offert.
   const TRAVEL_MIN=50, TRAVEL_FEE=20;
@@ -2138,7 +2138,7 @@
   // Borne l'heure proposée par l'artisan à la fenêtre acceptée par le client.
   function clampSlot(m,s){if(!m.slotFlex||!/^\d{1,2}:\d{2}$/.test(s||''))return s;const w=flexWindow(m);return minToSlot(Math.max(slotToMin(w[0]),Math.min(slotToMin(w[1]),slotToMin(s))));}
   function isForfait(m){return !!(m&&m.unit==='forfait');}
-  function billHours(m){return (m.finalHours!=null)?m.finalHours:(isForfait(m)?1:m.duration);}
+  function billHours(m){return isForfait(m)?1:((m.finalHours!=null)?m.finalHours:(m.duration||1));}
   // Tarif fixe (admin) pour la prestation ; la majoration « coup de pouce » s'ajoute par-dessus.
   // Prix fixe client. Pour un service facturé à la journée (garde d'animaux), le tarif
   // JOURNALIER est réglable par l'admin sous la clé « <svc>_j » ; sinon le tarif HORAIRE
@@ -7023,7 +7023,7 @@
       case 'pro-cancel-back':S.mission=null;S.proNav='home';render();break;
       case 'apply-cancelfee':{const m=S.mission;if(m&&m.status==='cancelled'){const c=cancelFeeCalc(m);m.feeDecision='applied';m.feeDecidedAt=Date.now();if(!isDemo())pushReqUpdate(m,{feeDecision:'applied',feeDecidedAt:Date.now()});recordCancelFee(m);const j=(S.proMissions||[]).indexOf(m);if(j>=0)S.proMissions.splice(j,1);S.mission=null;S.proNav='home';render();toast('Indemnité appliquée · +'+eur(c.net));}break;}
       case 'waive-cancelfee':{const m=S.mission;if(m&&m.status==='cancelled'){m.feeDecision='waived';m.feeDecidedAt=Date.now();if(!isDemo())pushReqUpdate(m,{feeDecision:'waived',feeDecidedAt:Date.now()});const j=(S.proMissions||[]).indexOf(m);if(j>=0)S.proMissions.splice(j,1);S.mission=null;S.proNav='home';render();toast('Vous avez renoncé à l’indemnité');}break;}
-      case 'confirm-done':{const _tt=totals(S.mission);pushMissionStatus(S.mission,{status:'paid',finalHours:billHours(S.mission),tip:_tt.tip||0,total:_tt.total});finalizePaid(S.mission);render();burstConfetti();break;}
+      case 'confirm-done':{const _tt=totals(S.mission);pushMissionStatus(S.mission,{status:'paid',tip:_tt.tip||0,total:_tt.total});finalizePaid(S.mission);render();burstConfetti();break;}
       case 'pro-reopen':S.proReopenAsk=true;render();break;
       case 'pro-reopen-cancel':S.proReopenAsk=false;render();break;
       case 'pro-reopen-confirm':reopenMission(S.mission);break;
