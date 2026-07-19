@@ -2389,7 +2389,9 @@
     if(S.persona==='concierge'){if(S.concRetInv)return 'conc:retinv';if(S.concInvoice)return 'conc:inv:'+S.concInvoice;if(S.concForm)return 'conc:form:'+(S.concForm.id||'new');if(S.concClientView)return 'conc:cv:'+S.concClientView;if(S.concOrder)return 'conc:order:'+S.concOrder.step;if(S.concView)return 'conc:view:'+S.concView;return 'conc:'+S.concNav;}
     if(S.persona==='admin')return 'admin:'+S.admin.view+':'+(S.admin.sel||'')+(S.admin.fact?':'+(S.admin.fact.mode||'')+':'+(S.admin.fact.art||'')+':'+(S.admin.fact.conc||'')+':'+(S.admin.fact.inv||''):'');
     if(S.persona==='pro')return 'pro:'+S.proStatus+':'+S.proNav+':'+(S.mission?S.mission.status:'');
-    if(!S.onboarded)return S.authView==='login'?'login':'onb:'+S.onbStep;
+    // Mode INVITÉ : un client non inscrit navigue librement (accueil, catégories,
+    // configurateur). On ne montre l'inscription/connexion que s'il l'a demandée.
+    if(!S.onboarded&&(S.authView==='login'||S.authView==='signup'))return S.authView==='login'?'login':'onb:'+S.onbStep;
     if(S.mission)return 'client:mission:'+S.mission.status;
     return 'client:'+S.clientNav;
   }
@@ -2746,6 +2748,20 @@
     "Appeler":"Call",
     "Nouvelle version — mettre à jour":"New version — update",
     "Mise à jour…":"Updating…",
+    "👋 Explorez librement":"👋 Browse freely",
+    "Compte requis seulement pour commander — c'est gratuit.":"Account only needed to order — it's free.",
+    "Mon profil":"My profile",
+    "Créez votre compte":"Create your account",
+    "La découverte est libre. Un compte — gratuit — vous permet de commander et de suivre vos prestations.":"Browsing is free. An account — free — lets you order and track your services.",
+    "Suivez vos réservations":"Track your reservations",
+    "Vos demandes en cours et passées réunies au même endroit.":"Your current and past requests in one place.",
+    "Vos adresses enregistrées":"Your saved addresses",
+    "Vos villas avec leur point GPS — réutilisées à chaque commande.":"Your villas with their GPS point — reused for every order.",
+    "Commandez en un geste":"Order in one tap",
+    "Moyen de paiement enregistré, prestations refaites en un clic.":"Saved payment method, services rebooked in one tap.",
+    "Débité seulement après la prestation validée — jamais plus que le montant annoncé.":"Charged only after the service is approved — never more than the quoted amount.",
+    "Aucune réservation pour l'instant":"No reservations yet",
+    "Créez un compte pour envoyer une demande et suivre vos prestations en direct.":"Create an account to send a request and track your services live.",
     "Un souci, un litige, une question sur cette prestation ?":"An issue, a dispute, a question about this service?",
     "Reçue par e-mail — votre justificatif de prestation.":"Received by email — your proof of service.",
     "Services à la demande · Saint-Barthélemy":"On-demand services · Saint-Barthélemy",
@@ -3467,6 +3483,20 @@
     "Appeler":"Ligar",
     "Nouvelle version — mettre à jour":"Nova versão — atualizar",
     "Mise à jour…":"A atualizar…",
+    "👋 Explorez librement":"👋 Explore livremente",
+    "Compte requis seulement pour commander — c'est gratuit.":"Conta só necessária para encomendar — é grátis.",
+    "Mon profil":"O meu perfil",
+    "Créez votre compte":"Crie a sua conta",
+    "La découverte est libre. Un compte — gratuit — vous permet de commander et de suivre vos prestations.":"A descoberta é livre. Uma conta — gratuita — permite encomendar e acompanhar os seus serviços.",
+    "Suivez vos réservations":"Acompanhe as suas reservas",
+    "Vos demandes en cours et passées réunies au même endroit.":"Os seus pedidos atuais e passados num só lugar.",
+    "Vos adresses enregistrées":"As suas moradas guardadas",
+    "Vos villas avec leur point GPS — réutilisées à chaque commande.":"As suas villas com o ponto GPS — reutilizadas em cada encomenda.",
+    "Commandez en un geste":"Encomende num gesto",
+    "Moyen de paiement enregistré, prestations refaites en un clic.":"Método de pagamento guardado, serviços repetidos num gesto.",
+    "Débité seulement après la prestation validée — jamais plus que le montant annoncé.":"Cobrado só após o serviço validado — nunca mais do que o valor anunciado.",
+    "Aucune réservation pour l'instant":"Ainda sem reservas",
+    "Créez un compte pour envoyer une demande et suivre vos prestations en direct.":"Crie uma conta para enviar um pedido e acompanhar os seus serviços em direto.",
     "Un souci, un litige, une question sur cette prestation ?":"Um problema, um litígio, uma questão sobre este serviço?",
     "Reçue par e-mail — votre justificatif de prestation.":"Recebida por e-mail — o seu comprovativo de serviço.",
     "Services à la demande · Saint-Barthélemy":"Serviços a pedido · Saint-Barthélemy",
@@ -3796,7 +3826,7 @@
   // Peut-on revenir en arrière depuis l'écran courant ? (mêmes cas que goBack)
   function canGoBack(){
     if(S.legalView||S.showPitch)return true;
-    if(!S.onboarded)return !!(S.authView||S.onbStep>0);
+    if(!S.onboarded)return !!(S.authView||S.onbStep>0||S.draft||S.payStep||S.share||S.chat||S.support||S.cardForm||S.addrForm||S.advantages);
     if(S.cardForm||S.clientInv||S.histInvoice||S.advantages||S.invoiceId||S.interv||S.referral||S.share||S.chat||S.support||S.addrForm||S.finishing||S.disputing||S.profileForm||S.draft||S.payStep)return true;
     if(S.persona==='admin')return S.admin.view!=='home';
     if(S.persona==='concierge')return !!(S.concRetInv||S.concInvoice||S.concForm||S.concClientView||S.concOrder||S.concView||S.concNav!=='home');
@@ -3821,7 +3851,7 @@
     // Panneau de commande (renderConfig) : peint HORS routeur. On le rétablit ici pour
     // qu'un render() externe — instantané Firestore, retour au premier plan après le
     // sélecteur de photo — NE renvoie PAS le client à l'accueil en perdant sa commande.
-    if(S.persona==='client'&&S.draft&&!S.payStep&&!S.share&&!S.addrForm&&!S.advantages&&!S.support&&!S.chat&&!S.cardForm&&!S.profileForm&&!S.clientInv&&!S.histInvoice&&!S.delAcct&&!S.generalSupport){renderConfig();paintPersona();try{requestAnimationFrame(function(){applyFieldValidity();});}catch(_){applyFieldValidity();}return;}
+    if(S.persona==='client'&&S.draft&&!S.payStep&&!S.authView&&!S.share&&!S.addrForm&&!S.advantages&&!S.support&&!S.chat&&!S.cardForm&&!S.profileForm&&!S.clientInv&&!S.histInvoice&&!S.delAcct&&!S.generalSupport){renderConfig();paintPersona();try{requestAnimationFrame(function(){applyFieldValidity();});}catch(_){applyFieldValidity();}return;}
     paintView((S.persona==='admin'?renderAdmin():(S.persona==='concierge'?renderConcierge():(S.persona==='client'?renderClient():renderPro()))),curScreen());paintPersona();try{requestAnimationFrame(function(){applyFieldValidity();});}catch(_){applyFieldValidity();}}
 
   /* ---------- ÉCRAN VITRINE / PITCH (présentation à un nouvel arrivant) ---------- */
@@ -4607,7 +4637,9 @@
   }
   function renderClient(){
     const m=S.mission;
-    if(!S.onboarded)return clientOnboard();
+    // Invité : inscription/connexion seulement si explicitement demandée ; sinon
+    // il accède à l'accueil, aux onglets (en mode invitation) et au configurateur.
+    if(!S.onboarded&&(S.authView==='login'||S.authView==='signup'))return clientOnboard();
     if(S.delAcct)return deleteAccountView();
     if(S.generalSupport)return generalSupportChat();
     if(S.share)return shareCard();
@@ -4621,11 +4653,12 @@
     if(S.clientInv&&m)return clientInvoiceDoc();
     if(S.histInvoice)return clientInvoiceDoc(S.histInvoice);
     if(S.draft&&S.payStep)return clientPay();
-    if(S.clientNav==='profile')return clientProfile();
+    if(S.clientNav==='profile')return S.onboarded?clientProfile():guestProfile();
     // Les demandes en cours vivent dans « Mes réservations » : on peut en lancer
     // plusieurs, chacune se suit depuis cet onglet. L'Accueil reste toujours le
     // catalogue, libre pour passer une nouvelle commande.
     if(S.clientNav==='wallet'){
+      if(!S.onboarded)return guestWallet();
       if(m){switch(m.status){
         case 'searching':return clientSearching();
         case 'declined':return clientDeclined();
@@ -4650,6 +4683,23 @@
     const act=attention()==='client';const nb=activeMissions().length;
     const item=(id,ic,lbl,badge,count)=>`<button data-cnav="${id}" class="${S.clientNav===id?'on':''}"><span class="nb-ic">${ic}${count?`<span class="nb-count">${count}</span>`:(badge?'<span class="nb-badge"></span>':'')}</span>${lbl}</button>`;
     return `<div class="navbar">${item('home',I.home,'Accueil',false,0)}${item('wallet',I.wallet,'Réservations',act,nb)}${item('profile',I.user,'Profil',false,0)}</div>`;
+  }
+  // Passage au paiement. MODE INVITÉ : la découverte est libre, mais pour ENVOYER
+  // la commande il faut un compte (identité, adresse, paiement). On ouvre alors
+  // l'inscription en conservant la commande configurée (_resumeOrder), reprise
+  // automatiquement à l'étape paiement juste après la création du compte.
+  function proceedToPay(){
+    if(!S.onboarded){
+      S._resumeOrder=true;S.authView='signup';S.onbStep=1;
+      S.clientForm=S.clientForm||{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''};
+      render();return;
+    }
+    S.payStep=true;S.payEdit=false;render();
+  }
+  // Après création/connexion du compte, si une commande attendait (gate invité),
+  // on reprend directement à l'étape paiement — rien n'est reperdu.
+  function resumeOrderIfPending(){
+    if(S._resumeOrder&&S.draft){S._resumeOrder=false;S.payStep=true;S.payEdit=false;}
   }
   function clientOnboard(){
     if(S.authView==='login')return loginView();
@@ -4743,7 +4793,8 @@
     const fullName=((S.account&&S.account.name)||(S.clientForm&&S.clientForm.name)||'').trim();
     const first=fullName?fullName.split(' ')[0]:'';
     const zone=(S.account&&S.account.zone)||(S.clientForm&&S.clientForm.zone)||'Gustavia';
-    return `<div class="pad"><div class="row between" style="margin-top:10px"><div><span class="eyebrow" style="color:var(--muted)">${I.pin} ${esc(zone)} · Saint-Barth</span><div class="h-hello">Bonjour${first?' '+esc(first):''}</div></div><div class="row" style="gap:9px;align-items:center"><button class="iconbtn" data-act="open-share" aria-label="Partager Ti-Services" title="Partager">${I.share}</button>${avatarPhoto(S.account&&S.account.photo,inits(fullName||'Ti'),'')}</div></div>
+    return `<div class="pad"><div class="row between" style="margin-top:10px"><div><span class="eyebrow" style="color:var(--muted)">${I.pin} ${esc(zone)} · Saint-Barth</span><div class="h-hello">Bonjour${first?' '+esc(first):''}</div></div><div class="row" style="gap:9px;align-items:center">${!S.onboarded?`<button class="iconbtn" data-act="lang-toggle" aria-label="Langue / Language" title="Langue / Language">${I.globe}</button>`:''}<button class="iconbtn" data-act="open-share" aria-label="Partager Ti-Services" title="Partager">${I.share}</button>${avatarPhoto(S.account&&S.account.photo,inits(fullName||'Ti'),'')}</div></div>
+      ${!S.onboarded?`<button class="card" data-act="guest-signup" style="width:100%;text-align:left;padding:12px 14px;margin-top:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;border-left:4px solid var(--teal-deep)"><div><b style="font-size:13px">👋 Explorez librement</b><div class="mini" style="margin-top:2px">Compte requis seulement pour commander — c'est gratuit.</div></div><span class="chip good" style="padding:5px 11px;flex:none">Créer un compte</span></button>`:''}
       <p class="sub" style="margin-top:4px">De quel service avez-vous besoin&nbsp;?</p><div class="cats">${cats}</div>
       <div class="deskqr"><div class="qrbox">${qrSvg(90)}</div><div><b>${I.install} Encore plus pratique sur mobile</b><p>Scannez ce QR code pour ouvrir Ti-Services sur votre téléphone — notifications en temps réel, appareil photo, géolocalisation. Vous pouvez aussi commander directement ici.</p></div></div>
       ${notifCTA('client')}
@@ -4754,6 +4805,41 @@
   function missionStatusMeta(st){return {searching:{l:'Recherche en cours',c:'coral'},declined:{l:'Artisan indisponible',c:'coral'},pending:{l:'En attente d’un artisan',c:'coral'},accepted:{l:'Artisan trouvé',c:'good'},working:{l:'Prestation en cours',c:'good'},done_pro:{l:'À confirmer',c:'coral'},disputed:{l:'En médiation',c:'coral'}}[st]||{l:st,c:'grey'};}
   // Historique dédupliqué des prestations terminées (source des cartes « Refaire »).
   function doneHistory(){const seen={},out=[];(S.history||[]).forEach(function(h){const k=h&&h.reqId;if(k){if(seen[k])return;seen[k]=1;}out.push(h);});return out;}
+  // ——— MODE INVITÉ : « Profil » et « Réservations » deviennent des invitations à
+  // créer un compte (jamais des onglets vides), la barre reste stable à 3 onglets. ———
+  function guestBenefits(){
+    return [[I.wallet,'Suivez vos réservations','Vos demandes en cours et passées réunies au même endroit.'],
+            [I.pin,'Vos adresses enregistrées','Vos villas avec leur point GPS — réutilisées à chaque commande.'],
+            [I.bolt,'Commandez en un geste','Moyen de paiement enregistré, prestations refaites en un clic.'],
+            [I.shield,'Paiement sécurisé','Débité seulement après la prestation validée — jamais plus que le montant annoncé.']]
+      .map(x=>`<div class="row benrow" style="gap:12px;align-items:flex-start"><div class="benic">${x[0]}</div><div><b style="font-size:14px">${x[1]}</b><div class="mini bendesc" style="margin-top:1px">${x[2]}</div></div></div>`).join('');
+  }
+  function guestCTAs(){
+    return `<div class="footcta" style="position:static;background:none;padding:20px 0 0">
+      <button class="btn primary" data-act="guest-signup">Créer mon compte — c'est gratuit</button>
+      <p class="mini" style="text-align:center;margin-top:10px">Déjà un compte&nbsp;? <button class="linklike" data-act="show-login">Se connecter</button></p>
+      <p class="mini" style="text-align:center;margin-top:8px">Vous êtes un professionnel&nbsp;? <button class="linklike" data-act="go-artisan-signup">Rejoindre Ti-Services ›</button></p>
+    </div>`;
+  }
+  function guestProfile(){
+    return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">${I.user} Mon profil</span>
+      <div class="h-hello" style="margin-top:6px">Créez votre compte</div>
+      <p class="sub" style="margin-top:4px">La découverte est libre. Un compte — gratuit — vous permet de commander et de suivre vos prestations.</p>
+      <div class="langsel" style="margin-top:12px"><span class="langsel-globe">${I.globe||'🌐'}</span><button class="langsel-opt ${S.lang==='fr'?'on':''}" data-act="lang-fr">FR</button><button class="langsel-opt ${S.lang==='en'?'on':''}" data-act="lang-en">EN</button><button class="langsel-opt ${S.lang==='pt'?'on':''}" data-act="lang-pt">PT</button></div>
+      <div class="stack" style="margin-top:16px;gap:13px">${guestBenefits()}</div>
+      ${guestCTAs()}
+      <div style="height:16px"></div></div>${clientNavbar()}`;
+  }
+  function guestWallet(){
+    return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">${I.wallet} Mes réservations</span>
+      <div class="card" style="padding:22px 18px;margin-top:12px;text-align:center;border-style:dashed">
+        <div class="benic" style="width:52px;height:52px;margin:0 auto;background:var(--teal-wash);color:var(--teal-deep)">${I.wallet}</div>
+        <b style="display:block;margin-top:12px;font-size:15px">Aucune réservation pour l'instant</b>
+        <p class="mini" style="margin-top:6px;color:var(--muted)">Créez un compte pour envoyer une demande et suivre vos prestations en direct.</p>
+      </div>
+      ${guestCTAs()}
+      <div style="height:16px"></div></div>${clientNavbar()}`;
+  }
   function clientWallet(){
     const done=doneHistory();
     const active=activeMissions();
@@ -6478,8 +6564,8 @@
         if(!cc.consent){toast('Cochez l’autorisation de transmettre les documents');renderConfig();return;}
         if(!S.draft.dateFrom||!S.draft.dateTo||S.draft.dateTo<S.draft.dateFrom){toast('Vérifiez la fenêtre de dates');renderConfig();return;}
         if(cc.deadline&&S.draft.dateTo>cc.deadline){toast('La fin de fenêtre dépasse la date limite de l’avis');renderConfig();return;}
-        S.payStep=true;S.payEdit=false;render();return;}
-      const mm=minSlotToday(S.draft);if(mm>=0&&!S.draft.slotFlex&&slotToMin(S.draft.slot)<mm){toast('Choisissez une heure à venir');renderConfig();return;}S.payStep=true;S.payEdit=false;render();}return;}
+        proceedToPay();return;}
+      const mm=minSlotToday(S.draft);if(mm>=0&&!S.draft.slotFlex&&slotToMin(S.draft.slot)<mm){toast('Choisissez une heure à venir');renderConfig();return;}proceedToPay();}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('comm-invoice:')===0){S.commInvId=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('invoice:')===0){S.invoiceId=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('histinv:')===0){const h=doneHistory()[+b.dataset.act.split(':')[1]];if(h){S.histInvoice=h;render();}return;}
@@ -6529,17 +6615,21 @@
     if(b.dataset.act&&b.dataset.act.indexOf('conc-quickvalidate:')===0){const o=S.concOrders.find(x=>x.id===b.dataset.act.split(':')[1]);if(o&&(o.status==='done'||o.status==='issue'))concValidateOrder(o);return;}
     if(b.dataset.act&&b.dataset.act.indexOf('conc-reorder:')===0){const o=S.concOrders.find(x=>x.id===b.dataset.act.split(':')[1]);if(o){S.concClientView=null;S.concView=null;S.concOrder={step:'form',clientId:o.clientId,svc:o.svc,svcName:o.svcName,rate:o.rate,duration:o.duration,when:'Aujourd’hui',slot:o.slot,notes:o.notes||''};render();toast('Commande pré-remplie — ajustez puis validez');}return;}
     switch(b.dataset.act){
-      case 'onb-start':S.onbStep=1;render();break;
-      case 'onb-back0':S.onbStep=0;render();break;
+      case 'onb-start':S.authView='signup';S.onbStep=1;render();break;
+      case 'guest-signup':S.authView='signup';S.onbStep=1;S.clientForm=S.clientForm||{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''};render();break;
+      // « ← Retour » depuis le formulaire d'inscription : on ANNULE le flux d'auth et
+      // on revient à la navigation invité (accueil, ou configurateur si une commande
+      // était en cours). L'éventuelle commande en attente est relâchée.
+      case 'onb-back0':S.authView=null;S.onbStep=0;S._resumeOrder=false;render();break;
       case 'onb-back1':S.onbStep=1;render();break;
       case 'finish-onboard':{const c=S.clientForm;const ok=(c.name||'').trim().length>1&&/.+@.+\..+/.test(c.email||'')&&(c.password||'').length>=6&&c.password===c.password2;if(!ok){toast('Nom, e-mail et mots de passe identiques (6 car.) requis');break;}if(!c.terms){toast('Veuillez accepter les CGU et les CGV pour continuer');break;}
         // Nouveau compte = part de zéro (aucune donnée de démo pré-remplie).
         S.addresses=[];S.addrDefault=null;S.history=[];S.recurring=[];S.card=null;S.mission=null;S.draft=null;
-        if(FB){fbSignup(c);}else{S.account={name:c.name.trim(),email:c.email.trim(),zone:c.zone,photo:c.photo||''};saveAccount(S.account);S.onboarded=true;S.authView=null;render();burstConfetti();toast('Compte créé 🐙 — bienvenue, '+c.name.trim().split(' ')[0]+' !');}break;}
+        if(FB){fbSignup(c);}else{S.account={name:c.name.trim(),email:c.email.trim(),zone:c.zone,photo:c.photo||''};saveAccount(S.account);S.onboarded=true;S.authView=null;resumeOrderIfPending();render();burstConfetti();toast('Compte créé 🐙 — bienvenue, '+c.name.trim().split(' ')[0]+' !');}break;}
       case 'show-login':S.authView='login';S.loginForm={email:(S.account?S.account.email:(S.clientForm.email||'')),password:''};render();break;
       case 'login-back':S.authView=null;render();break;
-      case 'login-to-signup':S.authView=null;S.onbStep=1;render();break;
-      case 'do-login':{const f=S.loginForm;if(!(/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=1)){toast('E-mail et mot de passe requis');break;}if(FB){fbLogin(f);}else{const acc=S.account&&S.account.email===f.email.trim()?S.account:{name:(S.account?S.account.name:'Camille Magras'),email:f.email.trim(),zone:(S.account?S.account.zone:'Gustavia')};S.account=acc;S.clientForm={name:acc.name,email:acc.email,zone:acc.zone,password:''};S.onboarded=true;S.authView=null;render();toast('Content de vous revoir, '+acc.name.split(' ')[0]+' !');}break;}
+      case 'login-to-signup':S.authView='signup';S.onbStep=1;render();break;
+      case 'do-login':{const f=S.loginForm;if(!(/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=1)){toast('E-mail et mot de passe requis');break;}if(FB){fbLogin(f);}else{const acc=S.account&&S.account.email===f.email.trim()?S.account:{name:(S.account?S.account.name:'Camille Magras'),email:f.email.trim(),zone:(S.account?S.account.zone:'Gustavia')};S.account=acc;S.clientForm={name:acc.name,email:acc.email,zone:acc.zone,password:''};S.onboarded=true;S.authView=null;resumeOrderIfPending();render();toast('Content de vous revoir, '+acc.name.split(' ')[0]+' !');}break;}
       case 'forgot-pw':{const em=((S.loginForm&&S.loginForm.email)||(S.account&&S.account.email)||'').trim();if(!/.+@.+\..+/.test(em)){toast('Saisissez votre e-mail, puis « Mot de passe oublié ».');break;}if(FB){fbResetPassword(em);}else{toast('Un lien de réinitialisation vous serait envoyé par e-mail.');}break;}
       case 'google-soon':if(FB){fbGoogle();}else{toast('Connexion Google — bientôt disponible');}break;
       case 'logout':S.demoMode=false;clearClientCache();if(FB)blankAll();fbLogout();if(!FB){S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;S.missions=[];render();}break;
@@ -6580,7 +6670,7 @@
       case 'lang-pt':setLang('pt');break;
       case 'lang-toggle':setLang(S.lang==='fr'?'en':(S.lang==='en'?'pt':'fr'));break;
       case 'show-pitch':S.showPitch=true;render();break;
-      case 'pitch-start':S.showPitch=false;S.onbStep=1;render();break;
+      case 'pitch-start':S.showPitch=false;S.authView='signup';S.onbStep=1;render();break;
       case 'pitch-close':S.showPitch=false;render();break;
       case 'report-issue':toast('Signalement transmis — vous ne serez pas débité');break;
       case 'pro-finish-start':{const m=S.mission;
@@ -7426,7 +7516,7 @@
       restoreClientLocal(user.uid);
       S.addresses=(data&&Array.isArray(data.addresses))?data.addresses:(S.addresses||[]);S.addrDefault=(data&&data.addrDefault)||S.addrDefault||null;
       S.history=(data&&Array.isArray(data.history)&&data.history.length)?data.history:(S.history||[]);S.recurring=(data&&Array.isArray(data.recurring)&&data.recurring.length)?data.recurring:(S.recurring||[]);S.card=(data&&data.card)||S.card||null;
-      S.onboarded=true;S.authView=null;S.cardForm=false;render();
+      S.onboarded=true;S.authView=null;S.cardForm=false;resumeOrderIfPending();render();
       if(typeof Notification!=='undefined'&&Notification.permission==='granted')registerPush('client');
       S.genSupport=(data&&Array.isArray(data.support))?data.support.slice():[];subscribeUserSupport(user.uid);
       loadActiveRequests(user.uid);
