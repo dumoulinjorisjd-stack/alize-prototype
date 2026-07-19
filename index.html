@@ -7832,7 +7832,7 @@
       if(activeReqUnsub){try{activeReqUnsub();}catch(_){}}
       const active=['pending','accepted','working','done_pro','disputed'];
       S._clientReqLoading=true; // squelettes tant que le 1er instantané n'est pas revenu
-      if(S.persona==='client'&&S.clientNav==='wallet'&&!S.mission)render();
+      if(S.persona==='client'&&S.clientNav==='wallet'&&!S.mission&&!S._accepting)render();
       setTimeout(function(){if(S._clientReqLoading){S._clientReqLoading=false;if(S.persona==='client')render();}},7000);
       activeReqUnsub=FB.f.onSnapshot(q,function(snap){
         S._clientReqLoading=false;
@@ -7943,7 +7943,7 @@
       }
       if(changed)saveProStats();
       if(miss.length){S.proMissions=miss;miss.forEach(function(mm){watchRequest(mm.reqId);});}
-      if((miss.length||changed)&&S.persona==='pro'&&!S.mission)render();
+      if((miss.length||changed)&&S.persona==='pro'&&!S.mission&&!S._accepting)render();
     }catch(e){console.warn('load pro missions',e);}
   }
   async function fbSignup(c){
@@ -8206,8 +8206,8 @@
     // Tant que le premier instantané n'est pas revenu, on affiche des squelettes
     // (plutôt qu'un « aucune mission » qui serait faux pendant le chargement).
     S._openReqLoading=true;
-    if(S.persona==='pro'&&!S.mission)render();
-    setTimeout(function(){if(S._openReqLoading){S._openReqLoading=false;if(S.persona==='pro'&&!S.mission)render();}},7000);
+    if(S.persona==='pro'&&!S.mission&&!S._accepting)render();
+    setTimeout(function(){if(S._openReqLoading){S._openReqLoading=false;if(S.persona==='pro'&&!S.mission&&!S._accepting)render();}},7000);
     try{
       const q=FB.f.query(FB.f.collection(FB.db,'requests'),FB.f.where('status','==','pending'));
       const firstSnap=!S._openReqSeen;S._openReqSeen=S._openReqSeen||{};
@@ -8238,7 +8238,7 @@
         // Les missions demandées en priorité pour MOI passent en tête.
         list.sort(function(a,b){const ap=(a.preferredProviderUid&&a.preferredProviderUid===myUid)?1:0,bp=(b.preferredProviderUid&&b.preferredProviderUid===myUid)?1:0;if(ap!==bp)return bp-ap;return (b.boost||0)-(a.boost||0);});
         S.openRequests=list;
-        if(S.persona==='pro'&&!S.mission)render();
+        if(S.persona==='pro'&&!S.mission&&!S._accepting)render();
       },function(err){console.warn('open requests listen',err);});
     }catch(e){console.warn(e);}
   }
@@ -8247,6 +8247,10 @@
   async function acceptRequestReal(reqId){
     if(!(FB&&FB.auth&&FB.auth.currentUser))return;
     const req=(S.openRequests||[]).find(function(x){return x.id===reqId;});if(!req)return;
+    // Pendant l'acceptation (écritures Firestore async), la demande quitte le fil et
+    // les écouteurs déclenchent un rendu : sans ce drapeau, la fiche « introuvable »
+    // s'affichait brièvement avant l'écran de mission acceptée. On suspend ces rendus.
+    S._accepting=reqId;
     try{
       const uid=FB.auth.currentUser.uid;
       const acceptedSlot=req.slotFlex?clampSlot(req,S.proReqSlot||req.slot):(req.slot||'');
@@ -8267,8 +8271,8 @@
       S.mission=Object.assign(newMission(base),{reqId:reqId,status:'accepted',svc:req.service,svcName:req.serviceName||svcNm(req.service),rate:req.rate,duration:req.duration||1,unit:req.unit||'h',acts:req.acts||null,when:req.when||'',slot:acceptedSlot,slotFlex:req.slotFlex||0,proposedSlot:req.slotFlex?acceptedSlot:null,zone:req.zone||det.zone||'',address:det.address||'',geo:det.geo||null,access:det.access||'',boost:req.boost||0,notes:req.notes||'',photos:(req.photos||[]).slice(),clientName:req.clientName||det.clientName||'',clientPhoto:req.clientPhoto||det.clientPhoto||null,clientPhone:det.clientPhone||'',provider:Object.assign({},PROVIDERS[req.service]||{},{nm:S.proName||'Vous'})});
       // Colis : reprend la fenêtre de dates + le dossier de retrait (pièces privées).
       if(req.service==='colis'){S.mission.poste=req.poste||det.poste||'';S.mission.dateFrom=req.dateFrom||det.dateFrom||'';S.mission.dateTo=req.dateTo||det.dateTo||'';if(det.colis){S.mission.colis=Object.assign({signed:!!req.colisSigned},det.colis);}}
-      proAddMission(S.mission);watchRequest(reqId);S.proReqView=null;S.proReqSlot=null;S.proReqPick=false;S.proNav='home';render();burstConfetti();toast('Mission acceptée — à vous de jouer !');
-    }catch(e){console.warn('accept failed',e);toast('Trop tard — cette mission vient d’être prise');}
+      proAddMission(S.mission);watchRequest(reqId);S._accepting=null;S.proReqView=null;S.proReqSlot=null;S.proReqPick=false;S.proNav='home';render();burstConfetti();toast('Mission acceptée — à vous de jouer !');
+    }catch(e){console.warn('accept failed',e);S._accepting=null;S.proReqView=null;S.proReqSlot=null;S.proReqPick=false;S.proNav='home';render();toast('Trop tard — cette mission vient d’être prise');}
   }
   // L'artisan PRÉCISÉMENT demandé (renouvellement / choix client) décline une demande
   // dirigée : elle passe en « declined » — elle sort de tous les fils, et c'est le CLIENT
@@ -8323,6 +8327,10 @@
   // révélées qu'après acceptation (modèle de confidentialité « premier arrivé »).
   function proReqFiche(reqId){
     const r=(S.openRequests||[]).find(function(x){return x.id===reqId;});
+    // Filet de sécurité : si la demande a quitté le fil PENDANT son acceptation, on ne
+    // montre PAS « introuvable » (faux) mais un bref indicateur, le temps que l'écran
+    // de mission acceptée prenne le relais.
+    if(!r&&S._accepting===reqId)return `<div class="pad"><div style="height:60px"></div><div class="card" style="padding:26px;text-align:center"><div class="radar sm"><div class="ring r1"></div><div class="ring r2"></div><div class="core">${I.check}</div></div><p class="sub" style="margin:10px 0 0">Acceptation en cours…</p></div></div>`;
     if(!r)return `<div class="pad"><button class="reset" data-act="reqview-close" style="margin:8px 0 2px">← Retour</button><div class="h-hello" style="margin-top:10px">Mission introuvable</div><p class="sub" style="margin-top:6px">Cette mission vient d'être prise ou annulée.</p><div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-act="reqview-close">Retour aux missions</button></div></div>`;
     const win=reqWinTxt(r);const dayU=(r.unit==='j');
     const myUid=(FB&&FB.auth&&FB.auth.currentUser)?FB.auth.currentUser.uid:'';
