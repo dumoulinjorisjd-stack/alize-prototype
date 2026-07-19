@@ -2071,9 +2071,9 @@
     return {free:false,fee:Math.round(base*0.5*100)/100,pct:50,hours:h,base:base};
   }
   // « day » (dans la journée) et « week » (n'importe quel jour de la semaine) ouvrent
-  // la même plage horaire 8 h – 19 h : l'artisan y choisit son heure de passage.
-  function flexWindow(m){let lo,hi;if(m.slotFlex==='day'||m.slotFlex==='week'){lo=480;hi=1140;}else{const b=slotToMin(m.slot),d=Number(m.slotFlex)||0;lo=b-d;hi=b+d;}const mm=minSlotToday(m);if(mm>=0)lo=Math.max(lo,mm);if(hi<lo)hi=lo;return [minToSlot(lo),minToSlot(hi)];}
-  function flexTxt(m){if(!m.slotFlex)return '';if(m.slotFlex==='week')return 'n’importe quel jour de la semaine';if(m.slotFlex==='day')return 'dans la journée (8 h – 19 h)';const w=flexWindow(m);return 'entre '+w[0]+' et '+w[1];}
+  // toute la plage 24 h/24 : l'artisan y choisit lui-même son heure de passage.
+  function flexWindow(m){let lo,hi;if(m.slotFlex==='day'||m.slotFlex==='week'){lo=0;hi=1410;}else{const b=slotToMin(m.slot),d=Number(m.slotFlex)||0;lo=b-d;hi=b+d;}const mm=minSlotToday(m);if(mm>=0)lo=Math.max(lo,mm);if(hi<lo)hi=lo;return [minToSlot(lo),minToSlot(hi)];}
+  function flexTxt(m){if(!m.slotFlex)return '';if(m.slotFlex==='week')return 'n’importe quel jour de la semaine';if(m.slotFlex==='day')return 'à tout moment de la journée';const w=flexWindow(m);return 'entre '+w[0]+' et '+w[1];}
   function proSlotList(m){const w=flexWindow(m);const start=slotToMin(w[0]),end=slotToMin(w[1]);const step=(m.slotFlex==='day'||m.slotFlex==='week')?60:30;const out=[];for(let t=start;t<=end;t+=step)out.push(minToSlot(t));return out;}
   // Borne l'heure proposée par l'artisan à la fenêtre acceptée par le client.
   function clampSlot(m,s){if(!m.slotFlex||!/^\d{1,2}:\d{2}$/.test(s||''))return s;const w=flexWindow(m);return minToSlot(Math.max(slotToMin(w[0]),Math.min(slotToMin(w[1]),slotToMin(s))));}
@@ -6870,9 +6870,9 @@
   // Options de jour : d'aujourd'hui à +30 jours — aucune date passée n'est proposée.
   function dayOptions(){const out=[];const base=new Date();base.setHours(0,0,0,0);for(let i=0;i<30;i++){const d=new Date(base);d.setDate(base.getDate()+i);const iso=dayIso(d);const lbl=i===0?'Aujourd’hui':(i===1?'Demain':(_WD[d.getDay()]+' '+d.getDate()+' '+_MO[d.getMonth()]));out.push({iso:iso,lbl:lbl});}return out;}
   function dayLabelFor(iso){const o=dayOptions().find(function(x){return x.iso===iso;});return o?o.lbl:iso;}
-  // Options d'heure : 07 h → 20 h par pas de 30 min ; les heures déjà passées
-  // (pour aujourd'hui) sont marquées « past » pour être désactivées.
-  function hourOptions(m){const minM=minSlotToday(m);const out=[];for(let t=7*60;t<=20*60;t+=30){out.push({s:minToSlot(t),past:(minM>=0&&t<minM)});}return out;}
+  // Options d'heure : 24 h/24 par pas de 30 min (00:00 → 23:30) ; les heures déjà
+  // passées (pour aujourd'hui) sont marquées « past » pour être désactivées.
+  function hourOptions(m){const minM=minSlotToday(m);const out=[];for(let t=0;t<=23*60+30;t+=30){out.push({s:minToSlot(t),past:(minM>=0&&t<minM)});}return out;}
   // ——— Commande « Colis & courrier » : fenêtre de dates + dossier de retrait par un tiers ———
   function renderColisConfig(m){
     const t=totals(m);
@@ -6955,7 +6955,7 @@
         ${minActPrice(m.svc)<TRAVEL_MIN?`<p class="mini" style="margin-top:8px">${I.pin} Déplacement <b>offert dès ${TRAVEL_MIN} €</b> de prestation — sinon forfait de ${TRAVEL_FEE} €.</p>`:''}</div>
 
       <div class="field"><label>Quand&nbsp;?</label>${daySelect}</div>
-      <div class="field"><label>Heure souhaitée</label>${dayFlex?`<p class="mini" style="margin:2px 0 0;color:var(--muted)">${I.clock} ${m.slotFlex==='week'?'Vous laissez toute la semaine — le pro vous proposera un jour et une heure.':'Vous laissez toute la journée — le pro choisit son heure (8 h – 19 h).'}</p>`:`${hourSelect}`}</div>
+      <div class="field"><label>Heure souhaitée</label>${dayFlex?`<p class="mini" style="margin:2px 0 0;color:var(--muted)">${I.clock} ${m.slotFlex==='week'?'Vous laissez toute la semaine — le pro vous proposera un jour et une heure.':'Vous laissez toute la journée — le pro choisit son heure de passage.'}</p>`:`${hourSelect}`}</div>
       <div class="field"><label>Souplesse sur le créneau</label><div class="segs"><button class="seg ${(!m.slotFlex)?'on':''}" data-slotflex="0">Précise</button><button class="seg ${m.slotFlex===60?'on':''}" data-slotflex="60">± 1 h</button><button class="seg ${m.slotFlex===120?'on':''}" data-slotflex="120">± 2 h</button><button class="seg ${m.slotFlex==='day'?'on':''}" data-slotflex="day">Journée</button><button class="seg ${m.slotFlex==='week'?'on':''}" data-slotflex="week">Semaine</button></div>${m.slotFlex?`<p class="mini" style="margin-top:6px">${I.clock} Le pro confirmera un <b>créneau précis ${flexTxt(m)}</b> en acceptant.</p>`:''}</div>
 
       ${pastArtisans().length?`<div class="field"><label>Un pro en particulier&nbsp;?</label><div class="segs"><button class="seg ${!m.preferredUid?'on':''}" data-prefart="">Peu importe</button>${pastArtisans().map(a=>`<button class="seg ${m.preferredUid===a.uid?'on':''}" data-prefart="${esc(a.uid)}" data-prefnm="${esc(a.nm)}">${esc(a.nm.split(' ')[0])}</button>`).join('')}</div></div>`:''}
@@ -7005,7 +7005,7 @@
     paintView(`<div class="pad"><div class="cfghead"><button class="reset" data-cfg="back">← Retour</button><span class="eyebrow" style="flex:1;justify-content:center">${m.svcName}</span><button class="iconbtn" data-act="go-home" aria-label="Accueil" title="Accueil"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg></button></div><div class="h-hello">Détails de la mission</div>
       ${m.svc==='animaux'?`<div class="field"><label>Mode de garde</label><div class="segs"><button class="seg ${isDayU(m)?'on':''}" data-cfg="unit-j">📅 À la journée</button><button class="seg ${!isDayU(m)?'on':''}" data-cfg="unit-h">${I.clock} À l'heure</button></div><p class="mini" style="margin-top:6px">Pour une garde sur plusieurs jours, choisissez « à la journée » — vous fixez les <b>dates</b>, pas les heures.</p></div>`:''}
       <div class="field"><label>${isDayU(m)?'Date de début':'Quand&nbsp;?'}</label>${daySelect}</div>
-      <div class="field"><label>${isDayU(m)?'Heure de dépôt':'Heure souhaitée'}</label>${dayFlex?`<p class="mini" style="margin:2px 0 0;color:var(--muted)">${I.clock} ${m.slotFlex==='week'?'Vous laissez toute la semaine — l’artisan vous proposera un jour et une heure de passage.':'Vous laissez toute la journée — l’artisan choisit son heure de passage (8 h – 19 h).'}</p>`:`${hourSelect}`}</div>
+      <div class="field"><label>${isDayU(m)?'Heure de dépôt':'Heure souhaitée'}</label>${dayFlex?`<p class="mini" style="margin:2px 0 0;color:var(--muted)">${I.clock} ${m.slotFlex==='week'?'Vous laissez toute la semaine — l’artisan vous proposera un jour et une heure de passage.':'Vous laissez toute la journée — l’artisan choisit son heure de passage.'}</p>`:`${hourSelect}`}</div>
       ${!isDayU(m)?`<div class="field"><label>Souplesse sur le créneau</label><div class="segs"><button class="seg ${(!m.slotFlex)?'on':''}" data-slotflex="0">Précise</button><button class="seg ${m.slotFlex===60?'on':''}" data-slotflex="60">± 1 h</button><button class="seg ${m.slotFlex===120?'on':''}" data-slotflex="120">± 2 h</button><button class="seg ${m.slotFlex==='day'?'on':''}" data-slotflex="day">Journée</button><button class="seg ${m.slotFlex==='week'?'on':''}" data-slotflex="week">Semaine</button></div>${m.slotFlex?`<p class="mini" style="margin-top:6px">${I.clock} L'artisan confirmera un <b>créneau précis ${flexTxt(m)}</b> en acceptant.</p>`:''}</div>`:''}
       ${pastArtisans().length?`<div class="field"><label>Un artisan en particulier&nbsp;?</label><div class="segs"><button class="seg ${!m.preferredUid?'on':''}" data-prefart="">Peu importe</button>${pastArtisans().map(a=>`<button class="seg ${m.preferredUid===a.uid?'on':''}" data-prefart="${esc(a.uid)}" data-prefnm="${esc(a.nm)}">${esc(a.nm.split(' ')[0])}</button>`).join('')}</div>${m.preferredUid?`<p class="mini" style="margin-top:6px">${I.clock} Adressée <b>uniquement à ${esc((m.preferredName||'').split(' ')[0])}</b>. S'il décline, vous pourrez la proposer à tous les artisans.</p>`:''}</div>`:''}
       ${m.svc==='baby'?`<p class="mini" style="margin-top:6px">${I.shield} La baby-sitter qui accepte vous sera présentée (photo, diplômes, présentation) et <b>vous pourrez l'appeler</b> avant de confirmer la garde.</p>`:''}
