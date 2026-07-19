@@ -927,3 +927,175 @@ exports.mollieOnboardingReturn = onRequest(async (req, res) => {
     res.redirect(302, APP_URL + '?mollie=' + (orgId ? 'active' : 'pending'));
   } catch (e) { console.warn('mollieOnboardingReturn', e); res.redirect(302, APP_URL + '?mollie=error'); }
 });
+
+/* ============================================================================
+ * FACTURE CLIENT PAR E-MAIL — envoi AUTOMATIQUE à la fin de chaque mission.
+ *
+ * À la bascule « commission réglée » (le n° de facture est alors figé côté
+ * serveur), on génère la facture CLIENT (au nom du prestataire, mandat de
+ * facturation) en PDF VECTORIEL léger (pdf-lib, ~30-60 Ko, texte net) et on
+ * la met en file dans la collection `mail` (extension Trigger Email) en PIÈCE
+ * JOINTE base64. Le PDF n'est PAS stocké en permanence → impact stockage
+ * négligeable (l'e-mail et sa pièce jointe sont transitoires).
+ *
+ * On n'envoie QUE la facture client (justificatif de la prestation). Les
+ * factures de COMMISSION (Ti-Services ↔ artisan) restent internes, non
+ * envoyées au client. Idempotent via `invoiceEmailed`.
+ * ========================================================================== */
+function eurTxt(x) { return (Math.round((Number(x) || 0) * 100) / 100).toFixed(2).replace('.', ',') + ' €'; }
+function escHtmlS(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function frDate(ts) {
+  let d;
+  try { d = (ts && ts.toDate) ? ts.toDate() : (ts ? new Date(ts) : new Date()); } catch (_) { d = new Date(); }
+  if (!d || isNaN(d.getTime())) d = new Date();
+  const mois = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+  return d.getDate() + ' ' + mois[d.getMonth()] + ' ' + d.getFullYear();
+}
+// Reconstitue lignes + total EXACTEMENT comme l'app (totals()) : à l'acte =
+// somme des actes + coup de pouce + forfait déplacement (< 50 €) ; horaire =
+// tarif × heures facturées (finalHours si déclarées) + coup de pouce.
+function invoiceLines(r) {
+  const acts = Array.isArray(r.acts) ? r.acts : null;
+  const boost = Number(r.boost) || 0;
+  const lines = [];
+  let sub = 0;
+  if (acts && acts.length) {
+    acts.forEach((a) => {
+      const q = Number(a.qty) || 1; const pu = Number(a.price) || 0;
+      lines.push({ label: a.nm || 'Prestation', qty: String(q), unit: eurTxt(pu), total: pu * q });
+      sub += pu * q;
+    });
+  } else {
+    const rate = Number(r.rate) || 0;
+    const hours = (r.finalHours != null) ? Number(r.finalHours) : (Number(r.duration) || 1);
+    const dayU = r.unit === 'j';
+    lines.push({ label: r.serviceName || 'Prestation', qty: hours + (dayU ? ' j' : ' h'), unit: eurTxt(rate), total: rate * hours });
+    sub += rate * hours;
+  }
+  const maj = Math.round(sub * boost / 100);
+  if (maj > 0) lines.push({ label: 'Coup de pouce +' + boost + '%', qty: '1', unit: eurTxt(maj), total: maj });
+  const travel = (acts && acts.length && sub > 0 && sub < 50) ? 20 : 0;
+  if (travel > 0) lines.push({ label: 'Forfait de déplacement', qty: '1', unit: eurTxt(travel), total: travel });
+  return { lines, total: Math.round((sub + maj + travel) * 100) / 100 };
+}
+function wrapPdf(page, font, size, color, text, x, y, maxW, lh) {
+  const words = String(text).split(' ');
+  let line = '';
+  for (const w of words) {
+    const test = line ? line + ' ' + w : w;
+    if (font.widthOfTextAtSize(test, size) > maxW && line) { page.drawText(line, { x, y, size, font, color }); y -= lh; line = w; }
+    else { line = test; }
+  }
+  if (line) { page.drawText(line, { x, y, size, font, color }); y -= lh; }
+  return y;
+}
+// PDF vectoriel A4 → base64. Texte uniquement (pas d'image) = fichier très léger.
+async function buildInvoicePdf(inv) {
+  const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
+  const doc = await PDFDocument.create();
+  const page = doc.addPage([595.28, 841.89]);
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  const ink = rgb(0.137, 0.118, 0.2); const coral = rgb(1, 0.416, 0.357);
+  const mut = rgb(0.45, 0.43, 0.5); const hair = rgb(0.87, 0.85, 0.88); const teal = rgb(0.05, 0.5, 0.5);
+  const M = 46; const W = 595.28; const R = W - M;
+  const T = (s, x, y, sz, f, c) => page.drawText(String(s == null ? '' : s), { x, y, size: sz, font: f || font, color: c || ink });
+  const TR = (s, xr, y, sz, f, c) => { s = String(s == null ? '' : s); const w = (f || font).widthOfTextAtSize(s, sz); page.drawText(s, { x: xr - w, y, size: sz, font: f || font, color: c || ink }); };
+  let y = 792;
+  T('Ti', M, y, 22, bold, coral);
+  T('-Services', M + bold.widthOfTextAtSize('Ti', 22), y, 22, bold, ink);
+  T('Services à la demande - Saint-Barthélemy', M, y - 15, 8.5, font, mut);
+  TR('FACTURE', R, y + 2, 20, bold, ink);
+  TR('N° ' + inv.invNo, R, y - 13, 10, font, mut);
+  TR(inv.dateStr, R, y - 26, 10, font, mut);
+  TR('PAYÉE', R, y - 41, 10, bold, teal);
+  y -= 62;
+  page.drawLine({ start: { x: M, y }, end: { x: R, y }, thickness: 1, color: hair });
+  y -= 22;
+  const colL = M; const colR = M + 275;
+  T('PRESTATAIRE', colL, y, 8, bold, mut); T('FACTURÉ À', colR, y, 8, bold, mut);
+  y -= 14;
+  T(inv.provider.legal || 'Artisan Ti-Services', colL, y, 11, bold, ink);
+  T(inv.client.company || inv.client.name || 'Client', colR, y, 11, bold, ink);
+  y -= 13;
+  const pL = [inv.provider.address || 'Saint-Barthélemy', inv.provider.siret ? ('SIRET ' + inv.provider.siret) : ''].filter(Boolean);
+  const cL = [inv.client.company ? inv.client.name : '', inv.client.siret ? ('SIRET ' + inv.client.siret) : '', (inv.client.zone ? inv.client.zone + ', ' : '') + 'Saint-Barthélemy'].filter(Boolean);
+  const mx = Math.max(pL.length, cL.length);
+  for (let i = 0; i < mx; i++) { if (pL[i]) T(pL[i], colL, y, 9, font, mut); if (cL[i]) T(cL[i], colR, y, 9, font, mut); y -= 12; }
+  y -= 14;
+  const cQty = 372; const cUnit = 462; const cTot = R;
+  page.drawRectangle({ x: M, y: y - 5, width: R - M, height: 20, color: rgb(0.98, 0.965, 0.955) });
+  T('Prestation', M + 6, y + 1, 9, bold, ink); TR('Qté', cQty, y + 1, 9, bold, ink); TR('Prix unit.', cUnit, y + 1, 9, bold, ink); TR('Total', cTot - 6, y + 1, 9, bold, ink);
+  y -= 13;
+  page.drawLine({ start: { x: M, y }, end: { x: R, y }, thickness: 0.7, color: hair });
+  y -= 16;
+  inv.lines.forEach((ln) => {
+    T(ln.label, M + 6, y, 10, font, ink); TR(ln.qty, cQty, y, 10, font, ink); TR(ln.unit, cUnit, y, 10, font, ink); TR(eurTxt(ln.total), cTot - 6, y, 10, bold, ink);
+    y -= 18;
+  });
+  y -= 2;
+  page.drawLine({ start: { x: M, y }, end: { x: R, y }, thickness: 0.7, color: hair });
+  y -= 22;
+  T('TOTAL RÉGLÉ', cUnit - 44, y, 11, bold, ink);
+  TR(eurTxt(inv.total), cTot - 6, y, 13, bold, coral);
+  y -= 17;
+  TR('Réglé par carte bancaire le ' + inv.dateStr + ' - encaissement via Mollie (agréé). Aucun solde dû.', cTot - 6, y, 7.5, font, mut);
+  y -= 34;
+  const legal = [
+    "TVA non applicable - Saint-Barthélemy (collectivité d'outre-mer, hors du champ de la TVA française).",
+    "Facture établie par Ti-Services au nom et pour le compte du prestataire, en vertu d'un mandat de facturation (art. 289 du CGI).",
+    'Document remis au client à titre de justificatif de la prestation réglée.',
+    'Ti-Services est un service édité par C.C.S - Construction Conseils et Services, SAS.',
+  ];
+  legal.forEach((p) => { y = wrapPdf(page, font, 7.5, mut, p, M, y, R - M, 10); y -= 3; });
+  const bytes = await doc.save();
+  return Buffer.from(bytes).toString('base64');
+}
+
+exports.emailClientInvoice = onDocumentUpdated('requests/{reqId}', async (event) => {
+  const before = (event.data && event.data.before && event.data.before.data()) || {};
+  const after = (event.data && event.data.after && event.data.after.data()) || {};
+  // Bascule « commission réglée » (n° de facture figé) — une seule fois.
+  if (before.commissionSettled || !after.commissionSettled) return;
+  if (after.invoiceEmailed) return;
+  const clientUid = after.clientUid;
+  if (!clientUid) { console.log('emailClientInvoice : demande sans clientUid, ignorée.'); return; }
+  const db = getFirestore();
+  let email = ''; let clientName = after.clientName || 'Client'; let company = ''; let csiret = '';
+  try {
+    const u = (await db.collection('users').doc(clientUid).get()).data() || {};
+    email = u.email || '';
+    if (u.name) clientName = u.name;
+    if (u.isPro) { company = u.company || ''; csiret = u.siret || ''; }
+  } catch (_) {}
+  if (!email) { console.log('emailClientInvoice : pas d\'e-mail client, ignoré.'); return; }
+  const { lines, total } = invoiceLines(after);
+  const invNo = after.saleInvoiceNo || after.invNo || ('2026-' + String(event.params.reqId).slice(-4));
+  const dateStr = frDate(after.settledAt);
+  const svcName = (after.serviceName || 'prestation').toString().slice(0, 80);
+  let pdfB64 = '';
+  try {
+    pdfB64 = await buildInvoicePdf({
+      invNo, dateStr,
+      provider: { legal: after.providerLegal || after.providerName || 'Artisan Ti-Services', address: after.providerAddress || '', siret: after.providerSiret || '' },
+      client: { name: clientName, company, siret: csiret, zone: after.zone || '' },
+      lines, total,
+    });
+  } catch (e) { console.warn('buildInvoicePdf', e); }
+  const message = {
+    subject: 'Votre facture Ti-Services - ' + svcName + ' (n° ' + invNo + ')',
+    html: '<p>Bonjour ' + escHtmlS(String(clientName).split(' ')[0]) + ',</p>' +
+          '<p>Merci d\'avoir fait appel à <b>Ti-Services</b>. Vous trouverez ci-joint votre facture (PDF) pour la prestation « ' + escHtmlS(svcName) + ' » du ' + dateStr + '.</p>' +
+          '<p>Elle reste également disponible à tout moment dans l\'application, rubrique « Historique &amp; factures ».</p>' +
+          '<p>À très vite,<br>L\'équipe Ti-Services</p>',
+  };
+  if (pdfB64) message.attachments = [{ filename: 'Facture-Ti-Services-' + invNo + '.pdf', content: pdfB64, encoding: 'base64' }];
+  try {
+    await db.collection('mail').add({ to: email, message });
+    await event.data.after.ref.update({ invoiceEmailed: true, invoiceEmailedAt: FieldValue.serverTimestamp() });
+    console.log('Facture client envoyée à ' + email + ' (n° ' + invNo + ', ' + total + ' €)');
+  } catch (e) { console.warn('emailClientInvoice send', e); }
+});
+
+// Export interne pour les tests unitaires (inerte en production : TI_TEST non défini).
+if (process.env.TI_TEST) { module.exports.__test = { buildInvoicePdf, invoiceLines, eurTxt, frDate }; }
