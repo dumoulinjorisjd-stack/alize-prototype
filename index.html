@@ -2013,7 +2013,7 @@
 
   const S={
     lang:initLang(),
-    persona:'client',clientNav:'home',proNav:'home',customServices:[],onboarded:false,guest:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},
+    persona:'client',clientNav:'home',proNav:'home',customServices:[],wishText:'',wishSent:false,adminWishes:[],onboarded:false,guest:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},
     card:null,cardForm:false,payStep:false,payEdit:false,paySaveCard:true,finishing:false,disputing:false,support:false,supportSide:null,mission:null,missions:[],draft:null,
     addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,
     concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,concRetroPaid:'',concIban:'',concIbanHolder:'',concLegal:'',concSiret:'',concAddress:'',retroRate:8,founderTaken:0,
@@ -2473,6 +2473,11 @@
     }catch(e){console.warn('i18n',e);}
   }
   var EN_DICT={
+    "Un service qui manque ?":"A service you’re missing?",
+    "Proposer ce service":"Suggest this service",
+    "Dites-nous quel service vous aimeriez trouver sur Ti-Services. Vos idées orientent les prochains métiers proposés.":"Tell us which service you’d like to find on Ti-Services. Your ideas shape the next trades we add.",
+    "Merci ! Votre suggestion a bien été transmise à Ti-Services.":"Thanks! Your suggestion has been sent to Ti-Services.",
+    "Ex. Vitrier, promenade de chien, réparation de vélo…":"e.g. Glazier, dog walking, bike repair…",
     "Mes métiers":"My trades",
     "Ajouter":"Add",
     "Ajouter un métier":"Add a trade",
@@ -3036,6 +3041,11 @@
   var TIER_PT={'bronze':'Bronze','argent':'Prata','or':'Ouro','platine':'Platina','diamant':'Diamante'};
   var DOW_PT={'lun':'Seg','mar':'Ter','mer':'Qua','jeu':'Qui','ven':'Sex','sam':'Sáb','dim':'Dom'};
   var PT_DICT={
+    "Un service qui manque ?":"Falta um serviço?",
+    "Proposer ce service":"Sugerir este serviço",
+    "Dites-nous quel service vous aimeriez trouver sur Ti-Services. Vos idées orientent les prochains métiers proposés.":"Diga-nos que serviço gostaria de encontrar na Ti-Services. As suas ideias orientam os próximos ofícios propostos.",
+    "Merci ! Votre suggestion a bien été transmise à Ti-Services.":"Obrigado! A sua sugestão foi enviada à Ti-Services.",
+    "Ex. Vitrier, promenade de chien, réparation de vélo…":"Ex.: Vidraceiro, passeio de cães, reparação de bicicletas…",
     "Mes métiers":"Os meus ofícios",
     "Ajouter":"Adicionar",
     "Ajouter un métier":"Adicionar um ofício",
@@ -3928,7 +3938,7 @@
 
   /* ---------- CLIENT ---------- */
   /* ---------- ADMIN ---------- */
-  function renderAdmin(){if(S.support&&S.mission)return supportChat()+adminNavbar();if(S.generalSupport&&S.genUser)return generalSupportChat()+adminNavbar();if(S.adminSupervise&&S.mission)return adminSupervise()+adminNavbar();let body;if(S.admin.view==='art')body=adminFiche('art');else if(S.admin.view==='cli')body=adminFiche('cli');else if(S.admin.view==='msg')body=adminMessagerie();else if(S.admin.view==='fact')body=adminInvoicesRouter();else body=adminHome();return body+adminNavbar();}
+  function renderAdmin(){if(S.support&&S.mission)return supportChat()+adminNavbar();if(S.generalSupport&&S.genUser)return generalSupportChat()+adminNavbar();if(S.adminSupervise&&S.mission)return adminSupervise()+adminNavbar();let body;if(S.admin.view==='art')body=adminFiche('art');else if(S.admin.view==='cli')body=adminFiche('cli');else if(S.admin.view==='msg')body=adminMessagerie();else if(S.admin.view==='fact')body=adminInvoicesRouter();else if(S.admin.view==='wishes')body=adminWishesView();else body=adminHome();return body+adminNavbar();}
   // Barre permanente de l'espace admin : retour à la console de gestion à tout moment.
   function adminNavbar(){
     const inMsg=(S.admin.view==='msg'||(S.support&&S.mission)||S.adminSupervise);
@@ -3941,6 +3951,24 @@
   function adminPendingCount(){return ((S.adminArtisans||[]).filter(function(a){return a.status==='attente';}).length)+((S.adminClients||[]).filter(function(c){return c.status==='attente';}).length);}
   function catNames(cats){return cats.map(svcNm).join(', ');}
   function inits(n){return n.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();}
+  // Récapitulatif admin des services souhaités par les clients (collection serviceWishes) :
+  // agrégation des demandes identiques (compte) + liste chronologique complète.
+  function adminWishesView(){
+    const w=(S.adminWishes||[]).slice();
+    const norm=function(t){return (t||'').toLowerCase().trim().replace(/\s+/g,' ');};
+    const agg={};
+    w.forEach(function(x){const k=norm(x.text);if(!k)return;if(!agg[k])agg[k]={label:x.text,count:0,last:0};agg[k].count++;agg[k].last=Math.max(agg[k].last,x.at||0);});
+    const top=Object.keys(agg).map(function(k){return agg[k];}).sort(function(a,b){return b.count-a.count||b.last-a.last;});
+    const chrono=w.slice().sort(function(a,b){return (b.at||0)-(a.at||0);});
+    return `<div class="pad"><button class="reset" data-adm="home" style="margin:10px 0 6px">← Retour</button>
+      <span class="eyebrow"><span aria-hidden="true">💡</span> Souhaits des clients</span><div class="h-hello">Services réclamés</div>
+      <p class="sub" style="margin-top:6px">Ce que les clients aimeraient trouver sur Ti-Services — pour décider des prochains métiers à ouvrir.</p>
+      ${top.length?`<div class="card" style="padding:16px;margin-top:14px"><div class="eyebrow" style="color:var(--muted)">Les plus demandés</div>${top.map(function(g){return `<div class="row between" style="margin-top:10px;align-items:center;gap:10px"><b style="font-size:14px">${esc(g.label)}</b><span class="chip ${g.count>1?'coral':'grey'}" style="padding:3px 10px;flex:none">${g.count} demande${g.count>1?'s':''}</span></div>`;}).join('')}</div>
+      <div class="eyebrow" style="margin:22px 4px 6px;color:var(--muted)">Toutes les suggestions</div>
+      ${chrono.map(function(x){return `<div class="card" style="padding:13px;margin-top:8px"><b style="font-size:14px">${esc(x.text)}</b><div class="mini" style="margin-top:3px">${esc(x.clientName||'Client')}${x.zone?' · '+esc(x.zone):''}${x.at?' · '+new Date(x.at).toLocaleDateString('fr-FR'):''}</div></div>`;}).join('')}`
+      :`<div class="card" style="padding:22px;margin-top:14px;text-align:center"><p class="sub" style="margin:0">Aucune suggestion pour l'instant. Les idées envoyées par les clients depuis leur profil apparaîtront ici.</p></div>`}
+    </div>`;
+  }
   function adminHome(){
     const arts=S.adminArtisans,clis=S.adminClients;
     const pendA=arts.filter(a=>a.status==='attente'),pendC=clis.filter(c=>c.status==='attente');
@@ -3984,6 +4012,8 @@
       <div class="row" style="gap:9px;margin-top:12px">${stat('En cours',allB.length,'réservations')}${stat('Artisans',validA,pendA.length+' en attente')}${stat('Clients',clis.length,pendC.length+' en attente')}</div>
       ${(typeof Notification!=='undefined'&&Notification.permission!=='granted')?`<button class="banner teal" data-act="admin-notif" style="margin-top:10px;width:100%;text-align:left;cursor:pointer">${I.bolt}<span>Activez les <b>alertes de candidature</b> — soyez prévenu dès qu'un artisan postule, même en dehors de la console.</span></button>`:''}
       <div class="card" style="padding:14px;margin-top:10px"><div class="row between"><span class="sub">Commission ce mois</span><b class="money" style="font-size:18px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(S.adminCommission)}</b></div></div>
+      <div style="height:16px"></div><span class="eyebrow"><span aria-hidden="true">💡</span> Souhaits des clients</span>
+      <button class="card" data-adm="wishes" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block"><div class="row between" style="align-items:center"><b style="font-size:14px">Services réclamés par les clients</b>${(S.adminWishes&&S.adminWishes.length)?`<span class="chip coral" style="padding:3px 10px">${S.adminWishes.length}</span>`:`<span class="mini" style="color:var(--muted)">Aucune pour l'instant</span>`}</div><p class="sub" style="margin-top:8px">Voir ce que les clients aimeraient trouver sur la plateforme.</p></button>
       <div style="height:16px"></div><span class="eyebrow">${I.euro} Tarifs des prestations (prix fixes clients)</span>
       <div class="card" style="padding:14px;margin-top:10px">
         ${allSvc().map(s=>{
@@ -4930,6 +4960,18 @@
         <p class="mini" style="text-align:center;margin-top:12px">${I.lock} Le lien mène à l'installation de Ti-Services sur le téléphone.</p>
       </div></div>`;
   }
+  // Boîte à idées client : suggestion d'un service à proposer sur la plateforme.
+  // Écrit dans la collection `serviceWishes` (lecture admin seule) pour recenser la demande.
+  async function sendWish(){
+    const t=(S.wishText||'').trim();if(!t)return;
+    const nm=(((S.account&&S.account.name)||'Client').split(' ')[0])||'Client';
+    const zone=(S.account&&S.account.zone)||'';
+    S.adminWishes=S.adminWishes||[];S.adminWishes.unshift({id:'w'+Date.now(),clientUid:'me',clientName:nm,text:t.slice(0,300),zone:zone,at:Date.now()});
+    if(FB&&FB.auth&&FB.auth.currentUser&&!isDemo()){
+      try{const ref=FB.f.doc(FB.f.collection(FB.db,'serviceWishes'));await FB.f.setDoc(ref,{clientUid:FB.auth.currentUser.uid,clientName:nm,text:t.slice(0,300),zone:zone,createdAt:FB.f.serverTimestamp()});}catch(e){console.warn('wish',e);}
+    }
+    S.wishText='';S.wishSent=true;render();toast('Merci — votre idée est transmise à Ti-Services');
+  }
   function clientProfile(){
     const cnm=((S.account&&S.account.name)||(S.clientForm&&S.clientForm.name)||'').trim()||'Mon compte';
     const cml=(S.account&&S.account.email)||(S.clientForm&&S.clientForm.email)||'';
@@ -4954,7 +4996,14 @@
       <div class="eyebrow" style="margin:26px 4px 6px;color:var(--muted)">Ti-Services</div>
       <button class="card" data-act="show-advantages" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">Garantie Ti-Services</b><span class="chip good">Active</span></div><p class="sub" style="margin-top:8px">Artisan absent ou travail non conforme&nbsp;? Vous n'êtes pas débité, et Ti-Services relance la recherche pour vous proposer une solution.</p><span class="mini" style="color:var(--teal-deep);font-weight:650;margin-top:8px;display:inline-block">Voir tous vos avantages ›</span></button>
       <button class="card" data-act="open-share" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.share}&nbsp;Partager Ti-Services</b><span class="mini" style="color:var(--teal-deep);font-weight:650">QR &amp; lien ›</span></div><p class="sub" style="margin-top:8px">Un QR à faire flasher et un lien à envoyer — partagez l'app à vos voisins en un geste.</p></button>
-      
+      <div class="card" style="padding:16px;margin-top:12px">
+        <b style="font-size:14px"><span aria-hidden="true">💡</span> Un service qui manque&nbsp;?</b>
+        <p class="sub" style="margin-top:8px">Dites-nous quel service vous aimeriez trouver sur Ti-Services. Vos idées orientent les prochains métiers proposés.</p>
+        <textarea rows="2" data-wish placeholder="Ex. Vitrier, promenade de chien, réparation de vélo…" style="margin-top:10px">${esc(S.wishText||'')}</textarea>
+        <button class="btn ghost sm" data-act="wish-send" style="margin-top:10px;width:auto;padding:9px 15px" ${(S.wishText||'').trim()?'':'disabled'}>${I.check} Proposer ce service</button>
+        ${S.wishSent?`<p class="mini" style="margin-top:9px;color:var(--good)">${I.check} Merci&nbsp;! Votre suggestion a bien été transmise à Ti-Services.</p>`:''}
+      </div>
+
       <div class="eyebrow" style="margin:26px 4px 6px;color:var(--muted)">Aide & réglages</div>
       <div class="card" style="padding:16px;margin-top:12px"><div class="row between" style="gap:12px"><div class="row" style="gap:11px;align-items:center"><span class="benic">${I.globe||'🌐'}</span><div><b style="font-size:14px">Langue</b><div class="mini" style="margin-top:1px">Choisir la langue de l'application.</div></div></div><div class="langsel"><button class="langsel-opt ${S.lang==='fr'?'on':''}" data-act="lang-fr">FR</button><button class="langsel-opt ${S.lang==='en'?'on':''}" data-act="lang-en">EN</button><button class="langsel-opt ${S.lang==='pt'?'on':''}" data-act="lang-pt">PT</button></div></div></div>
       ${notifCard('client')}
@@ -6594,6 +6643,7 @@
       else if(act==='supervise'){const th=(S.adminThreads||[]).find(function(x){return x.reqId===id;});if(th){S.mission=th;S.adminSupervise=true;S.support=false;S.admin.view='msg';watchRequest(th.reqId);render();view.scrollTop=view.scrollHeight;}return;}
       else if(act==='gensup'){const u=(S.adminGeneral||[]).find(function(x){return x.uid===id;});if(u){S.genUser=u;S.generalSupport=true;S.support=false;S.adminSupervise=false;S.admin.view='msg';markGenSupportReadAdmin();render();view.scrollTop=view.scrollHeight;}return;}
       else if(act==='fact'){S.admin.view='fact';S.admin.fact=null;S.admin.sel=null;S.support=false;S.supportSide=null;S.adminSupervise=false;S.generalSupport=false;S.genUser=null;S.mission=null;render();view.scrollTop=0;return;}
+      else if(act==='wishes'){S.admin.view='wishes';S.admin.sel=null;S.mission=null;render();view.scrollTop=0;return;}
       else if(act==='fact-comm'){S.admin.view='fact';S.admin.fact={art:id,mode:'comm'};render();view.scrollTop=0;return;}
       else if(act==='fact-mandat'){S.admin.view='fact';S.admin.fact={art:id,mode:'mandat'};render();view.scrollTop=0;return;}
       else if(act==='fact-doc'){S.admin.view='fact';S.admin.fact={art:id,mode:'doc',inv:parts[2]};render();view.scrollTop=0;return;}
@@ -6922,6 +6972,7 @@
       case 'pro-add-back':S.proAddView=false;render();break;
       case 'pro-add-assur':if(S.proAddForm){S.proAddForm.assur=!S.proAddForm.assur;render();}break;
       case 'pro-add-submit':submitAddServices();break;
+      case 'wish-send':sendWish();break;
       case 'pro-mollie':S.proMollieView=true;render();break;
       case 'pro-mollie-close':S.proMollieView=false;render();break;
       case 'mollie-start':startMollieOnboarding();break;
@@ -7189,6 +7240,7 @@
     // le total est recalculé à la validation. On tolère la virgule décimale française.
     const tc=e.target.closest('[data-tipcustom]');if(tc&&S.mission){const v=parseFloat(String(tc.value).replace(',','.'));S.mission.tip=(isFinite(v)&&v>0)?Math.round(v*100)/100:0;const bb=document.querySelector('[data-act="confirm-done"]');if(bb){const tt=totals(S.mission);bb.innerHTML=`${I.check} Confirmer la prestation${tt.tip?'<span> · '+eur(tt.total)+'</span>':''}`;i18nApply(bb);}}
     const pao=e.target.closest('[data-paother]');if(pao&&S.proAddForm){S.proAddForm.other=pao.value;const sb=document.querySelector('[data-act="pro-add-submit"]');if(sb){const f=S.proAddForm;sb.disabled=!(f.cats.length>0&&f.assur&&(f.cats.indexOf('autre')<0||(f.other||'').trim()));}}
+    const wi=e.target.closest('[data-wish]');if(wi){S.wishText=wi.value;S.wishSent=false;const wb=document.querySelector('[data-act="wish-send"]');if(wb)wb.disabled=!wi.value.trim();}
     const pf=e.target.closest('[data-pf]');if(pf){S.proForm[pf.dataset.pf]=pf.value;const pb=document.querySelector('[data-act="pro-submit"]');if(pb)pb.disabled=!proSignupOk(S.proForm);}
     const csf=e.target.closest('[data-csf]');if(csf&&S.concSignup){S.concSignup[csf.dataset.csf]=csf.value;const b2=document.querySelector('[data-act="conc-submit"]');if(b2)b2.disabled=!concSignupOk(S.concSignup);}
     const cf=e.target.closest('[data-cf]');if(cf){S.clientForm[cf.dataset.cf]=cf.value;const fb=document.querySelector('[data-act="finish-onboard"]');const c=S.clientForm;if(fb)fb.disabled=!((c.name||'').trim().length>1&&/.+@.+\..+/.test(c.email||'')&&(c.password||'').length>=6&&c.password===c.password2&&!!c.terms);}
@@ -7600,7 +7652,7 @@
       if((CONFIG.adminEmails||[]).map(function(e){return e.toLowerCase();}).indexOf((user.email||'').toLowerCase())>=0){
         S.account={name:'Ti-Services',email:user.email||'',uid:user.uid,role:'admin'};
         S.persona='admin';S.admin={view:'home',sel:null};S.onboarded=true;S.authView=null;render();
-        refreshAdminArtisans();refreshAdminConcierges();initAdminPush();subscribeAdminThreads();subscribeAdminGeneralSupport();subscribeAdminLedger();return;
+        refreshAdminArtisans();refreshAdminConcierges();refreshAdminWishes();initAdminPush();subscribeAdminThreads();subscribeAdminGeneralSupport();subscribeAdminLedger();return;
       }
       // Rôle déterminé de façon ROBUSTE : la fiche artisans / concierges fait foi, même
       // si le champ role de la fiche users est absent ou incorrect — sinon un artisan
@@ -7918,7 +7970,21 @@
   // seule et l'admin est alerté dès qu'une nouvelle candidature arrive (tant que
   // l'app est ouverte quelque part). Notification hors-app fermée = Cloud Function
   // FCM/e-mail (Phase 2, nécessite le plan Blaze).
-  let adminArtUnsub=null, adminSeenPending=null;
+  let adminArtUnsub=null, adminSeenPending=null, adminWishUnsub=null;
+  // Écoute temps réel des souhaits de services envoyés par les clients (serviceWishes).
+  function refreshAdminWishes(){
+    if(!FB)return;
+    if(adminWishUnsub){try{adminWishUnsub();}catch(_){}adminWishUnsub=null;}
+    try{
+      adminWishUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'serviceWishes'),function(snap){
+        const list=[];
+        snap.forEach(function(d){const x=d.data()||{};list.push({id:d.id,clientUid:x.clientUid||'',clientName:x.clientName||'Client',text:(x.text||'').toString(),zone:x.zone||'',at:(x.createdAt&&x.createdAt.toMillis)?x.createdAt.toMillis():(typeof x.createdAt==='number'?x.createdAt:0)});});
+        list.sort(function(a,b){return (b.at||0)-(a.at||0);});
+        S.adminWishes=list;
+        if(S.persona==='admin'&&(S.admin.view==='wishes'||S.admin.view==='home'))render();
+      });
+    }catch(e){console.warn('wishes load',e);}
+  }
   function refreshAdminArtisans(){
     if(!FB)return;
     if(adminArtUnsub){try{adminArtUnsub();}catch(_){}adminArtUnsub=null;}

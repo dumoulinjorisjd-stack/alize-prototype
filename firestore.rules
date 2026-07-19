@@ -79,6 +79,15 @@ service cloud.firestore {
       allow delete: if isAdmin() || uid() == artisanId;
     }
 
+    // Souhaits de services envoyés par les clients (« boîte à idées » du profil) :
+    // chacun crée les siens (clientUid = son uid) ; seul l'admin lit/gère l'ensemble
+    // pour recenser la demande. Pas de modification a posteriori par le client.
+    match /serviceWishes/{wishId} {
+      allow read:   if isAdmin();
+      allow create: if signedIn() && request.resource.data.clientUid == uid();
+      allow update, delete: if isAdmin();
+    }
+
     // Dossiers conciergerie (mandataires) : créés par la structure (statut « attente »
     // forcé), le statut ne peut être changé que par l'admin. Les données
     // opérationnelles (clients, commandes, apport) sont écrites par la conciergerie
