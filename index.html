@@ -2062,6 +2062,50 @@
     return base.getTime();
   }
   function hoursUntilMission(m){const ms=missionStartMs(m);if(ms==null)return null;return (ms-Date.now())/3600000;}
+  // Échéance EFFECTIVE d'une demande = fin de la fenêtre de créneau (souplesse comprise)
+  // + durée estimée. Base de la purge auto des demandes jamais honorées.
+  function reqCreatedMs(m){if(!m)return null;if(m._createdMs)return m._createdMs;const c=m.createdAt;if(c&&c.toMillis)return c.toMillis();if(typeof c==='number')return c;return null;}
+  function missionDeadlineMs(m){
+    if(!m)return null;
+    let base;
+    if(/^\d{4}-\d{2}-\d{2}$/.test(m.dateISO||'')){const p=(''+m.dateISO).split('-');base=new Date(+p[0],(+p[1])-1,+p[2]);}
+    else{const cm=reqCreatedMs(m);base=cm?new Date(cm):new Date();base.setHours(0,0,0,0);if(m.when==='Demain')base.setDate(base.getDate()+1);}
+    base.setHours(0,0,0,0);
+    const dur=Math.max(1,Number(m.duration)||1);
+    // Garde à la journée (plusieurs jours) : échéance = fin du dernier jour.
+    if(isDayU(m)){base.setDate(base.getDate()+(dur-1));base.setHours(23,59,0,0);return base.getTime();}
+    // Souplesse « semaine » : n'importe quel jour de la semaine → fin de semaine.
+    if(m.slotFlex==='week'){base.setDate(base.getDate()+6);base.setHours(23,59,0,0);return base.getTime();}
+    // Souplesse « journée » : n'importe quelle heure → fin de journée.
+    if(m.slotFlex==='day'){base.setHours(23,59,0,0);return base.getTime();}
+    // Créneau précis ou ± : fin de fenêtre (heure + souplesse) + durée.
+    const startMin=/^\d{1,2}:\d{2}$/.test(m.slot||'')?slotToMin(m.slot):12*60;
+    const flex=Number(m.slotFlex)||0;
+    base.setMinutes(base.getMinutes()+startMin+flex+dur*60);
+    return base.getTime();
+  }
+  var STALE_GRACE_MS=12*3600*1000; // 12 h de tolérance APRÈS l'échéance (souplesse comprise)
+  function isStaleMission(m){
+    if(!m)return false;
+    // Ne s'applique qu'aux demandes non honorées (jamais à une prestation validée/en litige).
+    if(['paid','rated','done_pro','disputed','expired','cancelled'].indexOf(m.status)>=0)return false;
+    const dl=missionDeadlineMs(m);
+    return dl!=null && Date.now()>dl+STALE_GRACE_MS;
+  }
+  // Purge auto (client) : retire une demande non honorée 12 h après son créneau (souplesse
+  // comprise). Marquée « expired » côté serveur → disparaît aussi du fil des artisans.
+  function purgeStaleMissions(){
+    const arr=S.missions||[];let purged=false;
+    for(var i=arr.length-1;i>=0;i--){var m=arr[i];
+      if(['searching','declined','pending','accepted','working'].indexOf(m.status)<0)continue;
+      if(!isStaleMission(m))continue;
+      if(m.reqId&&!isDemo()){try{pushReqUpdate(m,{status:'expired',expiredAt:Date.now()});}catch(_){}}
+      if(S.mission===m)S.mission=null;
+      arr.splice(i,1);purged=true;
+    }
+    if(purged){try{cacheClientLocal();}catch(_){}}
+    return purged;
+  }
   // Politique d'annulation : gratuite avant acceptation ou à 8 h+ du rendez-vous ;
   // sinon indemnité de 50 % de la prestation due à l'artisan (Ti-Services perçoit
   // sa commission sur cette indemnité, comme sur une prestation réalisée).
@@ -4711,6 +4755,8 @@
       <div style="height:8px"></div></div>${conciergeNavbar()}`;
   }
   function renderClient(){
+    // Purge des demandes non honorées, périmées depuis plus de 12 h (souplesse comprise).
+    if(purgeStaleMissions()&&S.mission==null&&S.clientNav==='wallet'){/* la liste a changé : le rendu ci-dessous reflète l'état purgé */}
     const m=S.mission;
     // Non inscrit : page d'accueil (welcome) par défaut ; l'app à 3 onglets n'apparaît
     // qu'après avoir choisi « entrer en mode invité » (S.guest). Inscription/connexion
@@ -5246,6 +5292,9 @@
         service:m.svc, serviceName:m.svcName,
         zone:m.zone||'',
         when:m.when||'', slot:m.slot||'', slotFlex:(m.slotFlex||0),
+        // Date absolue du créneau : indispensable pour calculer l'échéance et purger
+        // automatiquement la demande si elle n'est jamais honorée.
+        dateISO:(m.dateISO||''),
         unit:m.unit||'h', duration:m.duration||1,
         rate:t.rate, boost:m.boost||0, total:t.total,
         frequency:m.frequency||'ponctuelle',
@@ -7768,6 +7817,7 @@
             changed=true;
           }
           m.status=r.status;m.svc=r.service;m.svcName=r.serviceName||svcNm(r.service);m.rate=r.rate;m.duration=r.duration||1;m.unit=r.unit||'h';m.when=r.when||'';m.slot=r.acceptedSlot||r.slot||m.slot||'';m.zone=r.zone||m.zone||'';m.boost=r.boost||0;m.tip=r.tip||0;m.slotFlex=r.slotFlex||0;m.notes=r.notes||m.notes||'';m.frequency=r.frequency||m.frequency||'ponctuelle';
+          m.dateISO=r.dateISO||m.dateISO||'';if(r.createdAt&&r.createdAt.toMillis)m._createdMs=r.createdAt.toMillis();
           if(r.providerUid){m.providerUid=r.providerUid;if(!m.provider||m.provider.nm==='Votre artisan')m.provider={nm:r.providerName||'Votre artisan',ini:inits(r.providerName||'Artisan'),rating:0,jobs:(r.providerJobs||0),founder:!!r.providerFounder};}
           if(r.providerPhoto)m.providerPhoto=r.providerPhoto;if(r.providerPhone!=null)m.providerPhone=r.providerPhone;if(r.providerBio!=null)m.providerBio=r.providerBio;if(Array.isArray(r.providerDiplomas))m.providerDiplomas=r.providerDiplomas;if(r.clientConfirmed!=null)m.clientConfirmed=r.clientConfirmed;
           if(r.finalHours!=null)m.finalHours=r.finalHours;if(r.disputeMsg)m.disputeMsg=r.disputeMsg;
@@ -8204,7 +8254,7 @@
   function reqSkeleton(n){return Array.from({length:n||2}).map(function(){return `<div class="skel-card" style="margin-top:10px"><div class="row between"><span class="skel line" style="width:42%;margin:0"></span><span class="skel line" style="width:22%;margin:0"></span></div><div class="skel line lg" style="margin-top:9px"></div><div class="skel line sm"></div></div>`;}).join('');}
   function openRequestsBlock(){
     const skipped=S.proSkipped||[];
-    const list=(S.openRequests||[]).filter(function(r){return skipped.indexOf(r.id)<0;});
+    const list=(S.openRequests||[]).filter(function(r){return skipped.indexOf(r.id)<0&&!isStaleMission(r);});
     // Premier chargement du fil (avant le 1er instantané) : squelettes, pas « aucune mission ».
     if(S._openReqLoading&&!list.length)return `<div style="margin-top:12px"><span class="eyebrow" style="color:var(--teal-deep)">${I.flame} Missions disponibles</span>${reqSkeleton(2)}</div>`;
     if(!list.length)return `<div class="card" style="padding:18px;margin-top:12px;text-align:center;border-style:dashed"><div class="radar sm"><div class="ring r1"></div><div class="ring r2"></div><div class="core">${I.bolt}</div></div><p class="sub" style="margin:6px 0 0">Aucune mission disponible pour l'instant.</p><p class="mini" style="margin-top:4px">Vous serez notifié dès qu'une demande de votre zone arrive.</p></div>`;
