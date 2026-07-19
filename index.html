@@ -2018,7 +2018,7 @@
 
   const S={
     lang:initLang(),
-    persona:'client',clientNav:'home',proNav:'home',customServices:[],onboarded:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},
+    persona:'client',clientNav:'home',proNav:'home',customServices:[],onboarded:false,guest:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},
     card:null,cardForm:false,payStep:false,payEdit:false,paySaveCard:true,finishing:false,disputing:false,support:false,supportSide:null,mission:null,missions:[],draft:null,
     addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,
     concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,concRetroPaid:'',concIban:'',concIbanHolder:'',concLegal:'',concSiret:'',concAddress:'',retroRate:8,founderTaken:0,
@@ -2389,9 +2389,10 @@
     if(S.persona==='concierge'){if(S.concRetInv)return 'conc:retinv';if(S.concInvoice)return 'conc:inv:'+S.concInvoice;if(S.concForm)return 'conc:form:'+(S.concForm.id||'new');if(S.concClientView)return 'conc:cv:'+S.concClientView;if(S.concOrder)return 'conc:order:'+S.concOrder.step;if(S.concView)return 'conc:view:'+S.concView;return 'conc:'+S.concNav;}
     if(S.persona==='admin')return 'admin:'+S.admin.view+':'+(S.admin.sel||'')+(S.admin.fact?':'+(S.admin.fact.mode||'')+':'+(S.admin.fact.art||'')+':'+(S.admin.fact.conc||'')+':'+(S.admin.fact.inv||''):'');
     if(S.persona==='pro')return 'pro:'+S.proStatus+':'+S.proNav+':'+(S.mission?S.mission.status:'');
-    // Mode INVITÉ : un client non inscrit navigue librement (accueil, catégories,
-    // configurateur). On ne montre l'inscription/connexion que s'il l'a demandée.
-    if(!S.onboarded&&(S.authView==='login'||S.authView==='signup'))return S.authView==='login'?'login':'onb:'+S.onbStep;
+    // Non inscrit : on montre d'abord la PAGE D'ACCUEIL (welcome) — créer un compte,
+    // se connecter, ou « entrer en mode invité ». Le mode invité (S.guest) donne accès
+    // à l'app à 3 onglets sans compte. L'inscription/connexion s'affiche sur demande.
+    if(!S.onboarded&&(!S.guest||S.authView==='login'||S.authView==='signup'))return S.authView==='login'?'login':'onb:'+S.onbStep;
     if(S.mission)return 'client:mission:'+S.mission.status;
     return 'client:'+S.clientNav;
   }
@@ -2763,6 +2764,8 @@
     "Aucune réservation pour l'instant":"No reservations yet",
     "Créez un compte pour envoyer une demande et suivre vos prestations en direct.":"Create an account to send a request and track your services live.",
     "Télécharger le PDF":"Download the PDF",
+    "Explorer les services sans compte":"Explore services without an account",
+    "Voyez tous les services et les prix librement — compte demandé seulement pour commander.":"See all services and prices freely — account only needed to order.",
     "Un souci, un litige, une question sur cette prestation ?":"An issue, a dispute, a question about this service?",
     "Reçue par e-mail — votre justificatif de prestation.":"Received by email — your proof of service.",
     "Services à la demande · Saint-Barthélemy":"On-demand services · Saint-Barthélemy",
@@ -3499,6 +3502,8 @@
     "Aucune réservation pour l'instant":"Ainda sem reservas",
     "Créez un compte pour envoyer une demande et suivre vos prestations en direct.":"Crie uma conta para enviar um pedido e acompanhar os seus serviços em direto.",
     "Télécharger le PDF":"Descarregar o PDF",
+    "Explorer les services sans compte":"Explorar os serviços sem conta",
+    "Voyez tous les services et les prix librement — compte demandé seulement pour commander.":"Veja todos os serviços e preços livremente — conta só necessária para encomendar.",
     "Un souci, un litige, une question sur cette prestation ?":"Um problema, um litígio, uma questão sobre este serviço?",
     "Reçue par e-mail — votre justificatif de prestation.":"Recebida por e-mail — o seu comprovativo de serviço.",
     "Services à la demande · Saint-Barthélemy":"Serviços a pedido · Saint-Barthélemy",
@@ -4639,9 +4644,10 @@
   }
   function renderClient(){
     const m=S.mission;
-    // Invité : inscription/connexion seulement si explicitement demandée ; sinon
-    // il accède à l'accueil, aux onglets (en mode invitation) et au configurateur.
-    if(!S.onboarded&&(S.authView==='login'||S.authView==='signup'))return clientOnboard();
+    // Non inscrit : page d'accueil (welcome) par défaut ; l'app à 3 onglets n'apparaît
+    // qu'après avoir choisi « entrer en mode invité » (S.guest). Inscription/connexion
+    // sur demande.
+    if(!S.onboarded&&(!S.guest||S.authView==='login'||S.authView==='signup'))return clientOnboard();
     if(S.delAcct)return deleteAccountView();
     if(S.generalSupport)return generalSupportChat();
     if(S.share)return shareCard();
@@ -4725,7 +4731,9 @@
       ${S.account?`<div class="card" style="padding:13px 15px;margin-top:16px;display:flex;align-items:center;justify-content:space-between;gap:10px"><div class="row" style="gap:9px"><span class="benic">${I.user}</span><div><b style="font-size:13px">Bon retour, ${esc(S.account.name.split(' ')[0])}</b><div class="mini">${esc(S.account.email)}</div></div></div><button class="btn primary sm" data-act="show-login" style="width:auto;padding:9px 14px">Se connecter</button></div>`:''}
       <div class="footcta" style="position:static;background:none;padding:22px 0 0">
         <button class="btn primary" data-act="onb-start">Créer mon compte</button>
-        ${FB?`<button class="btn ghost" data-act="google-soon" style="margin-top:10px"><svg width="17" height="17" viewBox="0 0 24 24" style="vertical-align:-3px"><path fill="#4285F4" d="M23 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.2a5.3 5.3 0 0 1-2.3 3.5v2.9h3.7C21.7 18.9 23 15.9 23 12.3z"/><path fill="#34A853" d="M12 24c3.1 0 5.7-1 7.6-2.8l-3.7-2.9c-1 .7-2.3 1.1-3.9 1.1-3 0-5.5-2-6.4-4.8H1.8v3C3.7 21.3 7.5 24 12 24z"/><path fill="#FBBC05" d="M5.6 14.3a7.2 7.2 0 0 1 0-4.6v-3H1.8a12 12 0 0 0 0 10.6z"/><path fill="#EA4335" d="M12 4.8c1.7 0 3.2.6 4.4 1.7l3.3-3.3C17.7 1.2 15.1 0 12 0 7.5 0 3.7 2.7 1.8 6.7l3.8 3c.9-2.8 3.4-4.9 6.4-4.9z"/></svg>&nbsp;Continuer avec Google</button>`:''}
+        <button class="btn ghost" data-act="enter-guest" style="margin-top:10px">${I.bolt}&nbsp;Explorer les services sans compte</button>
+        <p class="mini" style="text-align:center;margin-top:8px;color:var(--muted)">Voyez tous les services et les prix librement — compte demandé seulement pour commander.</p>
+        ${FB?`<button class="btn ghost" data-act="google-soon" style="margin-top:12px"><svg width="17" height="17" viewBox="0 0 24 24" style="vertical-align:-3px"><path fill="#4285F4" d="M23 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.2a5.3 5.3 0 0 1-2.3 3.5v2.9h3.7C21.7 18.9 23 15.9 23 12.3z"/><path fill="#34A853" d="M12 24c3.1 0 5.7-1 7.6-2.8l-3.7-2.9c-1 .7-2.3 1.1-3.9 1.1-3 0-5.5-2-6.4-4.8H1.8v3C3.7 21.3 7.5 24 12 24z"/><path fill="#FBBC05" d="M5.6 14.3a7.2 7.2 0 0 1 0-4.6v-3H1.8a12 12 0 0 0 0 10.6z"/><path fill="#EA4335" d="M12 4.8c1.7 0 3.2.6 4.4 1.7l3.3-3.3C17.7 1.2 15.1 0 12 0 7.5 0 3.7 2.7 1.8 6.7l3.8 3c.9-2.8 3.4-4.9 6.4-4.9z"/></svg>&nbsp;Continuer avec Google</button>`:''}
         <p class="mini" style="text-align:center;margin-top:12px">Déjà un compte&nbsp;? <button class="linklike" data-act="show-login">Se connecter</button></p>
         <p class="mini" style="text-align:center;margin-top:8px">Vous êtes un professionnel&nbsp;? <button class="linklike" data-act="go-artisan-signup">Rejoindre Ti-Services ›</button></p>
       </div></div>`;
@@ -6641,6 +6649,10 @@
     if(b.dataset.act&&b.dataset.act.indexOf('conc-reorder:')===0){const o=S.concOrders.find(x=>x.id===b.dataset.act.split(':')[1]);if(o){S.concClientView=null;S.concView=null;S.concOrder={step:'form',clientId:o.clientId,svc:o.svc,svcName:o.svcName,rate:o.rate,duration:o.duration,when:'Aujourd’hui',slot:o.slot,notes:o.notes||''};render();toast('Commande pré-remplie — ajustez puis validez');}return;}
     switch(b.dataset.act){
       case 'onb-start':S.authView='signup';S.onbStep=1;render();break;
+      // Entrer en mode invité depuis la page d'accueil → app à 3 onglets, sans compte.
+      case 'enter-guest':S.guest=true;S.authView=null;S.clientNav='home';S.mission=null;S.draft=null;render();break;
+      // Revenir de l'app invité vers la page d'accueil (créer un compte / se connecter).
+      case 'guest-to-welcome':S.guest=false;S.authView=null;S.clientNav='home';S.draft=null;render();break;
       case 'guest-signup':S.authView='signup';S.onbStep=1;S.clientForm=S.clientForm||{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''};render();break;
       // « ← Retour » depuis le formulaire d'inscription : on ANNULE le flux d'auth et
       // on revient à la navigation invité (accueil, ou configurateur si une commande
@@ -6657,7 +6669,7 @@
       case 'do-login':{const f=S.loginForm;if(!(/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=1)){toast('E-mail et mot de passe requis');break;}if(FB){fbLogin(f);}else{const acc=S.account&&S.account.email===f.email.trim()?S.account:{name:(S.account?S.account.name:'Camille Magras'),email:f.email.trim(),zone:(S.account?S.account.zone:'Gustavia')};S.account=acc;S.clientForm={name:acc.name,email:acc.email,zone:acc.zone,password:''};S.onboarded=true;S.authView=null;resumeOrderIfPending();render();toast('Content de vous revoir, '+acc.name.split(' ')[0]+' !');}break;}
       case 'forgot-pw':{const em=((S.loginForm&&S.loginForm.email)||(S.account&&S.account.email)||'').trim();if(!/.+@.+\..+/.test(em)){toast('Saisissez votre e-mail, puis « Mot de passe oublié ».');break;}if(FB){fbResetPassword(em);}else{toast('Un lien de réinitialisation vous serait envoyé par e-mail.');}break;}
       case 'google-soon':if(FB){fbGoogle();}else{toast('Connexion Google — bientôt disponible');}break;
-      case 'logout':S.demoMode=false;clearClientCache();if(FB)blankAll();fbLogout();if(!FB){S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;S.missions=[];render();}break;
+      case 'logout':S.demoMode=false;S.guest=false;clearClientCache();if(FB)blankAll();fbLogout();if(!FB){S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;S.missions=[];render();}break;
       // Un artisan qui veut commander un service pour lui-même utilise un compte
       // CLIENT séparé (autre e-mail). On le déconnecte de l'espace artisan et on
       // ouvre directement l'écran de connexion client.
@@ -6728,7 +6740,7 @@
       case 'conc-submit':{const f=S.concSignup||{};if(!concSignupOk(f)){toast('Complétez tous les champs obligatoires (marqués *).');break;}if(FB){signupAsConcierge=true;fbConciergeSignup(f);}else{S.persona='concierge';S.concStatus='pending';S.concName=(f.contact||f.name||'').trim();S.onboarded=true;S.concNav='home';render();toast('Candidature envoyée (démo)');}break;}
       case 'back-to-client':S.persona='client';S.proStatus='approved';render();break;
       case 'start-demo':break; // Mode démonstration retiré (application en service réel).
-      case 'exit-demo':S.demoMode=false;if(FB)blankAll();S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;S.missions=[];S.draft=null;S.account=loadAccount();render();break;
+      case 'exit-demo':S.demoMode=false;S.guest=false;if(FB)blankAll();S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;S.missions=[];S.draft=null;S.account=loadAccount();render();break;
       case 'demo-go-pro':if(!isDemo())break;S.persona='pro';render();break;
       case 'demo-go-client':if(!isDemo())break;S.persona='client';render();break;
       case 'demo-go-admin':if(!isDemo())break;S.persona='admin';S.admin.view='home';S.admin.sel=null;render();break;
@@ -7132,7 +7144,7 @@
     const pins=e.target.closest('[data-proinsurance]');
     if(pins&&pins.files&&pins.files[0]){const file=pins.files[0];pins.value='';uploadProInsurance(file);return;}
   });
-  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,card:null,cardForm:false,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,proHistory:PRO_HISTORY(),fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,adminPrices:ADMIN_PRICES(),proPhoto:null,proStatus:'approved',proFounder:true,proNotifPush:true,proNotifWa:true,proPhone:'0690 00 00 00',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:'',photo:''}});render();toast('Scénario réinitialisé');});
+  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,card:null,cardForm:false,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,proHistory:PRO_HISTORY(),fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,guest:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,adminPrices:ADMIN_PRICES(),proPhoto:null,proStatus:'approved',proFounder:true,proNotifPush:true,proNotifWa:true,proPhone:'0690 00 00 00',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:'',photo:''}});render();toast('Scénario réinitialisé');});
 
   /* ---------- PWA: install + service worker ---------- */
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
@@ -7396,7 +7408,7 @@
     if(S.payStep){if(S.payEdit&&S.card){S.payEdit=false;render();return;}S.payStep=false;S.payEdit=false;if(S.draft)renderConfig();else render();return;}
     if(S.draft){S.draft=null;render();return;}
     if(S.mission){const st=S.mission.status;if(st==='searching'){cancelActiveRequest(S.mission);removeMission(S.mission);}else if(st==='paid'||st==='rated'){archiveMission(S.mission);}S.mission=null;S.clientNav='wallet';render();return;}
-    if(!S.onboarded){if(S.authView){S.authView=null;render();return;}if(S.onbStep>0){S.onbStep--;render();}return;}
+    if(!S.onboarded){if(S.authView){S.authView=null;render();return;}if(S.onbStep>0){S.onbStep--;render();return;}if(S.guest){if(S.clientNav!=='home'){S.clientNav='home';render();return;}S.guest=false;render();return;}return;}
     if(S.clientNav!=='home'){S.clientNav='home';render();return;}
   }
   function pushGuard(){try{history.pushState({app:1},'');}catch(e){}}
@@ -7439,7 +7451,7 @@
       try{ if(authM.setPersistence&&authM.browserLocalPersistence)await authM.setPersistence(FB.auth,authM.browserLocalPersistence); }catch(_){}
       authM.onAuthStateChanged(FB.auth,function(user){
         if(user){ loadUserProfile(user).finally(function(){try{window.__killSplash&&window.__killSplash();}catch(_){}}); }
-        else { if(S.onboarded){S.onboarded=false;S.mission=null;S.draft=null;S.persona='client';S.clientNav='home';if(S._wantClientLogin){S._wantClientLogin=false;S.authView='login';S.loginForm={email:'',password:''};}} render(); try{window.__killSplash&&window.__killSplash();}catch(_){} }
+        else { S.guest=false; if(S.onboarded){S.onboarded=false;S.mission=null;S.draft=null;S.persona='client';S.clientNav='home';if(S._wantClientLogin){S._wantClientLogin=false;S.authView='login';S.loginForm={email:'',password:''};}} render(); try{window.__killSplash&&window.__killSplash();}catch(_){} }
       });
       // Connexion Google par redirection (PWA mobile) : au retour, il FAUT récupérer
       // le résultat, sinon l'utilisateur revient sur l'accueil sans être connecté.
