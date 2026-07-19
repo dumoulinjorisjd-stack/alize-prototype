@@ -741,6 +741,8 @@
   .swipe-del{position:absolute;inset:0;width:100%;display:flex;align-items:center;justify-content:flex-end;gap:2px;padding:0 22px;background:var(--coral-deep);color:#fff;font-weight:750;font-size:14px;border-radius:var(--r-md)}
   .swipe-card{position:relative;z-index:1;transition:transform .18s cubic-bezier(.4,0,.2,1);touch-action:pan-y}
   .swipe-row.open .swipe-card{transform:translateX(-124px)}
+  /* Variante « Passer » (artisan) : geste identique, mais action non destructive → teinte neutre. */
+  .swipe-del.skip{background:#6b6472}
 
   /* Barre d'onglets TOUJOURS visible : ancrée en bas de l'écran (hors du flux de
      défilement), quel que soit le défilement. Sur mobile le sticky n'était pas
@@ -2473,6 +2475,7 @@
     }catch(e){console.warn('i18n',e);}
   }
   var EN_DICT={
+    "Passer":"Skip",
     "Un service qui manque ?":"A service you’re missing?",
     "Demander ce service":"Request this service",
     "Dites-nous quel service vous aimeriez trouver sur Ti-Services. Vos idées orientent les prochains métiers proposés.":"Tell us which service you’d like to find on Ti-Services. Your ideas shape the next trades we add.",
@@ -3041,6 +3044,7 @@
   var TIER_PT={'bronze':'Bronze','argent':'Prata','or':'Ouro','platine':'Platina','diamant':'Diamante'};
   var DOW_PT={'lun':'Seg','mar':'Ter','mer':'Qua','jeu':'Qui','ven':'Sex','sam':'Sáb','dim':'Dom'};
   var PT_DICT={
+    "Passer":"Passar",
     "Un service qui manque ?":"Falta um serviço?",
     "Demander ce service":"Pedir este serviço",
     "Dites-nous quel service vous aimeriez trouver sur Ti-Services. Vos idées orientent les prochains métiers proposés.":"Diga-nos que serviço gostaria de encontrar na Ti-Services. As suas ideias orientam os próximos ofícios propostos.",
@@ -6765,7 +6769,10 @@
     if(b.dataset.act&&b.dataset.act.indexOf('rm-diploma:')===0){const i=+b.dataset.act.split(':')[1];if(S.proForm&&S.proForm.diplomaDocs)S.proForm.diplomaDocs.splice(i,1);render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('signup-kind:')===0){const k=b.dataset.act.split(':')[1];if(k==='concierge'){S.signupKind='concierge';S.concSignup={name:'',siret:'',contact:'',phone:'',email:'',password:'',password2:'',cgu:false,mandat:false};}else{S.signupKind='artisan';S.proForm={name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,cgu:false,charte:false,rates:{},otherService:'',photo:''};}render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('rbfreq:')===0){S.rebookFreq=b.dataset.act.split(':')[1];render();return;}
-    if(b.dataset.act&&b.dataset.act.indexOf('reqview:')===0){S.proReqView=b.dataset.act.slice('reqview:'.length);S.proReqSlot=null;S.proReqPick=false;render();return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('reqview:')===0){const orow=b.closest('.swipe-row');if(orow&&orow.classList.contains('open')){orow.classList.remove('open');return;}S.proReqView=b.dataset.act.slice('reqview:'.length);S.proReqSlot=null;S.proReqPick=false;render();return;}
+    // « Passer » depuis le fil (glisser pour révéler) : retire la mission de la liste
+    // de l'artisan (proSkipped) — même effet que « Pas cette fois » dans la fiche.
+    if(b.dataset.act&&b.dataset.act.indexOf('pro-skip:')===0){const rid=b.dataset.act.slice('pro-skip:'.length);if(rid&&(S.proSkipped||[]).indexOf(rid)<0){S.proSkipped=S.proSkipped||[];S.proSkipped.push(rid);}render();toast('Mission passée — proposée aux autres artisans');return;}
     if(b.dataset.proreqslot){if(b.dataset.proreqslot==='__pick'){S.proReqPick=true;}else{S.proReqPick=false;S.proReqSlot=b.dataset.proreqslot;}render();return;}
     if(b.dataset.act==='reqview-close'){S.proReqView=null;render();return;}
     if(b.dataset.act==='reqview-skip'){if(S.proReqView&&(S.proSkipped||[]).indexOf(S.proReqView)<0){S.proSkipped=S.proSkipped||[];S.proSkipped.push(S.proReqView);}S.proReqView=null;render();return;}
@@ -8202,7 +8209,7 @@
     if(S._openReqLoading&&!list.length)return `<div style="margin-top:12px"><span class="eyebrow" style="color:var(--teal-deep)">${I.flame} Missions disponibles</span>${reqSkeleton(2)}</div>`;
     if(!list.length)return `<div class="card" style="padding:18px;margin-top:12px;text-align:center;border-style:dashed"><div class="radar sm"><div class="ring r1"></div><div class="ring r2"></div><div class="core">${I.bolt}</div></div><p class="sub" style="margin:6px 0 0">Aucune mission disponible pour l'instant.</p><p class="mini" style="margin-top:4px">Vous serez notifié dès qu'une demande de votre zone arrive.</p></div>`;
     const myUid=(FB&&FB.auth&&FB.auth.currentUser)?FB.auth.currentUser.uid:'';
-    return `<div style="margin-top:12px"><span class="eyebrow" style="color:var(--teal-deep)">${I.flame} Missions disponibles · ${list.length}</span>${list.map(function(r){const win=reqWinTxt(r);const forMe=(r.preferredProviderUid&&r.preferredProviderUid===myUid);return `<button class="card" data-act="reqview:${r.id}" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block${forMe?';border-left:4px solid var(--teal-deep)':''}"><div class="row between"><b style="font-size:14px">${esc(r.serviceName||svcNm(r.service))}</b><b class="money" style="color:var(--teal-deep);font-family:var(--f-disp)">${eur(reqPayout(r))}</b></div>${forMe?`<span class="chip" style="padding:2px 9px;background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.star} Demande réservée pour vous</span>`:''}<div class="mini" style="margin-top:4px">${I.pin} ${esc(r.zone||'')} · ${esc(r.when||'')} · ${esc(win)} · ${r.duration||1} ${r.unit==='j'?'j':'h'}</div>${r.boost?`<span class="chip" style="padding:2px 9px;background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.bolt} Coup de pouce +${r.boost}%</span>`:''}<div class="row between" style="margin-top:10px"><span class="mini" style="color:var(--muted)">${r.notes?'Détails du besoin fournis':'Voir la mission'}</span><span class="mini" style="color:var(--teal-deep);font-weight:700">Voir la fiche ›</span></div></button>`;}).join('')}</div>`;
+    return `<div style="margin-top:12px"><span class="eyebrow" style="color:var(--teal-deep)">${I.flame} Missions disponibles · ${list.length}</span>${list.map(function(r){const win=reqWinTxt(r);const forMe=(r.preferredProviderUid&&r.preferredProviderUid===myUid);return `<div class="swipe-row"><button class="swipe-del skip" data-act="pro-skip:${r.id}" aria-label="Passer cette mission">Passer</button><button class="card swipe-card" data-act="reqview:${r.id}" style="padding:14px;width:100%;text-align:left;display:block${forMe?';border-left:4px solid var(--teal-deep)':''}"><div class="row between"><b style="font-size:14px">${esc(r.serviceName||svcNm(r.service))}</b><b class="money" style="color:var(--teal-deep);font-family:var(--f-disp)">${eur(reqPayout(r))}</b></div>${forMe?`<span class="chip" style="padding:2px 9px;background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.star} Demande réservée pour vous</span>`:''}<div class="mini" style="margin-top:4px">${I.pin} ${esc(r.zone||'')} · ${esc(r.when||'')} · ${esc(win)} · ${r.duration||1} ${r.unit==='j'?'j':'h'}</div>${r.boost?`<span class="chip" style="padding:2px 9px;background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.bolt} Coup de pouce +${r.boost}%</span>`:''}<div class="row between" style="margin-top:10px"><span class="mini" style="color:var(--muted)">${r.notes?'Détails du besoin fournis':'Voir la mission'}</span><span class="mini" style="color:var(--teal-deep);font-weight:700">Voir la fiche ›</span></div></button></div>`;}).join('')}</div>`;
   }
   // Alerte de conflit d'agenda : l'artisan a déjà une intervention qui chevauche
   // ce créneau. Il confirme explicitement qu'il peut assurer, sinon « passe son tour ».
