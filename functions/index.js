@@ -320,12 +320,13 @@ exports.notifyArtisansNewRequest = onDocumentCreated('requests/{reqId}', async (
 
   const svcName = (r.serviceName || 'Nouvelle prestation').toString().slice(0, 60);
   const zone = (r.zone || '').toString().slice(0, 40);
+  const cliFirst = (r.clientName || 'Un client').toString().split(' ')[0].slice(0, 30);
   const message = {
     tokens,
     data: {
-      title: preferred ? 'Espace artisan · Mission pour vous' : 'Espace artisan · Nouvelle mission',
+      title: preferred ? '🌟 Demande réservée pour vous' : 'Espace artisan · Nouvelle mission',
       body: preferred
-        ? (svcName + (zone ? ' · ' + zone : '') + ' — demandée pour vous en priorité.')
+        ? (cliFirst + ' vous demande directement — ' + svcName + (zone ? ' · ' + zone : '') + '. Hors file d’attente, rien que pour vous.')
         : (svcName + (zone ? ' · ' + zone : '') + ' — premier arrivé, premier servi.'),
       url: './?open=missions',
     },
