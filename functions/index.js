@@ -73,6 +73,20 @@ async function mollieRouteNet(molliePaymentId, orgId, netAmount, label) {
     return true;
   } catch (e) { console.warn('mollieRouteNet', e); return false; }
 }
+// Appel bas-niveau à l'API Mollie (jeton plateforme). Renvoie {ok, data|status}.
+async function mollieApi(path, method, body) {
+  try {
+    const res = await fetch(MOLLIE_API + path, {
+      method: method || 'GET',
+      headers: {'Authorization': 'Bearer ' + process.env.MOLLIE_ACCESS_TOKEN, 'Content-Type': 'application/json'},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const txt = await res.text();
+    let data = null; try { data = txt ? JSON.parse(txt) : null; } catch (_) {}
+    if (!res.ok) { console.warn('mollieApi', method, path, res.status, (txt || '').slice(0, 300)); return {ok: false, status: res.status, data: data}; }
+    return {ok: true, data: data};
+  } catch (e) { console.warn('mollieApi throw', method, path, e); return {ok: false, error: String(e)}; }
+}
 /* ============================================================================
  * WHATSAPP BUSINESS CLOUD API — alerte directe à l'artisan (officiel, Meta).
  *
@@ -660,7 +674,7 @@ const SMALL_COMM_MIN = 21;   // seuil de base (€) sous lequel le plancher s'ap
 const SMALL_COMM_PCT = 10;   // taux plancher sous le seuil
 const round2 = (x) => Math.round((Number(x) || 0) * 100) / 100;
 
-exports.settleCommission = onDocumentUpdated('requests/{reqId}', async (event) => {
+exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secrets: ['MOLLIE_ACCESS_TOKEN']}, async (event) => {
   const before = (event.data && event.data.before && event.data.before.data()) || {};
   const after = (event.data && event.data.after && event.data.after.data()) || {};
   // On agit UNIQUEMENT sur la transition -> « paid », et une seule fois.
@@ -841,12 +855,32 @@ exports.settleCommission = onDocumentUpdated('requests/{reqId}', async (event) =
       } catch (e) { console.warn('settleCommission retro', e); }
     }
 
-    // 3) VERSEMENT MOLLIE (le cas échéant) : route le NET vers l'organisation de
-    //    l'artisan et garde la commission sur le solde plateforme. Inerte tant que
-    //    Mollie n'est pas configuré ou que le paiement est simulé (pas de molliePaymentId).
+    // 3) CAPTURE de l'empreinte puis VERSEMENT du net. À la validation, on débite
+    //    RÉELLEMENT le montant final (gross), plafonné à l'empreinte posée (« jamais
+    //    plus que le montant annoncé »). Sans molliePaymentId (paiement simulé) : no-op.
+    let captureOk = true;
+    if (mollieApiConfigured() && after.molliePaymentId && !after.mollieCaptured) {
+      captureOk = false;
+      try {
+        const held = round2(Number(after.molliePaymentAmount) || gross);
+        const toCapture = round2(Math.min(gross, held));
+        const p = await mollieApi('/payments/' + encodeURIComponent(after.molliePaymentId), 'GET');
+        const st = (p.ok && p.data) ? p.data.status : '';
+        if (st === 'authorized') {
+          const cap = await mollieApi('/payments/' + encodeURIComponent(after.molliePaymentId) + '/captures', 'POST',
+            {amount: {currency: 'EUR', value: toCapture.toFixed(2)}});
+          captureOk = cap.ok;
+        } else if (st === 'paid') {
+          captureOk = true;   // déjà capturé
+        }
+        await event.data.after.ref.update({mollieCaptured: captureOk, mollieCaptureAmount: toCapture});
+      } catch (e) { console.warn('settleCommission capture', e); }
+    }
+    // 3 bis) VERSEMENT MOLLIE : route le NET vers l'organisation de l'artisan et garde
+    //    la commission sur le solde plateforme. Uniquement si la capture a réussi.
     try {
       const orgId = after.mollieOrgId || (await db.collection('artisans').doc(providerUid).get()).get('mollieOrgId');
-      if (orgId && after.molliePaymentId) {
+      if (orgId && after.molliePaymentId && captureOk) {
         const routed = await mollieRouteNet(after.molliePaymentId, orgId, net,
           'Ti-Services · ' + (after.serviceName || after.service || 'prestation') + ' · ' + saleInvoiceNo);
         if (routed) await event.data.after.ref.update({molliePayout: 'routed'});
@@ -945,6 +979,87 @@ exports.recordNoShow = onDocumentUpdated('requests/{reqId}', async (event) => {
  * passer l'uid en clair, et vérifier l'authentification de l'appelant. Inerte tant
  * que MOLLIE_CLIENT_ID/SECRET ne sont pas configurés.
  */
+/**
+ * createClientPayment : pose l'EMPREINTE bancaire (autorisation Mollie, capture
+ * manuelle) pour une demande. Le client passe par le parcours sécurisé Mollie ; RIEN
+ * n'est débité — le débit réel n'a lieu qu'à la capture, déclenchée à la validation de
+ * la prestation (settleCommission). Montant = total FIGÉ côté serveur (jamais une
+ * valeur envoyée par le client) → « jamais plus que le montant annoncé ». Inerte si
+ * Mollie n'est pas configuré (renvoie {simulated:true}) : la bêta continue de simuler.
+ */
+exports.createClientPayment = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) => {
+  const uid = request.auth && request.auth.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Connexion requise.');
+  const reqId = ((request.data && request.data.reqId) || '').toString();
+  const returnUrl = ((request.data && request.data.returnUrl) || '').toString();
+  if (!reqId) throw new HttpsError('invalid-argument', 'reqId manquant.');
+  if (!mollieApiConfigured()) return {simulated: true};
+
+  const db = getFirestore();
+  const snap = await db.collection('requests').doc(reqId).get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Demande introuvable.');
+  const r = snap.data() || {};
+  if (r.clientUid !== uid) throw new HttpsError('permission-denied', 'Demande d\u2019un autre compte.');
+  const amount = round2(Number(r.total) || 0);
+  if (!(amount > 0)) throw new HttpsError('failed-precondition', 'Montant invalide.');
+
+  // Idempotence : si une empreinte est déjà en cours (open/pending/authorized), on
+  // renvoie son lien plutôt que de bloquer les fonds une seconde fois.
+  if (r.molliePaymentId) {
+    const ex = await mollieApi('/payments/' + encodeURIComponent(r.molliePaymentId), 'GET');
+    if (ex.ok && ex.data && ['open', 'pending', 'authorized'].indexOf(ex.data.status) >= 0) {
+      const link = ex.data._links && ex.data._links.checkout && ex.data._links.checkout.href;
+      return {paymentId: ex.data.id, checkoutUrl: link || null, status: ex.data.status, reused: true};
+    }
+  }
+
+  const appUrl = APP_URL.replace(/\/$/, '');
+  const redirectUrl = returnUrl || (appUrl + '/?paid=' + encodeURIComponent(reqId));
+  const webhookUrl = 'https://europe-west1-t-service-prod.cloudfunctions.net/mollieWebhook';
+  const out = await mollieApi('/payments', 'POST', {
+    amount: {currency: 'EUR', value: amount.toFixed(2)},
+    description: ('Ti-Services \u00b7 ' + (r.serviceName || r.service || 'prestation')).toString().slice(0, 100),
+    redirectUrl: redirectUrl,
+    webhookUrl: webhookUrl,
+    captureMode: 'manual',
+    metadata: {reqId: reqId, clientUid: uid},
+  });
+  if (!out.ok || !out.data) throw new HttpsError('internal', 'Création du paiement Mollie échouée.');
+  const pay = out.data;
+  await db.collection('requests').doc(reqId).set({
+    molliePaymentId: pay.id, molliePaymentStatus: pay.status || 'open', molliePaymentAmount: amount,
+  }, {merge: true});
+  const checkout = pay._links && pay._links.checkout && pay._links.checkout.href;
+  return {paymentId: pay.id, checkoutUrl: checkout || null, status: pay.status || 'open'};
+});
+
+/**
+ * mollieWebhook : Mollie POSTe l'id du paiement à chaque changement d'état. On
+ * re-interroge Mollie (source de vérité) et on reflète l'état sur la demande. On ne
+ * débite jamais ici : la capture se fait à la validation (settleCommission). On répond
+ * toujours 200 pour éviter les relances en boucle de Mollie.
+ */
+exports.mollieWebhook = onRequest({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (req, res) => {
+  try {
+    if (!mollieApiConfigured()) { res.status(200).send('ok'); return; }
+    const id = (req.body && req.body.id) || (req.query && req.query.id) || '';
+    if (!id) { res.status(400).send('missing id'); return; }
+    const out = await mollieApi('/payments/' + encodeURIComponent(id), 'GET');
+    if (out.ok && out.data) {
+      const pay = out.data;
+      const reqId = (pay.metadata && pay.metadata.reqId) || '';
+      if (reqId) {
+        const db = getFirestore();
+        const upd = {molliePaymentStatus: pay.status || ''};
+        if (pay.status === 'authorized') upd.molliePaymentAuthorized = true;
+        if (pay.status === 'paid') upd.molliePaymentCaptured = true;
+        try { await db.collection('requests').doc(reqId).set(upd, {merge: true}); } catch (e) { console.warn('mollieWebhook update', e); }
+      }
+    }
+    res.status(200).send('ok');
+  } catch (e) { console.warn('mollieWebhook', e); res.status(200).send('ok'); }
+});
+
 exports.mollieOnboardingStart = onRequest((req, res) => {
   if (!mollieOAuthConfigured()) { res.status(503).json({error: 'Mollie non configuré', message: 'Compte Mollie Connect à ouvrir + secrets à définir.'}); return; }
   const uid = (req.query.uid || req.query.state || '').toString();
