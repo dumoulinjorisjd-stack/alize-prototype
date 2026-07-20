@@ -6371,6 +6371,41 @@
     }
     printInvoiceFallback(m);
   }
+  // Téléchargement de la PROCURATION en vrai PDF (mandat de retrait signé). En mode réel,
+  // on demande au serveur (procurationPdf) le document avec la signature intégrée ; repli
+  // sur l'aperçu imprimable en démo / hors-ligne.
+  async function downloadProcurationPdf(m){
+    if(!m){toast('Procuration introuvable');return;}
+    const rid=(m.reqId||'').trim();
+    if(FB&&FB.functions&&FB.fn&&FB.auth&&FB.auth.currentUser&&!isDemo()&&rid){
+      try{
+        toast('Préparation du PDF…');
+        const call=FB.fn.httpsCallable(FB.functions,'procurationPdf');
+        const res=await call({reqId:rid});
+        const d=(res&&res.data)||{};
+        if(d.pdf){ downloadB64Pdf(d.pdf,d.filename||'Procuration-Ti-Services.pdf'); toast('Procuration enregistrée ✓'); return; }
+      }catch(e){ console.warn('procurationPdf',e); }
+    }
+    printProcurationFallback(m);
+  }
+  function printProcurationFallback(m){
+    try{
+      const tmp=document.createElement('div');tmp.style.cssText='position:absolute;left:-9999px;top:0;width:420px';
+      tmp.innerHTML=colisProcuration(m);document.body.appendChild(tmp);
+      const doc=tmp.querySelector('#invoiceDoc');const html=doc?doc.outerHTML:'';tmp.remove();
+      if(!html){window.print();return;}
+      const css=Array.prototype.map.call(document.querySelectorAll('style'),function(s){return s.textContent||'';}).join('\n');
+      const w=window.open('','_blank');
+      if(w&&w.document){
+        w.document.open();
+        w.document.write('<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Procuration · Ti-Services</title><style>'+css+'</style><style>body{background:#fff!important;margin:0;padding:14px}.noprint{display:none!important}@media print{body{padding:0}}</style></head><body>'+html+'</body></html>');
+        w.document.close();w.focus();
+        setTimeout(function(){try{w.print();}catch(_){}},600);
+        return;
+      }
+      toast('Autorisez l’ouverture de la fenêtre pour enregistrer le PDF.');
+    }catch(_){ toast('Édition PDF indisponible ici — ouvrez la procuration dans Safari.'); }
+  }
   // Photo de profil de l'artisan modifiée depuis « Mon compte » : persistée sur sa fiche
   // (et sur son compte users pour l'affichage) ; en démo, on garde juste l'aperçu local.
   function saveProPhoto(d){ try{ if(FB&&FB.auth&&FB.auth.currentUser&&!isDemo()){ const uid=FB.auth.currentUser.uid; FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{photo:d||''},{merge:true}).then(function(){toast('Photo de profil mise à jour ✓');}).catch(function(e){toast('⚠︎ Photo non enregistrée : '+fbErrTxt(e));}); try{ FB.f.setDoc(FB.f.doc(FB.db,'users',uid),{photo:d||''},{merge:true}); }catch(_){} } else { toast('Photo de profil mise à jour ✓'); } }catch(_){} }
@@ -6446,7 +6481,7 @@
       </div>
       <div class="thumbs" style="margin-top:10px">${c.idFront?`<div class="thumb"><img src="${c.idFront}" alt="Pièce d'identité recto"></div>`:''}${c.idBack?`<div class="thumb"><img src="${c.idBack}" alt="Pièce d'identité verso"></div>`:''}</div>
       <button class="btn ghost sm" data-act="colis-proc" style="margin-top:10px;width:auto;padding:9px 14px">${I.card} Voir la procuration</button>`
-      :`${c.signed?`<div class="banner teal" style="margin-top:12px">${I.check}<span>Procuration <b>signée</b> — votre prestataire a tout le nécessaire.</span></div>`:`<div class="banner coral" style="margin-top:12px">${I.clock}<span><b>Signez la procuration</b> pour que le prestataire puisse retirer votre pli.</span></div><button class="btn primary" data-act="colis-sign" style="margin-top:10px">${I.check} Signer la procuration</button>`}`}
+      :`${c.signed?`<div class="banner teal" style="margin-top:12px">${I.check}<span>Procuration <b>signée</b> — votre prestataire a tout le nécessaire.</span></div>`:`<div class="banner coral" style="margin-top:12px">${I.clock}<span><b>Signez la procuration</b> pour que le prestataire puisse retirer votre pli.</span></div><button class="btn primary" data-act="colis-sign" style="margin-top:10px">${I.check} Signer la procuration</button>`}<button class="btn ghost sm" data-act="colis-proc" style="margin-top:10px;width:auto;padding:9px 14px">${I.card} ${c.signed?'Revoir la procuration':'Voir la procuration'}</button>`}
     </div>`;
   }
   // Pavé de SIGNATURE MANUSCRITE : le client trace sa signature au doigt / stylet sur un
@@ -6466,7 +6501,7 @@
   function colisProcuration(m){
     const c=m.colis||{};const p=m.provider||{};
     const proNm=p.nm||m.providerName||'le prestataire mandaté par Ti-Services';
-    return `<div class="pad"><button class="reset" data-act="colis-proc-close" style="margin:8px 0 2px">← Retour</button>
+    return `<div class="pad"><div class="row between noprint" style="margin-top:6px;gap:8px"><button class="reset" data-act="colis-proc-close">← Retour</button><button class="btn primary" data-act="dl-procuration" style="width:auto;padding:10px 16px">${I.card}&nbsp;Télécharger le PDF</button></div>
       <p class="mini noprint" style="text-align:center;color:var(--muted);margin:6px 0 8px">${I.check} Procuration de retrait — à présenter au guichet avec les pièces d'identité.</p>
       <div id="invoiceDoc"><div class="inv">
         <div class="row between" style="align-items:flex-start"><div><h2>PROCURATION</h2><div class="mut">Retrait de courrier / colis par un tiers</div></div><div style="text-align:right"><div style="font-family:var(--f-disp);font-weight:800;font-size:16px;color:#151515">Ti-Services</div>${ccsHead()}</div></div>
@@ -7015,6 +7050,7 @@
     if(b.dataset.act==='sign-confirm'){const cv=S._sigCanvas;if(!cv||!cv.getAttribute('data-dirty')){toast('Tracez d’abord votre signature');return;}let data='';try{data=cv.toDataURL('image/png');}catch(_){}const m=S.mission;if(m&&m.colis){m.colis.signed=true;m.colis.signedAt=Date.now();m.colis.signature=data;pushReqUpdate(m,{colisSigned:true,colisSignedAt:Date.now(),colisSignature:data});}S.signPad=false;S._sigCanvas=null;render();toast('Procuration signée ✓');return;}
     if(b.dataset.act==='colis-proc'){S.colisProc=true;render();return;}
     if(b.dataset.act==='colis-proc-close'){S.colisProc=false;render();return;}
+    if(b.dataset.act==='dl-procuration'){downloadProcurationPdf(S.mission);return;}
     if(b.dataset.act==='colis-tournee'){S.colisTournee=true;render();return;}
     if(b.dataset.act==='colis-tournee-close'){S.colisTournee=false;render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('colis-open:')===0){const id=b.dataset.act.split(':')[1];const mm=(S.proMissions||[]).find(function(x){return x._id===id;});if(mm){S.mission=mm;S.colisTournee=false;render();}return;}

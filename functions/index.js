@@ -1101,6 +1101,55 @@ async function buildInvoicePdf(inv) {
   return Buffer.from(bytes).toString('base64');
 }
 
+// PROCURATION (mandat de retrait de colis par un tiers) — vrai document PDF vectoriel,
+// avec la signature manuscrite du destinataire intégrée (PNG). Généré à la demande.
+async function buildProcurationPdf(d) {
+  const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
+  const doc = await PDFDocument.create();
+  const page = doc.addPage([595.28, 841.89]);
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  const ink = rgb(0.137, 0.118, 0.2); const coral = rgb(1, 0.416, 0.357);
+  const mut = rgb(0.45, 0.43, 0.5); const hair = rgb(0.87, 0.85, 0.88);
+  const M = 46; const W = 595.28; const R = W - M;
+  const T = (s, x, y, sz, f, c) => page.drawText(String(s == null ? '' : s), { x, y, size: sz, font: f || font, color: c || ink });
+  const TR = (s, xr, y, sz, f, c) => { s = String(s == null ? '' : s); const w = (f || font).widthOfTextAtSize(s, sz); page.drawText(s, { x: xr - w, y, size: sz, font: f || font, color: c || ink }); };
+  let y = 792;
+  T('Ti', M, y, 20, bold, coral); T('-Services', M + bold.widthOfTextAtSize('Ti', 20), y, 20, bold, ink);
+  T('Services à la demande - Saint-Barthélemy', M, y - 14, 8.5, font, mut);
+  TR('PROCURATION', R, y + 1, 20, bold, ink);
+  TR('Retrait de courrier / colis par un tiers', R, y - 14, 9, font, mut);
+  y -= 34;
+  page.drawLine({ start: { x: M, y }, end: { x: R, y }, thickness: 1, color: hair }); y -= 24;
+  y = wrapPdf(page, font, 11, ink, 'Je soussigné(e) ' + (d.recipient || '-') + ', destinataire, donne procuration à ' + (d.providerName || 'le prestataire mandaté par Ti-Services') + ' pour retirer en mon nom, au bureau de poste de ' + (d.poste || '-') + ', le(s) pli(s) et colis désignés ci-dessous.', M, y, R - M, 16);
+  y -= 16;
+  page.drawRectangle({ x: M, y: y - 5, width: R - M, height: 20, color: rgb(0.98, 0.965, 0.955) });
+  T('Type', M + 6, y + 1, 9, bold, ink); T("N° d'avis", M + 250, y + 1, 9, bold, ink);
+  y -= 13; page.drawLine({ start: { x: M, y }, end: { x: R, y }, thickness: 0.7, color: hair }); y -= 16;
+  const items = d.items || [];
+  if (items.length) { items.forEach((it) => { T(it.type || 'Objet', M + 6, y, 10, font, ink); T(it.num || '-', M + 250, y, 10, font, ink); y -= 16; }); }
+  else { T('-', M + 6, y, 10, font, mut); y -= 16; }
+  y -= 4; page.drawLine({ start: { x: M, y }, end: { x: R, y }, thickness: 0.7, color: hair }); y -= 22;
+  T('PIÈCES JOINTES', M, y, 8, bold, mut); y -= 13;
+  y = wrapPdf(page, font, 9, mut, "Copie de la pièce d'identité du destinataire. Le mandataire présentera sa propre pièce d'identité originale au guichet.", M, y, R - M, 12);
+  y -= 22;
+  T('Fait à Saint-Barthélemy', M, y, 9, font, mut);
+  if (d.dateFromStr || d.dateToStr) T('Période : ' + (d.dateFromStr || '') + ' -> ' + (d.dateToStr || ''), M, y - 13, 9, font, mut);
+  TR('Signature du destinataire', R, y + 30, 8, bold, mut);
+  if (d.signatureBytes) {
+    try { const png = await doc.embedPng(d.signatureBytes); const sw = 150; const sh = Math.min(png.height * (sw / png.width), 56); page.drawImage(png, { x: R - sw, y: y - 4, width: sw, height: sh }); } catch (e) { console.warn('procuration sig embed', e); }
+  }
+  TR(d.signedDateStr ? ('Signé électroniquement le ' + d.signedDateStr) : 'Signé électroniquement via Ti-Services', R, y - 12, 7.5, font, mut);
+  y -= 40;
+  const legal = [
+    "Procuration établie via Ti-Services (mise en relation). Certains plis « à remettre en main propre » (actes d'huissier, plis judiciaires) ne peuvent être retirés par un tiers.",
+    'Document valable pour la période indiquée. Ti-Services est un service édité par C.C.S - Construction Conseils et Services, SAS.',
+  ];
+  legal.forEach((p) => { y = wrapPdf(page, font, 7.5, mut, p, M, y, R - M, 10); y -= 3; });
+  const bytes = await doc.save();
+  return Buffer.from(bytes).toString('base64');
+}
+
 exports.emailClientInvoice = onDocumentUpdated('requests/{reqId}', async (event) => {
   const before = (event.data && event.data.before && event.data.before.data()) || {};
   const after = (event.data && event.data.after && event.data.after.data()) || {};
@@ -1186,6 +1235,46 @@ exports.invoicePdf = onCall(async (request) => {
   return { pdf, invNo, filename: 'Facture-Ti-Services-' + invNo + '.pdf' };
 });
 
+// Téléchargement de la PROCURATION en PDF (mandat de retrait de colis) : régénère un
+// vrai document signé à partir de la demande + des détails privés. Réservé au client
+// concerné, au prestataire assigné et à l'admin.
+exports.procurationPdf = onCall(async (request) => {
+  const uid = request.auth && request.auth.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Connexion requise.');
+  const reqId = String((request.data && request.data.reqId) || '').trim();
+  if (!reqId) throw new HttpsError('invalid-argument', 'Demande introuvable.');
+  const db = getFirestore();
+  const snap = await db.collection('requests').doc(reqId).get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Demande introuvable.');
+  const r = snap.data() || {};
+  if (r.service !== 'colis') throw new HttpsError('failed-precondition', 'Cette demande n’a pas de procuration.');
+  const email = (request.auth.token && request.auth.token.email) || '';
+  const admin = !!email && email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+  if (r.clientUid !== uid && r.providerUid !== uid && !admin) throw new HttpsError('permission-denied', 'Accès refusé.');
+  let det = {};
+  try { det = (await db.collection('requests').doc(reqId).collection('private').doc('details').get()).data() || {}; } catch (_) {}
+  const colis = det.colis || {};
+  const TYPES = { recommande: 'Recommandé', colis: 'Colis', suivi: 'Lettre suivie', autre: 'Autre' };
+  const items = (colis.items || []).map((it) => ({ type: TYPES[it.type] || 'Objet', num: it.num || '' }));
+  let signatureBytes = null;
+  const sig = r.colisSignature || '';
+  if (sig && /^data:image\/png;base64,/.test(sig)) { try { signatureBytes = Buffer.from(sig.replace(/^data:image\/png;base64,/, ''), 'base64'); } catch (_) {} }
+  let pdf = '';
+  try {
+    pdf = await buildProcurationPdf({
+      recipient: colis.recipient || r.clientName || '',
+      providerName: r.providerName || '',
+      poste: r.poste || colis.poste || '',
+      dateFromStr: (r.dateFrom || colis.dateFrom) ? frDate(r.dateFrom || colis.dateFrom) : '',
+      dateToStr: (r.dateTo || colis.dateTo) ? frDate(r.dateTo || colis.dateTo) : '',
+      items,
+      signatureBytes,
+      signedDateStr: r.colisSignedAt ? frDate(r.colisSignedAt) : '',
+    });
+  } catch (e) { console.warn('procurationPdf build', e); throw new HttpsError('internal', 'Génération du PDF impossible.'); }
+  return { pdf, filename: 'Procuration-Ti-Services-' + reqId.slice(-5) + '.pdf' };
+});
+
 /* ============================================================================
  * E-MAIL DE BIENVENUE — à la création d'un compte CLIENT, un e-mail soigné,
  * à la charte Ti-Services, souhaite la bienvenue et confirme l'inscription.
@@ -1246,4 +1335,4 @@ exports.welcomeClientEmail = onDocumentCreated('users/{uid}', async (event) => {
 });
 
 // Export interne pour les tests unitaires (inerte en production : TI_TEST non défini).
-if (process.env.TI_TEST) { module.exports.__test = { buildInvoicePdf, invoiceLines, eurTxt, frDate, welcomeHtml }; }
+if (process.env.TI_TEST) { module.exports.__test = { buildInvoicePdf, buildProcurationPdf, invoiceLines, eurTxt, frDate, welcomeHtml }; }
