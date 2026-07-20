@@ -359,8 +359,13 @@
   .bub{max-width:80%;padding:9px 13px;border-radius:16px;font-size:14px;line-height:1.36;word-wrap:break-word;overflow-wrap:anywhere}
   .bub.them{align-self:flex-start;background:var(--card-2);border:1px solid var(--hair);border-bottom-left-radius:5px;color:var(--ink)}
   .bub.me{align-self:flex-end;background:linear-gradient(180deg,var(--teal),var(--teal-deep));color:#fff;border-bottom-right-radius:5px}
-  .chatbar{display:flex;gap:8px;align-items:center;margin-top:14px}
-  .chatbar input{flex:1;padding:13px 14px;border-radius:14px;border:1.5px solid var(--hair);background:var(--card);color:var(--ink);font-size:14px;font-family:inherit}
+  /* Barre de saisie ÉPINGLÉE en bas : le bouton « Envoyer » reste toujours visible,
+     même clavier ouvert / conversation longue. */
+  .chatbar{position:sticky;bottom:calc(env(safe-area-inset-bottom) + 6px);display:flex;gap:8px;align-items:center;margin-top:14px;background:var(--sand);padding:8px 0;z-index:6}
+  /* font-size 16px OBLIGATOIRE : en dessous, iOS ZOOME au focus et pousse le bouton
+     « Envoyer » hors de l'écran (bug « je ne vois plus le bouton envoyer »). */
+  .chatbar input{flex:1;min-width:0;padding:13px 14px;border-radius:14px;border:1.5px solid var(--hair);background:var(--card);color:var(--ink);font-size:16px;font-family:inherit}
+  .chatbar button{flex:none;white-space:nowrap}
   .chatbar button{width:auto;padding:13px 18px}
   .advcard{display:flex;gap:12px;align-items:flex-start;padding:14px;margin-top:10px}
   .advcard .ai{flex:none;width:38px;height:38px;border-radius:11px;background:var(--teal-wash);color:var(--teal-deep);display:flex;align-items:center;justify-content:center}
@@ -4384,7 +4389,7 @@
   function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
   function chatName(){return S.persona==='client'?(S.mission&&S.mission.provider?S.mission.provider.nm.split(' ')[0]:'votre artisan'):proClientName(S.mission);}
   function chatInits(){return S.persona==='client'?(S.mission&&S.mission.provider?S.mission.provider.ini:'··'):inits(proClientName(S.mission)||'client');}
-  function sendChat(){const el=document.getElementById('chatInput');if(!el||!S.mission)return;const v=el.value.trim();if(!v)return;el.value='';const m=S.mission;const msg={from:S.persona,text:v,at:Date.now()};m.chat=m.chat||[];m.chat.push(msg);render();view.scrollTop=view.scrollHeight;if(FB&&m.reqId&&!isDemo()){try{FB.f.updateDoc(FB.f.doc(FB.db,'requests',m.reqId),{messages:FB.f.arrayUnion(msg)});}catch(_){}}}
+  function sendChat(){const el=document.getElementById('chatInput');if(!el||!S.mission)return;const v=el.value.trim();if(!v)return;el.value='';const m=S.mission;const msg={from:S.persona,text:v,at:Date.now()};m.chat=m.chat||[];m.chat.push(msg);render();view.scrollTop=view.scrollHeight;if(FB&&m.reqId&&!isDemo()){const p=FB.f.updateDoc(FB.f.doc(FB.db,'requests',m.reqId),{messages:FB.f.arrayUnion(msg)});if(p&&p.catch)p.catch(function(e){toast('⚠︎ Message non envoyé — réessayez');console.warn('chat send',e);});}}
   // Marque la conversation comme lue par le rôle courant (accusé « Lu » pour l'autre).
   function markChatRead(){const m=S.mission;if(!m||(S.persona!=='client'&&S.persona!=='pro'))return;const field=(S.persona==='pro')?'readProAt':'readClientAt';const now=Date.now();m[field]=now;if(FB&&m.reqId&&!isDemo()){try{FB.f.updateDoc(FB.f.doc(FB.db,'requests',m.reqId),{[field]:now});}catch(_){}}}
   // Accusés de lecture de la messagerie SUPPORT (par prestation). L'admin marque avoir lu
@@ -4414,7 +4419,7 @@
       <div class="row" style="gap:11px;align-items:center;margin-top:2px"><div class="avatar" style="width:42px;height:42px;font-size:15px">${chatInits()}</div><div style="flex:1"><b style="font-size:16px;font-family:var(--f-disp)">${other}</b><div class="mini">${otherPhone?esc(otherPhone):'via Ti-Services'}</div></div><span class="chip good" style="padding:4px 10px">${I.check} Vérifié</span></div>
       <div class="banner teal" style="margin-top:12px">${I.shield}<span>Réglez et échangez dans l'app : la garantie et le paiement Ti-Services ne s'appliquent que si tout s'y passe.</span></div>
       <div class="chat-msgs">${list}${readStatus}</div>
-      ${tel?`<a class="btn ghost sm" href="tel:${tel}" style="text-decoration:none;margin-top:12px">${I.phone}&nbsp;Appeler ${esc(other)}</a>`:''}
+      ${tel?`<a class="btn ghost sm" href="tel:${tel}" style="text-decoration:none;margin-top:12px">${I.phone}&nbsp;Appeler ${esc(other)}</a>`:(m.svc==='baby'&&!m.clientConfirmed?`<p class="mini" style="text-align:center;color:var(--muted);margin-top:12px">${I.lock} Le numéro de téléphone s'affichera ici dès que la garde sera confirmée.</p>`:'')}
       <div class="chatbar"><input id="chatInput" placeholder="Écrire à ${other}…" autocomplete="off" maxlength="500"><button class="btn primary" data-act="chat-send">Envoyer</button></div>
       <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--hair)"><p class="mini" style="margin-bottom:8px;color:var(--muted)">Un souci, un litige, une question sur cette prestation&nbsp;?</p>
         <button class="btn ghost sm" data-act="open-support" style="justify-content:flex-start;gap:8px">${I.shield}&nbsp;Contacter Ti-Services (support)${(()=>{const th=(m.support&&m.support[S.persona])||[];return th.length?` · ${th.length}`:'';})()}</button></div>
