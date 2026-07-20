@@ -5814,6 +5814,13 @@
   // onboarding), en pré-remplissant l'identité déjà connue —
   //   window.location.href = urlOnboardingMollie;   // obtenue via mollieOnboardingStart
   function startMollieOnboarding(){
+    // Parcours RÉEL : prod + appareil armé (?realpay=1) → redirection vers l'onboarding
+    // hébergé Mollie (via notre fonction, qui renvoie l'URL OAuth). Sinon : simulation.
+    if(payReal()&&FB&&FB.auth&&FB.auth.currentUser){
+      toast('Ouverture du parcours Mollie…');
+      location.href='https://europe-west1-t-service-prod.cloudfunctions.net/mollieOnboardingStart?uid='+encodeURIComponent(FB.auth.currentUser.uid);
+      return;
+    }
     setMollieStatus('pending');
     toast('Ouverture du parcours Mollie (simulé en bêta)');
   }
@@ -6387,6 +6394,7 @@
   function handleDeepLink(){try{const q=new URLSearchParams(location.search);
     try{const rp=q.get('realpay');if(rp==='1')localStorage.setItem('tiPayReal','1');else if(rp==='0')localStorage.removeItem('tiPayReal');}catch(_){}
     const paid=q.get('paid'); if(paid){S._openReq=paid;S.onboarded=true;S.persona='client';S.clientNav='wallet';try{history.replaceState(null,'',location.origin+location.pathname);}catch(_){}}
+    const mol=q.get('mollie'); if(mol){try{history.replaceState(null,'',location.origin+location.pathname);}catch(_){}setTimeout(function(){try{if(mol==='active')toast('✅ Paiements activés — votre compte Mollie est connecté');else if(mol==='error')toast('⚠︎ Connexion Mollie échouée — réessayez');else toast('Compte Mollie en cours de vérification');}catch(_){}},900);}
     const rid=q.get('r'); if(rid)S._openReq=rid; // réservation à ouvrir (après connexion)
     const open=q.get('open');
     if(open==='missions'||q.has('mission')){S.onboarded=true;S.persona='pro';if(S.proStatus!=='approved')S.proStatus='approved';S.proNav='home';return true;}

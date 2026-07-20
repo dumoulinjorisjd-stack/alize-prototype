@@ -50,6 +50,10 @@ setGlobalOptions({region: 'europe-west1', maxInstances: 5});
 const MOLLIE_AUTHORIZE = 'https://my.mollie.com/oauth2/authorize';
 const MOLLIE_TOKEN = 'https://api.mollie.com/oauth2/tokens';
 const MOLLIE_API = 'https://api.mollie.com/v2';
+// Retour OAuth : DOIT pointer vers la fonction (pas l'hébergement) et matcher
+// l'URL enregistrée dans l'app Mollie Connect. Retour app : domaine prod canonique.
+const MOLLIE_RETURN_URL = 'https://europe-west1-t-service-prod.cloudfunctions.net/mollieOnboardingReturn';
+const MOLLIE_APP_RETURN = 'https://ti-services.fr';
 const APP_URL = process.env.APP_URL || 'https://ti-services.web.app';
 function mollieOAuthConfigured() { return !!(process.env.MOLLIE_CLIENT_ID && process.env.MOLLIE_CLIENT_SECRET); }
 function mollieApiConfigured() { return !!process.env.MOLLIE_ACCESS_TOKEN; }
@@ -1060,13 +1064,13 @@ exports.mollieWebhook = onRequest({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (req
   } catch (e) { console.warn('mollieWebhook', e); res.status(200).send('ok'); }
 });
 
-exports.mollieOnboardingStart = onRequest((req, res) => {
+exports.mollieOnboardingStart = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET']}, (req, res) => {
   if (!mollieOAuthConfigured()) { res.status(503).json({error: 'Mollie non configuré', message: 'Compte Mollie Connect à ouvrir + secrets à définir.'}); return; }
   const uid = (req.query.uid || req.query.state || '').toString();
   if (!uid) { res.status(400).json({error: 'uid manquant'}); return; }
   // redirect_uri FIGÉ côté serveur (jamais depuis la requête) : sinon un attaquant
   // pourrait détourner le code OAuth vers son propre domaine.
-  const redirectUri = APP_URL.replace(/\/$/, '') + '/mollieOnboardingReturn';
+  const redirectUri = MOLLIE_RETURN_URL;
   const scope = ['onboarding.read', 'onboarding.write', 'organizations.read', 'payments.read', 'payments.write', 'profiles.read'].join(' ');
   const url = MOLLIE_AUTHORIZE +
     '?client_id=' + encodeURIComponent(process.env.MOLLIE_CLIENT_ID) +
@@ -1083,20 +1087,20 @@ exports.mollieOnboardingStart = onRequest((req, res) => {
  * (mollieOrgId + mollieStatus). Puis on renvoie l'artisan dans l'app.
  * Inerte tant que Mollie n'est pas configuré.
  */
-exports.mollieOnboardingReturn = onRequest(async (req, res) => {
+exports.mollieOnboardingReturn = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET']}, async (req, res) => {
   if (!mollieOAuthConfigured()) { res.status(503).json({error: 'Mollie non configuré'}); return; }
   const code = (req.query.code || '').toString();
   const uid = (req.query.state || '').toString();
-  if (!code || !uid) { res.redirect(302, APP_URL); return; }
+  if (!code || !uid) { res.redirect(302, MOLLIE_APP_RETURN); return; }
   try {
-    const redirectUri = APP_URL.replace(/\/$/, '') + '/mollieOnboardingReturn';
+    const redirectUri = MOLLIE_RETURN_URL;
     const basic = Buffer.from(process.env.MOLLIE_CLIENT_ID + ':' + process.env.MOLLIE_CLIENT_SECRET).toString('base64');
     const tokRes = await fetch(MOLLIE_TOKEN, {
       method: 'POST',
       headers: {'Authorization': 'Basic ' + basic, 'Content-Type': 'application/x-www-form-urlencoded'},
       body: 'grant_type=authorization_code&code=' + encodeURIComponent(code) + '&redirect_uri=' + encodeURIComponent(redirectUri),
     });
-    if (!tokRes.ok) { console.warn('mollie token', tokRes.status, await tokRes.text()); res.redirect(302, APP_URL + '?mollie=error'); return; }
+    if (!tokRes.ok) { console.warn('mollie token', tokRes.status, await tokRes.text()); res.redirect(302, MOLLIE_APP_RETURN + '?mollie=error'); return; }
     const tok = await tokRes.json();
     // Lit l'organisation connectée avec le jeton d'accès obtenu.
     const orgRes = await fetch(MOLLIE_API + '/organizations/me', {headers: {'Authorization': 'Bearer ' + tok.access_token}});
@@ -1107,8 +1111,8 @@ exports.mollieOnboardingReturn = onRequest(async (req, res) => {
       mollieStatus: orgId ? 'active' : 'pending',
       mollieOnboardedAt: FieldValue.serverTimestamp(),
     }, {merge: true});
-    res.redirect(302, APP_URL + '?mollie=' + (orgId ? 'active' : 'pending'));
-  } catch (e) { console.warn('mollieOnboardingReturn', e); res.redirect(302, APP_URL + '?mollie=error'); }
+    res.redirect(302, MOLLIE_APP_RETURN + '?mollie=' + (orgId ? 'active' : 'pending'));
+  } catch (e) { console.warn('mollieOnboardingReturn', e); res.redirect(302, MOLLIE_APP_RETURN + '?mollie=error'); }
 });
 
 /* ============================================================================
