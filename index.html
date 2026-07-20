@@ -8014,7 +8014,23 @@
       <circle cx="75" cy="${cy}" r="18" fill="none" stroke="#007AFF" stroke-width="2.4"><animate attributeName="r" values="14;21;14" dur="1.7s" repeatCount="indefinite"/><animate attributeName="stroke-opacity" values="1;0;1" dur="1.7s" repeatCount="indefinite"/></circle>
     </svg>`;
   }
-  function showInstallGuide(){
+  // Détection RÉELLE de l'app installée (lancée en plein écran), indépendante de la
+  // classe .standalone simulée par « explorer sans installer ».
+  function appInstalled(){try{return (window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true;}catch(_){return false;}}
+  // Après une inscription, si l'app n'est pas installée : on pousse FORTEMENT
+  // l'installation (le frein est levé une fois inscrit) en insistant sur le fait que
+  // c'est ainsi qu'on reçoit les notifications.
+  function promptInstallAfterSignup(kind){
+    try{
+      if(appInstalled())return;
+      const banner=(kind==='pro'||kind==='concierge')
+        ? 'Installez Ti-Services sur votre écran d’accueil pour être <b>alerté des nouvelles demandes</b> — même application fermée. Sans elle, vous risquez de manquer des missions.'
+        : 'Installez Ti-Services sur votre écran d’accueil pour être <b>prévenu dès qu’un artisan répond</b> et suivre vos demandes en direct — même application fermée.';
+      setTimeout(function(){ try{ showInstallGuide({headTitle:'Ne manquez aucune notification', sub:'Ajoutez Ti-Services à votre écran d’accueil, en quelques gestes.', banner:banner}); }catch(_){} }, 1400);
+    }catch(_){}
+  }
+  function showInstallGuide(opts){
+    opts=opts||{};
     const pf=detectPlatform();
     const bname=IG_BROWSER_NAME[pf.browser]||'votre navigateur';
     const blogo=IG_LOGO[pf.browser]||'';
@@ -8055,7 +8071,8 @@
     const deviceLine = pf.inApp ? '' : `<span class="ig-badge-browser">${blogo||I.install} ${pf.ios?'Sur iPhone':pf.android?'Sur Android':'Sur ordinateur'}${pf.browser!=='other'?' · '+bname:''}</span>`;
     const wrap=document.createElement('div'); wrap.className='ig-back'; wrap.setAttribute('role','dialog'); wrap.setAttribute('aria-label','Installer Ti-Services');
     wrap.innerHTML=`<div class="ig-sheet"><button class="ig-x" aria-label="Fermer">×</button>
-      <div class="ig-head"><img src="./zouti-logo.svg" alt="" width="46" height="50"><div><b>Installer Ti-Services</b><span>Pour créer votre compte et commander en un geste.</span></div></div>
+      <div class="ig-head"><img src="./zouti-logo.svg" alt="" width="46" height="50"><div><b>${opts.headTitle||'Installer Ti-Services'}</b><span>${opts.sub||'Pour créer votre compte et commander en un geste.'}</span></div></div>
+      ${opts.banner?`<div class="ig-warn">🔔<div>${opts.banner}</div></div>`:''}
       ${deviceLine}
       ${body}</div>`;
     document.body.appendChild(wrap);
@@ -8454,6 +8471,7 @@
       const cred=await FB.a.createUserWithEmailAndPassword(FB.auth,c.email.trim(),c.password);
       try{ await FB.f.setDoc(FB.f.doc(FB.db,'users',cred.user.uid),{name:c.name.trim(),email:c.email.trim(),zone:c.zone,photo:c.photo||'',role:'client',acceptedTerms:true,termsVersion:TERMS_VERSION,termsAt:FB.f.serverTimestamp(),createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
       burstConfetti(); toast('Compte créé 🐙 — bienvenue, '+c.name.trim().split(' ')[0]+' !');
+      promptInstallAfterSignup('client');
     }catch(e){ toast(fbErr(e)); }finally{ signupInFlight=false; }
   }
   // Mise à jour de l'attestation d'assurance depuis l'espace artisan (compte existant).
@@ -8496,6 +8514,7 @@
       S.proInsuranceStatus='attente'; S.proInsuranceUrl=insuranceUrl; S.proCats=f.cats.slice();
       subscribeProStatus(uid);
       burstConfetti(); render(); toast('Candidature envoyée 🐙 — compte créé, examen sous 48 h');
+      promptInstallAfterSignup('pro');
     }catch(e){ toast(fbErr(e)); }finally{ signupAsArtisan=false; signupInFlight=false; }
   }
   async function fbConciergeSignup(f){
@@ -8510,6 +8529,7 @@
       S.concClients=[];S.concOrders=[];S.concEarn=0;S.concForm=null;S.concOrder=null;S.concView=null;
       subscribeConcStatus(uid);
       burstConfetti();render();toast('Candidature envoyée 🐙 — compte créé, examen sous 48 h');
+      promptInstallAfterSignup('concierge');
     }catch(e){ toast(fbErr(e)); }finally{ signupAsConcierge=false; signupInFlight=false; }
   }
   let concStatusUnsub=null;
