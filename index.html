@@ -356,6 +356,11 @@
   .contacts{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
   .contacts a{flex:1;min-width:96px;width:auto;text-decoration:none;padding:11px 8px;font-size:13px}
   .chat-msgs{display:flex;flex-direction:column;gap:8px;margin-top:14px;min-height:180px}
+  /* Pastilles d'état sur les cartes de mission : rouge = message non lu, orange = action. */
+  .pdots{display:inline-flex;gap:4px;vertical-align:middle;margin-right:7px}
+  .pdot{width:9px;height:9px;border-radius:50%;display:inline-block;flex:none}
+  .pdot.red{background:var(--coral);box-shadow:0 0 0 2px color-mix(in srgb,var(--coral) 22%,transparent)}
+  .pdot.orange{background:var(--warn);box-shadow:0 0 0 2px color-mix(in srgb,var(--warn) 22%,transparent)}
   .bub{max-width:80%;padding:9px 13px;border-radius:16px;font-size:14px;line-height:1.36;word-wrap:break-word;overflow-wrap:anywhere}
   .bub.them{align-self:flex-start;background:var(--card-2);border:1px solid var(--hair);border-bottom-left-radius:5px;color:var(--ink)}
   .bub.me{align-self:flex-end;background:linear-gradient(180deg,var(--teal),var(--teal-deep));color:#fff;border-bottom-right-radius:5px}
@@ -6100,10 +6105,17 @@
       S.proHistory.unshift({id:'cf'+(key||S.proHistory.length),reqId:key,dateISO:todayISO(),svc:m.svc,client:(m.clientName||'Client'),clientFull:(m.clientName||'Client'),clientZone:m.zone||'',cancelFee:true,duration:0,unit:m.unit||'h',amount:c.fee,commPct:c.pct,commission:c.commission,net:c.net,invNo:m.invNo||('IND-'+String(1000+S.proHistory.length)),paidVia:'indemnité'});
     }
   }
+  // Message CLIENT non lu par l'artisan (comparaison au dernier accusé de lecture pro).
+  function proMissionUnread(m){return !!(m&&m.chat&&m.chat.some(function(x){return x.from!=='pro'&&(x.at||0)>(m.readProAt||0);}));}
+  // Une ACTION incombe à l'artisan : démarrer (accepté), terminer (en cours) ou
+  // trancher une annulation. « Validation client » / « médiation » = on attend l'autre.
+  function proMissionAction(m){if(!m)return false;return m.status==='accepted'||m.status==='working'||(m.status==='cancelled'&&m.feeDecision==='pending');}
+  // Pastilles d'état : ROUGE = message non lu, ORANGE = action à faire.
+  function proDots(m){const u=proMissionUnread(m),a=proMissionAction(m);if(!u&&!a)return '';return `<span class="pdots">${u?'<span class="pdot red" aria-label="Message non lu" title="Message non lu"></span>':''}${a?'<span class="pdot orange" aria-label="Action à faire" title="Action à faire"></span>':''}</span>`;}
   function proTodoBlock(){
     const list=proActiveMissions();
     if(!list.length)return '';
-    return `<div style="margin-top:14px"><span class="eyebrow" style="color:var(--teal-deep)">${I.check} Missions en cours · ${list.length}</span>${list.map(function(m){const sm=proMissionMeta(m.status);return `<button class="card" data-act="promiss:${m._id||''}" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block;border-left:4px solid ${sm.c==='good'?'var(--good)':'var(--coral)'}"><div class="row between"><b style="font-size:14px">${esc(m.svcName||svcNm(m.svc))}</b><span class="chip ${sm.c}" style="padding:3px 10px">${sm.l}</span></div><div class="mini" style="margin-top:3px">${I.pin} ${esc(m.zone||'')} · ${esc(m.when||'')} · ${esc(m.slot||'')} · ${m.duration||1} ${m.unit==='j'?'j':'h'}</div><div class="row between" style="margin-top:9px"><span class="mini" style="color:var(--muted)">Vous percevez ${eur(totals(m).payout)}</span><span class="mini" style="color:var(--teal-deep);font-weight:700">Ouvrir ›</span></div></button>`;}).join('')}</div>`;
+    return `<div style="margin-top:14px"><span class="eyebrow" style="color:var(--teal-deep)">${I.check} Missions en cours · ${list.length}</span>${list.map(function(m){const sm=proMissionMeta(m.status);return `<button class="card" data-act="promiss:${m._id||''}" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block;border-left:4px solid ${sm.c==='good'?'var(--good)':'var(--coral)'}"><div class="row between"><b style="font-size:14px">${proDots(m)}${esc(m.svcName||svcNm(m.svc))}</b><span class="chip ${sm.c}" style="padding:3px 10px">${sm.l}</span></div><div class="mini" style="margin-top:3px">${I.pin} ${esc(m.zone||'')} · ${esc(m.when||'')} · ${esc(m.slot||'')} · ${m.duration||1} ${m.unit==='j'?'j':'h'}</div><div class="row between" style="margin-top:9px"><span class="mini" style="color:var(--muted)">Vous percevez ${eur(totals(m).payout)}</span><span class="mini" style="color:var(--teal-deep);font-weight:700">Ouvrir ›</span></div></button>`;}).join('')}</div>`;
   }
   function proHome(){
     const cats=(S.proCats&&S.proCats.length)?S.proCats:['menage'];
