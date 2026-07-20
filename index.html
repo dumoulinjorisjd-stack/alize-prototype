@@ -438,6 +438,13 @@
   .sigcanvas{display:block;width:100%;height:210px;touch-action:none;cursor:crosshair;background:#fff}
   .sigbase{position:absolute;left:22px;right:22px;bottom:46px;border-bottom:1.5px dashed var(--muted);pointer-events:none}
   .sig-clear{position:absolute;top:10px;right:10px;background:var(--sand);border:1px solid var(--hair);border-radius:999px;padding:6px 13px;font-size:12px;font-weight:700;color:var(--ink-soft);cursor:pointer}
+  img.viewable{cursor:zoom-in}
+  .imgviewer{position:fixed;inset:0;z-index:120;background:rgba(20,16,28,.94);display:flex;flex-direction:column}
+  .iv-bar{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:calc(env(safe-area-inset-top) + 12px) 16px 12px}
+  .iv-btn{background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:999px;padding:9px 16px;font-size:14px;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;cursor:pointer}
+  .iv-btn.dl{background:var(--coral)}
+  .iv-stage{flex:1;display:flex;align-items:center;justify-content:center;padding:0 14px calc(env(safe-area-inset-bottom) + 20px);overflow:auto}
+  .iv-img{max-width:100%;max-height:100%;object-fit:contain;border-radius:10px;background:#fff}
 
   .cats{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:14px}
   .cat{padding:15px 14px;text-align:center;border-radius:var(--r-md);background:var(--card);border:1px solid var(--hair);box-shadow:0 1px 2px -1px var(--shadow),0 10px 22px -20px var(--shadow);transition:transform .16s,border-color .2s,box-shadow .22s;position:relative;overflow:hidden}
@@ -2029,7 +2036,7 @@
     proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proReqSlot:null,proReqPick:false,proMissions:[],proSkipped:[],proConflict:null,proStmt:false,commInvId:null,commStmt:false,signupKind:null,concSignup:null,concStatus:'approved',adminConcierges:[],
     proHistory:PRO_HISTORY(),
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),
-    chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,histInvoice:null,histCat:null,signPad:false,colisProc:false,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,delAcct:false,
+    chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,histInvoice:null,histCat:null,signPad:false,colisProc:false,imgView:null,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,delAcct:false,
     proJobsTotal:214,fidTiers:FID_TIERS.map(t=>({...t})),referralCode:'MARILOU-SBH',
     filleuls:[{name:'Kevin Questel',status:'valide',bonus:40},{name:'Rosa Almeida',status:'attente',bonus:0}],
     admin:{view:'home',sel:null,fact:null},adminLedger:[],adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,adminPrices:ADMIN_PRICES(),
@@ -4792,6 +4799,7 @@
       <div style="height:8px"></div></div>${conciergeNavbar()}`;
   }
   function renderClient(){
+    if(S.imgView)return imgViewer();
     // Purge des demandes non honorées, périmées depuis plus de 12 h (souplesse comprise).
     if(purgeStaleMissions()&&S.mission==null&&S.clientNav==='wallet'){/* la liste a changé : le rendu ci-dessous reflète l'état purgé */}
     const m=S.mission;
@@ -5718,6 +5726,7 @@
 
   /* ---------- ARTISAN ---------- */
   function renderPro(){
+    if(S.imgView)return imgViewer();
     if(S.delAcct)return deleteAccountView();
     if(S.generalSupport)return generalSupportChat();
     if(S.proConflict)return proConflictView();
@@ -6287,7 +6296,7 @@
         <div class="row between" style="margin-top:6px"><span class="sub">Secteur</span><b>${I.pin} ${m.zone}</b></div>
         ${(m.acts&&m.acts.length)?`<div style="margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Prestations demandées</div><p class="sub" style="margin-top:4px;color:var(--ink-soft)">${m.acts.map(function(a){return esc(a.nm)+((a.qty||1)>1?' ×'+a.qty:'');}).join(' · ')}</p></div>`:''}
         ${m.notes?`<div style="margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Détail de la demande</div><p class="sub" style="margin-top:4px;color:var(--ink-soft)">${esc(m.notes)}</p></div>`:''}
-        ${(m.photos&&m.photos.length)?`<div style="margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Photos du client</div><div class="thumbs" style="margin-top:6px">${m.photos.map(u=>`<div class="thumb"><img src="${u}" alt="Photo du client"></div>`).join('')}</div></div>`:''}<hr class="dashed">
+        ${(m.photos&&m.photos.length)?`<div style="margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Photos du client</div><div class="thumbs" style="margin-top:6px">${m.photos.map(u=>`<div class="thumb"><img class="viewable" data-docname="photo-client" src="${u}" alt="Photo du client — appuyer pour agrandir"></div>`).join('')}</div></div>`:''}<hr class="dashed">
         <div class="row between" style="align-items:flex-end"><div><span class="sub">Vous percevez</span></div><div style="text-align:right"><b class="money" style="font-size:22px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(t.payout)}</b><div class="mini">Montant net · versé après la prestation</div></div></div></div>
       ${flexible?`<div class="card" style="padding:16px;margin-top:12px"><div class="eyebrow" style="color:var(--teal-deep)">${I.clock} Proposez votre créneau précis</div><p class="mini" style="margin:6px 0 8px">Le client accepte ${flexTxt(m)}. Choisissez l'heure exacte à laquelle vous viendrez — elle lui sera confirmée.</p><div class="segs">${presets.map(s=>`<button class="seg ${(!customPro&&pslot===s)?'on':''}" data-proslot="${s}">${s}</button>`).join('')}<button class="seg ${customPro?'on':''}" data-proslot="__pick">Autre…</button></div>${customPro?`<input class="txt" type="time" data-proslottime step="900" min="${flexWindow(m)[0]}" max="${flexWindow(m)[1]}" style="margin-top:10px" value="${/^\d{2}:\d{2}$/.test(pslot)?pslot:''}">`:''}</div>`:''}
       <div class="stack" style="margin-top:16px"><button class="btn accept" data-act="pro-accept">${I.flame} ${flexible?('Accepter · j\'arrive à '+pslot):'Accepter avant les autres'}</button><button class="btn ghost sm" data-act="pro-decline">Passer mon tour</button><p class="mini" style="text-align:center">L'adresse exacte s'affiche une fois la mission acceptée.</p></div></div>`;
@@ -6464,7 +6473,7 @@
   // Fiche de retrait (prestataire) OU rappel (client) pour une prestation colis.
   function colisDossier(m,forPro){
     const c=m.colis||{};
-    const items=(c.items||[]).map(function(it){return `<div class="row between" style="margin-top:8px;align-items:center"><div><b style="font-size:13px">${colisTypeLabel(it.type)}</b>${it.num?`<div class="mini">N° ${esc(it.num)}</div>`:''}</div>${it.photo?`<img src="${it.photo}" alt="Avis de passage" style="width:52px;height:52px;object-fit:cover;border-radius:8px;border:1px solid var(--hair)">`:''}</div>`;}).join('');
+    const items=(c.items||[]).map(function(it){return `<div class="row between" style="margin-top:8px;align-items:center"><div><b style="font-size:13px">${colisTypeLabel(it.type)}</b>${it.num?`<div class="mini">N° ${esc(it.num)}</div>`:''}</div>${it.photo?`<img class="viewable" data-docname="avis-de-passage" src="${it.photo}" alt="Avis de passage — appuyer pour agrandir" style="width:52px;height:52px;object-fit:cover;border-radius:8px;border:1px solid var(--hair)">`:''}</div>`;}).join('');
     return `<div class="card" style="padding:16px;margin-top:12px">
       <div class="eyebrow" style="color:var(--teal-deep)">${I.shield} Fiche de retrait</div>
       <div class="row between" style="margin-top:10px"><span class="sub">${I.pin} Bureau</span><b>La Poste · ${esc(m.poste||'')}</b></div>
@@ -6479,7 +6488,7 @@
         <div class="row" style="gap:8px;align-items:flex-start"><span style="color:var(--good);flex:none">${I.check}</span><span class="mini">Copie de la pièce d'identité du destinataire</span></div>
         <div class="row" style="gap:8px;align-items:flex-start"><span style="color:var(--coral-deep);flex:none">${I.user}</span><span class="mini"><b>Votre propre pièce d'identité</b> — à emporter (originale)</span></div>
       </div>
-      <div class="thumbs" style="margin-top:10px">${c.idFront?`<div class="thumb"><img src="${c.idFront}" alt="Pièce d'identité recto"></div>`:''}${c.idBack?`<div class="thumb"><img src="${c.idBack}" alt="Pièce d'identité verso"></div>`:''}</div>
+      <div class="thumbs" style="margin-top:10px">${c.idFront?`<div class="thumb"><img class="viewable" data-docname="piece-identite-recto" src="${c.idFront}" alt="Pièce d'identité recto — appuyer pour agrandir"></div>`:''}${c.idBack?`<div class="thumb"><img class="viewable" data-docname="piece-identite-verso" src="${c.idBack}" alt="Pièce d'identité verso — appuyer pour agrandir"></div>`:''}</div>
       <button class="btn ghost sm" data-act="colis-proc" style="margin-top:10px;width:auto;padding:9px 14px">${I.card} Voir la procuration</button>`
       :`${c.signed?`<div class="banner teal" style="margin-top:12px">${I.check}<span>Procuration <b>signée</b> — votre prestataire a tout le nécessaire.</span></div>`:`<div class="banner coral" style="margin-top:12px">${I.clock}<span><b>Signez la procuration</b> pour que le prestataire puisse retirer votre pli.</span></div><button class="btn primary" data-act="colis-sign" style="margin-top:10px">${I.check} Signer la procuration</button>`}<button class="btn ghost sm" data-act="colis-proc" style="margin-top:10px;width:auto;padding:9px 14px">${I.card} ${c.signed?'Revoir la procuration':'Voir la procuration'}</button>`}
     </div>`;
@@ -6496,6 +6505,12 @@
       <div class="sigwrap"><canvas data-signpad class="sigcanvas"></canvas><div class="sigbase"></div><button class="sig-clear" data-act="sign-clear" type="button">Effacer</button></div>
       <p class="mini" style="text-align:center;margin-top:8px;color:var(--muted)">${I.lock} Signature horodatée, apposée électroniquement via Ti-Services.</p>
       <div class="footcta" style="position:static;background:none;padding:16px 0 0"><button class="btn primary" data-act="sign-confirm">${I.check} Valider ma signature</button></div></div>`;
+  }
+  // Visionneuse plein écran d'un document (image) : consultation directe, sans passer par
+  // un téléchargement. Un bouton permet tout de même d'enregistrer le fichier.
+  function imgViewer(){
+    const v=S.imgView||{};const src=v.src||'';
+    return `<div class="imgviewer"><div class="iv-bar"><button class="iv-btn" data-act="imgview-close">✕ Fermer</button><a class="iv-btn dl" href="${src}" download="${esc(v.name||'document')}.jpg">${I.card}&nbsp;Télécharger</a></div><div class="iv-stage" data-act="imgview-close"><img src="${src}" alt="Document" class="iv-img"></div></div>`;
   }
   // Document « procuration » (mandat de retrait), consultable/imprimable, signé électroniquement.
   function colisProcuration(m){
@@ -6521,7 +6536,7 @@
       ${(m.svc==='baby'&&m.status==='accepted')?(m.clientConfirmed?`<div class="banner teal" style="margin-top:10px">${I.check}<span><b>Garde confirmée par le client</b> — il a validé après votre échange.</span></div>`:`<div class="banner teal" style="margin-top:10px">${I.chat}<span>Le client voit votre profil (photo, diplômes, présentation) et peut <b>vous contacter par message</b> pour faire connaissance avant de confirmer la garde. Vos numéros seront partagés une fois la garde confirmée.</span></div>`):''}
       ${m.svc==='colis'?`${colisTourneeBanner(m)}${colisDossier(m,true)}<div class="card" style="padding:15px;margin-top:12px"><div class="row between"><span class="sub">Livrer à</span><b style="text-align:right;max-width:60%">${esc(proClientName(m))} · ${esc(m.address||'')}</b></div><div class="row between" style="margin-top:6px"><span class="sub">Vous percevez</span><b class="money" style="color:var(--teal-deep)">${eur(t.payout)}</b></div></div>`
       :`<div class="card" style="padding:15px;margin-top:12px"><div class="row" style="gap:8px;flex-wrap:wrap"><span class="chip grey">${I.clock} ${m.slot}</span>${(m.acts&&m.acts.length)?'':`<span class="chip grey">${durTxt(m)}</span>`}</div><div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px"><span class="chip grey">${I.pin} ${esc(m.address)}</span></div>${(m.acts&&m.acts.length)?`<div class="row between" style="margin-top:10px;align-items:flex-start"><span class="sub">Prestations</span><b style="text-align:right;max-width:60%">${m.acts.map(function(a){return esc(a.nm)+((a.qty||1)>1?' ×'+a.qty:'');}).join('<br>')}</b></div>`:''}<hr class="dashed"><div class="row between"><span class="sub">Client</span><span class="row" style="gap:8px;align-items:center">${avatarPhoto(proClientPhoto(m),inits(proClientName(m)),'sm')}<b>${esc(proClientName(m))}</b></span></div><div class="row between" style="margin-top:6px"><span class="sub">Vous percevez</span><b class="money" style="color:var(--teal-deep)">${eur(t.payout)}</b></div></div>`}
-      ${(m.photos&&m.photos.length)?`<div class="card" style="padding:14px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Photos du client</div><div class="thumbs" style="margin-top:8px">${m.photos.map(u=>`<div class="thumb"><img src="${u}" alt="Photo du client"></div>`).join('')}</div></div>`:''}
+      ${(m.photos&&m.photos.length)?`<div class="card" style="padding:14px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Photos du client</div><div class="thumbs" style="margin-top:8px">${m.photos.map(u=>`<div class="thumb"><img class="viewable" data-docname="photo-client" src="${u}" alt="Photo du client — appuyer pour agrandir"></div>`).join('')}</div></div>`:''}
       ${m.access?`<div class="card" style="padding:14px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">${I.key} Infos d'accès</div><p class="sub" style="margin-top:6px;color:var(--ink-soft)">${esc(m.access)}</p></div>`:''}
       ${m.geo?`<div class="card" style="padding:14px;margin-top:12px"><div class="row between"><span class="chip">📍 Localisation du domicile</span><span class="mini" style="color:var(--muted)">Itinéraire ci-dessous</span></div>${miniMap(m.geo,'route')}
         <a class="btn primary sm" href="${navUrl(m.geo.lat,m.geo.lng)}" target="_blank" rel="noopener" style="margin-top:12px;justify-content:center">🧭 Lancer la navigation</a>
@@ -6868,6 +6883,10 @@
     toast('Prestation pré-remplie — vérifiez, ajustez, puis confirmez');
   }
   document.addEventListener('click',(e)=>{
+    // Visionneuse de documents : tout justificatif (avis de passage, pièce d'identité,
+    // photo du client) s'ouvre en plein écran au clic — consultation sans téléchargement.
+    const _iv=e.target.closest&&e.target.closest('img.viewable');
+    if(_iv&&_iv.getAttribute('src')){S.imgView={src:_iv.getAttribute('src'),name:_iv.getAttribute('data-docname')||'document'};render();return;}
     const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actqty],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday],[data-tip],[data-pac]');
     if(!b)return;
     // Un clic ISSU d'un <input type=file> (notamment déclenché par programme, ex. la
@@ -6937,8 +6956,8 @@
     if(b.dataset.act&&b.dataset.act.indexOf('del-demand:')===0){const id=b.dataset.act.slice('del-demand:'.length);const m=(S.missions||[]).find(function(x){return (x._id||'')===id;});if(m){cancelActiveRequest(m);removeMission(m);if(S.mission===m)S.mission=null;cacheClientLocal();toast('Demande supprimée');}render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('dismiss-mission:')===0){const id=b.dataset.act.slice('dismiss-mission:'.length);const m=(S.missions||[]).find(function(x){return (x._id||'')===id;});if(m){removeMission(m);if(S.mission===m)S.mission=null;cacheClientLocal();}render();return;}
     if(b.dataset.follow){const orow=b.closest('.swipe-row');if(orow&&orow.classList.contains('open')){orow.classList.remove('open');return;}const mm=(S.missions||[]).find(function(x){return (x._id||'')===b.dataset.follow;});if(mm){S.mission=mm;S.cancelAsk=false;S.clientNav='wallet';render();}return;}
-    if(b.dataset.cnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.invoiceId=null;S.histInvoice=null;S.histCat=null;S.signPad=false;S.colisProc=false;S._sigCanvas=null;S.addrForm=null;S.profileForm=null;S.mission=null;S.cancelAsk=false;S.catView=null;S.clientNav=b.dataset.cnav;if(b.dataset.cnav==='wallet')refreshClientRequests();render();return;}
-    if(b.dataset.pnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.proStmt=false;S.commInvId=null;S.commStmt=false;S.invoiceId=null;S.proConflict=null;S.proNav=b.dataset.pnav;render();return;}
+    if(b.dataset.cnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.invoiceId=null;S.histInvoice=null;S.histCat=null;S.signPad=false;S.colisProc=false;S.imgView=null;S._sigCanvas=null;S.addrForm=null;S.profileForm=null;S.mission=null;S.cancelAsk=false;S.catView=null;S.clientNav=b.dataset.cnav;if(b.dataset.cnav==='wallet')refreshClientRequests();render();return;}
+    if(b.dataset.pnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.proStmt=false;S.commInvId=null;S.commStmt=false;S.invoiceId=null;S.proConflict=null;S.imgView=null;S.proNav=b.dataset.pnav;render();return;}
     if(b.dataset.cnav2){S.concOrder=null;S.concView=null;S.concForm=null;S.concInvoice=null;S.concNav=b.dataset.cnav2;render();return;}
     if(b.dataset.concOc){const c=concClient(b.dataset.concOc);if(c&&c.authorized){S.concOrder.clientId=c.id;S.concOrder.step='service';render();}else{toast('La carte de ce client doit d’abord être autorisée');}return;}
     if(b.dataset.concOs){const s=SERVICES.find(x=>x.id===b.dataset.concOs);S.concOrder.svc=s.id;S.concOrder.svcName=s.nm;S.concOrder.rate=(S.adminPrices&&S.adminPrices[s.id]!=null)?S.adminPrices[s.id]:svcBase(s.id);S.concOrder.duration=3;S.concOrder.when='Aujourd’hui';S.concOrder.slot='14:00';S.concOrder.notes='';S.concOrder.step='form';render();return;}
@@ -7051,6 +7070,7 @@
     if(b.dataset.act==='colis-proc'){S.colisProc=true;render();return;}
     if(b.dataset.act==='colis-proc-close'){S.colisProc=false;render();return;}
     if(b.dataset.act==='dl-procuration'){downloadProcurationPdf(S.mission);return;}
+    if(b.dataset.act==='imgview-close'){S.imgView=null;render();return;}
     if(b.dataset.act==='colis-tournee'){S.colisTournee=true;render();return;}
     if(b.dataset.act==='colis-tournee-close'){S.colisTournee=false;render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('colis-open:')===0){const id=b.dataset.act.split(':')[1];const mm=(S.proMissions||[]).find(function(x){return x._id===id;});if(mm){S.mission=mm;S.colisTournee=false;render();}return;}
@@ -7799,6 +7819,7 @@
 
   /* ---------- Bouton retour du téléphone : revient à l'écran précédent (ne quitte pas l'app) ---------- */
   function goBack(){
+    if(S.imgView){S.imgView=null;render();return;}
     if(S.legalView){S.legalView=null;render();return;}
     if(S.showPitch){S.showPitch=false;render();return;}
     if(S.profileForm){S.profileForm=null;render();return;}
@@ -8545,7 +8566,7 @@
         ${(r.frequency&&r.frequency!=='ponctuelle')?`<div class="row between" style="margin-top:8px"><span class="sub">Fréquence</span><b>${I.repeat} ${esc(freqInfo(r.frequency).short)}</b></div>`:''}
       </div>
       ${r.slotFlex?flexProposalBlock(r):''}
-      ${(r.photos&&r.photos.length)?`<div class="card" style="padding:14px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">${I.camera} Photos du client</div><div class="thumbs" style="margin-top:8px">${r.photos.map(function(u){return `<div class="thumb"><img src="${esc(u)}" alt="Photo de la demande"></div>`;}).join('')}</div></div>`:''}
+      ${(r.photos&&r.photos.length)?`<div class="card" style="padding:14px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">${I.camera} Photos du client</div><div class="thumbs" style="margin-top:8px">${r.photos.map(function(u){return `<div class="thumb"><img class="viewable" data-docname="photo-demande" src="${esc(u)}" alt="Photo de la demande — appuyer pour agrandir"></div>`;}).join('')}</div></div>`:''}
       ${r.notes?`<div class="card" style="padding:16px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Le besoin du client</div><p class="sub" style="margin-top:6px;color:var(--ink-soft);white-space:pre-wrap">${esc(r.notes)}</p></div>`:''}
       <div class="card" style="padding:14px;margin-top:12px"><div class="row" style="gap:10px;align-items:flex-start"><span class="benic">${I.lock}</span><div><b style="font-size:13px">Adresse exacte masquée</b><p class="mini" style="margin-top:3px">L'adresse précise, le point GPS et les infos d'accès s'affichent <b>dès que vous acceptez</b> la mission.</p></div></div></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0">
