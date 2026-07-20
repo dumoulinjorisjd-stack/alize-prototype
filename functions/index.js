@@ -647,15 +647,15 @@ function commissionTierPct(jobsTotal) {
   if (n >= 50) return 12;   // Argent
   return 15;                // Bronze
 }
-// Artisan Fondateur : commission réduite aux seuls frais bancaires (≈ frais Mollie),
-// pendant une fenêtre limitée (3 mois OU 2 000 € de prestations). Ces trois constantes
-// doivent rester alignées avec public/index.html.
-const FOUNDER_COMM_PCT = 3.5;
+// Artisan Fondateur (Ambassadeur) : commission fortement réduite (5 %) pendant une
+// fenêtre limitée (3 mois OU 2 000 € de prestations). Ces trois constantes doivent
+// rester alignées avec index.html.
+const FOUNDER_COMM_PCT = 5;
 const FOUNDER_DAYS = 90;
 const FOUNDER_GROSS_CAP = 2000;
 // Petits montants : sous ce seuil de base (€), un taux PLANCHER s'applique — sinon la
-// commission serait dérisoire (ex. 3,5 % de 15 € = 0,53 €), non viable. Vaut pour TOUS,
-// y compris les ambassadeurs (leur 3,5 % passe à 10 % sous le seuil). Aligné avec index.html.
+// commission serait dérisoire (ex. 5 % de 15 € = 0,75 €), non viable. Vaut pour TOUS,
+// y compris les ambassadeurs (leur 5 % passe à 10 % sous le seuil). Aligné avec index.html.
 const SMALL_COMM_MIN = 21;   // seuil de base (€) sous lequel le plancher s'applique
 const SMALL_COMM_PCT = 10;   // taux plancher sous le seuil
 const round2 = (x) => Math.round((Number(x) || 0) * 100) / 100;
