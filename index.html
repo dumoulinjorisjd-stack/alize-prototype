@@ -364,9 +364,8 @@
   .bub{max-width:80%;padding:9px 13px;border-radius:16px;font-size:14px;line-height:1.36;word-wrap:break-word;overflow-wrap:anywhere}
   .bub.them{align-self:flex-start;background:var(--card-2);border:1px solid var(--hair);border-bottom-left-radius:5px;color:var(--ink)}
   .bub.me{align-self:flex-end;background:linear-gradient(180deg,var(--teal),var(--teal-deep));color:#fff;border-bottom-right-radius:5px}
-  /* Barre de saisie ÉPINGLÉE en bas : le bouton « Envoyer » reste toujours visible,
-     même clavier ouvert / conversation longue. */
-  .chatbar{position:sticky;bottom:calc(env(safe-area-inset-bottom) + 6px);display:flex;gap:8px;align-items:center;margin-top:14px;background:var(--sand);padding:8px 0;z-index:6}
+  /* Barre de saisie sous les messages (statique : n'occulte JAMAIS le dernier message). */
+  .chatbar{display:flex;gap:8px;align-items:center;margin-top:14px}
   /* font-size 16px OBLIGATOIRE : en dessous, iOS ZOOME au focus et pousse le bouton
      « Envoyer » hors de l'écran (bug « je ne vois plus le bouton envoyer »). */
   .chatbar input{flex:1;min-width:0;padding:13px 14px;border-radius:14px;border:1.5px solid var(--hair);background:var(--card);color:var(--ink);font-size:16px;font-family:inherit}
@@ -4393,6 +4392,10 @@
   }
   function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
   function chatName(){return S.persona==='client'?(S.mission&&S.mission.provider?S.mission.provider.nm.split(' ')[0]:'votre artisan'):proClientName(S.mission);}
+  // Fusionne les messages LOCAUX (déjà affichés, y compris ceux qu'on vient d'envoyer)
+  // avec ceux du SERVEUR, sans jamais perdre les siens le temps que l'écriture se
+  // propage (sinon l'expéditeur ne voyait plus son propre message après resync).
+  function mergeChat(local,server){const map=new Map();(local||[]).concat(server||[]).forEach(function(x){if(x&&x.text!=null){map.set((x.from||'')+'|'+(x.at||0)+'|'+x.text,x);}});return Array.from(map.values()).sort(function(a,b){return (a.at||0)-(b.at||0);});}
   function chatInits(){return S.persona==='client'?(S.mission&&S.mission.provider?S.mission.provider.ini:'··'):inits(proClientName(S.mission)||'client');}
   function sendChat(){const el=document.getElementById('chatInput');if(!el||!S.mission)return;const v=el.value.trim();if(!v)return;el.value='';const m=S.mission;const msg={from:S.persona,text:v,at:Date.now()};m.chat=m.chat||[];m.chat.push(msg);render();view.scrollTop=view.scrollHeight;if(FB&&m.reqId&&!isDemo()){const p=FB.f.updateDoc(FB.f.doc(FB.db,'requests',m.reqId),{messages:FB.f.arrayUnion(msg)});if(p&&p.catch)p.catch(function(e){toast('⚠︎ Message non envoyé — réessayez');console.warn('chat send',e);});}}
   // Marque la conversation comme lue par le rôle courant (accusé « Lu » pour l'autre).
@@ -5213,7 +5216,10 @@
     const p=m.provider||{};const first=(p.nm||'Votre baby-sitter').split(' ')[0];
     const dips=(m.providerDiplomas||[]);
     const tel=telClean(m.providerPhone||'');
-    const profile=`<div class="row" style="gap:12px;margin-top:10px;align-items:center">${avatarFounder(m.providerPhoto,p.ini||inits(p.nm||'BS'),'lg',p.founder)}<div style="flex:1;min-width:0"><b style="font-size:16px;font-family:var(--f-disp)">${esc(p.nm||'Votre baby-sitter')}</b><div class="mini" style="margin-top:2px">${[p.jobs?(p.jobs+' garde'+(p.jobs>1?'s':'')+' réalisée'+(p.jobs>1?'s':'')):null,m.providerAgeBand?esc(m.providerAgeBand):null,p.founder?(I.star+' Ambassadeur'):null].filter(Boolean).join(' · ')}</div></div><span class="chip good" style="padding:4px 10px">${I.check} Vérifié</span></div>
+    // Nombre de GARDES d'enfants réellement réalisées (jamais le total toutes prestations
+    // confondues) — pas de chiffre inventé : rien affiché tant qu'aucune garde n'a eu lieu.
+    const bj=Number(m.providerBabyJobs)||0;
+    const profile=`<div class="row" style="gap:12px;margin-top:10px;align-items:center">${avatarFounder(m.providerPhoto,p.ini||inits(p.nm||'BS'),'lg',p.founder)}<div style="flex:1;min-width:0"><b style="font-size:16px;font-family:var(--f-disp)">${esc(p.nm||'Votre baby-sitter')}</b><div class="mini" style="margin-top:2px">${[bj>0?(bj+' garde'+(bj>1?'s':'')+' réalisée'+(bj>1?'s':'')):'Nouveau profil garde d’enfants',m.providerAgeBand?esc(m.providerAgeBand):null,p.founder?(I.star+' Ambassadeur'):null].filter(Boolean).join(' · ')}</div></div><span class="chip good" style="padding:4px 10px">${I.check} Vérifié</span></div>
       ${dips.length?`<div class="mini" style="margin-top:9px;color:var(--teal-deep)">${I.check} ${dips.map(esc).join(' · ')}</div>`:''}
       ${m.providerBio?`<p class="sub" style="margin-top:8px;color:var(--ink-soft)">«&nbsp;${esc(m.providerBio)}&nbsp;»</p>`:''}`;
     if(m.clientConfirmed)return `<div class="card provider-pop" style="padding:16px;margin-top:12px">${profile}<div class="banner teal" style="margin-top:12px">${I.check}<span><b>Garde confirmée</b> avec ${esc(first)} — à ${esc(m.slot)}. ${tel?`Besoin de rappeler ${esc(first)}&nbsp;? <a href="tel:${tel}" style="color:var(--teal-deep);font-weight:700">${esc(m.providerPhone)}</a>`:''}</span></div></div>`;
@@ -5509,7 +5515,7 @@
         if(r.providerLegal!=null&&m.providerLegal!==r.providerLegal){m.providerLegal=r.providerLegal;touched=true;}
         if(r.providerSiret!=null&&m.providerSiret!==r.providerSiret){m.providerSiret=r.providerSiret;touched=true;}
         if(r.providerAddress!=null&&m.providerAddress!==r.providerAddress){m.providerAddress=r.providerAddress;touched=true;}
-        if(r.providerStatusType!=null&&m.providerStatusType!==r.providerStatusType){m.providerStatusType=r.providerStatusType;touched=true;}if(r.providerAgeBand!=null&&m.providerAgeBand!==r.providerAgeBand){m.providerAgeBand=r.providerAgeBand;touched=true;}
+        if(r.providerStatusType!=null&&m.providerStatusType!==r.providerStatusType){m.providerStatusType=r.providerStatusType;touched=true;}if(r.providerAgeBand!=null&&m.providerAgeBand!==r.providerAgeBand){m.providerAgeBand=r.providerAgeBand;touched=true;}if(r.providerBabyJobs!=null&&m.providerBabyJobs!==r.providerBabyJobs){m.providerBabyJobs=r.providerBabyJobs;touched=true;}
         if(Array.isArray(r.providerDiplomas))m.providerDiplomas=r.providerDiplomas;
         if(r.clientConfirmed!=null&&m.clientConfirmed!==r.clientConfirmed){m.clientConfirmed=r.clientConfirmed;touched=true;}
         if(r.colisSigned!=null&&m.colis&&m.colis.signed!==r.colisSigned){m.colis.signed=r.colisSigned;m.colis.signedAt=m.colis.signedAt||r.colisSignedAt||Date.now();touched=true;}
@@ -5535,7 +5541,7 @@
         // Messagerie (stockée dans le doc de demande → lisible par client, artisan assigné, admin)
         if(Array.isArray(r.messages)&&(m.chat||[]).length!==r.messages.length){
           const prevLen=(m.chat||[]).length;
-          m.chat=r.messages.slice().sort(function(a,b){return (a.at||0)-(b.at||0);});
+          m.chat=mergeChat(m.chat,r.messages);
           touched=true;
           // Notification à la réception d'un message de l'AUTRE partie (l'expéditeur
           // ne se notifie pas lui-même : on filtre sur from !== mon rôle).
@@ -8095,7 +8101,7 @@
           if(r.providerUid){m.providerUid=r.providerUid;if(!m.provider||m.provider.nm==='Votre artisan')m.provider={nm:r.providerName||'Votre artisan',ini:inits(r.providerName||'Artisan'),rating:0,jobs:(r.providerJobs||0),founder:!!r.providerFounder};}
           if(r.providerPhoto)m.providerPhoto=r.providerPhoto;if(r.providerPhone!=null)m.providerPhone=r.providerPhone;if(r.providerBio!=null)m.providerBio=r.providerBio;if(Array.isArray(r.providerDiplomas))m.providerDiplomas=r.providerDiplomas;if(r.clientConfirmed!=null)m.clientConfirmed=r.clientConfirmed;
           if(r.finalHours!=null)m.finalHours=r.finalHours;if(r.disputeMsg)m.disputeMsg=r.disputeMsg;
-          if(Array.isArray(r.messages))m.chat=r.messages.slice().sort(function(a,b){return (a.at||0)-(b.at||0);});
+          if(Array.isArray(r.messages))m.chat=mergeChat(m.chat,r.messages);
         });
         // Réconciliation de l'HISTORIQUE : toute réservation réglée (paid/rated) rejoint
         // l'historique si elle n'y est pas déjà — pour qu'AUCUNE réservation terminée ne
@@ -8160,7 +8166,7 @@
         const m=Object.assign(newMission(base),{_id:'pm'+docu.id,reqId:docu.id,status:r.status,svc:r.service,svcName:r.serviceName||svcNm(r.service),rate:r.rate,duration:r.duration||1,unit:r.unit||'h',dateISO:r.dateISO||'',acts:r.acts||null,when:r.when||'',slot:(r.acceptedSlot||r.slot||''),slotFlex:r.slotFlex||0,zone:r.zone||det.zone||'',address:det.address||'',geo:det.geo||null,access:det.access||'',boost:r.boost||0,tip:r.tip||0,notes:r.notes||'',photos:(r.photos||[]).slice(),clientName:r.clientName||det.clientName||'',clientPhoto:r.clientPhoto||det.clientPhoto||null,clientPhone:r.clientPhone||det.clientPhone||'',provider:Object.assign({},PROVIDERS[r.service]||{},{nm:S.proName||'Vous'})});
         // Colis : reprendre le dossier de retrait + l'état de signature (survivent au rechargement).
         if(r.service==='colis'){m.poste=r.poste||det.poste||'';m.dateFrom=r.dateFrom||det.dateFrom||'';m.dateTo=r.dateTo||det.dateTo||'';if(det.colis)m.colis=Object.assign({},det.colis,{signed:!!r.colisSigned,signedAt:r.colisSignedAt||(det.colis&&det.colis.signedAt)||null,signature:r.colisSignature||(det.colis&&det.colis.signature)||''});}
-        if(Array.isArray(r.messages))m.chat=r.messages.slice().sort(function(a,b){return (a.at||0)-(b.at||0);});
+        if(Array.isArray(r.messages))m.chat=mergeChat(m.chat,r.messages);
         miss.push(m);
       }
       // Réconciliation des prestations RÉGLÉES (éventuellement pendant que l'artisan
@@ -8498,7 +8504,7 @@
     try{
       const uid=FB.auth.currentUser.uid;
       const acceptedSlot=req.slotFlex?clampSlot(req,S.proReqSlot||req.slot):(req.slot||'');
-      const acc={status:'accepted',providerUid:uid,providerName:S.proName||'',providerJobs:(S.proJobsTotal||0),providerFounder:!!S.proFounder,providerPhoto:S.proPhoto||null,
+      const acc={status:'accepted',providerUid:uid,providerName:S.proName||'',providerJobs:(S.proJobsTotal||0),providerBabyJobs:((S.proHistory||[]).filter(function(h){return h&&h.svc==='baby'&&!h.cancelFee;}).length),providerFounder:!!S.proFounder,providerPhoto:S.proPhoto||null,
         // Identité légale du prestataire — mentions obligatoires de la facture émise en son nom
         // (mandat de facturation, art. 242 nonies A CGI) : raison sociale, SIRET, adresse, statut.
         providerLegal:S.proLegal||S.proName||'',providerSiret:S.proSiret||'',providerAddress:S.proAddress||'',providerStatusType:S.proStatusType||'entreprise',providerAgeBand:ageBand(S.proBirth)||'',
