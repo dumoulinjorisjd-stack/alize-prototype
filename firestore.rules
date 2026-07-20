@@ -32,6 +32,16 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    // Propriété des jetons FCM par APPAREIL : chaque jeton appartient au DERNIER compte
+    // qui l'a enregistré. Un utilisateur connecté peut (ré)clamer un jeton en s'y
+    // désignant propriétaire — ce qui COUPE les notifications d'un ancien compte encore
+    // associé au même appareil (ex. ex-artisan devenu client). La Cloud Function
+    // (Admin SDK) contourne ces règles pour filtrer les envois.
+    match /fcmOwners/{token} {
+      allow read:  if isAdmin() || (signedIn() && resource.data.uid == uid());
+      allow write: if signedIn() && request.resource.data.uid == uid();
+    }
+
     // Catalogue partagé (services « Autre » ajoutés par l'admin) : lu par tous
     // (les clients doivent voir les services proposés), écrit par l'admin seul.
     match /settings/{doc} {

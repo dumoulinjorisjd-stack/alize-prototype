@@ -278,7 +278,23 @@ exports.notifyArtisansNewRequest = onDocumentCreated('requests/{reqId}', async (
   await Promise.all(targetUids.map(async (uid) => {
     try {
       const u = await db.collection('users').doc(uid).get();
-      ((u.data() || {}).pushTokens || []).forEach((tok) => { tokenToUid[tok] = uid; });
+      const ud = u.data() || {};
+      // Le compte n'est PLUS un artisan (redevenu client) : on ne lui envoie aucune
+      // notification « nouvelle prestation », même si sa fiche artisan traîne encore.
+      if (ud.role && ud.role !== 'artisan') return;
+      (ud.pushTokens || []).forEach((tok) => { tokenToUid[tok] = uid; });
+    } catch (_) {}
+  }));
+  // PROPRIÉTÉ DU JETON. Un même appareil a pu servir à plusieurs comptes (ex. un
+  // artisan qui est ensuite devenu client). Le jeton FCM appartient au DERNIER compte
+  // qui l'a enregistré (fcmOwners/{token}.uid). On écarte tout jeton dont le
+  // propriétaire actuel n'est plus cet artisan — sinon un ex-artisan devenu client
+  // continuerait de recevoir les « prestations à faire » sur son appareil.
+  await Promise.all(Object.keys(tokenToUid).map(async (tok) => {
+    try {
+      const o = await db.collection('fcmOwners').doc(tok).get();
+      const od = o.exists ? (o.data() || {}) : null;
+      if (od && od.uid && od.uid !== tokenToUid[tok]) delete tokenToUid[tok];
     } catch (_) {}
   }));
   const tokens = Object.keys(tokenToUid);

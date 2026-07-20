@@ -8355,6 +8355,10 @@
       const token=await msgM.getToken(messaging,{vapidKey:CONFIG.vapidKey,serviceWorkerRegistration:reg});
       if(token){ pushRegDone=true;
         try{ await FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{pushTokens:FB.f.arrayUnion(token),role:role,notifAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
+        // Propriété EXCLUSIVE du jeton par ce compte : si l'appareil a déjà servi à un
+        // autre compte (ex. ancien profil artisan), on récupère la propriété du jeton
+        // pour que les notifications de l'ancien compte cessent (voir notifyArtisansNewRequest).
+        try{ await FB.f.setDoc(FB.f.doc(FB.db,'fcmOwners',token),{uid:FB.auth.currentUser.uid,role:role,at:FB.f.serverTimestamp()}); }catch(_){}
       }
       msgM.onMessage(messaging,function(payload){ const n=(payload&&(payload.data||payload.notification))||{}; toast('🔔 '+(n.title||'Ti-Services')+(n.body?' — '+n.body:'')); });
     }catch(e){ console.warn('push register',e); }
@@ -8617,7 +8621,11 @@
     clearClientCache();
     try{
       try{ if(FB.f.deleteDoc)await FB.f.deleteDoc(FB.f.doc(FB.db,'users',uid)); }catch(_){}
-      if(wasPro){ try{ if(FB.f.deleteDoc)await FB.f.deleteDoc(FB.f.doc(FB.db,'artisans',uid)); }catch(_){} }
+      // On efface TOUJOURS d'éventuelles fiches artisan / conciergerie liées à ce compte
+      // (pas seulement selon la persona courante) : sinon une fiche artisan « valide »
+      // pouvait survivre à la suppression et continuer de générer des notifications.
+      try{ if(FB.f.deleteDoc)await FB.f.deleteDoc(FB.f.doc(FB.db,'artisans',uid)); }catch(_){}
+      try{ if(FB.f.deleteDoc)await FB.f.deleteDoc(FB.f.doc(FB.db,'concierges',uid)); }catch(_){}
       await u.delete();
     }catch(e){
       if(e&&e.code==='auth/requires-recent-login'){ toast('Reconnectez-vous, puis relancez la suppression'); S.delAcct=false; try{await FB.a.signOut(FB.auth);}catch(_){} return; }
