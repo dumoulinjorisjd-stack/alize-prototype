@@ -439,6 +439,11 @@
   .sigbase{position:absolute;left:22px;right:22px;bottom:46px;border-bottom:1.5px dashed var(--muted);pointer-events:none}
   .sig-clear{position:absolute;top:10px;right:10px;background:var(--sand);border:1px solid var(--hair);border-radius:999px;padding:6px 13px;font-size:12px;font-weight:700;color:var(--ink-soft);cursor:pointer}
   img.viewable{cursor:zoom-in}
+  .doc-pick{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .doc-pick-lbl{font-size:12px;font-weight:700;color:var(--ink-soft);min-width:46px}
+  .doc-btn{display:inline-flex;align-items:center;gap:6px;background:var(--sand);border:1px dashed color-mix(in srgb,var(--teal) 34%,var(--hair));border-radius:12px;padding:9px 14px;font-size:12.5px;font-weight:650;color:var(--ink-soft);cursor:pointer}
+  .doc-btn span{display:inline-flex;color:var(--teal-deep)}
+  .doc-btn:active{background:var(--sand-2)}
   .imgviewer{position:fixed;inset:0;z-index:120;background:rgba(20,16,28,.94);display:flex;flex-direction:column}
   .iv-bar{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:calc(env(safe-area-inset-top) + 12px) 16px 12px}
   .iv-btn{background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:999px;padding:9px 16px;font-size:14px;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;cursor:pointer}
@@ -2048,7 +2053,7 @@
     if(cat){m.acts=[];}
     // Prestation « Colis & courrier » : pas d'heure précise mais une FENÊTRE de dates,
     // un bureau de poste, et le dossier de retrait par un tiers (procuration + pièces).
-    if(colis){m.poste='Gustavia';m.dateFrom=todayISO();m.dateTo=isoPlusDays(7);m.colis={recipient:'',idFront:null,idBack:null,items:[{type:'recommande',num:'',photo:null}],deadline:'',mainPropreAck:false,signed:false,signedAt:null};}
+    if(colis){m.poste='Gustavia';m.dateFrom=todayISO();m.dateTo=isoPlusDays(7);m.colis={recipient:((S.account&&S.account.name)||(S.clientForm&&S.clientForm.name)||'').trim(),idFront:null,idBack:null,items:[{type:'recommande',num:'',photo:null}],deadline:'',mainPropreAck:false,signed:false,signedAt:null};}
     return m;}
   // Créneau souple : le client propose une heure ± une marge ; l'artisan précise.
   function slotToMin(s){const p=(s||'0:0').split(':');return (+p[0])*60+(+p[1]||0);}
@@ -7330,12 +7335,12 @@
     const t=totals(m);
     const c=m.colis||(m.colis={recipient:'',idFront:null,idBack:null,items:[{type:'recommande',num:'',photo:null}],deadline:'',mainPropreAck:false,consent:false});
     const zoneSelect=`<select class="txt" data-cfgzone>${ZONES.map(z=>`<option value="${esc(z)}"${m.zone===z?' selected':''}>${esc(z)}</option>`).join('')}</select>`;
-    const idBox=(url,who)=>url?`<div class="thumb"><img src="${url}" alt="Pièce d'identité"><button data-act="colis-rmid:${who}" aria-label="Retirer">×</button></div>`:`<label class="thumb add"><span>${I.camera}</span><span>${who==='front'?'Recto':'Verso'}</span><input type="file" accept="image/*" data-colisid="${who}" hidden></label>`;
+    const idBox=(url,who)=>{const lbl=who==='front'?'Recto':'Verso';return url?`<div class="thumb"><img class="viewable" data-docname="piece-identite-${who}" src="${url}" alt="Pièce d'identité ${lbl}"><button data-act="colis-rmid:${who}" aria-label="Retirer">×</button></div>`:`<div class="doc-pick"><span class="doc-pick-lbl">${lbl}</span><label class="doc-btn"><span>${I.camera}</span>Photo<input type="file" accept="image/*" capture="environment" data-colisid="${who}" hidden></label><label class="doc-btn"><span>${I.image}</span>Galerie<input type="file" accept="image/*" data-colisid="${who}" hidden></label></div>`;};
     const items=c.items.map((it,i)=>`<div class="card" style="padding:13px;margin-top:10px">
       <div class="row between"><b style="font-size:13px">Objet ${i+1}</b>${c.items.length>1?`<button class="linklike mini" data-act="colis-rmitem:${i}" style="color:var(--muted)">Retirer</button>`:''}</div>
       <div class="segs" style="margin-top:8px;flex-wrap:wrap">${COLIS_TYPES.map(ct=>`<button class="seg ${it.type===ct[0]?'on':''}" data-colisitemtype="${i}:${ct[0]}">${ct[1]}</button>`).join('')}</div>
       <div class="field" style="margin-top:10px;margin-bottom:0"><input class="txt" data-colisitemnum="${i}" value="${esc(it.num||'')}" placeholder="N° d'avis de passage (facultatif)"></div>
-      <div class="thumbs" style="margin-top:10px">${it.photo?`<div class="thumb"><img src="${it.photo}" alt="Avis de passage"><button data-act="colis-rmitemphoto:${i}" aria-label="Retirer">×</button></div>`:`<label class="thumb add"><span>${I.camera}</span><span>Avis</span><input type="file" accept="image/*" data-colisitemphoto="${i}" hidden></label>`}</div>
+      <div style="margin-top:10px">${it.photo?`<div class="thumbs"><div class="thumb"><img class="viewable" data-docname="avis-de-passage" src="${it.photo}" alt="Avis de passage"><button data-act="colis-rmitemphoto:${i}" aria-label="Retirer">×</button></div></div>`:`<div class="doc-pick"><span class="doc-pick-lbl">Avis</span><label class="doc-btn"><span>${I.camera}</span>Photo<input type="file" accept="image/*" capture="environment" data-colisitemphoto="${i}" hidden></label><label class="doc-btn"><span>${I.image}</span>Galerie<input type="file" accept="image/*" data-colisitemphoto="${i}" hidden></label></div>`}</div>
     </div>`).join('');
     paintView(`<div class="pad"><div class="cfghead"><button class="reset" data-cfg="back">← Retour</button><span class="eyebrow" style="flex:1;justify-content:center;color:var(--teal-deep)">${svcIco('colis')} ${esc(m.svcName)}</span><button class="iconbtn" data-act="go-home" aria-label="Accueil" title="Accueil"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg></button></div>
       <div class="h-hello">Récupérer un colis / courrier</div>
@@ -7352,7 +7357,7 @@
       <div class="card" style="padding:16px;margin-top:14px"><div class="eyebrow" style="color:var(--muted)">${I.shield} Retrait par un tiers — documents</div>
         <div class="field" style="margin-top:12px"><label>Nom du destinataire (comme sur le pli)</label><input class="txt" data-colisrecipient value="${esc(c.recipient||'')}" placeholder="Ex. Camille Magras"></div>
         <label style="font-size:12px;font-weight:650">Pièce d'identité du destinataire — recto &amp; verso</label>
-        <div class="thumbs" style="margin-top:8px">${idBox(c.idFront,'front')}${idBox(c.idBack,'back')}</div>
+        <div class="stack" style="gap:8px;margin-top:8px">${idBox(c.idFront,'front')}${idBox(c.idBack,'back')}</div>
         <p class="mini" style="margin-top:6px">${I.lock} Transmise au seul prestataire retenu, puis supprimée après le retrait.</p>
       </div>
 
