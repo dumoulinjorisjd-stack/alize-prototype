@@ -5779,7 +5779,7 @@
       // dans la recherche générale (proposée à tous les artisans de la zone).
       else if(newS==='declined'){const who=((m.preferredName||m.provider&&m.provider.nm||'Votre artisan')+'').split(' ')[0];m.provider=null;m.providerUid=null;openToStandard(m);notify('Ti-Services',who+' n’est pas disponible — votre demande est proposée à tous les artisans.','ti-'+m.reqId);}
     }else if(S.persona==='pro'){
-      if(newS==='paid'){notify('Ti-Services','Le client a validé — vous êtes payé 🎉','ti-'+m.reqId);if(!m._paidCounted){m._paidCounted=true;recordProPaid(m);}}
+      if(newS==='paid'){const _t=totals(m);const _cli=((m.clientName||m.client||'Le client')+'').split(' ')[0];const _msg=(_t.tip>0)?('💛 '+_cli+' a validé et vous a laissé '+eur(_t.tip)+' de pourboire — vous percevez '+eur(_t.payout)+' 🎉'):(_cli+' a validé votre prestation — vous percevez '+eur(_t.payout)+' 🎉');notify('Ti-Services · Prestation validée',_msg,'ti-'+m.reqId);if(_t.tip>0)toast('💛 Pourboire de '+eur(_t.tip)+' — merci '+_cli+' !');if(!m._paidCounted){m._paidCounted=true;recordProPaid(m);}}
       else if(newS==='disputed')notify('Ti-Services','Le client conteste la durée déclarée.','ti-'+m.reqId);
       else if(newS==='cancelled'){if(!(S.proMissions||[]).some(function(x){return x===m;}))proAddMission(m);notify('Ti-Services','Annulation tardive d’un client — à vous de décider de l’indemnité.','ti-'+m.reqId);toast('Annulation tardive — décidez de l’indemnité');}
     }
@@ -5794,7 +5794,7 @@
     S.proHistory=S.proHistory||[];
     const key=m.reqId||m._id;
     if(!S.proHistory.some(function(h){return key&&h.reqId===key;})){
-      S.proHistory.unshift({id:'hm'+(key||''+S.proHistory.length),reqId:key,dateISO:(m.dateISO||todayISO()),svc:m.svc,client:(m.clientName||'Client'),clientFull:(m.clientName||'Client'),clientZone:m.zone||'',duration:billHours(m),unit:m.unit||'h',acts:(m.acts&&m.acts.length)?m.acts.map(function(a){return {id:a.id,nm:a.nm,price:a.price,qty:a.qty||1};}):null,travel:t.travel||0,rate:t.rate,amount:t.total,commPct:t.commPct,commission:t.commission,net:t.payout,invNo:m.invNo||('2026-'+String(1000+S.proHistory.length).padStart(4,'0')),paidVia:'carte'});
+      S.proHistory.unshift({id:'hm'+(key||''+S.proHistory.length),reqId:key,dateISO:(m.dateISO||todayISO()),svc:m.svc,client:(m.clientName||'Client'),clientFull:(m.clientName||'Client'),clientZone:m.zone||'',duration:billHours(m),unit:m.unit||'h',acts:(m.acts&&m.acts.length)?m.acts.map(function(a){return {id:a.id,nm:a.nm,price:a.price,qty:a.qty||1};}):null,travel:t.travel||0,tip:t.tip||0,rate:t.rate,amount:t.total,commPct:t.commPct,commission:t.commission,net:t.payout,invNo:m.invNo||('2026-'+String(1000+S.proHistory.length).padStart(4,'0')),paidVia:'carte'});
     }
     saveProStats();
   }
@@ -6865,6 +6865,7 @@
     const rows=list.length?list.map(function(h){const b=histBreakdown(h);return `<div class="card interv-row"><div class="row between"><b style="font-size:14px">${svcName(h.svc)}</b><span class="money" style="font-weight:700">${eur(b.net)}</span></div>
       <div class="mini" style="margin-top:3px">${fmtLong(h.dateISO)} · ${esc(h.client||'')} · ${durTxt({unit:h.unit},h.duration)}</div>
       ${b.commission>0?`<div class="mini" style="margin-top:4px;color:var(--muted)">Prestation ${eur(b.gross)} · commission Ti-Services −${eur(b.commission)} (${b.pct}&nbsp;%)</div>`:''}
+      ${(h.tip>0)?`<div class="mini" style="margin-top:4px;color:var(--good);font-weight:650">💛 dont ${eur(h.tip)} de pourboire du client (100&nbsp;% pour vous)</div>`:''}
       <div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap;align-items:center"><span class="chip good" style="padding:3px 9px">${I.check} Réglée · ${esc(h.invNo)}</span><button class="btn ghost sm" style="width:auto;padding:8px 12px" data-act="invoice:${h.id}">${I.card}&nbsp;Facture</button>${b.commission>0?`<button class="btn ghost sm" style="width:auto;padding:8px 12px" data-act="comm-invoice:${h.id}">${I.card}&nbsp;Commission</button>`:''}</div></div>`;}).join(''):`<div class="card" style="padding:24px;text-align:center;color:var(--muted);margin-top:12px">Aucune intervention réalisée pour l'instant.<br>Vos prestations terminées apparaîtront ici avec leur facture.</div>`;
     return `<div class="pad"><button class="reset" data-act="close-interv" style="margin:8px 0 2px">← Retour</button>
       <span class="eyebrow">${I.card} Comptabilité</span>
@@ -8460,12 +8461,12 @@
         const srvNo=r.saleInvoiceNo||r.invNo||'';
         // Entrée déjà connue : on adopte simplement le numéro serveur s'il diffère
         // (la numérotation officielle est celle attribuée par le serveur).
-        if(known[docu.id]){if(srvNo){const ex=S.proHistory.find(function(h){return h.reqId===docu.id;});if(ex&&ex.invNo!==srvNo){ex.invNo=srvNo;changed=true;}}continue;}
+        if(known[docu.id]){const ex=S.proHistory.find(function(h){return h.reqId===docu.id;});if(ex){if(srvNo&&ex.invNo!==srvNo){ex.invNo=srvNo;changed=true;}if((ex.tip==null||ex.tip===0)&&(Number(r.tip)>0)){ex.tip=Number(r.tip);changed=true;}}continue;}
         const dur=(r.finalHours!=null?r.finalHours:(r.duration||1));
         const hasSrv=(r.commissionAmount!=null&&r.netAmount!=null);
         const gross=(r.grossTotal!=null?r.grossTotal:(r.total||((r.rate||0)*dur)));
         const commission=hasSrv?r.commissionAmount:0;const net=hasSrv?r.netAmount:gross;const cpct=hasSrv?(r.commissionPct||0):0;
-        S.proHistory.unshift({id:'hm'+docu.id,reqId:docu.id,dateISO:(r.dateISO||todayISO()),svc:r.service,client:(r.clientName||'Client'),clientFull:(r.clientName||'Client'),clientZone:r.zone||'',duration:dur,unit:r.unit||'h',rate:r.rate||0,amount:gross,commPct:cpct,commission:commission,net:net,invNo:srvNo||('2026-'+String(1000+S.proHistory.length).padStart(4,'0')),paidVia:'carte'});
+        S.proHistory.unshift({id:'hm'+docu.id,reqId:docu.id,dateISO:(r.dateISO||todayISO()),svc:r.service,client:(r.clientName||'Client'),clientFull:(r.clientName||'Client'),clientZone:r.zone||'',duration:dur,unit:r.unit||'h',rate:r.rate||0,amount:gross,tip:r.tip||0,commPct:cpct,commission:commission,net:net,invNo:srvNo||('2026-'+String(1000+S.proHistory.length).padStart(4,'0')),paidVia:'carte'});
         S.proEarnings=Math.round(((S.proEarnings||0)+net)*100)/100;S.proJobsTotal=(S.proJobsTotal||0)+1;known[docu.id]=1;changed=true;
       }
       if(changed)saveProStats();
