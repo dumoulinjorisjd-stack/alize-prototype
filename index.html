@@ -5519,6 +5519,25 @@
   // Artisans déjà eus par le client (issus de l'historique) — sert à en redemander un
   // en priorité, SANS jamais exposer l'annuaire complet des artisans.
   function pastArtisans(){const seen={},out=[];(S.history||[]).forEach(function(h){const uid=h&&h.providerUid;if(uid&&h.provider&&h.provider.nm&&!seen[uid]){seen[uid]=1;out.push({uid:uid,nm:h.provider.nm,ini:h.provider.ini||inits(h.provider.nm)});}});return out;}
+  // ---- Paiement RÉEL Mollie (empreinte) — PROD uniquement, opt-in par appareil -----
+  // Sécurité : n'active JAMAIS le vrai parcours pour un client au hasard. Il faut le
+  // domaine prod, un vrai compte connecté, ET avoir armé l'appareil via ?realpay=1.
+  // Pendant les tests (clés Mollie « test »), seuls les appareils armés voient Mollie ;
+  // tout le monde garde la simulation. Bascule globale prévue au passage en clés live.
+  function isProdHost(){try{var h=(location.hostname||'').toLowerCase();return /(^|\.)ti-services\.fr$/.test(h)||/^t-service-prod\.(web\.app|firebaseapp\.com)$/.test(h);}catch(_){return false;}}
+  function payReal(){try{return isProdHost()&&!isDemo()&&!!(FB&&FB.auth&&FB.auth.currentUser)&&localStorage.getItem('tiPayReal')==='1';}catch(_){return false;}}
+  async function startMolliePayment(m){
+    try{
+      if(!m||!m.reqId||!(FB&&FB.fn&&FB.functions))return false;
+      const call=FB.fn.httpsCallable(FB.functions,'createClientPayment');
+      const base=location.origin+location.pathname;
+      const res=await call({reqId:m.reqId,returnUrl:base+'?paid='+encodeURIComponent(m.reqId)});
+      const d=(res&&res.data)||{};
+      if(d.simulated)return false;
+      if(d.checkoutUrl){toast('Redirection vers le paiement sécurisé…');location.href=d.checkoutUrl;return true;}
+      return false;
+    }catch(e){console.warn('startMolliePayment',e);toast('\u26a0\ufe0e Paiement indisponible — réessayez');return false;}
+  }
   function placeMission(){const d=S.draft;if(!d)return;
     // Anti-rebond : deux appuis trop rapprochés ne créent qu'une seule demande.
     if(S._placing&&(Date.now()-S._placing)<1800){return;}
@@ -5528,7 +5547,9 @@
     // appui, réseau lent, renvoi du même formulaire…).
     const sig=missionSig(d);const dup=activeMissions().find(function(x){return missionSig(x)===sig;});
     if(dup){S.mission=dup;S.draft=null;S.payStep=false;S.payEdit=false;S.clientNav='wallet';render();toast('Cette demande existe déjà — nous l’avons rouverte.');return;}
-    if(S.avgOffers[d.svc]){S.avgOffers[d.svc].sum+=d.rate;S.avgOffers[d.svc].n++;}d._id=d._id||('m'+Date.now());S.missions=S.missions||[];if(S.missions.indexOf(d)<0)S.missions.unshift(d);S.mission=d;S.draft=null;S.payStep=false;S.payEdit=false;S.clientNav='wallet';persistRequest(d);recurUpsert(d);startSearch();cacheClientLocal();}
+    if(S.avgOffers[d.svc]){S.avgOffers[d.svc].sum+=d.rate;S.avgOffers[d.svc].n++;}d._id=d._id||('m'+Date.now());S.missions=S.missions||[];if(S.missions.indexOf(d)<0)S.missions.unshift(d);S.mission=d;S.draft=null;S.payStep=false;S.payEdit=false;S.clientNav='wallet';
+    if(payReal()){(async function(){try{await persistRequest(d);}catch(e){console.warn('pay persist',e);}recurUpsert(d);cacheClientLocal();const ok=await startMolliePayment(d);if(!ok){startSearch();}})();render();return;}
+    persistRequest(d);recurUpsert(d);startSearch();cacheClientLocal();}
   // Étape 0 : la demande devient une fiche Firestore `requests/{id}` (vrais comptes uniquement).
   // Sans adresse exacte ni GPS — révélés seulement à l'artisan qui accepte. Base des notifications.
   async function persistRequest(m){
@@ -6364,6 +6385,8 @@
   function requestPush(){try{if('Notification'in window&&typeof Notification.requestPermission==='function'){const r=Notification.requestPermission();if(r&&r.then){r.then(perm=>{S.proNotifPush=(perm==='granted');toast(perm==='granted'?'Notifications activées 🔔':'Autorisez les notifications dans les réglages du téléphone');render();});}else{S.proNotifPush=(r==='granted');}}else{toast('Notifications non disponibles sur cet appareil');}}catch(e){}}
   // Deep link : une notif / un lien WhatsApp « Ouvrir Ti-Services » ouvre l'app sur l'espace Missions.
   function handleDeepLink(){try{const q=new URLSearchParams(location.search);
+    try{const rp=q.get('realpay');if(rp==='1')localStorage.setItem('tiPayReal','1');else if(rp==='0')localStorage.removeItem('tiPayReal');}catch(_){}
+    const paid=q.get('paid'); if(paid){S._openReq=paid;S.onboarded=true;S.persona='client';S.clientNav='wallet';try{history.replaceState(null,'',location.origin+location.pathname);}catch(_){}}
     const rid=q.get('r'); if(rid)S._openReq=rid; // réservation à ouvrir (après connexion)
     const open=q.get('open');
     if(open==='missions'||q.has('mission')){S.onboarded=true;S.persona='pro';if(S.proStatus!=='approved')S.proStatus='approved';S.proNav='home';return true;}
