@@ -4865,7 +4865,7 @@
   function clientNavbar(){
     const act=attention()==='client';const nb=activeMissions().length;
     const item=(id,ic,lbl,badge,count)=>`<button data-cnav="${id}" class="${S.clientNav===id?'on':''}"><span class="nb-ic">${ic}${count?`<span class="nb-count">${count}</span>`:(badge?'<span class="nb-badge"></span>':'')}</span>${lbl}</button>`;
-    return `<div class="navbar">${item('home',I.home,'Accueil',false,0)}${item('wallet',I.wallet,'Réservations',act,nb)}${item('profile',I.user,'Profil',false,0)}</div>`;
+    return `<div class="navbar">${item('home',I.home,'Accueil',false,0)}${item('wallet',I.wallet,'Réservations',act||anyClientUnread(),nb)}${item('profile',I.user,'Profil',false,0)}</div>`;
   }
   // Passage au paiement. MODE INVITÉ : la découverte est libre, mais pour ENVOYER
   // la commande il faut un compte (identité, adresse, paiement). On ouvre alors
@@ -5063,7 +5063,7 @@
       }
       const sm=missionStatusMeta(m.status);const canDel=(m.status==='searching'||m.status==='pending');
       const chip=`<span class="chip ${sm.c}" style="padding:3px 10px">${canDel?'<span class="srch-dot" style="margin-right:6px"></span>':''}${sm.l}</span>`;
-      const head=`<div class="row between"><b style="font-size:14px">${esc(m.svcName)}</b>${chip}</div><div class="mini" style="margin-top:3px">${esc(m.when||'')} · ${esc(m.slot||'')}${m.provider&&m.provider.nm?' · '+esc(m.provider.nm):''} · ${I.pin} ${esc(m.zone||'')}</div>`;
+      const head=`<div class="row between"><b style="font-size:14px">${unreadDot(m)}${esc(m.svcName)}</b>${chip}</div><div class="mini" style="margin-top:3px">${esc(m.when||'')} · ${esc(m.slot||'')}${m.provider&&m.provider.nm?' · '+esc(m.provider.nm):''} · ${I.pin} ${esc(m.zone||'')}</div>`;
       // Indicateur permanent « recherche active » : rassure l'utilisateur que
       // l'attente n'est pas un bug — personne n'a simplement encore répondu.
       const srchNote=canDel?`<div class="row" style="gap:11px;align-items:center;margin-top:11px;background:var(--coral-wash);border-radius:12px;padding:10px 12px"><span class="srch-badge">${I.search}</span><span class="mini" style="color:var(--coral-deep);line-height:1.4"><b>Recherche en cours…</b> On sollicite les artisans de votre zone.</span></div>`:'';
@@ -5245,7 +5245,7 @@
       ${m.status==='pending'?(m.preferredUid?`<div class="card" style="padding:16px;margin-top:12px"><div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="background:var(--teal-wash);color:var(--teal-deep)">${I.clock}</span><div><b style="font-size:14px">Demande réservée à ${esc((m.preferredName||'votre artisan').split(' ')[0])}</b><p class="mini" style="margin-top:4px">Votre demande est adressée <b>uniquement à ${esc(m.preferredName||'votre artisan')}</b> — pas aux autres artisans, puisque vous l'avez choisi. L'attente est normale&nbsp;: elle dure tant qu'il n'a pas encore répondu. Dès qu'il accepte ou décline, vous êtes prévenu.</p></div></div></div>`:`<div class="card" style="padding:16px;margin-top:12px;text-align:center">${searchRadar(true)}<p class="sub" style="margin:0">Vous saurez qui intervient dès l'acceptation.</p></div>`):((m.svc==='baby'&&p)?babyConfirmBlock(m):(p?`<div class="card provider-pop" style="padding:14px;margin-top:12px"><div class="row" style="gap:12px">${avatarFounder(m.providerPhoto,p.ini,'',p.founder)}<div style="flex:1"><b style="font-size:15px">${esc(p.nm)}</b><div class="mini">${p.jobs} missions réalisées · ${I.pin} ${m.zone}${m.providerAgeBand?' · '+esc(m.providerAgeBand):''}</div></div><div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">${p.founder?`<span class="chip founder-chip" style="padding:4px 9px">${I.star} Ambassadeur</span>`:''}<span class="chip good" style="padding:4px 10px">${I.check} Vérifié · Assuré</span></div></div></div>`:''))}
       ${(m.svc==='colis'&&p)?colisDossier(m,false):''}
       <div class="card" style="padding:16px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Suivi</div><div class="timeline" style="margin-top:12px">${tls}</div></div>
-      ${p?`${(bothAccepted(m)&&m.providerPhone)?`<a class="btn ghost sm" href="tel:${telClean(m.providerPhone)}" style="text-decoration:none;margin-top:12px;justify-content:flex-start;gap:8px">${I.phone}&nbsp;Appeler ${esc(p.nm.split(' ')[0])}</a>`:''}<button class="btn ghost sm" data-act="open-chat" style="margin-top:${(bothAccepted(m)&&m.providerPhone)?'8px':'12px'};justify-content:flex-start;gap:8px">${I.chat}&nbsp;Contacter ${esc(p.nm.split(' ')[0])} par messagerie${(m.chat&&m.chat.length)?` · ${m.chat.length}`:''}</button>`:''}
+      ${p?`${(bothAccepted(m)&&m.providerPhone)?`<a class="btn ghost sm" href="tel:${telClean(m.providerPhone)}" style="text-decoration:none;margin-top:12px;justify-content:flex-start;gap:8px">${I.phone}&nbsp;Appeler ${esc(p.nm.split(' ')[0])}</a>`:''}<button class="btn ghost sm" data-act="open-chat" style="margin-top:${(bothAccepted(m)&&m.providerPhone)?'8px':'12px'};justify-content:flex-start;gap:8px">${unreadDot(m)}${I.chat}&nbsp;Contacter ${esc(p.nm.split(' ')[0])} par messagerie${(m.chat&&m.chat.length)?` · ${m.chat.length}`:''}</button>`:''}
       <button class="btn ghost sm" data-act="open-support" style="margin-top:8px;justify-content:flex-start;gap:8px">${I.shield}&nbsp;Contacter Ti-Services (support)${(()=>{const th=(m.support&&m.support.client)||[];return th.length?` · ${th.length}`:'';})()}</button>
       <div class="est" style="background:var(--card-2);border-color:var(--hair)"><div class="line"><span>Montant garanti</span><b>${eur(t.total)}</b></div><div class="line"><span>Sur ${cardTxt()}</span><b>${S.card?'bloqué':'à la validation'}</b></div><small>${I.shield} Rien à faire&nbsp;: débité automatiquement à la fin (jamais plus que ce montant), seulement si vous validez.</small></div>
       ${m.status==='pending'?`<div class="footcta" style="position:static;background:none;padding:16px 0 0">${isDemo()?`<button class="demobtn" data-act="demo-go-pro">${I.hardhat} Voir côté artisan (démo)</button>`:''}${S.cancelAsk?cancelConfirmCard(m):`<button class="btn ghost" data-act="cancel-mission" style="margin-top:12px">Annuler la demande</button>`}</div>`:'<div style="height:18px"></div>'}
@@ -5863,7 +5863,7 @@
   function proNavbar(){
     const act=attention()==='pro';
     const item=(id,ic,lbl,badge)=>`<button data-pnav="${id}" class="${S.proNav===id&&!S.mission?'on':''}"><span class="nb-ic">${ic}${badge?'<span class="nb-badge"></span>':''}</span>${lbl}</button>`;
-    return `<div class="navbar">${item('home',I.bolt,'Missions',act)}${item('agenda',I.cal,'Agenda',false)}${item('earnings',I.wallet,'Revenus',false)}${item('account',I.user,'Compte',false)}</div>`;
+    return `<div class="navbar">${item('home',I.bolt,'Missions',act||anyProUnread())}${item('agenda',I.cal,'Agenda',false)}${item('earnings',I.wallet,'Revenus',false)}${item('account',I.user,'Compte',false)}</div>`;
   }
   // Choix du type de compte professionnel : artisan (prestataire) ou conciergerie
   // (mandataire qui commande pour ses clients). Les deux passent par une validation admin.
@@ -6106,7 +6106,15 @@
     }
   }
   // Message CLIENT non lu par l'artisan (comparaison au dernier accusé de lecture pro).
-  function proMissionUnread(m){return !!(m&&m.chat&&m.chat.some(function(x){return x.from!=='pro'&&(x.at||0)>(m.readProAt||0);}));}
+  // Message non lu par LA PERSONNE COURANTE (artisan ou client) sur cette mission :
+  // un message venant de l'autre partie, postérieur à son dernier accusé de lecture.
+  function missionUnread(m){if(!m||!m.chat||!m.chat.length)return false;const readAt=(S.persona==='pro')?(m.readProAt||0):(m.readClientAt||0);return m.chat.some(function(x){return x.from!==S.persona&&(x.at||0)>readAt;});}
+  function proMissionUnread(m){return missionUnread(m);}
+  // Y a-t-il un message non lu quelque part (pour la pastille de l'onglet) ?
+  function anyProUnread(){return (S.proMissions||[]).some(missionUnread);}
+  function anyClientUnread(){return (S.missions||[]).some(missionUnread);}
+  // Petite pastille rouge « message non lu » réutilisable le long du chemin d'accès.
+  function unreadDot(m){return missionUnread(m)?'<span class="pdot red" style="margin-right:6px"></span>':'';}
   // Une ACTION incombe à l'artisan : démarrer (accepté), terminer (en cours) ou
   // trancher une annulation. « Validation client » / « médiation » = on attend l'autre.
   function proMissionAction(m){if(!m)return false;return m.status==='accepted'||m.status==='working'||(m.status==='cancelled'&&m.feeDecision==='pending');}
@@ -6564,7 +6572,7 @@
         <a class="btn primary sm" href="${navUrl(m.geo.lat,m.geo.lng)}" target="_blank" rel="noopener" style="margin-top:12px;justify-content:center">🧭 Lancer la navigation</a>
         <p class="mini" style="margin-top:8px;color:var(--muted)">Le trajet s'affiche ici sans quitter l'app. « Lancer la navigation » ouvre le guidage vocal (${navAppName()}) de votre téléphone.</p></div>`:''}
       ${(bothAccepted(m)&&m.clientPhone)?`<a class="btn ghost sm" href="tel:${telClean(m.clientPhone)}" style="text-decoration:none;margin-top:12px;justify-content:flex-start;gap:8px">${I.phone}&nbsp;Appeler ${esc((proClientName(m)||'le client').split(' ')[0])}</a>`:''}
-      <button class="btn ghost sm" data-act="open-chat" style="margin-top:${(bothAccepted(m)&&m.clientPhone)?'8px':'12px'};justify-content:flex-start;gap:8px">${I.chat}&nbsp;Contacter le client par messagerie${(m.chat&&m.chat.length)?` · ${m.chat.length}`:''}</button>
+      <button class="btn ghost sm" data-act="open-chat" style="margin-top:${(bothAccepted(m)&&m.clientPhone)?'8px':'12px'};justify-content:flex-start;gap:8px">${unreadDot(m)}${I.chat}&nbsp;Contacter le client par messagerie${(m.chat&&m.chat.length)?` · ${m.chat.length}`:''}</button>
       <button class="btn ghost sm" data-act="open-support" style="margin-top:8px;justify-content:flex-start;gap:8px">${I.shield}&nbsp;Contacter Ti-Services (support)${(()=>{const th=(m.support&&m.support.pro)||[];return th.length?` · ${th.length}`:'';})()}</button>
       <div class="banner teal" style="margin-top:12px">${I.shield}<span>Paiement du client déjà sécurisé — versé dès qu'il valide la prestation.</span></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0">${m.status==='accepted'?`<button class="btn primary" data-act="pro-advance" data-to="working">Démarrer la prestation</button>`:`<button class="btn primary" data-act="pro-finish-start">J'ai terminé la prestation</button>`}${isDemo()?`<p class="mini" style="text-align:center;margin-top:10px"><button class="linklike" data-act="demo-go-client">🧑 Voir côté client (démo)</button></p>`:''}</div>
@@ -6595,7 +6603,7 @@
       ${(m.address||m.zone)?`<div class="row between" style="margin-top:10px;align-items:flex-start"><span class="sub">${I.pin} Adresse</span><b style="text-align:right;max-width:62%">${esc(m.address||'')}${(m.address&&m.zone)?'<br>':''}${esc(m.zone||'')}</b></div>`:''}
       ${m.access?`<div style="margin-top:10px"><div class="eyebrow" style="color:var(--muted)">${I.key} Accès</div><p class="sub" style="margin-top:4px;color:var(--ink-soft)">${esc(m.access)}</p></div>`:''}
       ${m.geo?`<a class="btn ghost sm" href="${navUrl(m.geo.lat,m.geo.lng)}" target="_blank" rel="noopener" style="text-decoration:none;margin-top:10px;justify-content:flex-start;gap:8px">🧭&nbsp;Itinéraire</a>`:''}
-      <button class="btn ghost sm" data-act="open-chat" style="margin-top:10px;justify-content:flex-start;gap:8px">${I.chat}&nbsp;Message au client${(m.chat&&m.chat.length)?` · ${m.chat.length}`:''}</button>
+      <button class="btn ghost sm" data-act="open-chat" style="margin-top:10px;justify-content:flex-start;gap:8px">${unreadDot(m)}${I.chat}&nbsp;Message au client${(m.chat&&m.chat.length)?` · ${m.chat.length}`:''}</button>
     </div>`;
   }
   function proWaiting(){
