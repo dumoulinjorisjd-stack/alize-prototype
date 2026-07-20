@@ -8172,6 +8172,10 @@
   let FB=null;
   let signupAsArtisan=false; // vrai pendant une inscription artisan (évite la création d'un compte client par la course onAuthStateChanged)
   let signupAsConcierge=false; // idem pour une inscription conciergerie
+  let signupInFlight=false; // anti-double-soumission : un seul createUser à la fois
+                            // (sinon un double appui lance 2 créations qui se percutent :
+                            //  l'une réussit « Candidature envoyée », l'autre échoue
+                            //  « compte existe déjà » → messages contradictoires).
   function fbErr(e){const c=(e&&e.code)||'';return ({
     'auth/email-already-in-use':'Un compte existe déjà avec cet e-mail — connectez-vous.',
     'auth/invalid-email':'E-mail invalide.',
@@ -8445,11 +8449,12 @@
     }catch(e){console.warn('load pro missions',e);}
   }
   async function fbSignup(c){
+    if(signupInFlight)return; signupInFlight=true;
     try{
       const cred=await FB.a.createUserWithEmailAndPassword(FB.auth,c.email.trim(),c.password);
       try{ await FB.f.setDoc(FB.f.doc(FB.db,'users',cred.user.uid),{name:c.name.trim(),email:c.email.trim(),zone:c.zone,photo:c.photo||'',role:'client',acceptedTerms:true,termsVersion:TERMS_VERSION,termsAt:FB.f.serverTimestamp(),createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
       burstConfetti(); toast('Compte créé 🐙 — bienvenue, '+c.name.trim().split(' ')[0]+' !');
-    }catch(e){ toast(fbErr(e)); }
+    }catch(e){ toast(fbErr(e)); }finally{ signupInFlight=false; }
   }
   // Mise à jour de l'attestation d'assurance depuis l'espace artisan (compte existant).
   async function uploadProInsurance(file){
@@ -8469,6 +8474,7 @@
     }catch(e){ console.warn('insurance update',e); toast('Échec de l’envoi — réessayez'); }
   }
   async function fbProSignup(f){
+    if(signupInFlight)return; signupInFlight=true;
     try{
       const cred=await FB.a.createUserWithEmailAndPassword(FB.auth,f.email.trim(),f.password);
       const uid=cred.user.uid;
@@ -8490,9 +8496,10 @@
       S.proInsuranceStatus='attente'; S.proInsuranceUrl=insuranceUrl; S.proCats=f.cats.slice();
       subscribeProStatus(uid);
       burstConfetti(); render(); toast('Candidature envoyée 🐙 — compte créé, examen sous 48 h');
-    }catch(e){ toast(fbErr(e)); }finally{ signupAsArtisan=false; }
+    }catch(e){ toast(fbErr(e)); }finally{ signupAsArtisan=false; signupInFlight=false; }
   }
   async function fbConciergeSignup(f){
+    if(signupInFlight)return; signupInFlight=true;
     try{
       const cred=await FB.a.createUserWithEmailAndPassword(FB.auth,f.email.trim(),f.password);
       const uid=cred.user.uid; const nm=(f.name||'').trim();
@@ -8503,7 +8510,7 @@
       S.concClients=[];S.concOrders=[];S.concEarn=0;S.concForm=null;S.concOrder=null;S.concView=null;
       subscribeConcStatus(uid);
       burstConfetti();render();toast('Candidature envoyée 🐙 — compte créé, examen sous 48 h');
-    }catch(e){ toast(fbErr(e)); }finally{ signupAsConcierge=false; }
+    }catch(e){ toast(fbErr(e)); }finally{ signupAsConcierge=false; signupInFlight=false; }
   }
   let concStatusUnsub=null;
   function subscribeConcStatus(uid){
