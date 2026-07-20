@@ -650,9 +650,14 @@ function commissionTierPct(jobsTotal) {
 // Artisan Fondateur : commission réduite aux seuls frais bancaires (≈ frais Mollie),
 // pendant une fenêtre limitée (3 mois OU 2 000 € de prestations). Ces trois constantes
 // doivent rester alignées avec public/index.html.
-const FOUNDER_COMM_PCT = 3;
+const FOUNDER_COMM_PCT = 3.5;
 const FOUNDER_DAYS = 90;
 const FOUNDER_GROSS_CAP = 2000;
+// Petits montants : sous ce seuil de base (€), un taux PLANCHER s'applique — sinon la
+// commission serait dérisoire (ex. 3,5 % de 15 € = 0,53 €), non viable. Vaut pour TOUS,
+// y compris les ambassadeurs (leur 3,5 % passe à 10 % sous le seuil). Aligné avec index.html.
+const SMALL_COMM_MIN = 21;   // seuil de base (€) sous lequel le plancher s'applique
+const SMALL_COMM_PCT = 10;   // taux plancher sous le seuil
 const round2 = (x) => Math.round((Number(x) || 0) * 100) / 100;
 
 exports.settleCommission = onDocumentUpdated('requests/{reqId}', async (event) => {
@@ -700,7 +705,9 @@ exports.settleCommission = onDocumentUpdated('requests/{reqId}', async (event) =
   const withinTime = (founderSinceMs == null) ? true : (Date.now() - founderSinceMs < FOUNDER_DAYS * 86400000);
   const withinGross = founderGross < FOUNDER_GROSS_CAP;
   const founderActive = isFounder && withinTime && withinGross;
-  const pct = founderActive ? FOUNDER_COMM_PCT : commissionTierPct(jobsTotal);
+  const basePct = founderActive ? FOUNDER_COMM_PCT : commissionTierPct(jobsTotal);
+  // Plancher « petits montants » : au moins SMALL_COMM_PCT % sous SMALL_COMM_MIN € de base.
+  const pct = (base < SMALL_COMM_MIN) ? Math.max(basePct, SMALL_COMM_PCT) : basePct;
   const commission = round2(base * pct / 100);
   const net = round2(gross - commission);
 

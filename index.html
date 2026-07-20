@@ -1944,9 +1944,14 @@
   // Artisan Fondateur : commission réduite aux seuls frais bancaires (≈ frais Mollie),
   // pendant une fenêtre limitée — 3 mois OU 2 000 € de prestations (au premier atteint),
   // puis commission standard (palier de fidélité). Prime sur le palier tant qu'active.
-  const FOUNDER_COMM_PCT=3;
+  const FOUNDER_COMM_PCT=3.5;
   const FOUNDER_DAYS=90;         // durée de l'avantage fondateur
   const FOUNDER_GROSS_CAP=2000;  // plafond de prestations (CA) de l'avantage
+  // Plancher « petits montants » : sous 21 € de base, la commission passe à 10 % au minimum
+  // (sinon 3,5 % de 15 € = 0,53 €, non viable). Vaut pour tous, ambassadeurs compris.
+  // DOIT rester aligné avec functions/index.js (SMALL_COMM_MIN / SMALL_COMM_PCT).
+  const SMALL_COMM_MIN=21, SMALL_COMM_PCT=10;
+  function effCommPct(basePct,sub){return ((Number(sub)||0)<SMALL_COMM_MIN)?Math.max(Number(basePct)||0,SMALL_COMM_PCT):(Number(basePct)||0);}
   // Avantage fondateur encore actif pour l'artisan connecté ? (dans les 3 mois ET sous 2 000 €)
   function founderActive(){ if(!S.proFounder)return false; if((S.proFounderGross||0)>=FOUNDER_GROSS_CAP)return false; if(S.proFounderSince&&(Date.now()-S.proFounderSince)>=FOUNDER_DAYS*86400000)return false; return true; }
   // Idem pour une fiche artisan quelconque (console admin).
@@ -2194,12 +2199,14 @@
     const total=sub+maj+travel+tip;
     // La commission Ti-Services porte sur la base (sub) ; la majoration éventuelle, le forfait
     // de déplacement ET le pourboire reviennent intégralement à l'intervenant (CGV art. 2).
-    const commPct=commPctFor(m);const commission=Math.round(sub*commPct)/100;const payout=Math.round((total-commission)*100)/100;
+    // Commission figée sur la mission (m.commPct) si déjà réglée ; sinon taux courant
+    // avec plancher « petits montants » appliqué sur la base (sub).
+    const commPct=(m&&m.commPct!=null)?m.commPct:effCommPct(myCommPct(),sub);const commission=Math.round(sub*commPct)/100;const payout=Math.round((total-commission)*100)/100;
     return {rate,sub,hours:h,boost,maj,travel,tip,commPct,commission,payout,total};}
   // Net RÉEL que l'artisan percevra pour une demande ouverte (commission déjà déduite) —
   // affiché AVANT l'acceptation pour qu'il décide en connaissance de cause. On ne montre
   // jamais à l'artisan le prix payé par le client (et jamais au client le net de l'artisan).
-  function reqPayout(r){let sub;const hasActs=!!(r.acts&&r.acts.length);if(hasActs){sub=r.acts.reduce(function(t,a){return t+(Number(a.price)||0)*(a.qty||1);},0);}else if(r.forfaitTotal!=null){sub=Number(r.forfaitTotal)||0;}else{sub=(Number(r.rate)||0)*(Number(r.duration)||1);}const maj=Math.round(sub*((r.boost||0))/100);const travel=travelFeeFor(sub,hasActs);const gross=sub+maj+travel;const pct=myCommPct();const commission=Math.round(sub*pct)/100;return Math.round((gross-commission)*100)/100;}
+  function reqPayout(r){let sub;const hasActs=!!(r.acts&&r.acts.length);if(hasActs){sub=r.acts.reduce(function(t,a){return t+(Number(a.price)||0)*(a.qty||1);},0);}else if(r.forfaitTotal!=null){sub=Number(r.forfaitTotal)||0;}else{sub=(Number(r.rate)||0)*(Number(r.duration)||1);}const maj=Math.round(sub*((r.boost||0))/100);const travel=travelFeeFor(sub,hasActs);const gross=sub+maj+travel;const pct=effCommPct(myCommPct(),sub);const commission=Math.round(sub*pct)/100;return Math.round((gross-commission)*100)/100;}
   // Décompose une ligne d'historique : brut (prix payé par le client / vente au mandat),
   // commission Ti-Services, net perçu par l'artisan. Rétrocompatible avec les anciennes
   // lignes (sans commission → net = brut).
@@ -5632,7 +5639,7 @@
   // Prestation validée par le client : on l'inscrit dans les revenus/missions de
   // l'artisan et on persiste (survit aux sessions et aux appareils).
   function recordProPaid(m){
-    if(m.commPct==null)m.commPct=myCommPct(); // taux figé au règlement
+    if(m.commPct==null)m.commPct=totals(m).commPct; // taux figé au règlement (plancher petits montants inclus)
     const t=totals(m);
     S.proEarnings=Math.round(((S.proEarnings||0)+t.payout)*100)/100;
     S.proJobsTotal=(S.proJobsTotal||0)+1;
@@ -6114,7 +6121,7 @@
   function proActiveMissions(){return (S.proMissions||[]).filter(function(m){return ['accepted','working','done_pro','disputed'].indexOf(m.status)>=0||(m.status==='cancelled'&&m.feeDecision==='pending');});}
   function proMissionMeta(st){return {accepted:{l:'À réaliser',c:'good'},working:{l:'En cours',c:'good'},done_pro:{l:'Validation client',c:'coral'},disputed:{l:'En médiation',c:'coral'},cancelled:{l:'Annulation à trancher',c:'coral'}}[st]||{l:st,c:'grey'};}
   // Indemnité d'annulation retenue : montant + net dus à l'artisan (commission déduite).
-  function cancelFeeCalc(m){const fee=(m.cancelFee!=null)?m.cancelFee:Math.round(totals(m).total*0.5*100)/100;const pct=(m.commPct!=null)?m.commPct:myCommPct();const commission=Math.round(fee*pct)/100;const net=Math.round((fee-commission)*100)/100;return {fee:fee,pct:pct,commission:commission,net:net};}
+  function cancelFeeCalc(m){const fee=(m.cancelFee!=null)?m.cancelFee:Math.round(totals(m).total*0.5*100)/100;const pct=(m.commPct!=null)?m.commPct:effCommPct(myCommPct(),fee);const commission=Math.round(fee*pct)/100;const net=Math.round((fee-commission)*100)/100;return {fee:fee,pct:pct,commission:commission,net:net};}
   // Décision de l'artisan sur une annulation tardive : appliquer l'indemnité (50 %) ou
   // y renoncer. C'est SON choix — Ti-Services ne l'impose pas.
   function proCancelDecision(m){
@@ -7369,7 +7376,10 @@
       case 'pro-contact-edit':S.proContactForm={phone:S.proPhone||'',bio:S.proBio||''};S.proEditContact=true;render();break;
       case 'pro-contact-cancel':S.proEditContact=false;S.proContactForm=null;render();break;
       case 'pro-contact-save':{const f=S.proContactForm||{};S.proPhone=(f.phone||'').trim();S.proBio=(f.bio||'').trim();S.proEditContact=false;S.proContactForm=null;
-        if(FB&&FB.auth&&FB.auth.currentUser&&!isDemo()){const uid=FB.auth.currentUser.uid;FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{phone:S.proPhone,bio:S.proBio},{merge:true}).then(function(){toast('Coordonnées mises à jour ✓');}).catch(function(e){toast('⚠︎ Non enregistré : '+fbErrTxt(e));});try{FB.f.setDoc(FB.f.doc(FB.db,'users',uid),{phone:S.proPhone},{merge:true});}catch(_){}}
+        if(FB&&FB.auth&&FB.auth.currentUser&&!isDemo()){const uid=FB.auth.currentUser.uid;FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{phone:S.proPhone,bio:S.proBio},{merge:true}).then(function(){toast('Coordonnées mises à jour ✓');}).catch(function(e){toast('⚠︎ Non enregistré : '+fbErrTxt(e));});try{FB.f.setDoc(FB.f.doc(FB.db,'users',uid),{phone:S.proPhone},{merge:true});}catch(_){}
+          // La présentation n'est visible du client QUE pour la garde d'enfants. On répercute
+          // la nouvelle bio sur les gardes en cours (elle était figée à l'acceptation).
+          (S.proMissions||[]).forEach(function(mm){if(mm&&mm.reqId&&mm.svc==='baby'){mm.providerBio=S.proBio;try{FB.f.updateDoc(FB.f.doc(FB.db,'requests',mm.reqId),{providerBio:S.proBio});}catch(_){}}});}
         else{toast('Coordonnées mises à jour ✓');}
         render();break;}
       case 'pro-add-service':S.proAddForm={cats:[],other:'',assur:false};S.proAddView=true;render();break;
