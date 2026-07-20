@@ -1816,6 +1816,60 @@
   const FREQS=[{id:'ponctuelle',lbl:'Ponctuelle',short:'ponctuelle'},{id:'hebdo',lbl:'Chaque semaine',short:'chaque semaine'},{id:'bihebdo',lbl:'Toutes les 2 sem.',short:'toutes les 2 semaines'},{id:'mensuelle',lbl:'Chaque mois',short:'chaque mois'}];
   const freqInfo=(id)=>FREQS.find(f=>f.id===id)||FREQS[0];
   function occLabels(freq){if(freq==='hebdo')return ['Aujourd’hui','Semaine prochaine','Dans 2 semaines','Dans 3 semaines'];if(freq==='bihebdo')return ['Aujourd’hui','Dans 2 semaines','Dans 4 semaines'];if(freq==='mensuelle')return ['Aujourd’hui','Le mois prochain'];return ['Aujourd’hui'];}
+  // ---- Récurrence ASSISTÉE (abonnement) ---------------------------------------
+  // Modèle validé : l'app garde l'INTENTION récurrente (S.recurring) et propose le
+  // prochain passage ; le client confirme en 1 tap → flux de commande normal (donc
+  // « débité à la validation », un débit par passage). Rien d'automatique côté argent.
+  function freqDays(f){return f==='hebdo'?7:f==='bihebdo'?14:f==='mensuelle'?30:0;}
+  function addDaysISO(iso,days){const b=(iso&&/^\d{4}-\d{2}-\d{2}$/.test(iso))?new Date(iso+'T00:00:00'):new Date();b.setDate(b.getDate()+(days||0));return b.getFullYear()+'-'+String(b.getMonth()+1).padStart(2,'0')+'-'+String(b.getDate()).padStart(2,'0');}
+  function recurSig(m){return (m.svc||'')+'|'+(m.addressId||m.address||'')+'|'+(m.frequency||m.freq||'');}
+  // Enregistre / rafraîchit l'abonnement à partir d'une commande récurrente placée.
+  function recurUpsert(m){
+    if(!m||!m.frequency||m.frequency==='ponctuelle')return;
+    S.recurring=S.recurring||[];const sig=recurSig(m);
+    const startISO=(m.dateISO&&/^\d{4}-\d{2}-\d{2}$/.test(m.dateISO))?m.dateISO:todayISO();
+    const entry={id:'rc'+(m.reqId||('t'+Date.now())),sig:sig,svc:m.svc,svcName:m.svcName||svcNm(m.svc),freq:m.frequency,short:freqInfo(m.frequency).short,
+      addressId:m.addressId||'',address:m.address||'',zone:m.zone||'',geo:m.geo?Object.assign({},m.geo):null,access:m.access||'',
+      slot:m.slot||'',slotFlex:m.slotFlex||0,unit:m.unit||'h',duration:m.duration||1,rate:m.rate||0,boost:m.boost||0,
+      notes:m.notes||'',acts:(m.acts&&m.acts.length)?m.acts.slice():null,
+      providerUid:m.providerUid||m.preferredUid||'',providerName:(m.provider&&m.provider.nm)||m.preferredName||'',
+      nextISO:addDaysISO(startISO,freqDays(m.frequency)),active:true};
+    const i=S.recurring.findIndex(function(x){return x&&x.sig===sig;});
+    if(i>=0){const prev=S.recurring[i];entry.id=prev.id;
+      // Ne jamais perdre l'artisan déjà mémorisé si la nouvelle commande n'en porte pas.
+      if(!entry.providerUid&&prev.providerUid){entry.providerUid=prev.providerUid;entry.providerName=prev.providerName||entry.providerName;}
+      S.recurring[i]=Object.assign({},prev,entry);}
+    else{S.recurring.unshift(entry);}
+    saveClientCloud();
+  }
+  // Mémorise l'artisan une fois la 1re prestation acceptée → passages suivants dirigés vers lui.
+  function recurSetProvider(m){if(!m||!m.frequency||m.frequency==='ponctuelle'||!m.providerUid)return;const sig=recurSig(m);const s=(S.recurring||[]).find(function(x){return x&&x.sig===sig;});if(s&&s.providerUid!==m.providerUid){s.providerUid=m.providerUid;s.providerName=(m.provider&&m.provider.nm)||s.providerName||'';saveClientCloud();}}
+  function recurDue(r){if(!r||!r.nextISO)return true;try{return new Date(r.nextISO+'T23:59:59')<=new Date(Date.now()+2*86400000);}catch(_){return true;}}
+  function recurCard(r){
+    const due=recurDue(r);const nextTxt=r.nextISO?fmtLong(r.nextISO):'à programmer';
+    const prov=r.providerName?(' · '+esc(r.providerName.split(' ')[0])):'';
+    return `<div class="card" style="padding:14px;margin-top:9px;border-left:4px solid ${due?'var(--coral)':'var(--teal)'}">
+      <div class="row between"><b style="font-size:14px">${I.repeat}&nbsp;${esc(r.svcName||svcNm(r.svc))}</b><span class="chip" style="padding:3px 9px">${esc(r.short||freqInfo(r.freq).short)}</span></div>
+      <div class="mini" style="margin-top:4px">Prochain passage : <b>${esc(nextTxt)}</b>${r.slot?' · '+esc(r.slot):''}${prov}</div>
+      ${due
+        ? `<div class="row" style="gap:8px;margin-top:11px"><button class="btn primary sm" data-act="recur-confirm:${r.id}" style="width:auto;padding:9px 15px">${I.check}&nbsp;Confirmer ce passage</button><button class="btn ghost sm" data-act="recur-skip:${r.id}" style="width:auto;padding:9px 13px">Décaler</button></div>`
+        : `<div class="row between" style="margin-top:10px"><button class="linklike" data-act="recur-confirm:${r.id}" style="color:var(--teal-deep);font-weight:700">${I.repeat} Réserver ce passage ›</button><button class="linklike" data-act="recur-stop:${r.id}" style="color:var(--muted)">Arrêter</button></div>`}
+    </div>`;
+  }
+  // Confirme un passage : pré-remplit une commande dirigée (même artisan) datée du
+  // prochain passage ; la fréquence est conservée → recurUpsert avancera l'échéance
+  // au moment où la commande est réellement placée.
+  function recurConfirm(id){const r=(S.recurring||[]).find(function(x){return x.id===id;});if(!r)return;
+    const svc=SERVICES.find(function(s){return s.id===r.svc;})||{id:r.svc,nm:r.svcName||svcNm(r.svc)};
+    const nm=Object.assign(newMission(svc),{rate:r.rate,duration:r.duration||1,unit:r.unit||'h',slot:r.slot,slotFlex:r.slotFlex||0,boost:r.boost||0,zone:r.zone,address:r.address,addressId:r.addressId,geo:r.geo?Object.assign({},r.geo):null,access:r.access,notes:r.notes,acts:r.acts?r.acts.slice():null,frequency:r.freq});
+    if(r.providerUid){nm.preferredUid=r.providerUid;nm.preferredName=r.providerName||'';}
+    const tod=todayISO();const dISO=(r.nextISO&&r.nextISO>=tod)?r.nextISO:tod;
+    nm.dateISO=dISO;nm.when=fmtDate(dISO);nm.dateMode='pick';
+    S.mission=null;S.draft=nm;S.payStep=false;S.payEdit=false;S.clientNav='home';renderConfig();
+    toast('Passage pré-rempli — vérifiez et confirmez');
+  }
+  function recurSkip(id){const r=(S.recurring||[]).find(function(x){return x.id===id;});if(!r)return;r.nextISO=addDaysISO(r.nextISO||todayISO(),freqDays(r.freq)||7);saveClientCloud();render();toast('Passage décalé à la période suivante');}
+  function recurStop(id){const i=(S.recurring||[]).findIndex(function(x){return x.id===id;});if(i<0)return;const nm=S.recurring[i].svcName||'';S.recurring.splice(i,1);saveClientCloud();render();toast('Abonnement arrêté'+(nm?' — '+nm:''));}
   const PLACEHOLDERS={menage:'Ex. 2 chambres + cuisine, produits fournis.',baby:'Ex. garde de 2 enfants (4 et 6 ans), sortie d’école.',jardin:'Ex. tondre 200 m² et tailler une haie.',repassage:'Ex. 2 paniers de linge, chemises comprises.',bricolage:'Ex. monter une étagère IKEA et fixer 2 cadres au mur.',cuisine:'Ex. repas pour 4, cuisine créole.',demenagement:'Ex. studio, 15 cartons + 1 canapé, 2e étage sans ascenseur.',coiffure:'Ex. coupe + brushing à domicile pour 2 personnes.',info:'Ex. configurer une box internet + imprimante wifi.',animaux:'Ex. promener un chien 2×/jour ce week-end.',massage:'Ex. massage relaxant dos & nuque, 1 h à domicile (table fournie).',manucure:'Ex. pose vernis semi-permanent mains + pieds.',epilation:'Ex. épilation demi-jambes + aisselles à la cire.',maquillage:'Ex. maquillage mariage, essai inclus.',piscine:'Ex. entretien hebdo d’une piscine 8×4, contrôle pH et filtre.',plomberie:'Ex. fuite sous l’évier + remplacement d’un mitigeur.',electricite:'Ex. remplacer 2 prises et installer un luminaire.',deck:'Ex. ponçage et saturation d’une terrasse bois 20 m².',clim:'Ex. entretien de 3 climatisations : nettoyage des filtres et contrôle du gaz.',coach:'Ex. remise en forme, 2 séances/semaine à domicile.',natation:'Ex. cours débutant pour un enfant de 7 ans, piscine privée.',pilates:'Ex. cours de Pilates à domicile, niveau débutant, tapis fourni.',yoga:'Ex. séance de yoga Vinyasa à domicile, 1 h, en solo ou à deux.'};
   const PHOTO_HINTS={menage:'les pièces ou les zones à nettoyer',baby:'le logement et le matériel (lit, jouets)',jardin:'le jardin, la haie ou la pelouse à entretenir',demenagement:'les meubles, les cartons et l’accès (étage, ascenseur)',coiffure:'la coupe souhaitée ou vos cheveux actuels',animaux:'votre animal et son espace de vie',massage:'la zone à masser ou l’espace prévu pour la table'};
   const AVG_SEED=()=>{const o={};SERVICES.forEach(s=>{o[s.id]={sum:s.rate*24,n:24};});return o;};
@@ -2668,6 +2722,10 @@
     "Modifier téléphone & présentation":"Edit phone & about you",
     "Décrivez votre expérience en quelques mots":"Describe your experience in a few words",
     "Coordonnées mises à jour ✓":"Details updated ✓",
+    "Mes abonnements":"My subscriptions","Confirmer ce passage":"Confirm this visit",
+    "Décaler":"Postpone","Arrêter":"Stop","Réserver ce passage ›":"Book this visit ›",
+    "Passage pré-rempli — vérifiez et confirmez":"Visit pre-filled — check and confirm",
+    "Passage décalé à la période suivante":"Visit moved to the next period","Abonnement arrêté":"Subscription stopped",
     "Pour corriger une information légale (nom, SIRET, adresse), contactez Ti-Services.":"To correct a legal detail (name, SIRET, address), contact Ti-Services.",
     // Paiement / commande
     "Cochez au moins une prestation pour continuer.":"Select at least one service to continue.","Aucune prestation sélectionnée":"No service selected","Déplacement offert":"Free travel","Coup de pouce":"Tip","Prix ferme":"Firm price","Choisissez la prestation":"Choose the service","Cochez une prestation pour continuer.":"Select a service to continue.",
@@ -3425,6 +3483,10 @@
     "Modifier téléphone & présentation":"Editar telefone e apresentação",
     "Décrivez votre expérience en quelques mots":"Descreva a sua experiência em poucas palavras",
     "Coordonnées mises à jour ✓":"Dados atualizados ✓",
+    "Mes abonnements":"As minhas subscrições","Confirmer ce passage":"Confirmar esta passagem",
+    "Décaler":"Adiar","Arrêter":"Parar","Réserver ce passage ›":"Reservar esta passagem ›",
+    "Passage pré-rempli — vérifiez et confirmez":"Passagem pré-preenchida — verifique e confirme",
+    "Passage décalé à la période suivante":"Passagem adiada para o período seguinte","Abonnement arrêté":"Subscrição terminada",
     "Pour corriger une information légale (nom, SIRET, adresse), contactez Ti-Services.":"Para corrigir um dado legal (nome, SIRET, morada), contacte a Ti-Services.",
     "Cochez au moins une prestation pour continuer.":"Selecione pelo menos um serviço para continuar.",
     "Aucune prestation sélectionnée":"Nenhum serviço selecionado",
@@ -5120,7 +5182,8 @@
     const newBtn=`<button class="btn ${active.length?'ghost':'primary'} sm" data-cnav="home" style="margin-top:14px">${I.search} Passer une nouvelle commande</button>`;
     const summary='';
     const list=done.length?clientHistoryBlock(done):(active.length?'':(S._clientReqLoading?`<div style="margin-top:12px">${reqSkeleton(2)}</div>`:`<div class="card" style="padding:26px 24px;margin-top:12px;text-align:center;color:var(--muted)"><div style="display:flex;justify-content:center">${octoMini(72,'wave')}</div><div style="margin-top:10px;font-weight:600;color:var(--ink-soft)">Aucune prestation pour l’instant</div><div style="margin-top:4px">Vos réservations et reçus apparaîtront ici.</div></div>`));
-    const rec=S.recurring.length?`<div style="margin-top:16px"><div class="eyebrow" style="color:var(--muted)">Prestations régulières</div>${S.recurring.map(r=>`<div class="card" style="padding:13px;margin-top:8px"><div class="row between"><b style="font-size:14px">${r.svcName}</b><span class="chip" style="padding:3px 9px">${I.repeat} ${r.short}</span></div><div class="row between" style="margin-top:3px"><span class="mini">${r.slot} · ${r.zone}</span><span class="chip good" style="padding:3px 9px">${I.check} Actif</span></div></div>`).join('')}</div>`:'';
+    const recList=(S.recurring||[]).filter(function(r){return r&&r.active!==false;});
+    const rec=recList.length?`<div style="margin-top:16px"><div class="eyebrow" style="color:var(--muted)">${I.repeat} Mes abonnements</div>${recList.map(recurCard).join('')}</div>`:'';
     return `<div class="pad"><div style="height:12px"></div><div class="row between" style="align-items:flex-start"><div><span class="eyebrow">${I.wallet} Mes réservations</span><div class="h-hello">${active.length?'Vos demandes en cours':'Mes réservations'}</div></div><div class="row" style="gap:9px;align-items:center">${!isDemo()?`<button class="iconbtn" data-act="refresh-requests" aria-label="Rafraîchir mes réservations" title="Rafraîchir">${I.repeat}</button>`:''}${avatarPhoto(S.account&&S.account.photo,inits(((S.account&&S.account.name)||(S.clientForm&&S.clientForm.name)||'Ti')),'')}</div></div>${active.length?notifCTA('client'):''}${activeBlock}${newBtn}${summary}${rec}${list}<div style="height:6px"></div></div>${clientNavbar()}`;
   }
   // Carte de partage : QR à flasher + lien + partage natif (aucun fichier à chercher).
@@ -5402,7 +5465,7 @@
     // appui, réseau lent, renvoi du même formulaire…).
     const sig=missionSig(d);const dup=activeMissions().find(function(x){return missionSig(x)===sig;});
     if(dup){S.mission=dup;S.draft=null;S.payStep=false;S.payEdit=false;S.clientNav='wallet';render();toast('Cette demande existe déjà — nous l’avons rouverte.');return;}
-    if(S.avgOffers[d.svc]){S.avgOffers[d.svc].sum+=d.rate;S.avgOffers[d.svc].n++;}d._id=d._id||('m'+Date.now());S.missions=S.missions||[];if(S.missions.indexOf(d)<0)S.missions.unshift(d);S.mission=d;S.draft=null;S.payStep=false;S.payEdit=false;S.clientNav='wallet';persistRequest(d);startSearch();cacheClientLocal();}
+    if(S.avgOffers[d.svc]){S.avgOffers[d.svc].sum+=d.rate;S.avgOffers[d.svc].n++;}d._id=d._id||('m'+Date.now());S.missions=S.missions||[];if(S.missions.indexOf(d)<0)S.missions.unshift(d);S.mission=d;S.draft=null;S.payStep=false;S.payEdit=false;S.clientNav='wallet';persistRequest(d);recurUpsert(d);startSearch();cacheClientLocal();}
   // Étape 0 : la demande devient une fiche Firestore `requests/{id}` (vrais comptes uniquement).
   // Sans adresse exacte ni GPS — révélés seulement à l'artisan qui accepte. Base des notifications.
   async function persistRequest(m){
@@ -5546,6 +5609,7 @@
         // Infos artisan (vues côté client)
         if(r.providerName){if(!m.provider||!m.providerUid||m.provider.nm==='Votre artisan'){m.provider={nm:r.providerName,ini:inits(r.providerName),rating:0,jobs:(r.providerJobs||0),founder:!!r.providerFounder};}m.providerUid=r.providerUid||m.providerUid;}
         if(r.providerUid&&!m.providerUid)m.providerUid=r.providerUid;
+        if(r.providerUid)recurSetProvider(m); // passages suivants dirigés vers cet artisan
         // Profil transmis à l'acceptation (photo pour tous ; téléphone/bio/diplômes
         // pour la garde d'enfants — appel + confirmation avant engagement).
         if(r.providerPhoto&&m.providerPhoto!==r.providerPhoto){m.providerPhoto=r.providerPhoto;touched=true;}
@@ -7154,6 +7218,9 @@
     if(b.dataset.act==='histcat-back'){S.histCat=null;render();try{view.scrollTop=0;}catch(_){}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('histinv:')===0){const h=doneHistory()[+b.dataset.act.split(':')[1]];if(h)downloadInvoicePdf(h);return;}
     if(b.dataset.act&&b.dataset.act.indexOf('renew:')===0){const h=doneHistory()[+b.dataset.act.split(':')[1]];if(h)renewMission(h);return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('recur-confirm:')===0){recurConfirm(b.dataset.act.slice('recur-confirm:'.length));return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('recur-skip:')===0){recurSkip(b.dataset.act.slice('recur-skip:'.length));return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('recur-stop:')===0){recurStop(b.dataset.act.slice('recur-stop:'.length));return;}
     if(b.dataset.act==='refresh-requests'){manualRefreshRequests();return;}
     if(b.dataset.act==='toggle-desktop'){toggleForceDesktop();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('rm-diploma:')===0){const i=+b.dataset.act.split(':')[1];if(S.proForm&&S.proForm.diplomaDocs)S.proForm.diplomaDocs.splice(i,1);render();return;}
