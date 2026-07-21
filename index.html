@@ -6681,9 +6681,11 @@
     // masqué pour ne pas encombrer. Défaut H24/7j → l'artisan reçoit tout tant qu'il n'a
     // pas restreint ses créneaux. Croix pour fermer immédiatement.
     const availFull=availCount()>=28;
-    let _dispoSeen=false;try{_dispoSeen=localStorage.getItem('tiAgendaDispoSeen')==='1';}catch(_){}
+    // « Vu » mémorisé CÔTÉ SERVEUR (fiche artisan) + localStorage : ainsi le rappel ne
+    // réapparaît pas même après un vidage de cache. On marque vu dès le premier affichage.
+    let _dispoSeen=!!S.proAgendaDispoSeen;try{if(localStorage.getItem('tiAgendaDispoSeen')==='1')_dispoSeen=true;}catch(_){}
     const showReminder=(tab==='presta')&&!_dispoSeen;
-    if(showReminder){try{localStorage.setItem('tiAgendaDispoSeen','1');}catch(_){}}
+    if(showReminder){S.proAgendaDispoSeen=true;try{localStorage.setItem('tiAgendaDispoSeen','1');}catch(_){}try{if(FB&&FB.auth&&FB.auth.currentUser&&!isDemo())FB.f.setDoc(FB.f.doc(FB.db,'artisans',FB.auth.currentUser.uid),{agendaDispoSeen:true},{merge:true});}catch(_){}}
     const dispoReminder=showReminder?`<div class="card" style="padding:14px;margin-top:12px;position:relative;border-left:4px solid ${availFull?'var(--coral)':'var(--teal-deep)'}">
       <button data-act="dispo-reminder-x" aria-label="Fermer" style="position:absolute;top:6px;right:6px;background:none;border:none;font-size:16px;line-height:1;color:var(--muted);padding:6px">×</button>
       <div class="row" style="gap:10px;align-items:flex-start"><span class="benic" style="background:${availFull?'var(--coral-wash)':'var(--teal-wash)'};color:${availFull?'var(--coral-deep)':'var(--teal-deep)'}">${I.clock}</span><div style="flex:1;padding-right:16px"><b style="font-size:14px">Vos disponibilités</b><p class="mini" style="margin-top:3px">${availFull?'Réglées sur <b>H24, 7j/7</b> par défaut — vous recevez <b>toutes</b> les missions. Indiquez vos vrais créneaux pour n\'être sollicité que quand vous êtes libre.':'<b>'+availCount()+'/28</b> créneaux actifs. Vous ne recevez de missions que sur ces créneaux — pensez à les tenir à jour.'}</p><button class="linklike" data-atab="dispo" style="color:var(--teal-deep);font-weight:700;margin-top:6px">Régler mes disponibilités ›</button></div></div>
@@ -7850,7 +7852,7 @@
       case 'close-comm-statement':S.commStmt=false;render();break;
       case 'stmt-prev':{var pp=stmtPeriod();var k=stmtKey(pp);if(k>stmtMinKey()){var m2=pp.m-1,y2=pp.y;if(m2<0){m2=11;y2--;}S.stmtPeriod={y:y2,m:m2};}render();break;}
       case 'stmt-next':{var pn=stmtPeriod();if(stmtKey(pn)<stmtNowKey()){var m3=pn.m+1,y3=pn.y;if(m3>11){m3=0;y3++;}S.stmtPeriod={y:y3,m:m3};}render();break;}
-      case 'dispo-reminder-x':try{localStorage.setItem('tiAgendaDispoSeen','1');}catch(_){}render();break;
+      case 'dispo-reminder-x':S.proAgendaDispoSeen=true;try{localStorage.setItem('tiAgendaDispoSeen','1');}catch(_){}try{if(FB&&FB.auth&&FB.auth.currentUser&&!isDemo())FB.f.setDoc(FB.f.doc(FB.db,'artisans',FB.auth.currentUser.uid),{agendaDispoSeen:true},{merge:true});}catch(_){}render();break;
       case 'open-year-statement':S.stmtYear=stmtYearNow();S.yearStmt=true;render();break;
       case 'close-year-statement':S.yearStmt=false;render();break;
       case 'year-prev':{var yp=curStmtYear();if(yp>yearMinYear())S.stmtYear=yp-1;render();break;}
@@ -8569,7 +8571,8 @@
           if(typeof ad.notifWa==='boolean')S.proNotifWa=ad.notifWa;
           // Lieu d'intervention : 'domicile' (se déplace), 'salon' (reçoit chez lui), 'both'.
           // Non renseigné (anciens comptes) => 'both' : il continue de voir toutes les demandes.
-          S.proSiteMode=ad.siteMode||'both'; S.proSalonAddress=ad.salonAddress||''; S.proSalonZone=ad.salonZone||'Gustavia'; S.proSalonGeo=ad.salonGeo||null; }
+          S.proSiteMode=ad.siteMode||'both'; S.proSalonAddress=ad.salonAddress||''; S.proSalonZone=ad.salonZone||'Gustavia'; S.proSalonGeo=ad.salonGeo||null;
+          S.proAgendaDispoSeen=!!ad.agendaDispoSeen; }
         S.proStatus=(ad&&ad.status==='valide')?'approved':'pending';
         S.onboarded=true;S.authView=null;S.proNav='home';render();
         if(typeof Notification!=='undefined'&&Notification.permission==='granted')registerPush('artisan');
