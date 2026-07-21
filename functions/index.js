@@ -738,12 +738,20 @@ exports.notifyBoosted = onDocumentUpdated('requests/{reqId}', async (event) => {
   const rb = Number(after.reboostedAt) || 0;
   if (!rb || rb === (Number(before.reboostedAt) || 0)) return; // pas de NOUVEAU coup de pouce
   const svc = after.service;
+  const reqId = event.params.reqId;
   const db = getFirestore();
   const artsSnap = await db.collection('artisans').where('status', '==', 'valide').get();
   const uids = artsSnap.docs
     .filter((d) => { const c = (d.data() || {}).cats || []; return !svc || c.indexOf(svc) >= 0; })
     .map((d) => d.id);
   if (!uids.length) return;
+  // « Re-solliciter TOUS les artisans, même ceux qui avaient passé » : on RETIRE cette
+  // demande de la liste `skippedRequests` de chaque artisan concerné. Ainsi la mission
+  // ré-apparaît dans son fil « Missions disponibles » — y compris sur une version de
+  // l'app encore en cache (le filtre côté client ne suffit pas si la coquille est ancienne).
+  await Promise.all(uids.map((uid) =>
+    db.collection('artisans').doc(uid).update({ skippedRequests: FieldValue.arrayRemove(reqId) }).catch(() => {})
+  ));
   let tokens = [];
   await Promise.all(uids.map(async (uid) => {
     try {
