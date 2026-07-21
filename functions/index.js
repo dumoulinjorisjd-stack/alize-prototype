@@ -726,6 +726,52 @@ exports.notifyArtisanPaid = onDocumentUpdated('requests/{reqId}', async (event) 
   } catch (e) { console.warn('notifyArtisanPaid push', e); }
 });
 
+/**
+ * notifyBoosted : le client a ajouté (ou augmenté) un COUP DE POUCE pendant la
+ * recherche (reboostedAt change, demande encore pending). On re-notifie TOUS les
+ * artisans validés du service — y compris ceux qui avaient « passé » la mission.
+ */
+exports.notifyBoosted = onDocumentUpdated('requests/{reqId}', async (event) => {
+  const before = (event.data && event.data.before && event.data.before.data()) || {};
+  const after = (event.data && event.data.after && event.data.after.data()) || {};
+  if (after.status !== 'pending') return;
+  const rb = Number(after.reboostedAt) || 0;
+  if (!rb || rb === (Number(before.reboostedAt) || 0)) return; // pas de NOUVEAU coup de pouce
+  const svc = after.service;
+  const db = getFirestore();
+  const artsSnap = await db.collection('artisans').where('status', '==', 'valide').get();
+  const uids = artsSnap.docs
+    .filter((d) => { const c = (d.data() || {}).cats || []; return !svc || c.indexOf(svc) >= 0; })
+    .map((d) => d.id);
+  if (!uids.length) return;
+  let tokens = [];
+  await Promise.all(uids.map(async (uid) => {
+    try {
+      const u = await db.collection('users').doc(uid).get();
+      const ud = u.data() || {};
+      if (ud.role && ud.role !== 'artisan') return;
+      (ud.pushTokens || []).forEach((t) => tokens.push(t));
+    } catch (_) {}
+  }));
+  tokens = Array.from(new Set(tokens));
+  if (!tokens.length) return;
+  const svcName = (after.serviceName || 'Une mission').toString().slice(0, 60);
+  const zone = (after.zone || '').toString().slice(0, 40);
+  const boost = Number(after.boost) || 0;
+  try {
+    await getMessaging().sendEachForMulticast({
+      tokens,
+      data: {
+        title: '🔥 Coup de pouce sur une mission',
+        body: svcName + (zone ? ' · ' + zone : '') + (boost ? ' — bonus +' + boost + '% ajouté' : '') + '. À saisir avant les autres !',
+        url: './?open=missions',
+      },
+      webpush: { fcmOptions: { link: '/?open=missions' }, headers: { Urgency: 'high' } },
+    });
+    console.log('notifyBoosted push -> ' + tokens.length + ' jetons');
+  } catch (e) { console.warn('notifyBoosted push', e); }
+});
+
 exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secrets: ['MOLLIE_ACCESS_TOKEN']}, async (event) => {
   const before = (event.data && event.data.before && event.data.before.data()) || {};
   const after = (event.data && event.data.after && event.data.after.data()) || {};
@@ -774,7 +820,7 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
   const basePct = founderActive ? FOUNDER_COMM_PCT : commissionTierPct(jobsTotal);
   // Plancher « petits montants » : au moins SMALL_COMM_PCT % sous SMALL_COMM_MIN € de base.
   const pct = (base < SMALL_COMM_MIN) ? Math.max(basePct, SMALL_COMM_PCT) : basePct;
-  const commission = round2(base * pct / 100);
+  const commission = round2((base + round2(base * boost / 100)) * pct / 100);
   const net = round2(gross - commission);
 
   const reqId = event.params.reqId;
