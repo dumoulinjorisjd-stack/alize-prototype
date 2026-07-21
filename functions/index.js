@@ -38,14 +38,14 @@ function siteOk(artisan, svc, locMode) {
 // (jour + matin/après-midi/soir). Grille absente => disponible partout (défaut H24 / 7j).
 // Doit rester identique au calcul côté client (index.html : availOk).
 function slotToMin(s) { const p = (s || '0:0').split(':'); return (+p[0]) * 60 + (+p[1] || 0); }
-function slotBlockAt(min) { min = ((min % 1440) + 1440) % 1440; return min < 720 ? 'm' : (min < 1080 ? 'a' : 's'); }
+function slotBlockAt(min) { min = ((min % 1440) + 1440) % 1440; return min < 360 ? 'n' : (min < 720 ? 'm' : (min < 1080 ? 'a' : 's')); }
 function windowBlocks(startMin, flex) { const end = startMin + Math.max(0, Number(flex) || 0); const set = {}; for (let t = startMin; t <= end; t += 30) set[slotBlockAt(t)] = 1; set[slotBlockAt(end)] = 1; return Object.keys(set); }
 function dowKey(dateISO) { const q = (dateISO || '').split('-'); if (q.length < 3) return null; const d = new Date(Date.UTC(+q[0], (+q[1]) - 1, +q[2])); return ['dim', 'lun', 'mar', 'mer', 'jeu', 'ven', 'sam'][d.getUTCDay()]; }
 function availOk(avail, r) {
   if (!avail || typeof avail !== 'object') return true;
-  if (r.slotFlex === 'week') { for (const d in avail) { const rw = avail[d]; if (rw && (rw.m || rw.a || rw.s)) return true; } return false; }
+  if (r.slotFlex === 'week') { for (const d in avail) { const rw = avail[d]; if (rw && (rw.n || rw.m || rw.a || rw.s)) return true; } return false; }
   const dk = dowKey(r.dateISO); if (!dk || !avail[dk]) return true; const row = avail[dk];
-  if (r.slotFlex === 'day') return !!(row.m || row.a || row.s);
+  if (r.slotFlex === 'day') return !!(row.n || row.m || row.a || row.s);
   const startMin = /^\d{1,2}:\d{2}$/.test(r.slot || '') ? slotToMin(r.slot) : 720;
   const bs = windowBlocks(startMin, r.slotFlex); for (let i = 0; i < bs.length; i++) if (row[bs[i]]) return true; return false;
 }

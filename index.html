@@ -744,7 +744,7 @@
   .paycap{height:200px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center}
   .checkmark{width:80px;height:80px;border-radius:50%;background:var(--good);display:flex;align-items:center;justify-content:center;color:#fff;animation:pop .45s cubic-bezier(.2,1.2,.4,1)}
 
-  .avgrid{display:grid;grid-template-columns:44px 1fr 1fr 1fr;gap:6px;margin-top:12px}
+  .avgrid{display:grid;grid-template-columns:38px 1fr 1fr 1fr 1fr;gap:5px;margin-top:12px}
   .avgrid .hd{font-size:11px;font-weight:700;color:var(--muted);text-align:center;padding-bottom:2px;text-transform:uppercase;letter-spacing:.03em}
   .avgrid .day{display:flex;align-items:center;font-size:12px;font-weight:700;color:var(--ink-soft)}
   .avcell{height:40px;border-radius:10px;border:1.5px solid var(--hair);background:var(--card);font-size:11px;color:var(--muted);transition:all .12s;display:flex;align-items:center;justify-content:center}
@@ -2170,14 +2170,15 @@
   function maxBirth(){var t=new Date();var y=t.getFullYear()-18;return y+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0');}
   const COMMISSION=0.15;
   const DAYS=[['lun','Lun'],['mar','Mar'],['mer','Mer'],['jeu','Jeu'],['ven','Ven'],['sam','Sam'],['dim','Dim']];
-  const BLOCKS=[['m','Matin'],['a','Après-m.'],['s','Soir']];
-  // Plages horaires des créneaux : Matin 6h–12h, Après-midi 12h–18h, Soir 18h–minuit.
-  const BLOCK_HOURS={m:'6h–12h',a:'12h–18h',s:'18h–00h'};
+  const BLOCKS=[['n','Nuit'],['m','Matin'],['a','Après-m.'],['s','Soir']];
+  // Plages horaires couvrant les 24 h : Nuit 00h–06h, Matin 6h–12h, Après-midi 12h–18h,
+  // Soir 18h–minuit.
+  const BLOCK_HOURS={n:'00h–06h',m:'6h–12h',a:'12h–18h',s:'18h–00h'};
   // Disponibilités par défaut : TOUT coché (H24 / 7j). Un nouvel artisan reçoit donc toutes
   // les missions tant qu'il n'a pas volontairement restreint ses créneaux — aucune mission
   // manquée par oubli. Il affine ensuite dans « Agenda › Disponibilités ».
-  function availAllOn(){return {lun:{m:1,a:1,s:1},mar:{m:1,a:1,s:1},mer:{m:1,a:1,s:1},jeu:{m:1,a:1,s:1},ven:{m:1,a:1,s:1},sam:{m:1,a:1,s:1},dim:{m:1,a:1,s:1}};}
-  function slotBlockAt(min){min=((min%1440)+1440)%1440;return min<720?'m':(min<1080?'a':'s');}
+  function availAllOn(){var g={};DAYS.forEach(function(d){g[d[0]]={n:1,m:1,a:1,s:1};});return g;}
+  function slotBlockAt(min){min=((min%1440)+1440)%1440;return min<360?'n':(min<720?'m':(min<1080?'a':'s'));}
   function windowBlocks(startMin,flex){var end=startMin+Math.max(0,Number(flex)||0);var set={};for(var t=startMin;t<=end;t+=30)set[slotBlockAt(t)]=1;set[slotBlockAt(end)]=1;return Object.keys(set);}
   function dowKey(dateISO){var q=(dateISO||'').split('-');if(q.length<3)return null;var d=new Date(+q[0],(+q[1])-1,+q[2]);return ['dim','lun','mar','mer','jeu','ven','sam'][d.getDay()];}
   // Un artisan est-il DISPONIBLE pour une demande (jour + créneau matin/aprem/soir) ? Grille
@@ -2185,9 +2186,9 @@
   // disponible s'il a coché au moins un créneau ce jour / dans la semaine.
   function availOk(avail,r){
     if(!avail||typeof avail!=='object')return true;
-    if(r.slotFlex==='week'){for(var d in avail){var rw=avail[d];if(rw&&(rw.m||rw.a||rw.s))return true;}return false;}
+    if(r.slotFlex==='week'){for(var d in avail){var rw=avail[d];if(rw&&(rw.n||rw.m||rw.a||rw.s))return true;}return false;}
     var dk=dowKey(r.dateISO);if(!dk||!avail[dk])return true;var row=avail[dk];
-    if(r.slotFlex==='day')return !!(row.m||row.a||row.s);
+    if(r.slotFlex==='day')return !!(row.n||row.m||row.a||row.s);
     var startMin=/^\d{1,2}:\d{2}$/.test(r.slot||'')?slotToMin(r.slot):720;
     var bs=windowBlocks(startMin,r.slotFlex);for(var i=0;i<bs.length;i++)if(row[bs[i]])return true;return false;
   }
@@ -2224,7 +2225,7 @@
     proJobsTotal:214,fidTiers:FID_TIERS.map(t=>({...t})),referralCode:'MARILOU-SBH',
     filleuls:[{name:'Kevin Questel',status:'valide',bonus:40},{name:'Rosa Almeida',status:'attente',bonus:0}],
     admin:{view:'home',sel:null,fact:null},adminLedger:[],adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,adminPrices:ADMIN_PRICES(),
-    avail:{lun:{m:1,a:1,s:0},mar:{m:1,a:1,s:0},mer:{m:1,a:1,s:1},jeu:{m:1,a:1,s:0},ven:{m:1,a:1,s:1},sam:{m:1,a:0,s:0},dim:{m:0,a:0,s:0}}
+    avail:{lun:{n:0,m:1,a:1,s:0},mar:{n:0,m:1,a:1,s:0},mer:{n:0,m:1,a:1,s:1},jeu:{n:0,m:1,a:1,s:0},ven:{n:0,m:1,a:1,s:1},sam:{n:0,m:1,a:0,s:0},dim:{n:0,m:0,a:0,s:0}}
   };
   function newMission(svc){const a=S.addresses.find(x=>x.id===S.addrDefault)||S.addresses[0]||null;const day=svc.id==='animaux';const colis=svc.id==='colis';const cat=isCatalogForfait(svc.id);const forf=colis||cat;const px=(S.adminPrices&&S.adminPrices[svc.id]!=null)?S.adminPrices[svc.id]:svcBase(svc.id);const m={svc:svc.id,svcName:svc.nm,unit:forf?'forfait':(day?'j':'h'),rate:day?DAY_RECO:px,boost:0,finalHours:null,disputeMsg:null,frequency:'ponctuelle',people:1,locationMode:'domicile',duration:forf?1:(day?2:3),zone:a?a.zone:'Gustavia',address:a?a.address:'',addressId:a?a.id:'__manual',geo:a?a.geo:null,access:a?(a.access||''):'',notes:'',photos:[],when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',slotMode:null,slotFlex:0,proposedSlot:null,status:'draft',provider:null,rating:0,competitors:0,chat:[],support:{client:[],pro:[]}};
     // Métier « à l'acte » (coiffure, manucure, plomberie…) : le client compose sa commande
@@ -2674,7 +2675,7 @@
     navigator.geolocation.getCurrentPosition(function(pos){geoCacheSet(pos.coords.latitude,pos.coords.longitude);render(pos.coords.latitude,pos.coords.longitude);},function(){setInfo('📍 Appuyez sur « Navigation » pour le guidage.');},{enableHighAccuracy:true,timeout:8000,maximumAge:600000});
   }
   function geolocate(apply){const fb={lat:17.8962,lng:-62.8498};const set=(g)=>{apply(g);toast('Point GPS enregistré');};if(navigator.geolocation){toast('Localisation en cours…');navigator.geolocation.getCurrentPosition(p=>set({lat:+p.coords.latitude.toFixed(5),lng:+p.coords.longitude.toFixed(5)}),()=>set(fb),{enableHighAccuracy:true,timeout:6000,maximumAge:0});}else set(fb);}
-  const availCount=()=>Object.values(S.avail).reduce((t,d)=>t+d.m+d.a+d.s,0);
+  const availCount=()=>Object.values(S.avail).reduce((t,d)=>t+(d.n||0)+(d.m||0)+(d.a||0)+(d.s||0),0);
 
   const view=document.getElementById('view');
   const toastEl=document.getElementById('toast');
@@ -6582,11 +6583,11 @@
   function dispoGrid(){
     const head=`<div class="avgrid"><div></div>${BLOCKS.map(b=>`<div class="hd">${b[1]}<span style="display:block;font-weight:500;font-size:10px;color:var(--muted);margin-top:1px">${BLOCK_HOURS[b[0]]}</span></div>`).join('')}`;
     const rows=DAYS.map(d=>{const cells=BLOCKS.map(b=>{const on=S.avail[d[0]][b[0]];return `<button class="avcell ${on?'on':''}" data-av="${d[0]}:${b[0]}" aria-label="${d[1]} ${b[1]} ${BLOCK_HOURS[b[0]]}">${on?I.check:''}</button>`;}).join('');return `<div class="day">${d[1]}</div>${cells}`;}).join('');
-    const full=availCount()>=21;
-    return `<p class="sub" style="margin-top:14px">Touchez les créneaux où vous êtes disponible — <b>Matin ${BLOCK_HOURS.m}</b>, <b>Après-midi ${BLOCK_HOURS.a}</b>, <b>Soir ${BLOCK_HOURS.s}</b>. Vous ne recevez de missions <b>que sur les créneaux cochés</b>.</p>
+    const full=availCount()>=28;
+    return `<p class="sub" style="margin-top:14px">Touchez les créneaux où vous êtes disponible — <b>Nuit ${BLOCK_HOURS.n}</b>, <b>Matin ${BLOCK_HOURS.m}</b>, <b>Après-midi ${BLOCK_HOURS.a}</b>, <b>Soir ${BLOCK_HOURS.s}</b>. Vous ne recevez de missions <b>que sur les créneaux cochés</b>.</p>
       <div class="banner ${full?'teal':'coral'}" style="margin-top:10px">${full?I.check:I.warn}<span>${full?'Vous êtes disponible <b>H24, 7j/7</b> (réglage par défaut) — décochez les créneaux où vous ne voulez pas de mission.':'Attention : les créneaux <b>décochés ne vous enverront aucune mission</b>. Pensez à garder cette grille à jour.'}</span></div>
-      ${head}${rows}
-      <div class="card" style="padding:14px;margin-top:16px"><div class="row between"><span class="sub"><b class="money" style="color:var(--ink)">${availCount()}</b> / 21 créneaux actifs / semaine</span>${full?`<span class="chip good">${I.check} Dispo max</span>`:`<span class="chip warn">${I.clock} Restreint</span>`}</div></div>
+      ${head}${rows}</div>
+      <div class="card" style="padding:14px;margin-top:16px"><div class="row between"><span class="sub"><b class="money" style="color:var(--ink)">${availCount()}</b> / 28 créneaux actifs / semaine</span>${full?`<span class="chip good">${I.check} Dispo max</span>`:`<span class="chip warn">${I.clock} Restreint</span>`}</div></div>
       <div style="margin-top:14px"><button class="btn primary" data-act="save-dispo">Enregistrer mes disponibilités</button></div>`;
   }
   // ---- Agenda mensuel de l'artisan : vue calendrier + récapitulatif ----
