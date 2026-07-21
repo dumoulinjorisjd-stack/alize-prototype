@@ -1847,6 +1847,12 @@
   // Sous-total forfait d'une mission à l'acte (somme des actes cochés × quantité), ou null
   // si la mission n'est pas de type « catalogue » (on retombe alors sur le tarif horaire).
   function forfaitSub(m){if(!m||!m.acts||!m.acts.length)return null;return m.acts.reduce(function(t,a){return t+(Number(a.price)||0)*(a.qty||1);},0);}
+  // Prestations facturées « par personne » (cours de sport, massages) : le client choisit
+  // le NOMBRE DE PARTICIPANTS et le prix est multiplié d'autant — chaque personne = une
+  // prestation (un massage, une place au cours). Les autres métiers ignorent ce réglage.
+  function needsPeople(svcId){return ['sport','coach','natation','pilates','yoga','massage'].indexOf(svcId)>=0;}
+  function peopleOf(m){return needsPeople(m&&m.svc)?Math.max(1,Math.min(20,Number(m&&m.people)||1)):1;}
+  function peopleLbl(n){return n+' '+(n>1?'personnes':'personne');}
   // Forfait de déplacement : sous ce seuil de commande (prestations « à l'acte »), on
   // ajoute un forfait pour couvrir le déplacement du prestataire. Au-dessus, c'est offert.
   const TRAVEL_MIN=50, TRAVEL_FEE=20;
@@ -2190,7 +2196,7 @@
     admin:{view:'home',sel:null,fact:null},adminLedger:[],adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,adminPrices:ADMIN_PRICES(),
     avail:{lun:{m:1,a:1,s:0},mar:{m:1,a:1,s:0},mer:{m:1,a:1,s:1},jeu:{m:1,a:1,s:0},ven:{m:1,a:1,s:1},sam:{m:1,a:0,s:0},dim:{m:0,a:0,s:0}}
   };
-  function newMission(svc){const a=S.addresses.find(x=>x.id===S.addrDefault)||S.addresses[0]||null;const day=svc.id==='animaux';const colis=svc.id==='colis';const cat=isCatalogForfait(svc.id);const forf=colis||cat;const px=(S.adminPrices&&S.adminPrices[svc.id]!=null)?S.adminPrices[svc.id]:svcBase(svc.id);const m={svc:svc.id,svcName:svc.nm,unit:forf?'forfait':(day?'j':'h'),rate:day?DAY_RECO:px,boost:0,finalHours:null,disputeMsg:null,frequency:'ponctuelle',duration:forf?1:(day?2:3),zone:a?a.zone:'Gustavia',address:a?a.address:'',addressId:a?a.id:'__manual',geo:a?a.geo:null,access:a?(a.access||''):'',notes:'',photos:[],when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',slotMode:null,slotFlex:0,proposedSlot:null,status:'draft',provider:null,rating:0,competitors:0,chat:[],support:{client:[],pro:[]}};
+  function newMission(svc){const a=S.addresses.find(x=>x.id===S.addrDefault)||S.addresses[0]||null;const day=svc.id==='animaux';const colis=svc.id==='colis';const cat=isCatalogForfait(svc.id);const forf=colis||cat;const px=(S.adminPrices&&S.adminPrices[svc.id]!=null)?S.adminPrices[svc.id]:svcBase(svc.id);const m={svc:svc.id,svcName:svc.nm,unit:forf?'forfait':(day?'j':'h'),rate:day?DAY_RECO:px,boost:0,finalHours:null,disputeMsg:null,frequency:'ponctuelle',people:1,duration:forf?1:(day?2:3),zone:a?a.zone:'Gustavia',address:a?a.address:'',addressId:a?a.id:'__manual',geo:a?a.geo:null,access:a?(a.access||''):'',notes:'',photos:[],when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',slotMode:null,slotFlex:0,proposedSlot:null,status:'draft',provider:null,rating:0,competitors:0,chat:[],support:{client:[],pro:[]}};
     // Métier « à l'acte » (coiffure, manucure, plomberie…) : le client compose sa commande
     // à partir de la grille catalogue ; total = somme des actes cochés (m.acts).
     if(cat){m.acts=[];}
@@ -2306,7 +2312,7 @@
   // Taux de commission Ti-Services (barème de fidélité dégressif). Figé sur la mission
   // au moment du règlement (m.commPct) pour rester stable dans l'historique/les factures.
   function commPctFor(m){return (m&&m.commPct!=null)?m.commPct:myCommPct();}
-  function totals(m){const rate=fixedRate(m);const h=billHours(m);const fs=forfaitSub(m);const sub=(fs!=null)?fs:rate*h;const boost=m.boost||0;const maj=Math.round(sub*boost/100);
+  function totals(m){const rate=fixedRate(m);const h=billHours(m);const fs=forfaitSub(m);const per=peopleOf(m);const sub=((fs!=null)?fs:rate*h)*per;const boost=m.boost||0;const maj=Math.round(sub*boost/100);
     // Forfait de déplacement sous le seuil (prestations à l'acte uniquement) — offert au-delà.
     const travel=travelFeeFor(sub,!!(m&&m.acts));
     // Pourboire (facultatif) laissé par le client APRÈS validation de la prestation — façon
@@ -2318,11 +2324,11 @@
     // Commission figée sur la mission (m.commPct) si déjà réglée ; sinon taux courant
     // avec plancher « petits montants » appliqué sur la base (sub).
     const commPct=(m&&m.commPct!=null)?m.commPct:effCommPct(myCommPct(),sub);const commission=Math.round((sub+maj)*commPct)/100;const payout=Math.round((total-commission)*100)/100;
-    return {rate,sub,hours:h,boost,maj,travel,tip,commPct,commission,payout,total};}
+    return {rate,sub,hours:h,people:per,boost,maj,travel,tip,commPct,commission,payout,total};}
   // Net RÉEL que l'artisan percevra pour une demande ouverte (commission déjà déduite) —
   // affiché AVANT l'acceptation pour qu'il décide en connaissance de cause. On ne montre
   // jamais à l'artisan le prix payé par le client (et jamais au client le net de l'artisan).
-  function reqPayout(r){let sub;const hasActs=!!(r.acts&&r.acts.length);if(hasActs){sub=r.acts.reduce(function(t,a){return t+(Number(a.price)||0)*(a.qty||1);},0);}else if(r.forfaitTotal!=null){sub=Number(r.forfaitTotal)||0;}else{sub=(Number(r.rate)||0)*(Number(r.duration)||1);}const maj=Math.round(sub*((r.boost||0))/100);const travel=travelFeeFor(sub,hasActs);const gross=sub+maj+travel;const pct=effCommPct(myCommPct(),sub);const commission=Math.round((sub+maj)*pct)/100;return Math.round((gross-commission)*100)/100;}
+  function reqPayout(r){let sub;const per=needsPeople(r.service)?Math.max(1,Math.min(20,Number(r.people)||1)):1;const hasActs=!!(r.acts&&r.acts.length);if(hasActs){sub=r.acts.reduce(function(t,a){return t+(Number(a.price)||0)*(a.qty||1);},0)*per;}else if(r.forfaitTotal!=null){sub=Number(r.forfaitTotal)||0;}else{sub=(Number(r.rate)||0)*(Number(r.duration)||1)*per;}const maj=Math.round(sub*((r.boost||0))/100);const travel=travelFeeFor(sub,hasActs);const gross=sub+maj+travel;const pct=effCommPct(myCommPct(),sub);const commission=Math.round((sub+maj)*pct)/100;return Math.round((gross-commission)*100)/100;}
   // Décompose une ligne d'historique : brut (prix payé par le client / vente au mandat),
   // commission Ti-Services, net perçu par l'artisan. Rétrocompatible avec les anciennes
   // lignes (sans commission → net = brut).
@@ -2713,6 +2719,12 @@
     }catch(e){console.warn('i18n',e);}
   }
   var EN_DICT={
+    "Nombre de participants":"Number of participants",
+    "Pour combien de personnes ?":"For how many people?",
+    "Pour combien de personnes ?":"For how many people?",
+    "Le prix est multiplié par le nombre de personnes — chacune sa prestation.":"The price is multiplied by the number of people — one service each.",
+    "Le prix ci-dessous est multiplié par le nombre de personnes — chacune sa prestation.":"The price below is multiplied by the number of people — one service each.",
+    "👥 Participants":"👥 Participants",
     "Passer":"Skip",
     "Un service qui manque ?":"A service you’re missing?",
     "Demander ce service":"Request this service",
@@ -3296,6 +3308,11 @@
   var TIER_PT={'bronze':'Bronze','argent':'Prata','or':'Ouro','platine':'Platina','diamant':'Diamante'};
   var DOW_PT={'lun':'Seg','mar':'Ter','mer':'Qua','jeu':'Qui','ven':'Sex','sam':'Sáb','dim':'Dom'};
   var PT_DICT={
+    "Nombre de participants":"Número de participantes",
+    "Pour combien de personnes ?":"Para quantas pessoas?",
+    "Le prix est multiplié par le nombre de personnes — chacune sa prestation.":"O preço é multiplicado pelo número de pessoas — um serviço para cada uma.",
+    "Le prix ci-dessous est multiplié par le nombre de personnes — chacune sa prestation.":"O preço abaixo é multiplicado pelo número de pessoas — um serviço para cada uma.",
+    "👥 Participants":"👥 Participantes",
     "Passer":"Passar",
     "Un service qui manque ?":"Falta um serviço?",
     "Demander ce service":"Pedir este serviço",
@@ -5434,7 +5451,7 @@
     // Demande dirigée en attente : c'est un seul artisan précis qui répond, pas le pool.
     if(m.status==='pending'&&m.preferredUid){const who=(m.preferredName||'Votre artisan').split(' ')[0];head={t:'En attente de '+esc(who),d:esc(m.preferredName||'Votre artisan')+' a reçu votre demande — vous serez prévenu dès sa réponse.'};}
     return `<div class="pad"><div style="height:8px"></div>
-      <div class="row between"><span class="chip ${m.status==='pending'?'coral':'good'}">${m.status==='pending'?'En attente':'Confirmée'}</span><span class="mini">${m.svcName} · ${durTxt(m)}${(m.frequency&&m.frequency!=='ponctuelle')?' · '+I.repeat+' '+freqInfo(m.frequency).short:''}</span></div>
+      <div class="row between"><span class="chip ${m.status==='pending'?'coral':'good'}">${m.status==='pending'?'En attente':'Confirmée'}</span><span class="mini">${m.svcName} · ${durTxt(m)}${(needsPeople(m.svc)&&peopleOf(m)>1)?' · 👥 '+peopleLbl(peopleOf(m)):''}${(m.frequency&&m.frequency!=='ponctuelle')?' · '+I.repeat+' '+freqInfo(m.frequency).short:''}</span></div>
       <div class="h-hello" style="margin-top:8px;text-align:center">${head.t}</div><p class="sub" style="text-align:center">${head.d}</p>
       ${(m.slotFlex&&m.status==='pending')?`<p class="mini" style="text-align:center;margin-top:4px">${I.clock} Créneau souhaité&nbsp;: ${m.when} · ${flexTxtClient(m)} — un artisan vous proposera une heure précise.</p>`:''}
       ${(m.slotFlex&&m.proposedSlot&&m.status!=='pending')?`<div class="banner teal" style="margin-top:10px">${I.clock}<span>${p?esc(p.nm.split(' ')[0]):'L’artisan'} a confirmé son passage à <b>${m.slot}</b> (votre souhait&nbsp;: ${flexTxtClient(m)}).</span></div>`:''}
@@ -5540,7 +5557,7 @@
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-act="card-save">${I.lock} Enregistrer ma carte</button><p class="mini" style="text-align:center;margin-top:10px">Maquette — aucune donnée réelle n'est envoyée ni conservée.</p></div></div>`;
   }
   // Signature d'une demande : sert à empêcher tout doublon strictement identique.
-  function missionSig(m){return [m.svc,m.zone||'',m.when||'',m.slot||'',(m.slotFlex||0),m.unit||'h',m.duration||1,m.rate||0,(m.boost||0),m.frequency||'ponctuelle',(m.address||''),(m.notes||'').trim()].join('|');}
+  function missionSig(m){return [m.svc,m.zone||'',m.when||'',m.slot||'',(m.slotFlex||0),m.unit||'h',m.duration||1,m.rate||0,(m.boost||0),(peopleOf(m)),m.frequency||'ponctuelle',(m.address||''),(m.notes||'').trim()].join('|');}
   // Artisans déjà eus par le client (issus de l'historique) — sert à en redemander un
   // en priorité, SANS jamais exposer l'annuaire complet des artisans.
   function pastArtisans(){const seen={},out=[];(S.history||[]).forEach(function(h){const uid=h&&h.providerUid;if(uid&&h.provider&&h.provider.nm&&!seen[uid]){seen[uid]=1;out.push({uid:uid,nm:h.provider.nm,ini:h.provider.ini||inits(h.provider.nm)});}});return out;}
@@ -5601,6 +5618,8 @@
         dateISO:(m.dateISO||''),
         unit:m.unit||'h', duration:m.duration||1,
         rate:t.rate, boost:m.boost||0, total:t.total,
+        // Nombre de participants (cours de sport / massages) — le prix est multiplié d'autant.
+        people:peopleOf(m),
         frequency:m.frequency||'ponctuelle',
         notes:(m.notes||'').slice(0,500),
         preferredProviderUid:m.preferredUid||null,
@@ -7328,7 +7347,7 @@
     if(b.dataset.actadd){const svc=b.dataset.actadd;const arr=ensureCatalogCopy(svc);S._actSeq=(S._actSeq||0)+1;arr.push({id:'usr'+S._actSeq+'_'+arr.length,nm:'',price:50});saveCatalog();render();return;}
     if(b.dataset.freq){if(!S.draft)return;S.draft.frequency=b.dataset.freq;renderConfig();return;}
     if(b.dataset.star){const n=+b.dataset.star;S.mission.rating=n;document.querySelectorAll('#rateStars button').forEach(x=>x.classList.toggle('lit',+x.dataset.star<=n));const rb=document.getElementById('rateBtn');if(rb)rb.disabled=false;return;}
-    if(b.dataset.cfg){const c=b.dataset.cfg;if(!S.draft)return;if(c==='back'){S.draft=null;render();}else if(c==='minus'){S.draft.duration=Math.max(1,S.draft.duration-1);renderConfig();}else if(c==='plus'){S.draft.duration=Math.min(isDayU(S.draft)?30:10,S.draft.duration+1);renderConfig();}else if(c==='unit-h'){S.draft.unit='h';S.draft.rate=(S.adminPrices&&S.adminPrices[S.draft.svc]!=null)?S.adminPrices[S.draft.svc]:svcBase(S.draft.svc);S.draft.duration=3;renderConfig();}else if(c==='unit-j'){S.draft.unit='j';S.draft.rate=DAY_RECO;S.draft.duration=2;renderConfig();}else if(c==='geoloc'){geolocate(g=>{if(S.draft){S.draft.geo=g;renderConfig();}});}else if(c==='addr-save-draft'){const d=S.draft;if(!(d.address||'').trim()){toast('Indiquez d’abord l’adresse');renderConfig();return;}const id='ad'+Date.now();S.addresses.push({id,label:((d.addrLabel||'').trim()||d.address||'Adresse ponctuelle').slice(0,40),address:d.address,zone:d.zone,geo:d.geo,access:d.access||''});d.addressId=id;if(S.addresses.length===1)S.addrDefault=id;saveClientCloud();toast(d.geo?'Adresse enregistrée dans votre profil':'Adresse enregistrée — pensez à ajouter le point GPS');renderConfig();}else if(c==='confirm'){
+    if(b.dataset.cfg){const c=b.dataset.cfg;if(!S.draft)return;if(c==='back'){S.draft=null;render();}else if(c==='minus'){S.draft.duration=Math.max(1,S.draft.duration-1);renderConfig();}else if(c==='plus'){S.draft.duration=Math.min(isDayU(S.draft)?30:10,S.draft.duration+1);renderConfig();}else if(c==='people-minus'){S.draft.people=Math.max(1,peopleOf(S.draft)-1);renderConfig();}else if(c==='people-plus'){S.draft.people=Math.min(20,peopleOf(S.draft)+1);renderConfig();}else if(c==='unit-h'){S.draft.unit='h';S.draft.rate=(S.adminPrices&&S.adminPrices[S.draft.svc]!=null)?S.adminPrices[S.draft.svc]:svcBase(S.draft.svc);S.draft.duration=3;renderConfig();}else if(c==='unit-j'){S.draft.unit='j';S.draft.rate=DAY_RECO;S.draft.duration=2;renderConfig();}else if(c==='geoloc'){geolocate(g=>{if(S.draft){S.draft.geo=g;renderConfig();}});}else if(c==='addr-save-draft'){const d=S.draft;if(!(d.address||'').trim()){toast('Indiquez d’abord l’adresse');renderConfig();return;}const id='ad'+Date.now();S.addresses.push({id,label:((d.addrLabel||'').trim()||d.address||'Adresse ponctuelle').slice(0,40),address:d.address,zone:d.zone,geo:d.geo,access:d.access||''});d.addressId=id;if(S.addresses.length===1)S.addrDefault=id;saveClientCloud();toast(d.geo?'Adresse enregistrée dans votre profil':'Adresse enregistrée — pensez à ajouter le point GPS');renderConfig();}else if(c==='confirm'){
       // Colis : validation du dossier de retrait par un tiers avant paiement.
       if(S.draft.svc==='colis'){const cc=S.draft.colis||{};
         if(!(cc.recipient||'').trim()){toast('Indiquez le nom du destinataire');renderConfig();return;}
@@ -7729,6 +7748,8 @@
       <div class="field" style="margin-top:14px"><label>Choisissez vos prestations</label><div class="actlist">${actRows}</div>
         ${minActPrice(m.svc)<TRAVEL_MIN?`<p class="mini" style="margin-top:8px">${I.pin} Déplacement <b>offert dès ${TRAVEL_MIN} €</b> de prestation — sinon forfait de ${TRAVEL_FEE} €.</p>`:''}</div>
 
+      ${needsPeople(m.svc)?`<div class="field"><label>Pour combien de personnes&nbsp;?</label><div class="stepper"><button data-cfg="people-minus">−</button><span class="val">👥 ${peopleLbl(peopleOf(m))}</span><button data-cfg="people-plus">+</button></div><p class="mini" style="margin-top:6px">Le prix ci-dessous est multiplié par le nombre de personnes — chacune sa prestation.</p></div>`:''}
+
       <div class="field"><label>Quand&nbsp;?</label>${daySelect}</div>
       <div class="field"><label>Heure souhaitée</label>${dayFlex?`<p class="mini" style="margin:2px 0 0;color:var(--muted)">${I.clock} ${m.slotFlex==='week'?'Vous laissez toute la semaine — le pro vous proposera un jour et une heure.':'Vous laissez toute la journée — le pro choisit son heure de passage.'}</p>`:`${hourSelect}`}</div>
       <div class="field"><label>Souplesse sur le créneau</label><div class="segs"><button class="seg ${(!m.slotFlex)?'on':''}" data-slotflex="0">Précise</button><button class="seg ${m.slotFlex===60?'on':''}" data-slotflex="60">± 1 h</button><button class="seg ${m.slotFlex===120?'on':''}" data-slotflex="120">± 2 h</button><button class="seg ${m.slotFlex==='day'?'on':''}" data-slotflex="day">Journée</button><button class="seg ${m.slotFlex==='week'?'on':''}" data-slotflex="week">Semaine</button></div>${m.slotFlex?`<p class="mini" style="margin-top:6px">${I.clock} Le pro confirmera un <b>créneau précis ${flexTxtClient(m)}</b> en acceptant.</p>`:''}</div>
@@ -7748,7 +7769,7 @@
         ${m.addressId==='__manual'?`<div class="card" style="padding:14px;margin-top:10px"><div class="field" style="margin-top:0"><label style="font-size:12px">Adresse / description du lieu</label><input class="txt" data-addrmanual value="${esc(m.address||'')}" placeholder="Ex. Villa des Amis, Saline"></div><div class="field"><label style="font-size:12px">Secteur</label>${zoneSelect}</div><div class="field"><label style="font-size:12px">Point GPS</label><button class="btn ghost sm" data-cfg="geoloc">📍 ${m.geo?'Actualiser le point GPS':'Enregistrer le point GPS'}</button>${m.geo?miniMap(m.geo,'edit','draft'):''}</div><div class="field" style="margin-bottom:0"><label style="font-size:12px">${I.key} Infos d'accès</label><textarea rows="2" data-addraccess placeholder="Ex. Code portail 4521 · clé sous le pot">${esc(m.access||'')}</textarea></div></div>`:''}
       </div>
 
-      <div class="est">${nSel?m.acts.map(a=>`<div class="line"><span>${esc(a.nm)}</span><b>${eur(a.price*(a.qty||1))}</b></div>`).join(''):`<div class="line"><span style="color:var(--muted)">Aucune prestation sélectionnée</span><b>—</b></div>`}${t.travel?`<div class="line"><span>${I.pin} Forfait déplacement</span><b>+${eur(t.travel)}</b></div>`:''}${(nSel&&!t.travel)?`<div class="line"><span style="color:var(--good)">${I.check} Déplacement offert</span><b style="color:var(--good)">0 €</b></div>`:''}<div class="total"><span>Total</span><b>${nSel?eur(t.total):'—'}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité${S.card?` (sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — encaissement agréé)`:` (moyen de paiement demandé juste après, via Mollie)`}. Aucun supplément sans votre accord.</small></div>
+      <div class="est">${nSel?m.acts.map(a=>`<div class="line"><span>${esc(a.nm)}</span><b>${eur(a.price*(a.qty||1))}</b></div>`).join(''):`<div class="line"><span style="color:var(--muted)">Aucune prestation sélectionnée</span><b>—</b></div>`}${(nSel&&needsPeople(m.svc)&&t.people>1)?`<div class="line"><span>👥 Pour ${peopleLbl(t.people)} (× ${t.people})</span><b>${eur(t.sub)}</b></div>`:''}${t.travel?`<div class="line"><span>${I.pin} Forfait déplacement</span><b>+${eur(t.travel)}</b></div>`:''}${(nSel&&!t.travel)?`<div class="line"><span style="color:var(--good)">${I.check} Déplacement offert</span><b style="color:var(--good)">0 €</b></div>`:''}<div class="total"><span>Total</span><b>${nSel?eur(t.total):'—'}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité${S.card?` (sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — encaissement agréé)`:` (moyen de paiement demandé juste après, via Mollie)`}. Aucun supplément sans votre accord.</small></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm"${nSel?'':' disabled'}>${I.search} Trouver un pro${nSel?' · '+eur(t.total):''}</button>${nSel?'':`<p class="mini" style="text-align:center;margin-top:8px;color:var(--muted)">Cochez au moins une prestation pour continuer.</p>`}</div>
     </div>`,'config');
   }
@@ -7784,6 +7805,7 @@
       ${pastArtisans().length?`<div class="field"><label>Un artisan en particulier&nbsp;?</label><div class="segs"><button class="seg ${!m.preferredUid?'on':''}" data-prefart="">Peu importe</button>${pastArtisans().map(a=>`<button class="seg ${m.preferredUid===a.uid?'on':''}" data-prefart="${esc(a.uid)}" data-prefnm="${esc(a.nm)}">${esc(a.nm.split(' ')[0])}</button>`).join('')}</div>${m.preferredUid?`<p class="mini" style="margin-top:6px">${I.clock} Adressée <b>uniquement à ${esc((m.preferredName||'').split(' ')[0])}</b>. S'il ne l'accepte pas, elle est automatiquement proposée à tous les artisans — vous n'êtes jamais bloqué.</p>`:''}</div>`:''}
       ${m.svc==='baby'?`<p class="mini" style="margin-top:6px">${I.shield} La baby-sitter qui accepte vous sera présentée (photo, diplômes, présentation) et <b>vous pourrez l'appeler</b> avant de confirmer la garde.</p>`:''}
       <div class="field"><label>Tarif ${isDayU(m)?'journalier':'horaire'} — prix fixe Ti-Services</label><div class="pricebox"><b class="money" style="font-size:22px;font-family:var(--f-disp)">${fixedRate(m)} ${rateUnit(m)}</b><span class="chip good" style="padding:3px 9px">${I.check} Prix fixe</span></div></div>
+      ${needsPeople(m.svc)?`<div class="field"><label>Nombre de participants</label><div class="stepper"><button data-cfg="people-minus">−</button><span class="val">👥 ${peopleLbl(peopleOf(m))}</span><button data-cfg="people-plus">+</button></div><p class="mini" style="margin-top:6px">Le prix est multiplié par le nombre de personnes — chacune sa prestation.</p></div>`:''}
       <div class="field"><label>${isDayU(m)?'Nombre de jours':'Durée estimée'}</label><div class="stepper"><button data-cfg="minus">−</button><span class="val">${durTxt(m)}</span><button data-cfg="plus">+</button></div>${isDayU(m)?`<p class="mini" style="margin-top:6px">📅 Du ${endDateTxt(m)} · ${durTxt(m)} de garde</p>`:''}</div>
       <div class="field"><label>Décrivez votre besoin</label><textarea rows="3" data-cfg="notes" placeholder="${PLACEHOLDERS[m.svc]||'Décrivez précisément la prestation…'}">${esc(m.notes)}</textarea></div>
       <div class="field"><label>Photos (facultatif)</label>
@@ -7808,7 +7830,7 @@
           </div>
         `:`${m.geo?`<div class="banner teal" style="margin-top:10px">${I.pin}<span><b>Point GPS déjà enregistré</b> depuis votre fiche.</span></div>`:`<p class="mini" style="margin-top:8px;color:var(--muted)">Cette adresse n'a pas de point GPS — ajoutez-le dans votre profil.</p>`}`}
       </div>
-      <div class="est"><div class="line"><span>${m.svcName} · ${t.rate} ${rateUnit(m)} × ${durTxt(m)}</span><b>${eur(t.sub)}</b></div><div class="total"><span>Total</span><b>${eur(t.total)}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité ${S.card?`(sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — encaissement agréé)`:`(moyen de paiement demandé juste après, via Mollie — encaissement agréé)`}. Aucun supplément sans votre accord.</small></div>
+      <div class="est"><div class="line"><span>${m.svcName} · ${t.rate} ${rateUnit(m)} × ${durTxt(m)}${(needsPeople(m.svc)&&t.people>1)?' × '+t.people+' pers.':''}</span><b>${eur(t.sub)}</b></div><div class="total"><span>Total</span><b>${eur(t.total)}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité ${S.card?`(sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — encaissement agréé)`:`(moyen de paiement demandé juste après, via Mollie — encaissement agréé)`}. Aucun supplément sans votre accord.</small></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm">${I.search} Trouver un artisan · ${eur(t.total)}</button></div></div>`,'config');
     if(S._focusAddr){S._focusAddr=false;setTimeout(function(){const el=document.getElementById('manualAddr');if(el){try{el.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){el.scrollIntoView();}const inp=el.querySelector('[data-addrmanual]');if(inp)try{inp.focus({preventScroll:true});}catch(_){}}},70);}
   }
@@ -8402,7 +8424,7 @@
             subscribeClientRequest(docu.id);
             changed=true;
           }
-          m.status=r.status;m.svc=r.service;m.svcName=r.serviceName||svcNm(r.service);m.rate=r.rate;m.duration=r.duration||1;m.unit=r.unit||'h';m.when=r.when||'';m.slot=r.acceptedSlot||r.slot||m.slot||'';m.zone=r.zone||m.zone||'';m.boost=r.boost||0;m.tip=r.tip||0;m.slotFlex=r.slotFlex||0;m.notes=r.notes||m.notes||'';m.frequency=r.frequency||m.frequency||'ponctuelle';
+          m.status=r.status;m.svc=r.service;m.svcName=r.serviceName||svcNm(r.service);m.rate=r.rate;m.duration=r.duration||1;m.unit=r.unit||'h';m.when=r.when||'';m.slot=r.acceptedSlot||r.slot||m.slot||'';m.zone=r.zone||m.zone||'';m.boost=r.boost||0;m.tip=r.tip||0;m.slotFlex=r.slotFlex||0;m.notes=r.notes||m.notes||'';m.frequency=r.frequency||m.frequency||'ponctuelle';m.people=r.people||m.people||1;
           m.dateISO=r.dateISO||m.dateISO||'';if(r.createdAt&&r.createdAt.toMillis)m._createdMs=r.createdAt.toMillis();
           // Demande DIRIGÉE : restaurer l'artisan visé pour afficher le bon écran de suivi
           // (« réservée à X ») au lieu du générique. Vidé si la demande a été rouverte à tous.
@@ -8882,7 +8904,7 @@
     if(S._openReqLoading&&!list.length)return `<div style="margin-top:12px"><span class="eyebrow" style="color:var(--teal-deep)">${I.flame} Missions disponibles</span>${reqSkeleton(2)}</div>`;
     if(!list.length)return `<div class="card" style="padding:18px;margin-top:12px;text-align:center;border-style:dashed"><div class="radar sm"><div class="ring r1"></div><div class="ring r2"></div><div class="core bare">${octoMini(64,'bob')}</div></div><p class="sub" style="margin:6px 0 0">Aucune mission disponible pour l'instant.</p><p class="mini" style="margin-top:4px">Vous serez notifié dès qu'une demande de votre zone arrive.</p></div>`;
     const myUid=(FB&&FB.auth&&FB.auth.currentUser)?FB.auth.currentUser.uid:'';
-    return `<div style="margin-top:12px"><span class="eyebrow" style="color:var(--teal-deep)">${I.flame} Missions disponibles · ${list.length}</span>${list.map(function(r){const win=reqWinTxt(r);const forMe=(r.preferredProviderUid&&r.preferredProviderUid===myUid);return `<div class="swipe-row"><button class="swipe-del skip" data-act="pro-skip:${r.id}" aria-label="Passer cette mission">Passer</button><button class="card swipe-card" data-act="reqview:${r.id}" style="padding:14px;width:100%;text-align:left;display:block${forMe?';border-left:4px solid var(--teal-deep)':''}"><div class="row between"><b style="font-size:14px">${esc(r.serviceName||svcNm(r.service))}</b><b class="money" style="color:var(--teal-deep);font-family:var(--f-disp)">${eur(reqPayout(r))}</b></div>${forMe?`<span class="chip" style="padding:2px 9px;background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.star} Demande réservée pour vous</span>`:''}<div class="mini" style="margin-top:4px">${I.pin} ${esc(r.zone||'')} · ${esc(r.when||'')} · ${esc(win)} · ${r.duration||1} ${r.unit==='j'?'j':'h'}</div>${r.boost?`<span class="chip" style="padding:2px 9px;background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.bolt} Coup de pouce +${r.boost}%</span>`:''}<div class="row between" style="margin-top:10px"><span class="mini" style="color:var(--muted)">${r.notes?'Détails du besoin fournis':'Voir la mission'}</span><span class="mini" style="color:var(--teal-deep);font-weight:700">Voir la fiche ›</span></div></button></div>`;}).join('')}</div>`;
+    return `<div style="margin-top:12px"><span class="eyebrow" style="color:var(--teal-deep)">${I.flame} Missions disponibles · ${list.length}</span>${list.map(function(r){const win=reqWinTxt(r);const forMe=(r.preferredProviderUid&&r.preferredProviderUid===myUid);return `<div class="swipe-row"><button class="swipe-del skip" data-act="pro-skip:${r.id}" aria-label="Passer cette mission">Passer</button><button class="card swipe-card" data-act="reqview:${r.id}" style="padding:14px;width:100%;text-align:left;display:block${forMe?';border-left:4px solid var(--teal-deep)':''}"><div class="row between"><b style="font-size:14px">${esc(r.serviceName||svcNm(r.service))}</b><b class="money" style="color:var(--teal-deep);font-family:var(--f-disp)">${eur(reqPayout(r))}</b></div>${forMe?`<span class="chip" style="padding:2px 9px;background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.star} Demande réservée pour vous</span>`:''}<div class="mini" style="margin-top:4px">${I.pin} ${esc(r.zone||'')} · ${esc(r.when||'')} · ${esc(win)} · ${r.duration||1} ${r.unit==='j'?'j':'h'}${(needsPeople(r.service)&&(Number(r.people)||1)>1)?' · 👥 '+peopleLbl(Number(r.people)||1):''}</div>${r.boost?`<span class="chip" style="padding:2px 9px;background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.bolt} Coup de pouce +${r.boost}%</span>`:''}<div class="row between" style="margin-top:10px"><span class="mini" style="color:var(--muted)">${r.notes?'Détails du besoin fournis':'Voir la mission'}</span><span class="mini" style="color:var(--teal-deep);font-weight:700">Voir la fiche ›</span></div></button></div>`;}).join('')}</div>`;
   }
   // Alerte de conflit d'agenda : l'artisan a déjà une intervention qui chevauche
   // ce créneau. Il confirme explicitement qu'il peut assurer, sinon « passe son tour ».
@@ -8930,6 +8952,7 @@
         :`<div class="row between" style="margin-top:8px"><span class="sub">${I.cal} Quand</span><b>${esc(r.when||'—')}</b></div>
         <div class="row between" style="margin-top:8px"><span class="sub">${I.clock} ${dayU?'Dépôt':'Heure'}</span><b>${esc(win||'—')}</b></div>
         ${(r.acts&&r.acts.length)?`<div class="row between" style="margin-top:8px;align-items:flex-start"><span class="sub">Prestations</span><b style="text-align:right;max-width:60%">${r.acts.map(function(a){return esc(a.nm)+((a.qty||1)>1?' ×'+a.qty:'');}).join('<br>')}</b></div>`:`<div class="row between" style="margin-top:8px"><span class="sub">${dayU?'Durée':'Durée estimée'}</span><b>${r.duration||1} ${dayU?'j':'h'}</b></div>`}`}
+        ${(needsPeople(r.service)&&(Number(r.people)||1)>1)?`<div class="row between" style="margin-top:8px"><span class="sub">👥 Participants</span><b>${peopleLbl(Number(r.people)||1)}</b></div>`:''}
         ${(r.frequency&&r.frequency!=='ponctuelle')?`<div class="row between" style="margin-top:8px"><span class="sub">Fréquence</span><b>${I.repeat} ${esc(freqInfo(r.frequency).short)}</b></div>`:''}
       </div>
       ${r.slotFlex?flexProposalBlock(r):''}
