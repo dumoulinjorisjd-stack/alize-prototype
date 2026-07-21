@@ -2322,7 +2322,11 @@
   // Taux de commission Ti-Services (barème de fidélité dégressif). Figé sur la mission
   // au moment du règlement (m.commPct) pour rester stable dans l'historique/les factures.
   function commPctFor(m){return (m&&m.commPct!=null)?m.commPct:myCommPct();}
-  function totals(m){const rate=fixedRate(m);const h=billHours(m);const fs=forfaitSub(m);const per=peopleOf(m);const sub=((fs!=null)?fs:rate*h)*per;const boost=m.boost||0;const maj=Math.round(sub*boost/100);
+  function totals(m){const rate=fixedRate(m);const h=billHours(m);const fs=forfaitSub(m);const per=peopleOf(m);const sub=((fs!=null)?fs:rate*h)*per;const boost=m.boost||0;
+    // Coup de pouce (relance pendant la recherche) : désormais un MONTANT en euros saisi par
+    // le client (m.boostEur), ajustable uniquement à la hausse. On conserve la compat avec un
+    // éventuel ancien boost en % (m.boost) — les deux s'additionnent dans la majoration.
+    const boostEur=Math.max(0,Math.round(Number(m.boostEur)||0));const maj=Math.round(sub*boost/100)+boostEur;
     // Forfait de déplacement sous le seuil (prestations à l'acte uniquement) — offert au-delà.
     // Aucun déplacement si la prestation a lieu CHEZ LE PRESTATAIRE (le client s'y rend).
     const travel=(locModeOf(m)==='salon')?0:travelFeeFor(sub,!!(m&&m.acts));
@@ -2335,11 +2339,11 @@
     // Commission figée sur la mission (m.commPct) si déjà réglée ; sinon taux courant
     // avec plancher « petits montants » appliqué sur la base (sub).
     const commPct=(m&&m.commPct!=null)?m.commPct:effCommPct(myCommPct(),sub);const commission=Math.round((sub+maj)*commPct)/100;const payout=Math.round((total-commission)*100)/100;
-    return {rate,sub,hours:h,people:per,boost,maj,travel,tip,commPct,commission,payout,total};}
+    return {rate,sub,hours:h,people:per,boost,boostEur,maj,travel,tip,commPct,commission,payout,total};}
   // Net RÉEL que l'artisan percevra pour une demande ouverte (commission déjà déduite) —
   // affiché AVANT l'acceptation pour qu'il décide en connaissance de cause. On ne montre
   // jamais à l'artisan le prix payé par le client (et jamais au client le net de l'artisan).
-  function reqPayout(r){let sub;const per=needsPeople(r.service)?Math.max(1,Math.min(20,Number(r.people)||1)):1;const hasActs=!!(r.acts&&r.acts.length);if(hasActs){sub=r.acts.reduce(function(t,a){return t+(Number(a.price)||0)*(a.qty||1);},0)*per;}else if(r.forfaitTotal!=null){sub=Number(r.forfaitTotal)||0;}else{sub=(Number(r.rate)||0)*(Number(r.duration)||1)*per;}const maj=Math.round(sub*((r.boost||0))/100);const travel=(canOnSite(r.service)&&r.locationMode==='salon')?0:travelFeeFor(sub,hasActs);const gross=sub+maj+travel;const pct=effCommPct(myCommPct(),sub);const commission=Math.round((sub+maj)*pct)/100;return Math.round((gross-commission)*100)/100;}
+  function reqPayout(r){let sub;const per=needsPeople(r.service)?Math.max(1,Math.min(20,Number(r.people)||1)):1;const hasActs=!!(r.acts&&r.acts.length);if(hasActs){sub=r.acts.reduce(function(t,a){return t+(Number(a.price)||0)*(a.qty||1);},0)*per;}else if(r.forfaitTotal!=null){sub=Number(r.forfaitTotal)||0;}else{sub=(Number(r.rate)||0)*(Number(r.duration)||1)*per;}const maj=Math.round(sub*((r.boost||0))/100)+Math.max(0,Math.round(Number(r.boostEur)||0));const travel=(canOnSite(r.service)&&r.locationMode==='salon')?0:travelFeeFor(sub,hasActs);const gross=sub+maj+travel;const pct=effCommPct(myCommPct(),sub);const commission=Math.round((sub+maj)*pct)/100;return Math.round((gross-commission)*100)/100;}
   // Décompose une ligne d'historique : brut (prix payé par le client / vente au mandat),
   // commission Ti-Services, net perçu par l'artisan. Rétrocompatible avec les anciennes
   // lignes (sans commission → net = brut).
@@ -5466,25 +5470,32 @@
     </div>`;
   }
   // Coup de pouce RELANÇABLE pendant la recherche : si personne ne répond, le client
-  // ajoute (ou augmente) un bonus % pour rendre la mission plus attractive. Cela
-  // re-sollicite TOUS les artisans du service — y compris ceux qui avaient « passé ».
-  // Le coup de pouce s'ajoute au montant et est soumis à la commission Ti-Services.
+  // ajoute un MONTANT EN EUROS (saisi manuellement), ajustable uniquement à la hausse,
+  // autant de fois qu'il le souhaite. Cela re-sollicite TOUS les artisans du service —
+  // y compris ceux qui avaient « passé ».
   function liveBoostBlock(m){
-    const cur=m.boost||0;const t=totals(m);const opts=[5,10,15].filter(function(p){return p>cur;});
+    const cur=Math.max(0,Math.round(Number(m.boostEur)||0));const t=totals(m);
     return `<div class="card" style="padding:15px;margin-top:12px;border-left:4px solid var(--coral)">
-      <div class="row" style="gap:10px;align-items:flex-start"><span class="benic" style="background:var(--coral-wash);color:var(--coral-deep)">${I.bolt}</span><div style="flex:1"><b style="font-size:14px">${cur?('Coup de pouce actif · +'+cur+'%'):'Personne ne répond ?'}</b>
-        <p class="mini" style="margin-top:3px">${cur?'Augmentez-le pour attirer un artisan plus vite.':'Ajoutez un coup de pouce&nbsp;: la mission devient plus attractive et <b>tous les artisans sont re-sollicités</b>, même ceux qui avaient passé.'}</p></div></div>
-      <div class="row between" style="margin-top:11px;padding-top:11px;border-top:1px solid var(--hair)"><span class="sub">Montant de la mission${cur?' (coup de pouce +'+cur+'% inclus)':''}</span><b class="money" style="color:var(--teal-deep);font-family:var(--f-disp)">${eur(t.total)}</b></div>
-      <div class="row" style="gap:8px;margin-top:11px;flex-wrap:wrap">${opts.length?opts.map(function(p){return `<button class="btn ghost sm" data-act="boost-live:${p}" style="width:auto;padding:9px 15px">${I.bolt}&nbsp;+${p}% <span style="color:var(--muted)">(+${eur(Math.round((t.sub)*p/100))})</span></button>`;}).join(''):'<span class="mini" style="color:var(--muted)">Coup de pouce déjà au maximum.</span>'}</div>
+      <div class="row" style="gap:10px;align-items:flex-start"><span class="benic" style="background:var(--coral-wash);color:var(--coral-deep)">${I.bolt}</span><div style="flex:1"><b style="font-size:14px">${cur?('Coup de pouce actif · '+eur(cur)):'Personne ne répond ?'}</b>
+        <p class="mini" style="margin-top:3px">${cur?'Vous pouvez encore l’augmenter pour attirer un artisan plus vite.':'Ajoutez un coup de pouce&nbsp;: un <b>montant en euros</b> qui rend la mission plus attractive. <b>Tous les artisans sont re-sollicités</b>, même ceux qui avaient passé.'}</p></div></div>
+      <div class="row between" style="margin-top:11px;padding-top:11px;border-top:1px solid var(--hair)"><span class="sub">Montant de la mission${cur?' (coup de pouce '+eur(cur)+' inclus)':''}</span><b class="money" style="color:var(--teal-deep);font-family:var(--f-disp)">${eur(t.total)}</b></div>
+      <div class="row" style="gap:8px;margin-top:11px;align-items:stretch">
+        <div style="flex:1;position:relative"><input class="txt" type="number" inputmode="decimal" min="${cur+1}" step="1" data-boostinput placeholder="${cur?('Plus de '+cur+' €'):'Ex. 15'}" style="padding-right:28px"><span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none">€</span></div>
+        <button class="btn primary sm" data-act="boost-eur" style="width:auto;padding:10px 16px;white-space:nowrap">${I.bolt} Booster</button>
+      </div>
+      <p class="mini" style="margin-top:7px;color:var(--muted)">Le coup de pouce ne peut qu’augmenter — vous pouvez le relever autant de fois que vous voulez. Il s’ajoute au montant de la mission.</p>
     </div>`;
   }
-  function liveBoost(pct){
+  function liveBoostEur(amount){
     const m=S.mission;if(!m||m.status!=='pending'||m.preferredUid)return;
-    m.boost=Math.max(m.boost||0,pct);m.reboostedAt=Date.now();
+    const cur=Math.max(0,Math.round(Number(m.boostEur)||0));
+    amount=Math.round(Number(amount)||0);
+    if(!(amount>cur)){toast(cur?('Le coup de pouce ne peut qu’augmenter — indiquez plus de '+eur(cur)):'Indiquez un montant en euros');return;}
+    m.boostEur=amount;m.reboostedAt=Date.now();
     const t=totals(m);
-    pushReqUpdate(m,{boost:m.boost,total:t.total,reboostedAt:Date.now()});
+    pushReqUpdate(m,{boostEur:m.boostEur,total:t.total,reboostedAt:Date.now()});
     cacheClientLocal();render();
-    toast('Coup de pouce +'+m.boost+'% 🔥 · nouveau montant '+eur(t.total)+' — artisans re-sollicités');
+    toast('Coup de pouce '+eur(m.boostEur)+' 🔥 · nouveau montant '+eur(t.total)+' — artisans re-sollicités');
   }
   function clientTracking(){
     const m=S.mission,t=totals(m),p=m.provider;
@@ -7408,7 +7419,7 @@
     if(b.dataset.czone){S.clientForm.zone=b.dataset.czone;render();return;}
     if(b.dataset.when){if(!S.draft)return;const v=b.dataset.when;if(v==='__pick'){S.draft.dateMode='pick';}else{S.draft.dateMode=null;S.draft.when=v;}renderConfig();return;}
     if(b.dataset.boost!=null){if(S.draft){S.draft.boost=+b.dataset.boost;renderConfig();}return;}
-    if(b.dataset.act&&b.dataset.act.indexOf('boost-live:')===0){liveBoost(+b.dataset.act.split(':')[1]);return;}
+    if(b.dataset.act==='boost-eur'){const inp=document.querySelector('[data-boostinput]');liveBoostEur(inp?parseFloat(inp.value):0);return;}
     // Pourboire à la validation : montants préréglés ou saisie libre (« Autre »).
     if(b.dataset.tip!=null){const m=S.mission;if(m){const v=b.dataset.tip;if(v==='custom'){m._tipCustom=true;}else{m._tipCustom=false;m.tip=Math.max(0,+v||0);}render();}return;}
     // Ajout de métier (artisan) : coche/décoche un service dans le formulaire d'ajout.
@@ -8504,7 +8515,7 @@
             subscribeClientRequest(docu.id);
             changed=true;
           }
-          m.status=r.status;m.svc=r.service;m.svcName=r.serviceName||svcNm(r.service);m.rate=r.rate;m.duration=r.duration||1;m.unit=r.unit||'h';m.when=r.when||'';m.slot=r.acceptedSlot||r.slot||m.slot||'';m.zone=r.zone||m.zone||'';m.boost=r.boost||0;m.tip=r.tip||0;m.slotFlex=r.slotFlex||0;m.notes=r.notes||m.notes||'';m.frequency=r.frequency||m.frequency||'ponctuelle';m.people=r.people||m.people||1;m.locationMode=r.locationMode||m.locationMode||'domicile';m.providerSalonAddress=r.providerSalonAddress||m.providerSalonAddress||'';m.providerSalonZone=r.providerSalonZone||m.providerSalonZone||'';m.providerSalonGeo=r.providerSalonGeo||m.providerSalonGeo||null;
+          m.status=r.status;m.svc=r.service;m.svcName=r.serviceName||svcNm(r.service);m.rate=r.rate;m.duration=r.duration||1;m.unit=r.unit||'h';m.when=r.when||'';m.slot=r.acceptedSlot||r.slot||m.slot||'';m.zone=r.zone||m.zone||'';m.boost=r.boost||0;m.boostEur=r.boostEur||0;m.tip=r.tip||0;m.slotFlex=r.slotFlex||0;m.notes=r.notes||m.notes||'';m.frequency=r.frequency||m.frequency||'ponctuelle';m.people=r.people||m.people||1;m.locationMode=r.locationMode||m.locationMode||'domicile';m.providerSalonAddress=r.providerSalonAddress||m.providerSalonAddress||'';m.providerSalonZone=r.providerSalonZone||m.providerSalonZone||'';m.providerSalonGeo=r.providerSalonGeo||m.providerSalonGeo||null;
           m.dateISO=r.dateISO||m.dateISO||'';if(r.createdAt&&r.createdAt.toMillis)m._createdMs=r.createdAt.toMillis();
           // Demande DIRIGÉE : restaurer l'artisan visé pour afficher le bon écran de suivi
           // (« réservée à X ») au lieu du générique. Vidé si la demande a été rouverte à tous.
@@ -8919,7 +8930,7 @@
           if(r.directed&&r.preferredProviderUid&&r.preferredProviderUid!==myUid)return;
           list.push(Object.assign({id:d.id},r));});
         // Les missions demandées en priorité pour MOI passent en tête.
-        list.sort(function(a,b){const ap=(a.preferredProviderUid&&a.preferredProviderUid===myUid)?1:0,bp=(b.preferredProviderUid&&b.preferredProviderUid===myUid)?1:0;if(ap!==bp)return bp-ap;return (b.boost||0)-(a.boost||0);});
+        list.sort(function(a,b){const ap=(a.preferredProviderUid&&a.preferredProviderUid===myUid)?1:0,bp=(b.preferredProviderUid&&b.preferredProviderUid===myUid)?1:0;if(ap!==bp)return bp-ap;return ((b.boostEur||0)-(a.boostEur||0))||((b.boost||0)-(a.boost||0));});
         S.openRequests=list;
         if(S.persona==='pro'&&!S.mission&&!S._accepting)render();
       },function(err){console.warn('open requests listen',err);});
@@ -8954,7 +8965,7 @@
       await FB.f.updateDoc(FB.f.doc(FB.db,'requests',reqId),acc);
       let det={};try{const s=await FB.f.getDoc(FB.f.doc(FB.db,'requests',reqId,'private','details'));det=s.exists()?s.data():{};}catch(_){}
       const base=findSvc(req.service)||{id:req.service,nm:req.serviceName||svcNm(req.service),rate:req.rate||svcBase(req.service)};
-      S.mission=Object.assign(newMission(base),{reqId:reqId,status:'accepted',svc:req.service,svcName:req.serviceName||svcNm(req.service),rate:req.rate,duration:req.duration||1,unit:req.unit||'h',acts:req.acts||null,when:req.when||'',slot:acceptedSlot,slotFlex:req.slotFlex||0,proposedSlot:req.slotFlex?acceptedSlot:null,zone:req.zone||det.zone||'',address:det.address||'',geo:det.geo||null,access:det.access||'',boost:req.boost||0,notes:req.notes||'',photos:(req.photos||[]).slice(),clientName:req.clientName||det.clientName||'',clientPhoto:req.clientPhoto||det.clientPhoto||null,clientPhone:det.clientPhone||'',provider:Object.assign({},PROVIDERS[req.service]||{},{nm:S.proName||'Vous'})});
+      S.mission=Object.assign(newMission(base),{reqId:reqId,status:'accepted',svc:req.service,svcName:req.serviceName||svcNm(req.service),rate:req.rate,duration:req.duration||1,unit:req.unit||'h',acts:req.acts||null,when:req.when||'',slot:acceptedSlot,slotFlex:req.slotFlex||0,proposedSlot:req.slotFlex?acceptedSlot:null,zone:req.zone||det.zone||'',address:det.address||'',geo:det.geo||null,access:det.access||'',boost:req.boost||0,boostEur:req.boostEur||0,people:req.people||1,locationMode:req.locationMode||'domicile',notes:req.notes||'',photos:(req.photos||[]).slice(),clientName:req.clientName||det.clientName||'',clientPhoto:req.clientPhoto||det.clientPhoto||null,clientPhone:det.clientPhone||'',provider:Object.assign({},PROVIDERS[req.service]||{},{nm:S.proName||'Vous'})});
       // Colis : reprend la fenêtre de dates + le dossier de retrait (pièces privées).
       if(req.service==='colis'){S.mission.poste=req.poste||det.poste||'';S.mission.dateFrom=req.dateFrom||det.dateFrom||'';S.mission.dateTo=req.dateTo||det.dateTo||'';if(det.colis){S.mission.colis=Object.assign({},det.colis,{signed:!!req.colisSigned,signedAt:req.colisSignedAt||(det.colis&&det.colis.signedAt)||null,signature:req.colisSignature||(det.colis&&det.colis.signature)||''});}}
       proAddMission(S.mission);watchRequest(reqId);S._accepting=null;S.proReqView=null;S.proReqSlot=null;S.proReqPick=false;S.proNav='home';render();burstConfetti();toast('Mission acceptée — à vous de jouer !');
@@ -8991,7 +9002,7 @@
     if(S._openReqLoading&&!list.length)return `<div style="margin-top:12px"><span class="eyebrow" style="color:var(--teal-deep)">${I.flame} Missions disponibles</span>${reqSkeleton(2)}</div>`;
     if(!list.length)return `<div class="card" style="padding:18px;margin-top:12px;text-align:center;border-style:dashed"><div class="radar sm"><div class="ring r1"></div><div class="ring r2"></div><div class="core bare">${octoMini(64,'bob')}</div></div><p class="sub" style="margin:6px 0 0">Aucune mission disponible pour l'instant.</p><p class="mini" style="margin-top:4px">Vous serez notifié dès qu'une demande de votre zone arrive.</p></div>`;
     const myUid=(FB&&FB.auth&&FB.auth.currentUser)?FB.auth.currentUser.uid:'';
-    return `<div style="margin-top:12px"><span class="eyebrow" style="color:var(--teal-deep)">${I.flame} Missions disponibles · ${list.length}</span>${list.map(function(r){const win=reqWinTxt(r);const forMe=(r.preferredProviderUid&&r.preferredProviderUid===myUid);return `<div class="swipe-row"><button class="swipe-del skip" data-act="pro-skip:${r.id}" aria-label="Passer cette mission">Passer</button><button class="card swipe-card" data-act="reqview:${r.id}" style="padding:14px;width:100%;text-align:left;display:block${forMe?';border-left:4px solid var(--teal-deep)':''}"><div class="row between"><b style="font-size:14px">${esc(r.serviceName||svcNm(r.service))}</b><b class="money" style="color:var(--teal-deep);font-family:var(--f-disp)">${eur(reqPayout(r))}</b></div>${forMe?`<span class="chip" style="padding:2px 9px;background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.star} Demande réservée pour vous</span>`:''}<div class="mini" style="margin-top:4px">${I.pin} ${esc(r.zone||'')} · ${esc(r.when||'')} · ${esc(win)} · ${r.duration||1} ${r.unit==='j'?'j':'h'}${(needsPeople(r.service)&&(Number(r.people)||1)>1)?' · 👥 '+peopleLbl(Number(r.people)||1):''}${canOnSite(r.service)?' · '+(r.locationMode==='salon'?'🏪 chez vous':'🏠 domicile'):''}</div>${r.boost?`<span class="chip" style="padding:2px 9px;background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.bolt} Coup de pouce +${r.boost}%</span>`:''}<div class="row between" style="margin-top:10px"><span class="mini" style="color:var(--muted)">${r.notes?'Détails du besoin fournis':'Voir la mission'}</span><span class="mini" style="color:var(--teal-deep);font-weight:700">Voir la fiche ›</span></div></button></div>`;}).join('')}</div>`;
+    return `<div style="margin-top:12px"><span class="eyebrow" style="color:var(--teal-deep)">${I.flame} Missions disponibles · ${list.length}</span>${list.map(function(r){const win=reqWinTxt(r);const forMe=(r.preferredProviderUid&&r.preferredProviderUid===myUid);return `<div class="swipe-row"><button class="swipe-del skip" data-act="pro-skip:${r.id}" aria-label="Passer cette mission">Passer</button><button class="card swipe-card" data-act="reqview:${r.id}" style="padding:14px;width:100%;text-align:left;display:block${forMe?';border-left:4px solid var(--teal-deep)':''}"><div class="row between"><b style="font-size:14px">${esc(r.serviceName||svcNm(r.service))}</b><b class="money" style="color:var(--teal-deep);font-family:var(--f-disp)">${eur(reqPayout(r))}</b></div>${forMe?`<span class="chip" style="padding:2px 9px;background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.star} Demande réservée pour vous</span>`:''}<div class="mini" style="margin-top:4px">${I.pin} ${esc(r.zone||'')} · ${esc(r.when||'')} · ${esc(win)} · ${r.duration||1} ${r.unit==='j'?'j':'h'}${(needsPeople(r.service)&&(Number(r.people)||1)>1)?' · 👥 '+peopleLbl(Number(r.people)||1):''}${canOnSite(r.service)?' · '+(r.locationMode==='salon'?'🏪 chez vous':'🏠 domicile'):''}</div>${(r.boostEur||r.boost)?`<span class="chip" style="padding:2px 9px;background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.bolt} Coup de pouce ${r.boostEur?('+'+eur(r.boostEur)):('+'+r.boost+'%')}</span>`:''}<div class="row between" style="margin-top:10px"><span class="mini" style="color:var(--muted)">${r.notes?'Détails du besoin fournis':'Voir la mission'}</span><span class="mini" style="color:var(--teal-deep);font-weight:700">Voir la fiche ›</span></div></button></div>`;}).join('')}</div>`;
   }
   // Alerte de conflit d'agenda : l'artisan a déjà une intervention qui chevauche
   // ce créneau. Il confirme explicitement qu'il peut assurer, sinon « passe son tour ».
@@ -9030,7 +9041,7 @@
       <div class="card" style="padding:16px;margin-top:14px">
         <div class="row between"><span class="sub">Vous percevez</span><b class="money" style="font-size:22px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(reqPayout(r))}</b></div>
         <p class="mini" style="margin-top:4px;color:var(--muted)">Montant net que vous touchez pour cette mission — versé après la prestation.</p>
-        ${r.boost?`<div class="banner teal" style="margin-top:10px">${I.bolt}<span>Le client a ajouté un <b>coup de pouce +${r.boost}%</b> — majoration qui vous revient et rend la mission prioritaire.</span></div>`:''}
+        ${(r.boostEur||r.boost)?`<div class="banner teal" style="margin-top:10px">${I.bolt}<span>Le client a ajouté un <b>coup de pouce ${r.boostEur?('de '+eur(r.boostEur)):('+'+r.boost+'%')}</b> — majoration qui vous revient et rend la mission prioritaire.</span></div>`:''}
         <hr class="dashed">
         <div class="row between"><span class="sub">${I.pin} Secteur</span><b>${esc(r.zone||'—')}</b></div>
         ${r.service==='colis'?`<div class="row between" style="margin-top:8px"><span class="sub">${I.pin} Bureau</span><b>La Poste · ${esc(r.poste||'—')}</b></div>

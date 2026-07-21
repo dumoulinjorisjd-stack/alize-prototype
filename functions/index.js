@@ -22,6 +22,10 @@ setGlobalOptions({region: 'europe-west1', maxInstances: 5});
 
 // Métiers pouvant se pratiquer au domicile du client OU chez le prestataire (salon).
 const CAN_ON_SITE = ['sport', 'coach', 'natation', 'pilates', 'yoga', 'massage', 'coiffure', 'beaute'];
+// Métiers facturés « par personne » (cours de sport, massages) : le prix (donc l'assiette
+// de commission) est multiplié par le nombre de participants.
+const NEEDS_PEOPLE = ['sport', 'coach', 'natation', 'pilates', 'yoga', 'massage'];
+function peopleCount(svc, p) { return NEEDS_PEOPLE.indexOf(svc) >= 0 ? Math.max(1, Math.min(20, Number(p) || 1)) : 1; }
 // Un artisan est-il éligible à une demande selon le LIEU ? Un « domicile seul » ne reçoit
 // pas les demandes « salon », et inversement. Mode absent ('both' par défaut) => tout voir.
 function siteOk(artisan, svc, locMode) {
@@ -777,12 +781,14 @@ exports.notifyBoosted = onDocumentUpdated('requests/{reqId}', async (event) => {
   const svcName = (after.serviceName || 'Une mission').toString().slice(0, 60);
   const zone = (after.zone || '').toString().slice(0, 40);
   const boost = Number(after.boost) || 0;
+  const boostEur = Math.max(0, Math.round(Number(after.boostEur) || 0));
+  const bonusTxt = boostEur ? (' — bonus +' + boostEur + ' € ajouté') : (boost ? (' — bonus +' + boost + '% ajouté') : '');
   try {
     await getMessaging().sendEachForMulticast({
       tokens,
       data: {
         title: '🔥 Coup de pouce sur une mission',
-        body: svcName + (zone ? ' · ' + zone : '') + (boost ? ' — bonus +' + boost + '% ajouté' : '') + '. À saisir avant les autres !',
+        body: svcName + (zone ? ' · ' + zone : '') + bonusTxt + '. À saisir avant les autres !',
         url: './?open=missions',
       },
       webpush: { fcmOptions: { link: '/?open=missions' }, headers: { Urgency: 'high' } },
@@ -812,11 +818,17 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
     const hours = (after.unit === 'forfait') ? 1 : ((after.finalHours != null) ? Number(after.finalHours) : (Number(after.duration) || 1));
     base = round2(rate * hours);
   }
+  // Prestations « par personne » (sport, massage) : le prix est multiplié par le nombre
+  // de participants — l'assiette de commission doit l'être aussi.
+  base = round2(base * peopleCount(after.service, after.people));
   const boost = Number(after.boost) || 0;
+  // Coup de pouce en euros (relance pendant la recherche) : montant fixe soumis à la
+  // commission (comme la majoration en %). S'ajoute à l'assiette et au brut.
+  const boostEur = Math.max(0, Math.round(Number(after.boostEur) || 0));
   // Pourboire laissé par le client à la validation : versé EN TOTALITÉ à l'artisan
   // (aucune commission Ti-Services). Il s'ajoute donc au brut ET au net.
   const tip = Math.max(0, round2(Number(after.tip) || 0));
-  const gross = round2(base + round2(base * boost / 100) + tip);
+  const gross = round2(base + round2(base * boost / 100) + boostEur + tip);
 
   const db = getFirestore();
   let jobsTotal = 0; let isFounder = false; let founderSinceMs = null; let founderGross = 0;
@@ -839,7 +851,7 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
   const basePct = founderActive ? FOUNDER_COMM_PCT : commissionTierPct(jobsTotal);
   // Plancher « petits montants » : au moins SMALL_COMM_PCT % sous SMALL_COMM_MIN € de base.
   const pct = (base < SMALL_COMM_MIN) ? Math.max(basePct, SMALL_COMM_PCT) : basePct;
-  const commission = round2((base + round2(base * boost / 100)) * pct / 100);
+  const commission = round2((base + round2(base * boost / 100) + boostEur) * pct / 100);
   const net = round2(gross - commission);
 
   const reqId = event.params.reqId;
