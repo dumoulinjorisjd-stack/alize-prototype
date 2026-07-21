@@ -1744,9 +1744,12 @@ exports.welcomeClientEmail = onDocumentCreated({document: 'users/{uid}', secrets
  */
 exports.emailDiag = onRequest({secrets: [SMTP_PASS]}, async (req, res) => {
   const pass = process.env.SMTP_PASS || '';
-  // Paramètres de test ajustables : ?port=587 (STARTTLS) ou ?port=465 (SSL, défaut).
+  // Paramètres de test ajustables sans redéploiement :
+  //   ?port=587 (STARTTLS) ou ?port=465 (SSL, défaut)
+  //   ?user=mon@compte.infomaniak  (si le login SMTP diffère de l'adresse d'envoi)
   const port = (String(req.query.port || '') === '587') ? 587 : SMTP_PORT;
-  const out = {smtpConfigured: !!pass, host: SMTP_HOST, port, user: MAIL_FROM_EMAIL, passLen: pass.length, sent: false};
+  const authUser = (String(req.query.user || '').trim()) || MAIL_FROM_EMAIL;
+  const out = {smtpConfigured: !!pass, host: SMTP_HOST, port, user: authUser, passLen: pass.length, sent: false};
   if (!pass) {
     out.note = 'SMTP_PASS absent — définissez le secret puis redéployez.';
     res.status(200).json(out); return;
@@ -1755,7 +1758,7 @@ exports.emailDiag = onRequest({secrets: [SMTP_PASS]}, async (req, res) => {
     const nodemailer = require('nodemailer');
     const tx = nodemailer.createTransport({
       host: SMTP_HOST, port, secure: (port === 465),
-      auth: {user: MAIL_FROM_EMAIL, pass},
+      auth: {user: authUser, pass},
       connectionTimeout: 15000, greetingTimeout: 15000,
     });
     try { await tx.verify(); out.verify = 'ok'; } catch (ve) {
