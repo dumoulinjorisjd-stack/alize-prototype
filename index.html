@@ -6515,7 +6515,9 @@
       ${isDemo()?`<p class="mini" style="text-align:center;margin-top:16px"><button class="linklike" data-act="demo-go-client">${I.user} Voir l'espace client (démo)</button> · <button class="linklike" data-act="demo-go-admin">${I.gear}︎ Admin (démo)</button></p>`:''}
       <div style="height:12px"></div></div>${proNavbar()}`;
   }
-  function apptPayout(a){if(a.amount!=null)return a.amount;const base=svcBase(a.svc);return (a.rate||base)*a.duration;}
+  // « Vous percevez » = NET pour l'artisan (après commission Ti-Services, pourboires
+  // inclus à 100 %). On privilégie donc a.net ; a.amount reste le total client (brut).
+  function apptPayout(a){if(a.net!=null)return a.net;if(a.amount!=null)return a.amount;const base=svcBase(a.svc);return (a.rate||base)*a.duration;}
   // --- Export agenda (.ics) : ajout à Google / Apple Calendar depuis le téléphone ---
   function apptStartDate(a){
     const now=new Date();let dt;
@@ -6623,11 +6625,11 @@
         if(['accepted','working','done_pro','disputed'].indexOf(m.status)<0)return;
         const iso=(/^\d{4}-\d{2}-\d{2}$/.test(m.dateISO||''))?m.dateISO:apptISO({day:m.when});
         const t=totals(m);
-        out.push({day:frDayLabel(iso),dateISO:iso,slot:m.slot||'',svc:m.svc,client:m.clientName||'Client',zone:m.zone||'',duration:billHours(m),unit:m.unit,rate:t.rate,amount:t.total,status:(m.status==='working'?'live':(m.status==='done_pro'?'tovalidate':'upcoming'))});
+        out.push({day:frDayLabel(iso),dateISO:iso,slot:m.slot||'',svc:m.svc,client:m.clientName||'Client',zone:m.zone||'',duration:billHours(m),unit:m.unit,rate:t.rate,amount:t.total,net:t.payout,status:(m.status==='working'?'live':(m.status==='done_pro'?'tovalidate':'upcoming'))});
       });
       (S.proHistory||[]).forEach(function(h){
         const iso=(/^\d{4}-\d{2}-\d{2}$/.test(h.dateISO||''))?h.dateISO:'';
-        out.push({day:iso?frDayLabel(iso):'',dateISO:iso,slot:h.slot||'',svc:h.svc,client:h.client||h.clientFull||'Client',zone:h.clientZone||h.zone||'',duration:h.duration,unit:h.unit,rate:h.rate,amount:h.amount,status:'done'});
+        out.push({day:iso?frDayLabel(iso):'',dateISO:iso,slot:h.slot||'',svc:h.svc,client:h.client||h.clientFull||'Client',zone:h.clientZone||h.zone||'',duration:h.duration,unit:h.unit,rate:h.rate,amount:h.amount,net:(h.net!=null?h.net:h.amount),status:'done'});
       });
     }
     S._agAppts=out;
