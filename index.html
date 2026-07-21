@@ -5412,7 +5412,9 @@
     const cur=m.boost||0;const t=totals(m);const opts=[5,10,15].filter(function(p){return p>cur;});
     return `<div class="card" style="padding:15px;margin-top:12px;border-left:4px solid var(--coral)">
       <div class="row" style="gap:10px;align-items:flex-start"><span class="benic" style="background:var(--coral-wash);color:var(--coral-deep)">${I.bolt}</span><div style="flex:1"><b style="font-size:14px">${cur?('Coup de pouce actif · +'+cur+'%'):'Personne ne répond ?'}</b>
-        <p class="mini" style="margin-top:3px">${cur?'Augmentez-le pour attirer un artisan plus vite.':'Ajoutez un coup de pouce&nbsp;: la mission devient plus attractive et <b>tous les artisans sont re-sollicités</b>, même ceux qui avaient passé.'} Il s’ajoute au montant et est soumis à la commission Ti-Services.</p></div></div>
+        <p class="mini" style="margin-top:3px">${cur?'Augmentez-le pour attirer un artisan plus vite.':'Ajoutez un coup de pouce&nbsp;: la mission devient plus attractive et <b>tous les artisans sont re-sollicités</b>, même ceux qui avaient passé.'}</p></div></div>
+      <div class="row between" style="margin-top:11px;padding-top:11px;border-top:1px solid var(--hair)"><span class="sub">Montant de la mission${cur?' (coup de pouce +'+cur+'% inclus)':''}</span><b class="money" style="color:var(--teal-deep);font-family:var(--f-disp)">${eur(t.total)}</b></div>
+      ${cur?`<p class="mini" style="margin-top:6px;color:var(--muted)">Dont ${eur(t.maj)} de coup de pouce — <b>soumis à la commission Ti-Services</b> (le pourboire de fin, lui, reste 100&nbsp;% artisan).</p>`:`<p class="mini" style="margin-top:8px;color:var(--muted)">Le coup de pouce s’ajoute au montant et est <b>soumis à la commission Ti-Services</b>.</p>`}
       <div class="row" style="gap:8px;margin-top:11px;flex-wrap:wrap">${opts.length?opts.map(function(p){return `<button class="btn ghost sm" data-act="boost-live:${p}" style="width:auto;padding:9px 15px">${I.bolt}&nbsp;+${p}% <span style="color:var(--muted)">(+${eur(Math.round((t.sub)*p/100))})</span></button>`;}).join(''):'<span class="mini" style="color:var(--muted)">Coup de pouce déjà au maximum.</span>'}</div>
     </div>`;
   }
@@ -5422,7 +5424,7 @@
     const t=totals(m);
     pushReqUpdate(m,{boost:m.boost,total:t.total,reboostedAt:Date.now()});
     cacheClientLocal();render();
-    toast('Coup de pouce +'+m.boost+'% 🔥 — artisans re-sollicités');
+    toast('Coup de pouce +'+m.boost+'% 🔥 · nouveau montant '+eur(t.total)+' — artisans re-sollicités');
   }
   function clientTracking(){
     const m=S.mission,t=totals(m),p=m.provider;
@@ -8782,8 +8784,20 @@
         // Demande DIRIGÉE nouvellement adressée à MOI : notification spéciale — elle
         // sort de la file « aléatoire », le client m'a choisi précisément.
         try{snap.docChanges().forEach(function(ch){
-          if(ch.type!=='added')return;
           const r=ch.doc.data()||{};const id=ch.doc.id;
+          // COUP DE POUCE (re-boost par le client, demande encore ouverte) : re-notifier
+          // l'artisan même app ouverte — y compris s'il avait « passé » cette mission.
+          if(ch.type==='modified'&&r.status==='pending'){
+            const rb=Number(r.reboostedAt)||0;S._rbSeen=S._rbSeen||{};
+            if(rb>(S._rbSeen[id]||0)){S._rbSeen[id]=rb;
+              const okSvc=!cats.length||cats.indexOf(r.service)>=0;const notMine=!(r.directed&&r.preferredProviderUid&&r.preferredProviderUid!==myUid);
+              if(rb&&okSvc&&notMine&&!firstSnap){const bid=id;
+                notify('🔥 Coup de pouce sur une mission',(r.serviceName||svcNm(r.service))+' — le client a boosté sa demande, à saisir !','ti-boost-'+id,function(){S.persona='pro';S.mission=null;S.proReqView=bid;S.proNav='home';render();});
+                if(S.persona==='pro')toast('🔥 Coup de pouce : '+(r.serviceName||svcNm(r.service))+' re-disponible');
+              }
+            }
+          }
+          if(ch.type!=='added')return;
           if(!(r.directed&&r.preferredProviderUid&&myUid&&r.preferredProviderUid===myUid))return;
           if(cats.length&&cats.indexOf(r.service)<0)return;
           if(S._openReqSeen[id])return;S._openReqSeen[id]=1;
