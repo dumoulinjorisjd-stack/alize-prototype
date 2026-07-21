@@ -1853,6 +1853,16 @@
   function needsPeople(svcId){return ['sport','coach','natation','pilates','yoga','massage'].indexOf(svcId)>=0;}
   function peopleOf(m){return needsPeople(m&&m.svc)?Math.max(1,Math.min(20,Number(m&&m.people)||1)):1;}
   function peopleLbl(n){return n+' '+(n>1?'personnes':'personne');}
+  // Métiers qui peuvent se pratiquer AU DOMICILE du client OU CHEZ LE PRESTATAIRE (salon,
+  // studio, agence) : cours de sport, massage, coiffure, beauté. Le client choisit le lieu
+  // à la commande ; l'artisan déclare à l'inscription s'il se déplace, reçoit chez lui, ou
+  // les deux — ce qui filtre les demandes qui lui sont proposées.
+  function canOnSite(svcId){return ['sport','coach','natation','pilates','yoga','massage','coiffure','beaute'].indexOf(svcId)>=0;}
+  // Lieu retenu pour une commande : 'salon' (chez le prestataire) ou 'domicile' (défaut).
+  function locModeOf(m){return (canOnSite(m&&m.svc)&&m&&m.locationMode==='salon')?'salon':'domicile';}
+  // Compatibilité entre le mode d'un artisan ('domicile' | 'salon' | 'both') et le lieu
+  // demandé : un artisan « domicile seul » ne voit pas les demandes « salon », et inverse.
+  function siteMatches(siteMode,locMode){var s=siteMode||'both';if(s==='both')return true;return s===(locMode||'domicile');}
   // Forfait de déplacement : sous ce seuil de commande (prestations « à l'acte »), on
   // ajoute un forfait pour couvrir le déplacement du prestataire. Au-dessus, c'est offert.
   const TRAVEL_MIN=50, TRAVEL_FEE=20;
@@ -2186,7 +2196,7 @@
     addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,
     concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,concRetroPaid:'',concIban:'',concIbanHolder:'',concLegal:'',concSiret:'',concAddress:'',retroRate:8,founderTaken:0,
     sepaIban:(function(){try{return localStorage.getItem('ts_sepa_iban')||'';}catch(_){return '';}})(),concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,
-    proPhoto:null,proStatus:'approved',proFounder:true,proNotifPush:true,proNotifWa:true,proPhone:'0690 00 00 00',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proPendingCats:[],proPendingOther:'',proAddView:false,proAddForm:null,proForm:{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:'',photo:''},
+    proPhoto:null,proStatus:'approved',proFounder:true,proNotifPush:true,proNotifWa:true,proPhone:'0690 00 00 00',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proPendingCats:[],proPendingOther:'',proSiteMode:'both',proSalonAddress:'',proSalonZone:'Gustavia',proSalonGeo:null,proAddView:false,proAddForm:null,proForm:{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:'',photo:''},
     proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proReqSlot:null,proReqPick:false,proMissions:[],proSkipped:[],proConflict:null,proStmt:false,commInvId:null,commStmt:false,signupKind:null,concSignup:null,concStatus:'approved',adminConcierges:[],
     proHistory:PRO_HISTORY(),
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),
@@ -2196,7 +2206,7 @@
     admin:{view:'home',sel:null,fact:null},adminLedger:[],adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,adminPrices:ADMIN_PRICES(),
     avail:{lun:{m:1,a:1,s:0},mar:{m:1,a:1,s:0},mer:{m:1,a:1,s:1},jeu:{m:1,a:1,s:0},ven:{m:1,a:1,s:1},sam:{m:1,a:0,s:0},dim:{m:0,a:0,s:0}}
   };
-  function newMission(svc){const a=S.addresses.find(x=>x.id===S.addrDefault)||S.addresses[0]||null;const day=svc.id==='animaux';const colis=svc.id==='colis';const cat=isCatalogForfait(svc.id);const forf=colis||cat;const px=(S.adminPrices&&S.adminPrices[svc.id]!=null)?S.adminPrices[svc.id]:svcBase(svc.id);const m={svc:svc.id,svcName:svc.nm,unit:forf?'forfait':(day?'j':'h'),rate:day?DAY_RECO:px,boost:0,finalHours:null,disputeMsg:null,frequency:'ponctuelle',people:1,duration:forf?1:(day?2:3),zone:a?a.zone:'Gustavia',address:a?a.address:'',addressId:a?a.id:'__manual',geo:a?a.geo:null,access:a?(a.access||''):'',notes:'',photos:[],when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',slotMode:null,slotFlex:0,proposedSlot:null,status:'draft',provider:null,rating:0,competitors:0,chat:[],support:{client:[],pro:[]}};
+  function newMission(svc){const a=S.addresses.find(x=>x.id===S.addrDefault)||S.addresses[0]||null;const day=svc.id==='animaux';const colis=svc.id==='colis';const cat=isCatalogForfait(svc.id);const forf=colis||cat;const px=(S.adminPrices&&S.adminPrices[svc.id]!=null)?S.adminPrices[svc.id]:svcBase(svc.id);const m={svc:svc.id,svcName:svc.nm,unit:forf?'forfait':(day?'j':'h'),rate:day?DAY_RECO:px,boost:0,finalHours:null,disputeMsg:null,frequency:'ponctuelle',people:1,locationMode:'domicile',duration:forf?1:(day?2:3),zone:a?a.zone:'Gustavia',address:a?a.address:'',addressId:a?a.id:'__manual',geo:a?a.geo:null,access:a?(a.access||''):'',notes:'',photos:[],when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',slotMode:null,slotFlex:0,proposedSlot:null,status:'draft',provider:null,rating:0,competitors:0,chat:[],support:{client:[],pro:[]}};
     // Métier « à l'acte » (coiffure, manucure, plomberie…) : le client compose sa commande
     // à partir de la grille catalogue ; total = somme des actes cochés (m.acts).
     if(cat){m.acts=[];}
@@ -2314,7 +2324,8 @@
   function commPctFor(m){return (m&&m.commPct!=null)?m.commPct:myCommPct();}
   function totals(m){const rate=fixedRate(m);const h=billHours(m);const fs=forfaitSub(m);const per=peopleOf(m);const sub=((fs!=null)?fs:rate*h)*per;const boost=m.boost||0;const maj=Math.round(sub*boost/100);
     // Forfait de déplacement sous le seuil (prestations à l'acte uniquement) — offert au-delà.
-    const travel=travelFeeFor(sub,!!(m&&m.acts));
+    // Aucun déplacement si la prestation a lieu CHEZ LE PRESTATAIRE (le client s'y rend).
+    const travel=(locModeOf(m)==='salon')?0:travelFeeFor(sub,!!(m&&m.acts));
     // Pourboire (facultatif) laissé par le client APRÈS validation de la prestation — façon
     // Uber : basé sur la satisfaction, versé en totalité à l'intervenant (aucune commission).
     const tip=Math.max(0,Math.round((Number(m.tip)||0)*100)/100);
@@ -2328,7 +2339,7 @@
   // Net RÉEL que l'artisan percevra pour une demande ouverte (commission déjà déduite) —
   // affiché AVANT l'acceptation pour qu'il décide en connaissance de cause. On ne montre
   // jamais à l'artisan le prix payé par le client (et jamais au client le net de l'artisan).
-  function reqPayout(r){let sub;const per=needsPeople(r.service)?Math.max(1,Math.min(20,Number(r.people)||1)):1;const hasActs=!!(r.acts&&r.acts.length);if(hasActs){sub=r.acts.reduce(function(t,a){return t+(Number(a.price)||0)*(a.qty||1);},0)*per;}else if(r.forfaitTotal!=null){sub=Number(r.forfaitTotal)||0;}else{sub=(Number(r.rate)||0)*(Number(r.duration)||1)*per;}const maj=Math.round(sub*((r.boost||0))/100);const travel=travelFeeFor(sub,hasActs);const gross=sub+maj+travel;const pct=effCommPct(myCommPct(),sub);const commission=Math.round((sub+maj)*pct)/100;return Math.round((gross-commission)*100)/100;}
+  function reqPayout(r){let sub;const per=needsPeople(r.service)?Math.max(1,Math.min(20,Number(r.people)||1)):1;const hasActs=!!(r.acts&&r.acts.length);if(hasActs){sub=r.acts.reduce(function(t,a){return t+(Number(a.price)||0)*(a.qty||1);},0)*per;}else if(r.forfaitTotal!=null){sub=Number(r.forfaitTotal)||0;}else{sub=(Number(r.rate)||0)*(Number(r.duration)||1)*per;}const maj=Math.round(sub*((r.boost||0))/100);const travel=(canOnSite(r.service)&&r.locationMode==='salon')?0:travelFeeFor(sub,hasActs);const gross=sub+maj+travel;const pct=effCommPct(myCommPct(),sub);const commission=Math.round((sub+maj)*pct)/100;return Math.round((gross-commission)*100)/100;}
   // Décompose une ligne d'historique : brut (prix payé par le client / vente au mandat),
   // commission Ti-Services, net perçu par l'artisan. Rétrocompatible avec les anciennes
   // lignes (sans commission → net = brut).
@@ -2725,6 +2736,16 @@
     "Le prix est multiplié par le nombre de personnes — chacune sa prestation.":"The price is multiplied by the number of people — one service each.",
     "Le prix ci-dessous est multiplié par le nombre de personnes — chacune sa prestation.":"The price below is multiplied by the number of people — one service each.",
     "👥 Participants":"👥 Participants",
+    "Lieu de la prestation":"Where it takes place",
+    "🏠 À domicile":"🏠 At home",
+    "🏪 Chez le prestataire":"🏪 At the provider’s",
+    "Le prestataire se déplace chez vous.":"The provider comes to you.",
+    "Lieu du rendez-vous":"Meeting place",
+    "Vous vous rendez chez le prestataire":"You go to the provider",
+    "Lieu d'intervention":"Where you work",
+    "🏠 Je me déplace":"🏠 I travel",
+    "🏪 Dans mon salon":"🏪 At my place",
+    "Les deux":"Both",
     "Passer":"Skip",
     "Un service qui manque ?":"A service you’re missing?",
     "Demander ce service":"Request this service",
@@ -3313,6 +3334,16 @@
     "Le prix est multiplié par le nombre de personnes — chacune sa prestation.":"O preço é multiplicado pelo número de pessoas — um serviço para cada uma.",
     "Le prix ci-dessous est multiplié par le nombre de personnes — chacune sa prestation.":"O preço abaixo é multiplicado pelo número de pessoas — um serviço para cada uma.",
     "👥 Participants":"👥 Participantes",
+    "Lieu de la prestation":"Local do serviço",
+    "🏠 À domicile":"🏠 Ao domicílio",
+    "🏪 Chez le prestataire":"🏪 No prestador",
+    "Le prestataire se déplace chez vous.":"O prestador desloca-se até si.",
+    "Lieu du rendez-vous":"Local do encontro",
+    "Vous vous rendez chez le prestataire":"Vai ter com o prestador",
+    "Lieu d'intervention":"Local de trabalho",
+    "🏠 Je me déplace":"🏠 Desloco-me",
+    "🏪 Dans mon salon":"🏪 No meu espaço",
+    "Les deux":"Ambos",
     "Passer":"Passar",
     "Un service qui manque ?":"Falta um serviço?",
     "Demander ce service":"Pedir este serviço",
@@ -5457,6 +5488,7 @@
       ${(m.slotFlex&&m.proposedSlot&&m.status!=='pending')?`<div class="banner teal" style="margin-top:10px">${I.clock}<span>${p?esc(p.nm.split(' ')[0]):'L’artisan'} a confirmé son passage à <b>${m.slot}</b> (votre souhait&nbsp;: ${flexTxtClient(m)}).</span></div>`:''}
       ${m.status==='pending'?(m.preferredUid?`<div class="card" style="padding:16px;margin-top:12px"><div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="background:var(--teal-wash);color:var(--teal-deep)">${I.clock}</span><div><b style="font-size:14px">Demande réservée à ${esc((m.preferredName||'votre artisan').split(' ')[0])}</b><p class="mini" style="margin-top:4px">Votre demande est adressée <b>uniquement à ${esc(m.preferredName||'votre artisan')}</b> — pas aux autres artisans, puisque vous l'avez choisi. L'attente est normale&nbsp;: elle dure tant qu'il n'a pas encore répondu. Dès qu'il accepte ou décline, vous êtes prévenu.</p></div></div></div>`:`<div class="card" style="padding:16px;margin-top:12px;text-align:center">${searchRadar(true)}<p class="sub" style="margin:0">Vous saurez qui intervient dès l'acceptation.</p></div>`):((m.svc==='baby'&&p)?babyConfirmBlock(m):(p?`<div class="card provider-pop" style="padding:14px;margin-top:12px"><div class="row" style="gap:12px">${avatarFounder(m.providerPhoto,p.ini,'',p.founder)}<div style="flex:1"><b style="font-size:15px">${esc(p.nm)}</b><div class="mini">${p.jobs} missions réalisées · ${I.pin} ${m.zone}${m.providerAgeBand?' · '+esc(m.providerAgeBand):''}</div></div><div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">${p.founder?`<span class="chip founder-chip" style="padding:4px 9px">${I.star} Ambassadeur</span>`:''}<span class="chip good" style="padding:4px 10px">${I.check} Vérifié · Assuré</span></div></div></div>`:''))}
       ${(m.status==='pending'&&!m.preferredUid)?liveBoostBlock(m):''}
+      ${(p&&locModeOf(m)==='salon')?`<div class="card" style="padding:16px;margin-top:12px;border-left:4px solid var(--teal-deep)"><div class="row" style="gap:10px;align-items:flex-start"><span class="benic" style="background:var(--teal-wash);color:var(--teal-deep)">${I.pin}</span><div style="flex:1"><b style="font-size:14px">Vous vous rendez chez le prestataire</b>${m.providerSalonAddress?`<p class="sub" style="margin-top:4px;color:var(--ink)">${esc(m.providerSalonAddress)}${m.providerSalonZone?' · '+esc(m.providerSalonZone):''}</p>`:`<p class="mini" style="margin-top:4px;color:var(--muted)">Le prestataire va vous communiquer son adresse.</p>`}</div></div>${m.providerSalonGeo?miniMap(m.providerSalonGeo,'view','salon'):''}${m.providerSalonGeo?`<a class="btn ghost sm" href="${navUrl(m.providerSalonGeo.lat,m.providerSalonGeo.lng)}" target="_blank" rel="noopener" style="margin-top:10px;text-decoration:none;justify-content:center;gap:8px">${I.pin} Ouvrir l'itinéraire (${navAppName()})</a>`:''}</div>`:''}
       ${(m.svc==='colis'&&p)?colisDossier(m,false):''}
       <div class="card" style="padding:16px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Suivi</div><div class="timeline" style="margin-top:12px">${tls}</div></div>
       ${p?`${(bothAccepted(m)&&m.providerPhone)?`<a class="btn ghost sm" href="tel:${telClean(m.providerPhone)}" style="text-decoration:none;margin-top:12px;justify-content:flex-start;gap:8px">${I.phone}&nbsp;Appeler ${esc(p.nm.split(' ')[0])}</a>`:''}<button class="btn ghost sm" data-act="open-chat" style="margin-top:${(bothAccepted(m)&&m.providerPhone)?'8px':'12px'};justify-content:flex-start;gap:8px">${unreadDot(m)}${I.chat}&nbsp;Contacter ${esc(p.nm.split(' ')[0])} par messagerie${(m.chat&&m.chat.length)?` · ${m.chat.length}`:''}</button>`:''}
@@ -5557,7 +5589,7 @@
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-act="card-save">${I.lock} Enregistrer ma carte</button><p class="mini" style="text-align:center;margin-top:10px">Maquette — aucune donnée réelle n'est envoyée ni conservée.</p></div></div>`;
   }
   // Signature d'une demande : sert à empêcher tout doublon strictement identique.
-  function missionSig(m){return [m.svc,m.zone||'',m.when||'',m.slot||'',(m.slotFlex||0),m.unit||'h',m.duration||1,m.rate||0,(m.boost||0),(peopleOf(m)),m.frequency||'ponctuelle',(m.address||''),(m.notes||'').trim()].join('|');}
+  function missionSig(m){return [m.svc,m.zone||'',m.when||'',m.slot||'',(m.slotFlex||0),m.unit||'h',m.duration||1,m.rate||0,(m.boost||0),(peopleOf(m)),(locModeOf(m)),m.frequency||'ponctuelle',(m.address||''),(m.notes||'').trim()].join('|');}
   // Artisans déjà eus par le client (issus de l'historique) — sert à en redemander un
   // en priorité, SANS jamais exposer l'annuaire complet des artisans.
   function pastArtisans(){const seen={},out=[];(S.history||[]).forEach(function(h){const uid=h&&h.providerUid;if(uid&&h.provider&&h.provider.nm&&!seen[uid]){seen[uid]=1;out.push({uid:uid,nm:h.provider.nm,ini:h.provider.ini||inits(h.provider.nm)});}});return out;}
@@ -5620,6 +5652,8 @@
         rate:t.rate, boost:m.boost||0, total:t.total,
         // Nombre de participants (cours de sport / massages) — le prix est multiplié d'autant.
         people:peopleOf(m),
+        // Lieu : 'domicile' (l'artisan se déplace) ou 'salon' (le client va chez le prestataire).
+        locationMode:locModeOf(m),
         frequency:m.frequency||'ponctuelle',
         notes:(m.notes||'').slice(0,500),
         preferredProviderUid:m.preferredUid||null,
@@ -6595,6 +6629,10 @@
   // Réglages artisan (disponibilités, en ligne, préférences de notif, n° WhatsApp) :
   // persistés sur la fiche artisans/{uid} pour survivre à une réinstallation.
   function saveProSettings(){ try{ if(FB&&FB.auth&&FB.auth.currentUser&&!isDemo()){ FB.f.setDoc(FB.f.doc(FB.db,'artisans',FB.auth.currentUser.uid),{avail:S.avail,online:!!S.proOnline,notifPush:!!S.proNotifPush,notifWa:!!S.proNotifWa,phone:S.proPhone||''},{merge:true}).catch(function(e){toast('⚠︎ Réglages non enregistrés : '+fbErrTxt(e));}); } }catch(_){} }
+  // Lieu d'intervention de l'artisan (domicile / salon / les deux) : persiste le mode seul
+  // (les demandes filtrées côté client + serveur) et, séparément, l'adresse du salon.
+  function persistSiteMode(){ try{ if(FB&&FB.auth&&FB.auth.currentUser&&!isDemo()){ FB.f.setDoc(FB.f.doc(FB.db,'artisans',FB.auth.currentUser.uid),{siteMode:S.proSiteMode||'both'},{merge:true}).catch(function(e){toast('⚠︎ Non enregistré : '+fbErrTxt(e));}); } }catch(_){} }
+  function persistSalon(){ try{ if(FB&&FB.auth&&FB.auth.currentUser&&!isDemo()){ FB.f.setDoc(FB.f.doc(FB.db,'artisans',FB.auth.currentUser.uid),{salonAddress:S.proSalonAddress||'',salonZone:S.proSalonZone||'Gustavia',salonGeo:S.proSalonGeo||null},{merge:true}).then(function(){toast('Salon enregistré ✓');}).catch(function(e){toast('⚠︎ Non enregistré : '+fbErrTxt(e));}); } else { toast('Salon enregistré ✓'); } }catch(_){} }
   // Impression / enregistrement PDF d'une facture. En app installée (PWA autonome) sur
   // iOS, window.print() est souvent inopérant : on ouvre alors le document dans une
   // fenêtre de navigateur (qui, elle, sait imprimer / enregistrer en PDF), avec le CSS
@@ -7055,6 +7093,19 @@
         ${(S.proPendingCats||[]).length?`<p class="mini" style="margin-top:11px">${I.shield} En attente de validation par Ti-Services — proposé aux clients une fois vérifié.</p>`:`<p class="mini" style="margin-top:11px;color:var(--muted)">Ajoutez un métier à tout moment. Chaque ajout est vérifié par Ti-Services avant d'être proposé aux clients.</p>`}
       </div>
 
+      ${(function(){var onSiteCats=(cats||[]).filter(canOnSite);if(!onSiteCats.length)return '';var sm=S.proSiteMode||'both';return `<div class="card" style="padding:16px;margin-top:16px">
+        <div class="row between" style="align-items:center"><b style="font-size:14px"><span aria-hidden="true">📍</span> Lieu d'intervention</b></div>
+        <p class="mini" style="margin-top:6px;color:var(--muted)">Pour ${onSiteCats.map(svcNm).join(', ')} : indiquez comment vous travaillez. Cela filtre les demandes qui vous sont proposées — vous ne recevez que celles qui correspondent.</p>
+        <div class="segs" style="margin-top:11px"><button class="seg ${sm==='domicile'?'on':''}" data-sitemode="domicile">🏠 Je me déplace</button><button class="seg ${sm==='salon'?'on':''}" data-sitemode="salon">🏪 Dans mon salon</button><button class="seg ${sm==='both'?'on':''}" data-sitemode="both">Les deux</button></div>
+        <p class="mini" style="margin-top:8px;color:var(--muted)">${sm==='domicile'?'Vous vous déplacez uniquement chez le client.':sm==='salon'?'Le client vient chez vous — vous ne recevez pas les demandes « à domicile ».':'Vous acceptez les deux : à domicile et dans votre salon.'}</p>
+        ${(sm==='salon'||sm==='both')?`<div style="margin-top:13px"><label class="sub" style="display:block;margin-bottom:5px">Adresse de mon salon / studio <span style="font-weight:500;color:var(--muted)">(communiquée au client dès que vous acceptez)</span></label>
+          <input class="txt" data-salonaddr value="${esc(S.proSalonAddress||'')}" placeholder="Ex. 12 rue du Roi Oscar II, Gustavia">
+          <div class="field" style="margin-top:8px;margin-bottom:0"><label style="font-size:12px">Secteur</label><select class="txt" data-salonzone>${ZONES.map(z=>`<option value="${esc(z)}"${(S.proSalonZone||'Gustavia')===z?' selected':''}>${esc(z)}</option>`).join('')}</select></div>
+          <button class="btn ghost sm" data-act="salon-geo" style="margin-top:9px;width:auto;padding:9px 14px">📍 ${S.proSalonGeo?'Actualiser le point GPS':'Enregistrer le point GPS'}</button>
+          ${S.proSalonGeo?miniMap(S.proSalonGeo,'edit','salon'):`<p class="mini" style="margin-top:6px;color:var(--muted)">Ajoutez le point GPS pour que le client vous trouve facilement.</p>`}
+          <button class="btn primary sm" data-act="salon-save" style="margin-top:11px;width:auto;padding:9px 16px">${I.check} Enregistrer mon salon</button></div>`:''}
+      </div>` ;})()}
+
       <div class="eyebrow" style="margin:26px 4px 6px;color:var(--muted)">Compte</div>
       ${(function(){const st=mollieState();const badge=st==='active'?`<span class="chip good" style="padding:3px 9px">${I.check} Actif</span>`:st==='pending'?`<span class="chip warn" style="padding:3px 9px">${I.clock} En vérification</span>`:`<span class="chip coral" style="padding:3px 9px">À activer</span>`;
       return `<div class="card" style="padding:16px;margin-top:16px"><div class="row between"><b style="font-size:14px">${I.card}&nbsp;Recevoir mes paiements</b>${badge}</div>
@@ -7207,7 +7258,7 @@
     // photo du client) s'ouvre en plein écran au clic — consultation sans téléchargement.
     const _iv=e.target.closest&&e.target.closest('img.viewable');
     if(_iv&&_iv.getAttribute('src')){S.imgView={src:_iv.getAttribute('src'),name:_iv.getAttribute('data-docname')||'document'};render();return;}
-    const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actqty],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday],[data-tip],[data-pac]');
+    const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actqty],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-loc],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday],[data-tip],[data-pac],[data-sitemode]');
     if(!b)return;
     // Un clic ISSU d'un <input type=file> (notamment déclenché par programme, ex. la
     // feuille « appareil photo / galerie ») remonte jusqu'ici : on ne le traite pas
@@ -7312,6 +7363,8 @@
     if(b.dataset.afzone){if(S.addrForm)S.addrForm.zone=b.dataset.afzone;render();return;}
     if(b.dataset.slot){if(S.draft){if(b.dataset.slot==='__pick'){S.draft.slotMode='pick';}else{S.draft.slotMode=null;S.draft.slot=b.dataset.slot;}}renderConfig();return;}
     if(b.dataset.slotflex!=null){if(S.draft){const v=b.dataset.slotflex;S.draft.slotFlex=(v==='day'||v==='week')?v:(+v);}renderConfig();return;}
+    if(b.dataset.loc!=null){if(S.draft){S.draft.locationMode=(b.dataset.loc==='salon')?'salon':'domicile';}renderConfig();return;}
+    if(b.dataset.sitemode!=null){S.proSiteMode=b.dataset.sitemode;persistSiteMode();render();return;}
     if(b.dataset.prefart!=null){if(S.draft){S.draft.preferredUid=b.dataset.prefart||null;S.draft.preferredName=b.dataset.prefnm||'';}renderConfig();return;}
     // Garde d'enfants : le client, non convaincu après l'appel, redirige sa demande
     // vers une AUTRE baby-sitter (ou la rouvre à toutes). Libération sans no-show
@@ -7596,6 +7649,8 @@
           (S.proMissions||[]).forEach(function(mm){if(mm&&mm.reqId&&mm.svc==='baby'){mm.providerBio=S.proBio;try{FB.f.updateDoc(FB.f.doc(FB.db,'requests',mm.reqId),{providerBio:S.proBio});}catch(_){}}});}
         else{toast('Coordonnées mises à jour ✓');}
         render();break;}
+      case 'salon-geo':geolocate(function(g){S.proSalonGeo=g;render();});break;
+      case 'salon-save':{const ai=document.querySelector('[data-salonaddr]');const zi=document.querySelector('[data-salonzone]');if(ai)S.proSalonAddress=(ai.value||'').trim();if(zi)S.proSalonZone=zi.value||'Gustavia';if(!S.proSalonAddress){toast('Indiquez l’adresse de votre salon');render();break;}persistSalon();render();break;}
       case 'pro-add-service':S.proAddForm={cats:[],other:'',assur:false};S.proAddView=true;render();break;
       case 'pro-add-back':S.proAddView=false;render();break;
       case 'pro-add-assur':if(S.proAddForm){S.proAddForm.assur=!S.proAddForm.assur;render();}break;
@@ -7748,6 +7803,7 @@
       <div class="field" style="margin-top:14px"><label>Choisissez vos prestations</label><div class="actlist">${actRows}</div>
         ${minActPrice(m.svc)<TRAVEL_MIN?`<p class="mini" style="margin-top:8px">${I.pin} Déplacement <b>offert dès ${TRAVEL_MIN} €</b> de prestation — sinon forfait de ${TRAVEL_FEE} €.</p>`:''}</div>
 
+      ${canOnSite(m.svc)?`<div class="field"><label>Lieu de la prestation</label><div class="segs"><button class="seg ${locModeOf(m)!=='salon'?'on':''}" data-loc="domicile">🏠 À domicile</button><button class="seg ${locModeOf(m)==='salon'?'on':''}" data-loc="salon">🏪 Chez le prestataire</button></div><p class="mini" style="margin-top:6px">${locModeOf(m)==='salon'?'Vous vous rendrez chez le prestataire — son adresse vous sera communiquée dès qu’il accepte.':'Le prestataire se déplace chez vous.'}</p></div>`:''}
       ${needsPeople(m.svc)?`<div class="field"><label>Pour combien de personnes&nbsp;?</label><div class="stepper"><button data-cfg="people-minus">−</button><span class="val">👥 ${peopleLbl(peopleOf(m))}</span><button data-cfg="people-plus">+</button></div><p class="mini" style="margin-top:6px">Le prix ci-dessous est multiplié par le nombre de personnes — chacune sa prestation.</p></div>`:''}
 
       <div class="field"><label>Quand&nbsp;?</label>${daySelect}</div>
@@ -7761,13 +7817,13 @@
       <div class="field"><label>Photos (facultatif)</label>
         <div class="thumbs">${(m.photos||[]).map((u,i)=>`<div class="thumb"><img src="${u}" alt="Photo"><button data-act="rmphoto:${i}" aria-label="Retirer la photo">×</button></div>`).join('')}<label class="thumb add"><span>${I.camera}</span><span>Photo</span><input type="file" accept="image/*" capture="environment" data-photoinput hidden></label><label class="thumb add"><span>${I.image}</span><span>Galerie</span><input type="file" accept="image/*" multiple data-photoinput hidden></label></div></div>
 
-      <div class="field"><label>Adresse de la prestation</label>
+      ${locModeOf(m)==='salon'?`<div class="field"><label>Lieu du rendez-vous</label><div class="banner teal" style="margin-top:2px">${I.pin}<span>Vous vous rendez <b>chez le prestataire</b>. Son adresse exacte s’affiche ici <b>dès qu’il accepte</b> votre demande.</span></div></div>`:`<div class="field"><label>Adresse de la prestation</label>
         ${S.addresses.length?`<div class="stack" style="gap:8px;margin-top:2px">
           ${S.addresses.map(a=>`<button class="addr-opt${m.addressId===a.id?' on':''}" data-addr="${a.id}"><div class="row between"><b>${esc(a.label)}</b>${a.geo?`<span class="chip good" style="padding:2px 8px">${I.pin} GPS</span>`:`<span class="chip coral" style="padding:2px 8px">GPS manquant</span>`}</div><div class="mini" style="margin-top:2px">${esc(a.address)} · ${a.zone}</div></button>`).join('')}
           <button class="addr-opt${m.addressId==='__manual'?' on':''}" data-addr="__manual"><b>＋ Autre adresse (ponctuelle)</b></button>
         </div>`:''}
         ${m.addressId==='__manual'?`<div class="card" style="padding:14px;margin-top:10px"><div class="field" style="margin-top:0"><label style="font-size:12px">Adresse / description du lieu</label><input class="txt" data-addrmanual value="${esc(m.address||'')}" placeholder="Ex. Villa des Amis, Saline"></div><div class="field"><label style="font-size:12px">Secteur</label>${zoneSelect}</div><div class="field"><label style="font-size:12px">Point GPS</label><button class="btn ghost sm" data-cfg="geoloc">📍 ${m.geo?'Actualiser le point GPS':'Enregistrer le point GPS'}</button>${m.geo?miniMap(m.geo,'edit','draft'):''}</div><div class="field" style="margin-bottom:0"><label style="font-size:12px">${I.key} Infos d'accès</label><textarea rows="2" data-addraccess placeholder="Ex. Code portail 4521 · clé sous le pot">${esc(m.access||'')}</textarea></div></div>`:''}
-      </div>
+      </div>`}
 
       <div class="est">${nSel?m.acts.map(a=>`<div class="line"><span>${esc(a.nm)}</span><b>${eur(a.price*(a.qty||1))}</b></div>`).join(''):`<div class="line"><span style="color:var(--muted)">Aucune prestation sélectionnée</span><b>—</b></div>`}${(nSel&&needsPeople(m.svc)&&t.people>1)?`<div class="line"><span>👥 Pour ${peopleLbl(t.people)} (× ${t.people})</span><b>${eur(t.sub)}</b></div>`:''}${t.travel?`<div class="line"><span>${I.pin} Forfait déplacement</span><b>+${eur(t.travel)}</b></div>`:''}${(nSel&&!t.travel)?`<div class="line"><span style="color:var(--good)">${I.check} Déplacement offert</span><b style="color:var(--good)">0 €</b></div>`:''}<div class="total"><span>Total</span><b>${nSel?eur(t.total):'—'}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité${S.card?` (sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — encaissement agréé)`:` (moyen de paiement demandé juste après, via Mollie)`}. Aucun supplément sans votre accord.</small></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm"${nSel?'':' disabled'}>${I.search} Trouver un pro${nSel?' · '+eur(t.total):''}</button>${nSel?'':`<p class="mini" style="text-align:center;margin-top:8px;color:var(--muted)">Cochez au moins une prestation pour continuer.</p>`}</div>
@@ -7805,13 +7861,14 @@
       ${pastArtisans().length?`<div class="field"><label>Un artisan en particulier&nbsp;?</label><div class="segs"><button class="seg ${!m.preferredUid?'on':''}" data-prefart="">Peu importe</button>${pastArtisans().map(a=>`<button class="seg ${m.preferredUid===a.uid?'on':''}" data-prefart="${esc(a.uid)}" data-prefnm="${esc(a.nm)}">${esc(a.nm.split(' ')[0])}</button>`).join('')}</div>${m.preferredUid?`<p class="mini" style="margin-top:6px">${I.clock} Adressée <b>uniquement à ${esc((m.preferredName||'').split(' ')[0])}</b>. S'il ne l'accepte pas, elle est automatiquement proposée à tous les artisans — vous n'êtes jamais bloqué.</p>`:''}</div>`:''}
       ${m.svc==='baby'?`<p class="mini" style="margin-top:6px">${I.shield} La baby-sitter qui accepte vous sera présentée (photo, diplômes, présentation) et <b>vous pourrez l'appeler</b> avant de confirmer la garde.</p>`:''}
       <div class="field"><label>Tarif ${isDayU(m)?'journalier':'horaire'} — prix fixe Ti-Services</label><div class="pricebox"><b class="money" style="font-size:22px;font-family:var(--f-disp)">${fixedRate(m)} ${rateUnit(m)}</b><span class="chip good" style="padding:3px 9px">${I.check} Prix fixe</span></div></div>
+      ${canOnSite(m.svc)?`<div class="field"><label>Lieu de la prestation</label><div class="segs"><button class="seg ${locModeOf(m)!=='salon'?'on':''}" data-loc="domicile">🏠 À domicile</button><button class="seg ${locModeOf(m)==='salon'?'on':''}" data-loc="salon">🏪 Chez le prestataire</button></div><p class="mini" style="margin-top:6px">${locModeOf(m)==='salon'?'Vous vous rendrez chez le prestataire — son adresse vous sera communiquée dès qu’il accepte.':'Le prestataire se déplace chez vous.'}</p></div>`:''}
       ${needsPeople(m.svc)?`<div class="field"><label>Nombre de participants</label><div class="stepper"><button data-cfg="people-minus">−</button><span class="val">👥 ${peopleLbl(peopleOf(m))}</span><button data-cfg="people-plus">+</button></div><p class="mini" style="margin-top:6px">Le prix est multiplié par le nombre de personnes — chacune sa prestation.</p></div>`:''}
       <div class="field"><label>${isDayU(m)?'Nombre de jours':'Durée estimée'}</label><div class="stepper"><button data-cfg="minus">−</button><span class="val">${durTxt(m)}</span><button data-cfg="plus">+</button></div>${isDayU(m)?`<p class="mini" style="margin-top:6px">📅 Du ${endDateTxt(m)} · ${durTxt(m)} de garde</p>`:''}</div>
       <div class="field"><label>Décrivez votre besoin</label><textarea rows="3" data-cfg="notes" placeholder="${PLACEHOLDERS[m.svc]||'Décrivez précisément la prestation…'}">${esc(m.notes)}</textarea></div>
       <div class="field"><label>Photos (facultatif)</label>
         <div class="thumbs">${(m.photos||[]).map((u,i)=>`<div class="thumb"><img src="${u}" alt="Photo de la prestation"><button data-act="rmphoto:${i}" aria-label="Retirer la photo">×</button></div>`).join('')}<label class="thumb add"><span>${I.camera}</span><span>Photo</span><input type="file" accept="image/*" capture="environment" data-photoinput hidden></label><label class="thumb add"><span>${I.image}</span><span>Galerie</span><input type="file" accept="image/*" multiple data-photoinput hidden></label></div>
         </div>
-      <div class="field"><label>Adresse de la prestation</label>
+      ${locModeOf(m)==='salon'?`<div class="field"><label>Lieu du rendez-vous</label><div class="banner teal" style="margin-top:2px">${I.pin}<span>Vous vous rendez <b>chez le prestataire</b>. Son adresse exacte s’affiche ici <b>dès qu’il accepte</b> votre demande.</span></div></div>`:`<div class="field"><label>Adresse de la prestation</label>
         ${S.addresses.length?`<div class="stack" style="gap:8px;margin-top:2px">
           ${S.addresses.map(a=>`<button class="addr-opt${m.addressId===a.id?' on':''}" data-addr="${a.id}"><div class="row between"><b>${esc(a.label)}</b>${a.geo?`<span class="chip good" style="padding:2px 8px">${I.pin} GPS</span>`:`<span class="chip coral" style="padding:2px 8px">GPS manquant</span>`}</div><div class="mini" style="margin-top:2px">${esc(a.address)} · ${a.zone}</div></button>`).join('')}
           <button class="addr-opt${m.addressId==='__manual'?' on':''}" data-addr="__manual"><b>＋ Autre adresse (ponctuelle)</b><div class="mini" style="margin-top:2px">Un lieu occasionnel, non enregistré</div></button>
@@ -7829,7 +7886,7 @@
           
           </div>
         `:`${m.geo?`<div class="banner teal" style="margin-top:10px">${I.pin}<span><b>Point GPS déjà enregistré</b> depuis votre fiche.</span></div>`:`<p class="mini" style="margin-top:8px;color:var(--muted)">Cette adresse n'a pas de point GPS — ajoutez-le dans votre profil.</p>`}`}
-      </div>
+      </div>`}
       <div class="est"><div class="line"><span>${m.svcName} · ${t.rate} ${rateUnit(m)} × ${durTxt(m)}${(needsPeople(m.svc)&&t.people>1)?' × '+t.people+' pers.':''}</span><b>${eur(t.sub)}</b></div><div class="total"><span>Total</span><b>${eur(t.total)}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité ${S.card?`(sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — encaissement agréé)`:`(moyen de paiement demandé juste après, via Mollie — encaissement agréé)`}. Aucun supplément sans votre accord.</small></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm">${I.search} Trouver un artisan · ${eur(t.total)}</button></div></div>`,'config');
     if(S._focusAddr){S._focusAddr=false;setTimeout(function(){const el=document.getElementById('manualAddr');if(el){try{el.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){el.scrollIntoView();}const inp=el.querySelector('[data-addrmanual]');if(inp)try{inp.focus({preventScroll:true});}catch(_){}}},70);}
@@ -8340,7 +8397,10 @@
           if(ad.avail&&typeof ad.avail==='object')S.avail=ad.avail;
           if(typeof ad.online==='boolean')S.proOnline=ad.online;
           if(typeof ad.notifPush==='boolean')S.proNotifPush=ad.notifPush;
-          if(typeof ad.notifWa==='boolean')S.proNotifWa=ad.notifWa; }
+          if(typeof ad.notifWa==='boolean')S.proNotifWa=ad.notifWa;
+          // Lieu d'intervention : 'domicile' (se déplace), 'salon' (reçoit chez lui), 'both'.
+          // Non renseigné (anciens comptes) => 'both' : il continue de voir toutes les demandes.
+          S.proSiteMode=ad.siteMode||'both'; S.proSalonAddress=ad.salonAddress||''; S.proSalonZone=ad.salonZone||'Gustavia'; S.proSalonGeo=ad.salonGeo||null; }
         S.proStatus=(ad&&ad.status==='valide')?'approved':'pending';
         S.onboarded=true;S.authView=null;S.proNav='home';render();
         if(typeof Notification!=='undefined'&&Notification.permission==='granted')registerPush('artisan');
@@ -8424,7 +8484,7 @@
             subscribeClientRequest(docu.id);
             changed=true;
           }
-          m.status=r.status;m.svc=r.service;m.svcName=r.serviceName||svcNm(r.service);m.rate=r.rate;m.duration=r.duration||1;m.unit=r.unit||'h';m.when=r.when||'';m.slot=r.acceptedSlot||r.slot||m.slot||'';m.zone=r.zone||m.zone||'';m.boost=r.boost||0;m.tip=r.tip||0;m.slotFlex=r.slotFlex||0;m.notes=r.notes||m.notes||'';m.frequency=r.frequency||m.frequency||'ponctuelle';m.people=r.people||m.people||1;
+          m.status=r.status;m.svc=r.service;m.svcName=r.serviceName||svcNm(r.service);m.rate=r.rate;m.duration=r.duration||1;m.unit=r.unit||'h';m.when=r.when||'';m.slot=r.acceptedSlot||r.slot||m.slot||'';m.zone=r.zone||m.zone||'';m.boost=r.boost||0;m.tip=r.tip||0;m.slotFlex=r.slotFlex||0;m.notes=r.notes||m.notes||'';m.frequency=r.frequency||m.frequency||'ponctuelle';m.people=r.people||m.people||1;m.locationMode=r.locationMode||m.locationMode||'domicile';m.providerSalonAddress=r.providerSalonAddress||m.providerSalonAddress||'';m.providerSalonZone=r.providerSalonZone||m.providerSalonZone||'';m.providerSalonGeo=r.providerSalonGeo||m.providerSalonGeo||null;
           m.dateISO=r.dateISO||m.dateISO||'';if(r.createdAt&&r.createdAt.toMillis)m._createdMs=r.createdAt.toMillis();
           // Demande DIRIGÉE : restaurer l'artisan visé pour afficher le bon écran de suivi
           // (« réservée à X ») au lieu du générique. Vidé si la demande a été rouverte à tous.
@@ -8827,8 +8887,12 @@
           notify('Demande réservée pour vous',who+' vous demande directement pour '+(r.serviceName||svcNm(r.service))+' — hors file d’attente.','ti-directed-'+id,function(){S.persona='pro';S.mission=null;S.proReqView=rid;S.proNav='home';render();});
           if(S.persona==='pro')toast(who+' vous demande directement · '+(r.serviceName||svcNm(r.service)));
         });}catch(_){}
+        const mySite=S.proSiteMode||'both';
         snap.forEach(function(d){const r=d.data()||{};
           if(cats.length&&cats.indexOf(r.service)<0)return;
+          // Filtre LIEU : un artisan « domicile seul » ne voit pas les demandes « en salon »
+          // et inversement. « Les deux » (ou métier non concerné) voit tout.
+          if(canOnSite(r.service)&&!siteMatches(mySite,r.locationMode||'domicile'))return;
           // Demande dirigée vers un artisan précis (choix / renouvellement) : lui seul
           // la voit. Pas de repli automatique — elle ne s'ouvre aux autres que si le
           // client le décide APRÈS un refus de l'artisan demandé.
@@ -8864,6 +8928,9 @@
       // Garde d'enfants : le client voit en plus le PROFIL COMPLET (présentation,
       // diplômes) et confirme avant le début.
       if(req.service==='baby'){acc.providerBio=S.proBio||'';acc.providerDiplomas=(S.proDiplomas||[]).slice(0,8);acc.clientConfirmed=false;}
+      // Prestation CHEZ LE PRESTATAIRE : on transmet au client l'adresse du salon/studio
+      // (avec le point GPS) dès l'acceptation, pour qu'il sache clairement où se rendre.
+      if((req.locationMode||'domicile')==='salon'){acc.providerSalonAddress=S.proSalonAddress||'';acc.providerSalonZone=S.proSalonZone||'';acc.providerSalonGeo=S.proSalonGeo||null;}
       await FB.f.updateDoc(FB.f.doc(FB.db,'requests',reqId),acc);
       let det={};try{const s=await FB.f.getDoc(FB.f.doc(FB.db,'requests',reqId,'private','details'));det=s.exists()?s.data():{};}catch(_){}
       const base=findSvc(req.service)||{id:req.service,nm:req.serviceName||svcNm(req.service),rate:req.rate||svcBase(req.service)};
@@ -8904,7 +8971,7 @@
     if(S._openReqLoading&&!list.length)return `<div style="margin-top:12px"><span class="eyebrow" style="color:var(--teal-deep)">${I.flame} Missions disponibles</span>${reqSkeleton(2)}</div>`;
     if(!list.length)return `<div class="card" style="padding:18px;margin-top:12px;text-align:center;border-style:dashed"><div class="radar sm"><div class="ring r1"></div><div class="ring r2"></div><div class="core bare">${octoMini(64,'bob')}</div></div><p class="sub" style="margin:6px 0 0">Aucune mission disponible pour l'instant.</p><p class="mini" style="margin-top:4px">Vous serez notifié dès qu'une demande de votre zone arrive.</p></div>`;
     const myUid=(FB&&FB.auth&&FB.auth.currentUser)?FB.auth.currentUser.uid:'';
-    return `<div style="margin-top:12px"><span class="eyebrow" style="color:var(--teal-deep)">${I.flame} Missions disponibles · ${list.length}</span>${list.map(function(r){const win=reqWinTxt(r);const forMe=(r.preferredProviderUid&&r.preferredProviderUid===myUid);return `<div class="swipe-row"><button class="swipe-del skip" data-act="pro-skip:${r.id}" aria-label="Passer cette mission">Passer</button><button class="card swipe-card" data-act="reqview:${r.id}" style="padding:14px;width:100%;text-align:left;display:block${forMe?';border-left:4px solid var(--teal-deep)':''}"><div class="row between"><b style="font-size:14px">${esc(r.serviceName||svcNm(r.service))}</b><b class="money" style="color:var(--teal-deep);font-family:var(--f-disp)">${eur(reqPayout(r))}</b></div>${forMe?`<span class="chip" style="padding:2px 9px;background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.star} Demande réservée pour vous</span>`:''}<div class="mini" style="margin-top:4px">${I.pin} ${esc(r.zone||'')} · ${esc(r.when||'')} · ${esc(win)} · ${r.duration||1} ${r.unit==='j'?'j':'h'}${(needsPeople(r.service)&&(Number(r.people)||1)>1)?' · 👥 '+peopleLbl(Number(r.people)||1):''}</div>${r.boost?`<span class="chip" style="padding:2px 9px;background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.bolt} Coup de pouce +${r.boost}%</span>`:''}<div class="row between" style="margin-top:10px"><span class="mini" style="color:var(--muted)">${r.notes?'Détails du besoin fournis':'Voir la mission'}</span><span class="mini" style="color:var(--teal-deep);font-weight:700">Voir la fiche ›</span></div></button></div>`;}).join('')}</div>`;
+    return `<div style="margin-top:12px"><span class="eyebrow" style="color:var(--teal-deep)">${I.flame} Missions disponibles · ${list.length}</span>${list.map(function(r){const win=reqWinTxt(r);const forMe=(r.preferredProviderUid&&r.preferredProviderUid===myUid);return `<div class="swipe-row"><button class="swipe-del skip" data-act="pro-skip:${r.id}" aria-label="Passer cette mission">Passer</button><button class="card swipe-card" data-act="reqview:${r.id}" style="padding:14px;width:100%;text-align:left;display:block${forMe?';border-left:4px solid var(--teal-deep)':''}"><div class="row between"><b style="font-size:14px">${esc(r.serviceName||svcNm(r.service))}</b><b class="money" style="color:var(--teal-deep);font-family:var(--f-disp)">${eur(reqPayout(r))}</b></div>${forMe?`<span class="chip" style="padding:2px 9px;background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.star} Demande réservée pour vous</span>`:''}<div class="mini" style="margin-top:4px">${I.pin} ${esc(r.zone||'')} · ${esc(r.when||'')} · ${esc(win)} · ${r.duration||1} ${r.unit==='j'?'j':'h'}${(needsPeople(r.service)&&(Number(r.people)||1)>1)?' · 👥 '+peopleLbl(Number(r.people)||1):''}${canOnSite(r.service)?' · '+(r.locationMode==='salon'?'🏪 chez vous':'🏠 domicile'):''}</div>${r.boost?`<span class="chip" style="padding:2px 9px;background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.bolt} Coup de pouce +${r.boost}%</span>`:''}<div class="row between" style="margin-top:10px"><span class="mini" style="color:var(--muted)">${r.notes?'Détails du besoin fournis':'Voir la mission'}</span><span class="mini" style="color:var(--teal-deep);font-weight:700">Voir la fiche ›</span></div></button></div>`;}).join('')}</div>`;
   }
   // Alerte de conflit d'agenda : l'artisan a déjà une intervention qui chevauche
   // ce créneau. Il confirme explicitement qu'il peut assurer, sinon « passe son tour ».
@@ -8953,12 +9020,13 @@
         <div class="row between" style="margin-top:8px"><span class="sub">${I.clock} ${dayU?'Dépôt':'Heure'}</span><b>${esc(win||'—')}</b></div>
         ${(r.acts&&r.acts.length)?`<div class="row between" style="margin-top:8px;align-items:flex-start"><span class="sub">Prestations</span><b style="text-align:right;max-width:60%">${r.acts.map(function(a){return esc(a.nm)+((a.qty||1)>1?' ×'+a.qty:'');}).join('<br>')}</b></div>`:`<div class="row between" style="margin-top:8px"><span class="sub">${dayU?'Durée':'Durée estimée'}</span><b>${r.duration||1} ${dayU?'j':'h'}</b></div>`}`}
         ${(needsPeople(r.service)&&(Number(r.people)||1)>1)?`<div class="row between" style="margin-top:8px"><span class="sub">👥 Participants</span><b>${peopleLbl(Number(r.people)||1)}</b></div>`:''}
+        ${canOnSite(r.service)?`<div class="row between" style="margin-top:8px"><span class="sub">📍 Lieu</span><b>${(r.locationMode==='salon')?'🏪 Chez vous (le client vient)':'🏠 Chez le client'}</b></div>`:''}
         ${(r.frequency&&r.frequency!=='ponctuelle')?`<div class="row between" style="margin-top:8px"><span class="sub">Fréquence</span><b>${I.repeat} ${esc(freqInfo(r.frequency).short)}</b></div>`:''}
       </div>
       ${r.slotFlex?flexProposalBlock(r):''}
       ${(r.photos&&r.photos.length)?`<div class="card" style="padding:14px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">${I.camera} Photos du client</div><div class="thumbs" style="margin-top:8px">${r.photos.map(function(u){return `<div class="thumb"><img class="viewable" data-docname="photo-demande" src="${esc(u)}" alt="Photo de la demande — appuyer pour agrandir"></div>`;}).join('')}</div></div>`:''}
       ${r.notes?`<div class="card" style="padding:16px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Le besoin du client</div><p class="sub" style="margin-top:6px;color:var(--ink-soft);white-space:pre-wrap">${esc(r.notes)}</p></div>`:''}
-      <div class="card" style="padding:14px;margin-top:12px"><div class="row" style="gap:10px;align-items:flex-start"><span class="benic">${I.lock}</span><div><b style="font-size:13px">Adresse exacte masquée</b><p class="mini" style="margin-top:3px">L'adresse précise, le point GPS et les infos d'accès s'affichent <b>dès que vous acceptez</b> la mission.</p></div></div></div>
+      ${(r.locationMode==='salon')?`<div class="card" style="padding:14px;margin-top:12px"><div class="row" style="gap:10px;align-items:flex-start"><span class="benic">🏪</span><div><b style="font-size:13px">Chez vous — le client se déplace</b><p class="mini" style="margin-top:3px">Cette prestation a lieu dans <b>votre salon / studio</b>. En acceptant, votre adresse est communiquée au client pour qu'il vous rejoigne. ${S.proSalonAddress?'':'⚠︎ Renseignez d’abord l’adresse de votre salon dans votre profil.'}</p></div></div></div>`:`<div class="card" style="padding:14px;margin-top:12px"><div class="row" style="gap:10px;align-items:flex-start"><span class="benic">${I.lock}</span><div><b style="font-size:13px">Adresse exacte masquée</b><p class="mini" style="margin-top:3px">L'adresse précise, le point GPS et les infos d'accès s'affichent <b>dès que vous acceptez</b> la mission.</p></div></div></div>`}
       <div class="footcta" style="position:static;background:none;padding:18px 0 0">
         <button class="btn accept" data-act="accept-req:${r.id}">${I.flame} Accepter${accLabel||' cette mission'}</button>
         ${directedMe

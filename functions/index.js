@@ -20,6 +20,17 @@ const {getMessaging} = require('firebase-admin/messaging');
 initializeApp();
 setGlobalOptions({region: 'europe-west1', maxInstances: 5});
 
+// Métiers pouvant se pratiquer au domicile du client OU chez le prestataire (salon).
+const CAN_ON_SITE = ['sport', 'coach', 'natation', 'pilates', 'yoga', 'massage', 'coiffure', 'beaute'];
+// Un artisan est-il éligible à une demande selon le LIEU ? Un « domicile seul » ne reçoit
+// pas les demandes « salon », et inversement. Mode absent ('both' par défaut) => tout voir.
+function siteOk(artisan, svc, locMode) {
+  if (CAN_ON_SITE.indexOf(svc) < 0) return true;
+  const sm = (artisan && artisan.siteMode) || 'both';
+  if (sm === 'both') return true;
+  return sm === (locMode || 'domicile');
+}
+
 /* ============================================================================
  * MOLLIE CONNECT — activation des paiements artisans + versement automatique.
  *
@@ -262,7 +273,7 @@ exports.notifyArtisansNewRequest = onDocumentCreated('requests/{reqId}', async (
   // Artisans validés (filtrage du service en mémoire : pas d'index composite requis).
   const artsSnap = await db.collection('artisans').where('status', '==', 'valide').get();
   const uids = artsSnap.docs
-    .filter((d) => { const c = (d.data() || {}).cats || []; return !svc || c.indexOf(svc) >= 0; })
+    .filter((d) => { const dd = d.data() || {}; const c = dd.cats || []; return (!svc || c.indexOf(svc) >= 0) && siteOk(dd, svc, r.locationMode); })
     .map((d) => d.id);
   if (!uids.length) { console.log('Aucun artisan validé pour ce service.'); return; }
 
@@ -742,7 +753,7 @@ exports.notifyBoosted = onDocumentUpdated('requests/{reqId}', async (event) => {
   const db = getFirestore();
   const artsSnap = await db.collection('artisans').where('status', '==', 'valide').get();
   const uids = artsSnap.docs
-    .filter((d) => { const c = (d.data() || {}).cats || []; return !svc || c.indexOf(svc) >= 0; })
+    .filter((d) => { const dd = d.data() || {}; const c = dd.cats || []; return (!svc || c.indexOf(svc) >= 0) && siteOk(dd, svc, after.locationMode); })
     .map((d) => d.id);
   if (!uids.length) return;
   // « Re-solliciter TOUS les artisans, même ceux qui avaient passé » : on RETIRE cette
@@ -1021,7 +1032,7 @@ exports.notifyReopenedRequest = onDocumentUpdated('requests/{reqId}', async (eve
   try {
     const artsSnap = await db.collection('artisans').where('status', '==', 'valide').get();
     let uids = artsSnap.docs
-      .filter((d) => { const c = (d.data() || {}).cats || []; return (!svc || c.indexOf(svc) >= 0) && d.id !== exclude; })
+      .filter((d) => { const dd = d.data() || {}; const c = dd.cats || []; return (!svc || c.indexOf(svc) >= 0) && d.id !== exclude && siteOk(dd, svc, after.locationMode); })
       .map((d) => d.id);
     const preferred = after.directed ? (after.preferredProviderUid || '') : '';
     if (preferred) uids = uids.indexOf(preferred) >= 0 ? [preferred] : [];
