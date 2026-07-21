@@ -1743,23 +1743,40 @@ exports.welcomeClientEmail = onDocumentCreated({document: 'users/{uid}', secrets
  * complète. Sûr : n'envoie qu'à l'adresse admin, jamais à une adresse fournie.
  */
 exports.emailDiag = onRequest({secrets: [SMTP_PASS]}, async (req, res) => {
-  const hasKey = !!(process.env.SMTP_PASS || '');
-  const out = {smtpConfigured: hasKey, from: MAIL_FROM_EMAIL, to: ADMIN_EMAIL, sent: false, note: ''};
-  if (!hasKey) {
-    out.note = 'SMTP_PASS absent — aucun e-mail ne peut partir directement. Définissez le secret puis redéployez.';
+  const pass = process.env.SMTP_PASS || '';
+  // Paramètres de test ajustables : ?port=587 (STARTTLS) ou ?port=465 (SSL, défaut).
+  const port = (String(req.query.port || '') === '587') ? 587 : SMTP_PORT;
+  const out = {smtpConfigured: !!pass, host: SMTP_HOST, port, user: MAIL_FROM_EMAIL, passLen: pass.length, sent: false};
+  if (!pass) {
+    out.note = 'SMTP_PASS absent — définissez le secret puis redéployez.';
     res.status(200).json(out); return;
   }
   try {
-    const ok = await sendMail(getFirestore(), ADMIN_EMAIL, {
-      subject: 'Test Ti-Services ✅ — envoi d\'e-mail opérationnel',
-      html: '<p>Ceci est un e-mail de test envoyé par <b>emailDiag</b>.</p>' +
-            '<p>Si vous le recevez, la configuration d\'envoi (Brevo) fonctionne : ' +
-            'bienvenue, factures et notifications partiront normalement.</p>',
+    const nodemailer = require('nodemailer');
+    const tx = nodemailer.createTransport({
+      host: SMTP_HOST, port, secure: (port === 465),
+      auth: {user: MAIL_FROM_EMAIL, pass},
+      connectionTimeout: 15000, greetingTimeout: 15000,
     });
-    out.sent = ok;
-    out.note = ok ? 'E-mail de test envoyé — vérifiez la boîte de réception (et les spams).'
-      : 'Échec de l\'envoi Brevo — voir les logs de la fonction (clé invalide ou expéditeur non vérifié ?).';
-  } catch (e) { out.note = 'Erreur : ' + (e && e.message); }
+    try { await tx.verify(); out.verify = 'ok'; } catch (ve) {
+      out.verify = 'échec';
+      out.error = {message: ve && ve.message, code: ve && ve.code, response: ve && ve.response, responseCode: ve && ve.responseCode};
+      out.note = 'Connexion/authentification SMTP refusée — voir le champ error.';
+      res.status(200).json(out); return;
+    }
+    const info = await tx.sendMail({
+      from: '"' + MAIL_FROM_NAME + '" <' + MAIL_FROM_EMAIL + '>',
+      to: ADMIN_EMAIL,
+      subject: 'Test Ti-Services — envoi d\'e-mail operationnel',
+      html: '<p>Ceci est un e-mail de test envoye par emailDiag.</p>' +
+            '<p>Si vous le recevez, l\'envoi SMTP fonctionne : bienvenue, factures et notifications partiront normalement.</p>',
+    });
+    out.sent = true; out.messageId = info && info.messageId;
+    out.note = 'E-mail de test envoye a ' + ADMIN_EMAIL + ' — verifiez la reception (et les spams).';
+  } catch (e) {
+    out.error = {message: e && e.message, code: e && e.code, response: e && e.response, responseCode: e && e.responseCode, command: e && e.command};
+    out.note = 'Echec de l\'envoi SMTP — voir le champ error.';
+  }
   res.status(200).json(out);
 });
 
