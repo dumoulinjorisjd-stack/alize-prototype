@@ -6980,25 +6980,44 @@
   }
   function svcName(id){const s=SERVICES.find(x=>x.id===id);return s?s.nm:id;}
   function fmtLong(iso){if(!iso)return '';const M=['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];const p=iso.split('-');if(p.length<3)return iso;return (+p[2])+' '+M[(+p[1])-1]+' '+p[0];}
-  function proInterventions(){
-    const list=S.proHistory||[];
-    const total=list.reduce((t,h)=>t+histBreakdown(h).net,0);
-    // Factures par mission CLASSÉES PAR CLIENT : on regroupe l'historique par nom de client
-    // (clients triés alphabétiquement) pour que l'artisan s'y retrouve d'un coup d'œil.
-    const invCard=function(h){const b=histBreakdown(h);return `<div class="card interv-row"><div class="row between"><b style="font-size:14px">${svcName(h.svc)}</b><span class="money" style="font-weight:700">${eur(b.net)}</span></div>
+  // Une ligne-facture (mission) — affichée dans le détail d'un client.
+  function proInvCard(h){const b=histBreakdown(h);return `<div class="card interv-row"><div class="row between"><b style="font-size:14px">${svcName(h.svc)}</b><span class="money" style="font-weight:700">${eur(b.net)}</span></div>
       <div class="mini" style="margin-top:3px">${fmtLong(h.dateISO)} · ${durTxt({unit:h.unit},h.duration)}</div>
       ${b.commission>0?`<div class="mini" style="margin-top:4px;color:var(--muted)">Prestation ${eur(b.gross)} · commission Ti-Services −${eur(b.commission)} (${b.pct}&nbsp;%)</div>`:''}
       ${(h.tip>0)?`<div class="mini" style="margin-top:4px;color:var(--good);font-weight:650">💛 dont ${eur(h.tip)} de pourboire du client (100&nbsp;% pour vous)</div>`:''}
-      <div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap;align-items:center"><span class="chip good" style="padding:3px 9px">${I.check} Réglée · ${esc(h.invNo)}</span><button class="btn ghost sm" style="width:auto;padding:8px 12px" data-act="invoice:${h.id}">${I.card}&nbsp;Facture</button>${b.commission>0?`<button class="btn ghost sm" style="width:auto;padding:8px 12px" data-act="comm-invoice:${h.id}">${I.card}&nbsp;Commission</button>`:''}</div></div>`;};
+      <div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap;align-items:center"><span class="chip good" style="padding:3px 9px">${I.check} Réglée · ${esc(h.invNo)}</span><button class="btn ghost sm" style="width:auto;padding:8px 12px" data-act="invoice:${h.id}">${I.card}&nbsp;Facture</button>${b.commission>0?`<button class="btn ghost sm" style="width:auto;padding:8px 12px" data-act="comm-invoice:${h.id}">${I.card}&nbsp;Commission</button>`:''}</div></div>`;}
+  function proClientAgg(gs){var net=0,tips=0;gs.forEach(function(h){net+=histBreakdown(h).net;tips+=Number(h.tip)||0;});return {net:Math.round(net*100)/100,tips:Math.round(tips*100)/100,count:gs.length};}
+  // Factures par mission, organisées PAR CLIENT : d'abord une FICHE par client (montant
+  // global de ses missions + pourboires) ; on clique dessus pour voir ses factures.
+  function proInterventions(){
+    const list=S.proHistory||[];
     var _grp={},_ord=[];(list||[]).forEach(function(h){var k=((h.clientFull||h.client||'Client')+'').trim()||'Client';if(!_grp[k]){_grp[k]=[];_ord.push(k);}_grp[k].push(h);});
     _ord.sort(function(a,b){return a.localeCompare(b,'fr',{sensitivity:'base'});});
-    const rows=list.length?_ord.map(function(k){var gs=_grp[k];var gnet=gs.reduce(function(t,h){return t+histBreakdown(h).net;},0);return `<div class="eyebrow" style="margin:18px 4px 4px;color:var(--muted);display:flex;justify-content:space-between;align-items:center"><span>👤 ${esc(k)}</span><span style="color:var(--muted);font-weight:600">${gs.length} mission${gs.length>1?'s':''} · ${eur(gnet)}</span></div>`+gs.map(invCard).join('');}).join(''):`<div class="card" style="padding:24px;text-align:center;color:var(--muted);margin-top:12px">Aucune intervention réalisée pour l'instant.<br>Vos prestations terminées apparaîtront ici avec leur facture.</div>`;
+    // DÉTAIL d'un client : ses factures + son montant global et ses pourboires.
+    if(S.invClient&&_grp[S.invClient]){
+      const gs=_grp[S.invClient];const ag=proClientAgg(gs);
+      return `<div class="pad"><button class="reset" data-act="invclient-back" style="margin:8px 0 2px">← Tous les clients</button>
+        <span class="eyebrow">${I.card} Fiche client</span>
+        <div class="h-hello">👤 ${esc(S.invClient)}</div>
+        <div class="card" style="padding:15px;margin-top:12px"><div class="row between"><div><div class="mini">Montant des missions</div><b class="money" style="font-size:19px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(ag.net)}</b></div><div style="text-align:right"><div class="mini">💛 Pourboires</div><b class="money" style="font-size:19px;font-family:var(--f-disp);color:var(--good)">${eur(ag.tips)}</b></div></div><div class="mini" style="margin-top:8px;color:var(--muted)">${ag.count} mission${ag.count>1?'s':''} réglée${ag.count>1?'s':''} — pourboires inclus dans le montant, 100&nbsp;% pour vous.</div></div>
+        <div class="eyebrow" style="margin:18px 4px 6px;color:var(--muted)">Factures</div>
+        ${gs.map(proInvCard).join('')}
+        <div style="height:10px"></div></div>${proNavbar()}`;
+    }
+    // LISTE des clients : une fiche par client (montant global + pourboires), cliquable.
+    const total=list.reduce((t,h)=>t+histBreakdown(h).net,0);
+    const totalTips=list.reduce((t,h)=>t+(Number(h.tip)||0),0);
+    const cards=list.length?_ord.map(function(k){var gs=_grp[k];var ag=proClientAgg(gs);return `<button class="card" data-invclient="${esc(k)}" style="padding:15px;margin-top:10px;width:100%;text-align:left;display:block">
+        <div class="row between" style="align-items:center"><b style="font-size:15px">👤 ${esc(k)}</b><b class="money" style="font-weight:800;color:var(--teal-deep);font-family:var(--f-disp)">${eur(ag.net)}</b></div>
+        <div class="row between" style="margin-top:5px"><span class="mini" style="color:var(--muted)">${ag.count} mission${ag.count>1?'s':''} · montant global</span>${ag.tips>0?`<span class="mini" style="color:var(--good);font-weight:650">💛 ${eur(ag.tips)} de pourboires</span>`:''}</div>
+        <div class="mini" style="margin-top:8px;text-align:right;color:var(--teal-deep);font-weight:700">Voir les factures ›</div>
+      </button>`;}).join(''):`<div class="card" style="padding:24px;text-align:center;color:var(--muted);margin-top:12px">Aucune intervention réalisée pour l'instant.<br>Vos prestations terminées apparaîtront ici, classées par client.</div>`;
     return `<div class="pad"><button class="reset" data-act="close-interv" style="margin:8px 0 2px">← Retour</button>
       <span class="eyebrow">${I.card} Comptabilité</span>
-      <div class="h-hello">Mes interventions</div>
-      <div class="card" style="padding:15px;margin-top:12px"><div class="row between"><div><div class="mini">Interventions réalisées</div><b class="money" style="font-size:19px;font-family:var(--f-disp)">${list.length}</b></div><div style="text-align:right"><div class="mini">Net encaissé</div><b class="money" style="font-size:19px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(total)}</b></div></div></div>
-      <div class="banner teal" style="margin-top:12px">${I.shield}<span>Ti-Services établit vos factures de prestation <b>en votre nom et pour votre compte</b> (mandat de facturation). La <b>commission Ti-Services</b> fait l'objet d'une facture séparée, à votre nom — bouton « Commission ».</span></div>
-      <div style="height:6px"></div>${rows}<div style="height:10px"></div></div>${proNavbar()}`;
+      <div class="h-hello">Mes factures par client</div>
+      <div class="card" style="padding:15px;margin-top:12px"><div class="row between"><div><div class="mini">Net encaissé</div><b class="money" style="font-size:19px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(total)}</b></div><div style="text-align:right"><div class="mini">💛 Pourboires</div><b class="money" style="font-size:19px;font-family:var(--f-disp);color:var(--good)">${eur(totalTips)}</b></div></div><div class="mini" style="margin-top:8px;color:var(--muted)">${list.length} mission${list.length>1?'s':''} · ${_ord.length} client${_ord.length>1?'s':''}</div></div>
+      <div class="banner teal" style="margin-top:12px">${I.shield}<span>Ti-Services établit vos factures de prestation <b>en votre nom et pour votre compte</b>. Choisissez un client pour voir ses factures.</span></div>
+      <div style="height:2px"></div>${cards}<div style="height:10px"></div></div>${proNavbar()}`;
   }
   function proInvoice(){
     const h=(S.proHistory||[]).find(x=>x.id===S.invoiceId);
@@ -7309,7 +7328,7 @@
     // photo du client) s'ouvre en plein écran au clic — consultation sans téléchargement.
     const _iv=e.target.closest&&e.target.closest('img.viewable');
     if(_iv&&_iv.getAttribute('src')){S.imgView={src:_iv.getAttribute('src'),name:_iv.getAttribute('data-docname')||'document'};render();return;}
-    const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actqty],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-loc],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday],[data-tip],[data-pac],[data-sitemode]');
+    const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actqty],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-loc],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday],[data-tip],[data-pac],[data-sitemode],[data-invclient]');
     if(!b)return;
     // Un clic ISSU d'un <input type=file> (notamment déclenché par programme, ex. la
     // feuille « appareil photo / galerie ») remonte jusqu'ici : on ne le traite pas
@@ -7416,6 +7435,7 @@
     if(b.dataset.slotflex!=null){if(S.draft){const v=b.dataset.slotflex;S.draft.slotFlex=(v==='day'||v==='week')?v:(+v);}renderConfig();return;}
     if(b.dataset.loc!=null){if(S.draft){S.draft.locationMode=(b.dataset.loc==='salon')?'salon':'domicile';}renderConfig();return;}
     if(b.dataset.sitemode!=null){S.proSiteMode=b.dataset.sitemode;persistSiteMode();render();return;}
+    if(b.dataset.invclient!=null){S.invClient=b.dataset.invclient;render();return;}
     if(b.dataset.prefart!=null){if(S.draft){S.draft.preferredUid=b.dataset.prefart||null;S.draft.preferredName=b.dataset.prefnm||'';}renderConfig();return;}
     // Garde d'enfants : le client, non convaincu après l'appel, redirige sa demande
     // vers une AUTRE baby-sitter (ou la rouvre à toutes). Libération sans no-show
@@ -7732,8 +7752,9 @@
         if(S.paySaveCard!==false){ S.card=cardObj; saveClientCloud(); }
         else { S.card=null; } // carte à usage unique : jamais conservée
         placeMission();break;}
-      case 'open-interv':S.interv=true;render();break;
-      case 'close-interv':S.interv=false;render();break;
+      case 'open-interv':S.interv=true;S.invClient=null;render();break;
+      case 'close-interv':S.interv=false;S.invClient=null;render();break;
+      case 'invclient-back':S.invClient=null;render();break;
       case 'open-statement':{var n0=new Date();S.stmtPeriod={y:n0.getFullYear(),m:n0.getMonth()};S.proStmt=true;render();break;}
       case 'close-statement':S.proStmt=false;render();break;
       case 'open-comm-statement':{var n1=new Date();S.stmtPeriod={y:n1.getFullYear(),m:n1.getMonth()};S.commStmt=true;render();break;}
