@@ -2379,6 +2379,14 @@
         <p class="sub" style="margin-top:8px">Votre document de <b>${stmtLabel(p)}</b> sera consultable et téléchargeable <b>${stmtAvailDate(p)}</b>. Tant que le mois n'est pas terminé, il serait incomplet — on évite ainsi un relevé faussé.</p>
         <p class="mini" style="margin-top:10px;color:var(--muted)">Utilisez « ← Précédent » pour consulter un mois déjà terminé. Vos factures par prestation, elles, restent disponibles à tout moment.</p>
       </div></div>${proNavbar()}`;}
+  // ATTESTATION ANNUELLE DE REVENUS : récapitulatif des encaissements d'un prestataire sur
+  // une année (brut, commission, net, pourboires), à conserver pour ses déclarations. L'année
+  // en cours est « provisoire » ; les années révolues sont définitives.
+  function stmtYearNow(){return new Date().getFullYear();}
+  function curStmtYear(){if(!S.stmtYear)S.stmtYear=stmtYearNow();return S.stmtYear;}
+  function yearHistory(y){return (S.proHistory||[]).filter(function(h){var q=(h.dateISO||'').split('-');return q.length>=1&&(+q[0])===y;});}
+  function yearMinYear(){var ys=(S.proHistory||[]).map(function(h){var q=(h.dateISO||'').split('-');return q.length>=1?(+q[0]):null;}).filter(function(x){return x;});var cur=stmtYearNow();return Math.min(ys.length?Math.min.apply(null,ys):cur,cur);}
+  function yearAgg(list){var gross=0,comm=0,net=0,tips=0;(list||[]).forEach(function(h){var b=histBreakdown(h);gross+=b.gross;comm+=b.commission;net+=b.net;tips+=Number(h.tip)||0;});var r=function(n){return Math.round(n*100)/100;};return {gross:r(gross),comm:r(comm),net:r(net),tips:r(tips),count:(list||[]).length};}
   function commMonthly(history){
     const list=(history||[]).map(function(h){return {h:h,b:histBreakdown(h)};}).filter(function(x){return x.b.commission>0;});
     const round2=function(n){return Math.round(n*100)/100;};
@@ -6073,6 +6081,7 @@
     if(S.invoiceId)return proInvoice();
     if(S.commInvId)return proCommInvoice();
     if(S.commStmt)return proCommStatement();
+    if(S.yearStmt)return proYearStatement();
     if(S.proStmt)return proStatement();
     if(S.interv)return proInterventions();
     if(S.referral)return proReferral();
@@ -6332,6 +6341,10 @@
         ${(f.diplomas||[]).includes('Autre diplôme')?`<div class="field" style="margin-top:10px;margin-bottom:0"><input class="txt" data-pf="diplomaOther" value="${esc(f.diplomaOther||'')}" placeholder="Précisez votre diplôme (ex. CAP AEPE en cours, BEP sanitaire…)"></div>`:''}
         ${(f.diplomas||[]).some(function(d){return d!=='Expérience seule (sans diplôme)';})?`<div class="field" style="margin-top:10px;margin-bottom:0"><label style="font-size:12px">Justificatifs de diplôme <span style="font-weight:500;color:var(--muted)">(recommandé, facultatif)</span></label><label class="btn ghost sm" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:auto;padding:9px 14px">📎 Joindre un diplôme (PDF/photo)<input type="file" accept="image/*,application/pdf" multiple data-diplomafile hidden></label>${(f.diplomaDocs&&f.diplomaDocs.length)?`<div class="stack" style="gap:6px;margin-top:8px">${f.diplomaDocs.map(function(d,i){return `<div class=\"row between\" style=\"gap:8px;align-items:center\"><span class=\"mini\" style=\"min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap\">${I.check} ${esc(d.name)}</span><button class=\"linklike\" data-act=\"rm-diploma:${i}\" style=\"color:var(--coral-deep);flex:none\">Retirer</button></div>`;}).join('')}</div>`:''}<p class="mini" style="margin-top:6px;color:var(--muted)">Transmettre vos justificatifs accélère la validation — non obligatoire.</p></div>`:''}
         ${(f.diplomas||[]).length?'':'<p class="mini" style="margin-top:8px;color:var(--coral-deep)">Sélectionnez au moins une option (« Expérience seule » si vous n’avez pas de diplôme).</p>'}</div>`:''}
+      <div class="card" style="padding:16px;margin-top:14px;border-left:4px solid var(--teal-deep)">
+        <div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="background:var(--teal-wash);color:var(--teal-deep)">${I.shield}</span><div><b style="font-size:14px">Vous êtes un professionnel indépendant</b>
+        <p class="mini" style="margin-top:5px;line-height:1.5">Ti-Services est un <b>intermédiaire</b> de mise en relation. Vous exercez sous votre propre statut (micro-entreprise, entreprise…) et vous êtes <b>seul responsable de vos déclarations fiscales et sociales</b> — revenus, cotisations. Ti-Services ne prélève, ne paie et ne déclare <b>aucun impôt à votre place</b>. Un <b>récapitulatif de vos encaissements</b> (par mois et par an) est mis à votre disposition dans l'application pour faciliter vos déclarations.</p></div></div>
+      </div>
       <div class="card" style="padding:16px;margin-top:14px">
         <div class="chkline" style="margin-top:16px"><button data-act="toggle-pcgu" aria-label="Accepter les conditions" style="background:none;border:none;padding:0">${chkbox(f.cgu)}</button><span class="mini" style="line-height:1.5">${RQ} J'ai lu et j'accepte les <button class="linklike" data-act="view-cgu">CGU</button> et les <button class="linklike" data-act="view-cgv">CGV</button> de Ti-Services.</span></div>
         <div class="chkline" style="margin-top:13px"><button data-act="toggle-pcharte" aria-label="Accepter la charte" style="background:none;border:none;padding:0">${chkbox(f.charte)}</button><span class="mini" style="line-height:1.5">${RQ} J'ai lu et j'accepte la <button class="linklike" data-act="view-charte">Charte de responsabilité de l'intervenant</button>. Je reconnais être <b>seul responsable des dommages, de la casse et des vols</b> survenant lors de mes interventions, disposer d'une <b>assurance RC professionnelle</b>, et que <b>Ti-Services n'est pas responsable</b> à ce titre.</span></div>
@@ -7052,6 +7065,7 @@
       <button class="card" data-act="open-interv" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.card}&nbsp;Mes factures par mission</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">La facture de chaque prestation réalisée, établie automatiquement en votre nom — à consulter ou télécharger.</p></button>
       <button class="card" data-act="open-statement" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">📄&nbsp;Relevé mensuel</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Un relevé par mois : toutes vos prestations et le total encaissé. Chaque mois s'ouvre le 1er du mois suivant ; les mois précédents restent consultables.</p></button>
       <button class="card" data-act="open-comm-statement" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">🧾&nbsp;Facture de commission (mensuelle)</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Votre facture de commission Ti-Services, une par mois (une ligne par mission) — charge déductible. Disponible dès le 1er du mois suivant.</p></button>
+      <button class="card" data-act="open-year-statement" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">🗓️&nbsp;Attestation annuelle de revenus</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Récapitulatif de vos encaissements sur l'année (brut, commission, net, pourboires) — à conserver pour vos déclarations fiscales et sociales.</p></button>
       <div class="banner teal" style="margin-top:12px">${I.lock}<span><b>Paiement garanti</b> : réglé sous 48 h après chaque prestation validée — sans relance.</span></div>
       </div>${proNavbar()}`;
   }
@@ -7278,6 +7292,37 @@
       </div></div>
       <div style="height:12px"></div></div>`;
   }
+  // ATTESTATION ANNUELLE DE REVENUS (Ti-Services → artisan) : récapitulatif de l'année pour
+  // aider le prestataire à faire ses déclarations. Navigation entre les années.
+  function proYearStatement(){
+    const y=curStmtYear();const list=yearHistory(y);const ag=yearAgg(list);
+    const defini=(y<stmtYearNow());
+    const canPrev=y>yearMinYear();const canNext=y<stmtYearNow();
+    var rows='';for(var mo=0;mo<12;mo++){var ms=list.filter(function(h){var q=(h.dateISO||'').split('-');return (+q[1])===mo+1;});if(!ms.length)continue;var a=yearAgg(ms);rows+=`<tr><td>${MOIS_FR[mo]}</td><td class="r">${a.count}</td><td class="r">${eur(a.gross)}</td><td class="r">${eur(a.comm)}</td><td class="r">${eur(a.net)}</td></tr>`;}
+    if(!rows)rows=`<tr><td colspan="5" style="text-align:center;color:#888;padding:14px">Aucune prestation en ${y}.</td></tr>`;
+    const uid=FB&&FB.auth&&FB.auth.currentUser?FB.auth.currentUser.uid:(S.proSiret||'DEMO');
+    return `<div class="pad">
+      <div class="row between noprint" style="margin-top:6px;gap:8px"><button class="reset" data-act="close-year-statement">← Retour</button><button class="btn primary" data-act="print-invoice" style="width:auto;padding:10px 16px">${I.card}&nbsp;Enregistrer / Imprimer</button></div>
+      <div class="row between noprint" style="align-items:center;margin:4px 0 8px"><button class="btn ghost sm" data-act="year-prev" ${canPrev?'':'disabled'} style="width:auto;padding:8px 12px">← ${y-1}</button><b style="font-size:15px">Année ${y}</b><button class="btn ghost sm" data-act="year-next" ${canNext?'':'disabled'} style="width:auto;padding:8px 12px">${y+1} →</button></div>
+      <p class="mini noprint" style="text-align:center;color:${defini?'var(--muted)':'var(--coral-deep)'};margin-bottom:8px">${defini?I.check+' Attestation annuelle définitive — à conserver pour vos déclarations.':'⏳ Récapitulatif provisoire — année en cours, montants susceptibles d\'évoluer.'}</p>
+      <div id="invoiceDoc"><div class="inv">
+        <div class="row between" style="align-items:flex-start"><div><h2>ATTESTATION ANNUELLE DE REVENUS</h2><div class="mut">N° TS-A-${y}-${String(uid||'0000').replace(/[^A-Za-z0-9]/g,'').slice(-4).toUpperCase()}</div><div class="mut">Année ${y}${defini?'':' — provisoire'}</div></div><div style="text-align:right"><div style="font-family:var(--f-disp);font-weight:800;font-size:16px;color:#151515">Ti-Services</div><div class="mut">Plateforme d'intermédiation</div>${ccsHead()}</div></div>
+        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Prestataire</div><b>${S.proLegal}</b><div class="mut">${S.proStatusType==='particulier'?'Particulier':'Entreprise'} · ${S.proAddress}</div><div class="mut">SIRET ${S.proSiret||'—'}</div></div>
+        <table><thead><tr><th>Mois</th><th class="r">Missions</th><th class="r">Brut</th><th class="r">Commission</th><th class="r">Net</th></tr></thead>
+        <tbody>${rows}</tbody></table>
+        <div class="row between sec"><span class="mut">Chiffre d'affaires brut encaissé (${ag.count} mission${ag.count>1?'s':''})</span><span class="tot">${eur(ag.gross)}</span></div>
+        ${ag.tips>0?`<div class="row between" style="margin-top:6px"><span class="mut">dont pourboires (100 % prestataire)</span><b>${eur(ag.tips)}</b></div>`:''}
+        <div class="row between" style="margin-top:6px"><span class="mut">Commission Ti-Services retenue</span><b>−${eur(ag.comm)}</b></div>
+        <div class="row between" style="margin-top:6px"><span class="mut">Net perçu sur l'année</span><b>${eur(ag.net)}</b></div>
+        <div class="legal">
+          Document établi par Ti-Services (intermédiaire de mise en relation) à titre de <b>récapitulatif des sommes encaissées</b> par le prestataire via la plateforme sur l'année ${y}.<br>
+          Le prestataire exerce en tant que <b>professionnel indépendant</b> et demeure <b>seul responsable de ses déclarations fiscales et sociales</b> (revenus, cotisations). Ti-Services ne prélève ni ne reverse aucun impôt à sa place.<br>
+          TVA non applicable — Saint-Barthélemy (collectivité d'outre-mer, hors du champ de la TVA française). Factures établies au nom et pour le compte du prestataire (mandat de facturation, art. 289 du CGI).<br>
+          Ti-Services est un service édité par ${ccsInline()}.
+        </div>
+      </div></div>
+      <div style="height:12px"></div></div>`;
+  }
   function proReferral(){
     const pending=(S.filleuls||[]).filter(f=>f.status==='attente').length;
     const gained=refMissions();
@@ -7404,7 +7449,7 @@
     if(b.dataset.act&&b.dataset.act.indexOf('dismiss-mission:')===0){const id=b.dataset.act.slice('dismiss-mission:'.length);const m=(S.missions||[]).find(function(x){return (x._id||'')===id;});if(m){removeMission(m);if(S.mission===m)S.mission=null;cacheClientLocal();}render();return;}
     if(b.dataset.follow){const orow=b.closest('.swipe-row');if(orow&&orow.classList.contains('open')){orow.classList.remove('open');return;}const mm=(S.missions||[]).find(function(x){return (x._id||'')===b.dataset.follow;});if(mm){S.mission=mm;S.cancelAsk=false;S.clientNav='wallet';render();}return;}
     if(b.dataset.cnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.invoiceId=null;S.histInvoice=null;S.histCat=null;S.signPad=false;S.colisProc=false;S.imgView=null;S._sigCanvas=null;S.addrForm=null;S.profileForm=null;S.mission=null;S.cancelAsk=false;S.catView=null;S.clientNav=b.dataset.cnav;if(b.dataset.cnav==='wallet')refreshClientRequests();render();return;}
-    if(b.dataset.pnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.proStmt=false;S.commInvId=null;S.commStmt=false;S.invoiceId=null;S.proConflict=null;S.imgView=null;S.proNav=b.dataset.pnav;render();return;}
+    if(b.dataset.pnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.invClient=null;S.proStmt=false;S.commInvId=null;S.commStmt=false;S.yearStmt=false;S.invoiceId=null;S.proConflict=null;S.imgView=null;S.proNav=b.dataset.pnav;render();return;}
     if(b.dataset.cnav2){S.concOrder=null;S.concView=null;S.concForm=null;S.concInvoice=null;S.concNav=b.dataset.cnav2;render();return;}
     if(b.dataset.concOc){const c=concClient(b.dataset.concOc);if(c&&c.authorized){S.concOrder.clientId=c.id;S.concOrder.step='service';render();}else{toast('La carte de ce client doit d’abord être autorisée');}return;}
     if(b.dataset.concOs){const s=SERVICES.find(x=>x.id===b.dataset.concOs);S.concOrder.svc=s.id;S.concOrder.svcName=s.nm;S.concOrder.rate=(S.adminPrices&&S.adminPrices[s.id]!=null)?S.adminPrices[s.id]:svcBase(s.id);S.concOrder.duration=3;S.concOrder.when='Aujourd’hui';S.concOrder.slot='14:00';S.concOrder.notes='';S.concOrder.step='form';render();return;}
@@ -7761,6 +7806,10 @@
       case 'close-comm-statement':S.commStmt=false;render();break;
       case 'stmt-prev':{var pp=stmtPeriod();var k=stmtKey(pp);if(k>stmtMinKey()){var m2=pp.m-1,y2=pp.y;if(m2<0){m2=11;y2--;}S.stmtPeriod={y:y2,m:m2};}render();break;}
       case 'stmt-next':{var pn=stmtPeriod();if(stmtKey(pn)<stmtNowKey()){var m3=pn.m+1,y3=pn.y;if(m3>11){m3=0;y3++;}S.stmtPeriod={y:y3,m:m3};}render();break;}
+      case 'open-year-statement':S.stmtYear=stmtYearNow();S.yearStmt=true;render();break;
+      case 'close-year-statement':S.yearStmt=false;render();break;
+      case 'year-prev':{var yp=curStmtYear();if(yp>yearMinYear())S.stmtYear=yp-1;render();break;}
+      case 'year-next':{var yn=curStmtYear();if(yn<stmtYearNow())S.stmtYear=yn+1;render();break;}
       case 'close-comm-invoice':S.commInvId=null;render();break;
       case 'close-invoice':S.invoiceId=null;render();break;
       case 'print-invoice':printInvoice();break;
