@@ -10,7 +10,7 @@
  *   firebase deploy --only functions
  * (nécessite le plan Blaze, déjà activé.)
  */
-const {onDocumentCreated, onDocumentUpdated} = require('firebase-functions/v2/firestore');
+const {onDocumentCreated, onDocumentUpdated, onDocumentWritten} = require('firebase-functions/v2/firestore');
 const {onRequest, onCall, HttpsError} = require('firebase-functions/v2/https');
 const {setGlobalOptions} = require('firebase-functions/v2');
 const {defineSecret} = require('firebase-functions/params');
@@ -537,6 +537,40 @@ exports.notifyServiceAddition = onDocumentUpdated({document: 'artisans/{artisanI
             '<p>Ouvrez la console admin, puis la fiche de l\'artisan, pour vérifier (assurance — et diplômes pour la garde d\'enfants) et <b>valider</b> ou <b>refuser</b> le métier. Tant qu\'il n\'est pas validé, il n\'est pas proposé aux clients.</p>',
     });
   } catch (e) { console.warn('service add notify', e); }
+});
+
+/**
+ * recomputeAvailability : maintient `settings/availability` à jour côté SERVEUR.
+ * Un service n'est proposé aux clients que s'il existe AU MOINS un artisan « valide »
+ * qui le pratique. Se déclenche à chaque changement d'une fiche artisan — y compris la
+ * SUPPRESSION du compte (le dernier artisan d'un métier part → le service repasse en
+ * « Bientôt disponible »/grisé). On ne recalcule que si le statut ou les métiers
+ * changent (ou création/suppression), pour ignorer les écritures fréquentes (en ligne,
+ * disponibilités…). Source de vérité : la collection `artisans` lue en direct.
+ */
+exports.recomputeAvailability = onDocumentWritten('artisans/{artisanId}', async (event) => {
+  const before = (event.data && event.data.before && event.data.before.exists) ? event.data.before.data() : null;
+  const after = (event.data && event.data.after && event.data.after.exists) ? event.data.after.data() : null;
+  const catsKey = (a) => JSON.stringify((a && Array.isArray(a.cats)) ? a.cats.slice().sort() : []);
+  const relevant = (!before || !after) ||
+    (before.status !== after.status) ||
+    (catsKey(before) !== catsKey(after));
+  if (!relevant) return;
+  const db = getFirestore();
+  try {
+    const snap = await db.collection('artisans').get();
+    const set = {};
+    snap.forEach((doc) => {
+      const a = doc.data() || {};
+      if (a.status === 'valide' && Array.isArray(a.cats)) {
+        a.cats.forEach((c) => { if (c) set[c] = 1; });
+      }
+    });
+    const services = Object.keys(set);
+    await db.collection('settings').doc('availability').set(
+      {services, updatedAt: FieldValue.serverTimestamp()}, {merge: true});
+    console.log('[availability] recalculée (' + services.length + ' service(s)) : ' + (services.join(', ') || '—'));
+  } catch (e) { console.warn('recomputeAvailability', e); }
 });
 
 /**

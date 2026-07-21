@@ -2015,7 +2015,12 @@
   // par tous). Recalcul à chaque validation/refus d'artisan.
   function activeServicesFromArtisans(){ const set={}; (S.adminArtisans||[]).forEach(function(a){ if(a&&a.status==='valide'&&Array.isArray(a.cats)){ a.cats.forEach(function(c){ if(c)set[c]=1; }); } }); return Object.keys(set); }
   function saveAvailability(){ try{ if(FB&&FB.auth&&FB.auth.currentUser){ FB.f.setDoc(FB.f.doc(FB.db,'settings','availability'),{services:activeServicesFromArtisans(),updatedAt:FB.f.serverTimestamp()}); } }catch(_){} }
-  async function loadAvailability(){ try{ if(!FB)return; const snap=await FB.f.getDoc(FB.f.doc(FB.db,'settings','availability')); const d=snap.exists()?(snap.data()||{}):{}; S.availableServices=Array.isArray(d.services)?d.services.slice():[]; render(); }catch(e){ console.warn('availability load',e); } }
+  // Abonnement EN DIRECT à la liste des services ouverts (settings/availability, tenue
+  // par le serveur d'après les artisans validés). Ainsi, si le dernier artisan d'un
+  // métier supprime son compte, le service repasse en « Bientôt disponible » sans avoir
+  // à recharger l'app. Un seul abonnement (garde _availSub).
+  var _availSub=null;
+  function loadAvailability(){ try{ if(!FB||_availSub)return; _availSub=FB.f.onSnapshot(FB.f.doc(FB.db,'settings','availability'), function(snap){ const d=snap.exists()?(snap.data()||{}):{}; S.availableServices=Array.isArray(d.services)?d.services.slice():[]; render(); }, function(e){ console.warn('availability load',e); }); }catch(e){ console.warn('availability sub',e); } }
   // Service réservable ? Sur la BÊTA on ne bloque rien (tests). Sur le site définitif,
   // il faut au moins un artisan validé (liste settings/availability). Tant qu'elle n'est
   // pas chargée (null), on grise par prudence côté prod (évite de tomber dans le vide).
