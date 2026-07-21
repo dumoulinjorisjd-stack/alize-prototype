@@ -2352,18 +2352,32 @@
   // FACTURE DE COMMISSION mensuelle (une ligne par mission). Modèle standard des
   // plateformes : le relevé mensuel EST la facture.
   const COMM_PERIOD='Juillet 2026';
-  // Le relevé mensuel / la facture de commission d'un artisan ne sont CONSULTABLES et
-  // exploitables qu'à partir du 1er du mois SUIVANT la période. Avant, le mois n'est pas
-  // terminé : le document serait incomplet, donc faussé. On fige ici la période comptable.
-  const COMM_PERIOD_MONTH=new Date(2026,6,1); // Juillet 2026 (cf. COMM_PERIOD)
-  function stmtUnlocked(){var n=new Date();return (n.getFullYear()*12+n.getMonth())>(COMM_PERIOD_MONTH.getFullYear()*12+COMM_PERIOD_MONTH.getMonth());}
-  function stmtAvailTxt(){var d=new Date(COMM_PERIOD_MONTH.getFullYear(),COMM_PERIOD_MONTH.getMonth()+1,1);var M=['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];return 'le 1er '+M[d.getMonth()]+' '+d.getFullYear();}
-  function stmtLockCard(title,backAct){return `<div class="pad"><button class="reset" data-act="${backAct}" style="margin:8px 0 2px">← Retour</button>
+  // Relevé/facture de commission mensuels de l'artisan : ils fonctionnent DE FAÇON
+  // IDENTIQUE chaque mois. Chaque mois a son propre document (ses seules missions), qui
+  // ne devient consultable qu'à partir du 1er du mois SUIVANT — avant, le mois n'est pas
+  // terminé, le document serait faussé. Le mois affiché par défaut est le mois EN COURS
+  // (verrouillé) ; l'artisan navigue vers les mois précédents (disponibles).
+  const MOIS_FR=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+  const MOIS_FR_MIN=['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+  function stmtNowKey(){var n=new Date();return n.getFullYear()*12+n.getMonth();}
+  function stmtPeriod(){if(!S.stmtPeriod){var n=new Date();S.stmtPeriod={y:n.getFullYear(),m:n.getMonth()};}return S.stmtPeriod;}
+  function stmtKey(p){return p.y*12+p.m;}
+  function stmtAvail(p){return stmtNowKey()>stmtKey(p);} // le mois est terminé
+  function stmtLabel(p){return MOIS_FR[p.m]+' '+p.y;}
+  function stmtAvailDate(p){var y=p.y,m=p.m+1;if(m>11){m=0;y++;}return 'le 1er '+MOIS_FR_MIN[m]+' '+y;}
+  function stmtHistory(p){return (S.proHistory||[]).filter(function(h){var q=(h.dateISO||'').split('-');return q.length>=2&&(+q[0])===p.y&&(+q[1])===(p.m+1);});}
+  // Bornes de navigation : jamais le mois en cours (non terminé) vers le futur ; vers le
+  // passé, jusqu'au mois de la 1re prestation (au moins le mois précédent).
+  function stmtMinKey(){var ks=(S.proHistory||[]).map(function(h){var q=(h.dateISO||'').split('-');return q.length>=2?((+q[0])*12+((+q[1])-1)):null;}).filter(function(x){return x!=null;});var cur=stmtNowKey();return Math.min(ks.length?Math.min.apply(null,ks):cur,cur-1);}
+  function stmtInvNo(p,idOrUid){return 'TS-C-'+p.y+'-'+String(p.m+1).padStart(2,'0')+'-'+String(idOrUid||'0000').replace(/[^A-Za-z0-9]/g,'').slice(-4).toUpperCase();}
+  function stmtNav(p){var canPrev=stmtKey(p)>stmtMinKey();var canNext=stmtKey(p)<stmtNowKey();return `<div class="row between noprint" style="align-items:center;margin:4px 0 10px"><button class="btn ghost sm" data-act="stmt-prev" ${canPrev?'':'disabled'} style="width:auto;padding:8px 12px">← Précédent</button><b style="font-size:14px">${stmtLabel(p)}</b><button class="btn ghost sm" data-act="stmt-next" ${canNext?'':'disabled'} style="width:auto;padding:8px 12px">Suivant →</button></div>`;}
+  function stmtLockCard(title,backAct,p){return `<div class="pad"><button class="reset" data-act="${backAct}" style="margin:8px 0 2px">← Retour</button>
       <span class="eyebrow">${I.card} ${title}</span>
-      <div class="card" style="padding:22px;margin-top:14px;text-align:center"><div class="benic" style="width:56px;height:56px;margin:0 auto;background:var(--coral-wash);color:var(--coral-deep)">${I.lock}</div>
-        <b style="display:block;margin-top:12px;font-size:15px">Disponible ${stmtAvailTxt()}</b>
-        <p class="sub" style="margin-top:8px">Votre document de <b>${COMM_PERIOD}</b> sera consultable et téléchargeable <b>${stmtAvailTxt()}</b>. Tant que le mois n'est pas terminé, il serait incomplet — on évite ainsi un relevé faussé.</p>
-        <p class="mini" style="margin-top:10px;color:var(--muted)">Vos factures par prestation, elles, restent disponibles à tout moment dans « Mes factures par mission ».</p>
+      ${stmtNav(p)}
+      <div class="card" style="padding:22px;margin-top:2px;text-align:center"><div class="benic" style="width:56px;height:56px;margin:0 auto;background:var(--coral-wash);color:var(--coral-deep)">${I.lock}</div>
+        <b style="display:block;margin-top:12px;font-size:15px">Disponible ${stmtAvailDate(p)}</b>
+        <p class="sub" style="margin-top:8px">Votre document de <b>${stmtLabel(p)}</b> sera consultable et téléchargeable <b>${stmtAvailDate(p)}</b>. Tant que le mois n'est pas terminé, il serait incomplet — on évite ainsi un relevé faussé.</p>
+        <p class="mini" style="margin-top:10px;color:var(--muted)">Utilisez « ← Précédent » pour consulter un mois déjà terminé. Vos factures par prestation, elles, restent disponibles à tout moment.</p>
       </div></div>${proNavbar()}`;}
   function commMonthly(history){
     const list=(history||[]).map(function(h){return {h:h,b:histBreakdown(h)};}).filter(function(x){return x.b.commission>0;});
@@ -7017,8 +7031,8 @@
       <div class="card" style="padding:18px;margin-top:12px"><div class="mini">Net perçu (juillet)</div><b class="money" style="font-size:30px;font-family:var(--f-disp)">${eur(S.proEarnings)}</b><div class="row between" style="margin-top:14px"><span class="sub">Missions réalisées</span><b>${nbDone}</b></div>${nbDone?`<div class="row between" style="margin-top:6px"><span class="sub">Prochain virement</span><b>sous 48 h après validation</b></div>`:''}</div>
       ${nbDone?'':`<div class="card" style="padding:22px;margin-top:12px;text-align:center;color:var(--muted)"><div style="display:flex;justify-content:center">${octoMini(64,'wave')}</div><div style="margin-top:8px;font-weight:600;color:var(--ink-soft)">Pas encore de mission réglée</div><div style="margin-top:3px">Vos revenus et vos factures apparaîtront ici après votre première prestation validée.</div></div>`}
       <button class="card" data-act="open-interv" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.card}&nbsp;Mes factures par mission</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">La facture de chaque prestation réalisée, établie automatiquement en votre nom — à consulter ou télécharger.</p></button>
-      <button class="card" data-act="open-statement" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">📄&nbsp;Relevé mensuel</b>${stmtUnlocked()?`<span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span>`:`<span class="mini" style="color:var(--muted);font-weight:650">${I.lock} ${stmtAvailTxt()}</span>`}</div><p class="sub" style="margin-top:8px">Votre document récapitulatif du mois : toutes vos prestations et le total encaissé, à enregistrer pour votre comptabilité.${stmtUnlocked()?'':` <b>Disponible ${stmtAvailTxt()}</b> (une fois le mois terminé).`}</p></button>
-      <button class="card" data-act="open-comm-statement" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">🧾&nbsp;Facture de commission (mensuelle)</b>${stmtUnlocked()?`<span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span>`:`<span class="mini" style="color:var(--muted);font-weight:650">${I.lock} ${stmtAvailTxt()}</span>`}</div><p class="sub" style="margin-top:8px">Votre facture de commission Ti-Services du mois, une ligne par mission — charge déductible pour votre comptabilité.${stmtUnlocked()?'':` <b>Disponible ${stmtAvailTxt()}</b> (une fois le mois terminé).`}</p></button>
+      <button class="card" data-act="open-statement" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">📄&nbsp;Relevé mensuel</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Un relevé par mois : toutes vos prestations et le total encaissé. Chaque mois s'ouvre le 1er du mois suivant ; les mois précédents restent consultables.</p></button>
+      <button class="card" data-act="open-comm-statement" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">🧾&nbsp;Facture de commission (mensuelle)</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Votre facture de commission Ti-Services, une par mois (une ligne par mission) — charge déductible. Disponible dès le 1er du mois suivant.</p></button>
       <div class="banner teal" style="margin-top:12px">${I.lock}<span><b>Paiement garanti</b> : réglé sous 48 h après chaque prestation validée — sans relance.</span></div>
       </div>${proNavbar()}`;
   }
@@ -7168,16 +7182,19 @@
       ${legalFooter('pro')}
       <div style="height:12px"></div></div>${proNavbar()}`;
   }
-  // Relevé mensuel imprimable (récapitulatif du mois). Verrouillé jusqu'au 1er du mois suivant.
+  // Relevé mensuel imprimable (récapitulatif du mois). Chaque mois a le sien ; verrouillé
+  // jusqu'au 1er du mois suivant. Navigation ← / → entre les mois.
   function proStatement(){
-    if(!stmtUnlocked())return stmtLockCard('Relevé mensuel','close-statement');
-    const list=S.proHistory||[];const total=list.reduce((t,h)=>t+h.amount,0);
-    const rows=list.length?list.map(function(h){return `<tr><td>${fmtLong(h.dateISO)}</td><td>${svcName(h.svc)} — ${esc(h.client||'')}</td><td class="r">${durTxt({unit:h.unit},h.duration)}</td><td class="r">${eur(h.amount)}</td></tr>`;}).join(''):`<tr><td colspan="4" style="text-align:center;color:#888;padding:14px">Aucune prestation ce mois-ci.</td></tr>`;
+    const p=stmtPeriod();
+    if(!stmtAvail(p))return stmtLockCard('Relevé mensuel','close-statement',p);
+    const list=stmtHistory(p);const total=list.reduce((t,h)=>t+h.amount,0);
+    const rows=list.length?list.map(function(h){return `<tr><td>${fmtLong(h.dateISO)}</td><td>${svcName(h.svc)} — ${esc(h.client||'')}</td><td class="r">${durTxt({unit:h.unit},h.duration)}</td><td class="r">${eur(h.amount)}</td></tr>`;}).join(''):`<tr><td colspan="4" style="text-align:center;color:#888;padding:14px">Aucune prestation en ${stmtLabel(p)}.</td></tr>`;
     return `<div class="pad">
       <div class="row between noprint" style="margin-top:6px;gap:8px"><button class="reset" data-act="close-statement">← Retour</button><button class="btn primary" data-act="print-invoice" style="width:auto;padding:10px 16px">${I.card}&nbsp;Enregistrer / Imprimer</button></div>
-      <p class="mini noprint" style="text-align:center;color:var(--muted);margin-bottom:8px">${I.check} Relevé récapitulatif du mois — pour votre comptabilité.</p>
+      ${stmtNav(p)}
+      <p class="mini noprint" style="text-align:center;color:var(--muted);margin-bottom:8px">${I.check} Relevé récapitulatif de ${stmtLabel(p)} — pour votre comptabilité.</p>
       <div id="invoiceDoc"><div class="inv">
-        <div class="row between" style="align-items:flex-start"><div><h2>RELEVÉ MENSUEL</h2><div class="mut">Juillet 2026</div></div><div style="text-align:right"><div style="font-family:var(--f-disp);font-weight:800;font-size:16px;color:#151515">Ti-Services</div>${ccsHead()}</div></div>
+        <div class="row between" style="align-items:flex-start"><div><h2>RELEVÉ MENSUEL</h2><div class="mut">${stmtLabel(p)}</div></div><div style="text-align:right"><div style="font-family:var(--f-disp);font-weight:800;font-size:16px;color:#151515">Ti-Services</div>${ccsHead()}</div></div>
         <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Prestataire</div><b>${S.proLegal}</b><div class="mut">${S.proStatusType==='particulier'?'Particulier':'Entreprise'} · ${S.proAddress}</div><div class="mut">SIRET ${S.proSiret||'—'}</div></div>
         <table><thead><tr><th>Date</th><th>Prestation</th><th class="r">Durée</th><th class="r">Net</th></tr></thead>
         <tbody>${rows}</tbody></table>
@@ -7216,14 +7233,17 @@
   // FACTURE DE COMMISSION MENSUELLE (Ti-Services → artisan) : une ligne par mission.
   // Document fiscal officiel — le relevé mensuel EST la facture (standard plateformes).
   function proCommStatement(){
-    if(!stmtUnlocked())return stmtLockCard('Facture de commission','close-comm-statement');
-    const c=commMonthly(S.proHistory);
-    const rows=c.count?c.list.map(function(x){return `<tr><td>${fmtLong(x.h.dateISO)}</td><td>${svcName(x.h.svc)} — ${esc(x.h.client||'')}</td><td class="r">${eur(x.b.commission)}</td></tr>`;}).join(''):`<tr><td colspan="3" style="text-align:center;color:#888;padding:14px">Aucune commission ce mois-ci.</td></tr>`;
+    const p=stmtPeriod();
+    if(!stmtAvail(p))return stmtLockCard('Facture de commission','close-comm-statement',p);
+    const c=commMonthly(stmtHistory(p));
+    const uid=FB&&FB.auth&&FB.auth.currentUser?FB.auth.currentUser.uid:(S.proSiret||'DEMO');
+    const rows=c.count?c.list.map(function(x){return `<tr><td>${fmtLong(x.h.dateISO)}</td><td>${svcName(x.h.svc)} — ${esc(x.h.client||'')}</td><td class="r">${eur(x.b.commission)}</td></tr>`;}).join(''):`<tr><td colspan="3" style="text-align:center;color:#888;padding:14px">Aucune commission en ${stmtLabel(p)}.</td></tr>`;
     return `<div class="pad">
       <div class="row between noprint" style="margin-top:6px;gap:8px"><button class="reset" data-act="close-comm-statement">← Retour</button><button class="btn primary" data-act="print-invoice" style="width:auto;padding:10px 16px">${I.card}&nbsp;Enregistrer / Imprimer</button></div>
-      <p class="mini noprint" style="text-align:center;color:var(--muted);margin-bottom:8px">${I.check} Facture de commission mensuelle Ti-Services — pour votre comptabilité (charge déductible).</p>
+      ${stmtNav(p)}
+      <p class="mini noprint" style="text-align:center;color:var(--muted);margin-bottom:8px">${I.check} Facture de commission mensuelle Ti-Services — ${stmtLabel(p)} (charge déductible).</p>
       <div id="invoiceDoc"><div class="inv">
-        <div class="row between" style="align-items:flex-start"><div><h2>FACTURE DE COMMISSION</h2><div class="mut">N° ${commInvNo(FB&&FB.auth&&FB.auth.currentUser?FB.auth.currentUser.uid:(S.proSiret||'DEMO'))}</div><div class="mut">${COMM_PERIOD}</div></div><div style="text-align:right"><div style="font-family:var(--f-disp);font-weight:800;font-size:16px;color:#151515">Ti-Services</div><div class="mut">Plateforme d'intermédiation</div>${ccsHead()}</div></div>
+        <div class="row between" style="align-items:flex-start"><div><h2>FACTURE DE COMMISSION</h2><div class="mut">N° ${stmtInvNo(p,uid)}</div><div class="mut">${stmtLabel(p)}</div></div><div style="text-align:right"><div style="font-family:var(--f-disp);font-weight:800;font-size:16px;color:#151515">Ti-Services</div><div class="mut">Plateforme d'intermédiation</div>${ccsHead()}</div></div>
         <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Facturé à · intervenant</div><b>${S.proLegal}</b><div class="mut">${S.proStatusType==='particulier'?'Particulier':'Entreprise'} · SIRET ${S.proSiret||'—'}</div></div>
         <table><thead><tr><th>Date</th><th>Prestation</th><th class="r">Commission</th></tr></thead>
         <tbody>${rows}</tbody></table>
@@ -7714,10 +7734,12 @@
         placeMission();break;}
       case 'open-interv':S.interv=true;render();break;
       case 'close-interv':S.interv=false;render();break;
-      case 'open-statement':S.proStmt=true;render();break;
+      case 'open-statement':{var n0=new Date();S.stmtPeriod={y:n0.getFullYear(),m:n0.getMonth()};S.proStmt=true;render();break;}
       case 'close-statement':S.proStmt=false;render();break;
-      case 'open-comm-statement':S.commStmt=true;render();break;
+      case 'open-comm-statement':{var n1=new Date();S.stmtPeriod={y:n1.getFullYear(),m:n1.getMonth()};S.commStmt=true;render();break;}
       case 'close-comm-statement':S.commStmt=false;render();break;
+      case 'stmt-prev':{var pp=stmtPeriod();var k=stmtKey(pp);if(k>stmtMinKey()){var m2=pp.m-1,y2=pp.y;if(m2<0){m2=11;y2--;}S.stmtPeriod={y:y2,m:m2};}render();break;}
+      case 'stmt-next':{var pn=stmtPeriod();if(stmtKey(pn)<stmtNowKey()){var m3=pn.m+1,y3=pn.y;if(m3>11){m3=0;y3++;}S.stmtPeriod={y:y3,m:m3};}render();break;}
       case 'close-comm-invoice':S.commInvId=null;render();break;
       case 'close-invoice':S.invoiceId=null;render();break;
       case 'print-invoice':printInvoice();break;
