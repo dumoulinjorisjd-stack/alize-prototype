@@ -6555,6 +6555,9 @@
     const paid=q.get('paid'); if(paid){S._openReq=paid;S.onboarded=true;S.persona='client';S.clientNav='wallet';try{history.replaceState(null,'',location.origin+location.pathname);}catch(_){}}
     const mol=q.get('mollie'); if(mol){try{history.replaceState(null,'',location.origin+location.pathname);}catch(_){}setTimeout(function(){try{if(mol==='active')toast('✅ Paiements activés — votre compte Mollie est connecté');else if(mol==='error')toast('⚠︎ Connexion Mollie échouée — réessayez');else toast('Compte Mollie en cours de vérification');}catch(_){}},900);}
     const rid=q.get('r'); if(rid)S._openReq=rid; // réservation à ouvrir (après connexion)
+    // Lien « installer l'app » (depuis l'e-mail de bienvenue) : ouvre directement le
+    // guide d'installation (invite native Android / gestes iPhone) une fois l'app peinte.
+    const inst=q.get('install'); if(inst==='1'){S._wantInstall=true;try{history.replaceState(null,'',location.origin+location.pathname);}catch(_){}}
     const open=q.get('open');
     if(open==='missions'||q.has('mission')){S.onboarded=true;S.persona='pro';if(S.proStatus!=='approved')S.proStatus='approved';S.proNav='home';return true;}
     if(open==='admin'){S.onboarded=true;S.persona='admin';S.admin={view:'home',sel:null};return true;}
@@ -9269,6 +9272,10 @@
 
   handleDeepLink();
   render();
+  // Ouverture depuis le lien « Installer l'application » de l'e-mail : on affiche le
+  // guide d'installation dès que l'app est peinte (sauf si déjà installée). Le petit
+  // délai laisse le temps à l'événement beforeinstallprompt de se déclencher (Android).
+  try{ if(S._wantInstall && typeof appInstalled==='function' && !appInstalled()){ S._wantInstall=false; setTimeout(function(){ try{ showInstallGuide({headTitle:'Installez Ti-Services', sub:'Ajoutez l’app à votre écran d’accueil, en quelques gestes.'}); }catch(_){} }, 1500); } }catch(_){}
   // Écran de lancement : laissé visible le temps de l'animation, puis fondu enchaîné
   // vers l'app déjà peinte (fondu instantané si l'utilisateur a réduit les animations).
   // Écran de lancement : masqué après l'animation en mode démo. En mode réel, on le

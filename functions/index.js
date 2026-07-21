@@ -1682,6 +1682,10 @@ function welcomeHtml(first, role) {
       '<tr><td style="padding:16px 18px">' +
         '<div style="font-size:14px;font-weight:700;color:#231E33">Installez l\'application</div>' +
         '<div style="font-size:13px;color:#6b6577;line-height:1.5;margin:6px 0 12px">' + installIntro + '</div>' +
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:12px"><tr><td align="center">' +
+          '<a href="' + app + '/?install=1" style="display:inline-block;background:' + btn + ';color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 22px;border-radius:11px">Installer l\'application</a>' +
+        '</td></tr></table>' +
+        '<div style="font-size:12px;color:#8a8494;line-height:1.5;margin-bottom:10px">Le bouton ci-dessus ouvre l\'app et lance l\'installation. Ou à la main&nbsp;:</div>' +
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:8px"><tr>' +
           '<td width="86" valign="top"><span style="display:inline-block;font-size:11px;font-weight:700;color:' + c1 + ';background:#ffffff;border:1px solid #efeae4;border-radius:8px;padding:4px 8px">iPhone</span></td>' +
           '<td style="font-size:13px;color:#4a4556;line-height:1.5">Ouvrez ce lien dans <b>Safari</b>, touchez le bouton <b>Partager</b> (le carré avec une flèche), puis <b>« Sur l\'écran d\'accueil »</b>.</td>' +
