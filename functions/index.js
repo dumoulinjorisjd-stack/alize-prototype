@@ -34,6 +34,21 @@ function siteOk(artisan, svc, locMode) {
   if (sm === 'both') return true;
   return sm === (locMode || 'domicile');
 }
+// DISPONIBILITÉS : un artisan ne reçoit une demande que si elle tombe sur un créneau coché
+// (jour + matin/après-midi/soir). Grille absente => disponible partout (défaut H24 / 7j).
+// Doit rester identique au calcul côté client (index.html : availOk).
+function slotToMin(s) { const p = (s || '0:0').split(':'); return (+p[0]) * 60 + (+p[1] || 0); }
+function slotBlockAt(min) { min = ((min % 1440) + 1440) % 1440; return min < 720 ? 'm' : (min < 1080 ? 'a' : 's'); }
+function windowBlocks(startMin, flex) { const end = startMin + Math.max(0, Number(flex) || 0); const set = {}; for (let t = startMin; t <= end; t += 30) set[slotBlockAt(t)] = 1; set[slotBlockAt(end)] = 1; return Object.keys(set); }
+function dowKey(dateISO) { const q = (dateISO || '').split('-'); if (q.length < 3) return null; const d = new Date(Date.UTC(+q[0], (+q[1]) - 1, +q[2])); return ['dim', 'lun', 'mar', 'mer', 'jeu', 'ven', 'sam'][d.getUTCDay()]; }
+function availOk(avail, r) {
+  if (!avail || typeof avail !== 'object') return true;
+  if (r.slotFlex === 'week') { for (const d in avail) { const rw = avail[d]; if (rw && (rw.m || rw.a || rw.s)) return true; } return false; }
+  const dk = dowKey(r.dateISO); if (!dk || !avail[dk]) return true; const row = avail[dk];
+  if (r.slotFlex === 'day') return !!(row.m || row.a || row.s);
+  const startMin = /^\d{1,2}:\d{2}$/.test(r.slot || '') ? slotToMin(r.slot) : 720;
+  const bs = windowBlocks(startMin, r.slotFlex); for (let i = 0; i < bs.length; i++) if (row[bs[i]]) return true; return false;
+}
 
 /* ============================================================================
  * MOLLIE CONNECT — activation des paiements artisans + versement automatique.
@@ -286,8 +301,13 @@ exports.notifyArtisansNewRequest = onDocumentCreated('requests/{reqId}', async (
   // tant qu'il n'a pas décliné. Le repli vers tous les artisans n'a lieu qu'ensuite, si le
   // client rouvre la demande (declined -> pending, géré par notifyReopenedRequest).
   const preferred = r.preferredProviderUid;
-  const targetUids = preferred ? (uids.indexOf(preferred) >= 0 ? [preferred] : []) : uids;
-  if (!targetUids.length) { console.log('Artisan demandé indisponible (aucun jeton ou non validé).'); return; }
+  // Demande DIRIGÉE : l'artisan choisi est notifié quelle que soit sa grille de dispo (le
+  // client l'a demandé ; il déclinera au besoin). Pour le POOL, on filtre par disponibilité.
+  const availById = {}; artsSnap.docs.forEach((d) => { availById[d.id] = (d.data() || {}).avail; });
+  const targetUids = preferred
+    ? (uids.indexOf(preferred) >= 0 ? [preferred] : [])
+    : uids.filter((uid) => availOk(availById[uid], r));
+  if (!targetUids.length) { console.log('Aucun artisan disponible pour ce créneau.'); return; }
 
   const svcNm = (r.serviceName || 'Nouvelle prestation').toString().slice(0, 60);
   const secteur = (r.zone || 'Saint-Barth').toString().slice(0, 40);
@@ -757,7 +777,7 @@ exports.notifyBoosted = onDocumentUpdated('requests/{reqId}', async (event) => {
   const db = getFirestore();
   const artsSnap = await db.collection('artisans').where('status', '==', 'valide').get();
   const uids = artsSnap.docs
-    .filter((d) => { const dd = d.data() || {}; const c = dd.cats || []; return (!svc || c.indexOf(svc) >= 0) && siteOk(dd, svc, after.locationMode); })
+    .filter((d) => { const dd = d.data() || {}; const c = dd.cats || []; return (!svc || c.indexOf(svc) >= 0) && siteOk(dd, svc, after.locationMode) && availOk(dd.avail, after); })
     .map((d) => d.id);
   if (!uids.length) return;
   // « Re-solliciter TOUS les artisans, même ceux qui avaient passé » : on RETIRE cette
@@ -1047,7 +1067,13 @@ exports.notifyReopenedRequest = onDocumentUpdated('requests/{reqId}', async (eve
       .filter((d) => { const dd = d.data() || {}; const c = dd.cats || []; return (!svc || c.indexOf(svc) >= 0) && d.id !== exclude && siteOk(dd, svc, after.locationMode); })
       .map((d) => d.id);
     const preferred = after.directed ? (after.preferredProviderUid || '') : '';
-    if (preferred) uids = uids.indexOf(preferred) >= 0 ? [preferred] : [];
+    if (preferred) {
+      uids = uids.indexOf(preferred) >= 0 ? [preferred] : [];
+    } else {
+      // Pool : on ne re-notifie que les artisans DISPONIBLES sur ce créneau.
+      const availById = {}; artsSnap.docs.forEach((d) => { availById[d.id] = (d.data() || {}).avail; });
+      uids = uids.filter((uid) => availOk(availById[uid], after));
+    }
     const tokenToUid = {};
     await Promise.all(uids.map(async (uid) => {
       try { const u = await db.collection('users').doc(uid).get(); ((u.data() || {}).pushTokens || []).forEach((t) => { tokenToUid[t] = uid; }); } catch (_) {}

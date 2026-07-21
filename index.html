@@ -2171,6 +2171,26 @@
   const COMMISSION=0.15;
   const DAYS=[['lun','Lun'],['mar','Mar'],['mer','Mer'],['jeu','Jeu'],['ven','Ven'],['sam','Sam'],['dim','Dim']];
   const BLOCKS=[['m','Matin'],['a','Après-m.'],['s','Soir']];
+  // Plages horaires des créneaux : Matin 6h–12h, Après-midi 12h–18h, Soir 18h–minuit.
+  const BLOCK_HOURS={m:'6h–12h',a:'12h–18h',s:'18h–00h'};
+  // Disponibilités par défaut : TOUT coché (H24 / 7j). Un nouvel artisan reçoit donc toutes
+  // les missions tant qu'il n'a pas volontairement restreint ses créneaux — aucune mission
+  // manquée par oubli. Il affine ensuite dans « Agenda › Disponibilités ».
+  function availAllOn(){return {lun:{m:1,a:1,s:1},mar:{m:1,a:1,s:1},mer:{m:1,a:1,s:1},jeu:{m:1,a:1,s:1},ven:{m:1,a:1,s:1},sam:{m:1,a:1,s:1},dim:{m:1,a:1,s:1}};}
+  function slotBlockAt(min){min=((min%1440)+1440)%1440;return min<720?'m':(min<1080?'a':'s');}
+  function windowBlocks(startMin,flex){var end=startMin+Math.max(0,Number(flex)||0);var set={};for(var t=startMin;t<=end;t+=30)set[slotBlockAt(t)]=1;set[slotBlockAt(end)]=1;return Object.keys(set);}
+  function dowKey(dateISO){var q=(dateISO||'').split('-');if(q.length<3)return null;var d=new Date(+q[0],(+q[1])-1,+q[2]);return ['dim','lun','mar','mer','jeu','ven','sam'][d.getDay()];}
+  // Un artisan est-il DISPONIBLE pour une demande (jour + créneau matin/aprem/soir) ? Grille
+  // absente => disponible partout (défaut H24). Créneau souple « journée »/« semaine » =>
+  // disponible s'il a coché au moins un créneau ce jour / dans la semaine.
+  function availOk(avail,r){
+    if(!avail||typeof avail!=='object')return true;
+    if(r.slotFlex==='week'){for(var d in avail){var rw=avail[d];if(rw&&(rw.m||rw.a||rw.s))return true;}return false;}
+    var dk=dowKey(r.dateISO);if(!dk||!avail[dk])return true;var row=avail[dk];
+    if(r.slotFlex==='day')return !!(row.m||row.a||row.s);
+    var startMin=/^\d{1,2}:\d{2}$/.test(r.slot||'')?slotToMin(r.slot):720;
+    var bs=windowBlocks(startMin,r.slotFlex);for(var i=0;i<bs.length;i++)if(row[bs[i]])return true;return false;
+  }
   // Prestations de démonstration réparties sur le mois en cours (dates réelles) :
   // interventions passées, du jour et futures, pour illustrer la charge de travail.
   const SEED_AGENDA=(function(){
@@ -6560,11 +6580,13 @@
     return summary+html+'<div style="height:6px"></div>';
   }
   function dispoGrid(){
-    const head=`<div class="avgrid"><div></div>${BLOCKS.map(b=>`<div class="hd">${b[1]}</div>`).join('')}`;
-    const rows=DAYS.map(d=>{const cells=BLOCKS.map(b=>{const on=S.avail[d[0]][b[0]];return `<button class="avcell ${on?'on':''}" data-av="${d[0]}:${b[0]}">${on?I.check:''}</button>`;}).join('');return `<div class="day">${d[1]}</div>${cells}`;}).join('');
-    return `<p class="sub" style="margin-top:14px">Touchez les créneaux où vous êtes disponible. Vous ne recevez des missions que sur ces créneaux.</p>
+    const head=`<div class="avgrid"><div></div>${BLOCKS.map(b=>`<div class="hd">${b[1]}<span style="display:block;font-weight:500;font-size:10px;color:var(--muted);margin-top:1px">${BLOCK_HOURS[b[0]]}</span></div>`).join('')}`;
+    const rows=DAYS.map(d=>{const cells=BLOCKS.map(b=>{const on=S.avail[d[0]][b[0]];return `<button class="avcell ${on?'on':''}" data-av="${d[0]}:${b[0]}" aria-label="${d[1]} ${b[1]} ${BLOCK_HOURS[b[0]]}">${on?I.check:''}</button>`;}).join('');return `<div class="day">${d[1]}</div>${cells}`;}).join('');
+    const full=availCount()>=21;
+    return `<p class="sub" style="margin-top:14px">Touchez les créneaux où vous êtes disponible — <b>Matin ${BLOCK_HOURS.m}</b>, <b>Après-midi ${BLOCK_HOURS.a}</b>, <b>Soir ${BLOCK_HOURS.s}</b>. Vous ne recevez de missions <b>que sur les créneaux cochés</b>.</p>
+      <div class="banner ${full?'teal':'coral'}" style="margin-top:10px">${full?I.check:I.warn}<span>${full?'Vous êtes disponible <b>H24, 7j/7</b> (réglage par défaut) — décochez les créneaux où vous ne voulez pas de mission.':'Attention : les créneaux <b>décochés ne vous enverront aucune mission</b>. Pensez à garder cette grille à jour.'}</span></div>
       ${head}${rows}
-      <div class="card" style="padding:14px;margin-top:16px"><div class="row between"><span class="sub"><b class="money" style="color:var(--ink)">${availCount()}</b> créneaux actifs / semaine</span><span class="chip good">${I.check} À jour</span></div></div>
+      <div class="card" style="padding:14px;margin-top:16px"><div class="row between"><span class="sub"><b class="money" style="color:var(--ink)">${availCount()}</b> / 21 créneaux actifs / semaine</span>${full?`<span class="chip good">${I.check} Dispo max</span>`:`<span class="chip warn">${I.clock} Restreint</span>`}</div></div>
       <div style="margin-top:14px"><button class="btn primary" data-act="save-dispo">Enregistrer mes disponibilités</button></div>`;
   }
   // ---- Agenda mensuel de l'artisan : vue calendrier + récapitulatif ----
@@ -6650,7 +6672,11 @@
   function proAgenda(){
     const tab=S.agendaTab;
     const seg=`<div class="segs" style="margin-top:8px"><button class="seg ${tab==='presta'?'on':''}" data-atab="presta">Agenda</button><button class="seg ${tab==='dispo'?'on':''}" data-atab="dispo">Disponibilités</button></div>`;
-    return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">${I.cal} Mon agenda</span><div class="h-hello">${tab==='dispo'?'Mes disponibilités':'Mon planning du mois'}</div>${seg}${tab==='dispo'?dispoGrid():proAgendaMonth()}</div>${proNavbar()}`;
+    // Rappel dispo (onglet Agenda) : par défaut l'artisan est dispo H24/7j → il reçoit tout.
+    // On l'invite à régler ses créneaux réels pour ne recevoir que les missions qui l'arrangent.
+    const availFull=availCount()>=21;
+    const dispoReminder=(tab==='presta')?`<button class="card" data-atab="dispo" style="padding:14px;margin-top:12px;width:100%;text-align:left;display:block;border-left:4px solid ${availFull?'var(--coral)':'var(--teal-deep)'}"><div class="row" style="gap:10px;align-items:flex-start"><span class="benic" style="background:${availFull?'var(--coral-wash)':'var(--teal-wash)'};color:${availFull?'var(--coral-deep)':'var(--teal-deep)'}">${I.clock}</span><div style="flex:1"><b style="font-size:14px">Vos disponibilités</b><p class="mini" style="margin-top:3px">${availFull?'Réglées sur <b>H24, 7j/7</b> par défaut — vous recevez <b>toutes</b> les missions. Indiquez vos vrais créneaux (matin / après-midi / soir) pour n\'être sollicité que quand vous êtes libre.':'<b>'+availCount()+'/21</b> créneaux actifs. Vous ne recevez de missions que sur ces créneaux — pensez à les tenir à jour.'}</p><span class="mini" style="color:var(--teal-deep);font-weight:700;display:inline-block;margin-top:6px">Régler mes disponibilités ›</span></div></div></button>`:'';
+    return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">${I.cal} Mon agenda</span><div class="h-hello">${tab==='dispo'?'Mes disponibilités':'Mon planning du mois'}</div>${seg}${dispoReminder}${tab==='dispo'?dispoGrid():proAgendaMonth()}</div>${proNavbar()}`;
   }
   function proRequest(){
     const m=S.mission,t=totals(m);
@@ -8517,7 +8543,8 @@
           // Revenus / missions réalisées, rechargés depuis la fiche (persistés à chaque paiement).
           S.proEarnings=ad.earnings||0; S.proJobsTotal=ad.jobsTotal||0; S.proHistory=Array.isArray(ad.history)?ad.history:[];
           // Réglages persistés (disponibilités, en ligne, préférences de notif).
-          if(ad.avail&&typeof ad.avail==='object')S.avail=ad.avail;
+          // Grille de dispo enregistrée sinon TOUT coché par défaut (H24 / 7j).
+          S.avail=(ad.avail&&typeof ad.avail==='object')?ad.avail:availAllOn();
           if(typeof ad.online==='boolean')S.proOnline=ad.online;
           if(typeof ad.notifPush==='boolean')S.proNotifPush=ad.notifPush;
           if(typeof ad.notifWa==='boolean')S.proNotifWa=ad.notifWa;
@@ -9020,6 +9047,11 @@
           // la voit. Pas de repli automatique — elle ne s'ouvre aux autres que si le
           // client le décide APRÈS un refus de l'artisan demandé.
           if(r.directed&&r.preferredProviderUid&&r.preferredProviderUid!==myUid)return;
+          // Filtre DISPONIBILITÉS : on ne voit que les demandes qui tombent sur un créneau
+          // coché (jour + matin/aprem/soir). Exception : une demande adressée à MOI passe
+          // toujours (le client m'a choisi ; je peux décliner).
+          var _directedMe=r.directed&&r.preferredProviderUid&&r.preferredProviderUid===myUid;
+          if(!_directedMe&&!availOk(S.avail,r))return;
           list.push(Object.assign({id:d.id},r));});
         // Les missions demandées en priorité pour MOI passent en tête.
         list.sort(function(a,b){const ap=(a.preferredProviderUid&&a.preferredProviderUid===myUid)?1:0,bp=(b.preferredProviderUid&&b.preferredProviderUid===myUid)?1:0;if(ap!==bp)return bp-ap;return ((b.boostEur||0)-(a.boostEur||0))||((b.boost||0)-(a.boost||0));});
