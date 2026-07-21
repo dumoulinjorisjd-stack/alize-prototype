@@ -43,9 +43,14 @@ const SMTP_PORT = 465; // SSL/TLS
 const MAIL_FROM_EMAIL = 'contact@ti-services.fr';
 const MAIL_FROM_NAME = 'Ti-Services';
 
+// Les mots de passe d'application (Infomaniak, Google…) s'affichent souvent en
+// groupes séparés par des espaces ; on retire tout espace au cas où il aurait été
+// collé tel quel — un mot de passe d'application ne contient jamais d'espace.
+function smtpPass() { return (process.env.SMTP_PASS || '').replace(/\s+/g, ''); }
+
 let _mailTx = null;
 function mailTransport() {
-  const pass = process.env.SMTP_PASS || '';
+  const pass = smtpPass();
   if (!pass) return null;
   if (_mailTx) return _mailTx;
   const nodemailer = require('nodemailer');
@@ -1743,13 +1748,14 @@ exports.welcomeClientEmail = onDocumentCreated({document: 'users/{uid}', secrets
  * complète. Sûr : n'envoie qu'à l'adresse admin, jamais à une adresse fournie.
  */
 exports.emailDiag = onRequest({secrets: [SMTP_PASS]}, async (req, res) => {
-  const pass = process.env.SMTP_PASS || '';
+  const rawPass = process.env.SMTP_PASS || '';
+  const pass = rawPass.replace(/\s+/g, ''); // espaces retirés (mots de passe d'application)
   // Paramètres de test ajustables sans redéploiement :
   //   ?port=587 (STARTTLS) ou ?port=465 (SSL, défaut)
   //   ?user=mon@compte.infomaniak  (si le login SMTP diffère de l'adresse d'envoi)
   const port = (String(req.query.port || '') === '587') ? 587 : SMTP_PORT;
   const authUser = (String(req.query.user || '').trim()) || MAIL_FROM_EMAIL;
-  const out = {smtpConfigured: !!pass, host: SMTP_HOST, port, user: authUser, passLen: pass.length, sent: false};
+  const out = {smtpConfigured: !!pass, host: SMTP_HOST, port, user: authUser, passLenRaw: rawPass.length, passLen: pass.length, sent: false};
   if (!pass) {
     out.note = 'SMTP_PASS absent — définissez le secret puis redéployez.';
     res.status(200).json(out); return;
