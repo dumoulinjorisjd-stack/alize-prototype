@@ -4803,8 +4803,9 @@
       if(cP.length)acts.push(btn(`${I.support} Support client · ${esc(t.clientName)}`,'sup:'+t.reqId+':client',String(cP.length),cPend));
       if(t.providerName&&pP.length)acts.push(btn(`${I.support} Support artisan · ${esc(t.providerName)}`,'sup:'+t.reqId+':pro',String(pP.length),pPend));
       const sm=missionStatusMeta(t.status);
+      const tkey='thread:'+t.reqId,tarm=(S._msgDelArm===tkey);
       return `<div class="card" style="padding:14px;margin-top:10px;${(cPend||pPend)?'border-left:4px solid var(--coral)':''}">
-        <div class="row between"><b style="font-size:14px">${esc(t.svcName)}</b><span class="chip ${sm.c}" style="padding:3px 9px">${sm.l}</span></div>
+        <div class="row between"><b style="font-size:14px">${esc(t.svcName)}</b><span class="row" style="gap:8px;align-items:center"><span class="chip ${sm.c}" style="padding:3px 9px">${sm.l}</span><button data-adm="delmsg:${tkey}" aria-label="Supprimer la conversation" title="Supprimer la conversation" style="flex:none;background:${tarm?'var(--coral-wash)':'none'};border:${tarm?'1px solid var(--coral)':'none'};border-radius:8px;padding:4px 6px;color:var(--coral-deep);font-size:11px;font-weight:800;display:inline-flex;align-items:center;gap:4px">${tarm?I.check+'Sûr&nbsp;?':I.trash}</button></span></div>
         <div class="mini" style="margin-top:3px">${esc(t.clientName)}${t.providerName?' · '+esc(t.providerName):' · en recherche'} · ${esc(t.when)} ${esc(t.slot)}</div>
         <div class="stack" style="gap:7px;margin-top:11px">${acts.join('')}</div>
       </div>`;
@@ -4813,7 +4814,11 @@
     const genRows=gen.map(function(u){
       const pend=u.support.length&&u.support[u.support.length-1].from!=='admin';
       const last=u.support[u.support.length-1]||{};
-      return `<button class="card" data-adm="gensup:${u.uid}" style="padding:13px;margin-top:9px;width:100%;text-align:left;display:block;${pend?'border-left:4px solid var(--coral)':''}"><div class="row between"><b style="font-size:14px">${esc(u.name)}</b><span class="chip ${pend?'coral':'grey'}" style="padding:3px 9px">${u.role==='artisan'?'Artisan':'Client'}${pend?' · à répondre':''}</span></div><div class="mini" style="margin-top:4px;color:var(--ink-soft)">« ${esc(String(last.text||'')).slice(0,64)} »</div></button>`;
+      const dkey='gen:'+u.uid,arm=(S._msgDelArm===dkey);
+      return `<div class="row" style="gap:8px;margin-top:9px;align-items:stretch">
+        <button class="card" data-adm="gensup:${u.uid}" style="flex:1;min-width:0;padding:13px;text-align:left;display:block;${pend?'border-left:4px solid var(--coral)':''}"><div class="row between"><b style="font-size:14px">${esc(u.name)}</b><span class="chip ${pend?'coral':'grey'}" style="padding:3px 9px">${u.role==='artisan'?'Artisan':'Client'}${pend?' · à répondre':''}</span></div><div class="mini" style="margin-top:4px;color:var(--ink-soft)">« ${esc(String(last.text||'')).slice(0,64)} »</div></button>
+        <button class="card" data-adm="delmsg:${dkey}" aria-label="Supprimer la conversation" title="Supprimer" style="flex:none;width:54px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:0;color:var(--coral-deep);${arm?'background:var(--coral-wash);border:1px solid var(--coral)':''}">${arm?I.check:I.trash}${arm?'<span style="font-size:9px;font-weight:800">Sûr&nbsp;?</span>':''}</button>
+      </div>`;
     }).join('');
     const nothing=!threads.length&&!gen.length;
     return `<div class="pad"><div style="height:12px"></div>
@@ -7475,6 +7480,19 @@
       else if(act==='sup'){const th=(S.adminThreads||[]).find(function(x){return x.reqId===id;});if(th){S.mission=th;S.supportSide=(parts[2]==='pro'?'pro':'client');S.support=true;S.adminSupervise=false;S.admin.view='msg';markSupportReadAdmin(th,S.supportSide);watchRequest(th.reqId);render();view.scrollTop=view.scrollHeight;}return;}
       else if(act==='supervise'){const th=(S.adminThreads||[]).find(function(x){return x.reqId===id;});if(th){S.mission=th;S.adminSupervise=true;S.support=false;S.admin.view='msg';watchRequest(th.reqId);render();view.scrollTop=view.scrollHeight;}return;}
       else if(act==='gensup'){const u=(S.adminGeneral||[]).find(function(x){return x.uid===id;});if(u){S.genUser=u;S.generalSupport=true;S.support=false;S.adminSupervise=false;S.admin.view='msg';markGenSupportReadAdmin();render();view.scrollTop=view.scrollHeight;}return;}
+      else if(act==='delmsg'){
+        // Suppression d'une conversation dans la messagerie admin. Double-clic de sécurité :
+        // 1er clic = « armé » (le bouton demande « Sûr ? »), 2e clic = suppression réelle.
+        const kind=parts[1],rid=parts[2],key=kind+':'+rid;
+        if(S._msgDelArm!==key){ S._msgDelArm=key; render(); setTimeout(function(){ if(S._msgDelArm===key){S._msgDelArm=null;try{render();}catch(_){}} },4000); return; }
+        S._msgDelArm=null;
+        if(!FB||isDemo()){ if(kind==='gen')S.adminGeneral=(S.adminGeneral||[]).filter(function(x){return x.uid!==rid;}); else S.adminThreads=(S.adminThreads||[]).filter(function(x){return x.reqId!==rid;}); if(S.genUser&&S.genUser.uid===rid){S.generalSupport=false;S.genUser=null;} if(S.mission&&S.mission.reqId===rid){S.support=false;S.adminSupervise=false;S.mission=null;} toast('Conversation supprimée'); render(); return; }
+        try{
+          if(kind==='gen'){ FB.f.updateDoc(FB.f.doc(FB.db,'users',rid),{support:[],supReadAdmin:0,supReadUser:0}).then(function(){toast('Conversation supprimée');}).catch(function(e){toast('⚠︎ Échec : '+fbErrTxt(e));}); if(S.genUser&&S.genUser.uid===rid){S.generalSupport=false;S.genUser=null;} }
+          else if(kind==='thread'){ FB.f.updateDoc(FB.f.doc(FB.db,'requests',rid),{messages:[],supportClient:[],supportPro:[]}).then(function(){toast('Conversation supprimée');}).catch(function(e){toast('⚠︎ Échec : '+fbErrTxt(e));}); if(S.mission&&S.mission.reqId===rid){S.support=false;S.adminSupervise=false;S.mission=null;} }
+        }catch(e){ toast('⚠︎ Échec : '+fbErrTxt(e)); }
+        render(); return;
+      }
       else if(act==='fact'){S.admin.view='fact';S.admin.fact=null;S.admin.sel=null;S.support=false;S.supportSide=null;S.adminSupervise=false;S.generalSupport=false;S.genUser=null;S.mission=null;render();view.scrollTop=0;return;}
       else if(act==='wishes'){S.admin.view='wishes';S.admin.sel=null;S.mission=null;render();view.scrollTop=0;return;}
       else if(act==='fact-comm'){S.admin.view='fact';S.admin.fact={art:id,mode:'comm'};render();view.scrollTop=0;return;}

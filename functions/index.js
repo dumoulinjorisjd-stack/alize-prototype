@@ -1768,7 +1768,8 @@ function welcomeHtml(first, role) {
  * ========================================================================== */
 function inviteArtisanHtml(name) {
   const app = APP_URL.replace(/\/$/, '');
-  const c1 = '#0FA896', c2 = '#14C2A8', btn = '#0FA896', dot = '#0FA896';
+  // Couleurs de marque Ti-Services (corail), comme l'e-mail de bienvenue client.
+  const c1 = '#FF6A5B', c2 = '#FF9F54', btn = '#FF6A5B', dot = '#FF6A5B';
   // Salutation sans prénom par défaut (envoi rapide sans risque) ; prénom seulement si fourni.
   const hi = name ? ('Bonjour ' + escHtmlS(name) + ',') : 'Bonjour,';
   const feats =
@@ -1784,7 +1785,7 @@ function inviteArtisanHtml(name) {
           '<tr><td style="height:6px;background:linear-gradient(90deg,' + c1 + ',' + c2 + ')"></td></tr>' +
           '<tr><td align="center" style="padding:26px 30px 4px">' +
             '<img src="cid:tilogo" width="60" height="60" alt="Ti-Services" style="display:block;border-radius:16px;margin:0 auto 10px">' +
-            '<div style="font-size:24px;font-weight:800;letter-spacing:-.02em"><span style="color:#0FA896">Ti</span><span style="color:#231E33">-Services</span></div>' +
+            '<div style="font-size:24px;font-weight:800;letter-spacing:-.02em"><span style="color:#FF6A5B">Ti</span><span style="color:#231E33">-Services</span></div>' +
             '<div style="font-size:12px;color:#8a8494;margin-top:2px">Services à la demande · Saint-Barthélemy</div>' +
           '</td></tr>' +
           '<tr><td style="padding:14px 30px 0">' +
