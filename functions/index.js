@@ -679,6 +679,53 @@ const SMALL_COMM_MIN = 21;   // seuil de base (€) sous lequel le plancher s'ap
 const SMALL_COMM_PCT = 10;   // taux plancher sous le seuil
 const round2 = (x) => Math.round((Number(x) || 0) * 100) / 100;
 
+/**
+ * notifyArtisanPaid : quand le CLIENT valide la prestation (statut -> paid), on
+ * prévient l'ARTISAN par push — même application fermée. Le pourboire est mis en
+ * avant s'il y en a un ; le montant net exact reste affiché dans l'app.
+ */
+exports.notifyArtisanPaid = onDocumentUpdated('requests/{reqId}', async (event) => {
+  const before = (event.data && event.data.before && event.data.before.data()) || {};
+  const after = (event.data && event.data.after && event.data.after.data()) || {};
+  if (before.status === 'paid' || after.status !== 'paid') return; // transition -> paid, une seule fois
+  const uid = after.providerUid;
+  if (!uid) return;
+
+  const db = getFirestore();
+  let tokens = [];
+  try { const u = await db.collection('users').doc(uid).get(); tokens = (u.data() || {}).pushTokens || []; } catch (_) {}
+  if (!tokens.length) { console.log('notifyArtisanPaid : aucun jeton pour ' + uid); return; }
+
+  const cli = (after.clientName || 'Le client').toString().split(' ')[0].slice(0, 30);
+  const tip = Math.max(0, round2(Number(after.tip) || 0));
+  const net = Number(after.netAmount);
+  const amt = (net > 0) ? (' — vous percevez ' + eurTxt(net)) : '';
+  const body = tip > 0
+    ? ('💛 ' + cli + ' a validé et vous a laissé ' + eurTxt(tip) + ' de pourboire' + amt)
+    : (cli + ' a validé votre prestation' + amt + '. Vous êtes payé 🎉');
+
+  try {
+    const res = await getMessaging().sendEachForMulticast({
+      tokens,
+      data: { title: '🎉 Prestation validée — vous êtes payé', body: body, url: './?open=missions' },
+      webpush: { fcmOptions: { link: '/?open=missions' }, headers: { Urgency: 'high' } },
+    });
+    console.log('notifyArtisanPaid push ' + res.successCount + '/' + tokens.length);
+    const dels = [];
+    res.responses.forEach((rp, i) => {
+      if (!rp.success) {
+        const code = rp.error && rp.error.code;
+        if (code === 'messaging/registration-token-not-registered' ||
+            code === 'messaging/invalid-argument' ||
+            code === 'messaging/invalid-registration-token') {
+          dels.push(db.collection('users').doc(uid).update({ pushTokens: FieldValue.arrayRemove(tokens[i]) }));
+        }
+      }
+    });
+    if (dels.length) await Promise.all(dels);
+  } catch (e) { console.warn('notifyArtisanPaid push', e); }
+});
+
 exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secrets: ['MOLLIE_ACCESS_TOKEN']}, async (event) => {
   const before = (event.data && event.data.before && event.data.before.data()) || {};
   const after = (event.data && event.data.after && event.data.after.data()) || {};
