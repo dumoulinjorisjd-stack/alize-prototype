@@ -4670,6 +4670,9 @@
         <div class="card" style="padding:16px;margin-top:12px"><span class="eyebrow" style="color:var(--muted)">${a.status==='attente'?'Contacter avant décision':'Contacter l’artisan'}</span>${contactRow(a)}</div>
         ${a.status==='attente'?`<div class="row" style="gap:8px;margin-top:14px"><button class="btn good" data-adm="valid-art:${a.id}" ${(insStatus(a)==='valide'&&a.siret)?'':'disabled'}>Valider le prestataire</button><button class="btn ghost" data-adm="rej-art:${a.id}">Refuser</button></div>${(insStatus(a)!=='valide'||!a.siret)?`<p class="mini" style="margin-top:8px;color:var(--coral-deep)">${!a.siret?'SIRET manquant. ':''}${insStatus(a)==='none'?'Attestation d’assurance manquante. ':insStatus(a)==='attente'?'Attestation à vérifier et valider ci-dessus. ':insStatus(a)==='refuse'?'Attestation refusée. ':''}Validation du prestataire impossible tant que le dossier n'est pas complet.</p>`:''}`:''}
         ${a.status==='refuse'?`<div class="row" style="gap:8px;margin-top:14px"><button class="btn ghost" data-adm="reexam-art:${a.id}">Réexaminer la candidature</button></div>`:''}
+        <div style="height:20px"></div>
+        <button class="btn ghost" data-adm="delart:${a.id}" style="color:var(--coral-deep);border:1px solid var(--coral)">${S._artDelArm===a.id?I.check+' Confirmer la suppression ?':I.trash+' Supprimer cet artisan'}</button>
+        <p class="mini" style="margin-top:7px;color:var(--muted)">Retire définitivement la fiche de la console (artisan désinscrit ou doublon). Ses métiers repassent en « Bientôt disponible » s'il était le dernier. N'affecte pas les factures déjà émises.</p>
       </div>`;
     }
     const cc=S.adminClients.find(x=>x.id===S.admin.sel);if(!cc)return adminHome();
@@ -7505,6 +7508,17 @@
       else if(act==='valid-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a&&a.insured&&a.siret){a.status='valide';adminWriteStatus(a,'valide');saveAvailability();toast('Artisan validé');}else{toast('Dossier incomplet (SIRET / assurance)');}}
       else if(act==='rej-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.status='refuse';if(!a.reason)a.reason=(!a.siret?'SIRET manquant. ':'')+(!a.insured?'Assurance manquante. ':'')||'Ne correspond pas aux critères Ti-Services';adminWriteStatus(a,'refuse');saveAvailability();}S.admin.view='home';toast('Candidature refusée — conservée dans l’historique');}
       else if(act==='reexam-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.status='attente';adminWriteStatus(a,'attente');toast('Candidature remise en attente');}}
+      else if(act==='delart'){
+        // Suppression admin d'une fiche artisan (désinscrit / doublon). Double-clic de sécurité.
+        if(S._artDelArm!==id){ S._artDelArm=id; render(); setTimeout(function(){ if(S._artDelArm===id){S._artDelArm=null;try{render();}catch(_){}} },4000); return; }
+        S._artDelArm=null;
+        const a=S.adminArtisans.find(x=>x.id===id); const uid=(a&&a.uid)||id;
+        if(!FB||isDemo()){ S.adminArtisans=(S.adminArtisans||[]).filter(function(x){return x.id!==id;}); S.admin.view='home';S.admin.sel=null; toast('Artisan supprimé'); render(); return; }
+        try{
+          FB.f.deleteDoc(FB.f.doc(FB.db,'artisans',uid)).then(function(){ try{ if(FB.f.deleteDoc)FB.f.deleteDoc(FB.f.doc(FB.db,'users',uid)); }catch(_){}; toast('Artisan supprimé ✓'); }).catch(function(e){ toast('⚠︎ Échec : '+fbErrTxt(e)); });
+        }catch(e){ toast('⚠︎ Échec : '+fbErrTxt(e)); }
+        S.admin.view='home';S.admin.sel=null; render(); return;
+      }
       // Validation d'un métier ajouté par l'artisan : on le déplace de pendingCats vers cats
       // (seul l'admin peut écrire cats). Le métier devient alors visible/matchable côté client.
       else if(act==='valcat'){const a=S.adminArtisans.find(x=>x.id===id);const sv=parts[2];if(a&&sv){if(!Array.isArray(a.cats))a.cats=[];if(a.cats.indexOf(sv)<0)a.cats.push(sv);a.pendingCats=(a.pendingCats||[]).filter(function(x){return x!==sv;});if(sv==='autre'&&a.pendingOther)a.other=a.pendingOther;adminWriteAddCat(a,sv);saveAvailability();toast('Métier validé — désormais proposé aux clients');}}
