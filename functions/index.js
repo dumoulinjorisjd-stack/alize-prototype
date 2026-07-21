@@ -1626,36 +1626,87 @@ exports.procurationPdf = onCall(async (request) => {
 });
 
 /* ============================================================================
- * E-MAIL DE BIENVENUE — à la création d'un compte CLIENT, un e-mail soigné,
- * à la charte Ti-Services, souhaite la bienvenue et confirme l'inscription.
- * (Les artisans / conciergerie ont leur propre parcours d'e-mails.)
+ * E-MAIL DE BIENVENUE — à la création d'un compte, un e-mail soigné à la charte
+ * Ti-Services. Deux versions distinctes : CLIENT (réserver un intervenant) et
+ * INTERVENANT / prestataire (profil enregistré, recevoir des missions). Aucune
+ * mention d'argent ni de commission. Rappelle d'installer l'application + comment.
  * ========================================================================== */
-function welcomeHtml(first) {
-  const app = APP_URL;
-  const feats = [
-    ['✅', 'Vérifiés &amp; assurés', 'SIRET et responsabilité civile contrôlés avant chaque activation de profil.'],
-    ['🔒', 'Paiement sécurisé', 'Débité seulement après la prestation validée — jamais plus que le montant annoncé.'],
-    ['🐙', '100% Saint-Barth', 'Des intervenants locaux, à la demande, chez vous en quelques minutes.'],
-  ].map((x) => '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:12px"><tr>' +
-    '<td width="34" valign="top" style="font-size:18px;line-height:1">' + x[0] + '</td>' +
-    '<td><b style="font-size:14px;color:#231E33">' + x[1] + '</b><div style="font-size:13px;color:#6b6577;margin-top:2px;line-height:1.5">' + x[2] + '</div></td></tr></table>').join('');
+function welcomeFeatureRow(dot, title, txt) {
+  return '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:14px"><tr>' +
+    '<td width="30" valign="top"><div style="width:11px;height:11px;border-radius:50%;background:' + dot + ';margin-top:5px"></div></td>' +
+    '<td><b style="font-size:14px;color:#231E33">' + title + '</b>' +
+    '<div style="font-size:13px;color:#6b6577;margin-top:2px;line-height:1.5">' + txt + '</div></td></tr></table>';
+}
+
+function welcomeHtml(first, role) {
+  const app = APP_URL.replace(/\/$/, '');
+  const isPro = (role === 'artisan' || role === 'concierge' || role === 'pro');
+  // Accents : corail pour les clients, sarcelle (teal) pour les intervenants.
+  const c1 = isPro ? '#0FA896' : '#FF6A5B';
+  const c2 = isPro ? '#14C2A8' : '#FF9F54';
+  const btn = isPro ? '#0FA896' : '#FF6A5B';
+  const dot = isPro ? '#0FA896' : '#FF6A5B';
+  const name = escHtmlS(first);
+
+  const intro = isPro ?
+    ('Votre <b>profil intervenant</b> Ti-Services est bien enregistré. Dès qu\'il est validé par notre équipe, ' +
+     'vous recevrez vos premières <b>demandes de mission</b> directement dans l\'application — près de chez vous, ' +
+     'à Saint-Barthélemy.') :
+    ('Votre compte <b>Ti-Services</b> est créé, votre inscription est confirmée. Réservez en quelques minutes un ' +
+     'intervenant local et de confiance, où que vous soyez à Saint-Barth : ménage, jardinage, coiffure, sport, ' +
+     'garde d\'enfants, et bien plus.');
+
+  const feats = isPro ? (
+    welcomeFeatureRow(dot, 'Des missions près de chez vous', 'Recevez les demandes de votre zone, selon les créneaux que vous choisissez.') +
+    welcomeFeatureRow(dot, 'Vous gardez la main', 'Vous acceptez uniquement les missions qui vous conviennent et gérez votre agenda.') +
+    welcomeFeatureRow(dot, 'Un cadre sérieux', 'Profils vérifiés et assurés : un environnement de confiance pour vous et vos clients.')
+  ) : (
+    welcomeFeatureRow(dot, 'Des intervenants vérifiés', 'Identité, SIRET et assurance contrôlés avant l\'activation de chaque profil.') +
+    welcomeFeatureRow(dot, '100 % Saint-Barth', 'Des professionnels locaux, disponibles à la demande, près de chez vous.') +
+    welcomeFeatureRow(dot, 'Suivi en direct', 'Vous suivez votre intervention et échangez avec votre intervenant dans l\'app.')
+  );
+
+  const installIntro = isPro ?
+    'Installez l\'app et activez les notifications pour ne manquer aucune demande de mission&nbsp;:' :
+    'Ajoutez Ti-Services à votre écran d\'accueil — vous la retrouverez comme une vraie application, avec les notifications&nbsp;:';
+
+  const ctaLabel = isPro ? 'Ouvrir mon espace' : 'Ouvrir Ti-Services';
+
+  const installBlock =
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FBF7F4;border:1px solid #efeae4;border-radius:14px;margin-top:6px">' +
+      '<tr><td style="padding:16px 18px">' +
+        '<div style="font-size:14px;font-weight:700;color:#231E33">Installez l\'application</div>' +
+        '<div style="font-size:13px;color:#6b6577;line-height:1.5;margin:6px 0 12px">' + installIntro + '</div>' +
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:8px"><tr>' +
+          '<td width="86" valign="top"><span style="display:inline-block;font-size:11px;font-weight:700;color:' + c1 + ';background:#ffffff;border:1px solid #efeae4;border-radius:8px;padding:4px 8px">iPhone</span></td>' +
+          '<td style="font-size:13px;color:#4a4556;line-height:1.5">Ouvrez ce lien dans <b>Safari</b>, touchez le bouton <b>Partager</b> (le carré avec une flèche), puis <b>« Sur l\'écran d\'accueil »</b>.</td>' +
+        '</tr></table>' +
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>' +
+          '<td width="86" valign="top"><span style="display:inline-block;font-size:11px;font-weight:700;color:' + c1 + ';background:#ffffff;border:1px solid #efeae4;border-radius:8px;padding:4px 8px">Android</span></td>' +
+          '<td style="font-size:13px;color:#4a4556;line-height:1.5">Ouvrez ce lien dans <b>Chrome</b>, touchez le menu <b>⋮</b> en haut à droite, puis <b>« Installer l\'application »</b>.</td>' +
+        '</tr></table>' +
+      '</td></tr>' +
+    '</table>';
+
   return '' +
   '<div style="margin:0;padding:0;background:#FBF7F4;font-family:-apple-system,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;color:#231E33">' +
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FBF7F4;padding:24px 12px">' +
       '<tr><td align="center">' +
         '<table role="presentation" width="520" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%;background:#ffffff;border-radius:18px;overflow:hidden">' +
-          '<tr><td style="height:6px;background:linear-gradient(90deg,#FF6A5B,#FF9F54)"></td></tr>' +
-          '<tr><td style="padding:26px 30px 6px">' +
-            '<div style="font-size:24px;font-weight:800;letter-spacing:-.02em"><span style="color:#FF6A5B">Ti</span><span style="color:#231E33">-Services</span></div>' +
+          '<tr><td style="height:6px;background:linear-gradient(90deg,' + c1 + ',' + c2 + ')"></td></tr>' +
+          '<tr><td align="center" style="padding:26px 30px 4px">' +
+            '<img src="' + app + '/icon-192.png" width="60" height="60" alt="Ti-Services" style="display:block;border-radius:16px;margin:0 auto 10px">' +
+            '<div style="font-size:24px;font-weight:800;letter-spacing:-.02em"><span style="color:' + (isPro ? '#0FA896' : '#FF6A5B') + '">Ti</span><span style="color:#231E33">-Services</span></div>' +
             '<div style="font-size:12px;color:#8a8494;margin-top:2px">Services à la demande · Saint-Barthélemy</div>' +
           '</td></tr>' +
           '<tr><td style="padding:14px 30px 0">' +
-            '<h1 style="font-size:22px;margin:8px 0 0;color:#231E33">Bienvenue ' + escHtmlS(first) + '&nbsp;! 🐙</h1>' +
-            '<p style="font-size:15px;line-height:1.6;color:#4a4556;margin:12px 0 0">Votre compte <b>Ti-Services</b> est créé — votre inscription est confirmée. Vous pouvez dès maintenant réserver un artisan ou un intervenant de confiance, où que vous soyez à Saint-Barth.</p>' +
+            '<h1 style="font-size:22px;margin:8px 0 0;color:#231E33">Bienvenue ' + name + '&nbsp;!</h1>' +
+            '<p style="font-size:15px;line-height:1.6;color:#4a4556;margin:12px 0 0">' + intro + '</p>' +
           '</td></tr>' +
-          '<tr><td style="padding:20px 30px 0">' + feats + '</td></tr>' +
-          '<tr><td align="center" style="padding:6px 30px 28px">' +
-            '<a href="' + app + '" style="display:inline-block;background:#FF6A5B;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:13px 28px;border-radius:12px;margin-top:8px">Ouvrir Ti-Services</a>' +
+          '<tr><td style="padding:22px 30px 4px">' + feats + '</td></tr>' +
+          '<tr><td style="padding:6px 30px 0">' + installBlock + '</td></tr>' +
+          '<tr><td align="center" style="padding:20px 30px 28px">' +
+            '<a href="' + app + '" style="display:inline-block;background:' + btn + ';color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:13px 30px;border-radius:12px">' + ctaLabel + '</a>' +
           '</td></tr>' +
           '<tr><td style="padding:16px 30px;border-top:1px solid #efeae4;background:#FBF7F4">' +
             '<div style="font-size:12px;color:#8a8494;line-height:1.6">À très vite,<br>L\'équipe Ti-Services<br>' +
@@ -1670,13 +1721,17 @@ function welcomeHtml(first) {
 exports.welcomeClientEmail = onDocumentCreated({document: 'users/{uid}', secrets: [SMTP_PASS]}, async (event) => {
   const snap = event.data; if (!snap) return;
   const u = snap.data() || {};
-  // Seulement les clients (les artisans/conciergerie ont leurs propres e-mails).
-  if (u.role && u.role !== 'client') return;
   const email = u.email || '';
   if (!email) return;
-  const first = String(u.name || '').trim().split(' ')[0] || 'à bord';
+  const role = u.role || 'client';
+  const isPro = (role === 'artisan' || role === 'concierge' || role === 'pro');
+  const first = String(u.name || '').trim().split(' ')[0] || (isPro ? 'à bord' : 'à bord');
+  const subject = isPro ?
+    'Bienvenue chez Ti-Services — votre profil intervenant' :
+    'Bienvenue sur Ti-Services';
   try {
-    await sendMail(getFirestore(), email, { subject: 'Bienvenue sur Ti-Services 🐙', html: welcomeHtml(first) });
+    await sendMail(getFirestore(), email, { subject, html: welcomeHtml(first, role) });
+    console.log('E-mail de bienvenue (' + (isPro ? 'intervenant' : 'client') + ') → ' + email);
   } catch (e) { console.warn('welcomeClientEmail', e); }
 });
 
