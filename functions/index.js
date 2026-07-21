@@ -1857,54 +1857,6 @@ exports.welcomeClientEmail = onDocumentCreated({document: 'users/{uid}', secrets
   } catch (e) { console.warn('welcomeClientEmail', e); }
 });
 
-/**
- * emailDiag : diagnostic d'envoi d'e-mail. Ouvrez dans le navigateur
- *   https://europe-west1-<project>.cloudfunctions.net/emailDiag
- * Renvoie un JSON indiquant si SMTP_PASS est présent, et envoie un e-mail
- * de test à l'adresse admin (contact@ti-services.fr) pour vérifier la chaîne
- * complète. Sûr : n'envoie qu'à l'adresse admin, jamais à une adresse fournie.
- */
-exports.emailDiag = onRequest({secrets: [SMTP_PASS]}, async (req, res) => {
-  const rawPass = process.env.SMTP_PASS || '';
-  const pass = rawPass.replace(/\s+/g, ''); // espaces retirés (mots de passe d'application)
-  // Paramètres de test ajustables sans redéploiement :
-  //   ?port=587 (STARTTLS) ou ?port=465 (SSL, défaut)
-  //   ?user=mon@compte.infomaniak  (si le login SMTP diffère de l'adresse d'envoi)
-  const port = (String(req.query.port || '') === '587') ? 587 : SMTP_PORT;
-  const authUser = (String(req.query.user || '').trim()) || MAIL_FROM_EMAIL;
-  const out = {smtpConfigured: !!pass, host: SMTP_HOST, port, user: authUser, passLenRaw: rawPass.length, passLen: pass.length, sent: false};
-  if (!pass) {
-    out.note = 'SMTP_PASS absent — définissez le secret puis redéployez.';
-    res.status(200).json(out); return;
-  }
-  try {
-    const nodemailer = require('nodemailer');
-    const tx = nodemailer.createTransport({
-      host: SMTP_HOST, port, secure: (port === 465),
-      auth: {user: authUser, pass},
-      connectionTimeout: 15000, greetingTimeout: 15000,
-    });
-    try { await tx.verify(); out.verify = 'ok'; } catch (ve) {
-      out.verify = 'échec';
-      out.error = {message: ve && ve.message, code: ve && ve.code, response: ve && ve.response, responseCode: ve && ve.responseCode};
-      out.note = 'Connexion/authentification SMTP refusée — voir le champ error.';
-      res.status(200).json(out); return;
-    }
-    const info = await tx.sendMail({
-      from: '"' + MAIL_FROM_NAME + '" <' + MAIL_FROM_EMAIL + '>',
-      to: ADMIN_EMAIL,
-      subject: 'Test Ti-Services — envoi d\'e-mail operationnel',
-      html: '<p>Ceci est un e-mail de test envoye par emailDiag.</p>' +
-            '<p>Si vous le recevez, l\'envoi SMTP fonctionne : bienvenue, factures et notifications partiront normalement.</p>',
-    });
-    out.sent = true; out.messageId = info && info.messageId;
-    out.note = 'E-mail de test envoye a ' + ADMIN_EMAIL + ' — verifiez la reception (et les spams).';
-  } catch (e) {
-    out.error = {message: e && e.message, code: e && e.code, response: e && e.response, responseCode: e && e.responseCode, command: e && e.command};
-    out.note = 'Echec de l\'envoi SMTP — voir le champ error.';
-  }
-  res.status(200).json(out);
-});
 
 // Export interne pour les tests unitaires (inerte en production : TI_TEST non défini).
 if (process.env.TI_TEST) { module.exports.__test = { buildInvoicePdf, buildProcurationPdf, invoiceLines, eurTxt, frDate, welcomeHtml, inviteArtisanHtml }; }

@@ -2172,7 +2172,7 @@
   function contactRow(p){return `<div class="contacts">`+
     `<a class="btn ghost sm" href="https://wa.me/${waNumber(p.phone)}" target="_blank" rel="noopener">${I.whatsapp} WhatsApp</a>`+
     `<a class="btn ghost sm" href="tel:${telClean(p.phone)}">${I.phone} Appeler</a>`+
-    `<a class="btn ghost sm" href="mailto:${p.email||''}">${I.mail} E-mail</a></div>`;}
+    `<a class="btn ghost sm" href="mailto:${esc(p.email||'')}">${I.mail} E-mail</a></div>`;}
   // Âge du prestataire : mineurs refusés à l'inscription ; côté client on n'affiche
   // qu'une TRANCHE d'âge (jamais la date exacte) — minimisation des données.
   function ageFromBirth(b){if(!b)return null;var d=new Date(b);if(isNaN(d.getTime()))return null;var t=new Date();var a=t.getFullYear()-d.getFullYear();var mo=t.getMonth()-d.getMonth();if(mo<0||(mo===0&&t.getDate()<d.getDate()))a--;return a;}
@@ -2580,7 +2580,7 @@
   function miniMap(g,mode,target){
     if(!g||!isFinite(+g.lat)||!isFinite(+g.lng))return '';
     const m=(mode==='edit')?'edit':(mode==='route'?'route':'view');const tg=target||'';
-    return `<div class="geomap ${m==='route'?'tall':''}"><div class="geomap-canvas" data-leafmap="${g.lat},${g.lng}" data-mapmode="${m}"${tg?` data-maptarget="${tg}"`:''}>${mapFallbackSvg()}</div><div class="geocoords">📍 ${g.lat}, ${g.lng}</div>${m==='edit'?`<div class="maphint">✋ Glissez le point pour l'ajuster</div>`:''}${m==='route'?`<div class="routeinfo">🧭 Calcul de l'itinéraire…</div>`:''}</div>`;
+    return `<div class="geomap ${m==='route'?'tall':''}"><div class="geomap-canvas" data-leafmap="${g.lat},${g.lng}" data-mapmode="${m}"${tg?` data-maptarget="${tg}"`:''}>${mapFallbackSvg()}</div><div class="geocoords">${g.lat}, ${g.lng}</div>${m==='edit'?`<div class="maphint">Glissez le point pour l'ajuster</div>`:''}${m==='route'?`<div class="routeinfo">Calcul de l'itinéraire…</div>`:''}</div>`;
   }
   function haversineKm(a1,o1,a2,o2){const R=6371,dLa=(a2-a1)*Math.PI/180,dLo=(o2-o1)*Math.PI/180,s=Math.sin(dLa/2)**2+Math.cos(a1*Math.PI/180)*Math.cos(a2*Math.PI/180)*Math.sin(dLo/2)**2;return 2*R*Math.asin(Math.min(1,Math.sqrt(s)));}
   // Guidage : on ouvre automatiquement l'app native du téléphone — Plans sur
@@ -2650,7 +2650,7 @@
     if(target==='addr'&&S.addrForm)S.addrForm.geo=g;
     else if(target==='draft'&&S.draft)S.draft.geo=g;
     else if(target==='ageo'&&S.concForm)S.concForm.ageo=g;
-    const wrap=el.closest('.geomap');const c=wrap&&wrap.querySelector('.geocoords');if(c)c.textContent='📍 '+g.lat+', '+g.lng;
+    const wrap=el.closest('.geomap');const c=wrap&&wrap.querySelector('.geocoords');if(c)c.textContent=g.lat+', '+g.lng;
   }
   // Trace l'itinéraire depuis la position actuelle jusqu'à la destination (in-app,
   // sans quitter). Route routière via OSRM ; repli sur un trait à vol d'oiseau.
@@ -2674,16 +2674,16 @@
             const rte=d.routes[0];const coords=rte.geometry.coordinates.map(function(c){return [c[1],c[0]];});
             const line=L.polyline(coords,{color:'#0E9E8E',weight:5,opacity:.85}).addTo(map);
             try{map.fitBounds(line.getBounds().pad(0.2));}catch(_){}
-            setInfo('🚗 '+(rte.distance/1000).toFixed(1)+' km · '+Math.max(1,Math.round(rte.duration/60))+' min');
+            setInfo((rte.distance/1000).toFixed(1)+' km · '+Math.max(1,Math.round(rte.duration/60))+' min');
           }else{drawStraight();}
         }).catch(function(){if(done)return;done=true;clearTimeout(guard);drawStraight();});
     };
     // Réutilise la position déjà connue : aucune nouvelle demande d'autorisation.
     const cached=geoCacheGet();
     if(cached){render(cached.lat,cached.lng);return;}
-    if(!navigator.geolocation){setInfo('📍 Appuyez sur « Navigation » pour le guidage.');return;}
-    setInfo('🧭 Localisation…');
-    navigator.geolocation.getCurrentPosition(function(pos){geoCacheSet(pos.coords.latitude,pos.coords.longitude);render(pos.coords.latitude,pos.coords.longitude);},function(){setInfo('📍 Appuyez sur « Navigation » pour le guidage.');},{enableHighAccuracy:true,timeout:8000,maximumAge:600000});
+    if(!navigator.geolocation){setInfo('Appuyez sur « Navigation » pour le guidage.');return;}
+    setInfo('Localisation…');
+    navigator.geolocation.getCurrentPosition(function(pos){geoCacheSet(pos.coords.latitude,pos.coords.longitude);render(pos.coords.latitude,pos.coords.longitude);},function(){setInfo('Appuyez sur « Navigation » pour le guidage.');},{enableHighAccuracy:true,timeout:8000,maximumAge:600000});
   }
   function geolocate(apply){const fb={lat:17.8962,lng:-62.8498};const set=(g)=>{apply(g);toast('Point GPS enregistré');};if(navigator.geolocation){toast('Localisation en cours…');navigator.geolocation.getCurrentPosition(p=>set({lat:+p.coords.latitude.toFixed(5),lng:+p.coords.longitude.toFixed(5)}),()=>set(fb),{enableHighAccuracy:true,timeout:6000,maximumAge:0});}else set(fb);}
   const availCount=()=>Object.values(S.avail).reduce((t,d)=>t+(d.n||0)+(d.m||0)+(d.a||0)+(d.s||0),0);
@@ -4380,8 +4380,8 @@
       ${(insStatus(a)!=='valide')?`<p class="mini" style="margin-top:6px;color:var(--muted)">Ouvrez la fiche pour vérifier et valider l'attestation avant d'accepter le prestataire.</p>`:''}
       ${!a.insured?`<p class="mini" style="margin-top:6px;color:var(--coral-deep)">Attestation d'assurance manquante — validation impossible.</p>`:''}</div>`));
     pendC.forEach(cc=>q.push(`<div class="card" style="padding:14px;margin-top:10px;border-left:4px solid var(--warn)">
-      <div class="row between"><b style="font-size:14px">${cc.name}</b><span class="chip grey" style="padding:3px 9px">Client</span></div>
-      <div class="mini" style="margin-top:3px">${cc.zone} · ${cc.card}</div>
+      <div class="row between"><b style="font-size:14px">${esc(cc.name)}</b><span class="chip grey" style="padding:3px 9px">Client</span></div>
+      <div class="mini" style="margin-top:3px">${esc(cc.zone)} · ${esc(cc.card)}</div>
       <p class="mini" style="margin-top:9px;color:var(--muted)">Échangez avant de décider&nbsp;:</p>${contactRow(cc)}
       <div class="row" style="gap:8px;margin-top:10px"><button class="btn good sm" data-adm="valid-cli:${cc.id}">Valider</button><button class="btn ghost sm" data-adm="cli:${cc.id}">Fiche</button></div></div>`));
     pendConc.forEach(cc=>q.push(`<div class="card" style="padding:14px;margin-top:10px;border-left:4px solid var(--warn)">
@@ -4395,9 +4395,9 @@
     const allB=liveRow.concat(S.adminBookings);
     const bookings=allB.map(bk=>{const st=bkStatus(bk.status);const sv=SERVICES.find(s=>s.id===bk.svc);return `<div class="card" style="padding:13px;margin-top:9px"><div class="row between"><b style="font-size:14px">${sv?sv.nm:bk.svc}</b><span class="chip ${st[0]}" style="padding:3px 9px">${st[1]}</span></div><div class="mini" style="margin-top:3px">${esc(bk.client)} → ${esc(bk.artisan)} · ${bk.when}</div><div class="mini" style="margin-top:2px">${eur(bk.amount)}</div></div>`;}).join('');
     const activeArts=arts.filter(a=>a.status!=='refuse'),refA=arts.filter(a=>a.status==='refuse');
-    const artList=activeArts.map(a=>{const c=acctChip(a.status);return `<button class="card" style="padding:12px;margin-top:8px;width:100%;text-align:left;display:block" data-adm="art:${a.id}"><div class="row between"><b style="font-size:14px">${a.name}</b><span class="row" style="gap:6px;align-items:center">${(a.noShowCount||0)>0?`<span class="chip coral" style="padding:3px 9px">${I.clock} ${a.noShowCount}</span>`:''}<span class="chip ${c[0]}" style="padding:3px 9px">${c[1]}</span></span></div><div class="mini" style="margin-top:2px">${catNames(a.cats)} · ${a.rate} €/h · ${a.zone}</div></button>`;}).join('');
-    const cliList=clis.map(cc=>{const c=acctChip(cc.status);return `<button class="card" style="padding:12px;margin-top:8px;width:100%;text-align:left;display:block" data-adm="cli:${cc.id}"><div class="row between"><b style="font-size:14px">${cc.name}</b><span class="chip ${c[0]}" style="padding:3px 9px">${c[1]}</span></div><div class="mini" style="margin-top:2px">${cc.zone} · ${cc.bookings} réservations</div></button>`;}).join('');
-    const refList=refA.map(a=>`<div class="card" style="padding:12px;margin-top:8px;border-left:4px solid var(--hair)"><div class="row between"><b style="font-size:14px">${a.name}</b><span class="chip grey" style="padding:3px 9px">Refusé</span></div><div class="mini" style="margin-top:2px">${catNames(a.cats)} · ${a.zone}</div>${a.reason?`<p class="mini" style="margin-top:5px;color:var(--coral-deep)">Motif&nbsp;: ${a.reason}</p>`:''}${contactRow(a)}<div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost sm" data-adm="reexam-art:${a.id}">Réexaminer</button><button class="btn ghost sm" data-adm="art:${a.id}">Fiche</button></div></div>`).join('');
+    const artList=activeArts.map(a=>{const c=acctChip(a.status);return `<button class="card" style="padding:12px;margin-top:8px;width:100%;text-align:left;display:block" data-adm="art:${a.id}"><div class="row between"><b style="font-size:14px">${esc(a.name)}</b><span class="row" style="gap:6px;align-items:center">${(a.noShowCount||0)>0?`<span class="chip coral" style="padding:3px 9px">${I.clock} ${a.noShowCount}</span>`:''}<span class="chip ${c[0]}" style="padding:3px 9px">${c[1]}</span></span></div><div class="mini" style="margin-top:2px">${catNames(a.cats)} · ${a.rate} €/h · ${esc(a.zone)}</div></button>`;}).join('');
+    const cliList=clis.map(cc=>{const c=acctChip(cc.status);return `<button class="card" style="padding:12px;margin-top:8px;width:100%;text-align:left;display:block" data-adm="cli:${cc.id}"><div class="row between"><b style="font-size:14px">${esc(cc.name)}</b><span class="chip ${c[0]}" style="padding:3px 9px">${c[1]}</span></div><div class="mini" style="margin-top:2px">${esc(cc.zone)} · ${cc.bookings} réservations</div></button>`;}).join('');
+    const refList=refA.map(a=>`<div class="card" style="padding:12px;margin-top:8px;border-left:4px solid var(--hair)"><div class="row between"><b style="font-size:14px">${esc(a.name)}</b><span class="chip grey" style="padding:3px 9px">Refusé</span></div><div class="mini" style="margin-top:2px">${catNames(a.cats)} · ${esc(a.zone)}</div>${a.reason?`<p class="mini" style="margin-top:5px;color:var(--coral-deep)">Motif&nbsp;: ${esc(a.reason)}</p>`:''}${contactRow(a)}<div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost sm" data-adm="reexam-art:${a.id}">Réexaminer</button><button class="btn ghost sm" data-adm="art:${a.id}">Fiche</button></div></div>`).join('');
     const sm=S.mission;const supBlocks=[];
     if(sm&&sm.support){['client','pro'].forEach(side=>{const th=sm.support[side];if(th&&th.length){const last=th[th.length-1];const who=side==='client'?esc(sm.clientName||(isDemo()?'Camille Magras':'Client')):esc((sm.provider&&sm.provider.nm)||'Artisan');const needReply=last.from!=='admin';supBlocks.push(`<button class="card" data-adm="support:${side}" style="padding:13px;margin-top:9px;width:100%;text-align:left;display:block;border-left:4px solid ${needReply?'var(--coral)':'var(--good)'}"><div class="row between"><b style="font-size:14px">${who}</b><span class="chip ${needReply?'coral':'good'}" style="padding:3px 9px">${needReply?'À répondre':'Répondu'}</span></div><div class="mini" style="margin-top:3px">${sm.svcName} · ${sm.when} ${sm.slot}</div><div class="mini" style="margin-top:4px;color:var(--ink-soft)">« ${esc(last.text).slice(0,64)} »</div></button>`);}});}
     return `<div class="pad">
@@ -4664,7 +4664,7 @@
           <div class="row between" style="margin-top:6px"><span class="sub">Note · missions</span><b>${a.rating?a.rating.toFixed(1)+' '+I.star+' · '+a.jobs:'—'}</b></div>
           <div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">Fiabilité · présence</span><b style="text-align:right;max-width:62%">${(a.noShowCount||0)>0?`<span class="chip coral" style="padding:2px 8px">${I.clock} ${a.noShowCount} absence${a.noShowCount>1?'s':''} signalée${a.noShowCount>1?'s':''}</span>${a.lastNoShowAt?`<br><span class="mini" style="color:var(--muted)">Dernière&nbsp;: ${new Date(a.lastNoShowAt).toLocaleDateString('fr-FR')}</span>`:''}`:`<span class="chip good" style="padding:2px 8px">${I.check} Aucun manquement</span>`}</b></div>
           <div class="row between" style="margin-top:6px"><span class="sub">Palier fidélité · commission</span><b>${founderActiveFor(a)?`<span class="chip founder-chip" style="padding:2px 8px">${I.star} Ambassadeur</span> ${FOUNDER_COMM_PCT} %`:`${a.founder?`<span class="chip" style="padding:2px 8px;background:var(--hair);color:var(--muted)">${I.star} Ambassadeur — expiré</span> `:''}<span class="chip" style="padding:2px 8px;background:${fidColor(fidFor(a.jobs).key)}22;color:${fidColor(fidFor(a.jobs).key)}">${I.star} ${fidFor(a.jobs).nm}</span> ${fidFor(a.jobs).pct} %`}</b></div>
-          ${a.status==='refuse'&&a.reason?`<hr class="dashed"><div class="row between"><span class="sub">Motif du refus</span><b style="color:var(--coral-deep);text-align:right;max-width:60%">${a.reason}</b></div>`:''}
+          ${a.status==='refuse'&&a.reason?`<hr class="dashed"><div class="row between"><span class="sub">Motif du refus</span><b style="color:var(--coral-deep);text-align:right;max-width:60%">${esc(a.reason)}</b></div>`:''}
         </div>
         ${(a.pendingCats&&a.pendingCats.length)?`<div class="card" style="padding:16px;margin-top:12px;border-left:4px solid var(--warn)">
           <span class="eyebrow" style="color:var(--warn)">${I.clock} Métiers à valider</span>
@@ -4681,10 +4681,10 @@
     }
     const cc=S.adminClients.find(x=>x.id===S.admin.sel);if(!cc)return adminHome();
     return `<div class="pad"><button class="reset" data-adm="home" style="margin:10px 0 6px">← Retour</button>
-      <div class="row" style="gap:12px"><div class="avatar lg">${inits(cc.name)}</div><div><b style="font-size:18px;font-family:var(--f-disp)">${cc.name}</b><div class="mini">Client · ${cc.zone}</div></div></div>
+      <div class="row" style="gap:12px"><div class="avatar lg">${inits(cc.name)}</div><div><b style="font-size:18px;font-family:var(--f-disp)">${esc(cc.name)}</b><div class="mini">Client · ${esc(cc.zone)}</div></div></div>
       <div class="card" style="padding:16px;margin-top:16px">
         <div class="row between"><span class="sub">Statut</span><span class="chip ${acctChip(cc.status)[0]}">${acctChip(cc.status)[1]}</span></div><hr class="dashed">
-        <div class="row between"><span class="sub">Moyen de paiement</span><b>${cc.card}</b></div>
+        <div class="row between"><span class="sub">Moyen de paiement</span><b>${esc(cc.card)}</b></div>
         <div class="row between" style="margin-top:6px"><span class="sub">Réservations</span><b>${cc.bookings}</b></div>
       </div>
       <div class="card" style="padding:16px;margin-top:12px"><span class="eyebrow" style="color:var(--muted)">Contacter</span>${contactRow(cc)}</div>
@@ -5029,7 +5029,7 @@
       <div class="row" style="gap:12px"><div class="avatar lg">${inits(c.name)}</div><div style="flex:1"><b style="font-size:18px;font-family:var(--f-disp)">${esc(c.name)}</b><div class="mini">Client conciergerie</div></div>${c.authorized?`<span class="chip good" style="padding:4px 10px">${I.check} Carte OK</span>`:`<span class="chip coral" style="padding:4px 10px">Carte à autoriser</span>`}</div>
       <div class="card" style="padding:16px;margin-top:14px"><div class="row between"><span class="sub">Contact</span><b style="text-align:right">${esc(c.phone||'—')}</b></div><div class="row between" style="margin-top:6px"><span class="sub">Paiement</span><b>${c.card?c.card.brand+' •••• '+c.card.last4:'à autoriser'}</b></div><div class="row between" style="margin-top:6px"><span class="sub">Adresse</span><b style="text-align:right;max-width:60%">${c.addr?c.addr.address:'—'}</b></div>${c.addr&&c.addr.geo?`<div class="row between" style="margin-top:6px"><span class="sub">Point GPS</span><span class="chip good" style="padding:3px 9px">${I.pin} enregistré</span></div>`:''}</div>
       ${c.notes?`<div class="card" style="padding:14px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">${I.key} Infos d'accès (transmises à l'artisan)</div><p class="sub" style="margin-top:6px;color:var(--ink-soft)">${esc(c.notes)}</p></div>`:''}
-      <div class="stack" style="margin-top:14px">${c.authorized?`<button class="btn primary" data-act="conc-new-for:${c.id}">＋ Nouvelle commande pour ${c.name.split(' ')[0].replace('M.','ce client')}</button>`:`<button class="btn ghost sm" data-act="conc-client-edit:${c.id}">Autoriser la carte / compléter la fiche</button>`}<button class="btn ghost sm" data-act="conc-client-edit:${c.id}">Modifier la fiche</button></div>
+      <div class="stack" style="margin-top:14px">${c.authorized?`<button class="btn primary" data-act="conc-new-for:${c.id}">＋ Nouvelle commande pour ${esc(c.name.split(' ')[0].replace('M.','ce client'))}</button>`:`<button class="btn ghost sm" data-act="conc-client-edit:${c.id}">Autoriser la carte / compléter la fiche</button>`}<button class="btn ghost sm" data-act="conc-client-edit:${c.id}">Modifier la fiche</button></div>
       <div style="height:16px"></div><span class="eyebrow">Historique · ${orders.length}</span>${hist}
       <div style="height:8px"></div></div>${conciergeNavbar()}`;
   }
@@ -5074,7 +5074,7 @@
       <div class="field"><label>Tarif horaire — prix fixe Ti-Services</label><div class="pricebox"><b class="money" style="font-size:20px;font-family:var(--f-disp)">${fr} €/h</b><span class="chip good" style="padding:3px 9px">${I.check} Prix fixe</span></div><p class="mini" style="margin-top:6px">Tarif défini par Ti-Services — identique pour tous les clients, pas de négociation.</p></div>
       <div class="field"><label>Détail de la demande</label><textarea rows="3" data-conc-notes placeholder="${PLACEHOLDERS[o.svc]||'Décrivez la prestation…'}">${esc(o.notes||'')}</textarea></div>
       <div class="est"><div class="total"><span>Total (réglé par le client)</span><b>${eur(t)}</b></div><small>${I.shield} Débité sur la carte de ${esc(c.name)}, facture à son nom. Votre commission d'apport&nbsp;: ${eur(Math.round(t*S.retroRate/100))} (versée par Ti-Services).</small></div>
-      <div class="footcta" style="position:static;background:none;padding:16px 0 0"><button class="btn primary" data-act="conc-order-place">${I.search} Commander pour ${c.name.split(' ')[0]} · ${eur(t)}</button></div></div>`;
+      <div class="footcta" style="position:static;background:none;padding:16px 0 0"><button class="btn primary" data-act="conc-order-place">${I.search} Commander pour ${esc(c.name.split(' ')[0])} · ${eur(t)}</button></div></div>`;
   }
   function conciergeOrderDetail(){
     const o=S.concOrders.find(x=>x.id===S.concView);if(!o)return conciergeHome();
@@ -5261,7 +5261,7 @@
           <div class="field"><label>E-mail</label><input class="txt" type="email" name="email" data-lf="email" value="${esc(f.email||(acc?acc.email:''))}" inputmode="email" autocomplete="username" placeholder="vous@exemple.com"></div>
           <div class="field" style="margin:0"><label>Mot de passe</label><div class="pw-wrap"><input class="txt" type="password" name="password" data-lf="password" value="${esc(f.password||'')}" autocomplete="current-password" placeholder="Votre mot de passe"><button type="button" class="pw-eye" data-act="pw-toggle" aria-label="Afficher le mot de passe">${I.eye}</button></div>
             <p class="mini" style="text-align:right;margin-top:8px"><button type="button" class="linklike" data-act="forgot-pw">Mot de passe oublié&nbsp;?</button></p>
-            <div class="chkline" style="margin-top:4px"><button type="button" data-act="toggle-remember" style="background:none;border:none;padding:0">${chkbox(f.remember!==false)}</button><span class="mini" style="line-height:1.5">Se souvenir de moi <span style="color:var(--muted)">— rester connecté sur cet appareil. Sinon, la connexion sera redemandée à chaque ouverture.</span></span></div></div>
+            <div class="chkline" style="margin-top:4px"><button type="button" data-act="toggle-remember" style="background:none;border:none;padding:0">${chkbox(f.remember!==false)}</button><span class="mini" style="line-height:1.5">Se souvenir de moi</span></div></div>
         </div>
         <div class="footcta" style="position:static;background:none;padding:14px 0 0">
           <button type="submit" id="loginSubmit" class="btn primary"${ok?'':' disabled'}>${I.lock} Se connecter</button>
@@ -5379,7 +5379,7 @@
       const head=`<div class="row between"><b style="font-size:14px">${unreadBadge(m)}${esc(m.svcName)}</b>${chip}</div><div class="mini" style="margin-top:3px">${esc(m.when||'')} · ${esc(m.slot||'')}${m.provider&&m.provider.nm?' · '+esc(m.provider.nm):''} · ${I.pin} ${esc(m.zone||'')}</div>`;
       // Indicateur permanent « recherche active » : rassure l'utilisateur que
       // l'attente n'est pas un bug — personne n'a simplement encore répondu.
-      const srchNote=canDel?`<div class="row" style="gap:11px;align-items:center;margin-top:11px;background:var(--coral-wash);border-radius:12px;padding:10px 12px"><span class="srch-badge">${I.search}</span><span class="mini" style="color:var(--coral-deep);line-height:1.4"><b>Soyez patient…</b> On sollicite les meilleurs prestataires pour vous.</span></div>`:'';
+      const srchNote=canDel?`<div class="row" style="gap:11px;align-items:center;margin-top:11px;background:var(--coral-wash);border-radius:12px;padding:10px 12px"><span class="srch-badge">${I.search}</span><span class="mini" style="color:var(--coral-deep);line-height:1.4">On sollicite les meilleurs artisans de votre zone pour vous.</span></div>`:'';
       if(canDel){
         const foot=`<div class="row between" style="margin-top:10px"><button class="linklike" data-act="del-demand:${m._id||''}" style="color:var(--coral-deep);font-weight:700">${I.trash} Supprimer</button><span class="mini" style="color:var(--teal-deep);font-weight:700">${eur(totals(m).total)} · Suivre ›</span></div>`;
         return `<div class="swipe-row"><button class="swipe-del" data-act="del-demand:${m._id||''}" aria-label="Supprimer la demande">${I.trash}&nbsp;Supprimer</button><div class="card swipe-card" data-follow="${m._id||''}" role="button" tabindex="0" style="padding:14px;text-align:left;border-left:4px solid var(--coral)">${head}${srchNote}${foot}</div></div>`;
@@ -5572,7 +5572,7 @@
     const t=totals(m);
     pushReqUpdate(m,{boostEur:m.boostEur,total:t.total,reboostedAt:Date.now()});
     cacheClientLocal();render();
-    toast('Coup de pouce '+eur(m.boostEur)+' 🔥 · nouveau montant '+eur(t.total)+' — artisans re-sollicités');
+    toast('Coup de pouce '+eur(m.boostEur)+' · nouveau montant '+eur(t.total)+' — artisans re-sollicités');
   }
   function clientTracking(){
     const m=S.mission,t=totals(m),p=m.provider;
@@ -5958,7 +5958,7 @@
       // dans la recherche générale (proposée à tous les artisans de la zone).
       else if(newS==='declined'){const who=((m.preferredName||m.provider&&m.provider.nm||'Votre artisan')+'').split(' ')[0];m.provider=null;m.providerUid=null;openToStandard(m);notify('Ti-Services',who+' n’est pas disponible — votre demande est proposée à tous les artisans.','ti-'+m.reqId);}
     }else if(S.persona==='pro'){
-      if(newS==='paid'){const _t=totals(m);const _cli=((m.clientName||m.client||'Le client')+'').split(' ')[0];const _msg=(_t.tip>0)?('💛 '+_cli+' a validé et vous a laissé '+eur(_t.tip)+' de pourboire — vous percevez '+eur(_t.payout)+' 🎉'):(_cli+' a validé votre prestation — vous percevez '+eur(_t.payout)+' 🎉');notify('Ti-Services · Prestation validée',_msg,'ti-'+m.reqId);if(_t.tip>0)toast('💛 Pourboire de '+eur(_t.tip)+' — merci '+_cli+' !');if(!m._paidCounted){m._paidCounted=true;recordProPaid(m);}}
+      if(newS==='paid'){const _t=totals(m);const _cli=((m.clientName||m.client||'Le client')+'').split(' ')[0];const _msg=(_t.tip>0)?(_cli+' a validé et vous a laissé '+eur(_t.tip)+' de pourboire — vous percevez '+eur(_t.payout)):(_cli+' a validé votre prestation — vous percevez '+eur(_t.payout));notify('Ti-Services · Prestation validée',_msg,'ti-'+m.reqId);if(_t.tip>0)toast('Pourboire de '+eur(_t.tip)+' — merci '+_cli+' !');if(!m._paidCounted){m._paidCounted=true;recordProPaid(m);}}
       else if(newS==='disputed')notify('Ti-Services','Le client conteste la durée déclarée.','ti-'+m.reqId);
       else if(newS==='cancelled'){if(!(S.proMissions||[]).some(function(x){return x===m;}))proAddMission(m);notify('Ti-Services','Annulation tardive d’un client — à vous de décider de l’indemnité.','ti-'+m.reqId);toast('Annulation tardive — décidez de l’indemnité');}
     }
@@ -6062,7 +6062,7 @@
         <div class="row between"><span class="chip">${I.card} Carte de paiement</span><span class="chip good" style="padding:4px 9px">${I.lock} Chiffré</span></div>
         <div class="field"><label>Numéro de carte</label><input class="txt" id="payCardNum" value="4242 4242 4242 4242" inputmode="numeric"></div>
         <div class="row" style="gap:11px;margin-top:11px"><div style="flex:1"><label style="font-size:12px;font-weight:650;color:var(--ink-soft)">Expiration</label><input class="txt" id="payCardExp" value="08/28" style="margin-top:7px"></div><div style="flex:1"><label style="font-size:12px;font-weight:650;color:var(--ink-soft)">CVC</label><input class="txt" value="•••" style="margin-top:7px"></div></div>
-        <div class="chkline" style="margin-top:14px"><button data-act="toggle-savecard" aria-label="Enregistrer ma carte" style="background:none;border:none;padding:0">${chkbox(S.paySaveCard!==false)}</button><span class="mini" style="line-height:1.5">Enregistrer cette carte pour mes prochaines commandes.<br><span style="color:var(--muted)">${S.paySaveCard!==false?'Vous n’aurez plus à la ressaisir.':'Elle ne sera pas conservée — vous la retaperez à chaque commande.'}</span></span></div>
+        <div class="chkline" style="margin-top:14px"><button data-act="toggle-savecard" aria-label="Enregistrer ma carte" style="background:none;border:none;padding:0">${chkbox(S.paySaveCard!==false)}</button><span class="mini" style="line-height:1.5">Enregistrer cette carte pour mes prochaines commandes.${S.paySaveCard!==false?'':'<br><span style="color:var(--muted)">Sinon, elle vous sera redemandée à chaque commande.</span>'}</span></div>
       </div>
       ${reassure}
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-act="pay-save">${I.lock} ${S.paySaveCard!==false?'Enregistrer &amp; trouver':'Trouver'} un artisan · ${eur(t.total)}</button><p class="mini" style="text-align:center;margin-top:10px">Maquette — aucune donnée réelle envoyée${S.paySaveCard!==false?' ni conservée':''}.</p></div></div>`;
@@ -6576,7 +6576,7 @@
     .concat(list.flatMap(icsEvent)).concat(['END:VCALENDAR']).join('\r\n');}
   function downloadIcs(text,name){try{const blob=new Blob([text],{type:'text/calendar;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name||'ti-services.ics';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>{try{URL.revokeObjectURL(url);}catch(_){}} ,1500);toast('Ajouté à votre agenda 📅');}catch(e){toast('Impossible d’ouvrir l’agenda');}}
   // Notifications push : demande d'autorisation (le vrai envoi = Cloud Function FCM, Phase 2).
-  function requestPush(){try{if('Notification'in window&&typeof Notification.requestPermission==='function'){const r=Notification.requestPermission();if(r&&r.then){r.then(perm=>{S.proNotifPush=(perm==='granted');toast(perm==='granted'?'Notifications activées 🔔':'Autorisez les notifications dans les réglages du téléphone');render();});}else{S.proNotifPush=(r==='granted');}}else{toast('Notifications non disponibles sur cet appareil');}}catch(e){}}
+  function requestPush(){try{if('Notification'in window&&typeof Notification.requestPermission==='function'){const r=Notification.requestPermission();if(r&&r.then){r.then(perm=>{S.proNotifPush=(perm==='granted');toast(perm==='granted'?'Notifications activées':'Autorisez les notifications dans les réglages du téléphone');render();});}else{S.proNotifPush=(r==='granted');}}else{toast('Notifications non disponibles sur cet appareil');}}catch(e){}}
   // Deep link : une notif / un lien WhatsApp « Ouvrir Ti-Services » ouvre l'app sur l'espace Missions.
   function handleDeepLink(){try{const q=new URLSearchParams(location.search);
     try{const rp=q.get('realpay');if(rp==='1')localStorage.setItem('tiPayReal','1');else if(rp==='0')localStorage.removeItem('tiPayReal');}catch(_){}
@@ -7710,7 +7710,7 @@
       case 'finish-onboard':{const c=S.clientForm;const ok=(c.name||'').trim().length>1&&/.+@.+\..+/.test(c.email||'')&&(c.password||'').length>=6&&c.password===c.password2;if(!ok){toast('Nom, e-mail et mots de passe identiques (6 car.) requis');break;}if(!c.terms){toast('Veuillez accepter les CGU et les CGV pour continuer');break;}
         // Nouveau compte = part de zéro (aucune donnée de démo pré-remplie).
         S.addresses=[];S.addrDefault=null;S.history=[];S.recurring=[];S.card=null;S.mission=null;S.draft=null;
-        if(FB){fbSignup(c);}else{S.account={name:c.name.trim(),email:c.email.trim(),zone:c.zone,photo:c.photo||''};saveAccount(S.account);S.onboarded=true;S.authView=null;resumeOrderIfPending();render();burstConfetti();toast('Compte créé 🐙 — bienvenue, '+c.name.trim().split(' ')[0]+' !');}break;}
+        if(FB){fbSignup(c);}else{S.account={name:c.name.trim(),email:c.email.trim(),zone:c.zone,photo:c.photo||''};saveAccount(S.account);S.onboarded=true;S.authView=null;resumeOrderIfPending();render();burstConfetti();toast('Compte créé — bienvenue, '+c.name.trim().split(' ')[0]+' !');}break;}
       case 'show-login':S.authView='login';S.loginForm={email:(S.account?S.account.email:(S.clientForm.email||'')),password:''};render();break;
       case 'login-back':S.authView=null;render();break;
       case 'login-to-signup':S.authView='signup';S.onbStep=1;render();break;
@@ -7841,8 +7841,8 @@
       case 'close-share':S.share=false;render();break;
       case 'cat-back':S.catView=null;render();break;
       case 'svc-soon':toast('Bientôt disponible — nous validons un pro pour ce service.');break;
-      case 'share-link':{const link=shareLink();const data={title:CONFIG.appName,text:'Ti-Services — un pro de confiance à la demande à Saint-Barth 🐙',url:link};if(navigator.share){navigator.share(data).catch(()=>{});}else if(navigator.clipboard){navigator.clipboard.writeText(link).then(()=>toast('Lien copié — collez-le où vous voulez')).catch(()=>toast('Lien : '+link));}else{toast('Lien : '+link);}break;}
-      case 'copy-link':{const link=shareLink();if(navigator.clipboard){navigator.clipboard.writeText(link).then(()=>toast('Lien copié 🔗')).catch(()=>toast('Lien : '+link));}else{toast('Lien : '+link);}break;}
+      case 'share-link':{const link=shareLink();const data={title:CONFIG.appName,text:'Ti-Services — un pro de confiance à la demande à Saint-Barth',url:link};if(navigator.share){navigator.share(data).catch(()=>{});}else if(navigator.clipboard){navigator.clipboard.writeText(link).then(()=>toast('Lien copié — collez-le où vous voulez')).catch(()=>toast('Lien : '+link));}else{toast('Lien : '+link);}break;}
+      case 'copy-link':{const link=shareLink();if(navigator.clipboard){navigator.clipboard.writeText(link).then(()=>toast('Lien copié')).catch(()=>toast('Lien : '+link));}else{toast('Lien : '+link);}break;}
       case 'pay-back':S.payStep=false;S.payEdit=false;if(S.draft)renderConfig();else render();break;
       case 'pay-change':S.payEdit=true;render();break;
       case 'go-admin':if(!isAdminAccount())break;S.persona='admin';S.admin={view:'home',sel:null};S.support=false;S.supportSide=null;S.profileForm=null;render();break;
@@ -7866,7 +7866,7 @@
       case 'enable-notif':{
         if(typeof Notification==='undefined'){toast('Notifications non disponibles sur cet appareil');break;}
         if(typeof Notification.requestPermission!=='function'){toast('Notifications non disponibles sur cet appareil');break;}
-        const after=function(perm){ if(perm==='granted'){ toast('Notifications activées 🔔'); S.proNotifPush=true; if(FB){ if(isAdminAccount())initAdminPush(); else registerPush(S.persona==='pro'?'artisan':'client'); } } else { toast('Autorisez les notifications dans les réglages de votre navigateur'); } render(); };
+        const after=function(perm){ if(perm==='granted'){ toast('Notifications activées'); S.proNotifPush=true; if(FB){ if(isAdminAccount())initAdminPush(); else registerPush(S.persona==='pro'?'artisan':'client'); } } else { toast('Autorisez les notifications dans les réglages de votre navigateur'); } render(); };
         const r=Notification.requestPermission(); if(r&&r.then){r.then(after);}else{after(r);} break;}
       case 'view-cgu':S.legalView='cgu';render();break;
       case 'view-cgv':S.legalView='cgv';render();break;
@@ -8411,11 +8411,11 @@
         <div class="ig-cards">${openStep}${card('2',IG_GLYPH.app,`Une fois dans ${pf.ios?'Safari':'le navigateur'}, retouchez <b>« Installer l'application »</b> — les étapes s'afficheront.`)}</div>`;
     } else if(pf.ios){
       const whereSub = pf.browser==='safari'
-        ? `<span class="ig-sub">👇 tout en bas de l'écran</span>`
+        ? `<span class="ig-sub">tout en bas de l'écran</span>`
         : `<span class="ig-sub">en haut à droite de la barre</span>`;
       body=`<p class="ig-intro">En <b>3 gestes</b>, Ti-Services s'installe comme une vraie application et s'ouvre en <b>plein écran</b>, sans barre de navigateur.${pf.browser!=='safari'?` <b>Astuce&nbsp;:</b> c'est encore plus simple dans Safari ${IG_LOGO.safari}.`:''}</p>
         ${igPhone(pf.browser==='safari'?'bottom':'top')}
-        <p class="ig-cap">Le bouton <b>Partager</b> est ${pf.browser==='safari'?'en bas':'en haut'} 👆</p>
+        <p class="ig-cap">Le bouton <b>Partager</b> est ${pf.browser==='safari'?'en bas':'en haut'}</p>
         <div class="ig-cards">
           ${card('1',IG_GLYPH.share,`Touchez le bouton <b>Partager</b>${whereSub}`)}
           ${card('2',IG_GLYPH.expand,`Touchez <b>« En voir plus »</b> ▾ pour dérouler toute la liste<span class="ig-sub">si « Sur l'écran d'accueil » n'apparaît pas déjà</span>`)}
@@ -8841,7 +8841,7 @@
     try{
       const cred=await FB.a.createUserWithEmailAndPassword(FB.auth,c.email.trim(),c.password);
       try{ await FB.f.setDoc(FB.f.doc(FB.db,'users',cred.user.uid),{name:c.name.trim(),email:c.email.trim(),zone:c.zone,photo:c.photo||'',role:'client',acceptedTerms:true,termsVersion:TERMS_VERSION,termsAt:FB.f.serverTimestamp(),createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
-      burstConfetti(); toast('Compte créé 🐙 — bienvenue, '+c.name.trim().split(' ')[0]+' !');
+      burstConfetti(); toast('Compte créé — bienvenue, '+c.name.trim().split(' ')[0]+' !');
       promptInstallAfterSignup('client');
     }catch(e){ toast(fbErr(e)); }finally{ signupInFlight=false; }
   }
@@ -8884,7 +8884,7 @@
       S.persona='pro'; S.proName=(f.name||'').trim(); S.proStatus='pending'; S.onboarded=true; S.authView=null; S.proNav='home';
       S.proInsuranceStatus='attente'; S.proInsuranceUrl=insuranceUrl; S.proCats=f.cats.slice();
       subscribeProStatus(uid);
-      burstConfetti(); render(); toast('Candidature envoyée 🐙 — compte créé, examen sous 48 h');
+      burstConfetti(); render(); toast('Candidature envoyée — compte créé, examen sous 48 h');
       promptInstallAfterSignup('pro');
     }catch(e){ toast(fbErr(e)); }finally{ signupAsArtisan=false; signupInFlight=false; }
   }
@@ -8899,7 +8899,7 @@
       S.persona='concierge';S.concName=(f.contact||nm);S.concStatus='pending';S.onboarded=true;S.authView=null;S.concNav='home';
       S.concClients=[];S.concOrders=[];S.concEarn=0;S.concForm=null;S.concOrder=null;S.concView=null;
       subscribeConcStatus(uid);
-      burstConfetti();render();toast('Candidature envoyée 🐙 — compte créé, examen sous 48 h');
+      burstConfetti();render();toast('Candidature envoyée — compte créé, examen sous 48 h');
       promptInstallAfterSignup('concierge');
     }catch(e){ toast(fbErr(e)); }finally{ signupAsConcierge=false; signupInFlight=false; }
   }
@@ -8918,13 +8918,13 @@
         if(newStatus!==was){
           S.concStatus=newStatus;changed=true;
           if(newStatus==='approved'&&was==='pending'){
-            toast('🎉 Conciergerie validée — bienvenue chez Ti-Services !');
+            toast('Conciergerie validée — bienvenue chez Ti-Services !');
             try{ if('Notification'in window&&Notification.permission==='granted'){ new Notification('Ti-Services — conciergerie validée',{body:'Votre compte est activé.',icon:'./icon-192.png',tag:'ti-conc-approved'}); } }catch(_){}
           }
         }
         if(newPaid!==wasPaid){
           S.concRetroPaid=newPaid;changed=true;
-          if(newPaid&&!wasPaid){toast('💸 Votre rétribution du mois a été versée par Ti-Services');}
+          if(newPaid&&!wasPaid){toast('Votre rétribution du mois a été versée par Ti-Services');}
         }
         if(changed&&S.persona==='concierge')render();
       },function(err){ console.warn('conc status listen',err); });
@@ -8997,7 +8997,7 @@
   // Alerte l'admin d'une nouvelle candidature : toast + notification système si autorisée.
   function notifyAdminCandidature(a){
     const nm=(a&&a.name)||'Un artisan';
-    toast('🔔 Nouvelle candidature — '+nm);
+    toast('Nouvelle candidature — '+nm);
     try{ if('Notification'in window&&Notification.permission==='granted'){ new Notification('Ti-Services — nouvelle candidature',{body:nm+' souhaite rejoindre Ti-Services. Ouvrez la console pour l’examiner.',icon:'./icon-192.png',tag:'ti-candidature'}); } }catch(_){}
   }
   // Demande à l'admin l'autorisation d'afficher les notifications système, puis
@@ -9019,7 +9019,7 @@
         try{ await FB.f.setDoc(FB.f.doc(FB.db,'adminTokens',token),{uid:FB.auth.currentUser.uid,email:FB.auth.currentUser.email||'',ua:(navigator.userAgent||'').slice(0,180),createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
       }
       // Message reçu app au premier plan : petit toast (le SW gère l'app fermée).
-      msgM.onMessage(messaging,function(payload){ const n=(payload&&(payload.data||payload.notification))||{}; toast('🔔 '+(n.title||'Ti-Services')+(n.body?' — '+n.body:'')); });
+      msgM.onMessage(messaging,function(payload){ const n=(payload&&(payload.data||payload.notification))||{}; toast((n.title||'Ti-Services')+(n.body?' — '+n.body:'')); });
     }catch(e){ console.warn('admin push init',e); }
   }
   // Capte le jeton FCM d'un client/artisan et l'enregistre dans SA fiche users
@@ -9041,7 +9041,7 @@
         // pour que les notifications de l'ancien compte cessent (voir notifyArtisansNewRequest).
         try{ await FB.f.setDoc(FB.f.doc(FB.db,'fcmOwners',token),{uid:FB.auth.currentUser.uid,role:role,at:FB.f.serverTimestamp()}); }catch(_){}
       }
-      msgM.onMessage(messaging,function(payload){ const n=(payload&&(payload.data||payload.notification))||{}; toast('🔔 '+(n.title||'Ti-Services')+(n.body?' — '+n.body:'')); });
+      msgM.onMessage(messaging,function(payload){ const n=(payload&&(payload.data||payload.notification))||{}; toast((n.title||'Ti-Services')+(n.body?' — '+n.body:'')); });
     }catch(e){ console.warn('push register',e); }
   }
   async function fbLogin(f){ try{
@@ -9102,7 +9102,7 @@
           S.proStatus=(newStatus==='refused')?'pending':newStatus;
           if(newStatus==='approved'&&was==='pending'){
             if(S.persona==='pro'){S.proNav='home';S.proDocsView=false;S.proPayoutView=false;}
-            toast('🎉 Inscription validée — bienvenue chez Ti-Services !');
+            toast('Inscription validée — bienvenue chez Ti-Services !');
             try{ if('Notification'in window&&Notification.permission==='granted'){ new Notification('Ti-Services — inscription validée',{body:'Votre compte est activé. Vous pouvez recevoir des missions.',icon:'./icon-192.png',tag:'ti-approved'}); } }catch(_){}
           }
           if(newStatus==='approved')subscribeOpenRequests();
@@ -9139,8 +9139,8 @@
             if(rb>(S._rbSeen[id]||0)){S._rbSeen[id]=rb;
               const okSvc=!cats.length||cats.indexOf(r.service)>=0;const notMine=!(r.directed&&r.preferredProviderUid&&r.preferredProviderUid!==myUid);
               if(rb&&okSvc&&notMine&&!firstSnap){const bid=id;
-                notify('🔥 Coup de pouce sur une mission',(r.serviceName||svcNm(r.service))+' — le client a boosté sa demande, à saisir !','ti-boost-'+id,function(){S.persona='pro';S.mission=null;S.proReqView=bid;S.proNav='home';render();});
-                if(S.persona==='pro')toast('🔥 Coup de pouce : '+(r.serviceName||svcNm(r.service))+' re-disponible');
+                notify('Coup de pouce sur une mission',(r.serviceName||svcNm(r.service))+' — le client a boosté sa demande, à saisir !','ti-boost-'+id,function(){S.persona='pro';S.mission=null;S.proReqView=bid;S.proNav='home';render();});
+                if(S.persona==='pro')toast('Coup de pouce : '+(r.serviceName||svcNm(r.service))+' re-disponible');
               }
             }
           }
@@ -9205,7 +9205,7 @@
       await FB.f.updateDoc(FB.f.doc(FB.db,'requests',reqId),acc);
       let det={};try{const s=await FB.f.getDoc(FB.f.doc(FB.db,'requests',reqId,'private','details'));det=s.exists()?s.data():{};}catch(_){}
       const base=findSvc(req.service)||{id:req.service,nm:req.serviceName||svcNm(req.service),rate:req.rate||svcBase(req.service)};
-      S.mission=Object.assign(newMission(base),{reqId:reqId,status:'accepted',svc:req.service,svcName:req.serviceName||svcNm(req.service),rate:req.rate,duration:req.duration||1,unit:req.unit||'h',acts:req.acts||null,when:req.when||'',slot:acceptedSlot,slotFlex:req.slotFlex||0,proposedSlot:req.slotFlex?acceptedSlot:null,zone:req.zone||det.zone||'',address:det.address||'',geo:det.geo||null,access:det.access||'',boost:req.boost||0,boostEur:req.boostEur||0,people:req.people||1,locationMode:req.locationMode||'domicile',notes:req.notes||'',photos:(req.photos||[]).slice(),clientName:req.clientName||det.clientName||'',clientPhoto:req.clientPhoto||det.clientPhoto||null,clientPhone:det.clientPhone||'',provider:Object.assign({},PROVIDERS[req.service]||{},{nm:S.proName||'Vous'})});
+      S.mission=Object.assign(newMission(base),{reqId:reqId,status:'accepted',svc:req.service,svcName:req.serviceName||svcNm(req.service),rate:req.rate,duration:req.duration||1,unit:req.unit||'h',acts:req.acts||null,when:req.when||'',slot:acceptedSlot,slotFlex:req.slotFlex||0,proposedSlot:req.slotFlex?acceptedSlot:null,zone:req.zone||det.zone||'',address:det.address||'',geo:det.geo||null,access:det.access||'',boost:req.boost||0,boostEur:req.boostEur||0,people:req.people||1,locationMode:req.locationMode||'domicile',notes:req.notes||'',photos:(req.photos||[]).slice(),clientName:req.clientName||det.clientName||'',clientPhoto:req.clientPhoto||det.clientPhoto||null,clientPhone:det.clientPhone||'',provider:{nm:S.proName||'Vous',ini:inits(S.proName||'Vous'),rating:0,jobs:S.proJobsTotal||0,founder:!!S.proFounder}});
       // Colis : reprend la fenêtre de dates + le dossier de retrait (pièces privées).
       if(req.service==='colis'){S.mission.poste=req.poste||det.poste||'';S.mission.dateFrom=req.dateFrom||det.dateFrom||'';S.mission.dateTo=req.dateTo||det.dateTo||'';if(det.colis){S.mission.colis=Object.assign({},det.colis,{signed:!!req.colisSigned,signedAt:req.colisSignedAt||(det.colis&&det.colis.signedAt)||null,signature:req.colisSignature||(det.colis&&det.colis.signature)||''});}}
       proAddMission(S.mission);watchRequest(reqId);S._accepting=null;S.proReqView=null;S.proReqSlot=null;S.proReqPick=false;S.proNav='home';render();burstConfetti();toast('Mission acceptée — à vous de jouer !');
