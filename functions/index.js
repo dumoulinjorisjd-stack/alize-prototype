@@ -1769,6 +1769,7 @@ function welcomeHtml(first, role) {
 function inviteArtisanHtml(name) {
   const app = APP_URL.replace(/\/$/, '');
   const c1 = '#0FA896', c2 = '#14C2A8', btn = '#0FA896', dot = '#0FA896';
+  // Salutation sans prénom par défaut (envoi rapide sans risque) ; prénom seulement si fourni.
   const hi = name ? ('Bonjour ' + escHtmlS(name) + ',') : 'Bonjour,';
   const feats =
     welcomeFeatureRow(dot, 'Des missions près de chez vous', 'Recevez les demandes de votre zone, sur les créneaux que vous choisissez.') +
@@ -1788,7 +1789,8 @@ function inviteArtisanHtml(name) {
           '</td></tr>' +
           '<tr><td style="padding:14px 30px 0">' +
             '<h1 style="font-size:22px;margin:8px 0 0;color:#231E33">Rejoignez Ti-Services</h1>' +
-            '<p style="font-size:15px;line-height:1.6;color:#4a4556;margin:12px 0 0">' + hi + ' votre travail à Saint-Barthélemy correspond exactement à ce que recherchent nos clients. <b>Ti-Services</b> est une nouvelle application <b>100 % Saint-Barth</b> qui met en relation les habitants avec des artisans et intervenants locaux de confiance — et vous recevez vos <b>demandes de mission</b> directement dans l\'application.</p>' +
+            '<p style="font-size:15px;line-height:1.6;color:#4a4556;margin:12px 0 0">' + hi + '</p>' +
+            '<p style="font-size:15px;line-height:1.6;color:#4a4556;margin:10px 0 0">Votre travail à Saint-Barthélemy correspond exactement à ce que recherchent nos clients. <b>Ti-Services</b> est une nouvelle application <b>100 % Saint-Barth</b> qui met en relation les habitants avec des artisans et intervenants locaux de confiance — et vous recevez vos <b>demandes de mission</b> directement dans l\'application.</p>' +
           '</td></tr>' +
           '<tr><td style="padding:22px 30px 4px">' + feats + '</td></tr>' +
           '<tr><td align="center" style="padding:18px 30px 6px">' +
