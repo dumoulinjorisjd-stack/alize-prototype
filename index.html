@@ -2732,7 +2732,13 @@
      auto de la langue du navigateur, bascule manuelle mémorisée. Déploiement par lots :
      les clés absentes du dictionnaire restent simplement en français (aucune casse). */
   function initLang(){try{var s=localStorage.getItem('ts_lang');if(s==='en'||s==='fr'||s==='pt')return s;}catch(_){}try{var l=(navigator.language||'').toLowerCase();if(/^pt/.test(l))return 'pt';if(/^en/.test(l))return 'en';}catch(_){}return 'fr';}
-  function setLang(l){S.lang=(l==='en'||l==='pt')?l:'fr';try{localStorage.setItem('ts_lang',S.lang);}catch(_){}try{document.documentElement.lang=S.lang;}catch(_){}render();}
+  function setLang(l){S.lang=(l==='en'||l==='pt')?l:'fr';try{localStorage.setItem('ts_lang',S.lang);}catch(_){}try{document.documentElement.lang=S.lang;}catch(_){}render();applyLandLang();}
+  // Le panneau d'accueil (.brief) est du DOM statique, hors du routeur : render() ne le
+  // repeint jamais. On mémorise sa version française d'origine puis, à chaque changement
+  // de langue, on restaure ce français avant de ré-appliquer la traduction (sinon un
+  // aller-retour EN→FR resterait figé en anglais, faute de dictionnaire inverse).
+  var _briefFR=null;
+  function applyLandLang(){try{var br=document.querySelector('.brief');if(!br)return;if(_briefFR==null)_briefFR=br.innerHTML;if(br.innerHTML!==_briefFR)br.innerHTML=_briefFR;if(S.lang!=='fr')i18nApply(br);}catch(_){}}
   // Repli par motif pour les chaînes avec nombre/interpolation (ex. « 4 prestations › »).
   var MO_EN={'janvier':'January','février':'February','fevrier':'February','mars':'March','avril':'April','mai':'May','juin':'June','juillet':'July','août':'August','aout':'August','septembre':'September','octobre':'October','novembre':'November','décembre':'December','decembre':'December','janv':'January','févr':'February','fevr':'February','avr':'April','juil':'July','sept':'September','oct':'October','nov':'November','déc':'December','dec':'December'};
   var TIER_EN={'bronze':'Bronze','argent':'Silver','or':'Gold','platine':'Platinum','diamant':'Diamond'};
@@ -2801,6 +2807,56 @@
     }catch(e){console.warn('i18n',e);}
   }
   var EN_DICT={
+    // --- Accueil / landing ---
+    "Je cherche un service":"I'm looking for a service",
+    "Je propose mes services":"I offer my services",
+    "Un pro de confiance,":"A trusted pro,",
+    "chez vous en quelques minutes.":"at your door in minutes.",
+    "Ménage, garde d'enfants, jardinage, coiffure… Un prestataire vérifié près de chez vous, quand vous en avez besoin. Sans abonnement.":"Cleaning, childcare, gardening, hairdressing… A verified provider near you, whenever you need one. No subscription.",
+    "Le service, l'heure, l'adresse. C'est tout.":"The service, the time, the address. That's it.",
+    "Un pro vérifié accepte":"A verified pro accepts",
+    "Le premier prestataire disponible remporte votre mission.":"The first available provider wins your job.",
+    "Réglé une fois la prestation faite":"Paid once the service is done",
+    "Paiement automatique et sécurisé, facture incluse.":"Automatic, secure payment, invoice included.",
+    "Commandez en deux gestes":"Book in two taps",
+    "Assurés & couverts":"Insured & covered",
+    "Des clients,":"Clients,",
+    "sans prospecter.":"without prospecting.",
+    "Prestataire à Saint-Barthélemy ? Ti-Services vous envoie des clients près de chez vous. Zéro abonnement, paiement garanti — vous ne reversez une commission que lorsque vous êtes payé.":"A provider in Saint-Barthélemy? Ti-Services sends clients near you. No subscription, guaranteed payment — you only pay a commission once you get paid.",
+    "Devenir prestataire — gratuit":"Become a provider — free",
+    "Inscription en 2 minutes. Vous êtes visible dès la validation de votre profil.":"Sign up in 2 minutes. You're visible as soon as your profile is approved.",
+    "Recevez des demandes":"Receive requests",
+    "On vous alerte dès qu'un client de Saint-Barthélemy a besoin de vous.":"We alert you as soon as a client in Saint-Barthélemy needs you.",
+    "Acceptez ce qui vous arrange":"Accept what suits you",
+    "Vous choisissez vos missions. Aucune obligation, aucun abonnement.":"You choose your jobs. No obligation, no subscription.",
+    "Payé après validation":"Paid after approval",
+    "Le client règle dans l'app, votre part vous est versée automatiquement. Fini les impayés.":"The client pays in the app, your share is paid to you automatically. No more unpaid invoices.",
+    "Zéro abonnement":"Zero subscription",
+    "Vous restez libre":"You stay free",
+    "Ce que vous pouvez proposer":"What you can offer",
+    "Garde d'enfants":"Childcare",
+    "Coiffure à domicile":"Home hairdressing",
+    "Dépannage & bricolage":"Repairs & handywork",
+    "Cuisine":"Cooking",
+    "Garde d'animaux":"Pet sitting",
+    "Livraison de colis":"Parcel delivery",
+    "Votre métier n'est pas dans la liste ?":"Your trade isn't on the list?",
+    "Le catalogue est ouvert : vous pouvez proposer":"The catalogue is open: you can offer",
+    "tout service, même hors de ces catégories":"any service, even beyond these categories",
+    ". Décrivez le vôtre à l'inscription — on vous trouve des clients.":". Describe yours when signing up — we'll find you clients.",
+    "★ Le programme Ambassadeur":"★ The Ambassador programme",
+    "Les premiers inscrits rejoignent le programme Ambassadeur : commission réduite et mise en avant dans l'app. Places limitées.":"The first to join get the Ambassador programme: reduced commission and featured placement in the app. Limited spots.",
+    "Ti-Services — services à la demande à Saint-Barthélemy, édité par C.C.S.":"Ti-Services — on-demand services in Saint-Barthélemy, published by C.C.S.",
+    "Suivez-nous sur Facebook":"Follow us on Facebook",
+    // --- Connexion / inscription ---
+    "jamais vendues ni transmises à des tiers à des fins commerciales":"never sold or shared with third parties for commercial purposes",
+    "Aucune carte à cette étape — moyen de paiement demandé seulement à la 1ʳᵉ réservation.":"No card at this step — a payment method is only requested at your 1st booking.",
+    "Vos données restent privées :":"Your data stays private:",
+    ". Détail dans la":". Details in the",
+    "de Ti-Services.":"of Ti-Services.",
+    "Se souvenir de moi":"Remember me",
+    "Vous êtes un professionnel ?":"Are you a professional?",
+    "Rejoindre Ti-Services ›":"Join Ti-Services ›",
     "Nombre de participants":"Number of participants",
     "Pour combien de personnes ?":"For how many people?",
     "Pour combien de personnes ?":"For how many people?",
@@ -3400,6 +3456,56 @@
   var TIER_PT={'bronze':'Bronze','argent':'Prata','or':'Ouro','platine':'Platina','diamant':'Diamante'};
   var DOW_PT={'lun':'Seg','mar':'Ter','mer':'Qua','jeu':'Qui','ven':'Sex','sam':'Sáb','dim':'Dom'};
   var PT_DICT={
+    // --- Accueil / landing ---
+    "Je cherche un service":"Procuro um serviço",
+    "Je propose mes services":"Ofereço os meus serviços",
+    "Un pro de confiance,":"Um profissional de confiança,",
+    "chez vous en quelques minutes.":"na sua casa em minutos.",
+    "Ménage, garde d'enfants, jardinage, coiffure… Un prestataire vérifié près de chez vous, quand vous en avez besoin. Sans abonnement.":"Limpeza, cuidado de crianças, jardinagem, cabeleireiro… Um prestador verificado perto de si, quando precisar. Sem assinatura.",
+    "Le service, l'heure, l'adresse. C'est tout.":"O serviço, a hora, a morada. É tudo.",
+    "Un pro vérifié accepte":"Um profissional verificado aceita",
+    "Le premier prestataire disponible remporte votre mission.":"O primeiro prestador disponível fica com o seu serviço.",
+    "Réglé une fois la prestation faite":"Pago depois do serviço feito",
+    "Paiement automatique et sécurisé, facture incluse.":"Pagamento automático e seguro, fatura incluída.",
+    "Commandez en deux gestes":"Reserve em dois gestos",
+    "Assurés & couverts":"Segurados e cobertos",
+    "Des clients,":"Clientes,",
+    "sans prospecter.":"sem prospetar.",
+    "Prestataire à Saint-Barthélemy ? Ti-Services vous envoie des clients près de chez vous. Zéro abonnement, paiement garanti — vous ne reversez une commission que lorsque vous êtes payé.":"Prestador em Saint-Barthélemy? A Ti-Services envia-lhe clientes perto de si. Sem assinatura, pagamento garantido — só paga uma comissão quando é pago.",
+    "Devenir prestataire — gratuit":"Tornar-se prestador — grátis",
+    "Inscription en 2 minutes. Vous êtes visible dès la validation de votre profil.":"Inscrição em 2 minutos. Fica visível assim que o seu perfil for validado.",
+    "Recevez des demandes":"Receba pedidos",
+    "On vous alerte dès qu'un client de Saint-Barthélemy a besoin de vous.":"Avisamos assim que um cliente de Saint-Barthélemy precisar de si.",
+    "Acceptez ce qui vous arrange":"Aceite o que lhe convém",
+    "Vous choisissez vos missions. Aucune obligation, aucun abonnement.":"Você escolhe os seus serviços. Sem obrigação, sem assinatura.",
+    "Payé après validation":"Pago após validação",
+    "Le client règle dans l'app, votre part vous est versée automatiquement. Fini les impayés.":"O cliente paga na app, a sua parte é-lhe paga automaticamente. Acabaram-se as dívidas.",
+    "Zéro abonnement":"Zero assinatura",
+    "Vous restez libre":"Continua livre",
+    "Ce que vous pouvez proposer":"O que pode oferecer",
+    "Garde d'enfants":"Cuidado de crianças",
+    "Coiffure à domicile":"Cabeleireiro ao domicílio",
+    "Dépannage & bricolage":"Reparações e bricolage",
+    "Cuisine":"Cozinha",
+    "Garde d'animaux":"Cuidado de animais",
+    "Livraison de colis":"Entrega de encomendas",
+    "Votre métier n'est pas dans la liste ?":"A sua profissão não está na lista?",
+    "Le catalogue est ouvert : vous pouvez proposer":"O catálogo é aberto: pode oferecer",
+    "tout service, même hors de ces catégories":"qualquer serviço, mesmo fora destas categorias",
+    ". Décrivez le vôtre à l'inscription — on vous trouve des clients.":". Descreva o seu ao inscrever-se — encontramos-lhe clientes.",
+    "★ Le programme Ambassadeur":"★ O programa Embaixador",
+    "Les premiers inscrits rejoignent le programme Ambassadeur : commission réduite et mise en avant dans l'app. Places limitées.":"Os primeiros inscritos entram no programa Embaixador: comissão reduzida e destaque na app. Vagas limitadas.",
+    "Ti-Services — services à la demande à Saint-Barthélemy, édité par C.C.S.":"Ti-Services — serviços a pedido em Saint-Barthélemy, editado por C.C.S.",
+    "Suivez-nous sur Facebook":"Siga-nos no Facebook",
+    // --- Connexion / inscription ---
+    "jamais vendues ni transmises à des tiers à des fins commerciales":"nunca vendidos nem partilhados com terceiros para fins comerciais",
+    "Aucune carte à cette étape — moyen de paiement demandé seulement à la 1ʳᵉ réservation.":"Sem cartão nesta etapa — o método de pagamento só é pedido na 1.ª reserva.",
+    "Vos données restent privées :":"Os seus dados ficam privados:",
+    ". Détail dans la":". Detalhes na",
+    "de Ti-Services.":"da Ti-Services.",
+    "Se souvenir de moi":"Lembrar-me",
+    "Vous êtes un professionnel ?":"É um profissional?",
+    "Rejoindre Ti-Services ›":"Juntar-se à Ti-Services ›",
     "Nombre de participants":"Número de participantes",
     "Pour combien de personnes ?":"Para quantas pessoas?",
     "Le prix est multiplié par le nombre de personnes — chacune sa prestation.":"O preço é multiplicado pelo número de pessoas — um serviço para cada uma.",
@@ -9359,6 +9465,7 @@
 
   handleDeepLink();
   render();
+  applyLandLang();
   // Ouverture depuis le lien « Installer l'application » de l'e-mail : on affiche le
   // guide d'installation dès que l'app est peinte (sauf si déjà installée). Le petit
   // délai laisse le temps à l'événement beforeinstallprompt de se déclencher (Android).
