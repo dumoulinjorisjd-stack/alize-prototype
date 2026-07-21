@@ -2348,6 +2348,19 @@
   // FACTURE DE COMMISSION mensuelle (une ligne par mission). Modèle standard des
   // plateformes : le relevé mensuel EST la facture.
   const COMM_PERIOD='Juillet 2026';
+  // Le relevé mensuel / la facture de commission d'un artisan ne sont CONSULTABLES et
+  // exploitables qu'à partir du 1er du mois SUIVANT la période. Avant, le mois n'est pas
+  // terminé : le document serait incomplet, donc faussé. On fige ici la période comptable.
+  const COMM_PERIOD_MONTH=new Date(2026,6,1); // Juillet 2026 (cf. COMM_PERIOD)
+  function stmtUnlocked(){var n=new Date();return (n.getFullYear()*12+n.getMonth())>(COMM_PERIOD_MONTH.getFullYear()*12+COMM_PERIOD_MONTH.getMonth());}
+  function stmtAvailTxt(){var d=new Date(COMM_PERIOD_MONTH.getFullYear(),COMM_PERIOD_MONTH.getMonth()+1,1);var M=['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];return 'le 1er '+M[d.getMonth()]+' '+d.getFullYear();}
+  function stmtLockCard(title,backAct){return `<div class="pad"><button class="reset" data-act="${backAct}" style="margin:8px 0 2px">← Retour</button>
+      <span class="eyebrow">${I.card} ${title}</span>
+      <div class="card" style="padding:22px;margin-top:14px;text-align:center"><div class="benic" style="width:56px;height:56px;margin:0 auto;background:var(--coral-wash);color:var(--coral-deep)">${I.lock}</div>
+        <b style="display:block;margin-top:12px;font-size:15px">Disponible ${stmtAvailTxt()}</b>
+        <p class="sub" style="margin-top:8px">Votre document de <b>${COMM_PERIOD}</b> sera consultable et téléchargeable <b>${stmtAvailTxt()}</b>. Tant que le mois n'est pas terminé, il serait incomplet — on évite ainsi un relevé faussé.</p>
+        <p class="mini" style="margin-top:10px;color:var(--muted)">Vos factures par prestation, elles, restent disponibles à tout moment dans « Mes factures par mission ».</p>
+      </div></div>${proNavbar()}`;}
   function commMonthly(history){
     const list=(history||[]).map(function(h){return {h:h,b:histBreakdown(h)};}).filter(function(x){return x.b.commission>0;});
     const round2=function(n){return Math.round(n*100)/100;};
@@ -6945,11 +6958,16 @@
   function proInterventions(){
     const list=S.proHistory||[];
     const total=list.reduce((t,h)=>t+histBreakdown(h).net,0);
-    const rows=list.length?list.map(function(h){const b=histBreakdown(h);return `<div class="card interv-row"><div class="row between"><b style="font-size:14px">${svcName(h.svc)}</b><span class="money" style="font-weight:700">${eur(b.net)}</span></div>
-      <div class="mini" style="margin-top:3px">${fmtLong(h.dateISO)} · ${esc(h.client||'')} · ${durTxt({unit:h.unit},h.duration)}</div>
+    // Factures par mission CLASSÉES PAR CLIENT : on regroupe l'historique par nom de client
+    // (clients triés alphabétiquement) pour que l'artisan s'y retrouve d'un coup d'œil.
+    const invCard=function(h){const b=histBreakdown(h);return `<div class="card interv-row"><div class="row between"><b style="font-size:14px">${svcName(h.svc)}</b><span class="money" style="font-weight:700">${eur(b.net)}</span></div>
+      <div class="mini" style="margin-top:3px">${fmtLong(h.dateISO)} · ${durTxt({unit:h.unit},h.duration)}</div>
       ${b.commission>0?`<div class="mini" style="margin-top:4px;color:var(--muted)">Prestation ${eur(b.gross)} · commission Ti-Services −${eur(b.commission)} (${b.pct}&nbsp;%)</div>`:''}
       ${(h.tip>0)?`<div class="mini" style="margin-top:4px;color:var(--good);font-weight:650">💛 dont ${eur(h.tip)} de pourboire du client (100&nbsp;% pour vous)</div>`:''}
-      <div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap;align-items:center"><span class="chip good" style="padding:3px 9px">${I.check} Réglée · ${esc(h.invNo)}</span><button class="btn ghost sm" style="width:auto;padding:8px 12px" data-act="invoice:${h.id}">${I.card}&nbsp;Facture</button>${b.commission>0?`<button class="btn ghost sm" style="width:auto;padding:8px 12px" data-act="comm-invoice:${h.id}">${I.card}&nbsp;Commission</button>`:''}</div></div>`;}).join(''):`<div class="card" style="padding:24px;text-align:center;color:var(--muted);margin-top:12px">Aucune intervention réalisée pour l'instant.<br>Vos prestations terminées apparaîtront ici avec leur facture.</div>`;
+      <div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap;align-items:center"><span class="chip good" style="padding:3px 9px">${I.check} Réglée · ${esc(h.invNo)}</span><button class="btn ghost sm" style="width:auto;padding:8px 12px" data-act="invoice:${h.id}">${I.card}&nbsp;Facture</button>${b.commission>0?`<button class="btn ghost sm" style="width:auto;padding:8px 12px" data-act="comm-invoice:${h.id}">${I.card}&nbsp;Commission</button>`:''}</div></div>`;};
+    var _grp={},_ord=[];(list||[]).forEach(function(h){var k=((h.clientFull||h.client||'Client')+'').trim()||'Client';if(!_grp[k]){_grp[k]=[];_ord.push(k);}_grp[k].push(h);});
+    _ord.sort(function(a,b){return a.localeCompare(b,'fr',{sensitivity:'base'});});
+    const rows=list.length?_ord.map(function(k){var gs=_grp[k];var gnet=gs.reduce(function(t,h){return t+histBreakdown(h).net;},0);return `<div class="eyebrow" style="margin:18px 4px 4px;color:var(--muted);display:flex;justify-content:space-between;align-items:center"><span>👤 ${esc(k)}</span><span style="color:var(--muted);font-weight:600">${gs.length} mission${gs.length>1?'s':''} · ${eur(gnet)}</span></div>`+gs.map(invCard).join('');}).join(''):`<div class="card" style="padding:24px;text-align:center;color:var(--muted);margin-top:12px">Aucune intervention réalisée pour l'instant.<br>Vos prestations terminées apparaîtront ici avec leur facture.</div>`;
     return `<div class="pad"><button class="reset" data-act="close-interv" style="margin:8px 0 2px">← Retour</button>
       <span class="eyebrow">${I.card} Comptabilité</span>
       <div class="h-hello">Mes interventions</div>
@@ -6988,8 +7006,8 @@
       <div class="card" style="padding:18px;margin-top:12px"><div class="mini">Net perçu (juillet)</div><b class="money" style="font-size:30px;font-family:var(--f-disp)">${eur(S.proEarnings)}</b><div class="row between" style="margin-top:14px"><span class="sub">Missions réalisées</span><b>${nbDone}</b></div>${nbDone?`<div class="row between" style="margin-top:6px"><span class="sub">Prochain virement</span><b>sous 48 h après validation</b></div>`:''}</div>
       ${nbDone?'':`<div class="card" style="padding:22px;margin-top:12px;text-align:center;color:var(--muted)"><div style="display:flex;justify-content:center">${octoMini(64,'wave')}</div><div style="margin-top:8px;font-weight:600;color:var(--ink-soft)">Pas encore de mission réglée</div><div style="margin-top:3px">Vos revenus et vos factures apparaîtront ici après votre première prestation validée.</div></div>`}
       <button class="card" data-act="open-interv" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.card}&nbsp;Mes factures par mission</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">La facture de chaque prestation réalisée, établie automatiquement en votre nom — à consulter ou télécharger.</p></button>
-      <button class="card" data-act="open-statement" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">📄&nbsp;Relevé mensuel</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Votre document récapitulatif du mois : toutes vos prestations et le total encaissé, à enregistrer pour votre comptabilité.</p></button>
-      <button class="card" data-act="open-comm-statement" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">🧾&nbsp;Facture de commission (mensuelle)</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Votre facture de commission Ti-Services du mois, une ligne par mission — charge déductible pour votre comptabilité.</p></button>
+      <button class="card" data-act="open-statement" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">📄&nbsp;Relevé mensuel</b>${stmtUnlocked()?`<span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span>`:`<span class="mini" style="color:var(--muted);font-weight:650">${I.lock} ${stmtAvailTxt()}</span>`}</div><p class="sub" style="margin-top:8px">Votre document récapitulatif du mois : toutes vos prestations et le total encaissé, à enregistrer pour votre comptabilité.${stmtUnlocked()?'':` <b>Disponible ${stmtAvailTxt()}</b> (une fois le mois terminé).`}</p></button>
+      <button class="card" data-act="open-comm-statement" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">🧾&nbsp;Facture de commission (mensuelle)</b>${stmtUnlocked()?`<span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span>`:`<span class="mini" style="color:var(--muted);font-weight:650">${I.lock} ${stmtAvailTxt()}</span>`}</div><p class="sub" style="margin-top:8px">Votre facture de commission Ti-Services du mois, une ligne par mission — charge déductible pour votre comptabilité.${stmtUnlocked()?'':` <b>Disponible ${stmtAvailTxt()}</b> (une fois le mois terminé).`}</p></button>
       <div class="banner teal" style="margin-top:12px">${I.lock}<span><b>Paiement garanti</b> : réglé sous 48 h après chaque prestation validée — sans relance.</span></div>
       </div>${proNavbar()}`;
   }
@@ -7139,8 +7157,9 @@
       ${legalFooter('pro')}
       <div style="height:12px"></div></div>${proNavbar()}`;
   }
-  // Relevé mensuel imprimable (récapitulatif du mois).
+  // Relevé mensuel imprimable (récapitulatif du mois). Verrouillé jusqu'au 1er du mois suivant.
   function proStatement(){
+    if(!stmtUnlocked())return stmtLockCard('Relevé mensuel','close-statement');
     const list=S.proHistory||[];const total=list.reduce((t,h)=>t+h.amount,0);
     const rows=list.length?list.map(function(h){return `<tr><td>${fmtLong(h.dateISO)}</td><td>${svcName(h.svc)} — ${esc(h.client||'')}</td><td class="r">${durTxt({unit:h.unit},h.duration)}</td><td class="r">${eur(h.amount)}</td></tr>`;}).join(''):`<tr><td colspan="4" style="text-align:center;color:#888;padding:14px">Aucune prestation ce mois-ci.</td></tr>`;
     return `<div class="pad">
@@ -7186,6 +7205,7 @@
   // FACTURE DE COMMISSION MENSUELLE (Ti-Services → artisan) : une ligne par mission.
   // Document fiscal officiel — le relevé mensuel EST la facture (standard plateformes).
   function proCommStatement(){
+    if(!stmtUnlocked())return stmtLockCard('Facture de commission','close-comm-statement');
     const c=commMonthly(S.proHistory);
     const rows=c.count?c.list.map(function(x){return `<tr><td>${fmtLong(x.h.dateISO)}</td><td>${svcName(x.h.svc)} — ${esc(x.h.client||'')}</td><td class="r">${eur(x.b.commission)}</td></tr>`;}).join(''):`<tr><td colspan="3" style="text-align:center;color:#888;padding:14px">Aucune commission ce mois-ci.</td></tr>`;
     return `<div class="pad">
