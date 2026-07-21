@@ -13,12 +13,75 @@
 const {onDocumentCreated, onDocumentUpdated} = require('firebase-functions/v2/firestore');
 const {onRequest, onCall, HttpsError} = require('firebase-functions/v2/https');
 const {setGlobalOptions} = require('firebase-functions/v2');
+const {defineSecret} = require('firebase-functions/params');
 const {initializeApp} = require('firebase-admin/app');
 const {getFirestore, FieldValue} = require('firebase-admin/firestore');
 const {getMessaging} = require('firebase-admin/messaging');
 
 initializeApp();
 setGlobalOptions({region: 'europe-west1', maxInstances: 5});
+
+/* ============================================================================
+ * E-MAIL — envoi RÉEL et observable (SMTP Infomaniak).
+ *
+ * Historique : toutes les fonctions écrivaient dans la collection Firestore
+ * `mail` en comptant sur l'extension « Trigger Email from Firestore » pour
+ * l'envoi. Si l'extension n'est pas installée / mal configurée (SMTP absent),
+ * les messages s'empilent et RIEN ne part, sans erreur visible.
+ *
+ * Désormais : si le secret SMTP_PASS est défini, on envoie directement en SMTP
+ * via la boîte contact@ti-services.fr (Infomaniak) et on journalise le résultat.
+ * En cas d'échec — ou si le secret est absent — on retombe sur la collection
+ * `mail` pour ne rien perdre. Pour activer :
+ *   1) firebase functions:secrets:set SMTP_PASS   (= mot de passe de la boîte
+ *      contact@ti-services.fr, ou un mot de passe d'application Infomaniak) ;
+ *   2) redéployer les fonctions.
+ * ==========================================================================*/
+const SMTP_PASS = defineSecret('SMTP_PASS');
+const SMTP_HOST = 'mail.infomaniak.com';
+const SMTP_PORT = 465; // SSL/TLS
+const MAIL_FROM_EMAIL = 'contact@ti-services.fr';
+const MAIL_FROM_NAME = 'Ti-Services';
+
+let _mailTx = null;
+function mailTransport() {
+  const pass = process.env.SMTP_PASS || '';
+  if (!pass) return null;
+  if (_mailTx) return _mailTx;
+  const nodemailer = require('nodemailer');
+  _mailTx = nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    secure: true,
+    auth: {user: MAIL_FROM_EMAIL, pass},
+  });
+  return _mailTx;
+}
+
+async function sendMail(db, to, message) {
+  const tx = mailTransport();
+  if (tx) {
+    try {
+      const info = await tx.sendMail({
+        from: '"' + MAIL_FROM_NAME + '" <' + MAIL_FROM_EMAIL + '>',
+        to,
+        subject: message.subject,
+        html: message.html,
+        attachments: (Array.isArray(message.attachments) && message.attachments.length) ? message.attachments : undefined,
+      });
+      console.log('[mail] envoyé à ' + to + ' (id=' + (info && info.messageId || '?') + ') — ' + message.subject);
+      return true;
+    } catch (e) {
+      console.error('[mail] échec SMTP → ' + to + ' : ' + (e && e.message));
+      try { await db.collection('mail').add({to, message}); } catch (_) {}
+      return false;
+    }
+  }
+  console.warn('[mail] SMTP_PASS absent — message mis en file `mail` pour ' + to +
+    ' (rien ne partira sans l\'extension Trigger Email OU le secret SMTP_PASS).');
+  await db.collection('mail').add({to, message});
+  return false;
+}
 
 // Métiers pouvant se pratiquer au domicile du client OU chez le prestataire (salon).
 const CAN_ON_SITE = ['sport', 'coach', 'natation', 'pilates', 'yoga', 'massage', 'coiffure', 'beaute'];
@@ -391,7 +454,7 @@ exports.notifyArtisansNewRequest = onDocumentCreated('requests/{reqId}', async (
  * prévient l'artisan par notification push ET met un e-mail en file d'envoi
  * (collection `mail`, lue par l'extension Firebase « Trigger Email »).
  */
-exports.notifyArtisanApproved = onDocumentUpdated('artisans/{artisanId}', async (event) => {
+exports.notifyArtisanApproved = onDocumentUpdated({document: 'artisans/{artisanId}', secrets: [SMTP_PASS]}, async (event) => {
   const before = (event.data && event.data.before && event.data.before.data()) || {};
   const after = (event.data && event.data.after && event.data.after.data()) || {};
   // On agit uniquement sur la transition -> « valide ».
@@ -430,15 +493,12 @@ exports.notifyArtisanApproved = onDocumentUpdated('artisans/{artisanId}', async 
   //    « Trigger Email from Firestore » pour l'envoi réel).
   if (email) {
     try {
-      await db.collection('mail').add({
-        to: email,
-        message: {
-          subject: 'Votre inscription Ti-Services est validée 🎉',
-          html: '<p>Bonjour ' + name + ',</p>' +
-                '<p>Bonne nouvelle : votre inscription en tant qu\'artisan sur <b>Ti-Services</b> vient d\'être validée.</p>' +
-                '<p>Votre compte est désormais actif : vous pouvez recevoir des demandes de missions. Ouvrez l\'application pour commencer — elle s\'ouvrira automatiquement sur votre espace missions.</p>' +
-                '<p>À très vite,<br>L\'équipe Ti-Services</p>',
-        },
+      await sendMail(db, email, {
+        subject: 'Votre inscription Ti-Services est validée 🎉',
+        html: '<p>Bonjour ' + name + ',</p>' +
+              '<p>Bonne nouvelle : votre inscription en tant qu\'artisan sur <b>Ti-Services</b> vient d\'être validée.</p>' +
+              '<p>Votre compte est désormais actif : vous pouvez recevoir des demandes de missions. Ouvrez l\'application pour commencer — elle s\'ouvrira automatiquement sur votre espace missions.</p>' +
+              '<p>À très vite,<br>L\'équipe Ti-Services</p>',
       });
     } catch (e) { console.warn('approve email queue', e); }
   }
@@ -451,7 +511,7 @@ exports.notifyArtisanApproved = onDocumentUpdated('artisans/{artisanId}', async 
  * (lui seul le peut, cf. règles), il n'est ni matché ni visible côté client.
  */
 const ADMIN_EMAIL = 'contact@ti-services.fr';
-exports.notifyServiceAddition = onDocumentUpdated('artisans/{artisanId}', async (event) => {
+exports.notifyServiceAddition = onDocumentUpdated({document: 'artisans/{artisanId}', secrets: [SMTP_PASS]}, async (event) => {
   const before = (event.data && event.data.before && event.data.before.data()) || {};
   const after = (event.data && event.data.after && event.data.after.data()) || {};
   const bp = Array.isArray(before.pendingCats) ? before.pendingCats : [];
@@ -465,14 +525,11 @@ exports.notifyServiceAddition = onDocumentUpdated('artisans/{artisanId}', async 
     ? ('Autre : ' + (after.pendingOther || '').toString().slice(0, 80))
     : c)).join(', ');
   try {
-    await db.collection('mail').add({
-      to: ADMIN_EMAIL,
-      message: {
-        subject: 'Ti-Services · Métier à valider — ' + name,
-        html: '<p><b>' + name + '</b> demande à proposer un nouveau métier sur Ti-Services :</p>' +
-              '<p style="font-size:16px"><b>' + labels + '</b></p>' +
-              '<p>Ouvrez la console admin, puis la fiche de l\'artisan, pour vérifier (assurance — et diplômes pour la garde d\'enfants) et <b>valider</b> ou <b>refuser</b> le métier. Tant qu\'il n\'est pas validé, il n\'est pas proposé aux clients.</p>',
-      },
+    await sendMail(db, ADMIN_EMAIL, {
+      subject: 'Ti-Services · Métier à valider — ' + name,
+      html: '<p><b>' + name + '</b> demande à proposer un nouveau métier sur Ti-Services :</p>' +
+            '<p style="font-size:16px"><b>' + labels + '</b></p>' +
+            '<p>Ouvrez la console admin, puis la fiche de l\'artisan, pour vérifier (assurance — et diplômes pour la garde d\'enfants) et <b>valider</b> ou <b>refuser</b> le métier. Tant qu\'il n\'est pas validé, il n\'est pas proposé aux clients.</p>',
     });
   } catch (e) { console.warn('service add notify', e); }
 });
@@ -1443,7 +1500,7 @@ async function buildProcurationPdf(d) {
   return Buffer.from(bytes).toString('base64');
 }
 
-exports.emailClientInvoice = onDocumentUpdated('requests/{reqId}', async (event) => {
+exports.emailClientInvoice = onDocumentUpdated({document: 'requests/{reqId}', secrets: [SMTP_PASS]}, async (event) => {
   const before = (event.data && event.data.before && event.data.before.data()) || {};
   const after = (event.data && event.data.after && event.data.after.data()) || {};
   // Bascule « commission réglée » (n° de facture figé) — une seule fois.
@@ -1482,7 +1539,7 @@ exports.emailClientInvoice = onDocumentUpdated('requests/{reqId}', async (event)
   };
   if (pdfB64) message.attachments = [{ filename: 'Facture-Ti-Services-' + invNo + '.pdf', content: pdfB64, encoding: 'base64' }];
   try {
-    await db.collection('mail').add({ to: email, message });
+    await sendMail(db, email, message);
     await event.data.after.ref.update({ invoiceEmailed: true, invoiceEmailedAt: FieldValue.serverTimestamp() });
     console.log('Facture client envoyée à ' + email + ' (n° ' + invNo + ', ' + total + ' €)');
   } catch (e) { console.warn('emailClientInvoice send', e); }
@@ -1610,7 +1667,7 @@ function welcomeHtml(first) {
   '</div>';
 }
 
-exports.welcomeClientEmail = onDocumentCreated('users/{uid}', async (event) => {
+exports.welcomeClientEmail = onDocumentCreated({document: 'users/{uid}', secrets: [SMTP_PASS]}, async (event) => {
   const snap = event.data; if (!snap) return;
   const u = snap.data() || {};
   // Seulement les clients (les artisans/conciergerie ont leurs propres e-mails).
@@ -1619,12 +1676,36 @@ exports.welcomeClientEmail = onDocumentCreated('users/{uid}', async (event) => {
   if (!email) return;
   const first = String(u.name || '').trim().split(' ')[0] || 'à bord';
   try {
-    await getFirestore().collection('mail').add({
-      to: email,
-      message: { subject: 'Bienvenue sur Ti-Services 🐙', html: welcomeHtml(first) },
-    });
-    console.log('E-mail de bienvenue mis en file pour ' + email);
+    await sendMail(getFirestore(), email, { subject: 'Bienvenue sur Ti-Services 🐙', html: welcomeHtml(first) });
   } catch (e) { console.warn('welcomeClientEmail', e); }
+});
+
+/**
+ * emailDiag : diagnostic d'envoi d'e-mail. Ouvrez dans le navigateur
+ *   https://europe-west1-<project>.cloudfunctions.net/emailDiag
+ * Renvoie un JSON indiquant si SMTP_PASS est présent, et envoie un e-mail
+ * de test à l'adresse admin (contact@ti-services.fr) pour vérifier la chaîne
+ * complète. Sûr : n'envoie qu'à l'adresse admin, jamais à une adresse fournie.
+ */
+exports.emailDiag = onRequest({secrets: [SMTP_PASS]}, async (req, res) => {
+  const hasKey = !!(process.env.SMTP_PASS || '');
+  const out = {smtpConfigured: hasKey, from: MAIL_FROM_EMAIL, to: ADMIN_EMAIL, sent: false, note: ''};
+  if (!hasKey) {
+    out.note = 'SMTP_PASS absent — aucun e-mail ne peut partir directement. Définissez le secret puis redéployez.';
+    res.status(200).json(out); return;
+  }
+  try {
+    const ok = await sendMail(getFirestore(), ADMIN_EMAIL, {
+      subject: 'Test Ti-Services ✅ — envoi d\'e-mail opérationnel',
+      html: '<p>Ceci est un e-mail de test envoyé par <b>emailDiag</b>.</p>' +
+            '<p>Si vous le recevez, la configuration d\'envoi (Brevo) fonctionne : ' +
+            'bienvenue, factures et notifications partiront normalement.</p>',
+    });
+    out.sent = ok;
+    out.note = ok ? 'E-mail de test envoyé — vérifiez la boîte de réception (et les spams).'
+      : 'Échec de l\'envoi Brevo — voir les logs de la fonction (clé invalide ou expéditeur non vérifié ?).';
+  } catch (e) { out.note = 'Erreur : ' + (e && e.message); }
+  res.status(200).json(out);
 });
 
 // Export interne pour les tests unitaires (inerte en production : TI_TEST non défini).
