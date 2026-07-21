@@ -7036,27 +7036,33 @@
     if(S.invClient&&_grp[S.invClient]){
       const gs=_grp[S.invClient];const ag=proClientAgg(gs);
       return `<div class="pad"><button class="reset" data-act="invclient-back" style="margin:8px 0 2px">← Tous les clients</button>
-        <span class="eyebrow">${I.card} Fiche client</span>
-        <div class="h-hello">👤 ${esc(S.invClient)}</div>
+        <span class="eyebrow">📁 Dossier client</span>
+        <div class="h-hello">${esc(S.invClient)}</div>
         <div class="card" style="padding:15px;margin-top:12px"><div class="row between"><div><div class="mini">Montant des missions</div><b class="money" style="font-size:19px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(ag.net)}</b></div><div style="text-align:right"><div class="mini">💛 Pourboires</div><b class="money" style="font-size:19px;font-family:var(--f-disp);color:var(--good)">${eur(ag.tips)}</b></div></div><div class="mini" style="margin-top:8px;color:var(--muted)">${ag.count} mission${ag.count>1?'s':''} réglée${ag.count>1?'s':''} — pourboires inclus dans le montant, 100&nbsp;% pour vous.</div></div>
-        <div class="eyebrow" style="margin:18px 4px 6px;color:var(--muted)">Factures</div>
+        <div class="eyebrow" style="margin:18px 4px 6px;color:var(--muted)">${I.card} Factures du dossier</div>
         ${gs.map(proInvCard).join('')}
         <div style="height:10px"></div></div>${proNavbar()}`;
     }
     // LISTE des clients : une fiche par client (montant global + pourboires), cliquable.
     const total=list.reduce((t,h)=>t+histBreakdown(h).net,0);
     const totalTips=list.reduce((t,h)=>t+(Number(h.tip)||0),0);
-    const cards=list.length?_ord.map(function(k){var gs=_grp[k];var ag=proClientAgg(gs);return `<button class="card" data-invclient="${esc(k)}" style="padding:15px;margin-top:10px;width:100%;text-align:left;display:block">
-        <div class="row between" style="align-items:center"><b style="font-size:15px">👤 ${esc(k)}</b><b class="money" style="font-weight:800;color:var(--teal-deep);font-family:var(--f-disp)">${eur(ag.net)}</b></div>
-        <div class="row between" style="margin-top:5px"><span class="mini" style="color:var(--muted)">${ag.count} mission${ag.count>1?'s':''} · montant global</span>${ag.tips>0?`<span class="mini" style="color:var(--good);font-weight:650">💛 ${eur(ag.tips)} de pourboires</span>`:''}</div>
-        <div class="mini" style="margin-top:8px;text-align:right;color:var(--teal-deep);font-weight:700">Voir les factures ›</div>
-      </button>`;}).join(''):`<div class="card" style="padding:24px;text-align:center;color:var(--muted);margin-top:12px">Aucune intervention réalisée pour l'instant.<br>Vos prestations terminées apparaîtront ici, classées par client.</div>`;
+    // Chaque client = un DOSSIER (aspect « chemise ») ; on l'ouvre pour voir ses factures.
+    const cards=list.length?_ord.map(function(k){var gs=_grp[k];var ag=proClientAgg(gs);return `<button class="folder" data-invclient="${esc(k)}" style="width:100%;text-align:left;display:block;padding:0;margin-top:12px;background:none;border:none">
+        <div style="height:11px;width:46%;min-width:120px;background:var(--teal-wash);border:1.5px solid var(--hair);border-bottom:none;border-radius:10px 12px 0 0;margin-left:6px"></div>
+        <div class="card" style="margin-top:-1px;padding:0;overflow:hidden;border:1.5px solid var(--hair)"><div style="display:flex;align-items:stretch">
+          <div style="width:54px;flex:none;background:var(--teal-wash);color:var(--teal-deep);display:flex;align-items:center;justify-content:center;font-size:24px">📁</div>
+          <div style="flex:1;padding:13px 14px;min-width:0">
+            <div class="row between" style="align-items:center;gap:8px"><b style="font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(k)}</b><b class="money" style="font-weight:800;color:var(--teal-deep);font-family:var(--f-disp);flex:none">${eur(ag.net)}</b></div>
+            <div class="row between" style="margin-top:4px;gap:8px"><span class="mini" style="color:var(--muted)">${ag.count} facture${ag.count>1?'s':''}${ag.tips>0?' · 💛 '+eur(ag.tips):''}</span><span class="mini" style="color:var(--teal-deep);font-weight:700;flex:none">Ouvrir le dossier ›</span></div>
+          </div>
+        </div></div>
+      </button>`;}).join(''):`<div class="card" style="padding:24px;text-align:center;color:var(--muted);margin-top:12px">Aucune intervention réalisée pour l'instant.<br>Vos prestations terminées apparaîtront ici, un dossier par client.</div>`;
     return `<div class="pad"><button class="reset" data-act="close-interv" style="margin:8px 0 2px">← Retour</button>
       <span class="eyebrow">${I.card} Comptabilité</span>
-      <div class="h-hello">Mes factures par client</div>
-      <div class="card" style="padding:15px;margin-top:12px"><div class="row between"><div><div class="mini">Net encaissé</div><b class="money" style="font-size:19px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(total)}</b></div><div style="text-align:right"><div class="mini">💛 Pourboires</div><b class="money" style="font-size:19px;font-family:var(--f-disp);color:var(--good)">${eur(totalTips)}</b></div></div><div class="mini" style="margin-top:8px;color:var(--muted)">${list.length} mission${list.length>1?'s':''} · ${_ord.length} client${_ord.length>1?'s':''}</div></div>
-      <div class="banner teal" style="margin-top:12px">${I.shield}<span>Ti-Services établit vos factures de prestation <b>en votre nom et pour votre compte</b>. Choisissez un client pour voir ses factures.</span></div>
-      <div style="height:2px"></div>${cards}<div style="height:10px"></div></div>${proNavbar()}`;
+      <div class="h-hello">Mes clients</div>
+      <p class="sub" style="margin-top:4px">Un <b>dossier par client</b> — touchez-en un pour ouvrir ses factures.</p>
+      <div class="card" style="padding:15px;margin-top:12px"><div class="row between"><div><div class="mini">Net encaissé</div><b class="money" style="font-size:19px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(total)}</b></div><div style="text-align:right"><div class="mini">💛 Pourboires</div><b class="money" style="font-size:19px;font-family:var(--f-disp);color:var(--good)">${eur(totalTips)}</b></div></div><div class="mini" style="margin-top:8px;color:var(--muted)">${_ord.length} client${_ord.length>1?'s':''} · ${list.length} facture${list.length>1?'s':''}</div></div>
+      ${cards}<div style="height:10px"></div></div>${proNavbar()}`;
   }
   function proInvoice(){
     const h=(S.proHistory||[]).find(x=>x.id===S.invoiceId);
