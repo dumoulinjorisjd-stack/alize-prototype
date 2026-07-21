@@ -152,7 +152,7 @@ const MOLLIE_API = 'https://api.mollie.com/v2';
 // l'URL enregistrée dans l'app Mollie Connect. Retour app : domaine prod canonique.
 const MOLLIE_RETURN_URL = 'https://europe-west1-t-service-prod.cloudfunctions.net/mollieOnboardingReturn';
 const MOLLIE_APP_RETURN = 'https://ti-services.fr';
-const APP_URL = process.env.APP_URL || 'https://ti-services.web.app';
+const APP_URL = process.env.APP_URL || 'https://ti-services.fr';
 function mollieOAuthConfigured() { return !!(process.env.MOLLIE_CLIENT_ID && process.env.MOLLIE_CLIENT_SECRET); }
 function mollieApiConfigured() { return !!process.env.MOLLIE_ACCESS_TOKEN; }
 
@@ -1700,7 +1700,7 @@ function welcomeHtml(first, role) {
         '<table role="presentation" width="520" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%;background:#ffffff;border-radius:18px;overflow:hidden">' +
           '<tr><td style="height:6px;background:linear-gradient(90deg,' + c1 + ',' + c2 + ')"></td></tr>' +
           '<tr><td align="center" style="padding:26px 30px 4px">' +
-            '<img src="' + app + '/icon-192.png" width="60" height="60" alt="Ti-Services" style="display:block;border-radius:16px;margin:0 auto 10px">' +
+            '<img src="cid:tilogo" width="60" height="60" alt="Ti-Services" style="display:block;border-radius:16px;margin:0 auto 10px">' +
             '<div style="font-size:24px;font-weight:800;letter-spacing:-.02em"><span style="color:' + (isPro ? '#0FA896' : '#FF6A5B') + '">Ti</span><span style="color:#231E33">-Services</span></div>' +
             '<div style="font-size:12px;color:#8a8494;margin-top:2px">Services à la demande · Saint-Barthélemy</div>' +
           '</td></tr>' +
@@ -1734,8 +1734,14 @@ exports.welcomeClientEmail = onDocumentCreated({document: 'users/{uid}', secrets
   const subject = isPro ?
     'Bienvenue chez Ti-Services — votre profil intervenant' :
     'Bienvenue sur Ti-Services';
+  // Logo intégré à l'e-mail (cid:tilogo) : s'affiche toujours, sans dépendre d'une URL.
+  const attachments = [];
   try {
-    await sendMail(getFirestore(), email, { subject, html: welcomeHtml(first, role) });
+    const logo = require('fs').readFileSync(require('path').join(__dirname, 'mail-logo.png'));
+    attachments.push({ filename: 'ti-services.png', content: logo, cid: 'tilogo' });
+  } catch (_) {}
+  try {
+    await sendMail(getFirestore(), email, { subject, html: welcomeHtml(first, role), attachments });
     console.log('E-mail de bienvenue (' + (isPro ? 'intervenant' : 'client') + ') → ' + email);
   } catch (e) { console.warn('welcomeClientEmail', e); }
 });
