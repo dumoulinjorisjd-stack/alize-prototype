@@ -4405,6 +4405,13 @@
       <div class="row" style="gap:9px;margin-top:12px">${stat('En cours',allB.length,'réservations')}${stat('Artisans',validA,pendA.length+' en attente')}${stat('Clients',clis.length,pendC.length+' en attente')}</div>
       ${(typeof Notification!=='undefined'&&Notification.permission!=='granted')?`<button class="banner teal" data-act="admin-notif" style="margin-top:10px;width:100%;text-align:left;cursor:pointer">${I.bolt}<span>Activez les <b>alertes de candidature</b> — soyez prévenu dès qu'un artisan postule, même en dehors de la console.</span></button>`:''}
       <div class="card" style="padding:14px;margin-top:10px"><div class="row between"><span class="sub">Commission ce mois</span><b class="money" style="font-size:18px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(S.adminCommission)}</b></div></div>
+      <div class="card" style="padding:14px;margin-top:10px">
+        <b style="font-size:14px">${I.users||''} Inviter un artisan</b>
+        <p class="sub" style="margin-top:6px">Envoyez un e-mail d'invitation soigné (à la charte Ti-Services) à un pro que vous souhaitez recruter.</p>
+        <input id="admInvName" placeholder="Prénom (facultatif)" autocomplete="off" style="width:100%;margin-top:9px;padding:11px 13px;border:1px solid var(--hair);border-radius:11px;background:var(--sand);color:var(--ink);font-size:14px;box-sizing:border-box">
+        <input id="admInvEmail" type="email" inputmode="email" autocapitalize="off" autocomplete="off" placeholder="email@exemple.com" style="width:100%;margin-top:8px;padding:11px 13px;border:1px solid var(--hair);border-radius:11px;background:var(--sand);color:var(--ink);font-size:14px;box-sizing:border-box">
+        <button class="btn" data-act="admin-invite" style="margin-top:10px;background:var(--teal-deep);color:#fff">Envoyer l'invitation</button>
+      </div>
       <div style="height:16px"></div><span class="eyebrow"><span aria-hidden="true">${I.info}</span> Souhaits des clients</span>
       <button class="card" data-adm="wishes" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block"><div class="row between" style="align-items:center"><b style="font-size:14px">Services réclamés par les clients</b>${(S.adminWishes&&S.adminWishes.length)?`<span class="chip coral" style="padding:3px 10px">${S.adminWishes.length}</span>`:`<span class="mini" style="color:var(--muted)">Aucune pour l'instant</span>`}</div><p class="sub" style="margin-top:8px">Voir ce que les clients aimeraient trouver sur la plateforme.</p></button>
       <div style="height:16px"></div><span class="eyebrow">${I.euro} Tarifs des prestations (prix fixes clients)</span>
@@ -7798,6 +7805,22 @@
       case 'pay-change':S.payEdit=true;render();break;
       case 'go-admin':if(!isAdminAccount())break;S.persona='admin';S.admin={view:'home',sel:null};S.support=false;S.supportSide=null;S.profileForm=null;render();break;
       case 'admin-notif':requestAdminPush();break;
+      case 'admin-invite':{
+        if(!isAdminAccount()){toast('Réservé à l’administrateur');break;}
+        const em=((document.getElementById('admInvEmail')||{}).value||'').trim();
+        const nm=((document.getElementById('admInvName')||{}).value||'').trim();
+        if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){toast('Adresse e-mail invalide');break;}
+        if(!(FB&&FB.functions&&FB.fn&&FB.fn.httpsCallable)){toast('Envoi indisponible');break;}
+        toast('Envoi de l’invitation…');
+        try{
+          const call=FB.fn.httpsCallable(FB.functions,'sendArtisanInvite');
+          call({email:em,name:nm}).then(function(r){
+            if(r&&r.data&&r.data.sent){ toast('Invitation envoyée à '+em+' ✓'); const e1=document.getElementById('admInvEmail'); if(e1)e1.value=''; const e2=document.getElementById('admInvName'); if(e2)e2.value=''; }
+            else toast('Envoi impossible — réessayez');
+          }).catch(function(e){ toast('Échec : '+fbErrTxt(e)); });
+        }catch(e){ toast('Échec : '+fbErrTxt(e)); }
+        break;
+      }
       case 'enable-notif':{
         if(typeof Notification==='undefined'){toast('Notifications non disponibles sur cet appareil');break;}
         if(typeof Notification.requestPermission!=='function'){toast('Notifications non disponibles sur cet appareil');break;}

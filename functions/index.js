@@ -1761,6 +1761,76 @@ function welcomeHtml(first, role) {
   '</div>';
 }
 
+/* ============================================================================
+ * E-MAIL D'INVITATION ARTISAN — pour prospecter un pro (envoyé à la main depuis la
+ * console admin). Même charte que la bienvenue, accent sarcelle. Aucun détail
+ * d'argent/commission ; met en avant les missions locales et l'inscription gratuite.
+ * ========================================================================== */
+function inviteArtisanHtml(name) {
+  const app = APP_URL.replace(/\/$/, '');
+  const c1 = '#0FA896', c2 = '#14C2A8', btn = '#0FA896', dot = '#0FA896';
+  const hi = name ? ('Bonjour ' + escHtmlS(name) + ',') : 'Bonjour,';
+  const feats =
+    welcomeFeatureRow(dot, 'Des missions près de chez vous', 'Recevez les demandes de votre zone, sur les créneaux que vous choisissez.') +
+    welcomeFeatureRow(dot, 'Vous gardez la main', 'Vous acceptez seulement les missions qui vous conviennent et gérez votre agenda.') +
+    welcomeFeatureRow(dot, 'Un cadre sérieux', 'Profils vérifiés et assurés : un environnement de confiance pour vous et vos clients.') +
+    welcomeFeatureRow(dot, 'Inscription gratuite', 'Créez votre profil en quelques minutes, sans engagement.');
+  return '' +
+  '<div style="margin:0;padding:0;background:#FBF7F4;font-family:-apple-system,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;color:#231E33">' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FBF7F4;padding:24px 12px">' +
+      '<tr><td align="center">' +
+        '<table role="presentation" width="520" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%;background:#ffffff;border-radius:18px;overflow:hidden">' +
+          '<tr><td style="height:6px;background:linear-gradient(90deg,' + c1 + ',' + c2 + ')"></td></tr>' +
+          '<tr><td align="center" style="padding:26px 30px 4px">' +
+            '<img src="cid:tilogo" width="60" height="60" alt="Ti-Services" style="display:block;border-radius:16px;margin:0 auto 10px">' +
+            '<div style="font-size:24px;font-weight:800;letter-spacing:-.02em"><span style="color:#0FA896">Ti</span><span style="color:#231E33">-Services</span></div>' +
+            '<div style="font-size:12px;color:#8a8494;margin-top:2px">Services à la demande · Saint-Barthélemy</div>' +
+          '</td></tr>' +
+          '<tr><td style="padding:14px 30px 0">' +
+            '<h1 style="font-size:22px;margin:8px 0 0;color:#231E33">Rejoignez Ti-Services</h1>' +
+            '<p style="font-size:15px;line-height:1.6;color:#4a4556;margin:12px 0 0">' + hi + ' votre travail à Saint-Barthélemy correspond exactement à ce que recherchent nos clients. <b>Ti-Services</b> est une nouvelle application <b>100 % Saint-Barth</b> qui met en relation les habitants avec des artisans et intervenants locaux de confiance — et vous recevez vos <b>demandes de mission</b> directement dans l\'application.</p>' +
+          '</td></tr>' +
+          '<tr><td style="padding:22px 30px 4px">' + feats + '</td></tr>' +
+          '<tr><td align="center" style="padding:18px 30px 6px">' +
+            '<a href="' + app + '" style="display:inline-block;background:' + btn + ';color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:13px 30px;border-radius:12px">Créer mon profil</a>' +
+          '</td></tr>' +
+          '<tr><td align="center" style="padding:0 30px 26px"><div style="font-size:12px;color:#8a8494">C\'est gratuit et ça prend quelques minutes · <a href="' + app + '" style="color:' + c1 + ';text-decoration:none">ti-services.fr</a></div></td></tr>' +
+          '<tr><td style="padding:16px 30px;border-top:1px solid #efeae4;background:#FBF7F4">' +
+            '<div style="font-size:12px;color:#8a8494;line-height:1.6">Au plaisir de vous compter parmi nous,<br>L\'équipe Ti-Services<br>' +
+            '<span style="color:#b0aab8">Service édité par C.C.S — Construction Conseils et Services, SAS · Saint-Barthélemy</span></div>' +
+          '</td></tr>' +
+        '</table>' +
+      '</td></tr>' +
+    '</table>' +
+  '</div>';
+}
+
+// Envoi de l'e-mail d'invitation artisan — RÉSERVÉ à l'admin (console). L'e-mail part
+// via le SMTP, avec le logo intégré (cid).
+exports.sendArtisanInvite = onCall({secrets: [SMTP_PASS]}, async (request) => {
+  const who = (request.auth && request.auth.token && request.auth.token.email) || '';
+  if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+    throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
+  }
+  const to = String((request.data && request.data.email) || '').trim();
+  const name = String((request.data && request.data.name) || '').trim().slice(0, 60);
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) {
+    throw new HttpsError('invalid-argument', 'Adresse e-mail invalide.');
+  }
+  const attachments = [];
+  try {
+    const logo = require('fs').readFileSync(require('path').join(__dirname, 'mail-logo.png'));
+    attachments.push({ filename: 'ti-services.png', content: logo, cid: 'tilogo' });
+  } catch (_) {}
+  const ok = await sendMail(getFirestore(), to, {
+    subject: 'Rejoignez Ti-Services — les clients de Saint-Barth vous cherchent',
+    html: inviteArtisanHtml(name),
+    attachments,
+  });
+  if (!ok) throw new HttpsError('internal', 'L\'envoi a échoué — réessayez.');
+  return { sent: true };
+});
+
 exports.welcomeClientEmail = onDocumentCreated({document: 'users/{uid}', secrets: [SMTP_PASS]}, async (event) => {
   const snap = event.data; if (!snap) return;
   const u = snap.data() || {};
@@ -1834,4 +1904,4 @@ exports.emailDiag = onRequest({secrets: [SMTP_PASS]}, async (req, res) => {
 });
 
 // Export interne pour les tests unitaires (inerte en production : TI_TEST non défini).
-if (process.env.TI_TEST) { module.exports.__test = { buildInvoicePdf, buildProcurationPdf, invoiceLines, eurTxt, frDate, welcomeHtml }; }
+if (process.env.TI_TEST) { module.exports.__test = { buildInvoicePdf, buildProcurationPdf, invoiceLines, eurTxt, frDate, welcomeHtml, inviteArtisanHtml }; }
