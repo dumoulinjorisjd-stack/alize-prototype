@@ -1,5 +1,5 @@
 /* Ti-Services — service worker (coquille hors-ligne) */
-const CACHE = 'ti-services-v458';
+const CACHE = 'ti-services-v459';
 const SHELL = [
   './',
   './index.html',
