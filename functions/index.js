@@ -192,6 +192,46 @@ async function mollieOnboardingReady(accessToken) {
     return {ok: status === 'completed' && canPay && canSettle, status: status};
   } catch (e) { console.warn('mollieOnboardingReady', e); return {ok: false, status: 'error'}; }
 }
+// Prévient l'ARTISAN (push + e-mail) quand son compte de paiement Mollie n'est pas
+// validé et requiert son action (dossier refusé / informations manquantes), ou quand un
+// versement n'a pas pu lui être fait. `reason` : 'needs-data' | 'route_failed' | 'no_org'.
+async function notifyArtisanMollieProblem(db, uid, reason) {
+  let email = '', tokens = [], name = '';
+  try {
+    const u = await db.collection('users').doc(uid).get();
+    const ud = u.data() || {};
+    email = ud.email || ''; tokens = ud.pushTokens || []; name = (ud.name || '').toString().slice(0, 60);
+  } catch (_) {}
+  const link = APP_URL.replace(/\/$/, '') + '/?open=missions';
+  const blocked = (reason === 'route_failed' || reason === 'no_org');
+  const pushBody = blocked
+    ? 'Un paiement n\'a pas pu vous être versé : votre compte Mollie n\'est pas encore validé. Ouvrez l\'app pour le finaliser.'
+    : 'Votre compte de paiement Mollie n\'est pas encore validé. Ouvrez l\'app pour finaliser — sans cela vous ne pouvez pas accepter de missions.';
+  if (tokens.length) {
+    try {
+      await getMessaging().sendEachForMulticast({
+        tokens,
+        data: {title: 'Ti-Services · Paiements à finaliser', body: pushBody, url: './?open=missions'},
+        webpush: {fcmOptions: {link: '/?open=missions'}, headers: {Urgency: 'high'}},
+      });
+    } catch (e) { console.warn('mollieProblem push', e); }
+  }
+  if (email) {
+    const intro = blocked
+      ? '<p>Une prestation a été validée, mais nous n\'avons <b>pas pu vous verser votre gain</b> : votre compte de paiement <b>Mollie</b> n\'est pas encore validé.</p><p>Rassurez-vous, la somme est en sécurité et vous sera versée dès que votre compte sera activé.</p>'
+      : '<p>Votre compte de paiement <b>Mollie</b> n\'a pas pu être validé en l\'état : il manque des informations ou un justificatif.</p><p>Tant qu\'il n\'est pas activé, vous <b>ne pouvez pas accepter de missions</b> — et surtout, vous ne pourriez pas être payé.</p>';
+    try {
+      await sendMail(db, email, {
+        subject: 'Ti-Services · Finalisez vos paiements pour recevoir vos missions',
+        html: '<p>Bonjour ' + escHtmlS(name || '') + ',</p>' + intro +
+              '<p>C\'est rapide : ouvrez l\'application Ti-Services, allez dans <b>« Recevoir mes paiements »</b> et suivez le parcours Mollie (identité + IBAN). Mollie est un établissement de paiement agréé — vos coordonnées bancaires ne transitent jamais par Ti-Services.</p>' +
+              '<p><a href="' + link + '" style="display:inline-block;background:#e8613c;color:#fff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:700">Finaliser mes paiements</a></p>' +
+              '<p>Besoin d\'aide ? Répondez simplement à cet e-mail.</p>' +
+              '<p>À très vite,<br>L\'équipe Ti-Services</p>',
+      });
+    } catch (e) { console.warn('mollieProblem email', e); }
+  }
+}
 // Appel bas-niveau à l'API Mollie (jeton plateforme). Renvoie {ok, data|status}.
 async function mollieApi(path, method, body) {
   try {
@@ -1153,6 +1193,9 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
           // L'argent reste sur le solde plateforme — on ne le perd JAMAIS en silence :
           // on marque la mission et on alerte l'admin pour régularisation manuelle.
           await event.data.after.ref.update({molliePayout: 'unrouted', molliePayoutIssue: orgId ? 'route_failed' : 'no_org'});
+          // On prévient AUSSI l'artisan : son compte Mollie n'est pas validé, un versement
+          // n'a pas pu lui être fait (la somme est en sécurité en attendant).
+          try { await notifyArtisanMollieProblem(db, providerUid, orgId ? 'route_failed' : 'no_org'); } catch (_) {}
           try {
             await sendMail(db, ADMIN_EMAIL, {
               subject: 'Versement Mollie à régulariser — ' + (after.serviceName || after.service || 'prestation'),
@@ -1472,7 +1515,7 @@ exports.mollieOnboardingReturn = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLI
  * retour dans l'app. Utilise le refresh-token conservé côté serveur. Fail-safe : en cas
  * de doute, on laisse « pending » (l'artisan reste bloqué à l'acceptation).
  */
-exports.mollieCheckStatus = onCall({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET']}, async (request) => {
+exports.mollieCheckStatus = onCall({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET', SMTP_PASS]}, async (request) => {
   const uid = request.auth && request.auth.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Connexion requise.');
   if (!mollieOAuthConfigured()) return {status: 'unconfigured', active: false};
@@ -1497,10 +1540,19 @@ exports.mollieCheckStatus = onCall({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT
       try { await db.collection('mollieTokens').doc(uid).set({refresh: tok.refresh_token, updatedAt: FieldValue.serverTimestamp()}, {merge: true}); } catch (_) {}
     }
     const ready = await mollieOnboardingReady(tok.access_token);
-    await db.collection('artisans').doc(uid).set({
-      mollieStatus: ready.ok ? 'active' : 'pending',
-      mollieOnboardingStatus: ready.status,
-    }, {merge: true});
+    const prevNotified = (artSnap.data() || {}).mollieIssueNotified || '';
+    const upd = {mollieStatus: ready.ok ? 'active' : 'pending', mollieOnboardingStatus: ready.status};
+    // Dossier refusé / infos manquantes (« needs-data ») : on prévient l'artisan par
+    // e-mail + push, mais UNE SEULE FOIS par état (mollieCheckStatus est rappelée à chaque
+    // ouverture de l'écran — sans ce garde-fou l'artisan serait spammé). « in-review » est
+    // une attente normale : pas d'alerte. « active » : on efface le drapeau.
+    if (ready.status === 'needs-data' && prevNotified !== 'needs-data') {
+      upd.mollieIssueNotified = 'needs-data';
+      try { await notifyArtisanMollieProblem(db, uid, 'needs-data'); } catch (_) {}
+    } else if (ready.ok && prevNotified) {
+      upd.mollieIssueNotified = '';
+    }
+    await db.collection('artisans').doc(uid).set(upd, {merge: true});
     return {status: ready.status, active: ready.ok};
   } catch (e) { console.warn('mollieCheckStatus', e); return {status: 'error', active: false}; }
 });
