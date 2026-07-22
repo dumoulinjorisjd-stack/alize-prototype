@@ -2536,7 +2536,7 @@
   function purgeStaleMissions(){
     const arr=S.missions||[];let purged=false;
     for(var i=arr.length-1;i>=0;i--){var m=arr[i];
-      if(['searching','declined','pending','accepted','working'].indexOf(m.status)<0)continue;
+      if(['pending_payment','payment_failed','searching','declined','pending','accepted','working'].indexOf(m.status)<0)continue;
       if(!isStaleMission(m))continue;
       if(m.reqId&&!isDemo()){try{pushReqUpdate(m,{status:'expired',expiredAt:Date.now()});}catch(_){}}
       if(S.mission===m)S.mission=null;
@@ -6656,7 +6656,7 @@
     return clientHome();
   }
   // Toutes les demandes actives (recherche → en cours). Source de vérité = S.missions.
-  function activeMissions(){return (S.missions||[]).filter(function(m){return ['searching','declined','pending','accepted','working','done_pro','disputed','cancelled'].indexOf(m.status)>=0;});}
+  function activeMissions(){return (S.missions||[]).filter(function(m){return ['pending_payment','payment_failed','searching','declined','pending','accepted','working','done_pro','disputed','cancelled'].indexOf(m.status)>=0;});}
   function clientMissionActive(){return activeMissions().length>0;}
   // Sortir une demande du suivi (annulation) ou l'archiver (terminée → historique).
   function removeMission(m){const i=(S.missions||[]).indexOf(m);if(i>=0)S.missions.splice(i,1);}
@@ -6789,7 +6789,7 @@
       ${zoutiLine('Choisissez'+(first?', '+esc(first):'')+' — je m’occupe de trouver le bon prestataire.')}
       <div style="height:16px"></div></div>${clientNavbar()}`;
   }
-  function missionStatusMeta(st){return {searching:{l:'Recherche en cours',c:'coral'},declined:{l:'Artisan indisponible',c:'coral'},pending:{l:'En attente d’un prestataire',c:'coral'},accepted:{l:'Artisan trouvé',c:'good'},working:{l:'Prestation en cours',c:'good'},done_pro:{l:'À confirmer',c:'coral'},disputed:{l:'En médiation',c:'coral'}}[st]||{l:st,c:'grey'};}
+  function missionStatusMeta(st){return {pending_payment:{l:'Paiement à finaliser',c:'coral'},payment_failed:{l:'Paiement non abouti',c:'coral'},searching:{l:'Recherche en cours',c:'coral'},declined:{l:'Artisan indisponible',c:'coral'},pending:{l:'En attente d’un prestataire',c:'coral'},accepted:{l:'Artisan trouvé',c:'good'},working:{l:'Prestation en cours',c:'good'},done_pro:{l:'À confirmer',c:'coral'},disputed:{l:'En médiation',c:'coral'}}[st]||{l:st,c:'grey'};}
   // Historique dédupliqué des prestations terminées (source des cartes « Refaire »).
   function doneHistory(){const seen={},out=[];(S.history||[]).forEach(function(h){const k=h&&h.reqId;if(k){if(seen[k])return;seen[k]=1;}out.push(h);});return out;}
   // ——— MODE INVITÉ : « Profil » et « Réservations » deviennent des invitations à
@@ -7064,6 +7064,21 @@
   }
   function clientTracking(){
     const m=S.mission,t=totals(m),p=m.provider;
+    // VERROU PAIEMENT : demande créée mais carte pas encore autorisée. Elle n'est PAS
+    // visible des prestataires — on invite le client à finaliser (ou annuler).
+    if(m.status==='pending_payment'||m.status==='payment_failed'){
+      const failed=m.status==='payment_failed';
+      return `<div class="pad"><div style="height:8px"></div>
+        <div class="row between"><span class="chip coral">${failed?'Paiement non abouti':'Paiement à finaliser'}</span><span class="mini">${esc(m.svcName||'')} · ${durTxt(m)}</span></div>
+        <div class="card" style="padding:20px 18px;margin-top:14px;text-align:center">
+          <span class="benic" style="background:var(--coral-wash);color:var(--coral-deep);margin:0 auto">${I.lock}</span>
+          <div class="h-hello" style="margin-top:10px">${failed?'Le paiement n’a pas abouti':'Finalisez le paiement'}</div>
+          <p class="sub" style="margin-top:6px">Votre demande n’est <b>pas encore proposée aux prestataires</b> : elle le sera dès que votre carte est autorisée. Vous n’êtes débité qu’<b>après la prestation validée</b>, jamais plus que ${eur(t.total)}.</p>
+          <button class="btn primary" data-act="resume-pay" style="margin-top:16px">${I.lock} ${failed?'Réessayer le paiement':'Autoriser ma carte'} · ${eur(t.total)}</button>
+          ${S.cancelAsk?cancelConfirmCard(m):`<button class="btn ghost sm" data-act="cancel-mission" style="margin-top:10px">Annuler la demande</button>`}
+        </div>
+        </div>${clientNavbar()}`;
+    }
     const steps=[{t:'Demande envoyée',d:m.when+' · '+m.slot},{t:'Mission acceptée',d:p?esc(p.nm):''},{t:m.status==='working'?'Prestation en cours':'Prestation à venir',d:m.duration+' h · '+m.slot},{t:'Terminée',d:'à confirmer par vous'}];
     const activeIdx={pending:1,accepted:2,working:2}[m.status];
     const tls=steps.map((s,idx)=>{let cls;if(idx<activeIdx)cls='done';else if(idx===activeIdx)cls='active';else cls='future';const bead=cls==='done'?I.check:(cls==='active'?'':(idx+1));return `<div class="tl ${cls}"><div class="marker"><div class="bead">${bead}</div><div class="stem"></div></div><div class="lbl"><div class="t">${s.t}</div><div class="d">${s.d}</div></div></div>`;}).join('');
@@ -7211,7 +7226,12 @@
     const sig=missionSig(d);const dup=activeMissions().find(function(x){return missionSig(x)===sig;});
     if(dup){S.mission=dup;S.draft=null;S.payStep=false;S.payEdit=false;S.clientNav='wallet';render();toast('Cette demande existe déjà — nous l’avons rouverte.');return;}
     if(S.avgOffers[d.svc]){S.avgOffers[d.svc].sum+=d.rate;S.avgOffers[d.svc].n++;}d._id=d._id||('m'+Date.now());S.missions=S.missions||[];if(S.missions.indexOf(d)<0)S.missions.unshift(d);S.mission=d;S.draft=null;S.payStep=false;S.payEdit=false;S.clientNav='wallet';
-    if(payReal()){(async function(){try{await persistRequest(d);}catch(e){console.warn('pay persist',e);}recurUpsert(d);cacheClientLocal();const ok=await startMolliePayment(d);if(!ok){startSearch();}})();render();return;}
+    if(payReal()){d.status='pending_payment';(async function(){try{await persistRequest(d);}catch(e){console.warn('pay persist',e);}recurUpsert(d);cacheClientLocal();const ok=await startMolliePayment(d);if(!ok){
+      // Le paiement n'a pas pu démarrer (Mollie indisponible, abandon…) : on NE lance PAS
+      // la recherche — la demande reste « à finaliser » (invisible des prestataires), le
+      // client peut réessayer ou annuler. Aucune prestation non payée ne peut avoir lieu.
+      d.status='payment_failed';render();toast('Paiement non finalisé — votre demande n’a pas été proposée.');
+    }})();render();return;}
     persistRequest(d);recurUpsert(d);startSearch();cacheClientLocal();}
   // Étape 0 : la demande devient une fiche Firestore `requests/{id}` (vrais comptes uniquement).
   // Sans adresse exacte ni GPS — révélés seulement au prestataire qui accepte. Base des notifications.
@@ -7230,7 +7250,11 @@
         clientUid:u.uid,
         clientName:first,
         clientPhoto:(S.account&&S.account.photo)||null,
-        status:'pending', providerUid:null, providerName:'',
+        // VERROU PAIEMENT : sur le vrai site, la demande naît en 'pending_payment' (invisible
+        // des prestataires). Elle ne s'ouvre au pool ('pending') qu'une fois la carte du
+        // client autorisée (bascule faite par le webhook Mollie). Personne ne peut donc
+        // réaliser une prestation non garantie financièrement.
+        status:(payReal()?'pending_payment':'pending'), providerUid:null, providerName:'',
         service:m.svc, serviceName:m.svcName,
         zone:m.zone||'',
         when:m.when||'', slot:m.slot||'', slotFlex:(m.slotFlex||0),
@@ -9406,6 +9430,7 @@
       case 'card-save':{const el=document.getElementById('pfCardNum'),ex=document.getElementById('pfCardExp');const num=(el?el.value:'').replace(/\D/g,'');let last4,brand;if(num.length>=4){last4=num.slice(-4);brand=/^(5[1-5]|2[2-7])/.test(num)?'Mastercard':(/^3[47]/.test(num)?'Amex':'Visa');}else if(S.card){last4=S.card.last4;brand=S.card.brand;}else{toast('Entrez un numéro de carte valide');break;}S.card={brand,last4,exp:(ex&&ex.value)||(S.card?S.card.exp:'08/28')};S.cardForm=false;saveClientCloud();render();toast('Moyen de paiement enregistré');break;}
       case 'pay-canceledit':S.payEdit=false;render();break;
       case 'pay-confirm':placeMission();break;
+      case 'resume-pay':{const m=S.mission;if(!m)break;toast('Redirection vers le paiement sécurisé…');(async function(){try{if(!m.reqId)await persistRequest(m);}catch(_){}const ok=await startMolliePayment(m);if(!ok){m.status='payment_failed';render();toast('Paiement indisponible pour le moment — réessayez.');}})();break;}
       case 'toggle-savecard':S.paySaveCard=(S.paySaveCard===false);render();break;
       case 'pay-save':{const el=document.getElementById('payCardNum'),ex=document.getElementById('payCardExp');const num=(el?el.value:'').replace(/\D/g,'');const last4=num.slice(-4)||'4242';const brand=/^(5[1-5]|2[2-7])/.test(num)?'Mastercard':(/^3[47]/.test(num)?'Amex':'Visa');const cardObj={brand,last4,exp:(ex&&ex.value)||'08/28'};
         if(S.paySaveCard!==false){ S.card=cardObj; saveClientCloud(); }
@@ -10213,7 +10238,7 @@
     try{
       const q=FB.f.query(FB.f.collection(FB.db,'requests'),FB.f.where('clientUid','==',uid));
       if(activeReqUnsub){try{activeReqUnsub();}catch(_){}}
-      const active=['pending','accepted','working','done_pro','disputed'];
+      const active=['pending_payment','payment_failed','pending','accepted','working','done_pro','disputed'];
       S._clientReqLoading=true; // squelettes tant que le 1er instantané n'est pas revenu
       if(S.persona==='client'&&S.clientNav==='wallet'&&!S.mission&&!S._accepting)render();
       setTimeout(function(){if(S._clientReqLoading){S._clientReqLoading=false;if(S.persona==='client')render();}},7000);
@@ -10283,7 +10308,7 @@
       const uid=FB.auth.currentUser.uid;
       const q=FB.f.query(FB.f.collection(FB.db,'requests'),FB.f.where('clientUid','==',uid));
       const snap=await FB.f.getDocs(q);
-      const active=['pending','accepted','working','done_pro','disputed'];
+      const active=['pending_payment','payment_failed','pending','accepted','working','done_pro','disputed'];
       let n=0;snap.forEach(function(d){if(active.indexOf((d.data()||{}).status)>=0)n++;});
       loadActiveRequests(uid);
       toast(n>0?(n+' réservation'+(n>1?'s':'')+' en cours synchronisée'+(n>1?'s':'')):'Aucune réservation en cours dans votre compte');

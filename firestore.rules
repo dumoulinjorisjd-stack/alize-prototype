@@ -161,10 +161,14 @@ service cloud.firestore {
       // (pour découvrir les demandes ouvertes à accepter), admin.
       allow read: if isAdmin() || isClient() || isProvider() || isValidArtisan();
 
-      // Création par le client, statut « pending », clientUid = soi-même.
+      // Création par le client, clientUid = soi-même. Statut « pending » (bêta, sans
+      // paiement) OU « pending_payment » (prod : la demande n'est PAS ouverte aux
+      // prestataires tant que la carte n'est pas autorisée — bascule faite par le webhook
+      // Mollie côté serveur, jamais par le client).
       allow create: if signedIn()
                     && request.resource.data.clientUid == uid()
-                    && request.resource.data.status == 'pending';
+                    && (request.resource.data.status == 'pending'
+                        || request.resource.data.status == 'pending_payment');
 
       // Mise à jour — chaque rôle ne peut toucher QUE ce qui le concerne, et JAMAIS
       // les champs financiers calculés par le serveur (intégrité de la commission).
@@ -206,6 +210,12 @@ service cloud.firestore {
             && !changed().hasAny(serverKeys())
             && !changed().hasAny(['finalHours'])
             && !changed().hasAny(['rate','unit','service','serviceName','duration','clientUid'])
+            // VERROU PAIEMENT : le client ne peut JAMAIS ouvrir lui-même sa demande au pool.
+            // La bascule pending_payment/payment_failed -> pending est réservée au serveur
+            // (webhook Mollie). Depuis un statut « paiement », il ne peut que renoncer.
+            && (!(resource.data.status == 'pending_payment' || resource.data.status == 'payment_failed')
+                || request.resource.data.status == 'expired'
+                || request.resource.data.status == 'cancelled')
             && (!changed().hasAny(['boost'])
                 || (resource.data.status == 'pending'
                     && request.resource.data.boost >= resource.data.get('boost', 0)))
@@ -229,7 +239,7 @@ service cloud.firestore {
       // acceptation). Une demande acceptée / en cours / réglée est une pièce comptable :
       // seul l'admin peut l'effacer (RGPD). Les commissions restent de toute façon dans
       // le registre immuable `ledger`, hors de portée du client.
-      allow delete: if isAdmin() || (isClient() && (resource.data.status == 'pending' || resource.data.status == 'declined'));
+      allow delete: if isAdmin() || (isClient() && (resource.data.status == 'pending' || resource.data.status == 'declined' || resource.data.status == 'pending_payment' || resource.data.status == 'payment_failed'));
 
       // Messagerie : réservée au client, au prestataire assigné et à l'admin.
       match /messages/{msgId} {

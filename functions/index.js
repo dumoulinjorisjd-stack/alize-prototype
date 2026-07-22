@@ -1149,11 +1149,15 @@ exports.notifyReopenedRequest = onDocumentUpdated('requests/{reqId}', async (eve
   // doit aussi être diffusée au pool — mais SANS prévenir le client (c'est lui qui l'a
   // rouverte volontairement). On exclut du push l'artisan qui vient de décliner.
   const wasDeclined = before.status === 'declined';
-  if (!((wasActive || wasDeclined) && after.status === 'pending')) return;
+  // Ouverture au pool après autorisation de la carte (verrou paiement) : une demande
+  // 'pending_payment' devient 'pending' → c'est là qu'on notifie les prestataires (jamais
+  // à la création, tant que le paiement n'est pas garanti).
+  const wasPendingPayment = before.status === 'pending_payment';
+  if (!((wasActive || wasDeclined || wasPendingPayment) && after.status === 'pending')) return;
 
   const db = getFirestore();
   const svc = after.service;
-  const exclude = wasDeclined ? (before.declinedBy || '') : (before.providerUid || '');
+  const exclude = wasDeclined ? (before.declinedBy || '') : (wasActive ? (before.providerUid || '') : '');
 
   // 1) Re-notifier les artisans validés du service (hors celui qui s'est désisté).
   //    Demande re-DIRIGÉE (le client a choisi une autre baby-sitter après l'appel) :
@@ -1179,8 +1183,9 @@ exports.notifyReopenedRequest = onDocumentUpdated('requests/{reqId}', async (eve
     if (tokens.length) {
       const svcName = (after.serviceName || 'Une mission').toString().slice(0, 60);
       const zone = (after.zone || '').toString().slice(0, 40);
-      await pushMulticast(tokens, 'Espace artisan · Mission de nouveau disponible',
-        svcName + (zone ? ' · ' + zone : '') + ' — un créneau se libère, à saisir.', '/?open=missions',
+      const title = wasPendingPayment ? 'Espace artisan · Nouvelle mission' : 'Espace artisan · Mission de nouveau disponible';
+      const body = svcName + (zone ? ' · ' + zone : '') + (wasPendingPayment ? ' — une nouvelle demande de votre zone, à saisir.' : ' — un créneau se libère, à saisir.');
+      await pushMulticast(tokens, title, body, '/?open=missions',
         (t) => db.collection('users').doc(tokenToUid[t]).update({ pushTokens: FieldValue.arrayRemove(t) }));
     }
   } catch (e) { console.warn('reopen notify artisans', e); }
@@ -1305,6 +1310,27 @@ exports.mollieWebhook = onRequest({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (req
         const upd = {molliePaymentStatus: pay.status || ''};
         if (pay.status === 'authorized') upd.molliePaymentAuthorized = true;
         if (pay.status === 'paid') upd.molliePaymentCaptured = true;
+        // VERROU PAIEMENT : une demande n'est ouverte aux prestataires (status 'pending')
+        // qu'UNE FOIS la carte du client autorisée. Avant ça elle est en 'pending_payment'
+        // (invisible du pool). Aucun prestataire ne peut donc accepter/réaliser une
+        // prestation non garantie financièrement.
+        if (pay.status === 'authorized' || pay.status === 'paid') {
+          try {
+            const cur = await db.collection('requests').doc(reqId).get();
+            const st = cur.exists && (cur.data() || {}).status;
+            // Ouverture au pool, y compris après une tentative précédente expirée (le client
+            // a fini par autoriser sa carte). On n'ouvre jamais une demande déjà accept./réglée.
+            if (st === 'pending_payment' || st === 'payment_failed') upd.status = 'pending';
+          } catch (_) {}
+        }
+        // Empreinte expirée / annulée / échouée avant autorisation : la demande n'a jamais
+        // été ouverte, on la marque pour purge côté client (elle ne partira jamais au pool).
+        if (['expired', 'canceled', 'failed'].indexOf(pay.status) >= 0) {
+          try {
+            const cur = await db.collection('requests').doc(reqId).get();
+            if (cur.exists && (cur.data() || {}).status === 'pending_payment') upd.status = 'payment_failed';
+          } catch (_) {}
+        }
         try { await db.collection('requests').doc(reqId).set(upd, {merge: true}); } catch (e) { console.warn('mollieWebhook update', e); }
       }
     }
