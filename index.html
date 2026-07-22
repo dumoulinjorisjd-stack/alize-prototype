@@ -7549,6 +7549,7 @@
   // onboarding), en pré-remplissant l'identité déjà connue —
   //   window.location.href = urlOnboardingMollie;   // obtenue via mollieOnboardingStart
   async function startMollieOnboarding(){
+    S._mollieWrongAccount=false; // nouvel essai : on efface l'alerte « mauvais compte »
     // Parcours RÉEL : on demande à une fonction AUTHENTIFIÉE l'URL OAuth Mollie signée
     // (le lien ne peut être créé que par l'artisan connecté, pour sa propre fiche), puis on
     // y redirige. Sinon (bêta/démo) : simulation.
@@ -7594,8 +7595,8 @@
       const r=await FB.fn.httpsCallable(FB.functions,'mollieCheckStatus')();
       const d=(r&&r.data)||{};
       if(d.status&&d.status!=='error'&&d.status!=='unconfigured'){
-        S.proMollie=d.active?'active':'pending';
-        if(d.dashboard)S.proMollieDashboard=d.dashboard;
+        if(d.status==='wrong-account'){S.proMollie='none';S.proMollieOrgId='';S.proMollieDashboard='';S._mollieWrongAccount=true;}
+        else{S.proMollie=d.active?'active':'pending';if(d.dashboard)S.proMollieDashboard=d.dashboard;}
         render();
       }
     }catch(e){console.warn('refreshMollieStatus',e);}
@@ -7859,6 +7860,7 @@
       </div>` : '';
     return `<div class="pad"><button class="reset" data-act="pro-mollie-close" style="margin:8px 0 2px">← Retour</button>
       <span class="eyebrow">${I.card} Mes paiements</span><div class="h-hello">${st==='active'?'Paiements automatiques':'Activer mes paiements'}</div>
+      ${S._mollieWrongAccount?`<div class="banner coral" style="margin-top:12px">${I.shield}<span><b>Mauvais compte Mollie.</b> Sur cet appareil, vous étiez connecté au compte Mollie de <b>Ti-Services</b>. Ouvrez <b>mollie.com</b>, <b>déconnectez-vous</b> de ce compte, puis relancez l'activation avec <b>votre</b> compte Mollie personnel (ou créez-en un).</span></div>`:''}
       ${st!=='active'?`<button class="btn ghost" data-act="mollie-guide-open" style="margin-top:12px;width:100%">${I.info||I.card} Guide pas à pas — réponses à copier-coller</button>`:''}
       ${body}
       ${mollieAccess}
@@ -8287,6 +8289,7 @@
       // le parcours par la fonction AUTHENTIFIÉE dès que la session artisan est prête — sinon
       // l'utilisateur restait bloqué sur l'accueil sans jamais atteindre Mollie.
       if(mol==='start'){S._mollieAutoStart=true;S.persona='pro';scheduleMollieAutoStart();}
+      else if(mol==='platform'){S.persona='pro';S.proMollieView=true;S._mollieWrongAccount=true;setTimeout(function(){try{toast('⚠︎ Vous étiez connecté au compte Mollie de Ti-Services — recommencez avec VOTRE compte.');}catch(_){}},900);}
       else{setTimeout(function(){try{if(mol==='active')toast('✅ Paiements activés — votre compte Mollie est connecté');else if(mol==='error')toast('⚠︎ Connexion Mollie échouée — réessayez');else toast('Compte Mollie en cours de vérification');}catch(_){}},900);
       // Re-vérification RÉELLE après le retour : la validation Mollie peut se terminer juste
       // après la redirection. On re-interroge Mollie une fois l'app chargée (best-effort).

@@ -323,6 +323,14 @@ async function syncArtisanMollie(db, uid) {
   if (!artSnap.exists) return null;
   const ad = artSnap.data() || {};
   if (!ad.mollieOrgId) return null;
+  // GARDE-FOU : la fiche pointe par erreur vers l'organisation Mollie de la PLATEFORME (CCS)
+  // — liaison croisée (appareil connecté au compte Mollie de Ti-Services). On NE marque
+  // JAMAIS actif et on nettoie la liaison erronée pour forcer une vraie ré-activation.
+  const platformOrg = await molliePlatformOrgId();
+  if (platformOrg && String(ad.mollieOrgId) === platformOrg) {
+    await db.collection('artisans').doc(uid).set({mollieStatus: 'none', mollieOrgId: '', mollieDashboardUrl: '', mollieOnboardingStatus: 'wrong-account'}, {merge: true});
+    return {status: 'wrong-account', active: false, dashboard: ''};
+  }
   const tokSnap = await db.collection('mollieTokens').doc(uid).get();
   const refresh = tokSnap.exists ? ((tokSnap.data() || {}).refresh || '') : '';
   if (!refresh) return null;
@@ -375,6 +383,22 @@ async function mollieApi(path, method, body) {
     if (!res.ok) { console.warn('mollieApi', method, path, res.status, (txt || '').slice(0, 300)); return {ok: false, status: res.status, data: data}; }
     return {ok: true, data: data};
   } catch (e) { console.warn('mollieApi throw', method, path, e); return {ok: false, error: String(e)}; }
+}
+// ORGANISATION MOLLIE DE LA PLATEFORME (CCS). Sert de garde-fou anti-liaison croisée :
+// si un artisan lance l'onboarding sur un appareil DÉJÀ connecté au compte Mollie de
+// Ti-Services/CCS, l'OAuth relie par erreur l'organisation de la PLATEFORME comme compte
+// de versement de l'artisan (elle est « complète » → faux « actif » très problématique).
+// On refuse ce cas en comparant l'org connectée à celle de la plateforme. Mémorisé par
+// instance (valeur fixe). Renvoie '' si le jeton plateforme n'est pas configuré (garde inerte).
+let _platformOrgId = null;
+async function molliePlatformOrgId() {
+  if (_platformOrgId !== null) return _platformOrgId;
+  if (!mollieApiConfigured()) { _platformOrgId = ''; return ''; }
+  try {
+    const r = await mollieApi('/organizations/me', 'GET');
+    _platformOrgId = (r.ok && r.data && r.data.id) ? String(r.data.id) : '';
+  } catch (_) { _platformOrgId = ''; }
+  return _platformOrgId;
 }
 /* ============================================================================
  * WHATSAPP BUSINESS CLOUD API — alerte directe à l'artisan (officiel, Meta).
@@ -1595,7 +1619,10 @@ exports.mollieOnboardingLink = onCall({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLI
     '&redirect_uri=' + encodeURIComponent(MOLLIE_RETURN_URL) +
     '&state=' + encodeURIComponent(signMollieState(uid)) +
     '&scope=' + encodeURIComponent(scope) +
-    '&response_type=code&approval_prompt=auto';
+    // approval_prompt=force : Mollie affiche TOUJOURS l'écran de consentement. L'artisan voit
+    // explicitement quelle organisation il relie (et peut annuler / changer de compte) au lieu
+    // d'une validation silencieuse qui reliait par erreur le compte déjà ouvert sur l'appareil.
+    '&response_type=code&approval_prompt=force';
   return {url: url};
 });
 
@@ -1616,7 +1643,7 @@ exports.mollieOnboardingStart = onRequest((req, res) => {
  * (mollieOrgId + mollieStatus). Puis on renvoie l'artisan dans l'app.
  * Inerte tant que Mollie n'est pas configuré.
  */
-exports.mollieOnboardingReturn = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET']}, async (req, res) => {
+exports.mollieOnboardingReturn = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET', 'MOLLIE_ACCESS_TOKEN']}, async (req, res) => {
   if (!mollieOAuthConfigured()) { res.status(503).json({error: 'Mollie non configuré'}); return; }
   const code = (req.query.code || '').toString();
   // Le `state` DOIT être un jeton signé par notre serveur (mollieOnboardingLink). Sinon on
@@ -1637,6 +1664,16 @@ exports.mollieOnboardingReturn = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLI
     const orgRes = await fetch(MOLLIE_API + '/organizations/me', {headers: {'Authorization': 'Bearer ' + tok.access_token}});
     const org = orgRes.ok ? await orgRes.json() : {};
     const orgId = org.id || '';
+    // GARDE-FOU anti-liaison croisée : l'artisan était connecté au compte Mollie de la
+    // PLATEFORME (Ti-Services/CCS) → l'OAuth a renvoyé NOTRE organisation. On REFUSE : ne
+    // rien enregistrer, ne jamais marquer « actif », et renvoyer un message explicite pour
+    // qu'il se déconnecte de ce compte Mollie et recommence avec le SIEN.
+    const platformOrg = await molliePlatformOrgId();
+    if (orgId && platformOrg && orgId === platformOrg) {
+      console.warn('mollieOnboardingReturn: liaison REFUSÉE (compte plateforme CCS) pour uid', uid);
+      res.redirect(302, MOLLIE_APP_RETURN + '?mollie=platform');
+      return;
+    }
     // On ne passe « active » QUE si l'onboarding Mollie est réellement terminé (identité +
     // IBAN vérifiés). Sinon « pending » — l'artisan ne pourra pas accepter tant que Mollie
     // n'a pas validé, ce qui évite tout versement dans le vide.
@@ -1655,7 +1692,7 @@ exports.mollieOnboardingReturn = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLI
     if (tok.refresh_token) {
       try { await db.collection('mollieTokens').doc(uid).set({refresh: tok.refresh_token, updatedAt: FieldValue.serverTimestamp()}, {merge: true}); } catch (_) {}
     }
-    // ANTI-BOUCLE. Le parcours OAuth rebondit immédiatement (approval_prompt=auto) : sans
+    // ANTI-BOUCLE. Après consentement, le parcours OAuth peut rebondir aussitôt : sans
     // ce garde-fou, un artisan au dossier incomplet retombait en boucle sur son profil
     // Ti-Services sans jamais pouvoir finir. Désormais :
     //  - completed  -> retour app « activé » ;
@@ -1682,7 +1719,7 @@ exports.mollieOnboardingReturn = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLI
  * retour dans l'app. Utilise le refresh-token conservé côté serveur. Fail-safe : en cas
  * de doute, on laisse « pending » (l'artisan reste bloqué à l'acceptation).
  */
-exports.mollieCheckStatus = onCall({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET', SMTP_PASS]}, async (request) => {
+exports.mollieCheckStatus = onCall({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET', 'MOLLIE_ACCESS_TOKEN', SMTP_PASS]}, async (request) => {
   const uid = request.auth && request.auth.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Connexion requise.');
   if (!mollieOAuthConfigured()) return {status: 'unconfigured', active: false};
@@ -1702,7 +1739,7 @@ exports.mollieCheckStatus = onCall({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT
  *   https://europe-west1-t-service-prod.cloudfunctions.net/mollieOnboardingWebhook
  * Répond toujours 200 (comme le webhook paiement) pour éviter les relances en boucle.
  */
-exports.mollieOnboardingWebhook = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET', SMTP_PASS]}, async (req, res) => {
+exports.mollieOnboardingWebhook = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET', 'MOLLIE_ACCESS_TOKEN', SMTP_PASS]}, async (req, res) => {
   try {
     if (!mollieOAuthConfigured()) { res.status(200).send('ok'); return; }
     const db = getFirestore();
@@ -1729,7 +1766,7 @@ exports.mollieOnboardingWebhook = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLL
  * encore « en attente » et on notifie tout changement. Garantit qu'aucun artisan ne
  * reste bloqué en silence. Volume faible → coût négligeable.
  */
-exports.mollieOnboardingSweep = onSchedule({schedule: 'every 15 minutes', secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET', SMTP_PASS]}, async () => {
+exports.mollieOnboardingSweep = onSchedule({schedule: 'every 15 minutes', secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET', 'MOLLIE_ACCESS_TOKEN', SMTP_PASS]}, async () => {
   if (!mollieOAuthConfigured()) return;
   const db = getFirestore();
   const pend = await db.collection('artisans').where('mollieStatus', '==', 'pending').get();
