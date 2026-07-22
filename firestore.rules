@@ -181,9 +181,13 @@ service cloud.firestore {
             && resource.data.status == 'pending'
             && request.resource.data.status == 'accepted'
             && request.resource.data.providerUid == uid()
-            // OBLIGATION RIB : un prestataire sans coordonnées bancaires (IBAN) ne peut pas
-            // accepter — sinon le client réglerait sans que rien ne puisse lui être versé.
-            && artisanDoc(uid()).get('iban', '').size() >= 15
+            // OBLIGATION PAIEMENTS MOLLIE : un prestataire dont l'activation Mollie n'est pas
+            // terminée (organisation connectée + statut « actif ») ne peut pas accepter —
+            // sinon le client réglerait sans qu'aucun versement automatique de son gain net
+            // ne puisse lui parvenir. Le RIB de l'artisan est détenu par Mollie (onboarding),
+            // jamais par l'app : on exige donc l'organisation Mollie connectée ET active.
+            && artisanDoc(uid()).get('mollieOrgId', '').size() >= 3
+            && artisanDoc(uid()).get('mollieStatus', '') == 'active'
             && (resource.data.get('directed', false) == false
                 || resource.data.get('preferredProviderUid', '') == uid())
             && !changed().hasAny(serverKeys())

@@ -7526,7 +7526,7 @@
     S.addresses=ADDRESSES_INIT();S.addrDefault='ad1';S.history=[];S.recurring=[];S.card=null;S.missions=[];S.proMissions=[];S.proReqView=null;S.proSkipped=[];S.proSkipAt={};
     S.proStatus='approved';S.proName='Marie-Lou';S.proCats=['menage','jardin'];S.proRate=35;
     S.proHistory=PRO_HISTORY();S.agenda=SEED_AGENDA.map(function(a){return Object.assign({},a);});
-    S.proEarnings=1284.50;S.proJobsToday=3;S.proJobsTotal=214;S.proRating=4.9;S.proIban='FR7630006000011234567890189';S.proIbanHolder='Marie-Lou Cagan';S.proBic='AGRIFRPP';S.proMollie='none';
+    S.proEarnings=1284.50;S.proJobsToday=3;S.proJobsTotal=214;S.proRating=4.9;S.proIban='FR7630006000011234567890189';S.proIbanHolder='Marie-Lou Cagan';S.proBic='AGRIFRPP';S.proMollie='active';S.proMollieOrgId='org_demo';
     S.proInsured=true;S.proInsurer='AXA · Police 12345';S.proInsuranceUrl=DEMO_ATTEST;S.proInsuranceStatus='valide';S.proAcceptedCharte=true;S.proAcceptedTerms=true;S.proTermsVersion=TERMS_VERSION;S.proTermsAt=new Date('2026-05-15T10:00:00');
     S.adminArtisans=ADMIN_ARTS();S.adminClients=ADMIN_CLIS();S.adminBookings=ADMIN_BOOK();S.adminCommission=1240;S.adminConcierges=ADMIN_CONC();
     S.concClients=CONCIERGE_CLIENTS();S.concOrders=CONCIERGE_ORDERS();S.concEarn=640;S.concIban='FR7630006000011234567890189';S.concIbanHolder='Conciergerie Alizés';S.concLegal='Conciergerie Alizés';S.concSiret='88012345600018';S.concAddress='Gustavia, 97133 Saint-Barthélemy';
@@ -7702,6 +7702,11 @@
   // (dossier en cours de vérification chez Mollie) | 'active' (le prestataire est payé
   // automatiquement, net de commission, sans nous faire de virement).
   function mollieState(){return S.proMollie||'none';}
+  // Paiements prêts : l'onboarding Mollie est terminé (organisation connectée) ET le
+  // statut est « actif ». C'est la condition pour accepter une mission — le versement du
+  // gain net (commission déduite) part alors automatiquement vers ce compte Mollie, sans
+  // aucun virement manuel. Remplace l'ancienne obligation de RIB dans l'app.
+  function mollieReady(){return mollieState()==='active'&&!!S.proMollieOrgId;}
   // Écran d'activation des paiements. Objectif : que la démarche paraisse un
   // simple bouton (« Activer mes paiements ») et non une corvée administrative.
   // Ti-Services pré-remplit l'identité déjà connue ; Mollie collecte l'IBAN et la
@@ -8792,7 +8797,7 @@
       return `<div class="card" style="padding:16px;margin-top:16px"><div class="row between"><b style="font-size:14px">${I.card}&nbsp;Recevoir mes paiements</b>${badge}</div>
         ${st==='active'?`<p class="mini" style="margin-top:8px">Vous êtes réglé automatiquement, net de commission, après chaque prestation. Aucun virement à nous faire.</p><button class="btn ghost sm" data-act="pro-mollie" style="margin-top:11px;width:auto;padding:9px 14px">Voir mes paiements</button>`
         :st==='pending'?`<p class="mini" style="margin-top:8px">Votre dossier est <b>en cours de vérification</b> chez Mollie. Vous serez payé dès la validation.</p><button class="btn ghost sm" data-act="pro-mollie" style="margin-top:11px;width:auto;padding:9px 14px">Suivre l'activation</button>`
-        :`<p class="mini" style="margin-top:8px">Activez vos paiements en quelques minutes pour être réglé <b>automatiquement</b> après chaque prestation. Sécurisé par Mollie.</p><button class="btn primary sm" data-act="pro-mollie" style="margin-top:11px;width:auto;padding:9px 14px">${I.lock} Activer mes paiements</button>`}
+        :`<p class="mini" style="margin-top:8px"><b>Obligatoire pour accepter des missions.</b> Activez vos paiements en quelques minutes pour être réglé <b>automatiquement</b> après chaque prestation. Sécurisé par Mollie.</p><button class="btn primary sm" data-act="pro-mollie" style="margin-top:11px;width:auto;padding:9px 14px">${I.lock} Activer mes paiements</button>`}
       </div>`;})()}
       <button class="card" data-act="pro-docs" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.shield}&nbsp;Mes documents</b>${insOk?`<span class="chip good" style="padding:3px 9px">${I.check} Assurance OK</span>`:`<span class="mini" style="color:var(--teal-deep);font-weight:650">Assurance &amp; décharge ›</span>`}</div><p class="sub" style="margin-top:8px">Attestation d'assurance et décharge de responsabilité acceptée.</p></button>
       
@@ -10731,10 +10736,11 @@
   // Firestore refuse la prise si la demande n'est plus « pending »).
   async function acceptRequestReal(reqId){
     if(!(FB&&FB.auth&&FB.auth.currentUser))return;
-    // OBLIGATION RIB : sans coordonnées bancaires valides, le prestataire ne peut pas
-    // accepter — sinon le client paierait « dans le vide » (rien à verser). On l'invite à
-    // renseigner son RIB d'abord. (Aussi vérifié côté serveur par les règles Firestore.)
-    if(!ibanValid(S.proIban)){toast('Enregistrez d’abord votre RIB pour pouvoir être payé.');S.payoutForm={holder:(S.proIbanHolder||S.proName||''),iban:(S.proIban||''),bic:(S.proBic||'')};S.proReqView=null;S.proMollieView=false;S.proPayoutView=true;render();return;}
+    // OBLIGATION PAIEMENTS MOLLIE : sans activation Mollie terminée (organisation connectée
+    // + statut actif), le prestataire ne peut pas accepter — sinon le client paierait « dans
+    // le vide » (aucun versement automatique possible). On l'envoie activer ses paiements.
+    // (Aussi vérifié côté serveur par les règles Firestore.)
+    if(!mollieReady()){toast('Activez vos paiements (Mollie) pour accepter et être payé automatiquement.');S.proReqView=null;S.proPayoutView=false;S.proMollieView=true;render();return;}
     const req=(S.openRequests||[]).find(function(x){return x.id===reqId;});if(!req)return;
     // Pendant l'acceptation (écritures Firestore async), la demande quitte le fil et
     // les écouteurs déclenchent un rendu : sans ce drapeau, la fiche « introuvable »
@@ -10858,11 +10864,11 @@
       ${(r.photos&&r.photos.length)?`<div class="card" style="padding:14px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">${I.camera} Photos du client</div><div class="thumbs" style="margin-top:8px">${r.photos.map(function(u){return `<div class="thumb"><img class="viewable" data-docname="photo-demande" src="${esc(u)}" alt="Photo de la demande — appuyer pour agrandir"></div>`;}).join('')}</div></div>`:''}
       ${r.notes?`<div class="card" style="padding:16px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Le besoin du client</div><p class="sub" style="margin-top:6px;color:var(--ink-soft);white-space:pre-wrap">${esc(r.notes)}</p></div>`:''}
       ${(r.locationMode==='salon')?`<div class="card" style="padding:14px;margin-top:12px"><div class="row" style="gap:10px;align-items:flex-start"><span class="benic">${I.shop}</span><div><b style="font-size:13px">Chez vous — le client se déplace</b><p class="mini" style="margin-top:3px">Cette prestation a lieu dans <b>votre salon / studio</b>. En acceptant, votre adresse est communiquée au client pour qu'il vous rejoigne. ${S.proSalonAddress?'':I.warn+' Renseignez d’abord l’adresse de votre salon dans votre profil.'}</p></div></div></div>`:`<div class="card" style="padding:14px;margin-top:12px"><div class="row" style="gap:10px;align-items:flex-start"><span class="benic">${I.lock}</span><div><b style="font-size:13px">Adresse exacte masquée</b><p class="mini" style="margin-top:3px">L'adresse précise, le point GPS et les infos d'accès s'affichent <b>dès que vous acceptez</b> la mission.</p></div></div></div>`}
-      ${!ibanValid(S.proIban)?`<div class="banner coral" style="margin-top:12px">${I.card}<span><b>RIB requis pour accepter.</b> Enregistrez vos coordonnées bancaires — c'est là que vous serez payé après la prestation.</span></div>`:''}
+      ${!mollieReady()?`<div class="banner coral" style="margin-top:12px">${I.card}<span><b>Paiements à activer pour accepter.</b> Activez vos paiements sécurisés (Mollie) — votre gain net vous sera versé <b>automatiquement</b> après la prestation.</span></div>`:''}
       <div class="footcta" style="position:static;background:none;padding:18px 0 0">
-        ${ibanValid(S.proIban)
+        ${mollieReady()
           ? `<button class="btn accept" data-act="accept-req:${r.id}">${I.flame} Accepter${accLabel||' cette mission'}</button>`
-          : `<button class="btn primary" data-act="pro-payout">${I.card} Enregistrer mon RIB pour accepter</button>`}
+          : `<button class="btn primary" data-act="pro-mollie">${I.lock} Activer mes paiements pour accepter</button>`}
         ${directedMe
           ? `<button class="btn ghost" data-act="decline-req:${r.id}" style="margin-top:10px">Je ne suis pas disponible</button>
              <p class="mini" style="text-align:center;margin-top:10px">${I.shield} Cette demande vous est <b>réservée</b> — vous seul la voyez pour l'instant. Si vous ne l'acceptez pas, elle est <b>automatiquement proposée à l'ensemble des prestataires</b>.</p>`
