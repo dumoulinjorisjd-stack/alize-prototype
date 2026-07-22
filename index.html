@@ -2801,14 +2801,16 @@
     const led=adminCommissionLedger();
     const concs=adminConcInvoiceList();
     const rows=[['Type','Sens','Date','N° facture','Client','Artisan / bénéficiaire','Service','Base HT (€)','Taux (%)','Montant (€)']];
-    led.forEach(function(e){rows.push(['Commission','Produit',e.dateISO||'',e.invNo||'',e.clientName||'',e.providerName||'',e.serviceName||svcName(e.service)||'',num(e.base),String(e.commissionPct||''),num(e.commissionAmount)]);});
-    concs.forEach(function(x){rows.push(['Rétribution apport','Charge',COMM_PERIOD,concRetInvNo(x.c.uid||x.c.id),'',x.c.name,'',num(x.m.base),String(S.retroRate||''),num(x.m.retro)]);});
+    led.forEach(function(e){rows.push(['Commission','Produit',e.dateISO||'',e.invNo||'',e.clientName||'',e.providerName||'',e.serviceName||svcName(e.service)||'',num(e.base),String(e.commissionPct||''),num(e.commissionAmount),(e.mollieFee!=null?num(e.mollieFee):'en attente')]);});
+    concs.forEach(function(x){rows.push(['Rétribution apport','Charge',COMM_PERIOD,concRetInvNo(x.c.uid||x.c.id),'',x.c.name,'',num(x.m.base),String(S.retroRate||''),num(x.m.retro),'']);});
     const totComm=led.reduce(function(t,e){return t+(Number(e.commissionAmount)||0);},0);
     const totRetro=concs.reduce(function(t,x){return t+x.m.retro;},0);
+    const totFee=led.reduce(function(t,e){return t+(Number(e.mollieFee)||0);},0);
     rows.push([]);
-    rows.push(['Total commissions (produit)','','','','','','','','',num(totComm)]);
-    rows.push(['Total rétributions apport (charge)','','','','','','','','',num(totRetro)]);
-    rows.push(['Revenu net Ti-Services','','','','','','','','',num(totComm-totRetro)]);
+    rows.push(['Total commissions (produit)','','','','','','','','',num(totComm),'']);
+    rows.push(['Total frais Mollie (charge)','','','','','','','','','',num(totFee)]);
+    rows.push(['Total rétributions apport (charge)','','','','','','','','',num(totRetro),'']);
+    rows.push(['Revenu net réel Ti-Services','','','','','','','','',num(totComm-totRetro-totFee),'']);
     const csv=rows.map(function(r){return r.map(csvCell).join(';');}).join('\r\n');
     const ok=downloadTextFile('comptabilite-ti-services-2026-07.csv','﻿'+csv,'text/csv;charset=utf-8');
     if(ok)toast('Export comptable — '+led.length+' commission'+(led.length>1?'s':'')+', '+concs.length+' rétribution'+(concs.length>1?'s':''));
@@ -6043,11 +6045,17 @@
         <div class="card" style="padding:13px;flex:1;min-width:0"><div class="mini">CA prestations</div><b class="money" style="font-size:20px;font-family:var(--f-disp);display:block">${eur(totGross)}</b><div class="mini">reversé aux prestataires</div></div>
       </div>
       <div class="banner teal" style="margin-top:12px">${I.shield}<span>Chaque prestataire reçoit <b>une facture de commission mensuelle</b> (une ligne par mission) — le standard. Les factures de prestation sont établies au mandat, en leur nom.</span></div>
-      ${(function(){const totRetro=round2((adminConcInvoiceList()).reduce(function(t,x){return t+x.m.retro;},0));const net=round2(totComm-totRetro);return `<div class="card" style="padding:16px;margin-top:12px">
+      ${(function(){const totRetro=round2((adminConcInvoiceList()).reduce(function(t,x){return t+x.m.retro;},0));
+        const _led=adminCommissionLedger();
+        const totFee=round2(_led.reduce(function(t,e){return t+(Number(e.mollieFee)||0);},0));
+        const feePending=_led.filter(function(e){return e.commissionAmount>0&&e.mollieFee==null;}).length;
+        const net=round2(totComm-totRetro-totFee);return `<div class="card" style="padding:16px;margin-top:12px">
         <b style="font-size:14px">${I.card}&nbsp;Comptabilité — justificatif de revenus</b>
         <div class="row between" style="margin-top:10px"><span class="sub">Commissions encaissées (produit)</span><b>${eur(totComm)}</b></div>
+        <div class="row between" style="margin-top:6px"><span class="sub">Frais Mollie (charge)</span><b style="color:var(--muted)">−${eur(totFee)}</b></div>
         <div class="row between" style="margin-top:6px"><span class="sub">Rétributions apport versées (charge)</span><b style="color:var(--muted)">−${eur(totRetro)}</b></div>
-        <hr class="dashed" style="margin:10px 0"><div class="row between"><span class="sub"><b>Revenu net Ti-Services</b></span><b class="money" style="color:var(--teal-deep)">${eur(net)}</b></div>
+        <hr class="dashed" style="margin:10px 0"><div class="row between"><span class="sub"><b>Revenu net réel Ti-Services</b></span><b class="money" style="color:var(--teal-deep)">${eur(net)}</b></div>
+        ${feePending?`<p class="mini" style="margin-top:9px;color:var(--muted)">${I.clock} ${feePending} prestation${feePending>1?'s':''} en attente du règlement Mollie — le frais réel se complète automatiquement sous 1 à 2 jours.</p>`:''}
         <button class="btn primary sm" data-adm="export-accounting" style="margin-top:12px;width:auto;padding:9px 14px">${I.card}&nbsp;Export comptable (CSV)</button>
         <p class="mini" style="margin-top:8px;color:var(--muted)">Journal détaillé (une ligne par commission et par rétribution) pour votre comptable. Chiffres issus du <b>registre serveur immuable</b>.</p></div>`;})()}
       <div style="height:8px"></div><span class="eyebrow">Par artisan · ${groups.length}</span>${cards}
@@ -6274,7 +6282,7 @@
     if(!(FB&&FB.db))return;
     try{ if(adminLedgerUnsub){try{adminLedgerUnsub();}catch(_){}}
       adminLedgerUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'ledger'),function(snap){
-        const list=[];snap.forEach(function(d){const e=d.data()||{};if((e.commissionAmount||0)>0)list.push({id:d.id,reqId:e.reqId||d.id,invNo:e.invNo||'',providerUid:e.providerUid||'',clientUid:e.clientUid||'',dateISO:(e.settledAt&&e.settledAt.toDate)?e.settledAt.toDate().toISOString().slice(0,10):'',clientName:e.clientName||'',providerName:e.providerName||'',service:e.service||'',serviceName:e.serviceName||'',unit:e.unit||'h',hours:e.hours||0,rate:e.rate||0,base:e.base||0,commissionPct:e.commissionPct||0,commissionAmount:e.commissionAmount||0,netAmount:e.netAmount||0,grossTotal:e.grossTotal||0,rateFlag:!!e.rateFlag,rateExpected:e.rateExpected||null});});
+        const list=[];snap.forEach(function(d){const e=d.data()||{};if((e.commissionAmount||0)>0)list.push({id:d.id,reqId:e.reqId||d.id,invNo:e.invNo||'',providerUid:e.providerUid||'',clientUid:e.clientUid||'',dateISO:(e.settledAt&&e.settledAt.toDate)?e.settledAt.toDate().toISOString().slice(0,10):'',clientName:e.clientName||'',providerName:e.providerName||'',service:e.service||'',serviceName:e.serviceName||'',unit:e.unit||'h',hours:e.hours||0,rate:e.rate||0,base:e.base||0,commissionPct:e.commissionPct||0,commissionAmount:e.commissionAmount||0,netAmount:e.netAmount||0,grossTotal:e.grossTotal||0,rateFlag:!!e.rateFlag,rateExpected:e.rateExpected||null,mollieFee:(e.mollieFee!=null?e.mollieFee:null),netTiServices:(e.netTiServices!=null?e.netTiServices:null)});});
         list.sort(function(a,b){return (b.dateISO||'').localeCompare(a.dateISO||'');});
         S.adminLedger=list;
         // Rafraîchit l'onglet Factures ET le tableau de bord (« Commission ce mois »

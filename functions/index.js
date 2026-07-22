@@ -195,6 +195,28 @@ async function mollieOnboardingReady(accessToken) {
     return {ok: status === 'completed' && canPay && canSettle, status: status, dashboard: dashboard};
   } catch (e) { console.warn('mollieOnboardingReady', e); return {ok: false, status: 'error', dashboard: ''}; }
 }
+// FRAIS MOLLIE RÉELS d'un paiement. Mollie expose `settlementAmount` = ce qu'il verse
+// vraiment après ses frais ; le frais exact = amount − settlementAmount. On enregistre ce
+// frais + le revenu net RÉEL de Ti-Services (commission − frais) sur le registre et la
+// demande. `settlementAmount` n'est parfois connu qu'au règlement (différé) : dans ce cas
+// on ne fait rien, le balayage quotidien re-tentera. No-op si Mollie non configuré /
+// paiement simulé. NB : n'affecte NI le versement à l'artisan NI le débit du client
+// (déjà exacts) — c'est de la comptabilité interne (marge réelle Ti-Services).
+async function recordMollieFee(db, reqId, molliePaymentId, commission) {
+  if (!mollieApiConfigured() || !molliePaymentId) return false;
+  try {
+    const p = await mollieApi('/payments/' + encodeURIComponent(molliePaymentId), 'GET');
+    if (!p.ok || !p.data) return false;
+    const amt = Number(p.data.amount && p.data.amount.value);
+    const settle = (p.data.settlementAmount && p.data.settlementAmount.value != null) ? Number(p.data.settlementAmount.value) : null;
+    if (!(amt > 0) || settle == null || isNaN(settle)) return false; // règlement Mollie pas encore connu
+    const fee = round2(amt - settle);
+    const netTs = round2((Number(commission) || 0) - fee);
+    await db.collection('ledger').doc(reqId).set({mollieFee: fee, mollieSettlementAmount: settle, netTiServices: netTs}, {merge: true});
+    try { await db.collection('requests').doc(reqId).set({mollieFee: fee, netTiServices: netTs}, {merge: true}); } catch (_) {}
+    return true;
+  } catch (e) { console.warn('recordMollieFee', e); return false; }
+}
 // Prévient l'ARTISAN (push + e-mail) quand son compte de paiement Mollie n'est pas
 // validé et requiert son action (dossier refusé / informations manquantes), ou quand un
 // versement n'a pas pu lui être fait. `reason` : 'needs-data' | 'route_failed' | 'no_org'.
@@ -1178,6 +1200,7 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
       commissionAmount: commission, // revenu Ti-Services
       netAmount: net,             // net perçu par l'artisan
       invNo: saleInvoiceNo,       // numéro de facture séquentiel (mandat, au nom de l'artisan)
+      molliePaymentId: after.molliePaymentId || '', // pour rapprocher le frais Mollie réel
       rateExpected: rateExpected, // tarif attendu (grille officielle), pour audit
       rateFlag: rateFlag,         // true si tarif nettement sous la grille → à vérifier
       settledAt: FieldValue.serverTimestamp(),
@@ -1291,6 +1314,9 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
         }
       }
     } catch (e) { console.warn('settleCommission route', e); }
+    // 3 ter) FRAIS MOLLIE RÉELS de ce paiement (si déjà connus) → registre. Sinon le
+    //    balayage quotidien (paymentReconciliation) complétera au règlement Mollie.
+    try { await recordMollieFee(db, reqId, after.molliePaymentId, commission); } catch (_) {}
   } catch (e) { console.warn('settleCommission write', e); }
 });
 
@@ -1741,6 +1767,19 @@ exports.paymentReconciliation = onSchedule({schedule: '0 9 * * *', secrets: [SMT
     } catch (e) { console.warn('reco unrouted', e); }
     if (items.length) sections.push('<h3>💸 Versements artisan à régulariser (' + items.length + ')</h3><ul>' + items.join('') + '</ul><p>Le client a payé, l\'artisan n\'a pas reçu son net (fonds en sécurité sur le solde plateforme). Vérifier son onboarding Mollie puis re-router (ou virement manuel).</p>');
   }
+
+  // BACKFILL DES FRAIS MOLLIE RÉELS : le règlement (settlementAmount) n'est souvent connu
+  // qu'un jour ou deux après la prestation. On complète ici, chaque matin, les frais des
+  // prestations réglées dont le frais Mollie n'est pas encore renseigné (200 plus récentes).
+  try {
+    const led = await db.collection('ledger').where('type', '==', 'commission').orderBy('settledAt', 'desc').limit(200).get();
+    let filled = 0;
+    for (const d of led.docs) {
+      const e = d.data() || {};
+      if (e.mollieFee == null && e.molliePaymentId) { if (await recordMollieFee(db, d.id, e.molliePaymentId, e.commissionAmount)) filled++; }
+    }
+    if (filled) console.log('paymentReconciliation : ' + filled + ' frais Mollie complété(s).');
+  } catch (e) { console.warn('reco mollieFee backfill', e); }
 
   if (!sections.length) { console.log('paymentReconciliation : aucune anomalie ✓'); return; }
   try {
