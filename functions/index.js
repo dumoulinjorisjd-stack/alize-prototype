@@ -1273,14 +1273,42 @@ exports.createClientPayment = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (
   const appUrl = APP_URL.replace(/\/$/, '');
   const redirectUrl = returnUrl || (appUrl + '/?paid=' + encodeURIComponent(reqId));
   const webhookUrl = 'https://europe-west1-t-service-prod.cloudfunctions.net/mollieWebhook';
-  const out = await mollieApi('/payments', 'POST', {
+  // CARTE ENREGISTRÉE : on rattache un « client Mollie » (créé une seule fois et mémorisé
+  // sur users/{uid}.mollieCustomerId). Au paiement suivant, la carte déjà utilisée est
+  // proposée en un clic — le client ne la ressaisit plus.
+  let customerId = '';
+  try {
+    const uref = db.collection('users').doc(uid);
+    const usnap = await uref.get();
+    const ud = (usnap.exists && usnap.data()) || {};
+    customerId = ud.mollieCustomerId || '';
+    if (!customerId) {
+      const custBody = {name: (r.clientName || ud.name || 'Client Ti-Services').toString().slice(0, 100), metadata: {uid: uid}};
+      const em = (ud.email || '').toString().slice(0, 100);
+      if (em) custBody.email = em;
+      const cust = await mollieApi('/customers', 'POST', custBody);
+      if (cust.ok && cust.data && cust.data.id) {
+        customerId = cust.data.id;
+        try { await uref.set({mollieCustomerId: customerId}, {merge: true}); } catch (_) {}
+      }
+    }
+  } catch (_) {}
+
+  const payBody = {
     amount: {currency: 'EUR', value: amount.toFixed(2)},
     description: ('Ti-Services \u00b7 ' + (r.serviceName || r.service || 'prestation')).toString().slice(0, 100),
     redirectUrl: redirectUrl,
     webhookUrl: webhookUrl,
     captureMode: 'manual',
     metadata: {reqId: reqId, clientUid: uid},
-  });
+  };
+  if (customerId) payBody.customerId = customerId;
+  // `sequenceType:'first'` fait mémoriser la carte (mandat) pour l'afficher au prochain
+  // paiement. REPLI robuste : si Mollie refuse cette combinaison (ex. incompatibilité avec
+  // la capture manuelle), on retombe sur un paiement simple — l'encaissement n'est JAMAIS
+  // bloqué par la fonctionnalité « carte enregistrée ».
+  let out = await mollieApi('/payments', 'POST', customerId ? Object.assign({sequenceType: 'first'}, payBody) : payBody);
+  if (!out.ok && customerId) out = await mollieApi('/payments', 'POST', payBody);
   if (!out.ok || !out.data) throw new HttpsError('internal', 'Création du paiement Mollie échouée.');
   const pay = out.data;
   await db.collection('requests').doc(reqId).set({
