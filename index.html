@@ -5775,7 +5775,7 @@
     if(S.cardForm||S.clientInv||S.histInvoice||S.advantages||S.invoiceId||S.interv||S.referral||S.share||S.chat||S.support||S.addrForm||S.finishing||S.disputing||S.profileForm||S.draft||S.payStep)return true;
     if(S.persona==='admin')return S.admin.view!=='home';
     if(S.persona==='concierge')return !!(S.concRetInv||S.concInvoice||S.concForm||S.concClientView||S.concOrder||S.concView||S.concNav!=='home');
-    if(S.persona==='pro'){if(S.proAddView||S.proDocsView||S.proPayoutView||S.proMollieView||S.proReqView||S.mission)return true;if(S.proStatus==='pending')return !isRealArtisan();if(S.proStatus==='signup')return true;return S.proNav!=='home';}
+    if(S.persona==='pro'){if(S.proAddView||S.proDocsView||S.proPayoutView||S.proMollieView||S.mollieGuideView||S.proReqView||S.mission)return true;if(S.proStatus==='pending')return !isRealArtisan();if(S.proStatus==='signup')return true;return S.proNav!=='home';}
     if(S.mission)return true;
     return S.clientNav!=='home';
   }
@@ -7712,6 +7712,7 @@
     if(S.proStatus==='signup'){ if(S.signupKind==='concierge')return conciergeSignup(); if(S.signupKind==='artisan')return proSignup(); return proTypeChoice(); }
     if(S.proAddView)return proAddService();
     if(S.proDocsView)return proDocs();
+    if(S.mollieGuideView)return mollieGuide();
     if(S.proMollieView)return proMollieActivate();
     if(S.proPayoutView)return proPayout();
     if(S.proStatus==='pending')return proPending();
@@ -7813,7 +7814,66 @@
     }
     return `<div class="pad"><button class="reset" data-act="pro-mollie-close" style="margin:8px 0 2px">← Retour</button>
       <span class="eyebrow">${I.card} Mes paiements</span><div class="h-hello">${st==='active'?'Paiements automatiques':'Activer mes paiements'}</div>
+      ${st!=='active'?`<button class="btn ghost" data-act="mollie-guide-open" style="margin-top:12px;width:100%">${I.info||I.card} Guide pas à pas — réponses à copier-coller</button>`:''}
       ${body}
+      <div style="height:14px"></div></div>`;
+  }
+  // GUIDE d'activation Mollie : accompagne l'artisan question par question, avec des
+  // réponses toutes prêtes à copier-coller (dont la description ≥ 50 caractères exigée par
+  // Mollie). Objectif : plus personne ne bloque devant le jargon du formulaire Mollie.
+  function mollieGuide(){
+    const metiers=(S.proCats&&S.proCats.length)?S.proCats.map(function(c){return svcNm(c);}).filter(Boolean).join(', '):'';
+    const activite=metiers?(metiers.charAt(0).toUpperCase()+metiers.slice(1)):'Services à la personne';
+    const desc=activite+' à domicile à Saint-Barthélemy, prestations réservées et réglées en ligne via la plateforme Ti-Services.';
+    const nom=S.proLegal||S.proName||'';
+    const adr=S.proAddress||'';
+    const siret=(S.proSiret||'').replace(/\s/g,'');
+    const iban=(S.proIban||'').replace(/\s/g,'');
+    const copyRow=function(label,value,hint){ if(!value)return ''; return `<div style="margin-top:10px">
+        <div class="mini" style="color:var(--muted)">${label}</div>
+        <div class="row between" style="gap:10px;align-items:center;margin-top:4px;background:var(--sand-2);border:1px solid var(--hair);border-radius:11px;padding:9px 11px">
+          <b style="font-size:13.5px;word-break:break-word;flex:1;line-height:1.35">${esc(value)}</b>
+          <button class="btn ghost sm" data-act="mollie-copy" data-copytext="${esc(value)}" style="width:auto;padding:7px 11px;flex:none">${I.copy} Copier</button></div>
+        ${hint?`<p class="mini" style="margin-top:5px;color:var(--muted)">${hint}</p>`:''}</div>`;};
+    const step=function(num,title,inner){return `<div class="card" style="padding:16px;margin-top:12px">
+        <div class="row" style="gap:11px;align-items:flex-start"><span style="flex:none;width:28px;height:28px;border-radius:50%;background:var(--teal-deep);color:#fff;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center">${num}</span>
+        <div style="flex:1;min-width:0"><b style="font-size:14.5px">${title}</b>${inner}</div></div></div>`;};
+    return `<div class="pad"><button class="reset" data-act="mollie-guide-close" style="margin:8px 0 2px">← Retour</button>
+      <span class="eyebrow">${I.card} Aide</span><div class="h-hello">Activer vos paiements, pas à pas</div>
+      <p class="sub" style="margin-top:6px">Le service de paiement <b>Mollie</b> va vous poser quelques questions. Voici <b>exactement quoi répondre</b> — vous pouvez copier chaque réponse d'un geste. Comptez <b>5 minutes</b>.</p>
+      <div class="banner teal" style="margin-top:12px">${I.shield}<span>Ces questions viennent <b>de Mollie</b> (obligation légale anti-fraude), pas de Ti-Services. Vos coordonnées bancaires vont à Mollie, <b>jamais</b> à nous.</span></div>
+
+      ${step('1','« Site web » — vous n\'en avez pas ?',`
+        <p class="sub" style="margin-top:6px">C'est <b>normal</b> et <b>pas obligatoire</b>. Cochez simplement la case&nbsp;:</p>
+        <div class="banner good" style="margin-top:8px">${I.check}<span>« <b>Mon site web n'est pas encore prêt</b> » — puis <b>Continuer</b>.</span></div>
+        ${copyRow('Si un site est absolument exigé, collez celui-ci :','https://ti-services.fr','La page publique de Ti-Services fait office de vitrine de votre activité.')}`)}
+
+      ${step('2','« Décrivez votre activité » (min. 50 caractères)',`
+        <p class="sub" style="margin-top:6px">Mollie exige une description d'<b>au moins 50 caractères</b>. En voici une toute prête, adaptée à vos métiers&nbsp;:</p>
+        ${copyRow('Description à coller',desc,'Vous pouvez la modifier, mais gardez-la au-dessus de 50 caractères.')}`)}
+
+      ${step('3','« Secteur / catégorie d\'activité »',`
+        <p class="sub" style="margin-top:6px">Dans la liste déroulante, choisissez <b>« Services à la personne »</b> (ou <b>« Autres services »</b> si absente). Évitez tout ce qui parle de <i>boutique</i>, <i>commerce en ligne</i> ou <i>marketplace</i>.</p>`)}
+
+      ${step('4','Vos informations d\'entreprise',`
+        <p class="sub" style="margin-top:6px">Souvent <b>déjà pré-remplies</b>. Si Mollie les redemande, copiez-collez&nbsp;:</p>
+        ${copyRow('Nom / raison sociale',nom,'')}
+        ${copyRow('Adresse',adr,'')}
+        ${copyRow('SIRET',siret,'')}
+        ${(!nom&&!adr&&!siret)?`<p class="mini" style="margin-top:8px;color:var(--coral-deep)">Complétez d'abord votre fiche dans « Mon compte » pour les retrouver ici.</p>`:''}`)}
+
+      ${step('5','Votre compte bancaire (IBAN)',`
+        <p class="sub" style="margin-top:6px">Saisissez l'IBAN <b>où vous voulez être payé</b>. C'est le <b>seul</b> endroit où vous le donnez — à Mollie, pas à Ti-Services.</p>
+        ${iban?copyRow('Votre IBAN',iban,'Vérifiez qu\'il est correct avant de valider.'):`<p class="mini" style="margin-top:6px;color:var(--muted)">${I.card} Ayez votre <b>RIB</b> à portée de main.</p>`}`)}
+
+      ${step('6','Votre pièce d\'identité',`
+        <p class="sub" style="margin-top:6px">Mollie demande une <b>photo de votre pièce d'identité</b> (carte d'identité ou passeport, parfois recto <b>et</b> verso). C'est une <b>obligation légale</b> pour vérifier que c'est bien vous — comme à la banque. Ayez-la prête, bien éclairée et nette.</p>`)}
+
+      ${step('7','Envoyer — puis c\'est fini',`
+        <p class="sub" style="margin-top:6px">Cliquez sur <b>Envoyer / Soumettre</b>. Mollie vérifie (souvent quelques minutes, parfois 1 à 2 jours). Vous recevez un <b>e-mail « paiements activés »</b> dès que c'est bon, et l'app vous passe <b>« actif »</b> toute seule. Rien d'autre à faire.</p>`)}
+
+      <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-act="mollie-start">${I.lock} J'ai compris — aller sur Mollie →</button></div>
+      <p class="mini" style="text-align:center;margin-top:10px;color:var(--muted)">Une question vous bloque&nbsp;? <button class="linklike" data-act="open-general-support">Écrivez-nous</button>, on vous débloque.</p>
       <div style="height:14px"></div></div>`;
   }
   function proPayout(){
@@ -9490,6 +9550,9 @@
       case 'wish-send':sendWish();break;
       case 'pro-mollie':S.proMollieView=true;render();refreshMollieStatus();break;
       case 'pro-mollie-close':S.proMollieView=false;render();break;
+      case 'mollie-guide-open':S.mollieGuideView=true;render();break;
+      case 'mollie-guide-close':S.mollieGuideView=false;render();break;
+      case 'mollie-copy':{const t=b.dataset.copytext||'';if(t&&navigator.clipboard){navigator.clipboard.writeText(t).then(function(){toast('Copié ✓ — collez-le dans Mollie');}).catch(function(){toast('Copié : '+t);});}else{toast(t||'—');}break;}
       case 'mollie-start':startMollieOnboarding();break;
       case 'mollie-sim-approve':setMollieStatus('active');toast('Paiements activés ✓');break;
       case 'pro-payout':S.payoutForm={holder:(S.proIbanHolder||S.proName||''),iban:(S.proIban||''),bic:(S.proBic||'')};S.proPayoutView=true;render();break;
@@ -10133,6 +10196,7 @@
       // client (sinon un prestataire validé se retrouve à tort dans l'interface client).
       if(S.proStatus==='pending'){if(isRealArtisan())return;S.proStatus='signup';render();return;}
       if(S.proStatus==='signup'){if(isRealArtisan())return;S.persona='client';S.proStatus='approved';render();return;}
+      if(S.mollieGuideView){S.mollieGuideView=false;render();return;}
       if(S.proMollieView){S.proMollieView=false;render();return;}
       if(S.proReqView){S.proReqView=null;render();return;}
       if(S.mission){if(isRealArtisan()){S.mission=null;S.proNav='home';render();return;}S.persona='client';render();return;}
