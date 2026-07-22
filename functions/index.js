@@ -1592,13 +1592,15 @@ exports.mollieOnboardingLink = onCall({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLI
   return {url: url};
 });
 
-// DÉPRÉCIÉ : ancien départ public (uid en clair). Conservé inerte — le retour n'accepte
-// plus qu'un `state` SIGNÉ, donc cet endpoint ne peut plus rien lier. On redirige vers l'app.
+// PONT DE COMPATIBILITÉ : ancien départ public (uid en clair), désormais abandonné pour la
+// sécurité. On IGNORE totalement le paramètre `uid` (non fiable) et on renvoie l'utilisateur
+// dans l'app avec le drapeau `?mollie=start`. L'app (version à jour, rechargée depuis le
+// réseau car c'est une navigation) relance alors le parcours par la fonction AUTHENTIFIÉE
+// `mollieOnboardingLink` — seule à pouvoir produire un lien signé pour la fiche de l'artisan
+// CONNECTÉ. Sans ce pont, les clients encore en cache (ancienne version) qui pointaient vers
+// cet endpoint retombaient bêtement sur l'accueil sans jamais atteindre Mollie.
 exports.mollieOnboardingStart = onRequest((req, res) => {
-  // Endpoint public d'origine : abandonné pour la sécurité (uid en clair non authentifié).
-  // Le départ passe désormais par la fonction authentifiée `mollieOnboardingLink`. On se
-  // contente de renvoyer l'utilisateur dans l'app.
-  res.redirect(302, MOLLIE_APP_RETURN);
+  res.redirect(302, MOLLIE_APP_RETURN + '?mollie=start');
 });
 
 /**

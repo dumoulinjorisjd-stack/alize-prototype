@@ -7565,6 +7565,24 @@
     setMollieStatus('pending');
     toast('Ouverture du parcours Mollie (simulé en bêta)');
   }
+  // Relance différée du parcours Mollie après le pont `?mollie=start` (client en cache
+  // redirigé par l'ancien endpoint). On ATTEND que la session artisan soit prête avant de
+  // lancer : appeler startMollieOnboarding() trop tôt (avant l'auth) basculerait le statut en
+  // « pending » à tort. On ré-essaie quelques secondes puis on abandonne proprement (au pire,
+  // l'artisan a le bouton « Continuer vers Mollie » sous les yeux, sur l'écran paiements).
+  function scheduleMollieAutoStart(){
+    if(S._mollieAutoStartTimer)return; let tries=0;
+    S._mollieAutoStartTimer=setInterval(function(){
+      tries++;
+      if(!S._mollieAutoStart||tries>15){clearInterval(S._mollieAutoStartTimer);S._mollieAutoStartTimer=null;return;}
+      // Prêt = prod + artisan connecté. Déjà activé → inutile de relancer.
+      if(payReal()&&FB&&FB.auth&&FB.auth.currentUser){
+        S._mollieAutoStart=false;clearInterval(S._mollieAutoStartTimer);S._mollieAutoStartTimer=null;
+        if(mollieReady()){S.proMollieView=true;render();return;}
+        startMollieOnboarding();
+      }
+    },800);
+  }
   // Re-vérifie auprès de Mollie que l'onboarding de l'artisan est RÉELLEMENT terminé, et
   // met à jour son statut. Indispensable car la vérification Mollie se termine souvent
   // APRÈS le retour dans l'app (statut « in-review » au retour). Appelée à l'ouverture de
@@ -8243,10 +8261,15 @@
   function handleDeepLink(){try{const q=new URLSearchParams(location.search);
     try{const rp=q.get('realpay');if(rp==='1')localStorage.setItem('tiPayReal','1');else if(rp==='0')localStorage.removeItem('tiPayReal');}catch(_){}
     const paid=q.get('paid'); if(paid){S._openReq=paid;S.onboarded=true;S.persona='client';S.clientNav='wallet';try{history.replaceState(null,'',location.origin+location.pathname);}catch(_){}}
-    const mol=q.get('mollie'); if(mol){try{history.replaceState(null,'',location.origin+location.pathname);}catch(_){}setTimeout(function(){try{if(mol==='active')toast('✅ Paiements activés — votre compte Mollie est connecté');else if(mol==='error')toast('⚠︎ Connexion Mollie échouée — réessayez');else toast('Compte Mollie en cours de vérification');}catch(_){}},900);
+    const mol=q.get('mollie'); if(mol){try{history.replaceState(null,'',location.origin+location.pathname);}catch(_){}
+      // `?mollie=start` = pont depuis l'ancien endpoint public (client en cache). On relance
+      // le parcours par la fonction AUTHENTIFIÉE dès que la session artisan est prête — sinon
+      // l'utilisateur restait bloqué sur l'accueil sans jamais atteindre Mollie.
+      if(mol==='start'){S._mollieAutoStart=true;S.persona='pro';scheduleMollieAutoStart();}
+      else{setTimeout(function(){try{if(mol==='active')toast('✅ Paiements activés — votre compte Mollie est connecté');else if(mol==='error')toast('⚠︎ Connexion Mollie échouée — réessayez');else toast('Compte Mollie en cours de vérification');}catch(_){}},900);
       // Re-vérification RÉELLE après le retour : la validation Mollie peut se terminer juste
       // après la redirection. On re-interroge Mollie une fois l'app chargée (best-effort).
-      if(mol!=='error'){setTimeout(function(){try{refreshMollieStatus();}catch(_){}},4000);}}
+      if(mol!=='error'){setTimeout(function(){try{refreshMollieStatus();}catch(_){}},4000);}}}
     const rid=q.get('r'); if(rid)S._openReq=rid; // réservation à ouvrir (après connexion)
     // Lien « installer l'app » (depuis l'e-mail de bienvenue) : ouvre directement le
     // guide d'installation (invite native Android / gestes iPhone) une fois l'app peinte.
