@@ -7548,12 +7548,18 @@
   // rediriger vers l'endpoint serveur qui renvoie l'URL OAuth de Mollie (hosted
   // onboarding), en pré-remplissant l'identité déjà connue —
   //   window.location.href = urlOnboardingMollie;   // obtenue via mollieOnboardingStart
-  function startMollieOnboarding(){
-    // Parcours RÉEL : prod + appareil armé (?realpay=1) → redirection vers l'onboarding
-    // hébergé Mollie (via notre fonction, qui renvoie l'URL OAuth). Sinon : simulation.
-    if(payReal()&&FB&&FB.auth&&FB.auth.currentUser){
+  async function startMollieOnboarding(){
+    // Parcours RÉEL : on demande à une fonction AUTHENTIFIÉE l'URL OAuth Mollie signée
+    // (le lien ne peut être créé que par l'artisan connecté, pour sa propre fiche), puis on
+    // y redirige. Sinon (bêta/démo) : simulation.
+    if(payReal()&&FB&&FB.fn&&FB.functions&&FB.auth&&FB.auth.currentUser){
       toast('Ouverture du parcours Mollie…');
-      location.href='https://europe-west1-t-service-prod.cloudfunctions.net/mollieOnboardingStart?uid='+encodeURIComponent(FB.auth.currentUser.uid);
+      try{
+        const r=await FB.fn.httpsCallable(FB.functions,'mollieOnboardingLink')();
+        const url=r&&r.data&&r.data.url;
+        if(url){location.href=url;return;}
+        toast('Impossible d’ouvrir Mollie — réessayez.');
+      }catch(e){toast('Impossible d’ouvrir Mollie : '+fbErrTxt(e));}
       return;
     }
     setMollieStatus('pending');

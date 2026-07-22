@@ -15,6 +15,7 @@ const {onRequest, onCall, HttpsError} = require('firebase-functions/v2/https');
 const {onSchedule} = require('firebase-functions/v2/scheduler');
 const {setGlobalOptions} = require('firebase-functions/v2');
 const {defineSecret} = require('firebase-functions/params');
+const crypto = require('crypto');
 const {initializeApp} = require('firebase-admin/app');
 const {getFirestore, FieldValue} = require('firebase-admin/firestore');
 const {getMessaging} = require('firebase-admin/messaging');
@@ -157,6 +158,29 @@ const MOLLIE_APP_RETURN = 'https://ti-services.fr';
 const APP_URL = process.env.APP_URL || 'https://ti-services.fr';
 function mollieOAuthConfigured() { return !!(process.env.MOLLIE_CLIENT_ID && process.env.MOLLIE_CLIENT_SECRET); }
 function mollieApiConfigured() { return !!process.env.MOLLIE_ACCESS_TOKEN; }
+// SIGNATURE DU `state` OAUTH (anti-détournement de liaison). Le state = uid de l'artisan +
+// expiration, signés par HMAC avec le secret Mollie. Seule la fonction AUTHENTIFIÉE
+// (mollieOnboardingLink) peut en produire un valide → un tiers ne peut PAS lier son compte
+// Mollie à la fiche d'un autre artisan en forgeant un uid. Le retour rejette tout state
+// non signé par nous.
+function signMollieState(uid) {
+  const exp = Date.now() + 30 * 60 * 1000;   // valable 30 minutes
+  const payload = String(uid) + '.' + exp;
+  const sig = crypto.createHmac('sha256', process.env.MOLLIE_CLIENT_SECRET || '').update(payload).digest('base64url');
+  return payload + '.' + sig;
+}
+function verifyMollieState(state) {
+  try {
+    const parts = String(state || '').split('.');
+    if (parts.length !== 3) return null;
+    const uid = parts[0], exp = parts[1], sig = parts[2];
+    if (!uid || !/^\d+$/.test(exp) || Date.now() > Number(exp)) return null;   // absent / malformé / expiré
+    const expected = crypto.createHmac('sha256', process.env.MOLLIE_CLIENT_SECRET || '').update(uid + '.' + exp).digest('base64url');
+    const a = Buffer.from(sig), b = Buffer.from(expected);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;    // signature invalide
+    return uid;
+  } catch (_) { return null; }
+}
 
 // Crée une route de versement du NET vers l'organisation Mollie de l'artisan, en
 // gardant la commission sur le solde plateforme. No-op tant que Mollie n'est pas
@@ -1551,21 +1575,30 @@ exports.mollieWebhook = onRequest({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (req
   } catch (e) { console.warn('mollieWebhook', e); res.status(200).send('ok'); }
 });
 
-exports.mollieOnboardingStart = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET']}, (req, res) => {
-  if (!mollieOAuthConfigured()) { res.status(503).json({error: 'Mollie non configuré', message: 'Compte Mollie Connect à ouvrir + secrets à définir.'}); return; }
-  const uid = (req.query.uid || req.query.state || '').toString();
-  if (!uid) { res.status(400).json({error: 'uid manquant'}); return; }
-  // redirect_uri FIGÉ côté serveur (jamais depuis la requête) : sinon un attaquant
-  // pourrait détourner le code OAuth vers son propre domaine.
-  const redirectUri = MOLLIE_RETURN_URL;
+// Départ SÉCURISÉ du parcours Mollie : fonction AUTHENTIFIÉE. Seul l'artisan connecté
+// obtient un lien signé pour SA propre fiche (uid = request.auth.uid, jamais fourni par le
+// client). Renvoie l'URL OAuth Mollie ; l'app y redirige. Remplace l'ancien endpoint public.
+exports.mollieOnboardingLink = onCall({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET']}, (request) => {
+  const uid = request.auth && request.auth.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Connexion requise.');
+  if (!mollieOAuthConfigured()) throw new HttpsError('failed-precondition', 'Mollie non configuré.');
   const scope = ['onboarding.read', 'onboarding.write', 'organizations.read', 'payments.read', 'payments.write', 'profiles.read'].join(' ');
   const url = MOLLIE_AUTHORIZE +
     '?client_id=' + encodeURIComponent(process.env.MOLLIE_CLIENT_ID) +
-    '&redirect_uri=' + encodeURIComponent(redirectUri) +
-    '&state=' + encodeURIComponent(uid) +
+    '&redirect_uri=' + encodeURIComponent(MOLLIE_RETURN_URL) +
+    '&state=' + encodeURIComponent(signMollieState(uid)) +
     '&scope=' + encodeURIComponent(scope) +
     '&response_type=code&approval_prompt=auto';
-  res.redirect(302, url);
+  return {url: url};
+});
+
+// DÉPRÉCIÉ : ancien départ public (uid en clair). Conservé inerte — le retour n'accepte
+// plus qu'un `state` SIGNÉ, donc cet endpoint ne peut plus rien lier. On redirige vers l'app.
+exports.mollieOnboardingStart = onRequest((req, res) => {
+  // Endpoint public d'origine : abandonné pour la sécurité (uid en clair non authentifié).
+  // Le départ passe désormais par la fonction authentifiée `mollieOnboardingLink`. On se
+  // contente de renvoyer l'utilisateur dans l'app.
+  res.redirect(302, MOLLIE_APP_RETURN);
 });
 
 /**
@@ -1577,8 +1610,10 @@ exports.mollieOnboardingStart = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE
 exports.mollieOnboardingReturn = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET']}, async (req, res) => {
   if (!mollieOAuthConfigured()) { res.status(503).json({error: 'Mollie non configuré'}); return; }
   const code = (req.query.code || '').toString();
-  const uid = (req.query.state || '').toString();
-  if (!code || !uid) { res.redirect(302, MOLLIE_APP_RETURN); return; }
+  // Le `state` DOIT être un jeton signé par notre serveur (mollieOnboardingLink). Sinon on
+  // refuse : impossible de lier une organisation Mollie à un uid forgé par un tiers.
+  const uid = verifyMollieState(req.query.state);
+  if (!code || !uid) { res.redirect(302, MOLLIE_APP_RETURN + (code ? '?mollie=error' : '')); return; }
   try {
     const redirectUri = MOLLIE_RETURN_URL;
     const basic = Buffer.from(process.env.MOLLIE_CLIENT_ID + ':' + process.env.MOLLIE_CLIENT_SECRET).toString('base64');
