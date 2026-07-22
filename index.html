@@ -1859,6 +1859,12 @@
      stocké — l'écran de connexion se contente de le vérifier localement. */
   function loadAccount(){if(CONFIG.firebase&&!window.__NOFB)return null;try{const r=localStorage.getItem('tiservices_account');return r?JSON.parse(r):null;}catch(_){return null;}}
   function saveAccount(a){if(CONFIG.firebase&&!window.__NOFB)return;try{localStorage.setItem('tiservices_account',JSON.stringify({name:a.name,email:a.email,zone:a.zone}));}catch(_){}}
+  // Sauvegarde locale de la photo de profil (par compte) : filet de sécurité pour qu'elle
+  // ne DISPARAISSE jamais. Si le cloud renvoyait un jour une photo vide (écriture ratée,
+  // lecture partielle…), on la restaure depuis ce cache et on la ré-enregistre au cloud.
+  function photoCacheKey(uid){return 'ts_photo_'+(uid||'');}
+  function savePhotoLocal(uid,d){try{if(uid&&d&&d.length>40)localStorage.setItem(photoCacheKey(uid),d);}catch(_){}}
+  function loadPhotoLocal(uid){try{return (uid&&localStorage.getItem(photoCacheKey(uid)))||'';}catch(_){return '';}}
   // Sauvegarde permanente (bêta) des données du compte client dans Firestore :
   // adresses + moyen de paiement, rechargés à chaque connexion (loadUserProfile).
   // Garde-fou : on allège une prestation avant archivage/persistance. Les photos
@@ -4128,6 +4134,7 @@
     "Ouverture du parcours Mollie (simulé en bêta)":"Opening the Mollie flow (simulated in beta)",
     "Paiements activés ✓":"Payments enabled ✓",
     "Photo de profil mise à jour ✓":"Profile photo updated ✓",
+    "Photo illisible — réessayez avec une autre image.":"Couldn't read the photo — try another image.",
     "Point GPS enregistré":"GPS point saved",
     "Prestation pré-remplie — vérifiez, ajustez, puis confirmez":"Service pre-filled — check, adjust, then confirm",
     "Prestation réglée — facture au nom du client":"Service paid — invoice in the client's name",
@@ -5535,6 +5542,7 @@
     "Ouverture du parcours Mollie (simulé en bêta)":"A abrir o percurso Mollie (simulado em beta)",
     "Paiements activés ✓":"Pagamentos ativados ✓",
     "Photo de profil mise à jour ✓":"Foto de perfil atualizada ✓",
+    "Photo illisible — réessayez avec une autre image.":"Não foi possível ler a foto — tente outra imagem.",
     "Point GPS enregistré":"Ponto GPS guardado",
     "Prestation pré-remplie — vérifiez, ajustez, puis confirmez":"Serviço pré-preenchido — verifique, ajuste e confirme",
     "Prestation réglée — facture au nom du client":"Serviço pago — fatura em nome do cliente",
@@ -8346,7 +8354,7 @@
   }
   // Photo de profil du prestataire modifiée depuis « Mon compte » : persistée sur sa fiche
   // (et sur son compte users pour l'affichage) ; en démo, on garde juste l'aperçu local.
-  function saveProPhoto(d){ try{ if(FB&&FB.auth&&FB.auth.currentUser&&!isDemo()){ const uid=FB.auth.currentUser.uid; FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{photo:d||''},{merge:true}).then(function(){toast('Photo de profil mise à jour ✓');}).catch(function(e){toast('⚠︎ Photo non enregistrée : '+fbErrTxt(e));}); try{ FB.f.setDoc(FB.f.doc(FB.db,'users',uid),{photo:d||''},{merge:true}); }catch(_){} } else { toast('Photo de profil mise à jour ✓'); } }catch(_){} }
+  function saveProPhoto(d){ try{ if(!d)return; if(FB&&FB.auth&&FB.auth.currentUser&&!isDemo()){ const uid=FB.auth.currentUser.uid; savePhotoLocal(uid,d); FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{photo:d},{merge:true}).then(function(){toast('Photo de profil mise à jour ✓');}).catch(function(e){toast('⚠︎ Photo non enregistrée : '+fbErrTxt(e));}); try{ FB.f.setDoc(FB.f.doc(FB.db,'users',uid),{photo:d},{merge:true}); }catch(_){} } else { toast('Photo de profil mise à jour ✓'); } }catch(_){} }
   // Désistement artisan : la mission acceptée repart en recherche pour les autres
   // artisans (re-diffusion), et le client est prévenu. Concrétise l'engagement de
   // moyens « on relance la recherche » sans en faire une garantie.
@@ -9384,7 +9392,10 @@
       case 'edit-profile':{const zone=(S.account&&S.account.zone)||(S.clientForm&&S.clientForm.zone)||'Gustavia';S.profileForm={name:((S.account&&S.account.name)||(S.clientForm&&S.clientForm.name)||'').trim(),email:(S.account&&S.account.email)||(S.clientForm&&S.clientForm.email)||'',zone:zone,phone:(S.account&&S.account.phone)||'',photo:(S.account&&S.account.photo)||(S.clientForm&&S.clientForm.photo)||'',isPro:!!(S.account&&S.account.isPro),company:(S.account&&S.account.company)||'',siret:(S.account&&S.account.siret)||''};render();break;}
       case 'toggle-pro-buyer':if(S.profileForm){S.profileForm.isPro=!S.profileForm.isPro;render();}break;
       case 'profile-cancel':S.profileForm=null;render();break;
-      case 'save-profile':{const f=S.profileForm;if(!f||(f.name||'').trim().length<2){toast('Indiquez votre nom');break;}const isPro=!!f.isPro;const company=isPro?(f.company||'').trim():'';const siret=isPro?(f.siret||'').replace(/\s/g,''):'';if(isPro&&siret&&siret.length!==14){toast('SIRET invalide (14 chiffres)');break;}const nm=f.name.trim(),ph=(f.phone||'').trim(),pht=f.photo||'';S.account=Object.assign({},S.account,{name:nm,zone:f.zone,phone:ph,photo:pht,isPro:isPro,company:company,siret:siret});S.clientForm=Object.assign({},S.clientForm,{name:nm,zone:f.zone,photo:pht});saveAccount(S.account);if(FB&&FB.auth&&FB.auth.currentUser){try{FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{name:nm,zone:f.zone,phone:ph,photo:pht,isPro:isPro,company:company,siret:siret},{merge:true}).then(function(){toast('Informations enregistrées ✓');}).catch(function(e){toast('⚠︎ Profil non enregistré : '+fbErrTxt(e));});}catch(e){toast('⚠︎ Profil : '+fbErrTxt(e));}}else{toast('Informations mises à jour');}saveClientCloud();S.profileForm=null;render();break;}
+      case 'save-profile':{const f=S.profileForm;if(!f||(f.name||'').trim().length<2){toast('Indiquez votre nom');break;}const isPro=!!f.isPro;const company=isPro?(f.company||'').trim():'';const siret=isPro?(f.siret||'').replace(/\s/g,''):'';if(isPro&&siret&&siret.length!==14){toast('SIRET invalide (14 chiffres)');break;}const nm=f.name.trim(),ph=(f.phone||'').trim();const pht=f.photo||(S.account&&S.account.photo)||'';S.account=Object.assign({},S.account,{name:nm,zone:f.zone,phone:ph,photo:pht,isPro:isPro,company:company,siret:siret});S.clientForm=Object.assign({},S.clientForm,{name:nm,zone:f.zone,photo:pht});saveAccount(S.account);if(FB&&FB.auth&&FB.auth.currentUser){const uid=FB.auth.currentUser.uid;if(pht)savePhotoLocal(uid,pht);
+        // On n'écrit JAMAIS une photo vide : si pht est absent, on omet le champ pour que
+        // « merge » conserve la photo déjà enregistrée (ne jamais l'effacer par accident).
+        const upd={name:nm,zone:f.zone,phone:ph,isPro:isPro,company:company,siret:siret};if(pht)upd.photo=pht;try{FB.f.setDoc(FB.f.doc(FB.db,'users',uid),upd,{merge:true}).then(function(){toast('Informations enregistrées ✓');}).catch(function(e){toast('⚠︎ Profil non enregistré : '+fbErrTxt(e));});}catch(e){toast('⚠︎ Profil : '+fbErrTxt(e));}}else{toast('Informations mises à jour');}saveClientCloud();S.profileForm=null;render();break;}
       case 'add-card':S.cardForm=true;render();break;
       case 'card-cancel':S.cardForm=false;render();break;
       case 'card-remove':S.card=null;S.cardForm=false;saveClientCloud();render();toast('Moyen de paiement retiré');break;
@@ -9714,7 +9725,7 @@
     const ai=e.target.closest('[data-avatarinput]');
     if(ai&&ai.files&&ai.files[0]){const who=ai.dataset.avatarinput,file=ai.files[0];ai.value='';
       // Toutes les photos de profil sont réduites en data URL : légères et persistées en base.
-      avatarDataUrl(file,function(d){ if(!d)return; if(who==='profile'){ if(S.profileForm)S.profileForm.photo=d; } else if(who==='client'){ S.clientForm.photo=d; } else if(who==='proPhoto'){ S.proPhoto=d; saveProPhoto(d); } else { S.proForm.photo=d; } render(); });
+      avatarDataUrl(file,function(d){ if(!d){toast('Photo illisible — réessayez avec une autre image.');return;} if(who==='profile'){ if(S.profileForm)S.profileForm.photo=d; } else if(who==='client'){ S.clientForm.photo=d; } else if(who==='proPhoto'){ S.proPhoto=d; saveProPhoto(d); } else { S.proForm.photo=d; } render(); });
       return;}
     const ins=e.target.closest('[data-insurancefile]');
     if(ins&&ins.files&&ins.files[0]){const file=ins.files[0];ins.value='';
@@ -10118,7 +10129,7 @@
         S.proLegal=(ad&&(ad.legalName||ad.name))||name; S.proAddress=(ad&&ad.address)||''; S.proStatusType=(ad&&ad.statusType)||'entreprise';
         if(ad&&Array.isArray(ad.cats)&&ad.cats.length){S.proCats=ad.cats.slice();const rr=ad.rates||{};S.proRate=Math.min.apply(null,ad.cats.map(c=>(rr[c]!=null?rr[c]:svcBase(c))));}
         if(ad){S.proPendingCats=Array.isArray(ad.pendingCats)?ad.pendingCats.slice():[];S.proPendingOther=ad.pendingOther||'';S.proSkipped=Array.isArray(ad.skippedRequests)?ad.skippedRequests.slice():[];}
-        if(ad){ S.proFounder=!!ad.founder; S.proFounderSince=(ad.founderSince&&ad.founderSince.toMillis)?ad.founderSince.toMillis():(typeof ad.founderSince==='number'?ad.founderSince:null); S.proFounderGross=Number(ad.founderGross)||0; S.proRating=ad.rating||0; S.proIban=ad.iban||''; S.proIbanHolder=ad.ibanHolder||''; S.proBic=ad.bic||''; S.proInsured=!!ad.insured; S.proInsurer=ad.insurer||''; S.proInsuranceUrl=ad.insuranceUrl||''; S.proInsuranceStatus=ad.insuranceStatus||(ad.status==='valide'&&ad.insured?'valide':(ad.insuranceUrl||ad.insured?'attente':'none')); S.proSiret=ad.siret||''; S.proBirth=ad.birth||''; S.proBio=ad.bio||''; S.proDiplomas=Array.isArray(ad.diplomas)?ad.diplomas:[]; S.proDiplomaOther=ad.diplomaOther||''; S.proPhoto=ad.photo||S.proPhoto; S.proAcceptedCharte=!!ad.acceptedCharte; S.proAcceptedTerms=!!ad.acceptedTerms; S.proTermsVersion=ad.termsVersion||''; S.proTermsAt=(ad.termsAt&&ad.termsAt.toDate)?ad.termsAt.toDate():null; S.proMollie=ad.mollieStatus||'none'; S.proMollieOrgId=ad.mollieOrgId||'';
+        if(ad){ S.proFounder=!!ad.founder; S.proFounderSince=(ad.founderSince&&ad.founderSince.toMillis)?ad.founderSince.toMillis():(typeof ad.founderSince==='number'?ad.founderSince:null); S.proFounderGross=Number(ad.founderGross)||0; S.proRating=ad.rating||0; S.proIban=ad.iban||''; S.proIbanHolder=ad.ibanHolder||''; S.proBic=ad.bic||''; S.proInsured=!!ad.insured; S.proInsurer=ad.insurer||''; S.proInsuranceUrl=ad.insuranceUrl||''; S.proInsuranceStatus=ad.insuranceStatus||(ad.status==='valide'&&ad.insured?'valide':(ad.insuranceUrl||ad.insured?'attente':'none')); S.proSiret=ad.siret||''; S.proBirth=ad.birth||''; S.proBio=ad.bio||''; S.proDiplomas=Array.isArray(ad.diplomas)?ad.diplomas:[]; S.proDiplomaOther=ad.diplomaOther||''; S.proPhoto=ad.photo||S.proPhoto||loadPhotoLocal(user.uid)||null; if(S.proPhoto)savePhotoLocal(user.uid,S.proPhoto); if(!ad.photo&&S.proPhoto){try{FB.f.setDoc(FB.f.doc(FB.db,'artisans',user.uid),{photo:S.proPhoto},{merge:true});}catch(_){}} S.proAcceptedCharte=!!ad.acceptedCharte; S.proAcceptedTerms=!!ad.acceptedTerms; S.proTermsVersion=ad.termsVersion||''; S.proTermsAt=(ad.termsAt&&ad.termsAt.toDate)?ad.termsAt.toDate():null; S.proMollie=ad.mollieStatus||'none'; S.proMollieOrgId=ad.mollieOrgId||'';
           // Revenus / missions réalisées, rechargés depuis la fiche (persistés à chaque paiement).
           S.proEarnings=ad.earnings||0; S.proJobsTotal=ad.jobsTotal||0; S.proHistory=Array.isArray(ad.history)?ad.history:[];
           // Réglages persistés (disponibilités, en ligne, préférences de notif).
@@ -10167,7 +10178,10 @@
         return;
       }
       const zone=(data&&data.zone)||typedZone||'Gustavia';
-      const photo=(data&&data.photo)||(S.clientForm&&S.clientForm.photo)||'';
+      let photo=(data&&data.photo)||(S.clientForm&&S.clientForm.photo)||'';
+      // Auto-réparation : si le cloud n'a pas de photo mais qu'on en a une en cache local,
+      // on la restaure ET on la ré-enregistre au cloud pour qu'elle ne disparaisse plus.
+      if(!photo){const lp=loadPhotoLocal(user.uid);if(lp){photo=lp;try{FB.f.setDoc(ref,{photo:lp},{merge:true});}catch(_){}}}else{savePhotoLocal(user.uid,photo);}
       if(!data&&!ad&&!cd){ try{ await FB.f.setDoc(ref,{name:name,email:user.email||'',zone:zone,role:'client',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){} }
       S.account={name:name,email:user.email||'',zone:zone,uid:user.uid,photo:photo,phone:(data&&data.phone)||'',isPro:!!(data&&data.isPro),company:(data&&data.company)||'',siret:(data&&data.siret)||''};
       S.clientForm=Object.assign({},S.clientForm,{name:name,email:user.email||'',zone:zone,photo:photo,password:'',password2:''});
