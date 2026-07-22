@@ -12,6 +12,7 @@
  */
 const {onDocumentCreated, onDocumentUpdated, onDocumentWritten} = require('firebase-functions/v2/firestore');
 const {onRequest, onCall, HttpsError} = require('firebase-functions/v2/https');
+const {onSchedule} = require('firebase-functions/v2/scheduler');
 const {setGlobalOptions} = require('firebase-functions/v2');
 const {defineSecret} = require('firebase-functions/params');
 const {initializeApp} = require('firebase-admin/app');
@@ -231,6 +232,84 @@ async function notifyArtisanMollieProblem(db, uid, reason) {
       });
     } catch (e) { console.warn('mollieProblem email', e); }
   }
+}
+// Bonne nouvelle proactive : le compte Mollie de l'artisan vient d'être validé — il peut
+// désormais recevoir des missions et être payé automatiquement.
+async function notifyArtisanMollieActivated(db, uid) {
+  let email = '', tokens = [], name = '';
+  try {
+    const u = await db.collection('users').doc(uid).get();
+    const ud = u.data() || {};
+    email = ud.email || ''; tokens = ud.pushTokens || []; name = (ud.name || '').toString().slice(0, 60);
+  } catch (_) {}
+  if (tokens.length) {
+    try {
+      await getMessaging().sendEachForMulticast({
+        tokens,
+        data: {title: 'Ti-Services · Paiements activés 🎉', body: 'Votre compte de paiement est validé — vous pouvez recevoir des missions et être payé automatiquement.', url: './?open=missions'},
+        webpush: {fcmOptions: {link: '/?open=missions'}, headers: {Urgency: 'high'}},
+      });
+    } catch (e) { console.warn('mollieActivated push', e); }
+  }
+  if (email) {
+    try {
+      await sendMail(db, email, {
+        subject: 'Ti-Services · Vos paiements sont activés 🎉',
+        html: '<p>Bonjour ' + escHtmlS(name || '') + ',</p>' +
+              '<p>Bonne nouvelle : votre compte de paiement <b>Mollie</b> vient d\'être validé.</p>' +
+              '<p>Vous pouvez désormais <b>accepter des missions</b> — et à chaque prestation validée, votre gain net (commission déduite) vous est <b>versé automatiquement</b>, sans aucun virement à faire.</p>' +
+              '<p>À très vite,<br>L\'équipe Ti-Services</p>',
+      });
+    } catch (e) { console.warn('mollieActivated email', e); }
+  }
+}
+// Re-synchronise le statut Mollie d'UN artisan : rafraîchit son jeton, interroge
+// l'onboarding réel, met à jour sa fiche, et le prévient (dossier incomplet → alerte ;
+// nouvellement actif → bonne nouvelle), chaque notification étant idempotente (drapeaux
+// mollieIssueNotified / mollieActiveNotified) pour ne jamais spammer. Renvoie {status,
+// active} ou null si rien à faire (pas d'organisation / pas de jeton / erreur). Partagé
+// par mollieCheckStatus (app), le webhook Mollie (temps réel) et le balayage planifié.
+async function syncArtisanMollie(db, uid) {
+  if (!mollieOAuthConfigured()) return null;
+  const artSnap = await db.collection('artisans').doc(uid).get();
+  if (!artSnap.exists) return null;
+  const ad = artSnap.data() || {};
+  if (!ad.mollieOrgId) return null;
+  const tokSnap = await db.collection('mollieTokens').doc(uid).get();
+  const refresh = tokSnap.exists ? ((tokSnap.data() || {}).refresh || '') : '';
+  if (!refresh) return null;
+  let tok;
+  try {
+    const basic = Buffer.from(process.env.MOLLIE_CLIENT_ID + ':' + process.env.MOLLIE_CLIENT_SECRET).toString('base64');
+    const tr = await fetch(MOLLIE_TOKEN, {
+      method: 'POST',
+      headers: {'Authorization': 'Basic ' + basic, 'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(refresh),
+    });
+    if (!tr.ok) { console.warn('syncArtisanMollie refresh', tr.status); return null; }
+    tok = await tr.json();
+  } catch (e) { console.warn('syncArtisanMollie refresh throw', e); return null; }
+  // Mollie fait tourner le refresh-token : on garde le nouveau pour la fois suivante.
+  if (tok.refresh_token) {
+    try { await db.collection('mollieTokens').doc(uid).set({refresh: tok.refresh_token, updatedAt: FieldValue.serverTimestamp()}, {merge: true}); } catch (_) {}
+  }
+  const ready = await mollieOnboardingReady(tok.access_token);
+  const prevStatus = ad.mollieStatus || 'none';
+  const prevNotified = ad.mollieIssueNotified || '';
+  const upd = {mollieStatus: ready.ok ? 'active' : 'pending', mollieOnboardingStatus: ready.status};
+  if (ready.status === 'needs-data' && prevNotified !== 'needs-data') {
+    upd.mollieIssueNotified = 'needs-data';
+    try { await notifyArtisanMollieProblem(db, uid, 'needs-data'); } catch (_) {}
+  } else if (ready.ok) {
+    if (prevNotified) upd.mollieIssueNotified = '';
+    // Transition vers « actif » → on prévient l'artisan (une seule fois).
+    if (prevStatus !== 'active' && ad.mollieActiveNotified !== true) {
+      upd.mollieActiveNotified = true;
+      try { await notifyArtisanMollieActivated(db, uid); } catch (_) {}
+    }
+  }
+  await db.collection('artisans').doc(uid).set(upd, {merge: true});
+  return {status: ready.status, active: ready.ok};
 }
 // Appel bas-niveau à l'API Mollie (jeton plateforme). Renvoie {ok, data|status}.
 async function mollieApi(path, method, body) {
@@ -1520,41 +1599,57 @@ exports.mollieCheckStatus = onCall({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT
   if (!uid) throw new HttpsError('unauthenticated', 'Connexion requise.');
   if (!mollieOAuthConfigured()) return {status: 'unconfigured', active: false};
   const db = getFirestore();
-  const artSnap = await db.collection('artisans').doc(uid).get();
-  const orgId = artSnap.exists ? ((artSnap.data() || {}).mollieOrgId || '') : '';
-  if (!orgId) return {status: 'none', active: false};
-  const tokSnap = await db.collection('mollieTokens').doc(uid).get();
-  const refresh = tokSnap.exists ? ((tokSnap.data() || {}).refresh || '') : '';
-  if (!refresh) return {status: 'unknown', active: false};
+  const res = await syncArtisanMollie(db, uid);
+  return res || {status: 'unknown', active: false};
+});
+
+/**
+ * mollieOnboardingWebhook : TEMPS RÉEL. Mollie appelle cette URL dès que le statut
+ * d'onboarding d'une organisation connectée change (dossier validé, refusé, infos
+ * requises). On re-synchronise l'artisan concerné SUR-LE-CHAMP → l'alerte (ou la bonne
+ * nouvelle) part à la seconde, sans que l'artisan ait à rouvrir l'app.
+ *
+ * À CONFIGURER UNE FOIS côté Mollie : dans les réglages de l'application Mollie Connect,
+ * renseigner l'URL de webhook « onboarding » :
+ *   https://europe-west1-t-service-prod.cloudfunctions.net/mollieOnboardingWebhook
+ * Répond toujours 200 (comme le webhook paiement) pour éviter les relances en boucle.
+ */
+exports.mollieOnboardingWebhook = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET', SMTP_PASS]}, async (req, res) => {
   try {
-    const basic = Buffer.from(process.env.MOLLIE_CLIENT_ID + ':' + process.env.MOLLIE_CLIENT_SECRET).toString('base64');
-    const tr = await fetch(MOLLIE_TOKEN, {
-      method: 'POST',
-      headers: {'Authorization': 'Basic ' + basic, 'Content-Type': 'application/x-www-form-urlencoded'},
-      body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(refresh),
-    });
-    if (!tr.ok) { console.warn('mollieCheckStatus refresh', tr.status); return {status: 'error', active: false}; }
-    const tok = await tr.json();
-    // Mollie fait tourner le refresh-token : on garde le nouveau pour la fois suivante.
-    if (tok.refresh_token) {
-      try { await db.collection('mollieTokens').doc(uid).set({refresh: tok.refresh_token, updatedAt: FieldValue.serverTimestamp()}, {merge: true}); } catch (_) {}
+    if (!mollieOAuthConfigured()) { res.status(200).send('ok'); return; }
+    const db = getFirestore();
+    // Mollie transmet l'identifiant de l'organisation concernée (selon les intégrations :
+    // body.id / body.organizationId / query). On l'utilise pour cibler l'artisan.
+    const orgId = ((req.body && (req.body.id || req.body.organizationId)) ||
+                   (req.query && (req.query.id || req.query.organizationId)) || '').toString();
+    if (orgId) {
+      const q = await db.collection('artisans').where('mollieOrgId', '==', orgId).limit(1).get();
+      if (!q.empty) { try { await syncArtisanMollie(db, q.docs[0].id); } catch (e) { console.warn('onboardingWebhook sync', e); } }
+    } else {
+      // Pas d'organisation identifiée dans l'appel : par sécurité, on re-synchronise tous
+      // les dossiers encore en attente (petit volume tant que le réseau démarre).
+      const pend = await db.collection('artisans').where('mollieStatus', '==', 'pending').get();
+      for (const d of pend.docs) { if ((d.data() || {}).mollieOrgId) { try { await syncArtisanMollie(db, d.id); } catch (_) {} } }
     }
-    const ready = await mollieOnboardingReady(tok.access_token);
-    const prevNotified = (artSnap.data() || {}).mollieIssueNotified || '';
-    const upd = {mollieStatus: ready.ok ? 'active' : 'pending', mollieOnboardingStatus: ready.status};
-    // Dossier refusé / infos manquantes (« needs-data ») : on prévient l'artisan par
-    // e-mail + push, mais UNE SEULE FOIS par état (mollieCheckStatus est rappelée à chaque
-    // ouverture de l'écran — sans ce garde-fou l'artisan serait spammé). « in-review » est
-    // une attente normale : pas d'alerte. « active » : on efface le drapeau.
-    if (ready.status === 'needs-data' && prevNotified !== 'needs-data') {
-      upd.mollieIssueNotified = 'needs-data';
-      try { await notifyArtisanMollieProblem(db, uid, 'needs-data'); } catch (_) {}
-    } else if (ready.ok && prevNotified) {
-      upd.mollieIssueNotified = '';
-    }
-    await db.collection('artisans').doc(uid).set(upd, {merge: true});
-    return {status: ready.status, active: ready.ok};
-  } catch (e) { console.warn('mollieCheckStatus', e); return {status: 'error', active: false}; }
+    res.status(200).send('ok');
+  } catch (e) { console.warn('mollieOnboardingWebhook', e); res.status(200).send('ok'); }
+});
+
+/**
+ * mollieOnboardingSweep : FILET DE SÉCURITÉ planifié. Même si le webhook n'était pas
+ * configuré (ou manquait un événement), on re-vérifie régulièrement les dossiers Mollie
+ * encore « en attente » et on notifie tout changement. Garantit qu'aucun artisan ne
+ * reste bloqué en silence. Volume faible → coût négligeable.
+ */
+exports.mollieOnboardingSweep = onSchedule({schedule: 'every 15 minutes', secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET', SMTP_PASS]}, async () => {
+  if (!mollieOAuthConfigured()) return;
+  const db = getFirestore();
+  const pend = await db.collection('artisans').where('mollieStatus', '==', 'pending').get();
+  for (const d of pend.docs) {
+    if (!(d.data() || {}).mollieOrgId) continue;
+    try { await syncArtisanMollie(db, d.id); } catch (e) { console.warn('mollieSweep', d.id, e); }
+  }
+  console.log('mollieOnboardingSweep : ' + pend.size + ' dossier(s) en attente re-vérifié(s).');
 });
 
 /* ============================================================================
