@@ -1746,7 +1746,22 @@ async function buildInvoicePdf(inv) {
   T(inv.provider.legal || 'Artisan Ti-Services', colL, y, 11, bold, ink);
   T(inv.client.company || inv.client.name || 'Client', colR, y, 11, bold, ink);
   y -= 13;
-  const pL = [inv.provider.address || 'Saint-Barthélemy', inv.provider.siret ? ('SIRET ' + inv.provider.siret) : ''].filter(Boolean);
+  // Mentions légales du prestataire selon son statut. Société : forme juridique + capital
+  // + RCS (obligatoire). Micro-entreprise : mention dédiée. SIREN = 9 premiers chiffres du
+  // SIRET. Pour un particulier, on n'ajoute ni forme ni RCS.
+  const pSiret = (inv.provider.siret || '').replace(/\s/g, '');
+  const siren = pSiret.slice(0, 9);
+  const stype = inv.provider.statusType || '';
+  let formLine = '';
+  if (stype === 'micro') {
+    formLine = 'Micro-entreprise';
+  } else if (stype !== 'particulier') {
+    const capNum = Number(String(inv.provider.capital || '').replace(/[^\d.]/g, ''));
+    formLine = [inv.provider.legalForm || '', (capNum > 0 ? 'au capital de ' + eurTxt(capNum) : '')].filter(Boolean).join(' ');
+  }
+  const rcsLine = (stype !== 'particulier' && stype !== 'micro' && inv.provider.rcsCity && siren)
+    ? ('RCS ' + inv.provider.rcsCity + ' ' + siren) : '';
+  const pL = [formLine, inv.provider.address || 'Saint-Barthélemy', pSiret ? ('SIRET ' + pSiret) : '', rcsLine].filter(Boolean);
   const cL = [inv.client.company ? inv.client.name : '', inv.client.siret ? ('SIRET ' + inv.client.siret) : '', (inv.client.zone ? inv.client.zone + ', ' : '') + 'Saint-Barthélemy'].filter(Boolean);
   const mx = Math.max(pL.length, cL.length);
   for (let i = 0; i < mx; i++) { if (pL[i]) T(pL[i], colL, y, 9, font, mut); if (cL[i]) T(cL[i], colR, y, 9, font, mut); y -= 12; }
@@ -1779,6 +1794,11 @@ async function buildInvoicePdf(inv) {
     'Document remis au client à titre de justificatif de la prestation réglée.',
     'Ti-Services est un service édité par C.C.S - Construction Conseils et Services, SAS.',
   ];
+  // Vente à un CLIENT PROFESSIONNEL (raison sociale ou SIRET renseigné) : mentions B2B
+  // obligatoires (pénalités de retard + indemnité forfaitaire de recouvrement).
+  if (inv.client.company || inv.client.siret) {
+    legal.splice(3, 0, "Client professionnel — en cas de retard de paiement : pénalités au taux de 3 fois l'intérêt légal et indemnité forfaitaire de recouvrement de 40 € (art. L441-10 et D441-5 du Code de commerce). Pas d'escompte pour paiement anticipé.");
+  }
   legal.forEach((p) => { y = wrapPdf(page, font, 7.5, mut, p, M, y, R - M, 10); y -= 3; });
   const bytes = await doc.save();
   return Buffer.from(bytes).toString('base64');
@@ -1858,7 +1878,7 @@ exports.emailClientInvoice = onDocumentUpdated({document: 'requests/{reqId}', se
   try {
     pdfB64 = await buildInvoicePdf({
       invNo, dateStr,
-      provider: { legal: after.providerLegal || after.providerName || 'Artisan Ti-Services', address: after.providerAddress || '', siret: after.providerSiret || '' },
+      provider: { legal: after.providerLegal || after.providerName || 'Artisan Ti-Services', address: after.providerAddress || '', siret: after.providerSiret || '', statusType: after.providerStatusType || '', legalForm: after.providerLegalForm || '', capital: after.providerCapital || '', rcsCity: after.providerRcsCity || '' },
       client: { name: clientName, company, siret: csiret, zone: after.zone || '' },
       lines, total,
     });
@@ -1910,7 +1930,7 @@ exports.invoicePdf = onCall(async (request) => {
   try {
     pdf = await buildInvoicePdf({
       invNo, dateStr,
-      provider: { legal: r.providerLegal || r.providerName || 'Artisan Ti-Services', address: r.providerAddress || '', siret: r.providerSiret || '' },
+      provider: { legal: r.providerLegal || r.providerName || 'Artisan Ti-Services', address: r.providerAddress || '', siret: r.providerSiret || '', statusType: r.providerStatusType || '', legalForm: r.providerLegalForm || '', capital: r.providerCapital || '', rcsCity: r.providerRcsCity || '' },
       client: { name: clientName, company, siret: csiret, zone: r.zone || '' },
       lines, total,
     });
