@@ -1669,8 +1669,12 @@ async function buildInvoicePdf(inv) {
   y -= 2;
   page.drawLine({ start: { x: M, y }, end: { x: R, y }, thickness: 0.7, color: hair });
   y -= 22;
-  T('TOTAL RÉGLÉ', cUnit - 44, y, 11, bold, ink);
-  TR(eurTxt(inv.total), cTot - 6, y, 13, bold, coral);
+  // Libellé aligné à DROITE, se terminant 14 pt avant le montant (calé à droite) : plus
+  // aucun chevauchement, quelle que soit la largeur du total (dizaines ou milliers d'euros).
+  const totalStr = eurTxt(inv.total);
+  const totalW = bold.widthOfTextAtSize(totalStr, 13);
+  TR('TOTAL RÉGLÉ', (cTot - 6) - totalW - 14, y, 11, bold, ink);
+  TR(totalStr, cTot - 6, y, 13, bold, coral);
   y -= 17;
   TR('Réglé par carte bancaire le ' + inv.dateStr + ' - encaissement via Mollie (agréé). Aucun solde dû.', cTot - 6, y, 7.5, font, mut);
   y -= 34;
