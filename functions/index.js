@@ -1652,6 +1652,90 @@ exports.mollieOnboardingSweep = onSchedule({schedule: 'every 15 minutes', secret
   console.log('mollieOnboardingSweep : ' + pend.size + ' dossier(s) en attente re-vérifié(s).');
 });
 
+/**
+ * paymentReconciliation : RÉCONCILIATION QUOTIDIENNE de l'argent, en LECTURE SEULE.
+ * Ne modifie rien, ne débite rien — balaye les demandes et signale à l'admin, par
+ * e-mail, tout ce qui « coince » dans le circuit de paiement :
+ *   1. commandes bloquées au paiement (pending_payment / payment_failed > 6 h) ;
+ *   2. missions actives dont l'EMPREINTE bancaire vieillit (autorisée depuis > 5 jours,
+ *      jamais capturée) — une autorisation Mollie finit par EXPIRER : si elle expire
+ *      avant la validation, le client ne pourrait plus être débité ;
+ *   3. prestations terminées côté pro mais jamais validées par le client (> 72 h) —
+ *      l'argent n'est ni capturé ni versé ;
+ *   4. versements artisan non routés (molliePayout = 'unrouted') pas encore régularisés.
+ * Aucune anomalie => aucun e-mail. Tourne chaque matin à ~5 h (heure de Saint-Barth).
+ */
+exports.paymentReconciliation = onSchedule({schedule: '0 9 * * *', secrets: [SMTP_PASS]}, async () => {
+  const db = getFirestore();
+  const now = Date.now();
+  const H = 3600 * 1000;
+  const ageH = (ts) => {
+    let t = 0;
+    try { t = (ts && ts.toMillis) ? ts.toMillis() : (Number(ts) || 0); } catch (_) { t = 0; }
+    return t ? Math.round((now - t) / H) : null;   // null = horodatage absent → ignoré
+  };
+  const row = (id, r, extra) => '<li><b>' + escHtmlS(r.serviceName || r.service || 'prestation') + '</b> — ' +
+    escHtmlS(r.clientName || '?') + ' / ' + escHtmlS(r.providerName || 'aucun pro') +
+    ' — ' + eurTxt(Number(r.total) || 0) + ' — <code>' + escHtmlS(id) + '</code>' + (extra ? ' — ' + extra : '') + '</li>';
+  const sections = [];
+  const scan = async (status) => { try { return (await db.collection('requests').where('status', '==', status).get()).docs; } catch (e) { console.warn('reco scan', status, e); return []; } };
+
+  // 1. Bloquées au paiement (> 6 h) — le client croit peut-être avoir commandé.
+  {
+    const items = [];
+    for (const st of ['pending_payment', 'payment_failed']) {
+      for (const d of await scan(st)) {
+        const r = d.data() || {}; const a = ageH(r.createdAt);
+        if (a !== null && a >= 6) items.push(row(d.id, r, st + ' depuis ' + a + ' h'));
+      }
+    }
+    if (items.length) sections.push('<h3>🛒 Commandes bloquées au paiement (' + items.length + ')</h3><ul>' + items.join('') + '</ul><p>Le pool de prestataires ne les voit pas. Le client doit finaliser (ou la demande expirer).</p>');
+  }
+  // 2. Empreintes qui vieillissent (> 5 jours sans capture) — risque d'expiration.
+  {
+    const items = [];
+    for (const st of ['accepted', 'working', 'done_pro']) {
+      for (const d of await scan(st)) {
+        const r = d.data() || {};
+        if (!r.molliePaymentId || r.mollieCaptured) continue;
+        const a = ageH(r.acceptedAt || r.createdAt);
+        if (a !== null && a >= 5 * 24) items.push(row(d.id, r, 'autorisée il y a ' + Math.round(a / 24) + ' j (' + st + ')'));
+      }
+    }
+    if (items.length) sections.push('<h3>⏳ Empreintes bancaires qui vieillissent (' + items.length + ')</h3><ul>' + items.join('') + '</ul><p>Si l\'autorisation expire avant la validation, le client ne pourra plus être débité. Relancer la validation de la prestation.</p>');
+  }
+  // 3. Terminées côté pro, jamais validées (> 72 h).
+  {
+    const items = [];
+    for (const d of await scan('done_pro')) {
+      const r = d.data() || {}; const a = ageH(r.acceptedAt || r.createdAt);
+      if (a !== null && a >= 72) items.push(row(d.id, r, 'en attente de validation client'));
+    }
+    if (items.length) sections.push('<h3>⚠️ Prestations terminées non validées depuis > 72 h (' + items.length + ')</h3><ul>' + items.join('') + '</ul><p>Ni capture ni versement tant que le client ne valide pas — relancer le client.</p>');
+  }
+  // 4. Versements artisan non routés, à régulariser.
+  {
+    const items = [];
+    try {
+      for (const d of (await db.collection('requests').where('molliePayout', '==', 'unrouted').get()).docs) {
+        const r = d.data() || {};
+        items.push(row(d.id, r, r.molliePayoutIssue === 'no_org' ? 'aucun compte Mollie connecté' : 'routage refusé par Mollie'));
+      }
+    } catch (e) { console.warn('reco unrouted', e); }
+    if (items.length) sections.push('<h3>💸 Versements artisan à régulariser (' + items.length + ')</h3><ul>' + items.join('') + '</ul><p>Le client a payé, l\'artisan n\'a pas reçu son net (fonds en sécurité sur le solde plateforme). Vérifier son onboarding Mollie puis re-router (ou virement manuel).</p>');
+  }
+
+  if (!sections.length) { console.log('paymentReconciliation : aucune anomalie ✓'); return; }
+  try {
+    await sendMail(db, ADMIN_EMAIL, {
+      subject: 'Ti-Services · Réconciliation paiements — ' + sections.length + ' point(s) à vérifier',
+      html: '<p>Contrôle quotidien automatique du circuit de paiement :</p>' + sections.join('') +
+            '<p style="color:#888">E-mail envoyé uniquement quand une anomalie est détectée. Aucune action automatique n\'a été faite.</p>',
+    });
+    console.log('paymentReconciliation : ' + sections.length + ' section(s) signalée(s) à l\'admin.');
+  } catch (e) { console.warn('paymentReconciliation mail', e); }
+});
+
 /* ============================================================================
  * FACTURE CLIENT PAR E-MAIL — envoi AUTOMATIQUE à la fin de chaque mission.
  *
