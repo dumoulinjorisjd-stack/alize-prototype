@@ -682,12 +682,16 @@ exports.notifyArtisanApproved = onDocumentUpdated({document: 'artisans/{artisanI
   //    « Trigger Email from Firestore » pour l'envoi réel).
   if (email) {
     try {
+      // Logo intégré (cid:tilogo), comme l'e-mail de bienvenue — s'affiche sans URL externe.
+      const attachments = [];
+      try {
+        const logo = require('fs').readFileSync(require('path').join(__dirname, 'mail-logo.png'));
+        attachments.push({filename: 'ti-services.png', content: logo, cid: 'tilogo'});
+      } catch (_) {}
       await sendMail(db, email, {
         subject: 'Votre inscription Ti-Services est validée 🎉',
-        html: '<p>Bonjour ' + name + ',</p>' +
-              '<p>Bonne nouvelle : votre inscription en tant qu\'artisan sur <b>Ti-Services</b> vient d\'être validée.</p>' +
-              '<p>Votre compte est désormais actif : vous pouvez recevoir des demandes de missions. Ouvrez l\'application pour commencer — elle s\'ouvrira automatiquement sur votre espace missions.</p>' +
-              '<p>À très vite,<br>L\'équipe Ti-Services</p>',
+        html: approvedArtisanHtml(name === 'Bonjour' ? '' : name),
+        attachments,
       });
     } catch (e) { console.warn('approve email queue', e); }
   }
@@ -2300,6 +2304,66 @@ function inviteArtisanHtml(name) {
 }
 
 /* ============================================================================
+ * E-MAIL « INSCRIPTION VALIDÉE » — envoyé quand l'admin valide un artisan. Même
+ * charte que la bienvenue (accent sarcelle intervenant). Annonce la validation,
+ * RAPPELLE l'étape Mollie (activation des paiements), précise que la validation
+ * Mollie peut prendre jusqu'à 48 h, et qu'à partir de là l'artisan peut recevoir
+ * des missions. Le bouton ouvre directement l'écran d'activation des paiements.
+ * ========================================================================== */
+function approvedArtisanHtml(name) {
+  const app = APP_URL.replace(/\/$/, '');
+  // Accent sarcelle (teal) : même code couleur que l'e-mail de bienvenue intervenant.
+  const c1 = '#0FA896', c2 = '#14C2A8', btn = '#0FA896', dot = '#0FA896';
+  const hi = name ? escHtmlS(name) : 'Bonjour';
+  // Bloc « dernière étape » Mollie : mis en avant sur fond sarcelle très doux.
+  const mollieBlock =
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#EAF6F3;border:1px solid #cfece7;border-radius:14px;margin-top:6px">' +
+      '<tr><td style="padding:16px 18px">' +
+        '<span style="display:inline-block;font-size:11px;font-weight:800;letter-spacing:.04em;color:#ffffff;background:' + c1 + ';border-radius:999px;padding:4px 11px">DERNIÈRE ÉTAPE</span>' +
+        '<div style="font-size:16px;font-weight:800;color:#231E33;margin-top:11px">Activez vos paiements (Mollie)</div>' +
+        '<div style="font-size:13.5px;color:#4a4556;line-height:1.55;margin-top:7px">Pour être réglé <b>automatiquement</b> après chaque prestation, vous devez ouvrir votre compte de paiement sécurisé chez <b>Mollie</b> — notre prestataire agréé. C\'est <b>une seule fois</b> et l\'application vous guide question par question (des réponses toutes prêtes à copier-coller).</div>' +
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px"><tr>' +
+          '<td width="26" valign="top"><div style="font-size:15px;line-height:1.3">⏱️</div></td>' +
+          '<td style="font-size:13px;color:#4a4556;line-height:1.5">La vérification de votre dossier par Mollie (identité, IBAN) peut prendre <b>jusqu\'à 48&nbsp;h</b>. Vous recevrez un e-mail dès qu\'elle est validée.</td>' +
+        '</tr></table>' +
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:9px"><tr>' +
+          '<td width="26" valign="top"><div style="font-size:15px;line-height:1.3">✅</div></td>' +
+          '<td style="font-size:13px;color:#4a4556;line-height:1.5"><b>À partir de là, vous pourrez recevoir des missions</b> et accepter les demandes près de chez vous — votre gain net (commission déduite) vous est versé tout seul, sans virement à faire.</td>' +
+        '</tr></table>' +
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px"><tr><td align="center">' +
+          '<a href="' + app + '/?open=missions" style="display:inline-block;background:' + btn + ';color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 24px;border-radius:11px">Activer mes paiements</a>' +
+        '</td></tr></table>' +
+        '<div style="font-size:12px;color:#8a8494;line-height:1.5;margin-top:10px;text-align:center">Astuce&nbsp;: cette étape est plus simple depuis un <b>ordinateur</b>.</div>' +
+      '</td></tr>' +
+    '</table>';
+  return '' +
+  '<div style="margin:0;padding:0;background:#FBF7F4;font-family:-apple-system,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;color:#231E33">' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FBF7F4;padding:24px 12px">' +
+      '<tr><td align="center">' +
+        '<table role="presentation" width="520" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%;background:#ffffff;border-radius:18px;overflow:hidden">' +
+          '<tr><td style="height:6px;background:linear-gradient(90deg,' + c1 + ',' + c2 + ')"></td></tr>' +
+          '<tr><td align="center" style="padding:26px 30px 4px">' +
+            '<img src="cid:tilogo" width="60" height="60" alt="Ti-Services" style="display:block;border-radius:16px;margin:0 auto 10px">' +
+            '<div style="font-size:24px;font-weight:800;letter-spacing:-.02em"><span style="color:' + c1 + '">Ti</span><span style="color:#231E33">-Services</span></div>' +
+            '<div style="font-size:12px;color:#8a8494;margin-top:2px">Services à la demande · Saint-Barthélemy</div>' +
+          '</td></tr>' +
+          '<tr><td style="padding:14px 30px 0">' +
+            '<h1 style="font-size:22px;margin:8px 0 0;color:#231E33">Votre inscription est validée&nbsp;🎉</h1>' +
+            '<p style="font-size:15px;line-height:1.6;color:#4a4556;margin:12px 0 0">Bonjour ' + hi + ',</p>' +
+            '<p style="font-size:15px;line-height:1.6;color:#4a4556;margin:10px 0 0">Bonne nouvelle&nbsp;: votre profil <b>intervenant</b> sur Ti-Services vient d\'être <b>validé</b> par notre équipe. Bienvenue à bord&nbsp;! Il reste une dernière étape avant de recevoir vos premières missions.</p>' +
+          '</td></tr>' +
+          '<tr><td style="padding:18px 30px 4px">' + mollieBlock + '</td></tr>' +
+          '<tr><td style="padding:16px 30px;border-top:1px solid #efeae4;background:#FBF7F4">' +
+            '<div style="font-size:12px;color:#8a8494;line-height:1.6">À très vite,<br>L\'équipe Ti-Services<br>' +
+            '<span style="color:#b0aab8">Service édité par C.C.S — Construction Conseils et Services, SAS · Saint-Barthélemy</span></div>' +
+          '</td></tr>' +
+        '</table>' +
+      '</td></tr>' +
+    '</table>' +
+  '</div>';
+}
+
+/* ============================================================================
  * E-MAIL « MOT DE PASSE OUBLIÉ » — soigné, aux couleurs Ti-Services, envoyé
  * depuis contact@ti-services.fr (au lieu de l'e-mail générique Firebase).
  * Trilingue (fr/en/pt). Le lien de réinitialisation est généré côté serveur
@@ -2462,4 +2526,4 @@ exports.welcomeClientEmail = onDocumentCreated({document: 'users/{uid}', secrets
 
 
 // Export interne pour les tests unitaires (inerte en production : TI_TEST non défini).
-if (process.env.TI_TEST) { module.exports.__test = { buildInvoicePdf, buildProcurationPdf, invoiceLines, eurTxt, frDate, welcomeHtml, inviteArtisanHtml, resetPasswordEmail }; }
+if (process.env.TI_TEST) { module.exports.__test = { buildInvoicePdf, buildProcurationPdf, invoiceLines, eurTxt, frDate, welcomeHtml, inviteArtisanHtml, approvedArtisanHtml, resetPasswordEmail }; }
