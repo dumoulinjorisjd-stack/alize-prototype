@@ -2460,7 +2460,7 @@
     concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,concRetroPaid:'',concIban:'',concIbanHolder:'',concLegal:'',concSiret:'',concAddress:'',retroRate:8,founderTaken:0,
     sepaIban:(function(){try{return localStorage.getItem('ts_sepa_iban')||'';}catch(_){return '';}})(),concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,
     proPhoto:null,proStatus:'approved',proFounder:true,proNotifPush:true,proNotifWa:true,proPhone:'0690 00 00 00',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proPendingCats:[],proPendingOther:'',proSiteMode:'both',proSalonAddress:'',proSalonZone:'Gustavia',proSalonGeo:null,proAddView:false,proAddForm:null,proForm:{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:'',photo:''},
-    proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proReqSlot:null,proReqPick:false,proMissions:[],proSkipped:[],proConflict:null,proStmt:false,commInvId:null,commStmt:false,signupKind:null,concSignup:null,concStatus:'approved',adminConcierges:[],
+    proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proReqSlot:null,proReqPick:false,proMissions:[],proSkipped:[],proSkipAt:{},proConflict:null,proStmt:false,commInvId:null,commStmt:false,signupKind:null,concSignup:null,concStatus:'approved',adminConcierges:[],
     proHistory:PRO_HISTORY(),
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),
     chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,histInvoice:null,histCat:null,signPad:false,colisProc:false,imgView:null,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,delAcct:false,
@@ -2551,7 +2551,11 @@
     if(!rid)return;
     S.proSkipped=S.proSkipped||[];
     if(S.proSkipped.indexOf(rid)<0)S.proSkipped.push(rid);
-    if(FB&&FB.auth&&FB.auth.currentUser&&!isDemo()){try{FB.f.updateDoc(FB.f.doc(FB.db,'artisans',FB.auth.currentUser.uid),{skippedRequests:FB.f.arrayUnion(rid)});}catch(_){}}
+    // On mémorise QUAND la mission a été passée : un « coup de pouce » du client ne la
+    // refait apparaître que s'il est POSTÉRIEUR à ce passage (sinon une mission déjà
+    // boostée une fois resterait à jamais, impossible à passer).
+    S.proSkipAt=S.proSkipAt||{};S.proSkipAt[rid]=Date.now();
+    if(FB&&FB.auth&&FB.auth.currentUser&&!isDemo()){try{const patch={skippedRequests:FB.f.arrayUnion(rid)};patch['skippedAt.'+rid]=Date.now();FB.f.updateDoc(FB.f.doc(FB.db,'artisans',FB.auth.currentUser.uid),patch);}catch(_){}}
   }
   // Politique d'annulation : gratuite avant acceptation ou à 8 h+ du rendez-vous ;
   // sinon indemnité de 50 % de la prestation due au prestataire (Ti-Services perçoit
@@ -7495,7 +7499,7 @@
   }
   // Le scénario de DÉMO (toutes les données pré-remplies). Utilisé par « Voir la démo ».
   function seedDemo(){
-    S.addresses=ADDRESSES_INIT();S.addrDefault='ad1';S.history=[];S.recurring=[];S.card=null;S.missions=[];S.proMissions=[];S.proReqView=null;S.proSkipped=[];
+    S.addresses=ADDRESSES_INIT();S.addrDefault='ad1';S.history=[];S.recurring=[];S.card=null;S.missions=[];S.proMissions=[];S.proReqView=null;S.proSkipped=[];S.proSkipAt={};
     S.proStatus='approved';S.proName='Marie-Lou';S.proCats=['menage','jardin'];S.proRate=35;
     S.proHistory=PRO_HISTORY();S.agenda=SEED_AGENDA.map(function(a){return Object.assign({},a);});
     S.proEarnings=1284.50;S.proJobsToday=3;S.proJobsTotal=214;S.proRating=4.9;S.proIban='FR7630006000011234567890189';S.proIbanHolder='Marie-Lou Cagan';S.proBic='AGRIFRPP';S.proMollie='none';
@@ -7505,7 +7509,7 @@
   }
   // La vraie BÊTA part de zéro : aucun client / artisan / historique de démo.
   function blankAll(){
-    S.addresses=[];S.addrDefault=null;S.history=[];S.recurring=[];S.card=null;S.mission=null;S.missions=[];S.proMissions=[];S.proReqView=null;S.proSkipped=[];
+    S.addresses=[];S.addrDefault=null;S.history=[];S.recurring=[];S.card=null;S.mission=null;S.missions=[];S.proMissions=[];S.proReqView=null;S.proSkipped=[];S.proSkipAt={};
     S.proHistory=[];S.agenda=[];S.proEarnings=0;S.proJobsToday=0;S.proJobsTotal=0;
     S.adminArtisans=[];S.adminClients=[];S.adminBookings=[];S.adminCommission=0;S.adminConcierges=[];
     S.concClients=[];S.concOrders=[];S.concEarn=0;
@@ -10128,7 +10132,7 @@
         // (et non les valeurs par défaut de démonstration).
         S.proLegal=(ad&&(ad.legalName||ad.name))||name; S.proAddress=(ad&&ad.address)||''; S.proStatusType=(ad&&ad.statusType)||'entreprise';
         if(ad&&Array.isArray(ad.cats)&&ad.cats.length){S.proCats=ad.cats.slice();const rr=ad.rates||{};S.proRate=Math.min.apply(null,ad.cats.map(c=>(rr[c]!=null?rr[c]:svcBase(c))));}
-        if(ad){S.proPendingCats=Array.isArray(ad.pendingCats)?ad.pendingCats.slice():[];S.proPendingOther=ad.pendingOther||'';S.proSkipped=Array.isArray(ad.skippedRequests)?ad.skippedRequests.slice():[];}
+        if(ad){S.proPendingCats=Array.isArray(ad.pendingCats)?ad.pendingCats.slice():[];S.proPendingOther=ad.pendingOther||'';S.proSkipped=Array.isArray(ad.skippedRequests)?ad.skippedRequests.slice():[];S.proSkipAt=(ad.skippedAt&&typeof ad.skippedAt==='object')?ad.skippedAt:{};}
         if(ad){ S.proFounder=!!ad.founder; S.proFounderSince=(ad.founderSince&&ad.founderSince.toMillis)?ad.founderSince.toMillis():(typeof ad.founderSince==='number'?ad.founderSince:null); S.proFounderGross=Number(ad.founderGross)||0; S.proRating=ad.rating||0; S.proIban=ad.iban||''; S.proIbanHolder=ad.ibanHolder||''; S.proBic=ad.bic||''; S.proInsured=!!ad.insured; S.proInsurer=ad.insurer||''; S.proInsuranceUrl=ad.insuranceUrl||''; S.proInsuranceStatus=ad.insuranceStatus||(ad.status==='valide'&&ad.insured?'valide':(ad.insuranceUrl||ad.insured?'attente':'none')); S.proSiret=ad.siret||''; S.proBirth=ad.birth||''; S.proBio=ad.bio||''; S.proDiplomas=Array.isArray(ad.diplomas)?ad.diplomas:[]; S.proDiplomaOther=ad.diplomaOther||''; S.proPhoto=ad.photo||S.proPhoto||loadPhotoLocal(user.uid)||null; if(S.proPhoto)savePhotoLocal(user.uid,S.proPhoto); if(!ad.photo&&S.proPhoto){try{FB.f.setDoc(FB.f.doc(FB.db,'artisans',user.uid),{photo:S.proPhoto},{merge:true});}catch(_){}} S.proAcceptedCharte=!!ad.acceptedCharte; S.proAcceptedTerms=!!ad.acceptedTerms; S.proTermsVersion=ad.termsVersion||''; S.proTermsAt=(ad.termsAt&&ad.termsAt.toDate)?ad.termsAt.toDate():null; S.proMollie=ad.mollieStatus||'none'; S.proMollieOrgId=ad.mollieOrgId||'';
           // Revenus / missions réalisées, rechargés depuis la fiche (persistés à chaque paiement).
           S.proEarnings=ad.earnings||0; S.proJobsTotal=ad.jobsTotal||0; S.proHistory=Array.isArray(ad.history)?ad.history:[];
@@ -10746,8 +10750,13 @@
   // Squelette de chargement d'une carte « mission » (shimmer).
   function reqSkeleton(n){return Array.from({length:n||2}).map(function(){return `<div class="skel-card" style="margin-top:10px"><div class="row between"><span class="skel line" style="width:42%;margin:0"></span><span class="skel line" style="width:22%;margin:0"></span></div><div class="skel line lg" style="margin-top:9px"></div><div class="skel line sm"></div></div>`;}).join('');}
   function openRequestsBlock(){
-    const skipped=S.proSkipped||[];
-    const list=(S.openRequests||[]).filter(function(r){return (skipped.indexOf(r.id)<0||!!r.reboostedAt)&&!isStaleMission(r);});
+    const skipped=S.proSkipped||[];const skippedAt=S.proSkipAt||{};
+    const list=(S.openRequests||[]).filter(function(r){
+      const was=skipped.indexOf(r.id)>=0;
+      // Passée puis re-boostée APRÈS coup : elle réapparaît. Sinon elle reste masquée.
+      const reboostedAfter=was&&r.reboostedAt&&Number(r.reboostedAt)>(Number(skippedAt[r.id])||0);
+      return (!was||reboostedAfter)&&!isStaleMission(r);
+    });
     // Premier chargement du fil (avant le 1er instantané) : squelettes, pas « aucune mission ».
     if(S._openReqLoading&&!list.length)return `<div style="margin-top:12px"><span class="eyebrow" style="color:var(--teal-deep)">${I.flame} Missions disponibles</span>${reqSkeleton(2)}</div>`;
     if(!list.length)return `<div class="card" style="padding:18px;margin-top:12px;text-align:center;border-style:dashed"><div class="radar sm"><div class="ring r1"></div><div class="ring r2"></div><div class="core bare">${octoMini(64,'bob')}</div></div><p class="sub" style="margin:6px 0 0">Aucune mission disponible pour l'instant.</p><p class="mini" style="margin-top:4px">Vous serez notifié dès qu'une demande de votre zone arrive.</p></div>`;
