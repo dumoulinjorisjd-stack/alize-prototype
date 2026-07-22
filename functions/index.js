@@ -185,13 +185,15 @@ async function mollieRouteNet(molliePaymentId, orgId, netAmount, label) {
 async function mollieOnboardingReady(accessToken) {
   try {
     const res = await fetch(MOLLIE_API + '/onboarding/me', {headers: {'Authorization': 'Bearer ' + accessToken}});
-    if (!res.ok) { console.warn('mollieOnboardingReady HTTP', res.status); return {ok: false, status: 'error'}; }
+    if (!res.ok) { console.warn('mollieOnboardingReady HTTP', res.status); return {ok: false, status: 'error', dashboard: ''}; }
     const ob = await res.json();
     const status = ob.status || 'in-review';
     const canPay = ob.canReceivePayments !== false;
     const canSettle = ob.canReceiveSettlements !== false;
-    return {ok: status === 'completed' && canPay && canSettle, status: status};
-  } catch (e) { console.warn('mollieOnboardingReady', e); return {ok: false, status: 'error'}; }
+    // Lien de complétion hébergé par Mollie (pour finir le dossier : identité, IBAN…).
+    const dashboard = (ob._links && ob._links.dashboard && ob._links.dashboard.href) || '';
+    return {ok: status === 'completed' && canPay && canSettle, status: status, dashboard: dashboard};
+  } catch (e) { console.warn('mollieOnboardingReady', e); return {ok: false, status: 'error', dashboard: ''}; }
 }
 // Prévient l'ARTISAN (push + e-mail) quand son compte de paiement Mollie n'est pas
 // validé et requiert son action (dossier refusé / informations manquantes), ou quand un
@@ -1568,7 +1570,7 @@ exports.mollieOnboardingReturn = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLI
     // On ne passe « active » QUE si l'onboarding Mollie est réellement terminé (identité +
     // IBAN vérifiés). Sinon « pending » — l'artisan ne pourra pas accepter tant que Mollie
     // n'a pas validé, ce qui évite tout versement dans le vide.
-    const ready = orgId ? await mollieOnboardingReady(tok.access_token) : {ok: false, status: 'needs-data'};
+    const ready = orgId ? await mollieOnboardingReady(tok.access_token) : {ok: false, status: 'needs-data', dashboard: ''};
     const db = getFirestore();
     await db.collection('artisans').doc(uid).set({
       mollieOrgId: orgId,
@@ -1582,7 +1584,22 @@ exports.mollieOnboardingReturn = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLI
     if (tok.refresh_token) {
       try { await db.collection('mollieTokens').doc(uid).set({refresh: tok.refresh_token, updatedAt: FieldValue.serverTimestamp()}, {merge: true}); } catch (_) {}
     }
-    res.redirect(302, MOLLIE_APP_RETURN + '?mollie=' + ((orgId && ready.ok) ? 'active' : 'pending'));
+    // ANTI-BOUCLE. Le parcours OAuth rebondit immédiatement (approval_prompt=auto) : sans
+    // ce garde-fou, un artisan au dossier incomplet retombait en boucle sur son profil
+    // Ti-Services sans jamais pouvoir finir. Désormais :
+    //  - completed  -> retour app « activé » ;
+    //  - needs-data -> redirection vers la page Mollie de COMPLÉTION (dashboard hébergé)
+    //                  pour qu'il saisisse ses informations manquantes ;
+    //  - in-review  -> Mollie vérifie, rien à faire : retour app « en vérification ».
+    // La mise à jour du statut est ensuite captée par le webhook onboarding, le balayage
+    // planifié (15 min) et la re-vérification à l'ouverture de l'écran paiements.
+    if (orgId && ready.ok) {
+      res.redirect(302, MOLLIE_APP_RETURN + '?mollie=active');
+    } else if (ready.status === 'needs-data' && ready.dashboard) {
+      res.redirect(302, ready.dashboard);
+    } else {
+      res.redirect(302, MOLLIE_APP_RETURN + '?mollie=pending');
+    }
   } catch (e) { console.warn('mollieOnboardingReturn', e); res.redirect(302, MOLLIE_APP_RETURN + '?mollie=error'); }
 });
 
