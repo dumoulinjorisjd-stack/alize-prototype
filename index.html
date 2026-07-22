@@ -7515,6 +7515,22 @@
     setMollieStatus('pending');
     toast('Ouverture du parcours Mollie (simulé en bêta)');
   }
+  // Re-vérifie auprès de Mollie que l'onboarding de l'artisan est RÉELLEMENT terminé, et
+  // met à jour son statut. Indispensable car la vérification Mollie se termine souvent
+  // APRÈS le retour dans l'app (statut « in-review » au retour). Appelée à l'ouverture de
+  // l'écran paiements et au retour du parcours (?mollie=…). No-op hors prod / hors artisan.
+  async function refreshMollieStatus(){
+    if(!(payReal()&&FB&&FB.fn&&FB.functions&&FB.auth&&FB.auth.currentUser))return;
+    if(!S.proMollieOrgId&&S.proMollie!=='pending')return; // rien à re-vérifier sans org
+    try{
+      const r=await FB.fn.httpsCallable(FB.functions,'mollieCheckStatus')();
+      const d=(r&&r.data)||{};
+      if(d.status&&d.status!=='error'&&d.status!=='unconfigured'){
+        S.proMollie=d.active?'active':'pending';
+        render();
+      }
+    }catch(e){console.warn('refreshMollieStatus',e);}
+  }
   // Annulation d'une demande encore ouverte : suppression du doc Firestore + arrêt de l'écoute.
   function cancelActiveRequest(m){
     if(!m)return;const id=m.reqId;if(!id)return;
@@ -8110,7 +8126,10 @@
   function handleDeepLink(){try{const q=new URLSearchParams(location.search);
     try{const rp=q.get('realpay');if(rp==='1')localStorage.setItem('tiPayReal','1');else if(rp==='0')localStorage.removeItem('tiPayReal');}catch(_){}
     const paid=q.get('paid'); if(paid){S._openReq=paid;S.onboarded=true;S.persona='client';S.clientNav='wallet';try{history.replaceState(null,'',location.origin+location.pathname);}catch(_){}}
-    const mol=q.get('mollie'); if(mol){try{history.replaceState(null,'',location.origin+location.pathname);}catch(_){}setTimeout(function(){try{if(mol==='active')toast('✅ Paiements activés — votre compte Mollie est connecté');else if(mol==='error')toast('⚠︎ Connexion Mollie échouée — réessayez');else toast('Compte Mollie en cours de vérification');}catch(_){}},900);}
+    const mol=q.get('mollie'); if(mol){try{history.replaceState(null,'',location.origin+location.pathname);}catch(_){}setTimeout(function(){try{if(mol==='active')toast('✅ Paiements activés — votre compte Mollie est connecté');else if(mol==='error')toast('⚠︎ Connexion Mollie échouée — réessayez');else toast('Compte Mollie en cours de vérification');}catch(_){}},900);
+      // Re-vérification RÉELLE après le retour : la validation Mollie peut se terminer juste
+      // après la redirection. On re-interroge Mollie une fois l'app chargée (best-effort).
+      if(mol!=='error'){setTimeout(function(){try{refreshMollieStatus();}catch(_){}},4000);}}
     const rid=q.get('r'); if(rid)S._openReq=rid; // réservation à ouvrir (après connexion)
     // Lien « installer l'app » (depuis l'e-mail de bienvenue) : ouvre directement le
     // guide d'installation (invite native Android / gestes iPhone) une fois l'app peinte.
@@ -9424,7 +9443,7 @@
       case 'pro-add-assur':if(S.proAddForm){S.proAddForm.assur=!S.proAddForm.assur;render();}break;
       case 'pro-add-submit':submitAddServices();break;
       case 'wish-send':sendWish();break;
-      case 'pro-mollie':S.proMollieView=true;render();break;
+      case 'pro-mollie':S.proMollieView=true;render();refreshMollieStatus();break;
       case 'pro-mollie-close':S.proMollieView=false;render();break;
       case 'mollie-start':startMollieOnboarding();break;
       case 'mollie-sim-approve':setMollieStatus('active');toast('Paiements activés ✓');break;

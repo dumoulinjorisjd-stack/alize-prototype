@@ -176,6 +176,22 @@ async function mollieRouteNet(molliePaymentId, orgId, netAmount, label) {
     return true;
   } catch (e) { console.warn('mollieRouteNet', e); return false; }
 }
+// Vérifie l'onboarding RÉEL de l'organisation liée au jeton d'accès fourni. Avoir
+// une organisation connectée ne suffit PAS : Mollie doit avoir vérifié l'identité et
+// le compte bancaire (statut « completed » + capable de recevoir paiements ET
+// règlements). Renvoie {ok, status}. FAIL-SAFE : toute erreur => ok=false — on
+// préfère BLOQUER (l'artisan ne peut pas accepter / être réglé) que verser dans le vide.
+async function mollieOnboardingReady(accessToken) {
+  try {
+    const res = await fetch(MOLLIE_API + '/onboarding/me', {headers: {'Authorization': 'Bearer ' + accessToken}});
+    if (!res.ok) { console.warn('mollieOnboardingReady HTTP', res.status); return {ok: false, status: 'error'}; }
+    const ob = await res.json();
+    const status = ob.status || 'in-review';
+    const canPay = ob.canReceivePayments !== false;
+    const canSettle = ob.canReceiveSettlements !== false;
+    return {ok: status === 'completed' && canPay && canSettle, status: status};
+  } catch (e) { console.warn('mollieOnboardingReady', e); return {ok: false, status: 'error'}; }
+}
 // Appel bas-niveau à l'API Mollie (jeton plateforme). Renvoie {ok, data|status}.
 async function mollieApi(path, method, body) {
   try {
@@ -914,7 +930,7 @@ exports.notifyBoosted = onDocumentUpdated('requests/{reqId}', async (event) => {
   } catch (e) { console.warn('notifyBoosted push', e); }
 });
 
-exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secrets: ['MOLLIE_ACCESS_TOKEN']}, async (event) => {
+exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secrets: ['MOLLIE_ACCESS_TOKEN', SMTP_PASS]}, async (event) => {
   const before = (event.data && event.data.before && event.data.before.data()) || {};
   const after = (event.data && event.data.after && event.data.after.data()) || {};
   // On agit UNIQUEMENT sur la transition -> « paid », et une seule fois.
@@ -1126,10 +1142,29 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
     //    la commission sur le solde plateforme. Uniquement si la capture a réussi.
     try {
       const orgId = after.mollieOrgId || (await db.collection('artisans').doc(providerUid).get()).get('mollieOrgId');
-      if (orgId && after.molliePaymentId && captureOk) {
-        const routed = await mollieRouteNet(after.molliePaymentId, orgId, net,
-          'Ti-Services · ' + (after.serviceName || after.service || 'prestation') + ' · ' + saleInvoiceNo);
-        if (routed) await event.data.after.ref.update({molliePayout: 'routed'});
+      if (after.molliePaymentId && captureOk) {
+        const routed = orgId ? await mollieRouteNet(after.molliePaymentId, orgId, net,
+          'Ti-Services · ' + (after.serviceName || after.service || 'prestation') + ' · ' + saleInvoiceNo) : false;
+        if (routed) {
+          await event.data.after.ref.update({molliePayout: 'routed'});
+        } else {
+          // FILET DE SÉCURITÉ : le client a été débité mais le NET n'a PAS pu être versé
+          // à l'artisan (onboarding Mollie incomplet, organisation absente, refus API).
+          // L'argent reste sur le solde plateforme — on ne le perd JAMAIS en silence :
+          // on marque la mission et on alerte l'admin pour régularisation manuelle.
+          await event.data.after.ref.update({molliePayout: 'unrouted', molliePayoutIssue: orgId ? 'route_failed' : 'no_org'});
+          try {
+            await sendMail(db, ADMIN_EMAIL, {
+              subject: 'Versement Mollie à régulariser — ' + (after.serviceName || after.service || 'prestation'),
+              html: '<p>Le client a été débité, mais le versement du net à l\'artisan n\'a pas pu être routé automatiquement.</p>'
+                + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li>'
+                + '<li><b>Artisan :</b> ' + escHtmlS(after.providerName || providerUid) + '</li>'
+                + '<li><b>Net dû :</b> ' + eurTxt(net) + '</li>'
+                + '<li><b>Cause :</b> ' + (orgId ? 'routage refusé par Mollie (onboarding probablement incomplet)' : 'aucune organisation Mollie connectée') + '</li></ul>'
+                + '<p>À faire : vérifier l\'onboarding Mollie de l\'artisan, puis re-router le paiement (ou virement manuel). L\'argent est en sécurité sur le solde plateforme.</p>',
+            });
+          } catch (_) {}
+        }
       }
     } catch (e) { console.warn('settleCommission route', e); }
   } catch (e) { console.warn('settleCommission write', e); }
@@ -1408,13 +1443,66 @@ exports.mollieOnboardingReturn = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLI
     const orgRes = await fetch(MOLLIE_API + '/organizations/me', {headers: {'Authorization': 'Bearer ' + tok.access_token}});
     const org = orgRes.ok ? await orgRes.json() : {};
     const orgId = org.id || '';
-    await getFirestore().collection('artisans').doc(uid).set({
+    // On ne passe « active » QUE si l'onboarding Mollie est réellement terminé (identité +
+    // IBAN vérifiés). Sinon « pending » — l'artisan ne pourra pas accepter tant que Mollie
+    // n'a pas validé, ce qui évite tout versement dans le vide.
+    const ready = orgId ? await mollieOnboardingReady(tok.access_token) : {ok: false, status: 'needs-data'};
+    const db = getFirestore();
+    await db.collection('artisans').doc(uid).set({
       mollieOrgId: orgId,
-      mollieStatus: orgId ? 'active' : 'pending',
+      mollieStatus: (orgId && ready.ok) ? 'active' : 'pending',
+      mollieOnboardingStatus: ready.status,
       mollieOnboardedAt: FieldValue.serverTimestamp(),
     }, {merge: true});
-    res.redirect(302, MOLLIE_APP_RETURN + '?mollie=' + (orgId ? 'active' : 'pending'));
+    // Refresh-token conservé CÔTÉ SERVEUR UNIQUEMENT (collection verrouillée, illisible par
+    // le client) : permet de re-vérifier le statut plus tard — l'artisan finit souvent sa
+    // vérification Mollie APRÈS être revenu dans l'app (statut « in-review » au retour).
+    if (tok.refresh_token) {
+      try { await db.collection('mollieTokens').doc(uid).set({refresh: tok.refresh_token, updatedAt: FieldValue.serverTimestamp()}, {merge: true}); } catch (_) {}
+    }
+    res.redirect(302, MOLLIE_APP_RETURN + '?mollie=' + ((orgId && ready.ok) ? 'active' : 'pending'));
   } catch (e) { console.warn('mollieOnboardingReturn', e); res.redirect(302, MOLLIE_APP_RETURN + '?mollie=error'); }
+});
+
+/**
+ * mollieCheckStatus : re-vérifie l'onboarding Mollie de l'artisan connecté et met à jour
+ * sa fiche (mollieStatus 'active' UNIQUEMENT si l'onboarding est réellement « completed »).
+ * Appelée par l'app quand le prestataire ouvre son écran « paiements » ou revient du
+ * parcours Mollie : indispensable car la vérification Mollie se termine souvent APRÈS le
+ * retour dans l'app. Utilise le refresh-token conservé côté serveur. Fail-safe : en cas
+ * de doute, on laisse « pending » (l'artisan reste bloqué à l'acceptation).
+ */
+exports.mollieCheckStatus = onCall({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET']}, async (request) => {
+  const uid = request.auth && request.auth.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Connexion requise.');
+  if (!mollieOAuthConfigured()) return {status: 'unconfigured', active: false};
+  const db = getFirestore();
+  const artSnap = await db.collection('artisans').doc(uid).get();
+  const orgId = artSnap.exists ? ((artSnap.data() || {}).mollieOrgId || '') : '';
+  if (!orgId) return {status: 'none', active: false};
+  const tokSnap = await db.collection('mollieTokens').doc(uid).get();
+  const refresh = tokSnap.exists ? ((tokSnap.data() || {}).refresh || '') : '';
+  if (!refresh) return {status: 'unknown', active: false};
+  try {
+    const basic = Buffer.from(process.env.MOLLIE_CLIENT_ID + ':' + process.env.MOLLIE_CLIENT_SECRET).toString('base64');
+    const tr = await fetch(MOLLIE_TOKEN, {
+      method: 'POST',
+      headers: {'Authorization': 'Basic ' + basic, 'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(refresh),
+    });
+    if (!tr.ok) { console.warn('mollieCheckStatus refresh', tr.status); return {status: 'error', active: false}; }
+    const tok = await tr.json();
+    // Mollie fait tourner le refresh-token : on garde le nouveau pour la fois suivante.
+    if (tok.refresh_token) {
+      try { await db.collection('mollieTokens').doc(uid).set({refresh: tok.refresh_token, updatedAt: FieldValue.serverTimestamp()}, {merge: true}); } catch (_) {}
+    }
+    const ready = await mollieOnboardingReady(tok.access_token);
+    await db.collection('artisans').doc(uid).set({
+      mollieStatus: ready.ok ? 'active' : 'pending',
+      mollieOnboardingStatus: ready.status,
+    }, {merge: true});
+    return {status: ready.status, active: ready.ok};
+  } catch (e) { console.warn('mollieCheckStatus', e); return {status: 'error', active: false}; }
 });
 
 /* ============================================================================
