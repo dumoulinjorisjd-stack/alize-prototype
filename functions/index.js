@@ -344,7 +344,10 @@ async function syncArtisanMollie(db, uid) {
   const ready = await mollieOnboardingReady(tok.access_token);
   const prevStatus = ad.mollieStatus || 'none';
   const prevNotified = ad.mollieIssueNotified || '';
-  const upd = {mollieStatus: ready.ok ? 'active' : 'pending', mollieOnboardingStatus: ready.status};
+  // Lien vers le compte Mollie de l'artisan (page hébergée : compléter / gérer son dossier).
+  // On le conserve pour que l'app puisse TOUJOURS proposer l'accès au compte Mollie.
+  const dashboard = ready.dashboard || ad.mollieDashboardUrl || '';
+  const upd = {mollieStatus: ready.ok ? 'active' : 'pending', mollieOnboardingStatus: ready.status, mollieDashboardUrl: dashboard};
   if (ready.status === 'needs-data' && prevNotified !== 'needs-data') {
     upd.mollieIssueNotified = 'needs-data';
     try { await notifyArtisanMollieProblem(db, uid, 'needs-data'); } catch (_) {}
@@ -357,7 +360,7 @@ async function syncArtisanMollie(db, uid) {
     }
   }
   await db.collection('artisans').doc(uid).set(upd, {merge: true});
-  return {status: ready.status, active: ready.ok};
+  return {status: ready.status, active: ready.ok, dashboard: dashboard};
 }
 // Appel bas-niveau à l'API Mollie (jeton plateforme). Renvoie {ok, data|status}.
 async function mollieApi(path, method, body) {
@@ -1643,6 +1646,7 @@ exports.mollieOnboardingReturn = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLI
       mollieOrgId: orgId,
       mollieStatus: (orgId && ready.ok) ? 'active' : 'pending',
       mollieOnboardingStatus: ready.status,
+      mollieDashboardUrl: ready.dashboard || '',
       mollieOnboardedAt: FieldValue.serverTimestamp(),
     }, {merge: true});
     // Refresh-token conservé CÔTÉ SERVEUR UNIQUEMENT (collection verrouillée, illisible par

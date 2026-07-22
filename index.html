@@ -7595,9 +7595,19 @@
       const d=(r&&r.data)||{};
       if(d.status&&d.status!=='error'&&d.status!=='unconfigured'){
         S.proMollie=d.active?'active':'pending';
+        if(d.dashboard)S.proMollieDashboard=d.dashboard;
         render();
       }
     }catch(e){console.warn('refreshMollieStatus',e);}
+  }
+  // Accès DIRECT au compte Mollie de l'artisan (page hébergée par Mollie : compléter /
+  // gérer son dossier, voir ses versements). Toujours disponible depuis l'espace paiements,
+  // quel que soit le statut. À défaut de lien précis mémorisé, on ouvre le tableau de bord
+  // Mollie générique — l'artisan s'y connecte avec le compte créé pendant l'activation.
+  function openMollieAccount(){
+    const d=S.proMollieDashboard;
+    const url=(d&&/^https:\/\//.test(d))?d:'https://my.mollie.com/';
+    try{window.open(url,'_blank','noopener');}catch(_){location.href=url;}
   }
   // Annulation d'une demande encore ouverte : suppression du doc Firestore + arrêt de l'écoute.
   function cancelActiveRequest(m){
@@ -7837,10 +7847,21 @@
       <div class="footcta" style="position:static;background:none;padding:16px 0 0"><button class="btn primary" data-act="mollie-start">${I.lock} Continuer vers Mollie →</button></div>
       <p class="mini" style="text-align:center;margin-top:8px;color:var(--muted)">La vérification d'identité est exigée par la loi (DSP2) pour tout encaissement.</p>`;
     }
+    // Accès PERMANENT au compte Mollie (dès qu'un compte a été démarré) : l'artisan doit
+    // toujours pouvoir rejoindre son espace Mollie pour compléter/gérer son dossier ou voir
+    // ses versements — et forcer une re-vérification du statut affiché ici.
+    const mollieAccess = (st!=='none') ? `<div class="card" style="padding:15px;margin-top:12px">
+        <div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="margin-top:1px">${I.card}</span>
+        <div style="flex:1;min-width:0"><b style="font-size:14px">Mon compte Mollie</b>
+        <p class="mini" style="margin-top:3px;color:var(--muted)">Accédez à votre espace Mollie pour compléter ou gérer votre dossier (identité, IBAN) et suivre vos versements.</p></div></div>
+        <button class="btn ghost sm" data-act="mollie-manage" style="margin-top:11px;width:100%">${I.lock} Accéder à mon compte Mollie ↗</button>
+        <button class="reset" data-act="mollie-refresh" style="margin-top:9px;display:block;width:100%;text-align:center;color:var(--teal-deep);font-weight:650;font-size:12.5px">↻ Actualiser mon statut</button>
+      </div>` : '';
     return `<div class="pad"><button class="reset" data-act="pro-mollie-close" style="margin:8px 0 2px">← Retour</button>
       <span class="eyebrow">${I.card} Mes paiements</span><div class="h-hello">${st==='active'?'Paiements automatiques':'Activer mes paiements'}</div>
       ${st!=='active'?`<button class="btn ghost" data-act="mollie-guide-open" style="margin-top:12px;width:100%">${I.info||I.card} Guide pas à pas — réponses à copier-coller</button>`:''}
       ${body}
+      ${mollieAccess}
       <div style="height:14px"></div></div>`;
   }
   // GUIDE d'activation Mollie : accompagne l'artisan question par question, avec des
@@ -9585,6 +9606,8 @@
       case 'wish-send':sendWish();break;
       case 'pro-mollie':S.proMollieView=true;render();refreshMollieStatus();break;
       case 'pro-mollie-close':S.proMollieView=false;render();break;
+      case 'mollie-manage':openMollieAccount();break;
+      case 'mollie-refresh':toast('Vérification de votre compte Mollie…');refreshMollieStatus();break;
       case 'mollie-guide-open':S.mollieGuideView=true;render();break;
       case 'mollie-guide-close':S.mollieGuideView=false;render();break;
       case 'mollie-copy':{const t=b.dataset.copytext||'';if(t&&navigator.clipboard){navigator.clipboard.writeText(t).then(function(){toast('Copié ✓ — collez-le dans Mollie');}).catch(function(){toast('Copié : '+t);});}else{toast(t||'—');}break;}
@@ -10341,7 +10364,7 @@
         S.proLegal=(ad&&(ad.legalName||ad.name))||name; S.proAddress=(ad&&ad.address)||''; S.proStatusType=(ad&&ad.statusType)||'entreprise'; S.proLegalForm=(ad&&ad.legalForm)||''; S.proCapital=(ad&&ad.capital)||''; S.proRcsCity=(ad&&ad.rcsCity)||'';
         if(ad&&Array.isArray(ad.cats)&&ad.cats.length){S.proCats=ad.cats.slice();const rr=ad.rates||{};S.proRate=Math.min.apply(null,ad.cats.map(c=>(rr[c]!=null?rr[c]:svcBase(c))));}
         if(ad){S.proPendingCats=Array.isArray(ad.pendingCats)?ad.pendingCats.slice():[];S.proPendingOther=ad.pendingOther||'';S.proSkipped=Array.isArray(ad.skippedRequests)?ad.skippedRequests.slice():[];S.proSkipAt=(ad.skippedAt&&typeof ad.skippedAt==='object')?ad.skippedAt:{};}
-        if(ad){ S.proFounder=!!ad.founder; S.proFounderSince=(ad.founderSince&&ad.founderSince.toMillis)?ad.founderSince.toMillis():(typeof ad.founderSince==='number'?ad.founderSince:null); S.proFounderGross=Number(ad.founderGross)||0; S.proRating=ad.rating||0; S.proIban=ad.iban||''; S.proIbanHolder=ad.ibanHolder||''; S.proBic=ad.bic||''; S.proInsured=!!ad.insured; S.proInsurer=ad.insurer||''; S.proInsuranceUrl=ad.insuranceUrl||''; S.proInsuranceStatus=ad.insuranceStatus||(ad.status==='valide'&&ad.insured?'valide':(ad.insuranceUrl||ad.insured?'attente':'none')); S.proSiret=ad.siret||''; S.proBirth=ad.birth||''; S.proBio=ad.bio||''; S.proDiplomas=Array.isArray(ad.diplomas)?ad.diplomas:[]; S.proDiplomaOther=ad.diplomaOther||''; S.proPhoto=ad.photo||S.proPhoto||loadPhotoLocal(user.uid)||null; if(S.proPhoto)savePhotoLocal(user.uid,S.proPhoto); if(!ad.photo&&S.proPhoto){try{FB.f.setDoc(FB.f.doc(FB.db,'artisans',user.uid),{photo:S.proPhoto},{merge:true});}catch(_){}} S.proAcceptedCharte=!!ad.acceptedCharte; S.proAcceptedTerms=!!ad.acceptedTerms; S.proTermsVersion=ad.termsVersion||''; S.proTermsAt=(ad.termsAt&&ad.termsAt.toDate)?ad.termsAt.toDate():null; S.proMollie=ad.mollieStatus||'none'; S.proMollieOrgId=ad.mollieOrgId||''; if(S.proMollie==='pending'&&S.proMollieOrgId&&!S._mollieAutoChecked){S._mollieAutoChecked=true;setTimeout(function(){try{refreshMollieStatus();}catch(_){}},1500);}
+        if(ad){ S.proFounder=!!ad.founder; S.proFounderSince=(ad.founderSince&&ad.founderSince.toMillis)?ad.founderSince.toMillis():(typeof ad.founderSince==='number'?ad.founderSince:null); S.proFounderGross=Number(ad.founderGross)||0; S.proRating=ad.rating||0; S.proIban=ad.iban||''; S.proIbanHolder=ad.ibanHolder||''; S.proBic=ad.bic||''; S.proInsured=!!ad.insured; S.proInsurer=ad.insurer||''; S.proInsuranceUrl=ad.insuranceUrl||''; S.proInsuranceStatus=ad.insuranceStatus||(ad.status==='valide'&&ad.insured?'valide':(ad.insuranceUrl||ad.insured?'attente':'none')); S.proSiret=ad.siret||''; S.proBirth=ad.birth||''; S.proBio=ad.bio||''; S.proDiplomas=Array.isArray(ad.diplomas)?ad.diplomas:[]; S.proDiplomaOther=ad.diplomaOther||''; S.proPhoto=ad.photo||S.proPhoto||loadPhotoLocal(user.uid)||null; if(S.proPhoto)savePhotoLocal(user.uid,S.proPhoto); if(!ad.photo&&S.proPhoto){try{FB.f.setDoc(FB.f.doc(FB.db,'artisans',user.uid),{photo:S.proPhoto},{merge:true});}catch(_){}} S.proAcceptedCharte=!!ad.acceptedCharte; S.proAcceptedTerms=!!ad.acceptedTerms; S.proTermsVersion=ad.termsVersion||''; S.proTermsAt=(ad.termsAt&&ad.termsAt.toDate)?ad.termsAt.toDate():null; S.proMollie=ad.mollieStatus||'none'; S.proMollieOrgId=ad.mollieOrgId||''; S.proMollieDashboard=ad.mollieDashboardUrl||''; if(S.proMollieOrgId&&!S._mollieAutoChecked){S._mollieAutoChecked=true;setTimeout(function(){try{refreshMollieStatus();}catch(_){}},1500);}
           // Revenus / missions réalisées, rechargés depuis la fiche (persistés à chaque paiement).
           S.proEarnings=ad.earnings||0; S.proJobsTotal=ad.jobsTotal||0; S.proHistory=Array.isArray(ad.history)?ad.history:[];
           // Réglages persistés (disponibilités, en ligne, préférences de notif).
