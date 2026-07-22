@@ -222,7 +222,7 @@ async function notifyArtisanMollieProblem(db, uid, reason) {
   if (email) {
     const intro = blocked
       ? '<p>Une prestation a été validée, mais nous n\'avons <b>pas pu vous verser votre gain</b> : votre compte de paiement <b>Mollie</b> n\'est pas encore validé.</p><p>Rassurez-vous, la somme est en sécurité et vous sera versée dès que votre compte sera activé.</p>'
-      : '<p>Votre compte de paiement <b>Mollie</b> n\'a pas pu être validé en l\'état : il manque des informations ou un justificatif.</p><p>Tant qu\'il n\'est pas activé, vous <b>ne pouvez pas accepter de missions</b> — et surtout, vous ne pourriez pas être payé.</p>';
+      : '<p>Votre compte de paiement <b>Mollie</b> n\'est pas encore validé : il manque une information ou un justificatif (pièce d\'identité, IBAN…).</p><p><b>Mollie vous indique précisément ce qui manque</b> sur sa page sécurisée — et vous a peut-être déjà écrit à ce sujet. Tant que le dossier n\'est pas complet, vous <b>ne pouvez pas accepter de missions</b> ni être payé.</p>';
     try {
       await sendMail(db, email, {
         subject: 'Ti-Services · Finalisez vos paiements pour recevoir vos missions',
