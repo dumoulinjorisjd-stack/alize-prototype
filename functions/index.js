@@ -17,6 +17,7 @@ const {defineSecret} = require('firebase-functions/params');
 const {initializeApp} = require('firebase-admin/app');
 const {getFirestore, FieldValue} = require('firebase-admin/firestore');
 const {getMessaging} = require('firebase-admin/messaging');
+const {getAuth} = require('firebase-admin/auth');
 
 initializeApp();
 setGlobalOptions({region: 'europe-west1', maxInstances: 5});
@@ -1808,6 +1809,118 @@ function inviteArtisanHtml(name) {
   '</div>';
 }
 
+/* ============================================================================
+ * E-MAIL « MOT DE PASSE OUBLIÉ » — soigné, aux couleurs Ti-Services, envoyé
+ * depuis contact@ti-services.fr (au lieu de l'e-mail générique Firebase).
+ * Trilingue (fr/en/pt). Le lien de réinitialisation est généré côté serveur
+ * par l'Admin SDK ; on ne révèle jamais si l'adresse est inscrite.
+ * ========================================================================== */
+function resetPasswordEmail(link, lang) {
+  const L = {
+    fr: {
+      subject: 'Réinitialisation de votre mot de passe Ti-Services',
+      h1: 'Mot de passe oublié ?',
+      intro: 'Pas d\'inquiétude. Cliquez sur le bouton ci-dessous pour choisir un nouveau mot de passe et retrouver votre compte Ti-Services.',
+      btn: 'Réinitialiser mon mot de passe',
+      alt: 'Le bouton ne fonctionne pas ? Copiez-collez ce lien dans votre navigateur :',
+      note: 'Ce lien est valable une heure et ne peut servir qu\'une seule fois. Si vous n\'êtes pas à l\'origine de cette demande, ignorez simplement cet e-mail — votre mot de passe reste inchangé.',
+      signoff: 'À très vite,',
+    },
+    en: {
+      subject: 'Reset your Ti-Services password',
+      h1: 'Forgot your password?',
+      intro: 'No worries. Click the button below to choose a new password and get back into your Ti-Services account.',
+      btn: 'Reset my password',
+      alt: 'Button not working? Copy and paste this link into your browser:',
+      note: 'This link is valid for one hour and can only be used once. If you didn\'t request this, just ignore this email — your password stays unchanged.',
+      signoff: 'See you soon,',
+    },
+    pt: {
+      subject: 'Redefinir a sua palavra-passe Ti-Services',
+      h1: 'Esqueceu-se da palavra-passe?',
+      intro: 'Sem problema. Clique no botão abaixo para escolher uma nova palavra-passe e voltar a aceder à sua conta Ti-Services.',
+      btn: 'Redefinir a minha palavra-passe',
+      alt: 'O botão não funciona? Copie e cole esta ligação no seu navegador:',
+      note: 'Esta ligação é válida durante uma hora e só pode ser usada uma vez. Se não fez este pedido, ignore este e-mail — a sua palavra-passe permanece inalterada.',
+      signoff: 'Até breve,',
+    },
+  };
+  const t = L[lang] || L.fr;
+  const c1 = '#FF6A5B', c2 = '#FF9F54', btn = '#FF6A5B';
+  const safe = escHtmlS(link);
+  const html = '' +
+  '<div style="margin:0;padding:0;background:#FBF7F4;font-family:-apple-system,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;color:#231E33">' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FBF7F4;padding:24px 12px">' +
+      '<tr><td align="center">' +
+        '<table role="presentation" width="520" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%;background:#ffffff;border-radius:18px;overflow:hidden">' +
+          '<tr><td style="height:6px;background:linear-gradient(90deg,' + c1 + ',' + c2 + ')"></td></tr>' +
+          '<tr><td align="center" style="padding:26px 30px 4px">' +
+            '<img src="cid:tilogo" width="60" height="60" alt="Ti-Services" style="display:block;border-radius:16px;margin:0 auto 10px">' +
+            '<div style="font-size:24px;font-weight:800;letter-spacing:-.02em"><span style="color:#FF6A5B">Ti</span><span style="color:#231E33">-Services</span></div>' +
+            '<div style="font-size:12px;color:#8a8494;margin-top:2px">Services à la demande · Saint-Barthélemy</div>' +
+          '</td></tr>' +
+          '<tr><td style="padding:14px 30px 0">' +
+            '<h1 style="font-size:22px;margin:8px 0 0;color:#231E33">' + t.h1 + '</h1>' +
+            '<p style="font-size:15px;line-height:1.6;color:#4a4556;margin:12px 0 0">' + t.intro + '</p>' +
+          '</td></tr>' +
+          '<tr><td align="center" style="padding:22px 30px 6px">' +
+            '<a href="' + safe + '" style="display:inline-block;background:' + btn + ';color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:13px 30px;border-radius:12px">' + t.btn + '</a>' +
+          '</td></tr>' +
+          '<tr><td style="padding:6px 30px 0"><div style="font-size:12px;color:#8a8494;line-height:1.5">' + t.alt + '<br><a href="' + safe + '" style="color:' + c1 + ';word-break:break-all">' + safe + '</a></div></td></tr>' +
+          '<tr><td style="padding:16px 30px 4px"><div style="font-size:13px;color:#6b6577;line-height:1.6;background:#FBF7F4;border:1px solid #efeae4;border-radius:12px;padding:12px 14px">' + t.note + '</div></td></tr>' +
+          '<tr><td style="padding:16px 30px 24px;border-top:1px solid #efeae4;background:#FBF7F4;margin-top:8px">' +
+            '<div style="font-size:12px;color:#8a8494;line-height:1.6">' + t.signoff + '<br>L\'équipe Ti-Services<br>' +
+            '<span style="color:#b0aab8">Service édité par C.C.S — Construction Conseils et Services, SAS · Saint-Barthélemy</span></div>' +
+          '</td></tr>' +
+        '</table>' +
+      '</td></tr>' +
+    '</table>' +
+  '</div>';
+  return { subject: t.subject, html };
+}
+
+// Envoi de l'e-mail « mot de passe oublié » soigné (SMTP Ti-Services). Appelé sans
+// authentification (l'utilisateur est déconnecté). On ne révèle jamais si l'adresse
+// est inscrite, et on limite à un envoi par minute et par adresse (anti-abus).
+exports.sendResetEmail = onCall({secrets: [SMTP_PASS]}, async (request) => {
+  const email = String((request.data && request.data.email) || '').trim().toLowerCase();
+  const lang0 = String((request.data && request.data.lang) || 'fr');
+  const lang = (lang0 === 'en' || lang0 === 'pt') ? lang0 : 'fr';
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    throw new HttpsError('invalid-argument', 'Adresse e-mail invalide.');
+  }
+  const db = getFirestore();
+  // Anti-abus : au plus un e-mail par minute et par adresse.
+  try {
+    const id = email.replace(/[^a-z0-9._+-]/g, '_').slice(0, 120);
+    const ref = db.collection('pwResetThrottle').doc(id);
+    const snap = await ref.get();
+    const last = snap.exists && snap.data() && snap.data().last;
+    if (last && (Date.now() - last) < 60000) return { sent: true };
+    await ref.set({ last: Date.now() }, { merge: true });
+  } catch (_) {}
+  // Génère le lien de réinitialisation (Admin SDK). Compte inexistant → on reste muet.
+  let link;
+  try {
+    link = await getAuth().generatePasswordResetLink(email);
+  } catch (e) {
+    if (e && e.code === 'auth/user-not-found') return { sent: true };
+    console.warn('sendResetEmail generateLink', e && e.code);
+    throw new HttpsError('internal', 'Envoi impossible — réessayez.');
+  }
+  const attachments = [];
+  try {
+    const logo = require('fs').readFileSync(require('path').join(__dirname, 'mail-logo.png'));
+    attachments.push({ filename: 'ti-services.png', content: logo, cid: 'tilogo' });
+  } catch (_) {}
+  const { subject, html } = resetPasswordEmail(link, lang);
+  try {
+    await sendMail(db, email, { subject, html, attachments });
+    console.log('E-mail de réinitialisation → ' + email);
+  } catch (e) { console.warn('sendResetEmail send', e); }
+  return { sent: true };
+});
+
 // Envoi de l'e-mail d'invitation artisan — RÉSERVÉ à l'admin (console). L'e-mail part
 // via le SMTP, avec le logo intégré (cid).
 exports.sendArtisanInvite = onCall({secrets: [SMTP_PASS]}, async (request) => {
@@ -1859,4 +1972,4 @@ exports.welcomeClientEmail = onDocumentCreated({document: 'users/{uid}', secrets
 
 
 // Export interne pour les tests unitaires (inerte en production : TI_TEST non défini).
-if (process.env.TI_TEST) { module.exports.__test = { buildInvoicePdf, buildProcurationPdf, invoiceLines, eurTxt, frDate, welcomeHtml, inviteArtisanHtml }; }
+if (process.env.TI_TEST) { module.exports.__test = { buildInvoicePdf, buildProcurationPdf, invoiceLines, eurTxt, frDate, welcomeHtml, inviteArtisanHtml, resetPasswordEmail }; }

@@ -4146,6 +4146,7 @@
     "SIRET invalide (14 chiffres)":"Invalid SIRET (14 digits)",
     "SIRET manquant":"Missing SIRET",
     "Saisissez votre e-mail, puis « Mot de passe oublié ».":"Enter your email, then “Forgot password”.",
+    "Si un compte existe, un e-mail de réinitialisation vient d’être envoyé.":"If an account exists, a reset email has just been sent.",
     "Sauvegarde téléchargée ✓ — conservez ce fichier":"Backup downloaded ✓ — keep this file",
     "Scénario réinitialisé":"Scenario reset",
     "Service retiré du catalogue":"Service removed from the catalog",
@@ -5548,6 +5549,7 @@
     "SIRET invalide (14 chiffres)":"SIRET inválido (14 dígitos)",
     "SIRET manquant":"SIRET em falta",
     "Saisissez votre e-mail, puis « Mot de passe oublié ».":"Introduza o seu e-mail e depois “Esqueci-me da palavra-passe”.",
+    "Si un compte existe, un e-mail de réinitialisation vient d’être envoyé.":"Se existir uma conta, foi enviado um e-mail de redefinição.",
     "Sauvegarde téléchargée ✓ — conservez ce fichier":"Cópia de segurança descarregada ✓ — guarde este ficheiro",
     "Scénario réinitialisé":"Cenário reposto",
     "Service retiré du catalogue":"Serviço removido do catálogo",
@@ -10528,9 +10530,19 @@
   // Réinitialisation par e-mail. Message identique que le compte existe ou non
   // (on ne révèle pas si l'adresse est inscrite — bonne pratique de sécurité).
   async function fbResetPassword(email){
-    try{ await FB.a.sendPasswordResetEmail(FB.auth,email); }
-    catch(e){ const c=(e&&e.code)||''; if(c==='auth/invalid-email'||c==='auth/too-many-requests'){ toast(fbErr(e)); return; } }
-    toast('Si un compte existe, un lien de réinitialisation vient d’être envoyé à '+email+'.');
+    const em=(email||'').trim();
+    try{
+      // E-mail soigné aux couleurs Ti-Services, envoyé depuis contact@ti-services.fr
+      // via une Cloud Function (au lieu de l'e-mail générique Firebase). Repli sur la
+      // méthode Firebase native si la fonction n'est pas disponible.
+      if(FB&&FB.fn&&FB.functions&&FB.fn.httpsCallable){
+        await FB.fn.httpsCallable(FB.functions,'sendResetEmail')({email:em,lang:S.lang});
+      }else{
+        await FB.a.sendPasswordResetEmail(FB.auth,em);
+      }
+    }
+    catch(e){ const c=(e&&e.code)||''; if(c==='auth/invalid-email'||c==='functions/invalid-argument'){ toast(fbErr(e)); return; } }
+    toast('Si un compte existe, un e-mail de réinitialisation vient d’être envoyé.');
   }
   async function fbGoogle(){
     if(!FB){toast('Connexion Google indisponible');return;}
