@@ -2729,6 +2729,16 @@
     if(S.adminLedger&&S.adminLedger.length)return S.adminLedger;
     const out=[];(S.adminArtisans||[]).forEach(function(a){(a.history||[]).forEach(function(h){const b=histBreakdown(h);if(b.commission>0)out.push({dateISO:h.dateISO,reqId:h.reqId||'',invNo:h.invNo||'',clientName:h.clientFull||h.client||'',providerName:a.name,service:h.svc,serviceName:svcName(h.svc),base:b.gross,commissionPct:b.pct,commissionAmount:b.commission,netAmount:b.net,grossTotal:b.gross});});});return out;
   }
+  // Commission du MOIS EN COURS, calculée depuis le MÊME registre que l'onglet
+  // Factures (une seule source de vérité — le tableau de bord affichait avant une
+  // variable jamais recalculée en mode réel, d'où un « 0,00 € » contradictoire).
+  // En démo, on garde le chiffre de démonstration.
+  function adminMonthCommission(){
+    if(S.demoMode||isDemo())return S.adminCommission||0;
+    const ym=currentPeriodKey();
+    let t=0;adminCommissionLedger().forEach(function(e){if((e.dateISO||'').slice(0,7)===ym)t+=Number(e.commissionAmount)||0;});
+    return Math.round(t*100)/100;
+  }
   function csvCell(v){v=String(v==null?'':v);
     // Neutralise l'injection de formule : un champ commençant par = + - @ (ou tab/CR)
     // est exécuté comme formule par Excel/Sheets à l'ouverture. On le préfixe d'une
@@ -5895,7 +5905,7 @@
       <div class="row between" style="margin-top:10px"><div><span class="eyebrow">Console admin · Ti-Services</span><div class="h-hello">Tableau de bord</div></div><div class="avatar" style="background:linear-gradient(135deg,var(--ink),#000)">TS</div></div>
       <div class="row" style="gap:9px;margin-top:12px">${stat('En cours',allB.length,'réservations')}${stat('Artisans',validA,pendA.length+' en attente')}${stat('Clients',clis.length,pendC.length+' en attente')}</div>
       ${(typeof Notification!=='undefined'&&Notification.permission!=='granted')?`<button class="banner teal" data-act="admin-notif" style="margin-top:10px;width:100%;text-align:left;cursor:pointer">${I.bolt}<span>Activez les <b>alertes de candidature</b> — soyez prévenu dès qu'un prestataire postule, même en dehors de la console.</span></button>`:''}
-      <div class="card" style="padding:14px;margin-top:10px"><div class="row between"><span class="sub">Commission ce mois</span><b class="money" style="font-size:18px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(S.adminCommission)}</b></div></div>
+      <div class="card" style="padding:14px;margin-top:10px"><div class="row between"><span class="sub">Commission ce mois</span><b class="money" style="font-size:18px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(adminMonthCommission())}</b></div></div>
       <div class="card" style="padding:14px;margin-top:10px">
         <b style="font-size:14px">${I.users||''} Inviter un prestataire</b>
         <p class="sub" style="margin-top:6px">Envoyez un e-mail d'invitation soigné (à la charte Ti-Services) à un pro que vous souhaitez recruter.</p>
@@ -6260,7 +6270,9 @@
         const list=[];snap.forEach(function(d){const e=d.data()||{};if((e.commissionAmount||0)>0)list.push({id:d.id,reqId:e.reqId||d.id,invNo:e.invNo||'',providerUid:e.providerUid||'',clientUid:e.clientUid||'',dateISO:(e.settledAt&&e.settledAt.toDate)?e.settledAt.toDate().toISOString().slice(0,10):'',clientName:e.clientName||'',providerName:e.providerName||'',service:e.service||'',serviceName:e.serviceName||'',unit:e.unit||'h',hours:e.hours||0,rate:e.rate||0,base:e.base||0,commissionPct:e.commissionPct||0,commissionAmount:e.commissionAmount||0,netAmount:e.netAmount||0,grossTotal:e.grossTotal||0,rateFlag:!!e.rateFlag,rateExpected:e.rateExpected||null});});
         list.sort(function(a,b){return (b.dateISO||'').localeCompare(a.dateISO||'');});
         S.adminLedger=list;
-        if(S.persona==='admin'&&S.admin.view==='fact'&&!(S.admin.fact))render();
+        // Rafraîchit l'onglet Factures ET le tableau de bord (« Commission ce mois »
+        // vient du même registre) — jamais pendant la consultation d'une fiche.
+        if(S.persona==='admin'&&(S.admin.view==='fact'||S.admin.view==='home')&&!S.admin.fact&&!S.admin.sel)render();
       },function(err){console.warn('admin ledger',err);});
     }catch(e){console.warn('admin ledger',e);}
   }
