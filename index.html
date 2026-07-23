@@ -7887,6 +7887,8 @@
     if(S.generalSupport)return generalSupportChat();
     if(S.proConflict)return proConflictView();
     if(S.proStatus==='signup'){ if(S.signupKind==='concierge')return conciergeSignup(); if(S.signupKind==='artisan')return proSignup(); return proTypeChoice(); }
+    // Inscription progressive (Google) : hub « compléter mon profil » + étapes groupées.
+    if(S.proStatus==='draft')return S.proStep?proDraftStep(S.proStep):proDraftHub();
     if(S.proAddView)return proAddService();
     if(S.proDocsView)return proDocs();
     if(S.mollieGuideView)return mollieGuide();
@@ -8236,6 +8238,33 @@
     }catch(e){ toast('Annuaire indisponible — saisissez vos infos à la main'); }
     finally{ S._siretBusy=false; try{render();}catch(_){} }
   }
+  // Section « Métiers & tarifs » utilisée par l'étape « Métiers » de l'inscription
+  // progressive (Google). Reprend la même sélection catégories/sous-catégories, grille et
+  // bloc diplômes que le formulaire complet proSignup (mêmes data-attributs → mêmes
+  // gestionnaires). NB : garder aligné avec le bloc équivalent de proSignup.
+  function proServicesSection(f){
+    const psvc=function(id){const s=findSvc(id);if(!s)return '';const on=f.cats.includes(s.id);const c=svcColor(s.id);const px=(S.adminPrices&&S.adminPrices[s.id]!=null?S.adminPrices[s.id]:s.rate);const rt=isForfaitSvc(s.id)?`${px} € forfait`:(isCatalogForfait(s.id)?`dès ${minActPrice(s.id)} €`:`dès ${px} €/h`);return `<button class="cat ${on?'sel':''}" data-pcat="${s.id}"><div class="pick">${I.check}</div><div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[s.id]||svcIco(s.id)}</div><div class="nm">${esc(s.nm)}</div><div class="rt">${rt}</div></button>`;};
+    const pcatCount=function(cat){return cat.subs.filter(function(id){return f.cats.includes(id);}).length;};
+    const pcatTile=function(cat){const open=f.openCat===cat.id;const n=pcatCount(cat);const c=svcColor(cat.id);return `<button class="cat" data-pcatopen="${cat.id}" style="${open?'border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-wash)':''}"><span class="cat-more" style="${open?'transform:rotate(90deg)':''}">${I.chevron}</span><div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[cat.id]||I.other}</div><div class="nm">${esc(cat.nm)}</div><div class="rt">${n?`<b style="color:var(--teal-deep)">${n} sélectionnée${n>1?'s':''}</b>`:cat.subs.length+' prestations'}</div></button>`;};
+    const cats=homeItems().map(function(it){
+      if(it.type==='svc')return psvc(it.svc.id);
+      const cat=it.cat,tile=pcatTile(cat);
+      if(f.openCat!==cat.id)return tile;
+      const subs=cat.subs.map(function(id){return psvc(id);}).join('');
+      return tile+`<div style="grid-column:1/-1;background:var(--sand-2);border-radius:14px;padding:11px;margin:0 0 2px"><div class="mini" style="color:var(--muted);margin:0 2px 8px">${esc(cat.nm)} — cochez les prestations que vous réalisez</div><div class="cats" style="margin-top:0">${subs}</div></div>`;
+    }).join('')
+      +`<button class="cat ${f.cats.includes('autre')?'sel':''}" data-pcat="autre"><div class="pick">${I.check}</div><div class="ic">${I.other}</div><div class="nm">Autre</div><div class="rt">à préciser</div></button>`;
+    return `<div class="cats">${cats}</div>
+      ${f.cats.includes('autre')?`<div class="field" style="margin-top:12px"><label>Précisez votre service « Autre »</label><input class="txt" data-pf="otherService" value="${esc(f.otherService||'')}" placeholder="Ex. Vitrier, peintre, cours de plongée…"><p class="mini" style="margin-top:6px">Examiné par Ti-Services avant d'être proposé.</p></div>`:''}
+      ${f.cats.length?`<div class="card" style="padding:16px;margin-top:14px"><div class="eyebrow" style="color:var(--muted)">Grille tarifaire Ti-Services</div>
+        <p class="mini" style="margin-top:4px">Prix <b>fixés par Ti-Services</b>, identiques pour tous. À chaque mission, vous voyez le <b>net que vous toucherez</b> avant d'accepter.</p>
+        <div class="chkline" style="margin-top:16px"><button data-act="toggle-grille" aria-label="Appliquer la grille" style="background:none;border:none;padding:0">${chkbox(f.acceptsGrille)}</button><span class="mini" style="line-height:1.5">${RQ} J'applique la <b>grille tarifaire Ti-Services</b> pour mes prestations.</span></div></div>`:`<p class="mini" style="margin-top:10px;color:var(--muted)">Sélectionnez au moins un service.</p>`}
+      ${f.cats.includes('baby')?`<div class="card" style="padding:16px;margin-top:14px"><div class="eyebrow" style="color:var(--muted)">${I.baby} Garde d'enfants — diplômes${RQ}</div>
+        <p class="mini" style="margin-top:4px"><b>PSC1 (premiers secours)</b> recommandé. Déclarations contrôlées à la validation.</p>
+        <div class="segs" style="margin-top:10px;flex-wrap:wrap">${BABY_DIPLOMAS.map(d=>`<button class="seg ${(f.diplomas||[]).includes(d)?'on':''}" data-pdip="${esc(d)}">${esc(d)}</button>`).join('')}</div>
+        ${(f.diplomas||[]).includes('Autre diplôme')?`<div class="field" style="margin-top:10px;margin-bottom:0"><input class="txt" data-pf="diplomaOther" value="${esc(f.diplomaOther||'')}" placeholder="Précisez votre diplôme"></div>`:''}
+        ${(f.diplomas||[]).length?'':'<p class="mini" style="margin-top:8px;color:var(--coral-deep)">Sélectionnez au moins une option (« Expérience seule » sinon).</p>'}</div>`:''}`;
+  }
   function proSignup(){
     const f=S.proForm;
     const ok=proSignupOk(f);
@@ -8322,6 +8351,103 @@
         <button class="btn primary" data-act="pro-submit"${ok?'':' disabled'}>Envoyer ma candidature</button>
         <p class="mini" id="proMissing" style="text-align:center;margin-top:10px;color:var(--coral-deep);${ok?'display:none':''}">${ok?'':'Pour valider, il reste à fournir : '+proMissing(f).join(' · ')+'.'}</p>
         <p class="mini" style="text-align:center;margin-top:8px">${ok?'Candidature soumise à validation de Ti-Services (SIRET, assurance &amp; tarif vérifiés).':'Renseignez tous les champs obligatoires (marqués <span class="req">*</span>) pour envoyer.'}</p>
+      </div></div>`;
+  }
+  /* ---------- INSCRIPTION PROGRESSIVE PRESTATAIRE (Google) ----------
+     Après connexion Google, le prestataire ENTRE dans l'app (compte créé) mais sa
+     candidature n'est PAS encore envoyée : il complète son profil en petites étapes
+     groupées, à son rythme, puis clique « Envoyer ma candidature ». Tant qu'il n'a pas
+     envoyé, aucune fiche `artisans` n'existe → il n'apparaît pas dans la file admin. */
+  function proDraftKey(){return 'tiProDraft:'+((FB&&FB.auth&&FB.auth.currentUser&&FB.auth.currentUser.uid)||'anon');}
+  function saveProDraft(){try{const f=S.proForm||{};const j={};['name','phone','siret','address','statusType','legalForm','capital','rcsCity','birth','bio','refCode','insurer','insuranceName','insuranceUrl','diplomaOther','otherService','photo','email'].forEach(function(k){if(f[k]!=null)j[k]=f[k];});j.insuranceDoc=!!f.insuranceDoc;j.mandat=!!f.mandat;j.cgu=!!f.cgu;j.charte=!!f.charte;j.acceptsGrille=!!f.acceptsGrille;j.cats=Array.isArray(f.cats)?f.cats:[];j.rates=f.rates||{};j.diplomas=Array.isArray(f.diplomas)?f.diplomas:[];j.googleAuth=!!f.googleAuth;localStorage.setItem(proDraftKey(),JSON.stringify(j));}catch(_){}}
+  function loadProDraft(){try{const r=localStorage.getItem(proDraftKey());if(r){const j=JSON.parse(r);S.proForm=Object.assign(S.proForm||{},j);}}catch(_){}}
+  async function uploadDraftInsurance(file){
+    try{
+      const uid=FB.auth.currentUser.uid;
+      const stM=await import('https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js');
+      const storage=stM.getStorage(FB.app);
+      const ext=((file.name||'').split('.').pop()||'').toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,5);
+      const sref=stM.ref(storage,'insurance/'+uid+'/attestation'+(ext?('.'+ext):''));
+      await stM.uploadBytes(sref,file,{contentType:file.type||'application/octet-stream'});
+      const url=await stM.getDownloadURL(sref);
+      if(S.proForm){S.proForm.insuranceUrl=url;S.proForm.insuranceDoc=true;S.proForm.insuranceFile=null;}
+      saveProDraft();render();toast('Attestation enregistrée ✓');
+    }catch(e){ console.warn('draft insurance',e); toast('Échec de l’envoi — réessayez'); }
+  }
+  function draftIdDone(f){f=f||{};return (f.name||'').trim().length>1&&(f.phone||'').trim().length>=6&&/^\d{14}$/.test((f.siret||'').replace(/\s/g,''))&&(f.address||'').trim().length>1&&isAdult(f.birth);}
+  function draftInsDone(f){f=f||{};return (f.insurer||'').trim().length>1&&!!f.insuranceDoc;}
+  function draftSvcDone(f){f=f||{};return !!(f.cats&&f.cats.length)&&!!f.acceptsGrille&&(!f.cats.includes('autre')||(f.otherService||'').trim())&&(!f.cats.includes('baby')||!!(f.diplomas&&f.diplomas.length));}
+  function draftAccDone(f){f=f||{};return !!f.mandat&&!!f.cgu&&!!f.charte;}
+  function draftSteps(f){return [
+    {id:'id',ic:I.user,nm:'Identité & entreprise',sub:'Nom, téléphone, SIRET, adresse',done:draftIdDone(f)},
+    {id:'ins',ic:I.shield,nm:'Assurance',sub:'Responsabilité civile + attestation',done:draftInsDone(f)},
+    {id:'svc',ic:I.bolt,nm:'Métiers & tarifs',sub:'Vos prestations + grille Ti-Services',done:draftSvcDone(f)},
+    {id:'acc',ic:I.check,nm:'Acceptations',sub:'Facturation, CGU/CGV, charte',done:draftAccDone(f)}
+  ];}
+  function proDraftHub(){
+    const f=S.proForm||{};
+    const steps=draftSteps(f);
+    const doneN=steps.filter(function(s){return s.done;}).length;
+    const first=((f.name||'').trim().split(' ')[0])||'';
+    const allOk=proSignupOk(f);
+    const rows=steps.map(function(s){return `<button class="card" data-act="draft-step:${s.id}" style="width:100%;text-align:left;padding:14px;margin-top:10px;display:flex;align-items:center;gap:12px;${s.done?'border-left:4px solid var(--good)':'border-left:4px solid var(--hair)'}">
+      <span class="benic" style="${s.done?'background:var(--good-wash,#E6F5EC);color:var(--good)':''}">${s.done?I.check:s.ic}</span>
+      <div style="flex:1"><b style="font-size:14px">${s.nm}</b><div class="mini" style="margin-top:2px">${s.sub}</div></div>
+      <span class="chip ${s.done?'good':''}" style="flex:none">${s.done?'✓ Fait':'À compléter'}</span></button>`;}).join('');
+    return `<div class="pad"><div style="height:12px"></div>
+      <div style="text-align:center">${octoMini(64,'wave')}<div style="font-family:var(--f-disp);font-weight:800;font-size:24px;letter-spacing:-.02em;margin-top:2px"><span style="color:var(--teal-deep)">Ti</span><span style="color:var(--ink)">-Services</span>${betaTag()}</div></div>
+      <div class="h-hello" style="text-align:center;margin-top:10px">Bienvenue${first?' '+esc(first):''} ! 🎉</div>
+      <p class="sub" style="text-align:center;margin-top:4px">Votre compte est créé. Complétez votre profil pour <b>envoyer votre candidature</b> — vous pouvez le faire en plusieurs fois, on garde votre progression.</p>
+      <div class="card" style="padding:14px 16px;margin-top:16px">
+        <div class="row between"><span class="mini"><b>${doneN}/4</b> étapes complétées</span><span class="mini">${allOk?'Prêt à envoyer ✓':'Bientôt prêt'}</span></div>
+        <div style="height:8px;border-radius:99px;background:var(--sand-2);margin-top:8px;overflow:hidden"><div style="height:100%;width:${Math.round(doneN/4*100)}%;background:var(--teal);border-radius:99px;transition:width .3s"></div></div>
+      </div>
+      ${rows}
+      <div class="footcta" style="position:static;background:none;padding:18px 0 0">
+        <button class="btn primary" data-act="draft-submit"${allOk?'':' disabled'}>${I.check} Envoyer ma candidature</button>
+        <p class="mini" style="text-align:center;margin-top:10px;color:var(--muted)">${allOk?'Un examen sous 48 h — vous serez prévenu dès la validation.':'Complétez les 4 étapes pour activer l’envoi.'}</p>
+        <p class="mini" style="text-align:center;margin-top:10px"><button class="linklike" data-act="draft-logout">Se déconnecter</button></p>
+      </div></div>`;
+  }
+  function proDraftStep(step){
+    const f=S.proForm||{};
+    const back=`<button class="reset" data-act="draft-hub" style="margin:0 0 8px">← Mon profil</button>`;
+    let title='',body='',okStep=false;
+    if(step==='id'){
+      title='Identité & entreprise';okStep=draftIdDone(f);
+      body=`<div class="card" style="padding:16px;margin-top:14px">
+        <div class="field">${photoPicker(f.photo,'pro')}<p class="mini" style="margin-top:2px">Les profils avec photo sont choisis plus souvent.</p></div>
+        <div class="field"><label>Nom / Raison sociale${RQ}</label><input class="txt" data-pf="name" data-v="name" value="${esc(f.name||'')}" autocomplete="organization" autocapitalize="words" placeholder="Nom et prénom, ou raison sociale"><p class="mini" style="margin-top:5px">Apparaît sur vos factures. Société : raison sociale exacte.</p></div>
+        <div class="field"><label>Téléphone${RQ}</label>${phoneCombo('pro',f.phone)}<p class="mini" style="margin-top:5px">Indicatif requis (alertes WhatsApp).</p></div>
+        <div class="field"><label>SIRET (14 chiffres)${RQ}</label><input class="txt" data-pf="siret" data-v="siret14" value="${esc(f.siret||'')}" inputmode="numeric" autocomplete="off" placeholder="Ex. 123 456 789 00012"><button class="btn ghost sm" data-act="siret-lookup" ${S._siretBusy?'disabled':''} style="margin-top:8px;width:auto;padding:9px 14px">${S._siretBusy?I.clock+' Recherche…':I.search+' Remplir avec mon SIRET'}</button><p class="mini" style="margin-top:5px;color:var(--muted)">Remplit raison sociale, adresse, forme juridique et ville RCS.</p></div>
+        <div class="field"><label>Adresse professionnelle (siège)${RQ}</label><input class="txt" data-pf="address" data-v="text" value="${esc(f.address||'')}" placeholder="Ex. Gustavia, 97133 Saint-Barthélemy"><p class="mini" style="margin-top:5px">Figure sur vos factures.</p></div>
+        <div class="field"><label>Forme juridique</label><div class="segs"><button class="seg ${f.statusType!=='micro'?'on':''}" data-pstatustype="entreprise">Société</button><button class="seg ${f.statusType==='micro'?'on':''}" data-pstatustype="micro">Micro-entreprise / EI</button></div></div>
+        ${(f.statusType!=='micro')?`<div class="field"><label>Mentions société (factures)</label><div class="row" style="gap:8px"><input class="txt" data-pf="legalForm" value="${esc(f.legalForm||'')}" placeholder="Forme (SAS, SARL…)" style="flex:1"><input class="txt" data-pf="capital" value="${esc(f.capital||'')}" inputmode="numeric" placeholder="Capital (€)" style="flex:none;width:118px"></div><input class="txt" data-pf="rcsCity" value="${esc(f.rcsCity||'')}" placeholder="Ville RCS (ex. Basse-Terre)" style="margin-top:8px"><p class="mini" style="margin-top:5px">Obligatoire pour les sociétés. Micro-entreprise / EI : laissez vide.</p></div>`:''}
+        <div class="field"><label>Date de naissance${RQ}</label><input class="txt" type="date" data-pf="birth" value="${esc(f.birth||'')}" max="${maxBirth()}"><p class="mini" style="margin-top:5px">Majeurs uniquement. Seule une tranche d'âge est montrée aux clients.</p>${(f.birth&&!isAdult(f.birth))?`<p class="mini" style="margin-top:5px;color:var(--coral-deep)">Réservé aux majeurs (18 ans et plus).</p>`:''}</div>
+        <div class="field" style="margin-bottom:0"><label>Code de parrainage <span style="font-weight:500;color:var(--muted)">(facultatif)</span></label><input class="txt" data-pf="refCode" value="${esc(f.refCode||'')}" autocomplete="off" placeholder="Ex. KEVIN-8A3F" style="text-transform:uppercase"><p class="mini" style="margin-top:5px">Parrainé par un artisan&nbsp;? Son code lui offre <b>+5 missions</b> à votre validation.</p></div>
+      </div>`;
+    } else if(step==='ins'){
+      title='Assurance';okStep=draftInsDone(f);
+      body=`<div class="card" style="padding:16px;margin-top:14px">
+        <div class="field"><label>Assurance responsabilité civile${RQ}</label><input class="txt" data-pf="insurer" data-v="text" value="${esc(f.insurer||'')}" placeholder="Assureur &amp; n° de police (ex. AXA 12345)"><label class="btn ghost sm" style="margin-top:8px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:auto;padding:9px 14px">${f.insuranceDoc?'✓ '+esc(f.insuranceName||'Attestation jointe'):I.clip+' Joindre mon attestation (PDF/photo)'}<input type="file" accept="image/*,application/pdf" data-insurancefile hidden></label>${f.insuranceDoc?`<button class="linklike" data-act="rm-insurance" style="margin-left:12px;color:var(--coral-deep);font-weight:700">Retirer</button>`:''}<p class="mini" style="margin-top:6px">Attestation RC en cours de validité, vérifiée par Ti-Services.</p></div>
+      </div>`;
+    } else if(step==='svc'){
+      title='Métiers & tarifs';okStep=draftSvcDone(f);
+      body=`<div style="margin-top:8px">${proServicesSection(f)}</div>`;
+    } else if(step==='acc'){
+      title='Acceptations';okStep=draftAccDone(f);
+      body=`<div class="card" style="padding:16px;margin-top:14px">
+        <div class="chkline"><button data-act="toggle-mandat" style="background:none;border:none;padding:0">${chkbox(f.mandat)}</button><span class="mini" style="line-height:1.5">${RQ} J'autorise Ti-Services à <b>établir mes factures en mon nom</b> (mandat de facturation, art. 289 CGI).</span></div>
+        <div class="chkline" style="margin-top:13px"><button data-act="toggle-pcgu" style="background:none;border:none;padding:0">${chkbox(f.cgu)}</button><span class="mini" style="line-height:1.5">${RQ} J'accepte les <button class="linklike" data-act="view-cgu">CGU</button> et <button class="linklike" data-act="view-cgv">CGV</button>.</span></div>
+        <div class="chkline" style="margin-top:13px"><button data-act="toggle-pcharte" style="background:none;border:none;padding:0">${chkbox(f.charte)}</button><span class="mini" style="line-height:1.5">${RQ} J'accepte la <button class="linklike" data-act="view-charte">Charte de responsabilité</button> (assurance RC, responsabilité des dommages).</span></div>
+      </div>`;
+    }
+    return `<div class="pad"><div style="height:10px"></div>${back}
+      <span class="eyebrow">Compléter mon profil</span>
+      <div class="h-hello">${title}</div>
+      ${body}
+      <div class="footcta" style="position:static;background:none;padding:16px 0 0">
+        <button class="btn primary" data-act="draft-save">${okStep?I.check+' Enregistrer — étape complète':'Enregistrer'}</button>
       </div></div>`;
   }
   function proPending(){
@@ -9594,6 +9720,7 @@
     if(b.dataset.act&&b.dataset.act.indexOf('comm-invoice:')===0){S.commInvId=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('invoice:')===0){S.invoiceId=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('pro-del-service:')===0){proRemoveService(b.dataset.act.split(':')[1]);return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('draft-step:')===0){S.proStep=b.dataset.act.split(':')[1];render();try{view.scrollTop=0;}catch(_){}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('histcat:')===0){S.histCat=b.dataset.act.split(':')[1]||null;render();try{view.scrollTop=0;}catch(_){}return;}
     if(b.dataset.act==='histcat-back'){S.histCat=null;render();try{view.scrollTop=0;}catch(_){}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('histinv:')===0){const h=doneHistory()[+b.dataset.act.split(':')[1]];if(h)downloadInvoicePdf(h);return;}
@@ -9748,6 +9875,10 @@
       case 'notif-wa':S.proNotifWa=!S.proNotifWa;saveProSettings();render();break;
       case 'save-dispo':saveProSettings();toast('Disponibilités enregistrées');break;
       case 'go-artisan-signup':S.persona='pro';S.proStatus='signup';S.signupKind=null;render();break;
+      // Inscription progressive (Google) : navigation hub ↔ étapes, envoi de la candidature.
+      case 'draft-hub':case 'draft-save':S.proStep=null;saveProDraft();render();try{view.scrollTop=0;}catch(_){}break;
+      case 'draft-submit':{const f=S.proForm;if(!proSignupOk(f)){toast('Complétez les 4 étapes pour envoyer');break;}signupAsArtisan=true;saveProDraft();fbProSignup(f);break;}
+      case 'draft-logout':try{localStorage.removeItem('tiSignupIntent');}catch(_){}fbLogout();if(!FB){S.onboarded=false;S.persona='client';S.proStatus='signup';render();}toast('Déconnecté');break;
       case 'conc-signup-back':S.signupKind=null;render();break;
       case 'conc-toggle-cgu':if(S.concSignup)S.concSignup.cgu=!S.concSignup.cgu;render();break;
       case 'conc-toggle-mandat':if(S.concSignup)S.concSignup.mandat=!S.concSignup.mandat;render();break;
@@ -10249,8 +10380,13 @@
       return;}
     const ins=e.target.closest('[data-insurancefile]');
     if(ins&&ins.files&&ins.files[0]){const file=ins.files[0];ins.value='';
-      // Le fichier est gardé en mémoire ; l'envoi vers Storage se fait après création du compte.
-      S.proForm.insuranceFile=file;S.proForm.insuranceDoc=true;S.proForm.insuranceName=(file.name||'attestation').slice(0,60);render();toast('Attestation jointe ✓');return;}
+      S.proForm.insuranceFile=file;S.proForm.insuranceDoc=true;S.proForm.insuranceName=(file.name||'attestation').slice(0,60);
+      // Inscription progressive (Google, statut « draft ») : le compte existe DÉJÀ, donc on
+      // envoie l'attestation vers Storage IMMÉDIATEMENT → elle survit à une fermeture de l'app
+      // (le prestataire complète en plusieurs fois). Sinon (formulaire e-mail), envoi à la
+      // création du compte comme avant.
+      if(S.proStatus==='draft'&&FB&&FB.auth&&FB.auth.currentUser){render();toast('Envoi de l’attestation…');uploadDraftInsurance(file);return;}
+      render();toast('Attestation jointe ✓');return;}
     const dipf=e.target.closest('[data-diplomafile]');
     if(dipf&&dipf.files&&dipf.files.length){S.proForm.diplomaDocs=S.proForm.diplomaDocs||[];Array.from(dipf.files).forEach(function(file){S.proForm.diplomaDocs.push({name:(file.name||'diplôme').slice(0,60),file:file});});dipf.value='';render();toast('Justificatif joint ✓');return;}
     const pins=e.target.closest('[data-proinsurance]');
@@ -10588,6 +10724,7 @@
       if(S.proConflict){S.proConflict=null;render();return;}
       // Artisan RÉEL : le retour reste dans l'espace pro — jamais de bascule vers le
       // client (sinon un prestataire validé se retrouve à tort dans l'interface client).
+      if(S.proStatus==='draft'){if(S.proStep){S.proStep=null;saveProDraft();render();}return;}
       if(S.proStatus==='pending'){if(isRealArtisan())return;S.proStatus='signup';render();return;}
       if(S.proStatus==='signup'){if(isRealArtisan())return;S.persona='client';S.proStatus='approved';render();return;}
       if(S.mollieGuideView){S.mollieGuideView=false;render();return;}
@@ -10668,6 +10805,21 @@
     const suf=((uid||'').replace(/[^a-zA-Z0-9]/g,'').slice(-4)||'0000').toUpperCase();
     return base+'-'+suf;
   }
+  // Entrée dans l'espace pro en état « brouillon » (inscription progressive Google) : compte
+  // créé, candidature à compléter/envoyer. Récupère la progression locale si présente.
+  function enterProDraft(user,nm){
+    S.proForm=Object.assign({name:'',phone:'',email:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,cgu:false,charte:false,acceptsGrille:false,rates:{},otherService:'',photo:'',refCode:storedParrain()},S.proForm||{});
+    loadProDraft(); // superpose les valeurs déjà saisies (même appareil)
+    S.proForm.googleAuth=true;
+    if(!(S.proForm.name||'').trim())S.proForm.name=(user.displayName||nm||'').trim();
+    S.proForm.email=user.email||S.proForm.email||'';
+    if(user.photoURL&&!S.proForm.photo)S.proForm.photo=user.photoURL;
+    S.account={name:S.proForm.name||nm,email:user.email||'',uid:user.uid,role:'artisan'};
+    S.referralCode=genReferralCode(S.proForm.name||nm,user.uid);
+    S.persona='pro';S.proStatus='draft';S.proStep=null;S.onboarded=true;S.authView=null;
+    try{localStorage.removeItem('tiParrain');}catch(_){}
+    render();
+  }
   async function loadUserProfile(user){
     try{
       const ref=FB.f.doc(FB.db,'users',user.uid);
@@ -10694,22 +10846,22 @@
       // Intention d'inscription mémorisée avant l'authentification Google (survit à une
       // redirection mobile). Détermine le routage d'un nouveau compte Google.
       const signupIntent=(function(){try{return localStorage.getItem('tiSignupIntent')||'';}catch(_){return '';}})();
-      // Inscription PRESTATAIRE via Google, non encore finalisée (aucune fiche artisans) :
-      // on présente le formulaire pro pré-rempli avec l'identité Google. Les champs métier
-      // (SIRET, assurance, prestations…) restent à saisir — l'e-mail/mot de passe est masqué.
+      // NOUVEL artisan via Google, non encore finalisé (aucune fiche artisans) : il ENTRE
+      // dans l'app (compte créé — première satisfaction) en état « brouillon », sa candidature
+      // n'est PAS encore envoyée. On persiste role='artisan' dans users pour qu'il retombe sur
+      // son profil à compléter aux prochaines ouvertures. Il complètera par petites étapes.
       if(signupIntent==='artisan' && !ad && !cd && (!data||data.role!=='artisan')){
-        signupAsArtisan=true;
-        S.proForm=Object.assign({name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,cgu:false,charte:false,rates:{},otherService:'',photo:'',refCode:storedParrain()},S.proForm||{});
-        S.proForm.googleAuth=true;
-        S.proForm.name=(S.proForm.name||'').trim()||user.displayName||'';
-        S.proForm.email=user.email||'';
-        if(user.photoURL&&!S.proForm.photo)S.proForm.photo=user.photoURL;
-        S.account={name:S.proForm.name||name,email:user.email||'',uid:user.uid,role:'artisan'};
-        S.persona='pro';S.proStatus='signup';S.signupKind='artisan';S.onboarded=false;S.authView=null;render();
+        signupAsArtisan=false;
+        try{localStorage.removeItem('tiSignupIntent');}catch(_){}
+        try{ FB.f.setDoc(ref,{name:(user.displayName||name||'').trim(),email:user.email||'',role:'artisan',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
+        enterProDraft(user,name);
         return;
       }
       // Compte prestataire : on route vers l'espace pro (statut lu dans la fiche artisans).
       if((data&&data.role)==='artisan' || ad){
+        // Artisan « brouillon » (role=artisan mais AUCUNE fiche artisans encore) : candidature
+        // pas envoyée → on rouvre son profil à compléter, pas l'espace missions.
+        if(!ad){ enterProDraft(user,name); return; }
         S.account={name:name,email:user.email||'',uid:user.uid,role:'artisan'};
         S.persona='pro'; S.proName=name; S.proPhone=(ad&&ad.phone)||(data&&data.phone)||'';
         // Identité affichée sur les factures : nom légal + adresse RÉELS du prestataire
@@ -10966,8 +11118,10 @@
       const rates={}; f.cats.forEach(function(c){rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});
       try{ await FB.f.setDoc(FB.f.doc(FB.db,'users',uid),{name:(f.name||'').trim(),email:email,role:'artisan',phone:f.phone||'',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
       // Envoi de l'attestation d'assurance vers Storage (une fois le compte créé = authentifié).
-      let insuranceUrl='';
-      if(f.insuranceFile){ try{
+      // Inscription progressive : l'attestation a déjà été envoyée vers Storage (f.insuranceUrl).
+      // Sinon (formulaire e-mail), on l'envoie maintenant depuis le fichier en mémoire.
+      let insuranceUrl=f.insuranceUrl||'';
+      if(!insuranceUrl && f.insuranceFile){ try{
         const stM=await import('https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js');
         const storage=stM.getStorage(FB.app);
         const ext=((f.insuranceFile.name||'').split('.').pop()||'').toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,5);
@@ -10981,9 +11135,9 @@
         referralCode:genReferralCode((f.name||'').trim(),uid),referredByCode:(f.refCode||'').trim().toUpperCase(),
         status:'attente',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
       S.account={name:(f.name||'').trim()||((email||'').split('@')[0]),email:email,uid:uid,role:'artisan'};
-      S.persona='pro'; S.proName=(f.name||'').trim(); S.proStatus='pending'; S.onboarded=true; S.authView=null; S.proNav='home';
+      S.persona='pro'; S.proName=(f.name||'').trim(); S.proStatus='pending'; S.proStep=null; S.onboarded=true; S.authView=null; S.proNav='home';
       S.referralCode=genReferralCode((f.name||'').trim(),uid);
-      try{localStorage.removeItem('tiSignupIntent');localStorage.removeItem('tiParrain');}catch(_){} // intention & parrainage consommés
+      try{localStorage.removeItem('tiSignupIntent');localStorage.removeItem('tiParrain');localStorage.removeItem(proDraftKey());}catch(_){} // intention, parrainage & brouillon consommés
       ensureBetaMollie(); // BÊTA : paiements marqués actifs pour pouvoir accepter (démo). No-op en prod.
       S.proInsuranceStatus='attente'; S.proInsuranceUrl=insuranceUrl; S.proCats=f.cats.slice();
       subscribeProStatus(uid);
