@@ -2434,6 +2434,17 @@
     `<a class="btn ghost sm" href="https://wa.me/${waNumber(p.phone)}" target="_blank" rel="noopener">${I.whatsapp} WhatsApp</a>`+
     `<a class="btn ghost sm" href="tel:${telClean(p.phone)}">${I.phone} Appeler</a>`+
     `<a class="btn ghost sm" href="mailto:${esc(p.email||'')}">${I.mail} E-mail</a></div>`;}
+  // L'e-mail (et le téléphone) de l'artisan vivent aussi sur sa fiche users/{uid}. Les
+  // anciennes fiches artisans ne les portaient pas → l'admin ne les voyait pas. On les
+  // récupère à l'ouverture de la fiche et on les met en cache (par uid) pour l'affichage.
+  function adminLoadArtisanContact(uid){
+    if(!uid||!(FB&&FB.f&&FB.db)||(typeof isDemo==='function'&&isDemo()))return;
+    S._artContacts=S._artContacts||{};
+    if(S._artContacts[uid])return; // déjà chargé / en cours
+    S._artContacts[uid]={};
+    try{ FB.f.getDoc(FB.f.doc(FB.db,'users',uid)).then(function(s){ const d=(s&&s.exists&&s.exists())?(s.data()||{}):{}; S._artContacts[uid]={email:d.email||'',phone:d.phone||''}; if(S.persona==='admin'&&S.admin.view==='art')render(); }).catch(function(){}); }catch(_){}
+  }
+  function artContact(a){ const c=(S._artContacts&&a&&S._artContacts[a.uid])||{}; return {email:a&&a.email?a.email:(c.email||''),phone:a&&a.phone?a.phone:(c.phone||'')}; }
   // Âge du prestataire : mineurs refusés à l'inscription ; côté client on n'affiche
   // qu'une TRANCHE d'âge (jamais la date exacte) — minimisation des données.
   function ageFromBirth(b){if(!b)return null;var d=new Date(b);if(isNaN(d.getTime()))return null;var t=new Date();var a=t.getFullYear()-d.getFullYear();var mo=t.getMonth()-d.getMonth();if(mo<0||(mo===0&&t.getDate()<d.getDate()))a--;return a;}
@@ -6247,7 +6258,14 @@
           <p class="mini" style="margin-top:6px">Le prestataire demande à proposer ${a.pendingCats.length>1?'ces nouveaux métiers':'ce nouveau métier'}. Vérifiez l'assurance (et les diplômes pour la garde d'enfants) avant de valider.</p>
           ${a.pendingCats.map(function(sv){const lbl=sv==='autre'?('Autre'+(a.pendingOther?' : '+esc(a.pendingOther):'')):esc(svcNm(sv));return `<div class="row between" style="margin-top:11px;align-items:center;gap:8px"><b style="font-size:14px;display:flex;gap:7px;align-items:center">${sv==='autre'?I.other:svcIco(sv)} ${lbl}</b><span class="row" style="gap:6px;flex:none"><button class="btn good sm" data-adm="valcat:${a.id}:${sv}" style="width:auto;padding:7px 12px">${I.check} Valider</button><button class="btn ghost sm" data-adm="refcat:${a.id}:${sv}" style="width:auto;padding:7px 12px">Refuser</button></span></div>`;}).join('')}
         </div>`:''}
-        <div class="card" style="padding:16px;margin-top:12px"><span class="eyebrow" style="color:var(--muted)">${a.status==='attente'?'Contacter avant décision':'Contacter le prestataire'}</span>${contactRow(a)}</div>
+        ${(function(){adminLoadArtisanContact(a.uid);const ct=artContact(a);return `<div class="card" style="padding:16px;margin-top:12px"><span class="eyebrow" style="color:var(--muted)">${a.status==='attente'?'Contacter avant décision':'Contacter le prestataire'}</span>
+          <div class="stack" style="gap:8px;margin-top:11px">
+            <div class="row between" style="gap:10px;align-items:center"><span class="sub">E-mail</span>${ct.email?`<a href="mailto:${esc(ct.email)}" style="color:var(--teal-deep);font-weight:600;font-size:13px;word-break:break-all;text-align:right">${esc(ct.email)}</a>`:`<span class="mini" style="color:var(--muted)">Non renseigné</span>`}</div>
+            <div class="row between" style="gap:10px;align-items:center"><span class="sub">Téléphone</span>${ct.phone?`<a href="tel:${telClean(ct.phone)}" style="color:var(--teal-deep);font-weight:600;font-size:13px">${esc(ct.phone)}</a>`:`<span class="mini" style="color:var(--muted)">Non renseigné</span>`}</div>
+          </div>
+          ${contactRow(ct)}
+          <button class="btn ghost sm" data-adm="art-msg:${a.id}" style="margin-top:10px;width:100%">${I.chat} Message interne (messagerie Ti-Services)</button>
+        </div>`;})()}
         ${a.status==='attente'?`<div class="row" style="gap:8px;margin-top:14px"><button class="btn good" data-adm="valid-art:${a.id}" ${(insStatus(a)==='valide'&&a.siret)?'':'disabled'}>Valider le prestataire</button><button class="btn ghost" data-adm="rej-art:${a.id}">Refuser</button></div>${(insStatus(a)!=='valide'||!a.siret)?`<p class="mini" style="margin-top:8px;color:var(--coral-deep)">${!a.siret?'SIRET manquant. ':''}${insStatus(a)==='none'?'Attestation d’assurance manquante. ':insStatus(a)==='attente'?'Attestation à vérifier et valider ci-dessus. ':insStatus(a)==='refuse'?'Attestation refusée. ':''}Validation du prestataire impossible tant que le dossier n'est pas complet.</p>`:''}`:''}
         ${a.status==='refuse'?`<div class="row" style="gap:8px;margin-top:14px"><button class="btn ghost" data-adm="reexam-art:${a.id}">Réexaminer la candidature</button></div>`:''}
         <div style="height:20px"></div>
@@ -9306,6 +9324,9 @@
       else if(act==='fact-back'){S.admin.fact=null;render();view.scrollTop=0;return;}
       else if(act==='home'){S.admin.view='home';S.admin.sel=null;S.admin.fact=null;}
       else if(act==='art'){S.admin.view='art';S.admin.sel=id;}
+      // Ouvre la messagerie interne Ti-Services avec ce prestataire (même s'il n'a pas
+      // encore de conversation). L'admin peut ainsi l'écrire directement depuis sa fiche.
+      else if(act==='art-msg'){const a=(S.adminArtisans||[]).find(x=>x.id===id||x.uid===id);const uid2=(a&&a.uid)||id;const ex=(S.adminGeneral||[]).find(x=>x.uid===uid2);S.genUser=ex||{uid:uid2,name:(a&&a.name)||'Prestataire',role:'artisan',support:[],supReadUser:0,supReadAdmin:0};S.generalSupport=true;S.support=false;S.supportSide=null;S.adminSupervise=false;S.admin.view='msg';S.mission=null;markGenSupportReadAdmin();render();return;}
       else if(act==='cli'){S.admin.view='cli';S.admin.sel=id;}
       else if(act==='valid-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a&&a.insured&&a.siret){a.status='valide';adminWriteStatus(a,'valide');saveAvailability();toast('Artisan validé');}else{toast('Dossier incomplet (SIRET / assurance)');}}
       else if(act==='rej-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.status='refuse';if(!a.reason)a.reason=(!a.siret?'SIRET manquant. ':'')+(!a.insured?'Assurance manquante. ':'')||'Ne correspond pas aux critères Ti-Services';adminWriteStatus(a,'refuse');saveAvailability();}S.admin.view='home';toast('Candidature refusée — conservée dans l’historique');}
@@ -10730,7 +10751,7 @@
         await stM.uploadBytes(sref,f.insuranceFile,{contentType:f.insuranceFile.type||'application/octet-stream'});
         insuranceUrl=await stM.getDownloadURL(sref);
       }catch(e){ console.warn('insurance upload failed',e); } }
-      try{ await FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{name:(f.name||'').trim(),legalName:(f.name||'').trim(),address:(f.address||'').trim(),statusType:f.statusType||'entreprise',legalForm:(f.legalForm||'').trim(),capital:(f.capital||'').toString().replace(/[^\d]/g,''),rcsCity:(f.rcsCity||'').trim(),birth:(f.birth||''),cats:f.cats.slice(),other:(f.otherService||'').trim(),rates:rates,diplomas:(f.diplomas||[]).slice(),diplomaOther:(f.diplomaOther||'').trim(),siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,insurer:f.insurer||'',insuranceUrl:insuranceUrl,insuranceStatus:'attente',phone:f.phone||'',photo:f.photo||'',bio:(f.bio||'').trim(),acceptedTerms:!!f.cgu,acceptedCharte:!!f.charte,acceptedMandat:!!f.mandat,acceptsGrille:!!f.acceptsGrille,termsVersion:TERMS_VERSION,termsAt:FB.f.serverTimestamp(),status:'attente',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
+      try{ await FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{name:(f.name||'').trim(),legalName:(f.name||'').trim(),email:(f.email||'').trim(),address:(f.address||'').trim(),statusType:f.statusType||'entreprise',legalForm:(f.legalForm||'').trim(),capital:(f.capital||'').toString().replace(/[^\d]/g,''),rcsCity:(f.rcsCity||'').trim(),birth:(f.birth||''),cats:f.cats.slice(),other:(f.otherService||'').trim(),rates:rates,diplomas:(f.diplomas||[]).slice(),diplomaOther:(f.diplomaOther||'').trim(),siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,insurer:f.insurer||'',insuranceUrl:insuranceUrl,insuranceStatus:'attente',phone:f.phone||'',photo:f.photo||'',bio:(f.bio||'').trim(),acceptedTerms:!!f.cgu,acceptedCharte:!!f.charte,acceptedMandat:!!f.mandat,acceptsGrille:!!f.acceptsGrille,termsVersion:TERMS_VERSION,termsAt:FB.f.serverTimestamp(),status:'attente',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
       S.account={name:(f.name||'').trim()||(f.email.trim().split('@')[0]),email:f.email.trim(),uid:uid,role:'artisan'};
       S.persona='pro'; S.proName=(f.name||'').trim(); S.proStatus='pending'; S.onboarded=true; S.authView=null; S.proNav='home';
       S.proInsuranceStatus='attente'; S.proInsuranceUrl=insuranceUrl; S.proCats=f.cats.slice();
