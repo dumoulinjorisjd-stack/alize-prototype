@@ -2358,7 +2358,10 @@
   // Idem pour une fiche artisan quelconque (console admin).
   function founderActiveFor(a){ if(!a||!a.founder)return false; if((a.founderGross||0)>=FOUNDER_GROSS_CAP)return false; if(a.founderSince&&(Date.now()-a.founderSince)>=FOUNDER_DAYS*86400000)return false; return true; }
   // Taux de commission réel du prestataire connecté : fondateur (si avantage actif) sinon son palier de fidélité.
-  function myCommPct(){ return founderActive()?FOUNDER_COMM_PCT:fidFor(S.proJobsTotal||0).pct; }
+  // Le statut de fidélité (donc la commission) tient compte des missions gagnées par
+  // parrainage (statusJobs = missions réalisées + crédit parrainage) — cohérent avec le
+  // calcul serveur (settleCommission ajoute refBonusJobs au total).
+  function myCommPct(){ return founderActive()?FOUNDER_COMM_PCT:fidFor(statusJobs()).pct; }
   /* Interventions déjà réalisées par le prestataire connecté (récap + factures). */
   const PRO_HISTORY=()=>[
     {id:'h1',dateISO:'2026-07-05',svc:'menage',client:'Villa Bartolomé',clientFull:'SCI Bartolomé',clientZone:'Gustavia',duration:2,rate:35,amount:70,commPct:10,commission:7,net:63,invNo:'2026-0042',paidVia:'carte'},
@@ -2388,6 +2391,9 @@
   function refValidated(){return (S.filleuls||[]).filter(function(f){return f.status==='valide';}).length;}
   function refMissions(){return refValidated()*REF_CREDIT;}
   function statusJobs(){return (S.proJobsTotal||0)+refMissions();}
+  // Code de parrainage capté depuis un lien « ?parrain=CODE » (mémorisé jusqu'à
+  // l'inscription du filleul, même après une redirection).
+  function storedParrain(){try{return (localStorage.getItem('tiParrain')||'').toUpperCase();}catch(_){return '';}}
   function digits(p){return (p||'').replace(/[^0-9]/g,'');}
   // Numéro au format international SANS « + » pour wa.me (WhatsApp).
   // WhatsApp refuse un numéro national (« 0628… » → « +0628… » invalide) : il faut
@@ -8273,6 +8279,7 @@
         <div class="field"><label>Forme juridique</label><div class="segs"><button class="seg ${f.statusType!=='micro'&&f.statusType!=='particulier'?'on':''}" data-pstatustype="entreprise">Société</button><button class="seg ${f.statusType==='micro'?'on':''}" data-pstatustype="micro">Micro-entreprise / EI</button></div></div>
         ${(f.statusType!=='micro')?`<div class="field"><label>Mentions société (sur vos factures)</label><div class="row" style="gap:8px"><input class="txt" data-pf="legalForm" value="${esc(f.legalForm||'')}" placeholder="Forme (SAS, SARL, EURL…)" style="flex:1"><input class="txt" data-pf="capital" value="${esc(f.capital||'')}" inputmode="numeric" placeholder="Capital (€)" style="flex:none;width:118px"></div><input class="txt" data-pf="rcsCity" value="${esc(f.rcsCity||'')}" placeholder="Ville d'immatriculation RCS (ex. Basse-Terre)" style="margin-top:8px"><p class="mini" style="margin-top:5px">Si vous êtes une <b>société</b>, ces mentions sont <b>obligatoires sur vos factures</b> (forme juridique, capital social, RCS). Micro-entreprise / EI : laissez vide.</p></div>`:''}
         <div class="field"><label>Présentation / expérience</label><textarea rows="3" data-pf="bio" placeholder="Votre expérience, vos spécialités, votre zone…">${esc(f.bio)}</textarea></div>
+        <div class="field"><label>Code de parrainage <span style="font-weight:500;color:var(--muted)">(facultatif)</span></label><input class="txt" data-pf="refCode" value="${esc(f.refCode||'')}" autocomplete="off" placeholder="Ex. KEVIN-8A3F" style="text-transform:uppercase"><p class="mini" style="margin-top:5px">Un artisan Ti-Services vous a parrainé&nbsp;? Saisissez son code&nbsp;: dès votre validation, il gagne <b>5 missions</b> vers son statut de fidélité.</p></div>
         <div class="field"><label>Date de naissance${RQ}</label><input class="txt" type="date" data-pf="birth" value="${esc(f.birth||'')}" max="${maxBirth()}"><p class="mini" style="margin-top:5px">Réservé aux personnes majeures. Une <b>tranche d'âge</b> (ex.&nbsp;25-34&nbsp;ans) est indiquée aux clients — jamais votre date exacte.</p>${(f.birth&&!isAdult(f.birth))?`<p class="mini" style="margin-top:5px;color:var(--coral-deep)">L'inscription est réservée aux personnes majeures (18&nbsp;ans et plus).</p>`:''}</div>
         <div class="field"><label>Assurance responsabilité civile${RQ}</label><input class="txt" data-pf="insurer" data-v="text" value="${esc(f.insurer)}" placeholder="Assureur &amp; n° de police (ex. AXA 12345)"><label class="btn ghost sm" style="margin-top:8px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:auto;padding:9px 14px">${f.insuranceDoc?'✓ '+esc(f.insuranceName||'Attestation jointe'):I.clip+' Joindre mon attestation (PDF/photo)'}<input type="file" accept="image/*,application/pdf" data-insurancefile hidden></label>${f.insuranceDoc?`<button class="linklike" data-act="rm-insurance" style="margin-left:12px;color:var(--coral-deep);font-weight:700">Retirer</button>`:''}<p class="mini" style="margin-top:6px">Joignez votre attestation d'assurance RC en cours de validité (PDF ou photo). Elle sera vérifiée par Ti-Services.</p></div>
         <div class="field"><label>Facturation${RQ}</label><button data-act="toggle-mandat" style="background:none;border:none;padding:0;width:100%;text-align:left;display:flex;gap:11px;align-items:flex-start"><span style="flex:none;width:22px;height:22px;border-radius:7px;border:2px solid ${f.mandat?'var(--good)':'var(--hair)'};background:${f.mandat?'var(--good)':'transparent'};color:#fff;display:flex;align-items:center;justify-content:center;margin-top:1px">${f.mandat?I.check:''}</span><span class="mini" style="line-height:1.45">J'autorise Ti-Services à <b>établir mes factures en mon nom et pour mon compte</b> (mandat de facturation, art. 289 du CGI) — une facture par prestation, automatiquement. Je reste responsable de mes obligations fiscales.</span></button></div>
@@ -8485,6 +8492,9 @@
       // Re-vérification RÉELLE après le retour : la validation Mollie peut se terminer juste
       // après la redirection. On re-interroge Mollie une fois l'app chargée (best-effort).
       if(mol!=='error'){setTimeout(function(){try{refreshMollieStatus();}catch(_){}},4000);}}}
+    // Lien de parrainage « ?parrain=CODE » : on mémorise le code du parrain pour préremplir
+    // l'inscription prestataire (survit à l'installation / la connexion Google).
+    const par=q.get('parrain'); if(par){try{localStorage.setItem('tiParrain',par.toUpperCase().slice(0,40));}catch(_){}}
     const rid=q.get('r'); if(rid)S._openReq=rid; // réservation à ouvrir (après connexion)
     // Lien « installer l'app » (depuis l'e-mail de bienvenue) : ouvre directement le
     // guide d'installation (invite native Android / gestes iPhone) une fois l'app peinte.
@@ -9178,7 +9188,7 @@
       
       <div class="eyebrow" style="margin:26px 4px 6px;color:var(--muted)">Avantages</div>
       ${fidCard()}
-      <div class="card" style="padding:16px;margin-top:12px;position:relative;overflow:hidden;opacity:.72" aria-disabled="true"><span aria-hidden="true" style="position:absolute;right:-8px;top:50%;transform:translateY(-50%) rotate(-15deg);font-family:var(--f-disp);font-weight:800;font-size:34px;letter-spacing:2px;color:var(--teal-deep);opacity:.10;pointer-events:none;white-space:nowrap">BIENTÔT</span><div class="row between" style="gap:12px;align-items:flex-start"><div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="margin-top:1px">${I.heart}</span><div><b style="font-size:14px">Parrainer un prestataire</b><p class="sub" style="margin-top:4px">Parrainez d'autres artisans et faites grimper votre statut. Fonctionnalité à venir.</p></div></div><span class="chip" style="background:var(--hair);color:var(--muted);flex:none">Bientôt</span></div></div>
+      <button class="card" data-act="open-referral" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between" style="gap:12px;align-items:center"><div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="margin-top:1px">${I.heart}</span><div><b style="font-size:14px">Parrainer un prestataire</b><p class="sub" style="margin-top:4px">Parrainez d'autres artisans et faites grimper votre statut — <b>+5 missions</b> par filleul validé.</p></div></div><span class="chip good" style="flex:none">${refValidated()?refValidated()+' filleul'+(refValidated()>1?'s':''):'Ouvrir'}</span></div></button>
       <p class="mini" style="text-align:center;margin-top:14px"><button class="linklike" data-act="show-advantages">${I.shield} Pourquoi passer par Ti-Services ›</button></p>
       
       <div class="eyebrow" style="margin:26px 4px 6px;color:var(--muted)">Aide & réglages</div>
@@ -9563,7 +9573,11 @@
         if(!S.draft.dateFrom||!S.draft.dateTo||S.draft.dateTo<S.draft.dateFrom){toast('Vérifiez la fenêtre de dates');renderConfig();return;}
         if(cc.deadline&&S.draft.dateTo>cc.deadline){toast('La fin de fenêtre dépasse la date limite de l’avis');renderConfig();return;}
         proceedToPay();return;}
-      const mm=minSlotToday(S.draft);if(mm>=0&&!S.draft.slotFlex&&slotToMin(S.draft.slot)<mm){toast('Choisissez une heure à venir');renderConfig();return;}proceedToPay();}return;}
+      const mm=minSlotToday(S.draft);if(mm>=0&&!S.draft.slotFlex&&slotToMin(S.draft.slot)<mm){toast('Choisissez une heure à venir');renderConfig();return;}
+      // Point GPS OBLIGATOIRE pour toute prestation à domicile : à Saint-Barth, c'est le seul
+      // repère fiable pour que le prestataire trouve le lieu. (Sauf « chez le prestataire ».)
+      if(locModeOf(S.draft)!=='salon' && !(S.draft.geo && isFinite(+S.draft.geo.lat))){toast('Enregistrez le point GPS du lieu — c’est obligatoire');S._focusAddr=true;renderConfig();return;}
+      proceedToPay();}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('comm-invoice:')===0){S.commInvId=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('invoice:')===0){S.invoiceId=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('pro-del-service:')===0){proRemoveService(b.dataset.act.split(':')[1]);return;}
@@ -9577,7 +9591,7 @@
     if(b.dataset.act==='refresh-requests'){manualRefreshRequests();return;}
     if(b.dataset.act==='toggle-desktop'){toggleForceDesktop();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('rm-diploma:')===0){const i=+b.dataset.act.split(':')[1];if(S.proForm&&S.proForm.diplomaDocs)S.proForm.diplomaDocs.splice(i,1);render();return;}
-    if(b.dataset.act&&b.dataset.act.indexOf('signup-kind:')===0){const k=b.dataset.act.split(':')[1];if(k==='concierge'){S.signupKind='concierge';S.concSignup={name:'',siret:'',contact:'',phone:'',email:'',password:'',password2:'',cgu:false,mandat:false};}else{S.signupKind='artisan';S.proForm={name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,cgu:false,charte:false,rates:{},otherService:'',photo:''};}render();return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('signup-kind:')===0){const k=b.dataset.act.split(':')[1];if(k==='concierge'){S.signupKind='concierge';S.concSignup={name:'',siret:'',contact:'',phone:'',email:'',password:'',password2:'',cgu:false,mandat:false};}else{S.signupKind='artisan';S.proForm={name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,cgu:false,charte:false,rates:{},otherService:'',photo:'',refCode:storedParrain()};}render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('rbfreq:')===0){S.rebookFreq=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('reqview:')===0){const orow=b.closest('.swipe-row');if(orow&&orow.classList.contains('open')){orow.classList.remove('open');return;}S.proReqView=b.dataset.act.slice('reqview:'.length);S.proReqSlot=null;S.proReqPick=false;render();return;}
     // « Passer » depuis le fil (glisser pour révéler) : retire la mission de la liste
@@ -9655,7 +9669,7 @@
       case 'google-client':try{localStorage.setItem('tiSignupIntent','client');}catch(_){}if(FB){fbGoogle();}else{toast('Connexion Google — bientôt disponible');}break;
       // Inscription PRESTATAIRE via Google : idem, mais on prépare le formulaire pro et on
       // reste dessus après authentification (SIRET, assurance, métiers restent à saisir).
-      case 'google-pro':try{localStorage.setItem('tiSignupIntent','artisan');}catch(_){}signupAsArtisan=true;S.proForm=S.proForm||{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,cgu:false,charte:false,rates:{},otherService:'',photo:''};if(FB){fbGoogle();}else{toast('Connexion Google — bientôt disponible');}break;
+      case 'google-pro':try{localStorage.setItem('tiSignupIntent','artisan');}catch(_){}signupAsArtisan=true;S.proForm=S.proForm||{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,cgu:false,charte:false,rates:{},otherService:'',photo:'',refCode:storedParrain()};if(FB){fbGoogle();}else{toast('Connexion Google — bientôt disponible');}break;
       case 'logout':S.demoMode=false;S.guest=false;clearClientCache();if(FB)blankAll();fbLogout();if(!FB){S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;S.missions=[];render();}break;
       // Un prestataire qui veut commander un service pour lui-même utilise un compte
       // CLIENT séparé (autre e-mail). On le déconnecte de l'espace prestataire et on
@@ -10102,13 +10116,13 @@
           <div class="field" style="margin-top:12px"><label style="font-size:12px">Nom du lieu <span style="font-weight:500;color:var(--muted)">(facultatif)</span></label><input class="txt" data-addrlabel value="${esc(m.addrLabel||'')}" placeholder="Nom du lieu"></div>
           <div class="field"><label style="font-size:12px">Adresse / description du lieu</label><input class="txt" data-addrmanual value="${esc(m.address||'')}" placeholder="Nom du lieu, quartier"></div>
           <div class="field"><label style="font-size:12px">Secteur</label>${zoneSelect}</div>
-          <div class="field"><label style="font-size:12px">Point GPS</label><button class="btn ghost sm" data-cfg="geoloc">${I.pin} ${m.geo?'Actualiser le point GPS':'Enregistrer le point GPS'}</button>
-          ${m.geo?miniMap(m.geo,'edit','draft'):`<p class="mini" style="margin-top:6px">À Saint-Barth, le point GPS est le repère le plus fiable — ajoutez-le pour que le prestataire trouve.</p>`}</div>
+          <div class="field"><label style="font-size:12px">Point GPS ${RQ}</label><button class="btn ${m.geo?'ghost':'primary'} sm" data-cfg="geoloc">${I.pin} ${m.geo?'Actualiser le point GPS':'Enregistrer le point GPS'}</button>
+          ${m.geo?miniMap(m.geo,'edit','draft'):`<p class="mini" style="margin-top:6px;color:var(--coral-deep)">Obligatoire — à Saint-Barth, le point GPS est le seul repère fiable pour que le prestataire vous trouve.</p>`}</div>
           <div class="field"><label style="font-size:12px">${I.key} Infos d'accès (transmises au prestataire)</label><textarea rows="2" data-addraccess placeholder="Ex. Code portail 4521 · chat à la maison · clé sous le pot">${esc(m.access||'')}</textarea></div>
           <button class="btn primary sm" data-cfg="addr-save-draft" style="margin-top:4px"${(m.address||'').trim()?'':' disabled'}>${I.pin} Enregistrer cette adresse dans mon profil</button>
           
           </div>
-        `:`${m.geo?`<div class="banner teal" style="margin-top:10px">${I.pin}<span><b>Point GPS déjà enregistré</b> depuis votre fiche.</span></div>`:`<p class="mini" style="margin-top:8px;color:var(--muted)">Cette adresse n'a pas de point GPS — ajoutez-le dans votre profil.</p>`}`}
+        `:`${m.geo?`<div class="banner teal" style="margin-top:10px">${I.pin}<span><b>Point GPS déjà enregistré</b> depuis votre fiche.</span></div>`:`<div class="field" style="margin-top:10px"><label style="font-size:12px">Point GPS ${RQ}</label><button class="btn primary sm" data-cfg="geoloc">${I.pin} Enregistrer le point GPS</button><p class="mini" style="margin-top:6px;color:var(--coral-deep)">Obligatoire — cette adresse n'a pas encore de point GPS. Placez-vous sur le lieu et enregistrez-le.</p></div>`}`}
       </div>`}
       <div class="est"><div class="line"><span>${m.svcName} · ${t.rate} ${rateUnit(m)} × ${durTxt(m)}${(needsPeople(m.svc)&&t.people>1)?' × '+t.people+' pers.':''}</span><b>${eur(((forfaitSub(m)!=null?forfaitSub(m):t.rate*billHours(m))*t.people))}</b></div>${optionsEstLines(m)}<div class="total"><span>Total</span><b>${eur(t.total)}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité ${S.card?`(sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — encaissement agréé)`:`(moyen de paiement demandé juste après, via Mollie — encaissement agréé)`}. Aucun supplément sans votre accord.</small></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm">${I.search} Trouver un prestataire · ${eur(t.total)}</button></div></div>`,'config');
@@ -10657,7 +10671,7 @@
       // (SIRET, assurance, prestations…) restent à saisir — l'e-mail/mot de passe est masqué.
       if(signupIntent==='artisan' && !ad && !cd && (!data||data.role!=='artisan')){
         signupAsArtisan=true;
-        S.proForm=Object.assign({name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,cgu:false,charte:false,rates:{},otherService:'',photo:''},S.proForm||{});
+        S.proForm=Object.assign({name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,cgu:false,charte:false,rates:{},otherService:'',photo:'',refCode:storedParrain()},S.proForm||{});
         S.proForm.googleAuth=true;
         S.proForm.name=(S.proForm.name||'').trim()||user.displayName||'';
         S.proForm.email=user.email||'';
@@ -10678,6 +10692,11 @@
         if(ad){ S.proFounder=!!ad.founder; S.proFounderSince=(ad.founderSince&&ad.founderSince.toMillis)?ad.founderSince.toMillis():(typeof ad.founderSince==='number'?ad.founderSince:null); S.proFounderGross=Number(ad.founderGross)||0; S.proRating=ad.rating||0; S.proIban=ad.iban||''; S.proIbanHolder=ad.ibanHolder||''; S.proBic=ad.bic||''; S.proInsured=!!ad.insured; S.proInsurer=ad.insurer||''; S.proInsuranceUrl=ad.insuranceUrl||''; S.proInsuranceStatus=ad.insuranceStatus||(ad.status==='valide'&&ad.insured?'valide':(ad.insuranceUrl||ad.insured?'attente':'none')); S.proSiret=ad.siret||''; S.proBirth=ad.birth||''; S.proBio=ad.bio||''; S.proDiplomas=Array.isArray(ad.diplomas)?ad.diplomas:[]; S.proDiplomaOther=ad.diplomaOther||''; S.proPhoto=ad.photo||S.proPhoto||loadPhotoLocal(user.uid)||null; if(S.proPhoto)savePhotoLocal(user.uid,S.proPhoto); if(!ad.photo&&S.proPhoto){try{FB.f.setDoc(FB.f.doc(FB.db,'artisans',user.uid),{photo:S.proPhoto},{merge:true});}catch(_){}} S.proAcceptedCharte=!!ad.acceptedCharte; S.proAcceptedTerms=!!ad.acceptedTerms; S.proTermsVersion=ad.termsVersion||''; S.proTermsAt=(ad.termsAt&&ad.termsAt.toDate)?ad.termsAt.toDate():null; S.proMollie=ad.mollieStatus||'none'; S.proMollieOrgId=ad.mollieOrgId||''; S.proMollieDashboard=ad.mollieDashboardUrl||''; ensureBetaMollie(); if(S.proMollieOrgId&&!S._mollieAutoChecked){S._mollieAutoChecked=true;setTimeout(function(){try{refreshMollieStatus();}catch(_){}},1500);}
           // Revenus / missions réalisées, rechargés depuis la fiche (persistés à chaque paiement).
           S.proEarnings=ad.earnings||0; S.proJobsTotal=ad.jobsTotal||0; S.proHistory=Array.isArray(ad.history)?ad.history:[];
+          // Parrainage : filleuls validés (crédités par le serveur) + code propre de l'artisan.
+          // Rétro-remplissage du code si absent (anciens comptes) pour pouvoir être parrainé.
+          S.filleuls=Array.isArray(ad.filleuls)?ad.filleuls.map(function(x){return {name:(x&&x.name)||'Filleul',status:'valide'};}):[];
+          S.referralCode=ad.referralCode||genReferralCode(name,user.uid);
+          if(!ad.referralCode){try{FB.f.setDoc(FB.f.doc(FB.db,'artisans',user.uid),{referralCode:S.referralCode},{merge:true});}catch(_){}}
           // Réglages persistés (disponibilités, en ligne, préférences de notif).
           // Grille de dispo enregistrée sinon TOUT coché par défaut (H24 / 7j).
           S.avail=(ad.avail&&typeof ad.avail==='object')?ad.avail:availAllOn();
@@ -10928,10 +10947,15 @@
         await stM.uploadBytes(sref,f.insuranceFile,{contentType:f.insuranceFile.type||'application/octet-stream'});
         insuranceUrl=await stM.getDownloadURL(sref);
       }catch(e){ console.warn('insurance upload failed',e); } }
-      try{ await FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{name:(f.name||'').trim(),legalName:(f.name||'').trim(),email:email,address:(f.address||'').trim(),statusType:f.statusType||'entreprise',legalForm:(f.legalForm||'').trim(),capital:(f.capital||'').toString().replace(/[^\d]/g,''),rcsCity:(f.rcsCity||'').trim(),birth:(f.birth||''),cats:f.cats.slice(),other:(f.otherService||'').trim(),rates:rates,diplomas:(f.diplomas||[]).slice(),diplomaOther:(f.diplomaOther||'').trim(),siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,insurer:f.insurer||'',insuranceUrl:insuranceUrl,insuranceStatus:'attente',phone:f.phone||'',photo:f.photo||'',bio:(f.bio||'').trim(),acceptedTerms:!!f.cgu,acceptedCharte:!!f.charte,acceptedMandat:!!f.mandat,acceptsGrille:!!f.acceptsGrille,termsVersion:TERMS_VERSION,termsAt:FB.f.serverTimestamp(),status:'attente',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
+      try{ await FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{name:(f.name||'').trim(),legalName:(f.name||'').trim(),email:email,address:(f.address||'').trim(),statusType:f.statusType||'entreprise',legalForm:(f.legalForm||'').trim(),capital:(f.capital||'').toString().replace(/[^\d]/g,''),rcsCity:(f.rcsCity||'').trim(),birth:(f.birth||''),cats:f.cats.slice(),other:(f.otherService||'').trim(),rates:rates,diplomas:(f.diplomas||[]).slice(),diplomaOther:(f.diplomaOther||'').trim(),siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,insurer:f.insurer||'',insuranceUrl:insuranceUrl,insuranceStatus:'attente',phone:f.phone||'',photo:f.photo||'',bio:(f.bio||'').trim(),acceptedTerms:!!f.cgu,acceptedCharte:!!f.charte,acceptedMandat:!!f.mandat,acceptsGrille:!!f.acceptsGrille,termsVersion:TERMS_VERSION,termsAt:FB.f.serverTimestamp(),
+        // Parrainage : code PROPRE de l'artisan (pour être parrain) + code du parrain éventuel
+        // (référencé à la validation par le serveur, qui crédite alors le parrain).
+        referralCode:genReferralCode((f.name||'').trim(),uid),referredByCode:(f.refCode||'').trim().toUpperCase(),
+        status:'attente',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
       S.account={name:(f.name||'').trim()||((email||'').split('@')[0]),email:email,uid:uid,role:'artisan'};
       S.persona='pro'; S.proName=(f.name||'').trim(); S.proStatus='pending'; S.onboarded=true; S.authView=null; S.proNav='home';
-      try{localStorage.removeItem('tiSignupIntent');}catch(_){} // intention d'inscription consommée
+      S.referralCode=genReferralCode((f.name||'').trim(),uid);
+      try{localStorage.removeItem('tiSignupIntent');localStorage.removeItem('tiParrain');}catch(_){} // intention & parrainage consommés
       ensureBetaMollie(); // BÊTA : paiements marqués actifs pour pouvoir accepter (démo). No-op en prod.
       S.proInsuranceStatus='attente'; S.proInsuranceUrl=insuranceUrl; S.proCats=f.cats.slice();
       subscribeProStatus(uid);

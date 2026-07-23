@@ -99,6 +99,7 @@ function realErrors(errs) {
     if (kind) { await kind.click(); await page.waitForTimeout(700); }
     ok(await page.$('[data-pf="name"]'), 'champ nom / raison sociale présent');
     ok(await page.$('[data-pf="siret"]'), 'champ SIRET présent');
+    ok(await page.$('[data-pf="refCode"]'), 'champ code de parrainage présent');
     // Par défaut « Société » : les mentions légales société doivent être demandées.
     ok(await page.$('[data-pf="legalForm"]'), 'champ forme juridique présent (société)');
     ok(await page.$('[data-pf="rcsCity"]'), 'champ ville RCS présent (société)');

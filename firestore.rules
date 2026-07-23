@@ -79,7 +79,9 @@ service cloud.firestore {
       // création, ni le modifier ensuite — sinon on contournerait le quota des 12 places.
       allow create: if uid() == artisanId
                     && request.resource.data.status == 'attente'
-                    && request.resource.data.get('founder', false) == false;
+                    && request.resource.data.get('founder', false) == false
+                    && request.resource.data.get('refBonusJobs', 0) == 0
+                    && request.resource.data.get('referralCredited', false) == false;
       // La fenêtre d'avantage fondateur (founderSince = date de départ, founderGross = CA
       // cumulé qui coupe l'avantage à 2 000 €) est tenue par le SERVEUR seul : l'artisan
       // ne peut ni la remettre à zéro ni la décaler pour prolonger son taux réduit.
@@ -88,12 +90,17 @@ service cloud.firestore {
       // revanche il peut RETIRER un de ses métiers depuis son compte : la nouvelle liste
       // doit être un SOUS-ENSEMBLE de l'ancienne (hasOnly = aucun ajout, retrait autorisé).
       // L'ajout reste réservé à l'admin (après validation).
+      // Le crédit de parrainage (refBonusJobs = statut +5 par filleul validé) et le drapeau
+      // referralCredited sont écrits par le SERVEUR seul (Cloud Function notifyArtisanApproved) :
+      // l'artisan ne peut ni se créditer, ni faire baisser sa commission en gonflant ce champ.
       allow update: if isAdmin()
                     || (uid() == artisanId
                         && request.resource.data.status == resource.data.status
                         && request.resource.data.get('founder', false) == resource.data.get('founder', false)
                         && request.resource.data.get('founderGross', 0) == resource.data.get('founderGross', 0)
                         && request.resource.data.get('founderSince', null) == resource.data.get('founderSince', null)
+                        && request.resource.data.get('refBonusJobs', 0) == resource.data.get('refBonusJobs', 0)
+                        && request.resource.data.get('referralCredited', false) == resource.data.get('referralCredited', false)
                         && request.resource.data.get('cats', []).hasOnly(resource.data.get('cats', [])));
       // Droit à l'effacement (RGPD) : l'artisan peut supprimer son propre dossier.
       allow delete: if isAdmin() || uid() == artisanId;

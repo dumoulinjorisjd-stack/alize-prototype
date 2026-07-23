@@ -722,6 +722,39 @@ exports.notifyArtisanApproved = onDocumentUpdated({document: 'artisans/{artisanI
       });
     } catch (e) { console.warn('approve email queue', e); }
   }
+
+  // 3) PARRAINAGE : si ce nouvel artisan a été parrainé (referredByCode) et n'a pas encore
+  //    été crédité, on crédite le PARRAIN (statut +5 missions) — écriture serveur seule,
+  //    donc infalsifiable. Le rapprochement se fait sur le code propre du parrain
+  //    (referralCode, stocké sur sa fiche). Idempotent via le drapeau referralCredited.
+  const refCode = (after.referredByCode || '').toString().trim().toUpperCase();
+  if (refCode && !after.referralCredited) {
+    try {
+      const q = await db.collection('artisans').where('referralCode', '==', refCode).limit(1).get();
+      if (!q.empty && q.docs[0].id !== uid) {
+        const refDoc = q.docs[0];
+        const cur = Number((refDoc.data() || {}).refBonusJobs) || 0;
+        await refDoc.ref.set({
+          refBonusJobs: cur + REF_CREDIT_JOBS,
+          filleuls: FieldValue.arrayUnion({name: (after.name || 'Filleul').toString().slice(0, 60), at: Date.now()}),
+        }, {merge: true});
+        // Notifie le parrain (push best-effort).
+        try {
+          const ru = (await db.collection('users').doc(refDoc.id).get()).data() || {};
+          const rtok = ru.pushTokens || [];
+          if (rtok.length) {
+            await getMessaging().sendEachForMulticast({
+              tokens: rtok,
+              data: {title: 'Parrainage validé 🎉', body: 'Votre filleul est validé — +' + REF_CREDIT_JOBS + ' missions vers votre statut.', url: './?open=missions'},
+              webpush: {fcmOptions: {link: '/?open=missions'}},
+            });
+          }
+        } catch (_) {}
+      }
+    } catch (e) { console.warn('referral credit', e); }
+    // Marque le filleul comme crédité (même si le parrain est introuvable — pas de double essai).
+    try { await db.collection('artisans').doc(uid).set({referralCredited: true}, {merge: true}); } catch (_) {}
+  }
 });
 
 /**
@@ -1056,6 +1089,9 @@ function commissionTierPct(jobsTotal, tiers) {
 const FOUNDER_COMM_PCT = 5;
 const FOUNDER_DAYS = 90;
 const FOUNDER_GROSS_CAP = 2000;
+// Parrainage : missions créditées au parrain à chaque filleul validé (aligné avec REF_CREDIT
+// côté client). Fait monter son statut de fidélité (donc baisser sa commission).
+const REF_CREDIT_JOBS = 5;
 // Petits montants : sous ce seuil de base (€), un taux PLANCHER s'applique — sinon la
 // commission serait dérisoire (ex. 5 % de 15 € = 0,75 €), non viable. Vaut pour TOUS,
 // y compris les ambassadeurs (leur 5 % passe à 10 % sous le seuil). Aligné avec index.html.
@@ -1206,13 +1242,16 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
   const gross = round2(base + round2(base * boost / 100) + boostEur + tip);
 
   const db = getFirestore();
-  let jobsTotal = 0; let isFounder = false; let founderSinceMs = null; let founderGross = 0;
+  let jobsTotal = 0; let isFounder = false; let founderSinceMs = null; let founderGross = 0; let refBonusJobs = 0;
   try {
     const a = (await db.collection('artisans').doc(providerUid).get()).data() || {};
     jobsTotal = a.jobsTotal || 0;
     isFounder = !!a.founder;
     founderGross = Number(a.founderGross) || 0;
     founderSinceMs = (a.founderSince && a.founderSince.toMillis) ? a.founderSince.toMillis() : (typeof a.founderSince === 'number' ? a.founderSince : null);
+    // Crédit de parrainage : chaque filleul validé fait monter le statut de fidélité
+    // (comme des missions réalisées) — écrit UNIQUEMENT par le serveur (jamais par l'artisan).
+    refBonusJobs = Number(a.refBonusJobs) || 0;
   } catch (_) {}
   // Barème de commission PERSONNALISÉ par l'admin (settings/config) — pour que la commission
   // réellement prélevée reflète le barème réglé dans la console (et non des valeurs figées).
@@ -1227,7 +1266,7 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
   const withinTime = (founderSinceMs == null) ? true : (Date.now() - founderSinceMs < FOUNDER_DAYS * 86400000);
   const withinGross = founderGross < FOUNDER_GROSS_CAP;
   const founderActive = isFounder && withinTime && withinGross;
-  const basePct = founderActive ? FOUNDER_COMM_PCT : commissionTierPct(jobsTotal, cfgTiers);
+  const basePct = founderActive ? FOUNDER_COMM_PCT : commissionTierPct(jobsTotal + refBonusJobs, cfgTiers);
   // Plancher « petits montants » : au moins SMALL_COMM_PCT % sous SMALL_COMM_MIN € de base.
   const pct = (base < SMALL_COMM_MIN) ? Math.max(basePct, SMALL_COMM_PCT) : basePct;
   const commission = round2((base + round2(base * boost / 100) + boostEur) * pct / 100);
