@@ -2091,6 +2091,19 @@
   // Sous-total forfait d'une mission à l'acte (somme des actes cochés × quantité), ou null
   // si la mission n'est pas de type « catalogue » (on retombe alors sur le tarif horaire).
   function forfaitSub(m){if(!m||!m.acts||!m.acts.length)return null;return m.acts.reduce(function(t,a){return t+(Number(a.price)||0)*(a.qty||1);},0);}
+  // PRESTATIONS / OPTIONS additionnelles d'un métier (éditables par l'admin, pour TOUS les
+  // métiers — horaires comme à l'acte). Chaque option a une unité : 'u' (à l'unité, prix
+  // fixe) ou 'h' (à l'heure : prix × nombre d'heures, et le temps s'ajoute à la prestation).
+  // C'est une couche ADDITIVE : sans option sélectionnée, tout se comporte comme avant.
+  function svcOptions(id){return (S.adminOptions&&S.adminOptions[id])||[];}
+  function ensureOptions(svc){S.adminOptions=S.adminOptions||{};if(!Array.isArray(S.adminOptions[svc]))S.adminOptions[svc]=[];return S.adminOptions[svc];}
+  function optUnit(o){return (o&&o.unit==='h')?'h':'u';}
+  function optInfo(svcId,optId){return svcOptions(svcId).find(function(o){return o.id===optId;})||null;}
+  // Sous-total des options sélectionnées sur une commande (prix × quantité ; la quantité
+  // représente un nombre d'heures pour les options 'h', un nombre d'unités pour les 'u').
+  function optSubOf(m){if(!m||!m.options||!m.options.length)return 0;return m.options.reduce(function(t,o){return t+(Number(o.price)||0)*(o.qty||1);},0);}
+  // Heures apportées par les options 'à l'heure' (temps additionnel occupé sur place).
+  function optHoursOf(m){if(!m||!m.options||!m.options.length)return 0;return m.options.reduce(function(t,o){return t+((optUnit(o)==='h')?(o.qty||1):0);},0);}
   // Prestations facturées « par personne » (cours de sport, massages) : le client choisit
   // le NOMBRE DE PARTICIPANTS et le prix est multiplié d'autant — chaque personne = une
   // prestation (un massage, une place au cours). Les autres métiers ignorent ce réglage.
@@ -2153,7 +2166,7 @@
     const entry={id:'rc'+(m.reqId||('t'+Date.now())),sig:sig,svc:m.svc,svcName:m.svcName||svcNm(m.svc),freq:m.frequency,short:freqInfo(m.frequency).short,
       addressId:m.addressId||'',address:m.address||'',zone:m.zone||'',geo:m.geo?Object.assign({},m.geo):null,access:m.access||'',
       slot:m.slot||'',slotFlex:m.slotFlex||0,unit:m.unit||'h',duration:m.duration||1,rate:m.rate||0,boost:m.boost||0,
-      notes:m.notes||'',acts:(m.acts&&m.acts.length)?m.acts.slice():null,
+      notes:m.notes||'',acts:(m.acts&&m.acts.length)?m.acts.slice():null,options:(m.options&&m.options.length)?m.options.map(function(o){return Object.assign({},o);}):null,
       providerUid:m.providerUid||m.preferredUid||'',providerName:(m.provider&&m.provider.nm)||m.preferredName||'',
       nextISO:addDaysISO(startISO,freqDays(m.frequency)),active:true};
     const i=S.recurring.findIndex(function(x){return x&&x.sig===sig;});
@@ -2183,7 +2196,7 @@
   // au moment où la commande est réellement placée.
   function recurConfirm(id){const r=(S.recurring||[]).find(function(x){return x.id===id;});if(!r)return;
     const svc=SERVICES.find(function(s){return s.id===r.svc;})||{id:r.svc,nm:r.svcName||svcNm(r.svc)};
-    const nm=Object.assign(newMission(svc),{rate:r.rate,duration:r.duration||1,unit:r.unit||'h',slot:r.slot,slotFlex:r.slotFlex||0,boost:r.boost||0,zone:r.zone,address:r.address,addressId:r.addressId,geo:r.geo?Object.assign({},r.geo):null,access:r.access,notes:r.notes,acts:r.acts?r.acts.slice():null,frequency:r.freq});
+    const nm=Object.assign(newMission(svc),{rate:r.rate,duration:r.duration||1,unit:r.unit||'h',slot:r.slot,slotFlex:r.slotFlex||0,boost:r.boost||0,zone:r.zone,address:r.address,addressId:r.addressId,geo:r.geo?Object.assign({},r.geo):null,access:r.access,notes:r.notes,acts:r.acts?r.acts.slice():null,options:r.options?r.options.map(function(o){return Object.assign({},o);}):null,frequency:r.freq});
     if(r.providerUid){nm.preferredUid=r.providerUid;nm.preferredName=r.providerName||'';}
     const tod=todayISO();const dISO=(r.nextISO&&r.nextISO>=tod)?r.nextISO:tod;
     nm.dateISO=dISO;nm.when=fmtDate(dISO);nm.dateMode='pick';
@@ -2243,8 +2256,12 @@
     saveCatalog(); render(); toast('« '+name+' » ajouté au catalogue ✓');
   }
   // Persistance du catalogue partagé (settings/catalog) — écrit par l'admin, lu par tous.
-  function saveCatalog(){ try{ if(FB&&FB.auth&&FB.auth.currentUser){ FB.f.setDoc(FB.f.doc(FB.db,'settings','catalog'),{services:S.customServices||[],catalog:S.adminCatalog||{}},{merge:true}); } }catch(_){} }
-  async function loadCatalog(){ try{ if(!FB)return; const snap=await FB.f.getDoc(FB.f.doc(FB.db,'settings','catalog')); if(snap.exists()){ const d=snap.data()||{}; if(Array.isArray(d.services)){ S.customServices=d.services.map(function(s){return {id:s.id,nm:s.nm,rate:s.rate,custom:true};}); } if(d.catalog&&typeof d.catalog==='object'){ S.adminCatalog=d.catalog; } render(); } }catch(e){ console.warn('catalog load',e); } }
+  function saveCatalog(){ try{ if(FB&&FB.auth&&FB.auth.currentUser){ FB.f.setDoc(FB.f.doc(FB.db,'settings','catalog'),{services:S.customServices||[],catalog:S.adminCatalog||{},options:S.adminOptions||{}},{merge:true}); } }catch(_){} }
+  function applyCatalogDoc(d){ if(!d)return; if(Array.isArray(d.services)){ S.customServices=d.services.map(function(s){return {id:s.id,nm:s.nm,rate:s.rate,custom:true};}); } if(d.catalog&&typeof d.catalog==='object'){ S.adminCatalog=d.catalog; } if(d.options&&typeof d.options==='object'){ S.adminOptions=d.options; } render(); }
+  // Catalogue partagé écouté EN TEMPS RÉEL : toute modification admin (prix, prestations,
+  // options, métiers) se propage à l'app de chacun sans rechargement. Une seule écoute.
+  async function loadCatalog(){ try{ if(!FB||_catalogSub)return; _catalogSub=FB.f.onSnapshot(FB.f.doc(FB.db,'settings','catalog'),function(snap){ applyCatalogDoc(snap.exists()?(snap.data()||{}):{}); },function(e){ console.warn('catalog load',e); }); }catch(e){ console.warn('catalog sub',e); } }
+  var _catalogSub=null;
   // — DISPONIBILITÉ DES SERVICES —
   // Un service n'est proposé au client (sur le site DÉFINITIF/prod) que s'il existe au
   // moins un prestataire VALIDÉ qui le propose — sinon « Bientôt disponible » (pas de vide).
@@ -2596,7 +2613,10 @@
   // Taux de commission Ti-Services (barème de fidélité dégressif). Figé sur la mission
   // au moment du règlement (m.commPct) pour rester stable dans l'historique/les factures.
   function commPctFor(m){return (m&&m.commPct!=null)?m.commPct:myCommPct();}
-  function totals(m){const rate=fixedRate(m);const h=billHours(m);const fs=forfaitSub(m);const per=peopleOf(m);const sub=((fs!=null)?fs:rate*h)*per;const boost=m.boost||0;
+  function totals(m){const rate=fixedRate(m);const h=billHours(m);const fs=forfaitSub(m);const per=peopleOf(m);
+    // Base (forfait à l'acte OU horaire × durée) × nb de personnes, PUIS on ajoute les
+    // prestations/options sélectionnées (couche additive — 0 si aucune option cochée).
+    const sub=((fs!=null)?fs:rate*h)*per+optSubOf(m);const boost=m.boost||0;
     // Coup de pouce (relance pendant la recherche) : désormais un MONTANT en euros saisi par
     // le client (m.boostEur), ajustable uniquement à la hausse. On conserve la compat avec un
     // éventuel ancien boost en % (m.boost) — les deux s'additionnent dans la majoration.
@@ -2617,7 +2637,10 @@
   // Net RÉEL que le prestataire percevra pour une demande ouverte (commission déjà déduite) —
   // affiché AVANT l'acceptation pour qu'il décide en connaissance de cause. On ne montre
   // jamais au prestataire le prix payé par le client (et jamais au client le net du prestataire).
-  function reqPayout(r){let sub;const per=needsPeople(r.service)?Math.max(1,Math.min(20,Number(r.people)||1)):1;const hasActs=!!(r.acts&&r.acts.length);if(hasActs){sub=r.acts.reduce(function(t,a){return t+(Number(a.price)||0)*(a.qty||1);},0)*per;}else if(r.forfaitTotal!=null){sub=Number(r.forfaitTotal)||0;}else{sub=(Number(r.rate)||0)*(Number(r.duration)||1)*per;}const maj=Math.round(sub*((r.boost||0))/100)+Math.max(0,Math.round(Number(r.boostEur)||0));const travel=(canOnSite(r.service)&&r.locationMode==='salon')?0:travelFeeFor(sub,hasActs);const gross=sub+maj+travel;const pct=effCommPct(myCommPct(),sub);const commission=Math.round((sub+maj)*pct)/100;return Math.round((gross-commission)*100)/100;}
+  function reqPayout(r){let sub;const per=needsPeople(r.service)?Math.max(1,Math.min(20,Number(r.people)||1)):1;const hasActs=!!(r.acts&&r.acts.length);if(hasActs){sub=r.acts.reduce(function(t,a){return t+(Number(a.price)||0)*(a.qty||1);},0)*per;}else if(r.forfaitTotal!=null){sub=Number(r.forfaitTotal)||0;}else{sub=(Number(r.rate)||0)*(Number(r.duration)||1)*per;}
+    // Options/prestations additionnelles (même couche additive que côté client).
+    if(r.options&&r.options.length&&!(r.forfaitTotal!=null&&!hasActs)){sub+=r.options.reduce(function(t,o){return t+(Number(o.price)||0)*(o.qty||1);},0);}
+    const maj=Math.round(sub*((r.boost||0))/100)+Math.max(0,Math.round(Number(r.boostEur)||0));const travel=(canOnSite(r.service)&&r.locationMode==='salon')?0:travelFeeFor(sub,hasActs);const gross=sub+maj+travel;const pct=effCommPct(myCommPct(),sub);const commission=Math.round((sub+maj)*pct)/100;return Math.round((gross-commission)*100)/100;}
   // Décompose une ligne d'historique : brut (prix payé par le client / vente au mandat),
   // commission Ti-Services, net perçu par le prestataire. Rétrocompatible avec les anciennes
   // lignes (sans commission → net = brut).
@@ -5875,6 +5898,21 @@
       :`<div class="card" style="padding:22px;margin-top:14px;text-align:center"><p class="sub" style="margin:0">Aucune suggestion pour l'instant. Les idées envoyées par les clients depuis leur profil apparaîtront ici.</p></div>`}
     </div>`;
   }
+  // Éditeur de PRESTATIONS / OPTIONS d'un métier (admin) — pour TOUS les métiers, horaires
+  // comme à l'acte. Chaque prestation : nom, unité (à l'unité / à l'heure) et prix. Persisté
+  // dans settings/catalog (options), synchronisé en temps réel dans toute l'application.
+  function optionsEditorHtml(svcId){
+    const opts=svcOptions(svcId);
+    return `<hr class="dashed" style="margin:13px 0 2px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Prestations / options</div>
+      <p class="mini" style="margin-top:4px;color:var(--muted)">Ajouts proposés au client par-dessus la prestation de base. <b>À l'unité</b> = prix fixe ; <b>à l'heure</b> = prix × heures (le client choisit la durée, ça occupe le créneau).</p>
+      ${opts.map(function(o){const h=optUnit(o)==='h';return `<div class="row" style="align-items:center;margin-top:9px;gap:6px">
+        <input class="txt" data-optname="${svcId}:${o.id}" value="${esc(o.nm)}" placeholder="Nom de la prestation" style="flex:1;min-width:0;padding:8px 10px;font-size:13px">
+        <button class="btn ghost sm" style="width:auto;padding:5px 8px;font-size:11px;flex:none;${h?'color:var(--teal-deep);font-weight:700':''}" data-optunit="${svcId}:${o.id}" title="Basculer unité / heure">${h?'à l’heure':'à l’unité'}</button>
+        <button class="btn ghost sm" style="width:26px;padding:5px 0;flex:none" data-optprice="${svcId}:${o.id}:down">−</button><b class="money" style="min-width:52px;text-align:center;white-space:nowrap;font-size:12.5px">${o.price} €${h?'/h':''}</b><button class="btn ghost sm" style="width:26px;padding:5px 0;flex:none" data-optprice="${svcId}:${o.id}:up">+</button>
+        <button class="btn ghost sm" style="width:26px;padding:5px 0;flex:none" data-optdel="${svcId}:${o.id}" aria-label="Retirer">${I.trash}</button>
+      </div>`;}).join('')}
+      <button class="btn ghost sm" data-optadd="${svcId}" style="margin-top:10px;width:auto;padding:8px 12px">${I.plus} Ajouter une prestation</button>`;
+  }
   function adminHome(){
     const arts=S.adminArtisans,clis=S.adminClients;
     const pendA=arts.filter(a=>a.status==='attente'),pendC=clis.filter(c=>c.status==='attente');
@@ -5944,7 +5982,7 @@
         else if(isCatalogForfait(s.id)){priceEditor=`<div class="mini" style="color:var(--muted);margin-bottom:2px">Grille à l'acte</div>${catalogFor(s.id).map(function(a){return `<div class="row between" style="align-items:center;margin-top:9px;gap:8px"><input class="txt" data-actname="${s.id}:${a.id}" value="${esc(a.nm)}" placeholder="Nom de la prestation" style="flex:1;min-width:0;padding:8px 10px;font-size:13px"><span class="row" style="gap:6px;align-items:center;flex:0 0 auto"><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actprice="${s.id}:${a.id}:down">−</button><b class="money" style="min-width:48px;text-align:center;white-space:nowrap">${a.price} €</b><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actprice="${s.id}:${a.id}:up">+</button><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actdel="${s.id}:${a.id}" aria-label="Retirer">${I.trash}</button></span></div>`;}).join('')}<button class="btn ghost sm" data-actadd="${s.id}" style="margin-top:10px;width:auto;padding:8px 12px">${I.plus} Ajouter une prestation</button>`;}
         else{priceEditor=priceCtl(s.id,px,'/h','Tarif horaire')+(s.custom?`<button class="btn ghost sm" data-adm="delcat:${s.id}" style="margin-top:10px;width:auto;padding:8px 12px;color:var(--coral-deep)">${I.trash} Retirer ce métier</button>`:'');}
         const artLines=catArts.length?catArts.map(function(a){return `<div class="row between" style="align-items:center;margin-top:8px"><button class="linklike" data-adm="art:${a.id}" style="font-size:13px;text-align:left;color:var(--ink)">${esc(a.name)}</button><span class="chip ${acctChip(a.status)[0]}">${acctChip(a.status)[1]}</span></div>`;}).join(''):`<p class="mini" style="margin-top:6px;color:var(--muted)">Aucun prestataire sur ce métier — « Bientôt disponible » côté client.</p>`;
-        return `${header}<div class="card" style="padding:13px;margin:6px 0 0;background:var(--sand)"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Artisans (${catArts.length})</div>${artLines}<hr class="dashed" style="margin:12px 0 2px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Tarif client</div>${priceEditor}</div>`;
+        return `${header}<div class="card" style="padding:13px;margin:6px 0 0;background:var(--sand)"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Artisans (${catArts.length})</div>${artLines}<hr class="dashed" style="margin:12px 0 2px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Tarif client</div>${priceEditor}${optionsEditorHtml(s.id)}</div>`;
       }).join('')}
       <div class="card" style="padding:14px;margin-top:12px;border:1px dashed var(--hair)">
         <b style="font-size:14px">${I.plus} Ajouter un métier</b>
@@ -7346,6 +7384,8 @@
         // Métier « à l'acte » : la liste des prestations cochées et le total ferme.
         acts:(m.acts&&m.acts.length)?m.acts.map(function(a){return {id:a.id,nm:a.nm,price:Number(a.price)||0,qty:a.qty||1};}):null,
         forfaitTotal:(m.acts&&m.acts.length)?t.sub:null,
+        // Prestations / options additionnelles choisies (nom, prix, unité, quantité/heures).
+        options:(m.options&&m.options.length)?m.options.map(function(o){return {id:o.id,nm:o.nm,price:Number(o.price)||0,unit:(o.unit==='h'?'h':'u'),qty:o.qty||1};}):null,
         createdAt:FB.f.serverTimestamp()
       });
       // Photos de la demande (transmises au prestataire) — écriture isolée pour ne
@@ -8486,6 +8526,7 @@
         <div class="row between"><span class="sub">Client</span><b>${esc(proClientName(m))}</b></div>
         <div class="row between" style="margin-top:6px"><span class="sub">Secteur</span><b>${I.pin} ${m.zone}</b></div>
         ${(m.acts&&m.acts.length)?`<div style="margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Prestations demandées</div><p class="sub" style="margin-top:4px;color:var(--ink-soft)">${m.acts.map(function(a){return esc(a.nm)+((a.qty||1)>1?' ×'+a.qty:'');}).join(' · ')}</p></div>`:''}
+        ${(m.options&&m.options.length)?`<div style="margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Prestations en option</div><p class="sub" style="margin-top:4px;color:var(--ink-soft)">${m.options.map(function(o){return esc(o.nm)+((o.unit==='h')?(' · '+(o.qty||1)+' h'):((o.qty||1)>1?' ×'+o.qty:''));}).join(' · ')}</p></div>`:''}
         ${m.notes?`<div style="margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Détail de la demande</div><p class="sub" style="margin-top:4px;color:var(--ink-soft)">${esc(m.notes)}</p></div>`:''}
         ${(m.photos&&m.photos.length)?`<div style="margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Photos du client</div><div class="thumbs" style="margin-top:6px">${m.photos.map(u=>`<div class="thumb"><img class="viewable" data-docname="photo-client" src="${u}" alt="Photo du client — appuyer pour agrandir"></div>`).join('')}</div></div>`:''}<hr class="dashed">
         <div class="row between" style="align-items:flex-end"><div><span class="sub">Vous percevez</span></div><div style="text-align:right"><b class="money" style="font-size:22px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(t.payout)}</b><div class="mini">Montant net · versé après la prestation</div></div></div></div>
@@ -9365,6 +9406,14 @@
     if(b.dataset.actprice){const p=b.dataset.actprice.split(':');const svc=p[0],aid=p[1],dir=p[2];const arr=ensureCatalogCopy(svc);const a=arr.find(function(x){return x.id===aid;});if(a){a.price=Math.max(5,(Number(a.price)||0)+(dir==='up'?5:-5));saveCatalog();render();}return;}
     if(b.dataset.actdel){const p=b.dataset.actdel.split(':');const svc=p[0],aid=p[1];const arr=ensureCatalogCopy(svc);S.adminCatalog[svc]=arr.filter(function(x){return x.id!==aid;});saveCatalog();render();return;}
     if(b.dataset.actadd){const svc=b.dataset.actadd;const arr=ensureCatalogCopy(svc);S._actSeq=(S._actSeq||0)+1;arr.push({id:'usr'+S._actSeq+'_'+arr.length,nm:'',price:50});saveCatalog();render();return;}
+    // Prestations / options (admin) : prix, unité (u/h), retrait, ajout.
+    if(b.dataset.optprice){const p=b.dataset.optprice.split(':');const arr=ensureOptions(p[0]);const o=arr.find(function(x){return x.id===p[1];});if(o){o.price=Math.max(5,(Number(o.price)||0)+(p[2]==='up'?5:-5));saveCatalog();render();}return;}
+    if(b.dataset.optunit){const p=b.dataset.optunit.split(':');const arr=ensureOptions(p[0]);const o=arr.find(function(x){return x.id===p[1];});if(o){o.unit=(optUnit(o)==='h')?'u':'h';saveCatalog();render();}return;}
+    if(b.dataset.optdel){const p=b.dataset.optdel.split(':');const arr=ensureOptions(p[0]);S.adminOptions[p[0]]=arr.filter(function(x){return x.id!==p[1];});saveCatalog();render();return;}
+    if(b.dataset.optadd){const svc=b.dataset.optadd;const arr=ensureOptions(svc);S._optSeq=(S._optSeq||0)+1;arr.push({id:'opt'+S._optSeq+'_'+arr.length,nm:'',price:30,unit:'u'});saveCatalog();render();return;}
+    // Prestations / options (client, écran de commande) : cocher/décocher, régler la quantité/heures.
+    if(b.dataset.optpick){const m=S.draft;if(!m)return;m.options=m.options||[];const id=b.dataset.optpick;const i=m.options.findIndex(function(o){return o.id===id;});if(i>=0){m.options.splice(i,1);}else{const o=optInfo(m.svc,id);if(o)m.options.push({id:o.id,nm:o.nm,price:Number(o.price)||0,unit:optUnit(o),qty:1});}renderConfig();return;}
+    if(b.dataset.optqty){const m=S.draft;if(!m)return;const parts=b.dataset.optqty.split(':');const id=parts[0],dir=parts[1];const o=(m.options||[]).find(function(x){return x.id===id;});if(o){if(dir==='up')o.qty=Math.min(99,(o.qty||1)+1);else{o.qty=(o.qty||1)-1;if(o.qty<1)m.options=m.options.filter(function(x){return x.id!==id;});}}renderConfig();return;}
     if(b.dataset.freq){if(!S.draft)return;S.draft.frequency=b.dataset.freq;renderConfig();return;}
     if(b.dataset.star){const n=+b.dataset.star;S.mission.rating=n;document.querySelectorAll('#rateStars button').forEach(x=>x.classList.toggle('lit',+x.dataset.star<=n));const rb=document.getElementById('rateBtn');if(rb)rb.disabled=false;return;}
     if(b.dataset.cfg){const c=b.dataset.cfg;if(!S.draft)return;if(c==='back'){S.draft=null;render();}else if(c==='minus'){S.draft.duration=Math.max(1,S.draft.duration-1);renderConfig();}else if(c==='plus'){S.draft.duration=Math.min(isDayU(S.draft)?30:10,S.draft.duration+1);renderConfig();}else if(c==='people-minus'){S.draft.people=Math.max(1,peopleOf(S.draft)-1);renderConfig();}else if(c==='people-plus'){S.draft.people=Math.min(20,peopleOf(S.draft)+1);renderConfig();}else if(c==='unit-h'){S.draft.unit='h';S.draft.rate=(S.adminPrices&&S.adminPrices[S.draft.svc]!=null)?S.adminPrices[S.draft.svc]:svcBase(S.draft.svc);S.draft.duration=3;renderConfig();}else if(c==='unit-j'){S.draft.unit='j';S.draft.rate=DAY_RECO;S.draft.duration=2;renderConfig();}else if(c==='geoloc'){geolocate(g=>{if(S.draft){S.draft.geo=g;renderConfig();}});}else if(c==='addr-save-draft'){const d=S.draft;if(!(d.address||'').trim()){toast('Indiquez d’abord l’adresse');renderConfig();return;}const id='ad'+Date.now();S.addresses.push({id,label:((d.addrLabel||'').trim()||d.address||'Adresse ponctuelle').slice(0,40),address:d.address,zone:d.zone,geo:d.geo,access:d.access||''});d.addressId=id;if(S.addresses.length===1)S.addrDefault=id;saveClientCloud();toast(d.geo?'Adresse enregistrée dans votre profil':'Adresse enregistrée — pensez à ajouter le point GPS');renderConfig();}else if(c==='confirm'){
@@ -9812,6 +9861,7 @@
 
       <div class="field" style="margin-top:14px"><label>Choisissez vos prestations</label><div class="actlist">${actRows}</div>
         ${minActPrice(m.svc)<TRAVEL_MIN?`<p class="mini" style="margin-top:8px">${I.pin} Déplacement <b>offert dès ${TRAVEL_MIN} €</b> de prestation — sinon forfait de ${TRAVEL_FEE} €.</p>`:''}</div>
+      ${optionsPickerHtml(m)}
 
       ${canOnSite(m.svc)?`<div class="field"><label>Lieu de la prestation</label><div class="segs"><button class="seg ${locModeOf(m)!=='salon'?'on':''}" data-loc="domicile">${I.home} À domicile</button><button class="seg ${locModeOf(m)==='salon'?'on':''}" data-loc="salon">${I.shop} Chez le prestataire</button></div><p class="mini" style="margin-top:6px">${locModeOf(m)==='salon'?'Vous vous rendrez chez le prestataire — son adresse vous sera communiquée dès qu’il accepte.':'Le prestataire se déplace chez vous.'}</p></div>`:''}
       ${needsPeople(m.svc)?`<div class="field"><label>Pour combien de personnes&nbsp;?</label><div class="stepper"><button data-cfg="people-minus">−</button><span class="val">${I.users} ${peopleLbl(peopleOf(m))}</span><button data-cfg="people-plus">+</button></div><p class="mini" style="margin-top:6px">Le prix ci-dessous est multiplié par le nombre de personnes — chacune sa prestation.</p></div>`:''}
@@ -9835,12 +9885,25 @@
         ${m.addressId==='__manual'?`<div class="card" style="padding:14px;margin-top:10px"><div class="field" style="margin-top:0"><label style="font-size:12px">Adresse / description du lieu</label><input class="txt" data-addrmanual value="${esc(m.address||'')}" placeholder="Nom du lieu, quartier"></div><div class="field"><label style="font-size:12px">Secteur</label>${zoneSelect}</div><div class="field"><label style="font-size:12px">Point GPS</label><button class="btn ghost sm" data-cfg="geoloc">${I.pin} ${m.geo?'Actualiser le point GPS':'Enregistrer le point GPS'}</button>${m.geo?miniMap(m.geo,'edit','draft'):''}</div><div class="field" style="margin-bottom:0"><label style="font-size:12px">${I.key} Infos d'accès</label><textarea rows="2" data-addraccess placeholder="Ex. Code portail 4521 · clé sous le pot">${esc(m.access||'')}</textarea></div></div>`:''}
       </div>`}
 
-      <div class="est">${nSel?m.acts.map(a=>`<div class="line"><span>${esc(a.nm)}</span><b>${eur(a.price*(a.qty||1))}</b></div>`).join(''):`<div class="line"><span style="color:var(--muted)">Aucune prestation sélectionnée</span><b>—</b></div>`}${(nSel&&needsPeople(m.svc)&&t.people>1)?`<div class="line"><span>${I.users} Pour ${peopleLbl(t.people)} (× ${t.people})</span><b>${eur(t.sub)}</b></div>`:''}${t.travel?`<div class="line"><span>${I.pin} Forfait déplacement</span><b>+${eur(t.travel)}</b></div>`:''}${(nSel&&!t.travel)?`<div class="line"><span style="color:var(--good)">${I.check} Déplacement offert</span><b style="color:var(--good)">0 €</b></div>`:''}<div class="total"><span>Total</span><b>${nSel?eur(t.total):'—'}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité${S.card?` (sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — encaissement agréé)`:` (moyen de paiement demandé juste après, via Mollie)`}. Aucun supplément sans votre accord.</small></div>
+      <div class="est">${nSel?m.acts.map(a=>`<div class="line"><span>${esc(a.nm)}</span><b>${eur(a.price*(a.qty||1))}</b></div>`).join(''):`<div class="line"><span style="color:var(--muted)">Aucune prestation sélectionnée</span><b>—</b></div>`}${optionsEstLines(m)}${(nSel&&needsPeople(m.svc)&&t.people>1)?`<div class="line"><span>${I.users} Pour ${peopleLbl(t.people)} (× ${t.people})</span><b>${eur(t.sub)}</b></div>`:''}${t.travel?`<div class="line"><span>${I.pin} Forfait déplacement</span><b>+${eur(t.travel)}</b></div>`:''}${(nSel&&!t.travel)?`<div class="line"><span style="color:var(--good)">${I.check} Déplacement offert</span><b style="color:var(--good)">0 €</b></div>`:''}<div class="total"><span>Total</span><b>${nSel?eur(t.total):'—'}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité${S.card?` (sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — encaissement agréé)`:` (moyen de paiement demandé juste après, via Mollie)`}. Aucun supplément sans votre accord.</small></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm"${nSel?'':' disabled'}>${I.search} Trouver un pro${nSel?' · '+eur(t.total):''}</button>${nSel?'':`<p class="mini" style="text-align:center;margin-top:8px;color:var(--muted)">Cochez au moins une prestation pour continuer.</p>`}</div>
     </div>`,'config');
   }
   // « Coup de pouce » : menu déroulant (plus compact et lisible que la rangée de boutons).
   function boostSelect(m,vals){return `<select class="txt" data-cfgboost>${vals.map(function(v){return `<option value="${v}"${(m.boost||0)===v?' selected':''}>${v===0?'Standard — aucun':('+'+v+' %')}</option>`;}).join('')}</select>`;}
+  // Sélecteur de PRESTATIONS / OPTIONS sur l'écran de commande (métiers horaires ET à l'acte).
+  // Cocher ajoute au total ; les options « à l'heure » ont un pas de durée (elles occupent
+  // du temps sur le créneau). Vide s'il n'y a aucune option pour ce métier.
+  function optionsPickerHtml(m){
+    const opts=svcOptions(m.svc).filter(function(o){return (o.nm||'').trim();});
+    if(!opts.length)return '';
+    const rows=opts.map(function(o){
+      const h=optUnit(o)==='h';const picked=(m.options||[]).find(function(x){return x.id===o.id;});const q=picked?(picked.qty||1):1;
+      return `<div class="actrow${picked?' on':''}"><button class="actmain" data-optpick="${esc(o.id)}"><span class="actck">${picked?I.check:''}</span><span class="actnm">${esc(o.nm)}${h?' <span class="mini" style="color:var(--muted)">à l’heure</span>':''}</span><span class="actpr">${o.price} €${h?'/h':''}</span></button>${picked?`<div class="row" style="gap:6px;align-items:center;padding:2px 12px 10px"><span class="mini" style="color:var(--muted)">${h?'Durée':'Quantité'}</span><button class="btn ghost sm" style="width:32px;padding:5px 0" data-optqty="${esc(o.id)}:down">−</button><b style="min-width:46px;text-align:center">${q}${h?' h':' ×'}</b><button class="btn ghost sm" style="width:32px;padding:5px 0" data-optqty="${esc(o.id)}:up">+</button><span class="mini" style="margin-left:auto;color:var(--ink-soft)">${eur((Number(o.price)||0)*q)}</span></div>`:''}</div>`;
+    }).join('');
+    return `<div class="field"><label>Prestations en option</label><div class="actlist">${rows}</div><p class="mini" style="margin-top:6px;color:var(--muted)">Facultatif — ajoutez des prestations. Celles « à l'heure » occupent du temps sur le créneau.</p></div>`;
+  }
+  function optionsEstLines(m){return (m&&m.options&&m.options.length)?m.options.map(function(o){const h=optUnit(o)==='h';const q=o.qty||1;return `<div class="line"><span>${esc(o.nm)}${h?(' · '+q+' h'):((q>1)?(' ×'+q):'')}</span><b>${eur((Number(o.price)||0)*q)}</b></div>`;}).join(''):'';}
   function renderConfig(){
     const m=S.draft,t=totals(m);
     if(m&&m.svc==='colis'){renderColisConfig(m);return;}
@@ -9874,6 +9937,7 @@
       ${canOnSite(m.svc)?`<div class="field"><label>Lieu de la prestation</label><div class="segs"><button class="seg ${locModeOf(m)!=='salon'?'on':''}" data-loc="domicile">${I.home} À domicile</button><button class="seg ${locModeOf(m)==='salon'?'on':''}" data-loc="salon">${I.shop} Chez le prestataire</button></div><p class="mini" style="margin-top:6px">${locModeOf(m)==='salon'?'Vous vous rendrez chez le prestataire — son adresse vous sera communiquée dès qu’il accepte.':'Le prestataire se déplace chez vous.'}</p></div>`:''}
       ${needsPeople(m.svc)?`<div class="field"><label>Nombre de participants</label><div class="stepper"><button data-cfg="people-minus">−</button><span class="val">${I.users} ${peopleLbl(peopleOf(m))}</span><button data-cfg="people-plus">+</button></div><p class="mini" style="margin-top:6px">Le prix est multiplié par le nombre de personnes — chacune sa prestation.</p></div>`:''}
       <div class="field"><label>${isDayU(m)?'Nombre de jours':'Durée estimée'}</label><div class="stepper"><button data-cfg="minus">−</button><span class="val">${durTxt(m)}</span><button data-cfg="plus">+</button></div>${isDayU(m)?`<p class="mini" style="margin-top:6px">${I.cal} Du ${endDateTxt(m)} · ${durTxt(m)} de garde</p>`:''}</div>
+      ${optionsPickerHtml(m)}
       <div class="field"><label>Décrivez votre besoin</label><textarea rows="3" data-cfg="notes" placeholder="${PLACEHOLDERS[m.svc]||'Décrivez précisément la prestation…'}">${esc(m.notes)}</textarea></div>
       <div class="field"><label>Photos (facultatif)</label>
         <div class="thumbs">${(m.photos||[]).map((u,i)=>`<div class="thumb"><img src="${u}" alt="Photo de la prestation"><button data-act="rmphoto:${i}" aria-label="Retirer la photo">×</button></div>`).join('')}<label class="thumb add"><span>${I.camera}</span><span>Photo</span><input type="file" accept="image/*" capture="environment" data-photoinput hidden></label><label class="thumb add"><span>${I.image}</span><span>Galerie</span><input type="file" accept="image/*" multiple data-photoinput hidden></label></div>
@@ -9897,7 +9961,7 @@
           </div>
         `:`${m.geo?`<div class="banner teal" style="margin-top:10px">${I.pin}<span><b>Point GPS déjà enregistré</b> depuis votre fiche.</span></div>`:`<p class="mini" style="margin-top:8px;color:var(--muted)">Cette adresse n'a pas de point GPS — ajoutez-le dans votre profil.</p>`}`}
       </div>`}
-      <div class="est"><div class="line"><span>${m.svcName} · ${t.rate} ${rateUnit(m)} × ${durTxt(m)}${(needsPeople(m.svc)&&t.people>1)?' × '+t.people+' pers.':''}</span><b>${eur(t.sub)}</b></div><div class="total"><span>Total</span><b>${eur(t.total)}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité ${S.card?`(sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — encaissement agréé)`:`(moyen de paiement demandé juste après, via Mollie — encaissement agréé)`}. Aucun supplément sans votre accord.</small></div>
+      <div class="est"><div class="line"><span>${m.svcName} · ${t.rate} ${rateUnit(m)} × ${durTxt(m)}${(needsPeople(m.svc)&&t.people>1)?' × '+t.people+' pers.':''}</span><b>${eur(((forfaitSub(m)!=null?forfaitSub(m):t.rate*billHours(m))*t.people))}</b></div>${optionsEstLines(m)}<div class="total"><span>Total</span><b>${eur(t.total)}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité ${S.card?`(sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — encaissement agréé)`:`(moyen de paiement demandé juste après, via Mollie — encaissement agréé)`}. Aucun supplément sans votre accord.</small></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm">${I.search} Trouver un prestataire · ${eur(t.total)}</button></div></div>`,'config');
     if(S._focusAddr){S._focusAddr=false;setTimeout(function(){const el=document.getElementById('manualAddr');if(el){try{el.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){el.scrollIntoView();}const inp=el.querySelector('[data-addrmanual]');if(inp)try{inp.focus({preventScroll:true});}catch(_){}}},70);}
   }
@@ -9965,6 +10029,7 @@
     }
     // Renommage d'un acte de la grille (console admin) — pas de re-render (garde le focus).
     const an=e.target.closest('[data-actname]');if(an){const p=an.dataset.actname.split(':');const arr=ensureCatalogCopy(p[0]);const a=arr.find(function(x){return x.id===p[1];});if(a){a.nm=an.value;saveCatalog();}}
+    const on=e.target.closest('[data-optname]');if(on){const p=on.dataset.optname.split(':');const arr=ensureOptions(p[0]);const o=arr.find(function(x){return x.id===p[1];});if(o){o.nm=on.value;saveCatalog();}}
     const al=e.target.closest('[data-addrlabel]');if(al&&S.draft){S.draft.addrLabel=al.value;}
     const aa=e.target.closest('[data-addraccess]');if(aa&&S.draft){S.draft.access=aa.value;}
     const af=e.target.closest('[data-af]');if(af&&S.addrForm){S.addrForm[af.dataset.af]=af.value;}

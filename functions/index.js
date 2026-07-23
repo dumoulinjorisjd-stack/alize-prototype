@@ -1152,6 +1152,12 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
   // Prestations « par personne » (sport, massage) : le prix est multiplié par le nombre
   // de participants — l'assiette de commission doit l'être aussi.
   base = round2(base * peopleCount(after.service, after.people));
+  // Prestations / options additionnelles (à l'unité ou à l'heure) : elles s'ajoutent à
+  // l'assiette de commission (après le multiplicateur « par personne », comme côté client).
+  const opts = Array.isArray(after.options) ? after.options : null;
+  if (opts && opts.length) {
+    base = round2(base + opts.reduce((t, o) => t + (Number(o.price) || 0) * (Number(o.qty) || 1), 0));
+  }
   const boost = Number(after.boost) || 0;
   // Coup de pouce en euros (relance pendant la recherche) : montant fixe soumis à la
   // commission (comme la majoration en %). S'ajoute à l'assiette et au brut.
