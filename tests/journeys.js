@@ -139,6 +139,70 @@ function realErrors(errs) {
     await page2.close();
   }
 
+  // ── Test 5 : point GPS OBLIGATOIRE avant de confirmer une commande à domicile ─
+  console.log('Test 5 — point GPS obligatoire');
+  {
+    const errs = [];
+    // Contexte avec géoloc autorisée + position fixée : « Enregistrer le point GPS » résout
+    // immédiatement (sinon, sans permission, getCurrentPosition reste en attente en headless).
+    const gctx = await browser.newContext({ locale: 'fr-FR', permissions: ['geolocation'], geolocation: { latitude: 17.9, longitude: -62.83 } });
+    const page = await gctx.newPage();
+    page.on('pageerror', (e) => errs.push('PAGEERR: ' + e.message));
+    await page.route('**/*', (route) => {
+      const u = route.request().url();
+      if (/gstatic|googleapis|firebase|firebaseio|cloudfunctions/.test(u)) return route.abort();
+      return route.continue();
+    });
+    await page.goto(INDEX, { waitUntil: 'load', timeout: 30000 });
+    await page.waitForTimeout(1800);
+    // Création de compte (démo) → l'accueil client (aucune adresse enregistrée).
+    await page.click('[data-act="onb-start"]'); await page.waitForTimeout(500);
+    await page.fill('[data-cf="name"]', 'Jean Test');
+    await page.fill('[data-cf="email"]', 'jean@test.fr');
+    await page.fill('[data-cf="password"]', 'azerty');
+    await page.fill('[data-cf="password2"]', 'azerty');
+    await page.click('[data-act="toggle-cterms"]'); await page.waitForTimeout(150);
+    await page.click('[data-act="finish-onboard"]'); await page.waitForTimeout(600);
+    ok(/Bonjour/i.test(await page.evaluate(() => document.body.innerText)), 'compte créé → accueil client');
+    // Commande d'un service à domicile → écran de configuration (adresse ponctuelle, sans GPS).
+    const svc = await page.$('[data-svc="menage"]'); ok(!!svc, 'tuile Ménage présente');
+    if (svc) { await svc.click(); await page.waitForTimeout(500); }
+    // Confirmer SANS point GPS doit être BLOQUÉ (on reste sur la configuration).
+    await page.click('[data-cfg="confirm"]'); await page.waitForTimeout(400);
+    ok(/obligatoire/i.test(await page.evaluate(() => document.body.innerText)), 'blocage : « obligatoire » sans GPS');
+    ok(!!(await page.$('[data-cfg="confirm"]')), 'toujours sur la configuration (commande non envoyée)');
+    // Enregistrer le point GPS (repli sur coordonnées par défaut si géoloc refusée) → la commande avance.
+    const geo = await page.$('[data-cfg="geoloc"]'); ok(!!geo, 'bouton « Enregistrer le point GPS » présent');
+    if (geo) { await geo.click(); await page.waitForTimeout(900); }
+    await page.click('[data-cfg="confirm"]'); await page.waitForTimeout(600);
+    ok(!(await page.$('[data-cfg="confirm"]')), 'GPS enregistré → la commande est acceptée');
+    ok(realErrors(errs).length === 0, 'aucune erreur JS');
+    await page.close(); await gctx.close();
+  }
+
+  // ── Test 6 : parrainage — code prérempli depuis un lien ?parrain= ────────────
+  console.log('Test 6 — parrainage : préremplissage du code');
+  {
+    const errs = [];
+    const ctx = await browser.newContext({ locale: 'fr-FR' });
+    const page = await ctx.newPage();
+    page.on('pageerror', (e) => errs.push('PAGEERR: ' + e.message));
+    await page.route('**/*', (route) => {
+      const u = route.request().url();
+      if (/gstatic|googleapis|firebase|firebaseio|cloudfunctions/.test(u)) return route.abort();
+      return route.continue();
+    });
+    await page.goto(INDEX + '?parrain=kevin-8a3f', { waitUntil: 'load', timeout: 30000 });
+    await page.waitForTimeout(1800);
+    await page.click('[data-act="go-artisan-signup"]'); await page.waitForTimeout(600);
+    const kind = await page.$('[data-act="signup-kind:artisan"]');
+    if (kind) { await kind.click(); await page.waitForTimeout(600); }
+    const val = await page.$eval('[data-pf="refCode"]', (el) => el.value).catch(() => null);
+    ok(val === 'KEVIN-8A3F', 'code de parrainage prérempli en majuscules depuis le lien');
+    ok(realErrors(errs).length === 0, 'aucune erreur JS');
+    await page.close(); await ctx.close();
+  }
+
   await browser.close();
   if (failures) { console.log('\n' + failures + ' échec(s) — DÉPLOIEMENT À BLOQUER'); process.exit(1); }
   console.log('\nTous les parcours passent ✓');
