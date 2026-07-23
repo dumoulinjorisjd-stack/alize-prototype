@@ -2759,6 +2759,12 @@
   // S'appuie sur le REGISTRE serveur immuable (S.adminLedger). En démo / tant que le
   // registre n'est pas chargé, on reconstruit depuis les historiques artisans (repli).
   function adminCommissionLedger(){
+    // COMPTABILITÉ RÉELLE (hors démo) : UNIQUEMENT le registre serveur, filtré sur les
+    // transactions réellement encaissées via Mollie (molliePaymentId). JAMAIS de repli sur
+    // l'historique des artisans — celui-ci contient d'anciennes prestations de TEST
+    // (antérieures aux vrais paiements) qui polluaient la commission du tableau de bord.
+    // Registre vide → 0 €, ce qui reflète l'absence de vraie transaction Mollie.
+    if(!(S.demoMode||isDemo())) return (S.adminLedger||[]).filter(function(e){return !!e.molliePaymentId;});
     if(S.adminLedger&&S.adminLedger.length)return S.adminLedger;
     const out=[];(S.adminArtisans||[]).forEach(function(a){(a.history||[]).forEach(function(h){const b=histBreakdown(h);if(b.commission>0)out.push({dateISO:h.dateISO,reqId:h.reqId||'',invNo:h.invNo||'',clientName:h.clientFull||h.client||'',providerName:a.name,service:h.svc,serviceName:svcName(h.svc),base:b.gross,commissionPct:b.pct,commissionAmount:b.commission,netAmount:b.net,grossTotal:b.gross});});});return out;
   }
@@ -6031,7 +6037,7 @@
     return Object.keys(by).map(function(k){const g=by[k];return {a:{id:g.id,uid:g.uid,name:g.name},c:{count:g.entries.length,gross:r2(g.gross),comm:r2(g.comm),net:r2(g.net)},entries:g.entries};});
   }
   // Groupes affichés : registre serveur si disponible, sinon repli sur les historiques.
-  function adminCommissionGroups(){const lg=adminLedgerGroups();return lg.length?lg:adminInvoiceArts();}
+  function adminCommissionGroups(){const lg=adminLedgerGroups();if(!(S.demoMode||isDemo()))return lg;return lg.length?lg:adminInvoiceArts();}
   // Lignes normalisées d'un prestataire (pour ses factures) : registre serveur d'abord,
   // sinon son historique. Renvoie {name,uid,siret,type,lines[],comm,gross,net,count}.
   function adminArtLines(artId){
