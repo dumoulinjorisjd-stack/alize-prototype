@@ -59,20 +59,20 @@ function realErrors(errs) {
     await page.close();
   }
 
-  // ── Test 2 : écran d'accueil compte — deux CTA + invité, Google réservé à la connexion ─
+  // ── Test 2 : écran d'accueil compte — deux CTA, plus de mode invité, Google partout ─
   console.log('Test 2 — création de compte');
   {
     const errs = [];
     const page = await newPage(browser, errs);
     ok(await page.$('[data-act="onb-start"]'), 'bouton « Je cherche un service » présent');
     ok(await page.$('[data-act="go-artisan-signup"]'), 'bouton « Je propose un service » présent');
-    ok(await page.$('[data-act="enter-guest"]'), 'bouton découverte sans compte présent');
-    // Création de compte client : PAS de bouton Google (impossible de distinguer client/pro).
+    ok(!(await page.$('[data-act="enter-guest"]')), 'bouton découverte sans compte retiré');
+    // Création de compte client : le bouton Google DOIT être proposé (inscription rapide).
     await page.click('[data-act="onb-start"]');
     await page.waitForTimeout(700);
     let txt = await page.evaluate(() => document.body.innerText);
     ok(/Créer mon compte/.test(txt), 'écran infos de création affiché');
-    ok(!/Continuer avec Google/.test(txt), 'pas de Google à la création de compte');
+    ok(!!(await page.$('[data-act="google-client"]')), 'Google proposé à la création de compte');
     // Connexion : le bouton Google DOIT y être.
     const loginBtn = await page.$('[data-act="show-login"]');
     ok(!!loginBtn, 'lien « Se connecter » présent');
@@ -114,17 +114,28 @@ function realErrors(errs) {
     await page.close();
   }
 
-  // ── Test 4 : mode invité — services visibles sans compte ───────────────────
-  console.log('Test 4 — mode invité');
+  // ── Test 4 : inscription via Google proposée côté client ET prestataire ─────
+  console.log('Test 4 — inscription via Google (client & prestataire)');
   {
     const errs = [];
     const page = await newPage(browser, errs);
-    await page.click('[data-act="enter-guest"]');
-    await page.waitForTimeout(900);
-    const txt = await page.evaluate(() => document.body.innerText);
-    ok(/Ménage/i.test(txt), 'services affichés en invité (Ménage visible)');
-    ok(realErrors(errs).length === 0, 'aucune erreur JS');
+    // Le mode invité a été retiré de l'accueil.
+    ok(!(await page.$('[data-act="enter-guest"]')), 'accueil sans bouton invité');
+    // Client : Google proposé sur l'écran de création.
+    await page.click('[data-act="onb-start"]');
+    await page.waitForTimeout(700);
+    ok(!!(await page.$('[data-act="google-client"]')), 'Google proposé à l’inscription client');
+    ok(realErrors(errs).length === 0, 'aucune erreur JS (client)');
     await page.close();
+    // Prestataire : Google proposé sur le formulaire de candidature.
+    const page2 = await newPage(browser, errs);
+    await page2.click('[data-act="go-artisan-signup"]');
+    await page2.waitForTimeout(700);
+    const kind = await page2.$('[data-act="signup-kind:artisan"]');
+    if (kind) { await kind.click(); await page2.waitForTimeout(700); }
+    ok(!!(await page2.$('[data-act="google-pro"]')), 'Google proposé à l’inscription prestataire');
+    ok(realErrors(errs).length === 0, 'aucune erreur JS (prestataire)');
+    await page2.close();
   }
 
   await browser.close();

@@ -6819,6 +6819,9 @@
     if(S.onbStep===1)return onbInfos();
     return onbWelcome();
   }
+  // Bouton « Continuer avec Google » réutilisable (inscription client, inscription
+  // prestataire, connexion). En démo sans Firebase, il est grisé + badge « bientôt ».
+  function googleBtnHtml(act,label){return `<button class="btn ghost" data-act="${act}" style="${FB?'':'opacity:.65'}"><svg width="17" height="17" viewBox="0 0 24 24"><path fill="#4285F4" d="M23 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.2a5.3 5.3 0 0 1-2.3 3.5v2.9h3.7C21.7 18.9 23 15.9 23 12.3z"/><path fill="#34A853" d="M12 24c3.1 0 5.7-1 7.6-2.8l-3.7-2.9c-1 .7-2.3 1.1-3.9 1.1-3 0-5.5-2-6.4-4.8H1.8v3C3.7 21.3 7.5 24 12 24z"/><path fill="#FBBC05" d="M5.6 14.3a7.2 7.2 0 0 1 0-4.6v-3H1.8a12 12 0 0 0 0 10.6z"/><path fill="#EA4335" d="M12 4.8c1.7 0 3.2.6 4.4 1.7l3.3-3.3C17.7 1.2 15.1 0 12 0 7.5 0 3.7 2.7 1.8 6.7l3.8 3c.9-2.8 3.4-4.9 6.4-4.9z"/></svg>&nbsp;${label} ${FB?"":'<span class="chip grey" style="margin-left:4px">bientôt</span>'}</button>`;}
   function onbWelcome(){
     const benefits=[[I.shield,'Prestataires vérifiés et assurés','SIRET, assurance responsabilité civile et avis de la communauté contrôlés avant l’activation de chaque profil.'],[I.lock,'Paiement sécurisé','Réglé par carte, débité seulement après la prestation validée — aucun impayé, aucune espèce à gérer.'],[I.bolt,'À la demande','Un pro de confiance quand vous en avez besoin, en quelques minutes.'],[I.check,'Gratuit, sans abonnement','Aucun frais d’inscription ni abonnement — vous ne payez que la prestation.']]
       .map(x=>`<div class="row benrow" style="gap:12px;align-items:flex-start"><div class="benic">${x[0]}</div><div><b style="font-size:14px">${x[1]}</b><div class="mini bendesc" style="margin-top:1px">${x[2]}</div></div></div>`).join('');
@@ -6837,9 +6840,7 @@
       <div class="footcta" style="position:static;background:none;padding:22px 0 0">
         <button class="btn primary" data-act="onb-start">Je cherche un service</button>
         <button class="btn primary" data-act="go-artisan-signup" style="margin-top:10px">Je propose un service</button>
-        <button class="btn ghost" data-act="enter-guest" style="margin-top:10px">${I.bolt}&nbsp;Explorer les services sans compte</button>
-        <p class="mini" style="text-align:center;margin-top:8px;color:var(--muted)">Voyez tous les services et les prix librement — compte demandé seulement pour commander.</p>
-        <p class="mini" style="text-align:center;margin-top:12px">Déjà un compte&nbsp;? <button class="linklike" data-act="show-login">Se connecter</button></p>
+        <p class="mini" style="text-align:center;margin-top:14px">Déjà un compte&nbsp;? <button class="linklike" data-act="show-login">Se connecter</button></p>
       </div></div>`;
   }
   function onbInfos(){
@@ -6850,7 +6851,10 @@
       <button class="reset" data-act="onb-back0" style="margin:0 0 8px">← Retour</button>
       <span class="eyebrow">Créer mon compte</span>
       <div class="h-hello">Vos informations</div>
-      <div class="card" style="padding:16px;margin-top:16px">
+      <div style="margin-top:14px">${googleBtnHtml('google-client','Continuer avec Google')}</div>
+      <p class="mini" style="text-align:center;margin-top:7px;color:var(--muted)">Inscription en un geste — vous compléterez vos informations dans votre profil.</p>
+      <div class="or-sep"><span>ou renseignez vos informations</span></div>
+      <div class="card" style="padding:16px;margin-top:6px">
         <div class="field">${photoPicker(f.photo,'client')}</div>
         <div class="field"><label>Prénom &amp; nom</label><input class="txt" data-cf="name" data-v="name" value="${esc(f.name)}" autocomplete="name" autocapitalize="words" placeholder="Nom et prénom"></div>
         <div class="field"><label>E-mail</label><input class="txt" data-cf="email" data-v="email" value="${esc(f.email)}" inputmode="email" autocomplete="email" placeholder="vous@exemple.com"></div>
@@ -8122,7 +8126,10 @@
   // rendu (état du bouton), l'écouteur « input » (mise à jour en direct) et le
   // gestionnaire d'envoi. Tout champ marqué * doit être renseigné pour débloquer l'envoi.
   function concSignupOk(f){f=f||{};return (f.name||'').trim().length>1&&(f.siret||'').replace(/\s/g,'').length>=9&&(f.address||'').trim().length>1&&(f.contact||'').trim().length>1&&(f.phone||'').trim().length>=6&&/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=6&&f.password===f.password2&&!!f.cgu&&!!f.mandat;}
-  function proSignupOk(f){f=f||{};const siret=(f.siret||'').replace(/\s/g,'');return (f.name||'').trim().length>1&&(f.phone||'').trim().length>=6&&/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=6&&f.password===f.password2&&/^\d{14}$/.test(siret)&&(f.address||'').trim().length>1&&(f.insurer||'').trim().length>1&&!!f.insuranceDoc&&!!(f.cats&&f.cats.length)&&(!f.cats.includes('autre')||(f.otherService||'').trim())&&(!f.cats.includes('baby')||!!(f.diplomas&&f.diplomas.length))&&!!f.mandat&&!!f.cgu&&!!f.charte&&!!f.acceptsGrille&&isAdult(f.birth);}
+  function proSignupOk(f){f=f||{};const siret=(f.siret||'').replace(/\s/g,'');
+    // Identifiants : via Google (déjà authentifié) OU e-mail + mot de passe classique.
+    const credOk=f.googleAuth?true:(/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=6&&f.password===f.password2);
+    return (f.name||'').trim().length>1&&(f.phone||'').trim().length>=6&&credOk&&/^\d{14}$/.test(siret)&&(f.address||'').trim().length>1&&(f.insurer||'').trim().length>1&&!!f.insuranceDoc&&!!(f.cats&&f.cats.length)&&(!f.cats.includes('autre')||(f.otherService||'').trim())&&(!f.cats.includes('baby')||!!(f.diplomas&&f.diplomas.length))&&!!f.mandat&&!!f.cgu&&!!f.charte&&!!f.acceptsGrille&&isAdult(f.birth);}
   // Liste ce qu'il reste à fournir pour valider la candidature — affiché sous le bouton
   // (désactivé) pour que le prestataire sache exactement quel champ ou document manque.
   function proMissing(f){f=f||{};const m=[];const siret=(f.siret||'').replace(/\s/g,'');
@@ -8254,12 +8261,13 @@
       <div class="banner coral" style="margin-top:14px">${I.shield}<span><b>Sur candidature</b> — réservé aux pros immatriculés (micro-entreprise ou société), profil vérifié avant activation. <b>SIRET obligatoire</b>.</span></div>
       <div class="card" style="padding:16px;margin-top:14px">
         <p class="reqnote" style="margin:0 0 4px">Les champs marqués ${RQ} sont obligatoires.</p>
+        ${f.googleAuth?`<div class="banner good" style="margin:4px 0 12px">${I.check}<span>Identité confirmée via <b>Google</b>${f.email?` — <b>${esc(f.email)}</b>`:''}. Complétez les informations ci-dessous.</span></div>`:`<div style="margin:6px 0 10px">${googleBtnHtml('google-pro','Continuer avec Google')}<p class="mini" style="text-align:center;margin-top:7px;color:var(--muted)">Inscription rapide — vous complétez ensuite votre profil (SIRET, assurance…).</p><div class="or-sep"><span>ou renseignez vos informations</span></div></div>`}
         <div class="field">${photoPicker(f.photo,'pro')}<p class="mini" style="margin-top:2px">Un visage rassure les clients — les profils avec photo sont choisis plus souvent.</p></div>
         <div class="field"><label>Nom / Raison sociale${RQ}</label><input class="txt" data-pf="name" data-v="name" value="${esc(f.name)}" autocomplete="organization" autocapitalize="words" placeholder="Nom et prénom, ou raison sociale (SAS, SARL…)"><p class="mini" style="margin-top:5px"><b>Société</b> : indiquez votre <b>raison sociale exacte</b> (ex. « Ménage Plus SAS »). <b>Micro-entreprise / EI</b> : vos nom et prénom. C'est ce nom qui apparaît sur vos factures.</p></div>
         <div class="field"><label>Téléphone${RQ}</label>${phoneCombo('pro',f.phone)}<p class="mini" style="margin-top:5px">Indicatif obligatoire — nécessaire pour les alertes WhatsApp.</p></div>
-        <div class="field"><label>E-mail${RQ}</label><input class="txt" data-pf="email" data-v="email" value="${esc(f.email||'')}" inputmode="email" autocomplete="email" placeholder="vous@exemple.com"></div>
+        ${f.googleAuth?'':`<div class="field"><label>E-mail${RQ}</label><input class="txt" data-pf="email" data-v="email" value="${esc(f.email||'')}" inputmode="email" autocomplete="email" placeholder="vous@exemple.com"></div>
         <div class="field"><label>Mot de passe${RQ}</label><div class="pw-wrap"><input class="txt" type="password" data-pf="password" value="${esc(f.password||'')}" autocomplete="new-password" placeholder="6 caractères minimum"><button type="button" class="pw-eye" data-act="pw-toggle" aria-label="Afficher le mot de passe">${I.eye}</button></div></div>
-        <div class="field"><label>Confirmer le mot de passe${RQ}</label><div class="pw-wrap"><input class="txt" type="password" data-pf="password2" value="${esc(f.password2||'')}" autocomplete="new-password" placeholder="Retapez votre mot de passe"><button type="button" class="pw-eye" data-act="pw-toggle" aria-label="Afficher le mot de passe">${I.eye}</button></div>${(f.password2&&f.password!==f.password2)?`<p class="mini" style="margin-top:5px;color:var(--coral-deep)">Les mots de passe ne correspondent pas.</p>`:((f.password2&&(f.password||'').length>=6)?`<p class="fv-ok">✓ Les mots de passe correspondent</p>`:'')}</div>
+        <div class="field"><label>Confirmer le mot de passe${RQ}</label><div class="pw-wrap"><input class="txt" type="password" data-pf="password2" value="${esc(f.password2||'')}" autocomplete="new-password" placeholder="Retapez votre mot de passe"><button type="button" class="pw-eye" data-act="pw-toggle" aria-label="Afficher le mot de passe">${I.eye}</button></div>${(f.password2&&f.password!==f.password2)?`<p class="mini" style="margin-top:5px;color:var(--coral-deep)">Les mots de passe ne correspondent pas.</p>`:((f.password2&&(f.password||'').length>=6)?`<p class="fv-ok">✓ Les mots de passe correspondent</p>`:'')}</div>`}
         <div class="field"><label>SIRET (14 chiffres)${RQ}</label><input class="txt" data-pf="siret" data-v="siret14" value="${f.siret}" inputmode="numeric" autocomplete="off" placeholder="Ex. 123 456 789 00012"><button class="btn ghost sm" data-act="siret-lookup" ${S._siretBusy?'disabled':''} style="margin-top:8px;width:auto;padding:9px 14px">${S._siretBusy?I.clock+' Recherche…':I.search+' Remplir avec mon SIRET'}</button><p class="mini" style="margin-top:5px;color:var(--muted)">Renseigne automatiquement votre <b>raison sociale</b>, votre <b>adresse</b> et votre <b>forme juridique</b> depuis l'annuaire officiel des entreprises.</p></div>
         <div class="field"><label>Adresse professionnelle (siège)${RQ}</label><input class="txt" data-pf="address" data-v="text" value="${esc(f.address||'')}" placeholder="Ex. Gustavia, 97133 Saint-Barthélemy"><p class="mini" style="margin-top:5px">Figure sur vos factures (mention légale obligatoire).</p></div>
         <div class="field"><label>Forme juridique</label><div class="segs"><button class="seg ${f.statusType!=='micro'&&f.statusType!=='particulier'?'on':''}" data-pstatustype="entreprise">Société</button><button class="seg ${f.statusType==='micro'?'on':''}" data-pstatustype="micro">Micro-entreprise / EI</button></div></div>
@@ -9641,6 +9649,13 @@
       case 'toggle-remember':S.loginForm.remember=(S.loginForm.remember===false);render();break;
       case 'forgot-pw':{let emDom='';try{const el=document.querySelector('[data-loginform] [data-lf="email"]');if(el&&el.value)emDom=el.value;}catch(_){}const em=(emDom||(S.loginForm&&S.loginForm.email)||(S.account&&S.account.email)||'').trim();if(!/.+@.+\..+/.test(em)){toast('Saisissez votre e-mail, puis « Mot de passe oublié ».');break;}if(FB){toast('Envoi de l’e-mail en cours…');fbResetPassword(em);}else{toast('Un lien de réinitialisation vous serait envoyé par e-mail.');}break;}
       case 'google-soon':if(FB){fbGoogle();}else{toast('Connexion Google — bientôt disponible');}break;
+      // Inscription CLIENT via Google : on mémorise l'intention (survit à une redirection
+      // mobile) puis on lance l'authentification. loadUserProfile crée le compte client
+      // et route vers le profil pour compléter les informations.
+      case 'google-client':try{localStorage.setItem('tiSignupIntent','client');}catch(_){}if(FB){fbGoogle();}else{toast('Connexion Google — bientôt disponible');}break;
+      // Inscription PRESTATAIRE via Google : idem, mais on prépare le formulaire pro et on
+      // reste dessus après authentification (SIRET, assurance, métiers restent à saisir).
+      case 'google-pro':try{localStorage.setItem('tiSignupIntent','artisan');}catch(_){}signupAsArtisan=true;S.proForm=S.proForm||{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,cgu:false,charte:false,rates:{},otherService:'',photo:''};if(FB){fbGoogle();}else{toast('Connexion Google — bientôt disponible');}break;
       case 'logout':S.demoMode=false;S.guest=false;clearClientCache();if(FB)blankAll();fbLogout();if(!FB){S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;S.missions=[];render();}break;
       // Un prestataire qui veut commander un service pour lui-même utilise un compte
       // CLIENT séparé (autre e-mail). On le déconnecte de l'espace prestataire et on
@@ -9710,7 +9725,12 @@
       case 'conc-toggle-cgu':if(S.concSignup)S.concSignup.cgu=!S.concSignup.cgu;render();break;
       case 'conc-toggle-mandat':if(S.concSignup)S.concSignup.mandat=!S.concSignup.mandat;render();break;
       case 'conc-submit':{const f=S.concSignup||{};if(!concSignupOk(f)){toast('Complétez tous les champs obligatoires (marqués *).');break;}if(FB){signupAsConcierge=true;fbConciergeSignup(f);}else{S.persona='concierge';S.concStatus='pending';S.concName=(f.contact||f.name||'').trim();S.onboarded=true;S.concNav='home';render();toast('Candidature envoyée (démo)');}break;}
-      case 'back-to-client':S.persona='client';S.proStatus='approved';render();break;
+      case 'back-to-client':try{localStorage.removeItem('tiSignupIntent');}catch(_){}signupAsArtisan=false;
+        // Déjà authentifié via Google sur le formulaire pro : on le bascule proprement en
+        // compte client (création + ouverture du profil) plutôt que de le laisser sur un
+        // écran d'accueil à moitié connecté.
+        if(FB&&FB.auth&&FB.auth.currentUser&&S.proForm&&S.proForm.googleAuth){try{localStorage.setItem('tiSignupIntent','client');}catch(_){}S.proForm.googleAuth=false;loadUserProfile(FB.auth.currentUser);break;}
+        S.persona='client';S.proStatus='approved';render();break;
       case 'start-demo':break; // Mode démonstration retiré (application en service réel).
       case 'exit-demo':S.demoMode=false;S.guest=false;if(FB)blankAll();S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;S.missions=[];S.draft=null;S.account=loadAccount();render();break;
       case 'demo-go-pro':if(!isDemo())break;S.persona='pro';render();break;
@@ -9881,7 +9901,7 @@
       case 'dl-invoice':downloadInvoicePdf(S.histInvoice||S.mission);break;
       case 'toggle-mandat':S.proForm.mandat=!S.proForm.mandat;render();break;
       case 'toggle-grille':S.proForm.acceptsGrille=!S.proForm.acceptsGrille;render();break;
-      case 'pro-submit':{const f=S.proForm;if((f.name||'').trim().length<2){toast('Indiquez votre nom / raison sociale');break;}if(!f.birth){toast('Indiquez votre date de naissance');break;}if(!isAdult(f.birth)){toast('Inscription réservée aux personnes majeures (18 ans et plus).');break;}if((f.phone||'').trim().length<6){toast('Indiquez un numéro de téléphone');break;}if(!f.cats.length){toast('Sélectionnez au moins un service');break;}if(f.cats.includes('autre')&&!(f.otherService||'').trim()){toast('Précisez le service « Autre » que vous proposez');break;}if(f.cats.includes('baby')&&!(f.diplomas&&f.diplomas.length)){toast('Garde d’enfants : indiquez vos diplômes (ou « Expérience seule »)');break;}if(!/.+@.+\..+/.test(f.email||'')){toast('Un e-mail valide est requis');break;}if((f.password||'').length<6||f.password!==f.password2){toast('Mot de passe : 6 caractères min., identiques');break;}if(!/^\d{14}$/.test((f.siret||'').replace(/\s/g,''))){toast('Un SIRET valide (14 chiffres) est requis');break;}if(!(f.address||'').trim()){toast('Indiquez votre adresse professionnelle (obligatoire sur les factures)');break;}if(!(f.insurer||'').trim()){toast('Indiquez votre assureur & n° de police');break;}if(!f.insuranceDoc){toast('Joignez votre attestation d’assurance');break;}if(!f.mandat){toast('Acceptez le mandat de facturation pour continuer');break;}if(!f.cgu){toast('Acceptez les CGU et les CGV pour continuer');break;}if(!f.charte){toast('Acceptez la charte de responsabilité du prestataire');break;}
+      case 'pro-submit':{const f=S.proForm;if((f.name||'').trim().length<2){toast('Indiquez votre nom / raison sociale');break;}if(!f.birth){toast('Indiquez votre date de naissance');break;}if(!isAdult(f.birth)){toast('Inscription réservée aux personnes majeures (18 ans et plus).');break;}if((f.phone||'').trim().length<6){toast('Indiquez un numéro de téléphone');break;}if(!f.cats.length){toast('Sélectionnez au moins un service');break;}if(f.cats.includes('autre')&&!(f.otherService||'').trim()){toast('Précisez le service « Autre » que vous proposez');break;}if(f.cats.includes('baby')&&!(f.diplomas&&f.diplomas.length)){toast('Garde d’enfants : indiquez vos diplômes (ou « Expérience seule »)');break;}if(!f.googleAuth&&!/.+@.+\..+/.test(f.email||'')){toast('Un e-mail valide est requis');break;}if(!f.googleAuth&&((f.password||'').length<6||f.password!==f.password2)){toast('Mot de passe : 6 caractères min., identiques');break;}if(!/^\d{14}$/.test((f.siret||'').replace(/\s/g,''))){toast('Un SIRET valide (14 chiffres) est requis');break;}if(!(f.address||'').trim()){toast('Indiquez votre adresse professionnelle (obligatoire sur les factures)');break;}if(!(f.insurer||'').trim()){toast('Indiquez votre assureur & n° de police');break;}if(!f.insuranceDoc){toast('Joignez votre attestation d’assurance');break;}if(!f.mandat){toast('Acceptez le mandat de facturation pour continuer');break;}if(!f.cgu){toast('Acceptez les CGU et les CGV pour continuer');break;}if(!f.charte){toast('Acceptez la charte de responsabilité du prestataire');break;}
         if(FB){signupAsArtisan=true;fbProSignup(f);break;} // vrai compte prestataire Firebase
         const rates={};f.cats.forEach(c=>{rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});const minRate=Math.min.apply(null,f.cats.map(c=>rates[c]));S.adminArtisans=S.adminArtisans.filter(x=>x.id!=='self');S.adminArtisans.unshift({id:'self',name:f.name||'Nouveau prestataire',status:'attente',type:'entreprise',cats:f.cats.slice(),other:(f.otherService||'').trim(),rates,rate:minRate,siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,rating:0,jobs:0,zone:'—',phone:f.phone||'',email:f.email||'',photo:f.photo||''});S.proStatus='pending';render();break;}
       case 'pro-approve':{S.proStatus='approved';const f=S.proForm;S.proBirth=f.birth||S.proBirth;if(f.photo)S.proPhoto=f.photo;if(f.name)S.proName=f.name;if(f.cats.length)S.proCats=f.cats.slice();const rates={};f.cats.forEach(c=>{rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});S.proRates=rates;if(f.cats.length)S.proRate=Math.min.apply(null,f.cats.map(c=>rates[c]));S.proStatusType='entreprise';S.proSiret=(f.siret||'').replace(/\s/g,'');S.proBio=f.bio||'';S.proInsured=!!f.insuranceDoc;if(f.insurer)S.proInsurer=f.insurer;if(f.phone)S.proPhone=f.phone;
@@ -10629,6 +10649,23 @@
       // client, verrouillant l'erreur).
       let ad=null; try{ const sA=await FB.f.getDoc(FB.f.doc(FB.db,'artisans',user.uid)); ad=sA.exists()?sA.data():null; }catch(_){}
       let cd=null; try{ const sC=await FB.f.getDoc(FB.f.doc(FB.db,'concierges',user.uid)); cd=sC.exists()?sC.data():null; }catch(_){}
+      // Intention d'inscription mémorisée avant l'authentification Google (survit à une
+      // redirection mobile). Détermine le routage d'un nouveau compte Google.
+      const signupIntent=(function(){try{return localStorage.getItem('tiSignupIntent')||'';}catch(_){return '';}})();
+      // Inscription PRESTATAIRE via Google, non encore finalisée (aucune fiche artisans) :
+      // on présente le formulaire pro pré-rempli avec l'identité Google. Les champs métier
+      // (SIRET, assurance, prestations…) restent à saisir — l'e-mail/mot de passe est masqué.
+      if(signupIntent==='artisan' && !ad && !cd && (!data||data.role!=='artisan')){
+        signupAsArtisan=true;
+        S.proForm=Object.assign({name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,cgu:false,charte:false,rates:{},otherService:'',photo:''},S.proForm||{});
+        S.proForm.googleAuth=true;
+        S.proForm.name=(S.proForm.name||'').trim()||user.displayName||'';
+        S.proForm.email=user.email||'';
+        if(user.photoURL&&!S.proForm.photo)S.proForm.photo=user.photoURL;
+        S.account={name:S.proForm.name||name,email:user.email||'',uid:user.uid,role:'artisan'};
+        S.persona='pro';S.proStatus='signup';S.signupKind='artisan';S.onboarded=false;S.authView=null;render();
+        return;
+      }
       // Compte prestataire : on route vers l'espace pro (statut lu dans la fiche artisans).
       if((data&&data.role)==='artisan' || ad){
         S.account={name:name,email:user.email||'',uid:user.uid,role:'artisan'};
@@ -10698,7 +10735,11 @@
       restoreClientLocal(user.uid);
       S.addresses=(data&&Array.isArray(data.addresses))?data.addresses:(S.addresses||[]);S.addrDefault=(data&&data.addrDefault)||S.addrDefault||null;
       S.history=(data&&Array.isArray(data.history)&&data.history.length)?data.history:(S.history||[]);S.recurring=(data&&Array.isArray(data.recurring)&&data.recurring.length)?data.recurring:(S.recurring||[]);S.card=(data&&data.card)||S.card||null;
-      S.onboarded=true;S.authView=null;S.cardForm=false;resumeOrderIfPending();render();
+      S.onboarded=true;S.authView=null;S.cardForm=false;
+      // Inscription CLIENT via Google (nouveau compte) : on ouvre le profil pour compléter
+      // les informations (quartier, photo…), sauf si une commande était en attente.
+      if(signupIntent==='client'){try{localStorage.removeItem('tiSignupIntent');}catch(_){}if(!data&&!S._resumeOrder)S.clientNav='profile';}
+      resumeOrderIfPending();render();
       if(typeof Notification!=='undefined'&&Notification.permission==='granted')registerPush('client');
       S.genSupport=(data&&Array.isArray(data.support))?data.support.slice():[];subscribeUserSupport(user.uid);
       loadActiveRequests(user.uid);
@@ -10865,10 +10906,18 @@
   async function fbProSignup(f){
     if(signupInFlight)return; signupInFlight=true;
     try{
-      const cred=await FB.a.createUserWithEmailAndPassword(FB.auth,f.email.trim(),f.password);
-      const uid=cred.user.uid;
+      // Deux voies d'identité : Google (déjà authentifié — on réutilise la session) ou
+      // e-mail + mot de passe (création classique du compte Firebase).
+      let uid,email;
+      if(f.googleAuth){
+        if(!(FB.auth&&FB.auth.currentUser)){ toast('Session Google expirée — reconnectez-vous'); signupInFlight=false; return; }
+        uid=FB.auth.currentUser.uid; email=(FB.auth.currentUser.email||f.email||'').trim();
+      } else {
+        const cred=await FB.a.createUserWithEmailAndPassword(FB.auth,f.email.trim(),f.password);
+        uid=cred.user.uid; email=f.email.trim();
+      }
       const rates={}; f.cats.forEach(function(c){rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});
-      try{ await FB.f.setDoc(FB.f.doc(FB.db,'users',uid),{name:(f.name||'').trim(),email:f.email.trim(),role:'artisan',phone:f.phone||'',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
+      try{ await FB.f.setDoc(FB.f.doc(FB.db,'users',uid),{name:(f.name||'').trim(),email:email,role:'artisan',phone:f.phone||'',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
       // Envoi de l'attestation d'assurance vers Storage (une fois le compte créé = authentifié).
       let insuranceUrl='';
       if(f.insuranceFile){ try{
@@ -10879,9 +10928,10 @@
         await stM.uploadBytes(sref,f.insuranceFile,{contentType:f.insuranceFile.type||'application/octet-stream'});
         insuranceUrl=await stM.getDownloadURL(sref);
       }catch(e){ console.warn('insurance upload failed',e); } }
-      try{ await FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{name:(f.name||'').trim(),legalName:(f.name||'').trim(),email:(f.email||'').trim(),address:(f.address||'').trim(),statusType:f.statusType||'entreprise',legalForm:(f.legalForm||'').trim(),capital:(f.capital||'').toString().replace(/[^\d]/g,''),rcsCity:(f.rcsCity||'').trim(),birth:(f.birth||''),cats:f.cats.slice(),other:(f.otherService||'').trim(),rates:rates,diplomas:(f.diplomas||[]).slice(),diplomaOther:(f.diplomaOther||'').trim(),siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,insurer:f.insurer||'',insuranceUrl:insuranceUrl,insuranceStatus:'attente',phone:f.phone||'',photo:f.photo||'',bio:(f.bio||'').trim(),acceptedTerms:!!f.cgu,acceptedCharte:!!f.charte,acceptedMandat:!!f.mandat,acceptsGrille:!!f.acceptsGrille,termsVersion:TERMS_VERSION,termsAt:FB.f.serverTimestamp(),status:'attente',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
-      S.account={name:(f.name||'').trim()||(f.email.trim().split('@')[0]),email:f.email.trim(),uid:uid,role:'artisan'};
+      try{ await FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{name:(f.name||'').trim(),legalName:(f.name||'').trim(),email:email,address:(f.address||'').trim(),statusType:f.statusType||'entreprise',legalForm:(f.legalForm||'').trim(),capital:(f.capital||'').toString().replace(/[^\d]/g,''),rcsCity:(f.rcsCity||'').trim(),birth:(f.birth||''),cats:f.cats.slice(),other:(f.otherService||'').trim(),rates:rates,diplomas:(f.diplomas||[]).slice(),diplomaOther:(f.diplomaOther||'').trim(),siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,insurer:f.insurer||'',insuranceUrl:insuranceUrl,insuranceStatus:'attente',phone:f.phone||'',photo:f.photo||'',bio:(f.bio||'').trim(),acceptedTerms:!!f.cgu,acceptedCharte:!!f.charte,acceptedMandat:!!f.mandat,acceptsGrille:!!f.acceptsGrille,termsVersion:TERMS_VERSION,termsAt:FB.f.serverTimestamp(),status:'attente',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
+      S.account={name:(f.name||'').trim()||((email||'').split('@')[0]),email:email,uid:uid,role:'artisan'};
       S.persona='pro'; S.proName=(f.name||'').trim(); S.proStatus='pending'; S.onboarded=true; S.authView=null; S.proNav='home';
+      try{localStorage.removeItem('tiSignupIntent');}catch(_){} // intention d'inscription consommée
       ensureBetaMollie(); // BÊTA : paiements marqués actifs pour pouvoir accepter (démo). No-op en prod.
       S.proInsuranceStatus='attente'; S.proInsuranceUrl=insuranceUrl; S.proCats=f.cats.slice();
       subscribeProStatus(uid);
