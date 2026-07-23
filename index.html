@@ -2294,8 +2294,11 @@
   // Config partagée (settings/config) : le taux d'apport conciergerie OFFICIEL. Écrit
   // par l'admin, lu par tous ET par le serveur (settleCommission) — c'est LUI qui fait
   // foi pour la rétribution, jamais la valeur envoyée par la conciergerie.
-  function saveConfig(){ try{ if(FB&&FB.auth&&FB.auth.currentUser){ FB.f.setDoc(FB.f.doc(FB.db,'settings','config'),{retroRate:(S.retroRate||0),updatedAt:FB.f.serverTimestamp()},{merge:true}); } }catch(_){} }
-  async function loadConfig(){ try{ if(!FB)return; const snap=await FB.f.getDoc(FB.f.doc(FB.db,'settings','config')); if(snap.exists()){ const d=snap.data()||{}; if(typeof d.retroRate==='number'){ S.retroRate=d.retroRate; render(); } } }catch(e){ console.warn('config load',e); } }
+  function saveConfig(){ try{ if(FB&&FB.auth&&FB.auth.currentUser){ const cfg={retroRate:(S.retroRate||0),updatedAt:FB.f.serverTimestamp()}; if(Array.isArray(S.fidTiers))cfg.fidTiers=S.fidTiers.map(function(t){return {key:t.key,nm:t.nm,min:t.min,pct:Number(t.pct)||0};}); FB.f.setDoc(FB.f.doc(FB.db,'settings','config'),cfg,{merge:true}); } }catch(_){} }
+  // Config partagée (barème de commission + taux d'apport) écoutée EN TEMPS RÉEL : la modif
+  // admin est persistée ET re-appliquée telle quelle — elle ne « saute » plus au rechargement.
+  async function loadConfig(){ try{ if(!FB||_configSub)return; _configSub=FB.f.onSnapshot(FB.f.doc(FB.db,'settings','config'),function(snap){ const d=snap.exists()?(snap.data()||{}):{}; if(typeof d.retroRate==='number')S.retroRate=d.retroRate; if(Array.isArray(d.fidTiers)&&d.fidTiers.length)S.fidTiers=d.fidTiers.map(function(t){return {key:t.key,nm:t.nm,min:t.min,pct:Number(t.pct)||0};}); render(); },function(e){ console.warn('config load',e); }); }catch(e){ console.warn('config sub',e); } }
+  var _configSub=null;
   // Compteur public du programme fondateur (settings/stats.founderTaken) : combien de
   // places ont été prises. Lisible par tous (même hors connexion, écran d'inscription pro).
   async function loadStats(){ try{ if(!FB)return; const snap=await FB.f.getDoc(FB.f.doc(FB.db,'settings','stats')); if(snap.exists()){ const d=snap.data()||{}; if(typeof d.founderTaken==='number'){ S.founderTaken=d.founderTaken; render(); } } }catch(e){ console.warn('stats load',e); } }
@@ -2373,6 +2376,9 @@
   /* Statut de COMPTE (dossier d'inscription) — distinct du cycle d'une réservation */
   function acctChip(st){return {valide:['good','Actif'],attente:['coral','En attente'],refuse:['grey','Refusé']}[st]||['grey',st];}
   function fidTiers(){return S.fidTiers||FID_TIERS;}
+  // Copie ÉDITABLE et PERSISTÉE du barème de commission. Sans elle, l'admin modifiait la
+  // constante FID_TIERS en mémoire (jamais sauvegardée) → sa modif « sautait » au rechargement.
+  function ensureFidTiers(){ if(!Array.isArray(S.fidTiers))S.fidTiers=FID_TIERS.map(function(t){return Object.assign({},t);}); return S.fidTiers; }
   function fidFor(jobs){let cur=fidTiers()[0];for(const t of fidTiers()){if(jobs>=t.min)cur=t;}return cur;}
   function fidNext(jobs){for(const t of fidTiers()){if(jobs<t.min)return t;}return null;}
   function fidColor(key){return {bronze:'#B0743A',argent:'#8A93A6',or:'#D6A72E',platine:'#4FA6C0'}[key]||'var(--teal-deep)';}
@@ -9335,8 +9341,8 @@
       // Suppression d'une demande de service supplémentaire (souhait client) une fois traitée :
       // retrait local immédiat + suppression Firestore (l'écoute temps réel confirme).
       else if(act==='wish-del'){S.adminWishes=(S.adminWishes||[]).filter(function(w){return w.id!==id;});if(FB&&FB.f&&FB.db&&!isDemo()){try{FB.f.deleteDoc(FB.f.doc(FB.db,'serviceWishes',id));}catch(_){}}toast('Demande supprimée');}
-      else if(act==='fidup'){const t=fidTiers().find(x=>x.key===id);if(t)t.pct=Math.min(30,t.pct+1);}
-      else if(act==='fiddown'){const t=fidTiers().find(x=>x.key===id);if(t)t.pct=Math.max(1,t.pct-1);}
+      else if(act==='fidup'){const t=ensureFidTiers().find(x=>x.key===id);if(t){t.pct=Math.min(30,t.pct+1);saveConfig();}}
+      else if(act==='fiddown'){const t=ensureFidTiers().find(x=>x.key===id);if(t){t.pct=Math.max(1,t.pct-1);saveConfig();}}
       else if(act==='retroup'){S.retroRate=Math.min(30,S.retroRate+1);saveConfig();}
       else if(act==='retrodown'){S.retroRate=Math.max(0,S.retroRate-1);saveConfig();}
       else if(act==='dispute-accept'){if(S.mission&&S.mission.status==='disputed'){finalizePaid(S.mission);toast('Modification validée — prestation réglée');}}

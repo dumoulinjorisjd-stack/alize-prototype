@@ -1005,8 +1005,15 @@ exports.notifyClientStatus = onDocumentUpdated('requests/{reqId}', async (event)
  * fois (idempotent via `commissionSettled`) sur la demande :
  *   commissionPct, commissionBase, commissionAmount, grossTotal, netAmount.
  */
-function commissionTierPct(jobsTotal) {
+function commissionTierPct(jobsTotal, tiers) {
   const n = Number(jobsTotal) || 0;
+  // Barème PERSONNALISÉ par l'admin (settings/config.fidTiers) prioritaire : on retient le
+  // palier de plus haut seuil `min` atteint. Repli sur le barème par défaut si absent.
+  if (Array.isArray(tiers) && tiers.length) {
+    let pct = null; let bestMin = -1;
+    for (const t of tiers) { const m = Number(t.min) || 0; const p = Number(t.pct); if (!isNaN(p) && n >= m && m >= bestMin) { bestMin = m; pct = p; } }
+    if (pct != null) return pct;
+  }
   if (n >= 300) return 8;   // Platine
   if (n >= 150) return 10;  // Or
   if (n >= 50) return 12;   // Argent
@@ -1176,6 +1183,10 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
     founderGross = Number(a.founderGross) || 0;
     founderSinceMs = (a.founderSince && a.founderSince.toMillis) ? a.founderSince.toMillis() : (typeof a.founderSince === 'number' ? a.founderSince : null);
   } catch (_) {}
+  // Barème de commission PERSONNALISÉ par l'admin (settings/config) — pour que la commission
+  // réellement prélevée reflète le barème réglé dans la console (et non des valeurs figées).
+  let cfgTiers = null;
+  try { const cfg = (await db.collection('settings').doc('config').get()).data() || {}; if (Array.isArray(cfg.fidTiers)) cfgTiers = cfg.fidTiers; } catch (_) {}
 
   // Artisan Fondateur : commission réduite aux seuls frais bancaires (jamais Bronze),
   // MAIS uniquement pendant la fenêtre d'avantage — 3 mois OU 2 000 € de prestations
@@ -1185,7 +1196,7 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
   const withinTime = (founderSinceMs == null) ? true : (Date.now() - founderSinceMs < FOUNDER_DAYS * 86400000);
   const withinGross = founderGross < FOUNDER_GROSS_CAP;
   const founderActive = isFounder && withinTime && withinGross;
-  const basePct = founderActive ? FOUNDER_COMM_PCT : commissionTierPct(jobsTotal);
+  const basePct = founderActive ? FOUNDER_COMM_PCT : commissionTierPct(jobsTotal, cfgTiers);
   // Plancher « petits montants » : au moins SMALL_COMM_PCT % sous SMALL_COMM_MIN € de base.
   const pct = (base < SMALL_COMM_MIN) ? Math.max(basePct, SMALL_COMM_PCT) : basePct;
   const commission = round2((base + round2(base * boost / 100) + boostEur) * pct / 100);
