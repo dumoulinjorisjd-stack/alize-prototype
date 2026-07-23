@@ -10116,6 +10116,9 @@
 
   /* ---------- PWA: install + service worker ---------- */
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
+  // Bandeau d'aide à l'installation sur iPhone Safari (visiteur non installé) — après un
+  // court délai pour ne pas gêner l'ouverture. Refermable, mémorisé.
+  setTimeout(function(){ try{ maybeShowIosInstallHint(); }catch(_){} }, 1800);
   // ——— Hauteur d'application fiable (correctif barre d'onglets « repliée » Android) ———
   // Historique : 100dvh (viewport DYNAMIQUE) sur-estime la hauteur quand les barres
   // système/navigateur sont susceptibles de se replier — l'app devenait plus haute que
@@ -10256,6 +10259,34 @@
         ? 'Installez Ti-Services sur votre écran d’accueil pour être <b>alerté des nouvelles demandes</b> — même application fermée. Sans elle, vous risquez de manquer des missions.'
         : 'Installez Ti-Services sur votre écran d’accueil pour être <b>prévenu dès qu’un prestataire répond</b> et suivre vos demandes en direct — même application fermée.';
       setTimeout(function(){ try{ showInstallGuide({headTitle:'Ne manquez aucune notification', sub:'Ajoutez Ti-Services à votre écran d’accueil, en quelques gestes.', banner:banner}); }catch(_){} }, 1400);
+    }catch(_){}
+  }
+  // BANDEAU AUTO iPhone : quand un visiteur ouvre le lien dans SAFARI sur iPhone (app pas
+  // installée), rien ne lui indique spontanément le geste « Sur l'écran d'accueil ». On
+  // affiche un petit bandeau discret et refermable qui l'explique — et ouvre le guide complet.
+  // iOS n'autorise l'installation QUE depuis Safari : inutile ailleurs. Refus mémorisé.
+  function maybeShowIosInstallHint(){
+    try{
+      if(appInstalled())return;
+      if(document.getElementById('iosInstallHint'))return;
+      try{ if(localStorage.getItem('tiIosHintDismissed')==='1')return; }catch(_){}
+      const pf=detectPlatform();
+      if(!pf||!pf.ios||pf.browser!=='safari'||pf.inApp)return;
+      const shareGlyph='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#FF6A5B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><path d="M12 15V3"/><path d="M8.5 6.5 12 3l3.5 3.5"/><path d="M6 12v7a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-7"/></svg>';
+      const el=document.createElement('div');
+      el.id='iosInstallHint';
+      el.setAttribute('style','position:fixed;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom, 0px) + 12px);z-index:9500;background:#fff;border:1px solid #efeae4;border-radius:16px;box-shadow:0 12px 34px rgba(0,0,0,.20);padding:13px 34px 13px 14px;font-family:-apple-system,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;color:#231E33;max-width:520px;margin:0 auto;box-sizing:border-box');
+      el.innerHTML='<button id="iosHintClose" aria-label="Fermer" style="position:absolute;top:6px;right:8px;background:none;border:none;font-size:20px;line-height:1;color:#b0aab8;padding:4px 6px;cursor:pointer">×</button>'+
+        '<div style="display:flex;gap:11px;align-items:center">'+
+          '<div style="flex:none;width:42px;height:42px;border-radius:12px;background:#FFF1EE;display:flex;align-items:center;justify-content:center;font-size:22px">📲</div>'+
+          '<div style="flex:1;min-width:0"><b style="font-size:14px">Installez Ti-Services</b>'+
+          '<div style="font-size:12.5px;color:#6b6577;line-height:1.45;margin-top:2px">Touchez <b>Partager</b> '+shareGlyph+' en bas de Safari, puis <b>« Sur l’écran d’accueil »</b>.</div></div>'+
+          '<button id="iosHintCta" style="flex:none;background:#FF6A5B;color:#fff;border:none;font-weight:700;font-size:12.5px;padding:9px 13px;border-radius:11px;cursor:pointer">Voir</button>'+
+        '</div>';
+      document.body.appendChild(el);
+      const close=function(){ try{localStorage.setItem('tiIosHintDismissed','1');}catch(_){} try{el.remove();}catch(_){} };
+      const c=el.querySelector('#iosHintClose'); if(c)c.addEventListener('click',close);
+      const cta=el.querySelector('#iosHintCta'); if(cta)cta.addEventListener('click',function(){ try{el.remove();}catch(_){} try{showInstallGuide();}catch(_){} });
     }catch(_){}
   }
   function showInstallGuide(opts){
