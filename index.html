@@ -1960,7 +1960,7 @@
   // COMPLÈTE (indicatif + numéro) est réécrite dans l'état via setPhoneVal(key).
   function phoneCombo(key,value){
     const s=splitPhone(value);
-    return `<div class="row" style="gap:8px"><select class="txt" data-phonepfx="${key}" style="flex:0 0 96px;min-width:0">${PHONE_PFX.map(p=>`<option value="${p}"${s.pfx===p?' selected':''}>${p}</option>`).join('')}</select><input class="txt" data-phonenum="${key}" data-v="phone" value="${esc(s.num)}" inputmode="tel" placeholder="690 00 00 00" style="flex:1;min-width:0"></div>`;
+    return `<div class="row" style="gap:8px"><select class="txt" data-phonepfx="${key}" style="flex:0 0 96px;min-width:0">${PHONE_PFX.map(p=>`<option value="${p}"${s.pfx===p?' selected':''}>${p}</option>`).join('')}</select><input class="txt" data-phonenum="${key}" data-v="phone" value="${esc(s.num)}" inputmode="tel" autocomplete="tel-national" placeholder="690 00 00 00" style="flex:1;min-width:0"></div>`;
   }
   function setPhoneVal(key,val){
     switch(key){
@@ -6837,7 +6837,7 @@
       <div class="h-hello">Vos informations</div>
       <div class="card" style="padding:16px;margin-top:16px">
         <div class="field">${photoPicker(f.photo,'client')}</div>
-        <div class="field"><label>Prénom &amp; nom</label><input class="txt" data-cf="name" data-v="name" value="${esc(f.name)}" placeholder="Nom et prénom"></div>
+        <div class="field"><label>Prénom &amp; nom</label><input class="txt" data-cf="name" data-v="name" value="${esc(f.name)}" autocomplete="name" autocapitalize="words" placeholder="Nom et prénom"></div>
         <div class="field"><label>E-mail</label><input class="txt" data-cf="email" data-v="email" value="${esc(f.email)}" inputmode="email" autocomplete="email" placeholder="vous@exemple.com"></div>
         <div class="field"><label>Mot de passe</label><div class="pw-wrap"><input class="txt" type="password" data-cf="password" value="${esc(f.password||'')}" autocomplete="new-password" placeholder="6 caractères minimum"><button type="button" class="pw-eye" data-act="pw-toggle" aria-label="Afficher le mot de passe">${I.eye}</button></div></div>
         <div class="field"><label>Confirmer le mot de passe</label><div class="pw-wrap"><input class="txt" type="password" data-cf="password2" value="${esc(f.password2||'')}" autocomplete="new-password" placeholder="Retapez votre mot de passe"><button type="button" class="pw-eye" data-act="pw-toggle" aria-label="Afficher le mot de passe">${I.eye}</button></div>${(f.password2&&f.password!==f.password2)?`<p class="mini" style="margin-top:5px;color:var(--coral-deep)">Les mots de passe ne correspondent pas.</p>`:((f.password2&&(f.password||'').length>=6)?`<p class="fv-ok">✓ Les mots de passe correspondent</p>`:'')}</div>
@@ -8108,10 +8108,10 @@
       <div class="banner coral" style="margin-top:14px">${I.shield}<span><b>Sur candidature</b> — réservé aux structures immatriculées. <b>SIRET obligatoire</b>. Profil vérifié avant activation.</span></div>
       <div class="card" style="padding:16px;margin-top:14px">
         <p class="reqnote" style="margin:0 0 4px">Les champs marqués ${RQ} sont obligatoires.</p>
-        <div class="field"><label>Nom de la conciergerie / raison sociale${RQ}</label><input class="txt" data-csf="name" data-v="name" value="${esc(f.name||'')}" placeholder="Votre raison sociale"></div>
+        <div class="field"><label>Nom de la conciergerie / raison sociale${RQ}</label><input class="txt" data-csf="name" data-v="name" value="${esc(f.name||'')}" autocomplete="organization" autocapitalize="words" placeholder="Votre raison sociale"></div>
         <div class="field"><label>SIRET${RQ}</label><input class="txt" data-csf="siret" data-v="siret9" value="${esc(f.siret||'')}" inputmode="numeric" placeholder="14 chiffres"></div>
         <div class="field"><label>Adresse (siège social)${RQ}</label><input class="txt" data-csf="address" data-v="text" value="${esc(f.address||'')}" placeholder="Ex. Gustavia, 97133 Saint-Barthélemy"><p class="mini" style="margin-top:5px">Figure sur votre relevé de rétribution (mention légale).</p></div>
-        <div class="field"><label>Personne à contacter${RQ}</label><input class="txt" data-csf="contact" data-v="name" value="${esc(f.contact||'')}" placeholder="Prénom & nom"></div>
+        <div class="field"><label>Personne à contacter${RQ}</label><input class="txt" data-csf="contact" data-v="name" value="${esc(f.contact||'')}" autocomplete="name" autocapitalize="words" placeholder="Prénom & nom"></div>
         <div class="field"><label>Téléphone${RQ}</label>${phoneCombo('conc',f.phone)}<p class="mini" style="margin-top:5px">Indicatif obligatoire — nécessaire pour les alertes WhatsApp.</p></div>
         <div class="field"><label>E-mail (identifiant de connexion)${RQ}</label><input class="txt" data-csf="email" data-v="email" value="${esc(f.email||'')}" inputmode="email" autocomplete="email" placeholder="contact@votre-conciergerie.com"></div>
         <div class="field"><label>Mot de passe${RQ}</label><div class="pw-wrap"><input class="txt" type="password" data-csf="password" value="${esc(f.password||'')}" autocomplete="new-password" placeholder="6 caractères minimum"><button type="button" class="pw-eye" data-act="pw-toggle" aria-label="Afficher">${I.eye}</button></div></div>
@@ -8125,6 +8125,39 @@
         <button class="btn primary" data-act="conc-submit"${ok?'':' disabled'}>${I.check} Envoyer ma candidature</button>
         <p class="mini" style="text-align:center;margin-top:10px">${I.lock} Vérification sous 48 h. Vous serez prévenu dès l'activation.</p>
       </div></div>`;
+  }
+  // Catégories juridiques INSEE (niveau III) les plus courantes → libellé lisible pour la
+  // mention légale « forme juridique ». Table volontairement limitée aux cas fréquents ;
+  // si le code est inconnu, on laisse l'artisan saisir/corriger à la main.
+  const NATURE_JURIDIQUE={'1000':'Entrepreneur individuel','5202':'SNC','5306':'Société en commandite simple','5308':'Société en commandite par actions','5385':'Société d’exercice libéral','5410':'SARL','5415':'SARL','5426':'SARL','5498':'EURL','5499':'SARL','5505':'SA','5510':'SA','5515':'SA','5599':'SA','5710':'SAS','5720':'SASU','6540':'SCI','6220':'GIE','9220':'Association'};
+  // PRÉ-REMPLISSAGE via le SIRET : interroge l'annuaire officiel des entreprises
+  // (recherche-entreprises.api.gouv.fr, public et gratuit) et remplit la raison sociale,
+  // l'adresse du siège et la forme juridique — l'artisan n'a plus qu'à vérifier/compléter.
+  async function lookupSiret(){
+    const raw=((S.proForm&&S.proForm.siret)||'').replace(/\D/g,'');
+    if(raw.length!==14){toast('Saisissez d’abord les 14 chiffres du SIRET');return;}
+    S._siretBusy=true;render();
+    try{
+      const res=await fetch('https://recherche-entreprises.api.gouv.fr/search?q='+encodeURIComponent(raw)+'&page=1&per_page=1');
+      if(!res.ok)throw new Error('http');
+      const d=await res.json();
+      const r=(d&&d.results&&d.results[0])||null;
+      if(!r){toast('SIRET introuvable — vérifiez le numéro (ou saisissez à la main)');return;}
+      const nj=(r.nature_juridique||'').toString();
+      const isEI=(nj===''||nj==='1000'); // entrepreneur individuel / micro
+      const raison=r.nom_raison_sociale||r.nom_complet||'';
+      const sg=r.siege||{};
+      const adr=(sg.adresse||[sg.numero_voie,sg.type_voie,sg.libelle_voie,sg.code_postal,sg.libelle_commune].filter(Boolean).join(' ')).trim();
+      S.proForm=S.proForm||{};
+      if(raison&&!(S.proForm.name||'').trim())S.proForm.name=raison;
+      if(adr&&!(S.proForm.address||'').trim())S.proForm.address=adr;
+      if(isEI){ S.proForm.statusType='micro'; }
+      else{ S.proForm.statusType='entreprise'; const lf=NATURE_JURIDIQUE[nj]||''; if(lf&&!(S.proForm.legalForm||'').trim())S.proForm.legalForm=lf; }
+      try{refreshProSubmit();}catch(_){}
+      render();
+      toast('Informations récupérées ✓ — vérifiez et complétez (capital, RCS)');
+    }catch(e){ toast('Annuaire indisponible — saisissez vos infos à la main'); }
+    finally{ S._siretBusy=false; try{render();}catch(_){} }
   }
   function proSignup(){
     const f=S.proForm;
@@ -8171,12 +8204,12 @@
       <div class="card" style="padding:16px;margin-top:14px">
         <p class="reqnote" style="margin:0 0 4px">Les champs marqués ${RQ} sont obligatoires.</p>
         <div class="field">${photoPicker(f.photo,'pro')}<p class="mini" style="margin-top:2px">Un visage rassure les clients — les profils avec photo sont choisis plus souvent.</p></div>
-        <div class="field"><label>Nom / Raison sociale${RQ}</label><input class="txt" data-pf="name" data-v="name" value="${esc(f.name)}" placeholder="Nom et prénom, ou raison sociale (SAS, SARL…)"><p class="mini" style="margin-top:5px"><b>Société</b> : indiquez votre <b>raison sociale exacte</b> (ex. « Ménage Plus SAS »). <b>Micro-entreprise / EI</b> : vos nom et prénom. C'est ce nom qui apparaît sur vos factures.</p></div>
+        <div class="field"><label>Nom / Raison sociale${RQ}</label><input class="txt" data-pf="name" data-v="name" value="${esc(f.name)}" autocomplete="organization" autocapitalize="words" placeholder="Nom et prénom, ou raison sociale (SAS, SARL…)"><p class="mini" style="margin-top:5px"><b>Société</b> : indiquez votre <b>raison sociale exacte</b> (ex. « Ménage Plus SAS »). <b>Micro-entreprise / EI</b> : vos nom et prénom. C'est ce nom qui apparaît sur vos factures.</p></div>
         <div class="field"><label>Téléphone${RQ}</label>${phoneCombo('pro',f.phone)}<p class="mini" style="margin-top:5px">Indicatif obligatoire — nécessaire pour les alertes WhatsApp.</p></div>
         <div class="field"><label>E-mail${RQ}</label><input class="txt" data-pf="email" data-v="email" value="${esc(f.email||'')}" inputmode="email" autocomplete="email" placeholder="vous@exemple.com"></div>
         <div class="field"><label>Mot de passe${RQ}</label><div class="pw-wrap"><input class="txt" type="password" data-pf="password" value="${esc(f.password||'')}" autocomplete="new-password" placeholder="6 caractères minimum"><button type="button" class="pw-eye" data-act="pw-toggle" aria-label="Afficher le mot de passe">${I.eye}</button></div></div>
         <div class="field"><label>Confirmer le mot de passe${RQ}</label><div class="pw-wrap"><input class="txt" type="password" data-pf="password2" value="${esc(f.password2||'')}" autocomplete="new-password" placeholder="Retapez votre mot de passe"><button type="button" class="pw-eye" data-act="pw-toggle" aria-label="Afficher le mot de passe">${I.eye}</button></div>${(f.password2&&f.password!==f.password2)?`<p class="mini" style="margin-top:5px;color:var(--coral-deep)">Les mots de passe ne correspondent pas.</p>`:((f.password2&&(f.password||'').length>=6)?`<p class="fv-ok">✓ Les mots de passe correspondent</p>`:'')}</div>
-        <div class="field"><label>SIRET (14 chiffres)${RQ}</label><input class="txt" data-pf="siret" data-v="siret14" value="${f.siret}" inputmode="numeric" placeholder="Ex. 123 456 789 00012"></div>
+        <div class="field"><label>SIRET (14 chiffres)${RQ}</label><input class="txt" data-pf="siret" data-v="siret14" value="${f.siret}" inputmode="numeric" autocomplete="off" placeholder="Ex. 123 456 789 00012"><button class="btn ghost sm" data-act="siret-lookup" ${S._siretBusy?'disabled':''} style="margin-top:8px;width:auto;padding:9px 14px">${S._siretBusy?I.clock+' Recherche…':I.search+' Remplir avec mon SIRET'}</button><p class="mini" style="margin-top:5px;color:var(--muted)">Renseigne automatiquement votre <b>raison sociale</b>, votre <b>adresse</b> et votre <b>forme juridique</b> depuis l'annuaire officiel des entreprises.</p></div>
         <div class="field"><label>Adresse professionnelle (siège)${RQ}</label><input class="txt" data-pf="address" data-v="text" value="${esc(f.address||'')}" placeholder="Ex. Gustavia, 97133 Saint-Barthélemy"><p class="mini" style="margin-top:5px">Figure sur vos factures (mention légale obligatoire).</p></div>
         <div class="field"><label>Forme juridique</label><div class="segs"><button class="seg ${f.statusType!=='micro'&&f.statusType!=='particulier'?'on':''}" data-pstatustype="entreprise">Société</button><button class="seg ${f.statusType==='micro'?'on':''}" data-pstatustype="micro">Micro-entreprise / EI</button></div></div>
         ${(f.statusType!=='micro')?`<div class="field"><label>Mentions société (sur vos factures)</label><div class="row" style="gap:8px"><input class="txt" data-pf="legalForm" value="${esc(f.legalForm||'')}" placeholder="Forme (SAS, SARL, EURL…)" style="flex:1"><input class="txt" data-pf="capital" value="${esc(f.capital||'')}" inputmode="numeric" placeholder="Capital (€)" style="flex:none;width:118px"></div><input class="txt" data-pf="rcsCity" value="${esc(f.rcsCity||'')}" placeholder="Ville d'immatriculation RCS (ex. Basse-Terre)" style="margin-top:8px"><p class="mini" style="margin-top:5px">Si vous êtes une <b>société</b>, ces mentions sont <b>obligatoires sur vos factures</b> (forme juridique, capital social, RCS). Micro-entreprise / EI : laissez vide.</p></div>`:''}
@@ -9645,6 +9678,7 @@
       case 'close-chat':S.chat=false;render();break;
       case 'chat-send':sendChat();view.scrollTop=view.scrollHeight;break;
       case 'rm-insurance':if(S.proForm){S.proForm.insuranceFile=null;S.proForm.insuranceDoc=false;S.proForm.insuranceName='';}render();toast('Attestation retirée');break;
+      case 'siret-lookup':lookupSiret();break;
       case 'addr-new':S.addrForm={id:null,label:'',address:'',zone:'Gustavia',geo:null,access:''};render();break;
       case 'addr-cancel':S.addrForm=null;render();break;
       case 'addr-geo':geolocate(g=>{if(S.addrForm){S.addrForm.geo=g;render();}});break;
