@@ -7920,6 +7920,25 @@
   // gain net (commission déduite) part alors automatiquement vers ce compte Mollie, sans
   // aucun virement manuel. Remplace l'ancienne obligation de RIB dans l'app.
   function mollieReady(){return mollieState()==='active'&&!!S.proMollieOrgId;}
+  // Peut-on accepter une mission ? En paiement RÉEL (prod), l'activation Mollie est requise
+  // (versement automatique du gain net). En BÊTA/démo, aucun versement réel → l'activation
+  // Mollie n'est PAS exigée, pour pouvoir dérouler la démonstration complète (accepter,
+  // réaliser, valider) sans passer par l'onboarding Mollie.
+  function canAcceptMissions(){return !payReal()||mollieReady();}
+  // BÊTA uniquement : il n'y a pas de vrai versement, donc l'onboarding Mollie n'a pas lieu
+  // d'être. Pour dérouler la démonstration complète (le prestataire doit pouvoir ACCEPTER),
+  // on marque son compte « paiements actifs » côté bêta — ce qui satisfait aussi la règle
+  // Firestore d'acceptation. EN PRODUCTION, rien n'est touché : l'onboarding Mollie réel
+  // reste exigé (aucun appel ici, gardé par IS_PROD).
+  function ensureBetaMollie(){
+    try{
+      if(IS_PROD)return;
+      if(!(FB&&FB.auth&&FB.auth.currentUser)||(typeof isDemo==='function'&&isDemo()))return;
+      if(S.proMollie==='active'&&S.proMollieOrgId)return;
+      S.proMollie='active'; S.proMollieOrgId=S.proMollieOrgId||'beta-demo';
+      FB.f.setDoc(FB.f.doc(FB.db,'artisans',FB.auth.currentUser.uid),{mollieStatus:'active',mollieOrgId:(S.proMollieOrgId||'beta-demo')},{merge:true}).catch(function(){});
+    }catch(_){}
+  }
   // Écran d'activation des paiements. Objectif : que la démarche paraisse un
   // simple bouton (« Activer mes paiements ») et non une corvée administrative.
   // Ti-Services pré-remplit l'identité déjà connue ; Mollie collecte l'IBAN et la
@@ -10592,7 +10611,7 @@
         S.proLegal=(ad&&(ad.legalName||ad.name))||name; S.proAddress=(ad&&ad.address)||''; S.proStatusType=(ad&&ad.statusType)||'entreprise'; S.proLegalForm=(ad&&ad.legalForm)||''; S.proCapital=(ad&&ad.capital)||''; S.proRcsCity=(ad&&ad.rcsCity)||'';
         if(ad&&Array.isArray(ad.cats)&&ad.cats.length){S.proCats=ad.cats.slice();const rr=ad.rates||{};S.proRate=Math.min.apply(null,ad.cats.map(c=>(rr[c]!=null?rr[c]:svcBase(c))));}
         if(ad){S.proPendingCats=Array.isArray(ad.pendingCats)?ad.pendingCats.slice():[];S.proPendingOther=ad.pendingOther||'';S.proSkipped=Array.isArray(ad.skippedRequests)?ad.skippedRequests.slice():[];S.proSkipAt=(ad.skippedAt&&typeof ad.skippedAt==='object')?ad.skippedAt:{};}
-        if(ad){ S.proFounder=!!ad.founder; S.proFounderSince=(ad.founderSince&&ad.founderSince.toMillis)?ad.founderSince.toMillis():(typeof ad.founderSince==='number'?ad.founderSince:null); S.proFounderGross=Number(ad.founderGross)||0; S.proRating=ad.rating||0; S.proIban=ad.iban||''; S.proIbanHolder=ad.ibanHolder||''; S.proBic=ad.bic||''; S.proInsured=!!ad.insured; S.proInsurer=ad.insurer||''; S.proInsuranceUrl=ad.insuranceUrl||''; S.proInsuranceStatus=ad.insuranceStatus||(ad.status==='valide'&&ad.insured?'valide':(ad.insuranceUrl||ad.insured?'attente':'none')); S.proSiret=ad.siret||''; S.proBirth=ad.birth||''; S.proBio=ad.bio||''; S.proDiplomas=Array.isArray(ad.diplomas)?ad.diplomas:[]; S.proDiplomaOther=ad.diplomaOther||''; S.proPhoto=ad.photo||S.proPhoto||loadPhotoLocal(user.uid)||null; if(S.proPhoto)savePhotoLocal(user.uid,S.proPhoto); if(!ad.photo&&S.proPhoto){try{FB.f.setDoc(FB.f.doc(FB.db,'artisans',user.uid),{photo:S.proPhoto},{merge:true});}catch(_){}} S.proAcceptedCharte=!!ad.acceptedCharte; S.proAcceptedTerms=!!ad.acceptedTerms; S.proTermsVersion=ad.termsVersion||''; S.proTermsAt=(ad.termsAt&&ad.termsAt.toDate)?ad.termsAt.toDate():null; S.proMollie=ad.mollieStatus||'none'; S.proMollieOrgId=ad.mollieOrgId||''; S.proMollieDashboard=ad.mollieDashboardUrl||''; if(S.proMollieOrgId&&!S._mollieAutoChecked){S._mollieAutoChecked=true;setTimeout(function(){try{refreshMollieStatus();}catch(_){}},1500);}
+        if(ad){ S.proFounder=!!ad.founder; S.proFounderSince=(ad.founderSince&&ad.founderSince.toMillis)?ad.founderSince.toMillis():(typeof ad.founderSince==='number'?ad.founderSince:null); S.proFounderGross=Number(ad.founderGross)||0; S.proRating=ad.rating||0; S.proIban=ad.iban||''; S.proIbanHolder=ad.ibanHolder||''; S.proBic=ad.bic||''; S.proInsured=!!ad.insured; S.proInsurer=ad.insurer||''; S.proInsuranceUrl=ad.insuranceUrl||''; S.proInsuranceStatus=ad.insuranceStatus||(ad.status==='valide'&&ad.insured?'valide':(ad.insuranceUrl||ad.insured?'attente':'none')); S.proSiret=ad.siret||''; S.proBirth=ad.birth||''; S.proBio=ad.bio||''; S.proDiplomas=Array.isArray(ad.diplomas)?ad.diplomas:[]; S.proDiplomaOther=ad.diplomaOther||''; S.proPhoto=ad.photo||S.proPhoto||loadPhotoLocal(user.uid)||null; if(S.proPhoto)savePhotoLocal(user.uid,S.proPhoto); if(!ad.photo&&S.proPhoto){try{FB.f.setDoc(FB.f.doc(FB.db,'artisans',user.uid),{photo:S.proPhoto},{merge:true});}catch(_){}} S.proAcceptedCharte=!!ad.acceptedCharte; S.proAcceptedTerms=!!ad.acceptedTerms; S.proTermsVersion=ad.termsVersion||''; S.proTermsAt=(ad.termsAt&&ad.termsAt.toDate)?ad.termsAt.toDate():null; S.proMollie=ad.mollieStatus||'none'; S.proMollieOrgId=ad.mollieOrgId||''; S.proMollieDashboard=ad.mollieDashboardUrl||''; ensureBetaMollie(); if(S.proMollieOrgId&&!S._mollieAutoChecked){S._mollieAutoChecked=true;setTimeout(function(){try{refreshMollieStatus();}catch(_){}},1500);}
           // Revenus / missions réalisées, rechargés depuis la fiche (persistés à chaque paiement).
           S.proEarnings=ad.earnings||0; S.proJobsTotal=ad.jobsTotal||0; S.proHistory=Array.isArray(ad.history)?ad.history:[];
           // Réglages persistés (disponibilités, en ligne, préférences de notif).
@@ -10836,6 +10855,7 @@
       try{ await FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{name:(f.name||'').trim(),legalName:(f.name||'').trim(),email:(f.email||'').trim(),address:(f.address||'').trim(),statusType:f.statusType||'entreprise',legalForm:(f.legalForm||'').trim(),capital:(f.capital||'').toString().replace(/[^\d]/g,''),rcsCity:(f.rcsCity||'').trim(),birth:(f.birth||''),cats:f.cats.slice(),other:(f.otherService||'').trim(),rates:rates,diplomas:(f.diplomas||[]).slice(),diplomaOther:(f.diplomaOther||'').trim(),siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,insurer:f.insurer||'',insuranceUrl:insuranceUrl,insuranceStatus:'attente',phone:f.phone||'',photo:f.photo||'',bio:(f.bio||'').trim(),acceptedTerms:!!f.cgu,acceptedCharte:!!f.charte,acceptedMandat:!!f.mandat,acceptsGrille:!!f.acceptsGrille,termsVersion:TERMS_VERSION,termsAt:FB.f.serverTimestamp(),status:'attente',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
       S.account={name:(f.name||'').trim()||(f.email.trim().split('@')[0]),email:f.email.trim(),uid:uid,role:'artisan'};
       S.persona='pro'; S.proName=(f.name||'').trim(); S.proStatus='pending'; S.onboarded=true; S.authView=null; S.proNav='home';
+      ensureBetaMollie(); // BÊTA : paiements marqués actifs pour pouvoir accepter (démo). No-op en prod.
       S.proInsuranceStatus='attente'; S.proInsuranceUrl=insuranceUrl; S.proCats=f.cats.slice();
       subscribeProStatus(uid);
       burstConfetti(); render(); toast('Candidature envoyée — compte créé, examen sous 48 h');
@@ -11157,7 +11177,7 @@
     // + statut actif), le prestataire ne peut pas accepter — sinon le client paierait « dans
     // le vide » (aucun versement automatique possible). On l'envoie activer ses paiements.
     // (Aussi vérifié côté serveur par les règles Firestore.)
-    if(!mollieReady()){toast('Activez vos paiements (Mollie) pour accepter et être payé automatiquement.');S.proReqView=null;S.proPayoutView=false;S.proMollieView=true;render();return;}
+    if(!canAcceptMissions()){toast('Activez vos paiements (Mollie) pour accepter et être payé automatiquement.');S.proReqView=null;S.proPayoutView=false;S.proMollieView=true;render();return;}
     const req=(S.openRequests||[]).find(function(x){return x.id===reqId;});if(!req)return;
     // Pendant l'acceptation (écritures Firestore async), la demande quitte le fil et
     // les écouteurs déclenchent un rendu : sans ce drapeau, la fiche « introuvable »
@@ -11281,9 +11301,9 @@
       ${(r.photos&&r.photos.length)?`<div class="card" style="padding:14px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">${I.camera} Photos du client</div><div class="thumbs" style="margin-top:8px">${r.photos.map(function(u){return `<div class="thumb"><img class="viewable" data-docname="photo-demande" src="${esc(u)}" alt="Photo de la demande — appuyer pour agrandir"></div>`;}).join('')}</div></div>`:''}
       ${r.notes?`<div class="card" style="padding:16px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Le besoin du client</div><p class="sub" style="margin-top:6px;color:var(--ink-soft);white-space:pre-wrap">${esc(r.notes)}</p></div>`:''}
       ${(r.locationMode==='salon')?`<div class="card" style="padding:14px;margin-top:12px"><div class="row" style="gap:10px;align-items:flex-start"><span class="benic">${I.shop}</span><div><b style="font-size:13px">Chez vous — le client se déplace</b><p class="mini" style="margin-top:3px">Cette prestation a lieu dans <b>votre salon / studio</b>. En acceptant, votre adresse est communiquée au client pour qu'il vous rejoigne. ${S.proSalonAddress?'':I.warn+' Renseignez d’abord l’adresse de votre salon dans votre profil.'}</p></div></div></div>`:`<div class="card" style="padding:14px;margin-top:12px"><div class="row" style="gap:10px;align-items:flex-start"><span class="benic">${I.lock}</span><div><b style="font-size:13px">Adresse exacte masquée</b><p class="mini" style="margin-top:3px">L'adresse précise, le point GPS et les infos d'accès s'affichent <b>dès que vous acceptez</b> la mission.</p></div></div></div>`}
-      ${!mollieReady()?`<div class="banner coral" style="margin-top:12px">${I.card}<span><b>Paiements à activer pour accepter.</b> Activez vos paiements sécurisés (Mollie) — votre gain net vous sera versé <b>automatiquement</b> après la prestation.</span></div>`:''}
+      ${!canAcceptMissions()?`<div class="banner coral" style="margin-top:12px">${I.card}<span><b>Paiements à activer pour accepter.</b> Activez vos paiements sécurisés (Mollie) — votre gain net vous sera versé <b>automatiquement</b> après la prestation.</span></div>`:''}
       <div class="footcta" style="position:static;background:none;padding:18px 0 0">
-        ${mollieReady()
+        ${canAcceptMissions()
           ? `<button class="btn accept" data-act="accept-req:${r.id}">${I.flame} Accepter${accLabel||' cette mission'}</button>`
           : `<button class="btn primary" data-act="pro-mollie">${I.lock} Activer mes paiements pour accepter</button>`}
         ${directedMe
