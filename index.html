@@ -6015,15 +6015,7 @@
         <button class="btn" data-act="admin-add-cat" style="margin-top:10px;background:var(--teal-deep);color:#fff">Ajouter au catalogue</button>
       </div>
       <p class="mini" style="margin-top:12px">Ces prix fixes sont ceux que voient les clients à la commande. La majoration « coup de pouce » s'applique <b>par-dessus</b> et revient au prestataire.</p>
-      ${(S.mission&&S.mission.status==='disputed')?`<div style="height:16px"></div><span class="eyebrow" style="color:var(--coral-deep)">${I.scales} Litige à arbitrer</span>
-      <div class="card" style="padding:14px;margin-top:10px;border-left:4px solid var(--coral)">
-        <div class="row between"><b style="font-size:14px">${S.mission.svcName}</b><span class="chip coral">Désaccord durée</span></div>
-        <div class="mini" style="margin-top:3px">${esc(S.mission.clientName||(isDemo()?'Camille Magras':'Client'))} → ${esc((S.mission.provider&&S.mission.provider.nm)||'')}</div>
-        <div class="receipt-line" style="margin-top:8px"><span>Accord initial</span><b>${S.mission.duration} h · ${eur(S.mission.rate*S.mission.duration)}</b></div>
-        <div class="receipt-line"><span>Déclaré par le prestataire</span><b>${S.mission.finalHours} h · ${eur(S.mission.rate*S.mission.finalHours)}</b></div>
-        ${S.mission.disputeMsg?`<div class="banner teal" style="margin-top:10px">${I.chat}<span>« ${esc(S.mission.disputeMsg)} »</span></div>`:''}
-        <div class="row" style="gap:8px;margin-top:11px"><button class="btn good sm" data-adm="dispute-accept">Valider la modification</button><button class="btn ghost sm" data-adm="dispute-revert">Revenir à l'accord initial</button></div>
-      </div>`:''}
+      ${disputeArbitrationHtml(S.mission)}
       ${supBlocks.length?`<div style="height:16px"></div><span class="eyebrow">Messages support · ${supBlocks.length}</span>${supBlocks.join('')}`:''}
       <div style="height:16px"></div><span class="eyebrow">Barème de commission · fidélité</span>
       <div class="card" style="padding:14px;margin-top:10px"><p class="mini" style="margin:0 0 4px;color:var(--muted)">Plus le prestataire réalise de missions, plus la commission baisse. Visible ici uniquement — jamais côté client/artisan (le % figure dans les CGU).</p>
@@ -6388,9 +6380,16 @@
         snap.forEach(function(docu){
           const r=docu.data()||{};
           const chat=srt(r.messages),supC=srt(r.supportClient),supP=srt(r.supportPro);
-          if(!chat.length&&!supC.length&&!supP.length)return;
+          // On garde les conversations AVEC messages, ET tout litige en cours (à arbitrer)
+          // même sans message — sinon il n'apparaîtrait pas dans la messagerie admin.
+          if(!chat.length&&!supC.length&&!supP.length&&r.status!=='disputed')return;
           const lastAt=function(a){return a.length?(a[a.length-1].at||0):0;};
-          list.push({reqId:docu.id,clientName:r.clientName||'Client',providerName:r.providerName||'',providerUid:r.providerUid||'',clientUid:r.clientUid||'',svc:r.service,svcName:r.serviceName||svcNm(r.service),when:r.when||'',slot:r.acceptedSlot||r.slot||'',status:r.status||'',chat:chat,support:{client:supC,pro:supP},supCReadAdmin:r.supCReadAdmin||0,supCReadUser:r.supCReadUser||0,supPReadAdmin:r.supPReadAdmin||0,supPReadUser:r.supPReadUser||0,provider:r.providerName?{nm:r.providerName,ini:inits(r.providerName)}:null,ts:Math.max(lastAt(chat),lastAt(supC),lastAt(supP))});
+          list.push({reqId:docu.id,clientName:r.clientName||'Client',providerName:r.providerName||'',providerUid:r.providerUid||'',clientUid:r.clientUid||'',svc:r.service,svcName:r.serviceName||svcNm(r.service),when:r.when||'',slot:r.acceptedSlot||r.slot||'',status:r.status||'',
+            // Champs nécessaires à l'arbitrage d'un litige directement depuis la messagerie
+            // admin (carte « Litige à arbitrer » + règlement à la durée arbitrée, synchronisé
+            // en base → le serveur capture le paiement Mollie sur finalHours).
+            duration:(r.duration!=null?r.duration:1),rate:(r.rate!=null?r.rate:0),finalHours:(r.finalHours!=null?r.finalHours:null),disputeMsg:r.disputeMsg||'',unit:r.unit||'h',acts:Array.isArray(r.acts)?r.acts:null,options:Array.isArray(r.options)?r.options:null,boost:r.boost||0,boostEur:r.boostEur||0,people:(r.people!=null?r.people:1),tip:r.tip||0,locationMode:r.locationMode||'',forfaitTotal:(r.forfaitTotal!=null?r.forfaitTotal:null),commPct:(r.commPct!=null?r.commPct:null),molliePaymentId:r.molliePaymentId||'',
+            chat:chat,support:{client:supC,pro:supP},supCReadAdmin:r.supCReadAdmin||0,supCReadUser:r.supCReadUser||0,supPReadAdmin:r.supPReadAdmin||0,supPReadUser:r.supPReadUser||0,provider:r.providerName?{nm:r.providerName,ini:inits(r.providerName)}:null,ts:Math.max(lastAt(chat),lastAt(supC),lastAt(supP))});
         });
         list.sort(function(a,b){return b.ts-a.ts;});
         S.adminThreads=list;
@@ -6402,7 +6401,7 @@
   // Badge = messages NON LUS par l'admin (et pas seulement « en attente de réponse ») :
   // s'efface dès que l'admin ouvre le fil. Un fil est non lu si le dernier message de
   // l'utilisateur est plus récent que le marqueur de lecture admin de ce fil.
-  function adminSupportPending(){const m=(S.adminThreads||[]).reduce(function(n,t){[['client','supCReadAdmin'],['pro','supPReadAdmin']].forEach(function(pr){const th=t.support[pr[0]];const last=th&&th[th.length-1];if(last&&last.from!=='admin'&&(last.at||0)>(t[pr[1]]||0))n++;});return n;},0);const g=(S.adminGeneral||[]).reduce(function(n,u){const last=u.support[u.support.length-1];return n+((last&&last.from!=='admin'&&(last.at||0)>(u.supReadAdmin||0))?1:0);},0);return m+g;}
+  function adminSupportPending(){const m=(S.adminThreads||[]).reduce(function(n,t){[['client','supCReadAdmin'],['pro','supPReadAdmin']].forEach(function(pr){const th=t.support[pr[0]];const last=th&&th[th.length-1];if(last&&last.from!=='admin'&&(last.at||0)>(t[pr[1]]||0))n++;});return n;},0);const g=(S.adminGeneral||[]).reduce(function(n,u){const last=u.support[u.support.length-1];return n+((last&&last.from!=='admin'&&(last.at||0)>(u.supReadAdmin||0))?1:0);},0);const disp=(S.adminThreads||[]).filter(function(t){return t.status==='disputed';}).length;return m+g+disp;}
   function adminMessagerie(){
     const threads=S.adminThreads||[];
     const rows=threads.map(function(t){
@@ -6415,10 +6414,11 @@
       if(t.providerName&&pP.length)acts.push(btn(`${I.support} Support artisan · ${esc(t.providerName)}`,'sup:'+t.reqId+':pro',String(pP.length),pPend));
       const sm=missionStatusMeta(t.status);
       const tkey='thread:'+t.reqId,tarm=(S._msgDelArm===tkey);
-      return `<div class="card" style="padding:14px;margin-top:10px;${(cPend||pPend)?'border-left:4px solid var(--coral)':''}">
+      const disp=(t.status==='disputed');
+      return `<div class="card" style="padding:14px;margin-top:10px;${(disp||cPend||pPend)?'border-left:4px solid var(--coral)':''}">
         <div class="row between"><b style="font-size:14px">${esc(t.svcName)}</b><span class="row" style="gap:8px;align-items:center"><span class="chip ${sm.c}">${sm.l}</span><button data-adm="delmsg:${tkey}" aria-label="Supprimer la conversation" title="Supprimer la conversation" style="flex:none;background:${tarm?'var(--coral-wash)':'none'};border:${tarm?'1px solid var(--coral)':'none'};border-radius:8px;padding:4px 6px;color:var(--coral-deep);font-size:11px;font-weight:800;display:inline-flex;align-items:center;gap:4px">${tarm?I.check+'Sûr&nbsp;?':I.trash}</button></span></div>
         <div class="mini" style="margin-top:3px">${esc(t.clientName)}${t.providerName?' · '+esc(t.providerName):' · en recherche'} · ${esc(t.when)} ${esc(t.slot)}</div>
-        <div class="stack" style="gap:7px;margin-top:11px">${acts.join('')}</div>
+        <div class="stack" style="gap:7px;margin-top:11px">${disp?`<button class="btn sm" data-adm="supervise:${t.reqId}" style="background:var(--coral-deep);color:#fff;justify-content:center">${I.scales} Litige — arbitrer</button>`:''}${acts.join('')}</div>
       </div>`;
     }).join('');
     const gen=S.adminGeneral||[];
@@ -6442,6 +6442,20 @@
       <div style="height:8px"></div></div>`;
   }
   // Supervision : lecture seule de la discussion client↔artisan par l'admin.
+  // Bloc d'arbitrage d'un litige de durée (réutilisable) : tableau de bord ET supervision.
+  function disputeArbitrationHtml(m){
+    if(!m||m.status!=='disputed')return '';
+    const provNm=(m.provider&&m.provider.nm)||m.providerName||'';
+    return `<div style="height:16px"></div><span class="eyebrow" style="color:var(--coral-deep)">${I.scales} Litige à arbitrer</span>
+      <div class="card" style="padding:14px;margin-top:10px;border-left:4px solid var(--coral)">
+        <div class="row between"><b style="font-size:14px">${esc(m.svcName)}</b><span class="chip coral">Désaccord durée</span></div>
+        <div class="mini" style="margin-top:3px">${esc(m.clientName||(isDemo()?'Camille Magras':'Client'))} → ${esc(provNm)}</div>
+        <div class="receipt-line" style="margin-top:8px"><span>Accord initial</span><b>${m.duration} h · ${eur(m.rate*m.duration)}</b></div>
+        <div class="receipt-line"><span>Déclaré par le prestataire</span><b>${m.finalHours} h · ${eur(m.rate*m.finalHours)}</b></div>
+        ${m.disputeMsg?`<div class="banner teal" style="margin-top:10px">${I.chat}<span>« ${esc(m.disputeMsg)} »</span></div>`:''}
+        <div class="row" style="gap:8px;margin-top:11px"><button class="btn good sm" data-adm="dispute-accept">Valider la modification</button><button class="btn ghost sm" data-adm="dispute-revert">Revenir à l'accord initial</button></div>
+      </div>`;
+  }
   function adminSupervise(){
     const m=S.mission;if(!m)return adminMessagerie();
     const msgs=m.chat||[];
@@ -6449,6 +6463,7 @@
     return `<div class="pad"><button class="reset" data-adm="msg" style="margin:8px 0 2px">← Retour</button>
       <div class="row" style="gap:11px;align-items:center;margin-top:2px"><div class="avatar" style="width:42px;height:42px;font-size:14px">${I.eye}</div><div style="flex:1"><b style="font-size:16px;font-family:var(--f-disp)">Supervision</b><div class="mini">${esc(m.clientName||'Client')} ↔ ${esc((m.provider&&m.provider.nm)||'artisan')}</div></div></div>
       <div class="banner teal" style="margin-top:12px">${I.shield}<span>Lecture seule — discussion à propos de&nbsp;: <b>${esc(m.svcName)}</b> · ${esc(m.when)} ${esc(m.slot)}.</span></div>
+      ${disputeArbitrationHtml(m)}
       <div class="chat-msgs">${list}</div>
       <div style="height:10px"></div></div>`;
   }
@@ -9435,8 +9450,20 @@
       else if(act==='fiddown'){const t=ensureFidTiers().find(x=>x.key===id);if(t){t.pct=Math.max(1,t.pct-1);saveConfig();}}
       else if(act==='retroup'){S.retroRate=Math.min(30,S.retroRate+1);saveConfig();}
       else if(act==='retrodown'){S.retroRate=Math.max(0,S.retroRate-1);saveConfig();}
-      else if(act==='dispute-accept'){if(S.mission&&S.mission.status==='disputed'){finalizePaid(S.mission);toast('Modification validée — prestation réglée');}}
-      else if(act==='dispute-revert'){if(S.mission&&S.mission.status==='disputed'){S.mission.finalHours=S.mission.duration;finalizePaid(S.mission);toast('Retour à l’accord initial — prestation réglée');}}
+      else if(act==='dispute-accept'||act==='dispute-revert'){if(S.mission&&S.mission.status==='disputed'){
+        // Arbitrage admin d'un désaccord de durée. « Valider » = on retient la durée déclarée
+        // par le prestataire (m.finalHours) ; « Revenir » = on repasse à la durée convenue.
+        // On FIGE le résultat en base (status=paid + finalHours) : c'est cette écriture qui
+        // déclenche côté serveur settleCommission → capture du paiement Mollie sur la durée
+        // arbitrée, et met à jour les deux applis (client & prestataire) en temps réel.
+        if(act==='dispute-revert')S.mission.finalHours=(S.mission.duration!=null?S.mission.duration:1);
+        const _fh=(S.mission.finalHours!=null?S.mission.finalHours:(S.mission.duration!=null?S.mission.duration:1));
+        S.mission.status='paid';
+        if(!isDemo()&&S.mission.reqId){pushMissionStatus(S.mission,{status:'paid',finalHours:_fh});}
+        else{finalizePaid(S.mission);}
+        toast(act==='dispute-accept'?'Modification validée — prestation réglée':'Retour à l’accord initial — prestation réglée');
+        S.adminSupervise=false;S.support=false;S.mission=null;
+      }}
       render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('del-demand:')===0){const id=b.dataset.act.slice('del-demand:'.length);const m=(S.missions||[]).find(function(x){return (x._id||'')===id;});if(m){cancelActiveRequest(m);removeMission(m);if(S.mission===m)S.mission=null;cacheClientLocal();toast('Demande supprimée');}render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('dismiss-mission:')===0){const id=b.dataset.act.slice('dismiss-mission:'.length);const m=(S.missions||[]).find(function(x){return (x._id||'')===id;});if(m){removeMission(m);if(S.mission===m)S.mission=null;cacheClientLocal();}render();return;}

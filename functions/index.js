@@ -755,6 +755,37 @@ exports.notifyServiceAddition = onDocumentUpdated({document: 'artisans/{artisanI
 });
 
 /**
+ * notifyAdminDispute : le client conteste la durée déclarée (statut -> disputed). On alerte
+ * l'admin par e-mail pour qu'il arbitre depuis la console (valider la durée déclarée, ou
+ * revenir à l'accord initial). Le client n'est pas débité tant que le litige n'est pas réglé.
+ */
+exports.notifyAdminDispute = onDocumentUpdated({document: 'requests/{reqId}', secrets: [SMTP_PASS]}, async (event) => {
+  const before = (event.data && event.data.before && event.data.before.data()) || {};
+  const after = (event.data && event.data.after && event.data.after.data()) || {};
+  if (before.status === 'disputed' || after.status !== 'disputed') return;
+  const db = getFirestore();
+  const svc = (after.serviceName || after.service || 'Prestation').toString().slice(0, 60);
+  const cli = (after.clientName || 'Client').toString().slice(0, 60);
+  const pro = (after.providerName || 'Prestataire').toString().slice(0, 60);
+  const rate = Number(after.rate) || 0;
+  const dur = Number(after.duration) || 0;
+  const fin = (after.finalHours != null) ? Number(after.finalHours) : dur;
+  const msg = (after.disputeMsg || '').toString().slice(0, 500);
+  const money = (x) => (Math.round((Number(x) || 0) * 100) / 100).toFixed(2).replace('.', ',') + ' €';
+  try {
+    await sendMail(db, ADMIN_EMAIL, {
+      subject: 'Ti-Services · Litige à arbitrer — ' + svc,
+      html: '<p><b>Un désaccord de durée est à arbitrer</b> sur une prestation :</p>' +
+            '<p><b>' + escHtmlS(svc) + '</b> — ' + escHtmlS(cli) + ' → ' + escHtmlS(pro) + '</p>' +
+            '<p>Accord initial : <b>' + dur + ' h</b> (' + money(rate * dur) + ')<br>' +
+            'Déclaré par le prestataire : <b>' + fin + ' h</b> (' + money(rate * fin) + ')</p>' +
+            (msg ? '<p>Message du client :<br>« ' + escHtmlS(msg) + ' »</p>' : '') +
+            '<p>Ouvrez la <b>console admin → Messagerie</b> (ou le tableau de bord) pour <b>valider la durée déclarée</b> ou <b>revenir à l\'accord initial</b>. Le client n\'est pas débité tant que le litige n\'est pas réglé.</p>',
+    });
+  } catch (e) { console.warn('dispute notify', e); }
+});
+
+/**
  * recomputeAvailability : maintient `settings/availability` à jour côté SERVEUR.
  * Un service n'est proposé aux clients que s'il existe AU MOINS un artisan « valide »
  * qui le pratique. Se déclenche à chaque changement d'une fiche artisan — y compris la
