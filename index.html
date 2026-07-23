@@ -10323,8 +10323,16 @@
     // Navigateur INTÉGRÉ à une app (Instagram, WhatsApp, Messenger…) : impossible
     // d'installer une PWA depuis là — il FAUT d'abord ouvrir dans Safari/Chrome.
     // C'est le blocage le plus fréquent quand on clique un lien reçu par message.
+    const installed=window.matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
+    // `navigator.standalone` N'EXISTE QUE dans le VRAI Safari iOS (false hors app installée,
+    // true une fois installée). S'il est `undefined` alors que l'UA contient « Safari », on
+    // est en réalité dans une vue Safari INTÉGRÉE — SFSafariViewController lancé depuis
+    // WhatsApp/Instagram (le fameux « ◀ WhatsApp » en haut) — ou un WKWebView : « Sur l'écran
+    // d'accueil » n'y est PAS disponible, mais l'UA est identique à Safari → détection ratée.
+    const iosEmbedded=ios && !installed && typeof navigator.standalone==='undefined';
     const inApp=/(FBAN|FBAV|FB_IAB|Instagram|Line\/|Snapchat|Pinterest|WhatsApp|MicroMessenger|WeChat|TikTok|musical_ly|Twitter|GSA)/i.test(ua)
-      || (ios && /AppleWebKit/i.test(ua) && !/Safari|CriOS|FxiOS|EdgiOS|OPiOS/i.test(ua) && !window.matchMedia('(display-mode: standalone)').matches);
+      || (iosEmbedded && browser==='safari')
+      || (ios && /AppleWebKit/i.test(ua) && !/Safari|CriOS|FxiOS|EdgiOS|OPiOS/i.test(ua) && !installed);
     const iosOtherBrowser = ios && browser!=='safari';
     return {ios,android,desktop,browser,inApp,iosOtherBrowser,ua};
   }
@@ -10346,7 +10354,9 @@
     dotsH:'<svg width="26" height="26" viewBox="0 0 24 24" fill="#1c1c1e"><circle cx="5" cy="12" r="2.1"/><circle cx="12" cy="12" r="2.1"/><circle cx="19" cy="12" r="2.1"/></svg>',
     // Icône « Installer » de la barre d'adresse (ordinateur).
     install:'<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#1477E6" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M12 8v5m0 0 2.4-2.4M12 13l-2.4-2.4M8 21h8"/></svg>',
-    app:'<img src="./zouti-logo.svg" width="34" height="34" alt="">'
+    app:'<img src="./zouti-logo.svg" width="34" height="34" alt="">',
+    // Boussole Safari (pour « ouvrir dans Safari » depuis un navigateur intégré).
+    safari:'<svg width="30" height="30" viewBox="0 0 48 48"><defs><linearGradient id="igsfg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3CADF5"/><stop offset="1" stop-color="#1477E6"/></linearGradient></defs><circle cx="24" cy="24" r="22" fill="url(#igsfg)"/><path d="M24 24 33 15 27 27Z" fill="#F1503F"/><path d="M24 24 15 33 21 21Z" fill="#fff"/><circle cx="24" cy="24" r="1.7" fill="#fff"/></svg>'
   };
   // Logos des navigateurs (dessins reconnaissables — pas d'appel réseau).
   const IG_LOGO={
@@ -10428,12 +10438,17 @@
     const card=(n,glyph,txt)=>`<div class="ig-card"><span class="ig-n">${n}</span><span class="ig-glyph">${glyph}</span><div class="ig-txt">${txt}</div></div>`;
     let body='';
     if(pf.inApp){
-      // Navigateur intégré (Instagram, WhatsApp…) : on NE PEUT PAS installer ici.
+      // Navigateur intégré (Instagram, WhatsApp…) : on NE PEUT PAS installer ici. Le bouton
+      // pour rejoindre Safari varie selon l'app (icône Partager en bas, boussole Safari en
+      // bas à droite, ou menu ⋯), d'où une étape « repère l'un de ces boutons » + un repli
+      // infaillible : ouvrir Safari soi-même et taper l'adresse.
       const openStep = pf.ios
-        ? card('1',IG_GLYPH.dots,`Touchez le menu <b>•••</b> ou <b>⋯</b> (en haut à droite), puis <b>« Ouvrir dans Safari »</b>&nbsp;${IG_LOGO.safari}`)
+        ? card('1',IG_GLYPH.safari,`Touchez l'icône <b>Partager</b> (en bas) ou la <b>boussole Safari</b> ${IG_LOGO.safari} (en bas à droite), puis <b>« Ouvrir dans Safari »</b>`)
         : card('1',IG_GLYPH.dots,`Touchez le menu <b>⋮</b>, puis <b>« Ouvrir dans le navigateur »</b> (Chrome)&nbsp;${IG_LOGO.chrome}`);
-      body=`<div class="ig-warn">${I.shield}<div>Vous avez ouvert Ti-Services <b>à l'intérieur d'une autre application</b> (Instagram, WhatsApp, Messenger…). D'ici, l'installation est impossible — ouvrez d'abord dans ${pf.ios?'<b>Safari</b>':'<b>votre navigateur</b>'}, c'est très simple&nbsp;:</div></div>
-        <div class="ig-cards">${openStep}${card('2',IG_GLYPH.app,`Une fois dans ${pf.ios?'Safari':'le navigateur'}, retouchez <b>« Installer l'application »</b> — les étapes s'afficheront.`)}</div>`;
+      body=`<div class="ig-warn">${I.shield}<div>Vous avez ouvert Ti-Services <b>à l'intérieur de WhatsApp</b> (ou Instagram, Messenger…). D'ici, l'installation est <b>impossible</b> — il faut d'abord ouvrir dans ${pf.ios?'<b>Safari</b>':'<b>votre navigateur</b>'}&nbsp;:</div></div>
+        <div class="ig-cards">${openStep}${card('2',IG_GLYPH.app,`Une fois dans ${pf.ios?'Safari':'le navigateur'}, retouchez <b>« Installer l'application »</b> — les étapes s'afficheront.`)}</div>
+        <p class="ig-or">ou, encore plus simple&nbsp;:</p>
+        <div class="ig-cards">${card('★',IG_GLYPH.safari,`Ouvrez ${pf.ios?`<b>Safari</b> ${IG_LOGO.safari}`:'<b>votre navigateur</b>'} vous-même et tapez&nbsp;: <b>ti-services.fr</b>`)}</div>`;
     } else if(pf.ios){
       const whereSub = pf.browser==='safari'
         ? `<span class="ig-sub">tout en bas de l'écran</span>`
