@@ -83,16 +83,18 @@ service cloud.firestore {
       // La fenêtre d'avantage fondateur (founderSince = date de départ, founderGross = CA
       // cumulé qui coupe l'avantage à 2 000 €) est tenue par le SERVEUR seul : l'artisan
       // ne peut ni la remettre à zéro ni la décaler pour prolonger son taux réduit.
-      // Les métiers ACTIFS (cats) ne sont écrits QUE par l'admin après validation :
-      // l'artisan propose un ajout via `pendingCats` (librement), mais ne peut jamais
-      // s'auto-activer un métier — sinon la validation admin serait contournée.
+      // Les métiers ACTIFS (cats) : l'artisan ne peut jamais AJOUTER un métier (sinon la
+      // validation admin serait contournée) — il propose un ajout via `pendingCats`. En
+      // revanche il peut RETIRER un de ses métiers depuis son compte : la nouvelle liste
+      // doit être un SOUS-ENSEMBLE de l'ancienne (hasOnly = aucun ajout, retrait autorisé).
+      // L'ajout reste réservé à l'admin (après validation).
       allow update: if isAdmin()
                     || (uid() == artisanId
                         && request.resource.data.status == resource.data.status
                         && request.resource.data.get('founder', false) == resource.data.get('founder', false)
                         && request.resource.data.get('founderGross', 0) == resource.data.get('founderGross', 0)
                         && request.resource.data.get('founderSince', null) == resource.data.get('founderSince', null)
-                        && request.resource.data.get('cats', []) == resource.data.get('cats', []));
+                        && request.resource.data.get('cats', []).hasOnly(resource.data.get('cats', [])));
       // Droit à l'effacement (RGPD) : l'artisan peut supprimer son propre dossier.
       allow delete: if isAdmin() || uid() == artisanId;
     }

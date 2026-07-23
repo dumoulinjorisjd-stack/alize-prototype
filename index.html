@@ -2642,7 +2642,10 @@
   function stmtHistory(p){return (S.proHistory||[]).filter(function(h){var q=(h.dateISO||'').split('-');return q.length>=2&&(+q[0])===p.y&&(+q[1])===(p.m+1);});}
   // Bornes de navigation : jamais le mois en cours (non terminé) vers le futur ; vers le
   // passé, jusqu'au mois de la 1re prestation (au moins le mois précédent).
-  function stmtMinKey(){var ks=(S.proHistory||[]).map(function(h){var q=(h.dateISO||'').split('-');return q.length>=2?((+q[0])*12+((+q[1])-1)):null;}).filter(function(x){return x!=null;});var cur=stmtNowKey();return Math.min(ks.length?Math.min.apply(null,ks):cur,cur-1);}
+  // Borne passée = mois de la 1re prestation. SANS aucune prestation, aucun mois passé à
+  // consulter (on ne propose plus un relevé « à 0 € » d'un mois où le compte n'existait même
+  // pas) : minKey = mois en cours → « Précédent » désactivé.
+  function stmtMinKey(){var ks=(S.proHistory||[]).map(function(h){var q=(h.dateISO||'').split('-');return q.length>=2?((+q[0])*12+((+q[1])-1)):null;}).filter(function(x){return x!=null;});return ks.length?Math.min.apply(null,ks):stmtNowKey();}
   function stmtInvNo(p,idOrUid){return 'TS-C-'+p.y+'-'+String(p.m+1).padStart(2,'0')+'-'+String(idOrUid||'0000').replace(/[^A-Za-z0-9]/g,'').slice(-4).toUpperCase();}
   function stmtNav(p){var canPrev=stmtKey(p)>stmtMinKey();var canNext=stmtKey(p)<stmtNowKey();return `<div class="row between noprint" style="align-items:center;margin:4px 0 10px"><button class="btn ghost sm" data-act="stmt-prev" ${canPrev?'':'disabled'} style="width:auto;padding:8px 12px">← Précédent</button><b style="font-size:14px">${stmtLabel(p)}</b><button class="btn ghost sm" data-act="stmt-next" ${canNext?'':'disabled'} style="width:auto;padding:8px 12px">Suivant →</button></div>`;}
   function stmtLockCard(title,backAct,p){return `<div class="pad"><button class="reset" data-act="${backAct}" style="margin:8px 0 2px">← Retour</button>
@@ -5868,7 +5871,7 @@
       <p class="sub" style="margin-top:6px">Ce que les clients aimeraient trouver sur Ti-Services — pour décider des prochains métiers à ouvrir.</p>
       ${top.length?`<div class="card" style="padding:16px;margin-top:14px"><div class="eyebrow" style="color:var(--muted)">Les plus demandés</div>${top.map(function(g){return `<div class="row between" style="margin-top:10px;align-items:center;gap:10px"><b style="font-size:14px">${esc(g.label)}</b><span class="chip ${g.count>1?'coral':'grey'}" style="flex:none">${g.count} demande${g.count>1?'s':''}</span></div>`;}).join('')}</div>
       <div class="eyebrow" style="margin:22px 4px 6px;color:var(--muted)">Toutes les suggestions</div>
-      ${chrono.map(function(x){return `<div class="card" style="padding:13px;margin-top:8px"><b style="font-size:14px">${esc(x.text)}</b><div class="mini" style="margin-top:3px">${esc(x.clientName||'Client')}${x.zone?' · '+esc(x.zone):''}${x.at?' · '+new Date(x.at).toLocaleDateString('fr-FR'):''}</div></div>`;}).join('')}`
+      ${chrono.map(function(x){return `<div class="card" style="padding:13px;margin-top:8px"><div class="row between" style="gap:10px;align-items:flex-start"><div style="flex:1;min-width:0"><b style="font-size:14px">${esc(x.text)}</b><div class="mini" style="margin-top:3px">${esc(x.clientName||'Client')}${x.zone?' · '+esc(x.zone):''}${x.at?' · '+new Date(x.at).toLocaleDateString('fr-FR'):''}</div></div><button class="btn ghost sm" data-adm="wish-del:${x.id}" style="width:auto;padding:7px 10px;flex:none;color:var(--coral-deep)" aria-label="Supprimer cette demande">${I.trash}</button></div></div>`;}).join('')}`
       :`<div class="card" style="padding:22px;margin-top:14px;text-align:center"><p class="sub" style="margin:0">Aucune suggestion pour l'instant. Les idées envoyées par les clients depuis leur profil apparaîtront ici.</p></div>`}
     </div>`;
   }
@@ -5943,6 +5946,13 @@
         const artLines=catArts.length?catArts.map(function(a){return `<div class="row between" style="align-items:center;margin-top:8px"><button class="linklike" data-adm="art:${a.id}" style="font-size:13px;text-align:left;color:var(--ink)">${esc(a.name)}</button><span class="chip ${acctChip(a.status)[0]}">${acctChip(a.status)[1]}</span></div>`;}).join(''):`<p class="mini" style="margin-top:6px;color:var(--muted)">Aucun prestataire sur ce métier — « Bientôt disponible » côté client.</p>`;
         return `${header}<div class="card" style="padding:13px;margin:6px 0 0;background:var(--sand)"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Artisans (${catArts.length})</div>${artLines}<hr class="dashed" style="margin:12px 0 2px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Tarif client</div>${priceEditor}</div>`;
       }).join('')}
+      <div class="card" style="padding:14px;margin-top:12px;border:1px dashed var(--hair)">
+        <b style="font-size:14px">${I.plus} Ajouter un métier</b>
+        <p class="sub" style="margin-top:5px">Créez une nouvelle catégorie de service, sans code. Elle apparaît côté client dès qu'un artisan validé la propose (« Bientôt disponible » en attendant).</p>
+        <input id="admNewCatName" placeholder="Nom du métier (ex. Vitrier)" autocomplete="off" autocapitalize="words" style="width:100%;margin-top:9px;padding:11px 13px;border:1px solid var(--hair);border-radius:11px;background:var(--sand);color:var(--ink);font-size:14px;box-sizing:border-box">
+        <div class="row" style="gap:8px;margin-top:8px;align-items:center"><span class="mini" style="color:var(--muted)">Tarif indicatif</span><input id="admNewCatRate" type="number" inputmode="numeric" value="40" min="5" style="width:88px;padding:9px 11px;border:1px solid var(--hair);border-radius:10px;background:var(--sand);color:var(--ink);font-size:14px;box-sizing:border-box"><span class="mini" style="color:var(--muted)">€/h</span></div>
+        <button class="btn" data-act="admin-add-cat" style="margin-top:10px;background:var(--teal-deep);color:#fff">Ajouter au catalogue</button>
+      </div>
       <p class="mini" style="margin-top:12px">Ces prix fixes sont ceux que voient les clients à la commande. La majoration « coup de pouce » s'applique <b>par-dessus</b> et revient au prestataire.</p>
       ${(S.mission&&S.mission.status==='disputed')?`<div style="height:16px"></div><span class="eyebrow" style="color:var(--coral-deep)">${I.scales} Litige à arbitrer</span>
       <div class="card" style="padding:14px;margin-top:10px;border-left:4px solid var(--coral)">
@@ -6057,7 +6067,7 @@
         <hr class="dashed" style="margin:10px 0"><div class="row between"><span class="sub"><b>Revenu net réel Ti-Services</b></span><b class="money" style="color:var(--teal-deep)">${eur(net)}</b></div>
         ${feePending?`<p class="mini" style="margin-top:9px;color:var(--muted)">${I.clock} ${feePending} prestation${feePending>1?'s':''} en attente du règlement Mollie — le frais réel se complète automatiquement sous 1 à 2 jours.</p>`:''}
         <button class="btn primary sm" data-adm="export-accounting" style="margin-top:12px;width:auto;padding:9px 14px">${I.card}&nbsp;Export comptable (CSV)</button>
-        <p class="mini" style="margin-top:8px;color:var(--muted)">Journal détaillé (une ligne par commission et par rétribution) pour votre comptable. Chiffres issus du <b>registre serveur immuable</b>.</p></div>`;})()}
+        <p class="mini" style="margin-top:8px;color:var(--muted)">Journal détaillé (une ligne par commission et par rétribution) pour votre comptable. Chiffres issus du <b>registre serveur immuable</b> — <b>seules les transactions réellement encaissées via Mollie</b> sont comptées (les missions de test n'apparaissent pas).</p></div>`;})()}
       <div style="height:8px"></div><span class="eyebrow">Par artisan · ${groups.length}</span>${cards}
       ${adminConcRetribSection(round2)}
       <div style="height:24px"></div></div>`;
@@ -6282,7 +6292,15 @@
     if(!(FB&&FB.db))return;
     try{ if(adminLedgerUnsub){try{adminLedgerUnsub();}catch(_){}}
       adminLedgerUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'ledger'),function(snap){
-        const list=[];snap.forEach(function(d){const e=d.data()||{};if((e.commissionAmount||0)>0)list.push({id:d.id,reqId:e.reqId||d.id,invNo:e.invNo||'',providerUid:e.providerUid||'',clientUid:e.clientUid||'',dateISO:(e.settledAt&&e.settledAt.toDate)?e.settledAt.toDate().toISOString().slice(0,10):'',clientName:e.clientName||'',providerName:e.providerName||'',service:e.service||'',serviceName:e.serviceName||'',unit:e.unit||'h',hours:e.hours||0,rate:e.rate||0,base:e.base||0,commissionPct:e.commissionPct||0,commissionAmount:e.commissionAmount||0,netAmount:e.netAmount||0,grossTotal:e.grossTotal||0,rateFlag:!!e.rateFlag,rateExpected:e.rateExpected||null,mollieFee:(e.mollieFee!=null?e.mollieFee:null),netTiServices:(e.netTiServices!=null?e.netTiServices:null)});});
+        const realOnly=!(S.demoMode||isDemo());
+        const list=[];snap.forEach(function(d){const e=d.data()||{};if(!((e.commissionAmount||0)>0))return;
+          // COMPTABILITÉ RÉELLE, CALQUÉE SUR MOLLIE : on n'inscrit que les transactions
+          // réellement encaissées via Mollie (identifiant de paiement `molliePaymentId`
+          // présent). Les missions de TEST / paiements jamais effectués (sans identifiant
+          // Mollie) sont ignorés → ils ne polluent plus la comptabilité, qui reflète
+          // exactement ce que Mollie a encaissé.
+          if(realOnly&&!e.molliePaymentId)return;
+          list.push({id:d.id,reqId:e.reqId||d.id,invNo:e.invNo||'',molliePaymentId:e.molliePaymentId||'',providerUid:e.providerUid||'',clientUid:e.clientUid||'',dateISO:(e.settledAt&&e.settledAt.toDate)?e.settledAt.toDate().toISOString().slice(0,10):'',clientName:e.clientName||'',providerName:e.providerName||'',service:e.service||'',serviceName:e.serviceName||'',unit:e.unit||'h',hours:e.hours||0,rate:e.rate||0,base:e.base||0,commissionPct:e.commissionPct||0,commissionAmount:e.commissionAmount||0,netAmount:e.netAmount||0,grossTotal:e.grossTotal||0,rateFlag:!!e.rateFlag,rateExpected:e.rateExpected||null,mollieFee:(e.mollieFee!=null?e.mollieFee:null),netTiServices:(e.netTiServices!=null?e.netTiServices:null)});});
         list.sort(function(a,b){return (b.dateISO||'').localeCompare(a.dateISO||'');});
         S.adminLedger=list;
         // Rafraîchit l'onglet Factures ET le tableau de bord (« Commission ce mois »
@@ -7609,6 +7627,18 @@
     const d=S.proMollieDashboard;
     const url=(d&&/^https:\/\//.test(d))?d:'https://my.mollie.com/';
     try{window.open(url,'_blank','noopener');}catch(_){location.href=url;}
+  }
+  // L'artisan retire un de SES métiers depuis son compte. Persisté sur sa fiche (les règles
+  // autorisent le RETRAIT — jamais l'ajout, réservé à l'admin). Effet immédiat : les demandes
+  // de ce service disparaissent de sa file, et le serveur cesse de les lui pousser.
+  function proRemoveService(cat){
+    if(!cat||(S.proCats||[]).indexOf(cat)<0)return;
+    S.proCats=(S.proCats||[]).filter(function(c){return c!==cat;});
+    try{ if(FB&&FB.f&&FB.db&&FB.auth&&FB.auth.currentUser&&typeof isDemo==='function'&&!isDemo()){ FB.f.updateDoc(FB.f.doc(FB.db,'artisans',FB.auth.currentUser.uid),{cats:FB.f.arrayRemove(cat)}).catch(function(){}); } }catch(_){}
+    // Retrait immédiat des demandes de ce service déjà chargées (retour visuel instantané).
+    S.openRequests=(S.openRequests||[]).filter(function(r){return r.service!==cat;});
+    render();
+    toast('« '+svcNm(cat)+' » retiré — vous ne recevrez plus ces demandes');
   }
   // Annulation d'une demande encore ouverte : suppression du doc Firestore + arrêt de l'écoute.
   function cancelActiveRequest(m){
@@ -8956,10 +8986,10 @@
       <div class="card" style="padding:16px;margin-top:16px">
         <div class="row between" style="align-items:center;gap:12px">${iconTitle(I.hardhat,'Mes métiers')}<button class="btn ghost sm" data-act="pro-add-service" style="width:auto;padding:8px 13px;flex:none">${I.plus} Ajouter</button></div>
         <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap">
-          ${cats.map(function(c){return `<span class="chip good">${I.check} ${esc(svcNm(c))}</span>`;}).join('')}
+          ${cats.map(function(c){var removable=(S.proCats||[]).indexOf(c)>=0;return `<span class="chip good">${I.check} ${esc(svcNm(c))}${removable?` <button data-act="pro-del-service:${c}" aria-label="Retirer ${esc(svcNm(c))}" title="Retirer ce métier" style="background:none;border:none;padding:0 0 0 5px;margin:0;color:inherit;cursor:pointer;font-weight:800;font-size:15px;line-height:1">×</button>`:''}</span>`;}).join('')}
           ${(S.proPendingCats||[]).map(function(c){return `<span class="chip warn">${I.clock} ${esc(c==='autre'?('Autre'+(S.proPendingOther?' : '+S.proPendingOther:'')):svcNm(c))}</span>`;}).join('')}
         </div>
-        ${(S.proPendingCats||[]).length?`<p class="mini" style="margin-top:11px">${I.shield} En attente de validation par Ti-Services — proposé aux clients une fois vérifié.</p>`:`<p class="mini" style="margin-top:11px;color:var(--muted)">Ajoutez un métier à tout moment. Chaque ajout est vérifié par Ti-Services avant d'être proposé aux clients.</p>`}
+        ${(S.proPendingCats||[]).length?`<p class="mini" style="margin-top:11px">${I.shield} En attente de validation par Ti-Services — proposé aux clients une fois vérifié.</p>`:`<p class="mini" style="margin-top:11px;color:var(--muted)">Ajoutez un métier à tout moment (vérifié avant d'être proposé aux clients). Touchez le <b>×</b> d'un métier pour ne plus recevoir ses demandes.</p>`}
       </div>
 
       ${(function(){var onSiteCats=(cats||[]).filter(canOnSite);if(!onSiteCats.length)return '';var sm=S.proSiteMode||'both';return `<div class="card" style="padding:16px;margin-top:16px">
@@ -9256,6 +9286,9 @@
       else if(act==='rej-ins'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.insuranceStatus='refuse';adminWriteField(a,{insuranceStatus:'refuse'});toast('Attestation refusée');}}
       else if(act==='addcat'){const a=S.adminArtisans.find(x=>x.id===id);if(a&&a.other){addCustomService(a.other,(a.rates&&a.rates.autre)||40);}}
       else if(act==='delcat'){S.customServices=(S.customServices||[]).filter(function(s){return s.id!==id;});saveCatalog();toast('Service retiré du catalogue');}
+      // Suppression d'une demande de service supplémentaire (souhait client) une fois traitée :
+      // retrait local immédiat + suppression Firestore (l'écoute temps réel confirme).
+      else if(act==='wish-del'){S.adminWishes=(S.adminWishes||[]).filter(function(w){return w.id!==id;});if(FB&&FB.f&&FB.db&&!isDemo()){try{FB.f.deleteDoc(FB.f.doc(FB.db,'serviceWishes',id));}catch(_){}}toast('Demande supprimée');}
       else if(act==='fidup'){const t=fidTiers().find(x=>x.key===id);if(t)t.pct=Math.min(30,t.pct+1);}
       else if(act==='fiddown'){const t=fidTiers().find(x=>x.key===id);if(t)t.pct=Math.max(1,t.pct-1);}
       else if(act==='retroup'){S.retroRate=Math.min(30,S.retroRate+1);saveConfig();}
@@ -9348,6 +9381,7 @@
       const mm=minSlotToday(S.draft);if(mm>=0&&!S.draft.slotFlex&&slotToMin(S.draft.slot)<mm){toast('Choisissez une heure à venir');renderConfig();return;}proceedToPay();}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('comm-invoice:')===0){S.commInvId=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('invoice:')===0){S.invoiceId=b.dataset.act.split(':')[1];render();return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('pro-del-service:')===0){proRemoveService(b.dataset.act.split(':')[1]);return;}
     if(b.dataset.act&&b.dataset.act.indexOf('histcat:')===0){S.histCat=b.dataset.act.split(':')[1]||null;render();try{view.scrollTop=0;}catch(_){}return;}
     if(b.dataset.act==='histcat-back'){S.histCat=null;render();try{view.scrollTop=0;}catch(_){}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('histinv:')===0){const h=doneHistory()[+b.dataset.act.split(':')[1]];if(h)downloadInvoicePdf(h);return;}
@@ -9573,6 +9607,14 @@
             else toast('Envoi impossible — réessayez');
           }).catch(function(e){ toast('Échec : '+fbErrTxt(e)); });
         }catch(e){ toast('Échec : '+fbErrTxt(e)); }
+        break;
+      }
+      case 'admin-add-cat':{
+        if(!isAdminAccount()){toast('Réservé à l’administrateur');break;}
+        const nm=((document.getElementById('admNewCatName')||{}).value||'').trim();
+        const rt=parseInt(((document.getElementById('admNewCatRate')||{}).value||'40'),10);
+        if(!nm){toast('Indiquez un nom de métier');break;}
+        addCustomService(nm,(rt&&rt>=5)?rt:40); // persiste au catalogue partagé + rend
         break;
       }
       case 'enable-notif':{
@@ -10234,7 +10276,11 @@
     if(S.share){S.share=false;render();return;}
     if(S.chat){S.chat=false;render();return;}
     if(S.histCat&&S.persona==='client'&&S.clientNav==='wallet'){S.histCat=null;render();return;}
-    if(S.persona==='admin'){if(S.admin.view==='fact'&&S.admin.fact){S.admin.fact=null;render();return;}if(S.admin.view!=='home'){S.admin.view='home';S.admin.sel=null;S.admin.fact=null;render();}else{S.persona='client';render();}return;}
+    if(S.persona==='admin'){if(S.admin.view==='fact'&&S.admin.fact){S.admin.fact=null;render();return;}
+      // Catégorie dépliée sur l'accueil admin : le retour Android la REPLIE d'abord (au lieu
+      // de basculer en interface client, ce qui déroutait l'administrateur).
+      if(S.admin.view==='home'&&S.admPriceOpen&&Object.keys(S.admPriceOpen).some(function(k){return S.admPriceOpen[k];})){S.admPriceOpen={};render();return;}
+      if(S.admin.view!=='home'){S.admin.view='home';S.admin.sel=null;S.admin.fact=null;render();}else{S.persona='client';render();}return;}
     if(S.persona==='concierge'){
       if(S.concRetInv){S.concRetInv=false;render();return;}
       if(S.concInvoice){S.concInvoice=null;render();return;}
