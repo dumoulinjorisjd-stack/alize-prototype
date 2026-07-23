@@ -8215,11 +8215,24 @@
       S.proForm=S.proForm||{};
       if(raison&&!(S.proForm.name||'').trim())S.proForm.name=raison;
       if(adr&&!(S.proForm.address||'').trim())S.proForm.address=adr;
+      let capMissing=false;
       if(isEI){ S.proForm.statusType='micro'; }
-      else{ S.proForm.statusType='entreprise'; const lf=NATURE_JURIDIQUE[nj]||''; if(lf&&!(S.proForm.legalForm||'').trim())S.proForm.legalForm=lf; }
+      else{
+        S.proForm.statusType='entreprise';
+        const lf=NATURE_JURIDIQUE[nj]||''; if(lf&&!(S.proForm.legalForm||'').trim())S.proForm.legalForm=lf;
+        // Ville d'immatriculation RCS : le libellé « RCS <Ville> » des factures correspond au
+        // greffe, en pratique la commune du siège → on la préremplit (modifiable).
+        const rcsVille=sg.libelle_commune||sg.commune||''; if(rcsVille&&!(S.proForm.rcsCity||'').trim())S.proForm.rcsCity=rcsVille.replace(/\b\w/g,c=>c.toUpperCase());
+        // Capital social : NON exposé par l'annuaire public (recherche-entreprises). On le
+        // remplit s'il figure malgré tout dans la réponse, sinon saisie manuelle (on ne
+        // fabrique jamais une mention légale).
+        const cap=(r.capital||r.capital_social||(r.complements&&(r.complements.capital_social||r.complements.capital))||'').toString().replace(/[^\d]/g,'');
+        if(cap&&!(S.proForm.capital||'').trim())S.proForm.capital=cap;
+        capMissing=!(S.proForm.capital||'').trim();
+      }
       try{refreshProSubmit();}catch(_){}
       render();
-      toast('Informations récupérées ✓ — vérifiez et complétez (capital, RCS)');
+      toast(capMissing?'Infos récupérées ✓ — reste le capital social (non public) à saisir':'Informations récupérées ✓ — vérifiez avant de valider');
     }catch(e){ toast('Annuaire indisponible — saisissez vos infos à la main'); }
     finally{ S._siretBusy=false; try{render();}catch(_){} }
   }
@@ -8274,7 +8287,7 @@
         ${f.googleAuth?'':`<div class="field"><label>E-mail${RQ}</label><input class="txt" data-pf="email" data-v="email" value="${esc(f.email||'')}" inputmode="email" autocomplete="email" placeholder="vous@exemple.com"></div>
         <div class="field"><label>Mot de passe${RQ}</label><div class="pw-wrap"><input class="txt" type="password" data-pf="password" value="${esc(f.password||'')}" autocomplete="new-password" placeholder="6 caractères minimum"><button type="button" class="pw-eye" data-act="pw-toggle" aria-label="Afficher le mot de passe">${I.eye}</button></div></div>
         <div class="field"><label>Confirmer le mot de passe${RQ}</label><div class="pw-wrap"><input class="txt" type="password" data-pf="password2" value="${esc(f.password2||'')}" autocomplete="new-password" placeholder="Retapez votre mot de passe"><button type="button" class="pw-eye" data-act="pw-toggle" aria-label="Afficher le mot de passe">${I.eye}</button></div>${(f.password2&&f.password!==f.password2)?`<p class="mini" style="margin-top:5px;color:var(--coral-deep)">Les mots de passe ne correspondent pas.</p>`:((f.password2&&(f.password||'').length>=6)?`<p class="fv-ok">✓ Les mots de passe correspondent</p>`:'')}</div>`}
-        <div class="field"><label>SIRET (14 chiffres)${RQ}</label><input class="txt" data-pf="siret" data-v="siret14" value="${f.siret}" inputmode="numeric" autocomplete="off" placeholder="Ex. 123 456 789 00012"><button class="btn ghost sm" data-act="siret-lookup" ${S._siretBusy?'disabled':''} style="margin-top:8px;width:auto;padding:9px 14px">${S._siretBusy?I.clock+' Recherche…':I.search+' Remplir avec mon SIRET'}</button><p class="mini" style="margin-top:5px;color:var(--muted)">Remplit automatiquement raison sociale, adresse et forme juridique.</p></div>
+        <div class="field"><label>SIRET (14 chiffres)${RQ}</label><input class="txt" data-pf="siret" data-v="siret14" value="${f.siret}" inputmode="numeric" autocomplete="off" placeholder="Ex. 123 456 789 00012"><button class="btn ghost sm" data-act="siret-lookup" ${S._siretBusy?'disabled':''} style="margin-top:8px;width:auto;padding:9px 14px">${S._siretBusy?I.clock+' Recherche…':I.search+' Remplir avec mon SIRET'}</button><p class="mini" style="margin-top:5px;color:var(--muted)">Remplit raison sociale, adresse, forme juridique et ville RCS. Capital social à saisir (non public).</p></div>
         <div class="field"><label>Adresse professionnelle (siège)${RQ}</label><input class="txt" data-pf="address" data-v="text" value="${esc(f.address||'')}" placeholder="Ex. Gustavia, 97133 Saint-Barthélemy"><p class="mini" style="margin-top:5px">Figure sur vos factures.</p></div>
         <div class="field"><label>Forme juridique</label><div class="segs"><button class="seg ${f.statusType!=='micro'&&f.statusType!=='particulier'?'on':''}" data-pstatustype="entreprise">Société</button><button class="seg ${f.statusType==='micro'?'on':''}" data-pstatustype="micro">Micro-entreprise / EI</button></div></div>
         ${(f.statusType!=='micro')?`<div class="field"><label>Mentions société (sur vos factures)</label><div class="row" style="gap:8px"><input class="txt" data-pf="legalForm" value="${esc(f.legalForm||'')}" placeholder="Forme (SAS, SARL, EURL…)" style="flex:1"><input class="txt" data-pf="capital" value="${esc(f.capital||'')}" inputmode="numeric" placeholder="Capital (€)" style="flex:none;width:118px"></div><input class="txt" data-pf="rcsCity" value="${esc(f.rcsCity||'')}" placeholder="Ville d'immatriculation RCS (ex. Basse-Terre)" style="margin-top:8px"><p class="mini" style="margin-top:5px">Obligatoire pour les sociétés (forme, capital, RCS). Micro-entreprise / EI : laissez vide.</p></div>`:''}
