@@ -9520,12 +9520,30 @@
   function proReferral(){
     const pending=(S.filleuls||[]).filter(f=>f.status==='attente').length;
     const gained=refMissions();
+    // Compteur de progression vers le prochain palier (statut), placé sous le lien de
+    // parrainage pour MOTIVER : « plus que X missions pour passer Argent — commission réduite
+    // de Y % ». On montre l'écart de commission (points), pas les montants ni le taux absolu.
+    const jobs=statusJobs(),tier=fidFor(jobs),next=fidNext(jobs),col=fidColor(tier.key),isFounder=founderActive();
+    let ladder;
+    if(next){
+      const span=Math.max(1,next.min-tier.min),done=Math.max(0,Math.min(span,jobs-tier.min)),pc=Math.round(done/span*100);
+      const left=Math.max(0,next.min-jobs),cut=Math.max(0,(tier.pct||0)-(next.pct||0));
+      ladder=`<div class="card" style="padding:16px;margin-top:12px">
+        <div class="row between" style="align-items:center"><span class="mini">Votre statut</span><span class="chip" style="background:${col}22;color:${col}">★ ${tier.nm}</span></div>
+        <div style="height:9px;border-radius:999px;background:var(--sand-2);margin-top:11px;overflow:hidden"><div style="height:100%;width:${pc}%;border-radius:999px;background:${col};transition:width .4s"></div></div>
+        <p class="sub" style="margin-top:9px">Plus que <b>${left} mission${left>1?'s':''}</b> pour passer <b style="color:${fidColor(next.key)}">${next.nm}</b>${(cut>0&&!isFounder)?` — votre commission sera réduite de <b>${cut}&nbsp;%</b>`:''}.</p>
+        <p class="mini" style="margin-top:6px;color:var(--muted)">${isFounder?I.star+' Ambassadeur : vous gardez déjà la quasi-totalité de chaque mission — chaque filleul rapproche votre statut définitif.':'Chaque filleul validé = <b>'+REF_CREDIT+' missions</b> d’avance vers le prochain palier.'}</p>
+      </div>`;
+    }else{
+      ladder=`<div class="card" style="padding:16px;margin-top:12px;text-align:center"><span class="chip" style="background:${col}22;color:${col}">★ ${tier.nm}</span><p class="sub" style="margin-top:9px">${I.party} Statut maximum atteint — vous conservez la plus grande part possible de chaque mission.</p></div>`;
+    }
     const list=S.filleuls.length?S.filleuls.map(f=>`<div class="card" style="padding:13px;margin-top:9px"><div class="row between"><b style="font-size:14px">${esc(f.name)}</b><span class="chip ${f.status==='valide'?'good':'coral'}">${f.status==='valide'?I.check+' Validé · +'+REF_CREDIT+' missions':'En attente'}</span></div></div>`).join(''):emptyState('Aucun filleul pour l’instant','Chaque prestataire parrainé et validé vous crédite 5 missions vers votre statut.');
     return `<div class="pad"><button class="reset" data-act="close-referral" style="margin:8px 0 2px">← Retour</button>
       <span class="eyebrow">${I.heart} Parrainage</span>
       <div class="h-hello">Parrainez, montez plus vite</div>
       <p class="sub" style="margin-top:6px">Chaque prestataire parrainé et validé fait grimper votre statut de <b>5 missions</b>.</p>
       <div class="card" style="padding:18px;margin-top:14px;text-align:center"><div class="mini">Votre code de parrainage</div><b class="money" style="font-size:24px;font-family:var(--f-disp);letter-spacing:1.5px;display:block;margin-top:4px">${S.referralCode}</b><button class="btn primary" data-act="copy-referral" style="margin-top:12px">${I.chat} Partager mon lien</button></div>
+      ${ladder}
       <div class="row" style="gap:11px;margin-top:12px"><div class="card" style="padding:14px;flex:1"><div class="mini">Missions gagnées</div><b class="money" style="font-size:20px;font-family:var(--f-disp)">+${gained}</b></div><div class="card" style="padding:14px;flex:1"><div class="mini">Filleuls</div><b class="money" style="font-size:20px;font-family:var(--f-disp)">${S.filleuls.length}</b><div class="mini">${pending} en attente</div></div></div>
       <div style="height:16px"></div><span class="eyebrow">Mes filleuls</span>${list}
       <div style="height:10px"></div></div>${proNavbar()}`;
