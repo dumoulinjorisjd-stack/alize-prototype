@@ -87,23 +87,35 @@ function realErrors(errs) {
     await page.close();
   }
 
-  // ── Test 3 : inscription prestataire — champs société (forme/capital/RCS) ──
-  console.log('Test 3 — inscription prestataire (mentions société)');
+  // ── Test 3 : inscription prestataire e-mail — compte court → profil en 4 étapes ──
+  console.log('Test 3 — inscription prestataire (compte court + étapes)');
   {
     const errs = [];
     const page = await newPage(browser, errs);
     await page.click('[data-act="go-artisan-signup"]');
     await page.waitForTimeout(700);
-    // Choix du type (artisan / conciergerie) si l'écran existe, sinon déjà sur le formulaire.
     const kind = await page.$('[data-act="signup-kind:artisan"]');
     if (kind) { await kind.click(); await page.waitForTimeout(700); }
-    ok(await page.$('[data-pf="name"]'), 'champ nom / raison sociale présent');
-    ok(await page.$('[data-pf="siret"]'), 'champ SIRET présent');
-    ok(await page.$('[data-pf="refCode"]'), 'champ code de parrainage présent');
-    // Par défaut « Société » : les mentions légales société doivent être demandées.
-    ok(await page.$('[data-pf="legalForm"]'), 'champ forme juridique présent (société)');
-    ok(await page.$('[data-pf="rcsCity"]'), 'champ ville RCS présent (société)');
-    // Bascule micro-entreprise : ces champs disparaissent (non requis).
+    // Écran d'entrée MINIMAL : juste de quoi créer le compte + option Google.
+    ok(await page.$('[data-pf="name"]'), 'champ nom présent');
+    ok(await page.$('[data-pf="email"]'), 'champ e-mail présent');
+    ok(await page.$('[data-act="google-pro"]'), 'option Google présente');
+    ok(!(await page.$('[data-pf="siret"]')), 'SIRET PAS demandé à l’entrée (repoussé au profil)');
+    // Créer le compte (démo) → on entre en brouillon avec la checklist.
+    await page.fill('[data-pf="name"]', 'Léa Artisan');
+    await page.fill('[data-pf="email"]', 'lea@test.fr');
+    await page.fill('[data-pf="password"]', 'azerty');
+    await page.fill('[data-pf="password2"]', 'azerty');
+    await page.click('[data-act="pro-account-create"]'); await page.waitForTimeout(700);
+    const hub = await page.evaluate(() => document.body.innerText);
+    ok(/Bienvenue Léa/.test(hub), 'brouillon : accueil « Bienvenue » après création');
+    ok(/0\/4|1\/4/.test(hub), 'brouillon : compteur d’étapes');
+    // Ouvrir l'étape Identité → les mentions société (forme/RCS) sont là.
+    await page.click('[data-act="draft-step:id"]'); await page.waitForTimeout(600);
+    ok(await page.$('[data-pf="siret"]'), 'étape Identité : champ SIRET présent');
+    ok(await page.$('[data-pf="legalForm"]'), 'étape Identité : forme juridique (société)');
+    ok(await page.$('[data-pf="rcsCity"]'), 'étape Identité : ville RCS (société)');
+    ok(await page.$('[data-pf="refCode"]'), 'étape Identité : code de parrainage');
     const micro = await page.$('[data-pstatustype="micro"]');
     ok(!!micro, 'segment micro-entreprise présent');
     if (micro) {
@@ -197,6 +209,13 @@ function realErrors(errs) {
     await page.click('[data-act="go-artisan-signup"]'); await page.waitForTimeout(600);
     const kind = await page.$('[data-act="signup-kind:artisan"]');
     if (kind) { await kind.click(); await page.waitForTimeout(600); }
+    // Créer le compte (démo) puis ouvrir l'étape Identité : le code parrain y est prérempli.
+    await page.fill('[data-pf="name"]', 'Léa Artisan');
+    await page.fill('[data-pf="email"]', 'lea@test.fr');
+    await page.fill('[data-pf="password"]', 'azerty');
+    await page.fill('[data-pf="password2"]', 'azerty');
+    await page.click('[data-act="pro-account-create"]'); await page.waitForTimeout(600);
+    await page.click('[data-act="draft-step:id"]'); await page.waitForTimeout(500);
     const val = await page.$eval('[data-pf="refCode"]', (el) => el.value).catch(() => null);
     ok(val === 'KEVIN-8A3F', 'code de parrainage prérempli en majuscules depuis le lien');
     ok(realErrors(errs).length === 0, 'aucune erreur JS');

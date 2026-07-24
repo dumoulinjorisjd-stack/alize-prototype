@@ -2311,9 +2311,9 @@ function welcomeHtml(first, role) {
   const name = escHtmlS(first);
 
   const intro = isPro ?
-    ('Votre <b>profil intervenant</b> Ti-Services est bien enregistré. Dès qu\'il est validé par notre équipe, ' +
-     'vous recevrez vos premières <b>demandes de mission</b> directement dans l\'application — près de chez vous, ' +
-     'à Saint-Barthélemy.') :
+    ('Votre <b>compte intervenant</b> Ti-Services est créé&nbsp;! Dernière étape&nbsp;: <b>complétez votre profil</b> ' +
+     'dans l\'application (en quelques minutes) pour <b>envoyer votre candidature</b>. Dès qu\'elle est validée par ' +
+     'notre équipe, vous recevrez vos premières <b>demandes de mission</b> près de chez vous, à Saint-Barthélemy.') :
     ('Votre compte <b>Ti-Services</b> est créé, votre inscription est confirmée. Réservez en quelques minutes un ' +
      'intervenant local et de confiance, où que vous soyez à Saint-Barth : ménage, jardinage, coiffure, sport, ' +
      'garde d\'enfants, et bien plus.');

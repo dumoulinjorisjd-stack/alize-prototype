@@ -7886,7 +7886,7 @@
     if(S.delAcct)return deleteAccountView();
     if(S.generalSupport)return generalSupportChat();
     if(S.proConflict)return proConflictView();
-    if(S.proStatus==='signup'){ if(S.signupKind==='concierge')return conciergeSignup(); if(S.signupKind==='artisan')return proSignup(); return proTypeChoice(); }
+    if(S.proStatus==='signup'){ if(S.signupKind==='concierge')return conciergeSignup(); if(S.signupKind==='artisan')return proEmailSignup(); return proTypeChoice(); }
     // Inscription progressive (Google) : hub « compléter mon profil » + étapes groupées.
     if(S.proStatus==='draft')return S.proStep?proDraftStep(S.proStep):proDraftHub();
     if(S.proAddView)return proAddService();
@@ -8160,7 +8160,11 @@
   }
   // Met à jour en direct l'état du bouton + la liste des éléments manquants (sans re-render,
   // pour préserver le focus des champs texte).
-  function refreshProSubmit(){const f=S.proForm;if(!f)return;const ok=proSignupOk(f);const btn=document.querySelector('[data-act="pro-submit"]');if(btn)btn.disabled=!ok;const el=document.getElementById('proMissing');if(el){el.style.display=ok?'none':'';el.textContent=ok?'':('Pour valider, il reste à fournir : '+proMissing(f).join(' · ')+'.');}}
+  function refreshProSubmit(){const f=S.proForm;if(!f)return;
+    // Écran d'entrée e-mail : bouton « Créer mon compte » (nom + e-mail + mot de passe).
+    const acc=document.querySelector('[data-act="pro-account-create"]');
+    if(acc){const okA=(f.name||'').trim().length>1&&/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=6&&f.password===f.password2;acc.disabled=!okA;}
+    const ok=proSignupOk(f);const btn=document.querySelector('[data-act="pro-submit"]');if(btn)btn.disabled=!ok;const el=document.getElementById('proMissing');if(el){el.style.display=ok?'none':'';el.textContent=ok?'':('Pour valider, il reste à fournir : '+proMissing(f).join(' · ')+'.');}}
   const RQ='<span class="req">*</span>';
   function conciergeSignup(){
     const f=S.concSignup||{};
@@ -8241,10 +8245,42 @@
     }catch(e){ toast('Annuaire indisponible — saisissez vos infos à la main'); }
     finally{ S._siretBusy=false; try{render();}catch(_){} }
   }
+  // Écran d'ENTRÉE de l'inscription prestataire (e-mail) : minimal — juste de quoi CRÉER le
+  // compte (nom, e-mail, mot de passe) ou passer par Google. Ensuite, le prestataire ENTRE
+  // dans l'app et complète son profil par petites étapes (mêmes 4 cartes que le parcours
+  // Google). Objectif : ne pas bloquer sur un long formulaire dès le départ.
+  function proEmailSignup(){
+    const f=S.proForm||{};
+    const ok=(f.name||'').trim().length>1&&/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=6&&f.password===f.password2;
+    const benefits=[
+      [I.lock,'Paiement garanti sous 48 h','Ti-Services encaisse et vous règle après chaque prestation validée.'],
+      [I.check,'Zéro paperasse','Factures émises en votre nom, encaissement et suivi automatiques.'],
+      [I.bolt,'Liberté totale','Sans abonnement — vous acceptez les missions qui vous arrangent.']
+    ].map(x=>`<div class="row" style="gap:12px;align-items:flex-start"><div class="benic">${x[0]}</div><div><b style="font-size:14px">${x[1]}</b><div class="mini" style="margin-top:1px">${x[2]}</div></div></div>`).join('');
+    return `<div class="pad"><div style="height:10px"></div>
+      <button class="reset" data-act="back-to-client" style="margin:0 0 8px">← Je suis un client</button>
+      <span class="eyebrow">Rejoindre Ti-Services</span>
+      <div class="h-hello">Bossez, soyez payé, ne gérez rien.</div>
+      <p class="sub" style="margin-top:6px">Créez votre compte en 2 min. Vous <b>complétez ensuite votre profil</b> (SIRET, assurance, métiers…) pour envoyer votre candidature.</p>
+      <div class="stack" style="gap:13px;margin-top:16px">${benefits}</div>
+      <div class="banner coral" style="margin-top:14px">${I.shield}<span><b>Sur candidature</b> — réservé aux pros immatriculés, profil vérifié avant activation.</span></div>
+      <div style="margin-top:14px">${googleBtnHtml('google-pro','Continuer avec Google')}</div>
+      <div class="or-sep"><span>ou avec un e-mail</span></div>
+      <div class="card" style="padding:16px">
+        <div class="field"><label>Prénom &amp; nom / Raison sociale${RQ}</label><input class="txt" data-pf="name" data-v="name" value="${esc(f.name||'')}" autocomplete="organization" autocapitalize="words" placeholder="Nom et prénom, ou raison sociale"></div>
+        <div class="field"><label>E-mail${RQ}</label><input class="txt" data-pf="email" data-v="email" value="${esc(f.email||'')}" inputmode="email" autocomplete="email" placeholder="vous@exemple.com"></div>
+        <div class="field"><label>Mot de passe${RQ}</label><div class="pw-wrap"><input class="txt" type="password" data-pf="password" value="${esc(f.password||'')}" autocomplete="new-password" placeholder="6 caractères minimum"><button type="button" class="pw-eye" data-act="pw-toggle" aria-label="Afficher le mot de passe">${I.eye}</button></div></div>
+        <div class="field" style="margin-bottom:0"><label>Confirmer le mot de passe${RQ}</label><div class="pw-wrap"><input class="txt" type="password" data-pf="password2" value="${esc(f.password2||'')}" autocomplete="new-password" placeholder="Retapez votre mot de passe"><button type="button" class="pw-eye" data-act="pw-toggle" aria-label="Afficher le mot de passe">${I.eye}</button></div>${(f.password2&&f.password!==f.password2)?`<p class="mini" style="margin-top:5px;color:var(--coral-deep)">Les mots de passe ne correspondent pas.</p>`:((f.password2&&(f.password||'').length>=6)?`<p class="fv-ok">✓ Les mots de passe correspondent</p>`:'')}</div>
+      </div>
+      <div class="footcta" style="position:static;background:none;padding:16px 0 0">
+        <button class="btn primary" data-act="pro-account-create"${ok?'':' disabled'}>${I.check} Créer mon compte</button>
+        <p class="mini" style="text-align:center;margin-top:10px;color:var(--muted)">${I.lock} Aucune carte demandée. Vous complétez votre profil juste après.</p>
+        <p class="mini" style="text-align:center;margin-top:8px">Déjà un compte&nbsp;? <button class="linklike" data-act="show-login">Se connecter</button></p>
+      </div></div>`;
+  }
   // Section « Métiers & tarifs » utilisée par l'étape « Métiers » de l'inscription
-  // progressive (Google). Reprend la même sélection catégories/sous-catégories, grille et
-  // bloc diplômes que le formulaire complet proSignup (mêmes data-attributs → mêmes
-  // gestionnaires). NB : garder aligné avec le bloc équivalent de proSignup.
+  // progressive. Reprend la même sélection catégories/sous-catégories, grille et bloc
+  // diplômes que le formulaire complet proSignup (mêmes data-attributs → mêmes gestionnaires).
   function proServicesSection(f){
     const psvc=function(id){const s=findSvc(id);if(!s)return '';const on=f.cats.includes(s.id);const c=svcColor(s.id);const px=(S.adminPrices&&S.adminPrices[s.id]!=null?S.adminPrices[s.id]:s.rate);const rt=isForfaitSvc(s.id)?`${px} € forfait`:(isCatalogForfait(s.id)?`dès ${minActPrice(s.id)} €`:`dès ${px} €/h`);return `<button class="cat ${on?'sel':''}" data-pcat="${s.id}"><div class="pick">${I.check}</div><div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[s.id]||svcIco(s.id)}</div><div class="nm">${esc(s.nm)}</div><div class="rt">${rt}</div></button>`;};
     const pcatCount=function(cat){return cat.subs.filter(function(id){return f.cats.includes(id);}).length;};
@@ -9878,9 +9914,10 @@
       case 'notif-wa':S.proNotifWa=!S.proNotifWa;saveProSettings();render();break;
       case 'save-dispo':saveProSettings();toast('Disponibilités enregistrées');break;
       case 'go-artisan-signup':S.persona='pro';S.proStatus='signup';S.signupKind=null;render();break;
-      // Inscription progressive (Google) : navigation hub ↔ étapes, envoi de la candidature.
+      // Inscription progressive : création du compte (e-mail) puis navigation hub ↔ étapes.
+      case 'pro-account-create':{const f=S.proForm;const ok=(f.name||'').trim().length>1&&/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=6&&f.password===f.password2;if(!ok){toast('Nom, e-mail et mots de passe identiques (6 car.) requis');break;}fbProAccountCreate(f);break;}
       case 'draft-hub':case 'draft-save':S.proStep=null;saveProDraft();render();try{view.scrollTop=0;}catch(_){}break;
-      case 'draft-submit':{const f=S.proForm;if(!proSignupOk(f)){toast('Complétez les 4 étapes pour envoyer');break;}signupAsArtisan=true;saveProDraft();fbProSignup(f);break;}
+      case 'draft-submit':{const f=S.proForm;if(!proSignupOk(f)){toast('Complétez les 4 étapes pour envoyer');break;}saveProDraft();if(FB){signupAsArtisan=true;fbProSignup(f);}else{S.proStatus='pending';S.proStep=null;render();burstConfetti();toast('Candidature envoyée (démo)');}break;}
       case 'draft-logout':try{localStorage.removeItem('tiSignupIntent');}catch(_){}fbLogout();if(!FB){S.onboarded=false;S.persona='client';S.proStatus='signup';render();}toast('Déconnecté');break;
       case 'conc-signup-back':S.signupKind=null;render();break;
       case 'conc-toggle-cgu':if(S.concSignup)S.concSignup.cgu=!S.concSignup.cgu;render();break;
@@ -10814,7 +10851,7 @@
   function enterProDraft(user,nm){
     S.proForm=Object.assign({name:'',phone:'',email:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,cgu:false,charte:false,acceptsGrille:false,rates:{},otherService:'',photo:'',refCode:storedParrain()},S.proForm||{});
     loadProDraft(); // superpose les valeurs déjà saisies (même appareil)
-    S.proForm.googleAuth=true;
+    S.proForm.authed=true; // compte déjà créé (Google ou e-mail) → l'envoi réutilisera la session
     if(!(S.proForm.name||'').trim())S.proForm.name=(user.displayName||nm||'').trim();
     S.proForm.email=user.email||S.proForm.email||'';
     if(user.photoURL&&!S.proForm.photo)S.proForm.photo=user.photoURL;
@@ -10857,8 +10894,11 @@
       if(signupIntent==='artisan' && !ad && !cd && (!data||data.role!=='artisan')){
         signupAsArtisan=false;
         try{localStorage.removeItem('tiSignupIntent');}catch(_){}
-        try{ FB.f.setDoc(ref,{name:(user.displayName||name||'').trim(),email:user.email||'',role:'artisan',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
-        enterProDraft(user,name);
+        // Nom : priorité au nom saisi (inscription e-mail) puis au nom Google — jamais le
+        // préfixe de l'e-mail (sinon le mail de bienvenue et la fiche afficheraient « jean.dupont »).
+        const draftNm=((S.proForm&&S.proForm.name)||'').trim()||user.displayName||'';
+        try{ FB.f.setDoc(ref,{name:(draftNm||name||'').trim(),email:user.email||'',role:'artisan',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
+        enterProDraft(user,draftNm||name);
         return;
       }
       // Compte prestataire : on route vers l'espace pro (statut lu dans la fiche artisans).
@@ -11106,14 +11146,32 @@
       render(); toast('Attestation envoyée ✓ — en attente de vérification');
     }catch(e){ console.warn('insurance update',e); toast('Échec de l’envoi — réessayez'); }
   }
+  // Création du COMPTE prestataire par e-mail (étape courte), PUIS entrée en état
+  // « brouillon » pour compléter le profil. La candidature n'est envoyée qu'ensuite.
+  async function fbProAccountCreate(c){
+    if(!FB){ // démo : brouillon local, sans vrai compte
+      S.proForm=Object.assign(S.proForm||{},{authed:true,password:'',password2:''});
+      S.account={name:(c.name||'').trim(),email:(c.email||'').trim(),uid:'demo',role:'artisan'};
+      S.persona='pro';S.proStatus='draft';S.proStep=null;S.onboarded=true;S.authView=null;
+      burstConfetti();render();toast('Compte créé — complétez votre profil');return;
+    }
+    if(signupInFlight)return; signupInFlight=true;
+    try{
+      // Mémorise l'intention : au retour de createUser, onAuthStateChanged → loadUserProfile
+      // route vers le brouillon (enterProDraft) avec l'identité fraîchement créée.
+      try{localStorage.setItem('tiSignupIntent','artisan');}catch(_){}
+      await FB.a.createUserWithEmailAndPassword(FB.auth,(c.email||'').trim(),c.password);
+      burstConfetti();
+    }catch(e){ toast(fbErr(e)); }finally{ signupInFlight=false; }
+  }
   async function fbProSignup(f){
     if(signupInFlight)return; signupInFlight=true;
     try{
-      // Deux voies d'identité : Google (déjà authentifié — on réutilise la session) ou
-      // e-mail + mot de passe (création classique du compte Firebase).
+      // Compte DÉJÀ créé (inscription progressive : Google OU e-mail) → on réutilise la
+      // session. Sinon (chemin legacy), création classique du compte Firebase.
       let uid,email;
-      if(f.googleAuth){
-        if(!(FB.auth&&FB.auth.currentUser)){ toast('Session Google expirée — reconnectez-vous'); signupInFlight=false; return; }
+      if(f.googleAuth||f.authed){
+        if(!(FB.auth&&FB.auth.currentUser)){ toast('Session expirée — reconnectez-vous'); signupInFlight=false; return; }
         uid=FB.auth.currentUser.uid; email=(FB.auth.currentUser.email||f.email||'').trim();
       } else {
         const cred=await FB.a.createUserWithEmailAndPassword(FB.auth,f.email.trim(),f.password);
