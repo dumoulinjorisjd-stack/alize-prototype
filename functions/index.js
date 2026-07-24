@@ -2213,6 +2213,29 @@ exports.emailClientInvoice = onDocumentUpdated({document: 'requests/{reqId}', se
   } catch (e) { console.warn('emailClientInvoice send', e); }
 });
 
+/* Entonnoir d'installation : compteurs ANONYMES (aucune donnée personnelle) —
+ * visites → guide d'installation ouvert → app réellement installée, ventilés par
+ * plateforme. Écrits ici (Admin SDK) pour garder les règles Firestore fermées à
+ * l'écriture ; le client déduplique (1×/jour, installé 1×/appareil) et appelle en
+ * fire-and-forget. Doc settings/installFunnel_{prod|beta}, lu par la console admin. */
+const FUNNEL_EVENTS = ['visit', 'guide', 'installed'];
+const FUNNEL_PLATFORMS = ['ios', 'android', 'desktop'];
+exports.trackFunnel = onCall(async (request) => {
+  const d = request.data || {};
+  const ev = String(d.event || '');
+  const pf = String(d.platform || '');
+  const env = d.env === 'prod' ? 'prod' : 'beta';
+  if (!FUNNEL_EVENTS.includes(ev) || !FUNNEL_PLATFORMS.includes(pf)) {
+    throw new HttpsError('invalid-argument', 'Événement inconnu.');
+  }
+  const db = getFirestore();
+  const upd = {updatedAt: FieldValue.serverTimestamp()};
+  upd[ev + '_total'] = FieldValue.increment(1);
+  upd[ev + '_' + pf] = FieldValue.increment(1);
+  await db.doc('settings/installFunnel_' + env).set(upd, {merge: true});
+  return {ok: true};
+});
+
 /* Téléchargement à la demande de la facture PDF (bouton « Télécharger le PDF » de
  * l'app). On régénère EXACTEMENT le même document vectoriel que celui envoyé par
  * e-mail, à partir de la demande figée dans Firestore — donc un vrai fichier .pdf,

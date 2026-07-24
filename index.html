@@ -256,6 +256,7 @@
   .ig-txt b{color:var(--ink)}
   .ig-txt .ig-sub{display:block;font-size:12px;color:var(--muted);margin-top:2px}
   .ig-phone{display:block;margin:2px auto 6px;width:132px;height:auto}
+  .ig-anim{width:162px;margin:0 auto 8px}
   .ig-cap{text-align:center;font-size:12.5px;font-weight:650;color:#007AFF;margin:0 0 14px}
   .ig-warn{display:flex;gap:11px;align-items:flex-start;background:#FFF3E0;border:1px solid #F3C583;border-radius:16px;padding:13px 14px;margin:0 0 14px;color:#8a4b12;font-size:13px;line-height:1.45}
   .ig-warn b{color:#7a3f0c}
@@ -5967,6 +5968,14 @@
       </div>`;}).join('')}
       <button class="btn ghost sm" data-optadd="${svcId}" style="margin-top:10px;width:auto;padding:8px 12px">${I.plus} Ajouter une prestation</button>`;
   }
+  // Compteurs de l'entonnoir d'installation (doc settings/installFunnel_*) — console admin.
+  async function loadAdminFunnel(){
+    try{
+      if(FB&&FB.f&&FB.db){const snap=await FB.f.getDoc(FB.f.doc(FB.db,'settings','installFunnel_'+(IS_PROD?'prod':'beta')));S.adminFunnel=(snap&&snap.exists())?(snap.data()||{}):{};}
+      else S.adminFunnel={};
+    }catch(_){S.adminFunnel={};}
+    S.adminFunnelLoaded=true;render();
+  }
   function adminHome(){
     const arts=S.adminArtisans,clis=S.adminClients;
     const pendA=arts.filter(a=>a.status==='attente'),pendC=clis.filter(c=>c.status==='attente');
@@ -6010,6 +6019,20 @@
       <div class="row" style="gap:9px;margin-top:12px">${stat('En cours',allB.length,'réservations')}${stat('Artisans',validA,pendA.length+' en attente')}${stat('Clients',clis.length,pendC.length+' en attente')}</div>
       ${(typeof Notification!=='undefined'&&Notification.permission!=='granted')?`<button class="banner teal" data-act="admin-notif" style="margin-top:10px;width:100%;text-align:left;cursor:pointer">${I.bolt}<span>Activez les <b>alertes de candidature</b> — soyez prévenu dès qu'un prestataire postule, même en dehors de la console.</span></button>`:''}
       <div class="card" style="padding:14px;margin-top:10px"><div class="row between"><span class="sub">Commission ce mois</span><b class="money" style="font-size:18px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(adminMonthCommission())}</b></div></div>
+      ${(function(){
+        if(!S.adminFunnelLoaded&&!S._funnelLoading){S._funnelLoading=true;setTimeout(loadAdminFunnel,0);}
+        const f=S.adminFunnel||{};const n=function(k){return Number(f[k])||0;};
+        const v=n('visit_total'),g=n('guide_total'),ins=n('installed_total');
+        const pct=v?Math.round(ins/v*100):0;
+        return `<div class="card" style="padding:14px;margin-top:10px">
+          <div class="row between" style="align-items:center"><b style="font-size:14px">${I.install} Entonnoir d'installation</b><span class="mini">${S.adminFunnelLoaded?(IS_PROD?'prod':'beta'):'chargement…'}</span></div>
+          <div class="row" style="gap:9px;margin-top:10px">
+            <div style="flex:1"><div class="mini">Visites</div><b class="money" style="font-size:19px;font-family:var(--f-disp)">${v}</b></div>
+            <div style="flex:1"><div class="mini">Guide ouvert</div><b class="money" style="font-size:19px;font-family:var(--f-disp)">${g}</b></div>
+            <div style="flex:1"><div class="mini">Installées</div><b class="money" style="font-size:19px;font-family:var(--f-disp);color:var(--teal-deep)">${ins}</b>${v?`<div class="mini">${pct}&nbsp;% des visites</div>`:''}</div>
+          </div>
+          <div class="mini" style="margin-top:8px;color:var(--muted)">Installées&nbsp;: iPhone ${n('installed_ios')} · Android ${n('installed_android')} · Ordinateur ${n('installed_desktop')}</div>
+        </div>`;})()}
       <div class="card" style="padding:14px;margin-top:10px">
         <b style="font-size:14px">${I.users||''} Inviter un prestataire</b>
         <p class="sub" style="margin-top:6px">Envoyez un e-mail d'invitation soigné (à la charte Ti-Services) à un pro que vous souhaitez recruter.</p>
@@ -10527,6 +10550,8 @@
   // « ouvrez d'abord ce lien dans Safari ». En vrai Safari on n'affiche rien (l'accueil montre
   // déjà le bouton + l'astuce) : ni doublon, ni conseil trompeur.
   setTimeout(function(){ try{ maybeShowInAppInstallHint(); }catch(_){} }, 1800);
+  // Entonnoir : visite du jour + « installée » à la 1ʳᵉ ouverture en plein écran.
+  setTimeout(function(){ try{ trackFunnel('visit'); if(appInstalled())trackFunnel('installed'); }catch(_){} }, 2500);
   // ——— Hauteur d'application fiable (correctif barre d'onglets « repliée » Android) ———
   // Historique : 100dvh (viewport DYNAMIQUE) sur-estime la hauteur quand les barres
   // système/navigateur sont susceptibles de se replier — l'app devenait plus haute que
@@ -10621,6 +10646,8 @@
     : 'iPhone&nbsp;: ouvrez d’abord ce lien dans <b>Safari</b> pour installer l’app.';}
   // On mémorise l'invite native (Android/Chrome) pour la déclencher depuis la feuille.
   window.addEventListener('beforeinstallprompt',(e)=>{e.preventDefault();deferredPrompt=e;});
+  // Entonnoir : installation native confirmée (Android/desktop).
+  window.addEventListener('appinstalled',function(){ try{ trackFunnel('installed'); }catch(_){} });
   // Feuille « Installer l'application » : instructions selon le navigateur reconnu.
   // Glyphes fidèles aux vraies icônes des systèmes (aident à reconnaître le bouton).
   const IG_GLYPH={
@@ -10668,9 +10695,71 @@
       <circle cx="75" cy="${cy}" r="18" fill="none" stroke="#007AFF" stroke-width="2.4"><animate attributeName="r" values="14;21;14" dur="1.7s" repeatCount="indefinite"/><animate attributeName="stroke-opacity" values="1;0;1" dur="1.7s" repeatCount="indefinite"/></circle>
     </svg>`;
   }
+  // Animation « montrer, pas expliquer » (~9 s en boucle) : mime le geste COMPLET sur
+  // iPhone/Safari — tap Partager → la feuille monte → tap « Sur l'écran d'accueil » →
+  // l'icône Ti-Services apparaît sur l'écran, avec une coche. Un non-technicien comprend
+  // en regardant, sans lire. SMIL natif, couleurs explicites (pas de var() : certains
+  // WebKit iOS ne les résolvent pas dans un SVG), aucune ressource externe.
+  function igPhoneAnim(){
+    const D='9s';
+    return `<svg class="ig-phone ig-anim" viewBox="0 0 150 244" role="img" aria-label="Démonstration : installer Ti-Services sur iPhone">
+      <rect x="30" y="4" width="90" height="236" rx="18" fill="#FFFFFF" stroke="#E2DDD3" stroke-width="2"/>
+      <rect x="37" y="16" width="76" height="212" rx="8" fill="#F4F1EC"/>
+      ${[0,1,2].map(i=>`<rect x="${44+i*22}" y="26" width="16" height="16" rx="4.5" fill="#E2DBCE"/>`).join('')}
+      ${[0,1].map(i=>`<rect x="${44+i*22}" y="48" width="16" height="16" rx="4.5" fill="#E2DBCE"/>`).join('')}
+      <g opacity="0">
+        <rect x="88" y="48" width="16" height="16" rx="4.5" fill="#FF6A5B"/>
+        <circle cx="93.5" cy="53.5" r="1.4" fill="#FFFFFF"/><circle cx="98.5" cy="53.5" r="1.4" fill="#FFFFFF"/>
+        <path d="M92.6 58c1.2 1.5 5.6 1.5 6.8 0" stroke="#FFFFFF" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+        <circle cx="105" cy="47" r="4.6" fill="#1FA463"/>
+        <path d="M102.8 47l1.6 1.6 2.8-3" stroke="#FFFFFF" stroke-width="1.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.65;0.71;0.97;1" dur="${D}" repeatCount="indefinite"/>
+      </g>
+      <rect x="37" y="204" width="76" height="24" rx="7" fill="#E6DFD3"/>
+      <circle cx="75" cy="216" r="10" fill="#007AFF"/>
+      <g transform="translate(75 216) scale(0.52) translate(-12 -12)" fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.2V15"/><path d="M8 7l4-4 4 4"/><path d="M7 10H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-1"/></g>
+      <g>
+        <animateTransform attributeName="transform" type="translate" values="0 150;0 150;0 0;0 0;0 150;0 150" keyTimes="0;0.18;0.26;0.55;0.62;1" dur="${D}" repeatCount="indefinite"/>
+        <rect x="37" y="118" width="76" height="110" rx="10" fill="#FFFFFF" stroke="#E2DDD3" stroke-width="1.4"/>
+        <rect x="68" y="123" width="14" height="3" rx="1.5" fill="#D8D2C6"/>
+        <rect x="44" y="132" width="62" height="16" rx="5" fill="#F4F1EC"/>
+        <rect x="44" y="176" width="62" height="16" rx="5" fill="#F4F1EC"/>
+        <rect x="44" y="154" width="62" height="16" rx="5" fill="#F4F1EC">
+          <animate attributeName="fill" values="#F4F1EC;#F4F1EC;#DCEBFF;#DCEBFF;#F4F1EC" keyTimes="0;0.40;0.45;0.52;0.56" dur="${D}" repeatCount="indefinite"/>
+        </rect>
+        <rect x="48" y="157.5" width="9" height="9" rx="2.4" fill="none" stroke="#231E33" stroke-width="1.2"/>
+        <path d="M52.5 159.6v4.8M50.1 162h4.8" stroke="#231E33" stroke-width="1.2" stroke-linecap="round"/>
+        <text x="61" y="161.6" font-size="5.6" font-family="-apple-system,'Segoe UI',Roboto,sans-serif" font-weight="600" fill="#231E33">Sur l'écran</text>
+        <text x="61" y="168" font-size="5.6" font-family="-apple-system,'Segoe UI',Roboto,sans-serif" font-weight="600" fill="#231E33">d'accueil</text>
+      </g>
+      <circle cx="75" cy="216" r="7.5" fill="#231E33" opacity="0">
+        <animate attributeName="opacity" values="0;0;0.32;0.32;0;0" keyTimes="0;0.06;0.09;0.15;0.19;1" dur="${D}" repeatCount="indefinite"/>
+        <animate attributeName="r" values="7.5;7.5;5.6;7.5;7.5;7.5" keyTimes="0;0.09;0.12;0.15;0.19;1" dur="${D}" repeatCount="indefinite"/>
+      </circle>
+      <circle cx="75" cy="162" r="7.5" fill="#231E33" opacity="0">
+        <animate attributeName="opacity" values="0;0;0.32;0.32;0;0" keyTimes="0;0.40;0.43;0.50;0.54;1" dur="${D}" repeatCount="indefinite"/>
+        <animate attributeName="r" values="7.5;7.5;5.6;7.5;7.5;7.5" keyTimes="0;0.43;0.46;0.50;0.54;1" dur="${D}" repeatCount="indefinite"/>
+      </circle>
+    </svg>`;
+  }
   // Détection RÉELLE de l'app installée (lancée en plein écran), indépendante de la
   // classe .standalone simulée par « explorer sans installer ».
   function appInstalled(){try{return (window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true;}catch(_){return false;}}
+  // ── Entonnoir d'installation : mesure ANONYME (aucune donnée personnelle) ──
+  // visit = ouverture de l'app (1×/jour/appareil) · guide = guide d'installation ouvert
+  // (1×/jour) · installed = app réellement installée (1× par appareil). Fire-and-forget :
+  // jamais bloquant ; silencieux hors mode réel (démo/tests : FB absent → no-op).
+  // NB iPhone : le stockage de l'app installée est séparé de Safari → le « installed »
+  // compté à la 1ʳᵉ ouverture plein écran est bien unique par appareil.
+  function trackFunnel(ev){
+    try{
+      if(!(FB&&FB.fn&&FB.functions))return;
+      const key='tiFunnel:'+ev+(ev==='installed'?'':(':'+new Date().toISOString().slice(0,10)));
+      try{ if(localStorage.getItem(key))return; localStorage.setItem(key,'1'); }catch(_){}
+      const pf=detectPlatform();
+      FB.fn.httpsCallable(FB.functions,'trackFunnel')({event:ev,platform:pf.ios?'ios':(pf.android?'android':'desktop'),env:IS_PROD?'prod':'beta'}).catch(function(){});
+    }catch(_){}
+  }
   // Après une inscription, si l'app n'est pas installée : on pousse FORTEMENT
   // l'installation (le frein est levé une fois inscrit) en insistant sur le fait que
   // c'est ainsi qu'on reçoit les notifications.
@@ -10713,6 +10802,7 @@
   }
   function showInstallGuide(opts){
     opts=opts||{};
+    try{ trackFunnel('guide'); }catch(_){}
     const pf=detectPlatform();
     const bname=IG_BROWSER_NAME[pf.browser]||'votre navigateur';
     const blogo=IG_LOGO[pf.browser]||'';
@@ -10736,14 +10826,14 @@
         <p class="ig-or">ou, encore plus simple&nbsp;:</p>
         <div class="ig-cards">${card('★',IG_GLYPH.safari,`Ouvrez ${pf.ios?`<b>Safari</b> ${IG_LOGO.safari}`:'<b>votre navigateur</b>'} vous-même et tapez&nbsp;: <b>ti-services.fr</b>`)}</div>`;
     } else if(pf.ios){
-      const whereSub = pf.browser==='safari'
-        ? `<span class="ig-sub">tout en bas de l'écran</span>`
-        : `<span class="ig-sub">en haut à droite de la barre</span>`;
-      body=`<p class="ig-intro">En <b>3 gestes</b>, Ti-Services s'installe comme une vraie application et s'ouvre en <b>plein écran</b>, sans barre de navigateur.${pf.browser!=='safari'?` <b>Astuce&nbsp;:</b> c'est encore plus simple dans Safari ${IG_LOGO.safari}.`:''}</p>
-        ${igPhone(pf.browser==='safari'?'bottom':'top')}
-        <p class="ig-cap">Le bouton <b>Partager</b> est ${pf.browser==='safari'?'en bas':'en haut'}</p>
+      // Ici, forcément le VRAI Safari (les autres navigateurs iPhone passent par la
+      // branche « ouvrir dans Safari » ci-dessus). On MONTRE le geste en boucle animée,
+      // puis les 3 étapes en texte servent d'aide-mémoire.
+      body=`<p class="ig-intro">Regardez le geste — puis reproduisez-le. En <b>3 secondes</b>, Ti-Services s'installe comme une vraie application, en <b>plein écran</b>.</p>
+        ${igPhoneAnim()}
+        <p class="ig-cap">Le bouton <b>Partager</b> est en bas</p>
         <div class="ig-cards">
-          ${card('1',IG_GLYPH.share,`Touchez le bouton <b>Partager</b>${whereSub}`)}
+          ${card('1',IG_GLYPH.share,`Touchez le bouton <b>Partager</b><span class="ig-sub">tout en bas de l'écran</span>`)}
           ${card('2',IG_GLYPH.expand,`Touchez <b>« En voir plus »</b> ▾ pour dérouler toute la liste<span class="ig-sub">si « Sur l'écran d'accueil » n'apparaît pas déjà</span>`)}
           ${card('3',IG_GLYPH.addhome,`Touchez <b>« Sur l'écran d'accueil »</b>, puis <b>Ajouter</b> — l'icône Ti-Services apparaît sur votre écran. ${I.party}`)}
         </div>`;
