@@ -257,6 +257,8 @@
   .ig-txt .ig-sub{display:block;font-size:12px;color:var(--muted);margin-top:2px}
   .ig-phone{display:block;margin:2px auto 6px;width:132px;height:auto}
   .ig-anim{width:162px;margin:0 auto 8px}
+  /* Coquille native (App Store/Play Store) : ni bouton « Installer », ni Google (WebView). */
+  body.native-shell [data-act="get-app"],body.native-shell [data-act="google-client"],body.native-shell [data-act="google-pro"],body.native-shell #installSteps{display:none!important}
   .ig-cap{text-align:center;font-size:12.5px;font-weight:650;color:#007AFF;margin:0 0 14px}
   .ig-warn{display:flex;gap:11px;align-items:flex-start;background:#FFF3E0;border:1px solid #F3C583;border-radius:16px;padding:13px 14px;margin:0 0 14px;color:#8a4b12;font-size:13px;line-height:1.45}
   .ig-warn b{color:#7a3f0c}
@@ -1421,6 +1423,12 @@
       ?'C’est ainsi que les clients vous atteignent. Sans elles, vous ne verrez pas les nouvelles missions.'
       :'Soyez prévenu à chaque étape : artisan trouvé, prestation démarrée, terminée.';
     const wrap=function(inner){return `<div class="notifcta"><div class="nc-ic">${bell}</div><div class="nc-body"><b>${title}</b><span>${body}</span>${inner}</div></div>`;};
+    // Coquille native : permission via le plugin push. Bouton tant que non activées.
+    if(typeof isNativeShell==='function'&&isNativeShell()){
+      let on=false;try{on=localStorage.getItem('tiNativePushOn')==='1';}catch(_){}
+      if(on)return '';
+      return wrap(`<button class="btn primary sm" data-act="enable-notif" style="margin-top:9px;width:auto;padding:9px 16px">Activer les notifications</button>`);
+    }
     // API indisponible : typiquement iPhone tant que l'app n'est pas installée.
     if(typeof Notification==='undefined'||typeof Notification.requestPermission!=='function'){
       if(document.body.classList.contains('standalone'))return '';
@@ -1444,7 +1452,11 @@
       :'Soyez prévenu à chaque étape : artisan trouvé, prestation démarrée, terminée, et messages du prestataire.';
     const apiOk=(typeof Notification!=='undefined'&&typeof Notification.requestPermission==='function');
     let chip,inner;
-    if(apiOk&&Notification.permission==='granted'){
+    if(typeof isNativeShell==='function'&&isNativeShell()){
+      let on=false;try{on=localStorage.getItem('tiNativePushOn')==='1';}catch(_){}
+      chip=on?'<span class="chip good">'+I.check+' Activées</span>':'<span class="chip coral">À activer</span>';
+      inner=on?'':'<button class="btn primary sm" data-act="enable-notif" style="margin-top:10px;width:auto;padding:9px 16px">'+bell+'&nbsp;Activer les notifications</button>';
+    }else if(apiOk&&Notification.permission==='granted'){
       chip='<span class="chip good">'+I.check+' Activées</span>';
       inner='';
     }else if(apiOk&&Notification.permission==='denied'){
@@ -10118,6 +10130,8 @@
         break;
       }
       case 'enable-notif':{
+        // Coquille native : la permission système passe par le plugin push (APNs/FCM).
+        if(isNativeShell()){ S.proNotifPush=true; if(FB){ if(isAdminAccount())initAdminPush(); else registerPush(S.persona==='pro'?'artisan':'client'); } toast('Notifications activées'); render(); break; }
         if(typeof Notification==='undefined'){toast('Notifications non disponibles sur cet appareil');break;}
         if(typeof Notification.requestPermission!=='function'){toast('Notifications non disponibles sur cet appareil');break;}
         const after=function(perm){ if(perm==='granted'){ toast('Notifications activées'); S.proNotifPush=true; if(FB){ if(isAdminAccount())initAdminPush(); else registerPush(S.persona==='pro'?'artisan':'client'); } } else { toast('Autorisez les notifications dans les réglages de votre navigateur'); } render(); };
@@ -10545,6 +10559,9 @@
 
   /* ---------- PWA: install + service worker ---------- */
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
+  // Coquille native (App Store / Play Store) : se comporte comme installée + masque
+  // ce qui n'a pas de sens en natif (bouton Installer, connexion Google en WebView).
+  if(isNativeShell()){document.body.classList.add('standalone','native-shell');}
   // Aide PROACTIVE limitée aux navigateurs INTÉGRÉS (WhatsApp, Instagram, Messenger…) : là,
   // l'installation « Sur l'écran d'accueil » n'existe PAS — la seule info utile et vraie est
   // « ouvrez d'abord ce lien dans Safari ». En vrai Safari on n'affiche rien (l'accueil montre
@@ -10625,7 +10642,7 @@
     // Navigateur INTÉGRÉ à une app (Instagram, WhatsApp, Messenger…) : impossible
     // d'installer une PWA depuis là — il FAUT d'abord ouvrir dans Safari/Chrome.
     // C'est le blocage le plus fréquent quand on clique un lien reçu par message.
-    const installed=window.matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
+    const installed=window.matchMedia('(display-mode: standalone)').matches||navigator.standalone===true||(typeof isNativeShell==='function'&&isNativeShell());
     // `navigator.standalone` N'EXISTE QUE dans le VRAI Safari iOS (false hors app installée,
     // true une fois installée). S'il est `undefined` alors que l'UA contient « Safari », on
     // est en réalité dans une vue Safari INTÉGRÉE — SFSafariViewController lancé depuis
@@ -10742,9 +10759,14 @@
       </circle>
     </svg>`;
   }
+  // Coquille NATIVE (app App Store / Play Store construite avec Capacitor) : le site
+  // tourne alors dans une WebView avec le pont natif injecté. Dans ce cas : pas de
+  // bouton « Installer », pas de connexion Google (bloquée par Google en WebView),
+  // et les notifications passent par le push NATIF (APNs/FCM via plugin).
+  function isNativeShell(){try{return !!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform());}catch(_){return false;}}
   // Détection RÉELLE de l'app installée (lancée en plein écran), indépendante de la
   // classe .standalone simulée par « explorer sans installer ».
-  function appInstalled(){try{return (window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true;}catch(_){return false;}}
+  function appInstalled(){try{if(isNativeShell())return true;return (window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true;}catch(_){return false;}}
   // ── Entonnoir d'installation : mesure ANONYME (aucune donnée personnelle) ──
   // visit = ouverture de l'app (1×/jour/appareil) · guide = guide d'installation ouvert
   // (1×/jour) · installed = app réellement installée (1× par appareil). Fire-and-forget :
@@ -11513,6 +11535,14 @@
   // (collection adminTokens). La Cloud Function y enverra les push app fermée.
   let adminPushDone=false;
   async function initAdminPush(){
+    if(isNativeShell()){
+      try{
+        if(adminPushDone)return; if(!FB||!FB.auth||!FB.auth.currentUser)return;
+        const tok=await nativeFcmToken(); if(!tok)return; adminPushDone=true;
+        try{ await FB.f.setDoc(FB.f.doc(FB.db,'adminTokens',tok),{uid:FB.auth.currentUser.uid,email:FB.auth.currentUser.email||'',ua:'native-shell',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
+      }catch(e){ console.warn('admin push natif',e); }
+      return;
+    }
     try{
       if(adminPushDone)return; if(!FB||!FB.auth||!FB.auth.currentUser)return;
       if(!('Notification'in window)||Notification.permission!=='granted')return;
@@ -11528,10 +11558,31 @@
       msgM.onMessage(messaging,function(payload){ const n=(payload&&(payload.data||payload.notification))||{}; toast((n.title||'Ti-Services')+(n.body?' — '+n.body:'')); });
     }catch(e){ console.warn('admin push init',e); }
   }
+  // Push NATIF (coquille App Store/Play Store) : demande la permission système et
+  // renvoie le jeton FCM via le plugin Capacitor FirebaseMessaging. Le serveur envoie
+  // déjà via FCM : mêmes jetons, mêmes Cloud Functions, zéro changement côté serveur.
+  async function nativeFcmToken(){
+    try{
+      const P=window.Capacitor&&window.Capacitor.Plugins;const M=P&&P.FirebaseMessaging;if(!M)return null;
+      const perm=await M.requestPermissions();if(!perm||perm.receive!=='granted')return null;
+      const t=await M.getToken();const tok=(t&&(t.token||t.value))||null;
+      if(tok){try{localStorage.setItem('tiNativePushOn','1');}catch(_){}}
+      return tok;
+    }catch(_){return null;}
+  }
   // Capte le jeton FCM d'un client/artisan et l'enregistre dans SA fiche users
   // (champ pushTokens). Les futures Cloud Functions y enverront missions / suivi.
   let pushRegDone=false;
   async function registerPush(role){
+    if(isNativeShell()){
+      try{
+        if(pushRegDone)return; if(!FB||!FB.auth||!FB.auth.currentUser)return;
+        const tok=await nativeFcmToken(); if(!tok)return; pushRegDone=true;
+        try{ await FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{pushTokens:FB.f.arrayUnion(tok),role:role,notifAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
+        try{ await FB.f.setDoc(FB.f.doc(FB.db,'fcmOwners',tok),{uid:FB.auth.currentUser.uid,role:role,at:FB.f.serverTimestamp()}); }catch(_){}
+      }catch(e){ console.warn('push natif',e); }
+      return;
+    }
     try{
       if(pushRegDone)return; if(!FB||!FB.auth||!FB.auth.currentUser)return;
       if(!('Notification'in window)||Notification.permission!=='granted')return;
