@@ -1164,12 +1164,13 @@
   const IS_BETA = !IS_PROD;
   // Étiquette « BÊTA » à accoler au nom/logo (chaîne vide en production).
   function betaTag(){return IS_BETA?'<span class="beta-tag">BÊTA</span>':'';}
-  // Ouverture au public CLIENT : le 1er octobre 2026. Avant cette date, l'inscription client
-  // est fermée EN PRODUCTION (on recrute d'abord les prestataires) ; la bêta reste ouverte
-  // pour les tests. La date rouvre l'inscription automatiquement — aucun redéploiement requis.
+  // Ouverture des SERVICES au public : le 1er octobre 2026. Avant cette date, les clients
+  // peuvent s'inscrire et découvrir l'app EN PRODUCTION, mais les services sont grisés (pas
+  // de commande possible) — on prévient chaque inscrit par e-mail à l'ouverture. La bêta
+  // reste ouverte. La date rouvre les services automatiquement — aucun redéploiement requis.
   const CLIENT_LAUNCH='2026-10-01';
-  function clientSignupOpen(){ if(!IS_PROD)return true; try{ return (new Date().toISOString().slice(0,10))>=CLIENT_LAUNCH; }catch(_){ return true; } }
-  function clientSoon(){ toast('Ouverture aux clients le 1er octobre — à très bientôt !'); }
+  function servicesOpen(){ if(!IS_PROD)return true; try{ return (new Date().toISOString().slice(0,10))>=CLIENT_LAUNCH; }catch(_){ return true; } }
+  function servicesSoon(){ toast('Nos services ouvrent le 1er octobre — vous serez prévenu !'); }
   const FB_PROD = {
     apiKey: 'AIzaSyAenua7BQN3zFLaRymHz9lzhj38ibbCUrg',
     authDomain: 't-service-prod.firebaseapp.com',
@@ -6853,8 +6854,7 @@
       <div class="stack welcome-benefits">${benefits}</div>
       ${S.account?`<div class="card" style="padding:13px 15px;margin-top:16px;display:flex;align-items:center;justify-content:space-between;gap:10px"><div class="row" style="gap:9px"><span class="benic">${I.user}</span><div><b style="font-size:13px">Bon retour, ${esc(S.account.name.split(' ')[0])}</b><div class="mini">${esc(S.account.email)}</div></div></div><button class="btn primary sm" data-act="show-login" style="width:auto;padding:9px 14px">Se connecter</button></div>`:''}
       <div class="footcta" style="position:static;background:none;padding:22px 0 0">
-        ${clientSignupOpen()?`<button class="btn primary" data-act="onb-start">Je cherche un service</button>`:`<button class="btn primary" data-act="client-soon" style="opacity:.55" aria-disabled="true">${I.clock} Je cherche un service</button>
-        <p class="mini" style="text-align:center;margin-top:8px;color:var(--teal-deep);font-weight:700">Ouverture aux clients bientôt — le 1er octobre&nbsp;!</p>`}
+        <button class="btn primary" data-act="onb-start">Je cherche un service</button>
         <button class="btn primary" data-act="go-artisan-signup" style="margin-top:10px">Je propose un service</button>
         <p class="mini" style="text-align:center;margin-top:14px">Déjà un compte&nbsp;? <button class="linklike" data-act="show-login">Se connecter</button></p>
       </div></div>`;
@@ -6911,8 +6911,11 @@
       </div>`;
   }
   function clientHome(){
-    const svcTile=function(s){const soon=!svcAvailable(s.id);const c=soon?'#9a94a6':svcColor(s.id);const px=(S.adminPrices&&S.adminPrices[s.id]!=null?S.adminPrices[s.id]:s.rate);const rt=soon?'<span style="color:var(--muted)">Bientôt disponible</span>':(isForfaitSvc(s.id)?`<b>${px}</b> <b>€</b> forfait`:(isCatalogForfait(s.id)?`dès <b>${minActPrice(s.id)}</b> <b>€</b>`:`dès <b>${px}</b> <b>€</b>/h`));return `<button class="cat${soon?' soon':''}" ${soon?'data-act="svc-soon"':`data-svc="${s.id}"`}>${soon?'<span class="soon-badge">Bientôt</span>':''}<div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${svcIco(s.id)}</div><div class="nm">${esc(s.nm)}</div><div class="rt">${rt}</div></button>`;};
-    const catTile=function(cat){const soon=!catAvailable(cat);const c=soon?'#9a94a6':svcColor(cat.id);return `<button class="cat${soon?' soon':''}" ${soon?'data-act="svc-soon"':`data-catopen="${cat.id}"`}>${soon?'<span class="soon-badge">Bientôt</span>':`<span class="cat-more">${I.chevron}</span>`}<div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[cat.id]||I.other}</div><div class="nm">${esc(cat.nm)}</div><div class="rt">${soon?'<span style="color:var(--muted)">Bientôt disponible</span>':cat.subs.length+' prestations'}</div></button>`;};
+    // Avant l'ouverture publique (prod, avant le 1er octobre) : tous les services grisés et
+    // non commandables (bannière + clic = message date). Le client s'inscrit et sera prévenu.
+    const closed=!servicesOpen();
+    const svcTile=function(s){const soon=!svcAvailable(s.id)||closed;const c=soon?'#9a94a6':svcColor(s.id);const px=(S.adminPrices&&S.adminPrices[s.id]!=null?S.adminPrices[s.id]:s.rate);const rt=soon?'<span style="color:var(--muted)">Bientôt disponible</span>':(isForfaitSvc(s.id)?`<b>${px}</b> <b>€</b> forfait`:(isCatalogForfait(s.id)?`dès <b>${minActPrice(s.id)}</b> <b>€</b>`:`dès <b>${px}</b> <b>€</b>/h`));return `<button class="cat${soon?' soon':''}" ${soon?'data-act="svc-soon"':`data-svc="${s.id}"`}>${soon?'<span class="soon-badge">Bientôt</span>':''}<div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${svcIco(s.id)}</div><div class="nm">${esc(s.nm)}</div><div class="rt">${rt}</div></button>`;};
+    const catTile=function(cat){const soon=!catAvailable(cat)||closed;const c=soon?'#9a94a6':svcColor(cat.id);return `<button class="cat${soon?' soon':''}" ${soon?'data-act="svc-soon"':`data-catopen="${cat.id}"`}>${soon?'<span class="soon-badge">Bientôt</span>':`<span class="cat-more">${I.chevron}</span>`}<div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[cat.id]||I.other}</div><div class="nm">${esc(cat.nm)}</div><div class="rt">${soon?'<span style="color:var(--muted)">Bientôt disponible</span>':cat.subs.length+' prestations'}</div></button>`;};
     // Vue « sous-catégorie » : on a ouvert une catégorie (ex. Beauté) → liste ses prestations.
     const catView=S.catView?CATEGORIES.find(function(c){return c.id===S.catView;}):null;
     if(catView){
@@ -6933,7 +6936,7 @@
     const zone=S.onboarded?((S.account&&S.account.zone)||(S.clientForm&&S.clientForm.zone)||'Gustavia'):'';
     return `<div class="pad"><div class="row between" style="margin-top:10px"><div><span class="eyebrow" style="color:var(--muted)">${I.pin} ${zone?esc(zone)+' · ':''}Saint-Barth</span><div class="h-hello">Bonjour${first?' '+esc(first):''}</div></div><div class="row" style="gap:9px;align-items:center">${!S.onboarded?`<button class="iconbtn" data-act="lang-toggle" aria-label="Langue / Language" title="Langue / Language">${I.globe}</button>`:''}<button class="iconbtn" data-act="open-share" aria-label="Partager Ti-Services" title="Partager">${I.share}</button>${S.onboarded?avatarPhoto(S.account&&S.account.photo,inits(fullName||'Ti'),''):''}</div></div>
       ${!S.onboarded?`<button class="card" data-act="guest-signup" style="width:100%;text-align:left;padding:12px 14px;margin-top:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;border-left:4px solid var(--teal-deep)"><div><b style="font-size:13px">${I.wave} Explorez librement</b><div class="mini" style="margin-top:2px">Compte requis seulement pour commander — c'est gratuit.</div></div><span class="chip good" style="flex:none">Créer un compte</span></button>`:''}
-      <p class="sub" style="margin-top:4px">De quel service avez-vous besoin&nbsp;?</p><div class="cats">${cats}</div>
+      ${closed?`<div class="card" style="padding:16px;margin-top:12px;border-left:4px solid var(--teal);text-align:center"><b style="font-size:15px">${I.party||I.bolt} Nos services ouvrent le 1ᵉʳ octobre&nbsp;!</b><p class="mini" style="margin-top:5px">Votre compte est prêt — on vous prévient par e-mail dès l'ouverture. Découvrez déjà tout ce qui vous attend&nbsp;:</p></div>`:`<p class="sub" style="margin-top:4px">De quel service avez-vous besoin&nbsp;?</p>`}<div class="cats">${cats}</div>
       ${notifCTA('client')}
       <div class="trust"><span>${I.shield}Prestataires vérifiés</span><span>${I.lock}Prestataires assurés</span><span>${I.check}Payé après la presta</span></div>
       ${zoutiLine('Choisissez'+(first?', '+esc(first):'')+' — je m’occupe de trouver le bon prestataire.')}
@@ -9838,14 +9841,12 @@
     if(b.dataset.act&&b.dataset.act.indexOf('conc-quickvalidate:')===0){const o=S.concOrders.find(x=>x.id===b.dataset.act.split(':')[1]);if(o&&(o.status==='done'||o.status==='issue'))concValidateOrder(o);return;}
     if(b.dataset.act&&b.dataset.act.indexOf('conc-reorder:')===0){const o=S.concOrders.find(x=>x.id===b.dataset.act.split(':')[1]);if(o){S.concClientView=null;S.concView=null;S.concOrder={step:'form',clientId:o.clientId,svc:o.svc,svcName:o.svcName,rate:o.rate,duration:o.duration,when:'Aujourd’hui',slot:o.slot,notes:o.notes||''};render();toast('Commande pré-remplie — ajustez puis validez');}return;}
     switch(b.dataset.act){
-      // Inscription CLIENT fermée avant l'ouverture publique (prod) : message sympa.
-      case 'client-soon':clientSoon();break;
-      case 'onb-start':if(!clientSignupOpen()){clientSoon();break;}S.authView='signup';S.onbStep=1;render();break;
+      case 'onb-start':S.authView='signup';S.onbStep=1;render();break;
       // Entrer en mode invité depuis la page d'accueil → app à 3 onglets, sans compte.
       case 'enter-guest':S.guest=true;S.authView=null;S.clientNav='home';S.mission=null;S.draft=null;render();break;
       // Revenir de l'app invité vers la page d'accueil (créer un compte / se connecter).
       case 'guest-to-welcome':S.guest=false;S.authView=null;S.clientNav='home';S.draft=null;render();break;
-      case 'guest-signup':if(!clientSignupOpen()){clientSoon();break;}S.authView='signup';S.onbStep=1;S.clientForm=S.clientForm||{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''};render();break;
+      case 'guest-signup':S.authView='signup';S.onbStep=1;S.clientForm=S.clientForm||{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''};render();break;
       // « ← Retour » depuis le formulaire d'inscription : on ANNULE le flux d'auth et
       // on revient à la navigation invité (accueil, ou configurateur si une commande
       // était en cours). L'éventuelle commande en attente est relâchée.
@@ -9865,7 +9866,7 @@
       // Inscription CLIENT via Google : on mémorise l'intention (survit à une redirection
       // mobile) puis on lance l'authentification. loadUserProfile crée le compte client
       // et route vers le profil pour compléter les informations.
-      case 'google-client':if(!clientSignupOpen()){clientSoon();break;}try{localStorage.setItem('tiSignupIntent','client');}catch(_){}if(FB){fbGoogle();}else{toast('Connexion Google — bientôt disponible');}break;
+      case 'google-client':try{localStorage.setItem('tiSignupIntent','client');}catch(_){}if(FB){fbGoogle();}else{toast('Connexion Google — bientôt disponible');}break;
       // Inscription PRESTATAIRE via Google : idem, mais on prépare le formulaire pro et on
       // reste dessus après authentification (SIRET, assurance, métiers restent à saisir).
       case 'google-pro':try{localStorage.setItem('tiSignupIntent','artisan');}catch(_){}signupAsArtisan=true;S.proForm=S.proForm||{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,cgu:false,charte:false,rates:{},otherService:'',photo:'',refCode:storedParrain()};if(FB){fbGoogle();}else{toast('Connexion Google — bientôt disponible');}break;
@@ -9907,7 +9908,7 @@
       case 'lang-pt':setLang('pt');break;
       case 'lang-toggle':setLang(S.lang==='fr'?'en':(S.lang==='en'?'pt':'fr'));break;
       case 'show-pitch':S.showPitch=true;render();break;
-      case 'pitch-start':if(!clientSignupOpen()){clientSoon();break;}S.showPitch=false;S.authView='signup';S.onbStep=1;render();break;
+      case 'pitch-start':S.showPitch=false;S.authView='signup';S.onbStep=1;render();break;
       case 'pitch-close':S.showPitch=false;render();break;
       case 'report-issue':toast('Signalement transmis — vous ne serez pas débité');break;
       case 'pro-finish-start':{const m=S.mission;
@@ -10005,7 +10006,8 @@
       case 'open-share':if(S.persona!=='pro'&&S.persona!=='concierge'&&S.persona!=='admin')S.persona='client';S.share=true;render();break;
       case 'close-share':S.share=false;render();break;
       case 'cat-back':S.catView=null;render();break;
-      case 'svc-soon':toast('Bientôt disponible — nous validons un pro pour ce service.');break;
+      case 'services-soon':servicesSoon();break;
+      case 'svc-soon':if(!servicesOpen()){servicesSoon();break;}toast('Bientôt disponible — nous validons un pro pour ce service.');break;
       case 'share-link':{const link=shareLink();const data={title:CONFIG.appName,text:'Ti-Services — un pro de confiance à la demande à Saint-Barth',url:link};if(navigator.share){navigator.share(data).catch(()=>{});}else if(navigator.clipboard){navigator.clipboard.writeText(link).then(()=>toast('Lien copié — collez-le où vous voulez')).catch(()=>toast('Lien : '+link));}else{toast('Lien : '+link);}break;}
       case 'copy-link':{const link=shareLink();if(navigator.clipboard){navigator.clipboard.writeText(link).then(()=>toast('Lien copié')).catch(()=>toast('Lien : '+link));}else{toast('Lien : '+link);}break;}
       case 'pay-back':S.payStep=false;S.payEdit=false;if(S.draft)renderConfig();else render();break;
