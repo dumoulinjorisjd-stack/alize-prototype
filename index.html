@@ -2363,10 +2363,18 @@
   // Net indicatif touché par un prestataire pour un prix donné (barème standard « débutant »
   // = 1er palier de fidélité) — utilisé pour SÉDUIRE à l'inscription (« vous touchez ~X € »).
   function proNetHint(price){const p=Number(price)||0;if(!p)return 0;const pct=effCommPct(fidFor(0).pct,p);return Math.round(p*(100-pct)/100);}
+  // Départ du compte à rebours de l'avantage fondateur : JAMAIS avant l'ouverture aux
+  // clients (1er oct). Inutile — et injuste — de brûler la fenêtre de 3 mois tant qu'aucun
+  // client ne peut commander. On prend donc le plus tardif entre l'inscription et le 1er oct.
+  // (AST = UTC-4 toute l'année à Saint-Barthélemy). DOIT rester aligné avec functions/index.js (LAUNCH_MS).
+  function launchMs(){ try{ return Date.parse(CLIENT_LAUNCH+'T00:00:00-04:00')||0; }catch(_){ return 0; } }
+  function founderStartMs(since){ return Math.max(Number(since)||0, launchMs()); }
+  // Jours restants d'avantage fondateur (0 avant l'ouverture → « démarre le 1er oct »).
+  function founderDaysLeft(){ const end=founderStartMs(S.proFounderSince)+FOUNDER_DAYS*86400000; return Math.max(0,Math.ceil((end-Date.now())/86400000)); }
   // Avantage fondateur encore actif pour le prestataire connecté ? (dans les 3 mois ET sous 2 000 €)
-  function founderActive(){ if(!S.proFounder)return false; if((S.proFounderGross||0)>=FOUNDER_GROSS_CAP)return false; if(S.proFounderSince&&(Date.now()-S.proFounderSince)>=FOUNDER_DAYS*86400000)return false; return true; }
+  function founderActive(){ if(!S.proFounder)return false; if((S.proFounderGross||0)>=FOUNDER_GROSS_CAP)return false; if(S.proFounderSince&&(Date.now()-founderStartMs(S.proFounderSince))>=FOUNDER_DAYS*86400000)return false; return true; }
   // Idem pour une fiche artisan quelconque (console admin).
-  function founderActiveFor(a){ if(!a||!a.founder)return false; if((a.founderGross||0)>=FOUNDER_GROSS_CAP)return false; if(a.founderSince&&(Date.now()-a.founderSince)>=FOUNDER_DAYS*86400000)return false; return true; }
+  function founderActiveFor(a){ if(!a||!a.founder)return false; if((a.founderGross||0)>=FOUNDER_GROSS_CAP)return false; if(a.founderSince&&(Date.now()-founderStartMs(a.founderSince))>=FOUNDER_DAYS*86400000)return false; return true; }
   // Taux de commission réel du prestataire connecté : fondateur (si avantage actif) sinon son palier de fidélité.
   // Le statut de fidélité (donc la commission) tient compte des missions gagnées par
   // parrainage (statusJobs = missions réalisées + crédit parrainage) — cohérent avec le
@@ -9166,18 +9174,27 @@
     // Fondateur : son avantage (commission réduite aux frais bancaires) prime sur le
     // palier de fidélité — on l'affiche à part, sans le laisser croire qu'il est « Bronze ».
     if(founderActive()){
+      // Rappel LÉGER des conditions : la fenêtre (3 mois / 2 000 €) ne démarre qu'à
+      // l'ouverture aux clients (1er oct). Avant, on affiche « démarre le 1er oct » ;
+      // après, le nombre de jours restants.
+      const notLaunched=Date.now()<launchMs(),left=founderDaysLeft();
+      const cond=notLaunched
+        ? `Le compte à rebours démarre le <b>1ᵉʳ octobre</b>, à l'ouverture aux clients : commission réduite pendant <b>3 mois</b> ou jusqu'à <b>2 000 €</b> de missions.`
+        : `Encore <b>${left} jour${left>1?'s':''}</b> (ou jusqu'à <b>2 000 €</b> de missions) à ce tarif réduit.`;
       return `<div class="card founder" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">Statut fidélité</b><span class="chip founder-chip">${I.star} Ambassadeur</span></div>
         <p class="sub" style="margin-top:8px">En tant qu'<b>Ambassadeur</b>, vous conservez la <b>quasi-totalité</b> de chaque prestation.</p>
-        <div class="row between" style="margin-top:8px"><span class="mini">${jobs} missions au total${rm?` · dont ${rm} par parrainage`:''}</span></div></div>`;
+        <p class="mini" style="margin-top:8px;color:var(--muted)">${I.clock} ${cond}</p>
+        <div class="row between" style="margin-top:8px"><span class="mini">${jobs} mission${jobs>1?'s':''} au total${rm?` · dont ${rm} par parrainage`:''}</span></div></div>`;
     }
     let prog='';
-    if(next){const span=next.min-tier.min,done=Math.max(0,Math.min(span,jobs-tier.min));const pc=Math.round(done/span*100);
-      prog=`<div style="height:9px;border-radius:999px;background:var(--sand-2);margin-top:12px;overflow:hidden"><div style="height:100%;width:${pc}%;border-radius:999px;background:${col}"></div></div>
-      <p class="mini" style="margin-top:7px">Plus que <b>${next.min-jobs} missions</b> pour atteindre le statut <b>${next.nm}</b> — et conserver une part encore plus grande de chaque prestation.</p>`;
+    if(next){const span=Math.max(1,next.min-tier.min),done=Math.max(0,Math.min(span,jobs-tier.min)),pc=Math.round(done/span*100);
+      const left=Math.max(0,next.min-jobs),cut=Math.max(0,(tier.pct||0)-(next.pct||0));
+      prog=`<div style="height:9px;border-radius:999px;background:var(--sand-2);margin-top:12px;overflow:hidden"><div style="height:100%;width:${pc}%;border-radius:999px;background:${col};transition:width .4s"></div></div>
+      <p class="mini" style="margin-top:7px">Plus que <b>${left} mission${left>1?'s':''}</b> pour passer <b style="color:${fidColor(next.key)}">${next.nm}</b>${cut>0?` — votre commission sera réduite de <b>${cut}&nbsp;%</b>`:''}.</p>`;
     }else{prog=`<p class="mini" style="margin-top:10px">${I.party} Statut maximum atteint — vous conservez la plus grande part possible de chaque prestation.</p>`;}
     return `<div class="card" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">Statut fidélité</b><span class="chip" style="background:${col}22;color:${col}">★ ${tier.nm}</span></div>
       <p class="sub" style="margin-top:8px">Plus vous enchaînez les missions via Ti-Services, plus vous gardez une <b>grande part</b> de chaque prestation.</p>
-      <div class="row between" style="margin-top:8px"><span class="mini">${jobs} missions au total${rm?` · dont ${rm} par parrainage`:''}</span>${next?`<span class="mini">Prochain&nbsp;: ${next.nm}</span>`:''}</div>${prog}</div>`;
+      <div class="row between" style="margin-top:8px"><span class="mini">${jobs} mission${jobs>1?'s':''} au total${rm?` · dont ${rm} par parrainage`:''}</span>${next?`<span class="mini">Prochain&nbsp;: ${next.nm}</span>`:''}</div>${prog}</div>`;
   }
   function svcName(id){const s=SERVICES.find(x=>x.id===id);return s?s.nm:id;}
   function fmtLong(iso){if(!iso)return '';const M=['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];const p=iso.split('-');if(p.length<3)return iso;return (+p[2])+' '+M[(+p[1])-1]+' '+p[0];}
@@ -9520,30 +9537,12 @@
   function proReferral(){
     const pending=(S.filleuls||[]).filter(f=>f.status==='attente').length;
     const gained=refMissions();
-    // Compteur de progression vers le prochain palier (statut), placé sous le lien de
-    // parrainage pour MOTIVER : « plus que X missions pour passer Argent — commission réduite
-    // de Y % ». On montre l'écart de commission (points), pas les montants ni le taux absolu.
-    const jobs=statusJobs(),tier=fidFor(jobs),next=fidNext(jobs),col=fidColor(tier.key),isFounder=founderActive();
-    let ladder;
-    if(next){
-      const span=Math.max(1,next.min-tier.min),done=Math.max(0,Math.min(span,jobs-tier.min)),pc=Math.round(done/span*100);
-      const left=Math.max(0,next.min-jobs),cut=Math.max(0,(tier.pct||0)-(next.pct||0));
-      ladder=`<div class="card" style="padding:16px;margin-top:12px">
-        <div class="row between" style="align-items:center"><span class="mini">Votre statut</span><span class="chip" style="background:${col}22;color:${col}">★ ${tier.nm}</span></div>
-        <div style="height:9px;border-radius:999px;background:var(--sand-2);margin-top:11px;overflow:hidden"><div style="height:100%;width:${pc}%;border-radius:999px;background:${col};transition:width .4s"></div></div>
-        <p class="sub" style="margin-top:9px">Plus que <b>${left} mission${left>1?'s':''}</b> pour passer <b style="color:${fidColor(next.key)}">${next.nm}</b>${(cut>0&&!isFounder)?` — votre commission sera réduite de <b>${cut}&nbsp;%</b>`:''}.</p>
-        <p class="mini" style="margin-top:6px;color:var(--muted)">${isFounder?I.star+' Ambassadeur : vous gardez déjà la quasi-totalité de chaque mission — chaque filleul rapproche votre statut définitif.':'Chaque filleul validé = <b>'+REF_CREDIT+' missions</b> d’avance vers le prochain palier.'}</p>
-      </div>`;
-    }else{
-      ladder=`<div class="card" style="padding:16px;margin-top:12px;text-align:center"><span class="chip" style="background:${col}22;color:${col}">★ ${tier.nm}</span><p class="sub" style="margin-top:9px">${I.party} Statut maximum atteint — vous conservez la plus grande part possible de chaque mission.</p></div>`;
-    }
     const list=S.filleuls.length?S.filleuls.map(f=>`<div class="card" style="padding:13px;margin-top:9px"><div class="row between"><b style="font-size:14px">${esc(f.name)}</b><span class="chip ${f.status==='valide'?'good':'coral'}">${f.status==='valide'?I.check+' Validé · +'+REF_CREDIT+' missions':'En attente'}</span></div></div>`).join(''):emptyState('Aucun filleul pour l’instant','Chaque prestataire parrainé et validé vous crédite 5 missions vers votre statut.');
     return `<div class="pad"><button class="reset" data-act="close-referral" style="margin:8px 0 2px">← Retour</button>
       <span class="eyebrow">${I.heart} Parrainage</span>
       <div class="h-hello">Parrainez, montez plus vite</div>
       <p class="sub" style="margin-top:6px">Chaque prestataire parrainé et validé fait grimper votre statut de <b>5 missions</b>.</p>
       <div class="card" style="padding:18px;margin-top:14px;text-align:center"><div class="mini">Votre code de parrainage</div><b class="money" style="font-size:24px;font-family:var(--f-disp);letter-spacing:1.5px;display:block;margin-top:4px">${S.referralCode}</b><button class="btn primary" data-act="copy-referral" style="margin-top:12px">${I.chat} Partager mon lien</button></div>
-      ${ladder}
       <div class="row" style="gap:11px;margin-top:12px"><div class="card" style="padding:14px;flex:1"><div class="mini">Missions gagnées</div><b class="money" style="font-size:20px;font-family:var(--f-disp)">+${gained}</b></div><div class="card" style="padding:14px;flex:1"><div class="mini">Filleuls</div><b class="money" style="font-size:20px;font-family:var(--f-disp)">${S.filleuls.length}</b><div class="mini">${pending} en attente</div></div></div>
       <div style="height:16px"></div><span class="eyebrow">Mes filleuls</span>${list}
       <div style="height:10px"></div></div>${proNavbar()}`;

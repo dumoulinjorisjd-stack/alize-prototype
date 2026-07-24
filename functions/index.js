@@ -1089,6 +1089,10 @@ function commissionTierPct(jobsTotal, tiers) {
 const FOUNDER_COMM_PCT = 5;
 const FOUNDER_DAYS = 90;
 const FOUNDER_GROSS_CAP = 2000;
+// La fenêtre d'avantage fondateur ne démarre qu'à l'ouverture aux clients (1er oct,
+// AST = UTC-4) : inutile de brûler les 3 mois tant qu'aucun client ne peut commander.
+// DOIT rester aligné avec index.html (launchMs / founderStartMs).
+const FOUNDER_LAUNCH_MS = Date.parse('2026-10-01T00:00:00-04:00');
 // Parrainage : missions créditées au parrain à chaque filleul validé (aligné avec REF_CREDIT
 // côté client). Fait monter son statut de fidélité (donc baisser sa commission).
 const REF_CREDIT_JOBS = 5;
@@ -1263,7 +1267,9 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
   // (au premier des deux atteint), puis commission standard (palier de fidélité).
   // La prestation qui franchit le plafond bénéficie encore du taux fondateur ; on cumule
   // ensuite le CA dans founderGross pour couper l'avantage aux suivantes.
-  const withinTime = (founderSinceMs == null) ? true : (Date.now() - founderSinceMs < FOUNDER_DAYS * 86400000);
+  // Départ du compte à rebours = le plus tardif entre l'inscription et l'ouverture clients.
+  const founderStartMs = Math.max(founderSinceMs || 0, FOUNDER_LAUNCH_MS);
+  const withinTime = (Date.now() - founderStartMs) < FOUNDER_DAYS * 86400000;
   const withinGross = founderGross < FOUNDER_GROSS_CAP;
   const founderActive = isFounder && withinTime && withinGross;
   const basePct = founderActive ? FOUNDER_COMM_PCT : commissionTierPct(jobsTotal + refBonusJobs, cfgTiers);
