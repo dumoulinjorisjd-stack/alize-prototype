@@ -10613,8 +10613,12 @@
     const iosOtherBrowser = ios && browser!=='safari';
     return {ios,android,desktop,browser,inApp,iosOtherBrowser,ua};
   }
-  const isiOS=detectPlatform().ios;
-  if(isiOS&&installSteps){installSteps.innerHTML='iPhone&nbsp;: <b>Partager</b> ⬆︎ → <b>«&nbsp;Sur l’écran d’accueil&nbsp;»</b>.';}
+  const _pfTop=detectPlatform();const isiOS=_pfTop.ios;
+  // Sur iPhone, l'installation « Sur l'écran d'accueil » n'existe QUE dans Safari. Depuis
+  // Chrome/Firefox/Edge (ou un navigateur intégré), on indique d'abord d'ouvrir dans Safari.
+  if(isiOS&&installSteps){installSteps.innerHTML=(_pfTop.browser==='safari'&&!_pfTop.inApp)
+    ? 'iPhone&nbsp;: <b>Partager</b> ⬆︎ → <b>«&nbsp;Sur l’écran d’accueil&nbsp;»</b>.'
+    : 'iPhone&nbsp;: ouvrez d’abord ce lien dans <b>Safari</b> pour installer l’app.';}
   // On mémorise l'invite native (Android/Chrome) pour la déclencher depuis la feuille.
   window.addEventListener('beforeinstallprompt',(e)=>{e.preventDefault();deferredPrompt=e;});
   // Feuille « Installer l'application » : instructions selon le navigateur reconnu.
@@ -10714,15 +10718,20 @@
     const blogo=IG_LOGO[pf.browser]||'';
     const card=(n,glyph,txt)=>`<div class="ig-card"><span class="ig-n">${n}</span><span class="ig-glyph">${glyph}</span><div class="ig-txt">${txt}</div></div>`;
     let body='';
-    if(pf.inApp){
-      // Navigateur intégré (Instagram, WhatsApp…) : on NE PEUT PAS installer ici. Le bouton
-      // pour rejoindre Safari varie selon l'app (icône Partager en bas, boussole Safari en
-      // bas à droite, ou menu ⋯), d'où une étape « repère l'un de ces boutons » + un repli
-      // infaillible : ouvrir Safari soi-même et taper l'adresse.
-      const openStep = pf.ios
-        ? card('1',IG_GLYPH.safari,`Touchez l'icône <b>Partager</b> (en bas) ou la <b>boussole Safari</b> ${IG_LOGO.safari} (en bas à droite), puis <b>« Ouvrir dans Safari »</b>`)
-        : card('1',IG_GLYPH.dots,`Touchez le menu <b>⋮</b>, puis <b>« Ouvrir dans le navigateur »</b> (Chrome)&nbsp;${IG_LOGO.chrome}`);
-      body=`<div class="ig-warn">${I.shield}<div>Vous avez ouvert Ti-Services <b>à l'intérieur de WhatsApp</b> (ou Instagram, Messenger…). D'ici, l'installation est <b>impossible</b> — il faut d'abord ouvrir dans ${pf.ios?'<b>Safari</b>':'<b>votre navigateur</b>'}&nbsp;:</div></div>
+    if(pf.inApp || pf.iosOtherBrowser){
+      // Impossible d'installer ici : soit navigateur INTÉGRÉ (WhatsApp/Instagram…), soit un
+      // navigateur iPhone autre que Safari (Chrome, Firefox, Edge…). Sur iPhone, seule Safari
+      // installe une vraie PWA « Sur l'écran d'accueil ». On explique comment rejoindre Safari,
+      // avec un repli infaillible : ouvrir Safari soi-même et taper l'adresse.
+      const warn = pf.inApp
+        ? `Vous avez ouvert Ti-Services <b>à l'intérieur d'une autre app</b> (WhatsApp, Instagram, Messenger…). D'ici, l'installation est <b>impossible</b>`
+        : `Sur iPhone, l'installation « Sur l'écran d'accueil » se fait <b>uniquement depuis Safari</b> — pas dans ${bname}`;
+      const openStep = !pf.ios
+        ? card('1',IG_GLYPH.dots,`Touchez le menu <b>⋮</b>, puis <b>« Ouvrir dans le navigateur »</b> (Chrome)&nbsp;${IG_LOGO.chrome}`)
+        : (pf.inApp
+            ? card('1',IG_GLYPH.safari,`Touchez l'icône <b>Partager</b> (en bas) ou la <b>boussole Safari</b> ${IG_LOGO.safari} (en bas à droite), puis <b>« Ouvrir dans Safari »</b>`)
+            : card('1',IG_GLYPH.safari,`Ouvrez le menu de <b>${bname}</b>${blogo?' '+blogo:''}, puis <b>« Ouvrir dans Safari »</b>`));
+      body=`<div class="ig-warn">${I.shield}<div>${warn} — il faut d'abord ouvrir dans ${pf.ios?'<b>Safari</b>':'<b>votre navigateur</b>'}&nbsp;:</div></div>
         <div class="ig-cards">${openStep}${card('2',IG_GLYPH.app,`Une fois dans ${pf.ios?'Safari':'le navigateur'}, retouchez <b>« Installer l'application »</b> — les étapes s'afficheront.`)}</div>
         <p class="ig-or">ou, encore plus simple&nbsp;:</p>
         <div class="ig-cards">${card('★',IG_GLYPH.safari,`Ouvrez ${pf.ios?`<b>Safari</b> ${IG_LOGO.safari}`:'<b>votre navigateur</b>'} vous-même et tapez&nbsp;: <b>ti-services.fr</b>`)}</div>`;
