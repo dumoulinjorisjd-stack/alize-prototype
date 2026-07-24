@@ -138,8 +138,8 @@ COMPTE — La suppression de compte est disponible dans l'app (Profil →
 - [ ] Comptes démo créés sur ti-services.fr : demo.client@… (fait) et
       demo.artisan@… **validé** dans la console admin (fait)
 - [ ] Mots de passe saisis DANS ASC (identifiants + notes), pas dans ce fichier
-- [ ] Optionnel : ajouter les métiers Beauté et Sport à l'artisan démo pour que
-      les 10 catégories soient actives pendant l'examen
+- [x] Toutes les catégories actives pour le compte démo : automatique (le compte
+      de démonstration voit toutes les tuiles ouvertes, code v520)
 - [ ] Build envoyé depuis Xcode (Archive → Distribute) et sélectionné dans ASC
 - [ ] Captures d'écran chargées (2 tailles)
 - [ ] Questionnaire confidentialité rempli (section ci-dessus)
