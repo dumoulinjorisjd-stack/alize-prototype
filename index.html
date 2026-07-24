@@ -2353,6 +2353,9 @@
   // DOIT rester aligné avec functions/index.js (SMALL_COMM_MIN / SMALL_COMM_PCT).
   const SMALL_COMM_MIN=21, SMALL_COMM_PCT=10;
   function effCommPct(basePct,sub){return ((Number(sub)||0)<SMALL_COMM_MIN)?Math.max(Number(basePct)||0,SMALL_COMM_PCT):(Number(basePct)||0);}
+  // Net indicatif touché par un prestataire pour un prix donné (barème standard « débutant »
+  // = 1er palier de fidélité) — utilisé pour SÉDUIRE à l'inscription (« vous touchez ~X € »).
+  function proNetHint(price){const p=Number(price)||0;if(!p)return 0;const pct=effCommPct(fidFor(0).pct,p);return Math.round(p*(100-pct)/100);}
   // Avantage fondateur encore actif pour le prestataire connecté ? (dans les 3 mois ET sous 2 000 €)
   function founderActive(){ if(!S.proFounder)return false; if((S.proFounderGross||0)>=FOUNDER_GROSS_CAP)return false; if(S.proFounderSince&&(Date.now()-S.proFounderSince)>=FOUNDER_DAYS*86400000)return false; return true; }
   // Idem pour une fiche artisan quelconque (console admin).
@@ -8296,7 +8299,8 @@
     return `<div class="cats">${cats}</div>
       ${f.cats.includes('autre')?`<div class="field" style="margin-top:12px"><label>Précisez votre service « Autre »</label><input class="txt" data-pf="otherService" value="${esc(f.otherService||'')}" placeholder="Ex. Vitrier, peintre, cours de plongée…"><p class="mini" style="margin-top:6px">Examiné par Ti-Services avant d'être proposé.</p></div>`:''}
       ${f.cats.length?`<div class="card" style="padding:16px;margin-top:14px"><div class="eyebrow" style="color:var(--muted)">Grille tarifaire Ti-Services</div>
-        <p class="mini" style="margin-top:4px">Prix <b>fixés par Ti-Services</b>, identiques pour tous. À chaque mission, vous voyez le <b>net que vous toucherez</b> avant d'accepter.</p>
+        <p class="mini" style="margin-top:4px">Prix <b>fixés par Ti-Services</b>. À chaque mission, vous voyez le <b>net que vous touchez</b> avant d'accepter.</p>
+        ${f.cats.filter(function(id){return id!=='autre';}).map(function(id){const plat=(S.adminPrices&&S.adminPrices[id]!=null)?S.adminPrices[id]:svcBase(id);const forf=isCatalogForfait(id);const priceTxt=forf?`dès ${minActPrice(id)} €`:(id==='colis'?`${plat} € / retrait`:`${plat} €/h`);const netVal=forf?proNetHint(minActPrice(id)):proNetHint(plat);const netSuf=forf?'':(id==='colis'?'/retrait':'/h');return `<div class="row between" style="align-items:flex-start;margin-top:12px;padding-top:12px;border-top:1px solid var(--hair)"><span class="sub" style="display:flex;align-items:center;gap:8px"><span style="display:inline-flex;width:26px;height:26px;border-radius:8px;background:var(--teal-wash);color:var(--teal-deep);align-items:center;justify-content:center">${svcIco(id)}</span>${svcNm(id)}</span><div style="text-align:right"><b>${priceTxt}</b><div class="mini" style="color:var(--good);font-weight:800;margin-top:1px">≈ ${netVal} € net${netSuf} pour vous</div></div></div>`;}).join('')}
         <div class="chkline" style="margin-top:16px"><button data-act="toggle-grille" aria-label="Appliquer la grille" style="background:none;border:none;padding:0">${chkbox(f.acceptsGrille)}</button><span class="mini" style="line-height:1.5">${RQ} J'applique la <b>grille tarifaire Ti-Services</b> pour mes prestations.</span></div></div>`:`<p class="mini" style="margin-top:10px;color:var(--muted)">Sélectionnez au moins un service.</p>`}
       ${f.cats.includes('baby')?`<div class="card" style="padding:16px;margin-top:14px"><div class="eyebrow" style="color:var(--muted)">${I.baby} Garde d'enfants — diplômes${RQ}</div>
         <p class="mini" style="margin-top:4px"><b>PSC1 (premiers secours)</b> recommandé. Déclarations contrôlées à la validation.</p>
@@ -8370,7 +8374,7 @@
       ${f.cats.includes('autre')?`<div class="field" style="margin-top:12px"><label>Précisez votre service « Autre »</label><input class="txt" data-pf="otherService" value="${esc(f.otherService||'')}" placeholder="Ex. Vitrier, peintre, cours de plongée…"><p class="mini" style="margin-top:6px">Examiné par Ti-Services avant d'être proposé.</p></div>`:''}
       ${f.cats.length?`<div class="card" style="padding:16px;margin-top:14px"><div class="eyebrow" style="color:var(--muted)">Grille tarifaire Ti-Services</div>
         <p class="mini" style="margin-top:4px">Prix <b>fixés par Ti-Services</b>, identiques pour tous. À chaque mission, vous voyez le <b>net que vous toucherez</b> avant d'accepter.</p>
-        ${f.cats.filter(function(id){return id!=='autre';}).map(function(id){const plat=(S.adminPrices&&S.adminPrices[id]!=null)?S.adminPrices[id]:svcBase(id);const forf=isCatalogForfait(id);const head=`<div class="row between" style="align-items:center"><span class="sub" style="display:flex;align-items:center;gap:8px"><span style="display:inline-flex;width:26px;height:26px;border-radius:8px;background:var(--teal-wash);color:var(--teal-deep);align-items:center;justify-content:center">${svcIco(id)}</span>${svcNm(id)}</span>${forf?`<span class="mini" style="color:var(--muted)">dès ${minActPrice(id)} €</span>`:(id==='colis'?`<b>${plat} € / retrait</b>`:`<b>${plat} €/h</b>`)}</div>`;const acts=forf?`<div class="mini" style="margin-top:6px;color:var(--ink-soft);line-height:1.55">${catalogFor(id).map(function(a){return esc(a.nm)+' — '+a.price+' €';}).join(' · ')}</div>`:'';return `<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--hair)">${head}${acts}</div>`;}).join('')}
+        ${f.cats.filter(function(id){return id!=='autre';}).map(function(id){const plat=(S.adminPrices&&S.adminPrices[id]!=null)?S.adminPrices[id]:svcBase(id);const forf=isCatalogForfait(id);const priceTxt=forf?`dès ${minActPrice(id)} €`:(id==='colis'?`${plat} € / retrait`:`${plat} €/h`);const netVal=forf?proNetHint(minActPrice(id)):proNetHint(plat);const netSuf=forf?'':(id==='colis'?'/retrait':'/h');const head=`<div class="row between" style="align-items:flex-start"><span class="sub" style="display:flex;align-items:center;gap:8px"><span style="display:inline-flex;width:26px;height:26px;border-radius:8px;background:var(--teal-wash);color:var(--teal-deep);align-items:center;justify-content:center">${svcIco(id)}</span>${svcNm(id)}</span><div style="text-align:right"><b>${priceTxt}</b><div class="mini" style="color:var(--good);font-weight:800;margin-top:1px">≈ ${netVal} € net${netSuf} pour vous</div></div></div>`;const acts=forf?`<div class="mini" style="margin-top:6px;color:var(--ink-soft);line-height:1.55">${catalogFor(id).map(function(a){return esc(a.nm)+' — '+a.price+' €';}).join(' · ')}</div>`:'';return `<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--hair)">${head}${acts}</div>`;}).join('')}
         <div class="chkline" style="margin-top:16px"><button data-act="toggle-grille" aria-label="Appliquer la grille" style="background:none;border:none;padding:0">${chkbox(f.acceptsGrille)}</button><span class="mini" style="line-height:1.5">${RQ} J'applique la <b>grille tarifaire Ti-Services</b> pour mes prestations. Je pourrai proposer d'<b>enrichir le catalogue</b> (validé par Ti-Services), mais les prix restent ceux de la grille.</span></div></div>`:`<p class="mini" style="margin-top:10px;color:var(--muted)">Sélectionnez au moins un service.</p>`}
       ${f.cats.includes('baby')?`<div class="card" style="padding:16px;margin-top:14px"><div class="eyebrow" style="color:var(--muted)">${I.baby} Garde d'enfants — diplômes &amp; qualifications${RQ}</div>
         <p class="mini" style="margin-top:4px"><b>PSC1 (premiers secours)</b> recommandé. Vos déclarations sont <b>contrôlées</b> à la validation.</p>
@@ -8417,6 +8421,8 @@
   function draftInsDone(f){f=f||{};return !!f.insuranceDoc;}
   function draftSvcDone(f){f=f||{};return !!(f.cats&&f.cats.length)&&!!f.acceptsGrille&&(!f.cats.includes('autre')||(f.otherService||'').trim())&&(!f.cats.includes('baby')||!!(f.diplomas&&f.diplomas.length));}
   function draftAccDone(f){f=f||{};return !!f.mandat&&!!f.cgu&&!!f.charte;}
+  // Prochaine étape INCOMPLÈTE (pour enchaîner « Enregistrer et continuer ») ; null si tout est fait.
+  function nextDraftStep(cur){const order=['id','ins','svc','acc'];const f=S.proForm||{};const done={id:draftIdDone(f),ins:draftInsDone(f),svc:draftSvcDone(f),acc:draftAccDone(f)};const i=order.indexOf(cur);for(let k=i+1;k<order.length;k++)if(!done[order[k]])return order[k];for(let k=0;k<order.length;k++)if(!done[order[k]])return order[k];return null;}
   function draftSteps(f){return [
     {id:'id',ic:I.user,nm:'Identité & entreprise',sub:'Nom, téléphone, SIRET, adresse',done:draftIdDone(f)},
     {id:'ins',ic:I.shield,nm:'Assurance',sub:'Attestation responsabilité civile',done:draftInsDone(f)},
@@ -8491,7 +8497,7 @@
       <div class="h-hello">${title}</div>
       ${body}
       <div class="footcta" style="position:static;background:none;padding:16px 0 0">
-        <button class="btn primary" data-act="draft-save">${okStep?I.check+' Enregistrer — étape complète':'Enregistrer'}</button>
+        <button class="btn primary" data-act="draft-save">${nextDraftStep(step)?'Enregistrer et continuer →':(okStep?I.check+' Enregistrer — c’est complet':'Enregistrer')}</button>
       </div></div>`;
   }
   function proPending(){
@@ -9921,7 +9927,10 @@
       case 'go-artisan-signup':S.persona='pro';S.proStatus='signup';S.signupKind=null;render();break;
       // Inscription progressive : création du compte (e-mail) puis navigation hub ↔ étapes.
       case 'pro-account-create':{const f=S.proForm;const ok=(f.name||'').trim().length>1&&/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=6&&f.password===f.password2;if(!ok){toast('Nom, e-mail et mots de passe identiques (6 car.) requis');break;}fbProAccountCreate(f);break;}
-      case 'draft-hub':case 'draft-save':S.proStep=null;saveProDraft();render();try{view.scrollTop=0;}catch(_){}break;
+      case 'draft-hub':S.proStep=null;saveProDraft();render();try{view.scrollTop=0;}catch(_){}break;
+      // « Enregistrer et continuer » : on enchaîne sur la prochaine étape incomplète (parcours
+      // guidé, moins d'allers-retours), sinon retour au hub (prêt à envoyer).
+      case 'draft-save':{saveProDraft();S.proStep=nextDraftStep(S.proStep);render();try{view.scrollTop=0;}catch(_){}break;}
       case 'draft-submit':{const f=S.proForm;if(!proSignupOk(f)){toast('Complétez les 4 étapes pour envoyer');break;}saveProDraft();if(FB){signupAsArtisan=true;fbProSignup(f);}else{S.proStatus='pending';S.proStep=null;render();burstConfetti();toast('Candidature envoyée (démo)');}break;}
       case 'draft-logout':try{localStorage.removeItem('tiSignupIntent');}catch(_){}fbLogout();if(!FB){S.onboarded=false;S.persona='client';S.proStatus='signup';render();}toast('Déconnecté');break;
       case 'conc-signup-back':S.signupKind=null;render();break;
