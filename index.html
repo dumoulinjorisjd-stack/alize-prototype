@@ -1164,6 +1164,12 @@
   const IS_BETA = !IS_PROD;
   // Étiquette « BÊTA » à accoler au nom/logo (chaîne vide en production).
   function betaTag(){return IS_BETA?'<span class="beta-tag">BÊTA</span>':'';}
+  // Ouverture au public CLIENT : le 1er octobre 2026. Avant cette date, l'inscription client
+  // est fermée EN PRODUCTION (on recrute d'abord les prestataires) ; la bêta reste ouverte
+  // pour les tests. La date rouvre l'inscription automatiquement — aucun redéploiement requis.
+  const CLIENT_LAUNCH='2026-10-01';
+  function clientSignupOpen(){ if(!IS_PROD)return true; try{ return (new Date().toISOString().slice(0,10))>=CLIENT_LAUNCH; }catch(_){ return true; } }
+  function clientSoon(){ toast('Ouverture aux clients le 1er octobre — à très bientôt !'); }
   const FB_PROD = {
     apiKey: 'AIzaSyAenua7BQN3zFLaRymHz9lzhj38ibbCUrg',
     authDomain: 't-service-prod.firebaseapp.com',
@@ -6847,7 +6853,8 @@
       <div class="stack welcome-benefits">${benefits}</div>
       ${S.account?`<div class="card" style="padding:13px 15px;margin-top:16px;display:flex;align-items:center;justify-content:space-between;gap:10px"><div class="row" style="gap:9px"><span class="benic">${I.user}</span><div><b style="font-size:13px">Bon retour, ${esc(S.account.name.split(' ')[0])}</b><div class="mini">${esc(S.account.email)}</div></div></div><button class="btn primary sm" data-act="show-login" style="width:auto;padding:9px 14px">Se connecter</button></div>`:''}
       <div class="footcta" style="position:static;background:none;padding:22px 0 0">
-        <button class="btn primary" data-act="onb-start">Je cherche un service</button>
+        ${clientSignupOpen()?`<button class="btn primary" data-act="onb-start">Je cherche un service</button>`:`<button class="btn primary" data-act="client-soon" style="opacity:.55" aria-disabled="true">${I.clock} Je cherche un service</button>
+        <p class="mini" style="text-align:center;margin-top:8px;color:var(--teal-deep);font-weight:700">Ouverture aux clients bientôt — le 1er octobre&nbsp;!</p>`}
         <button class="btn primary" data-act="go-artisan-signup" style="margin-top:10px">Je propose un service</button>
         <p class="mini" style="text-align:center;margin-top:14px">Déjà un compte&nbsp;? <button class="linklike" data-act="show-login">Se connecter</button></p>
       </div></div>`;
@@ -9831,12 +9838,14 @@
     if(b.dataset.act&&b.dataset.act.indexOf('conc-quickvalidate:')===0){const o=S.concOrders.find(x=>x.id===b.dataset.act.split(':')[1]);if(o&&(o.status==='done'||o.status==='issue'))concValidateOrder(o);return;}
     if(b.dataset.act&&b.dataset.act.indexOf('conc-reorder:')===0){const o=S.concOrders.find(x=>x.id===b.dataset.act.split(':')[1]);if(o){S.concClientView=null;S.concView=null;S.concOrder={step:'form',clientId:o.clientId,svc:o.svc,svcName:o.svcName,rate:o.rate,duration:o.duration,when:'Aujourd’hui',slot:o.slot,notes:o.notes||''};render();toast('Commande pré-remplie — ajustez puis validez');}return;}
     switch(b.dataset.act){
-      case 'onb-start':S.authView='signup';S.onbStep=1;render();break;
+      // Inscription CLIENT fermée avant l'ouverture publique (prod) : message sympa.
+      case 'client-soon':clientSoon();break;
+      case 'onb-start':if(!clientSignupOpen()){clientSoon();break;}S.authView='signup';S.onbStep=1;render();break;
       // Entrer en mode invité depuis la page d'accueil → app à 3 onglets, sans compte.
       case 'enter-guest':S.guest=true;S.authView=null;S.clientNav='home';S.mission=null;S.draft=null;render();break;
       // Revenir de l'app invité vers la page d'accueil (créer un compte / se connecter).
       case 'guest-to-welcome':S.guest=false;S.authView=null;S.clientNav='home';S.draft=null;render();break;
-      case 'guest-signup':S.authView='signup';S.onbStep=1;S.clientForm=S.clientForm||{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''};render();break;
+      case 'guest-signup':if(!clientSignupOpen()){clientSoon();break;}S.authView='signup';S.onbStep=1;S.clientForm=S.clientForm||{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''};render();break;
       // « ← Retour » depuis le formulaire d'inscription : on ANNULE le flux d'auth et
       // on revient à la navigation invité (accueil, ou configurateur si une commande
       // était en cours). L'éventuelle commande en attente est relâchée.
@@ -9856,7 +9865,7 @@
       // Inscription CLIENT via Google : on mémorise l'intention (survit à une redirection
       // mobile) puis on lance l'authentification. loadUserProfile crée le compte client
       // et route vers le profil pour compléter les informations.
-      case 'google-client':try{localStorage.setItem('tiSignupIntent','client');}catch(_){}if(FB){fbGoogle();}else{toast('Connexion Google — bientôt disponible');}break;
+      case 'google-client':if(!clientSignupOpen()){clientSoon();break;}try{localStorage.setItem('tiSignupIntent','client');}catch(_){}if(FB){fbGoogle();}else{toast('Connexion Google — bientôt disponible');}break;
       // Inscription PRESTATAIRE via Google : idem, mais on prépare le formulaire pro et on
       // reste dessus après authentification (SIRET, assurance, métiers restent à saisir).
       case 'google-pro':try{localStorage.setItem('tiSignupIntent','artisan');}catch(_){}signupAsArtisan=true;S.proForm=S.proForm||{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,cgu:false,charte:false,rates:{},otherService:'',photo:'',refCode:storedParrain()};if(FB){fbGoogle();}else{toast('Connexion Google — bientôt disponible');}break;
@@ -9898,7 +9907,7 @@
       case 'lang-pt':setLang('pt');break;
       case 'lang-toggle':setLang(S.lang==='fr'?'en':(S.lang==='en'?'pt':'fr'));break;
       case 'show-pitch':S.showPitch=true;render();break;
-      case 'pitch-start':S.showPitch=false;S.authView='signup';S.onbStep=1;render();break;
+      case 'pitch-start':if(!clientSignupOpen()){clientSoon();break;}S.showPitch=false;S.authView='signup';S.onbStep=1;render();break;
       case 'pitch-close':S.showPitch=false;render();break;
       case 'report-issue':toast('Signalement transmis — vous ne serez pas débité');break;
       case 'pro-finish-start':{const m=S.mission;
