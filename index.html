@@ -10522,10 +10522,11 @@
 
   /* ---------- PWA: install + service worker ---------- */
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
-  // (Retiré) La surcouche auto « Installez Ti-Services » faisait doublon avec le bouton
-  // « Installer l'application » et son astuce, déjà présents sur l'accueil — et pouvait
-  // donner un conseil « Safari » erroné dans un navigateur intégré (WhatsApp). L'aide reste
-  // accessible au clic sur le bouton (showInstallGuide).
+  // Aide PROACTIVE limitée aux navigateurs INTÉGRÉS (WhatsApp, Instagram, Messenger…) : là,
+  // l'installation « Sur l'écran d'accueil » n'existe PAS — la seule info utile et vraie est
+  // « ouvrez d'abord ce lien dans Safari ». En vrai Safari on n'affiche rien (l'accueil montre
+  // déjà le bouton + l'astuce) : ni doublon, ni conseil trompeur.
+  setTimeout(function(){ try{ maybeShowInAppInstallHint(); }catch(_){} }, 1800);
   // ——— Hauteur d'application fiable (correctif barre d'onglets « repliée » Android) ———
   // Historique : 100dvh (viewport DYNAMIQUE) sur-estime la hauteur quand les barres
   // système/navigateur sont susceptibles de se replier — l'app devenait plus haute que
@@ -10676,6 +10677,34 @@
         ? 'Installez Ti-Services sur votre écran d’accueil pour être <b>alerté des nouvelles demandes</b> — même application fermée. Sans elle, vous risquez de manquer des missions.'
         : 'Installez Ti-Services sur votre écran d’accueil pour être <b>prévenu dès qu’un prestataire répond</b> et suivre vos demandes en direct — même application fermée.';
       setTimeout(function(){ try{ showInstallGuide({headTitle:'Ne manquez aucune notification', sub:'Ajoutez Ti-Services à votre écran d’accueil, en quelques gestes.', banner:banner}); }catch(_){} }, 1400);
+    }catch(_){}
+  }
+  // Bandeau proactif RÉSERVÉ aux navigateurs intégrés (WhatsApp/Instagram/…), où l'on ne peut
+  // pas installer la PWA : on garde l'info utile (« ouvrez dans Safari »), sans le conseil
+  // trompeur « Partager → Sur l'écran d'accueil » (impossible tant qu'on n'est pas dans Safari).
+  function maybeShowInAppInstallHint(){
+    try{
+      if(typeof appInstalled==='function' && appInstalled())return;
+      if(document.getElementById('inAppInstallHint'))return;
+      try{ if(localStorage.getItem('tiInAppHintDismissed')==='1')return; }catch(_){}
+      const pf=detectPlatform();
+      if(!pf||!pf.inApp)return;                 // uniquement navigateur intégré
+      const openWhere=pf.ios?'<b>Safari</b>':'<b>votre navigateur</b>';
+      const pillOn=!!document.getElementById('swUpdate');   // ne pas chevaucher « mettre à jour »
+      const el=document.createElement('div');
+      el.id='inAppInstallHint';
+      el.setAttribute('style','position:fixed;left:12px;right:12px;bottom:calc('+(pillOn?'130px':'12px')+' + env(safe-area-inset-bottom, 0px));z-index:9400;background:#fff;border:1px solid #efeae4;border-radius:16px;box-shadow:0 12px 34px rgba(0,0,0,.20);padding:13px 34px 13px 14px;color:#231E33;max-width:520px;margin:0 auto;box-sizing:border-box');
+      el.innerHTML='<button id="inAppHintClose" aria-label="Fermer" style="position:absolute;top:6px;right:8px;background:none;border:none;font-size:20px;line-height:1;color:#b0aab8;padding:4px 6px;cursor:pointer">×</button>'+
+        '<div style="display:flex;gap:11px;align-items:center">'+
+          '<div style="flex:none;width:42px;height:42px;border-radius:12px;background:#FFF1EE;color:#FF6A5B;display:flex;align-items:center;justify-content:center">'+I.install+'</div>'+
+          '<div style="flex:1;min-width:0"><b style="font-size:14px">Installer l\'application</b>'+
+          '<div style="font-size:12.5px;color:#6b6577;line-height:1.45;margin-top:2px">Pour ajouter Ti-Services à votre écran d\'accueil, ouvrez d\'abord ce lien dans '+openWhere+'.</div></div>'+
+          '<button id="inAppHintCta" style="flex:none;background:#FF6A5B;color:#fff;border:none;font-weight:700;font-size:12.5px;padding:9px 13px;border-radius:11px;cursor:pointer">Voir</button>'+
+        '</div>';
+      document.body.appendChild(el);
+      const close=function(){ try{localStorage.setItem('tiInAppHintDismissed','1');}catch(_){} try{el.remove();}catch(_){} };
+      const c=el.querySelector('#inAppHintClose'); if(c)c.addEventListener('click',close);
+      const cta=el.querySelector('#inAppHintCta'); if(cta)cta.addEventListener('click',function(){ try{el.remove();}catch(_){} try{showInstallGuide();}catch(_){} });
     }catch(_){}
   }
   function showInstallGuide(opts){
