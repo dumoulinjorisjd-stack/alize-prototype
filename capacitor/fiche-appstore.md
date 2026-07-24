@@ -1,15 +1,29 @@
-# Fiche App Store — textes prêts à coller
+# Fiche App Store — TOUT ce qu'il faut pour App Store Connect
 
-## Nom
-Ti-Services
+Chaque section ci-dessous correspond à un champ d'App Store Connect.
+Copier-coller dans l'ordre. Les seuls éléments à saisir de tête sont les
+mots de passe des comptes démo (JAMAIS dans ce fichier : le dépôt est public).
 
-## Sous-titre (30 car. max)
-Services à domicile à St-Barth
+---
 
-## Catégorie
-Principale : Style de vie · Secondaire : Services (ou Économie et entreprise)
+## Informations générales
+
+| Champ ASC | Valeur |
+|---|---|
+| **Nom** | Ti-Services |
+| **Sous-titre** (30 car. max) | Services à domicile à St-Barth |
+| **Catégorie principale** | Style de vie |
+| **Catégorie secondaire** | Économie et entreprise |
+| **Prix** | Gratuit |
+| **Disponibilité** | France (suffit : St-Barthélemy en fait partie) — ou Monde entier, au choix |
+| **Copyright** | © 2026 C.C.S |
+| **Classification d'âge** | Répondre « Non » à tout le questionnaire → 4+ |
+| **URL d'assistance** | https://ti-services.fr |
+| **URL marketing** (facultatif) | https://ti-services.fr |
+| **URL de confidentialité** | https://ti-services.fr/?legal=confidentialite |
 
 ## Description
+
 Ti-Services, c'est un pro de confiance chez vous en quelques minutes, à
 Saint-Barthélemy.
 
@@ -34,48 +48,99 @@ POUR LES PRESTATAIRES
 Ti-Services est édité par C.C.S à Saint-Barthélemy (COM, hors TVA).
 
 ## Mots-clés (100 car. max)
+
 saint-barth,ménage,jardinage,baby-sitting,coiffure,services,domicile,artisan,st-barthélemy
 
-## URL d'assistance
-https://ti-services.fr
+## Nouveautés de cette version (obligatoire, v1)
 
-## URL de confidentialité
-https://ti-services.fr/?legal=confidentialite
+Première version de Ti-Services : commandez un service à domicile en quelques
+gestes, suivez la prestation en direct, payez en toute sécurité une fois le
+travail fait.
 
-## Questionnaire confidentialité (App Privacy) — réponses
-Collecte de données : OUI.
-- **Coordonnées** (nom, e-mail, n° de téléphone) → liée à l'identité, usage
-  « Fonctionnalité de l'app », pas de pistage.
-- **Localisation précise** (point GPS de l'adresse d'intervention) → liée à
-  l'identité, usage « Fonctionnalité de l'app », pas de pistage.
-- **Informations financières** : paiements traités par Mollie (prestataire de
-  paiement) — l'app ne stocke pas les numéros de carte. Déclarer « Infos de
-  paiement » collectées, usage Fonctionnalité, pas de pistage.
-- **Identifiants** (identifiant utilisateur/compte) → Fonctionnalité, pas de pistage.
-- **Pistage (tracking) inter-apps : NON.** Pas de publicité, pas de revente.
+---
 
-## Notes pour l'examinateur (champ « Notes » de la soumission)
+## Questionnaire confidentialité (App Privacy)
+
+Collecte de données : OUI. Déclarer, pour chaque type, « lié à l'identité de
+l'utilisateur », usage « Fonctionnalité de l'app », **pistage : NON** :
+
+- **Coordonnées** : nom, adresse e-mail, numéro de téléphone, adresse physique
+- **Localisation** : localisation précise (point GPS de l'adresse d'intervention)
+- **Informations financières** : infos de paiement (traitées par Mollie, PSP —
+  l'app ne stocke jamais les numéros de carte)
+- **Identifiants** : identifiant utilisateur
+- **Pistage inter-apps (tracking) : NON** — pas de publicité, pas de revente,
+  pas de courtiers en données.
+
+## Export compliance (chiffrement)
+
+Déjà déclaré dans l'app (`ITSAppUsesNonExemptEncryption = false`) : HTTPS
+standard uniquement → aucune question à l'envoi du build.
+
+---
+
+## Informations pour l'examen (App Review Information)
+
+### Connexion requise : OUI — identifiants à saisir dans ASC
+
+- **Champ identifiant** : demo.client@ti-services.fr
+- **Champ mot de passe** : *(saisir dans ASC uniquement — ne figure pas ici)*
+
+### Coordonnées de contact
+
+Joris DUMOULIN · [ton téléphone au format +590…] · ccs.dumoulin@gmail.com
+
+### Notes pour l'examinateur (copier-coller dans le champ « Notes »)
+
 Ti-Services est une place de marché locale de services à domicile pour l'île de
-Saint-Barthélemy (France). L'app native apporte les notifications push (APNs)
-indispensables aux prestataires (nouvelles missions en temps réel) et aux clients
-(suivi de prestation). Comptes, réservations, paiements (Mollie), messagerie et
-facturation sont pleinement fonctionnels.
+Saint-Barthélemy (France). L'app apporte les notifications push natives,
+indispensables aux prestataires (nouvelles missions en temps réel) et aux
+clients (suivi de prestation).
 
-IMPORTANT — Ouverture au public le 1er octobre : avant cette date, les comptes
-clients ordinaires voient les services « bientôt disponibles ». Le compte de
-démonstration ci-dessous a l'accès COMPLET activé (commande possible), afin que
-vous puissiez évaluer l'intégralité du parcours.
+CONTEXTE D'OUVERTURE — L'ouverture au grand public est planifiée au 1er octobre
+2026 : d'ici là, les comptes clients ordinaires voient les services « bientôt
+disponibles ». Le compte de démonstration fourni ci-dessus dispose de l'ACCÈS
+COMPLET (commande possible) afin d'évaluer l'intégralité du parcours.
 
-Comptes de démonstration (à créer AVANT la soumission, sur ti-services.fr) :
-- Client (accès complet) : demo.client@ti-services.fr / [mot de passe à définir]
-  ⚠️ Cet e-mail précis est indispensable : c'est lui qui a l'accès complet.
-- Prestataire validé : [créer un artisan de test, le valider dans la console
-  admin, renseigner ici e-mail + mot de passe]
+MARKETPLACE — Certaines catégories peuvent afficher « Bientôt disponible » :
+c'est le comportement normal d'une place de marché tant qu'aucun prestataire
+vérifié ne propose ce service. La majorité des catégories sont actives et
+commandables avec le compte fourni.
 
-## Captures d'écran (à faire au simulateur, ⌘S)
-1. Accueil client (grille des services)
-2. Commande (choix heure/adresse/GPS)
+DEUXIÈME COMPTE DE DÉMONSTRATION (espace prestataire) — pour évaluer le côté
+intervenant : demo.artisan@ti-services.fr / [même mot de passe — saisir ici].
+Ce compte est un prestataire validé : il reçoit les demandes et peut les
+accepter.
+
+PAIEMENTS — Les paiements concernent exclusivement des prestations de services
+PHYSIQUES rendues à domicile (ménage, jardinage…), traitées par le prestataire
+de paiement Mollie, conformément à la règle 3.1.5(a) — l'achat intégré (IAP)
+ne s'applique pas.
+
+COMPTE — La suppression de compte est disponible dans l'app (Profil →
+« Supprimer mon compte »), conformément à la règle 5.1.1(v).
+
+---
+
+## Captures d'écran (formats 6,7" 1290×2796 et 6,5" 1284×2778)
+
+À faire depuis le simulateur (⌘S) ou fournies par l'outillage du projet :
+1. Accueil client (grille des services) — connecté avec le compte démo
+2. Commande (choix heure/adresse/point GPS)
 3. Suivi de mission (statut en direct)
 4. Espace prestataire « Mes missions »
 5. Statut fidélité / parrainage
-Formats requis : 6,7" (1290×2796) et 6,5" (1284×2778).
+
+---
+
+## Check-list finale avant de cliquer « Soumettre »
+
+- [ ] Comptes démo créés sur ti-services.fr : demo.client@… (fait) et
+      demo.artisan@… **validé** dans la console admin (fait)
+- [ ] Mots de passe saisis DANS ASC (identifiants + notes), pas dans ce fichier
+- [ ] Optionnel : ajouter les métiers Beauté et Sport à l'artisan démo pour que
+      les 10 catégories soient actives pendant l'examen
+- [ ] Build envoyé depuis Xcode (Archive → Distribute) et sélectionné dans ASC
+- [ ] Captures d'écran chargées (2 tailles)
+- [ ] Questionnaire confidentialité rempli (section ci-dessus)
+- [ ] Numéro de téléphone de contact renseigné dans App Review Information
