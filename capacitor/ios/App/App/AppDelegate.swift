@@ -9,9 +9,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Firebase (push natif APNs→FCM). Nécessite GoogleService-Info.plist dans App/App
-        // (voir README-APPSTORE.md, étape 4).
-        FirebaseApp.configure()
+        // Firebase (push natif APNs→FCM) — activé seulement si GoogleService-Info.plist
+        // est présent (voir README-APPSTORE.md, étape 4). Sans lui, l'app démarre quand
+        // même (utile pour les premiers essais au simulateur) ; seul le push est inactif.
+        if Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist") != nil {
+            FirebaseApp.configure()
+        }
         return true
     }
 
