@@ -61,8 +61,16 @@ indispensables aux prestataires (nouvelles missions en temps réel) et aux clien
 (suivi de prestation). Comptes, réservations, paiements (Mollie), messagerie et
 facturation sont pleinement fonctionnels.
 
-Compte de démonstration : [créer un compte test client + prestataire validé avant
-la soumission et renseigner ici e-mail + mot de passe].
+IMPORTANT — Ouverture au public le 1er octobre : avant cette date, les comptes
+clients ordinaires voient les services « bientôt disponibles ». Le compte de
+démonstration ci-dessous a l'accès COMPLET activé (commande possible), afin que
+vous puissiez évaluer l'intégralité du parcours.
+
+Comptes de démonstration (à créer AVANT la soumission, sur ti-services.fr) :
+- Client (accès complet) : demo.client@ti-services.fr / [mot de passe à définir]
+  ⚠️ Cet e-mail précis est indispensable : c'est lui qui a l'accès complet.
+- Prestataire validé : [créer un artisan de test, le valider dans la console
+  admin, renseigner ici e-mail + mot de passe]
 
 ## Captures d'écran (à faire au simulateur, ⌘S)
 1. Accueil client (grille des services)
