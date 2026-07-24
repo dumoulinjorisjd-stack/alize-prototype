@@ -2528,7 +2528,7 @@
     proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proReqSlot:null,proReqPick:false,proMissions:[],proSkipped:[],proSkipAt:{},proConflict:null,proStmt:false,commInvId:null,commStmt:false,signupKind:null,concSignup:null,concStatus:'approved',adminConcierges:[],
     proHistory:PRO_HISTORY(),
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),
-    chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,histInvoice:null,histCat:null,signPad:false,colisProc:false,imgView:null,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,delAcct:false,
+    chat:false,advantages:false,referral:false,fidDetail:false,interv:false,invoiceId:null,clientInv:false,histInvoice:null,histCat:null,signPad:false,colisProc:false,imgView:null,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,delAcct:false,
     proJobsTotal:214,fidTiers:FID_TIERS.map(t=>({...t})),referralCode:'MARILOU-SBH',
     filleuls:[{name:'Kevin Questel',status:'valide',bonus:40},{name:'Rosa Almeida',status:'attente',bonus:0}],
     admin:{view:'home',sel:null,fact:null},adminLedger:[],adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,adminPrices:ADMIN_PRICES(),
@@ -3032,6 +3032,7 @@
     if(S.histInvoice)return 'client:histinv:'+(S.histInvoice.invNo||S.histInvoice._id||'');
     if(S.interv)return S.persona+':interv';
     if(S.referral)return S.persona+':referral';
+    if(S.fidDetail)return S.persona+':fidelity';
     if(S.share)return S.persona+':share';
     if(S.chat)return S.persona+':chat';
     if(S.draft&&S.payStep)return 'client:pay:'+(S.payEdit?'edit':'saved');
@@ -5845,7 +5846,7 @@
   function canGoBack(){
     if(S.legalView||S.showPitch)return true;
     if(!S.onboarded)return !!(S.authView||S.onbStep>0||S.draft||S.payStep||S.share||S.chat||S.support||S.cardForm||S.addrForm||S.advantages);
-    if(S.cardForm||S.clientInv||S.histInvoice||S.advantages||S.invoiceId||S.interv||S.referral||S.share||S.chat||S.support||S.addrForm||S.finishing||S.disputing||S.profileForm||S.draft||S.payStep)return true;
+    if(S.cardForm||S.clientInv||S.histInvoice||S.advantages||S.invoiceId||S.interv||S.referral||S.fidDetail||S.share||S.chat||S.support||S.addrForm||S.finishing||S.disputing||S.profileForm||S.draft||S.payStep)return true;
     if(S.persona==='admin')return S.admin.view!=='home';
     if(S.persona==='concierge')return !!(S.concRetInv||S.concInvoice||S.concForm||S.concClientView||S.concOrder||S.concView||S.concNav!=='home');
     if(S.persona==='pro'){if(S.proAddView||S.proDocsView||S.proPayoutView||S.proMollieView||S.mollieGuideView||S.proReqView||S.mission)return true;if(S.proStatus==='pending')return !isRealArtisan();if(S.proStatus==='signup')return true;return S.proNav!=='home';}
@@ -7925,6 +7926,7 @@
     if(S.proStmt)return proStatement();
     if(S.interv)return proInterventions();
     if(S.referral)return proReferral();
+    if(S.fidDetail)return proFidelity();
     if(S.colisTournee)return colisTournee();
     if(S.colisProc&&S.mission)return colisProcuration(S.mission);
     if(S.chat&&S.mission)return chatScreen();
@@ -9169,32 +9171,51 @@
       <div class="card" style="padding:16px"><div class="eyebrow" style="color:var(--muted)">Détail du versement</div><div class="receipt-line" style="margin-top:8px"><span>${m.svcName} · ${durTxt(m)}</span><span class="mini">${m.when} · ${m.slot}</span></div><hr class="dashed"><div class="receipt-line"><span>Prestation</span><b>${eur(t.total-t.tip)}</b></div>${t.tip?`<div class="receipt-line"><span>${I.heart} Pourboire du client</span><b style="color:var(--good)">+${eur(t.tip)}</b></div>`:''}${t.commission>0?`<div class="receipt-line"><span>Commission Ti-Services (${t.commPct}&nbsp;%)</span><b style="color:var(--muted)">−${eur(t.commission)}</b></div>`:''}<hr class="dashed"><div class="receipt-line"><span>Net perçu</span><b style="color:var(--good)">${eur(t.payout)}</b></div></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-act="pro-back-home">Retour aux missions</button></div></div>`;
   }
+  // Carte COMPACTE et CLIQUABLE (ouvre le détail). On n'y montre que l'essentiel :
+  // le badge Ambassadeur (permanent, à vie) + le palier général + le nombre de missions.
   function fidCard(){
+    const jobs=statusJobs(),tier=fidFor(jobs),col=fidColor(tier.key),isAmb=!!S.proFounder;
+    return `<button class="card" data-act="open-fidelity" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block">
+      <div class="row between" style="gap:12px;align-items:center">
+        <div class="row" style="gap:11px;align-items:center"><span class="benic">${I.star}</span>
+          <div><b style="font-size:14px">Statut fidélité</b><div class="mini" style="margin-top:2px">${jobs} mission${jobs>1?'s':''} au total ›</div></div></div>
+        <div class="row" style="gap:6px;flex:none;align-items:center;flex-wrap:wrap;justify-content:flex-end">${isAmb?`<span class="chip founder-chip">${I.star} Ambassadeur</span>`:''}<span class="chip" style="background:${col}22;color:${col}">★ ${tier.nm}</span></div>
+      </div></button>`;
+  }
+  // Détail du statut fidélité : compteur, badge Ambassadeur (à vie) + son avantage
+  // temporaire (3 mois / 2 000 €, départ au 1er oct), et l'évolution du statut GÉNÉRAL
+  // qui s'appliquera une fois l'avantage Ambassadeur terminé.
+  function proFidelity(){
     const jobs=statusJobs(),rm=refMissions(),tier=fidFor(jobs),next=fidNext(jobs),col=fidColor(tier.key);
-    // Fondateur : son avantage (commission réduite aux frais bancaires) prime sur le
-    // palier de fidélité — on l'affiche à part, sans le laisser croire qu'il est « Bronze ».
-    if(founderActive()){
-      // Rappel LÉGER des conditions : la fenêtre (3 mois / 2 000 €) ne démarre qu'à
-      // l'ouverture aux clients (1er oct). Avant, on affiche « démarre le 1er oct » ;
-      // après, le nombre de jours restants.
-      const notLaunched=Date.now()<launchMs(),left=founderDaysLeft();
-      const cond=notLaunched
-        ? `Le compte à rebours démarre le <b>1ᵉʳ octobre</b>, à l'ouverture aux clients : commission réduite pendant <b>3 mois</b> ou jusqu'à <b>2 000 €</b> de missions.`
-        : `Encore <b>${left} jour${left>1?'s':''}</b> (ou jusqu'à <b>2 000 €</b> de missions) à ce tarif réduit.`;
-      return `<div class="card founder" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">Statut fidélité</b><span class="chip founder-chip">${I.star} Ambassadeur</span></div>
-        <p class="sub" style="margin-top:8px">En tant qu'<b>Ambassadeur</b>, vous conservez la <b>quasi-totalité</b> de chaque prestation.</p>
-        <p class="mini" style="margin-top:8px;color:var(--muted)">${I.clock} ${cond}</p>
-        <div class="row between" style="margin-top:8px"><span class="mini">${jobs} mission${jobs>1?'s':''} au total${rm?` · dont ${rm} par parrainage`:''}</span></div></div>`;
+    const isAmb=!!S.proFounder,advActive=founderActive(),notLaunched=Date.now()<launchMs(),left=founderDaysLeft();
+    let amb='';
+    if(isAmb){
+      const cond=advActive
+        ? (notLaunched
+            ? `${I.clock} Le compte à rebours démarre le <b>1ᵉʳ octobre</b>, à l'ouverture aux clients : commission réduite pendant <b>3 mois</b> ou jusqu'à <b>2 000 €</b> de missions.`
+            : `${I.clock} Encore <b>${left} jour${left>1?'s':''}</b> (ou jusqu'à <b>2 000 €</b> de missions) au tarif Ambassadeur.`)
+        : `${I.check} Votre avantage Ambassadeur (commission réduite) est arrivé à terme. Le <b>badge</b>, lui, reste à vie.`;
+      amb=`<div class="card founder" style="padding:16px;margin-top:14px">
+        <div class="row between" style="align-items:center"><b style="font-size:14px">${I.star} Ambassadeur</b><span class="chip founder-chip">À vie</span></div>
+        <p class="sub" style="margin-top:8px">Badge de fondateur — affiché <b>en permanence</b>.${advActive?` Pendant l'avantage, vous conservez la <b>quasi-totalité</b> de chaque mission.`:''}</p>
+        <p class="mini" style="margin-top:8px;color:var(--muted)">${cond}</p></div>`;
     }
     let prog='';
     if(next){const span=Math.max(1,next.min-tier.min),done=Math.max(0,Math.min(span,jobs-tier.min)),pc=Math.round(done/span*100);
-      const left=Math.max(0,next.min-jobs),cut=Math.max(0,(tier.pct||0)-(next.pct||0));
+      const l=Math.max(0,next.min-jobs),cut=Math.max(0,(tier.pct||0)-(next.pct||0));
       prog=`<div style="height:9px;border-radius:999px;background:var(--sand-2);margin-top:12px;overflow:hidden"><div style="height:100%;width:${pc}%;border-radius:999px;background:${col};transition:width .4s"></div></div>
-      <p class="mini" style="margin-top:7px">Plus que <b>${left} mission${left>1?'s':''}</b> pour passer <b style="color:${fidColor(next.key)}">${next.nm}</b>${cut>0?` — votre commission sera réduite de <b>${cut}&nbsp;%</b>`:''}.</p>`;
-    }else{prog=`<p class="mini" style="margin-top:10px">${I.party} Statut maximum atteint — vous conservez la plus grande part possible de chaque prestation.</p>`;}
-    return `<div class="card" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">Statut fidélité</b><span class="chip" style="background:${col}22;color:${col}">★ ${tier.nm}</span></div>
-      <p class="sub" style="margin-top:8px">Plus vous enchaînez les missions via Ti-Services, plus vous gardez une <b>grande part</b> de chaque prestation.</p>
+      <p class="mini" style="margin-top:7px">Plus que <b>${l} mission${l>1?'s':''}</b> pour passer <b style="color:${fidColor(next.key)}">${next.nm}</b>${cut>0?` — votre commission sera réduite de <b>${cut}&nbsp;%</b>`:''}.</p>`;
+    }else{prog=`<p class="mini" style="margin-top:10px">${I.party} Statut maximum atteint — vous conservez la plus grande part possible de chaque mission.</p>`;}
+    const genCard=`<div class="card" style="padding:16px;margin-top:14px"><div class="row between" style="align-items:center"><b style="font-size:14px">${isAmb?'Votre statut général':'Statut fidélité'}</b><span class="chip" style="background:${col}22;color:${col}">★ ${tier.nm}</span></div>
+      <p class="sub" style="margin-top:8px">${isAmb?`C'est le statut qui s'appliquera <b>après</b> votre avantage Ambassadeur. Il monte à chaque mission réalisée.`:`Plus vous enchaînez les missions via Ti-Services, plus vous gardez une <b>grande part</b> de chaque prestation.`}</p>
       <div class="row between" style="margin-top:8px"><span class="mini">${jobs} mission${jobs>1?'s':''} au total${rm?` · dont ${rm} par parrainage`:''}</span>${next?`<span class="mini">Prochain&nbsp;: ${next.nm}</span>`:''}</div>${prog}</div>`;
+    return `<div class="pad"><button class="reset" data-act="close-fidelity" style="margin:8px 0 2px">← Retour</button>
+      <span class="eyebrow">${I.star} Statut fidélité</span>
+      <div class="h-hello">Votre statut</div>
+      <p class="sub" style="margin-top:6px">${isAmb?`Vous êtes <b>${tier.nm}</b> — et, à titre exceptionnel, <b>Ambassadeur</b> (badge à vie).`:`Plus vous réalisez de missions, plus votre commission baisse.`}</p>
+      ${amb}
+      ${genCard}
+      <div style="height:12px"></div></div>${proNavbar()}`;
   }
   function svcName(id){const s=SERVICES.find(x=>x.id===id);return s?s.nm:id;}
   function fmtLong(iso){if(!iso)return '';const M=['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];const p=iso.split('-');if(p.length<3)return iso;return (+p[2])+' '+M[(+p[1])-1]+' '+p[0];}
@@ -9703,7 +9724,7 @@
     if(b.dataset.act&&b.dataset.act.indexOf('dismiss-mission:')===0){const id=b.dataset.act.slice('dismiss-mission:'.length);const m=(S.missions||[]).find(function(x){return (x._id||'')===id;});if(m){removeMission(m);if(S.mission===m)S.mission=null;cacheClientLocal();}render();return;}
     if(b.dataset.follow){const orow=b.closest('.swipe-row');if(orow&&orow.classList.contains('open')){orow.classList.remove('open');return;}const mm=(S.missions||[]).find(function(x){return (x._id||'')===b.dataset.follow;});if(mm){S.mission=mm;S.cancelAsk=false;S.clientNav='wallet';render();}return;}
     if(b.dataset.cnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.invoiceId=null;S.histInvoice=null;S.histCat=null;S.signPad=false;S.colisProc=false;S.imgView=null;S._sigCanvas=null;S.addrForm=null;S.profileForm=null;S.mission=null;S.cancelAsk=false;S.catView=null;S.clientNav=b.dataset.cnav;if(b.dataset.cnav==='wallet')refreshClientRequests();render();return;}
-    if(b.dataset.pnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.invClient=null;S.proStmt=false;S.commInvId=null;S.commStmt=false;S.yearStmt=false;S.invoiceId=null;S.proConflict=null;S.imgView=null;S.proNav=b.dataset.pnav;render();return;}
+    if(b.dataset.pnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.fidDetail=false;S.interv=false;S.invClient=null;S.proStmt=false;S.commInvId=null;S.commStmt=false;S.yearStmt=false;S.invoiceId=null;S.proConflict=null;S.imgView=null;S.proNav=b.dataset.pnav;render();return;}
     if(b.dataset.cnav2){S.concOrder=null;S.concView=null;S.concForm=null;S.concInvoice=null;S.concNav=b.dataset.cnav2;render();return;}
     if(b.dataset.concOc){const c=concClient(b.dataset.concOc);if(c&&c.authorized){S.concOrder.clientId=c.id;S.concOrder.step='service';render();}else{toast('La carte de ce client doit d’abord être autorisée');}return;}
     if(b.dataset.concOs){const s=SERVICES.find(x=>x.id===b.dataset.concOs);S.concOrder.svc=s.id;S.concOrder.svcName=s.nm;S.concOrder.rate=(S.adminPrices&&S.adminPrices[s.id]!=null)?S.adminPrices[s.id]:svcBase(s.id);S.concOrder.duration=3;S.concOrder.when='Aujourd’hui';S.concOrder.slot='14:00';S.concOrder.notes='';S.concOrder.step='form';render();return;}
@@ -9943,7 +9964,7 @@
       case 'submit-rating':S.mission.status='rated';render();break;
       case 'new-mission':archiveMission(S.mission);S.mission=null;S.clientNav='home';render();break;
       case 'app-back':goBack();break;
-      case 'go-home':S.mission=null;S.draft=null;S.payStep=false;S.payEdit=false;S.chat=false;S.support=false;S.clientInv=false;S.advantages=false;S.addrForm=null;S.referral=false;S.interv=false;S.invoiceId=null;S.finishing=false;S.disputing=false;S.persona='client';S.clientNav='home';render();break;
+      case 'go-home':S.mission=null;S.draft=null;S.payStep=false;S.payEdit=false;S.chat=false;S.support=false;S.clientInv=false;S.advantages=false;S.addrForm=null;S.referral=false;S.fidDetail=false;S.interv=false;S.invoiceId=null;S.finishing=false;S.disputing=false;S.persona='client';S.clientNav='home';render();break;
       case 'renew-mission':renewMission();break;
       case 'show-client-invoice':S.clientInv=true;render();break;
       case 'close-client-invoice':S.clientInv=false;S.histInvoice=null;render();break;
@@ -10019,6 +10040,8 @@
       case 'close-advantages':S.advantages=false;render();break;
       case 'open-referral':S.referral=true;render();break;
       case 'close-referral':S.referral=false;render();break;
+      case 'open-fidelity':S.fidDetail=true;render();break;
+      case 'close-fidelity':S.fidDetail=false;render();break;
       case 'copy-referral':{const link=siteBase()+'/?parrain='+encodeURIComponent(S.referralCode);const share={title:CONFIG.appName,text:'Rejoins-moi sur '+CONFIG.appName+' à Saint-Barth',url:link};if(navigator.share){navigator.share(share).catch(()=>{});}else if(navigator.clipboard){navigator.clipboard.writeText(link).then(()=>toast('Lien de parrainage copié')).catch(()=>toast('Lien : '+link));}else{toast('Lien : '+link);}break;}
       case 'open-share':if(S.persona!=='pro'&&S.persona!=='concierge'&&S.persona!=='admin')S.persona='client';S.share=true;render();break;
       case 'close-share':S.share=false;render();break;
@@ -10783,6 +10806,7 @@
     if(S.invoiceId){S.invoiceId=null;render();return;}
     if(S.interv){S.interv=false;render();return;}
     if(S.referral){S.referral=false;render();return;}
+    if(S.fidDetail){S.fidDetail=false;render();return;}
     if(S.share){S.share=false;render();return;}
     if(S.chat){S.chat=false;render();return;}
     if(S.histCat&&S.persona==='client'&&S.clientNav==='wallet'){S.histCat=null;render();return;}
