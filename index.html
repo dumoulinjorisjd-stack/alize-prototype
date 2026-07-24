@@ -2862,11 +2862,15 @@
   // écrans « compte » de chaque rôle. Rappel mensuel tant que la sauvegarde n'est pas faite.
   function backupCard(){
     if(isDemo())return '';
-    const due=backupDue();
+    // « À faire » ne s'affiche QUE s'il y a réellement des factures à sauvegarder ce
+    // mois-ci. Sans aucune facture (nouveau compte), pas d'alerte : rien n'est en retard.
+    const hasData=(S.proHistory||[]).length>0;
+    const due=hasData&&backupDue();
+    const badge=due?`<span class="chip coral" style="white-space:nowrap;flex:none">À faire</span>`:(hasData?`<span class="chip good" style="white-space:nowrap;flex:none">${I.check} À jour</span>`:'');
     return `<div class="card" style="padding:16px;margin-top:12px${due?';border-left:4px solid var(--coral)':''}">
-      <div class="row between" style="gap:8px;align-items:center"><div class="row" style="gap:11px;align-items:center"><span class="benic">${I.card}</span><div><b style="font-size:14px;line-height:1.2">Sauvegarde des factures</b><div class="mini" style="margin-top:1px">Copie mensuelle de vos justificatifs.</div></div></div>${due?`<span class="chip coral" style="white-space:nowrap;flex:none">À faire</span>`:`<span class="chip good" style="white-space:nowrap;flex:none">${I.check} À jour</span>`}</div>
-      <p class="mini" style="margin-top:8px;color:var(--muted);line-height:1.5">Téléchargez chaque mois une copie de vos factures et données comptables. <b>Vous êtes seul responsable de la conservation de vos justificatifs</b> — Ti-Services fournit l'outil sans garantir la conservation au-delà de ses obligations légales.</p>
-      <button class="btn ${due?'primary':'ghost'} sm" data-act="download-backup" style="margin-top:10px">${I.card}&nbsp;Télécharger (CSV)</button>
+      <div class="row between" style="gap:8px;align-items:center"><div class="row" style="gap:11px;align-items:center"><span class="benic">${I.card}</span><div><b style="font-size:14px;line-height:1.2">Sauvegarde des factures</b><div class="mini" style="margin-top:1px">Copie mensuelle de vos justificatifs.</div></div></div>${badge}</div>
+      <p class="mini" style="margin-top:8px;color:var(--muted);line-height:1.5">${hasData?`Téléchargez chaque mois une copie de vos factures et données comptables. <b>Vous êtes seul responsable de la conservation de vos justificatifs</b> — Ti-Services fournit l'outil sans garantir la conservation au-delà de ses obligations légales.`:`Dès vos premières missions, vous pourrez télécharger ici une copie de vos factures et données comptables (à conserver de votre côté).`}</p>
+      ${hasData?`<button class="btn ${due?'primary':'ghost'} sm" data-act="download-backup" style="margin-top:10px">${I.card}&nbsp;Télécharger (CSV)</button>`:''}
     </div>`;
   }
   function adminExportAccounting(){
@@ -9361,7 +9365,15 @@
 
       <div class="card" style="padding:16px;margin-top:16px">
         <span class="eyebrow" style="color:var(--muted)">Votre statut</span>
-        <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap">${S.proFounder?`<span class="chip founder-chip">${I.star} Ambassadeur</span>`:''}<span class="chip good">${I.check} Vérifié</span><span class="chip">${I.shield} Assuré</span></div>
+        <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap">${S.proFounder?`<span class="chip founder-chip">${I.star} Ambassadeur</span>`:''}<span class="chip good">${I.check} Vérifié</span>${insOk?`<span class="chip good">${I.check} Assuré</span>`:''}</div>
+        ${(function(){
+          // Rappel des actions IMPORTANTES encore à faire (surfacées en haut, pas enfouies).
+          const todos=[];
+          const ms=mollieState();
+          if(ms!=='active')todos.push(`<button class="banner ${ms==='pending'?'teal':'coral'}" data-act="pro-mollie" style="margin-top:10px;width:100%;text-align:left;cursor:pointer">${I.card}<span>${ms==='pending'?`<b>Paiements en cours de vérification</b> — suivez l'activation.`:`<b>Activez vos paiements</b> — indispensable pour accepter des missions.`}</span></button>`);
+          if(!insOk){const pend=!!S.proInsuranceUrl;todos.push(`<button class="banner ${pend?'teal':'coral'}" data-act="pro-docs" style="margin-top:10px;width:100%;text-align:left;cursor:pointer">${I.shield}<span>${pend?`<b>Attestation d'assurance en vérification</b> — rien à faire, on vous prévient.`:`<b>Joignez votre attestation d'assurance</b> — requise pour accepter des missions.`}</span></button>`);}
+          return todos.join('');
+        })()}
       </div>
 
       ${(function(){
