@@ -2804,7 +2804,7 @@ exports.icalFeed = onRequest(async (req, res) => {
    - secret : firebase functions:secrets:set GCAL_OAUTH_SECRET
    Jetons de rafraîchissement dans gcalTokens/{uid} (serveur uniquement).
    ============================================================ */
-const GCAL_CLIENT_ID = 'A_CONFIGURER.apps.googleusercontent.com';
+const GCAL_CLIENT_ID = '616112558398-hrcn1vp27gfv69ssqclkkamq2va78a97.apps.googleusercontent.com';
 const GCAL_OAUTH_SECRET = defineSecret('GCAL_OAUTH_SECRET');
 const GCAL_SCOPES = 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.freebusy';
 function gcalConfigured() { return GCAL_CLIENT_ID.indexOf('A_CONFIGURER') < 0; }
