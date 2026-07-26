@@ -2310,14 +2310,31 @@ exports.trackFunnel = onCall(async (request) => {
   const ev = String(d.event || '');
   const pf = String(d.platform || '');
   const env = d.env === 'prod' ? 'prod' : 'beta';
+  const did = String(d.did || '').slice(0, 64);
   if (!FUNNEL_EVENTS.includes(ev) || !FUNNEL_PLATFORMS.includes(pf)) {
     throw new HttpsError('invalid-argument', 'Événement inconnu.');
   }
+  if (!/^[a-f0-9-]{16,64}$/i.test(did)) throw new HttpsError('invalid-argument', 'Identifiant invalide.');
   const db = getFirestore();
-  const upd = {updatedAt: FieldValue.serverTimestamp()};
-  upd[ev + '_total'] = FieldValue.increment(1);
-  upd[ev + '_' + pf] = FieldValue.increment(1);
-  await db.doc('settings/installFunnel_' + env).set(upd, {merge: true});
+  // APPAREILS UNIQUES : chaque appareil porte un identifiant anonyme stable (généré
+  // côté client, aucune donnée personnelle). Une transaction n'incrémente le compteur
+  // que la PREMIÈRE fois que CET appareil franchit CETTE étape — les revisites, les
+  // rechargements et les doublons ne comptent plus. Champs « u_* » : nouveau comptage
+  // unique ; les anciens champs (comptage avec doublons) restent archivés dans le doc.
+  const devRef = db.collection('funnelDevices_' + env).doc(did);
+  const cntRef = db.doc('settings/installFunnel_' + env);
+  await db.runTransaction(async (tx) => {
+    const dev = await tx.get(devRef);
+    const dd = dev.exists ? (dev.data() || {}) : {};
+    if (dd[ev]) return; // déjà compté pour cet appareil
+    const dpatch = {updatedAt: FieldValue.serverTimestamp()};
+    dpatch[ev] = true; dpatch[ev + 'Pf'] = pf;
+    tx.set(devRef, dpatch, {merge: true});
+    const upd = {updatedAt: FieldValue.serverTimestamp()};
+    upd['u_' + ev + '_total'] = FieldValue.increment(1);
+    upd['u_' + ev + '_' + pf] = FieldValue.increment(1);
+    tx.set(cntRef, upd, {merge: true});
+  });
   return {ok: true};
 });
 
