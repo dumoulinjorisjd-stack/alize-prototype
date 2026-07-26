@@ -3055,6 +3055,95 @@ exports.setExtCals = onCall(async (request) => {
   return { ok: true, count: urls.length };
 });
 
+/* ── Annuaire public des prestataires d'un métier : le client peut viser un prestataire
+   PRÉCIS dès la première commande (défaut : « le premier disponible »). On n'expose que
+   le profil public — jamais téléphone, e-mail ou adresse exacte. ── */
+exports.listProviders = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Connexion requise.');
+  const svc = String((request.data || {}).service || '').slice(0, 40);
+  if (!svc) throw new HttpsError('invalid-argument', 'Service requis.');
+  const db = getFirestore();
+  const snap = await db.collection('artisans').where('status', '==', 'valide').get();
+  const out = [];
+  snap.docs.forEach((doc) => {
+    const a = doc.data() || {};
+    if ((a.cats || []).indexOf(svc) < 0) return;
+    out.push({
+      uid: doc.id,
+      name: String(a.name || 'Prestataire').slice(0, 60),
+      // Photo de profil (vignette recadrée par l'app) — bornée pour la taille de réponse.
+      photo: (typeof a.photo === 'string' && a.photo.indexOf('data:image') === 0 && a.photo.length < 90000) ? a.photo : null,
+      jobs: Number(a.jobsTotal) || 0,
+      founder: !!a.founder,
+      siteMode: a.siteMode || 'both',
+      salonZone: String(a.salonZone || '').slice(0, 40),
+      cal: ((a.extCals || []).length > 0)
+    });
+  });
+  // Agenda vérifiable ? (Google connecté compte aussi — collection serveur gcalTokens.)
+  await Promise.all(out.map(async (p) => {
+    if (p.cal) return;
+    try { p.cal = (await db.collection('gcalTokens').doc(p.uid).get()).exists; } catch (_) {}
+  }));
+  out.sort((x, y) => (Number(y.founder) - Number(x.founder)) || (y.jobs - x.jobs));
+  return { providers: out.slice(0, 20) };
+});
+
+/* ── Créneaux réellement libres d'un prestataire pour UNE journée : le client qui vise
+   un prestataire précis voit quelles heures sont réellement disponibles. Sources :
+   agenda Google, liens iCal externes, missions Ti-Services déjà acceptées ce jour-là.
+   Réponse : un booléen libre/occupé par créneau — jamais le détail des rendez-vous. ── */
+exports.providerSlots = onCall({ secrets: [GCAL_OAUTH_SECRET] }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Connexion requise.');
+  const d = request.data || {};
+  const uid = String(d.providerUid || '').slice(0, 128);
+  const dateISO = String(d.dateISO || '');
+  if (!uid || !/^\d{4}-\d{2}-\d{2}$/.test(dateISO)) throw new HttpsError('invalid-argument', 'Paramètres invalides.');
+  const slots = (Array.isArray(d.slots) ? d.slots : []).slice(0, 48)
+    .map((s) => String(s || '')).filter((s) => /^\d{1,2}:\d{2}$/.test(s));
+  const hours = Math.min(12, Math.max(1, Number(d.hours) || 1));
+  const db = getFirestore();
+  const fromMs = Date.parse(dateISO + 'T00:00:00-04:00');
+  const toMs = fromMs + 24 * 3600 * 1000;
+  const busy = [];
+  // 1) Agenda Google du prestataire (une seule requête pour la journée entière).
+  const tok = await gcalAccessToken(uid);
+  if (tok) {
+    try {
+      const r = await fetch('https://www.googleapis.com/calendar/v3/freeBusy', {
+        method: 'POST', headers: { 'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ timeMin: new Date(fromMs).toISOString(), timeMax: new Date(toMs).toISOString(), items: [{ id: 'primary' }] })
+      });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) (((j.calendars || {}).primary || {}).busy || []).slice(0, 20).forEach((b) => busy.push(b));
+    } catch (_) {}
+  }
+  // 2) Autres agendas (liens iCal — Planity via Google, Fresha, Calendly…).
+  (await extCalsBusy(uid, fromMs, toMs)).forEach((b) => busy.push(b));
+  const hasExt = ((((await db.collection('artisans').doc(uid).get()).data() || {}).extCals) || []).length > 0;
+  // 3) Missions Ti-Services déjà acceptées ce jour-là (toujours prises en compte).
+  try {
+    const reqs = await db.collection('requests')
+      .where('providerUid', '==', uid).where('dateISO', '==', dateISO).get();
+    reqs.docs.forEach((doc) => {
+      const q = doc.data() || {};
+      if (['accepted', 'working'].indexOf(q.status) < 0) return;
+      const sl = String(q.acceptedSlot || q.slot || '09:00');
+      const st = Date.parse(dateISO + 'T' + (sl.length < 5 ? '0' : '') + sl + ':00-04:00');
+      if (!isFinite(st)) return;
+      const dur = (q.unit === 'j') ? 8 : Math.max(1, Number(q.duration) || 1);
+      busy.push({ start: new Date(st).toISOString(), end: new Date(st + dur * 3600 * 1000).toISOString() });
+    });
+  } catch (_) {}
+  const free = {};
+  slots.forEach((s) => {
+    const st = Date.parse(dateISO + 'T' + (s.length < 5 ? '0' : '') + s + ':00-04:00');
+    const en = st + hours * 3600 * 1000;
+    free[s] = !busy.some((b) => Date.parse(b.start) < en && Date.parse(b.end) > st);
+  });
+  return { cal: (!!tok || hasExt), free: free };
+});
+
 // Mission acceptée → événement dans l'agenda Google du prestataire ; annulée → retiré.
 exports.gcalSyncEvent = onDocumentUpdated({ document: 'requests/{reqId}', secrets: [GCAL_OAUTH_SECRET] }, async (event) => {
   if (!gcalConfigured()) return;
