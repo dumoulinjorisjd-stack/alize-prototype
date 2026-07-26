@@ -1889,6 +1889,61 @@ exports.missionReminders = onSchedule({schedule: 'every 15 minutes'}, async () =
   }
 });
 
+/* ── Rappel de re-commande : pour les prestations récurrentes par nature, si la
+   dernière prestation validée d'un client date de 3 à 5 semaines et qu'il n'a rien
+   re-commandé depuis, une notification l'invite à refaire en 1 clic (lien ?rebook=svc
+   → commande pré-remplie, même prestataire). Garde-fous : 1 rappel max par service
+   et par mois (users.rebookNudges), 50 envois max par passage. ── */
+const REBOOK_SVCS = ['menage', 'jardin', 'piscine', 'baby', 'coach', 'massage',
+  'coiffure', 'beaute', 'manucure', 'epilation', 'epilationdef', 'animaux'];
+exports.rebookNudges = onSchedule({schedule: 'every day 14:00'}, async () => {
+  const db = getFirestore();
+  const nowMs = Date.now();
+  const dayISO = (ms) => new Date(ms - 4 * 3600 * 1000).toISOString().slice(0, 10);
+  const from = dayISO(nowMs - 35 * 86400 * 1000);
+  const to = dayISO(nowMs - 21 * 86400 * 1000);
+  const snap = await db.collection('requests').where('dateISO', '>=', from).where('dateISO', '<=', to).get();
+  // Dernière prestation validée par (client, service) dans la fenêtre.
+  const best = {};
+  snap.docs.forEach((doc) => {
+    const r = doc.data() || {};
+    if (['paid', 'rated'].indexOf(r.status) < 0) return;
+    if (!r.clientUid || REBOOK_SVCS.indexOf(r.service) < 0) return;
+    const k = r.clientUid + '|' + r.service;
+    if (!best[k] || String(r.dateISO) > String(best[k].dateISO)) best[k] = r;
+  });
+  let sent = 0;
+  for (const k of Object.keys(best)) {
+    if (sent >= 50) break;
+    const r = best[k];
+    // Le client a déjà re-commandé ce service depuis ? Alors aucun rappel.
+    let later = false;
+    try {
+      const q = await db.collection('requests').where('clientUid', '==', r.clientUid).where('service', '==', r.service).get();
+      later = q.docs.some((d) => { const x = d.data() || {}; return String(x.dateISO || '') > String(r.dateISO) && x.status !== 'cancelled'; });
+    } catch (_) {}
+    if (later) continue;
+    const uref = db.collection('users').doc(r.clientUid);
+    let u = {};
+    try { u = (await uref.get()).data() || {}; } catch (_) { continue; }
+    if (u.role && u.role !== 'client') continue;
+    const nudges = u.rebookNudges || {};
+    if (nudges[r.service] && (nowMs - nudges[r.service]) < 30 * 86400 * 1000) continue;
+    const tokens = u.pushTokens || [];
+    if (!tokens.length) continue;
+    const first = String(r.providerName || '').trim().split(/\s+/)[0];
+    const svcNm = String(r.serviceName || 'Votre prestation').slice(0, 40);
+    const weeks = Math.max(3, Math.round((nowMs - Date.parse(r.dateISO + 'T12:00:00-04:00')) / (7 * 86400 * 1000)));
+    await pushMulticast(tokens, 'Envie de refaire ?',
+      svcNm + (first ? (' avec ' + first) : '') + ' — c\'était il y a ' + weeks + ' semaines. Re-commandez en 1 clic.',
+      '/?rebook=' + encodeURIComponent(r.service),
+      (tok) => uref.update({ pushTokens: FieldValue.arrayRemove(tok) }).catch(() => {}));
+    await uref.set({ rebookNudges: Object.assign({}, nudges, (() => { const o = {}; o[r.service] = nowMs; return o; })()) }, { merge: true });
+    sent++;
+  }
+  console.log('rebookNudges : ' + sent + ' rappel(s) envoyé(s)');
+});
+
 exports.mollieOnboardingSweep = onSchedule({schedule: 'every 15 minutes', secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET', 'MOLLIE_ACCESS_TOKEN', SMTP_PASS]}, async () => {
   if (!mollieOAuthConfigured()) return;
   const db = getFirestore();
