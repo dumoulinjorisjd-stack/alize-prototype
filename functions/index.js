@@ -2790,5 +2790,196 @@ exports.icalFeed = onRequest(async (req, res) => {
   }
 });
 
+/* ============================================================
+   AGENDA GOOGLE (OAuth) — le prestataire connecte son Google Agenda :
+   1) LECTURE des créneaux occupés (freeBusy) → alerte « conflit possible »
+      sur la fiche mission AVANT d'accepter ;
+   2) ÉCRITURE automatique : mission acceptée → événement dans son agenda
+      (et suppression si la mission est annulée). Comme Planity sait se
+      synchroniser avec Google Agenda, la boucle se ferme sans toucher Planity.
+   Config Google Cloud (une fois, projet t-service-prod) :
+   - Écran de consentement + client OAuth « Web » avec l'URI de redirection
+     https://europe-west1-t-service-prod.cloudfunctions.net/gcalOAuthReturn
+   - remplacer GCAL_CLIENT_ID ci-dessous ;
+   - secret : firebase functions:secrets:set GCAL_OAUTH_SECRET
+   Jetons de rafraîchissement dans gcalTokens/{uid} (serveur uniquement).
+   ============================================================ */
+const GCAL_CLIENT_ID = 'A_CONFIGURER.apps.googleusercontent.com';
+const GCAL_OAUTH_SECRET = defineSecret('GCAL_OAUTH_SECRET');
+const GCAL_SCOPES = 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.freebusy';
+function gcalConfigured() { return GCAL_CLIENT_ID.indexOf('A_CONFIGURER') < 0; }
+function gcalRedirectUri() {
+  return 'https://europe-west1-' + (process.env.GCLOUD_PROJECT || 't-service-prod') + '.cloudfunctions.net/gcalOAuthReturn';
+}
+// Fenêtre d'une mission en ISO avec fuseau de Saint-Barthélemy (UTC−4, sans heure d'été).
+function gcalWindow(dateISO, slot, hours) {
+  const s = /^\d{1,2}:\d{2}$/.test(slot || '') ? ((slot.length < 5 ? '0' : '') + slot) : '09:00';
+  const start = dateISO + 'T' + s + ':00-04:00';
+  const endMs = Date.parse(start) + Math.max(1, Math.min(12, Number(hours) || 1)) * 3600 * 1000;
+  // Fin reformatée en heure LOCALE (UTC−4) : on retire l'offset pour réutiliser les getters UTC.
+  const loc = new Date(endMs - 4 * 3600 * 1000);
+  const p = (n) => (n < 10 ? '0' : '') + n;
+  const end = loc.getUTCFullYear() + '-' + p(loc.getUTCMonth() + 1) + '-' + p(loc.getUTCDate())
+    + 'T' + p(loc.getUTCHours()) + ':' + p(loc.getUTCMinutes()) + ':00-04:00';
+  return { timeMin: start, timeMax: end };
+}
+async function gcalAccessToken(uid) {
+  const db = getFirestore();
+  const doc = await db.collection('gcalTokens').doc(uid).get();
+  const refresh = doc.exists ? (doc.data() || {}).refresh : null;
+  if (!refresh) return null;
+  const r = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ client_id: GCAL_CLIENT_ID, client_secret: GCAL_OAUTH_SECRET.value(), refresh_token: refresh, grant_type: 'refresh_token' }).toString()
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.access_token) {
+    // Accès révoqué côté Google : on nettoie pour que l'app repasse en « non connecté ».
+    if (j && j.error === 'invalid_grant') {
+      try { await db.collection('gcalTokens').doc(uid).delete(); } catch (_) {}
+      try { await db.collection('artisans').doc(uid).set({ gcalOn: false }, { merge: true }); } catch (_) {}
+    }
+    return null;
+  }
+  return j.access_token;
+}
+
+// URL de consentement pour l'artisan connecté (état signé, 15 min).
+exports.gcalAuthUrl = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Connexion requise.');
+  if (!gcalConfigured()) throw new HttpsError('failed-precondition', 'Connexion Google Agenda pas encore configurée.');
+  const uid = request.auth.uid;
+  const db = getFirestore();
+  const art = await db.collection('artisans').doc(uid).get();
+  if (!art.exists) throw new HttpsError('failed-precondition', 'Profil prestataire introuvable.');
+  const state = require('crypto').randomBytes(24).toString('base64url');
+  await db.collection('gcalStates').doc(state).set({ uid: uid, exp: Date.now() + 15 * 60 * 1000 });
+  const url = 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({
+    client_id: GCAL_CLIENT_ID, redirect_uri: gcalRedirectUri(), response_type: 'code',
+    access_type: 'offline', prompt: 'consent', include_granted_scopes: 'true',
+    scope: GCAL_SCOPES, state: state
+  }).toString();
+  return { url: url };
+});
+
+// Retour du consentement Google : échange du code, stockage du refresh token.
+exports.gcalOAuthReturn = onRequest({ secrets: [GCAL_OAUTH_SECRET] }, async (req, res) => {
+  const back = 'https://ti-services.fr/';
+  try {
+    const state = String(req.query.state || '');
+    const code = String(req.query.code || '');
+    const db = getFirestore();
+    const st = state ? await db.collection('gcalStates').doc(state).get() : null;
+    const uid = (st && st.exists && (st.data() || {}).exp > Date.now()) ? (st.data() || {}).uid : null;
+    if (state) { try { await db.collection('gcalStates').doc(state).delete(); } catch (_) {} }
+    if (!uid || !code) { res.redirect(back + '?gcal=err'); return; }
+    const r = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ client_id: GCAL_CLIENT_ID, client_secret: GCAL_OAUTH_SECRET.value(), code: code, grant_type: 'authorization_code', redirect_uri: gcalRedirectUri() }).toString()
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.refresh_token) { console.error('gcalOAuthReturn: échange', j); res.redirect(back + '?gcal=err'); return; }
+    // e-mail Google (informatif) depuis l'id_token — payload non vérifié : affichage seulement.
+    let email = '';
+    try { email = JSON.parse(Buffer.from(String(j.id_token || '').split('.')[1] || '', 'base64').toString('utf8')).email || ''; } catch (_) {}
+    await db.collection('gcalTokens').doc(uid).set({ refresh: j.refresh_token, email: email, updatedAt: FieldValue.serverTimestamp() });
+    await db.collection('artisans').doc(uid).set({ gcalOn: true, gcalEmail: email }, { merge: true });
+    res.redirect(back + '?gcal=ok');
+  } catch (e) { console.error('gcalOAuthReturn', e); res.redirect(back + '?gcal=err'); }
+});
+
+// Déconnexion : révoque le jeton côté Google et nettoie.
+exports.gcalDisconnect = onCall({ secrets: [GCAL_OAUTH_SECRET] }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Connexion requise.');
+  const uid = request.auth.uid;
+  const db = getFirestore();
+  const doc = await db.collection('gcalTokens').doc(uid).get();
+  const refresh = doc.exists ? (doc.data() || {}).refresh : null;
+  if (refresh) {
+    try { await fetch('https://oauth2.googleapis.com/revoke?token=' + encodeURIComponent(refresh), { method: 'POST' }); } catch (_) {}
+  }
+  try { await db.collection('gcalTokens').doc(uid).delete(); } catch (_) {}
+  await db.collection('artisans').doc(uid).set({ gcalOn: false, gcalEmail: '' }, { merge: true });
+  return { ok: true };
+});
+
+// Créneaux occupés autour d'une mission : alerte « conflit possible » avant d'accepter.
+exports.gcalFreeBusy = onCall({ secrets: [GCAL_OAUTH_SECRET] }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Connexion requise.');
+  const d = request.data || {};
+  const dateISO = String(d.dateISO || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateISO)) throw new HttpsError('invalid-argument', 'Date invalide.');
+  const tok = await gcalAccessToken(request.auth.uid);
+  if (!tok) return { connected: false };
+  const w = gcalWindow(dateISO, d.slot, d.hours);
+  const r = await fetch('https://www.googleapis.com/calendar/v3/freeBusy', {
+    method: 'POST', headers: { 'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ timeMin: w.timeMin, timeMax: w.timeMax, items: [{ id: 'primary' }] })
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { console.error('gcalFreeBusy', j); return { connected: true, conflict: false, error: true }; }
+  const busy = (((j.calendars || {}).primary || {}).busy || []).slice(0, 5);
+  return { connected: true, conflict: busy.length > 0, busy: busy };
+});
+
+// Mission acceptée → événement dans l'agenda Google du prestataire ; annulée → retiré.
+exports.gcalSyncEvent = onDocumentUpdated({ document: 'requests/{reqId}', secrets: [GCAL_OAUTH_SECRET] }, async (event) => {
+  if (!gcalConfigured()) return;
+  const before = (event.data && event.data.before && event.data.before.data()) || {};
+  const after = (event.data && event.data.after && event.data.after.data()) || {};
+  if (before.status === after.status) return;
+  const uid = after.providerUid;
+  if (!uid) return;
+  const db = getFirestore();
+  const reqId = event.params.reqId;
+  // Acceptation : insertion (une seule fois).
+  if (after.status === 'accepted') {
+    const tok = await gcalAccessToken(uid);
+    if (!tok) return;
+    const seen = await db.collection('gcalEvents').doc(reqId).get();
+    if (seen.exists) return;
+    const dateISO = after.dateISO || '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateISO)) return;
+    const slot = after.acceptedSlot || after.slot || '09:00';
+    const first = (((after.clientName || '').trim().split(/\s+/)[0]) || 'Client');
+    const salon = after.locationMode === 'salon';
+    let body;
+    if (after.unit === 'j') {
+      const next = new Date(Date.parse(dateISO + 'T12:00:00Z') + 24 * 3600 * 1000);
+      const p = (n) => (n < 10 ? '0' : '') + n;
+      const nd = next.getUTCFullYear() + '-' + p(next.getUTCMonth() + 1) + '-' + p(next.getUTCDate());
+      body = { start: { date: dateISO }, end: { date: nd } };
+    } else {
+      const w = gcalWindow(dateISO, slot, after.duration);
+      body = { start: { dateTime: w.timeMin, timeZone: 'America/St_Barthelemy' }, end: { dateTime: w.timeMax, timeZone: 'America/St_Barthelemy' } };
+    }
+    body.summary = 'Ti-Services — ' + (after.serviceName || after.service || 'Mission') + ' · ' + first;
+    body.location = salon ? 'Votre salon / studio' : (after.zone || 'Saint-Barthélemy');
+    body.description = 'Réservation Ti-Services — détails dans l’application.';
+    const r = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+      method: 'POST', headers: { 'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok && j.id) {
+      await db.collection('gcalEvents').doc(reqId).set({ uid: uid, eventId: j.id, createdAt: FieldValue.serverTimestamp() });
+      console.log('gcalSyncEvent: événement créé pour ' + reqId);
+    } else { console.error('gcalSyncEvent: insertion', j); }
+    return;
+  }
+  // Annulation après acceptation : on retire l'événement.
+  if (after.status === 'cancelled' || after.status === 'declined') {
+    const seen = await db.collection('gcalEvents').doc(reqId).get();
+    if (!seen.exists) return;
+    const ev = seen.data() || {};
+    const tok = await gcalAccessToken(ev.uid || uid);
+    if (tok && ev.eventId) {
+      try { await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events/' + encodeURIComponent(ev.eventId), { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + tok } }); } catch (_) {}
+    }
+    try { await db.collection('gcalEvents').doc(reqId).delete(); } catch (_) {}
+    console.log('gcalSyncEvent: événement retiré pour ' + reqId);
+  }
+});
+
 // Export interne pour les tests unitaires (inerte en production : TI_TEST non défini).
-if (process.env.TI_TEST) { module.exports.__test = { buildInvoicePdf, buildProcurationPdf, invoiceLines, eurTxt, frDate, welcomeHtml, inviteArtisanHtml, approvedArtisanHtml, resetPasswordEmail, buildIcs, icsEscape }; }
+if (process.env.TI_TEST) { module.exports.__test = { buildInvoicePdf, buildProcurationPdf, invoiceLines, eurTxt, frDate, welcomeHtml, inviteArtisanHtml, approvedArtisanHtml, resetPasswordEmail, buildIcs, icsEscape, gcalWindow }; }
