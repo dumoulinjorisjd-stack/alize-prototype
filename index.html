@@ -6195,12 +6195,22 @@
     }catch(_){}
   }
   function prospectId(){const a=new Uint8Array(8);crypto.getRandomValues(a);return 'pr'+Array.from(a).map(function(b){return b.toString(16).padStart(2,'0');}).join('');}
-  // Notes modifiables directement sur la carte (enregistrées à la volée, hors ligne aussi).
+  // Notes, téléphone et e-mail modifiables directement sur la carte (enregistrés à la
+  // volée, hors ligne aussi). Téléphone/e-mail re-rendent la fiche : les boutons
+  // Appeler / WhatsApp / Inviter apparaissent dès que la coordonnée existe.
   document.addEventListener('change',function(e){
-    const t=e.target&&e.target.closest&&e.target.closest('[data-prnotes]');
+    const t=e.target&&e.target.closest&&e.target.closest('[data-prnotes],[data-prphone],[data-premail]');
     if(!t)return;
-    loadProspects();const p=(S.adminProspects||[]).find(function(x){return x.id===t.dataset.prnotes;});
-    if(p){p.notes=(t.value||'').slice(0,500);p.updatedAt=Date.now();p._dirty=true;persistProspects();toast('Note enregistrée ✓');}
+    loadProspects();
+    const id=t.dataset.prnotes||t.dataset.prphone||t.dataset.premail;
+    const p=(S.adminProspects||[]).find(function(x){return x.id===id;});
+    if(!p)return;
+    if(t.dataset.prnotes){p.notes=(t.value||'').slice(0,500);}
+    else if(t.dataset.prphone){p.phone=(t.value||'').trim().slice(0,30);}
+    else{const em=(t.value||'').trim().slice(0,120);if(em&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){toast('Adresse e-mail invalide');return;}p.email=em;}
+    p.updatedAt=Date.now();p._dirty=true;persistProspects();
+    if(t.dataset.prnotes){toast('Note enregistrée ✓');}
+    else{render();toast('Fiche mise à jour ✓');}
   });
   function adminProspect(){
     loadProspects();fetchProspects();
@@ -6224,7 +6234,7 @@
           ${p.phone?`<a class="btn ghost sm" href="${esc(waOf(p.phone))}" target="_blank" rel="noopener" style="text-decoration:none;width:auto;padding:8px 12px">${I.chat} WhatsApp</a>`:''}
           ${p.email?`<button class="btn ghost sm" data-adm="prospect-invite:${p.id}" style="width:auto;padding:8px 12px">${I.check} Inviter par e-mail</button>`:''}
         </div>`:''}
-        <div class="mini" style="margin-top:8px;color:var(--muted)">${esc(p.phone||'')}${p.phone&&p.email?' · ':''}${esc(p.email||'')}</div>
+        <div class="row" style="gap:8px;margin-top:8px"><input data-prphone="${esc(p.id)}" value="${esc(p.phone||'')}" placeholder="Téléphone" inputmode="tel" autocomplete="off" style="flex:1;min-width:0;padding:8px 10px;border:1px solid var(--hair);border-radius:10px;background:var(--sand);color:var(--ink);font-size:13px;box-sizing:border-box"><input data-premail="${esc(p.id)}" type="email" value="${esc(p.email||'')}" placeholder="E-mail" autocomplete="off" style="flex:1;min-width:0;padding:8px 10px;border:1px solid var(--hair);border-radius:10px;background:var(--sand);color:var(--ink);font-size:13px;box-sizing:border-box"></div>
         <textarea rows="2" data-prnotes="${esc(p.id)}" placeholder="Notes (rappeler jeudi, recommandé par…)" style="width:100%;margin-top:8px;padding:9px 11px;border:1px solid var(--hair);border-radius:10px;background:var(--sand);color:var(--ink);font-size:13px;font-family:inherit;box-sizing:border-box">${esc(p.notes||'')}</textarea>
         <div class="row between" style="margin-top:9px;align-items:center;gap:8px">
           <div class="row" style="gap:5px;flex-wrap:wrap">${PROSPECT_STATUSES.map(function(s){return `<button class="seg ${p.status===s[0]?'on':''}" data-adm="prospect-st:${p.id}:${s[0]}" style="flex:none;padding:6px 9px;font-size:11.5px">${s[1]}</button>`;}).join('')}</div>
