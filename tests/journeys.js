@@ -222,6 +222,45 @@ function realErrors(errs) {
     await page.close(); await ctx.close();
   }
 
+  // ── Test 7 : Épilation définitive — catalogue Carma + « chez le prestataire » ─
+  console.log('Test 7 — épilation définitive (chez le prestataire)');
+  {
+    const errs = [];
+    const page = await newPage(browser, errs);
+    // Création de compte (démo) → accueil client.
+    await page.click('[data-act="onb-start"]'); await page.waitForTimeout(500);
+    await page.fill('[data-cf="name"]', 'Zoé Test');
+    await page.fill('[data-cf="email"]', 'zoe@test.fr');
+    await page.fill('[data-cf="password"]', 'azerty');
+    await page.fill('[data-cf="password2"]', 'azerty');
+    await page.click('[data-act="toggle-cterms"]'); await page.waitForTimeout(150);
+    await page.click('[data-act="finish-onboard"]'); await page.waitForTimeout(600);
+    // Catégorie Beauté → tuile Épilation définitive.
+    await page.click('[data-catopen="beaute"]'); await page.waitForTimeout(400);
+    const tile = await page.$('[data-svc="epilationdef"]');
+    ok(!!tile, 'tuile « Épilation définitive » dans Beauté');
+    if (tile) { await tile.click(); await page.waitForTimeout(600); }
+    let body = await page.evaluate(() => document.body.innerText);
+    ok(/épilation définitive/i.test(body), 'écran de commande ouvert');
+    // Catalogue repris tel quel (zones, combinés, packs).
+    ok(/Aisselles/.test(body) && /Maillot complet/.test(body), 'actes « zones » présents');
+    ok(/Pack 6 séances/.test(body) && /1[  ]?680|1680/.test(body.replace(/ | /g, '')), 'packs 6 séances présents (1 680 €)');
+    // Lieu IMPOSÉ chez le prestataire : pas de choix domicile/salon, pas d'adresse ni GPS.
+    ok(/Chez le prestataire/.test(body), 'bannière « Chez le prestataire »');
+    ok(!(await page.$('[data-loc="domicile"]')), 'aucun choix de lieu (salon imposé)');
+    ok(!/Adresse de la prestation/.test(body), 'aucune adresse client demandée');
+    ok(!/Enregistrer le point GPS/.test(body), 'aucun point GPS demandé');
+    // Cocher un acte → le total suit ; la confirmation passe SANS GPS.
+    await page.click('[data-actpick="ed_aiss"]'); await page.waitForTimeout(300);
+    body = await page.evaluate(() => document.body.innerText);
+    ok(/70/.test(body), 'acte « Aisselles » coché (70 €)');
+    await page.click('[data-cfg="confirm"]'); await page.waitForTimeout(600);
+    body = await page.evaluate(() => document.body.innerText);
+    ok(!/obligatoire/i.test(body), 'aucun blocage GPS pour une prestation en salon');
+    ok(realErrors(errs).length === 0, 'aucune erreur JS');
+    await page.close();
+  }
+
   await browser.close();
   if (failures) { console.log('\n' + failures + ' échec(s) — DÉPLOIEMENT À BLOQUER'); process.exit(1); }
   console.log('\nTous les parcours passent ✓');
