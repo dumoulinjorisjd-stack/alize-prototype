@@ -1859,6 +1859,36 @@ exports.mollieOnboardingWebhook = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLL
  * encore « en attente » et on notifie tout changement. Garantit qu'aucun artisan ne
  * reste bloqué en silence. Volume faible → coût négligeable.
  */
+/* ── Rappel 1 h avant : push au prestataire pour chaque mission acceptée qui
+   démarre dans l'heure (balayage toutes les 15 min, heure de Saint-Barthélemy). ── */
+exports.missionReminders = onSchedule({schedule: 'every 15 minutes'}, async () => {
+  const db = getFirestore();
+  const nowMs = Date.now();
+  // Aujourd'hui ET demain en heure locale (une mission de 00:30 se rappelle la veille à 23:30).
+  const dayISO = (ms) => new Date(ms - 4 * 3600 * 1000).toISOString().slice(0, 10);
+  const days = [dayISO(nowMs), dayISO(nowMs + 24 * 3600 * 1000)];
+  const snap = await db.collection('requests').where('status', '==', 'accepted').where('dateISO', 'in', days).get();
+  for (const doc of snap.docs) {
+    const r = doc.data() || {};
+    if (r.reminded1h || !r.providerUid) continue;
+    const slot = /^\d{1,2}:\d{2}$/.test(r.acceptedSlot || '') ? r.acceptedSlot : (/^\d{1,2}:\d{2}$/.test(r.slot || '') ? r.slot : null);
+    if (!slot || r.unit === 'j') continue;
+    const startMs = Date.parse(r.dateISO + 'T' + (slot.length < 5 ? '0' : '') + slot + ':00-04:00');
+    const delta = startMs - nowMs;
+    if (!(delta > 0 && delta <= 60 * 60 * 1000)) continue;
+    let tokens = [];
+    try { tokens = ((await db.collection('users').doc(r.providerUid).get()).data() || {}).pushTokens || []; } catch (_) {}
+    await doc.ref.update({ reminded1h: true });
+    if (!tokens.length) continue;
+    const first = (((r.clientName || '').trim().split(/\s+/)[0]) || 'votre client');
+    const where = (r.locationMode === 'salon') ? 'dans votre salon' : ('à ' + (r.zone || 'Saint-Barthélemy'));
+    await pushMulticast(tokens, 'Dans 1 h · ' + (r.serviceName || 'Mission'),
+      slot + ' — ' + first + ' ' + where + '.', '/?open=promissions',
+      (tok) => db.collection('users').doc(r.providerUid).update({ pushTokens: FieldValue.arrayRemove(tok) }));
+    console.log('Rappel 1 h envoyé pour ' + doc.id);
+  }
+});
+
 exports.mollieOnboardingSweep = onSchedule({schedule: 'every 15 minutes', secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET', 'MOLLIE_ACCESS_TOKEN', SMTP_PASS]}, async () => {
   if (!mollieOAuthConfigured()) return;
   const db = getFirestore();
@@ -2909,20 +2939,120 @@ exports.gcalDisconnect = onCall({ secrets: [GCAL_OAUTH_SECRET] }, async (request
 // Créneaux occupés autour d'une mission : alerte « conflit possible » avant d'accepter.
 exports.gcalFreeBusy = onCall({ secrets: [GCAL_OAUTH_SECRET] }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Connexion requise.');
+  const uid = request.auth.uid;
   const d = request.data || {};
+  const tok = await gcalAccessToken(uid);
+  // Occupations d'une fenêtre : Google (si connecté) + « autres agendas » (liens iCal).
+  const busyFor = async (w) => {
+    let busy = [];
+    if (tok) {
+      const r = await fetch('https://www.googleapis.com/calendar/v3/freeBusy', {
+        method: 'POST', headers: { 'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ timeMin: w.timeMin, timeMax: w.timeMax, items: [{ id: 'primary' }] })
+      });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) busy = (((j.calendars || {}).primary || {}).busy || []).slice(0, 5);
+    }
+    (await extCalsBusy(uid, Date.parse(w.timeMin), Date.parse(w.timeMax))).forEach((b) => busy.push(b));
+    return busy.slice(0, 8);
+  };
+  const hasExt = (((await getFirestore().collection('artisans').doc(uid).get()).data() || {}).extCals || []).length > 0;
+  if (!tok && !hasExt) return { connected: false };
+  // Mode LISTE (badges de la liste des missions) : jusqu'à 20 fenêtres, un drapeau chacune.
+  if (Array.isArray(d.windows)) {
+    const results = [];
+    for (const win of d.windows.slice(0, 20)) {
+      const dateISO = String((win || {}).dateISO || '');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateISO)) { results.push({ conflict: false }); continue; }
+      const busy = await busyFor(gcalWindow(dateISO, win.slot, win.hours));
+      results.push({ conflict: busy.length > 0 });
+    }
+    return { connected: true, results: results };
+  }
   const dateISO = String(d.dateISO || '');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateISO)) throw new HttpsError('invalid-argument', 'Date invalide.');
-  const tok = await gcalAccessToken(request.auth.uid);
-  if (!tok) return { connected: false };
-  const w = gcalWindow(dateISO, d.slot, d.hours);
-  const r = await fetch('https://www.googleapis.com/calendar/v3/freeBusy', {
-    method: 'POST', headers: { 'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ timeMin: w.timeMin, timeMax: w.timeMax, items: [{ id: 'primary' }] })
-  });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) { console.error('gcalFreeBusy', j); return { connected: true, conflict: false, error: true }; }
-  const busy = (((j.calendars || {}).primary || {}).busy || []).slice(0, 5);
+  const busy = await busyFor(gcalWindow(dateISO, d.slot, d.hours));
   return { connected: true, conflict: busy.length > 0, busy: busy };
+});
+
+/* ── Autres agendas (import iCal inverse) : le prestataire colle le lien iCal exporté
+   par SA plateforme (Planity via Google, Fresha, Calendly, iCloud partagé, Outlook…) —
+   Ti-Services lit ses créneaux occupés quelle que soit la plateforme. ── */
+// Analyse minimale d'un flux iCalendar : rend les intervalles occupés [start,end] (ms)
+// chevauchant la fenêtre. Formats gérés : UTC (…Z), heure locale/TZID (traitée en heure
+// de Saint-Barthélemy, UTC−4 — le public visé est local), et VALUE=DATE (journée entière).
+// Les récurrences (RRULE) ne sont pas développées : limite acceptée en v1.
+function parseIcsBusy(text, fromMs, toMs) {
+  const busy = [];
+  const chunks = String(text || '').split('BEGIN:VEVENT').slice(1);
+  const parseDt = (line) => {
+    const v = line.split(':').pop().trim();
+    if (/^\d{8}$/.test(v)) return { ms: Date.parse(v.slice(0, 4) + '-' + v.slice(4, 6) + '-' + v.slice(6, 8) + 'T00:00:00-04:00'), allDay: true };
+    const m = v.match(/^(\d{8})T(\d{6})(Z?)$/);
+    if (!m) return null;
+    const iso = m[1].slice(0, 4) + '-' + m[1].slice(4, 6) + '-' + m[1].slice(6, 8) + 'T' + m[2].slice(0, 2) + ':' + m[2].slice(2, 4) + ':' + m[2].slice(4, 6) + (m[3] ? 'Z' : '-04:00');
+    return { ms: Date.parse(iso), allDay: false };
+  };
+  for (const c of chunks) {
+    const body = c.split('END:VEVENT')[0];
+    // lignes dépliées (continuation par espace) puis repérage DTSTART/DTEND
+    const lines = body.replace(/\r?\n[ \t]/g, '').split(/\r?\n/);
+    let ds = null, de = null;
+    for (const l of lines) {
+      if (/^DTSTART/i.test(l)) ds = parseDt(l);
+      else if (/^DTEND/i.test(l)) de = parseDt(l);
+    }
+    if (!ds || !isFinite(ds.ms)) continue;
+    let end = (de && isFinite(de.ms)) ? de.ms : (ds.allDay ? ds.ms + 24 * 3600 * 1000 : ds.ms + 3600 * 1000);
+    if (ds.allDay && de && de.allDay) end = de.ms; // DTEND exclusif déjà au lendemain
+    if (end > fromMs && ds.ms < toMs) busy.push({ start: new Date(Math.max(ds.ms, fromMs)).toISOString(), end: new Date(Math.min(end, toMs)).toISOString() });
+    if (busy.length >= 20) break;
+  }
+  return busy;
+}
+async function extCalsBusy(uid, fromMs, toMs) {
+  const db = getFirestore();
+  let urls = [];
+  try { urls = ((await db.collection('artisans').doc(uid).get()).data() || {}).extCals || []; } catch (_) {}
+  const out = [];
+  for (const u of urls.slice(0, 3)) {
+    try {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 6000);
+      const r = await fetch(u, { signal: ctl.signal });
+      clearTimeout(t);
+      if (!r.ok) continue;
+      const txt = await r.text();
+      if (txt.indexOf('BEGIN:VCALENDAR') < 0) continue;
+      parseIcsBusy(txt, fromMs, toMs).forEach((b) => out.push(b));
+    } catch (_) {}
+  }
+  return out;
+}
+
+// Enregistre les liens iCal des « autres agendas » du prestataire (3 max, validés).
+exports.setExtCals = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Connexion requise.');
+  const db = getFirestore();
+  const art = await db.collection('artisans').doc(request.auth.uid).get();
+  if (!art.exists) throw new HttpsError('failed-precondition', 'Profil prestataire introuvable.');
+  const raw = Array.isArray((request.data || {}).urls) ? request.data.urls : [];
+  const urls = [];
+  for (let u of raw.slice(0, 3)) {
+    u = String(u || '').trim().replace(/^webcal:\/\//i, 'https://');
+    if (!/^https:\/\/[^\s]{8,500}$/i.test(u)) continue;
+    try {
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 6000);
+      const r = await fetch(u, { signal: ctl.signal });
+      clearTimeout(t);
+      const txt = r.ok ? (await r.text()).slice(0, 200000) : '';
+      if (txt.indexOf('BEGIN:VCALENDAR') >= 0) urls.push(u);
+    } catch (_) {}
+  }
+  if (raw.length && !urls.length) throw new HttpsError('invalid-argument', "Ce lien ne renvoie pas un calendrier iCal — vérifiez l'adresse (elle finit souvent par .ics).");
+  await db.collection('artisans').doc(request.auth.uid).set({ extCals: urls }, { merge: true });
+  return { ok: true, count: urls.length };
 });
 
 // Mission acceptée → événement dans l'agenda Google du prestataire ; annulée → retiré.
@@ -2985,4 +3115,4 @@ exports.gcalSyncEvent = onDocumentUpdated({ document: 'requests/{reqId}', secret
 });
 
 // Export interne pour les tests unitaires (inerte en production : TI_TEST non défini).
-if (process.env.TI_TEST) { module.exports.__test = { buildInvoicePdf, buildProcurationPdf, invoiceLines, eurTxt, frDate, welcomeHtml, inviteArtisanHtml, approvedArtisanHtml, resetPasswordEmail, buildIcs, icsEscape, gcalWindow }; }
+if (process.env.TI_TEST) { module.exports.__test = { buildInvoicePdf, buildProcurationPdf, invoiceLines, eurTxt, frDate, welcomeHtml, inviteArtisanHtml, approvedArtisanHtml, resetPasswordEmail, buildIcs, icsEscape, gcalWindow, parseIcsBusy }; }
