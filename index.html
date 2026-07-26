@@ -459,7 +459,21 @@
     #invoiceDoc .inv{border:none;margin:0;box-shadow:none;border-radius:0;padding:8mm 6mm}
     .inv thead th,.inv-total-box,.inv-paid{-webkit-print-color-adjust:exact;print-color-adjust:exact}
     .noprint, .noprint *{display:none !important}
+    /* Manuel d'exploitation : à l'impression, toutes les sections sont visibles. */
+    #invoiceDoc details{display:block}
+    #invoiceDoc details>*{display:block}
   }
+  /* Manuel d'exploitation (console admin) : sections repliables natives. */
+  .manbook details{background:var(--card);border:1px solid var(--hair);border-radius:14px;padding:0;margin-top:10px;overflow:hidden}
+  .manbook summary{list-style:none;cursor:pointer;padding:14px 16px;font-weight:700;font-size:14px;display:flex;align-items:center;gap:9px}
+  .manbook summary::-webkit-details-marker{display:none}
+  .manbook summary::after{content:'›';margin-left:auto;color:var(--muted);transform:rotate(0deg);transition:transform .15s}
+  .manbook details[open] summary::after{transform:rotate(90deg)}
+  .manbook .manbody{padding:0 16px 14px;font-size:13px;line-height:1.55;color:var(--ink-soft)}
+  .manbook .manbody b{color:var(--ink)}
+  .manbook .manbody ul{margin:6px 0 10px;padding-left:18px}
+  .manbook .manbody li{margin-top:4px}
+  .manbook .manq{font-weight:700;color:var(--ink);margin-top:10px}
 
   .btn{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;padding:16px;border-radius:16px;font-size:15px;font-weight:700;transition:transform .12s,filter .2s;letter-spacing:-.01em}
   .btn:active{transform:scale(.975)}
@@ -6079,7 +6093,105 @@
 
   /* ---------- CLIENT ---------- */
   /* ---------- ADMIN ---------- */
-  function renderAdmin(){if(S.support&&S.mission)return supportChat()+adminNavbar();if(S.generalSupport&&S.genUser)return generalSupportChat()+adminNavbar();if(S.adminSupervise&&S.mission)return adminSupervise()+adminNavbar();let body;if(S.admin.view==='art')body=adminFiche('art');else if(S.admin.view==='cli')body=adminFiche('cli');else if(S.admin.view==='msg')body=adminMessagerie();else if(S.admin.view==='fact')body=adminInvoicesRouter();else if(S.admin.view==='wishes')body=adminWishesView();else body=adminHome();return body+adminNavbar();}
+  function renderAdmin(){if(S.support&&S.mission)return supportChat()+adminNavbar();if(S.generalSupport&&S.genUser)return generalSupportChat()+adminNavbar();if(S.adminSupervise&&S.mission)return adminSupervise()+adminNavbar();let body;if(S.admin.view==='art')body=adminFiche('art');else if(S.admin.view==='cli')body=adminFiche('cli');else if(S.admin.view==='msg')body=adminMessagerie();else if(S.admin.view==='fact')body=adminInvoicesRouter();else if(S.admin.view==='wishes')body=adminWishesView();else if(S.admin.view==='manual')body=adminManual();else body=adminHome();return body+adminNavbar();}
+  // ── MANUEL D'EXPLOITATION ────────────────────────────────────────────────────
+  // Référence interne complète du fonctionnement de la plateforme : pour l'éditeur,
+  // un employé ou un médiateur qui doit répondre aux clients et aux prestataires.
+  // Chaque section est repliable ; « Imprimer » sort le manuel complet sur papier.
+  function adminManual(){
+    const sec=(t,body)=>`<details><summary>${t}</summary><div class="manbody">${body}</div></details>`;
+    return `<div class="pad"><button class="reset noprint" data-adm="home" style="margin:10px 0 6px">← Console</button>
+      <span class="eyebrow noprint">${I.info} Référence interne</span>
+      <div class="row between noprint" style="align-items:flex-start"><div class="h-hello">Manuel d'exploitation</div></div>
+      <p class="sub noprint" style="margin-top:4px">Tout le fonctionnement de Ti-Services, pour vous, un employé ou un médiateur — et pour répondre aux clients comme aux prestataires.</p>
+      <div class="row noprint" style="gap:8px;margin-top:12px;flex-wrap:wrap">
+        <button class="btn ghost sm" data-adm="manual-all" style="width:auto;padding:8px 12px">Tout déplier</button>
+        <button class="btn ghost sm" data-adm="manual-none" style="width:auto;padding:8px 12px">Tout replier</button>
+        <button class="btn primary sm" data-adm="manual-print" style="width:auto;padding:8px 14px">${I.card} Imprimer / PDF</button>
+      </div>
+      <div id="invoiceDoc" class="manbook" style="margin-top:6px">
+      ${sec('1 · Vue d’ensemble & rôles',`
+        <p><b>Ti-Services</b> (éditeur : C.C.S) met en relation des <b>clients</b> et des <b>prestataires indépendants</b> à Saint-Barthélemy. La plateforme encaisse le client, sécurise la prestation et reverse le prestataire ; elle prélève une <b>commission de 15 %</b> sur chaque prestation (facturée au prestataire, avec justificatifs automatiques).</p>
+        <ul><li><b>Client</b> : commande, suit, valide, note.</li>
+        <li><b>Prestataire</b> : candidate, est validé par l'admin, accepte des missions, est payé automatiquement.</li>
+        <li><b>Concierge</b> : professionnel qui commande pour SES clients (villas) — parcours dédié.</li>
+        <li><b>Admin (vous)</b> : valide les comptes et assurances, règle tarifs et catalogues, répond au support, suit les commissions.</li></ul>
+        <p>Langues : français, anglais, portugais (bascule automatique + choix dans le compte).</p>`)}
+      ${sec('2 · La commande, pas à pas (côté client)',`
+        <ul><li>Le client choisit un service : soit au <b>tarif horaire fixe</b> (ménage, jardin…), soit à la <b>grille à l'acte</b> (beauté, coiffure, épilation définitive… : il coche ses prestations, total ferme). Les tarifs sont fixés par VOUS dans la console (section « Prestations · artisans & tarifs »).</li>
+        <li>Il choisit <b>date, heure</b> et la <b>souplesse</b> du créneau : Précise · ± 1 h · ± 2 h · Journée · Semaine (plus c'est souple, plus vite c'est accepté).</li>
+        <li><b>Lieu</b> : à domicile (adresse + <b>point GPS obligatoire</b> — seul repère fiable sur l'île) ou chez le prestataire (son adresse n'est révélée qu'après acceptation). Certains services sont uniquement en salon (ex. épilation définitive).</li>
+        <li>Grilles à l'acte : <b>déplacement offert dès ${TRAVEL_MIN} €</b> de prestation, sinon forfait de ${TRAVEL_FEE} €.</li>
+        <li>Le <b>prix affiché est ferme</b> : c'est le maximum débité, aucun supplément sans accord.</li></ul>`)}
+      ${sec('3 · Attribution : premier disponible ou prestataire choisi',`
+        <ul><li><b>Par défaut</b> : « Le premier disponible » — la demande part à <b>tous les prestataires validés du métier</b> (filtrés par leurs disponibilités déclarées). Premier arrivé, premier servi.</li>
+        <li><b>Prestataire choisi</b> (services personnels : beauté, coiffure, massage, sport, épilation, baby-sitting, animaux) : le client sélectionne une carte dans l'annuaire (photo, nombre de missions, badge Fondateur). La demande est alors <b>dirigée</b> : seul ce prestataire la voit et est alerté (« Demande réservée pour vous »).</li>
+        <li>Si le prestataire choisi <b>décline</b> : le client décide — proposer à tous, ou annuler. Rien n'est débité.</li>
+        <li><b>Relances automatiques à l'écran</b> : au pool sans réponse après 45 min → propositions « Élargir à la journée » et coup de pouce ; demande dirigée sans réponse après 3 h → bouton « Proposer à tous les prestataires ».</li>
+        <li><b>Coup de pouce</b> : le client peut ajouter un montant en € pour rendre sa demande plus attractive — les prestataires sont re-sollicités.</li></ul>`)}
+      ${sec('4 · Agendas & créneaux réellement libres',`
+        <ul><li>Le prestataire peut connecter son <b>agenda Google</b> (recommandé) : alerte en cas de conflit avant d'accepter, missions ajoutées automatiquement. S'il utilise Planity : Planity se synchronise avec Google Agenda, donc Ti-Services voit ses vraies disponibilités.</li>
+        <li>« <b>Mes autres agendas</b> » : il peut coller jusqu'à 3 liens iCal (Fresha, Calendly…) — leurs créneaux occupés sont pris en compte.</li>
+        <li>« <b>Recevoir mes missions ailleurs</b> » : lien iCal personnel à ajouter dans Apple/Outlook (ne pas l'ajouter dans Google si Google est déjà connecté : doublon).</li>
+        <li>Côté pro : badge « ⚠ conflit agenda » sur les missions qui chevauchent son planning + option pour les masquer ; bouton « Ajouter à mon calendrier (.ics) » sur chaque mission ; <b>rappel automatique 1 h avant</b> chaque mission.</li>
+        <li>Côté client : s'il vise un prestataire précis, les <b>heures déjà occupées sont grisées « occupé »</b> (agenda Google + iCal + missions Ti-Services du jour). On ne montre jamais le détail de l'agenda — seulement libre/occupé.</li></ul>`)}
+      ${sec('5 · Cycle de vie d’une demande (statuts)',`
+        <ul><li><b>Paiement à finaliser</b> : carte pas encore autorisée — la demande n'est PAS visible des prestataires.</li>
+        <li><b>En attente</b> : visible du pool (ou du prestataire choisi). Le client peut annuler sans frais.</li>
+        <li><b>Acceptée</b> : un prestataire a pris la mission — le client voit son profil ; adresse exacte, accès et téléphones sont partagés (téléphone : seulement après acceptation des deux côtés).</li>
+        <li><b>En cours</b> : le prestataire a démarré.</li>
+        <li><b>Terminée (côté pro)</b> : le prestataire déclare avoir fini — le client doit <b>valider</b>.</li>
+        <li><b>Validée / payée</b> : débit automatique, facture par e-mail, le client note (note confidentielle, outil qualité).</li>
+        <li><b>Litige</b> : si le client conteste, la mission passe en litige → à traiter dans la <b>Messagerie</b> admin.</li></ul>`)}
+      ${sec('6 · Argent : encaissement, reversement, commission',`
+        <ul><li>À la commande, la carte du client est <b>autorisée</b> (empreinte via Mollie, encaissement agréé) : le montant est bloqué, <b>jamais débité avant la validation</b> de la prestation — et jamais plus que le montant annoncé.</li>
+        <li>Le prestataire doit activer <b>ses paiements Mollie</b> (obligatoire pour accepter des missions) : il est <b>réglé automatiquement</b>, net de commission, après chaque prestation validée.</li>
+        <li><b>Commission Ti-Services : 15 %</b> du total. Le prestataire voit toujours son <b>net</b> avant d'accepter.</li>
+        <li>Justificatifs automatiques : <b>facture client</b> par e-mail à la validation ; côté pro, détail de commission par prestation, <b>facture de commission mensuelle</b> et <b>relevé mensuel</b> imprimable.</li></ul>`)}
+      ${sec('7 · Récurrences & abonnements',`
+        <ul><li>À la commande, le client choisit une fréquence : <b>ponctuelle · chaque semaine · toutes les 2 semaines · chaque mois</b>.</li>
+        <li>Une prestation récurrente apparaît dans « <b>Mes abonnements</b> » (onglet Réservations). Le passage suivant est proposé à la confirmation, <b>pré-rempli et dirigé vers le même prestataire</b>.</li>
+        <li>Si le prestataire habituel décline, la demande repart à tous — le client n'est jamais bloqué.</li></ul>`)}
+      ${sec('8 · Re-commander en 1 clic & rappels automatiques',`
+        <ul><li><b>Bouton « Refaire »</b> : dans l'historique (chaque prestation passée) et juste après une bonne note — il rouvre une commande <b>pré-remplie</b> (mêmes détails, même prestataire présélectionné). Le client vérifie la date et confirme.</li>
+        <li><b>Rappel automatique</b> : si la dernière prestation validée d'un service récurrent (ménage, jardin, beauté, coach, épilation, baby…) date de <b>3 à 5 semaines</b> sans nouvelle commande, le client reçoit une notification « Envie de refaire ? » qui ouvre la commande pré-remplie.</li>
+        <li>Garde-fous anti-spam : <b>1 rappel max par service et par mois</b>, 50 envois max par jour, uniquement les clients avec notifications actives.</li></ul>`)}
+      ${sec('9 · Annulations, absences, désistements',`
+        <ul><li><b>Client — avant acceptation</b> : annulation libre et gratuite (rien n'est débité).</li>
+        <li><b>Client — après acceptation</b> : gratuit jusqu'à <b>8 h avant</b> le rendez-vous ; plus tard, une <b>indemnité de 50 %</b> revient au prestataire — c'est LUI qui décide de l'appliquer ou d'en faire cadeau (écran dédié).</li>
+        <li><b>Prestataire absent (no-show)</b> : le client le signale → la recherche est <b>relancée aussitôt</b> auprès des autres, il ne paie rien. L'absence est comptée sur la fiche du prestataire (visible en console).</li>
+        <li><b>Prestataire qui se désiste</b> : la demande repart automatiquement en recherche, client prévenu.</li></ul>`)}
+      ${sec('10 · Cas particuliers (colis, baby-sitting, salon)',`
+        <ul><li><b>Colis & courrier</b> : le client renseigne les avis de passage + pièce d'identité, puis <b>signe une procuration électronique</b> (signature au doigt). Le prestataire présente au guichet : avis, procuration signée, copie de la pièce du client et SA propre pièce. Les retraits au même bureau se regroupent en <b>tournée</b>.</li>
+        <li><b>Baby-sitting</b> : diplômes vérifiés à l'inscription. Après acceptation, le client voit le <b>profil complet</b> (photo, diplômes, présentation), peut <b>appeler</b> via l'app, puis <b>confirme la garde</b> — ou change de baby-sitter sans pénalité.</li>
+        <li><b>Prestations en salon</b> (ex. épilation définitive) : pas d'adresse client ni GPS demandés ; l'adresse du salon est communiquée à l'acceptation.</li></ul>`)}
+      ${sec('11 · Côté prestataire : de la candidature au quotidien',`
+        <ul><li><b>Candidature</b> : profil, métiers, statut (auto-entrepreneur…), SIRET, <b>attestation d'assurance RC obligatoire</b>. VOUS validez en console (réponse annoncée sous 48 h).</li>
+        <li><b>Activation Mollie</b> obligatoire pour accepter des missions (identité + IBAN vérifiés par Mollie).</li>
+        <li><b>Missions</b> : liste des demandes de ses métiers/zones ; il voit TOUT avant d'accepter (sauf données confidentielles : adresse exacte, GPS, identité — révélées après acceptation).</li>
+        <li><b>Confidentialité des numéros</b> : téléphones partagés seulement après acceptation des deux côtés.</li>
+        <li><b>Avantages</b> : badge <b>Fondateur</b> (premiers inscrits, avantage limité dans le temps), statuts de fidélité, <b>parrainage : +5 missions</b> par filleul validé.</li>
+        <li><b>Alertes</b> : notifications push + WhatsApp en secours (s'il l'active), rappel 1 h avant mission.</li></ul>`)}
+      ${sec('12 · La console admin au quotidien',`
+        <ul><li><b>Candidatures</b> : valider un artisan (exige assurance vérifiée + SIRET), refuser avec motif, réexaminer.</li>
+        <li><b>Prestations · artisans & tarifs</b> : régler le tarif horaire ou la <b>grille à l'acte</b> de chaque métier (ajouter/retirer des prestations), voir qui pratique quoi. Un métier sans prestataire validé s'affiche « Bientôt disponible » côté client.</li>
+        <li><b>Messagerie</b> : 3 types de fils — support d'une mission (côté client ou côté pro), <b>supervision</b> d'une conversation client↔pro, support général. Répondre vite : c'est la vitrine du service.</li>
+        <li><b>Factures</b> : commissions, reversements, détail par prestataire.</li>
+        <li><b>Souhaits des clients</b> : services demandés — votre radar pour recruter.</li>
+        <li><b>Inviter un pro</b> : e-mail d'invitation à la charte depuis la console.</li></ul>`)}
+      ${sec('13 · Réponses aux questions fréquentes (script)',`
+        <p class="manq">« Quand suis-je débité ? » (client)</p><p>Jamais avant la fin : votre carte est seulement autorisée. Le débit part quand VOUS validez la prestation — et jamais plus que le montant annoncé.</p>
+        <p class="manq">« Personne n'accepte ma demande »</p><p>Élargissez le créneau (Journée/Semaine), ajoutez un coup de pouce, ou choisissez un autre prestataire. L'app vous le propose d'elle-même après 45 min.</p>
+        <p class="manq">« Je veux absolument tel prestataire »</p><p>Choisissez-le dans « Votre prestataire » à la commande : lui seul reçoit la demande. S'il décline, elle peut repartir à tous.</p>
+        <p class="manq">« Je dois annuler »</p><p>Gratuit avant acceptation, et jusqu'à 8 h avant le rendez-vous. Après, une indemnité de 50 % peut s'appliquer — le prestataire décide.</p>
+        <p class="manq">« Quand suis-je payé ? » (prestataire)</p><p>Automatiquement après validation du client, net de la commission de 15 %, sur votre compte via Mollie. Vos justificatifs sont dans l'app.</p>
+        <p class="manq">« Pourquoi “conflit agenda” sur une mission ? »</p><p>Le créneau chevauche votre agenda (Google, iCal ou une mission Ti-Services). Vous pouvez quand même accepter — l'app demande juste confirmation.</p>
+        <p class="manq">« J'utilise Planity, ça marche ? »</p><p>Oui : synchronisez Planity avec Google Agenda, puis connectez Google dans « Mon agenda ». Ti-Services verra vos vraies disponibilités et bloquera les créneaux pris.</p>
+        <p class="manq">« Le prestataire n'est pas venu »</p><p>Signalez-le dans le suivi (« Le prestataire ne s'est pas présenté ? ») : recherche relancée aussitôt, rien n'est débité.</p>`)}
+      </div>
+      <p class="mini noprint" style="margin-top:14px;color:var(--muted)">Document interne Ti-Services / C.C.S — mis à jour avec l'application. Ne pas diffuser tel quel aux clients ; s'en servir comme référence pour répondre.</p>
+      <div style="height:12px"></div></div>`;
+  }
   // Barre permanente de l'espace admin : retour à la console de gestion à tout moment.
   function adminNavbar(){
     const inMsg=(S.admin.view==='msg'||(S.support&&S.mission)||S.adminSupervise);
@@ -6197,6 +6309,8 @@
         <input id="admInvEmail" type="email" inputmode="email" autocapitalize="off" autocomplete="off" placeholder="email@exemple.com" style="width:100%;margin-top:8px;padding:11px 13px;border:1px solid var(--hair);border-radius:11px;background:var(--sand);color:var(--ink);font-size:14px;box-sizing:border-box">
         <button class="btn" data-act="admin-invite" style="margin-top:10px;background:var(--teal-deep);color:#fff">Envoyer l'invitation</button>
       </div>
+      <div style="height:16px"></div><span class="eyebrow">${I.shield} Fonctionnement</span>
+      <button class="card" data-adm="manual" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block"><div class="row between" style="align-items:center"><b style="font-size:14px">Manuel d'exploitation</b><span class="mini" style="color:var(--teal-deep);font-weight:700">Ouvrir ›</span></div><p class="sub" style="margin-top:8px">Tout le fonctionnement de la plateforme (commandes, prestataire choisi, paiements, récurrences, annulations…) — pour vous, un employé ou un médiateur. Imprimable.</p></button>
       <div style="height:16px"></div><span class="eyebrow"><span aria-hidden="true">${I.info}</span> Souhaits des clients</span>
       <button class="card" data-adm="wishes" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block"><div class="row between" style="align-items:center"><b style="font-size:14px">Services réclamés par les clients</b>${(S.adminWishes&&S.adminWishes.length)?`<span class="chip coral">${S.adminWishes.length}</span>`:`<span class="mini" style="color:var(--muted)">Aucune pour l'instant</span>`}</div><p class="sub" style="margin-top:8px">Voir ce que les clients aimeraient trouver sur la plateforme.</p></button>
       <div style="height:16px"></div><span class="eyebrow">${I.euro} Prestations · artisans &amp; tarifs</span>
@@ -9988,6 +10102,9 @@
       }
       else if(act==='fact'){S.admin.view='fact';S.admin.fact=null;S.admin.sel=null;S.support=false;S.supportSide=null;S.adminSupervise=false;S.generalSupport=false;S.genUser=null;S.mission=null;render();view.scrollTop=0;return;}
       else if(act==='wishes'){S.admin.view='wishes';S.admin.sel=null;S.mission=null;render();view.scrollTop=0;return;}
+      else if(act==='manual'){S.admin.view='manual';S.admin.sel=null;S.mission=null;render();view.scrollTop=0;return;}
+      else if(act==='manual-all'||act==='manual-none'){document.querySelectorAll('.manbook details').forEach(function(d){d.open=(act==='manual-all');});return;}
+      else if(act==='manual-print'){document.querySelectorAll('.manbook details').forEach(function(d){d.open=true;});setTimeout(function(){try{window.print();}catch(_){}},80);return;}
       else if(act==='fact-comm'){S.admin.view='fact';S.admin.fact={art:id,mode:'comm'};render();view.scrollTop=0;return;}
       else if(act==='fact-mandat'){S.admin.view='fact';S.admin.fact={art:id,mode:'mandat'};render();view.scrollTop=0;return;}
       else if(act==='fact-doc'){S.admin.view='fact';S.admin.fact={art:id,mode:'doc',inv:parts[2]};render();view.scrollTop=0;return;}
