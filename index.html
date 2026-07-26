@@ -218,6 +218,13 @@
   .land-tabs{display:flex;gap:4px;background:var(--coral-wash);border:1px solid var(--coral);border-radius:14px;padding:4px;margin:18px 0 2px}
   .land-tab{flex:1;border:none;background:none;padding:10px 8px;border-radius:11px;font-family:inherit;font-size:13.5px;font-weight:750;color:var(--coral-deep);cursor:pointer;transition:background .15s,color .15s}
   .land-tab.on{background:var(--coral);color:#fff;box-shadow:0 3px 10px -4px rgba(190,52,59,.5)}
+  /* Cartes repliables des écrans Compte : repliées par défaut (pages plus courtes),
+     la tête garde le titre + l'état (pastille) ; un toucher déplie. */
+  .foldc{padding:0!important;overflow:hidden}
+  .fold-head{width:100%;display:flex;align-items:center;gap:11px;padding:14px 16px;background:none;border:none;text-align:left;font-family:inherit;color:inherit;cursor:pointer}
+  .fold-chev{flex:none;color:var(--muted);display:flex;transition:transform .18s ease}
+  .foldc.open .fold-chev{transform:rotate(90deg)}
+  .fold-body{padding:0 16px 16px}
   .brief.show-pro #briefClient{display:none}
   .brief:not(.show-pro) #briefPro{display:none}
   .land-founder{margin-top:18px;background:linear-gradient(180deg,color-mix(in srgb,var(--coral) 13%,var(--card)),var(--card));border:1.4px solid color-mix(in srgb,var(--coral) 32%,var(--hair));border-radius:15px;padding:14px 15px}
@@ -1455,6 +1462,15 @@
   // montre l'état réel (activées / à activer / bloquées / indisponible) et permet
   // de les activer. Contrairement à notifCTA (bannière qui disparaît une fois
   // l'autorisation accordée), on la retrouve toujours au même endroit.
+  // Carte repliable (écrans Compte) : la tête affiche titre + résumé + pastille ;
+  // le corps ne se rend que déplié (S._fold). Tout est replié par défaut.
+  function foldCard(id,icon,title,sub,body,chip){
+    const open=!!(S._fold&&S._fold[id]);
+    return `<div class="card foldc${open?' open':''}" style="margin-top:12px">
+      <button class="fold-head" data-fold="${id}" aria-expanded="${open?'true':'false'}"><span class="benic" style="flex:none">${icon}</span><div style="flex:1;min-width:0"><b style="font-size:14px">${title}</b>${sub?`<div class="mini" style="margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sub}</div>`:''}</div>${chip||''}<span class="fold-chev" aria-hidden="true">${I.chevron}</span></button>
+      ${open?`<div class="fold-body">${body}</div>`:''}
+    </div>`;
+  }
   function notifCard(role){
     const bell='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>';
     const pro=(role==='pro');
@@ -2932,11 +2948,9 @@
     const hasData=(S.proHistory||[]).length>0;
     const due=hasData&&backupDue();
     const badge=due?`<span class="chip coral" style="white-space:nowrap;flex:none">À faire</span>`:(hasData?`<span class="chip good" style="white-space:nowrap;flex:none">${I.check} À jour</span>`:'');
-    return `<div class="card" style="padding:16px;margin-top:12px${due?';border-left:4px solid var(--coral)':''}">
-      <div class="row between" style="gap:8px;align-items:center"><div class="row" style="gap:11px;align-items:center"><span class="benic">${I.card}</span><div><b style="font-size:14px;line-height:1.2">Sauvegarde des factures</b><div class="mini" style="margin-top:1px">Copie mensuelle de vos justificatifs.</div></div></div>${badge}</div>
-      <p class="mini" style="margin-top:8px;color:var(--muted);line-height:1.5">${hasData?`Téléchargez chaque mois une copie de vos factures et données comptables. <b>Vous êtes seul responsable de la conservation de vos justificatifs</b> — Ti-Services fournit l'outil sans garantir la conservation au-delà de ses obligations légales.`:`Dès vos premières missions, vous pourrez télécharger ici une copie de vos factures et données comptables (à conserver de votre côté).`}</p>
-      ${hasData?`<button class="btn ${due?'primary':'ghost'} sm" data-act="download-backup" style="margin-top:10px">${I.card}&nbsp;Télécharger (CSV)</button>`:''}
-    </div>`;
+    return foldCard('backup',I.card,'Sauvegarde des factures','Copie mensuelle de vos justificatifs.',`
+      <p class="mini" style="color:var(--muted);line-height:1.5">${hasData?`Téléchargez chaque mois une copie de vos factures et données comptables. <b>Vous êtes seul responsable de la conservation de vos justificatifs</b> — Ti-Services fournit l'outil sans garantir la conservation au-delà de ses obligations légales.`:`Dès vos premières missions, vous pourrez télécharger ici une copie de vos factures et données comptables (à conserver de votre côté).`}</p>
+      ${hasData?`<button class="btn ${due?'primary':'ghost'} sm" data-act="download-backup" style="margin-top:10px">${I.card}&nbsp;Télécharger (CSV)</button>`:''}`,badge);
   }
   function adminExportAccounting(){
     const num=function(n){return (Math.round((Number(n)||0)*100)/100).toFixed(2).replace('.',',');};
@@ -3880,7 +3894,7 @@
     // Divers récurrents
     "Prestations terminées":"Completed services","Bien exécuté & réglé":"Done & paid","Recherche en cours":"Searching…","En attente d’un prestataire":"Waiting for a pro","Artisan trouvé":"Pro found","Prestation en cours":"Service in progress","À confirmer":"To confirm","Terminée":"Completed","Supprimer":"Delete","Annulée":"Cancelled",
     // Profil / réglages
-    "Compte":"Account","Mes informations":"My information","Modifier":"Edit","Prénom & nom":"First & last name","E-mail":"Email","Téléphone":"Phone","Secteur":"Area","À renseigner":"To be filled in","Moyen de paiement":"Payment method","Enregistré":"Saved","Mes adresses":"My addresses","Par défaut":"Default","Aide & réglages":"Help & settings","Mon agenda — Google · Apple · Planity":"My calendar — Google · Apple · Planity","Vos missions Ti-Services directement dans votre agenda habituel : créez votre lien privé, puis abonnez-vous-y. Si votre Planity est synchronisé avec Google Agenda, vos missions y apparaîtront aussi.":"Your Ti-Services jobs right in your usual calendar: create your private link, then subscribe to it. If your Planity is synced with Google Calendar, your jobs will show up there too.","Copier le lien":"Copy the link","Aller plus loin : connexion Google Agenda":"Go further: connect Google Calendar","Ti-Services vérifie vos disponibilités avant que vous acceptiez (alerte en cas de conflit) et ajoute automatiquement chaque mission acceptée dans votre agenda Google — donc dans Planity si votre synchro Google y est active.":"Ti-Services checks your availability before you accept (conflict alert) and automatically adds each accepted job to your Google Calendar — and therefore to Planity if its Google sync is on.","Connecter mon agenda Google":"Connect my Google Calendar","Google Agenda connecté":"Google Calendar connected","Déconnecter":"Disconnect","Aucun conflit avec votre agenda Google sur ce créneau.":"No conflict with your Google Calendar for this slot.","Régénérer":"Regenerate","Créer mon lien d'agenda":"Create my calendar link","Langue":"Language","Choisir la langue de l'application.":"Choose the app language.","Garantie Ti-Services":"Ti-Services guarantee","Partager Ti-Services":"Share Ti-Services","Contacter Ti-Services":"Contact Ti-Services","Active":"Active","Mon compte":"My account","Retirer":"Remove","＋ Ajouter":"＋ Add","Voir tous vos avantages ›":"See all your benefits ›","QR & lien ›":"QR & link ›",
+    "Compte":"Account","Mes informations":"My information","Modifier":"Edit","Prénom & nom":"First & last name","E-mail":"Email","Téléphone":"Phone","Secteur":"Area","À renseigner":"To be filled in","Moyen de paiement":"Payment method","Enregistré":"Saved","Mes adresses":"My addresses","Par défaut":"Default","Aide & réglages":"Help & settings","Mon agenda — Google · Apple · Planity":"My calendar — Google · Apple · Planity","Vos missions Ti-Services directement dans votre agenda habituel : créez votre lien privé, puis abonnez-vous-y. Si votre Planity est synchronisé avec Google Agenda, vos missions y apparaîtront aussi.":"Your Ti-Services jobs right in your usual calendar: create your private link, then subscribe to it. If your Planity is synced with Google Calendar, your jobs will show up there too.","Copier le lien":"Copy the link","Mon agenda":"My calendar","Ajouter un métier":"Add a trade","Je me déplace chez le client":"I travel to the client","Dans mon salon / studio":"At my salon / studio","À domicile et dans mon salon":"At home and at my salon","Notifications & WhatsApp":"Notifications & WhatsApp","Notifications activées":"Notifications on","Tél. manquant":"Phone missing","Sauvegarde des factures":"Invoice backup","Copie mensuelle de vos justificatifs.":"Monthly copy of your records.","Aller plus loin : connexion Google Agenda":"Go further: connect Google Calendar","Ti-Services vérifie vos disponibilités avant que vous acceptiez (alerte en cas de conflit) et ajoute automatiquement chaque mission acceptée dans votre agenda Google — donc dans Planity si votre synchro Google y est active.":"Ti-Services checks your availability before you accept (conflict alert) and automatically adds each accepted job to your Google Calendar — and therefore to Planity if its Google sync is on.","Connecter mon agenda Google":"Connect my Google Calendar","Google Agenda connecté":"Google Calendar connected","Déconnecter":"Disconnect","Aucun conflit avec votre agenda Google sur ce créneau.":"No conflict with your Google Calendar for this slot.","Régénérer":"Regenerate","Créer mon lien d'agenda":"Create my calendar link","Langue":"Language","Choisir la langue de l'application.":"Choose the app language.","Garantie Ti-Services":"Ti-Services guarantee","Partager Ti-Services":"Share Ti-Services","Contacter Ti-Services":"Contact Ti-Services","Active":"Active","Mon compte":"My account","Retirer":"Remove","＋ Ajouter":"＋ Add","Voir tous vos avantages ›":"See all your benefits ›","QR & lien ›":"QR & link ›",
     // Espace prestataire
     "Votre statut":"Your status","Ambassadeur":"Ambassador","Assuré":"Insured","Changer ma photo":"Change my photo","Ajouter une photo":"Add a photo","Vous êtes en ligne":"You're online","Hors ligne":"Offline","Vous recevez les nouvelles demandes":"You receive new requests","Activez pour recevoir des missions":"Turn on to receive jobs","Missions disponibles":"Available jobs","À réaliser":"To do","En cours":"In progress","Validation client":"Client approval","En médiation":"In mediation","Annulation à trancher":"Cancellation to decide","Vous percevez":"You get","Mes documents":"My documents","Assurance OK":"Insurance OK","Notifications de l'app":"App notifications","WhatsApp en secours":"WhatsApp backup","Quitter la démo":"Exit demo","Missions réalisées":"Jobs completed","Prochain virement":"Next payout","Statut fidélité":"Loyalty status","Parrainage":"Referrals",
     // Tunnel de commande
@@ -5101,6 +5115,16 @@
     "Fermer":"Fechar",
     "Partager":"Partilhar",
     "Copier le lien":"Copiar a ligação",
+    "Mon agenda":"A minha agenda",
+    "Ajouter un métier":"Adicionar uma profissão",
+    "Je me déplace chez le client":"Desloco-me a casa do cliente",
+    "Dans mon salon / studio":"No meu salão / estúdio",
+    "À domicile et dans mon salon":"Ao domicílio e no meu salão",
+    "Notifications & WhatsApp":"Notificações & WhatsApp",
+    "Notifications activées":"Notificações ativadas",
+    "Tél. manquant":"Telefone em falta",
+    "Sauvegarde des factures":"Cópia das faturas",
+    "Copie mensuelle de vos justificatifs.":"Cópia mensal dos seus comprovativos.",
     "Aller plus loin : connexion Google Agenda":"Ir mais longe: ligar o Google Agenda",
     "Ti-Services vérifie vos disponibilités avant que vous acceptiez (alerte en cas de conflit) et ajoute automatiquement chaque mission acceptée dans votre agenda Google — donc dans Planity si votre synchro Google y est active.":"O Ti-Services verifica a sua disponibilidade antes de aceitar (alerta de conflito) e adiciona automaticamente cada missão aceite ao seu Google Agenda — e portanto ao Planity se a sincronização Google estiver ativa.",
     "Connecter mon agenda Google":"Ligar o meu Google Agenda",
@@ -7189,17 +7213,17 @@
       ${isAdminAccount()?`<button class="card" data-act="go-admin" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block;border-left:4px solid var(--ink)"><div class="row between"><b style="font-size:14px">${I.shield}&nbsp;Console d'administration</b>${adminPendingCount()?`<span class="chip coral">${adminPendingCount()} en attente</span>`:`<span class="mini" style="color:var(--teal-deep);font-weight:650">Ouvrir ›</span>`}</div><p class="sub" style="margin-top:8px">Revenez au tableau de bord de gestion (candidatures, tarifs, réservations).</p></button>`:''}
       
       <div class="eyebrow" style="margin:26px 4px 6px;color:var(--muted)">Compte</div>
-      <div class="card infocard" style="margin-top:18px">
-        <div class="infohead"><b>Mes informations</b><button class="btn ghost sm" style="width:auto;padding:6px 14px" data-act="edit-profile">${I.edit} Modifier</button></div>
+      ${foldCard('c-infos',I.user,'Mes informations',esc(cnm),`
         <div class="inforow"><span class="benic">${I.user}</span><div class="infotxt"><span class="infolbl">Prénom &amp; nom</span><span class="infoval">${esc(cnm)}</span></div></div>
         ${cml?`<div class="inforow"><span class="benic">${I.mail}</span><div class="infotxt"><span class="infolbl">E-mail</span><span class="infoval email">${esc(cml)}</span></div></div>`:''}
         <div class="inforow"><span class="benic">${I.phone}</span><div class="infotxt"><span class="infolbl">Téléphone</span><span class="infoval${cph?'':' empty'}">${cph?esc(cph):'À renseigner'}</span></div></div>
         <div class="inforow"><span class="benic">${I.pin}</span><div class="infotxt"><span class="infolbl">Secteur</span><span class="infoval">${esc(czone)}</span></div></div>
-      </div>
-      <div class="card" style="padding:16px;margin-top:18px"><div class="row between" style="gap:12px;align-items:center">${iconTitle(I.card,'Moyen de paiement')}${(S.card||payReal())?`<span class="chip good">${I.check} Enregistré</span>`:''}</div>${payReal()?`<div class="banner good" style="margin-top:12px">${I.lock}<span>Carte saisie en sécurité sur <b>Mollie</b> à chaque réservation — Ti-Services ne voit jamais votre numéro. Rien n'est débité avant validation.</span></div>`:(S.card?`<div class="row between" style="margin-top:12px"><div class="row" style="gap:11px;align-items:center"><span class="benic">${I.card}</span><div><b>${S.card.brand} ••••&nbsp;${S.card.last4}</b><div class="mini">Expire ${S.card.exp||'08/28'}</div></div></div></div><div class="row" style="gap:8px;margin-top:12px"><button class="btn ghost sm" data-act="add-card">Modifier</button><button class="btn ghost sm" data-act="card-remove">Retirer</button></div><div class="banner good" style="margin-top:12px">${I.check}<span>Débit automatique après chaque prestation validée — rien à gérer.</span></div>`:`<p class="mini" style="margin-top:10px">Facultatif — enregistrez une carte pour réserver plus vite. Sinon, elle vous sera demandée à votre première réservation. Rien n'est débité avant validation.</p><button class="btn ghost sm" data-act="add-card" style="margin-top:12px">${I.card} Ajouter un moyen de paiement</button>`)}</div>
-      <div class="card" style="padding:16px;margin-top:12px"><div class="row between" style="align-items:center;gap:12px">${iconTitle(I.pin,'Mes adresses')}<button class="btn ghost sm" style="width:auto;padding:6px 12px" data-act="addr-new">${I.plus} Ajouter</button></div>
-        ${S.addresses.length?S.addresses.map(a=>`<button class="card" data-act="addr-edit:${a.id}" style="padding:12px;margin-top:9px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${esc(a.label)}${S.addrDefault===a.id?` <span class="chip">Par défaut</span>`:''}</b>${a.geo?`<span class="chip good">${I.pin} GPS</span>`:`<span class="chip coral">GPS manquant</span>`}</div><div class="mini" style="margin-top:2px">${esc(a.address)} · ${a.zone}</div></button>`).join(''):`<p class="mini" style="margin-top:10px;color:var(--muted)">Aucune adresse enregistrée. Ajoutez vos villas avec leur point GPS permanent.</p>`}
-        <p class="mini" style="margin-top:10px;color:var(--muted)">À Saint-Barthélemy, le point GPS est le repère le plus fiable — enregistré une fois, réutilisé à chaque réservation.</p></div>
+        <button class="btn ghost sm" style="width:auto;padding:6px 14px;margin-top:10px" data-act="edit-profile">${I.edit} Modifier</button>`,cph?'':`<span class="chip coral" style="flex:none">Tél. manquant</span>`)}
+      ${foldCard('c-pay',I.card,'Moyen de paiement','',`${payReal()?`<div class="banner good" style="margin-top:12px">${I.lock}<span>Carte saisie en sécurité sur <b>Mollie</b> à chaque réservation — Ti-Services ne voit jamais votre numéro. Rien n'est débité avant validation.</span></div>`:(S.card?`<div class="row between" style="margin-top:12px"><div class="row" style="gap:11px;align-items:center"><span class="benic">${I.card}</span><div><b>${S.card.brand} ••••&nbsp;${S.card.last4}</b><div class="mini">Expire ${S.card.exp||'08/28'}</div></div></div></div><div class="row" style="gap:8px;margin-top:12px"><button class="btn ghost sm" data-act="add-card">Modifier</button><button class="btn ghost sm" data-act="card-remove">Retirer</button></div><div class="banner good" style="margin-top:12px">${I.check}<span>Débit automatique après chaque prestation validée — rien à gérer.</span></div>`:`<p class="mini" style="margin-top:2px">Facultatif — enregistrez une carte pour réserver plus vite. Sinon, elle vous sera demandée à votre première réservation. Rien n'est débité avant validation.</p><button class="btn ghost sm" data-act="add-card" style="margin-top:12px">${I.card} Ajouter un moyen de paiement</button>`)}`,(S.card||payReal())?`<span class="chip good" style="flex:none">${I.check} Enregistré</span>`:'')}
+      ${foldCard('c-addr',I.pin,'Mes adresses',S.addresses.length?(S.addresses.length+' adresse'+(S.addresses.length>1?'s':'')+' enregistrée'+(S.addresses.length>1?'s':'')):'Aucune adresse enregistrée',`
+        ${S.addresses.length?S.addresses.map(a=>`<button class="card" data-act="addr-edit:${a.id}" style="padding:12px;margin-top:9px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${esc(a.label)}${S.addrDefault===a.id?` <span class="chip">Par défaut</span>`:''}</b>${a.geo?`<span class="chip good">${I.pin} GPS</span>`:`<span class="chip coral">GPS manquant</span>`}</div><div class="mini" style="margin-top:2px">${esc(a.address)} · ${a.zone}</div></button>`).join(''):`<p class="mini" style="color:var(--muted)">Aucune adresse enregistrée. Ajoutez vos villas avec leur point GPS permanent.</p>`}
+        <button class="btn ghost sm" style="width:auto;padding:6px 12px;margin-top:10px" data-act="addr-new">${I.plus} Ajouter</button>
+        <p class="mini" style="margin-top:10px;color:var(--muted)">À Saint-Barthélemy, le point GPS est le repère le plus fiable — enregistré une fois, réutilisé à chaque réservation.</p>`,S.addresses.some(a=>!a.geo)?`<span class="chip coral" style="flex:none">GPS manquant</span>`:'')}
       
       <div class="eyebrow" style="margin:26px 4px 6px;color:var(--muted)">Ti-Services</div>
       <button class="card" data-act="show-advantages" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between" style="gap:12px;align-items:flex-start"><div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="margin-top:1px">${I.shield}</span><div><b style="font-size:14px">Garantie Ti-Services</b><p class="sub" style="margin-top:4px">Prestataire absent ou travail non conforme&nbsp;? Vous n'êtes pas débité, et Ti-Services relance la recherche pour vous proposer une solution.</p><span class="mini" style="color:var(--teal-deep);font-weight:650;margin-top:8px;display:inline-block">Voir tous vos avantages ›</span></div></div><span class="chip good" style="flex:none">Active</span></div></button>
@@ -9514,18 +9538,15 @@
         <p class="mini" style="margin-top:12px;color:var(--muted)">Info légale à corriger&nbsp;? Contactez Ti-Services.</p>
       </div>`;})()}
 
-      <div class="card" style="padding:16px;margin-top:16px">
-        <div class="row between" style="align-items:center;gap:12px">${iconTitle(I.hardhat,'Mes métiers')}<button class="btn ghost sm" data-act="pro-add-service" style="width:auto;padding:8px 13px;flex:none">${I.plus} Ajouter</button></div>
-        <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap">
+      ${foldCard('p-metiers',I.hardhat,'Mes métiers',cats.map(function(c){return svcNm(c);}).join(' · '),`<div class="row" style="gap:8px;flex-wrap:wrap">
           ${cats.map(function(c){var removable=(S.proCats||[]).indexOf(c)>=0;return `<span class="chip good">${I.check} ${esc(svcNm(c))}${removable?` <button data-act="pro-del-service:${c}" aria-label="Retirer ${esc(svcNm(c))}" title="Retirer ce métier" style="background:none;border:none;padding:0 0 0 5px;margin:0;color:inherit;cursor:pointer;font-weight:800;font-size:15px;line-height:1">×</button>`:''}</span>`;}).join('')}
           ${(S.proPendingCats||[]).map(function(c){return `<span class="chip warn">${I.clock} ${esc(c==='autre'?('Autre'+(S.proPendingOther?' : '+S.proPendingOther:'')):svcNm(c))}</span>`;}).join('')}
         </div>
-        ${(S.proPendingCats||[]).length?`<p class="mini" style="margin-top:11px">${I.shield} En attente de validation par Ti-Services — proposé aux clients une fois vérifié.</p>`:`<p class="mini" style="margin-top:11px;color:var(--muted)">Ajoutez un métier à tout moment (vérifié avant d'être proposé aux clients). Touchez le <b>×</b> d'un métier pour ne plus recevoir ses demandes.</p>`}
-      </div>
+        <button class="btn ghost sm" data-act="pro-add-service" style="width:auto;padding:8px 13px;margin-top:11px">${I.plus} Ajouter un métier</button>
+        ${(S.proPendingCats||[]).length?`<p class="mini" style="margin-top:11px">${I.shield} En attente de validation par Ti-Services — proposé aux clients une fois vérifié.</p>`:`<p class="mini" style="margin-top:11px;color:var(--muted)">Ajoutez un métier à tout moment (vérifié avant d'être proposé aux clients). Touchez le <b>×</b> d'un métier pour ne plus recevoir ses demandes.</p>`}`,(S.proPendingCats||[]).length?`<span class="chip warn" style="flex:none">${I.clock} ${(S.proPendingCats||[]).length}</span>`:'')}
 
-      ${(function(){var onSiteCats=(cats||[]).filter(canOnSite);if(!onSiteCats.length)return '';var sm=S.proSiteMode||'both';return `<div class="card" style="padding:16px;margin-top:16px">
-        ${iconTitle(I.pin,"Lieu d'intervention")}
-        <p class="mini" style="margin-top:6px;color:var(--muted)">${I.check} Filtre les demandes selon votre façon de travailler.</p>
+      ${(function(){var onSiteCats=(cats||[]).filter(canOnSite);if(!onSiteCats.length)return '';var sm=S.proSiteMode||'both';return foldCard('p-lieu',I.pin,"Lieu d'intervention",sm==='domicile'?'Je me déplace chez le client':sm==='salon'?'Dans mon salon / studio':'À domicile et dans mon salon',`
+        <p class="mini" style="color:var(--muted)">${I.check} Filtre les demandes selon votre façon de travailler.</p>
         <div class="segs" style="margin-top:11px"><button class="seg ${sm==='domicile'?'on':''}" data-sitemode="domicile">${I.home} Je me déplace</button><button class="seg ${sm==='salon'?'on':''}" data-sitemode="salon">${I.shop} Dans mon salon</button><button class="seg ${sm==='both'?'on':''}" data-sitemode="both">Les deux</button></div>
         <p class="mini" style="margin-top:8px;color:var(--muted)">${sm==='domicile'?'Vous vous déplacez uniquement chez le client.':sm==='salon'?'Le client vient chez vous — vous ne recevez pas les demandes « à domicile ».':'Vous acceptez les deux : à domicile et dans votre salon.'}</p>
         ${(sm==='salon'||sm==='both')?`<div style="margin-top:13px"><label class="sub" style="display:block;margin-bottom:5px">Adresse de mon salon / studio <span style="font-weight:500;color:var(--muted)">(communiquée au client dès que vous acceptez)</span></label>
@@ -9533,16 +9554,14 @@
           <div class="field" style="margin-top:8px;margin-bottom:0"><label style="font-size:12px">Secteur</label><select class="txt" data-salonzone>${ZONES.map(z=>`<option value="${esc(z)}"${(S.proSalonZone||'Gustavia')===z?' selected':''}>${esc(z)}</option>`).join('')}</select></div>
           <button class="btn ghost sm" data-act="salon-geo" style="margin-top:9px;width:auto;padding:9px 14px">${I.pin} ${S.proSalonGeo?'Actualiser le point GPS':'Enregistrer le point GPS'}</button>
           ${S.proSalonGeo?miniMap(S.proSalonGeo,'edit','salon'):`<p class="mini" style="margin-top:6px;color:var(--muted)">Ajoutez le point GPS pour que le client vous trouve facilement.</p>`}
-          <button class="btn primary sm" data-act="salon-save" style="margin-top:11px;width:auto;padding:9px 16px">${I.check} Enregistrer mon salon</button></div>`:''}
-      </div>` ;})()}
+          <button class="btn primary sm" data-act="salon-save" style="margin-top:11px;width:auto;padding:9px 16px">${I.check} Enregistrer mon salon</button></div>`:''}`);})()}
 
       <div class="eyebrow" style="margin:26px 4px 6px;color:var(--muted)">Compte</div>
-      ${(function(){const st=mollieState();const badge=st==='active'?`<span class="chip good">${I.check} Actif</span>`:st==='pending'?`<span class="chip warn">${I.clock} En vérification</span>`:`<span class="chip coral">À activer</span>`;
-      return `<div class="card" style="padding:16px;margin-top:16px"><div class="row between" style="gap:12px;align-items:center">${iconTitle(I.card,'Recevoir mes paiements')}${badge}</div>
-        ${st==='active'?`<p class="mini" style="margin-top:8px">${I.lock} Réglé automatiquement, net, après chaque prestation.</p><button class="btn ghost sm" data-act="pro-mollie" style="margin-top:11px;width:auto;padding:9px 14px">Voir mes paiements</button>`
-        :st==='pending'?`<p class="mini" style="margin-top:8px">Votre dossier est <b>en cours de vérification</b> chez Mollie. Vous serez payé dès la validation.</p><button class="btn ghost sm" data-act="pro-mollie" style="margin-top:11px;width:auto;padding:9px 14px">Suivre l'activation</button>`
-        :`<p class="mini" style="margin-top:8px"><b>Obligatoire pour accepter des missions.</b> Activez vos paiements en quelques minutes pour être réglé <b>automatiquement</b> après chaque prestation. Sécurisé par Mollie.</p><button class="btn primary sm" data-act="pro-mollie" style="margin-top:11px;width:auto;padding:9px 14px">${I.lock} Activer mes paiements</button>`}
-      </div>`;})()}
+      ${(function(){const st=mollieState();const badge=st==='active'?`<span class="chip good" style="flex:none">${I.check} Actif</span>`:st==='pending'?`<span class="chip warn" style="flex:none">${I.clock} En vérification</span>`:`<span class="chip coral" style="flex:none">À activer</span>`;
+      return foldCard('p-pay',I.card,'Recevoir mes paiements','',`
+        ${st==='active'?`<p class="mini">${I.lock} Réglé automatiquement, net, après chaque prestation.</p><button class="btn ghost sm" data-act="pro-mollie" style="margin-top:11px;width:auto;padding:9px 14px">Voir mes paiements</button>`
+        :st==='pending'?`<p class="mini">Votre dossier est <b>en cours de vérification</b> chez Mollie. Vous serez payé dès la validation.</p><button class="btn ghost sm" data-act="pro-mollie" style="margin-top:11px;width:auto;padding:9px 14px">Suivre l'activation</button>`
+        :`<p class="mini"><b>Obligatoire pour accepter des missions.</b> Activez vos paiements en quelques minutes pour être réglé <b>automatiquement</b> après chaque prestation. Sécurisé par Mollie.</p><button class="btn primary sm" data-act="pro-mollie" style="margin-top:11px;width:auto;padding:9px 14px">${I.lock} Activer mes paiements</button>`}`,badge);})()}
       <button class="card" data-act="pro-docs" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between" style="gap:12px;align-items:flex-start"><div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="margin-top:1px">${I.shield}</span><div><b style="font-size:14px">Mes documents</b><p class="sub" style="margin-top:4px">Attestation d'assurance et décharge de responsabilité acceptée.</p></div></div>${insOk?`<span class="chip good" style="flex:none">${I.check} Assurance OK</span>`:`<span class="mini" style="color:var(--teal-deep);font-weight:650;white-space:nowrap;flex:none">Assurance &amp; décharge ›</span>`}</div></button>
       
       <div class="eyebrow" style="margin:26px 4px 6px;color:var(--muted)">Avantages</div>
@@ -9558,8 +9577,7 @@
            dans Google Agenda : l'abonnement ferait apparaître chaque mission en double. */
         let icu=''; try{ icu=localStorage.getItem('tiIcalUrl')||''; }catch(_){ }
         let on=''; try{ on=localStorage.getItem('tiGcalOn')||''; }catch(_){ }
-        return `<div class="card" style="padding:16px;margin-top:12px">
-        <span class="eyebrow" style="color:var(--muted)">${I.cal} Mon agenda — Google · Apple · Planity</span>
+        return foldCard('p-agenda',I.cal,'Mon agenda','Google · Apple · Planity',`
         ${on==='1'?`<div class="row between" style="gap:10px;margin-top:10px"><div><b style="font-size:13px">${I.check} Google Agenda connecté</b><div class="mini" style="margin-top:2px">Conflits signalés sur les fiches mission · missions acceptées ajoutées automatiquement à votre agenda — donc à Planity si votre synchro Google y est active.</div></div><button class="btn ghost sm" data-act="gcal-off" style="width:auto;padding:8px 12px;white-space:nowrap">Déconnecter</button></div>`
         :`<p class="mini" style="margin-top:8px"><b>Recommandé :</b> connectez votre agenda Google — Ti-Services vérifie vos disponibilités avant que vous acceptiez (alerte en cas de conflit) et y ajoute automatiquement chaque mission acceptée, en temps réel — donc dans Planity si votre synchro Google y est active.</p>
         <button class="btn primary sm" data-act="gcal-on" style="width:auto;padding:9px 14px;margin-top:8px">Connecter mon agenda Google</button>`}
@@ -9571,18 +9589,15 @@
         <div class="row" style="gap:8px;margin-top:10px"><button class="btn ghost sm" data-act="ical-copy" style="width:auto;padding:9px 14px">${I.copy} Copier le lien</button><button class="btn ghost sm" data-act="ical-rotate" style="width:auto;padding:9px 14px">Régénérer</button></div>
         <p class="mini" style="margin-top:10px;color:var(--muted)"><b>iPhone</b> : Réglages → Apps → Calendrier → Comptes → Ajouter un abonnement. Ce lien est personnel : ne le partagez pas.</p>`
         :`<button class="btn ghost sm" data-act="ical-get" style="width:auto;padding:9px 14px;margin-top:8px">${I.cal} Créer mon lien d'agenda</button>`}
-        </div>
-      </div>`;})()}
+        </div>`,on==='1'?`<span class="chip good" style="flex:none">${I.check} Google</span>`:'');})()}
       ${(function(){
         const napi=(typeof Notification!=='undefined'&&typeof Notification.requestPermission==='function');
         const nDenied=napi&&Notification.permission==='denied';
         const pushEff=!!S.proNotifPush&&!nDenied;
-        return `<div class="card" style="padding:16px;margin-top:12px">
-        <span class="eyebrow" style="color:var(--muted)">${I.bell} Alertes nouvelles demandes</span>
-        <div class="row between" style="margin-top:12px;align-items:center;gap:12px"><div><b style="font-size:14px">Notifications de l'app</b>${nDenied?`<div class="mini" style="color:var(--coral-deep)">Bloquées sur l'appareil — réactivez-les dans les réglages du téléphone.</div>`:''}</div><button class="switch" data-act="notif-push" style="background:${pushEff?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${pushEff?'25px':'3px'}"></span></button></div>
+        return foldCard('p-alerts',I.bell,'Alertes nouvelles demandes',pushEff?'Notifications activées':'Notifications & WhatsApp',`
+        <div class="row between" style="align-items:center;gap:12px"><div><b style="font-size:14px">Notifications de l'app</b>${nDenied?`<div class="mini" style="color:var(--coral-deep)">Bloquées sur l'appareil — réactivez-les dans les réglages du téléphone.</div>`:''}</div><button class="switch" data-act="notif-push" style="background:${pushEff?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${pushEff?'25px':'3px'}"></span></button></div>
         <div class="row between" style="margin-top:14px;align-items:center;gap:12px"><div><b style="font-size:14px">WhatsApp en secours</b></div><button class="switch" data-act="notif-wa" style="background:${S.proNotifWa?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${S.proNotifWa?'25px':'3px'}"></span></button></div>
-        ${S.proNotifWa?`<div class="field" style="margin-top:12px;margin-bottom:0"><label style="font-size:12px">Votre numéro WhatsApp (indicatif obligatoire)</label>${phoneCombo('wa',S.proPhone)}</div>`:''}
-      </div>`;})()}
+        ${S.proNotifWa?`<div class="field" style="margin-top:12px;margin-bottom:0"><label style="font-size:12px">Votre numéro WhatsApp (indicatif obligatoire)</label>${phoneCombo('wa',S.proPhone)}</div>`:''}`,pushEff?`<span class="chip good" style="flex:none">${I.check}</span>`:nDenied?`<span class="chip coral" style="flex:none">Bloquées</span>`:'');})()}
       <button class="card" data-act="open-general-support" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between" style="gap:12px;align-items:flex-start"><div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="margin-top:1px">${I.support}</span><div><b style="font-size:14px">Contacter Ti-Services</b><p class="sub" style="margin-top:4px">Une question sur votre compte&nbsp;? Écrivez-nous.</p></div></div><span class="mini" style="color:var(--teal-deep);font-weight:650;white-space:nowrap;flex:none">Support ›</span></div></button>
       ${backupCard()}
       ${S.demoMode?`<p class="mini" style="text-align:center;margin-top:12px"><button class="linklike" data-act="demo-go-client">${I.user} Voir l'espace client (démo)</button> · <button class="linklike" data-act="demo-go-admin">${I.gear} Admin (démo)</button></p>`:(FB?`<button class="btn ghost sm" data-act="logout" style="margin-top:14px">Se déconnecter</button>`:'')}
@@ -9748,7 +9763,7 @@
     // photo du client) s'ouvre en plein écran au clic — consultation sans téléchargement.
     const _iv=e.target.closest&&e.target.closest('img.viewable');
     if(_iv&&_iv.getAttribute('src')){S.imgView={src:_iv.getAttribute('src'),name:_iv.getAttribute('data-docname')||'document'};render();return;}
-    const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actqty],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-loc],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday],[data-tip],[data-pac],[data-sitemode],[data-invclient]');
+    const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actqty],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-loc],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday],[data-tip],[data-pac],[data-sitemode],[data-invclient],[data-fold]');
     if(!b)return;
     // Un clic ISSU d'un <input type=file> (notamment déclenché par programme, ex. la
     // feuille « appareil photo / galerie ») remonte jusqu'ici : on ne le traite pas
@@ -9901,6 +9916,7 @@
     if(b.dataset.slot){if(S.draft){if(b.dataset.slot==='__pick'){S.draft.slotMode='pick';}else{S.draft.slotMode=null;S.draft.slot=b.dataset.slot;}}renderConfig();return;}
     if(b.dataset.slotflex!=null){if(S.draft){const v=b.dataset.slotflex;S.draft.slotFlex=(v==='day'||v==='week')?v:(+v);}renderConfig();return;}
     if(b.dataset.loc!=null){if(S.draft){S.draft.locationMode=(b.dataset.loc==='salon')?'salon':'domicile';}renderConfig();return;}
+    if(b.dataset.fold){S._fold=S._fold||{};S._fold[b.dataset.fold]=!S._fold[b.dataset.fold];render();return;}
     if(b.dataset.sitemode!=null){S.proSiteMode=b.dataset.sitemode;persistSiteMode();render();return;}
     if(b.dataset.invclient!=null){S.invClient=b.dataset.invclient;render();return;}
     if(b.dataset.prefart!=null){if(S.draft){S.draft.preferredUid=b.dataset.prefart||null;S.draft.preferredName=b.dataset.prefnm||'';}renderConfig();return;}

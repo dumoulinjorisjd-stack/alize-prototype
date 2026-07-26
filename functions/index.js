@@ -2809,7 +2809,9 @@ const GCAL_OAUTH_SECRET = defineSecret('GCAL_OAUTH_SECRET');
 const GCAL_SCOPES = 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.freebusy';
 function gcalConfigured() { return GCAL_CLIENT_ID.indexOf('A_CONFIGURER') < 0; }
 function gcalRedirectUri() {
-  return 'https://europe-west1-' + (process.env.GCLOUD_PROJECT || 't-service-prod') + '.cloudfunctions.net/gcalOAuthReturn';
+  // Via la réécriture Hosting (firebase.json) : l'autorisation Google s'affiche au nom
+  // de ti-services.fr — pas du domaine technique cloudfunctions.net (anxiogène).
+  return 'https://ti-services.fr/gcalOAuthReturn';
 }
 // Fenêtre d'une mission en ISO avec fuseau de Saint-Barthélemy (UTC−4, sans heure d'été).
 function gcalWindow(dateISO, slot, hours) {
