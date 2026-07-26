@@ -2682,5 +2682,113 @@ exports.welcomeClientEmail = onDocumentCreated({document: 'users/{uid}', secrets
 });
 
 
+/* ============================================================
+   AGENDA PERSO (iCal) — chaque prestataire dispose d'un flux privé
+   listant ses missions Ti-Services, à ABONNER dans Google Agenda ou
+   Apple Calendrier (et donc visible dans Planity si le prestataire a
+   activé la synchro Google côté Planity). L'URL porte un JETON secret
+   (crypto), révocable en régénérant le lien. Le flux ne contient
+   AUCUNE donnée sensible : service, prénom du client, secteur —
+   les détails (adresse exacte, téléphone) restent dans l'application.
+   ============================================================ */
+function icsEscape(s) {
+  return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+}
+// Événements → texte iCalendar. Heures LOCALES de Saint-Barthélemy (UTC−4, sans
+// heure d'été) converties en UTC — affichage correct dans tous les agendas.
+function buildIcs(events) {
+  const utc = (ms) => {
+    const d = new Date(ms);
+    const p = (n) => (n < 10 ? '0' : '') + n;
+    return d.getUTCFullYear() + p(d.getUTCMonth() + 1) + p(d.getUTCDate()) + 'T' + p(d.getUTCHours()) + p(d.getUTCMinutes()) + '00Z';
+  };
+  const stamp = utc(Date.now());
+  const L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Ti-Services//Agenda prestataire//FR',
+    'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:Ti-Services', 'X-WR-TIMEZONE:America/St_Barthelemy'];
+  (events || []).forEach((ev) => {
+    L.push('BEGIN:VEVENT', 'UID:' + ev.id + '@ti-services.fr', 'DTSTAMP:' + stamp);
+    if (ev.allDay) {
+      const day = ev.dateISO.replace(/-/g, '');
+      const next = new Date(Date.parse(ev.dateISO + 'T12:00:00Z') + 24 * 3600 * 1000);
+      const p = (n) => (n < 10 ? '0' : '') + n;
+      L.push('DTSTART;VALUE=DATE:' + day,
+        'DTEND;VALUE=DATE:' + next.getUTCFullYear() + p(next.getUTCMonth() + 1) + p(next.getUTCDate()));
+    } else {
+      const start = Date.parse(ev.dateISO + 'T' + (ev.slot.length < 5 ? '0' : '') + ev.slot + ':00-04:00');
+      L.push('DTSTART:' + utc(start), 'DTEND:' + utc(start + (ev.hours || 1) * 3600 * 1000));
+    }
+    L.push('SUMMARY:' + icsEscape(ev.summary), 'LOCATION:' + icsEscape(ev.location || ''),
+      'DESCRIPTION:' + icsEscape(ev.description || ''), 'END:VEVENT');
+  });
+  L.push('END:VCALENDAR');
+  return L.join('\r\n');
+}
+
+// Crée (ou régénère avec {rotate:true}) le lien d'agenda privé du prestataire connecté.
+exports.getIcalUrl = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Connexion requise.');
+  const uid = request.auth.uid;
+  const db = getFirestore();
+  const ref = db.collection('artisans').doc(uid);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('failed-precondition', 'Profil prestataire introuvable.');
+  let tok = (snap.data() || {}).icalToken || '';
+  const rotate = !!(request.data && request.data.rotate);
+  if (!tok || rotate) {
+    const old = tok;
+    tok = require('crypto').randomBytes(24).toString('base64url');
+    await ref.set({ icalToken: tok }, { merge: true });
+    await db.collection('icalTokens').doc(tok).set({ uid: uid, createdAt: FieldValue.serverTimestamp() });
+    if (old) { try { await db.collection('icalTokens').doc(old).delete(); } catch (_) {} }
+  } else {
+    await db.collection('icalTokens').doc(tok).set({ uid: uid }, { merge: true });
+  }
+  const base = 'https://europe-west1-' + (process.env.GCLOUD_PROJECT || 't-service-prod') + '.cloudfunctions.net/icalFeed';
+  return { url: base + '?t=' + tok };
+});
+
+// Le flux lui-même : text/calendar, authentifié par le jeton porteur de l'URL.
+exports.icalFeed = onRequest(async (req, res) => {
+  try {
+    const tok = String((req.query && req.query.t) || '');
+    if (!/^[A-Za-z0-9_-]{20,80}$/.test(tok)) { res.status(404).send('Introuvable'); return; }
+    const db = getFirestore();
+    const map = await db.collection('icalTokens').doc(tok).get();
+    const uid = map.exists ? (map.data() || {}).uid : null;
+    if (!uid) { res.status(404).send('Introuvable'); return; }
+    const snap = await db.collection('requests').where('providerUid', '==', uid).limit(500).get();
+    const keep = { accepted: 1, done_pro: 1, completed: 1, paid: 1 };
+    const cutoff = Date.now() - 60 * 24 * 3600 * 1000; // 60 jours d'historique
+    const events = [];
+    snap.forEach((doc) => {
+      const r = doc.data() || {};
+      if (!keep[r.status]) return;
+      const dateISO = r.dateISO || '';
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateISO)) return;
+      const t = Date.parse(dateISO + 'T12:00:00Z');
+      if (isFinite(t) && t < cutoff) return;
+      const slot = /^\d{1,2}:\d{2}$/.test(r.acceptedSlot || '') ? r.acceptedSlot
+        : (/^\d{1,2}:\d{2}$/.test(r.slot || '') ? r.slot : '09:00');
+      const allDay = r.unit === 'j';
+      const hours = Math.max(1, Math.min(12, Number(r.duration) || 1));
+      const first = (((r.clientName || '').trim().split(/\s+/)[0]) || 'Client');
+      const salon = r.locationMode === 'salon';
+      events.push({
+        id: doc.id, dateISO: dateISO, slot: slot, hours: hours, allDay: allDay,
+        summary: 'Ti-Services — ' + (r.serviceName || r.service || 'Mission') + ' · ' + first,
+        location: salon ? 'Votre salon / studio' : (r.zone || 'Saint-Barthélemy'),
+        description: 'Réservation Ti-Services' + (r.zone ? ' · ' + r.zone : '') + ' — détails dans l’application.'
+      });
+    });
+    events.sort((a, b) => (a.dateISO + a.slot).localeCompare(b.dateISO + b.slot));
+    res.set('Content-Type', 'text/calendar; charset=utf-8');
+    res.set('Cache-Control', 'private, max-age=300');
+    res.status(200).send(buildIcs(events));
+  } catch (e) {
+    console.error('icalFeed', e);
+    res.status(500).send('Erreur');
+  }
+});
+
 // Export interne pour les tests unitaires (inerte en production : TI_TEST non défini).
-if (process.env.TI_TEST) { module.exports.__test = { buildInvoicePdf, buildProcurationPdf, invoiceLines, eurTxt, frDate, welcomeHtml, inviteArtisanHtml, approvedArtisanHtml, resetPasswordEmail }; }
+if (process.env.TI_TEST) { module.exports.__test = { buildInvoicePdf, buildProcurationPdf, invoiceLines, eurTxt, frDate, welcomeHtml, inviteArtisanHtml, approvedArtisanHtml, resetPasswordEmail, buildIcs, icsEscape }; }
