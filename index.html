@@ -6145,7 +6145,117 @@
 
   /* ---------- CLIENT ---------- */
   /* ---------- ADMIN ---------- */
-  function renderAdmin(){if(S.support&&S.mission)return supportChat()+adminNavbar();if(S.generalSupport&&S.genUser)return generalSupportChat()+adminNavbar();if(S.adminSupervise&&S.mission)return adminSupervise()+adminNavbar();let body;if(S.admin.view==='art')body=adminFiche('art');else if(S.admin.view==='cli')body=adminFiche('cli');else if(S.admin.view==='msg')body=adminMessagerie();else if(S.admin.view==='fact')body=adminInvoicesRouter();else if(S.admin.view==='wishes')body=adminWishesView();else if(S.admin.view==='manual')body=adminManual();else body=adminHome();return body+adminNavbar();}
+  function renderAdmin(){if(S.support&&S.mission)return supportChat()+adminNavbar();if(S.generalSupport&&S.genUser)return generalSupportChat()+adminNavbar();if(S.adminSupervise&&S.mission)return adminSupervise()+adminNavbar();let body;if(S.admin.view==='art')body=adminFiche('art');else if(S.admin.view==='cli')body=adminFiche('cli');else if(S.admin.view==='msg')body=adminMessagerie();else if(S.admin.view==='fact')body=adminInvoicesRouter();else if(S.admin.view==='wishes')body=adminWishesView();else if(S.admin.view==='manual')body=adminManual();else if(S.admin.view==='prospect')body=adminProspect();else body=adminHome();return body+adminNavbar();}
+  // ── DÉMARCHAGE (console admin) ──────────────────────────────────────────────
+  // Carnet de prospection des artisans à recruter, PENSÉ HORS LIGNE : chaque saisie
+  // est enregistrée immédiatement sur l'appareil (localStorage), puis synchronisée
+  // vers Firestore (collection admin-only « prospects ») dès que le réseau revient.
+  const PROSPECT_STATUSES=[['todo','À contacter','coral'],['contacted','Contacté','warn'],['relance','À relancer','coral'],['inscrit','Inscrit','good'],['refus','Refus','grey']];
+  function prospectStatusMeta(st){return PROSPECT_STATUSES.find(function(x){return x[0]===st;})||PROSPECT_STATUSES[0];}
+  function loadProspects(){if(S.adminProspects)return;try{S.adminProspects=JSON.parse(localStorage.getItem('tiProspects')||'[]');}catch(_){S.adminProspects=[];}}
+  function persistProspects(){try{localStorage.setItem('tiProspects',JSON.stringify(S.adminProspects||[]));}catch(_){}syncProspects();}
+  function prospectDirtyCount(){loadProspects();let dels=[];try{dels=JSON.parse(localStorage.getItem('tiProspectsDel')||'[]');}catch(_){}return (S.adminProspects||[]).filter(function(p){return p._dirty;}).length+dels.length;}
+  // Pousse vers le cloud tout ce qui a changé (best-effort : silencieux hors ligne).
+  function syncProspects(){
+    try{
+      if(!(FB&&FB.f&&FB.db&&FB.auth&&FB.auth.currentUser&&!isDemo()))return;
+      (S.adminProspects||[]).filter(function(p){return p._dirty;}).forEach(function(p){
+        const clean={};Object.keys(p).forEach(function(k){if(k!=='_dirty')clean[k]=p[k];});
+        FB.f.setDoc(FB.f.doc(FB.db,'prospects',p.id),clean).then(function(){
+          p._dirty=false;try{localStorage.setItem('tiProspects',JSON.stringify(S.adminProspects||[]));}catch(_){}
+          if(S.persona==='admin'&&S.admin.view==='prospect')render();
+        }).catch(function(){});
+      });
+      let dels=[];try{dels=JSON.parse(localStorage.getItem('tiProspectsDel')||'[]');}catch(_){}
+      dels.forEach(function(id){FB.f.deleteDoc(FB.f.doc(FB.db,'prospects',id)).then(function(){
+        let d2=[];try{d2=JSON.parse(localStorage.getItem('tiProspectsDel')||'[]');}catch(_){}
+        try{localStorage.setItem('tiProspectsDel',JSON.stringify(d2.filter(function(x){return x!==id;})));}catch(_){}
+        if(S.persona==='admin'&&S.admin.view==='prospect')render();
+      }).catch(function(){});});
+    }catch(_){}
+  }
+  try{window.addEventListener('online',function(){syncProspects();});}catch(_){}
+  // Récupération cloud → fusion locale (une fois par session ; le plus récent gagne,
+  // sauf modifications locales non encore synchronisées, toujours prioritaires).
+  function fetchProspects(){
+    if(S._prospectsFetched)return;S._prospectsFetched=true;
+    try{
+      if(!(FB&&FB.f&&FB.db&&FB.auth&&FB.auth.currentUser&&!isDemo()))return;
+      FB.f.getDocs(FB.f.collection(FB.db,'prospects')).then(function(snap){
+        loadProspects();const by={};(S.adminProspects||[]).forEach(function(p){by[p.id]=p;});
+        let dels=[];try{dels=JSON.parse(localStorage.getItem('tiProspectsDel')||'[]');}catch(_){}
+        snap.forEach(function(d){const r=d.data()||{};r.id=d.id;
+          if(dels.indexOf(d.id)>=0)return;
+          const loc=by[r.id];
+          if(!loc)S.adminProspects.push(r);
+          else if(!loc._dirty&&(Number(r.updatedAt)||0)>(Number(loc.updatedAt)||0))Object.assign(loc,r);});
+        try{localStorage.setItem('tiProspects',JSON.stringify(S.adminProspects||[]));}catch(_){}
+        if(S.persona==='admin'&&S.admin.view==='prospect')render();
+      }).catch(function(){});
+    }catch(_){}
+  }
+  function prospectId(){const a=new Uint8Array(8);crypto.getRandomValues(a);return 'pr'+Array.from(a).map(function(b){return b.toString(16).padStart(2,'0');}).join('');}
+  // Notes modifiables directement sur la carte (enregistrées à la volée, hors ligne aussi).
+  document.addEventListener('change',function(e){
+    const t=e.target&&e.target.closest&&e.target.closest('[data-prnotes]');
+    if(!t)return;
+    loadProspects();const p=(S.adminProspects||[]).find(function(x){return x.id===t.dataset.prnotes;});
+    if(p){p.notes=(t.value||'').slice(0,500);p.updatedAt=Date.now();p._dirty=true;persistProspects();toast('Note enregistrée ✓');}
+  });
+  function adminProspect(){
+    loadProspects();fetchProspects();
+    const all=S.adminProspects||[];
+    const filt=S._prospectFilter||'all';
+    const list=all.filter(function(p){return filt==='all'||p.status===filt;})
+      .slice().sort(function(a,b){return (b.updatedAt||0)-(a.updatedAt||0);});
+    const dirty=prospectDirtyCount();
+    const counts={};all.forEach(function(p){counts[p.status]=(counts[p.status]||0)+1;});
+    const chips=[['all','Tous ('+all.length+')']].concat(PROSPECT_STATUSES.map(function(s){return [s[0],s[1]+(counts[s[0]]?' ('+counts[s[0]]+')':'')];}))
+      .map(function(c){return `<button class="seg ${filt===c[0]?'on':''}" data-adm="prospect-filter:${c[0]}" style="flex:none;padding:8px 11px;font-size:12.5px">${c[1]}</button>`;}).join('');
+    const catOpts=allSvc().map(function(s){return `<option value="${esc(s.id)}">${esc(s.nm)}</option>`;}).join('')+'<option value="autre">Autre métier</option>';
+    const zoneOpts=ZONES.map(function(z){return `<option value="${esc(z)}">${esc(z)}</option>`;}).join('');
+    const waOf=function(ph){const d=(ph||'').replace(/[^\d+]/g,'').replace(/^00/,'+');return d?('https://wa.me/'+d.replace(/^\+/,'').replace(/^0/,'590')):'';};
+    // Regroupement par métier (comme l'éditeur de tarifs) quand « Tous » ; liste plate sinon.
+    const card=function(p){const sm=prospectStatusMeta(p.status);
+      return `<div class="card" style="padding:14px;margin-top:9px">
+        <div class="row between" style="align-items:flex-start;gap:10px"><div style="min-width:0"><b style="font-size:14px">${esc(p.name)}</b><div class="mini" style="margin-top:2px">${esc(svcNm(p.cat)||p.cat||'—')}${p.zone?' · '+I.pin+' '+esc(p.zone):''}</div></div><span class="chip ${sm[2]}" style="flex:none">${sm[1]}</span></div>
+        ${(p.phone||p.email)?`<div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
+          ${p.phone?`<a class="btn ghost sm" href="tel:${esc((p.phone||'').replace(/\s/g,''))}" style="text-decoration:none;width:auto;padding:8px 12px">${I.phone} Appeler</a>`:''}
+          ${p.phone?`<a class="btn ghost sm" href="${esc(waOf(p.phone))}" target="_blank" rel="noopener" style="text-decoration:none;width:auto;padding:8px 12px">${I.chat} WhatsApp</a>`:''}
+          ${p.email?`<button class="btn ghost sm" data-adm="prospect-invite:${p.id}" style="width:auto;padding:8px 12px">${I.check} Inviter par e-mail</button>`:''}
+        </div>`:''}
+        <div class="mini" style="margin-top:8px;color:var(--muted)">${esc(p.phone||'')}${p.phone&&p.email?' · ':''}${esc(p.email||'')}</div>
+        <textarea rows="2" data-prnotes="${esc(p.id)}" placeholder="Notes (rappeler jeudi, recommandé par…)" style="width:100%;margin-top:8px;padding:9px 11px;border:1px solid var(--hair);border-radius:10px;background:var(--sand);color:var(--ink);font-size:13px;font-family:inherit;box-sizing:border-box">${esc(p.notes||'')}</textarea>
+        <div class="row between" style="margin-top:9px;align-items:center;gap:8px">
+          <div class="row" style="gap:5px;flex-wrap:wrap">${PROSPECT_STATUSES.map(function(s){return `<button class="seg ${p.status===s[0]?'on':''}" data-adm="prospect-st:${p.id}:${s[0]}" style="flex:none;padding:6px 9px;font-size:11.5px">${s[1]}</button>`;}).join('')}</div>
+          <button class="linklike" data-adm="prospect-del:${p.id}" style="color:var(--coral-deep);flex:none">${I.trash}</button>
+        </div>
+        ${p._dirty?`<div class="mini" style="margin-top:6px;color:var(--muted)">${I.clock} À synchroniser (enregistré sur cet appareil)</div>`:''}
+      </div>`;};
+    let body;
+    if(filt==='all'&&list.length){
+      const cats={};list.forEach(function(p){const k=p.cat||'autre';(cats[k]=cats[k]||[]).push(p);});
+      body=Object.keys(cats).sort(function(a,b){return cats[b].length-cats[a].length;})
+        .map(function(k){return `<div class="eyebrow" style="margin:16px 4px 2px;color:var(--muted)">${esc(svcNm(k)||k)} · ${cats[k].length}</div>`+cats[k].map(card).join('');}).join('');
+    }else{
+      body=list.length?list.map(card).join(''):`<div class="card" style="padding:22px;margin-top:12px;text-align:center;border-style:dashed"><p class="sub" style="margin:0">Aucun contact${filt!=='all'?' dans ce statut':''} pour l'instant.</p><p class="mini" style="margin-top:5px;color:var(--muted)">Ajoutez les artisans repérés sur l'île — même sans réseau, tout est conservé.</p></div>`;
+    }
+    return `<div class="pad"><div style="height:12px"></div>
+      <div class="row between" style="align-items:flex-start"><div><span class="eyebrow">${I.users||''} Recrutement</span><div class="h-hello">Démarchage</div></div>
+      ${all.length?`<button class="btn ghost sm" data-adm="prospect-export" style="width:auto;padding:8px 12px;flex:none">${I.card} CSV</button>`:''}</div>
+      <p class="sub" style="margin-top:4px">Votre carnet de prospection — fonctionne <b>hors ligne</b> : tout est enregistré sur l'appareil et synchronisé dès le retour du réseau.</p>
+      ${dirty?`<div class="banner teal" style="margin-top:10px">${I.clock}<span><b>${dirty}</b> modification${dirty>1?'s':''} en attente de synchronisation — elle${dirty>1?'s':''} partir${dirty>1?'ont':'a'} automatiquement dès le réseau retrouvé.</span></div>`:''}
+      <div class="card" style="padding:15px;margin-top:12px">
+        <b style="font-size:14px">＋ Ajouter un contact</b>
+        <div class="row" style="gap:8px;margin-top:10px"><input id="prName" placeholder="Nom / société" autocomplete="off" style="flex:1;min-width:0;padding:10px 12px;border:1px solid var(--hair);border-radius:11px;background:var(--sand);color:var(--ink);font-size:14px;box-sizing:border-box"><select id="prCat" class="txt" style="flex:1;min-width:0">${catOpts}</select></div>
+        <div class="row" style="gap:8px;margin-top:8px"><input id="prPhone" placeholder="Téléphone" inputmode="tel" autocomplete="off" style="flex:1;min-width:0;padding:10px 12px;border:1px solid var(--hair);border-radius:11px;background:var(--sand);color:var(--ink);font-size:14px;box-sizing:border-box"><input id="prEmail" type="email" placeholder="E-mail (facultatif)" autocomplete="off" style="flex:1;min-width:0;padding:10px 12px;border:1px solid var(--hair);border-radius:11px;background:var(--sand);color:var(--ink);font-size:14px;box-sizing:border-box"></div>
+        <div class="row" style="gap:8px;margin-top:8px"><select id="prZone" class="txt" style="flex:1;min-width:0">${zoneOpts}</select><input id="prNotes" placeholder="Note (recommandé par…, vu au marché…)" autocomplete="off" style="flex:2;min-width:0;padding:10px 12px;border:1px solid var(--hair);border-radius:11px;background:var(--sand);color:var(--ink);font-size:14px;box-sizing:border-box"></div>
+        <button class="btn primary sm" data-adm="prospect-add" style="margin-top:10px;width:auto;padding:9px 16px">${I.check} Ajouter au carnet</button>
+      </div>
+      <div class="row" style="gap:6px;margin-top:14px;flex-wrap:wrap">${chips}</div>
+      ${body}
+      <div style="height:12px"></div></div>`;
+  }
   // ── FAQ UTILISATEURS ────────────────────────────────────────────────────────
   // Les réponses du manuel d'exploitation, servies directement aux intéressés :
   // questions « client » dans le compte client, questions « prestataire » côté pro.
@@ -6270,7 +6380,8 @@
     const exitIco='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>';
     const pend=adminPendingCount();const sup=(typeof adminSupportPending==='function')?adminSupportPending():0;
     const onFact=(S.admin.view==='fact');
-    return `<div class="navbar"><button data-adm="home" class="${onHome?'on':''}"><span class="nb-ic">${I.shield}${pend?`<span class="nb-count">${pend}</span>`:''}</span>Console</button><button data-adm="msg" class="${inMsg?'on':''}"><span class="nb-ic">${I.chat}${sup?`<span class="nb-count">${sup}</span>`:''}</span>Messagerie</button><button data-adm="fact" class="${onFact?'on':''}"><span class="nb-ic">${I.card}</span>Factures</button><button data-adm="quit"><span class="nb-ic">${exitIco}</span>${(!isDemo()&&isAdminAccount())?'Déconnexion':'Quitter'}</button></div>`;
+    const onProspect=(S.admin.view==='prospect');
+    return `<div class="navbar"><button data-adm="home" class="${onHome?'on':''}"><span class="nb-ic">${I.shield}${pend?`<span class="nb-count">${pend}</span>`:''}</span>Console</button><button data-adm="msg" class="${inMsg?'on':''}"><span class="nb-ic">${I.chat}${sup?`<span class="nb-count">${sup}</span>`:''}</span>Messagerie</button><button data-adm="fact" class="${onFact?'on':''}"><span class="nb-ic">${I.card}</span>Factures</button><button data-adm="prospect" class="${onProspect?'on':''}"><span class="nb-ic">${I.users||I.user}</span>Démarchage</button><button data-adm="quit"><span class="nb-ic">${exitIco}</span>${(!isDemo()&&isAdminAccount())?'Déconnexion':'Quitter'}</button></div>`;
   }
   function adminPendingCount(){return ((S.adminArtisans||[]).filter(function(a){return a.status==='attente';}).length)+((S.adminClients||[]).filter(function(c){return c.status==='attente';}).length);}
   function catNames(cats){return cats.map(svcNm).join(', ');}
@@ -10221,6 +10332,56 @@
       else if(act==='manual'){S.admin.view='manual';S.admin.sel=null;S.mission=null;render();view.scrollTop=0;return;}
       else if(act==='manual-all'||act==='manual-none'){document.querySelectorAll('.manbook details').forEach(function(d){d.open=(act==='manual-all');});return;}
       else if(act==='manual-print'){document.querySelectorAll('.manbook details').forEach(function(d){d.open=true;});setTimeout(function(){try{window.print();}catch(_){}},80);return;}
+      else if(act==='prospect'){S.admin.view='prospect';S.admin.sel=null;S.mission=null;S.support=false;S.supportSide=null;S.adminSupervise=false;S.generalSupport=false;S.genUser=null;render();view.scrollTop=0;return;}
+      else if(act==='prospect-filter'){S._prospectFilter=id||'all';render();return;}
+      else if(act==='prospect-add'){(function(){
+        const nm=((document.getElementById('prName')||{}).value||'').trim();
+        if(!nm){toast('Indiquez au moins un nom');return;}
+        const em=((document.getElementById('prEmail')||{}).value||'').trim();
+        if(em&&!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)){toast('Adresse e-mail invalide');return;}
+        loadProspects();
+        S.adminProspects.push({id:prospectId(),name:nm.slice(0,80),
+          cat:((document.getElementById('prCat')||{}).value||'autre'),
+          phone:((document.getElementById('prPhone')||{}).value||'').trim().slice(0,30),
+          email:em.slice(0,120),
+          zone:((document.getElementById('prZone')||{}).value||''),
+          notes:((document.getElementById('prNotes')||{}).value||'').trim().slice(0,500),
+          status:'todo',createdAt:Date.now(),updatedAt:Date.now(),_dirty:true});
+        persistProspects();render();toast('Contact ajouté au carnet ✓');
+      })();return;}
+      else if(act==='prospect-st'){(function(){
+        loadProspects();const p=(S.adminProspects||[]).find(function(x){return x.id===id;});
+        if(!p)return;p.status=parts[2]||'todo';p.updatedAt=Date.now();p._dirty=true;persistProspects();render();
+      })();return;}
+      else if(act==='prospect-del'){(function(){
+        loadProspects();const p=(S.adminProspects||[]).find(function(x){return x.id===id;});
+        if(!p)return;
+        S.adminProspects=S.adminProspects.filter(function(x){return x.id!==id;});
+        let dels=[];try{dels=JSON.parse(localStorage.getItem('tiProspectsDel')||'[]');}catch(_){}
+        if(dels.indexOf(id)<0)dels.push(id);
+        try{localStorage.setItem('tiProspectsDel',JSON.stringify(dels));}catch(_){}
+        persistProspects();render();toast('Contact retiré');
+      })();return;}
+      else if(act==='prospect-invite'){(function(){
+        loadProspects();const p=(S.adminProspects||[]).find(function(x){return x.id===id;});
+        if(!p||!p.email){toast('Aucun e-mail pour ce contact');return;}
+        if(!isAdminAccount()){toast('Réservé à l’administrateur (compte réel)');return;}
+        if(!(FB&&FB.functions&&FB.fn&&FB.fn.httpsCallable)){toast('Envoi indisponible hors ligne — réessayez connecté');return;}
+        toast('Envoi de l’invitation…');
+        FB.fn.httpsCallable(FB.functions,'sendArtisanInvite')({email:p.email,name:(p.name||'').split(' ')[0]}).then(function(r){
+          if(r&&r.data&&r.data.sent){p.status='contacted';p.updatedAt=Date.now();p._dirty=true;persistProspects();render();toast('Invitation envoyée à '+p.email+' ✓');}
+          else toast('⚠︎ Invitation non envoyée');
+        }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
+      })();return;}
+      else if(act==='prospect-export'){(function(){
+        loadProspects();
+        const esc2=function(v){v=String(v==null?'':v);if(/^[=+\-@]/.test(v))v="'"+v;return '"'+v.replace(/"/g,'""')+'"';};
+        const rows=[['Métier','Nom','Téléphone','E-mail','Secteur','Statut','Notes']].concat((S.adminProspects||[]).map(function(p){return [svcNm(p.cat)||p.cat||'',p.name||'',p.phone||'',p.email||'',p.zone||'',prospectStatusMeta(p.status)[1],p.notes||''];}));
+        const csv='﻿'+rows.map(function(r){return r.map(esc2).join(';');}).join('\r\n');
+        const b=new Blob([csv],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');
+        a.href=URL.createObjectURL(b);a.download='demarchage-ti-services.csv';document.body.appendChild(a);a.click();
+        setTimeout(function(){try{a.remove();URL.revokeObjectURL(a.href);}catch(_){}},400);
+      })();return;}
       else if(act==='fact-comm'){S.admin.view='fact';S.admin.fact={art:id,mode:'comm'};render();view.scrollTop=0;return;}
       else if(act==='fact-mandat'){S.admin.view='fact';S.admin.fact={art:id,mode:'mandat'};render();view.scrollTop=0;return;}
       else if(act==='fact-doc'){S.admin.view='fact';S.admin.fact={art:id,mode:'doc',inv:parts[2]};render();view.scrollTop=0;return;}
