@@ -3141,7 +3141,9 @@ exports.listProviders = onCall(async (request) => {
     try { p.cal = (await db.collection('gcalTokens').doc(p.uid).get()).exists; } catch (_) {}
   }));
   out.sort((x, y) => (Number(y.founder) - Number(x.founder)) || (y.jobs - x.jobs));
-  return { providers: out.slice(0, 20) };
+  // Le nombre de missions sert au TRI côté serveur mais ne sort JAMAIS vers le client
+  // (le client ne doit pas voir les volumes d'activité des prestataires).
+  return { providers: out.slice(0, 20).map((p) => ({ uid: p.uid, name: p.name, photo: p.photo, founder: p.founder, siteMode: p.siteMode, salonZone: p.salonZone, cal: p.cal })) };
 });
 
 /* ── Créneaux réellement libres d'un prestataire pour UNE journée : le client qui vise
