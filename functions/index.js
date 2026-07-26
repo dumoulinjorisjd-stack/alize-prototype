@@ -2743,8 +2743,9 @@ exports.getIcalUrl = onCall(async (request) => {
   } else {
     await db.collection('icalTokens').doc(tok).set({ uid: uid }, { merge: true });
   }
-  const base = 'https://europe-west1-' + (process.env.GCLOUD_PROJECT || 't-service-prod') + '.cloudfunctions.net/icalFeed';
-  return { url: base + '?t=' + tok };
+  // Via la réécriture Hosting (firebase.json) : une adresse au nom de ti-services.fr,
+  // rassurante et cohérente (l'ancienne adresse cloudfunctions.net reste servie).
+  return { url: 'https://ti-services.fr/icalFeed?t=' + tok };
 });
 
 // Le flux lui-même : text/calendar, authentifié par le jeton porteur de l'URL.
