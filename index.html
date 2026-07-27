@@ -7586,7 +7586,37 @@
   // Sortir une demande du suivi (annulation) ou l'archiver (terminée → historique).
   function removeMission(m){const i=(S.missions||[]).indexOf(m);if(i>=0)S.missions.splice(i,1);}
   function archiveMission(m){removeMission(m);if(m){const key=m.reqId;S.history=S.history||[];if(!(key&&S.history.some(function(h){return h.reqId===key;})))S.history.unshift(histClean(m));}if(S.persona==='client')saveClientCloud();}
-  function cardTxt(){return S.card?(S.card.brand+' •••• '+S.card.last4):'votre moyen de paiement';}
+  function cardTxt(){const _c=S.card||payCard();return _c?(_c.brand+' •••• '+_c.last4):'votre moyen de paiement';}
+  // CARTE MÉMORISÉE (production) : elle n'est jamais chez nous — elle vit chez Mollie
+  // sous forme de « mandat », créé par le premier paiement réussi. On en lit l'aperçu
+  // par le callable clientCard. Rend undefined tant que la lecture est en cours, null
+  // si aucune carte n'est mémorisée, l'objet sinon. Une seule lecture par session.
+  function payCard(){
+    if(!payReal())return null;
+    const e=S._payCard;
+    if(e&&e.done)return e.card;
+    if(!(e&&e.loading)){
+      S._payCard={loading:true};
+      FB.fn.httpsCallable(FB.functions,'clientCard')({action:'get'}).then(function(r){
+        S._payCard={done:true,card:(r&&r.data&&r.data.card)||null};
+        if(S.persona==='client'&&S.clientNav==='profile')render();
+      }).catch(function(){S._payCard={done:true,card:null};});
+    }
+    return undefined;
+  }
+  // Retire la carte mémorisée chez Mollie : la prochaine réservation en redemandera une,
+  // qui sera mémorisée à son tour. C'est la seule façon honnête de « changer de carte »
+  // sans prélèvement — Mollie n'enregistre une carte qu'à l'occasion d'un paiement.
+  function forgetPayCard(){
+    if(!payReal())return;
+    S._payCard={loading:true};render();
+    FB.fn.httpsCallable(FB.functions,'clientCard')({action:'revoke'}).then(function(r){
+      S._payCard={done:true,card:(r&&r.data&&r.data.card)||null};
+      render();toast('Carte retirée — la prochaine réservation vous en demandera une');
+    }).catch(function(){S._payCard={done:true,card:null};render();toast('Retrait impossible pour le moment');});
+  }
+  // Échéance Mollie « AAAA-MM » → « MM/AAAA ».
+  function payCardExp(c){const m=/^(\d{4})-(\d{2})/.exec(String((c&&c.exp)||''));return m?(m[2]+'/'+m[1]):'';}
   function clientNavbar(){
     const act=attention()==='client';const nb=activeMissions().length;
     const item=(id,ic,lbl,badge,count)=>`<button data-cnav="${id}" class="${S.clientNav===id?'on':''}"><span class="nb-ic">${ic}${count?`<span class="nb-count">${count}</span>`:''}${badge?'<span class="nb-badge left"></span>':''}</span>${lbl}</button>`;
@@ -7864,7 +7894,25 @@
         <div class="inforow"><span class="benic">${I.phone}</span><div class="infotxt"><span class="infolbl">Téléphone</span><span class="infoval${cph?'':' empty'}">${cph?esc(cph):'À renseigner'}</span></div></div>
         <div class="inforow"><span class="benic">${I.pin}</span><div class="infotxt"><span class="infolbl">Secteur</span><span class="infoval">${esc(czone)}</span></div></div>
         <button class="btn ghost sm" style="width:auto;padding:6px 14px;margin-top:10px" data-act="edit-profile">${I.edit} Modifier</button>`,cph?'':`<span class="chip coral" style="flex:none">Tél. manquant</span>`)}
-      ${foldCard('c-pay',I.card,'Moyen de paiement','',`${payReal()?`<div class="banner good" style="margin-top:12px">${I.lock}<span>Carte saisie en sécurité sur <b>Mollie</b> à chaque réservation — Ti-Services ne voit jamais votre numéro. Rien n'est débité avant validation.</span></div>`:(S.card?`<div class="row between" style="margin-top:12px"><div class="row" style="gap:11px;align-items:center"><span class="benic">${I.card}</span><div><b>${S.card.brand} ••••&nbsp;${S.card.last4}</b><div class="mini">Expire ${S.card.exp||'08/28'}</div></div></div></div><div class="row" style="gap:8px;margin-top:12px"><button class="btn ghost sm" data-act="add-card">Modifier</button><button class="btn ghost sm" data-act="card-remove">Retirer</button></div><div class="banner good" style="margin-top:12px">${I.check}<span>Débit automatique après chaque prestation validée — rien à gérer.</span></div>`:`<p class="mini" style="margin-top:2px">Facultatif — enregistrez une carte pour réserver plus vite. Sinon, elle vous sera demandée à votre première réservation. Rien n'est débité avant validation.</p><button class="btn ghost sm" data-act="add-card" style="margin-top:12px">${I.card} Ajouter un moyen de paiement</button>`)}`,(S.card||payReal())?`<span class="chip good" style="flex:none">${I.check} Enregistré</span>`:'')}
+      ${(function(){
+        // Production : la carte vit chez Mollie. On affiche CE QUI EST VRAI — la carte
+        // réellement mémorisée si elle existe, sinon le fait qu'elle le sera à la
+        // première réservation. Jamais « Enregistré » par principe.
+        if(payReal()){
+          const c=payCard();
+          const body=(c===undefined)
+            ?`<p class="mini" style="margin-top:2px;color:var(--muted)">${I.clock} Vérification de votre carte enregistrée…</p>`
+            :(c?`<div class="row" style="gap:11px;align-items:center;margin-top:12px"><span class="benic">${I.card}</span><div><b>${esc(c.brand)} ••••&nbsp;${esc(c.last4)}</b><div class="mini">${payCardExp(c)?('Expire '+payCardExp(c)):'Carte enregistrée'}${c.holder?' · '+esc(c.holder):''}</div></div></div>
+              <div class="banner good" style="margin-top:12px">${I.lock}<span>Conservée en sécurité chez <b>Mollie</b> — Ti-Services ne voit jamais votre numéro. Proposée en un clic à votre prochaine réservation, et rien n'est débité avant validation.</span></div>
+              ${S.cardForgetAsk?`<div class="card" style="padding:14px;margin-top:12px;border-left:4px solid var(--coral)"><b style="font-size:14px">Retirer cette carte&nbsp;?</b><p class="mini" style="margin-top:4px">À votre prochaine réservation, vous saisirez la nouvelle sur Mollie — elle sera mémorisée à son tour. Aucune prestation en cours n'est affectée.</p><div class="row" style="gap:8px;margin-top:10px"><button class="btn primary sm" data-act="card-forget-yes" style="width:auto;padding:9px 14px">Retirer</button><button class="btn ghost sm" data-act="card-forget-no" style="width:auto;padding:9px 14px">Garder</button></div></div>`:`<button class="btn ghost sm" data-act="card-forget" style="margin-top:12px;width:auto;padding:9px 14px">${I.card} Changer de carte</button>
+              <p class="mini" style="margin-top:8px;color:var(--muted)">Retire cette carte&nbsp;: votre prochaine réservation vous demandera la nouvelle, qui sera mémorisée à son tour.</p>`}`
+            :`<p class="mini" style="margin-top:2px">Aucune carte mémorisée pour l'instant. Elle le sera lors de votre première réservation, saisie en sécurité sur <b>Mollie</b> — Ti-Services ne voit jamais votre numéro, et rien n'est débité avant validation.</p>`);
+          const chip=(c===undefined)?'':(c?`<span class="chip good" style="flex:none">${I.check} Enregistré</span>`:`<span class="chip grey" style="flex:none">À la 1re réservation</span>`);
+          const sub=c?(esc(c.brand)+' •••• '+esc(c.last4)):'';
+          return foldCard('c-pay',I.card,'Moyen de paiement',sub,body,chip);
+        }
+        return foldCard('c-pay',I.card,'Moyen de paiement','',`${S.card?`<div class="row between" style="margin-top:12px"><div class="row" style="gap:11px;align-items:center"><span class="benic">${I.card}</span><div><b>${S.card.brand} ••••&nbsp;${S.card.last4}</b><div class="mini">Expire ${S.card.exp||'08/28'}</div></div></div></div><div class="row" style="gap:8px;margin-top:12px"><button class="btn ghost sm" data-act="add-card">Modifier</button><button class="btn ghost sm" data-act="card-remove">Retirer</button></div><div class="banner good" style="margin-top:12px">${I.check}<span>Débit automatique après chaque prestation validée — rien à gérer.</span></div>`:`<p class="mini" style="margin-top:2px">Facultatif — enregistrez une carte pour réserver plus vite. Sinon, elle vous sera demandée à votre première réservation. Rien n'est débité avant validation.</p><button class="btn ghost sm" data-act="add-card" style="margin-top:12px">${I.card} Ajouter un moyen de paiement</button>`}`,S.card?`<span class="chip good" style="flex:none">${I.check} Enregistré</span>`:'');
+      })()}
       ${foldCard('c-addr',I.pin,'Mes adresses',S.addresses.length?(S.addresses.length+' adresse'+(S.addresses.length>1?'s':'')+' enregistrée'+(S.addresses.length>1?'s':'')):'Aucune adresse enregistrée',`
         ${S.addresses.length?S.addresses.map(a=>`<button class="card" data-act="addr-edit:${a.id}" style="padding:12px;margin-top:9px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${esc(a.label)}${S.addrDefault===a.id?` <span class="chip">Par défaut</span>`:''}</b>${a.geo?`<span class="chip good">${I.pin} GPS</span>`:`<span class="chip coral">GPS manquant</span>`}</div><div class="mini" style="margin-top:2px">${esc(a.address)} · ${a.zone}</div></button>`).join(''):`<p class="mini" style="color:var(--muted)">Aucune adresse enregistrée. Ajoutez vos villas avec leur point GPS permanent.</p>`}
         <button class="btn ghost sm" style="width:auto;padding:6px 12px;margin-top:10px" data-act="addr-new">${I.plus} Ajouter</button>
@@ -8202,7 +8250,7 @@
       if(!past.length)return '';
       const opts='<option value="">Peu importe — le premier disponible</option>'+
         past.map(function(a){return '<option value="'+esc(a.uid)+'"'+(m.preferredUid===a.uid?' selected':'')+'>'+esc(artisanFullLabel(a))+'</option>';}).join('');
-      const note=m.preferredUid?`<p class="mini" style="margin-top:6px">${I.clock} Adressée <b>uniquement à ${esc((m.preferredName||'').split(' ')[0])}</b>. S'il ne l'accepte pas, elle est automatiquement proposée à tous les prestataires — vous n'êtes jamais bloqué.</p>`:'';
+      const note=m.preferredUid?`<p class="mini" style="margin-top:6px">${I.clock} Adressée <b>uniquement à ${esc((m.preferredName||'').split(' ')[0])}</b>. S'il décline ou ne répond pas, vous pourrez la proposer à tous les prestataires d'un geste — vous n'êtes jamais bloqué.</p>`:'';
       return `<div class="field"><label>Un prestataire en particulier&nbsp;?</label><select class="txt" data-prefsel>${opts}</select>${note}</div>`;
     }
     // Métier « personnel » : cartes sélectionnables (annuaire + déjà venus), défaut pool.
@@ -11231,6 +11279,9 @@
         const upd={name:nm,zone:f.zone,phone:ph,isPro:isPro,company:company,siret:siret};if(pht)upd.photo=pht;try{FB.f.setDoc(FB.f.doc(FB.db,'users',uid),upd,{merge:true}).then(function(){toast('Informations enregistrées ✓');}).catch(function(e){toast('⚠︎ Profil non enregistré : '+fbErrTxt(e));});}catch(e){toast('⚠︎ Profil : '+fbErrTxt(e));}}else{toast('Informations mises à jour');}saveClientCloud();S.profileForm=null;render();break;}
       case 'add-card':S.cardForm=true;render();break;
       case 'card-cancel':S.cardForm=false;render();break;
+      case 'card-forget':S.cardForgetAsk=true;render();break;
+      case 'card-forget-no':S.cardForgetAsk=false;render();break;
+      case 'card-forget-yes':S.cardForgetAsk=false;forgetPayCard();break;
       case 'card-remove':S.card=null;S.cardForm=false;saveClientCloud();render();toast('Moyen de paiement retiré');break;
       case 'card-save':{const el=document.getElementById('pfCardNum'),ex=document.getElementById('pfCardExp');const num=(el?el.value:'').replace(/\D/g,'');let last4,brand;if(num.length>=4){last4=num.slice(-4);brand=/^(5[1-5]|2[2-7])/.test(num)?'Mastercard':(/^3[47]/.test(num)?'Amex':'Visa');}else if(S.card){last4=S.card.last4;brand=S.card.brand;}else{toast('Entrez un numéro de carte valide');break;}S.card={brand,last4,exp:(ex&&ex.value)||(S.card?S.card.exp:'08/28')};S.cardForm=false;saveClientCloud();render();toast('Moyen de paiement enregistré');break;}
       case 'pay-canceledit':S.payEdit=false;render();break;

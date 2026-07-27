@@ -1570,6 +1570,54 @@ exports.recordNoShow = onDocumentUpdated('requests/{reqId}', async (event) => {
  * que MOLLIE_CLIENT_ID/SECRET ne sont pas configurés.
  */
 /**
+ * clientCard : APERÇU et RETRAIT de la carte mémorisée du client. La carte n'est jamais
+ * chez Ti-Services — elle vit chez Mollie sous forme de « mandat » attaché au client
+ * Mollie (users/{uid}.mollieCustomerId), créé par le premier paiement réussi. On n'en
+ * lit que ce que Mollie expose : marque, 4 derniers chiffres, échéance.
+ *   action 'get'    → {card:{id,brand,last4,exp,holder}|null}
+ *   action 'revoke' → révoque le mandat : la prochaine réservation redemande la carte.
+ * Inerte (card:null) tant que Mollie n'est pas configuré : la bêta simulée continue.
+ */
+exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) => {
+  const uid = request.auth && request.auth.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Connexion requise.');
+  if (!mollieApiConfigured()) return {card: null, simulated: true};
+  const action = String((request.data && request.data.action) || 'get');
+  let customerId = '';
+  try {
+    const snap = await db.collection('users').doc(uid).get();
+    customerId = (snap.exists && snap.data() && snap.data().mollieCustomerId) || '';
+  } catch (_) {}
+  if (!customerId) return {card: null};
+
+  // Le mandat valide le plus récent = la carte que Mollie proposera à la réservation.
+  const readCard = async () => {
+    const out = await mollieApi('/customers/' + encodeURIComponent(customerId) + '/mandates?limit=50', 'GET');
+    const arr = (out.ok && out.data && out.data._embedded && out.data._embedded.mandates) || [];
+    const valid = arr.filter((m) => m && m.status === 'valid' && m.details);
+    if (!valid.length) return null;
+    valid.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+    const m = valid[0], d = m.details || {};
+    return {
+      id: String(m.id || ''),
+      brand: String(d.cardLabel || (m.method === 'creditcard' ? 'Carte' : m.method) || 'Carte'),
+      last4: String(d.cardNumber || '').slice(-4),
+      exp: String(d.cardExpiryDate || '').slice(0, 7),   // AAAA-MM
+      holder: String(d.cardHolder || ''),
+    };
+  };
+
+  if (action === 'revoke') {
+    const cur = await readCard();
+    if (!cur || !cur.id) return {card: null, revoked: false};
+    // Mollie répond 204 sans corps : mollieApi renvoie {ok:true, data:null}.
+    const del = await mollieApi('/customers/' + encodeURIComponent(customerId) + '/mandates/' + encodeURIComponent(cur.id), 'DELETE');
+    return {card: await readCard(), revoked: !!del.ok};
+  }
+  return {card: await readCard()};
+});
+
+/**
  * createClientPayment : pose l'EMPREINTE bancaire (autorisation Mollie, capture
  * manuelle) pour une demande. Le client passe par le parcours sécurisé Mollie ; RIEN
  * n'est débité — le débit réel n'a lieu qu'à la capture, déclenchée à la validation de
