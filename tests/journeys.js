@@ -175,7 +175,7 @@ function realErrors(errs) {
     await page.fill('[data-cf="password2"]', 'azerty');
     await page.click('[data-act="toggle-cterms"]'); await page.waitForTimeout(150);
     await page.click('[data-act="finish-onboard"]'); await page.waitForTimeout(600);
-    ok(/Bonjour/i.test(await page.evaluate(() => document.body.innerText)), 'compte créé → accueil client');
+    ok(/Bonjour|Bonsoir/i.test(await page.evaluate(() => document.body.innerText)), 'compte créé → accueil client');
     // Commande d'un service à domicile → écran de configuration (adresse ponctuelle, sans GPS).
     const svc = await page.$('[data-svc="menage"]'); ok(!!svc, 'tuile Ménage présente');
     if (svc) { await svc.click(); await page.waitForTimeout(500); }
