@@ -1606,7 +1606,7 @@
   // juste au-dessus (liste déroulante) — inutile de le répéter.
   function isleZone(zone,pickFor){
     return `<div class="card isle-zone" style="padding:14px 14px 12px;margin-top:10px"><div style="max-width:300px;margin:0 auto">${isleMap(zone,pickFor)}</div>`
-      +(pickFor?`<div style="text-align:center;margin-top:9px"><b style="font-size:15px">${zone?esc(zone):'—'}</b>`
+      +(pickFor?`<div style="text-align:center;margin-top:9px"><b class="isle-nm" style="font-size:15px">${zone?esc(migZone(zone)):'—'}</b>`
         +`<p class="mini" style="margin:2px 0 0;color:var(--muted)">Touchez votre zone sur la carte.</p></div>`:'')+`</div>`;
   }
   // Carte repliable (écrans Compte) : la tête affiche titre + résumé + pastille ;
@@ -7598,7 +7598,8 @@
     if(!(e&&e.loading)){
       S._payCard={loading:true};
       FB.fn.httpsCallable(FB.functions,'clientCard')({action:'get'}).then(function(r){
-        S._payCard={done:true,card:(r&&r.data&&r.data.card)||null};
+        const d=(r&&r.data)||{};
+        S._payCard={done:true,card:d.card||null,setup:((d.setupMethods||[]).length>0)};
         if(S.persona==='client'&&S.clientNav==='profile')render();
       }).catch(function(){S._payCard={done:true,card:null};});
     }
@@ -7629,6 +7630,7 @@
       // Motif technique renvoyé par Mollie : affiché uniquement à l'administrateur,
       // pour diagnostiquer sans avoir à fouiller les journaux serveur.
       S.cardSetupErr=(isAdminAccount()&&r&&r.data&&r.data.reason)?String(r.data.reason):'';
+      if(S._payCard)S._payCard.setup=false;   // refusé par Mollie : on n'insiste pas
       S.cardSetupBusy=false;render();
       toast('Enregistrement indisponible — votre carte vous sera demandée à la réservation');
     }catch(e){S.cardSetupErr=isAdminAccount()?String((e&&e.message)||e).slice(0,160):'';S.cardSetupBusy=false;render();toast('Enregistrement indisponible pour le moment');}
@@ -7924,11 +7926,13 @@
               <div class="banner good" style="margin-top:12px">${I.lock}<span>Conservée chez <b>Mollie</b> — nous ne voyons jamais votre numéro.</span></div>
               ${S.cardForgetAsk?`<div class="card" style="padding:14px;margin-top:12px;border-left:4px solid var(--coral)"><b style="font-size:14px">Retirer cette carte&nbsp;?</b><p class="mini" style="margin-top:4px">À votre prochaine réservation, vous saisirez la nouvelle sur Mollie — elle sera mémorisée à son tour. Aucune prestation en cours n'est affectée.</p><div class="row" style="gap:8px;margin-top:10px"><button class="btn primary sm" data-act="card-forget-yes" style="width:auto;padding:9px 14px">Retirer</button><button class="btn ghost sm" data-act="card-forget-no" style="width:auto;padding:9px 14px">Garder</button></div></div>`:`<button class="btn ghost sm" data-act="card-forget" style="margin-top:12px;width:auto;padding:9px 14px">${I.card} Changer de carte</button>
               <p class="mini" style="margin-top:8px;color:var(--muted)">Retire cette carte&nbsp;: votre prochaine réservation vous demandera la nouvelle, qui sera mémorisée à son tour.</p>`}`
-            :`<p class="mini" style="margin-top:2px">Aucune carte mémorisée pour l'instant. Vous pouvez l'enregistrer dès maintenant&nbsp;: elle sera alors proposée d'office à votre première commande.</p>
+            :((S._payCard&&S._payCard.setup)?`<p class="mini" style="margin-top:2px">Aucune carte mémorisée pour l'instant. Vous pouvez l'enregistrer dès maintenant&nbsp;: elle sera alors proposée d'office à votre première commande.</p>
               <button class="btn primary sm" data-act="card-setup" style="margin-top:12px;width:auto;padding:9px 14px"${S.cardSetupBusy?' disabled':''}>${I.card}&nbsp;${S.cardSetupBusy?'Ouverture…':'Enregistrer ma carte'}</button>
               <div class="banner good" style="margin-top:12px">${I.lock}<span><b>Aucun débit</b> — carte simplement vérifiée sur <b>Mollie</b> (0,00&nbsp;€).</span></div>
               <p class="mini" style="margin-top:8px;color:var(--muted)">Facultatif — sinon elle vous sera demandée à votre première réservation.</p>
-              ${S.cardSetupErr?`<p class="mini" style="margin-top:8px;color:var(--coral-deep)">Mollie&nbsp;: ${esc(S.cardSetupErr)}</p>`:''}`);
+              ${S.cardSetupErr?`<p class="mini" style="margin-top:8px;color:var(--coral-deep)">Mollie&nbsp;: ${esc(S.cardSetupErr)}</p>`:''}`
+            :`<p class="mini" style="margin-top:2px">Aucune carte mémorisée pour l'instant. Elle le sera à votre première réservation&nbsp;: saisie sur <b>Mollie</b>, elle vous sera ensuite proposée en un clic.</p>
+              <div class="banner good" style="margin-top:12px">${I.lock}<span>Ti-Services ne voit jamais votre numéro de carte.</span></div>`));
           const chip=(c===undefined)?'':(c?`<span class="chip good" style="flex:none">${I.check} Enregistré</span>`:`<span class="chip grey" style="flex:none">À la 1re réservation</span>`);
           const sub=c?(esc(c.brand)+' •••• '+esc(c.last4)):'';
           return foldCard('c-pay',I.card,'Moyen de paiement',sub,body,chip);
@@ -7989,7 +7993,7 @@
       <div class="card" style="padding:16px;margin-top:14px">
         <div class="field"><label>Nom du lieu</label><input class="txt" data-af="label" value="${esc(f.label)}" placeholder="Nom du lieu"></div>
         <div class="field"><label>Adresse / description</label><input class="txt" data-af="address" value="${esc(f.address)}" placeholder="Nom du lieu, quartier"></div>
-        <div class="field"><label>Secteur</label><select class="txt" data-af="zone">${ZONES.map(z=>`<option value="${esc(z)}"${migZone(f.zone)===z?' selected':''}>${esc(z)}</option>`).join('')}</select></div>${isleZone(f.zone,'af')}
+        <div class="field" style="margin-bottom:0"><label>Secteur</label></div>${isleZone(f.zone,'af')}
         <div class="field"><label>Point GPS permanent</label><button class="btn ghost sm" data-act="addr-geo">${I.pin} ${f.geo?'Actualiser ma position':'Enregistrer ma position actuelle'}</button>${f.geo?miniMap(f.geo,'edit','addr'):`<p class="mini" style="margin-top:6px">Placez-vous à l'adresse et enregistrez le point GPS.</p>`}</div>
         <div class="field" style="margin:0"><label>${I.key} Infos d'accès (transmises au prestataire)</label><textarea rows="2" data-af="access" placeholder="Ex. Code portail 4521 · chat à la maison · clé sous le pot">${esc(f.access||'')}</textarea><p class="mini" style="margin-top:6px">Saisi une seule fois pour ce logement — repris automatiquement à chaque réservation.</p></div>
       </div>

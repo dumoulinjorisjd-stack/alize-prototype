@@ -1607,12 +1607,21 @@ exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) 
     };
   };
 
+  // L'enregistrement à 0,00 € n'est pas ouvert sur tous les comptes Mollie. On le
+  // DEMANDE à Mollie au lieu de le supposer : l'API Methods dit quelles méthodes
+  // acceptent un premier paiement de montant nul. Vide → l'app n'affiche pas le bouton.
+  const canSetup = async () => {
+    const out = await mollieApi('/methods?amount[value]=0.00&amount[currency]=EUR&sequenceType=first', 'GET');
+    const arr = (out.ok && out.data && out.data._embedded && out.data._embedded.methods) || [];
+    return arr.map((m) => String((m && m.id) || '')).filter(Boolean);
+  };
+
   if (action === 'revoke') {
     const cur = await readCard();
     if (!cur || !cur.id) return {card: null, revoked: false};
     // Mollie répond 204 sans corps : mollieApi renvoie {ok:true, data:null}.
     const del = await mollieApi('/customers/' + encodeURIComponent(customerId) + '/mandates/' + encodeURIComponent(cur.id), 'DELETE');
-    return {card: await readCard(), revoked: !!del.ok};
+    return {card: await readCard(), revoked: !!del.ok, setupMethods: await canSetup()};
   }
 
   // ENREGISTREMENT AVANT TOUTE RÉSERVATION : Mollie accepte un « premier paiement » de
@@ -1651,7 +1660,7 @@ exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) 
     const link = out.data._links && out.data._links.checkout && out.data._links.checkout.href;
     return {checkoutUrl: link || null, paymentId: String(out.data.id || '')};
   }
-  return {card: await readCard()};
+  return {card: await readCard(), setupMethods: await canSetup()};
 });
 
 /**
