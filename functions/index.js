@@ -1614,6 +1614,29 @@ exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) 
     const del = await mollieApi('/customers/' + encodeURIComponent(customerId) + '/mandates/' + encodeURIComponent(cur.id), 'DELETE');
     return {card: await readCard(), revoked: !!del.ok};
   }
+
+  // ENREGISTREMENT AVANT TOUTE RÉSERVATION : Mollie accepte un « premier paiement » de
+  // 0,00 € en carte — la carte est vérifiée (3-D Secure) et le mandat créé, SANS aucun
+  // débit ni empreinte. Le client peut donc enregistrer sa carte dès l'inscription ;
+  // elle sera proposée d'office à sa première commande.
+  if (action === 'setup') {
+    const returnUrl = String((request.data && request.data.returnUrl) || '').slice(0, 400);
+    const appUrl = APP_URL.replace(/\/$/, '');
+    const body = {
+      amount: {currency: 'EUR', value: '0.00'},
+      description: 'Ti-Services · enregistrement de votre carte',
+      redirectUrl: /^https:\/\//.test(returnUrl) ? returnUrl : (appUrl + '/?card=1'),
+      webhookUrl: 'https://europe-west1-t-service-prod.cloudfunctions.net/mollieWebhook',
+      method: 'creditcard',            // seules la carte et PayPal acceptent le 0,00 €
+      sequenceType: 'first',
+      customerId: customerId,
+      metadata: {clientUid: uid, cardSetup: true},
+    };
+    const out = await mollieApi('/payments', 'POST', body);
+    if (!out.ok || !out.data) return {checkoutUrl: null, error: 'setup_refused'};
+    const link = out.data._links && out.data._links.checkout && out.data._links.checkout.href;
+    return {checkoutUrl: link || null, paymentId: String(out.data.id || '')};
+  }
   return {card: await readCard()};
 });
 
@@ -1685,10 +1708,20 @@ exports.createClientPayment = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (
   };
   if (customerId) payBody.customerId = customerId;
   // `sequenceType:'first'` fait mémoriser la carte (mandat) pour l'afficher au prochain
-  // paiement. REPLI robuste : si Mollie refuse cette combinaison (ex. incompatibilité avec
-  // la capture manuelle), on retombe sur un paiement simple — l'encaissement n'est JAMAIS
-  // bloqué par la fonctionnalité « carte enregistrée ».
-  let out = await mollieApi('/payments', 'POST', customerId ? Object.assign({sequenceType: 'first'}, payBody) : payBody);
+  // paiement — inutile si le client en a DÉJÀ un (carte enregistrée au profil ou lors
+  // d'une commande précédente) : on éviterait juste d'empiler des mandats en double, le
+  // parcours Mollie proposant de toute façon la carte connue. REPLI robuste : si Mollie
+  // refuse la combinaison (ex. incompatibilité avec la capture manuelle), on retombe sur
+  // un paiement simple — l'encaissement n'est JAMAIS bloqué par cette fonctionnalité.
+  let hasMandate = false;
+  if (customerId) {
+    try {
+      const mds = await mollieApi('/customers/' + encodeURIComponent(customerId) + '/mandates?limit=50', 'GET');
+      const arr = (mds.ok && mds.data && mds.data._embedded && mds.data._embedded.mandates) || [];
+      hasMandate = arr.some((m) => m && m.status === 'valid');
+    } catch (_) {}
+  }
+  let out = await mollieApi('/payments', 'POST', (customerId && !hasMandate) ? Object.assign({sequenceType: 'first'}, payBody) : payBody);
   if (!out.ok && customerId) out = await mollieApi('/payments', 'POST', payBody);
   if (!out.ok || !out.data) throw new HttpsError('internal', 'Création du paiement Mollie échouée.');
   const pay = out.data;
