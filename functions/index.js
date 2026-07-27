@@ -2520,7 +2520,7 @@ function welcomeHtml(first, role) {
  * console admin). Même charte que la bienvenue, accent sarcelle. Aucun détail
  * d'argent/commission ; met en avant les missions locales et l'inscription gratuite.
  * ========================================================================== */
-function inviteArtisanHtml(name) {
+function inviteArtisanHtml(name, message) {
   const app = APP_URL.replace(/\/$/, '');
   // Couleurs de marque Ti-Services (corail), comme l'e-mail de bienvenue client.
   const c1 = '#FF6A5B', c2 = '#FF9F54', btn = '#FF6A5B', dot = '#FF6A5B';
@@ -2545,7 +2545,14 @@ function inviteArtisanHtml(name) {
           '<tr><td style="padding:14px 30px 0">' +
             '<h1 style="font-size:22px;margin:8px 0 0;color:#231E33">Rejoignez Ti-Services</h1>' +
             '<p style="font-size:15px;line-height:1.6;color:#4a4556;margin:12px 0 0">' + hi + '</p>' +
-            '<p style="font-size:15px;line-height:1.6;color:#4a4556;margin:10px 0 0">Votre travail à Saint-Barthélemy correspond exactement à ce que recherchent nos clients. <b>Ti-Services</b> est une nouvelle application <b>100 % Saint-Barth</b> qui met en relation les habitants avec des artisans et intervenants locaux de confiance — et vous recevez vos <b>demandes de mission</b> directement dans l\'application.</p>' +
+            // Texte modifiable par l'admin : inséré ÉCHAPPÉ dans le même gabarit (charte
+            // conservée : logo, bandeau, points forts, bouton). Sans texte fourni, le
+            // paragraphe standard (avec ses mises en gras) est utilisé.
+            (message
+              ? String(message).split(/\n{2,}/).map(function (par) {
+                  return '<p style="font-size:15px;line-height:1.6;color:#4a4556;margin:10px 0 0">' + escHtmlS(par).replace(/\n/g, '<br>') + '</p>';
+                }).join('')
+              : '<p style="font-size:15px;line-height:1.6;color:#4a4556;margin:10px 0 0">Votre travail à Saint-Barthélemy correspond exactement à ce que recherchent nos clients. <b>Ti-Services</b> est une nouvelle application <b>100 % Saint-Barth</b> qui met en relation les habitants avec des artisans et intervenants locaux de confiance — et vous recevez vos <b>demandes de mission</b> directement dans l\'application.</p>') +
           '</td></tr>' +
           '<tr><td style="padding:22px 30px 4px">' + feats + '</td></tr>' +
           '<tr><td align="center" style="padding:18px 30px 6px">' +
@@ -2751,9 +2758,10 @@ exports.sendArtisanInvite = onCall({secrets: [SMTP_PASS]}, async (request) => {
     const logo = require('fs').readFileSync(require('path').join(__dirname, 'mail-logo.png'));
     attachments.push({ filename: 'ti-services.png', content: logo, cid: 'tilogo' });
   } catch (_) {}
+  const message = String((request.data && request.data.message) || '').trim().slice(0, 1200);
   const ok = await sendMail(getFirestore(), to, {
     subject: 'Rejoignez Ti-Services — les clients de Saint-Barth vous cherchent',
-    html: inviteArtisanHtml(name),
+    html: inviteArtisanHtml(name, message),
     attachments,
   });
   if (!ok) throw new HttpsError('internal', 'L\'envoi a échoué — réessayez.');

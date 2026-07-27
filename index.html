@@ -6199,6 +6199,21 @@
     }catch(_){}
   }
   function prospectId(){const a=new Uint8Array(8);crypto.getRandomValues(a);return 'pr'+Array.from(a).map(function(b){return b.toString(16).padStart(2,'0');}).join('');}
+  // Texte de l'e-mail d'invitation : modifiable par l'admin (mémorisé sur l'appareil).
+  // DOIT rester la version « texte brut » du paragraphe standard de functions/index.js
+  // (inviteArtisanHtml) : tant que l'admin n'y touche pas, le serveur garde son
+  // paragraphe d'origine avec ses mises en gras.
+  const DEFAULT_INVITE_TXT="Votre travail à Saint-Barthélemy correspond exactement à ce que recherchent nos clients. Ti-Services est une nouvelle application 100 % Saint-Barth qui met en relation les habitants avec des artisans et intervenants locaux de confiance — et vous recevez vos demandes de mission directement dans l'application.";
+  function invMsgStored(){try{return localStorage.getItem('tiInvMsg')||'';}catch(_){return '';}}
+  // Rend le texte à ENVOYER : vide si l'admin a laissé le texte standard (le serveur
+  // utilise alors sa version riche), sinon le texte personnalisé.
+  function invMsgCustom(){const v=invMsgStored().trim();return (v&&v!==DEFAULT_INVITE_TXT)?v.slice(0,1200):'';}
+  // Mémorise l'état ouvert/fermé des volets d'invitation (sinon un re-rendu — après
+  // enregistrement du texte, par exemple — les refermait sous les doigts de l'admin).
+  document.addEventListener('toggle',function(e){
+    const el=e.target;if(!el||!el.dataset||el.dataset.invdet==null)return;
+    if(el.dataset.invdet==='1')S._invOpen=el.open;else S._invMsgOpen=el.open;
+  },true);
   // Liens réseaux sociaux d'un prospect : « @pseudo », « pseudo » ou lien complet
   // acceptés — on reconstruit l'adresse du profil au besoin.
   function prSocialUrl(kind,v){v=(v||'').trim();if(!v)return '';if(/^https?:\/\//i.test(v))return v;
@@ -6208,10 +6223,12 @@
   // fiche : les boutons Appeler / WhatsApp / Inviter / Instagram / Facebook
   // apparaissent dès que l'information existe.
   document.addEventListener('change',function(e){
-    const t=e.target&&e.target.closest&&e.target.closest('[data-prnotes],[data-prphone],[data-premail],[data-prinsta],[data-prfb]');
+    const t=e.target&&e.target.closest&&e.target.closest('[data-prnotes],[data-prphone],[data-premail],[data-prinsta],[data-prfb],[data-invmsg]');
     if(!t)return;
+    const d=t.dataset;
+    if(d.invmsg!=null){try{localStorage.setItem('tiInvMsg',(t.value||'').slice(0,1200));}catch(_){}render();toast('Texte de l\'invitation enregistré ✓');return;}
     loadProspects();
-    const d=t.dataset;const id=d.prnotes||d.prphone||d.premail||d.prinsta||d.prfb;
+    const id=d.prnotes||d.prphone||d.premail||d.prinsta||d.prfb;
     const p=(S.adminProspects||[]).find(function(x){return x.id===id;});
     if(!p)return;
     if(d.prnotes!=null){p.notes=(t.value||'').slice(0,500);}
@@ -6281,6 +6298,25 @@
         <div class="row" style="gap:8px;margin-top:8px"><input id="prInsta" placeholder="Instagram (@pseudo, facultatif)" autocomplete="off" autocapitalize="off" style="flex:1;min-width:0;padding:10px 12px;border:1px solid var(--hair);border-radius:11px;background:var(--sand);color:var(--ink);font-size:14px;box-sizing:border-box"><input id="prFb" placeholder="Facebook (facultatif)" autocomplete="off" autocapitalize="off" style="flex:1;min-width:0;padding:10px 12px;border:1px solid var(--hair);border-radius:11px;background:var(--sand);color:var(--ink);font-size:14px;box-sizing:border-box"></div>
         <div class="row" style="gap:8px;margin-top:8px"><select id="prZone" class="txt" style="flex:1;min-width:0">${zoneOpts}</select><input id="prNotes" placeholder="Note (recommandé par…, vu au marché…)" autocomplete="off" style="flex:2;min-width:0;padding:10px 12px;border:1px solid var(--hair);border-radius:11px;background:var(--sand);color:var(--ink);font-size:14px;box-sizing:border-box"></div>
         <button class="btn primary sm" data-adm="prospect-add" style="margin-top:10px;width:auto;padding:9px 16px">${I.check} Ajouter au carnet</button>
+      </div>
+      <div class="manbook">
+        <details data-invdet="1"${S._invOpen?' open':''}>
+          <summary>${I.users||''} Inviter un prestataire par e-mail</summary>
+          <div class="manbody">
+            <p style="margin:0">Envoyez l'invitation à la charte Ti-Services (logo, bandeau, points forts, bouton « Créer mon profil »).</p>
+            <input id="admInvName" placeholder="Prénom (facultatif)" autocomplete="off" style="width:100%;margin-top:10px;padding:11px 13px;border:1px solid var(--hair);border-radius:11px;background:var(--sand);color:var(--ink);font-size:14px;box-sizing:border-box">
+            <input id="admInvEmail" type="email" inputmode="email" autocapitalize="off" autocomplete="off" placeholder="email@exemple.com" style="width:100%;margin-top:8px;padding:11px 13px;border:1px solid var(--hair);border-radius:11px;background:var(--sand);color:var(--ink);font-size:14px;box-sizing:border-box">
+            <details data-invdet="2"${S._invMsgOpen?' open':''} style="margin-top:10px;border:1px solid var(--hair);border-radius:12px">
+              <summary style="padding:11px 13px;font-size:13px">✎ Texte de l'e-mail — modifiable</summary>
+              <div style="padding:0 12px 12px">
+                <textarea data-invmsg rows="7" style="width:100%;padding:10px 12px;border:1px solid var(--hair);border-radius:10px;background:var(--sand);color:var(--ink);font-size:13px;font-family:inherit;line-height:1.5;box-sizing:border-box">${esc(invMsgStored()||DEFAULT_INVITE_TXT)}</textarea>
+                <p class="mini" style="margin-top:7px;color:var(--muted)">La salutation (« Bonjour Prénom, ») est ajoutée automatiquement, et votre texte est inséré dans le <b>modèle à la charte</b> — logo, couleurs et bouton d'inscription restent identiques. Un saut de deux lignes crée un nouveau paragraphe. ${invMsgCustom()?`<button class="linklike" data-adm="invmsg-reset" style="color:var(--coral-deep)">Revenir au texte standard</button>`:'Texte standard actuellement utilisé.'}</p>
+              </div>
+            </details>
+            <button class="btn primary sm" data-act="admin-invite" style="margin-top:10px;width:auto;padding:9px 16px">${I.check} Envoyer l'invitation</button>
+            <p class="mini" style="margin-top:8px;color:var(--muted)">Le texte ajusté sert aussi au bouton « Inviter par e-mail » des fiches ci-dessous.</p>
+          </div>
+        </details>
       </div>
       <div class="row" style="gap:6px;margin-top:14px;flex-wrap:wrap">${chips}</div>
       ${body}
@@ -6546,13 +6582,6 @@
           <div class="mini" style="margin-top:8px;color:var(--muted)">Installées&nbsp;: iPhone ${n('u_installed_ios')} · Android ${n('u_installed_android')} · Ordinateur ${n('u_installed_desktop')}</div>
           ${legacy?`<div class="mini" style="margin-top:6px;color:var(--muted)">Ancien comptage (avec doublons, archivé)&nbsp;: ${n('visit_total')} visites · ${n('installed_total')} installées</div>`:''}
         </div>`;})()}
-      <div class="card" style="padding:14px;margin-top:10px">
-        <b style="font-size:14px">${I.users||''} Inviter un prestataire</b>
-        <p class="sub" style="margin-top:6px">Envoyez un e-mail d'invitation soigné (à la charte Ti-Services) à un pro que vous souhaitez recruter.</p>
-        <input id="admInvName" placeholder="Prénom (facultatif)" autocomplete="off" style="width:100%;margin-top:9px;padding:11px 13px;border:1px solid var(--hair);border-radius:11px;background:var(--sand);color:var(--ink);font-size:14px;box-sizing:border-box">
-        <input id="admInvEmail" type="email" inputmode="email" autocapitalize="off" autocomplete="off" placeholder="email@exemple.com" style="width:100%;margin-top:8px;padding:11px 13px;border:1px solid var(--hair);border-radius:11px;background:var(--sand);color:var(--ink);font-size:14px;box-sizing:border-box">
-        <button class="btn" data-act="admin-invite" style="margin-top:10px;background:var(--teal-deep);color:#fff">Envoyer l'invitation</button>
-      </div>
       <div style="height:16px"></div><span class="eyebrow">${I.shield} Fonctionnement</span>
       <button class="card" data-adm="manual" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block"><div class="row between" style="align-items:center"><b style="font-size:14px">Manuel d'exploitation</b><span class="mini" style="color:var(--teal-deep);font-weight:700">Ouvrir ›</span></div><p class="sub" style="margin-top:8px">Tout le fonctionnement de la plateforme (commandes, prestataire choisi, paiements, récurrences, annulations…) — pour vous, un employé ou un médiateur. Imprimable.</p></button>
       <div style="height:16px"></div><span class="eyebrow"><span aria-hidden="true">${I.info}</span> Souhaits des clients</span>
@@ -10396,6 +10425,7 @@
       else if(act==='prospect'){S.admin.view='prospect';S.admin.sel=null;S.mission=null;S.support=false;S.supportSide=null;S.adminSupervise=false;S.generalSupport=false;S.genUser=null;render();view.scrollTop=0;return;}
       else if(act==='prospect-filter'){S._prospectFilter=id||'all';render();return;}
       else if(act==='prospect-cat'){S._prospectCats=S._prospectCats||{};S._prospectCats[id]=!S._prospectCats[id];render();return;}
+      else if(act==='invmsg-reset'){try{localStorage.removeItem('tiInvMsg');}catch(_){}render();toast('Texte standard rétabli ✓');return;}
       else if(act==='prospect-add'){(function(){
         const nm=((document.getElementById('prName')||{}).value||'').trim();
         if(!nm){toast('Indiquez au moins un nom');return;}
@@ -10432,7 +10462,7 @@
         if(!isAdminAccount()){toast('Réservé à l’administrateur (compte réel)');return;}
         if(!(FB&&FB.functions&&FB.fn&&FB.fn.httpsCallable)){toast('Envoi indisponible hors ligne — réessayez connecté');return;}
         toast('Envoi de l’invitation…');
-        FB.fn.httpsCallable(FB.functions,'sendArtisanInvite')({email:p.email,name:(p.name||'').split(' ')[0]}).then(function(r){
+        FB.fn.httpsCallable(FB.functions,'sendArtisanInvite')({email:p.email,name:(p.name||'').split(' ')[0],message:invMsgCustom()||undefined}).then(function(r){
           if(r&&r.data&&r.data.sent){p.status='contacted';p.updatedAt=Date.now();p._dirty=true;persistProspects();render();toast('Invitation envoyée à '+p.email+' ✓');}
           else toast('⚠︎ Invitation non envoyée');
         }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
@@ -10928,7 +10958,7 @@
         toast('Envoi de l’invitation…');
         try{
           const call=FB.fn.httpsCallable(FB.functions,'sendArtisanInvite');
-          call({email:em,name:nm}).then(function(r){
+          call({email:em,name:nm,message:invMsgCustom()||undefined}).then(function(r){
             if(r&&r.data&&r.data.sent){ toast('Invitation envoyée à '+em+' ✓'); const e1=document.getElementById('admInvEmail'); if(e1)e1.value=''; const e2=document.getElementById('admInvName'); if(e2)e2.value=''; }
             else toast('Envoi impossible — réessayez');
           }).catch(function(e){ toast('Échec : '+fbErrTxt(e)); });
