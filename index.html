@@ -6318,7 +6318,7 @@
       </div>
       <div id="invoiceDoc" class="manbook" style="margin-top:6px">
       ${sec('1 · Vue d’ensemble & rôles',`
-        <p><b>Ti-Services</b> (éditeur : C.C.S) met en relation des <b>clients</b> et des <b>prestataires indépendants</b> à Saint-Barthélemy. La plateforme encaisse le client, sécurise la prestation et reverse le prestataire ; elle prélève une <b>commission de 15 %</b> sur chaque prestation (facturée au prestataire, avec justificatifs automatiques).</p>
+        <p><b>Ti-Services</b> (éditeur : C.C.S) met en relation des <b>clients</b> et des <b>prestataires indépendants</b> à Saint-Barthélemy. La plateforme encaisse le client, sécurise la prestation et reverse le prestataire ; elle prélève une <b>commission dégressive</b> sur chaque prestation — de 15 % à 8 % selon le palier de fidélité du prestataire (détail section 7) — facturée au prestataire, avec justificatifs automatiques.</p>
         <ul><li><b>Client</b> : commande, suit, valide, note.</li>
         <li><b>Prestataire</b> : candidate, est validé par l'admin, accepte des missions, est payé automatiquement.</li>
         <li><b>Concierge</b> : professionnel qui commande pour SES clients (villas) — parcours dédié.</li>
@@ -6352,41 +6352,69 @@
         <li><b>Litige</b> : si le client conteste, la mission passe en litige → à traiter dans la <b>Messagerie</b> admin.</li></ul>`)}
       ${sec('6 · Argent : encaissement, reversement, commission',`
         <ul><li>À la commande, la carte du client est <b>autorisée</b> (empreinte via Mollie, encaissement agréé) : le montant est bloqué, <b>jamais débité avant la validation</b> de la prestation — et jamais plus que le montant annoncé.</li>
-        <li>Le prestataire doit activer <b>ses paiements Mollie</b> (obligatoire pour accepter des missions) : il est <b>réglé automatiquement</b>, net de commission, après chaque prestation validée.</li>
-        <li><b>Commission Ti-Services : 15 %</b> du total. Le prestataire voit toujours son <b>net</b> avant d'accepter.</li>
-        <li>Justificatifs automatiques : <b>facture client</b> par e-mail à la validation ; côté pro, détail de commission par prestation, <b>facture de commission mensuelle</b> et <b>relevé mensuel</b> imprimable.</li></ul>`)}
-      ${sec('7 · Récurrences & abonnements',`
+        <li>Le prestataire doit activer <b>ses paiements Mollie</b> (obligatoire pour accepter des missions) : il est <b>réglé automatiquement</b>, net de commission, après chaque prestation validée. Le prestataire voit toujours son <b>net</b> avant d'accepter.</li></ul>
+        <p class="manq">Ce qui compose le prix client</p>
+        <ul><li><b>Sous-total prestations</b> : tarif horaire × durée (× nombre de personnes), OU somme des actes cochés (grille), OU forfait — plus les <b>options</b> ajoutées.</li>
+        <li><b>Coup de pouce</b> éventuel du client (en € ou %) : il s'ajoute au sous-total et <b>revient au prestataire</b> (commissionné comme le reste).</li>
+        <li><b>Frais de déplacement</b> (grilles à l'acte uniquement) : offerts dès ${TRAVEL_MIN} € de prestation, sinon ${TRAVEL_FEE} € — <b>reversés au prestataire sans commission</b>. Jamais facturés pour une prestation en salon.</li>
+        <li><b>Pourboire</b> éventuel à la validation : <b>100 % au prestataire, jamais commissionné</b>.</li></ul>
+        <p class="manq">La commission Ti-Services</p>
+        <ul><li>Assise sur <b>prestations + coup de pouce</b> (jamais sur le déplacement ni le pourboire).</li>
+        <li>Taux selon le <b>palier de fidélité</b> du prestataire (section 7) : de 15 % à 8 % — ou 5 % pendant l'avantage Ambassadeur.</li>
+        <li><b>Plancher petites commandes</b> : en dessous de ${SMALL_COMM_MIN} € de prestation, la commission est d'au moins ${SMALL_COMM_PCT} % (couvre les frais fixes d'encaissement).</li>
+        <li><b>Confidentialité du barème</b> : le taux exact n'est jamais affiché aux clients ; le prestataire voit son net et le détail figure dans ses justificatifs et les CGU. Ne communiquez pas le barème en dehors de ces canaux.</li></ul>
+        <p class="manq">Concierges (apporteurs d'affaires)</p>
+        <ul><li>Un concierge qui commande pour ses clients touche une <b>rétribution d'apport</b> (par défaut 8 %, réglable dans la console) prélevée <b>sur la marge Ti-Services</b> — le prix client ne change pas, le net du prestataire non plus.</li></ul>
+        <p class="manq">Justificatifs automatiques</p>
+        <ul><li><b>Facture client</b> par e-mail à la validation (re-téléchargeable dans l'app).</li>
+        <li>Côté prestataire : <b>détail de commission par prestation</b>, <b>facture de commission mensuelle</b> (une ligne par mission), <b>relevé mensuel</b> et <b>récapitulatif annuel</b> imprimables — tout ce qu'il faut pour sa comptabilité.</li>
+        <li>Côté console : registre des commissions et reversements, exports comptables.</li></ul>`)}
+      ${sec('7 · Badges, statuts & commission dégressive',`
+        <p class="manq">Le palier de fidélité (moteur financier du prestataire)</p>
+        <ul><li>Le palier est calculé sur les <b>« missions de statut »</b> = missions réalisées <b>+ ${REF_CREDIT} par filleul parrainé validé</b> (le parrainage accélère le statut, il ne verse pas d'argent).</li>
+        <li>Barème par défaut : <b>Bronze</b> dès 0 mission → commission 15 % · <b>Argent</b> dès 50 → 12 % · <b>Or</b> dès 150 → 10 % · <b>Platine</b> dès 300 → 8 %.</li>
+        <li>Ce barème est <b>modifiable dans la console</b> (section Prestations — seuils et taux) : la valeur en console fait foi, le manuel décrit les valeurs de départ.</li>
+        <li>Évolution <b>automatique et immédiate</b> : au passage du seuil, le taux baisse dès la mission suivante. Le prestataire voit son palier, sa barre de progression et le prochain palier dans « Statut fidélité » ; c'est votre argument anti-« passons en direct » : plus il travaille via l'app, moins il paie.</li></ul>
+        <p class="manq">Ambassadeur (« Artisan Fondateur »)</p>
+        <ul><li><b>${FOUNDER_SPOTS} places</b> au lancement, attribuées automatiquement par le serveur aux premiers artisans validés (impossible à s'auto-attribuer).</li>
+        <li>Avantage : <b>commission ${FOUNDER_COMM_PCT} %</b> pendant <b>${FOUNDER_DAYS} jours</b> OU jusqu'à <b>${FOUNDER_GROSS_CAP.toLocaleString('fr-FR')} €</b> de prestations (au premier atteint). Le compte à rebours ne démarre <b>jamais avant l'ouverture aux clients</b> (1er octobre 2026).</li>
+        <li>À l'expiration : le badge devient « Ambassadeur — expiré » (visible en console) et le prestataire bascule sur son palier de fidélité normal.</li></ul>
+        <p class="manq">Qui voit quel badge ?</p>
+        <ul><li><b>Côté client</b> : « ${'✓'} Vérifié · Assuré » (tout prestataire validé), « Fondateur » dans l'annuaire au moment du choix, « Ambassadeur » sur la carte du prestataire après acceptation. <b>Jamais</b> de compteur de missions, de palier ni de taux de commission.</li>
+        <li><b>Côté prestataire</b> : son palier (Bronze → Platine), sa progression, son badge Ambassadeur avec l'échéance, et « +5 missions » par filleul validé.</li>
+        <li><b>Console (vous)</b> : sur chaque fiche artisan — palier et taux courant, badge Ambassadeur actif/expiré, statut Mollie, absences signalées.</li></ul>`)}
+      ${sec('8 · Récurrences & abonnements',`
         <ul><li>À la commande, le client choisit une fréquence : <b>ponctuelle · chaque semaine · toutes les 2 semaines · chaque mois</b>.</li>
         <li>Une prestation récurrente apparaît dans « <b>Mes abonnements</b> » (onglet Réservations). Le passage suivant est proposé à la confirmation, <b>pré-rempli et dirigé vers le même prestataire</b>.</li>
         <li>Si le prestataire habituel décline, la demande repart à tous — le client n'est jamais bloqué.</li></ul>`)}
-      ${sec('8 · Re-commander en 1 clic & rappels automatiques',`
+      ${sec('9 · Re-commander en 1 clic & rappels automatiques',`
         <ul><li><b>Bouton « Refaire »</b> : dans l'historique (chaque prestation passée) et juste après une bonne note — il rouvre une commande <b>pré-remplie</b> (mêmes détails, même prestataire présélectionné). Le client vérifie la date et confirme.</li>
         <li><b>Rappel automatique</b> : si la dernière prestation validée d'un service récurrent (ménage, jardin, beauté, coach, épilation, baby…) date de <b>3 à 5 semaines</b> sans nouvelle commande, le client reçoit une notification « Envie de refaire ? » qui ouvre la commande pré-remplie.</li>
         <li>Garde-fous anti-spam : <b>1 rappel max par service et par mois</b>, 50 envois max par jour, uniquement les clients avec notifications actives.</li></ul>`)}
-      ${sec('9 · Annulations, absences, désistements',`
+      ${sec('10 · Annulations, absences, désistements',`
         <ul><li><b>Client — avant acceptation</b> : annulation libre et gratuite (rien n'est débité).</li>
         <li><b>Client — après acceptation</b> : gratuit jusqu'à <b>8 h avant</b> le rendez-vous ; plus tard, une <b>indemnité de 50 %</b> revient au prestataire — c'est LUI qui décide de l'appliquer ou d'en faire cadeau (écran dédié).</li>
         <li><b>Prestataire absent (no-show)</b> : le client le signale → la recherche est <b>relancée aussitôt</b> auprès des autres, il ne paie rien. L'absence est comptée sur la fiche du prestataire (visible en console).</li>
         <li><b>Prestataire qui se désiste</b> : la demande repart automatiquement en recherche, client prévenu.</li></ul>`)}
-      ${sec('10 · Cas particuliers (colis, baby-sitting, salon)',`
+      ${sec('11 · Cas particuliers (colis, baby-sitting, salon)',`
         <ul><li><b>Colis & courrier</b> : le client renseigne les avis de passage + pièce d'identité, puis <b>signe une procuration électronique</b> (signature au doigt). Le prestataire présente au guichet : avis, procuration signée, copie de la pièce du client et SA propre pièce. Les retraits au même bureau se regroupent en <b>tournée</b>.</li>
         <li><b>Baby-sitting</b> : diplômes vérifiés à l'inscription. Après acceptation, le client voit le <b>profil complet</b> (photo, diplômes, présentation), peut <b>appeler</b> via l'app, puis <b>confirme la garde</b> — ou change de baby-sitter sans pénalité.</li>
         <li><b>Prestations en salon</b> (ex. épilation définitive) : pas d'adresse client ni GPS demandés ; l'adresse du salon est communiquée à l'acceptation.</li></ul>`)}
-      ${sec('11 · Côté prestataire : de la candidature au quotidien',`
+      ${sec('12 · Côté prestataire : de la candidature au quotidien',`
         <ul><li><b>Candidature</b> : profil, métiers, statut (auto-entrepreneur…), SIRET, <b>attestation d'assurance RC obligatoire</b>. VOUS validez en console (réponse annoncée sous 48 h).</li>
         <li><b>Activation Mollie</b> obligatoire pour accepter des missions (identité + IBAN vérifiés par Mollie).</li>
         <li><b>Missions</b> : liste des demandes de ses métiers/zones ; il voit TOUT avant d'accepter (sauf données confidentielles : adresse exacte, GPS, identité — révélées après acceptation).</li>
         <li><b>Confidentialité des numéros</b> : téléphones partagés seulement après acceptation des deux côtés.</li>
         <li><b>Avantages</b> : badge <b>Fondateur</b> (premiers inscrits, avantage limité dans le temps), statuts de fidélité, <b>parrainage : +5 missions</b> par filleul validé.</li>
         <li><b>Alertes</b> : notifications push + WhatsApp en secours (s'il l'active), rappel 1 h avant mission.</li></ul>`)}
-      ${sec('12 · La console admin au quotidien',`
+      ${sec('13 · La console admin au quotidien',`
         <ul><li><b>Candidatures</b> : valider un artisan (exige assurance vérifiée + SIRET), refuser avec motif, réexaminer.</li>
         <li><b>Prestations · artisans & tarifs</b> : régler le tarif horaire ou la <b>grille à l'acte</b> de chaque métier (ajouter/retirer des prestations), voir qui pratique quoi. Un métier sans prestataire validé s'affiche « Bientôt disponible » côté client.</li>
         <li><b>Messagerie</b> : 3 types de fils — support d'une mission (côté client ou côté pro), <b>supervision</b> d'une conversation client↔pro, support général. Répondre vite : c'est la vitrine du service.</li>
         <li><b>Factures</b> : commissions, reversements, détail par prestataire.</li>
         <li><b>Souhaits des clients</b> : services demandés — votre radar pour recruter.</li>
         <li><b>Inviter un pro</b> : e-mail d'invitation à la charte depuis la console.</li></ul>`)}
-      ${sec('13 · Réponses aux questions fréquentes (script)',`
+      ${sec('14 · Réponses aux questions fréquentes (script)',`
         <p class="manq">« Quand suis-je débité ? » (client)</p><p>Jamais avant la fin : votre carte est seulement autorisée. Le débit part quand VOUS validez la prestation — et jamais plus que le montant annoncé.</p>
         <p class="manq">« Personne n'accepte ma demande »</p><p>Élargissez le créneau (Journée/Semaine), ajoutez un coup de pouce, ou choisissez un autre prestataire. L'app vous le propose d'elle-même après 45 min.</p>
         <p class="manq">« Je veux absolument tel prestataire »</p><p>Choisissez-le dans « Votre prestataire » à la commande : lui seul reçoit la demande. S'il décline, elle peut repartir à tous.</p>
