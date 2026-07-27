@@ -7626,9 +7626,12 @@
       const r=await FB.fn.httpsCallable(FB.functions,'clientCard')({action:'setup',returnUrl:base+'?card=1'});
       const url=r&&r.data&&r.data.checkoutUrl;
       if(url){location.href=url;return;}
+      // Motif technique renvoyé par Mollie : affiché uniquement à l'administrateur,
+      // pour diagnostiquer sans avoir à fouiller les journaux serveur.
+      S.cardSetupErr=(isAdminAccount()&&r&&r.data&&r.data.reason)?String(r.data.reason):'';
       S.cardSetupBusy=false;render();
       toast('Enregistrement indisponible — votre carte vous sera demandée à la réservation');
-    }catch(_){S.cardSetupBusy=false;render();toast('Enregistrement indisponible pour le moment');}
+    }catch(e){S.cardSetupErr=isAdminAccount()?String((e&&e.message)||e).slice(0,160):'';S.cardSetupBusy=false;render();toast('Enregistrement indisponible pour le moment');}
   }
   // Échéance Mollie « AAAA-MM » → « MM/AAAA ».
   function payCardExp(c){const m=/^(\d{4})-(\d{2})/.exec(String((c&&c.exp)||''));return m?(m[2]+'/'+m[1]):'';}
@@ -7924,7 +7927,8 @@
             :`<p class="mini" style="margin-top:2px">Aucune carte mémorisée pour l'instant. Vous pouvez l'enregistrer dès maintenant&nbsp;: elle sera alors proposée d'office à votre première commande.</p>
               <button class="btn primary sm" data-act="card-setup" style="margin-top:12px;width:auto;padding:9px 14px"${S.cardSetupBusy?' disabled':''}>${I.card}&nbsp;${S.cardSetupBusy?'Ouverture…':'Enregistrer ma carte'}</button>
               <div class="banner good" style="margin-top:12px">${I.lock}<span><b>Aucun débit</b> — carte simplement vérifiée sur <b>Mollie</b> (0,00&nbsp;€).</span></div>
-              <p class="mini" style="margin-top:8px;color:var(--muted)">Facultatif — sinon elle vous sera demandée à votre première réservation.</p>`);
+              <p class="mini" style="margin-top:8px;color:var(--muted)">Facultatif — sinon elle vous sera demandée à votre première réservation.</p>
+              ${S.cardSetupErr?`<p class="mini" style="margin-top:8px;color:var(--coral-deep)">Mollie&nbsp;: ${esc(S.cardSetupErr)}</p>`:''}`);
           const chip=(c===undefined)?'':(c?`<span class="chip good" style="flex:none">${I.check} Enregistré</span>`:`<span class="chip grey" style="flex:none">À la 1re réservation</span>`);
           const sub=c?(esc(c.brand)+' •••• '+esc(c.last4)):'';
           return foldCard('c-pay',I.card,'Moyen de paiement',sub,body,chip);

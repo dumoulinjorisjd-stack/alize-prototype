@@ -1632,8 +1632,22 @@ exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) 
       customerId: customerId,
       metadata: {clientUid: uid, cardSetup: true},
     };
-    const out = await mollieApi('/payments', 'POST', body);
-    if (!out.ok || !out.data) return {checkoutUrl: null, error: 'setup_refused'};
+    let out = await mollieApi('/payments', 'POST', body);
+    // Certains comptes Mollie n'autorisent pas encore le montant nul : on retente alors
+    // en laissant Mollie choisir la méthode (PayPal accepte aussi le 0,00 €).
+    if (!out.ok) {
+      const alt = Object.assign({}, body);
+      delete alt.method;
+      out = await mollieApi('/payments', 'POST', alt);
+    }
+    if (!out.ok || !out.data) {
+      // On remonte le motif Mollie (message technique sur NOTRE usage de l'API, aucune
+      // donnée personnelle) : sans lui, l'échec est indiagnosticable côté exploitation.
+      const d = out.data || {};
+      const reason = String(d.detail || d.title || ('HTTP ' + (out.status || '?'))).slice(0, 160);
+      console.warn('clientCard setup refusé', out.status, reason);
+      return {checkoutUrl: null, error: 'setup_refused', reason: reason};
+    }
     const link = out.data._links && out.data._links.checkout && out.data._links.checkout.href;
     return {checkoutUrl: link || null, paymentId: String(out.data.id || '')};
   }
