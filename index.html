@@ -6,6 +6,13 @@
 <title>Ti-Services Saint-Barthélemy — services à domicile à la demande</title>
 <meta name="description" content="Ti-Services — un prestataire vérifié et assuré chez vous en quelques minutes à Saint-Barthélemy : ménage, garde d'enfants, jardinage, coiffure à domicile, dépannage, massage, garde d'animaux, livraison de colis. Sans abonnement, paiement sécurisé après la prestation.">
 <link rel="canonical" href="https://ti-services.fr/">
+<!-- Ouverture anticipée des connexions vers Firebase : le premier appel de données
+     part sans attendre la résolution DNS ni la poignée de main TLS (~200-400 ms en 4G). -->
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://europe-west1-t-service-prod.cloudfunctions.net" crossorigin>
+<link rel="dns-prefetch" href="https://firebasestorage.googleapis.com">
 <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
 <meta name="author" content="C.C.S — Construction Conseils et Services">
 <meta name="keywords" content="Ti Services, Ti Services Saint Barth, Ti Services Saint-Barth, Ti Services Saint Barthélemy, Ti Services Saint-Barthélemy, Ti-Services, services à la demande Saint-Barthélemy, ménage Saint-Barth, garde d'enfants, baby-sitting, jardinage, coiffure à domicile, dépannage, plomberie, électricité, massage, garde d'animaux, déménagement, artisan Saint-Barthélemy, aide à domicile Gustavia">
@@ -1249,6 +1256,20 @@
   // ti-services.fr (backend t-service-prod), BÊTA partout ailleurs (github.io…,
   // backend ti-service-e8ced). Un seul code, deux backends cloisonnés.
   const IS_PROD = /(^|\.)ti-services\.fr$/i.test(location.hostname) || /^t-service-prod\.(web\.app|firebaseapp\.com)$/i.test(location.hostname);
+  // ——— Verrou de domaine (anti-copie) ———
+  // L'application ne dialogue avec Firebase que depuis les domaines officiels, la
+  // coquille native, ou un poste de développement. Une copie du fichier déposée sur
+  // un autre hébergement n'a donc aucun back-end : ni comptes, ni prestataires, ni
+  // paiements. (Deuxième verrou côté Google : la clé Web est restreinte par domaine.)
+  const OFFICIAL_HOSTS = /(^|\.)ti-services\.fr$|^t-service-prod\.(web\.app|firebaseapp\.com)$|^dumoulinjorisjd-stack\.github\.io$|^localhost$|^127\.0\.0\.1$|^\[::1\]$/i;
+  function hostOfficiel(){
+    try{
+      const h = location.hostname || '';
+      if(!h || location.protocol === 'file:') return true;               // ouverture locale / tests
+      if(typeof isNativeShell === 'function' && isNativeShell()) return true;
+      return OFFICIAL_HOSTS.test(h);
+    }catch(_){ return true; }
+  }
   const IS_BETA = !IS_PROD;
   // Étiquette « BÊTA » à accoler au nom/logo (chaîne vide en production).
   function betaTag(){return IS_BETA?'<span class="beta-tag">BÊTA</span>':'';}
@@ -12063,8 +12084,30 @@
     'auth/popup-closed-by-user':'Connexion Google annulée.',
     'auth/too-many-requests':'Trop de tentatives — réessayez plus tard.'
   })[c] || ('Erreur : '+(c||(e&&e.message)||'inconnue'));}
+  // Affiché uniquement si l'application tourne sur un domaine non officiel.
+  function copieNonOfficielle(){
+    try{
+      const d=document.createElement('div');
+      d.setAttribute('role','alert');
+      d.style.cssText='position:fixed;inset:0;z-index:100000;background:var(--sand,#FBF7F4);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:32px;text-align:center;font-family:system-ui,-apple-system,sans-serif';
+      const t=document.createElement('div');
+      t.style.cssText='font-size:19px;font-weight:800;color:#231E33';
+      t.textContent='Copie non officielle';
+      const p1=document.createElement('p');
+      p1.style.cssText='font-size:14px;color:#4E4757;line-height:1.55;max-width:34ch;margin:0';
+      p1.textContent="Cette page n'est pas hébergée par Ti-Services : aucun compte, aucune réservation et aucun paiement n'y fonctionnent.";
+      const a=document.createElement('a');
+      a.href='https://ti-services.fr/';a.rel='noopener';
+      a.style.cssText='margin-top:6px;font-size:14px;font-weight:700;color:#E23F2B;text-decoration:underline';
+      a.textContent='Ouvrir le site officiel : ti-services.fr';
+      d.appendChild(t);d.appendChild(p1);d.appendChild(a);
+      document.body.appendChild(d);
+    }catch(_){}
+  }
   async function initFirebase(){
     if(!CONFIG.firebase || window.__NOFB) return;
+    // Copie déposée sur un hébergement tiers : aucun back-end, et on le dit.
+    if(!hostOfficiel()){ copieNonOfficielle(); return; }
     S.account=null; // en mode réel l'identité vient de Firebase (pas du localStorage)
     if(!S.demoMode) blankAll(); // vraie bêta : on part de zéro (les seeds ne servent qu'à la démo)
     try{

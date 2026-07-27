@@ -1,5 +1,5 @@
 /* Ti-Services — service worker (coquille hors-ligne) */
-const CACHE = 'ti-services-v567';
+const CACHE = 'ti-services-v568';
 const SHELL = [
   './',
   './index.html',
@@ -68,9 +68,24 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   // Ne pas intercepter le cross-origin (Firebase, gstatic, googleapis…) : réseau direct.
   if (new URL(req.url).origin !== self.location.origin) return;
-  // navigations : réseau d'abord, repli sur la coquille en cache (hors-ligne)
+  // Navigations : COQUILLE EN CACHE D'ABORD (affichage quasi instantané), et on
+  // rafraîchit la copie en arrière-plan. C'est cohérent avec la mise à jour sur
+  // consentement : la nouvelle version s'installe en attente et n'est appliquée
+  // qu'au clic sur « mettre à jour ». Avant, chaque lancement retéléchargeait
+  // l'application entière — plusieurs secondes en 4G.
   if (req.mode === 'navigate') {
-    e.respondWith(fetch(req).catch(() => caches.match('./index.html')));
+    e.respondWith(
+      caches.match('./index.html').then((hit) => {
+        const net = fetch(req).then((res) => {
+          if (res && res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put('./index.html', copy)).catch(() => {});
+          }
+          return res;
+        }).catch(() => hit);
+        return hit || net;
+      })
+    );
     return;
   }
   // reste : cache d'abord, puis réseau
