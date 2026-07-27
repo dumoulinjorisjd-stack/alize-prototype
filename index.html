@@ -11840,11 +11840,15 @@
     return {ios,android,desktop,browser,inApp,iosOtherBrowser,ua};
   }
   const _pfTop=detectPlatform();const isiOS=_pfTop.ios;
-  // Sur iPhone, l'installation « Sur l'écran d'accueil » n'existe QUE dans Safari. Depuis
-  // Chrome/Firefox/Edge (ou un navigateur intégré), on indique d'abord d'ouvrir dans Safari.
-  if(isiOS&&installSteps){installSteps.innerHTML=(_pfTop.browser==='safari'&&!_pfTop.inApp)
-    ? 'iPhone&nbsp;: <b>Partager</b> ⬆︎ → <b>«&nbsp;Sur l’écran d’accueil&nbsp;»</b>.'
-    : 'iPhone&nbsp;: ouvrez d’abord ce lien dans <b>Safari</b> pour installer l’app.';}
+  // Sur iPhone, « Sur l'écran d'accueil » passe par le bouton Partager — EN BAS dans
+  // Safari, EN HAUT (barre d'adresse) dans Chrome/Edge, qui savent installer depuis
+  // iOS 17. Seul un navigateur INTÉGRÉ à une autre app (WhatsApp, Instagram…) impose
+  // vraiment de rouvrir dans Safari.
+  if(isiOS&&installSteps){installSteps.innerHTML=_pfTop.inApp
+    ? 'iPhone&nbsp;: ouvrez d’abord ce lien dans <b>Safari</b> pour installer l’app.'
+    : (_pfTop.browser==='safari'
+      ? 'iPhone&nbsp;: <b>Partager</b> ⬆︎ (en bas) → <b>«&nbsp;Sur l’écran d’accueil&nbsp;»</b>.'
+      : 'iPhone&nbsp;: <b>Partager</b> ⬆︎ (en haut) → <b>«&nbsp;Sur l’écran d’accueil&nbsp;»</b>.');}
   // On mémorise l'invite native (Android/Chrome) pour la déclencher depuis la feuille.
   window.addEventListener('beforeinstallprompt',(e)=>{e.preventDefault();deferredPrompt=e;});
   // Entonnoir : installation native confirmée (Android/desktop).
@@ -11901,24 +11905,29 @@
   // l'icône Ti-Services apparaît sur l'écran, avec une coche. Un non-technicien comprend
   // en regardant, sans lire. SMIL natif, couleurs explicites (pas de var() : certains
   // WebKit iOS ne les résolvent pas dans un SVG), aucune ressource externe.
-  function igPhoneAnim(){
-    const D='9s';
+  // Démonstration animée du geste d'installation. Le bouton « Partager » n'est pas au
+  // même endroit selon le navigateur : EN BAS dans Safari, EN HAUT (barre d'adresse)
+  // dans Chrome/Edge sur iPhone. On décale donc le repère et la grille d'icônes.
+  function igPhoneAnim(pos){
+    const D='9s', top=(pos==='top'), dy=top?16:0;
+    const shX=top?105:75, shY=top?24:216;
+    const shareGlyph=`<g transform="translate(${shX} ${shY}) scale(${top?0.42:0.52}) translate(-12 -12)" fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.2V15"/><path d="M8 7l4-4 4 4"/><path d="M7 10H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-1"/></g>`;
     return `<svg class="ig-phone ig-anim" viewBox="0 0 150 244" role="img" aria-label="Démonstration : installer Ti-Services sur iPhone">
       <rect x="30" y="4" width="90" height="236" rx="18" fill="#FFFFFF" stroke="#E2DDD3" stroke-width="2"/>
       <rect x="37" y="16" width="76" height="212" rx="8" fill="#F4F1EC"/>
-      ${[0,1,2].map(i=>`<rect x="${44+i*22}" y="26" width="16" height="16" rx="4.5" fill="#E2DBCE"/>`).join('')}
-      ${[0,1].map(i=>`<rect x="${44+i*22}" y="48" width="16" height="16" rx="4.5" fill="#E2DBCE"/>`).join('')}
+      ${top?`<rect x="41" y="17" width="68" height="15" rx="7.5" fill="#E6DFD3"/><rect x="48" y="22" width="40" height="5" rx="2.5" fill="#C9C2B4"/><circle cx="${shX}" cy="${shY}" r="7" fill="#1A73E8"/>${shareGlyph}`:''}
+      ${[0,1,2].map(i=>`<rect x="${44+i*22}" y="${26+dy}" width="16" height="16" rx="4.5" fill="#E2DBCE"/>`).join('')}
+      ${[0,1].map(i=>`<rect x="${44+i*22}" y="${48+dy}" width="16" height="16" rx="4.5" fill="#E2DBCE"/>`).join('')}
       <g opacity="0">
-        <rect x="88" y="48" width="16" height="16" rx="4.5" fill="#FF6A5B"/>
-        <circle cx="93.5" cy="53.5" r="1.4" fill="#FFFFFF"/><circle cx="98.5" cy="53.5" r="1.4" fill="#FFFFFF"/>
-        <path d="M92.6 58c1.2 1.5 5.6 1.5 6.8 0" stroke="#FFFFFF" stroke-width="1.3" fill="none" stroke-linecap="round"/>
-        <circle cx="105" cy="47" r="4.6" fill="#1FA463"/>
-        <path d="M102.8 47l1.6 1.6 2.8-3" stroke="#FFFFFF" stroke-width="1.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="88" y="${48+dy}" width="16" height="16" rx="4.5" fill="#FF6A5B"/>
+        <circle cx="93.5" cy="${53.5+dy}" r="1.4" fill="#FFFFFF"/><circle cx="98.5" cy="${53.5+dy}" r="1.4" fill="#FFFFFF"/>
+        <path d="M92.6 ${58+dy}c1.2 1.5 5.6 1.5 6.8 0" stroke="#FFFFFF" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+        <circle cx="105" cy="${47+dy}" r="4.6" fill="#1FA463"/>
+        <path d="M102.8 ${47+dy}l1.6 1.6 2.8-3" stroke="#FFFFFF" stroke-width="1.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
         <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.65;0.71;0.97;1" dur="${D}" repeatCount="indefinite"/>
       </g>
       <rect x="37" y="204" width="76" height="24" rx="7" fill="#E6DFD3"/>
-      <circle cx="75" cy="216" r="10" fill="#007AFF"/>
-      <g transform="translate(75 216) scale(0.52) translate(-12 -12)" fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.2V15"/><path d="M8 7l4-4 4 4"/><path d="M7 10H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-1"/></g>
+      ${top?'':`<circle cx="75" cy="216" r="10" fill="#007AFF"/>${shareGlyph}`}
       <g>
         <animateTransform attributeName="transform" type="translate" values="0 150;0 150;0 0;0 0;0 150;0 150" keyTimes="0;0.18;0.26;0.55;0.62;1" dur="${D}" repeatCount="indefinite"/>
         <rect x="37" y="118" width="76" height="110" rx="10" fill="#FFFFFF" stroke="#E2DDD3" stroke-width="1.4"/>
@@ -11933,7 +11942,7 @@
         <text x="61" y="161.6" font-size="5.6" font-family="-apple-system,'Segoe UI',Roboto,sans-serif" font-weight="600" fill="#231E33">Sur l'écran</text>
         <text x="61" y="168" font-size="5.6" font-family="-apple-system,'Segoe UI',Roboto,sans-serif" font-weight="600" fill="#231E33">d'accueil</text>
       </g>
-      <circle cx="75" cy="216" r="7.5" fill="#231E33" opacity="0">
+      <circle cx="${shX}" cy="${shY}" r="7.5" fill="#231E33" opacity="0">
         <animate attributeName="opacity" values="0;0;0.32;0.32;0;0" keyTimes="0;0.06;0.09;0.15;0.19;1" dur="${D}" repeatCount="indefinite"/>
         <animate attributeName="r" values="7.5;7.5;5.6;7.5;7.5;7.5" keyTimes="0;0.09;0.12;0.15;0.19;1" dur="${D}" repeatCount="indefinite"/>
       </circle>
@@ -12022,14 +12031,22 @@
     const card=(n,glyph,txt)=>`<div class="ig-card"><span class="ig-n">${n}</span><span class="ig-glyph">${glyph}</span><div class="ig-txt">${txt}</div></div>`;
     let body='';
     if(pf.iosOtherBrowser && !pf.inApp){
-      // Navigateur iPhone autre que Safari (Chrome, Firefox, Edge…) : seul Safari peut
-      // installer une PWA, et ces navigateurs n'ont PAS de menu « Ouvrir dans Safari »
-      // fiable. Un seul chemin, toujours vrai : ouvrir Safari soi-même. (Icône et texte
-      // cohérents — pas de logo Safari à côté d'une consigne Chrome.)
-      body=`<div class="ig-warn">${I.shield}<div>Sur iPhone, l'installation « Sur l'écran d'accueil » se fait <b>uniquement depuis Safari</b> — pas dans ${bname}&nbsp;:</div></div>
+      // Navigateur iPhone autre que Safari (Chrome, Edge, Firefox…). Depuis iOS 17,
+      // ces navigateurs installent eux aussi sur l'écran d'accueil, par LEUR bouton
+      // Partager — situé en HAUT, dans la barre d'adresse (et non en bas comme Safari).
+      // On montre donc le geste ici, avec le repère au bon endroit ; le renvoi vers
+      // Safari n'est plus qu'un repli pour les iPhone restés en iOS 16 ou antérieur.
+      body=`<p class="ig-intro">Regardez le geste — puis reproduisez-le dans ${bname}. En <b>3 secondes</b>, Ti-Services s'installe comme une vraie application, en <b>plein écran</b>.</p>
+        ${igPhoneAnim('top')}
+        <p class="ig-cap">Dans ${bname}, le bouton <b>Partager</b> est <b>en haut</b>, dans la barre d'adresse</p>
         <div class="ig-cards">
-          ${card('1',IG_GLYPH.safari,`Ouvrez <b>Safari</b> ${IG_LOGO.safari} — la boussole bleue de votre iPhone`)}
-          ${card('2',IG_GLYPH.app,`Tapez <b>ti-services.fr</b> dans la barre d'adresse, puis touchez <b>« Installer l'application »</b> — les étapes s'afficheront.`)}
+          ${card('1',IG_GLYPH.share,`Touchez le bouton <b>Partager</b> ${blogo}<span class="ig-sub">en haut à droite de la barre d'adresse</span>`)}
+          ${card('2',IG_GLYPH.expand,`Faites défiler la liste<span class="ig-sub">si « Sur l'écran d'accueil » n'apparaît pas déjà</span>`)}
+          ${card('3',IG_GLYPH.addhome,`Touchez <b>« Sur l'écran d'accueil »</b>, puis <b>Ajouter</b> — l'icône Ti-Services apparaît sur votre écran. ${I.party}`)}
+        </div>
+        <p class="ig-or">l'option n'apparaît pas&nbsp;? (iPhone en iOS 16 ou plus ancien)</p>
+        <div class="ig-cards">
+          ${card('★',IG_GLYPH.safari,`Ouvrez <b>Safari</b> ${IG_LOGO.safari}, tapez <b>ti-services.fr</b>, puis touchez <b>« Installer l'application »</b>`)}
         </div>`;
     } else if(pf.inApp){
       // Navigateur INTÉGRÉ (WhatsApp/Instagram/Messenger…) : impossible d'installer ici.
