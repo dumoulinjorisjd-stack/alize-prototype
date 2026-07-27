@@ -9412,12 +9412,19 @@
     if(!list.length)return '';
     return `<div style="margin-top:14px"><span class="eyebrow" style="color:var(--teal-deep)">${I.check} Missions en cours · ${list.length}</span>${list.map(function(m){const sm=proMissionMeta(m.status);return `<button class="card" data-act="promiss:${m._id||''}" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block;border-left:4px solid ${sm.c==='good'?'var(--good)':'var(--coral)'}"><div class="row between"><b style="font-size:14px">${proDots(m)}${esc(m.svcName||svcNm(m.svc))}</b><span class="chip ${sm.c}">${sm.l}</span></div><div class="mini" style="margin-top:3px">${I.pin} ${esc(m.zone||'')} · ${esc(m.when||'')} · ${esc(m.slot||'')} · ${m.duration||1} ${m.unit==='j'?'j':'h'}</div><div class="row between" style="margin-top:9px"><span class="mini" style="color:var(--muted)">Vous percevez ${eur(totals(m).payout)}</span><span class="mini" style="color:var(--teal-deep);font-weight:700">Ouvrir ›</span></div></button>`;}).join('')}</div>`;
   }
+  // En-tête commun aux quatre onglets prestataire : même bloc titre à gauche, même paire
+  // « action de la page + photo » à droite, même silhouette de l'île en filigrane.
+  function proHead(eyebrow,title,action){
+    return `<div class="row between isle-wm" style="margin-top:10px;gap:10px"><div style="min-width:0"><span class="eyebrow">${eyebrow}</span><div class="h-hello">${title}</div></div>`
+      +`<div class="row" style="gap:9px;align-items:center;flex:none">${action||''}${avatarFounder(S.proPhoto,inits(S.proName||'Mon compte'),'',S.proFounder)}</div></div>`;
+  }
+  function proHeadBtn(act,label,ico){return `<button class="iconbtn" data-act="${act}" aria-label="${label}" title="${label}">${ico}</button>`;}
   function proHome(){
     const cats=(S.proCats&&S.proCats.length)?S.proCats:['menage'];
     const catNames=cats.map(c=>{const s=SERVICES.find(x=>x.id===c);return s?s.nm:c;}).slice(0,2).join(' · ');
     const d=openDemand();const isNew=(S.proJobsTotal||0)===0;
     const online=S.proOnline;
-    return `<div class="pad"><div class="row between isle-wm" style="margin-top:10px"><div><span class="eyebrow">Prestataire · ${catNames} · dès ${S.proRate} €/h</span><div class="h-hello">Mes missions</div></div><div class="row" style="gap:9px;align-items:center"><button class="iconbtn" data-act="open-share" aria-label="Partager Ti-Services" title="Partager">${I.share}</button>${avatarFounder(S.proPhoto,inits(S.proName||'Mon compte'),'',S.proFounder)}</div></div>
+    return `<div class="pad">${proHead('Prestataire · '+catNames+' · dès '+S.proRate+' €/h','Mes missions',proHeadBtn('open-share','Partager Ti-Services',I.share))}
       ${notifCTA('pro')}
       ${(function(){const st=mollieState();if(st==='active')return '';
         // Paiements non actifs : le rappeler ICI, sur l'écran missions — pas au moment
@@ -9653,7 +9660,7 @@
       <button data-act="dispo-reminder-x" aria-label="Fermer" style="position:absolute;top:6px;right:6px;background:none;border:none;font-size:16px;line-height:1;color:var(--muted);padding:6px">×</button>
       <div class="row" style="gap:10px;align-items:flex-start"><span class="benic" style="background:${availFull?'var(--coral-wash)':'var(--teal-wash)'};color:${availFull?'var(--coral-deep)':'var(--teal-deep)'}">${I.clock}</span><div style="flex:1;padding-right:16px"><b style="font-size:14px">Vos disponibilités</b><p class="mini" style="margin-top:3px">${availFull?'Réglées sur <b>H24, 7j/7</b> par défaut — vous recevez <b>toutes</b> les missions. Indiquez vos vrais créneaux pour n\'être sollicité que quand vous êtes libre.':'<b>'+availCount()+'/28</b> créneaux actifs. Vous ne recevez de missions que sur ces créneaux — pensez à les tenir à jour.'}</p><button class="linklike" data-atab="dispo" style="color:var(--teal-deep);font-weight:700;margin-top:6px">Régler mes disponibilités ›</button></div></div>
     </div>`:'';
-    return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">${I.cal} Mon agenda</span><div class="h-hello">${tab==='dispo'?'Mes disponibilités':'Mon planning du mois'}</div>${seg}${dispoReminder}${tab==='dispo'?dispoGrid():proAgendaMonth()}</div>${proNavbar()}`;
+    return `<div class="pad">${proHead(I.cal+' Mon agenda',tab==='dispo'?'Mes disponibilités':'Mon planning du mois',proHeadBtn('pro-cal-setup','Connecter mon agenda',I.link))}${seg}${dispoReminder}${tab==='dispo'?dispoGrid():proAgendaMonth()}</div>${proNavbar()}`;
   }
   function proRequest(){
     const m=S.mission,t=totals(m);
@@ -10100,7 +10107,7 @@
     const nbDone=(S.proHistory||[]).length;
     const totComm=(S.proHistory||[]).reduce(function(t,h){return t+histBreakdown(h).commission;},0);
     const tier=fidFor(S.proJobsTotal||0);
-    return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">${I.wallet} Revenus</span><div class="h-hello">Ce mois-ci</div>
+    return `<div class="pad">${proHead(I.wallet+' Revenus','Ce mois-ci',proHeadBtn('open-interv','Mes factures par mission',I.card))}
       <div class="card" style="padding:18px;margin-top:12px"><div class="mini">Net perçu (juillet)</div><b class="money" style="font-size:30px;font-family:var(--f-disp)">${eur(S.proEarnings)}</b><div class="row between" style="margin-top:14px"><span class="sub">Missions réalisées</span><b>${nbDone}</b></div>${nbDone?`<div class="row between" style="margin-top:6px"><span class="sub">Prochain virement</span><b>sous 48 h après validation</b></div>`:''}</div>
       ${nbDone?'':`<div class="card" style="padding:22px;margin-top:12px;text-align:center;color:var(--muted)"><div style="display:flex;justify-content:center">${octoMini(64,'wave')}</div><div style="margin-top:8px;font-weight:600;color:var(--ink-soft)">Pas encore de mission réglée</div><div style="margin-top:3px">Vos revenus et vos factures apparaîtront ici après votre première prestation validée.</div></div>`}
       <button class="card" data-act="open-interv" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.card}&nbsp;Mes factures par mission</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Chaque prestation facturée automatiquement à votre nom.</p></button>
@@ -10157,12 +10164,13 @@
     const catNames=cats.map(function(c){const s=SERVICES.find(x=>x.id===c);return s?s.nm:c;}).slice(0,3).join(' · ');
     const insOk=S.proInsuranceStatus==='valide';const isNew=(S.proJobsTotal||0)===0;
     return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">${I.user} Mon compte</span>
-      <div class="row between" style="gap:12px;margin-top:8px;align-items:center">
-        <div><b style="font-size:20px;font-family:var(--f-disp)">${esc(S.proName||'Mon compte')}</b><div class="mini">${esc(catNames)} · dès ${S.proRate} €/h</div></div>
+      <div class="row between isle-wm" style="gap:12px;margin-top:8px;align-items:center">
+        <div style="min-width:0"><b style="font-size:20px;font-family:var(--f-disp)">${esc(S.proName||'Mon compte')}</b><div class="mini">${esc(catNames)} · dès ${S.proRate} €/h</div></div>
+        <div class="row" style="gap:9px;align-items:center;flex:none">${proHeadBtn('open-share','Partager Ti-Services',I.share)}
         <button data-act="photopick:proPhoto" aria-label="Changer ma photo de profil" style="position:relative;background:none;border:none;padding:0;flex:none;line-height:0;border-radius:50%">
           ${avatarFounder(S.proPhoto,inits(S.proName||'Mon compte'),'lg',S.proFounder)}
           <span aria-hidden="true" style="position:absolute;left:-2px;bottom:-2px;width:26px;height:26px;border-radius:50%;background:var(--teal-deep);color:#fff;display:flex;align-items:center;justify-content:center;border:2px solid var(--card);box-shadow:0 2px 6px -2px rgba(0,0,0,.4)">${I.camera}</span>
-        </button>
+        </button></div>
       </div>
       <input type="file" accept="image/*" capture="user" data-avatarinput="proPhoto" data-pcam hidden><input type="file" accept="image/*" data-avatarinput="proPhoto" data-pgal hidden>
 
@@ -11122,6 +11130,8 @@
         else { S.card=null; } // carte à usage unique : jamais conservée
         placeMission();break;}
       case 'open-interv':S.interv=true;S.invClient=null;render();break;
+      // Onglet Agenda → réglages de synchronisation (carte « Mon agenda » du Compte, dépliée).
+      case 'pro-cal-setup':S.proNav='account';S._fold=Object.assign({},S._fold||{},{'p-agenda':true});render();break;
       case 'close-interv':S.interv=false;S.invClient=null;render();break;
       case 'invclient-back':S.invClient=null;render();break;
       case 'open-statement':{var n0=new Date();S.stmtPeriod={y:n0.getFullYear(),m:n0.getMonth()};S.proStmt=true;render();break;}
