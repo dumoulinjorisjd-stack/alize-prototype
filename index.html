@@ -6699,39 +6699,52 @@
     const groups=adminCommissionGroups();const round2=function(n){return Math.round(n*100)/100;};
     const totComm=round2(groups.reduce(function(t,x){return t+x.c.comm;},0));
     const totGross=round2(groups.reduce(function(t,x){return t+x.c.gross;},0));
+    const chip=function(cls,txt){return `<span class="chip ${cls}" style="flex:none">${txt}</span>`;};
     const cards=groups.length?groups.map(function(x){return `<div class="card" style="padding:14px;margin-top:10px">
         <div class="row between"><b style="font-size:14px">${esc(x.a.name)}</b><span class="chip good">${x.c.count} mission${x.c.count>1?'s':''}</span></div>
         <div class="mini" style="margin-top:4px">CA ${eur(x.c.gross)} · commission ${eur(x.c.comm)} · net ${eur(x.c.net)}</div>
         <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn primary sm" style="width:auto;padding:8px 12px" data-adm="fact-comm:${x.a.id}">${I.card}&nbsp;Facture de commission</button><button class="btn ghost sm" style="width:auto;padding:8px 12px" data-adm="fact-mandat:${x.a.id}">${I.card}&nbsp;Factures prestations</button></div>
       </div>`;}).join(''):`<div class="card" style="padding:20px;text-align:center;color:var(--muted);margin-top:10px">Aucune prestation réglée ce mois — les factures apparaîtront ici.</div>`;
+    // ── Corps des cartes repliables ──
+    const searchBody=`<p class="mini" style="margin:0 0 6px;color:var(--muted)">Tapez au moins 2 caractères&nbsp;: n° de facture, nom du client, du prestataire ou du service.</p>
+      <input class="txt" data-factq value="${esc(S.admin.factQ||'')}" placeholder="N° de facture, client, artisan ou service…" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <div id="factSearchResults">${factSearchResultsHtml()}</div>`;
+    const artBody=`<div class="banner teal">${I.shield}<span>Chaque prestataire reçoit <b>une facture de commission mensuelle</b> (une ligne par mission) — le standard. Les factures de prestation sont établies au mandat, en leur nom.</span></div>${cards}`;
+    const concs=adminConcInvoiceList();
+    const totRetro=round2(concs.reduce(function(t,x){return t+x.m.retro;},0));
+    const dueList=concs.filter(function(x){return x.c.retroPaid!==COMM_PERIOD;});
+    const dueTot=round2(dueList.reduce(function(t,x){return t+x.m.retro;},0));
+    const concBody=adminConcRetribSection(round2);
+    const _led=adminCommissionLedger();
+    const totFee=round2(_led.reduce(function(t,e){return t+(Number(e.mollieFee)||0);},0));
+    const feePending=_led.filter(function(e){return e.commissionAmount>0&&e.mollieFee==null;}).length;
+    const netRev=round2(totComm-totRetro-totFee);
+    const accBody=`<div class="row between"><span class="sub">Commissions encaissées (produit)</span><b>${eur(totComm)}</b></div>
+      <div class="row between" style="margin-top:6px"><span class="sub">Frais Mollie (charge)</span><b style="color:var(--muted)">−${eur(totFee)}</b></div>
+      <div class="row between" style="margin-top:6px"><span class="sub">Rétributions apport versées (charge)</span><b style="color:var(--muted)">−${eur(totRetro)}</b></div>
+      <hr class="dashed" style="margin:10px 0"><div class="row between"><span class="sub"><b>Revenu net réel Ti-Services</b></span><b class="money" style="color:var(--teal-deep)">${eur(netRev)}</b></div>
+      ${feePending?`<p class="mini" style="margin-top:9px;color:var(--muted)">${I.clock} ${feePending} prestation${feePending>1?'s':''} en attente du règlement Mollie — le frais réel se complète automatiquement sous 1 à 2 jours.</p>`:''}
+      <button class="btn primary sm" data-adm="export-accounting" style="margin-top:12px;width:auto;padding:9px 14px">${I.card}&nbsp;Export comptable (CSV)</button>
+      <p class="mini" style="margin-top:8px;color:var(--muted)">Journal détaillé (une ligne par commission et par rétribution) pour votre comptable. Chiffres issus du <b>registre serveur immuable</b> — <b>seules les transactions réellement encaissées via Mollie</b> sont comptées (les missions de test n'apparaissent pas).</p>`;
     return `<div class="pad">
       <div class="row between" style="margin-top:10px"><div><span class="eyebrow">Console admin · Factures</span><div class="h-hello">Factures &amp; commissions</div></div><div class="avatar" style="background:linear-gradient(135deg,var(--ink),#000)">TS</div></div>
       <div class="mini" style="margin-top:4px;color:var(--muted)">Tout l'historique — chaque facture reste accessible et retrouvable.</div>
-      <div class="card" style="padding:13px;margin-top:12px">
-        <label class="mini" style="display:block;margin-bottom:6px;color:var(--muted)">Retrouver une facture de prestation</label>
-        <input class="txt" data-factq value="${esc(S.admin.factQ||'')}" placeholder="N° de facture, client, artisan ou service…" autocomplete="off" autocapitalize="off" spellcheck="false">
-        <div id="factSearchResults">${factSearchResultsHtml()}</div>
-      </div>
       <div class="row" style="gap:9px;margin-top:12px">
         <div class="card" style="padding:13px;flex:1;min-width:0"><div class="mini">Commission Ti-Services</div><b class="money" style="font-size:20px;font-family:var(--f-disp);display:block;color:var(--teal-deep)">${eur(totComm)}</b><div class="mini">cumul</div></div>
         <div class="card" style="padding:13px;flex:1;min-width:0"><div class="mini">CA prestations</div><b class="money" style="font-size:20px;font-family:var(--f-disp);display:block">${eur(totGross)}</b><div class="mini">reversé aux prestataires</div></div>
       </div>
-      <div class="banner teal" style="margin-top:12px">${I.shield}<span>Chaque prestataire reçoit <b>une facture de commission mensuelle</b> (une ligne par mission) — le standard. Les factures de prestation sont établies au mandat, en leur nom.</span></div>
-      ${(function(){const totRetro=round2((adminConcInvoiceList()).reduce(function(t,x){return t+x.m.retro;},0));
-        const _led=adminCommissionLedger();
-        const totFee=round2(_led.reduce(function(t,e){return t+(Number(e.mollieFee)||0);},0));
-        const feePending=_led.filter(function(e){return e.commissionAmount>0&&e.mollieFee==null;}).length;
-        const net=round2(totComm-totRetro-totFee);return `<div class="card" style="padding:16px;margin-top:12px">
-        <b style="font-size:14px">${I.card}&nbsp;Comptabilité — justificatif de revenus</b>
-        <div class="row between" style="margin-top:10px"><span class="sub">Commissions encaissées (produit)</span><b>${eur(totComm)}</b></div>
-        <div class="row between" style="margin-top:6px"><span class="sub">Frais Mollie (charge)</span><b style="color:var(--muted)">−${eur(totFee)}</b></div>
-        <div class="row between" style="margin-top:6px"><span class="sub">Rétributions apport versées (charge)</span><b style="color:var(--muted)">−${eur(totRetro)}</b></div>
-        <hr class="dashed" style="margin:10px 0"><div class="row between"><span class="sub"><b>Revenu net réel Ti-Services</b></span><b class="money" style="color:var(--teal-deep)">${eur(net)}</b></div>
-        ${feePending?`<p class="mini" style="margin-top:9px;color:var(--muted)">${I.clock} ${feePending} prestation${feePending>1?'s':''} en attente du règlement Mollie — le frais réel se complète automatiquement sous 1 à 2 jours.</p>`:''}
-        <button class="btn primary sm" data-adm="export-accounting" style="margin-top:12px;width:auto;padding:9px 14px">${I.card}&nbsp;Export comptable (CSV)</button>
-        <p class="mini" style="margin-top:8px;color:var(--muted)">Journal détaillé (une ligne par commission et par rétribution) pour votre comptable. Chiffres issus du <b>registre serveur immuable</b> — <b>seules les transactions réellement encaissées via Mollie</b> sont comptées (les missions de test n'apparaissent pas).</p></div>`;})()}
-      <div style="height:8px"></div><span class="eyebrow">Par artisan · ${groups.length}</span>${cards}
-      ${adminConcRetribSection(round2)}
+
+      ${dueList.length?`<div style="height:18px"></div><span class="eyebrow" style="color:var(--coral-deep)">${I.bolt} À traiter · ${dueList.length}</span>
+      <button class="banner coral" data-fold="f-conc" style="margin-top:10px;width:100%;text-align:left;cursor:pointer">${I.card}<span><b>${dueList.length} rétribution${dueList.length>1?'s':''} d’apport à verser</b> — ${eur(dueTot)} au total. Touchez pour ouvrir les relevés et l’export SEPA.</span></button>`:''}
+
+      <div style="height:18px"></div><span class="eyebrow">${I.card} Documents</span>
+      <p class="mini" style="margin:6px 0 0;color:var(--muted)">Touchez une carte pour la déplier.</p>
+      ${foldCard('f-search',I.search,'Retrouver une facture','N° de facture, client, artisan ou service',searchBody,(S.admin.factQ||'').trim().length>1?chip('grey','recherche en cours'):'')}
+      ${foldCard('f-art',I.card,'Factures par artisan','Facture de commission + factures de prestation (mandat)',artBody,chip(groups.length?'good':'grey',groups.length))}
+      ${foldCard('f-conc',I.concierge,'Rétributions conciergerie','Virement mensuel groupé + export SEPA',concBody,dueList.length?chip('coral',dueList.length+' à verser'):chip('good','à jour'))}
+
+      <div style="height:18px"></div><span class="eyebrow">${I.euro} Comptabilité</span>
+      ${foldCard('f-acc',I.card,'Justificatif de revenus','Commissions − frais Mollie − rétributions versées',accBody,chip('grey',eur(netRev)))}
       <div style="height:24px"></div></div>`;
   }
   // Section « Rétributions conciergerie » de la vue Factures : montant dû ce mois par
@@ -6752,8 +6765,7 @@
         <p class="sub" style="margin-top:6px">Générez un fichier de virement unique (norme SEPA) pour les <b>${due.length}</b> rétribution${due.length>1?'s':''} à verser (<b>${eur(dueTot)}</b>), à déposer sur votre banque en une fois.</p>
         <div class="field" style="margin-top:10px;margin-bottom:0"><label>IBAN Ti-Services (donneur d'ordre)</label><input class="txt" data-sepa value="${esc(S.sepaIban||'')}" placeholder="FR76 ... (compte qui émet les virements)" autocomplete="off">${(S.sepaIban&&!ibanValid(S.sepaIban))?`<p class="mini" style="margin-top:5px;color:var(--coral-deep)">IBAN incomplet ou invalide.</p>`:''}</div>
         <button class="btn primary sm" data-adm="conc-sepa-export" style="margin-top:12px;width:auto;padding:9px 14px">${I.card}&nbsp;Exporter les virements (SEPA)</button></div>`:'';
-    return `<div style="height:18px"></div><span class="eyebrow">Rétributions conciergerie · ${concs.length}</span>
-      <div class="banner teal" style="margin-top:8px">${I.concierge}<span>Les apporteurs sont payés <b>une fois par mois</b>&nbsp;: un virement groupé par conciergerie, contre un relevé d'auto-facturation généré par Ti-Services. À verser ce mois&nbsp;: <b>${eur(totRetro)}</b>.</span></div>${sepaBlock}${cards}`;
+    return `<div class="banner teal">${I.concierge}<span>Les apporteurs sont payés <b>une fois par mois</b>&nbsp;: un virement groupé par conciergerie, contre un relevé d'auto-facturation généré par Ti-Services. À verser ce mois&nbsp;: <b>${eur(totRetro)}</b>.</span></div>${sepaBlock}${cards}`;
   }
   // Génère et télécharge le fichier SEPA des rétributions concierge « à verser ».
   function adminExportConcSepa(){
