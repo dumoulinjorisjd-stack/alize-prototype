@@ -1212,6 +1212,10 @@
     try{ return (new Date().toISOString().slice(0,10))>=CLIENT_LAUNCH; }catch(_){ return true; }
   }
   function servicesSoon(){ toast('Nos services ouvrent le 1er octobre — vous serez prévenu !'); }
+  // Inscription CONCIERGERIE : masquée pour l'instant (mode pas encore prêt à être
+  // déployé). Repasser à true pour rouvrir — tout le parcours est conservé, et les
+  // conciergeries déjà inscrites continuent de fonctionner normalement.
+  const CONCIERGE_OPEN=false;
   // Le bandeau « ouverture le 1er octobre » de la vitrine se retire tout seul le jour J
   // (partout, bêta comprise) — aucun redéploiement requis.
   try{ if((new Date().toISOString().slice(0,10))>=CLIENT_LAUNCH){ const on=document.getElementById('openNote'); if(on)on.remove(); } }catch(_){}
@@ -7664,7 +7668,7 @@
       ${backupCard()}
       ${(window.innerWidth>=768)?`<div class="card" style="padding:16px;margin-top:12px"><div class="row between" style="gap:12px"><div class="row" style="gap:11px;align-items:center"><span class="benic">${I.gear}</span><div><b style="font-size:14px">Affichage ordinateur</b><div class="mini" style="margin-top:1px">Menu latéral et colonne large — pratique sur tablette et grand écran.</div></div></div><button class="btn ${forceDesktopPref()?'primary':'ghost'} sm" style="width:auto;padding:8px 14px;white-space:nowrap" data-act="toggle-desktop">${forceDesktopPref()?I.check+' Activé':'Activer'}</button></div></div>`:''}
       ${S.demoMode?`<div class="banner teal" style="margin-top:16px">${I.bolt}<span><b>Mode démonstration</b> — vous explorez librement tous les espaces. Ce n'est pas un vrai compte.</span></div><button class="btn ghost sm" data-act="exit-demo" style="margin-top:10px">Quitter la démo</button>`:(FB?`<button class="btn ghost sm" data-act="logout" style="margin-top:16px">Se déconnecter</button>`:'')}
-      ${isDemo()?`<p class="mini" style="text-align:center;margin-top:14px">Explorer les autres espaces&nbsp;: <button class="linklike" data-act="demo-go-pro">${I.hardhat} Artisan</button> · <button class="linklike" data-act="demo-go-concierge">${I.concierge} Conciergerie</button> · <button class="linklike" data-act="demo-go-admin">${I.gear} Admin</button></p>`:''}
+      ${isDemo()?`<p class="mini" style="text-align:center;margin-top:14px">Explorer les autres espaces&nbsp;: <button class="linklike" data-act="demo-go-pro">${I.hardhat} Artisan</button>${CONCIERGE_OPEN?` · <button class="linklike" data-act="demo-go-concierge">${I.concierge} Conciergerie</button>`:''} · <button class="linklike" data-act="demo-go-admin">${I.gear} Admin</button></p>`:''}
       ${(!S.demoMode&&FB)?`<p class="mini" style="text-align:center;margin-top:16px"><button class="linklike" data-act="account-delete" style="color:var(--coral-deep)">Supprimer mon compte</button></p>`:''}
       ${legalFooter('client')}</div>${clientNavbar()}`;
   }
@@ -8558,7 +8562,10 @@
     if(S.delAcct)return deleteAccountView();
     if(S.generalSupport)return generalSupportChat();
     if(S.proConflict)return proConflictView();
-    if(S.proStatus==='signup'){ if(S.signupKind==='concierge')return conciergeSignup(); if(S.signupKind==='artisan')return proEmailSignup(); return proTypeChoice(); }
+    if(S.proStatus==='signup'){
+      // Conciergerie masquée : toute entrée dans l'inscription pro va à l'artisan.
+      if(!CONCIERGE_OPEN&&S.signupKind!=='artisan'){S.signupKind='artisan';if(!S.proForm)S.proForm={name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,cgu:false,charte:false,rates:{},otherService:'',photo:'',refCode:storedParrain()};}
+      if(S.signupKind==='concierge')return conciergeSignup(); if(S.signupKind==='artisan')return proEmailSignup(); return proTypeChoice(); }
     // Inscription progressive (Google) : hub « compléter mon profil » + étapes groupées.
     if(S.proStatus==='draft')return S.proStep?proDraftStep(S.proStep):proDraftHub();
     if(S.proAddView)return proAddService();
@@ -10769,7 +10776,12 @@
       case 'notif-push':{const napi=(typeof Notification!=='undefined'&&typeof Notification.requestPermission==='function');if(napi&&Notification.permission==='denied'){toast('Notifications bloquées — réactivez-les dans les réglages du téléphone');break;}if(!S.proNotifPush){S.proNotifPush=true;requestPush();}else{S.proNotifPush=false;}saveProSettings();render();break;}
       case 'notif-wa':S.proNotifWa=!S.proNotifWa;saveProSettings();render();break;
       case 'save-dispo':saveProSettings();toast('Disponibilités enregistrées');break;
-      case 'go-artisan-signup':S.persona='pro';S.proStatus='signup';S.signupKind=null;render();break;
+      case 'go-artisan-signup':S.persona='pro';S.proStatus='signup';
+        // Conciergerie masquée : on saute l'écran de choix et on entre directement
+        // dans l'inscription artisan (même initialisation que signup-kind:artisan).
+        if(!CONCIERGE_OPEN){S.signupKind='artisan';S.proForm={name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,cgu:false,charte:false,rates:{},otherService:'',photo:'',refCode:storedParrain()};}
+        else S.signupKind=null;
+        render();break;
       // Inscription progressive : création du compte (e-mail) puis navigation hub ↔ étapes.
       case 'pro-account-create':{const f=S.proForm;const ok=(f.name||'').trim().length>1&&/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=6&&f.password===f.password2;if(!ok){toast('Nom, e-mail et mots de passe identiques (6 car.) requis');break;}fbProAccountCreate(f);break;}
       case 'draft-hub':S.proStep=null;saveProDraft();render();try{view.scrollTop=0;}catch(_){}break;
