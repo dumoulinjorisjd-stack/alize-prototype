@@ -270,12 +270,15 @@
   /* LISTE DES MÉTIERS : en pastilles libres, les lignes finissaient en escalier avec de
      grands vides à droite. Une grille à colonnes égales aligne tout, et la puce colorée
      reprend la couleur du service telle qu'elle apparaît dans l'app. */
-  .jobs{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:8px;margin-top:12px}
-  .jchip{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:650;color:var(--ink-soft);
-    background:var(--card);border:1px solid var(--hair);border-radius:12px;padding:10px 12px;min-width:0}
+  .jobs{display:grid;grid-template-columns:repeat(auto-fill,minmax(142px,1fr));gap:8px;margin-top:12px}
+  .jchip{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:650;color:var(--ink-soft);
+    background:var(--card);border:1px solid var(--hair);border-radius:12px;padding:10px 11px;min-width:0}
   .jchip i{width:9px;height:9px;border-radius:50%;flex:none;background:var(--teal-deep)}
   .jchip span{min-width:0;line-height:1.25}
-  @media (max-width:359px){ .jobs{grid-template-columns:1fr 1fr} .jchip{font-size:11.5px;padding:9px 10px} }
+  /* Petits écrans : on resserre le texte plutôt que de laisser un libellé passer sur
+     deux lignes — une seule pastille plus haute étire toute sa rangée. */
+  @media (max-width:409px){ .jchip{font-size:11.5px;padding:9px 10px;gap:7px} }
+  @media (max-width:359px){ .jobs{grid-template-columns:1fr 1fr;gap:6px} .jchip{font-size:10.5px;padding:9px 8px;gap:6px} .jchip i{width:8px;height:8px} }
   .pitch-foot{font-size:12px;color:var(--muted);margin:16px 0 0;line-height:1.5}
   .fb-link{display:inline-flex;align-items:center;gap:8px;margin-top:12px;font-size:13.5px;font-weight:700;color:#1877F2;text-decoration:none}
   .fb-link svg{width:22px;height:22px;flex:none}
@@ -1290,12 +1293,12 @@
       <span class="jchip" data-jobdot="menage"><i></i><span>Ménage</span></span>
       <span class="jchip" data-jobdot="jardin"><i></i><span>Jardinage</span></span>
       <span class="jchip" data-jobdot="baby"><i></i><span>Garde d'enfants</span></span>
-      <span class="jchip" data-jobdot="coiffure"><i></i><span>Coiffure à domicile</span></span>
-      <span class="jchip" data-jobdot="plomberie"><i></i><span>Dépannage &amp; bricolage</span></span>
+      <span class="jchip" data-jobdot="coiffure"><i></i><span>Coiffure</span></span>
+      <span class="jchip" data-jobdot="plomberie"><i></i><span>Dépannage</span></span>
       <span class="jchip"><i></i><span>Cuisine</span></span>
       <span class="jchip" data-jobdot="massage"><i></i><span>Massage</span></span>
       <span class="jchip" data-jobdot="animaux"><i></i><span>Garde d'animaux</span></span>
-      <span class="jchip" data-jobdot="colis"><i></i><span>Livraison de colis</span></span>
+      <span class="jchip" data-jobdot="colis"><i></i><span>Colis &amp; courrier</span></span>
     </div>
     <p class="pitch-sub" style="margin-top:12px"><b>Votre métier n'est pas dans la liste&nbsp;?</b> Le catalogue est ouvert&nbsp;: vous pouvez proposer <b>tout service, même hors de ces catégories</b>. Décrivez le vôtre à l'inscription — on vous trouve des clients.</p>
 
@@ -6415,6 +6418,20 @@
   // visite, au moment où la moitié client devient visible (elle est masquée par défaut
   // pendant le recrutement — lancer la tournée sur une carte invisible la gâcherait).
   const _isleToured={};
+  // La carte est loin sous la ligne de flottaison : lancée au chargement, la tournée
+  // était finie avant qu'on ait fini de descendre. On l'arme donc, et elle ne part
+  // qu'au moment où la carte entre réellement dans l'écran.
+  function isleArm(which){
+    const id=(which==='pro')?'coverIslePro':'coverIsleClient';
+    const box=document.getElementById(id);
+    if(!box||_isleToured[id])return;
+    if(!('IntersectionObserver'in window)){isleTour(which);return;}   // repli : on joue tout de suite
+    if(box._isleObs)return;
+    const obs=new IntersectionObserver(function(ents){
+      ents.forEach(function(e){ if(e.isIntersecting){ obs.disconnect(); box._isleObs=null; isleTour(which); } });
+    },{threshold:.35});
+    box._isleObs=obs; obs.observe(box);
+  }
   function isleTour(which){
     const id=(which==='pro')?'coverIslePro':'coverIsleClient';
     if(_isleToured[id])return;
@@ -6440,7 +6457,7 @@
     }
   }
   function setLandTab(which){var br=document.querySelector('.brief');if(!br)return;br.classList.toggle('show-pro',which==='pro');
-    setTimeout(function(){isleTour(which);},120);var tabs=br.querySelectorAll('.land-tab');for(var i=0;i<tabs.length;i++){tabs[i].classList.toggle('on',tabs[i].getAttribute('data-tab')===which);}try{window.scrollTo(0,0);}catch(_){}}
+    setTimeout(function(){isleArm(which);},120);var tabs=br.querySelectorAll('.land-tab');for(var i=0;i<tabs.length;i++){tabs[i].classList.toggle('on',tabs[i].getAttribute('data-tab')===which);}try{window.scrollTo(0,0);}catch(_){}}
   function pitchView(){
     const steps=[
       [I.search,'Commandez votre prestation en 1 clic','Choisissez un service, une date/heure. Ajoutez une photo et l’adresse (point GPS) si besoin.'],
@@ -12040,7 +12057,7 @@
   // Tournée de l'île au chargement, si la moitié client est celle qui s'affiche.
   (function(){try{
     const br=document.querySelector('.brief'); if(!br)return;
-    setTimeout(function(){isleTour(br.classList.contains('show-pro')?'pro':'client');},650);
+    setTimeout(function(){isleArm(br.classList.contains('show-pro')?'pro':'client');},650);
   }catch(_){}})();
   // On mémorise l'invite native (Android/Chrome) pour la déclencher depuis la feuille.
   window.addEventListener('beforeinstallprompt',(e)=>{e.preventDefault();deferredPrompt=e;});
