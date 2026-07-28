@@ -11837,7 +11837,13 @@
       || (iosEmbedded && browser==='safari')
       || (ios && /AppleWebKit/i.test(ua) && !/Safari|CriOS|FxiOS|EdgiOS|OPiOS/i.test(ua) && !installed);
     const iosOtherBrowser = ios && browser!=='safari';
-    return {ios,android,desktop,browser,inApp,iosOtherBrowser,ua};
+    // Version majeure d'iOS : à partir d'iOS 26, Safari n'affiche plus le bouton
+    // Partager dans sa barre — il faut passer par le menu « ••• ». Le chemin à
+    // montrer n'est donc pas le même. 0 si on ne sait pas (on prend alors le
+    // chemin moderne, majoritaire).
+    const mv=/(?:iPhone )?OS (\d+)[_.]/i.exec(ua);
+    const iosVer = mv?parseInt(mv[1],10):0;
+    return {ios,android,desktop,browser,inApp,iosOtherBrowser,iosVer,ua};
   }
   const _pfTop=detectPlatform();const isiOS=_pfTop.ios;
   // Sur iPhone, « Sur l'écran d'accueil » passe par le bouton Partager — EN BAS dans
@@ -11847,7 +11853,9 @@
   if(isiOS&&installSteps){installSteps.innerHTML=_pfTop.inApp
     ? 'iPhone&nbsp;: ouvrez d’abord ce lien dans <b>Safari</b> pour installer l’app.'
     : (_pfTop.browser==='safari'
-      ? 'iPhone&nbsp;: <b>Partager</b> ⬆︎ (en bas) → <b>«&nbsp;Sur l’écran d’accueil&nbsp;»</b>.'
+      ? ((!_pfTop.iosVer||_pfTop.iosVer>=26)
+        ? 'iPhone&nbsp;: <b>•••</b> (en bas) → <b>Partager</b> → <b>«&nbsp;Sur l’écran d’accueil&nbsp;»</b>.'
+        : 'iPhone&nbsp;: <b>Partager</b> ⬆︎ (en bas) → <b>«&nbsp;Sur l’écran d’accueil&nbsp;»</b>.')
       : 'iPhone&nbsp;: <b>Partager</b> ⬆︎ (en haut) → <b>«&nbsp;Sur l’écran d’accueil&nbsp;»</b>.');}
   // On mémorise l'invite native (Android/Chrome) pour la déclencher depuis la feuille.
   window.addEventListener('beforeinstallprompt',(e)=>{e.preventDefault();deferredPrompt=e;});
@@ -11926,14 +11934,55 @@
   // Démonstration animée du geste d'installation. Le bouton « Partager » n'est pas au
   // même endroit selon le navigateur : EN BAS dans Safari, EN HAUT (barre d'adresse)
   // dans Chrome/Edge sur iPhone. On décale donc le repère et la grille d'icônes.
-  function igPhoneAnim(pos){
-    const D='9s', top=(pos==='top'), dy=top?16:0;
+  // Démonstration animée du geste d'installation. Trois variantes, car le chemin n'est
+  // pas le même selon le navigateur ET la version d'iOS :
+  //   'safari26' → Safari depuis iOS 26 : le bouton Partager a disparu de la barre, il
+  //                faut passer par le menu « ••• » (3 gestes).
+  //   'safari'   → Safari iOS 25 et avant : bouton Partager en bas (2 gestes).
+  //   'chrome'   → Chrome / Edge : bouton Partager en haut, dans la barre d'adresse.
+  function igPhoneAnim(mode){
+    const D='11s', top=(mode==='chrome'), three=(mode==='safari26'), dy=top?16:0;
     const shX=top?105:75, shY=top?24:216;
-    const shareGlyph=`<g transform="translate(${shX} ${shY}) scale(${top?0.42:0.52}) translate(-12 -12)" fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.2V15"/><path d="M8 7l4-4 4 4"/><path d="M7 10H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-1"/></g>`;
+    const shareGlyph=(x,y,sc)=>`<g transform="translate(${x} ${y}) scale(${sc}) translate(-12 -12)" fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.2V15"/><path d="M8 7l4-4 4 4"/><path d="M7 10H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-1"/></g>`;
+    const row=(y,fill)=>`<rect x="44" y="${y}" width="62" height="16" rx="5" fill="${fill||'#F4F1EC'}"/>`;
+    const label=(y,l1,l2)=>`<text x="61" y="${y}" font-size="5.6" font-family="-apple-system,'Segoe UI',Roboto,sans-serif" font-weight="600" fill="#231E33">${l1}</text>`
+      +(l2?`<text x="61" y="${y+6.4}" font-size="5.6" font-family="-apple-system,'Segoe UI',Roboto,sans-serif" font-weight="600" fill="#231E33">${l2}</text>`:'');
+    const plusGlyph=(y)=>`<rect x="48" y="${y}" width="9" height="9" rx="2.4" fill="none" stroke="#231E33" stroke-width="1.2"/><path d="M52.5 ${y+2.1}v4.8M50.1 ${y+4.5}h4.8" stroke="#231E33" stroke-width="1.2" stroke-linecap="round"/>`;
+    const shareGlyphDark=(y)=>`<g transform="translate(52.5 ${y+4.5}) scale(0.34) translate(-12 -12)" fill="none" stroke="#231E33" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.2V15"/><path d="M8 7l4-4 4 4"/><path d="M7 10H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-1"/></g>`;
+    // Repères de temps — 2 gestes : t1 tape, la feuille monte, t2 tape « Sur l'écran ».
+    //                  3 gestes : t1 « ••• », t2 « Partager », t3 « Sur l'écran ».
+    const T = three
+      ? {tap1:'0;0.05;0.08;0.13;0.17;1', up:'0;0.16;0.23;0.66;0.72;1', sw:'0.41;0.45',
+         hi1:'0;0.26;0.30;0.36;0.40', tap2:'0;0.26;0.29;0.35;0.39;1', arr2:'0;0.22;0.26;0.36;0.40;1',
+         hi2:'0;0.48;0.52;0.60;0.64', tap3:'0;0.48;0.51;0.59;0.63;1', arr3:'0;0.44;0.48;0.60;0.64;1',
+         icon:'0;0.74;0.79;0.97;1'}
+      : {tap1:'0;0.06;0.09;0.15;0.19;1', up:'0;0.18;0.26;0.55;0.62;1', sw:null,
+         hi1:null, tap2:'0;0.40;0.43;0.50;0.54;1', arr2:'0;0.34;0.38;0.51;0.54;1',
+         hi2:'0;0.40;0.45;0.52;0.56', tap3:null, arr3:null,
+         icon:'0;0.65;0.71;0.97;1'};
+    const hiFill=(keys)=>`<animate attributeName="fill" values="#F4F1EC;#F4F1EC;#DCEBFF;#DCEBFF;#F4F1EC" keyTimes="${keys}" dur="${D}" repeatCount="indefinite"/>`;
+    const tap=(x,y,keys)=>`<circle cx="${x}" cy="${y}" r="7.5" fill="#231E33" opacity="0">
+        <animate attributeName="opacity" values="0;0;0.32;0.32;0;0" keyTimes="${keys}" dur="${D}" repeatCount="indefinite"/>
+      </circle>`;
+    // Panneau A (menu « ••• ») puis panneau B (feuille de partage) : ils se succèdent
+    // en fondu à l'intérieur du même bloc qui monte et redescend.
+    // Bascule NETTE entre les deux panneaux (calcMode discrete) : un fondu ferait se
+    // superposer « Partager » et « Sur l'écran d'accueil » — illisible.
+    const fade=(from,to,inn)=>`<animate attributeName="opacity" values="${inn?'0;1;1':'1;0;0'}" keyTimes="0;${from};1" calcMode="discrete" dur="${D}" repeatCount="indefinite"/>`;
+    const panelA=`<g opacity="${three?1:0}">${three?fade(T.sw.split(';')[0],T.sw.split(';')[1],false):''}
+        ${row(132)}${row(176)}
+        <rect x="44" y="154" width="62" height="16" rx="5" fill="#F4F1EC">${hiFill(T.hi1||'0;0;0;0;0')}</rect>
+        ${shareGlyphDark(157.5)}${label(161.6,'Partager')}
+      </g>`;
+    const panelB=`<g opacity="${three?0:1}">${three?fade(T.sw.split(';')[0],T.sw.split(';')[1],true):''}
+        ${row(132)}${row(176)}
+        <rect x="44" y="154" width="62" height="16" rx="5" fill="#F4F1EC">${hiFill(T.hi2)}</rect>
+        ${plusGlyph(157.5)}${label(161.6,"Sur l'écran","d'accueil")}
+      </g>`;
     return `<svg class="ig-phone ig-anim" viewBox="0 0 150 244" role="img" aria-label="Démonstration : installer Ti-Services sur iPhone">
       <rect x="30" y="4" width="90" height="236" rx="18" fill="#FFFFFF" stroke="#E2DDD3" stroke-width="2"/>
       <rect x="37" y="16" width="76" height="212" rx="8" fill="#F4F1EC"/>
-      ${top?`<rect x="41" y="17" width="68" height="15" rx="7.5" fill="#E6DFD3"/><rect x="48" y="22" width="40" height="5" rx="2.5" fill="#C9C2B4"/><circle cx="${shX}" cy="${shY}" r="7" fill="#1A73E8"/>${shareGlyph}`:''}
+      ${top?`<rect x="41" y="17" width="68" height="15" rx="7.5" fill="#E6DFD3"/><rect x="48" y="22" width="40" height="5" rx="2.5" fill="#C9C2B4"/><circle cx="${shX}" cy="${shY}" r="7" fill="#1A73E8"/>${shareGlyph(shX,shY,0.42)}`:''}
       ${[0,1,2].map(i=>`<rect x="${44+i*22}" y="${26+dy}" width="16" height="16" rx="4.5" fill="#E2DBCE"/>`).join('')}
       ${[0,1].map(i=>`<rect x="${44+i*22}" y="${48+dy}" width="16" height="16" rx="4.5" fill="#E2DBCE"/>`).join('')}
       <g opacity="0">
@@ -11942,34 +11991,26 @@
         <path d="M92.6 ${58+dy}c1.2 1.5 5.6 1.5 6.8 0" stroke="#FFFFFF" stroke-width="1.3" fill="none" stroke-linecap="round"/>
         <circle cx="105" cy="${47+dy}" r="4.6" fill="#1FA463"/>
         <path d="M102.8 ${47+dy}l1.6 1.6 2.8-3" stroke="#FFFFFF" stroke-width="1.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-        <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="0;0.65;0.71;0.97;1" dur="${D}" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0;0;1;1;0" keyTimes="${T.icon}" dur="${D}" repeatCount="indefinite"/>
       </g>
       <rect x="37" y="204" width="76" height="24" rx="7" fill="#E6DFD3"/>
-      ${top?'':`<circle cx="75" cy="216" r="10" fill="#007AFF"/>${shareGlyph}`}
+      ${three?`<rect x="43" y="209" width="52" height="14" rx="7" fill="#F4F1EC"/><rect x="50" y="214" width="32" height="4" rx="2" fill="#C9C2B4"/>
+        <circle cx="104" cy="216" r="8" fill="#F4F1EC" stroke="#D8D2C6" stroke-width="1"/>
+        ${[0,1,2].map(i=>`<circle cx="${100.4+i*3.6}" cy="216" r="1.25" fill="#3C3746"/>`).join('')}`
+        :(top?'':`<circle cx="75" cy="216" r="10" fill="#007AFF"/>${shareGlyph(75,216,0.52)}`)}
       <g>
-        <animateTransform attributeName="transform" type="translate" values="0 150;0 150;0 0;0 0;0 150;0 150" keyTimes="0;0.18;0.26;0.55;0.62;1" dur="${D}" repeatCount="indefinite"/>
+        <animateTransform attributeName="transform" type="translate" values="0 150;0 150;0 0;0 0;0 150;0 150" keyTimes="${T.up}" dur="${D}" repeatCount="indefinite"/>
         <rect x="37" y="118" width="76" height="110" rx="10" fill="#FFFFFF" stroke="#E2DDD3" stroke-width="1.4"/>
         <rect x="68" y="123" width="14" height="3" rx="1.5" fill="#D8D2C6"/>
-        <rect x="44" y="132" width="62" height="16" rx="5" fill="#F4F1EC"/>
-        <rect x="44" y="176" width="62" height="16" rx="5" fill="#F4F1EC"/>
-        <rect x="44" y="154" width="62" height="16" rx="5" fill="#F4F1EC">
-          <animate attributeName="fill" values="#F4F1EC;#F4F1EC;#DCEBFF;#DCEBFF;#F4F1EC" keyTimes="0;0.40;0.45;0.52;0.56" dur="${D}" repeatCount="indefinite"/>
-        </rect>
-        <rect x="48" y="157.5" width="9" height="9" rx="2.4" fill="none" stroke="#231E33" stroke-width="1.2"/>
-        <path d="M52.5 159.6v4.8M50.1 162h4.8" stroke="#231E33" stroke-width="1.2" stroke-linecap="round"/>
-        <text x="61" y="161.6" font-size="5.6" font-family="-apple-system,'Segoe UI',Roboto,sans-serif" font-weight="600" fill="#231E33">Sur l'écran</text>
-        <text x="61" y="168" font-size="5.6" font-family="-apple-system,'Segoe UI',Roboto,sans-serif" font-weight="600" fill="#231E33">d'accueil</text>
+        ${three?panelA:''}
+        ${panelB}
       </g>
-      <circle cx="${shX}" cy="${shY}" r="7.5" fill="#231E33" opacity="0">
-        <animate attributeName="opacity" values="0;0;0.32;0.32;0;0" keyTimes="0;0.06;0.09;0.15;0.19;1" dur="${D}" repeatCount="indefinite"/>
-        <animate attributeName="r" values="7.5;7.5;5.6;7.5;7.5;7.5" keyTimes="0;0.09;0.12;0.15;0.19;1" dur="${D}" repeatCount="indefinite"/>
-      </circle>
-      <circle cx="75" cy="162" r="7.5" fill="#231E33" opacity="0">
-        <animate attributeName="opacity" values="0;0;0.32;0.32;0;0" keyTimes="0;0.40;0.43;0.50;0.54;1" dur="${D}" repeatCount="indefinite"/>
-        <animate attributeName="r" values="7.5;7.5;5.6;7.5;7.5;7.5" keyTimes="0;0.43;0.46;0.50;0.54;1" dur="${D}" repeatCount="indefinite"/>
-      </circle>
-      ${igArrow(top?107:75, top?34:202, top?-90:90, '0;0.02;0.06;0.17;0.20;1', D)}
-      ${igArrow(40,162,0,'0;0.34;0.38;0.51;0.54;1',D)}
+      ${tap(three?104:shX, three?216:shY, T.tap1)}
+      ${three?tap(75,162,T.tap2):''}
+      ${tap(75,162,three?T.tap3:T.tap2)}
+      ${igArrow(three?104:(top?107:75), three?202:(top?34:202), (three||!top)?90:-90, T.tap1.replace(/^0;([\d.]+);([\d.]+);([\d.]+);([\d.]+)/, (m,a,b,c,e)=>`0;${Math.max(0,+a-0.03)};${(+b-0.02).toFixed(2)};${(+c+0.02).toFixed(2)};${(+e+0.02).toFixed(2)}`), D)}
+      ${three?igArrow(40,162,0,T.arr2,D):''}
+      ${igArrow(40,162,0,three?T.arr3:T.arr2,D)}
     </svg>`;
   }
   // Coquille NATIVE (app App Store / Play Store construite avec Capacitor) : le site
@@ -12057,7 +12098,7 @@
       // On montre donc le geste ici, avec le repère au bon endroit ; le renvoi vers
       // Safari n'est plus qu'un repli pour les iPhone restés en iOS 16 ou antérieur.
       body=`<p class="ig-intro">Regardez le geste — puis reproduisez-le dans ${bname}. En <b>3 secondes</b>, Ti-Services s'installe comme une vraie application, en <b>plein écran</b>.</p>
-        ${igPhoneAnim('top')}
+        ${igPhoneAnim('chrome')}
         <p class="ig-cap">Dans ${bname}, le bouton <b>Partager</b> est <b>en haut</b>, dans la barre d'adresse</p>
         <div class="ig-cards">
           ${card('1',IG_GLYPH.share,`Touchez le bouton <b>Partager</b> ${blogo}<span class="ig-sub">en haut à droite de la barre d'adresse</span>`)}
@@ -12083,13 +12124,20 @@
       // Ici, forcément le VRAI Safari (les autres navigateurs iPhone passent par la
       // branche « ouvrir dans Safari » ci-dessus). On MONTRE le geste en boucle animée,
       // puis les 3 étapes en texte servent d'aide-mémoire.
-      body=`<p class="ig-intro">Regardez le geste — puis reproduisez-le. En <b>3 secondes</b>, Ti-Services s'installe comme une vraie application, en <b>plein écran</b>.</p>
-        ${igPhoneAnim()}
-        <p class="ig-cap">Le bouton <b>Partager</b> est en bas</p>
+      // Depuis iOS 26, Safari a retiré le bouton Partager de sa barre : il est dans le
+      // menu « ••• », à droite de l'adresse. Avant, il était directement en bas.
+      const dots = !pf.iosVer || pf.iosVer>=26;
+      body=`<p class="ig-intro">Regardez le geste — puis reproduisez-le. En <b>quelques secondes</b>, Ti-Services s'installe comme une vraie application, en <b>plein écran</b>.</p>
+        ${igPhoneAnim(dots?'safari26':'safari')}
+        <p class="ig-cap">${dots?'Le menu <b>•••</b> est en bas, à droite de l\'adresse':'Le bouton <b>Partager</b> est en bas'}</p>
         <div class="ig-cards">
-          ${card('1',IG_GLYPH.share,`Touchez le bouton <b>Partager</b><span class="ig-sub">tout en bas de l'écran</span>`)}
-          ${card('2',IG_GLYPH.expand,`Touchez <b>« En voir plus »</b> ▾ pour dérouler toute la liste<span class="ig-sub">si « Sur l'écran d'accueil » n'apparaît pas déjà</span>`)}
-          ${card('3',IG_GLYPH.addhome,`Touchez <b>« Sur l'écran d'accueil »</b>, puis <b>Ajouter</b> — l'icône Ti-Services apparaît sur votre écran. ${I.party}`)}
+          ${dots
+            ? card('1',IG_GLYPH.dots,`Touchez le bouton <b>•••</b><span class="ig-sub">en bas, juste à droite de l'adresse</span>`)+
+              card('2',IG_GLYPH.share,`Dans le menu, touchez <b>« Partager »</b>`)+
+              card('3',IG_GLYPH.addhome,`Touchez <b>« Sur l'écran d'accueil »</b>, puis <b>Ajouter</b> — l'icône Ti-Services apparaît sur votre écran. ${I.party}`)
+            : card('1',IG_GLYPH.share,`Touchez le bouton <b>Partager</b><span class="ig-sub">tout en bas de l'écran</span>`)+
+              card('2',IG_GLYPH.expand,`Touchez <b>« En voir plus »</b> ▾ pour dérouler toute la liste<span class="ig-sub">si « Sur l'écran d'accueil » n'apparaît pas déjà</span>`)+
+              card('3',IG_GLYPH.addhome,`Touchez <b>« Sur l'écran d'accueil »</b>, puis <b>Ajouter</b> — l'icône Ti-Services apparaît sur votre écran. ${I.party}`)}
         </div>`;
     } else if(pf.android){
       body=`${deferredPrompt?`<button class="ig-cta" id="igInstall">${I.install} Installer maintenant</button><p class="ig-or">ou à la main&nbsp;:</p>`:`<p class="ig-intro">En <b>2 gestes</b>, Ti-Services s'installe comme une vraie application.</p>`}
