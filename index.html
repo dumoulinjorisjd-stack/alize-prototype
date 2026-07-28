@@ -2611,6 +2611,34 @@
   function svcNm(id){if(id==='autre')return 'Autre service';const s=findSvc(id);return s?s.nm:id;}
   // Libellé des services d'un prestataire, avec le détail du service « Autre » proposé.
   function artSvcLabel(a){return (a&&a.cats?a.cats:[]).map(function(c){return c==='autre'?('Autre'+(a.other?' : '+a.other:'')):svcNm(c);}).join(', ');}
+  // Tarifs d'un prestataire, pour la fiche admin. Un prestataire NE FIXE PAS ses
+  // prix : à l'inscription il coche « J'applique la grille tarifaire Ti-Services »
+  // (case obligatoire) et le champ `rates` reçoit une simple COPIE de la grille du
+  // jour. On affiche donc le prix de la grille EN VIGUEUR, et on ne signale l'ancien
+  // montant que si la grille a bougé depuis son inscription.
+  function artPriceRows(a){
+    const cats=(a&&a.cats?a.cats:[]).filter(function(c){return c!=='autre';});
+    if(!cats.length)return '<span class="mini" style="color:var(--muted);font-weight:500">Tarif fixé par Ti-Services après examen.</span>';
+    return cats.map(function(c){
+      const plat=(S.adminPrices&&S.adminPrices[c]!=null)?S.adminPrices[c]:svcBase(c);
+      const forf=isCatalogForfait(c);
+      const px=forf?('dès '+minActPrice(c)+' €'):(c==='colis'?(plat+' € / retrait'):(plat+' €/h'));
+      const old=(a.rates&&a.rates[c]!=null)?a.rates[c]:null;
+      const moved=(!forf&&old!=null&&old!==plat);
+      return esc(svcNm(c))+' <span style="color:var(--good)">'+px+'</span>'
+        +(moved?'<br><span class="mini" style="color:var(--muted);font-weight:500">Grille à son inscription&nbsp;: '+old+' €/h</span>':'');
+    }).join('<br>');
+  }
+  // Même information, en une seule ligne pour les listes de la console. Un seul
+  // chiffre ne peut pas résumer plusieurs métiers dont certains sont au forfait :
+  // dans ce cas on renvoie simplement à la grille.
+  function artPriceShort(a){
+    const cats=(a&&a.cats?a.cats:[]).filter(function(c){return c!=='autre';});
+    if(!cats.length)return 'tarif à définir';
+    if(cats.length>1)return 'grille Ti-Services';
+    const c=cats[0],plat=(S.adminPrices&&S.adminPrices[c]!=null)?S.adminPrices[c]:svcBase(c);
+    return isCatalogForfait(c)?('dès '+minActPrice(c)+' €'):(c==='colis'?(plat+' € / retrait'):(plat+' €/h'));
+  }
   // Statut de VALIDATION de l'attestation d'assurance (décidé par l'admin, pas
   // automatique au dépôt). 'none' = aucun document, 'attente' = déposé à vérifier,
   // 'valide' = approuvé par l'admin, 'refuse' = refusé.
@@ -4017,7 +4045,7 @@
     "Sélectionnez au moins une option (« Expérience seule » si vous n’avez pas de diplôme).":"Select at least one option (“Experience only” if you have no qualification).",
     "Sûr ?":"Sure?",
     "Tarif défini par Ti-Services — identique pour tous les clients, pas de négociation.":"Rate set by Ti-Services — the same for all clients, no negotiation.",
-    "Taux souhaité":"Desired rate",
+    "Tarifs Ti-Services":"Ti-Services rates",
     "Ti-Services Saint-Barthélemy — services à domicile à la demande":"Ti-Services Saint-Barthélemy — on-demand home services",
     "Ti-Services conserve les pièces comptables qui lui incombent pour la durée légale, mais":"Ti-Services keeps the accounting records it is responsible for for the legal period, but",
     "Ti-Services décline toute responsabilité":"Ti-Services disclaims all liability",
@@ -5236,7 +5264,7 @@
     "Sélectionnez au moins une option (« Expérience seule » si vous n’avez pas de diplôme).":"Selecione pelo menos uma opção (“Só experiência” se não tiver diploma).",
     "Sûr ?":"Tem a certeza?",
     "Tarif défini par Ti-Services — identique pour tous les clients, pas de négociation.":"Tarifa definida pela Ti-Services — igual para todos os clientes, sem negociação.",
-    "Taux souhaité":"Taxa pretendida",
+    "Tarifs Ti-Services":"Tarifas Ti-Services",
     "Ti-Services Saint-Barthélemy — services à domicile à la demande":"Ti-Services Saint-Barthélemy — serviços ao domicílio a pedido",
     "Ti-Services conserve les pièces comptables qui lui incombent pour la durée légale, mais":"A Ti-Services conserva os documentos contabilísticos que lhe cabem durante o prazo legal, mas",
     "Ti-Services décline toute responsabilité":"A Ti-Services declina toda a responsabilidade",
@@ -6877,7 +6905,7 @@
     const q=[];
     pendA.forEach(a=>q.push(`<div class="card" style="padding:14px;margin-top:10px;border-left:4px solid var(--warn)">
       <div class="row between" style="align-items:flex-start"><div class="row" style="gap:10px;align-items:center">${avatarPhoto(a.photo,inits(a.name||'A'),'')}<b style="font-size:14px">${esc(a.name)}</b></div><span class="chip grey">Prestataire</span></div>
-      <div class="mini" style="margin-top:6px">${a.type==='particulier'?'Particulier':'Entreprise'} · ${esc(artSvcLabel(a))} · ${a.rate} €/h</div>
+      <div class="mini" style="margin-top:6px">${a.type==='particulier'?'Particulier':'Entreprise'} · ${esc(artSvcLabel(a))} · ${artPriceShort(a)}</div>
       ${(a.cats&&a.cats.includes('autre')&&a.other)?`<div class="banner teal" style="margin-top:7px">${I.other}<span>Service « Autre » proposé&nbsp;: <b>${esc(a.other)}</b> — à évaluer.</span></div>`:''}
       <div class="row" style="gap:6px;margin-top:7px;flex-wrap:wrap"><span class="chip ${a.siret?'good':'coral'}">SIRET ${a.siret?'fourni':'manquant'}</span>${(function(){const l=insLabel(insStatus(a));return `<span class="chip ${l[0]}">Assurance ${l[1].toLowerCase()}</span>`;})()}</div>
       <p class="mini" style="margin-top:9px;color:var(--muted)">Échangez avant de décider&nbsp;:</p>${contactRow(a)}
@@ -6900,7 +6928,7 @@
     const allB=liveRow.concat(S.adminBookings);
     const bookings=allB.length?allB.map(bk=>{const st=bkStatus(bk.status);const sv=SERVICES.find(s=>s.id===bk.svc);const liv=(bk.status==='pending'||bk.status==='working'||bk.status==='done_pro')?' live':'';return `<div class="card" style="padding:13px;margin-top:9px"><div class="row between"><b style="font-size:14px">${sv?sv.nm:bk.svc}</b><span class="chip ${st[0]}${liv}">${st[1]}</span></div><div class="mini" style="margin-top:3px">${esc(bk.client)} → ${esc(bk.artisan)} · ${bk.when}</div><div class="mini" style="margin-top:2px">${eur(bk.amount)}</div></div>`;}).join(''):`<p class="mini" style="margin-top:8px;color:var(--muted)">Aucune réservation en cours.</p>`;
     const activeArts=arts.filter(a=>a.status!=='refuse'),refA=arts.filter(a=>a.status==='refuse');
-    const artList=activeArts.length?activeArts.map(a=>{const c=acctChip(a.status);const mol=(a.status==='valide'&&a.mollieStatus!=='active')?`<span class="chip coral" title="Paiements non activés">€ inactif</span>`:'';return `<button class="card" style="padding:12px;margin-top:8px;width:100%;text-align:left;display:block" data-adm="art:${a.id}"><div class="row between"><b style="font-size:14px">${esc(a.name)}</b><span class="row" style="gap:6px;align-items:center">${(a.noShowCount||0)>0?`<span class="chip coral">${I.clock} ${a.noShowCount}</span>`:''}${mol}<span class="chip ${c[0]}">${c[1]}</span></span></div><div class="mini" style="margin-top:2px">${catNames(a.cats)} · ${a.rate} €/h · ${esc(migZone(a.zone))}</div></button>`;}).join(''):`<p class="mini" style="margin-top:8px;color:var(--muted)">Aucun prestataire inscrit pour l’instant.</p>`;
+    const artList=activeArts.length?activeArts.map(a=>{const c=acctChip(a.status);const mol=(a.status==='valide'&&a.mollieStatus!=='active')?`<span class="chip coral" title="Paiements non activés">€ inactif</span>`:'';return `<button class="card" style="padding:12px;margin-top:8px;width:100%;text-align:left;display:block" data-adm="art:${a.id}"><div class="row between"><b style="font-size:14px">${esc(a.name)}</b><span class="row" style="gap:6px;align-items:center">${(a.noShowCount||0)>0?`<span class="chip coral">${I.clock} ${a.noShowCount}</span>`:''}${mol}<span class="chip ${c[0]}">${c[1]}</span></span></div><div class="mini" style="margin-top:2px">${catNames(a.cats)} · ${artPriceShort(a)} · ${esc(migZone(a.zone))}</div></button>`;}).join(''):`<p class="mini" style="margin-top:8px;color:var(--muted)">Aucun prestataire inscrit pour l’instant.</p>`;
     const cliList=clis.length?clis.map(cc=>{const c=acctChip(cc.status);return `<button class="card" style="padding:12px;margin-top:8px;width:100%;text-align:left;display:block" data-adm="cli:${cc.id}"><div class="row between"><b style="font-size:14px">${esc(cc.name)}</b><span class="chip ${c[0]}">${c[1]}</span></div><div class="mini" style="margin-top:2px">${esc(migZone(cc.zone))} · ${cc.bookings} réservations</div></button>`;}).join(''):`<p class="mini" style="margin-top:8px;color:var(--muted)">Aucun client inscrit pour l’instant.</p>`;
     const refList=refA.map(a=>`<div class="card" style="padding:12px;margin-top:8px;border-left:4px solid var(--hair)"><div class="row between"><b style="font-size:14px">${esc(a.name)}</b><span class="chip grey">Refusé</span></div><div class="mini" style="margin-top:2px">${catNames(a.cats)} · ${esc(migZone(a.zone))}</div>${a.reason?`<p class="mini" style="margin-top:5px;color:var(--coral-deep)">Motif&nbsp;: ${esc(a.reason)}</p>`:''}${contactRow(a)}<div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost sm" data-adm="reexam-art:${a.id}">Réexaminer</button><button class="btn ghost sm" data-adm="art:${a.id}">Fiche</button></div></div>`).join('');
     const sm=S.mission;const supBlocks=[];
@@ -7201,7 +7229,7 @@
         <div class="card" style="padding:16px;margin-top:12px">
           <div class="row between"><span class="sub">Statut</span><span class="chip ${acctChip(a.status)[0]}">${acctChip(a.status)[1]}</span></div><hr class="dashed">
           <div class="row between" style="align-items:flex-start"><span class="sub">Services</span><b style="text-align:right;max-width:62%">${esc(artSvcLabel(a))}</b></div>
-          <div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">Taux souhaité</span><b style="text-align:right;max-width:62%">${a.rates?Object.keys(a.rates).map(k=>{const s=SERVICES.find(x=>x.id===k);const nm=s?s.nm:k;const plat=(S.adminPrices&&S.adminPrices[k]!=null)?S.adminPrices[k]:svcBase(k);const r=a.rates[k];const diff=r!==plat;return nm+' <span style="color:'+(diff?'var(--coral-deep)':'var(--good)')+'">'+r+' €/h</span>'+(diff?'<br><span class="mini" style="color:var(--muted);font-weight:500">Prix Ti-Services&nbsp;: '+plat+' €/h</span>':'');}).join('<br>'):a.rate+' €/h'}</b></div>
+          <div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">Tarifs Ti-Services</span><b style="text-align:right;max-width:62%">${artPriceRows(a)}</b></div>
           ${(a.cats&&a.cats.includes('baby'))?`<div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">Diplômes garde d'enfants</span><b style="text-align:right;max-width:62%">${(a.diplomas&&a.diplomas.length)?a.diplomas.map(d=>esc(d==='Autre diplôme'&&a.diplomaOther?'Autre : '+a.diplomaOther:d)).join('<br>'):'<span style="color:var(--coral-deep)">Non renseignés</span>'}</b></div>${(a.diplomas&&a.diplomas.length&&!a.diplomas.some(d=>/PSC1/.test(d)))?`<p class="mini" style="margin-top:4px;color:var(--coral-deep)">${I.shield} PSC1 (premiers secours) non déclaré — recommandé pour la garde d'enfants. Vérifiez les justificatifs avant validation.</p>`:''}`:''}
           <div class="row between" style="margin-top:6px"><span class="sub">SIRET</span><b class="money">${esc(a.siret||'—')}</b></div>
           <div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">Assurance RC</span><b style="text-align:right;max-width:62%">${(function(){const st=insStatus(a),l=insLabel(st);return `<span class="chip ${l[0]}">${l[1]}</span>`;})()}${a.insurer?`<br><span style="color:var(--ink);font-weight:600;font-size:13px">${esc(a.insurer)}</span>`:''}${a.insuranceUrl?`<br><a href="${esc(a.insuranceUrl)}" target="_blank" rel="noopener" style="color:var(--teal-deep);font-weight:700">${I.other} Voir l'attestation</a>`:`<br><span class="mini" style="color:var(--muted)">Attestation non jointe</span>`}</b></div>
