@@ -2639,6 +2639,33 @@
     const c=cats[0],plat=(S.adminPrices&&S.adminPrices[c]!=null)?S.adminPrices[c]:svcBase(c);
     return isCatalogForfait(c)?('dès '+minActPrice(c)+' €'):(c==='colis'?(plat+' € / retrait'):(plat+' €/h'));
   }
+  // Identité légale et engagements signés d'un prestataire, dans sa fiche admin.
+  // Tout cela est saisi à l'inscription et bien enregistré en base, mais n'était
+  // jamais remonté à l'écran : impossible de vérifier une forme juridique, une
+  // majorité, ou de prouver qu'un prestataire a bien accepté les CGU et le mandat.
+  function artLegalRows(a){
+    if(!a)return '';
+    const row=function(lbl,val){return val?`<div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">${lbl}</span><b style="text-align:right;max-width:62%">${val}</b></div>`:'';};
+    const out=[];
+    if(a.legalName&&a.legalName!==a.name)out.push(row('Dénomination légale',esc(a.legalName)));
+    const jur=[a.legalForm?esc(a.legalForm):'',a.capital?esc(a.capital)+' € de capital':'',a.rcsCity?'RCS '+esc(a.rcsCity):''].filter(Boolean).join('<br>');
+    out.push(row('Forme juridique',jur||(a.statusType==='particulier'?'Particulier':'')));
+    if(a.birth){
+      const maj=(typeof isAdult==='function')?isAdult(a.birth):true;
+      const d=new Date(a.birth);const txt=isNaN(d)?esc(a.birth):d.toLocaleDateString('fr-FR');
+      out.push(row('Naissance',txt+(maj?'':'<br><span class="mini" style="color:var(--coral-deep);font-weight:700">Mineur — inscription à refuser</span>')));
+    }
+    // Preuve d'acceptation : ce qui protège Ti-Services en cas de litige.
+    const eng=[['CGU',a.acceptedTerms],['Charte',a.acceptedCharte],['Mandat',a.acceptedMandat],['Grille tarifaire',a.acceptsGrille]]
+      .map(function(p){return '<span class="chip '+(p[1]?'good':'coral')+'">'+(p[1]?I.check:'')+' '+p[0]+'</span>';}).join(' ');
+    out.push(row('Engagements',eng
+      +(a.termsVersion?'<br><span class="mini" style="color:var(--muted);font-weight:500">Version '+esc(String(a.termsVersion))+(a.termsAt?' · '+new Date(a.termsAt).toLocaleDateString('fr-FR'):'')+'</span>':'')));
+    if(a.referralCode||a.referredByCode){
+      out.push(row('Parrainage',(a.referralCode?'Son code&nbsp;: <span class="money">'+esc(a.referralCode)+'</span>':'')
+        +(a.referredByCode?(a.referralCode?'<br>':'')+'<span class="mini" style="color:var(--muted);font-weight:500">Parrainé par '+esc(a.referredByCode)+'</span>':'')));
+    }
+    return out.join('');
+  }
   // Statut de VALIDATION de l'attestation d'assurance (décidé par l'admin, pas
   // automatique au dépôt). 'none' = aucun document, 'attente' = déposé à vérifier,
   // 'valide' = approuvé par l'admin, 'refuse' = refusé.
@@ -7232,6 +7259,7 @@
           <div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">Tarifs Ti-Services</span><b style="text-align:right;max-width:62%">${artPriceRows(a)}</b></div>
           ${(a.cats&&a.cats.includes('baby'))?`<div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">Diplômes garde d'enfants</span><b style="text-align:right;max-width:62%">${(a.diplomas&&a.diplomas.length)?a.diplomas.map(d=>esc(d==='Autre diplôme'&&a.diplomaOther?'Autre : '+a.diplomaOther:d)).join('<br>'):'<span style="color:var(--coral-deep)">Non renseignés</span>'}</b></div>${(a.diplomas&&a.diplomas.length&&!a.diplomas.some(d=>/PSC1/.test(d)))?`<p class="mini" style="margin-top:4px;color:var(--coral-deep)">${I.shield} PSC1 (premiers secours) non déclaré — recommandé pour la garde d'enfants. Vérifiez les justificatifs avant validation.</p>`:''}`:''}
           <div class="row between" style="margin-top:6px"><span class="sub">SIRET</span><b class="money">${esc(a.siret||'—')}</b></div>
+          ${artLegalRows(a)}
           <div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">Assurance RC</span><b style="text-align:right;max-width:62%">${(function(){const st=insStatus(a),l=insLabel(st);return `<span class="chip ${l[0]}">${l[1]}</span>`;})()}${a.insurer?`<br><span style="color:var(--ink);font-weight:600;font-size:13px">${esc(a.insurer)}</span>`:''}${a.insuranceUrl?`<br><a href="${esc(a.insuranceUrl)}" target="_blank" rel="noopener" style="color:var(--teal-deep);font-weight:700">${I.other} Voir l'attestation</a>`:`<br><span class="mini" style="color:var(--muted)">Attestation non jointe</span>`}</b></div>
           <div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">Paiements (Mollie)</span><b style="text-align:right;max-width:62%">${(function(){const st=a.mollieStatus||'none';
             if(st==='active')return `<span class="chip good">${I.check} Actif</span>`;
@@ -13041,7 +13069,7 @@
       adminArtUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'artisans'),function(snap){
         const list=[],pending=new Set();
         snap.forEach(function(d){ const a=d.data()||{}; const cats=Array.isArray(a.cats)?a.cats:[]; const rr=a.rates||{}; const st=a.status||'attente';
-          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Prestataire',status:st,type:'entreprise',cats:cats,other:a.other||'',pendingCats:Array.isArray(a.pendingCats)?a.pendingCats:[],pendingOther:a.pendingOther||'',rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,founderSince:(a.founderSince&&a.founderSince.toMillis)?a.founderSince.toMillis():(typeof a.founderSince==='number'?a.founderSince:null),founderGross:Number(a.founderGross)||0,rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,mollieStatus:a.mollieStatus||'none',mollieOnb:a.mollieOnboardingStatus||'',lastNoShowAt:(a.lastNoShowAt&&a.lastNoShowAt.toDate)?a.lastNoShowAt.toDate().getTime():0});
+          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Prestataire',status:st,type:(a.statusType==='particulier')?'particulier':'entreprise',statusType:a.statusType||'entreprise',legalName:a.legalName||'',legalForm:a.legalForm||'',capital:a.capital||'',rcsCity:a.rcsCity||'',birth:a.birth||'',referralCode:a.referralCode||'',referredByCode:a.referredByCode||'',acceptedTerms:!!a.acceptedTerms,acceptedCharte:!!a.acceptedCharte,acceptedMandat:!!a.acceptedMandat,acceptsGrille:!!a.acceptsGrille,termsVersion:a.termsVersion||'',termsAt:(a.termsAt&&a.termsAt.toMillis)?a.termsAt.toMillis():0,createdAt:(a.createdAt&&a.createdAt.toMillis)?a.createdAt.toMillis():0,cats:cats,other:a.other||'',pendingCats:Array.isArray(a.pendingCats)?a.pendingCats:[],pendingOther:a.pendingOther||'',rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,founderSince:(a.founderSince&&a.founderSince.toMillis)?a.founderSince.toMillis():(typeof a.founderSince==='number'?a.founderSince:null),founderGross:Number(a.founderGross)||0,rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,mollieStatus:a.mollieStatus||'none',mollieOnb:a.mollieOnboardingStatus||'',lastNoShowAt:(a.lastNoShowAt&&a.lastNoShowAt.toDate)?a.lastNoShowAt.toDate().getTime():0});
           if(st==='attente')pending.add(d.id); });
         S.adminArtisans=list;
         // Recalcule la liste des services actifs (au moins un prestataire validé) et la publie
