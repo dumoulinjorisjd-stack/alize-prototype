@@ -623,6 +623,7 @@ exports.notifyArtisansNewRequest = onDocumentCreated('requests/{reqId}', async (
 
   // Jetons push de ces artisans (avec correspondance jeton -> uid pour le nettoyage).
   const tokenToUid = {};
+  const consent = {};   // users/{uid}.notifOn : ce compte veut-il être notifié sur cet appareil ?
   await Promise.all(targetUids.map(async (uid) => {
     try {
       const u = await db.collection('users').doc(uid).get();
@@ -630,19 +631,26 @@ exports.notifyArtisansNewRequest = onDocumentCreated('requests/{reqId}', async (
       // Le compte n'est PLUS un artisan (redevenu client) : on ne lui envoie aucune
       // notification « nouvelle prestation », même si sa fiche artisan traîne encore.
       if (ud.role && ud.role !== 'artisan') return;
+      if (typeof ud.notifOn === 'boolean') consent[uid] = ud.notifOn;
       (ud.pushTokens || []).forEach((tok) => { tokenToUid[tok] = uid; });
     } catch (_) {}
   }));
-  // PROPRIÉTÉ DU JETON. Un même appareil a pu servir à plusieurs comptes (ex. un
-  // artisan qui est ensuite devenu client). Le jeton FCM appartient au DERNIER compte
-  // qui l'a enregistré (fcmOwners/{token}.uid). On écarte tout jeton dont le
-  // propriétaire actuel n'est plus cet artisan — sinon un ex-artisan devenu client
-  // continuerait de recevoir les « prestations à faire » sur son appareil.
+  // PLUSIEURS COMPTES SUR UN MÊME TÉLÉPHONE. Le jeton appartient à l'appareil, pas au
+  // compte : deux artisans qui utilisent le même téléphone partagent le même jeton.
+  // Chacun peut vouloir être notifié — c'est le cas d'un gérant qui suit deux comptes.
+  // On respecte donc le CONSENTEMENT de chaque compte (users/{uid}.notifOn), posé
+  // quand il active les notifications et levé quand il les coupe.
+  // Pour les comptes anciens, sans consentement enregistré, on garde l'ancienne règle :
+  // le jeton revient au dernier qui l'a enregistré (fcmOwners/{token}.uid) — sinon un
+  // ex-artisan devenu client recevrait encore des « prestations à faire ».
   await Promise.all(Object.keys(tokenToUid).map(async (tok) => {
     try {
+      const uid = tokenToUid[tok];
+      if (consent[uid] === true) return;          // ce compte a dit oui : on le notifie
+      if (consent[uid] === false) { delete tokenToUid[tok]; return; }
       const o = await db.collection('fcmOwners').doc(tok).get();
       const od = o.exists ? (o.data() || {}) : null;
-      if (od && od.uid && od.uid !== tokenToUid[tok]) delete tokenToUid[tok];
+      if (od && od.uid && od.uid !== uid) delete tokenToUid[tok];
     } catch (_) {}
   }));
   const tokens = Object.keys(tokenToUid);

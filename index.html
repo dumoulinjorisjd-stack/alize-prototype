@@ -11842,7 +11842,7 @@
       case 'show-client-invoice':S.clientInv=true;render();break;
       case 'close-client-invoice':S.clientInv=false;S.histInvoice=null;render();break;
       case 'toggle-online':S.proOnline=!S.proOnline;saveProSettings();render();break;
-      case 'notif-push':{const napi=(typeof Notification!=='undefined'&&typeof Notification.requestPermission==='function');if(napi&&Notification.permission==='denied'){toast('Notifications bloquées — réactivez-les dans les réglages du téléphone');break;}if(!S.proNotifPush){S.proNotifPush=true;requestPush();}else{S.proNotifPush=false;}saveProSettings();render();break;}
+      case 'notif-push':{const napi=(typeof Notification!=='undefined'&&typeof Notification.requestPermission==='function');if(napi&&Notification.permission==='denied'){toast('Notifications bloquées — réactivez-les dans les réglages du téléphone');break;}if(!S.proNotifPush){S.proNotifPush=true;requestPush();}else{S.proNotifPush=false;pushOptOut();}saveProSettings();render();break;}
       case 'notif-wa':S.proNotifWa=!S.proNotifWa;saveProSettings();render();break;
       case 'save-dispo':saveProSettings();toast('Disponibilités enregistrées');break;
       // Réponse à la proposition de Ti-Services (« vous êtes un professionnel ? »).
@@ -13702,6 +13702,18 @@
   // lequel l'enregistrement a été fait. C'est LE point qui manquait : l'ancien
   // drapeau ne disait que « on l'a déjà fait », sans dire pour qui.
   function pushNeedsRegister(uid){ return !!uid && pushRegUid!==uid; }
+  // Couper les notifications pour CE compte : on retire le jeton de l'appareil de sa
+  // fiche et on lève son consentement. Les autres comptes du même téléphone gardent
+  // les leurs — c'est ce qui permet d'être notifié sur deux comptes à la fois.
+  async function pushOptOut(){
+    try{
+      const u=FB&&FB.auth&&FB.auth.currentUser; if(!u||isDemo())return;
+      const patch={notifOn:false};
+      if(pushRegTok&&FB.f.arrayRemove)patch.pushTokens=FB.f.arrayRemove(pushRegTok);
+      await FB.f.setDoc(FB.f.doc(FB.db,'users',u.uid),patch,{merge:true});
+      if(pushRegUid===u.uid)pushRegUid=null;   // il pourra se réabonner plus tard
+    }catch(_){}
+  }
   async function registerPush(role){
     if(isNativeShell()){
       try{
@@ -13709,7 +13721,7 @@
         if(!pushNeedsRegister(FB.auth.currentUser.uid))return;
         const tok=await nativeFcmToken(); if(!tok)return;
         pushRegUid=FB.auth.currentUser.uid; pushRegTok=tok;
-        try{ await FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{pushTokens:FB.f.arrayUnion(tok),role:role,notifAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
+        try{ await FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{pushTokens:FB.f.arrayUnion(tok),role:role,notifOn:true,notifAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
         try{ await FB.f.setDoc(FB.f.doc(FB.db,'fcmOwners',tok),{uid:FB.auth.currentUser.uid,role:role,at:FB.f.serverTimestamp()}); }catch(_){}
       }catch(e){ console.warn('push natif',e); }
       return;
@@ -13724,7 +13736,7 @@
       const messaging=msgM.getMessaging(FB.app);
       const token=await msgM.getToken(messaging,{vapidKey:CONFIG.vapidKey,serviceWorkerRegistration:reg});
       if(token){ pushRegUid=FB.auth.currentUser.uid; pushRegTok=token;
-        try{ await FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{pushTokens:FB.f.arrayUnion(token),role:role,notifAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
+        try{ await FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{pushTokens:FB.f.arrayUnion(token),role:role,notifOn:true,notifAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
         // Propriété EXCLUSIVE du jeton par ce compte : si l'appareil a déjà servi à un
         // autre compte (ex. ancien profil prestataire), on récupère la propriété du jeton
         // pour que les notifications de l'ancien compte cessent (voir notifyArtisansNewRequest).
@@ -14098,16 +14110,11 @@
     render();toast('Votre compte a été supprimé');
   }
   function fbLogout(){
-    // Le compte qui part cesse d'être destinataire sur CET appareil : on retire son
-    // jeton et on rouvre la porte à l'enregistrement du compte suivant. Sans ça, le
-    // téléphone restait inscrit chez l'ancien et muet pour le nouveau.
-    try{
-      const u=FB&&FB.auth&&FB.auth.currentUser;
-      if(u&&pushRegTok&&FB.f.arrayRemove&&!isDemo()){
-        FB.f.setDoc(FB.f.doc(FB.db,'users',u.uid),{pushTokens:FB.f.arrayRemove(pushRegTok)},{merge:true}).catch(function(){});
-      }
-    }catch(_){}
-    pushRegUid=null; pushRegTok=null;
+    // On NE retire PAS le jeton du compte qui part : plusieurs comptes d'un même
+    // téléphone peuvent rester abonnés en même temps. Seul un « couper les
+    // notifications » dans un compte le détache (cf. pushOptOut). On rouvre
+    // simplement la garde pour que le compte suivant s'enregistre à son tour.
+    pushRegUid=null;
     if(adminArtUnsub){try{adminArtUnsub();}catch(_){}adminArtUnsub=null;} if(proStatusUnsub){try{proStatusUnsub();}catch(_){}proStatusUnsub=null;} if(openReqUnsub){try{openReqUnsub();}catch(_){}openReqUnsub=null;} if(activeReqUnsub){try{activeReqUnsub();}catch(_){}activeReqUnsub=null;} if(concStatusUnsub){try{concStatusUnsub();}catch(_){}concStatusUnsub=null;} if(adminConcUnsub){try{adminConcUnsub();}catch(_){}adminConcUnsub=null;} if(adminLedgerUnsub){try{adminLedgerUnsub();}catch(_){}adminLedgerUnsub=null;} Object.keys(clientReqUnsubs).forEach(unsubClientRequest); adminSeenPending=null; if(FB){ try{FB.a.signOut(FB.auth);}catch(_){} } }
 
   handleDeepLink();
