@@ -438,6 +438,10 @@
      PRO ardoise, ADMIN sarcelle — pour qu'aucun ne se confonde avec un autre. */
   .sirettap{display:inline-flex;align-items:center;gap:6px;background:var(--sand-2,#F4F1EC);border:1px solid var(--hair);border-radius:9px;padding:5px 9px;font:inherit;font-size:13.5px;font-weight:700;color:var(--ink);cursor:pointer;letter-spacing:.02em}
   .sirettap:active{background:var(--teal-wash)}
+  /* Identifiant de compte d'une candidature non envoyée : sert à la retrouver dans la
+     console Firebase (Authentication → Users). Discret, mais copiable d'un geste. */
+  .uidtap{display:inline-flex;align-items:center;gap:5px;margin-top:7px;background:none;border:none;padding:0;font:inherit;font-size:11px;color:var(--muted);cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+  .uidtap:active{color:var(--teal-deep)}
   .siretlink{display:block;margin-top:5px;font-size:11.5px;font-weight:700;color:var(--teal-deep);text-decoration:none}
   /* ============ FICHES DE CONSOLE ============ */
   /* Une fiche admin, c'est vingt lignes lues à la suite. Tant que chaque valeur était
@@ -3304,7 +3308,7 @@
     // formulaire en cours. Volontairement à part de S.missions pour ne rien perturber.
     renfortView:false,renforts:[],renfortsLoaded:false,renfortForm:null,renfortBusy:false,
     // Candidatures commencées mais jamais envoyées (compte créé, aucune fiche artisan).
-    adminDrafts:[],
+    adminDrafts:[],adminArtsLoaded:false,
     sepaIban:(function(){try{return localStorage.getItem('ts_sepa_iban')||'';}catch(_){return '';}})(),concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,
     proPhoto:null,proStatus:'approved',proFounder:true,proNotifPush:true,proNotifWa:true,proPhone:'0690 00 00 00',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proPendingCats:[],proPendingOther:'',proSiteMode:'both',proSalonAddress:'',proSalonZone:'Gustavia',proSalonGeo:null,proAddView:false,proAddForm:null,proForm:{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:'',photo:''},
     proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proReqSlot:null,proReqPick:false,proMissions:[],proSkipped:[],proSkipAt:{},proConflict:null,proStmt:false,commInvId:null,commStmt:false,signupKind:null,concSignup:null,concStatus:'approved',adminConcierges:[],
@@ -7504,6 +7508,9 @@
         // Un compte prestataire SANS fiche `artisans`, c'est quelqu'un qui a monté son
         // dossier et ne l'a jamais envoyé. Il n'apparaît dans aucune autre liste : sans
         // cette carte, il est perdu pour vous sans que personne ne le sache.
+        // Tant que les fiches prestataires ne sont pas revenues du serveur, on ne sait
+        // pas qui a déjà la sienne : on se tait plutôt que d'accuser tout le monde.
+        if(!S.adminArtsLoaded)return '';
         const connus={};(arts||[]).forEach(function(a){if(a.uid)connus[a.uid]=1;});
         const att=(S.adminDrafts||[]).filter(function(d){return !connus[d.uid];});
         if(!att.length)return '';
@@ -7517,6 +7524,7 @@
               ${d.email?`<a href="mailto:${esc(d.email)}?subject=${encodeURIComponent('Votre inscription Ti-Services')}" style="color:var(--teal-deep);font-weight:700;font-size:13px;word-break:break-all">${I.mail||''} ${esc(d.email)}</a>`:`<span class="mini">E-mail inconnu</span>`}
               ${d.phone?`<a href="tel:${telClean(d.phone)}" style="color:var(--teal-deep);font-weight:700;font-size:13px">${esc(d.phone)}</a>`:''}
             </div>
+            <button class="uidtap" data-adm="copyuid:${d.uid}" title="Copier l'identifiant du compte">${I.copy} <span class="money">${esc(d.uid)}</span></button>
           </div></div>`;}).join('');
         return `<div class="card" style="padding:16px;margin-top:12px;border-left:4px solid var(--coral)">
           <div class="row between" style="gap:8px;align-items:center"><span class="eyebrow" style="color:var(--coral-deep)">${I.clock} Candidatures jamais envoyées</span><span class="chip coral" style="flex:none">${att.length}</span></div>
@@ -9720,7 +9728,7 @@
   function blankAll(){
     S.addresses=[];S.addrDefault=null;S.history=[];S.recurring=[];S.card=null;S.mission=null;S.missions=[];S.proMissions=[];S.proReqView=null;S.proSkipped=[];S.proSkipAt={};
     S.proHistory=[];S.agenda=[];S.proEarnings=0;S.proJobsToday=0;S.proJobsTotal=0;
-    S.adminArtisans=[];S.adminClients=[];S.adminBookings=[];S.adminCommission=0;S.adminConcierges=[];S.adminDrafts=[];
+    S.adminArtisans=[];S.adminClients=[];S.adminBookings=[];S.adminCommission=0;S.adminConcierges=[];S.adminDrafts=[];S.adminArtsLoaded=false;
     S.concClients=[];S.concOrders=[];S.concEarn=0;
     // Renfort (bêta) : rien ne doit survivre à un changement de compte.
     S.renforts=[];S.renfortsLoaded=false;S.renfortForm=null;S.renfortView=false;S._rfLoading=false;S._rfCancel=null;
@@ -11950,6 +11958,13 @@
         try{ if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(v).then(function(){toast('SIRET copié ✓');},function(){toast(v);}); } else { toast(v); } }catch(_){ toast(v); }
         return;
       }
+      else if(act==='copyuid'){
+        // Identifiant du compte : c'est la clé qui permet de retrouver la personne dans
+        // Firebase (Authentication → Users, ou Firestore → users).
+        if(!id)return;
+        try{ if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(id).then(function(){toast('Identifiant copié ✓');},function(){toast(id);}); } else { toast(id); } }catch(_){ toast(id); }
+        return;
+      }
       else if(act==='prosug-on'||act==='prosug-off'){
         // On MARQUE le compte, on ne le convertit pas : la bascule n'aura lieu que si la
         // personne accepte. Une proposition annulée efface simplement le marquage.
@@ -14108,7 +14123,7 @@
         snap.forEach(function(d){ const a=d.data()||{}; const cats=Array.isArray(a.cats)?a.cats:[]; const rr=a.rates||{}; const st=a.status||'attente';
           list.push({id:d.id,uid:d.id,real:true,name:a.name||'Prestataire',status:st,type:(a.statusType==='particulier')?'particulier':'entreprise',statusType:a.statusType||'entreprise',legalName:a.legalName||'',legalForm:a.legalForm||'',capital:a.capital||'',rcsCity:a.rcsCity||'',birth:a.birth||'',referralCode:a.referralCode||'',referredByCode:a.referredByCode||'',acceptedTerms:!!a.acceptedTerms,acceptedCharte:!!a.acceptedCharte,acceptedMandat:!!a.acceptedMandat,acceptsGrille:!!a.acceptsGrille,termsVersion:a.termsVersion||'',termsAt:(a.termsAt&&a.termsAt.toMillis)?a.termsAt.toMillis():0,createdAt:(a.createdAt&&a.createdAt.toMillis)?a.createdAt.toMillis():0,cats:cats,other:a.other||'',pendingCats:Array.isArray(a.pendingCats)?a.pendingCats:[],pendingOther:a.pendingOther||'',rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,founderSince:(a.founderSince&&a.founderSince.toMillis)?a.founderSince.toMillis():(typeof a.founderSince==='number'?a.founderSince:null),founderGross:Number(a.founderGross)||0,rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,online:!!a.online,siteMode:a.siteMode||'',salonAddress:a.salonAddress||'',salonZone:a.salonZone||'',push:(Array.isArray(a.pushTokens)?a.pushTokens.length:0),mollieStatus:a.mollieStatus||'none',mollieOnb:a.mollieOnboardingStatus||'',lastNoShowAt:(a.lastNoShowAt&&a.lastNoShowAt.toDate)?a.lastNoShowAt.toDate().getTime():0});
           if(st==='attente')pending.add(d.id); });
-        S.adminArtisans=list;
+        S.adminArtisans=list;S.adminArtsLoaded=true;
         // Recalcule la liste des services actifs (au moins un prestataire validé) et la publie
         // dans settings/availability — c'est ce que lisent les clients pour griser le reste.
         saveAvailability();
