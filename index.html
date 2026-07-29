@@ -7460,7 +7460,10 @@
   }
   function adminHome(){
     const arts=S.adminArtisans,clis=S.adminClients;
-    const pendA=arts.filter(a=>a.status==='attente'),pendC=clis.filter(c=>c.status==='attente');
+    // File de validation : un compte devenu prestataire se valide côté prestataire, pas
+    // ici — sinon il apparaîtrait deux fois, dans deux files qui ne veulent pas dire la
+    // même chose.
+    const pendA=arts.filter(a=>a.status==='attente'),pendC=clis.filter(c=>c.status==='attente'&&!c.alsoPro);
     const pendConc=(S.adminConcierges||[]).filter(c=>c.status==='attente');
     const live=(S.mission&&['pending','accepted','working','done_pro'].includes(S.mission.status))?1:0;
     const validA=arts.filter(a=>a.status==='valide').length;
@@ -7506,7 +7509,7 @@
         ${al.length?`<div class="row" style="gap:5px;margin-top:6px;flex-wrap:wrap">${al.join('')}</div>`:''}
       </div></button>`;}).join(''):`<p class="mini" style="margin-top:8px;color:var(--muted)">Aucun prestataire inscrit pour l’instant.</p>`;
     const cliList=clis.length?clis.map(cc=>{const c=acctChip(cc.status);return `<button class="card listrow" data-adm="cli:${cc.id}">${avatarPhoto(cc.photo,inits(cc.name),'sm')}<div class="lr-main">
-      <div class="row between" style="gap:8px;align-items:center"><b class="lr-name">${esc(cc.name)}</b><span class="chip ${c[0]}" style="flex:none">${c[1]}</span></div>
+      <div class="row between" style="gap:8px;align-items:center"><b class="lr-name">${esc(cc.name)}</b><span class="chip ${cc.alsoPro?'teal':c[0]}" style="flex:none">${cc.alsoPro?'Devenu prestataire':c[1]}</span></div>
       <div class="mini lr-sub">${esc(migZone(cc.zone))} · ${cc.bookings} réservation${cc.bookings>1?'s':''}</div>
     </div></button>`;}).join(''):`<p class="mini" style="margin-top:8px;color:var(--muted)">Aucun client inscrit pour l’instant.</p>`;
     const refList=refA.map(a=>`<div class="card" style="padding:12px;margin-top:8px;border-left:4px solid var(--hair)"><div class="row" style="gap:11px;align-items:flex-start">${avatarPhoto(a.photo,inits(a.name),'sm')}<div style="flex:1;min-width:0"><div class="row between" style="gap:8px;align-items:center"><b class="lr-name">${esc(a.name)}</b><span class="chip grey" style="flex:none">Refusé</span></div><div class="mini lr-sub">${catShort(a.cats)} · ${esc(migZone(a.zone))}</div></div></div>${a.reason?`<p class="mini" style="margin-top:6px;color:var(--coral-deep)">Motif&nbsp;: ${esc(a.reason)}</p>`:''}${contactRow(a)}<div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost sm" data-adm="reexam-art:${a.id}">Réexaminer</button><button class="btn ghost sm" data-adm="art:${a.id}">Fiche</button></div></div>`).join('');
@@ -7843,6 +7846,11 @@
       const a=S.adminArtisans.find(x=>x.id===S.admin.sel);if(!a)return adminHome();
       return `<div class="pad"><button class="reset" data-adm="home" style="margin:10px 0 6px">← Retour</button>
         <div class="row" style="gap:12px">${avatarPhoto(a.photo,inits(a.name),'lg')}<div><b style="font-size:18px;font-family:var(--f-disp)">${esc(a.name)}</b><div class="mini">Prestataire · ${a.type==='particulier'?'Particulier':'Entreprise'} · ${a.zone}</div></div></div>
+        ${(function(){
+          // Même identifiant des deux côtés : ce prestataire a d'abord été client. Le dire
+          // ici évite de traiter deux fois la même personne comme deux comptes distincts.
+          const cc=(S.adminClients||[]).find(function(x){return x.uid===a.uid&&x.alsoPro;});
+          return cc?`<div class="banner teal" style="margin-top:14px">${I.info||I.shield}<span>Cette personne était <b>cliente</b> avant de devenir prestataire — même identifiant, ${cc.bookings} réservation${cc.bookings>1?'s':''} à son actif. <button class="linklike" data-adm="cli:${esc(cc.id)}" style="font-weight:800">Ouvrir sa fiche client</button></span></div>`:'';})()}
         ${(a.cats&&a.cats.includes('autre')&&a.other)?`<div class="banner teal" style="margin-top:14px">${I.other}<span>Service « Autre » proposé&nbsp;: <b>${esc(a.other)}</b> — à évaluer avant validation.</span></div>${(S.customServices||[]).some(function(x){return x.nm.toLowerCase()===a.other.toLowerCase();})?`<p class="mini" style="margin-top:8px;color:var(--good)">${I.check} « ${esc(a.other)} » figure déjà au catalogue.</p>`:`<button class="btn ghost sm" data-adm="addcat:${a.id}" style="margin-top:9px;width:auto;padding:9px 14px">${I.plus} Ajouter « ${esc(a.other)} » au catalogue</button>`}`:''}
         <div class="card fiche" style="padding:16px;margin-top:12px">
           ${fRow('Statut',`<span class="chip ${acctChip(a.status)[0]}">${acctChip(a.status)[1]}</span>`)}
@@ -7900,6 +7908,10 @@
     }).join('');
     return `<div class="pad"><button class="reset" data-adm="home" style="margin:10px 0 6px">← Retour</button>
       <div class="row" style="gap:12px">${avatarPhoto(cc.photo,inits(cc.name),'lg')}<div><b style="font-size:18px;font-family:var(--f-disp)">${esc(cc.name)}</b><div class="mini">Client · ${esc(migZone(cc.zone))}${cc.createdAt?' · inscrit le '+dt(cc.createdAt):''}</div></div></div>
+      ${cc.alsoPro?(function(){
+        // Même personne des deux côtés : on le dit franchement et on ouvre l'autre fiche.
+        const a=(S.adminArtisans||[]).find(function(x){return x.uid===cc.uid||x.id===cc.uid;});
+        return `<div class="banner teal" style="margin-top:14px">${I.info||I.shield}<span>Ce compte est <b>devenu prestataire</b> — c'est la même personne, le même identifiant. Son historique de client est conservé ci-dessous.${a?` <button class="linklike" data-adm="art:${esc(a.id)}" style="font-weight:800">Ouvrir sa fiche prestataire</button>`:` Sa candidature prestataire n'est pas encore envoyée.`}</span></div>`;})():''}
       <div class="card fiche" style="padding:16px;margin-top:16px">
         ${row('Statut',`<span class="chip ${acctChip(cc.status)[0]}">${acctChip(cc.status)[1]}</span>`)}
         ${row('Moyen de paiement',`${esc(cc.card)}${cc.cardExp?`<div class="mini" style="margin-top:4px">Expire ${esc(cc.cardExp)}</div>`:''}`)}
@@ -8193,10 +8205,22 @@
     const out=[];
     snap.forEach(function(docu){
       const d=docu.data()||{};
-      if((d.role||'client')!=='client')return;      // artisans et conciergeries ont leur propre liste
+      const role=d.role||'client';
       const hist=Array.isArray(d.history)?d.history:[];
       const card=d.card||null;
-      out.push({id:docu.id,uid:docu.id,real:true,
+      // Un compte qui passe de client à prestataire voit son rôle basculer à « artisan ».
+      // Filtrer sur le seul rôle le faisait DISPARAÎTRE de la liste des clients, alors que
+      // ses réservations, ses adresses et sa carte sont toujours dans sa fiche : on perdait
+      // la trace d'un client réel et de son historique d'achats.
+      // Règle : on ne perd jamais un client. Dès qu'une fiche porte une trace d'activité
+      // côté client, elle reste listée — signalée « devenu prestataire ».
+      const traceClient=hist.length>0
+        ||(Array.isArray(d.addresses)&&d.addresses.length>0)
+        ||!!card
+        ||(Array.isArray(d.recurring)&&d.recurring.length>0)
+        ||d.wasClient===true;
+      if(role!=='client'&&!traceClient)return;      // artisans et conciergeries ont leur propre liste
+      out.push({id:docu.id,uid:docu.id,real:true,role:role,alsoPro:role!=='client',
         name:d.name||'Client',email:d.email||'',phone:d.phone||'',zone:d.zone||'—',photo:d.photo||'',
         status:d.status||'valide',
         card:card?((card.brand||'Carte')+' ••'+(card.last4||card.last||'····')):'Aucune carte enregistrée',
@@ -12374,7 +12398,10 @@
         if(u&&!isDemo()){
           // Le rôle bascule MAINTENANT : s'il ferme l'app avant d'avoir envoyé sa
           // candidature, il retrouvera son profil à compléter et non l'espace client.
-          try{ FB.f.setDoc(FB.f.doc(FB.db,'users',u.uid),{role:'artisan',proSuggest:false,proSuggestAnswer:'yes',proSuggestAnsweredAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
+          // wasClient : ce compte a EU une vie de client. Le rôle bascule, mais la console
+          // doit continuer à le voir dans ses clients — sinon un client réel, avec son
+          // historique de commandes, disparaît des écrans le jour où il devient prestataire.
+          try{ FB.f.setDoc(FB.f.doc(FB.db,'users',u.uid),{role:'artisan',wasClient:true,proSuggest:false,proSuggestAnswer:'yes',proSuggestAnsweredAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
           enterProDraft(u,(S.account&&S.account.name)||'');
           return;
         }
@@ -13782,7 +13809,11 @@
         // Nom : priorité au nom saisi (inscription e-mail) puis au nom Google — jamais le
         // préfixe de l'e-mail (sinon le mail de bienvenue et la fiche afficheraient « jean.dupont »).
         const draftNm=((S.proForm&&S.proForm.name)||'').trim()||user.displayName||'';
-        try{ FB.f.setDoc(ref,{name:(draftNm||name||'').trim(),email:user.email||'',role:'artisan',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
+        // Un compte CLIENT existant qui repasse par l'inscription prestataire (même e-mail,
+        // même identifiant Google) bascule ici. On le marque wasClient pour que la console
+        // ne perde pas le client qu'il a été — ses réservations, sa carte, ses adresses.
+        const etaitClient=!!(data&&(data.role||'client')==='client');
+        try{ FB.f.setDoc(ref,Object.assign({name:(draftNm||name||'').trim(),email:user.email||'',role:'artisan',createdAt:FB.f.serverTimestamp()},etaitClient?{wasClient:true}:{}),{merge:true}); }catch(_){}
         enterProDraft(user,draftNm||name);
         return;
       }
@@ -14066,7 +14097,15 @@
         uid=cred.user.uid; email=f.email.trim();
       }
       const rates={}; f.cats.forEach(function(c){rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});
-      try{ await FB.f.setDoc(FB.f.doc(FB.db,'users',uid),{name:(f.name||'').trim(),email:email,role:'artisan',phone:f.phone||'',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
+      // Ce compte avait-il déjà une vie de client (réservations, adresses, carte) ? Si oui,
+      // on le marque : le rôle bascule côté prestataire, mais la console doit garder le
+      // client sous les yeux plutôt que de le voir s'évaporer.
+      let etaitClient=false;
+      try{ const sU=await FB.f.getDoc(FB.f.doc(FB.db,'users',uid)); const du=sU.exists()?(sU.data()||{}):{};
+        etaitClient=(du.role||'')==='client'||du.wasClient===true
+          ||(Array.isArray(du.history)&&du.history.length>0)||!!du.card
+          ||(Array.isArray(du.addresses)&&du.addresses.length>0); }catch(_){}
+      try{ await FB.f.setDoc(FB.f.doc(FB.db,'users',uid),Object.assign({name:(f.name||'').trim(),email:email,role:'artisan',phone:f.phone||'',createdAt:FB.f.serverTimestamp()},etaitClient?{wasClient:true}:{}),{merge:true}); }catch(_){}
       // Envoi de l'attestation d'assurance vers Storage (une fois le compte créé = authentifié).
       // Inscription progressive : l'attestation a déjà été envoyée vers Storage (f.insuranceUrl).
       // Sinon (formulaire e-mail), on l'envoie maintenant depuis le fichier en mémoire.
