@@ -1445,6 +1445,14 @@
   // ti-services.fr (backend t-service-prod), BÊTA partout ailleurs (github.io…,
   // backend ti-service-e8ced). Un seul code, deux backends cloisonnés.
   const IS_PROD = /(^|\.)ti-services\.fr$/i.test(location.hostname) || /^t-service-prod\.(web\.app|firebaseapp\.com)$/i.test(location.hostname);
+  // ——— RENFORT ENTRE PRESTATAIRES (à l'essai) ———
+  // Un prestataire qui a besoin d'une seconde paire de bras — sur un chantier commandé
+  // ici ou sur l'un des siens — commande un confrère comme un client commanderait :
+  // une demande, un seul règlement, une facture à son nom d'entreprise. On l'essaie
+  // d'abord sur le bêta : en production le code est présent mais la porte reste fermée.
+  // Le mot « intérim » est volontairement banni (activité réglementée) : ici on commande
+  // une PRESTATION à un indépendant, pas de la main-d'œuvre mise à disposition.
+  const FEAT_RENFORT = !IS_PROD;
   // ——— Verrou de domaine (anti-copie) ———
   // L'application ne dialogue avec Firebase que depuis les domaines officiels, la
   // coquille native, ou un poste de développement. Une copie du fichier déposée sur
@@ -3287,6 +3295,9 @@
     card:null,cardForm:false,payStep:false,payEdit:false,paySaveCard:true,finishing:false,disputing:false,support:false,supportSide:null,mission:null,missions:[],draft:null,
     addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,
     concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,concRetroPaid:'',concIban:'',concIbanHolder:'',concLegal:'',concSiret:'',concAddress:'',retroRate:8,founderTaken:0,
+    // Renfort entre prestataires (bêta) : ses propres demandes de renfort, et le
+    // formulaire en cours. Volontairement à part de S.missions pour ne rien perturber.
+    renfortView:false,renforts:[],renfortsLoaded:false,renfortForm:null,renfortBusy:false,
     sepaIban:(function(){try{return localStorage.getItem('ts_sepa_iban')||'';}catch(_){return '';}})(),concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,
     proPhoto:null,proStatus:'approved',proFounder:true,proNotifPush:true,proNotifWa:true,proPhone:'0690 00 00 00',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proPendingCats:[],proPendingOther:'',proSiteMode:'both',proSalonAddress:'',proSalonZone:'Gustavia',proSalonGeo:null,proAddView:false,proAddForm:null,proForm:{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:'',photo:''},
     proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proReqSlot:null,proReqPick:false,proMissions:[],proSkipped:[],proSkipAt:{},proConflict:null,proStmt:false,commInvId:null,commStmt:false,signupKind:null,concSignup:null,concStatus:'approved',adminConcierges:[],
@@ -9290,6 +9301,116 @@
       o.status='paid'; if(o.reqId)pushReqUpdate({reqId:o.reqId},{status:'paid'}); saveConcCloud(); render(); toast('Prestation validée — règlement en cours');
     }
   }
+  // ————— RENFORT ENTRE PRESTATAIRES (à l'essai sur le bêta) —————
+  // Un prestataire qui manque de bras commande un confrère : il devient le CLIENT de
+  // cette demande-là. Rien de neuf côté serveur — c'est une demande ordinaire, marquée
+  // `renfort:true` pour la reconnaître dans la console. Le confrère la reçoit et
+  // l'accepte comme n'importe quelle mission : pas une ligne de code de son côté.
+  const renfortUnsubs={};
+  // Métiers proposables en renfort : tous, sauf « colis » (dossier de retrait
+  // particulier) et les métiers qui se pratiquent uniquement dans un local équipé.
+  // Un renfort, ce sont des heures de travail sur un chantier : il se facture donc à
+  // l'heure au tarif du métier, y compris pour les métiers vendus au forfait aux
+  // clients — c'est ce qui permet de couvrir le déménagement ou le deck, précisément
+  // là où on manque de bras.
+  function renfortServices(){ return allSvc().filter(function(s){return s.id!=='colis'&&!s.salonOnly;}); }
+  function renfortRate(svc){ return (S.adminPrices&&S.adminPrices[svc]!=null)?S.adminPrices[svc]:svcBase(svc); }
+  function renfortTotal(f){ return Math.round(renfortRate(f.svc)*(Number(f.duration)||1)); }
+  // Statuts d'une demande, dits en clair pour celui qui l'a passée.
+  function renfortState(st){
+    return {pending_payment:['grey','À finaliser'],payment_failed:['coral','Paiement non finalisé'],
+      pending:['grey','En recherche'],accepted:['good','Confirmé'],working:['good','En cours'],
+      done_pro:['good','À valider'],disputed:['coral','Litige'],paid:['good','Réglé'],rated:['good','Réglé'],
+      declined:['coral','Décliné'],cancelled:['grey','Annulé'],expired:['grey','Expiré']}[st]||['grey','En recherche'];
+  }
+  // Ses demandes de renfort, lues chez Firestore (aucune copie locale à maintenir :
+  // elles survivent au changement de téléphone et restent vraies après réinstallation).
+  async function loadRenforts(uid){
+    if(!(FB&&FB.db)||!uid||isDemo())return;
+    try{
+      const q=FB.f.query(FB.f.collection(FB.db,'requests'),FB.f.where('clientUid','==',uid));
+      const snap=await FB.f.getDocs(q);
+      const list=[];
+      snap.forEach(function(d){
+        const r=d.data()||{};
+        if(!r.renfort)return;
+        list.push({reqId:d.id,svc:r.service,svcName:r.serviceName||svcNm(r.service),rate:r.rate||0,
+          duration:r.duration||1,when:r.when||'',slot:r.slot||'',dateISO:r.dateISO||'',zone:r.zone||'',
+          notes:r.notes||'',total:r.total||0,status:r.status||'pending',artisan:r.providerName||'',
+          directed:!!r.directed,preferredName:r.preferredProviderName||'',
+          createdAt:(r.createdAt&&r.createdAt.toMillis)?r.createdAt.toMillis():0});
+      });
+      list.sort(function(a,b){return (b.createdAt||0)-(a.createdAt||0);});
+      S.renforts=list;S.renfortsLoaded=true;
+      list.forEach(function(x){watchRenfort(x.reqId);});
+      if(S.persona==='pro'&&S.renfortView)render();
+    }catch(e){ console.warn('renforts load',e); S.renfortsLoaded=true; if(S.persona==='pro'&&S.renfortView)render(); }
+  }
+  // Suivi en direct d'une demande de renfort : qui a accepté, où elle en est.
+  function watchRenfort(reqId){
+    if(!FB||!reqId||isDemo())return;
+    if(renfortUnsubs[reqId])return;
+    renfortUnsubs[reqId]=FB.f.onSnapshot(FB.f.doc(FB.db,'requests',reqId),function(snap){
+      const x=(S.renforts||[]).find(function(y){return y.reqId===reqId;});if(!x)return;
+      if(!snap.exists()){x.status='cancelled';if(S.persona==='pro'&&S.renfortView)render();return;}
+      const r=snap.data()||{};
+      x.status=r.status||x.status; x.artisan=r.providerName||x.artisan;
+      if(r.total!=null)x.total=r.total;
+      if(S.persona==='pro'&&S.renfortView)render();
+    },function(e){console.warn('renfort watch',e);});
+  }
+  // Envoi de la demande : une demande Firestore ordinaire, dont le client est le
+  // prestataire lui-même. En production elle naît « à finaliser » et n'est proposée
+  // qu'une fois la carte autorisée — un seul règlement, comme pour un client.
+  async function sendRenfort(){
+    const f=S.renfortForm;if(!f||S.renfortBusy)return;
+    if(!f.svc){toast('Choisissez un métier');return;}
+    if(!f.dateISO){toast('Choisissez une date');return;}
+    if(!(f.address||'').trim()){toast('Indiquez l’adresse du chantier');return;}
+    if(!(FB&&FB.auth&&FB.auth.currentUser)||isDemo()){toast('Connectez-vous pour demander un renfort');return;}
+    S.renfortBusy=true;render();
+    try{
+      const u=FB.auth.currentUser;
+      const rate=renfortRate(f.svc),dur=Math.max(1,Number(f.duration)||1),total=Math.round(rate*dur);
+      const who=((S.proLegal||S.proName||'Un confrère')+'').trim();
+      const ref=FB.f.doc(FB.f.collection(FB.db,'requests'));
+      await FB.f.setDoc(ref,{
+        clientUid:u.uid, clientName:who, clientPhoto:S.proPhoto||null,
+        // Marqueur du renfort : c'est un prestataire qui commande, pas un particulier.
+        renfort:true, renfortByUid:u.uid, renfortByName:who,
+        status:(payReal()?'pending_payment':'pending'), providerUid:null, providerName:'',
+        service:f.svc, serviceName:svcNm(f.svc),
+        zone:f.zone||'', when:fmtLong(f.dateISO), slot:f.slot||'', slotFlex:0,
+        dateISO:f.dateISO, unit:'h', duration:dur,
+        rate:rate, boost:0, total:total, people:1,
+        locationMode:'domicile', frequency:'ponctuelle',
+        notes:('Renfort demandé par un prestataire. '+(f.notes||'')).slice(0,500),
+        preferredProviderUid:f.preferredUid||null,
+        preferredProviderName:f.preferredName||'',
+        directed:!!f.preferredUid,
+        createdAt:FB.f.serverTimestamp()
+      });
+      // Adresse exacte : réservée au confrère qui accepte, comme pour toute demande.
+      try{ await FB.f.setDoc(FB.f.doc(FB.db,'requests',ref.id,'private','details'),
+        {address:(f.address||'').slice(0,200),zone:f.zone||'',geo:null,access:(f.access||'').slice(0,200),
+         clientName:who,clientPhone:S.proPhone||'',clientPhoto:S.proPhoto||null}); }catch(_){}
+      S.renforts=[{reqId:ref.id,svc:f.svc,svcName:svcNm(f.svc),rate:rate,duration:dur,when:fmtLong(f.dateISO),
+        slot:f.slot||'',dateISO:f.dateISO,zone:f.zone||'',notes:f.notes||'',total:total,
+        status:(payReal()?'pending_payment':'pending'),artisan:'',directed:!!f.preferredUid,
+        preferredName:f.preferredName||'',createdAt:Date.now()}].concat(S.renforts||[]);
+      watchRenfort(ref.id);
+      S.renfortForm=null;S.renfortBusy=false;render();
+      toast(f.preferredUid?('Demande envoyée à '+(f.preferredName||'votre confrère')):'Demande envoyée aux prestataires du métier');
+    }catch(e){ S.renfortBusy=false;render();console.warn('renfort write',e);toast('⚠︎ Demande non envoyée : '+fbErrTxt(e)); }
+  }
+  // Annulation par celui qui a demandé — tant que personne n'est venu.
+  function cancelRenfort(reqId){
+    const x=(S.renforts||[]).find(function(y){return y.reqId===reqId;});if(!x)return;
+    if(S._rfCancel!==reqId){S._rfCancel=reqId;render();setTimeout(function(){if(S._rfCancel===reqId){S._rfCancel=null;render();}},4000);return;}
+    S._rfCancel=null;x.status='cancelled';
+    if(FB&&!isDemo()){try{FB.f.updateDoc(FB.f.doc(FB.db,'requests',reqId),{status:'cancelled'});}catch(_){}}
+    render();toast('Demande de renfort annulée');
+  }
   // Le client écoute CHACUNE de ses demandes (plusieurs en parallèle possibles) :
   // dès qu'un prestataire en accepte une, l'app met à jour la demande concernée.
   const clientReqUnsubs={};
@@ -9527,6 +9648,9 @@
     S.proHistory=[];S.agenda=[];S.proEarnings=0;S.proJobsToday=0;S.proJobsTotal=0;
     S.adminArtisans=[];S.adminClients=[];S.adminBookings=[];S.adminCommission=0;S.adminConcierges=[];
     S.concClients=[];S.concOrders=[];S.concEarn=0;
+    // Renfort (bêta) : rien ne doit survivre à un changement de compte.
+    S.renforts=[];S.renfortsLoaded=false;S.renfortForm=null;S.renfortView=false;S._rfLoading=false;S._rfCancel=null;
+    try{Object.keys(renfortUnsubs).forEach(function(k){try{renfortUnsubs[k]();}catch(_){}delete renfortUnsubs[k];});}catch(_){}
     // Identité artisan : AUCUNE valeur de démo ne doit subsister (elle serait
     // affichée/facturée à la place des vraies données). Tout part à blanc ; la fiche
     // réelle est ensuite chargée depuis Firestore (loadUserProfile).
@@ -9667,6 +9791,8 @@
     // Inscription progressive (Google) : hub « compléter mon profil » + étapes groupées.
     if(S.proStatus==='draft')return S.proStep?proDraftStep(S.proStep):proDraftHub();
     if(S.proAddView)return proAddService();
+    // Renfort entre prestataires : à l'essai sur le bêta, porte fermée en production.
+    if(FEAT_RENFORT&&S.renfortView)return renfortScreen();
     if(S.proDocsView)return proDocs();
     if(S.mollieGuideView)return mollieGuide();
     if(S.proMollieView)return proMollieActivate();
@@ -11169,6 +11295,70 @@
   }
   // Onglet « Mon compte » : tout ce qui n'est pas revenu/factures (RIB, statut,
   // documents, parrainage, déconnexion).
+  // ————— ÉCRAN « RENFORT » (bêta) —————
+  // Liste de ses demandes de renfort, et le formulaire pour en passer une. Volontairement
+  // court : un métier, une date, une durée, une adresse. Le prix vient de la grille.
+  function renfortScreen(){
+    if(!S.renfortsLoaded&&FB&&FB.auth&&FB.auth.currentUser&&!isDemo()&&!S._rfLoading){
+      S._rfLoading=true;setTimeout(function(){loadRenforts(FB.auth.currentUser.uid);},0);
+    }
+    if(S.renfortForm)return renfortFormScreen();
+    const list=(S.renforts||[]).length?(S.renforts||[]).map(function(x){
+      const st=renfortState(x.status);
+      const encours=(x.status==='pending'||x.status==='pending_payment');
+      return `<div class="card listrow" style="align-items:center">
+        <span class="benic" style="flex:none;background:${svcColor(x.svc)}18;color:${svcColor(x.svc)}">${svcIco(x.svc)}</span>
+        <div class="lr-main">
+          <div class="row between" style="gap:8px;align-items:center"><b class="lr-name">${esc(x.svcName)}</b><span class="chip ${st[0]}" style="flex:none">${st[1]}</span></div>
+          <div class="mini lr-sub">${esc(x.when)}${x.slot?' · '+esc(x.slot):''} · ${x.duration} h · ${eur(x.total)}</div>
+          <div class="mini lr-sub">${x.artisan?(I.check+' '+esc(x.artisan)):(x.directed?('Adressée à '+esc(x.preferredName||'un confrère')):'Proposée aux prestataires du métier')}</div>
+          ${encours?`<button class="btn ghost sm" data-rf="cancel:${x.reqId}" style="margin-top:8px;width:auto;padding:7px 12px">${S._rfCancel===x.reqId?'Confirmer l’annulation ?':'Annuler'}</button>`:''}
+        </div></div>`;}).join(''):
+      (S.renfortsLoaded?`<p class="mini" style="margin-top:10px;color:var(--muted)">Aucune demande de renfort pour l’instant.</p>`
+        :`<p class="mini" style="margin-top:10px;color:var(--muted)">Chargement…</p>`);
+    return `<div class="pad"><button class="reset" data-rf="back" style="margin:10px 0 6px">← Retour</button>
+      <span class="eyebrow">${I.hardhat} Renfort</span>
+      <div class="h-hello">Vous manquez de bras&nbsp;?</div>
+      <p class="sub" style="margin-top:6px">Demandez un confrère pour un chantier — qu'il vienne de Ti-Services ou qu'il soit à vous. Vous réglez une fois, il est payé, et vous recevez une facture au nom de votre entreprise.</p>
+      <button class="btn primary" data-rf="new" style="margin-top:14px">${I.plus}&nbsp;Demander un renfort</button>
+      <div style="height:18px"></div><span class="eyebrow" style="color:var(--muted)">Mes demandes</span>
+      ${list}
+      <div style="height:24px"></div></div>`;
+  }
+  function renfortFormScreen(){
+    const f=S.renfortForm;
+    const svcs=renfortServices().map(function(s){return `<button class="cat${f.svc===s.id?' on':''}" data-rf="svc:${s.id}"><div class="ic">${svcIco(s.id)}</div><div class="nm">${esc(s.nm)}</div><div class="rt"><b>${renfortRate(s.id)}</b> <b>€</b>/h</div></button>`;}).join('');
+    const slots=['07:00','08:00','09:00','10:00','13:00','14:00','16:00'].map(function(s){return `<button class="seg ${f.slot===s?'on':''}" data-rf="slot:${s}">${s}</button>`;}).join('');
+    const zones='<option value="">Secteur…</option>'+ZONES.map(function(z){return '<option value="'+esc(z)+'"'+(f.zone===z?' selected':'')+'>'+esc(z)+'</option>';}).join('');
+    // Choix nominatif : l'annuaire du métier, sans soi-même.
+    const dir=f.svc?proDirFor(f.svc):[];
+    const myUid=(FB&&FB.auth&&FB.auth.currentUser)?FB.auth.currentUser.uid:'';
+    const others=(dir||[]).filter(function(a){return a.uid!==myUid;});
+    const pick=!f.svc?'':(dir===null
+      ? `<p class="mini" style="margin-top:6px;color:var(--muted)">Chargement des prestataires…</p>`
+      : (others.length?`<div class="field"><label>Un confrère en particulier&nbsp;?</label>
+          <select class="txt" data-rfi="preferred"><option value="">Peu importe — le premier disponible</option>${others.map(function(a){return '<option value="'+esc(a.uid)+'|'+esc(a.name)+'"'+(f.preferredUid===a.uid?' selected':'')+'>'+esc(a.name)+'</option>';}).join('')}</select>
+          ${f.preferredUid?`<p class="mini" style="margin-top:6px">${I.clock} Adressée <b>uniquement à ${esc((f.preferredName||'').split(' ')[0])}</b>. S'il décline, vous pourrez la rouvrir à tous.</p>`:''}</div>`
+        :`<p class="mini" style="margin-top:6px;color:var(--muted)">Aucun autre prestataire sur ce métier pour l'instant — la demande sera proposée dès qu'il y en aura un.</p>`));
+    const total=f.svc?renfortTotal(f):0;
+    return `<div class="pad"><button class="reset" data-rf="formback" style="margin:10px 0 6px">← Retour</button>
+      <span class="eyebrow">${I.hardhat} Renfort</span><div class="h-hello">Quel renfort vous faut-il&nbsp;?</div>
+      <div class="field" style="margin-top:12px"><label>Métier</label><p class="mini" style="margin:-2px 0 8px;color:var(--muted)">Un renfort se facture à l'heure, au tarif du métier.</p></div>
+      <div class="cats">${svcs}</div>
+      ${f.svc?`
+      <div class="field" style="margin-top:14px"><label>Date</label><input class="txt" type="date" data-rfi="dateISO" value="${esc(f.dateISO||'')}" min="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>Heure de début</label><div class="segs">${slots}</div></div>
+      <div class="field"><label>Durée estimée</label><div class="stepper"><button data-rf="dur:down">−</button><span class="val">${f.duration} h</span><button data-rf="dur:up">+</button></div></div>
+      <div class="field"><label>Secteur</label><select class="txt" data-rfi="zone">${zones}</select></div>
+      <div class="field"><label>Adresse du chantier</label><input class="txt" data-rfi="address" value="${esc(f.address||'')}" placeholder="Rue, lieu-dit, nom de la villa…" autocomplete="off"><p class="mini" style="margin-top:5px;color:var(--muted)">Communiquée au confrère qui accepte, pas avant.</p></div>
+      <div class="field"><label>Ce qu'il y a à faire</label><textarea rows="3" data-rfi="notes" placeholder="Deux mots suffisent : ce qu'il faut faire, ce qu'il doit apporter…">${esc(f.notes||'')}</textarea></div>
+      ${pick}
+      <div class="field"><label>Tarif — grille Ti-Services</label><div class="pricebox"><b class="money" style="font-size:20px;font-family:var(--f-disp)">${renfortRate(f.svc)} €/h</b><span class="chip good">${I.check} Prix fixe</span></div></div>
+      <div class="est"><div class="total"><span>Total à régler</span><b>${eur(total)}</b></div><small>${I.shield} Un seul règlement. Facture au nom de votre entreprise, à passer en charge. Le confrère est payé par Ti-Services.</small></div>
+      <div class="footcta" style="position:static;background:none;padding:16px 0 0"><button class="btn primary" data-rf="send"${S.renfortBusy?' disabled':''}>${S.renfortBusy?'Envoi…':(I.search+' Envoyer la demande · '+eur(total))}</button></div>
+      `:`<p class="mini" style="margin-top:14px;color:var(--muted)">Choisissez d'abord le métier — le tarif de la grille s'applique ensuite.</p>`}
+      <div style="height:24px"></div></div>`;
+  }
   function proAccount(){
     const cats=(S.proCats&&S.proCats.length)?S.proCats:['menage'];
     const catNames=cats.map(function(c){const s=SERVICES.find(x=>x.id===c);return s?s.nm:c;}).slice(0,3).join(' · ');
@@ -11179,6 +11369,12 @@
         +avatarFounder(S.proPhoto,inits(S.proName||'Mon compte'),'',S.proFounder)
         +`<span aria-hidden="true" style="position:absolute;left:-3px;bottom:-3px;width:21px;height:21px;border-radius:50%;background:var(--teal-deep);color:#fff;display:flex;align-items:center;justify-content:center;border:2px solid var(--card);box-shadow:0 2px 6px -2px rgba(0,0,0,.4)">${I.camera}</span></button>`)}
       <input type="file" accept="image/*" capture="user" data-avatarinput="proPhoto" data-pcam hidden><input type="file" accept="image/*" data-avatarinput="proPhoto" data-pgal hidden>
+
+      ${FEAT_RENFORT?`<button class="card listrow" data-rf="open" style="margin-top:16px;align-items:center">
+        <span class="benic" style="flex:none">${I.hardhat}</span>
+        <div class="lr-main"><div class="row between" style="gap:8px;align-items:center"><b style="font-size:14px">Besoin d'un renfort&nbsp;?</b>${(S.renforts||[]).length?`<span class="chip grey" style="flex:none">${(S.renforts||[]).length}</span>`:`<span class="chip" style="flex:none">Nouveau</span>`}</div>
+        <div class="mini lr-sub">Demandez un confrère pour un chantier — le vôtre ou celui d'un client. Un seul règlement, facture à votre entreprise.</div></div>
+      </button>`:''}
 
       <div class="card" style="padding:16px;margin-top:16px">
         <span class="eyebrow" style="color:var(--muted)">Votre statut</span>
@@ -11457,7 +11653,7 @@
     // photo du client) s'ouvre en plein écran au clic — consultation sans téléchargement.
     const _iv=e.target.closest&&e.target.closest('img.viewable');
     if(_iv&&_iv.getAttribute('src')){S.imgView={src:_iv.getAttribute('src'),name:_iv.getAttribute('data-docname')||'document'};render();return;}
-    const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actqty],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-loc],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday],[data-tip],[data-pac],[data-sitemode],[data-invclient],[data-fold],[data-optpick],[data-optqty],[data-optadd],[data-optdel],[data-optprice],[data-optunit]');
+    const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actqty],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-loc],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday],[data-tip],[data-pac],[data-sitemode],[data-invclient],[data-fold],[data-optpick],[data-optqty],[data-optadd],[data-optdel],[data-optprice],[data-optunit],[data-rf]');
     if(!b)return;
     // Un clic ISSU d'un <input type=file> (notamment déclenché par programme, ex. la
     // feuille « appareil photo / galerie ») remonte jusqu'ici : on ne le traite pas
@@ -11467,6 +11663,20 @@
     // Retour haptique (Android/Chrome ; ignoré ailleurs) : tapotement léger sur toute
     // action, vibration « validation » plus marquée sur les gestes décisifs.
     haptic(RE_HAPTIC_KEY.test((b.dataset.act||'')+' '+(b.dataset.adm||''))?'success':'light');
+    // ——— Renfort entre prestataires (bêta) ———
+    if(b.dataset.rf){
+      const rf=b.dataset.rf,arg=rf.indexOf(':')>=0?rf.slice(rf.indexOf(':')+1):'';
+      if(rf==='open'){S.renfortView=true;S.renfortForm=null;render();try{window.scrollTo(0,0);}catch(_){}return;}
+      if(rf==='back'){S.renfortView=false;S.renfortForm=null;S._rfCancel=null;render();return;}
+      if(rf==='formback'){S.renfortForm=null;render();return;}
+      if(rf==='new'){S.renfortForm={svc:'',dateISO:'',slot:'08:00',duration:2,zone:'',address:'',access:'',notes:'',preferredUid:'',preferredName:''};render();try{window.scrollTo(0,0);}catch(_){}return;}
+      if(rf.indexOf('svc:')===0&&S.renfortForm){S.renfortForm.svc=arg;S.renfortForm.preferredUid='';S.renfortForm.preferredName='';render();return;}
+      if(rf.indexOf('slot:')===0&&S.renfortForm){S.renfortForm.slot=arg;render();return;}
+      if(rf.indexOf('dur:')===0&&S.renfortForm){const d=Number(S.renfortForm.duration)||1;S.renfortForm.duration=Math.min(12,Math.max(1,arg==='up'?d+1:d-1));render();return;}
+      if(rf==='send'){sendRenfort();return;}
+      if(rf.indexOf('cancel:')===0){cancelRenfort(arg);return;}
+      return;
+    }
     if(b.dataset.act==='pw-toggle'){const w=b.closest('.pw-wrap');const inp=w&&w.querySelector('input');if(inp){const reveal=inp.type==='password';inp.type=reveal?'text':'password';b.innerHTML=reveal?I.eyeoff:I.eye;}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('photopick:')===0){openPhotoSheet(b.dataset.act.slice('photopick:'.length));return;}
     // Vitrine : « Installer l'application » ouvre la feuille d'installation adaptée
@@ -12538,6 +12748,12 @@
       if(af.dataset.af==='zone'){render();return;}}
     const po=e.target.closest('[data-po]');if(po&&S.payoutForm){S.payoutForm[po.dataset.po]=po.value;const sb=document.querySelector('[data-act="save-payout"]');if(sb)sb.disabled=!((S.payoutForm.holder||'').trim().length>1&&ibanValid(S.payoutForm.iban));}
     const cf2=e.target.closest('[data-cf2]');if(cf2&&S.concForm){S.concForm[cf2.dataset.cf2]=cf2.value;}
+    // Renfort (bêta) : champs texte du formulaire. Pas de re-render — le curseur reste
+    // dans le champ ; le total, lui, ne dépend que du métier et de la durée.
+    const rfi=e.target.closest('[data-rfi]');
+    if(rfi&&S.renfortForm){const k=rfi.dataset.rfi;
+      if(k==='address'||k==='notes'||k==='access'){S.renfortForm[k]=rfi.value;}
+      else if(k==='dateISO'){S.renfortForm.dateISO=rfi.value;}}
     const cn=e.target.closest('[data-conc-notes]');if(cn&&S.concOrder){S.concOrder.notes=cn.value;}
     const cib=e.target.closest('[data-cib]');if(cib){if(cib.dataset.cib==='iban')S.concIban=cib.value;else S.concIbanHolder=cib.value;}
     const sip=e.target.closest('[data-sepa]');if(sip){S.sepaIban=sip.value;try{localStorage.setItem('ts_sepa_iban',sip.value);}catch(_){}}
@@ -12546,6 +12762,14 @@
     const fq=e.target.closest('[data-factq]');if(fq){S.admin.factQ=fq.value;const box=document.getElementById('factSearchResults');if(box)box.innerHTML=factSearchResultsHtml();}
   });
   view.addEventListener('change',(e)=>{
+    // Renfort (bêta) : secteur, date et choix nominatif du confrère.
+    const rfc=e.target.closest('[data-rfi]');
+    if(rfc&&S.renfortForm){const k=rfc.dataset.rfi;
+      if(k==='zone'){S.renfortForm.zone=rfc.value;render();return;}
+      if(k==='dateISO'){S.renfortForm.dateISO=rfc.value;render();return;}
+      if(k==='preferred'){const v=String(rfc.value||'');const i=v.indexOf('|');
+        S.renfortForm.preferredUid=i>=0?v.slice(0,i):'';S.renfortForm.preferredName=i>=0?v.slice(i+1):'';render();return;}}
+
     // Indicatif téléphonique : recompose la valeur complète à chaque changement.
     const ppfx=e.target.closest('[data-phonepfx]');
     if(ppfx){readPhoneCombo(ppfx.dataset.phonepfx);if(ppfx.dataset.phonepfx==='wa')saveProSettings();if(S.proForm)refreshProSubmit();const cb1=document.querySelector('[data-act="conc-submit"]');if(cb1&&S.concSignup)cb1.disabled=!concSignupOk(S.concSignup);return;}
@@ -13369,7 +13593,7 @@
         if(typeof Notification!=='undefined'&&Notification.permission==='granted')registerPush('artisan');
         subscribeProStatus(user.uid);
         S.genSupport=(data&&Array.isArray(data.support))?data.support.slice():[];subscribeUserSupport(user.uid);
-        if(S.proStatus==='approved'){subscribeOpenRequests();loadProMissions(user.uid);}
+        if(S.proStatus==='approved'){subscribeOpenRequests();loadProMissions(user.uid);if(FEAT_RENFORT)loadRenforts(user.uid);}
         return;
       }
       // Inscription prestataire en cours : la fiche users (role: artisan) n'est peut-être
@@ -13972,6 +14196,7 @@
             }
           }
           if(ch.type!=='added')return;
+          if(myUid&&r.clientUid===myUid)return;
           if(!(r.directed&&r.preferredProviderUid&&myUid&&r.preferredProviderUid===myUid))return;
           if(cats.length&&cats.indexOf(r.service)<0)return;
           if(S._openReqSeen[id])return;S._openReqSeen[id]=1;
@@ -13982,6 +14207,9 @@
         });}catch(_){}
         const mySite=S.proSiteMode||'both';
         snap.forEach(function(d){const r=d.data()||{};
+          // Jamais sa propre demande : un prestataire qui commande un renfort ne doit
+          // pas pouvoir se l'attribuer à lui-même (mission fictive, statistiques faussées).
+          if(myUid&&r.clientUid===myUid)return;
           if(cats.length&&cats.indexOf(r.service)<0)return;
           // Filtre LIEU : un prestataire « domicile seul » ne voit pas les demandes « en salon »
           // et inversement. « Les deux » (ou métier non concerné) voit tout.
