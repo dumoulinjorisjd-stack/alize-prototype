@@ -39,6 +39,12 @@ async function newPage(browser, errs) {
   });
   await page.goto(INDEX, { waitUntil: 'load', timeout: 30000 });
   await page.waitForTimeout(1800);
+  // Parcours vécus DANS l'application installée : on se déclare installé, sinon la
+  // barrière d'installation (depuis le site, on ne peut qu'installer) prend la main sur
+  // tous les écrans de compte. Cette barrière est vérifiée à part, dans test-porte.js.
+  await page.evaluate(() => { const vrai = window.matchMedia;
+    window.matchMedia = function (q) { return /display-mode:\s*standalone/.test(q)
+      ? { matches: true, addEventListener: function () {}, addListener: function () {} } : vrai.call(window, q); }; });
   return page;
 }
 function realErrors(errs) {
@@ -167,6 +173,10 @@ function realErrors(errs) {
     });
     await page.goto(INDEX, { waitUntil: 'load', timeout: 30000 });
     await page.waitForTimeout(1800);
+    // Cette section ouvre sa propre page : même déclaration « application installée ».
+    await page.evaluate(() => { const vrai = window.matchMedia;
+      window.matchMedia = function (q) { return /display-mode:\s*standalone/.test(q)
+        ? { matches: true, addEventListener: function () {}, addListener: function () {} } : vrai.call(window, q); }; });
     // Création de compte (démo) → l'accueil client (aucune adresse enregistrée).
     await page.click('[data-act="onb-start"]'); await page.waitForTimeout(500);
     await page.fill('[data-cf="name"]', 'Jean Test');
@@ -206,6 +216,10 @@ function realErrors(errs) {
     });
     await page.goto(INDEX + '?parrain=kevin-8a3f', { waitUntil: 'load', timeout: 30000 });
     await page.waitForTimeout(1800);
+    // Cette section ouvre sa propre page : même déclaration « application installée ».
+    await page.evaluate(() => { const vrai = window.matchMedia;
+      window.matchMedia = function (q) { return /display-mode:\s*standalone/.test(q)
+        ? { matches: true, addEventListener: function () {}, addListener: function () {} } : vrai.call(window, q); }; });
     await page.click('[data-act="go-artisan-signup"]'); await page.waitForTimeout(600);
     const kind = await page.$('[data-act="signup-kind:artisan"]');
     if (kind) { await kind.click(); await page.waitForTimeout(600); }
