@@ -10092,7 +10092,13 @@
   function refreshProSubmit(){const f=S.proForm;if(!f)return;
     // Écran d'entrée e-mail : bouton « Créer mon compte » (nom + e-mail + mot de passe).
     const acc=document.querySelector('[data-act="pro-account-create"]');
-    if(acc){const okA=(f.name||'').trim().length>1&&/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=6&&f.password===f.password2;acc.disabled=!okA;}
+    if(acc){const okA=(f.name||'').trim().length>1&&/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=6&&f.password===f.password2;acc.disabled=!okA;
+      // Les explications suivent la frappe : sans ça elles n'apparaîtraient qu'au
+      // prochain redessin, c'est-à-dire jamais tant que la personne reste sur l'écran.
+      const mh=document.getElementById('mailHint');if(mh)mh.innerHTML=mailHint(f.email);
+      const ph=document.getElementById('pwHint');if(ph)ph.innerHTML=pwHint(f.password);
+      const am=document.getElementById('acctMissing');
+      if(am){am.style.display=okA?'none':'';am.innerHTML=okA?'':('Il reste à renseigner&nbsp;: '+acctMissing(f).join(' · ')+'.');}}
     const ok=proSignupOk(f);const btn=document.querySelector('[data-act="pro-submit"]');if(btn)btn.disabled=!ok;const el=document.getElementById('proMissing');if(el){el.style.display=ok?'none':'';el.textContent=ok?'':('Pour valider, il reste à fournir : '+proMissing(f).join(' · ')+'.');}}
   const RQ='<span class="req">*</span>';
   function conciergeSignup(){
@@ -10178,6 +10184,25 @@
   // compte (nom, e-mail, mot de passe) ou passer par Google. Ensuite, le prestataire ENTRE
   // dans l'app et complète son profil par petites étapes (mêmes 4 cartes que le parcours
   // Google). Objectif : ne pas bloquer sur un long formulaire dès le départ.
+  // Un bouton grisé sans explication, c'est une inscription perdue : la personne ne
+  // devine pas ce qui cloche et s'en va. On nomme donc ce qui manque, et pour l'e-mail
+  // on vise l'erreur la plus courante — le @ oublié (« nom.gmail.com »).
+  function mailHint(v){
+    const e=(v||'').trim();
+    if(!e)return '';
+    if(/.+@.+\..+/.test(e))return '';
+    if(e.indexOf('@')<0)return `<p class="mini" style="margin-top:5px;color:var(--coral-deep)">Il manque le <b>@</b> — par exemple <b>${esc(e.replace(/\.(gmail|hotmail|outlook|orange|wanadoo|yahoo|free|icloud|me|live|sfr|laposte)\./i,'@$1.'))}</b></p>`;
+    return `<p class="mini" style="margin-top:5px;color:var(--coral-deep)">Adresse e-mail incomplète — il manque le nom de domaine (ex. <b>@gmail.com</b>).</p>`;
+  }
+  function pwHint(v){const n=(v||'').length;return (n>0&&n<6)?`<p class="mini" style="margin-top:5px;color:var(--coral-deep)">Encore ${6-n} caractère${(6-n)>1?'s':''}.</p>`:'';}
+  function acctMissing(f){
+    f=f||{};const m=[];
+    if((f.name||'').trim().length<2)m.push('votre nom ou raison sociale');
+    if(!/.+@.+\..+/.test(f.email||''))m.push((f.email||'').trim()?'une adresse e-mail valide':'votre e-mail');
+    if((f.password||'').length<6)m.push('un mot de passe de 6 caractères minimum');
+    else if(f.password!==f.password2)m.push('la confirmation du mot de passe (identique)');
+    return m;
+  }
   function proEmailSignup(){
     const f=S.proForm||{};
     const ok=(f.name||'').trim().length>1&&/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=6&&f.password===f.password2;
@@ -10197,12 +10222,13 @@
       <div class="or-sep"><span>ou avec un e-mail</span></div>
       <div class="card" style="padding:16px">
         <div class="field"><label>Prénom &amp; nom / Raison sociale${RQ}</label><input class="txt" data-pf="name" data-v="name" value="${esc(f.name||'')}" autocomplete="organization" autocapitalize="words" placeholder="Nom et prénom, ou raison sociale"></div>
-        <div class="field"><label>E-mail${RQ}</label><input class="txt" data-pf="email" data-v="email" value="${esc(f.email||'')}" inputmode="email" autocomplete="email" placeholder="vous@exemple.com"></div>
-        <div class="field"><label>Mot de passe${RQ}</label><div class="pw-wrap"><input class="txt" type="password" data-pf="password" value="${esc(f.password||'')}" autocomplete="new-password" placeholder="6 caractères minimum"><button type="button" class="pw-eye" data-act="pw-toggle" aria-label="Afficher le mot de passe">${I.eye}</button></div></div>
+        <div class="field"><label>E-mail${RQ}</label><input class="txt" data-pf="email" data-v="email" value="${esc(f.email||'')}" inputmode="email" autocomplete="email" placeholder="vous@exemple.com"><span id="mailHint">${mailHint(f.email)}</span></div>
+        <div class="field"><label>Mot de passe${RQ}</label><div class="pw-wrap"><input class="txt" type="password" data-pf="password" value="${esc(f.password||'')}" autocomplete="new-password" placeholder="6 caractères minimum"><button type="button" class="pw-eye" data-act="pw-toggle" aria-label="Afficher le mot de passe">${I.eye}</button></div><span id="pwHint">${pwHint(f.password)}</span></div>
         <div class="field" style="margin-bottom:0"><label>Confirmer le mot de passe${RQ}</label><div class="pw-wrap"><input class="txt" type="password" data-pf="password2" value="${esc(f.password2||'')}" autocomplete="new-password" placeholder="Retapez votre mot de passe"><button type="button" class="pw-eye" data-act="pw-toggle" aria-label="Afficher le mot de passe">${I.eye}</button></div>${(f.password2&&f.password!==f.password2)?`<p class="mini" style="margin-top:5px;color:var(--coral-deep)">Les mots de passe ne correspondent pas.</p>`:((f.password2&&(f.password||'').length>=6)?`<p class="fv-ok">✓ Les mots de passe correspondent</p>`:'')}</div>
       </div>
       <div class="footcta" style="position:static;background:none;padding:16px 0 0">
         <button class="btn primary" data-act="pro-account-create"${ok?'':' disabled'}>${I.check} Créer mon compte</button>
+        <p class="mini" id="acctMissing" style="text-align:center;margin-top:10px;color:var(--coral-deep);font-weight:600;${ok?'display:none':''}">${ok?'':'Il reste à renseigner&nbsp;: '+acctMissing(f).join(' · ')+'.'}</p>
         <p class="mini" style="text-align:center;margin-top:10px;color:var(--muted)">${I.lock} Aucune carte demandée. Vous complétez votre profil juste après.</p>
         <p class="mini" style="text-align:center;margin-top:8px">Déjà un compte&nbsp;? <button class="linklike" data-act="show-login">Se connecter</button></p>
       </div></div>`;
