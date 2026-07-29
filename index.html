@@ -2891,6 +2891,19 @@
       out.push(row('Parrainage',(a.referralCode?'Son code&nbsp;: <span class="money">'+esc(a.referralCode)+'</span>':'')
         +(a.referredByCode?(a.referralCode?'<br>':'')+'<span class="mini" style="color:var(--muted);font-weight:500">Parrainé par '+esc(a.referredByCode)+'</span>':'')));
     }
+    // Où il travaille, et depuis quand : de quoi le rappeler et le situer sans chercher.
+    out.push(row('Adresse',a.address?esc(a.address):''));
+    if(a.siteMode){
+      const md={domicile:'Chez le client',salon:'Dans son local',both:'Chez le client et dans son local'}[a.siteMode]||esc(a.siteMode);
+      out.push(row('Lieu d\'exercice',md+((a.siteMode!=='domicile'&&a.salonAddress)?'<br><span class="mini" style="color:var(--muted);font-weight:500">'+esc(a.salonAddress)+(a.salonZone?' · '+esc(migZone(a.salonZone)):'')+'</span>':'')));
+    }
+    out.push(row('Inscrit le',a.createdAt?new Date(a.createdAt).toLocaleDateString('fr-FR'):''));
+    out.push(row('Disponibilité',(a.online?'<span class="chip good">'+I.check+' En ligne</span>':'<span class="chip grey">Hors ligne</span>')
+      +'<br><span class="mini" style="color:var(--muted);font-weight:500">'+(a.push?('Notifications actives ('+a.push+' appareil'+(a.push>1?'s':'')+')'):'Aucun appareil notifié — il ne verra pas les demandes')+'</span>'));
+    if(a.earnings||a.jobs){
+      out.push(row('Activité',(a.jobs||0)+' mission'+((a.jobs||0)>1?'s':'')
+        +'<br><span class="mini" style="color:var(--muted);font-weight:500">'+(a.earnings||0)+' € encaissés</span>'));
+    }
     return out.join('');
   }
   // Statut de VALIDATION de l'attestation d'assurance (décidé par l'admin, pas
@@ -7521,15 +7534,35 @@
       </div>`;
     }
     const cc=S.adminClients.find(x=>x.id===S.admin.sel);if(!cc)return adminHome();
+    const row=function(lbl,val){return val?`<div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">${lbl}</span><b style="text-align:right;max-width:62%">${val}</b></div>`:'';};
+    const dt=function(ms){return ms?new Date(ms).toLocaleDateString('fr-FR'):'';};
+    // Adresses enregistrées : c'est là que se jouent les tournées, et un point GPS
+    // manquant est la première cause de prestataire qui tourne en rond.
+    const addrs=(cc.addresses||[]).map(function(a){
+      const def=(a.id===cc.addrDefault);
+      return `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--hair)">
+        <div class="row between" style="align-items:flex-start;gap:8px"><b style="font-size:13px">${esc(a.label||a.address||'Adresse')}${def?' <span class="chip good" style="margin-left:4px">Par défaut</span>':''}</b>
+        <span class="chip ${a.geo?'good':'coral'}" style="flex:none">${a.geo?'GPS':'sans GPS'}</span></div>
+        <div class="mini" style="margin-top:2px;color:var(--muted)">${esc(a.address||'')}${a.zone?' · '+esc(migZone(a.zone)):''}</div>
+        ${a.access?`<div class="mini" style="margin-top:2px">Accès&nbsp;: ${esc(a.access)}</div>`:''}</div>`;
+    }).join('');
     return `<div class="pad"><button class="reset" data-adm="home" style="margin:10px 0 6px">← Retour</button>
-      <div class="row" style="gap:12px"><div class="avatar lg">${inits(cc.name)}</div><div><b style="font-size:18px;font-family:var(--f-disp)">${esc(cc.name)}</b><div class="mini">Client · ${esc(migZone(cc.zone))}</div></div></div>
+      <div class="row" style="gap:12px">${avatarPhoto(cc.photo,inits(cc.name),'lg')}<div><b style="font-size:18px;font-family:var(--f-disp)">${esc(cc.name)}</b><div class="mini">Client · ${esc(migZone(cc.zone))}${cc.createdAt?' · inscrit le '+dt(cc.createdAt):''}</div></div></div>
       <div class="card" style="padding:16px;margin-top:16px">
         <div class="row between"><span class="sub">Statut</span><span class="chip ${acctChip(cc.status)[0]}">${acctChip(cc.status)[1]}</span></div><hr class="dashed">
-        <div class="row between"><span class="sub">Moyen de paiement</span><b>${esc(cc.card)}</b></div>
-        <div class="row between" style="margin-top:6px"><span class="sub">Réservations</span><b>${cc.bookings}</b></div>
+        <div class="row between"><span class="sub">Moyen de paiement</span><b style="text-align:right;max-width:62%">${esc(cc.card)}${cc.cardExp?`<br><span class="mini" style="color:var(--muted);font-weight:500">Expire ${esc(cc.cardExp)}</span>`:''}</b></div>
+        ${row('Réservations',cc.bookings+(cc.lastAt?`<br><span class="mini" style="color:var(--muted);font-weight:500">Dernière&nbsp;: ${dt(cc.lastAt)}</span>`:''))}
+        ${row('Abonnements',(cc.recurring&&cc.recurring.length)?cc.recurring.map(function(r){return esc(svcNm(r.svc||r.service||''))+(r.freq?' · '+esc(r.freq):'');}).join('<br>'):'')}
+        ${row('Notifications',cc.push?`<span class="chip good">${I.check} Actives (${cc.push} appareil${cc.push>1?'s':''})</span>`:`<span class="chip grey">Aucun appareil</span>`)}
+        ${row('Conditions',cc.acceptedTerms?`<span class="chip good">${I.check} Acceptées</span>${cc.termsVersion?`<br><span class="mini" style="color:var(--muted);font-weight:500">Version ${esc(String(cc.termsVersion))}${cc.termsAt?' · '+dt(cc.termsAt):''}</span>`:''}`:`<span class="chip coral">Non acceptées</span>`)}
+        ${cc.isPro?row('Compte professionnel',(cc.company?esc(cc.company):'Oui')+(cc.siret?`<br><span class="mini money" style="color:var(--muted);font-weight:500">${esc(cc.siret)}</span>`:'')):''}
       </div>
-      <div class="card" style="padding:16px;margin-top:12px"><span class="eyebrow" style="color:var(--muted)">Contacter</span>${contactRow(cc)}</div>
+      <div class="card" style="padding:16px;margin-top:12px"><span class="eyebrow" style="color:var(--muted)">Adresses enregistrées${(cc.addresses&&cc.addresses.length)?' ('+cc.addresses.length+')':''}</span>
+        ${addrs||`<p class="mini" style="margin-top:8px;color:var(--muted)">Aucune adresse enregistrée pour l'instant.</p>`}</div>
+      <div class="card" style="padding:16px;margin-top:12px"><span class="eyebrow" style="color:var(--muted)">Contacter</span>
+        <div class="mini" style="margin-top:6px;color:var(--muted)">${esc(cc.email||'e-mail inconnu')}${cc.phone?' · '+esc(cc.phone):''}</div>${contactRow(cc)}</div>
       ${cc.status==='attente'?`<div class="row" style="gap:8px;margin-top:14px"><button class="btn good" data-adm="valid-cli:${cc.id}">Valider le client</button></div>`:''}
+      <div style="height:12px"></div>
     </div>`;
   }
   function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
@@ -7787,6 +7820,34 @@
       },function(err){console.warn('user support',err);});
     }catch(e){console.warn(e);}
   }
+  // Fiches clients de la console, construites depuis la collection `users`.
+  // On remonte TOUT ce que le client a renseigné : la fiche admin doit permettre de
+  // répondre à une question au téléphone sans aller fouiller ailleurs.
+  function buildAdminClients(snap){
+    const out=[];
+    snap.forEach(function(docu){
+      const d=docu.data()||{};
+      if((d.role||'client')!=='client')return;      // artisans et conciergeries ont leur propre liste
+      const hist=Array.isArray(d.history)?d.history:[];
+      const card=d.card||null;
+      out.push({id:docu.id,uid:docu.id,real:true,
+        name:d.name||'Client',email:d.email||'',phone:d.phone||'',zone:d.zone||'—',photo:d.photo||'',
+        status:d.status||'valide',
+        card:card?((card.brand||'Carte')+' ••'+(card.last4||card.last||'····')):'Aucune carte enregistrée',
+        cardExp:card?(card.exp||''):'',
+        addresses:Array.isArray(d.addresses)?d.addresses:[],addrDefault:d.addrDefault||null,
+        bookings:hist.length,history:hist,
+        lastAt:hist.reduce(function(t,h){return Math.max(t,h.at||0);},0),
+        recurring:Array.isArray(d.recurring)?d.recurring:[],
+        acceptedTerms:!!d.acceptedTerms,termsVersion:d.termsVersion||'',
+        termsAt:(d.termsAt&&d.termsAt.toMillis)?d.termsAt.toMillis():0,
+        createdAt:(d.createdAt&&d.createdAt.toMillis)?d.createdAt.toMillis():0,
+        push:(Array.isArray(d.pushTokens)?d.pushTokens.length:0),
+        isPro:!!d.isPro,company:d.company||'',siret:d.siret||''});
+    });
+    out.sort(function(a,b){return (b.createdAt||0)-(a.createdAt||0);});
+    S.adminClients=out;
+  }
   // Admin : écoute des supports généraux de tous les utilisateurs.
   let adminGeneralUnsub=null;
   function subscribeAdminGeneralSupport(){
@@ -7794,6 +7855,9 @@
     try{ if(adminGeneralUnsub){try{adminGeneralUnsub();}catch(_){}}
       adminGeneralUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'users'),function(snap){
         const list=[];
+        // Cette écoute lit DÉJÀ toutes les fiches utilisateurs : on en profite pour tenir
+        // la liste des clients de la console à jour, sans deuxième abonnement.
+        buildAdminClients(snap);
         snap.forEach(function(docu){const d=docu.data()||{};const sup=Array.isArray(d.support)?d.support.slice().sort(function(a,b){return (a.at||0)-(b.at||0);}):[];if(!sup.length)return;list.push({uid:docu.id,name:d.name||'Utilisateur',role:d.role||'client',support:sup,supReadUser:d.supReadUser||0,supReadAdmin:d.supReadAdmin||0,ts:sup[sup.length-1].at||0});});
         list.sort(function(a,b){return b.ts-a.ts;});
         S.adminGeneral=list;
@@ -13330,7 +13394,7 @@
       adminArtUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'artisans'),function(snap){
         const list=[],pending=new Set();
         snap.forEach(function(d){ const a=d.data()||{}; const cats=Array.isArray(a.cats)?a.cats:[]; const rr=a.rates||{}; const st=a.status||'attente';
-          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Prestataire',status:st,type:(a.statusType==='particulier')?'particulier':'entreprise',statusType:a.statusType||'entreprise',legalName:a.legalName||'',legalForm:a.legalForm||'',capital:a.capital||'',rcsCity:a.rcsCity||'',birth:a.birth||'',referralCode:a.referralCode||'',referredByCode:a.referredByCode||'',acceptedTerms:!!a.acceptedTerms,acceptedCharte:!!a.acceptedCharte,acceptedMandat:!!a.acceptedMandat,acceptsGrille:!!a.acceptsGrille,termsVersion:a.termsVersion||'',termsAt:(a.termsAt&&a.termsAt.toMillis)?a.termsAt.toMillis():0,createdAt:(a.createdAt&&a.createdAt.toMillis)?a.createdAt.toMillis():0,cats:cats,other:a.other||'',pendingCats:Array.isArray(a.pendingCats)?a.pendingCats:[],pendingOther:a.pendingOther||'',rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,founderSince:(a.founderSince&&a.founderSince.toMillis)?a.founderSince.toMillis():(typeof a.founderSince==='number'?a.founderSince:null),founderGross:Number(a.founderGross)||0,rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,mollieStatus:a.mollieStatus||'none',mollieOnb:a.mollieOnboardingStatus||'',lastNoShowAt:(a.lastNoShowAt&&a.lastNoShowAt.toDate)?a.lastNoShowAt.toDate().getTime():0});
+          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Prestataire',status:st,type:(a.statusType==='particulier')?'particulier':'entreprise',statusType:a.statusType||'entreprise',legalName:a.legalName||'',legalForm:a.legalForm||'',capital:a.capital||'',rcsCity:a.rcsCity||'',birth:a.birth||'',referralCode:a.referralCode||'',referredByCode:a.referredByCode||'',acceptedTerms:!!a.acceptedTerms,acceptedCharte:!!a.acceptedCharte,acceptedMandat:!!a.acceptedMandat,acceptsGrille:!!a.acceptsGrille,termsVersion:a.termsVersion||'',termsAt:(a.termsAt&&a.termsAt.toMillis)?a.termsAt.toMillis():0,createdAt:(a.createdAt&&a.createdAt.toMillis)?a.createdAt.toMillis():0,cats:cats,other:a.other||'',pendingCats:Array.isArray(a.pendingCats)?a.pendingCats:[],pendingOther:a.pendingOther||'',rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,founderSince:(a.founderSince&&a.founderSince.toMillis)?a.founderSince.toMillis():(typeof a.founderSince==='number'?a.founderSince:null),founderGross:Number(a.founderGross)||0,rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,online:!!a.online,siteMode:a.siteMode||'',salonAddress:a.salonAddress||'',salonZone:a.salonZone||'',push:(Array.isArray(a.pushTokens)?a.pushTokens.length:0),mollieStatus:a.mollieStatus||'none',mollieOnb:a.mollieOnboardingStatus||'',lastNoShowAt:(a.lastNoShowAt&&a.lastNoShowAt.toDate)?a.lastNoShowAt.toDate().getTime():0});
           if(st==='attente')pending.add(d.id); });
         S.adminArtisans=list;
         // Recalcule la liste des services actifs (au moins un prestataire validé) et la publie
