@@ -1949,10 +1949,8 @@
 
   /* ===== Mascotte « Zouti » — la pieuvre : 8 bras, un pour chaque besoin ===== */
   const MASCOT='Zouti';
-  const FOUNDER_SPOTS=12; // total du programme « Artisan Fondateur » (lancement)
-  // Places encore libres = total − places déjà prises (compteur serveur settings/stats.founderTaken,
-  // incrémenté de façon atomique par la Cloud Function à chaque candidature retenue).
-  function founderLeft(){ return Math.max(0, FOUNDER_SPOTS - (S.founderTaken||0)); }
+  // Il n'y a plus de places à compter : l'inscription avant l'ouverture suffit.
+  function founderOpen(){ try{ return Date.now()<launchMs(); }catch(_){ return true; } }
   // Tête de la pieuvre — mantle allongé (ovale), yeux points, petit sourire, contour marqué
   function octoHead(){
     return `<path d="M60 12 C 41 12, 32 28, 32 46 C 32 71, 45 89, 60 89 C 75 89, 88 71, 88 46 C 88 28, 79 12, 60 12 Z" fill="#FF6A5B" stroke="#2A2340" stroke-width="3.2"/>
@@ -3110,9 +3108,9 @@
   // admin est persistée ET re-appliquée telle quelle — elle ne « saute » plus au rechargement.
   async function loadConfig(){ try{ if(!FB||_configSub)return; _configSub=FB.f.onSnapshot(FB.f.doc(FB.db,'settings','config'),function(snap){ const d=snap.exists()?(snap.data()||{}):{}; if(typeof d.retroRate==='number')S.retroRate=d.retroRate; if(Array.isArray(d.fidTiers)&&d.fidTiers.length)S.fidTiers=d.fidTiers.map(function(t){return {key:t.key,nm:t.nm,min:t.min,pct:Number(t.pct)||0};}); render(); },function(e){ console.warn('config load',e); }); }catch(e){ console.warn('config sub',e); } }
   var _configSub=null;
-  // Compteur public du programme fondateur (settings/stats.founderTaken) : combien de
-  // places ont été prises. Lisible par tous (même hors connexion, écran d'inscription pro).
-  async function loadStats(){ try{ if(!FB)return; const snap=await FB.f.getDoc(FB.f.doc(FB.db,'settings','stats')); if(snap.exists()){ const d=snap.data()||{}; if(typeof d.founderTaken==='number'){ S.founderTaken=d.founderTaken; render(); } } }catch(e){ console.warn('stats load',e); } }
+  // Le programme Ambassadeur n'a plus de quota : plus rien à charger ici. La fonction
+  // est conservée car elle est appelée au démarrage.
+  async function loadStats(){}
   function svcReco(id){const a=S.avgOffers&&S.avgOffers[id];return a?Math.round(a.sum/a.n):svcBase(id);}
   const DEMO_ATTEST='data:image/png;base64,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';
   const ADMIN_ARTS=()=>[
@@ -3164,9 +3162,16 @@
   // DOIT rester aligné avec functions/index.js (SMALL_COMM_MIN / SMALL_COMM_PCT).
   const SMALL_COMM_MIN=21, SMALL_COMM_PCT=10;
   function effCommPct(basePct,sub){return ((Number(sub)||0)<SMALL_COMM_MIN)?Math.max(Number(basePct)||0,SMALL_COMM_PCT):(Number(basePct)||0);}
-  // Net indicatif touché par un prestataire pour un prix donné (barème standard « débutant »
-  // = 1er palier de fidélité) — utilisé pour SÉDUIRE à l'inscription (« vous touchez ~X € »).
-  function proNetHint(price){const p=Number(price)||0;if(!p)return 0;const pct=effCommPct(fidFor(0).pct,p);return Math.round(p*(100-pct)/100);}
+  // Net indicatif touché par un prestataire pour un prix donné — c'est CE chiffre qu'on lui
+  // montre à l'inscription, et lui seul (le prix client et le pourcentage ne le regardent pas).
+  // Tant que le programme Ambassadeur est ouvert, quiconque s'inscrit en est : on annonce
+  // donc le net AMBASSADEUR, sinon on lui promet moins que ce qu'il touchera réellement.
+  // Après l'ouverture aux clients, retour au 1er palier de fidélité.
+  function signupCommPct(){ return founderOpen()?FOUNDER_COMM_PCT:fidFor(0).pct; }
+  function proNetHint(price){const p=Number(price)||0;if(!p)return 0;const pct=effCommPct(signupCommPct(),p);return Math.round(p*(100-pct)/100);}
+  // Net réel du prestataire CONNECTÉ (son taux du moment : ambassadeur ou palier de fidélité)
+  // — pour les écrans de son espace, où l'on ne parle plus d'inscription.
+  function myNetHint(price){const p=Number(price)||0;if(!p)return 0;const pct=effCommPct(myCommPct(),p);return Math.round(p*(100-pct)/100);}
   // Départ du compte à rebours de l'avantage fondateur : JAMAIS avant l'ouverture aux
   // clients (1er oct). Inutile — et injuste — de brûler la fenêtre de 3 mois tant qu'aucun
   // client ne peut commander. On prend donc le plus tardif entre l'inscription et le 1er oct.
@@ -3178,7 +3183,12 @@
   // Avantage fondateur encore actif pour le prestataire connecté ? (dans les 3 mois ET sous 2 000 €)
   function founderActive(){ if(!S.proFounder)return false; if((S.proFounderGross||0)>=FOUNDER_GROSS_CAP)return false; if(S.proFounderSince&&(Date.now()-founderStartMs(S.proFounderSince))>=FOUNDER_DAYS*86400000)return false; return true; }
   // Idem pour une fiche artisan quelconque (console admin).
-  function founderActiveFor(a){ if(!a||!a.founder)return false; if((a.founderGross||0)>=FOUNDER_GROSS_CAP)return false; if(a.founderSince&&(Date.now()-founderStartMs(a.founderSince))>=FOUNDER_DAYS*86400000)return false; return true; }
+  // Est ambassadeur QUICONQUE s'est inscrit avant l'ouverture aux clients. Plus de
+  // places limitées : la date d'inscription suffit, et elle répare d'elle-même les
+  // fiches marquées « founder:false » du temps où un quota existait.
+  function isFounderArtisan(a){ if(!a)return false; if(a.founder===true)return true;
+    const c=Number(a.createdAt)||0; return c>0&&c<launchMs(); }
+  function founderActiveFor(a){ if(!isFounderArtisan(a))return false; if((a.founderGross||0)>=FOUNDER_GROSS_CAP)return false; if(a.founderSince&&(Date.now()-founderStartMs(a.founderSince))>=FOUNDER_DAYS*86400000)return false; return true; }
   // Taux de commission réel du prestataire connecté : fondateur (si avantage actif) sinon son palier de fidélité.
   // Le statut de fidélité (donc la commission) tient compte des missions gagnées par
   // parrainage (statusJobs = missions réalisées + crédit parrainage) — cohérent avec le
@@ -3214,8 +3224,18 @@
   function refMissions(){return refValidated()*REF_CREDIT;}
   function statusJobs(){return (S.proJobsTotal||0)+refMissions();}
   // Code de parrainage capté depuis un lien « ?parrain=CODE » (mémorisé jusqu'à
-  // l'inscription du filleul, même après une redirection).
-  function storedParrain(){try{return (localStorage.getItem('tiParrain')||'').toUpperCase();}catch(_){return '';}}
+  // l'inscription du filleul, même après une redirection ou une installation).
+  // Il PÉRIME au bout de 30 jours : sans cela, un lien ouvert des mois plus tôt
+  // repréremplit une inscription sans raison visible pour la personne qui s'inscrit.
+  // Un code sans date de capture est un reliquat d'avant cette règle : on l'oublie.
+  const PARRAIN_TTL=30*86400000;
+  function storedParrain(){try{
+    const c=(localStorage.getItem('tiParrain')||'').toUpperCase();
+    if(!c)return '';
+    const at=Number(localStorage.getItem('tiParrainAt'))||0;
+    if(!at||(Date.now()-at)>PARRAIN_TTL){localStorage.removeItem('tiParrain');localStorage.removeItem('tiParrainAt');return '';}
+    return c;
+  }catch(_){return '';}}
   function digits(p){return (p||'').replace(/[^0-9]/g,'');}
   // Numéro au format international SANS « + » pour wa.me (WhatsApp).
   // WhatsApp refuse un numéro national (« 0628… » → « +0628… » invalide) : il faut
@@ -3326,7 +3346,7 @@
     persona:'client',clientNav:'home',proNav:'home',customServices:[],wishText:'',wishSent:false,adminWishes:[],onboarded:false,guest:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},
     card:null,cardForm:false,payStep:false,payEdit:false,paySaveCard:true,finishing:false,disputing:false,support:false,supportSide:null,mission:null,missions:[],draft:null,
     addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,
-    concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,concRetroPaid:'',concIban:'',concIbanHolder:'',concLegal:'',concSiret:'',concAddress:'',retroRate:8,founderTaken:0,
+    concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,concRetroPaid:'',concIban:'',concIbanHolder:'',concLegal:'',concSiret:'',concAddress:'',retroRate:8,
     // Renfort entre prestataires (bêta) : ses propres demandes de renfort, et le
     // formulaire en cours. Volontairement à part de S.missions pour ne rien perturber.
     renfortView:false,renforts:[],renfortsLoaded:false,renfortForm:null,renfortBusy:false,
@@ -3887,6 +3907,10 @@
   var TIER_EN={'bronze':'Bronze','argent':'Silver','or':'Gold','platine':'Platinum','diamant':'Diamond'};
   var DOW_EN={'lun':'Mon','mar':'Tue','mer':'Wed','jeu':'Thu','ven':'Fri','sam':'Sat','dim':'Sun'};
   var T_RE=[
+    [/^dès (\d+) € net$/,'from $1 € net'],
+    [/^(\d+) € net\/h$/,'$1 € net\/h'],
+    [/^(\d+) € net\/retrait$/,'$1 € net per pickup'],
+    [/^(\d+) € net$/,'$1 € net'],
     [/^uniquement à (.+)$/,'only to $1'],
     [/^(.+) n'a pas encore répondu$/,"$1 hasn't answered yet"],
     [/^Vérification des disponibilités de (.+)…$/,"Checking $1's availability…"],
@@ -3963,6 +3987,18 @@
     }catch(e){console.warn('i18n',e);}
   }
   var EN_DICT={
+    // --- Grille tarifaire montrée au prestataire à l'inscription ---
+    "1 h relaxant":"1 h relaxing",
+    "Grille tarifaire Ti-Services":"Ti-Services rate card",
+    "Les prix sont fixés par Ti-Services, identiques pour tous. Voici, prestation par prestation, le net qui vous revient.":"Prices are set by Ti-Services and are the same for everyone. Here is what you take home, service by service.",
+    "★ Ambassadeur":"★ Ambassador",
+    "Vous vous inscrivez avant le 1er octobre 2026 : les montants ci-dessous sont vos nets d'ambassadeur.":"You're joining before 1 October 2026, so the amounts below are your Ambassador take-home rates.",
+    "pour vous":"you keep",
+    "prestations — le client choisit, le total est ferme.":"services — the client picks, the total is fixed.",
+    "prestation — le client choisit, le total est ferme.":"service — the client picks, the total is fixed.",
+    "Ce net d’ambassadeur court sur vos 3 premiers mois d’activité ou jusqu’à 2 000 € de prestations ; ensuite votre net évolue avec votre ancienneté sur Ti-Services. Les prix peuvent évoluer ; vous en êtes informé et vous voyez toujours votre net avant d'accepter une mission.":"Your Ambassador rate runs for your first 3 months of activity, or up to 2,000 € of work — whichever comes first. After that, what you take home follows your track record on Ti-Services. Prices may change; you'll be told, and you always see your take-home before accepting a job.",
+    "Le net indiqué vaut pour un début sur Ti-Services : il augmente avec votre ancienneté. Les prix peuvent évoluer ; vous en êtes informé et vous voyez toujours votre net avant d'accepter une mission.":"The figures shown are what a newcomer takes home; they go up as you build a track record. Prices may change; you'll be told, and you always see your take-home before accepting a job.",
+    "J'ai lu la grille ci-dessus et je l'applique pour mes prestations. Je pourrai proposer d'enrichir le catalogue (validé par Ti-Services), mais les prix restent ceux de la grille.":"I've read the rate card above and I apply it to my work. I may suggest additions to the catalogue (subject to Ti-Services approval), but the prices stay as listed.",
     // --- Guide d'installation ---
     "Touchez le menu":"Tap the menu",
     "(Chrome)":"(Chrome)",
@@ -5223,6 +5259,18 @@
   var TIER_PT={'bronze':'Bronze','argent':'Prata','or':'Ouro','platine':'Platina','diamant':'Diamante'};
   var DOW_PT={'lun':'Seg','mar':'Ter','mer':'Qua','jeu':'Qui','ven':'Sex','sam':'Sáb','dim':'Dom'};
   var PT_DICT={
+    // --- Grille tarifaire montrée au prestataire à l'inscription ---
+    "1 h relaxant":"1 h relaxante",
+    "Grille tarifaire Ti-Services":"Tabela de preços Ti-Services",
+    "Les prix sont fixés par Ti-Services, identiques pour tous. Voici, prestation par prestation, le net qui vous revient.":"Os preços são definidos pela Ti-Services e são iguais para todos. Eis, serviço a serviço, o que lhe fica.",
+    "★ Ambassadeur":"★ Embaixador",
+    "Vous vous inscrivez avant le 1er octobre 2026 : les montants ci-dessous sont vos nets d'ambassadeur.":"Inscreve-se antes de 1 de outubro de 2026, por isso os valores abaixo são os seus líquidos de embaixador.",
+    "pour vous":"para si",
+    "prestations — le client choisit, le total est ferme.":"serviços — o cliente escolhe, o total é fixo.",
+    "prestation — le client choisit, le total est ferme.":"serviço — o cliente escolhe, o total é fixo.",
+    "Ce net d’ambassadeur court sur vos 3 premiers mois d’activité ou jusqu’à 2 000 € de prestations ; ensuite votre net évolue avec votre ancienneté sur Ti-Services. Les prix peuvent évoluer ; vous en êtes informé et vous voyez toujours votre net avant d'accepter une mission.":"O líquido de embaixador vigora nos seus 3 primeiros meses de atividade ou até 2 000 € de serviços, o que acontecer primeiro. Depois, o que lhe fica acompanha a sua antiguidade na Ti-Services. Os preços podem mudar; será avisado e vê sempre o seu líquido antes de aceitar um serviço.",
+    "Le net indiqué vaut pour un début sur Ti-Services : il augmente avec votre ancienneté. Les prix peuvent évoluer ; vous en êtes informé et vous voyez toujours votre net avant d'accepter une mission.":"Os valores indicados são os de quem começa na Ti-Services; sobem com a sua antiguidade. Os preços podem mudar; será avisado e vê sempre o seu líquido antes de aceitar um serviço.",
+    "J'ai lu la grille ci-dessus et je l'applique pour mes prestations. Je pourrai proposer d'enrichir le catalogue (validé par Ti-Services), mais les prix restent ceux de la grille.":"Li a tabela acima e aplico-a nos meus serviços. Poderei propor novos serviços para o catálogo (validados pela Ti-Services), mas os preços continuam a ser os da tabela.",
     // --- Guide d'installation ---
     "Touchez le menu":"Toque no menu",
     "(Chrome)":"(Chrome)",
@@ -6766,6 +6814,10 @@
     "Prix fixe, quel que soit le nombre d'objets. Débité seulement après la remise, à votre validation.":"Preço fixo, independentemente do número de objetos. Cobrado apenas após a entrega, na sua validação."
   };
   var T_RE_PT=[
+    [/^dès (\d+) € net$/,'desde $1 € líquidos'],
+    [/^(\d+) € net\/h$/,'$1 € líquidos\/h'],
+    [/^(\d+) € net\/retrait$/,'$1 € líquidos por levantamento'],
+    [/^(\d+) € net$/,'$1 € líquidos'],
     [/^uniquement à (.+)$/,'apenas a $1'],
     [/^(.+) n'a pas encore répondu$/,'$1 ainda não respondeu'],
     [/^Vérification des disponibilités de (.+)…$/,'A verificar a disponibilidade de $1…'],
@@ -7298,7 +7350,7 @@
         <li>Ce barème est <b>modifiable dans la console</b> (section Prestations — seuils et taux) : la valeur en console fait foi, le manuel décrit les valeurs de départ.</li>
         <li>Évolution <b>automatique et immédiate</b> : au passage du seuil, le taux baisse dès la mission suivante. Le prestataire voit son palier, sa barre de progression et le prochain palier dans « Statut fidélité » ; c'est votre argument anti-« passons en direct » : plus il travaille via l'app, moins il paie.</li></ul>
         <p class="manq">Ambassadeur (« Artisan Fondateur »)</p>
-        <ul><li><b>${FOUNDER_SPOTS} places</b> au lancement, attribuées automatiquement par le serveur aux premiers artisans validés (impossible à s'auto-attribuer).</li>
+        <ul><li><b>Aucun quota</b> : est ambassadeur tout prestataire dont la fiche est créée <b>avant l'ouverture aux clients</b> (1er octobre 2026). Le serveur le marque à l'inscription ; la date d'inscription fait foi de toute façon.</li>
         <li>Avantage : <b>commission ${FOUNDER_COMM_PCT} %</b> pendant <b>${FOUNDER_DAYS} jours</b> OU jusqu'à <b>${FOUNDER_GROSS_CAP.toLocaleString('fr-FR')} €</b> de prestations (au premier atteint). Le compte à rebours ne démarre <b>jamais avant l'ouverture aux clients</b> (1er octobre 2026).</li>
         <li>À l'expiration : le badge devient « Ambassadeur — expiré » (visible en console) et le prestataire bascule sur son palier de fidélité normal.</li></ul>
         <p class="manq">Qui voit quel badge ?</p>
@@ -7558,17 +7610,16 @@
         </div>`;})()}
       ${foldCard('a-clis',I.user,'Fiches clients',pendC.length?pendC.length+' en attente de validation':'Comptes clients inscrits',cliList,chip('grey',clis.length))}
       ${(function(){
-        const pris=Number(S.founderTaken||0), libres=Math.max(0,FOUNDER_SPOTS-pris);
-        const r=S._founderRecount;
-        // Les ambassadeurs en cours, nommés : savoir qui occupe une place vaut mieux
-        // qu'un simple total, et c'est la même liste que le recomptage vérifie.
+        // Plus de places à compter : est ambassadeur qui s'est inscrit avant l'ouverture.
+        // La carte se contente donc de nommer ceux dont l'avantage court encore.
         const amb=(S.adminArtisans||[]).filter(function(a){return founderActiveFor(a);});
-        const body=`<p class="mini" style="color:var(--muted);line-height:1.55">${pris} place${pris>1?'s':''} prise${pris>1?'s':''} sur ${FOUNDER_SPOTS} — ${libres?libres+' place'+(libres>1?'s':'')+' libre'+(libres>1?'s':''):'plus aucune place libre'}. Une candidature refusée rend désormais sa place automatiquement. Les refus antérieurs à cette règle, eux, en retiennent peut-être encore&nbsp;: le recomptage repart des fiches et rétablit le vrai total.</p>
-          ${amb.length?`<div class="mini" style="margin-top:11px;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Ambassadeurs en cours (${amb.length})</div>
-            ${amb.map(function(a){return `<button class="reset row between" data-adm="art:${a.id}" style="width:100%;margin-top:7px;gap:8px;align-items:center;text-align:left"><b style="font-size:13.5px">${esc(a.name)}</b><span class="chip founder-chip" style="flex:none">${I.star} ${FOUNDER_COMM_PCT} %</span></button>`;}).join('')}`:''}
-          ${r?`<p class="mini" style="margin-top:11px;color:var(--good);font-weight:700">${I.check} Recompté&nbsp;: ${r.avant} → ${r.apres} place${r.apres>1?'s':''} prise${r.apres>1?'s':''}${r.liberees?` (${r.liberees} rendue${r.liberees>1?'s':''} par des candidatures refusées)`:' — le compteur était déjà juste'}.</p>`:''}
-          <button class="btn ghost sm" data-adm="recount-founder" style="margin-top:12px;width:auto;padding:9px 14px"${S._founderBusy?' disabled':''}>${S._founderBusy?'Recomptage…':'Recompter les places'}</button>`;
-        return foldCard('a-founder',I.star,'Programme Ambassadeur',pris+' place'+(pris>1?'s':'')+' prise'+(pris>1?'s':'')+' sur '+FOUNDER_SPOTS,body,chip(libres?'good':'coral',libres+' libre'+(libres>1?'s':'')));
+        const expires=(S.adminArtisans||[]).filter(function(a){return isFounderArtisan(a)&&!founderActiveFor(a);});
+        const body=`<p class="mini" style="color:var(--muted);line-height:1.55">Est ambassadeur <b>tout prestataire inscrit avant le 1er octobre 2026</b>, sans limite de nombre. L'avantage court ${FOUNDER_DAYS} jours à partir de l'ouverture, ou jusqu'à ${FOUNDER_GROSS_CAP.toLocaleString('fr-FR')} € de prestations — au premier des deux atteint.</p>
+          ${amb.length?`<div class="mini" style="margin-top:11px;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Avantage en cours (${amb.length})</div>
+            ${amb.map(function(a){return `<button class="reset row between" data-adm="art:${a.id}" style="width:100%;margin-top:7px;gap:8px;align-items:center;text-align:left"><b style="font-size:13.5px">${esc(a.name)}</b><span class="chip founder-chip" style="flex:none">${I.star} ${FOUNDER_COMM_PCT} %</span></button>`;}).join('')}`:`<p class="mini" style="margin-top:11px;color:var(--muted)">Aucun ambassadeur pour l'instant.</p>`}
+          ${expires.length?`<div class="mini" style="margin-top:13px;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Avantage terminé (${expires.length})</div>
+            ${expires.map(function(a){return `<button class="reset row between" data-adm="art:${a.id}" style="width:100%;margin-top:7px;gap:8px;align-items:center;text-align:left"><b style="font-size:13.5px">${esc(a.name)}</b><span class="chip" style="flex:none;background:var(--hair);color:var(--muted)">${I.star} expiré</span></button>`;}).join('')}`:''}`;
+        return foldCard('a-founder',I.star,'Programme Ambassadeur','Tout prestataire inscrit avant le 1er octobre 2026',body,chip(amb.length?'good':'grey',amb.length+' en cours'));
       })()}
       ${foldCard('a-funnel',I.install,"Entonnoir d'installation",'Visiteurs, guide ouvert, applications installées',funnelBody,S.adminFunnelLoaded?chip('grey',(Number((S.adminFunnel||{}).u_installed_total)||0)+' installées'):'')}
 
@@ -10330,8 +10381,37 @@
   // Section « Métiers & tarifs » utilisée par l'étape « Métiers » de l'inscription
   // progressive. Reprend la même sélection catégories/sous-catégories, grille et bloc
   // diplômes que le formulaire complet proSignup (mêmes data-attributs → mêmes gestionnaires).
+  /* Grille tarifaire présentée au prestataire pendant l'inscription.
+     Il n'y voit QUE son net : le prix payé par le client ne le regarde pas, et afficher les
+     deux côte à côte revenait à afficher le pourcentage de commission — ce qu'on ne fait
+     jamais. Tant que le programme Ambassadeur est ouvert, le net annoncé est le net
+     d'ambassadeur, puisque tout inscrit avant l'ouverture en est un (cf. proNetHint). */
+  function grilleCard(f){
+    if(!(f.cats||[]).length)return `<p class="mini" style="margin-top:10px;color:var(--muted)">Sélectionnez au moins un service.</p>`;
+    const amb=founderOpen();
+    const lignes=f.cats.filter(function(id){return id!=='autre';}).map(function(id){
+      const plat=(S.adminPrices&&S.adminPrices[id]!=null)?S.adminPrices[id]:svcBase(id);
+      const forf=isCatalogForfait(id);
+      const netVal=forf?proNetHint(minActPrice(id)):proNetHint(plat);
+      const netTxt=forf?`dès ${netVal} € net`:`${netVal} € net${id==='colis'?'/retrait':'/h'}`;
+      // Métier vendu à l'acte : « dès 110 € » ne dit rien de ce qu'on lui demande d'accepter.
+      // On déplie CHAQUE prestation du catalogue avec le net correspondant — on ne fait pas
+      // signer une grille que la personne n'a pas sous les yeux.
+      const actes=forf?catalogFor(id):[];
+      return `<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--hair)"><div class="row between" style="align-items:flex-start"><span class="sub" style="display:flex;align-items:center;gap:8px"><span style="display:inline-flex;width:26px;height:26px;border-radius:8px;background:var(--teal-wash);color:var(--teal-deep);align-items:center;justify-content:center">${svcIco(id)}</span>${svcNm(id)}</span><div style="text-align:right"><b style="color:var(--good)">${netTxt}</b><div class="mini" style="color:var(--muted);margin-top:1px">pour vous</div></div></div>
+        ${actes.length?`<div class="gridacts">${actes.map(function(a){return `<div class="row between" style="gap:10px;align-items:baseline"><span class="mini" style="flex:1;min-width:0">${esc(a.nm||a.id)}</span><span class="mini" style="flex:none;text-align:right;color:var(--good);font-weight:800">${proNetHint(Number(a.price)||0)} € net</span></div>`;}).join('')}</div>
+          <p class="mini" style="margin-top:6px;color:var(--muted)"><b>${actes.length}</b> ${actes.length>1?'prestations':'prestation'} — le client choisit, le total est ferme.</p>`:''}
+      </div>`;
+    }).join('');
+    return `<div class="card" style="padding:16px;margin-top:14px"><div class="eyebrow" style="color:var(--muted)">Grille tarifaire Ti-Services</div>
+      <p class="mini" style="margin-top:4px">Les prix sont fixés par Ti-Services, identiques pour tous. Voici, prestation par prestation, le net qui vous revient.</p>
+      ${amb?`<div class="row" style="gap:9px;align-items:flex-start;margin-top:10px"><span class="chip" style="background:#FFEFC9;color:#8A5A00;flex:none">★ Ambassadeur</span><span class="mini" style="color:var(--muted);line-height:1.5">Vous vous inscrivez avant le 1er octobre 2026&nbsp;: les montants ci-dessous sont vos nets d'ambassadeur.</span></div>`:''}
+      ${lignes}
+      <p class="mini" style="margin-top:12px;color:var(--muted);line-height:1.5">${amb?'Ce net d’ambassadeur court sur vos 3 premiers mois d’activité ou jusqu’à 2 000 € de prestations&nbsp;; ensuite votre net évolue avec votre ancienneté sur Ti-Services.':'Le net indiqué vaut pour un début sur Ti-Services&nbsp;: il augmente avec votre ancienneté.'} Les prix peuvent évoluer&nbsp;; vous en êtes informé et vous voyez toujours votre net avant d'accepter une mission.</p>
+      <div class="chkline" style="margin-top:14px"><button data-act="toggle-grille" aria-label="Appliquer la grille" style="background:none;border:none;padding:0">${chkbox(f.acceptsGrille)}</button><span class="mini" style="line-height:1.5">${RQ} J'ai lu la grille ci-dessus et je l'applique pour mes prestations. Je pourrai proposer d'enrichir le catalogue (validé par Ti-Services), mais les prix restent ceux de la grille.</span></div></div>`;
+  }
   function proServicesSection(f){
-    const psvc=function(id){const s=findSvc(id);if(!s)return '';const on=f.cats.includes(s.id);const c=svcColor(s.id);const px=(S.adminPrices&&S.adminPrices[s.id]!=null?S.adminPrices[s.id]:s.rate);const rt=isForfaitSvc(s.id)?`${px} € forfait`:(isCatalogForfait(s.id)?`dès ${minActPrice(s.id)} €`:`dès ${px} €/h`);return `<button class="cat ${on?'sel':''}" data-pcat="${s.id}"><div class="pick">${I.check}</div><div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[s.id]||svcIco(s.id)}</div><div class="nm">${esc(s.nm)}</div><div class="rt">${rt}</div></button>`;};
+    const psvc=function(id){const s=findSvc(id);if(!s)return '';const on=f.cats.includes(s.id);const c=svcColor(s.id);const px=(S.adminPrices&&S.adminPrices[s.id]!=null?S.adminPrices[s.id]:s.rate);const rt=isForfaitSvc(s.id)?`${proNetHint(px)} € net`:(isCatalogForfait(s.id)?`dès ${proNetHint(minActPrice(s.id))} € net`:`${proNetHint(px)} € net/h`);return `<button class="cat ${on?'sel':''}" data-pcat="${s.id}"><div class="pick">${I.check}</div><div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[s.id]||svcIco(s.id)}</div><div class="nm">${esc(s.nm)}</div><div class="rt">${rt}</div></button>`;};
     const pcatCount=function(cat){return cat.subs.filter(function(id){return f.cats.includes(id);}).length;};
     const pcatTile=function(cat){const open=f.openCat===cat.id;const n=pcatCount(cat);const c=svcColor(cat.id);return `<button class="cat" data-pcatopen="${cat.id}" style="${open?'border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-wash)':''}"><span class="cat-more" style="${open?'transform:rotate(90deg)':''}">${I.chevron}</span><div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[cat.id]||I.other}</div><div class="nm">${esc(cat.nm)}</div><div class="rt">${n?`<b style="color:var(--teal-deep)">${n} sélectionnée${n>1?'s':''}</b>`:cat.subs.length+' prestations'}</div></button>`;};
     const cats=homeItems().map(function(it){
@@ -10344,19 +10424,7 @@
       +`<button class="cat ${f.cats.includes('autre')?'sel':''}" data-pcat="autre"><div class="pick">${I.check}</div><div class="ic">${I.other}</div><div class="nm">Autre</div><div class="rt">à préciser</div></button>`;
     return `<div class="cats">${cats}</div>
       ${f.cats.includes('autre')?`<div class="field" style="margin-top:12px"><label>Précisez votre service « Autre »</label><input class="txt" data-pf="otherService" value="${esc(f.otherService||'')}" placeholder="Ex. Vitrier, peintre, cours de plongée…"><p class="mini" style="margin-top:6px">Examiné par Ti-Services avant d'être proposé.</p></div>`:''}
-      ${f.cats.length?`<div class="card" style="padding:16px;margin-top:14px"><div class="eyebrow" style="color:var(--muted)">Grille tarifaire Ti-Services</div>
-        <p class="mini" style="margin-top:4px">Prix <b>fixés par Ti-Services</b>. À chaque mission, vous voyez le <b>net que vous touchez</b> avant d'accepter.</p>
-        ${f.cats.filter(function(id){return id!=='autre';}).map(function(id){const plat=(S.adminPrices&&S.adminPrices[id]!=null)?S.adminPrices[id]:svcBase(id);const forf=isCatalogForfait(id);const priceTxt=forf?`dès ${minActPrice(id)} €`:(id==='colis'?`${plat} € / retrait`:`${plat} €/h`);const netVal=forf?proNetHint(minActPrice(id)):proNetHint(plat);const netSuf=forf?'':(id==='colis'?'/retrait':'/h');
-          // Métier vendu à l'acte : « dès 110 € » ne dit rien de ce qu'on lui demande
-          // d'accepter. On déplie ici CHAQUE prestation du catalogue avec son prix et son
-          // net — on ne fait pas signer une grille que la personne n'a pas sous les yeux.
-          const actes=forf?catalogFor(id):[];
-          return `<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--hair)"><div class="row between" style="align-items:flex-start"><span class="sub" style="display:flex;align-items:center;gap:8px"><span style="display:inline-flex;width:26px;height:26px;border-radius:8px;background:var(--teal-wash);color:var(--teal-deep);align-items:center;justify-content:center">${svcIco(id)}</span>${svcNm(id)}</span><div style="text-align:right"><b>${priceTxt}</b><div class="mini" style="color:var(--good);font-weight:800;margin-top:1px">≈ ${netVal} € net${netSuf} pour vous</div></div></div>
-            ${actes.length?`<div class="gridacts">${actes.map(function(a){const px=Number(a.price)||0;return `<div class="row between" style="gap:10px;align-items:baseline"><span class="mini" style="flex:1;min-width:0">${esc(a.nm||a.id)}</span><span style="flex:none;text-align:right"><b class="mini" style="color:var(--ink)">${px} €</b> <span class="mini" style="color:var(--good);font-weight:700">→ ${proNetHint(px)} € net</span></span></div>`;}).join('')}</div>
-              <p class="mini" style="margin-top:6px;color:var(--muted)">${actes.length} prestation${actes.length>1?'s':''} — le client choisit, le total est ferme.</p>`:''}
-          </div>`;}).join('')}
-        <p class="mini" style="margin-top:12px;color:var(--muted);line-height:1.5">Le net indiqué vaut pour un début sur Ti-Services&nbsp;: il augmente avec votre ancienneté. Les prix peuvent évoluer&nbsp;; vous en êtes informé et vous voyez toujours votre net avant d'accepter une mission.</p>
-        <div class="chkline" style="margin-top:14px"><button data-act="toggle-grille" aria-label="Appliquer la grille" style="background:none;border:none;padding:0">${chkbox(f.acceptsGrille)}</button><span class="mini" style="line-height:1.5">${RQ} J'ai lu la grille ci-dessus et je l'applique pour mes prestations.</span></div></div>`:`<p class="mini" style="margin-top:10px;color:var(--muted)">Sélectionnez au moins un service.</p>`}
+      ${grilleCard(f)}
       ${f.cats.includes('baby')?`<div class="card" style="padding:16px;margin-top:14px"><div class="eyebrow" style="color:var(--muted)">${I.baby} Garde d'enfants — diplômes${RQ}</div>
         <p class="mini" style="margin-top:4px"><b>PSC1 (premiers secours)</b> recommandé. Déclarations contrôlées à la validation.</p>
         <div class="segs" style="margin-top:10px;flex-wrap:wrap">${BABY_DIPLOMAS.map(d=>`<button class="seg ${(f.diplomas||[]).includes(d)?'on':''}" data-pdip="${esc(d)}">${esc(d)}</button>`).join('')}</div>
@@ -10371,7 +10439,7 @@
     // Sport) s'ouvrent en accordéon pour révéler leurs prestations ; le prestataire coche
     // celles qu'il réalise (multi-sélection). Les services sans catégorie et « Autre »
     // restent des tuiles directes.
-    const psvc=function(id){const s=findSvc(id);if(!s)return '';const on=f.cats.includes(s.id);const c=svcColor(s.id);const px=(S.adminPrices&&S.adminPrices[s.id]!=null?S.adminPrices[s.id]:s.rate);const rt=isForfaitSvc(s.id)?`${px} € forfait`:(isCatalogForfait(s.id)?`dès ${minActPrice(s.id)} €`:`dès ${px} €/h`);return `<button class="cat ${on?'sel':''}" data-pcat="${s.id}"><div class="pick">${I.check}</div><div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[s.id]||svcIco(s.id)}</div><div class="nm">${esc(s.nm)}</div><div class="rt">${rt}</div></button>`;};
+    const psvc=function(id){const s=findSvc(id);if(!s)return '';const on=f.cats.includes(s.id);const c=svcColor(s.id);const px=(S.adminPrices&&S.adminPrices[s.id]!=null?S.adminPrices[s.id]:s.rate);const rt=isForfaitSvc(s.id)?`${proNetHint(px)} € net`:(isCatalogForfait(s.id)?`dès ${proNetHint(minActPrice(s.id))} € net`:`${proNetHint(px)} € net/h`);return `<button class="cat ${on?'sel':''}" data-pcat="${s.id}"><div class="pick">${I.check}</div><div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[s.id]||svcIco(s.id)}</div><div class="nm">${esc(s.nm)}</div><div class="rt">${rt}</div></button>`;};
     const pcatCount=function(cat){return cat.subs.filter(function(id){return f.cats.includes(id);}).length;};
     const pcatTile=function(cat){const open=f.openCat===cat.id;const n=pcatCount(cat);const c=svcColor(cat.id);return `<button class="cat" data-pcatopen="${cat.id}" style="${open?'border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-wash)':''}"><span class="cat-more" style="${open?'transform:rotate(90deg)':''}">${I.chevron}</span><div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[cat.id]||I.other}</div><div class="nm">${esc(cat.nm)}</div><div class="rt">${n?`<b style="color:var(--teal-deep)">${n} sélectionnée${n>1?'s':''}</b>`:cat.subs.length+' prestations'}</div></button>`;};
     const cats=homeItems().map(function(it){
@@ -10394,15 +10462,15 @@
       <div class="h-hello">Concentrez-vous sur votre métier, on gère le reste.</div>
       <p class="sub" style="margin-top:6px">Développez votre activité à Saint-Barth : des missions en plus, <b>sans la paperasse ni les impayés</b>.</p>
       <div class="stack" style="gap:13px;margin-top:16px">${benefitsPro}</div>
-      ${founderLeft()>0?`<div class="card founder" style="padding:16px;margin-top:16px">
-        <div class="row between"><span class="eyebrow" style="color:#B77400">★ Programme Ambassadeur</span><span class="chip" style="background:#FFEFC9;color:#8A5A00">Places limitées</span></div>
-        <div class="h-hello" style="font-size:18px;margin-top:8px">Faites partie des ambassadeurs</div>
+      ${founderOpen()?`<div class="card founder" style="padding:16px;margin-top:16px">
+        <div class="row between"><span class="eyebrow" style="color:#B77400">★ Programme Ambassadeur</span><span class="chip" style="background:#FFEFC9;color:#8A5A00">Avant le 1er octobre</span></div>
+        <div class="h-hello" style="font-size:18px;margin-top:8px">Inscrivez-vous avant l'ouverture, vous êtes ambassadeur</div>
         <div class="stack" style="gap:8px;margin-top:10px">
           <div class="row" style="gap:9px"><span style="color:#B77400;flex:none">${I.check}</span><span class="sub"><b>Commission réduite aux seuls frais bancaires</b> — vous gardez quasiment tout.</span></div>
           <div class="row" style="gap:9px"><span style="color:#B77400;flex:none">${I.check}</span><span class="sub"><b>Badge Ambassadeur</b> sur votre profil, visible des clients.</span></div>
           <div class="row" style="gap:9px"><span style="color:#B77400;flex:none">${I.check}</span><span class="sub"><b>Placement prioritaire</b> sur les nouvelles demandes.</span></div>
         </div>
-        <p class="mini" style="margin-top:11px;color:var(--muted)">Réservé aux <b>premiers artisans</b> retenus. Avantage valable durant vos 3 premiers mois ou jusqu'à 2 000 € de prestations (au premier des deux atteint) ; commission standard ensuite.</p>
+        <p class="mini" style="margin-top:11px;color:var(--muted)">Pour <b>tout prestataire validé avant le 1er octobre 2026</b>. Avantage valable durant vos 3 premiers mois ou jusqu'à 2 000 € de prestations (au premier des deux atteint) ; commission standard ensuite.</p>
       </div>`:''}
       <div class="banner coral" style="margin-top:14px">${I.shield}<span><b>Sur candidature</b> — réservé aux pros immatriculés (micro-entreprise ou société), profil vérifié avant activation. <b>SIRET obligatoire</b>.</span></div>
       <div class="card" style="padding:16px;margin-top:14px">
@@ -10427,10 +10495,7 @@
       <div class="field" style="margin-top:18px"><label>Quels services souhaitez-vous réaliser&nbsp;? (un ou plusieurs)${RQ}</label></div>
       <div class="cats">${cats}</div>
       ${f.cats.includes('autre')?`<div class="field" style="margin-top:12px"><label>Précisez votre service « Autre »</label><input class="txt" data-pf="otherService" value="${esc(f.otherService||'')}" placeholder="Ex. Vitrier, peintre, cours de plongée…"><p class="mini" style="margin-top:6px">Examiné par Ti-Services avant d'être proposé.</p></div>`:''}
-      ${f.cats.length?`<div class="card" style="padding:16px;margin-top:14px"><div class="eyebrow" style="color:var(--muted)">Grille tarifaire Ti-Services</div>
-        <p class="mini" style="margin-top:4px">Prix <b>fixés par Ti-Services</b>, identiques pour tous. À chaque mission, vous voyez le <b>net que vous toucherez</b> avant d'accepter.</p>
-        ${f.cats.filter(function(id){return id!=='autre';}).map(function(id){const plat=(S.adminPrices&&S.adminPrices[id]!=null)?S.adminPrices[id]:svcBase(id);const forf=isCatalogForfait(id);const priceTxt=forf?`dès ${minActPrice(id)} €`:(id==='colis'?`${plat} € / retrait`:`${plat} €/h`);const netVal=forf?proNetHint(minActPrice(id)):proNetHint(plat);const netSuf=forf?'':(id==='colis'?'/retrait':'/h');const head=`<div class="row between" style="align-items:flex-start"><span class="sub" style="display:flex;align-items:center;gap:8px"><span style="display:inline-flex;width:26px;height:26px;border-radius:8px;background:var(--teal-wash);color:var(--teal-deep);align-items:center;justify-content:center">${svcIco(id)}</span>${svcNm(id)}</span><div style="text-align:right"><b>${priceTxt}</b><div class="mini" style="color:var(--good);font-weight:800;margin-top:1px">≈ ${netVal} € net${netSuf} pour vous</div></div></div>`;const acts=forf?`<div class="mini" style="margin-top:6px;color:var(--ink-soft);line-height:1.55">${catalogFor(id).map(function(a){return esc(a.nm)+' — '+a.price+' €';}).join(' · ')}</div>`:'';return `<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--hair)">${head}${acts}</div>`;}).join('')}
-        <div class="chkline" style="margin-top:16px"><button data-act="toggle-grille" aria-label="Appliquer la grille" style="background:none;border:none;padding:0">${chkbox(f.acceptsGrille)}</button><span class="mini" style="line-height:1.5">${RQ} J'applique la <b>grille tarifaire Ti-Services</b> pour mes prestations. Je pourrai proposer d'<b>enrichir le catalogue</b> (validé par Ti-Services), mais les prix restent ceux de la grille.</span></div></div>`:`<p class="mini" style="margin-top:10px;color:var(--muted)">Sélectionnez au moins un service.</p>`}
+      ${grilleCard(f)}
       ${f.cats.includes('baby')?`<div class="card" style="padding:16px;margin-top:14px"><div class="eyebrow" style="color:var(--muted)">${I.baby} Garde d'enfants — diplômes &amp; qualifications${RQ}</div>
         <p class="mini" style="margin-top:4px"><b>PSC1 (premiers secours)</b> recommandé. Vos déclarations sont <b>contrôlées</b> à la validation.</p>
         <div class="segs" style="margin-top:10px;flex-wrap:wrap">${BABY_DIPLOMAS.map(d=>`<button class="seg ${(f.diplomas||[]).includes(d)?'on':''}" data-pdip="${esc(d)}">${esc(d)}</button>`).join('')}</div>
@@ -10788,7 +10853,7 @@
       if(mol!=='error'){setTimeout(function(){try{refreshMollieStatus();}catch(_){}},4000);}}}
     // Lien de parrainage « ?parrain=CODE » : on mémorise le code du parrain pour préremplir
     // l'inscription prestataire (survit à l'installation / la connexion Google).
-    const par=q.get('parrain'); if(par){try{localStorage.setItem('tiParrain',par.toUpperCase().slice(0,40));}catch(_){}}
+    const par=q.get('parrain'); if(par){try{localStorage.setItem('tiParrain',par.toUpperCase().slice(0,40));localStorage.setItem('tiParrainAt',String(Date.now()));}catch(_){}}
     const rid=q.get('r'); if(rid)S._openReq=rid; // réservation à ouvrir (après connexion)
     // Lien « installer l'app » (depuis l'e-mail de bienvenue) : ouvre directement le
     // guide d'installation (invite native Android / gestes iPhone) une fois l'app peinte.
@@ -11405,7 +11470,7 @@
     const f=S.proAddForm||(S.proAddForm={cats:[],other:'',assur:false});
     const owned=(S.proCats||[]).concat(S.proPendingCats||[]);
     const avail=SERVICES.filter(function(s){return owned.indexOf(s.id)<0;});
-    const svcCard=function(s){const on=f.cats.indexOf(s.id)>=0;const c=svcColor(s.id);const forf=isCatalogForfait(s.id);const px=(S.adminPrices&&S.adminPrices[s.id]!=null?S.adminPrices[s.id]:s.rate);const rt=isForfaitSvc(s.id)?`${px} € forfait`:(forf?`dès ${minActPrice(s.id)} €`:`dès ${px} €/h`);
+    const svcCard=function(s){const on=f.cats.indexOf(s.id)>=0;const c=svcColor(s.id);const forf=isCatalogForfait(s.id);const px=(S.adminPrices&&S.adminPrices[s.id]!=null?S.adminPrices[s.id]:s.rate);const rt=isForfaitSvc(s.id)?`${myNetHint(px)} € net`:(forf?`dès ${myNetHint(minActPrice(s.id))} € net`:`${myNetHint(px)} € net/h`);
       return `<button class="cat ${on?'sel':''}" data-pac="${s.id}"><div class="pick">${I.check}</div><div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[s.id]||svcIco(s.id)}</div><div class="nm">${esc(s.nm)}</div><div class="rt">${rt}</div></button>`;};
     const otherOn=f.cats.indexOf('autre')>=0;const nSel=f.cats.length;
     const canSubmit=nSel>0&&f.assur&&(!otherOn||(f.other||'').trim());
@@ -11953,19 +12018,6 @@
           FB.f.deleteDoc(FB.f.doc(FB.db,'artisans',uid)).then(function(){ try{ if(FB.f.deleteDoc)FB.f.deleteDoc(FB.f.doc(FB.db,'users',uid)); }catch(_){}; toast('Artisan supprimé ✓'); }).catch(function(e){ toast('⚠︎ Échec : '+fbErrTxt(e)); });
         }catch(e){ toast('⚠︎ Échec : '+fbErrTxt(e)); }
         S.admin.view='home';S.admin.sel=null; render(); return;
-      }
-      else if(act==='recount-founder'){
-        if(S._founderBusy)return;
-        if(!FB||!FB.fn||!FB.functions||isDemo()){ toast('Disponible en mode réel uniquement'); return; }
-        S._founderBusy=true; render();
-        FB.fn.httpsCallable(FB.functions,'recountFounderSpots')({})
-          .then(function(res){ const d=(res&&res.data)||{};
-            S._founderRecount={avant:d.avant||0,apres:d.apres||0,liberees:d.liberees||0};
-            S.founderTaken=d.apres||0;
-            toast('Compteur rétabli ✓'); })
-          .catch(function(e){ toast('⚠︎ Échec : '+fbErrTxt(e)); })
-          .then(function(){ S._founderBusy=false; render(); });
-        return;
       }
       else if(act==='copysiret'){
         const a=(S.adminArtisans||[]).find(x=>x.id===id); const v=(a&&a.siret)||'';
@@ -13672,7 +13724,7 @@
     S.account={name:S.proForm.name||nm,email:user.email||'',uid:user.uid,role:'artisan'};
     S.referralCode=genReferralCode(S.proForm.name||nm,user.uid);
     S.persona='pro';S.proStatus='draft';S.proStep=null;S.onboarded=true;S.authView=null;
-    try{localStorage.removeItem('tiParrain');}catch(_){}
+    try{localStorage.removeItem('tiParrain');localStorage.removeItem('tiParrainAt');}catch(_){}
     render();
   }
   async function loadUserProfile(user){
@@ -14035,7 +14087,7 @@
       S.account={name:(f.name||'').trim()||((email||'').split('@')[0]),email:email,uid:uid,role:'artisan'};
       S.persona='pro'; S.proName=(f.name||'').trim(); S.proStatus='pending'; S.proStep=null; S.onboarded=true; S.authView=null; S.proNav='home';
       S.referralCode=genReferralCode((f.name||'').trim(),uid);
-      try{localStorage.removeItem('tiSignupIntent');localStorage.removeItem('tiParrain');localStorage.removeItem(proDraftKey());}catch(_){} // intention, parrainage & brouillon consommés
+      try{localStorage.removeItem('tiSignupIntent');localStorage.removeItem('tiParrain');localStorage.removeItem('tiParrainAt');localStorage.removeItem(proDraftKey());}catch(_){} // intention, parrainage & brouillon consommés
       ensureBetaMollie(); // BÊTA : paiements marqués actifs pour pouvoir accepter (démo). No-op en prod.
       S.proInsuranceStatus='attente'; S.proInsuranceUrl=insuranceUrl; S.proCats=f.cats.slice();
       subscribeProStatus(uid);

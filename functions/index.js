@@ -10,7 +10,7 @@
  *   firebase deploy --only functions
  * (nécessite le plan Blaze, déjà activé.)
  */
-const {onDocumentCreated, onDocumentUpdated, onDocumentWritten, onDocumentDeleted} = require('firebase-functions/v2/firestore');
+const {onDocumentCreated, onDocumentUpdated, onDocumentWritten} = require('firebase-functions/v2/firestore');
 const {onRequest, onCall, HttpsError} = require('firebase-functions/v2/https');
 const {onSchedule} = require('firebase-functions/v2/scheduler');
 const {setGlobalOptions} = require('firebase-functions/v2');
@@ -537,34 +537,24 @@ exports.notifyAdminNewArtisan = onDocumentCreated('artisans/{artisanId}', async 
 });
 
 /**
- * assignFounderSpot : programme « Artisan Fondateur ». Les FOUNDER_TOTAL premières
- * candidatures reçoivent automatiquement le statut fondateur. Le compteur est tenu
- * côté serveur (settings/stats.founderTaken) dans une TRANSACTION atomique — impossible
- * de dépasser le total, quelle que soit la simultanéité des inscriptions. Le champ
- * founder de la fiche artisan est positionné true/false par le serveur (jamais le client).
+ * assignFounderSpot : programme « Artisan Fondateur ». Il n'y a plus de quota — est
+ * ambassadeur TOUT prestataire dont la fiche est créée avant l'ouverture aux clients.
+ * Le champ founder est posé par le serveur, jamais par le client. Après l'ouverture,
+ * les nouvelles fiches naissent sans avantage.
  */
-const FOUNDER_TOTAL = 12;
 exports.assignFounderSpot = onDocumentCreated('artisans/{artisanId}', async (event) => {
   const snap = event.data;
   if (!snap) return;
-  const db = getFirestore();
-  const statsRef = db.doc('settings/stats');
   try {
-    await db.runTransaction(async (tx) => {
-      const cur = await tx.get(snap.ref);
-      // Fiche disparue entre-temps, ou statut fondateur déjà tranché : on ne retouche pas.
-      if (!cur.exists) return;
-      if (typeof (cur.data() || {}).founder === 'boolean') return;
-      const st = await tx.get(statsRef);
-      const taken = (st.exists && Number(st.data().founderTaken)) || 0;
-      if (taken < FOUNDER_TOTAL) {
-        tx.set(statsRef, {founderTaken: taken + 1}, {merge: true});
-        // founderSince démarre la fenêtre d'avantage (3 mois / 2 000 €).
-        tx.set(snap.ref, {founder: true, founderSince: FieldValue.serverTimestamp()}, {merge: true});
-      } else {
-        tx.set(snap.ref, {founder: false}, {merge: true});
-      }
-    });
+    const cur = snap.data() || {};
+    // Statut déjà tranché (reprise de fiche, import) : on ne retouche pas.
+    if (typeof cur.founder === 'boolean') return;
+    const avantOuverture = Date.now() < FOUNDER_LAUNCH_MS;
+    await snap.ref.set(avantOuverture
+      // founderSince démarre la fenêtre d'avantage ; elle ne court qu'à partir de
+      // l'ouverture (cf. founderStartMs), jamais avant.
+      ? {founder: true, founderSince: FieldValue.serverTimestamp()}
+      : {founder: false}, {merge: true});
   } catch (e) {
     console.error('assignFounderSpot', e);
   }
@@ -1584,95 +1574,10 @@ exports.recordNoShow = onDocumentUpdated('requests/{reqId}', async (event) => {
   } catch (e) { console.warn('recordNoShow', e); }
 });
 
-/**
- * releaseFounderSpot : rend sa place au programme quand une candidature fondatrice
- * est REFUSÉE (ou sa fiche effacée). La place était prise à l'envoi de la
- * candidature, jamais rendue : quelques refus et le programme se fermait avant
- * d'avoir servi douze prestataires réellement retenus.
- *
- * `founderReleased` marque la restitution : la fonction peut être rejouée sans
- * jamais décrémenter deux fois, et un compte refusé puis re-refusé ne rend qu'une
- * seule place. Le compteur ne descend jamais sous zéro.
- */
-async function giveBackFounderSpot(db, ref) {
-  await db.runTransaction(async (tx) => {
-    const cur = await tx.get(ref);
-    if (!cur.exists) return;
-    const d = cur.data() || {};
-    if (d.founder !== true || d.founderReleased === true) return;  // rien à rendre
-    const statsRef = db.doc('settings/stats');
-    const st = await tx.get(statsRef);
-    const taken = (st.exists && Number(st.data().founderTaken)) || 0;
-    tx.set(statsRef, {founderTaken: Math.max(0, taken - 1)}, {merge: true});
-    tx.set(ref, {founder: false, founderReleased: true, founderSince: null}, {merge: true});
-  });
-}
-exports.releaseFounderSpot = onDocumentUpdated('artisans/{artisanId}', async (event) => {
-  const before = (event.data && event.data.before && event.data.before.data()) || {};
-  const after = (event.data && event.data.after && event.data.after.data()) || {};
-  if (before.status === 'refuse' || after.status !== 'refuse') return;   // refus tout neuf seulement
-  try {
-    await giveBackFounderSpot(getFirestore(), event.data.after.ref);
-    console.log('Place fondateur rendue (refus) — artisan=' + event.params.artisanId);
-  } catch (e) { console.error('releaseFounderSpot', e); }
-});
-// Fiche effacée : la place doit revenir au pot, sinon elle est perdue pour de bon.
-exports.releaseFounderSpotOnDelete = onDocumentDeleted('artisans/{artisanId}', async (event) => {
-  const d = (event.data && event.data.data()) || {};
-  if (d.founder !== true || d.founderReleased === true) return;
-  try {
-    const db = getFirestore();
-    const statsRef = db.doc('settings/stats');
-    await db.runTransaction(async (tx) => {
-      const st = await tx.get(statsRef);
-      const taken = (st.exists && Number(st.data().founderTaken)) || 0;
-      tx.set(statsRef, {founderTaken: Math.max(0, taken - 1)}, {merge: true});
-    });
-    console.log('Place fondateur rendue (fiche effacée) — artisan=' + event.params.artisanId);
-  } catch (e) { console.error('releaseFounderSpotOnDelete', e); }
-});
-
-/**
- * recountFounderSpots : remet le compteur du programme à sa VRAIE valeur.
- *
- * Avant que le refus ne rende la place, chaque candidature refusée en consommait une
- * définitivement. Le compteur pouvait donc annoncer le programme complet alors que
- * des places restaient libres. Cette fonction repart des fiches elles-mêmes :
- *   – une fiche fondatrice REFUSÉE : sa place est rendue (et la fiche marquée),
- *   – une fiche fondatrice active : elle occupe bien une place,
- *   – les fiches effacées ne comptent plus, par construction.
- * Le compteur est ensuite réécrit avec le total réel.
- *
- * À déclencher une fois depuis la console, puis à oublier : le refus rend désormais
- * la place tout seul. Rejouable sans risque — elle recompte, elle n'incrémente pas.
- */
-exports.recountFounderSpots = onCall(async (request) => {
-  const email = (request.auth && request.auth.token && request.auth.token.email) || '';
-  if (!email || email.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
-    throw new HttpsError('permission-denied', 'Réservé à Ti-Services.');
-  }
-  const db = getFirestore();
-  const snap = await db.collection('artisans').get();
-  let actifs = 0; const liberees = [];
-  const ecritures = [];
-  snap.forEach((doc) => {
-    const d = doc.data() || {};
-    if (d.founder !== true || d.founderReleased === true) return;
-    if (d.status === 'refuse') {
-      liberees.push(doc.id);
-      ecritures.push(doc.ref.set({founder: false, founderReleased: true, founderSince: null}, {merge: true}));
-    } else {
-      actifs++;
-    }
-  });
-  await Promise.all(ecritures);
-  const avant = await db.doc('settings/stats').get();
-  const ancien = (avant.exists && Number(avant.data().founderTaken)) || 0;
-  await db.doc('settings/stats').set({founderTaken: actifs}, {merge: true});
-  console.log('recountFounderSpots : ' + ancien + ' → ' + actifs +
-    ' (' + liberees.length + ' place(s) rendue(s) par des candidatures refusées)');
-  return {avant: ancien, apres: actifs, liberees: liberees.length, total: FOUNDER_TOTAL};
-});
+/* Le programme Ambassadeur n'a plus de quota : est ambassadeur qui s'inscrit avant
+   l'ouverture aux clients. Les fonctions qui rendaient, reprenaient et recomptaient les
+   places (releaseFounderSpot, releaseFounderSpotOnDelete, recountFounderSpots) n'ont
+   donc plus d'objet et ont été retirées. */
 
 /**
  * mollieOnboardingStart : point d'entrée du parcours d'activation des paiements.
