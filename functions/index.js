@@ -10,7 +10,7 @@
  *   firebase deploy --only functions
  * (nécessite le plan Blaze, déjà activé.)
  */
-const {onDocumentCreated, onDocumentUpdated, onDocumentWritten} = require('firebase-functions/v2/firestore');
+const {onDocumentCreated, onDocumentUpdated, onDocumentWritten, onDocumentDeleted} = require('firebase-functions/v2/firestore');
 const {onRequest, onCall, HttpsError} = require('firebase-functions/v2/https');
 const {onSchedule} = require('firebase-functions/v2/scheduler');
 const {setGlobalOptions} = require('firebase-functions/v2');
@@ -1582,6 +1582,54 @@ exports.recordNoShow = onDocumentUpdated('requests/{reqId}', async (event) => {
     }, {merge: true});
     console.log('No-show enregistré artisan=' + uid + ' req=' + event.params.reqId);
   } catch (e) { console.warn('recordNoShow', e); }
+});
+
+/**
+ * releaseFounderSpot : rend sa place au programme quand une candidature fondatrice
+ * est REFUSÉE (ou sa fiche effacée). La place était prise à l'envoi de la
+ * candidature, jamais rendue : quelques refus et le programme se fermait avant
+ * d'avoir servi douze prestataires réellement retenus.
+ *
+ * `founderReleased` marque la restitution : la fonction peut être rejouée sans
+ * jamais décrémenter deux fois, et un compte refusé puis re-refusé ne rend qu'une
+ * seule place. Le compteur ne descend jamais sous zéro.
+ */
+async function giveBackFounderSpot(db, ref) {
+  await db.runTransaction(async (tx) => {
+    const cur = await tx.get(ref);
+    if (!cur.exists) return;
+    const d = cur.data() || {};
+    if (d.founder !== true || d.founderReleased === true) return;  // rien à rendre
+    const statsRef = db.doc('settings/stats');
+    const st = await tx.get(statsRef);
+    const taken = (st.exists && Number(st.data().founderTaken)) || 0;
+    tx.set(statsRef, {founderTaken: Math.max(0, taken - 1)}, {merge: true});
+    tx.set(ref, {founder: false, founderReleased: true, founderSince: null}, {merge: true});
+  });
+}
+exports.releaseFounderSpot = onDocumentUpdated('artisans/{artisanId}', async (event) => {
+  const before = (event.data && event.data.before && event.data.before.data()) || {};
+  const after = (event.data && event.data.after && event.data.after.data()) || {};
+  if (before.status === 'refuse' || after.status !== 'refuse') return;   // refus tout neuf seulement
+  try {
+    await giveBackFounderSpot(getFirestore(), event.data.after.ref);
+    console.log('Place fondateur rendue (refus) — artisan=' + event.params.artisanId);
+  } catch (e) { console.error('releaseFounderSpot', e); }
+});
+// Fiche effacée : la place doit revenir au pot, sinon elle est perdue pour de bon.
+exports.releaseFounderSpotOnDelete = onDocumentDeleted('artisans/{artisanId}', async (event) => {
+  const d = (event.data && event.data.data()) || {};
+  if (d.founder !== true || d.founderReleased === true) return;
+  try {
+    const db = getFirestore();
+    const statsRef = db.doc('settings/stats');
+    await db.runTransaction(async (tx) => {
+      const st = await tx.get(statsRef);
+      const taken = (st.exists && Number(st.data().founderTaken)) || 0;
+      tx.set(statsRef, {founderTaken: Math.max(0, taken - 1)}, {merge: true});
+    });
+    console.log('Place fondateur rendue (fiche effacée) — artisan=' + event.params.artisanId);
+  } catch (e) { console.error('releaseFounderSpotOnDelete', e); }
 });
 
 /**
