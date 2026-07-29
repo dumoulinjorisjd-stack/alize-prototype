@@ -434,6 +434,12 @@
   .beta-tag{display:inline-block;vertical-align:middle;margin-left:.32em;padding:.14em .42em .08em;border-radius:.35em;background:linear-gradient(180deg,var(--coral),var(--coral-deep));color:#fff;font-family:var(--f-disp);font-weight:800;font-size:.46em;letter-spacing:.08em;line-height:1.3;transform:translateY(-.16em);box-shadow:0 2px 6px -2px color-mix(in srgb,var(--coral) 70%,transparent)}
   /* Ardoise, et non une seconde teinte chaude : à côté du BÊTA rouge, un orange se
      confondrait avec lui. Le repère d'espace doit se lire au premier coup d'œil. */
+  /* ADMIN : sarcelle profond. Trois repères d'espace bien distincts — BÊTA rouge,
+     PRO ardoise, ADMIN sarcelle — pour qu'aucun ne se confonde avec un autre. */
+  .sirettap{display:inline-flex;align-items:center;gap:6px;background:var(--sand-2,#F4F1EC);border:1px solid var(--hair);border-radius:9px;padding:6px 10px;font:inherit;font-weight:700;color:var(--ink);cursor:pointer;letter-spacing:.02em}
+  .sirettap:active{background:var(--teal-wash)}
+  .siretlink{display:block;margin-top:5px;font-size:11.5px;font-weight:700;color:var(--teal-deep);text-decoration:none}
+  .adm-tag{background:linear-gradient(180deg,var(--good),#0B7A4E);box-shadow:0 2px 6px -2px color-mix(in srgb,var(--good) 60%,transparent)}
   .pro-tag{background:linear-gradient(180deg,var(--ink-soft),var(--ink));box-shadow:0 2px 6px -2px color-mix(in srgb,var(--ink) 55%,transparent)}
   body.desktop .brandbar{display:none}
   .view::-webkit-scrollbar{width:0}
@@ -1437,7 +1443,11 @@
   // Repère d'espace : dans un compte prestataire, la marque porte « PRO ». Même
   // gabarit que « BÊTA », teinte différente pour qu'on les distingue quand les deux
   // cohabitent. On sait ainsi d'un coup d'œil de quel côté de l'app on se trouve.
-  function proTag(){return (S.persona==='pro')?'<span class="beta-tag pro-tag">PRO</span>':'';}
+  function proTag(){
+    if(S.persona==='pro')return '<span class="beta-tag pro-tag">PRO</span>';
+    if(S.persona==='admin')return '<span class="beta-tag adm-tag">ADMIN</span>';
+    return '';
+  }
   // Ouverture des SERVICES au public : le 1er octobre 2026. Avant cette date, les clients
   // peuvent s'inscrire et découvrir l'app EN PRODUCTION, mais les services sont grisés (pas
   // de commande possible) — on prévient chaque inscrit par e-mail à l'ouverture. La bêta
@@ -2893,6 +2903,9 @@
   // Nom/icône d'une catégorie, y compris la catégorie « autre » (service hors liste).
   function svcNm(id){if(id==='autre')return 'Autre service';const s=findSvc(id);return s?s.nm:id;}
   // Libellé des services d'un prestataire, avec le détail du service « Autre » proposé.
+  // Le SIRET s'écrit par blocs sur les papiers officiels : à l'écran, on le lit et on
+  // le compare bien plus vite ainsi. La copie, elle, reste en chiffres collés.
+  function fmtSiret(v){ const d=String(v||'').replace(/\D/g,''); return d.length===14?(d.slice(0,3)+' '+d.slice(3,6)+' '+d.slice(6,9)+' '+d.slice(9)):d; }
   function artSvcLabel(a){return (a&&a.cats?a.cats:[]).map(function(c){return c==='autre'?('Autre'+(a.other?' : '+a.other:'')):svcNm(c);}).join(', ');}
   // Tarifs d'un prestataire, pour la fiche admin. Un prestataire NE FIXE PAS ses
   // prix : à l'inscription il coche « J'applique la grille tarifaire Ti-Services »
@@ -4403,6 +4416,8 @@
     "Proposer de devenir prestataire":"Suggest becoming a provider",
     "Annuler la proposition":"Cancel the suggestion",
     "installations distinctes — un iPhone désinstallé puis réinstallé recompte":"distinct installs — an iPhone uninstalled then reinstalled is counted again",
+    "Vérifier à l'annuaire des entreprises ›":"Check on the official company register ›",
+    "SIRET copié ✓":"Registration number copied ✓",
     "Tarifs Ti-Services":"Ti-Services rates",
     "Ti-Services Saint-Barthélemy — services à domicile à la demande":"Ti-Services Saint-Barthélemy — on-demand home services",
     "Ti-Services conserve les pièces comptables qui lui incombent pour la durée légale, mais":"Ti-Services keeps the accounting records it is responsible for for the legal period, but",
@@ -5657,6 +5672,8 @@
     "Proposer de devenir prestataire":"Sugerir tornar-se prestador",
     "Annuler la proposition":"Cancelar a sugestão",
     "installations distinctes — un iPhone désinstallé puis réinstallé recompte":"instalações distintas — um iPhone desinstalado e reinstalado conta de novo",
+    "Vérifier à l'annuaire des entreprises ›":"Verificar no registo oficial de empresas ›",
+    "SIRET copié ✓":"Número de registo copiado ✓",
     "Tarifs Ti-Services":"Tarifas Ti-Services",
     "Ti-Services Saint-Barthélemy — services à domicile à la demande":"Ti-Services Saint-Barthélemy — serviços ao domicílio a pedido",
     "Ti-Services conserve les pièces comptables qui lui incombent pour la durée légale, mais":"A Ti-Services conserva os documentos contabilísticos que lhe cabem durante o prazo legal, mas",
@@ -7618,7 +7635,8 @@
           <div class="row between" style="align-items:flex-start"><span class="sub">Services</span><b style="text-align:right;max-width:62%">${esc(artSvcLabel(a))}</b></div>
           <div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">Tarifs Ti-Services</span><b style="text-align:right;max-width:62%">${artPriceRows(a)}</b></div>
           ${(a.cats&&a.cats.includes('baby'))?`<div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">Diplômes garde d'enfants</span><b style="text-align:right;max-width:62%">${(a.diplomas&&a.diplomas.length)?a.diplomas.map(d=>esc(d==='Autre diplôme'&&a.diplomaOther?'Autre : '+a.diplomaOther:d)).join('<br>'):'<span style="color:var(--coral-deep)">Non renseignés</span>'}</b></div>${(a.diplomas&&a.diplomas.length&&!a.diplomas.some(d=>/PSC1/.test(d)))?`<p class="mini" style="margin-top:4px;color:var(--coral-deep)">${I.shield} PSC1 (premiers secours) non déclaré — recommandé pour la garde d'enfants. Vérifiez les justificatifs avant validation.</p>`:''}`:''}
-          <div class="row between" style="margin-top:6px"><span class="sub">SIRET</span><b class="money">${esc(a.siret||'—')}</b></div>
+          <div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">SIRET</span><b style="text-align:right;max-width:66%">${a.siret?`<button class="sirettap" data-adm="copysiret:${a.id}" title="Copier le numéro">${I.copy} <span class="money">${esc(fmtSiret(a.siret))}</span></button>
+            <a class="siretlink" href="https://annuaire-entreprises.data.gouv.fr/etablissement/${esc(a.siret)}" target="_blank" rel="noopener">Vérifier à l'annuaire des entreprises ›</a>`:'<span class="money">—</span>'}</b></div>
           ${artLegalRows(a)}
           <div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">Assurance RC</span><b style="text-align:right;max-width:62%">${(function(){const st=insStatus(a),l=insLabel(st);return `<span class="chip ${l[0]}">${l[1]}</span>`;})()}${a.insurer?`<br><span style="color:var(--ink);font-weight:600;font-size:13px">${esc(a.insurer)}</span>`:''}${a.insuranceUrl?`<br><a href="${esc(a.insuranceUrl)}" target="_blank" rel="noopener" style="color:var(--teal-deep);font-weight:700">${I.other} Voir l'attestation</a>`:`<br><span class="mini" style="color:var(--muted)">Attestation non jointe</span>`}</b></div>
           <div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">Paiements (Mollie)</span><b style="text-align:right;max-width:62%">${(function(){const st=a.mollieStatus||'none';
@@ -11511,6 +11529,12 @@
           FB.f.deleteDoc(FB.f.doc(FB.db,'artisans',uid)).then(function(){ try{ if(FB.f.deleteDoc)FB.f.deleteDoc(FB.f.doc(FB.db,'users',uid)); }catch(_){}; toast('Artisan supprimé ✓'); }).catch(function(e){ toast('⚠︎ Échec : '+fbErrTxt(e)); });
         }catch(e){ toast('⚠︎ Échec : '+fbErrTxt(e)); }
         S.admin.view='home';S.admin.sel=null; render(); return;
+      }
+      else if(act==='copysiret'){
+        const a=(S.adminArtisans||[]).find(x=>x.id===id); const v=(a&&a.siret)||'';
+        if(!v)return;
+        try{ if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(v).then(function(){toast('SIRET copié ✓');},function(){toast(v);}); } else { toast(v); } }catch(_){ toast(v); }
+        return;
       }
       else if(act==='prosug-on'||act==='prosug-off'){
         // On MARQUE le compte, on ne le convertit pas : la bascule n'aura lieu que si la
