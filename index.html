@@ -8207,6 +8207,22 @@
         <p class="mini" style="text-align:center;margin-top:13px;color:var(--muted)">Si vous répondez non, nous ne vous le redemanderons pas.</p>
       </div></div>`;
   }
+  // Une proposition est EN ATTENTE si Ti-Services l'a posée et que la personne n'a
+  // pas encore tranché. Toute réponse, oui ou non, la retire définitivement.
+  function proSuggestPending(d){ return !!(d&&d.proSuggest)&&!(d&&d.proSuggestAnswer); }
+  // Le profil n'est relu qu'au démarrage (changement d'état d'authentification). Un
+  // téléphone qui garde l'app en mémoire ne verrait donc la proposition qu'après une
+  // vraie relance. On relit ce seul champ au retour au premier plan : une lecture de
+  // document, et la question apparaît dans la foulée.
+  async function refreshProSuggest(){
+    try{
+      if(!(FB&&FB.auth&&FB.auth.currentUser)||isDemo())return;
+      if(S.persona!=='client'||!S.onboarded||S.proSuggest)return;
+      const snap=await FB.f.getDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid));
+      const d=(snap&&snap.exists&&snap.exists())?(snap.data()||{}):null;
+      if(proSuggestPending(d)){ S.proSuggest=true; render(); }
+    }catch(_){}
+  }
   function renderClient(){
     if(S.imgView)return imgViewer();
     // Purge des demandes non honorées, périmées depuis plus de 12 h (souplesse comprise).
@@ -13278,7 +13294,7 @@
       S.account={name:name,email:user.email||'',zone:zone,uid:user.uid,photo:photo,phone:(data&&data.phone)||'',isPro:!!(data&&data.isPro),company:(data&&data.company)||'',siret:(data&&data.siret)||''};
       // Ti-Services soupçonne un professionnel inscrit du mauvais côté : on lui posera
       // la question à l'ouverture. Une fois qu'il a répondu (oui ou non), plus jamais.
-      S.proSuggest=!!(data&&data.proSuggest)&&!(data&&data.proSuggestAnswer);
+      S.proSuggest=proSuggestPending(data);
       S.clientForm=Object.assign({},S.clientForm,{name:name,email:user.email||'',zone:zone,photo:photo,password:'',password2:''});
       // Cache local d'abord (instantané), puis les données Firestore prennent le relais.
       restoreClientLocal(user.uid);
@@ -14086,8 +14102,8 @@
   initFirebase();
   // Retour de l'app au premier plan (mobile) : on resynchronise les demandes du
   // client, car l'écoute Firestore a pu être suspendue en arrière-plan.
-  document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='visible')refreshClientRequests(); });
-  window.addEventListener('focus',refreshClientRequests);
+  document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='visible'){refreshClientRequests();refreshProSuggest();} });
+  window.addEventListener('focus',function(){refreshClientRequests();refreshProSuggest();});
   window.addEventListener('online',refreshClientRequests);
 })();
 </script>
