@@ -13692,26 +13692,38 @@
   }
   // Capte le jeton FCM d'un client/artisan et l'enregistre dans SA fiche users
   // (champ pushTokens). Les futures Cloud Functions y enverront missions / suivi.
-  let pushRegDone=false;
+  // Le jeton de notification appartient à l'APPAREIL, pas au compte : deux comptes
+  // ouverts sur le même téléphone reçoivent le même. Un simple drapeau « déjà fait »
+  // empêchait donc le second compte de s'enregistrer — il semblait avoir perdu son
+  // souhait de recevoir les notifications, alors qu'il ne l'avait jamais inscrit. On
+  // mémorise POUR QUEL compte l'enregistrement a été fait.
+  let pushRegUid=null, pushRegTok=null;
+  // Faut-il (ré)enregistrer ? Oui dès que le compte connecté n'est pas celui pour
+  // lequel l'enregistrement a été fait. C'est LE point qui manquait : l'ancien
+  // drapeau ne disait que « on l'a déjà fait », sans dire pour qui.
+  function pushNeedsRegister(uid){ return !!uid && pushRegUid!==uid; }
   async function registerPush(role){
     if(isNativeShell()){
       try{
-        if(pushRegDone)return; if(!FB||!FB.auth||!FB.auth.currentUser)return;
-        const tok=await nativeFcmToken(); if(!tok)return; pushRegDone=true;
+        if(!FB||!FB.auth||!FB.auth.currentUser)return;
+        if(!pushNeedsRegister(FB.auth.currentUser.uid))return;
+        const tok=await nativeFcmToken(); if(!tok)return;
+        pushRegUid=FB.auth.currentUser.uid; pushRegTok=tok;
         try{ await FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{pushTokens:FB.f.arrayUnion(tok),role:role,notifAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
         try{ await FB.f.setDoc(FB.f.doc(FB.db,'fcmOwners',tok),{uid:FB.auth.currentUser.uid,role:role,at:FB.f.serverTimestamp()}); }catch(_){}
       }catch(e){ console.warn('push natif',e); }
       return;
     }
     try{
-      if(pushRegDone)return; if(!FB||!FB.auth||!FB.auth.currentUser)return;
+      if(!FB||!FB.auth||!FB.auth.currentUser)return;
+      if(!pushNeedsRegister(FB.auth.currentUser.uid))return;
       if(!('Notification'in window)||Notification.permission!=='granted')return;
       if(!('serviceWorker'in navigator)||!CONFIG.vapidKey)return;
       const msgM=await import('https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging.js');
       const reg=await navigator.serviceWorker.ready;
       const messaging=msgM.getMessaging(FB.app);
       const token=await msgM.getToken(messaging,{vapidKey:CONFIG.vapidKey,serviceWorkerRegistration:reg});
-      if(token){ pushRegDone=true;
+      if(token){ pushRegUid=FB.auth.currentUser.uid; pushRegTok=token;
         try{ await FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{pushTokens:FB.f.arrayUnion(token),role:role,notifAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
         // Propriété EXCLUSIVE du jeton par ce compte : si l'appareil a déjà servi à un
         // autre compte (ex. ancien profil prestataire), on récupère la propriété du jeton
@@ -14085,7 +14097,18 @@
     if(FB)blankAll(); S.delAcct=false;S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;S.missions=[];S.proMissions=[];S.account=null;
     render();toast('Votre compte a été supprimé');
   }
-  function fbLogout(){ if(adminArtUnsub){try{adminArtUnsub();}catch(_){}adminArtUnsub=null;} if(proStatusUnsub){try{proStatusUnsub();}catch(_){}proStatusUnsub=null;} if(openReqUnsub){try{openReqUnsub();}catch(_){}openReqUnsub=null;} if(activeReqUnsub){try{activeReqUnsub();}catch(_){}activeReqUnsub=null;} if(concStatusUnsub){try{concStatusUnsub();}catch(_){}concStatusUnsub=null;} if(adminConcUnsub){try{adminConcUnsub();}catch(_){}adminConcUnsub=null;} if(adminLedgerUnsub){try{adminLedgerUnsub();}catch(_){}adminLedgerUnsub=null;} Object.keys(clientReqUnsubs).forEach(unsubClientRequest); adminSeenPending=null; if(FB){ try{FB.a.signOut(FB.auth);}catch(_){} } }
+  function fbLogout(){
+    // Le compte qui part cesse d'être destinataire sur CET appareil : on retire son
+    // jeton et on rouvre la porte à l'enregistrement du compte suivant. Sans ça, le
+    // téléphone restait inscrit chez l'ancien et muet pour le nouveau.
+    try{
+      const u=FB&&FB.auth&&FB.auth.currentUser;
+      if(u&&pushRegTok&&FB.f.arrayRemove&&!isDemo()){
+        FB.f.setDoc(FB.f.doc(FB.db,'users',u.uid),{pushTokens:FB.f.arrayRemove(pushRegTok)},{merge:true}).catch(function(){});
+      }
+    }catch(_){}
+    pushRegUid=null; pushRegTok=null;
+    if(adminArtUnsub){try{adminArtUnsub();}catch(_){}adminArtUnsub=null;} if(proStatusUnsub){try{proStatusUnsub();}catch(_){}proStatusUnsub=null;} if(openReqUnsub){try{openReqUnsub();}catch(_){}openReqUnsub=null;} if(activeReqUnsub){try{activeReqUnsub();}catch(_){}activeReqUnsub=null;} if(concStatusUnsub){try{concStatusUnsub();}catch(_){}concStatusUnsub=null;} if(adminConcUnsub){try{adminConcUnsub();}catch(_){}adminConcUnsub=null;} if(adminLedgerUnsub){try{adminLedgerUnsub();}catch(_){}adminLedgerUnsub=null;} Object.keys(clientReqUnsubs).forEach(unsubClientRequest); adminSeenPending=null; if(FB){ try{FB.a.signOut(FB.auth);}catch(_){} } }
 
   handleDeepLink();
   render();
