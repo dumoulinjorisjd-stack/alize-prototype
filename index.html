@@ -436,9 +436,25 @@
      confondrait avec lui. Le repère d'espace doit se lire au premier coup d'œil. */
   /* ADMIN : sarcelle profond. Trois repères d'espace bien distincts — BÊTA rouge,
      PRO ardoise, ADMIN sarcelle — pour qu'aucun ne se confonde avec un autre. */
-  .sirettap{display:inline-flex;align-items:center;gap:6px;background:var(--sand-2,#F4F1EC);border:1px solid var(--hair);border-radius:9px;padding:6px 10px;font:inherit;font-weight:700;color:var(--ink);cursor:pointer;letter-spacing:.02em}
+  .sirettap{display:inline-flex;align-items:center;gap:6px;background:var(--sand-2,#F4F1EC);border:1px solid var(--hair);border-radius:9px;padding:5px 9px;font:inherit;font-size:13.5px;font-weight:700;color:var(--ink);cursor:pointer;letter-spacing:.02em}
   .sirettap:active{background:var(--teal-wash)}
   .siretlink{display:block;margin-top:5px;font-size:11.5px;font-weight:700;color:var(--teal-deep);text-decoration:none}
+  /* ============ FICHES DE CONSOLE ============ */
+  /* Une fiche admin, c'est vingt lignes lues à la suite. Tant que chaque valeur était
+     collée à droite, chacune commençait à un endroit différent et les valeurs longues
+     se cassaient en escalier : l'œil devait chercher le début de chaque ligne. Ici une
+     seule grille — libellé à gauche, valeur toujours au même fil, une seule taille de
+     texte, une seule graisse — pour que le regard descende tout droit. */
+  .fiche .fr{display:grid;grid-template-columns:106px minmax(0,1fr);gap:12px;align-items:start;padding:9px 0;border-top:1px solid var(--hair)}
+  .fiche .fr:first-child{border-top:0;padding-top:0}
+  .fiche .fr>.k{font-size:12.5px;font-weight:600;color:var(--muted);line-height:1.45;padding-top:2px;overflow-wrap:anywhere}
+  .fiche .fr>.v{font-size:14px;font-weight:650;color:var(--ink);line-height:1.5;min-width:0;overflow-wrap:anywhere}
+  .fiche .fr>.v .mini,.fiche .fr>.v .sub{font-size:12px;font-weight:500;color:var(--muted);line-height:1.45}
+  .fiche .fr>.v a{font-size:13.5px;font-weight:700}
+  .fiche .fr>.v .chip{vertical-align:middle;margin:2px 4px 2px 0;font-size:11.5px;padding:3px 9px}
+  .fiche .fr>.v .chipwrap{display:flex;flex-wrap:wrap;gap:5px}
+  .fiche .fr>.v .chipwrap .chip{margin:0}
+  @media (max-width:359px){ .fiche .fr{grid-template-columns:1fr;gap:2px} .fiche .fr>.k{padding-top:0} }
   .adm-tag{background:linear-gradient(180deg,var(--good),#0B7A4E);box-shadow:0 2px 6px -2px color-mix(in srgb,var(--good) 60%,transparent)}
   .pro-tag{background:linear-gradient(180deg,var(--ink-soft),var(--ink));box-shadow:0 2px 6px -2px color-mix(in srgb,var(--ink) 55%,transparent)}
   body.desktop .brandbar{display:none}
@@ -2939,9 +2955,13 @@
   // Tout cela est saisi à l'inscription et bien enregistré en base, mais n'était
   // jamais remonté à l'écran : impossible de vérifier une forme juridique, une
   // majorité, ou de prouver qu'un prestataire a bien accepté les CGU et le mandat.
+  // Une ligne de fiche de console : libellé à gauche, valeur sur le même fil que
+  // toutes les autres (grille .fiche .fr). Toutes les fiches passent par ici, sinon
+  // chaque ligne repart avec sa propre taille et son propre alignement.
+  function fRow(lbl,val){return val?`<div class="fr"><span class="k">${lbl}</span><div class="v">${val}</div></div>`:'';}
   function artLegalRows(a){
     if(!a)return '';
-    const row=function(lbl,val){return val?`<div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">${lbl}</span><b style="text-align:right;max-width:62%">${val}</b></div>`:'';};
+    const row=fRow;
     const out=[];
     if(a.legalName&&a.legalName!==a.name)out.push(row('Dénomination légale',esc(a.legalName)));
     const jur=[a.legalForm?esc(a.legalForm):'',a.capital?esc(a.capital)+' € de capital':'',a.rcsCity?'RCS '+esc(a.rcsCity):''].filter(Boolean).join('<br>');
@@ -2954,8 +2974,8 @@
     // Preuve d'acceptation : ce qui protège Ti-Services en cas de litige.
     const eng=[['CGU',a.acceptedTerms],['Charte',a.acceptedCharte],['Mandat',a.acceptedMandat],['Grille tarifaire',a.acceptsGrille]]
       .map(function(p){return '<span class="chip '+(p[1]?'good':'coral')+'">'+(p[1]?I.check:'')+' '+p[0]+'</span>';}).join(' ');
-    out.push(row('Engagements',eng
-      +(a.termsVersion?'<br><span class="mini" style="color:var(--muted);font-weight:500">Version '+esc(String(a.termsVersion))+(a.termsAt?' · '+new Date(a.termsAt).toLocaleDateString('fr-FR'):'')+'</span>':'')));
+    out.push(row('Engagements','<span class="chipwrap">'+eng+'</span>'
+      +(a.termsVersion?'<div class="mini" style="margin-top:5px">Version '+esc(String(a.termsVersion))+(a.termsAt?' · '+new Date(a.termsAt).toLocaleDateString('fr-FR'):'')+'</div>':'')));
     if(a.referralCode||a.referredByCode){
       out.push(row('Parrainage',(a.referralCode?'Son code&nbsp;: <span class="money">'+esc(a.referralCode)+'</span>':'')
         +(a.referredByCode?(a.referralCode?'<br>':'')+'<span class="mini" style="color:var(--muted);font-weight:500">Parrainé par '+esc(a.referredByCode)+'</span>':'')));
@@ -7338,7 +7358,9 @@
     const allB=liveRow.concat(S.adminBookings);
     const bookings=allB.length?allB.map(bk=>{const st=bkStatus(bk.status);const sv=SERVICES.find(s=>s.id===bk.svc);const liv=(bk.status==='pending'||bk.status==='working'||bk.status==='done_pro')?' live':'';return `<div class="card" style="padding:13px;margin-top:9px"><div class="row between"><b style="font-size:14px">${sv?sv.nm:bk.svc}</b><span class="chip ${st[0]}${liv}">${st[1]}</span></div><div class="mini" style="margin-top:3px">${esc(bk.client)} → ${esc(bk.artisan)} · ${bk.when}</div><div class="mini" style="margin-top:2px">${eur(bk.amount)}</div></div>`;}).join(''):`<p class="mini" style="margin-top:8px;color:var(--muted)">Aucune réservation en cours.</p>`;
     const activeArts=arts.filter(a=>a.status!=='refuse'),refA=arts.filter(a=>a.status==='refuse');
-    const artList=activeArts.length?activeArts.map(a=>{const c=acctChip(a.status);const mol=(a.status==='valide'&&a.mollieStatus!=='active')?`<span class="chip coral" title="Paiements non activés">€ inactif</span>`:'';return `<button class="card" style="padding:12px;margin-top:8px;width:100%;text-align:left;display:block" data-adm="art:${a.id}"><div class="row between"><b style="font-size:14px">${esc(a.name)}</b><span class="row" style="gap:6px;align-items:center">${(a.noShowCount||0)>0?`<span class="chip coral">${I.clock} ${a.noShowCount}</span>`:''}${mol}<span class="chip ${c[0]}">${c[1]}</span></span></div><div class="mini" style="margin-top:2px">${catNames(a.cats)} · ${artPriceShort(a)} · ${esc(migZone(a.zone))}</div></button>`;}).join(''):`<p class="mini" style="margin-top:8px;color:var(--muted)">Aucun prestataire inscrit pour l’instant.</p>`;
+    // Le badge Ambassadeur se lit dès la liste : les places sont comptées, savoir qui
+    // en occupe une ne doit pas demander d'ouvrir chaque fiche.
+    const artList=activeArts.length?activeArts.map(a=>{const c=acctChip(a.status);const mol=(a.status==='valide'&&a.mollieStatus!=='active')?`<span class="chip coral" title="Paiements non activés">€ inactif</span>`:'';const amb=founderActiveFor(a)?`<span class="chip founder-chip" title="Programme Ambassadeur">${I.star} Ambassadeur</span>`:'';return `<button class="card" style="padding:12px;margin-top:8px;width:100%;text-align:left;display:block" data-adm="art:${a.id}"><div class="row between" style="gap:6px;flex-wrap:wrap"><b style="font-size:14px">${esc(a.name)}</b><span class="row" style="gap:6px;align-items:center;flex-wrap:wrap">${amb}${(a.noShowCount||0)>0?`<span class="chip coral">${I.clock} ${a.noShowCount}</span>`:''}${mol}<span class="chip ${c[0]}">${c[1]}</span></span></div><div class="mini" style="margin-top:2px">${catNames(a.cats)} · ${artPriceShort(a)} · ${esc(migZone(a.zone))}</div></button>`;}).join(''):`<p class="mini" style="margin-top:8px;color:var(--muted)">Aucun prestataire inscrit pour l’instant.</p>`;
     const cliList=clis.length?clis.map(cc=>{const c=acctChip(cc.status);return `<button class="card" style="padding:12px;margin-top:8px;width:100%;text-align:left;display:block" data-adm="cli:${cc.id}"><div class="row between"><b style="font-size:14px">${esc(cc.name)}</b><span class="chip ${c[0]}">${c[1]}</span></div><div class="mini" style="margin-top:2px">${esc(migZone(cc.zone))} · ${cc.bookings} réservations</div></button>`;}).join(''):`<p class="mini" style="margin-top:8px;color:var(--muted)">Aucun client inscrit pour l’instant.</p>`;
     const refList=refA.map(a=>`<div class="card" style="padding:12px;margin-top:8px;border-left:4px solid var(--hair)"><div class="row between"><b style="font-size:14px">${esc(a.name)}</b><span class="chip grey">Refusé</span></div><div class="mini" style="margin-top:2px">${catNames(a.cats)} · ${esc(migZone(a.zone))}</div>${a.reason?`<p class="mini" style="margin-top:5px;color:var(--coral-deep)">Motif&nbsp;: ${esc(a.reason)}</p>`:''}${contactRow(a)}<div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost sm" data-adm="reexam-art:${a.id}">Réexaminer</button><button class="btn ghost sm" data-adm="art:${a.id}">Fiche</button></div></div>`).join('');
     const sm=S.mission;const supBlocks=[];
@@ -7416,12 +7438,16 @@
       ${(function(){
         const pris=Number(S.founderTaken||0), libres=Math.max(0,FOUNDER_SPOTS-pris);
         const r=S._founderRecount;
-        return `<div class="card" style="padding:16px;margin-top:12px">
-          <div class="row between"><span class="eyebrow" style="color:#B77400">${I.star} Programme Ambassadeur</span><span class="chip ${libres?'good':'coral'}">${libres} place${libres>1?'s':''} libre${libres>1?'s':''}</span></div>
-          <p class="mini" style="margin-top:8px;color:var(--muted);line-height:1.55">${pris} place${pris>1?'s':''} prise${pris>1?'s':''} sur ${FOUNDER_SPOTS}. Une candidature refusée rend désormais sa place automatiquement. Les refus antérieurs à cette règle, eux, en retiennent peut-être encore&nbsp;: le recomptage repart des fiches et rétablit le vrai total.</p>
-          ${r?`<p class="mini" style="margin-top:8px;color:var(--good);font-weight:700">${I.check} Recompté&nbsp;: ${r.avant} → ${r.apres} place${r.apres>1?'s':''} prise${r.apres>1?'s':''}${r.liberees?` (${r.liberees} rendue${r.liberees>1?'s':''} par des candidatures refusées)`:' — le compteur était déjà juste'}.</p>`:''}
-          <button class="btn ghost sm" data-adm="recount-founder" style="margin-top:10px;width:auto;padding:9px 14px"${S._founderBusy?' disabled':''}>${S._founderBusy?'Recomptage…':'Recompter les places'}</button>
-        </div>`;})()}
+        // Les ambassadeurs en cours, nommés : savoir qui occupe une place vaut mieux
+        // qu'un simple total, et c'est la même liste que le recomptage vérifie.
+        const amb=(S.adminArtisans||[]).filter(function(a){return founderActiveFor(a);});
+        const body=`<p class="mini" style="color:var(--muted);line-height:1.55">${pris} place${pris>1?'s':''} prise${pris>1?'s':''} sur ${FOUNDER_SPOTS} — ${libres?libres+' place'+(libres>1?'s':'')+' libre'+(libres>1?'s':''):'plus aucune place libre'}. Une candidature refusée rend désormais sa place automatiquement. Les refus antérieurs à cette règle, eux, en retiennent peut-être encore&nbsp;: le recomptage repart des fiches et rétablit le vrai total.</p>
+          ${amb.length?`<div class="mini" style="margin-top:11px;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Ambassadeurs en cours (${amb.length})</div>
+            ${amb.map(function(a){return `<button class="reset row between" data-adm="art:${a.id}" style="width:100%;margin-top:7px;gap:8px;align-items:center;text-align:left"><b style="font-size:13.5px">${esc(a.name)}</b><span class="chip founder-chip" style="flex:none">${I.star} ${FOUNDER_COMM_PCT} %</span></button>`;}).join('')}`:''}
+          ${r?`<p class="mini" style="margin-top:11px;color:var(--good);font-weight:700">${I.check} Recompté&nbsp;: ${r.avant} → ${r.apres} place${r.apres>1?'s':''} prise${r.apres>1?'s':''}${r.liberees?` (${r.liberees} rendue${r.liberees>1?'s':''} par des candidatures refusées)`:' — le compteur était déjà juste'}.</p>`:''}
+          <button class="btn ghost sm" data-adm="recount-founder" style="margin-top:12px;width:auto;padding:9px 14px"${S._founderBusy?' disabled':''}>${S._founderBusy?'Recomptage…':'Recompter les places'}</button>`;
+        return foldCard('a-founder',I.star,'Programme Ambassadeur',pris+' place'+(pris>1?'s':'')+' prise'+(pris>1?'s':'')+' sur '+FOUNDER_SPOTS,body,chip(libres?'good':'coral',libres+' libre'+(libres>1?'s':'')));
+      })()}
       ${foldCard('a-funnel',I.install,"Entonnoir d'installation",'Visiteurs, guide ouvert, applications installées',funnelBody,S.adminFunnelLoaded?chip('grey',(Number((S.adminFunnel||{}).u_installed_total)||0)+' installées'):'')}
 
       <div style="height:18px"></div><span class="eyebrow">${I.euro} Tarifs &amp; commissions</span>
@@ -7645,26 +7671,26 @@
       return `<div class="pad"><button class="reset" data-adm="home" style="margin:10px 0 6px">← Retour</button>
         <div class="row" style="gap:12px">${avatarPhoto(a.photo,inits(a.name),'lg')}<div><b style="font-size:18px;font-family:var(--f-disp)">${esc(a.name)}</b><div class="mini">Prestataire · ${a.type==='particulier'?'Particulier':'Entreprise'} · ${a.zone}</div></div></div>
         ${(a.cats&&a.cats.includes('autre')&&a.other)?`<div class="banner teal" style="margin-top:14px">${I.other}<span>Service « Autre » proposé&nbsp;: <b>${esc(a.other)}</b> — à évaluer avant validation.</span></div>${(S.customServices||[]).some(function(x){return x.nm.toLowerCase()===a.other.toLowerCase();})?`<p class="mini" style="margin-top:8px;color:var(--good)">${I.check} « ${esc(a.other)} » figure déjà au catalogue.</p>`:`<button class="btn ghost sm" data-adm="addcat:${a.id}" style="margin-top:9px;width:auto;padding:9px 14px">${I.plus} Ajouter « ${esc(a.other)} » au catalogue</button>`}`:''}
-        <div class="card" style="padding:16px;margin-top:12px">
-          <div class="row between"><span class="sub">Statut</span><span class="chip ${acctChip(a.status)[0]}">${acctChip(a.status)[1]}</span></div><hr class="dashed">
-          <div class="row between" style="align-items:flex-start"><span class="sub">Services</span><b style="text-align:right;max-width:62%">${esc(artSvcLabel(a))}</b></div>
-          <div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">Tarifs Ti-Services</span><b style="text-align:right;max-width:62%">${artPriceRows(a)}</b></div>
-          ${(a.cats&&a.cats.includes('baby'))?`<div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">Diplômes garde d'enfants</span><b style="text-align:right;max-width:62%">${(a.diplomas&&a.diplomas.length)?a.diplomas.map(d=>esc(d==='Autre diplôme'&&a.diplomaOther?'Autre : '+a.diplomaOther:d)).join('<br>'):'<span style="color:var(--coral-deep)">Non renseignés</span>'}</b></div>${(a.diplomas&&a.diplomas.length&&!a.diplomas.some(d=>/PSC1/.test(d)))?`<p class="mini" style="margin-top:4px;color:var(--coral-deep)">${I.shield} PSC1 (premiers secours) non déclaré — recommandé pour la garde d'enfants. Vérifiez les justificatifs avant validation.</p>`:''}`:''}
-          <div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">SIRET</span><b style="text-align:right;max-width:66%">${a.siret?`<button class="sirettap" data-adm="copysiret:${a.id}" title="Copier le numéro">${I.copy} <span class="money">${esc(fmtSiret(a.siret))}</span></button>
-            <a class="siretlink" href="https://annuaire-entreprises.data.gouv.fr/etablissement/${esc(a.siret)}" target="_blank" rel="noopener">Vérifier à l'annuaire des entreprises ›</a>`:'<span class="money">—</span>'}</b></div>
+        <div class="card fiche" style="padding:16px;margin-top:12px">
+          ${fRow('Statut',`<span class="chip ${acctChip(a.status)[0]}">${acctChip(a.status)[1]}</span>`)}
+          ${fRow('Services',esc(artSvcLabel(a)))}
+          ${fRow('Tarifs Ti-Services',artPriceRows(a))}
+          ${(a.cats&&a.cats.includes('baby'))?fRow('Diplômes garde d\'enfants',`${(a.diplomas&&a.diplomas.length)?a.diplomas.map(d=>esc(d==='Autre diplôme'&&a.diplomaOther?'Autre : '+a.diplomaOther:d)).join('<br>'):'<span style="color:var(--coral-deep)">Non renseignés</span>'}${(a.diplomas&&a.diplomas.length&&!a.diplomas.some(d=>/PSC1/.test(d)))?`<div class="mini" style="margin-top:5px;color:var(--coral-deep);font-weight:600">${I.shield} PSC1 (premiers secours) non déclaré — recommandé pour la garde d'enfants. Vérifiez les justificatifs avant validation.</div>`:''}`):''}
+          ${fRow('SIRET',a.siret?`<button class="sirettap" data-adm="copysiret:${a.id}" title="Copier le numéro">${I.copy} <span class="money">${esc(fmtSiret(a.siret))}</span></button>
+            <a class="siretlink" href="https://annuaire-entreprises.data.gouv.fr/etablissement/${esc(a.siret)}" target="_blank" rel="noopener">Vérifier à l'annuaire ›</a>`:'<span class="money">—</span>')}
           ${artLegalRows(a)}
-          <div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">Assurance RC</span><b style="text-align:right;max-width:62%">${(function(){const st=insStatus(a),l=insLabel(st);return `<span class="chip ${l[0]}">${l[1]}</span>`;})()}${a.insurer?`<br><span style="color:var(--ink);font-weight:600;font-size:13px">${esc(a.insurer)}</span>`:''}${a.insuranceUrl?`<br><a href="${esc(a.insuranceUrl)}" target="_blank" rel="noopener" style="color:var(--teal-deep);font-weight:700">${I.other} Voir l'attestation</a>`:`<br><span class="mini" style="color:var(--muted)">Attestation non jointe</span>`}</b></div>
-          <div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">Paiements (Mollie)</span><b style="text-align:right;max-width:62%">${(function(){const st=a.mollieStatus||'none';
+          ${fRow('Assurance RC',`${(function(){const st=insStatus(a),l=insLabel(st);return `<span class="chip ${l[0]}">${l[1]}</span>`;})()}${a.insurer?`<div class="mini" style="margin-top:4px;color:var(--ink);font-weight:600">${esc(a.insurer)}</div>`:''}${a.insuranceUrl?`<div style="margin-top:4px"><a href="${esc(a.insuranceUrl)}" target="_blank" rel="noopener" style="color:var(--teal-deep)">${I.other} Voir l'attestation</a></div>`:`<div class="mini" style="margin-top:4px">Attestation non jointe</div>`}`)}
+          ${fRow('Paiements (Mollie)',`${(function(){const st=a.mollieStatus||'none';
             if(st==='active')return `<span class="chip good">${I.check} Actif</span>`;
-            if(st==='pending'&&a.mollieOnb==='needs-data')return `<span class="chip coral">${I.clip} Dossier à compléter</span><br><span class="mini" style="color:var(--muted)">Un appel de 2 min peut débloquer — il ne lui manque qu'une pièce ou l'IBAN.</span>`;
+            if(st==='pending'&&a.mollieOnb==='needs-data')return `<span class="chip coral">${I.clip} Dossier à compléter</span><div class="mini" style="margin-top:4px">Un appel de 2 min peut débloquer — il ne lui manque qu'une pièce ou l'IBAN.</div>`;
             if(st==='pending')return `<span class="chip warn">${I.clock} En examen chez Mollie</span>`;
-            return `<span class="chip coral">Jamais commencé</span><br><span class="mini" style="color:var(--muted)">Sans activation, il ne peut pas accepter de missions.</span>`;})()}</b></div>
-          ${a.insuranceUrl?`<div class="row" style="gap:8px;margin-top:10px">${insStatus(a)!=='valide'?`<button class="btn good sm" data-adm="valid-ins:${a.id}">${I.check} Valider l'attestation</button>`:''}${insStatus(a)!=='refuse'?`<button class="btn ghost sm" data-adm="rej-ins:${a.id}">Refuser l'attestation</button>`:''}</div><p class="mini" style="margin-top:6px;color:var(--muted)">Ouvrez le document ci-dessus, puis validez ou refusez l'attestation. Rien n'est validé automatiquement.</p>`:''}
-          ${a.bio?`<div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">Présentation</span><b style="text-align:right;max-width:62%;font-weight:500">${esc(a.bio)}</b></div>`:''}
-          <div class="row between" style="margin-top:6px"><span class="sub">Note · missions</span><b>${a.rating?a.rating.toFixed(1)+' '+I.star+' · '+a.jobs:'—'}</b></div>
-          <div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">Fiabilité · présence</span><b style="text-align:right;max-width:62%">${(a.noShowCount||0)>0?`<span class="chip coral">${I.clock} ${a.noShowCount} absence${a.noShowCount>1?'s':''} signalée${a.noShowCount>1?'s':''}</span>${a.lastNoShowAt?`<br><span class="mini" style="color:var(--muted)">Dernière&nbsp;: ${new Date(a.lastNoShowAt).toLocaleDateString('fr-FR')}</span>`:''}`:`<span class="chip good">${I.check} Aucun manquement</span>`}</b></div>
-          <div class="row between" style="margin-top:6px"><span class="sub">Palier fidélité · commission</span><b>${founderActiveFor(a)?`<span class="chip founder-chip">${I.star} Ambassadeur</span> ${FOUNDER_COMM_PCT} %`:`${a.founder?`<span class="chip" style="background:var(--hair);color:var(--muted)">${I.star} Ambassadeur — expiré</span> `:''}<span class="chip" style="background:${fidColor(fidFor(a.jobs).key)}22;color:${fidColor(fidFor(a.jobs).key)}">${I.star} ${fidFor(a.jobs).nm}</span> ${fidFor(a.jobs).pct} %`}</b></div>
-          ${a.status==='refuse'&&a.reason?`<hr class="dashed"><div class="row between"><span class="sub">Motif du refus</span><b style="color:var(--coral-deep);text-align:right;max-width:60%">${esc(a.reason)}</b></div>`:''}
+            return `<span class="chip coral">Jamais commencé</span><div class="mini" style="margin-top:4px">Sans activation, il ne peut pas accepter de missions.</div>`;})()}`)}
+          ${a.insuranceUrl?`<div style="padding:11px 0;border-top:1px solid var(--hair)"><div class="row" style="gap:8px">${insStatus(a)!=='valide'?`<button class="btn good sm" data-adm="valid-ins:${a.id}">${I.check} Valider l'attestation</button>`:''}${insStatus(a)!=='refuse'?`<button class="btn ghost sm" data-adm="rej-ins:${a.id}">Refuser l'attestation</button>`:''}</div><p class="mini" style="margin-top:7px;color:var(--muted)">Ouvrez le document ci-dessus, puis validez ou refusez l'attestation. Rien n'est validé automatiquement.</p></div>`:''}
+          ${a.bio?fRow('Présentation',`<span style="font-weight:500">${esc(a.bio)}</span>`):''}
+          ${fRow('Note · missions',a.rating?a.rating.toFixed(1)+' '+I.star+' · '+a.jobs:'—')}
+          ${fRow('Fiabilité · présence',(a.noShowCount||0)>0?`<span class="chip coral">${I.clock} ${a.noShowCount} absence${a.noShowCount>1?'s':''} signalée${a.noShowCount>1?'s':''}</span>${a.lastNoShowAt?`<div class="mini" style="margin-top:4px">Dernière&nbsp;: ${new Date(a.lastNoShowAt).toLocaleDateString('fr-FR')}</div>`:''}`:`<span class="chip good">${I.check} Aucun manquement</span>`)}
+          ${fRow('Palier fidélité · commission',founderActiveFor(a)?`<span class="chip founder-chip">${I.star} Ambassadeur</span> ${FOUNDER_COMM_PCT} %`:`${a.founder?`<span class="chip" style="background:var(--hair);color:var(--muted)">${I.star} Ambassadeur — expiré</span> `:''}<span class="chip" style="background:${fidColor(fidFor(a.jobs).key)}22;color:${fidColor(fidFor(a.jobs).key)}">${I.star} ${fidFor(a.jobs).nm}</span> ${fidFor(a.jobs).pct} %`)}
+          ${(a.status==='refuse'&&a.reason)?fRow('Motif du refus',`<span style="color:var(--coral-deep)">${esc(a.reason)}</span>`):''}
         </div>
         ${(a.pendingCats&&a.pendingCats.length)?`<div class="card" style="padding:16px;margin-top:12px;border-left:4px solid var(--warn)">
           <span class="eyebrow" style="color:var(--warn)">${I.clock} Métiers à valider</span>
@@ -7672,9 +7698,9 @@
           ${a.pendingCats.map(function(sv){const lbl=sv==='autre'?('Autre'+(a.pendingOther?' : '+esc(a.pendingOther):'')):esc(svcNm(sv));return `<div class="row between" style="margin-top:11px;align-items:center;gap:8px"><b style="font-size:14px;display:flex;gap:7px;align-items:center">${sv==='autre'?I.other:svcIco(sv)} ${lbl}</b><span class="row" style="gap:6px;flex:none"><button class="btn good sm" data-adm="valcat:${a.id}:${sv}" style="width:auto;padding:7px 12px">${I.check} Valider</button><button class="btn ghost sm" data-adm="refcat:${a.id}:${sv}" style="width:auto;padding:7px 12px">Refuser</button></span></div>`;}).join('')}
         </div>`:''}
         ${(function(){adminLoadArtisanContact(a.uid);const ct=artContact(a);return `<div class="card" style="padding:16px;margin-top:12px"><span class="eyebrow" style="color:var(--muted)">${a.status==='attente'?'Contacter avant décision':'Contacter le prestataire'}</span>
-          <div class="stack" style="gap:8px;margin-top:11px">
-            <div class="row between" style="gap:10px;align-items:center"><span class="sub">E-mail</span>${ct.email?`<a href="mailto:${esc(ct.email)}" style="color:var(--teal-deep);font-weight:600;font-size:13px;word-break:break-all;text-align:right">${esc(ct.email)}</a>`:`<span class="mini" style="color:var(--muted)">Non renseigné</span>`}</div>
-            <div class="row between" style="gap:10px;align-items:center"><span class="sub">Téléphone</span>${ct.phone?`<a href="tel:${telClean(ct.phone)}" style="color:var(--teal-deep);font-weight:600;font-size:13px">${esc(ct.phone)}</a>`:`<span class="mini" style="color:var(--muted)">Non renseigné</span>`}</div>
+          <div class="fiche" style="margin-top:11px">
+            ${fRow('E-mail',ct.email?`<a href="mailto:${esc(ct.email)}" style="color:var(--teal-deep)">${esc(ct.email)}</a>`:`<span class="mini">Non renseigné</span>`)}
+            ${fRow('Téléphone',ct.phone?`<a href="tel:${telClean(ct.phone)}" style="color:var(--teal-deep)">${esc(ct.phone)}</a>`:`<span class="mini">Non renseigné</span>`)}
           </div>
           ${contactRow(ct)}
           <button class="btn ghost sm" data-adm="art-msg:${a.id}" style="margin-top:10px;width:100%">${I.chat} Message interne (messagerie Ti-Services)</button>
@@ -7687,7 +7713,7 @@
       </div>`;
     }
     const cc=S.adminClients.find(x=>x.id===S.admin.sel);if(!cc)return adminHome();
-    const row=function(lbl,val){return val?`<div class="row between" style="margin-top:6px;align-items:flex-start"><span class="sub">${lbl}</span><b style="text-align:right;max-width:62%">${val}</b></div>`:'';};
+    const row=fRow;
     const dt=function(ms){return ms?new Date(ms).toLocaleDateString('fr-FR'):'';};
     // Adresses enregistrées : c'est là que se jouent les tournées, et un point GPS
     // manquant est la première cause de prestataire qui tourne en rond.
@@ -7701,18 +7727,18 @@
     }).join('');
     return `<div class="pad"><button class="reset" data-adm="home" style="margin:10px 0 6px">← Retour</button>
       <div class="row" style="gap:12px">${avatarPhoto(cc.photo,inits(cc.name),'lg')}<div><b style="font-size:18px;font-family:var(--f-disp)">${esc(cc.name)}</b><div class="mini">Client · ${esc(migZone(cc.zone))}${cc.createdAt?' · inscrit le '+dt(cc.createdAt):''}</div></div></div>
-      <div class="card" style="padding:16px;margin-top:16px">
-        <div class="row between"><span class="sub">Statut</span><span class="chip ${acctChip(cc.status)[0]}">${acctChip(cc.status)[1]}</span></div><hr class="dashed">
-        <div class="row between"><span class="sub">Moyen de paiement</span><b style="text-align:right;max-width:62%">${esc(cc.card)}${cc.cardExp?`<br><span class="mini" style="color:var(--muted);font-weight:500">Expire ${esc(cc.cardExp)}</span>`:''}</b></div>
-        ${row('Réservations',cc.bookings+(cc.lastAt?`<br><span class="mini" style="color:var(--muted);font-weight:500">Dernière&nbsp;: ${dt(cc.lastAt)}</span>`:''))}
+      <div class="card fiche" style="padding:16px;margin-top:16px">
+        ${row('Statut',`<span class="chip ${acctChip(cc.status)[0]}">${acctChip(cc.status)[1]}</span>`)}
+        ${row('Moyen de paiement',`${esc(cc.card)}${cc.cardExp?`<div class="mini" style="margin-top:4px">Expire ${esc(cc.cardExp)}</div>`:''}`)}
+        ${row('Réservations',cc.bookings+(cc.lastAt?`<div class="mini" style="margin-top:4px">Dernière&nbsp;: ${dt(cc.lastAt)}</div>`:''))}
         ${row('Abonnements',(cc.recurring&&cc.recurring.length)?cc.recurring.map(function(r){return esc(svcNm(r.svc||r.service||''))+(r.freq?' · '+esc(r.freq):'');}).join('<br>'):'')}
         ${row('Notifications',cc.push?`<span class="chip good">${I.check} Actives (${cc.push} appareil${cc.push>1?'s':''})</span>`:`<span class="chip grey">Aucun appareil</span>`)}
-        ${row('Conditions',cc.acceptedTerms?`<span class="chip good">${I.check} Acceptées</span>${cc.termsVersion?`<br><span class="mini" style="color:var(--muted);font-weight:500">Version ${esc(String(cc.termsVersion))}${cc.termsAt?' · '+dt(cc.termsAt):''}</span>`:''}`:`<span class="chip coral">Non acceptées</span>`)}
-        ${cc.isPro?row('Facturation',`Réserve <b>pour une entreprise</b>`
+        ${row('Conditions',cc.acceptedTerms?`<span class="chip good">${I.check} Acceptées</span>${cc.termsVersion?`<div class="mini" style="margin-top:4px">Version ${esc(String(cc.termsVersion))}${cc.termsAt?' · '+dt(cc.termsAt):''}</div>`:''}`:`<span class="chip coral">Non acceptées</span>`)}
+        ${cc.isPro?row('Facturation',`Réserve pour une entreprise`
           +((cc.company||cc.siret)
-            ? (cc.company?`<br><span style="color:var(--ink);font-weight:600;font-size:13px">${esc(cc.company)}</span>`:'')
-              +(cc.siret?`<br><span class="mini money" style="color:var(--muted);font-weight:500">${esc(cc.siret)}</span>`:'')
-            : `<br><span class="mini" style="color:var(--coral-deep);font-weight:600">Raison sociale et SIRET non renseignés — ses factures ne pourront pas porter ces mentions.</span>`)):''}
+            ? (cc.company?`<div style="margin-top:4px;font-size:13px">${esc(cc.company)}</div>`:'')
+              +(cc.siret?`<div class="mini money" style="margin-top:2px">${esc(cc.siret)}</div>`:'')
+            : `<div class="mini" style="margin-top:4px;color:var(--coral-deep);font-weight:600">Raison sociale et SIRET non renseignés — ses factures ne pourront pas porter ces mentions.</div>`)):''}
       </div>
       <div class="card" style="padding:16px;margin-top:12px"><span class="eyebrow" style="color:var(--muted)">Adresses enregistrées${(cc.addresses&&cc.addresses.length)?' ('+cc.addresses.length+')':''}</span>
         ${addrs||`<p class="mini" style="margin-top:8px;color:var(--muted)">Aucune adresse enregistrée pour l'instant.</p>`}</div>
@@ -11150,10 +11176,10 @@
         const birthTxt=/^\d{4}-\d{2}-\d{2}$/.test(birth)?birth.split('-').reverse().join('/'):(birth||'');
         const dips=(S.proDiplomas||[]).slice();
         if(S.proDiplomaOther)dips.push(S.proDiplomaOther);
-        const row=function(lbl,val){return val?`<div class="row between" style="gap:12px;margin-top:9px"><span class="sub">${lbl}</span><b style="font-size:13px;text-align:right;max-width:62%;word-break:break-word">${esc(val)}</b></div>`:'';};
+        const row=function(lbl,val){return fRow(lbl,esc(val));};
         const editing=!!S.proEditContact;const cf=S.proContactForm||{phone:S.proPhone||'',bio:S.proBio||''};
         return foldCard('p-infos',I.user,"Mes informations d'inscription",esc(S.proLegal||S.proName||''),`
-        <div>
+        <div class="fiche">
           ${row('Nom / raison sociale',S.proLegal||S.proName)}
           ${row('Statut',S.proStatusType==='particulier'?'Particulier':'Entreprise')}
           ${row('SIRET',S.proSiret)}
