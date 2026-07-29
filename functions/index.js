@@ -45,6 +45,13 @@ const SMTP_HOST = 'mail.infomaniak.com';
 const SMTP_PORT = 465; // SSL/TLS
 const MAIL_FROM_EMAIL = 'contact@ti-services.fr';
 const MAIL_FROM_NAME = 'Ti-Services';
+// Copie cachée systématique à Ti-Services. Un envoi SMTP ne laisse AUCUNE trace côté
+// expéditeur — le dossier « Messages envoyés » d'une boîte n'est alimenté que par ce
+// qu'on y dépose explicitement, et un serveur qui remet un message ne le fait pas.
+// Cette copie tient donc lieu de journal : elle arrive dans la boîte de réception de
+// contact@ti-services.fr (un filtre permet d'en faire un dossier dédié).
+// Mettre à '' pour la désactiver.
+const MAIL_BCC = 'contact@ti-services.fr';
 
 // Les mots de passe d'application (Infomaniak, Google…) s'affichent souvent en
 // groupes séparés par des espaces ; on retire tout espace au cas où il aurait été
@@ -66,6 +73,12 @@ function mailTransport() {
   return _mailTx;
 }
 
+// Enveloppe pour la file d'attente : même copie cachée que l'envoi direct.
+function withBcc(to, message) {
+  const d = {to, message};
+  if (MAIL_BCC && String(to).toLowerCase() !== MAIL_BCC) d.bcc = MAIL_BCC;
+  return d;
+}
 async function sendMail(db, to, message) {
   const tx = mailTransport();
   if (tx) {
@@ -73,6 +86,9 @@ async function sendMail(db, to, message) {
       const info = await tx.sendMail({
         from: '"' + MAIL_FROM_NAME + '" <' + MAIL_FROM_EMAIL + '>',
         to,
+        // Pas de copie quand le destinataire EST déjà Ti-Services : inutile de recevoir
+        // deux fois ses propres notifications d'administration.
+        bcc: (MAIL_BCC && String(to).toLowerCase() !== MAIL_BCC) ? MAIL_BCC : undefined,
         subject: message.subject,
         html: message.html,
         attachments: (Array.isArray(message.attachments) && message.attachments.length) ? message.attachments : undefined,
@@ -81,13 +97,13 @@ async function sendMail(db, to, message) {
       return true;
     } catch (e) {
       console.error('[mail] échec SMTP → ' + to + ' : ' + (e && e.message));
-      try { await db.collection('mail').add({to, message}); } catch (_) {}
+      try { await db.collection('mail').add(withBcc(to, message)); } catch (_) {}
       return false;
     }
   }
   console.warn('[mail] SMTP_PASS absent — message mis en file `mail` pour ' + to +
     ' (rien ne partira sans l\'extension Trigger Email OU le secret SMTP_PASS).');
-  await db.collection('mail').add({to, message});
+  await db.collection('mail').add(withBcc(to, message));
   return false;
 }
 
