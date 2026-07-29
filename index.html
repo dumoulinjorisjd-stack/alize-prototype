@@ -3987,6 +3987,15 @@
     }catch(e){console.warn('i18n',e);}
   }
   var EN_DICT={
+    // --- Passage d'un compte client à un compte prestataire ---
+    "Vous gardez vos identifiants":"You keep your login",
+    "Même adresse e-mail, même mot de passe. Rien à recréer.":"Same email, same password. Nothing to set up again.",
+    "Ce que vous ne pourrez plus faire":"What you'll no longer be able to do",
+    "Vos données ne sont pas effacées : Ti-Services les conserve. Si vous voulez continuer à commander, gardez ce compte client et créez un compte prestataire avec une autre adresse e-mail.":"Nothing is deleted — Ti-Services keeps your data. If you want to go on booking services, keep this client account and open a provider account with a different email address.",
+    "Cette transformation est définitive.":"This change cannot be undone.",
+    "Je confirme, transformer mon compte":"Confirm — switch my account",
+    "Annuler":"Cancel",
+    "Devenu prestataire":"Now a provider",
     // --- Grille tarifaire montrée au prestataire à l'inscription ---
     "1 h relaxant":"1 h relaxing",
     "Grille tarifaire Ti-Services":"Ti-Services rate card",
@@ -5259,6 +5268,14 @@
   var TIER_PT={'bronze':'Bronze','argent':'Prata','or':'Ouro','platine':'Platina','diamant':'Diamante'};
   var DOW_PT={'lun':'Seg','mar':'Ter','mer':'Qua','jeu':'Qui','ven':'Sex','sam':'Sáb','dim':'Dom'};
   var PT_DICT={
+    // --- Passage d'un compte client à un compte prestataire ---
+    "Vous gardez vos identifiants":"Mantém os seus dados de acesso",
+    "Même adresse e-mail, même mot de passe. Rien à recréer.":"O mesmo e-mail, a mesma palavra-passe. Não há nada a recriar.",
+    "Ce que vous ne pourrez plus faire":"O que deixará de poder fazer",
+    "Vos données ne sont pas effacées : Ti-Services les conserve. Si vous voulez continuer à commander, gardez ce compte client et créez un compte prestataire avec une autre adresse e-mail.":"Os seus dados não são apagados — a Ti-Services conserva-os. Se quiser continuar a encomendar serviços, mantenha esta conta de cliente e crie uma conta de prestador com outro endereço de e-mail.",
+    "Cette transformation est définitive.":"Esta alteração é definitiva.",
+    "Je confirme, transformer mon compte":"Confirmo, transformar a minha conta",
+    "Devenu prestataire":"Passou a prestador",
     // --- Grille tarifaire montrée au prestataire à l'inscription ---
     "1 h relaxant":"1 h relaxante",
     "Grille tarifaire Ti-Services":"Tabela de preços Ti-Services",
@@ -8475,20 +8492,47 @@
   // Proposition de bascule vers le compte prestataire, à l'initiative de Ti-Services.
   // Deux issues : il complète son profil professionnel, ou il reste client et on ne
   // lui repose plus la question.
+  /* Ce qu'un compte client perd en devenant prestataire. La transformation est
+     DÉFINITIVE : un compte porte un rôle et un seul. Réservations, carte enregistrée et
+     adresses restent dans la fiche mais ne sont plus accessibles depuis l'application. On
+     l'annonce avant, chiffres à l'appui — et on fait confirmer une seconde fois quand la
+     personne a réellement quelque chose à perdre. */
+  function proSugPertes(){
+    const out=[];
+    const n=(S.history||[]).length;
+    if(n)out.push(n+' réservation'+(n>1?'s':'')+' et son historique');
+    if(S.card)out.push('votre carte enregistrée');
+    const a=(S.addresses||[]).length;
+    if(a)out.push(a+' adresse'+(a>1?'s':'')+' enregistrée'+(a>1?'s':''));
+    const r=(S.recurring||[]).length;
+    if(r)out.push(r+' abonnement'+(r>1?'s':''));
+    return out;
+  }
   function proSuggestView(){
+    const pertes=proSugPertes();
+    const confirmer=!!S.proSugConfirm;
     return `<div class="pad"><div style="height:18px"></div>
       <div style="text-align:center;display:flex;flex-direction:column;align-items:center">${octoMini(64,'wave')}</div>
       <div class="h-hello" style="text-align:center;margin-top:12px">Vous êtes un professionnel&nbsp;?</div>
       <p class="sub" style="text-align:center;margin-top:8px;line-height:1.6">Votre compte a été créé du côté <b>client</b>, celui qui sert à réserver des prestations. Si vous proposez vos services à Saint-Barth, c'est un <b>compte prestataire</b> qu'il vous faut — nous pouvons le transformer sans que vous ayez à vous réinscrire.</p>
       <div class="card" style="padding:16px;margin-top:18px">
-        <div class="row" style="gap:11px;align-items:flex-start"><span class="benic">${I.check}</span><div><b style="font-size:14px">Vous gardez votre compte</b><div class="mini" style="margin-top:2px">Mêmes identifiants, même adresse e-mail. Rien à recréer.</div></div></div>
+        <div class="row" style="gap:11px;align-items:flex-start"><span class="benic">${I.check}</span><div><b style="font-size:14px">Vous gardez vos identifiants</b><div class="mini" style="margin-top:2px">Même adresse e-mail, même mot de passe. Rien à recréer.</div></div></div>
         <div class="row" style="gap:11px;align-items:flex-start;margin-top:12px"><span class="benic">${I.clip}</span><div><b style="font-size:14px">Un profil à compléter</b><div class="mini" style="margin-top:2px">Identité et entreprise, assurance, métiers, acceptations. En plusieurs fois si besoin.</div></div></div>
         <div class="row" style="gap:11px;align-items:flex-start;margin-top:12px"><span class="benic">${I.shield}</span><div><b style="font-size:14px">Puis Ti-Services vérifie</b><div class="mini" style="margin-top:2px">Votre candidature est examinée avant activation.</div></div></div>
       </div>
+      <div class="card" style="padding:16px;margin-top:14px;border-left:4px solid var(--coral)">
+        <div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="color:var(--coral-deep)">${I.shield}</span><div><b style="font-size:14px">Ce que vous ne pourrez plus faire</b>
+          <div class="mini" style="margin-top:4px;line-height:1.55">Ce compte deviendra un compte <b>prestataire</b>, et le restera. Vous ne pourrez plus <b>commander de prestation</b> avec.${pertes.length?` Vous perdrez l'accès à ${pertes.join(', ')}.`:''}</div>
+          <div class="mini" style="margin-top:6px;color:var(--muted);line-height:1.55">Vos données ne sont pas effacées&nbsp;: Ti-Services les conserve. Si vous voulez continuer à commander, gardez ce compte client et créez un compte prestataire avec une autre adresse e-mail.</div></div></div>
+      </div>
       <div class="footcta" style="position:static;background:none;padding:20px 0 0">
-        <button class="btn primary" data-act="prosug-yes">Oui, devenir prestataire</button>
-        <button class="btn ghost" data-act="prosug-no" style="margin-top:10px">Non, je reste client</button>
-        <p class="mini" style="text-align:center;margin-top:13px;color:var(--muted)">Si vous répondez non, nous ne vous le redemanderons pas.</p>
+        ${confirmer
+          ? `<p class="mini" style="text-align:center;margin-bottom:10px;color:var(--coral-deep);font-weight:800">Cette transformation est définitive.</p>
+             <button class="btn primary" data-act="prosug-yes">Je confirme, transformer mon compte</button>
+             <button class="btn ghost" data-act="prosug-back" style="margin-top:10px">Annuler</button>`
+          : `<button class="btn primary" data-act="prosug-yes">Oui, devenir prestataire</button>
+             <button class="btn ghost" data-act="prosug-no" style="margin-top:10px">Non, je reste client</button>
+             <p class="mini" style="text-align:center;margin-top:13px;color:var(--muted)">Si vous répondez non, nous ne vous le redemanderons pas.</p>`}
       </div></div>`;
   }
   // Une proposition est EN ATTENTE si Ti-Services l'a posée et que la personne n'a
@@ -12393,6 +12437,11 @@
       case 'save-dispo':saveProSettings();toast('Disponibilités enregistrées');break;
       // Réponse à la proposition de Ti-Services (« vous êtes un professionnel ? »).
       case 'prosug-yes':{
+        // La bascule est DÉFINITIVE. Si la personne a réellement quelque chose à perdre
+        // (réservations, carte, adresses, abonnements), on ne la transforme pas sur un
+        // simple appui : on lui fait confirmer une seconde fois, avertissement sous les yeux.
+        if(!S.proSugConfirm&&proSugPertes().length){ S.proSugConfirm=true; render(); return; }
+        S.proSugConfirm=false;
         S.proSuggest=false;
         const u=FB&&FB.auth&&FB.auth.currentUser;
         if(u&&!isDemo()){
@@ -12409,7 +12458,10 @@
         S.proForm={name:(S.account&&S.account.name)||'',phone:'',email:(S.account&&S.account.email)||'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,cgu:false,charte:false,rates:{},otherService:'',photo:'',refCode:storedParrain()};
         render();break;
       }
+      // Renonce à la confirmation : on revient à la question, rien n'a été touché.
+      case 'prosug-back':{ S.proSugConfirm=false; render(); return; }
       case 'prosug-no':{
+        S.proSugConfirm=false;
         S.proSuggest=false;
         const u2=FB&&FB.auth&&FB.auth.currentUser;
         if(u2&&!isDemo()){ try{ FB.f.setDoc(FB.f.doc(FB.db,'users',u2.uid),{proSuggest:false,proSuggestAnswer:'no',proSuggestAnsweredAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){} }
