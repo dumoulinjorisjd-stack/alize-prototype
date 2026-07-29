@@ -1633,6 +1633,48 @@ exports.releaseFounderSpotOnDelete = onDocumentDeleted('artisans/{artisanId}', a
 });
 
 /**
+ * recountFounderSpots : remet le compteur du programme à sa VRAIE valeur.
+ *
+ * Avant que le refus ne rende la place, chaque candidature refusée en consommait une
+ * définitivement. Le compteur pouvait donc annoncer le programme complet alors que
+ * des places restaient libres. Cette fonction repart des fiches elles-mêmes :
+ *   – une fiche fondatrice REFUSÉE : sa place est rendue (et la fiche marquée),
+ *   – une fiche fondatrice active : elle occupe bien une place,
+ *   – les fiches effacées ne comptent plus, par construction.
+ * Le compteur est ensuite réécrit avec le total réel.
+ *
+ * À déclencher une fois depuis la console, puis à oublier : le refus rend désormais
+ * la place tout seul. Rejouable sans risque — elle recompte, elle n'incrémente pas.
+ */
+exports.recountFounderSpots = onCall(async (request) => {
+  const email = (request.auth && request.auth.token && request.auth.token.email) || '';
+  if (!email || email.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+    throw new HttpsError('permission-denied', 'Réservé à Ti-Services.');
+  }
+  const db = getFirestore();
+  const snap = await db.collection('artisans').get();
+  let actifs = 0; const liberees = [];
+  const ecritures = [];
+  snap.forEach((doc) => {
+    const d = doc.data() || {};
+    if (d.founder !== true || d.founderReleased === true) return;
+    if (d.status === 'refuse') {
+      liberees.push(doc.id);
+      ecritures.push(doc.ref.set({founder: false, founderReleased: true, founderSince: null}, {merge: true}));
+    } else {
+      actifs++;
+    }
+  });
+  await Promise.all(ecritures);
+  const avant = await db.doc('settings/stats').get();
+  const ancien = (avant.exists && Number(avant.data().founderTaken)) || 0;
+  await db.doc('settings/stats').set({founderTaken: actifs}, {merge: true});
+  console.log('recountFounderSpots : ' + ancien + ' → ' + actifs +
+    ' (' + liberees.length + ' place(s) rendue(s) par des candidatures refusées)');
+  return {avant: ancien, apres: actifs, liberees: liberees.length, total: FOUNDER_TOTAL};
+});
+
+/**
  * mollieOnboardingStart : point d'entrée du parcours d'activation des paiements.
  * L'app y redirige l'artisan ; on renvoie (302) vers le parcours hébergé Mollie
  * (OAuth). `state` = uid de l'artisan pour le corréler au retour.

@@ -4418,6 +4418,9 @@
     "installations distinctes — un iPhone désinstallé puis réinstallé recompte":"distinct installs — an iPhone uninstalled then reinstalled is counted again",
     "Vérifier à l'annuaire des entreprises ›":"Check on the official company register ›",
     "SIRET copié ✓":"Registration number copied ✓",
+    "Recompter les places":"Recount the spots",
+    "Recomptage…":"Recounting…",
+    "Compteur rétabli ✓":"Counter restored ✓",
     "Tarifs Ti-Services":"Ti-Services rates",
     "Ti-Services Saint-Barthélemy — services à domicile à la demande":"Ti-Services Saint-Barthélemy — on-demand home services",
     "Ti-Services conserve les pièces comptables qui lui incombent pour la durée légale, mais":"Ti-Services keeps the accounting records it is responsible for for the legal period, but",
@@ -5674,6 +5677,9 @@
     "installations distinctes — un iPhone désinstallé puis réinstallé recompte":"instalações distintas — um iPhone desinstalado e reinstalado conta de novo",
     "Vérifier à l'annuaire des entreprises ›":"Verificar no registo oficial de empresas ›",
     "SIRET copié ✓":"Número de registo copiado ✓",
+    "Recompter les places":"Recontar as vagas",
+    "Recomptage…":"A recontar…",
+    "Compteur rétabli ✓":"Contador reposto ✓",
     "Tarifs Ti-Services":"Tarifas Ti-Services",
     "Ti-Services Saint-Barthélemy — services à domicile à la demande":"Ti-Services Saint-Barthélemy — serviços ao domicílio a pedido",
     "Ti-Services conserve les pièces comptables qui lui incombent pour la durée légale, mais":"A Ti-Services conserva os documentos contabilísticos que lhe cabem durante o prazo legal, mas",
@@ -7407,6 +7413,15 @@
       ${foldCard('a-bookings',I.cal,'Réservations en cours','Recherche → acceptée → en cours → validée → réglée',bookings,chip(allB.length?'good':'grey',allB.length))}
       ${foldCard('a-arts',I.hardhat,'Fiches artisans',validA+' validé'+(validA>1?'s':'')+' · '+pendA.length+' en attente'+(refA.length?' · '+refA.length+' refusé'+(refA.length>1?'s':''):''),artList+(refA.length?`<hr class="dashed" style="margin:14px 0 2px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Prestataires refusés (${refA.length})</div>${refList}`:''),chip('grey',activeArts.length))}
       ${foldCard('a-clis',I.user,'Fiches clients',pendC.length?pendC.length+' en attente de validation':'Comptes clients inscrits',cliList,chip('grey',clis.length))}
+      ${(function(){
+        const pris=Number(S.founderTaken||0), libres=Math.max(0,FOUNDER_SPOTS-pris);
+        const r=S._founderRecount;
+        return `<div class="card" style="padding:16px;margin-top:12px">
+          <div class="row between"><span class="eyebrow" style="color:#B77400">${I.star} Programme Ambassadeur</span><span class="chip ${libres?'good':'coral'}">${libres} place${libres>1?'s':''} libre${libres>1?'s':''}</span></div>
+          <p class="mini" style="margin-top:8px;color:var(--muted);line-height:1.55">${pris} place${pris>1?'s':''} prise${pris>1?'s':''} sur ${FOUNDER_SPOTS}. Une candidature refusée rend désormais sa place automatiquement. Les refus antérieurs à cette règle, eux, en retiennent peut-être encore&nbsp;: le recomptage repart des fiches et rétablit le vrai total.</p>
+          ${r?`<p class="mini" style="margin-top:8px;color:var(--good);font-weight:700">${I.check} Recompté&nbsp;: ${r.avant} → ${r.apres} place${r.apres>1?'s':''} prise${r.apres>1?'s':''}${r.liberees?` (${r.liberees} rendue${r.liberees>1?'s':''} par des candidatures refusées)`:' — le compteur était déjà juste'}.</p>`:''}
+          <button class="btn ghost sm" data-adm="recount-founder" style="margin-top:10px;width:auto;padding:9px 14px"${S._founderBusy?' disabled':''}>${S._founderBusy?'Recomptage…':'Recompter les places'}</button>
+        </div>`;})()}
       ${foldCard('a-funnel',I.install,"Entonnoir d'installation",'Visiteurs, guide ouvert, applications installées',funnelBody,S.adminFunnelLoaded?chip('grey',(Number((S.adminFunnel||{}).u_installed_total)||0)+' installées'):'')}
 
       <div style="height:18px"></div><span class="eyebrow">${I.euro} Tarifs &amp; commissions</span>
@@ -11529,6 +11544,19 @@
           FB.f.deleteDoc(FB.f.doc(FB.db,'artisans',uid)).then(function(){ try{ if(FB.f.deleteDoc)FB.f.deleteDoc(FB.f.doc(FB.db,'users',uid)); }catch(_){}; toast('Artisan supprimé ✓'); }).catch(function(e){ toast('⚠︎ Échec : '+fbErrTxt(e)); });
         }catch(e){ toast('⚠︎ Échec : '+fbErrTxt(e)); }
         S.admin.view='home';S.admin.sel=null; render(); return;
+      }
+      else if(act==='recount-founder'){
+        if(S._founderBusy)return;
+        if(!FB||!FB.fn||!FB.functions||isDemo()){ toast('Disponible en mode réel uniquement'); return; }
+        S._founderBusy=true; render();
+        FB.fn.httpsCallable(FB.functions,'recountFounderSpots')({})
+          .then(function(res){ const d=(res&&res.data)||{};
+            S._founderRecount={avant:d.avant||0,apres:d.apres||0,liberees:d.liberees||0};
+            S.founderTaken=d.apres||0;
+            toast('Compteur rétabli ✓'); })
+          .catch(function(e){ toast('⚠︎ Échec : '+fbErrTxt(e)); })
+          .then(function(){ S._founderBusy=false; render(); });
+        return;
       }
       else if(act==='copysiret'){
         const a=(S.adminArtisans||[]).find(x=>x.id===id); const v=(a&&a.siret)||'';
