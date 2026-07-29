@@ -11967,7 +11967,15 @@
   // déjà le bouton + l'astuce) : ni doublon, ni conseil trompeur.
   setTimeout(function(){ try{ maybeShowInAppInstallHint(); }catch(_){} }, 1800);
   // Entonnoir : visite du jour + « installée » à la 1ʳᵉ ouverture en plein écran.
-  setTimeout(function(){ try{ trackFunnel('visit'); if(appInstalled())trackFunnel('installed'); }catch(_){} }, 2500);
+  // Plusieurs tentatives espacées : au lancement d'une app installée, Firebase n'est pas
+  // toujours prêt à 2,5 s (démarrage à froid, réseau lent). Une seule tentative ratée
+  // faisait perdre l'installation ; on réessaie jusqu'à ce que le serveur confirme.
+  (function funnelSweep(n){
+    setTimeout(function(){
+      try{ trackFunnel('visit'); if(appInstalled())trackFunnel('installed'); }catch(_){}
+      if(n<4)funnelSweep(n+1);
+    }, n?6000:2500);
+  })(0);
   // ——— Hauteur d'application fiable (correctif barre d'onglets « repliée » Android) ———
   // Historique : 100dvh (viewport DYNAMIQUE) sur-estime la hauteur quand les barres
   // système/navigateur sont susceptibles de se replier — l'app devenait plus haute que
@@ -12289,16 +12297,34 @@
   // aucune donnée personnelle — sert uniquement à ne pas compter deux fois le même
   // appareil dans une étape).
   function funnelDid(){try{let d=localStorage.getItem('tiDid');if(!d){const a=new Uint8Array(16);crypto.getRandomValues(a);d=Array.from(a).map(function(b){return b.toString(16).padStart(2,'0');}).join('');localStorage.setItem('tiDid',d);}return d;}catch(_){return '';}}
+  const _funnelSending={};
   function trackFunnel(ev){
     try{
       if(!(FB&&FB.fn&&FB.functions))return;
       // Une fois PAR APPAREIL et à vie (plus de re-comptage quotidien) ; le serveur
       // re-déduplique par identifiant au cas où le stockage local aurait été vidé.
-      const key='tiFunnel:'+ev;
-      try{ if(localStorage.getItem(key))return; localStorage.setItem(key,'1'); }catch(_){}
+      //
+      // Le drapeau local n'est posé QU'APRÈS confirmation du serveur. Avant, il était
+      // écrit AVANT l'appel : un envoi perdu était perdu pour toujours. C'est ce qui
+      // faisait disparaître les installations Android — « installée » part au moment
+      // exact où Chrome bascule vers l'app, l'appel n'aboutit pas toujours, et comme
+      // l'app installée partage le stockage de Chrome (contrairement à iPhone, où le
+      // plein écran a le sien), plus aucun lancement ne retentait. Désormais, tant que
+      // le serveur n'a pas répondu, on réessaie au lancement suivant ; un doublon ne
+      // compte jamais deux fois, le serveur dédoublonne par identifiant d'appareil.
+      // Clé versionnée : les appareils qui portent l'ancien drapeau (posé sans preuve
+      // d'envoi) repartent d'une page blanche et retentent une fois. Le serveur
+      // dédoublonne, donc les compteurs déjà justes ne bougent pas.
+      const key='tiFunnel2:'+ev;
+      try{ if(localStorage.getItem(key))return; }catch(_){}
+      if(_funnelSending[ev])return;
       const did=funnelDid(); if(!did)return;
+      _funnelSending[ev]=true;
       const pf=detectPlatform();
-      FB.fn.httpsCallable(FB.functions,'trackFunnel')({event:ev,platform:pf.ios?'ios':(pf.android?'android':'desktop'),env:IS_PROD?'prod':'beta',did:did}).catch(function(){});
+      FB.fn.httpsCallable(FB.functions,'trackFunnel')({event:ev,platform:pf.ios?'ios':(pf.android?'android':'desktop'),env:IS_PROD?'prod':'beta',did:did})
+        .then(function(){ try{localStorage.setItem(key,'1');}catch(_){} })
+        .catch(function(){})
+        .then(function(){ _funnelSending[ev]=false; });
     }catch(_){}
   }
   // Après une inscription, si l'app n'est pas installée : on pousse FORTEMENT
