@@ -10054,8 +10054,13 @@
   // gestionnaire d'envoi. Tout champ marqué * doit être renseigné pour débloquer l'envoi.
   function concSignupOk(f){f=f||{};return (f.name||'').trim().length>1&&(f.siret||'').replace(/\s/g,'').length>=9&&(f.address||'').trim().length>1&&(f.contact||'').trim().length>1&&(f.phone||'').trim().length>=6&&/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=6&&f.password===f.password2&&!!f.cgu&&!!f.mandat;}
   function proSignupOk(f){f=f||{};const siret=(f.siret||'').replace(/\s/g,'');
-    // Identifiants : via Google (déjà authentifié) OU e-mail + mot de passe classique.
-    const credOk=f.googleAuth?true:(/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=6&&f.password===f.password2);
+    // Identifiants. Le compte peut DÉJÀ exister : inscription par Google (googleAuth),
+    // ou création du compte par e-mail puis complétion du profil en plusieurs fois
+    // (authed). Dans ces deux cas il n'y a plus de mot de passe à saisir — l'envoi
+    // réutilise la session ouverte, exactement comme le fait fbProSignup. Ne tester
+    // que googleAuth condamnait toute candidature créée par e-mail : les quatre
+    // étapes passaient au vert et le bouton d'envoi restait gris à jamais.
+    const credOk=(f.googleAuth||f.authed)?true:(/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=6&&f.password===f.password2);
     return (f.name||'').trim().length>1&&(f.phone||'').trim().length>=6&&credOk&&/^\d{14}$/.test(siret)&&(f.address||'').trim().length>1&&!!f.insuranceDoc&&!!(f.cats&&f.cats.length)&&(!f.cats.includes('autre')||(f.otherService||'').trim())&&(!f.cats.includes('baby')||!!(f.diplomas&&f.diplomas.length))&&!!f.mandat&&!!f.cgu&&!!f.charte&&!!f.acceptsGrille&&isAdult(f.birth);}
   // Liste ce qu'il reste à fournir pour valider la candidature — affiché sous le bouton
   // (désactivé) pour que le prestataire sache exactement quel champ ou document manque.
@@ -10066,8 +10071,10 @@
     if(!(f.cats&&f.cats.length))m.push('au moins un métier');
     if(f.cats&&f.cats.includes('autre')&&!(f.otherService||'').trim())m.push('préciser le service « Autre »');
     if(f.cats&&f.cats.includes('baby')&&!(f.diplomas&&f.diplomas.length))m.push('diplômes garde d’enfants');
-    if(!/.+@.+\..+/.test(f.email||''))m.push('e-mail valide');
-    if((f.password||'').length<6||f.password!==f.password2)m.push('mot de passe (6 caractères, identiques)');
+    if(!(f.googleAuth||f.authed)){
+      if(!/.+@.+\..+/.test(f.email||''))m.push('e-mail valide');
+      if((f.password||'').length<6||f.password!==f.password2)m.push('mot de passe (6 caractères, identiques)');
+    }
     if(!/^\d{14}$/.test(siret))m.push('SIRET (14 chiffres)');
     if(!(f.address||'').trim())m.push('adresse professionnelle');
     if(!f.insuranceDoc)m.push('attestation d’assurance');
@@ -10318,7 +10325,7 @@
      groupées, à son rythme, puis clique « Envoyer ma candidature ». Tant qu'il n'a pas
      envoyé, aucune fiche `artisans` n'existe → il n'apparaît pas dans la file admin. */
   function proDraftKey(){return 'tiProDraft:'+((FB&&FB.auth&&FB.auth.currentUser&&FB.auth.currentUser.uid)||'anon');}
-  function saveProDraft(){try{const f=S.proForm||{};const j={};['name','phone','siret','address','statusType','legalForm','capital','rcsCity','birth','bio','refCode','insurer','insuranceName','insuranceUrl','diplomaOther','otherService','photo','email'].forEach(function(k){if(f[k]!=null)j[k]=f[k];});j.insuranceDoc=!!f.insuranceDoc;j.mandat=!!f.mandat;j.cgu=!!f.cgu;j.charte=!!f.charte;j.acceptsGrille=!!f.acceptsGrille;j.cats=Array.isArray(f.cats)?f.cats:[];j.rates=f.rates||{};j.diplomas=Array.isArray(f.diplomas)?f.diplomas:[];j.googleAuth=!!f.googleAuth;localStorage.setItem(proDraftKey(),JSON.stringify(j));}catch(_){}}
+  function saveProDraft(){try{const f=S.proForm||{};const j={};['name','phone','siret','address','statusType','legalForm','capital','rcsCity','birth','bio','refCode','insurer','insuranceName','insuranceUrl','diplomaOther','otherService','photo','email'].forEach(function(k){if(f[k]!=null)j[k]=f[k];});j.insuranceDoc=!!f.insuranceDoc;j.mandat=!!f.mandat;j.cgu=!!f.cgu;j.charte=!!f.charte;j.acceptsGrille=!!f.acceptsGrille;j.cats=Array.isArray(f.cats)?f.cats:[];j.rates=f.rates||{};j.diplomas=Array.isArray(f.diplomas)?f.diplomas:[];j.googleAuth=!!f.googleAuth;j.authed=!!f.authed;localStorage.setItem(proDraftKey(),JSON.stringify(j));}catch(_){}}
   function loadProDraft(){try{const r=localStorage.getItem(proDraftKey());if(r){const j=JSON.parse(r);S.proForm=Object.assign(S.proForm||{},j);}}catch(_){}}
   async function uploadDraftInsurance(file){
     try{
