@@ -1794,6 +1794,20 @@ exports.mollieWebhook = onRequest({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (req
       const reqId = (pay.metadata && pay.metadata.reqId) || '';
       if (reqId) {
         const db = getFirestore();
+        // Un paiement qui n'est PLUS celui de la demande ne doit plus parler en son nom.
+        // Quand une tentative inaboutie est remplacée, Mollie nous notifie son annulation :
+        // sans ce garde-fou, cette notification marquait la demande « paiement non abouti »
+        // alors que le client était en train de régler la nouvelle — et l'écran repartait
+        // en boucle sur « Réessayer ».
+        try {
+          const cur0 = await db.collection('requests').doc(reqId).get();
+          const enCours = cur0.exists ? ((cur0.data() || {}).molliePaymentId || '') : '';
+          if (enCours && enCours !== pay.id) {
+            console.log('Webhook ignoré : paiement remplacé reqId=' + reqId + ' ' + pay.id + ' (' + (pay.status || '') + ')');
+            res.status(200).send('ok');
+            return;
+          }
+        } catch (_) {}
         const upd = {molliePaymentStatus: pay.status || ''};
         if (pay.status === 'authorized') upd.molliePaymentAuthorized = true;
         if (pay.status === 'paid') upd.molliePaymentCaptured = true;
