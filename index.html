@@ -7616,7 +7616,16 @@
         return `<div class="card" style="padding:13px;margin-top:9px;border-left:3px solid var(--coral)">
           <div class="row between" style="gap:8px;align-items:center"><button class="linklike" data-adm="art:${esc(a.id)}" style="font-size:14px;font-weight:700;text-align:left;color:var(--ink)">${esc(a.name)}</button><span class="chip ${e[0]}" style="flex:none">${e[1]}</span></div>
           <div class="mini" style="margin-top:3px;color:var(--muted)">${catShort(a.cats)} · ${esc(migZone(a.zone))}${n?' · relancé '+n+' fois':' · jamais relancé'}</div>
-          ${contactRow(a)}</div>`;
+          ${contactRow(a)}
+          ${(function(){
+            // Relance écrite d'avance, à la charte, en tutoiement : deux appuis et elle part.
+            // Deux temps volontaires — un e-mail à un vrai prestataire ne doit pas partir
+            // sur un frôlement de pouce.
+            const arme=(S._molArm===a.id);
+            return `<button class="btn ${arme?'primary':'ghost'} sm" data-adm="molrelance:${esc(a.id)}" style="margin-top:8px">${arme?'Confirmer l’envoi'
+              :`${I.mail} Envoyer la relance paiement`}</button>
+            ${arme?`<p class="mini" style="margin-top:6px;color:var(--muted)">Part à ${esc(a.email||'son adresse')} — paiements à activer + notifications à laisser allumées.</p>`:''}`;
+          })()}</div>`;
       }).join('');
       return entete
         +`<div class="banner coral" style="margin-top:12px">${I.shield}<span>${molBloques.length>1
@@ -7636,11 +7645,9 @@
       ${supBlocks.length?`<div style="height:14px"></div><span class="eyebrow">Messages support · ${supBlocks.length}</span>${supBlocks.join('')}`:''}
       ${nsBlock}
 
-      <div style="height:18px"></div><span class="eyebrow">${I.search} Suivi de l'activité</span>
+      <div style="height:18px"></div><span class="eyebrow">${I.hardhat} Prestataires</span>
       <p class="mini" style="margin:6px 0 0;color:var(--muted)">Touchez une carte pour la déplier.</p>
-      ${foldCard('a-bookings',I.cal,'Réservations en cours','Recherche → acceptée → en cours → validée → réglée',bookings,chip(allB.length?'good':'grey',allB.length))}
       ${foldCard('a-arts',I.hardhat,'Fiches artisans',validA+' validé'+(validA>1?'s':'')+(pendA.length?' · '+pendA.length+' en attente':'')+(refA.length?' · '+refA.length+' refusé'+(refA.length>1?'s':''):'')+(nbAmb?' · '+nbAmb+' ambassadeur'+(nbAmb>1?'s':''):''),artList+(refA.length?`<hr class="dashed" style="margin:14px 0 2px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Prestataires refusés (${refA.length})</div>${refList}`:''),chip('grey',activeArts.length))}
-      ${molBlock?foldCard('a-mollie',I.card,'Prêts à encaisser','Qui pourra vraiment accepter une mission le 1er octobre',molBlock,molBloques.length?chip('coral',molBloques.length+' à relancer'):chip('good',molPrets.length+' prêts')):''}
       ${(function(){
         // Un compte prestataire SANS fiche `artisans`, c'est quelqu'un qui a monté son
         // dossier et ne l'a jamais envoyé. Il n'apparaît dans aucune autre liste : sans
@@ -7663,12 +7670,12 @@
             </div>
             <button class="uidtap" data-adm="copyuid:${d.uid}" title="Copier l'identifiant du compte">${I.copy} <span class="money">${esc(d.uid)}</span></button>
           </div></div>`;}).join('');
-        return `<div class="card" style="padding:16px;margin-top:12px;border-left:4px solid var(--coral)">
-          <div class="row between" style="gap:8px;align-items:center"><span class="eyebrow" style="color:var(--coral-deep)">${I.clock} Candidatures jamais envoyées</span><span class="chip coral" style="flex:none">${att.length}</span></div>
-          <p class="mini" style="margin-top:8px;color:var(--muted);line-height:1.55">Ces personnes ont créé leur compte prestataire mais n'ont jamais envoyé leur candidature — elles n'ont donc aucune fiche à valider. Le plus souvent leur dossier est déjà rempli&nbsp;: un appel suffit. Leurs pièces (SIRET, attestation) restent sur leur téléphone tant qu'elles n'ont pas envoyé, elles n'apparaissent pas ici.</p>
-          ${lignes}
-        </div>`;})()}
-      ${foldCard('a-clis',I.user,'Fiches clients',pendC.length?pendC.length+' en attente de validation':'Comptes clients inscrits',cliList,chip('grey',clis.length))}
+        // Repliable comme ses voisines : la liste peut être longue et repousser tout le
+        // reste de la console. Le compteur reste visible sur l'en-tête, replié ou non.
+        const corps=`<p class="mini" style="color:var(--muted);line-height:1.55">Ces personnes ont créé leur compte prestataire mais n'ont jamais envoyé leur candidature — elles n'ont donc aucune fiche à valider. Le plus souvent leur dossier est déjà rempli&nbsp;: un appel suffit. Leurs pièces (SIRET, attestation) restent sur leur téléphone tant qu'elles n'ont pas envoyé, elles n'apparaissent pas ici.</p>
+          ${lignes}`;
+        return foldCard('a-drafts',I.clock,'Candidatures jamais envoyées','Comptes créés, dossier jamais envoyé — un appel suffit',corps,chip('coral',att.length));})()}
+      ${molBlock?foldCard('a-mollie',I.card,'Prêts à encaisser','Qui pourra vraiment accepter une mission le 1er octobre',molBlock,molBloques.length?chip('coral',molBloques.length+' à relancer'):chip('good',molPrets.length+' prêts')):''}
       ${(function(){
         // Plus de places à compter : est ambassadeur qui s'est inscrit avant l'ouverture.
         // La carte se contente donc de nommer ceux dont l'avantage court encore.
@@ -7681,16 +7688,18 @@
             ${expires.map(function(a){return `<button class="reset row between" data-adm="art:${a.id}" style="width:100%;margin-top:7px;gap:8px;align-items:center;text-align:left"><b style="font-size:13.5px">${esc(a.name)}</b><span class="chip" style="flex:none;background:var(--hair);color:var(--muted)">${I.star} expiré</span></button>`;}).join('')}`:''}`;
         return foldCard('a-founder',I.star,'Programme Ambassadeur','Tout prestataire inscrit avant le 1er octobre 2026',body,chip(amb.length?'good':'grey',amb.length+' en cours'));
       })()}
-      ${foldCard('a-funnel',I.install,"Entonnoir d'installation",'Visiteurs, guide ouvert, applications installées',funnelBody,S.adminFunnelLoaded?chip('grey',(Number((S.adminFunnel||{}).u_installed_total)||0)+' installées'):'')}
-
-      <div style="height:18px"></div><span class="eyebrow">${I.euro} Tarifs &amp; commissions</span>
-      ${foldCard('a-prices',I.euro,'Prestations · artisans &amp; tarifs',svcAll.length+' métiers'+(svcNoPro?' · '+svcNoPro+' sans prestataire':''),pricesBody,svcNoPro?chip('coral',svcNoPro+' sans pro'):chip('good',svcAll.length))}
       ${foldCard('a-fid',I.star,'Barème de commission · fidélité','Bronze, argent, or, platine — jamais visible côté client',fidBody,chip('grey',fidTiers().length+' paliers'))}
       ${foldCard('a-retro',I.concierge,'Rétrocession conciergerie','Commission d’apport reversée au concierge',retroBody,chip('grey',S.retroRate+'&nbsp;%'))}
 
-      <div style="height:18px"></div><span class="eyebrow">${I.shield} Fonctionnement</span>
-      <button class="card" data-adm="manual" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block"><div class="row between" style="align-items:center"><b style="font-size:14px">Manuel d'exploitation</b><span class="mini" style="color:var(--teal-deep);font-weight:700">Ouvrir ›</span></div><p class="sub" style="margin-top:8px">Tout le fonctionnement de la plateforme (commandes, prestataire choisi, paiements, récurrences, annulations…) — pour vous, un employé ou un médiateur. Imprimable.</p></button>
+      <div style="height:18px"></div><span class="eyebrow">${I.user} Clients</span>
+      ${foldCard('a-clis',I.user,'Fiches clients',pendC.length?pendC.length+' en attente de validation':'Comptes clients inscrits',cliList,chip('grey',clis.length))}
       <button class="card" data-adm="wishes" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block"><div class="row between" style="align-items:center"><b style="font-size:14px">Services réclamés par les clients</b>${(S.adminWishes&&S.adminWishes.length)?`<span class="chip coral">${S.adminWishes.length}</span>`:`<span class="mini" style="color:var(--muted)">Aucune pour l'instant</span>`}</div><p class="sub" style="margin-top:8px">Voir ce que les clients aimeraient trouver sur la plateforme.</p></button>
+
+      <div style="height:18px"></div><span class="eyebrow">${I.shield} Fonctionnement</span>
+      ${foldCard('a-bookings',I.cal,'Réservations en cours','Recherche → acceptée → en cours → validée → réglée',bookings,chip(allB.length?'good':'grey',allB.length))}
+      ${foldCard('a-prices',I.euro,'Prestations · artisans &amp; tarifs',svcAll.length+' métiers'+(svcNoPro?' · '+svcNoPro+' sans prestataire':''),pricesBody,svcNoPro?chip('coral',svcNoPro+' sans pro'):chip('good',svcAll.length))}
+      ${foldCard('a-funnel',I.install,"Entonnoir d'installation",'Visiteurs, guide ouvert, applications installées',funnelBody,S.adminFunnelLoaded?chip('grey',(Number((S.adminFunnel||{}).u_installed_total)||0)+' installées'):'')}
+      <button class="card" data-adm="manual" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block"><div class="row between" style="align-items:center"><b style="font-size:14px">Manuel d'exploitation</b><span class="mini" style="color:var(--teal-deep);font-weight:700">Ouvrir ›</span></div><p class="sub" style="margin-top:8px">Tout le fonctionnement de la plateforme (commandes, prestataire choisi, paiements, récurrences, annulations…) — pour vous, un employé ou un médiateur. Imprimable.</p></button>
       <div style="height:24px"></div>
     </div>`;
   }
@@ -10977,6 +10986,10 @@
     if(rb){S._rebookSvc=String(rb).slice(0,30);S.onboarded=true;S.persona='client';S.clientNav='wallet';try{history.replaceState(null,'',location.origin+location.pathname);}catch(_){}return true;}
     const open=q.get('open');
     if(open==='missions'||q.has('mission')){S.onboarded=true;S.persona='pro';if(S.proStatus!=='approved')S.proStatus='approved';S.proNav='home';return true;}
+    // « ?open=alerts » : le bouton « Activer mes notifications » des e-mails de relance.
+    // On ouvre le Compte prestataire ET on déplie la carte des alertes — sinon la
+    // personne arrive sur un écran de réglages et doit chercher.
+    if(open==='alerts'){S.onboarded=true;S.persona='pro';if(S.proStatus!=='approved')S.proStatus='approved';S.proNav='account';S._fold=Object.assign({},S._fold,{'p-alerts':true});return true;}
     if(open==='admin'){S.onboarded=true;S.persona='admin';S.admin={view:'home',sel:null};return true;}
     if(open==='wallet'){S.clientNav='wallet';return true;}
   }catch(e){}return false;}
@@ -12052,6 +12065,22 @@
       else if(act==='prospect'){S.admin.view='prospect';S.admin.sel=null;S.mission=null;S.support=false;S.supportSide=null;S.adminSupervise=false;S.generalSupport=false;S.genUser=null;render();view.scrollTop=0;return;}
       else if(act==='prospect-filter'){S._prospectFilter=id||'all';render();return;}
       else if(act==='prospect-cat'){S._prospectCats=S._prospectCats||{};S._prospectCats[id]=!S._prospectCats[id];render();return;}
+      else if(act==='molrelance'){(function(){
+        // 1er appui : on arme (le bouton demande confirmation, 6 s). 2e appui : ça part.
+        if(S._molArm!==id){S._molArm=id;render();setTimeout(function(){if(S._molArm===id){S._molArm=null;try{render();}catch(_){}}},6000);return;}
+        S._molArm=null;
+        if(!isAdminAccount()){toast('Réservé à l’administrateur (compte réel)');render();return;}
+        if(!(FB&&FB.functions&&FB.fn&&FB.fn.httpsCallable)){toast('Envoi indisponible hors ligne — réessayez connecté');render();return;}
+        const a=(S.adminArtisans||[]).find(function(x){return x.id===id;});
+        toast('Envoi de la relance…');render();
+        FB.fn.httpsCallable(FB.functions,'sendMollieRelance')({uid:id}).then(function(r){
+          const d=(r&&r.data)||{};
+          if(d.sent){if(a){a.mollieRelances=Number(d.relances)||((Number(a.mollieRelances)||0)+1);a.mollieRelanceAt=Date.now();}
+            toast('Relance envoyée à '+(d.email||'ce prestataire')+' ✓');render();}
+          else if(d.reason==='active'){toast('Ses paiements sont déjà actifs — rien à relancer');}
+          else toast('⚠︎ Relance non envoyée');
+        }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
+      })();return;}
       else if(act==='invmsg-reset'){try{localStorage.removeItem('tiInvMsg');}catch(_){}render();toast('Texte standard rétabli ✓');return;}
       else if(act==='prospect-add'){(function(){
         const nm=((document.getElementById('prName')||{}).value||'').trim();

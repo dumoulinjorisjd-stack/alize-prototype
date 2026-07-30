@@ -2104,8 +2104,8 @@ exports.mollieActivationReminder = onSchedule({schedule: 'every monday 13:00', s
       const u = (await db.collection('users').doc(d.id).get()).data() || {};
       const tokens = u.pushTokens || [];
       if (tokens.length) {
-        await pushMulticast(tokens, 'Vos paiements ne sont pas encore activés',
-          'Sans cette étape, vous ne pourrez accepter aucune mission. Quelques minutes suffisent.',
+        await pushMulticast(tokens, 'Tes paiements ne sont pas encore activés',
+          'Sans cette étape tu ne peux accepter aucune mission. Quelques minutes suffisent.',
           '/?open=missions',
           (tok) => db.collection('users').doc(d.id).update({pushTokens: FieldValue.arrayRemove(tok)}).catch(() => {}));
       }
@@ -2114,7 +2114,7 @@ exports.mollieActivationReminder = onSchedule({schedule: 'every monday 13:00', s
     if (a.email) {
       try {
         await sendMail(db, a.email, {
-          subject: 'Il vous reste une étape pour recevoir des missions',
+          subject: 'Il te reste une étape pour recevoir des missions',
           html: mollieReminderHtml(String(a.name || '').trim(), n),
           attachments,
         });
@@ -2759,10 +2759,14 @@ function inviteArtisanHtml(name, message) {
  * des missions. Le bouton ouvre directement l'écran d'activation des paiements.
  * ========================================================================== */
 /**
- * mollieReminderHtml : e-mail de relance hebdomadaire « activez vos paiements ».
- * Ton : factuel, jamais culpabilisant. On rappelle la conséquence concrète (aucune mission
- * acceptable) plutôt que de réclamer une démarche administrative. Au fil des relances le
- * message se resserre : on ne répète pas mot pour mot une chose déjà lue trois fois.
+ * mollieReminderHtml : e-mail de relance « active tes paiements ».
+ * Tutoiement volontaire : sur l'île on se parle ainsi, et un courrier qui sonne
+ * administratif ne fait bouger personne. Deux choses seulement, jamais plus : activer
+ * les paiements, et laisser les notifications ouvertes — c'est le couple qui décide si
+ * la personne travaillera ou regardera passer les missions. Ton factuel, jamais
+ * culpabilisant : on rappelle la conséquence concrète plutôt que de réclamer une
+ * démarche. Au fil des relances le message se resserre — on ne répète pas mot pour mot
+ * une chose déjà lue trois fois. Sert aussi à la relance manuelle (sendMollieRelance).
  */
 function mollieReminderHtml(name, n) {
   const app = APP_URL.replace(/\/$/, '');
@@ -2770,10 +2774,10 @@ function mollieReminderHtml(name, n) {
   const hi = name ? escHtmlS(String(name).split(/\s+/)[0]) : '';
   const relance = Number(n) || 1;
   const accroche = relance >= 3
-    ? 'Votre profil est validé depuis un moment, mais vous ne pouvez toujours <b>pas accepter de mission</b>.'
+    ? 'Ton profil est validé depuis un moment, et tu ne peux toujours <b>pas accepter de mission</b>. Il ne manque qu\'une chose.'
     : (relance === 2
-      ? 'Petit rappel&nbsp;: sans compte de paiement, vous ne pouvez <b>pas encore accepter de mission</b>.'
-      : 'Votre profil est validé — il ne manque plus que vos <b>paiements</b>.');
+      ? 'Petit rappel&nbsp;: sans compte de paiement, tu ne peux <b>pas encore accepter de mission</b>.'
+      : 'Ton profil est validé — il ne manque plus que tes <b>paiements</b>.');
   return '' +
   '<div style="margin:0;padding:0;background:#FBF7F4;font-family:-apple-system,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;color:#231E33">' +
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FBF7F4;padding:24px 12px">' +
@@ -2786,20 +2790,31 @@ function mollieReminderHtml(name, n) {
             '<div style="font-size:12px;color:#8a8494;margin-top:2px">Services à la demande · Saint-Barthélemy</div>' +
           '</td></tr>' +
           '<tr><td style="padding:16px 30px 0">' +
-            '<h1 style="font-size:21px;margin:6px 0 0;color:#231E33">' + (hi ? (hi + ', il') : 'Il') + ' vous reste une étape</h1>' +
+            '<h1 style="font-size:21px;margin:6px 0 0;color:#231E33">' + (hi ? (hi + ', il') : 'Il') + ' te reste une étape</h1>' +
             '<p style="font-size:14.5px;line-height:1.6;color:#4a4556;margin:12px 0 0">' + accroche + '</p>' +
+            // 1 — les paiements. Le vrai verrou : sans compte Mollie, aucune mission acceptable.
             '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#EAF6F3;border:1px solid #cfece7;border-radius:14px;margin-top:16px">' +
               '<tr><td style="padding:16px 18px">' +
-                '<div style="font-size:15px;font-weight:800;color:#231E33">Pourquoi c\'est obligatoire</div>' +
-                '<div style="font-size:13.5px;color:#4a4556;line-height:1.55;margin-top:7px">Votre gain vous est versé <b>automatiquement</b> après chaque prestation, sans facture à courir ni virement à réclamer. Pour cela il faut un compte de paiement à votre nom chez <b>Mollie</b>, notre prestataire agréé. C\'est <b>une seule fois</b>, et l\'application vous guide question par question.</div>' +
+                '<div style="font-size:15px;font-weight:800;color:#231E33">1 · Active tes paiements</div>' +
+                '<div style="font-size:13.5px;color:#4a4556;line-height:1.55;margin-top:7px">Ton argent t\'est versé <b>automatiquement</b> après chaque prestation&nbsp;: pas de facture à courir, pas de virement à réclamer. Pour ça il faut un compte de paiement à ton nom chez <b>Mollie</b>, notre prestataire agréé. C\'est <b>une seule fois</b>, et l\'application te guide question par question.</div>' +
                 '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px"><tr><td align="center">' +
                   '<a href="' + app + '/?open=missions" style="display:inline-block;background:' + btn + ';color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 24px;border-radius:11px">Activer mes paiements</a>' +
                 '</td></tr></table>' +
-                '<div style="font-size:12px;color:#8a8494;line-height:1.5;margin-top:10px;text-align:center">Comptez quelques minutes — c\'est plus simple depuis un <b>ordinateur</b>.</div>' +
+                '<div style="font-size:12px;color:#8a8494;line-height:1.5;margin-top:10px;text-align:center">Compte quelques minutes — c\'est plus simple depuis un <b>ordinateur</b>.</div>' +
               '</td></tr>' +
             '</table>' +
-            '<p style="font-size:13px;line-height:1.6;color:#8a8494;margin:16px 0 0">La vérification par Mollie (identité, IBAN) peut prendre jusqu\'à 48&nbsp;h&nbsp;: mieux vaut ne pas s\'y prendre au dernier moment. Vous recevez ce message chaque semaine tant que vos paiements ne sont pas actifs — il s\'arrête tout seul dès que c\'est fait.</p>' +
-            '<p style="font-size:13px;line-height:1.6;color:#8a8494;margin:12px 0 0">Un blocage, une question&nbsp;? Répondez simplement à cet e-mail.</p>' +
+            // 2 — les notifications. Sans elles, les missions partent avant d'être vues.
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FFF4EF;border:1px solid #f6dcd0;border-radius:14px;margin-top:12px">' +
+              '<tr><td style="padding:16px 18px">' +
+                '<div style="font-size:15px;font-weight:800;color:#231E33">2 · Laisse tes notifications allumées</div>' +
+                '<div style="font-size:13.5px;color:#4a4556;line-height:1.55;margin-top:7px">Une demande part à tous les prestataires du métier en même temps, et <b>le premier qui répond la prend</b>. Sans notification tu l\'apprends trop tard. Vérifie qu\'elles sont bien actives&nbsp;: <b>Compte</b> → <b>Alertes nouvelles demandes</b>.</div>' +
+                '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:13px"><tr><td align="center">' +
+                  '<a href="' + app + '/?open=alerts" style="display:inline-block;background:#ffffff;border:1.5px solid #F26A4B;color:#D6421F;text-decoration:none;font-weight:700;font-size:13.5px;padding:9px 20px;border-radius:11px">Vérifier mes notifications</a>' +
+                '</td></tr></table>' +
+              '</td></tr>' +
+            '</table>' +
+            '<p style="font-size:13px;line-height:1.6;color:#8a8494;margin:16px 0 0">Mollie vérifie ton identité et ton IBAN&nbsp;: ça peut prendre jusqu\'à 48&nbsp;h. Mieux vaut ne pas s\'y prendre au dernier moment. Tu reçois ce message chaque semaine tant que tes paiements ne sont pas actifs — il s\'arrête tout seul dès que c\'est fait.</p>' +
+            '<p style="font-size:13px;line-height:1.6;color:#8a8494;margin:12px 0 0">Un blocage, une question&nbsp;? Réponds simplement à cet e-mail.</p>' +
           '</td></tr>' +
           '<tr><td style="padding:22px 30px 26px">' +
             '<div style="height:1px;background:#EEE5DF"></div>' +
@@ -3001,6 +3016,46 @@ exports.sendArtisanInvite = onCall({secrets: [SMTP_PASS]}, async (request) => {
   });
   if (!ok) throw new HttpsError('internal', 'L\'envoi a échoué — réessayez.');
   return { sent: true };
+});
+
+// Relance manuelle depuis la console admin : exactement le même e-mail que la relance
+// automatique du lundi, envoyé tout de suite. C'est ce qu'on veut juste après avoir eu
+// la personne au téléphone — le message est déjà écrit, il part avec la charte.
+// L'envoi incrémente le compteur de relances : la tâche du lundi voit le garde-fou des
+// 6 jours et ne double donc pas ce message.
+exports.sendMollieRelance = onCall({secrets: [SMTP_PASS]}, async (request) => {
+  const who = (request.auth && request.auth.token && request.auth.token.email) || '';
+  if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+    throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
+  }
+  const uid = String((request.data && request.data.uid) || '').trim().slice(0, 128);
+  if (!uid) throw new HttpsError('invalid-argument', 'Prestataire manquant.');
+  const db = getFirestore();
+  const ref = db.collection('artisans').doc(uid);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Fiche prestataire introuvable.');
+  const a = snap.data() || {};
+  // Ne jamais relancer quelqu'un qui a terminé : ce serait le message le plus décourageant.
+  if (a.mollieStatus === 'active') return {sent: false, reason: 'active'};
+  let email = a.email || '';
+  if (!email) {
+    try { email = ((await db.collection('users').doc(uid).get()).data() || {}).email || ''; } catch (_) {}
+  }
+  if (!email) throw new HttpsError('failed-precondition', 'Aucune adresse e-mail connue pour ce prestataire.');
+  const n = (Number(a.mollieRelances) || 0) + 1;
+  const attachments = [];
+  try {
+    const logo = require('fs').readFileSync(require('path').join(__dirname, 'mail-logo.png'));
+    attachments.push({filename: 'ti-services.png', content: logo, cid: 'tilogo'});
+  } catch (_) {}
+  const ok = await sendMail(db, email, {
+    subject: 'Il te reste une étape pour recevoir des missions',
+    html: mollieReminderHtml(String(a.name || '').trim(), n),
+    attachments,
+  });
+  if (!ok) throw new HttpsError('internal', 'L\'envoi a échoué — réessayez.');
+  try { await ref.set({mollieRelances: n, mollieRelanceAt: Date.now()}, {merge: true}); } catch (_) {}
+  return {sent: true, email: email, relances: n};
 });
 
 exports.welcomeClientEmail = onDocumentCreated({document: 'users/{uid}', secrets: [SMTP_PASS]}, async (event) => {
