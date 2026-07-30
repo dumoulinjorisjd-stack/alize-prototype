@@ -3461,6 +3461,20 @@
   function nowMin(){const d=new Date();return d.getHours()*60+d.getMinutes();}
   function todayISO(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
   function isoPlusDays(n){const d=new Date();d.setDate(d.getDate()+(n||0));return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+  // « Aujourd'hui · 14:00 » sur une commande de colis : le client n'a JAMAIS choisi
+  // d'heure — 14:00 est la valeur de départ d'une réservation ordinaire, restée là
+  // faute d'avoir été remplacée. Un colis se retire dans une FENÊTRE de dates, pas à
+  // une heure. On dit donc ce qui a réellement été choisi, et rien d'autre.
+  function quandTxt(m){
+    if(!m)return '';
+    if(m.svc==='colis'){
+      const d1=m.dateFrom||'',d2=m.dateTo||'';
+      if(d1&&d2&&d1!==d2)return 'Retrait entre le '+fmtShort(d1)+' et le '+fmtShort(d2);
+      if(d1)return 'Retrait le '+fmtShort(d1);
+      return m.when||'';
+    }
+    return (m.when||'')+(m.slot?(' · '+m.slot):'');
+  }
   function fmtShort(iso){if(!iso||!/^\d{4}-\d{2}-\d{2}$/.test(iso))return '';const p=iso.split('-');return (+p[2])+'/'+(+p[1]);}
   const COLIS_TYPES=[['recommande','Recommandé'],['colis','Colis'],['suivi','Lettre suivie'],['autre','Autre']];
   function colisTypeLabel(t){const x=COLIS_TYPES.find(function(c){return c[0]===t;});return x?x[1]:'Objet';}
@@ -8174,7 +8188,7 @@
     const readStatus=lastMine?`<div class="mini" style="align-self:flex-end;margin-top:-2px;font-weight:650;color:${wasRead?'var(--teal-deep)':'var(--muted)'}">${wasRead?'✓✓ Lu':'✓ Envoyé'}</div>`:'';
     return `<div class="pad"><button class="reset" data-act="close-support" style="margin:8px 0 2px">← Retour</button>
       <div class="row" style="gap:11px;align-items:center;margin-top:2px"><div class="avatar" style="width:42px;height:42px;font-size:14px;background:linear-gradient(135deg,var(--teal),var(--teal-deep))">TS</div><div style="flex:1"><b style="font-size:16px;font-family:var(--f-disp)">Ti-Services · Support</b><div class="mini">${admin?('Échange avec '+(side==='client'?'le client':'le prestataire')):'Assistance Ti-Services'}</div></div></div>
-      <div class="banner teal" style="margin-top:12px">${I.shield}<span>À propos de&nbsp;: <b>${m.svcName}</b> · ${m.when} ${m.slot}${admin?` · ${whoLbl}`:''}. ${admin?'Vous voyez directement la prestation concernée.':'Ti-Services voit directement de quelle prestation il s’agit — pas besoin de tout réexpliquer.'}</span></div>
+      <div class="banner teal" style="margin-top:12px">${I.shield}<span>À propos de&nbsp;: <b>${m.svcName}</b> · ${quandTxt(m)}${admin?` · ${whoLbl}`:''}. ${admin?'Vous voyez directement la prestation concernée.':'Ti-Services voit directement de quelle prestation il s’agit — pas besoin de tout réexpliquer.'}</span></div>
       <div class="chat-msgs">${list}${readStatus}</div>
       <div class="chatbar"><input id="supportInput" placeholder="${admin?'Répondre…':'Écrire à Ti-Services…'}" autocomplete="off" maxlength="500"><button class="btn primary" data-act="support-send">Envoyer</button></div>
       ${isDemo()?`<p class="mini" style="text-align:center;margin-top:12px"><button class="linklike" data-act="${admin?'support-to-user':'support-to-admin'}">${admin?(I.user+' Voir côté '+(side==='client'?'client':'artisan')+' (démo)'):(I.gear+' Voir la réception côté Ti-Services (démo)')}</button></p>`:''}
@@ -9213,7 +9227,7 @@
   }
   function clientSearching(){
     const m=S.mission;
-    return `<div class="pad"><div style="height:8px"></div><div style="text-align:center"><span class="eyebrow" style="justify-content:center">${m.svcName} · ${m.when} ${m.slot}</span><div class="h-hello">Recherche d'un prestataire…</div>
+    return `<div class="pad"><div style="height:8px"></div><div style="text-align:center"><span class="eyebrow" style="justify-content:center">${m.svcName} · ${quandTxt(m)}</span><div class="h-hello">Recherche d'un prestataire…</div>
       <p class="sub" style="margin-top:2px">Le premier prestataire disponible sur votre créneau prend la mission.</p></div>
       ${searchRadar(false)}
       <div class="card" style="padding:14px;text-align:center"><p class="sub" style="margin:0"><b id="notif">…</b> artisans notifiés</p></div>
@@ -10057,22 +10071,24 @@
   }
   function clientPay(){
     const m=S.draft,t=totals(m);
-    const recap=`<div class="card" style="padding:15px;margin-top:14px"><div class="row between"><b style="font-size:14px">${m.svcName}</b><b class="money">${eur(t.total)}</b></div><div class="mini" style="margin-top:3px">${m.when} · ${m.slot} · ${durTxt(m)} · ${m.zone}</div><hr class="dashed"><p class="mini" style="margin:0;color:var(--muted)">${I.clock} Annulation gratuite jusqu'à 8&nbsp;h avant le rendez-vous. Passé ce délai, une indemnité de 50&nbsp;% est due au prestataire (voir CGV).</p></div>`;
+    const recap=`<div class="card" style="padding:15px;margin-top:14px"><div class="row between"><b style="font-size:14px">${m.svcName}</b><b class="money">${eur(t.total)}</b></div><div class="mini" style="margin-top:3px">${quandTxt(m)}${isForfait(m)?'':' · '+durTxt(m)} · ${m.zone}</div><hr class="dashed"><p class="mini" style="margin:0;color:var(--muted)">${I.clock} Annulation gratuite jusqu'à 8&nbsp;h avant. Ensuite, 50&nbsp;% dus au prestataire (CGV).</p></div>`;
     // Bandeau rassurance : sur la BÊTA (paiement non réel), on ne mentionne PAS Mollie ni
     // d'empreinte bancaire — c'est une démonstration, aucun paiement réel n'a lieu.
     const reassure=payReal()
-      ? `<div class="banner teal" style="margin-top:14px">${I.shield}<span><b>Aucun débit maintenant.</b> Simple empreinte bancaire — vous n'êtes prélevé qu'après avoir validé la prestation, jamais plus que ${eur(t.total)}. Encaissement pour compte via Mollie (établissement agréé).</span></div>`
+      ? `<div class="banner teal" style="margin-top:14px">${I.shield}<span><b>Aucun débit maintenant.</b> Votre carte est seulement autorisée&nbsp;; vous n'êtes prélevé qu'après avoir validé la prestation, jamais plus que ${eur(t.total)}.</span></div>`
       : `<div class="banner teal" style="margin-top:14px">${I.shield}<span><b>Démonstration${betaTag()?' (bêta)':''}.</b> Aucun paiement réel, aucune carte nécessaire — vous pouvez dérouler toute la commande librement.</span></div>`;
     // PAIEMENT RÉEL (prod) : la carte est saisie sur la page sécurisée de Mollie, pas ici.
-    // Elle y est mémorisée pour les prochaines réservations (paiement en un clic). On ne
-    // demande donc AUCUNE carte dans l'app — juste la confirmation avant redirection.
+    // Elle n'y est PAS mémorisée : Mollie ne combine pas l'enregistrement de la carte avec
+    // une empreinte (capture différée), et forcer les deux ouvrait un écran de règlement
+    // vide. L'enregistrement se fait par le chemin dédié (Profil → moyen de paiement,
+    // autorisation à 0 €). On ne demande donc AUCUNE carte dans l'app — juste la
+    // confirmation avant redirection.
     if(payReal()){
       return `<div class="pad"><button class="reset" data-act="pay-back" style="margin:8px 0 2px">← Retour</button>
         <span class="eyebrow">${I.lock} Paiement sécurisé</span><div class="h-hello">Confirmer la réservation</div>
-        <p class="sub" style="margin-top:6px">Vous validez, puis vous autorisez votre carte sur la page sécurisée de Mollie. <b>Votre carte y est enregistrée</b> pour vos prochaines réservations — vous ne la ressaisirez plus.</p>
         ${recap}
         ${reassure}
-        <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-act="pay-confirm">${I.lock} Payer en sécurité · ${eur(t.total)}</button><p class="mini" style="text-align:center;margin-top:10px">${I.shield} Paiement traité par Mollie, établissement de paiement agréé. Ti-Services ne voit jamais votre numéro de carte.</p></div></div>`;
+        <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-act="pay-confirm">${I.lock} Payer en sécurité · ${eur(t.total)}</button><p class="mini" style="text-align:center;margin-top:10px;line-height:1.5">${I.shield} Paiement par Mollie, établissement agréé — Ti-Services ne voit jamais votre carte.<br>L'ouverture peut prendre quelques secondes, ne fermez pas la fenêtre.</p></div></div>`;
     }
     // BÊTA / démonstration (paiement non réel) : la carte n'est PAS requise pour dérouler la
     // démonstration complète. Écran de confirmation simple ; ajouter une carte reste possible
