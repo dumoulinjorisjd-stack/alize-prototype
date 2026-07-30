@@ -7605,7 +7605,13 @@
         else if(isCatalogForfait(s.id)){priceEditor=`<div class="mini" style="color:var(--muted);margin-bottom:2px">Grille à l'acte</div>${catalogFor(s.id).map(function(a){return `<div style="margin-top:9px;padding:10px;border-radius:12px;background:var(--card)"><input class="txt" data-actname="${s.id}:${a.id}" value="${esc(a.nm)}" placeholder="Nom de la prestation" style="width:100%;padding:11px 12px;font-size:14px"><span class="row" style="gap:6px;align-items:center;justify-content:flex-end;margin-top:8px"><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actprice="${s.id}:${a.id}:down">−</button><b class="money" style="min-width:48px;text-align:center;white-space:nowrap">${a.price} €</b><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actprice="${s.id}:${a.id}:up">+</button><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actdel="${s.id}:${a.id}" aria-label="Retirer">${I.trash}</button></span></div>`;}).join('')}<button class="btn ghost sm" data-actadd="${s.id}" style="margin-top:10px;width:auto;padding:8px 12px">${I.plus} Ajouter une prestation</button>`;}
         else{priceEditor=priceCtl(s.id,px,'/h','Tarif horaire')+(s.custom?`<button class="btn ghost sm" data-adm="delcat:${s.id}" style="margin-top:10px;width:auto;padding:8px 12px;color:var(--coral-deep)">${I.trash} Retirer ce métier</button>`:'');}
         const artLines=catArts.length?catArts.map(function(a){return `<div class="row between" style="align-items:center;margin-top:8px"><button class="linklike" data-adm="art:${a.id}" style="font-size:13px;text-align:left;color:var(--ink)">${esc(a.name)}</button><span class="chip ${acctChip(a.status)[0]}">${acctChip(a.status)[1]}</span></div>`;}).join(''):`<p class="mini" style="margin-top:6px;color:var(--muted)">Aucun prestataire sur ce métier — « Bientôt disponible » côté client.</p>`;
-        return `${header}<div class="card" style="padding:13px;margin:6px 0 0;background:var(--sand)"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Artisans (${catArts.length})</div>${artLines}<hr class="dashed" style="margin:12px 0 2px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Tarif client</div>${priceEditor}${optionsEditorHtml(s.id)}</div>`;
+        return `${header}<div class="card" style="padding:13px;margin:6px 0 0;background:var(--sand)"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Artisans (${catArts.length})</div>${artLines}<hr class="dashed" style="margin:12px 0 2px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Tarif client</div>${priceEditor}${optionsEditorHtml(s.id)}
+        <hr class="dashed" style="margin:13px 0 2px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Essai sur cet appareil</div>
+        <div class="row between" style="align-items:center;gap:10px;margin-top:8px">
+          <div style="flex:1;min-width:0"><span class="sub">Commander malgré tout</span>
+            <div class="mini" style="color:var(--muted);line-height:1.45">Ignore la date d'ouverture et l'absence de prestataire validé — ici seulement. Aucun autre client n'est concerné.</div></div>
+          <button class="switch" data-adm="testsvc:${s.id}" style="flex:none;background:${svcForce(s.id)?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${svcForce(s.id)?'25px':'3px'}"></span></button>
+        </div></div>`;
       }).join('')}
       <div class="card" style="padding:14px;margin-top:12px;border:1px dashed var(--hair)">
         <b style="font-size:14px">${I.plus} Ajouter un métier</b>
@@ -12174,6 +12180,18 @@
           else if(d.reason==='active'){toast('Ses paiements sont déjà actifs — rien à relancer');}
           else toast('⚠︎ Relance non envoyée');
         }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
+      })();return;}
+      else if(act==='testsvc'){(function(){
+        // Le lien « ?ouvrir= » ne sert que hors de l'app installée : sur iPhone, ouvrir
+        // une adresse lance Safari, qui a son propre stockage — le réglage n'arrivait
+        // donc jamais dans l'application. Depuis la console, on est au bon endroit.
+        try{const l=(localStorage.getItem('tiOuvrir')||'').split(',').filter(Boolean);
+          const i=l.indexOf(id);
+          if(i>=0)l.splice(i,1); else l.push(id);
+          if(l.length)localStorage.setItem('tiOuvrir',l.join(',')); else localStorage.removeItem('tiOuvrir');
+          toast(i>=0?('Essai arrêté sur '+(svcNm(id)||id)):((svcNm(id)||id)+' commandable sur cet appareil'));
+        }catch(_){toast('Réglage impossible sur cet appareil');}
+        render();
       })();return;}
       else if(act==='invmsg-reset'){try{localStorage.removeItem('tiInvMsg');}catch(_){}render();toast('Texte standard rétabli ✓');return;}
       else if(act==='prospect-add'){(function(){
