@@ -217,6 +217,61 @@ async function mollieRouteNet(molliePaymentId, orgId, netAmount, label) {
     return true;
   } catch (e) { console.warn('mollieRouteNet', e); return false; }
 }
+/**
+ * mollieChargeComplement : encaisse un SUPPLÉMENT au-delà de l'empreinte — heures
+ * déclarées en plus, coup de pouce ajouté après la commande, pourboire. Une empreinte
+ * bancaire ne se relève JAMAIS : sans ce second paiement, ces sommes figuraient sur la
+ * facture du client sans être prélevées, et l'artisan attendait un versement impossible.
+ *
+ * Chemin normal : la carte du client est déjà mémorisée (mandat Mollie créé lors du
+ * premier paiement) → on prélève DIRECTEMENT, sans rien lui redemander.
+ * Repli : aucun mandat valide, ou refus → on crée un paiement classique et on renvoie
+ * son lien, à faire suivre au client. On ne verse jamais à l'artisan ce qui n'a pas
+ * été encaissé : le versement du supplément n'a lieu qu'au webhook « paid ».
+ */
+async function mollieChargeComplement(db, reqId, clientUid, amount, label) {
+  const out = {ok: false, direct: false, paymentId: '', checkoutUrl: '', reason: ''};
+  if (!mollieApiConfigured() || !(amount > 0) || !reqId) { out.reason = 'inactif'; return out; }
+  let customerId = '';
+  try { customerId = (await db.collection('users').doc(clientUid).get()).get('mollieCustomerId') || ''; } catch (_) {}
+  const app = APP_URL.replace(/\/$/, '');
+  const body = {
+    amount: {currency: 'EUR', value: round2(amount).toFixed(2)},
+    description: (label || 'Ti-Services · supplément').toString().slice(0, 100),
+    webhookUrl: 'https://europe-west1-t-service-prod.cloudfunctions.net/mollieWebhook',
+    metadata: {reqId: reqId, clientUid: clientUid, kind: 'complement'},
+  };
+  if (customerId) {
+    let mandateId = '';
+    try {
+      const mds = await mollieApi('/customers/' + encodeURIComponent(customerId) + '/mandates?limit=50', 'GET');
+      const arr = (mds.ok && mds.data && mds.data._embedded && mds.data._embedded.mandates) || [];
+      const m = arr.find((x) => x && x.status === 'valid');
+      if (m) mandateId = m.id;
+    } catch (_) {}
+    if (mandateId) {
+      const rec = await mollieApi('/payments', 'POST',
+        Object.assign({customerId: customerId, sequenceType: 'recurring', mandateId: mandateId}, body));
+      if (rec.ok && rec.data && rec.data.id) {
+        out.ok = true; out.direct = true; out.paymentId = rec.data.id;
+        out.reason = 'direct:' + (rec.data.status || '');
+        return out;
+      }
+      console.warn('mollieChargeComplement direct refusé reqId=' + reqId);
+    }
+  }
+  const one = await mollieApi('/payments', 'POST', Object.assign(
+    {redirectUrl: app + '/?paid=' + encodeURIComponent(reqId)},
+    customerId ? {customerId: customerId} : {}, body));
+  if (one.ok && one.data && one.data.id) {
+    out.ok = true; out.paymentId = one.data.id;
+    out.checkoutUrl = (one.data._links && one.data._links.checkout && one.data._links.checkout.href) || '';
+    out.reason = 'lien';
+    return out;
+  }
+  out.reason = 'echec';
+  return out;
+}
 // Vérifie l'onboarding RÉEL de l'organisation liée au jeton d'accès fourni. Avoir
 // une organisation connectée ne suffit PAS : Mollie doit avoir vérifié l'identité et
 // le compte bancaire (statut « completed » + capable de recevoir paiements ET
@@ -1427,11 +1482,15 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
     //    RÉELLEMENT le montant final (gross), plafonné à l'empreinte posée (« jamais
     //    plus que le montant annoncé »). Sans molliePaymentId (paiement simulé) : no-op.
     let captureOk = true;
+    // Montant RÉELLEMENT encaissé sur l'empreinte (jamais plus qu'elle) : c'est lui, et
+    // pas le total de la facture, qui borne ce qu'on peut verser à l'artisan.
+    let capte = gross;
     if (mollieApiConfigured() && after.molliePaymentId && !after.mollieCaptured) {
       captureOk = false;
       try {
         const held = round2(Number(after.molliePaymentAmount) || gross);
         const toCapture = round2(Math.min(gross, held));
+        capte = toCapture;
         const p = await mollieApi('/payments/' + encodeURIComponent(after.molliePaymentId), 'GET');
         const st = (p.ok && p.data) ? p.data.status : '';
         if (st === 'authorized') {
@@ -1443,14 +1502,63 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
         }
         await event.data.after.ref.update({mollieCaptured: captureOk, mollieCaptureAmount: toCapture});
       } catch (e) { console.warn('settleCommission capture', e); }
+    } else if (after.mollieCaptureAmount != null) {
+      capte = round2(Number(after.mollieCaptureAmount) || gross);
     }
-    // 3 bis) VERSEMENT MOLLIE : route le NET vers l'organisation de l'artisan et garde
+
+    // 3 bis) SUPPLÉMENT NON COUVERT PAR L'EMPREINTE. Heures déclarées en plus, coup de
+    //    pouce ajouté après la commande, pourboire : le total validé peut dépasser la
+    //    somme autorisée à la commande. Une empreinte ne se relève pas — on encaisse
+    //    donc la différence par un SECOND paiement, directement sur la carte déjà
+    //    mémorisée quand c'est possible. Sans ça la facture annonçait une somme qui
+    //    n'était jamais prélevée, et le versement à l'artisan échouait.
+    const complement = round2(Math.max(0, gross - capte));
+    if (complement > 0.009 && mollieApiConfigured() && after.molliePaymentId && !after.complementPaymentId) {
+      try {
+        const r2 = await mollieChargeComplement(db, reqId, after.clientUid,
+          complement, 'Ti-Services · supplément · ' + (after.serviceName || after.service || 'prestation'));
+        const patch = {complementAmount: complement, complementStatus: r2.ok ? (r2.direct ? 'en_cours' : 'a_regler') : 'echec',
+          complementPaymentId: r2.paymentId || '', complementCheckoutUrl: r2.checkoutUrl || ''};
+        await event.data.after.ref.update(patch);
+        if (!r2.ok || !r2.direct) {
+          // Le client doit repasser par sa carte : on le lui dit, et on prévient l'admin.
+          try {
+            const u = (await db.collection('users').doc(after.clientUid).get()).data() || {};
+            const tokens = u.pushTokens || [];
+            if (tokens.length) {
+              await pushMulticast(tokens, 'Un complément reste à régler',
+                'Votre prestation a coûté ' + eurTxt(complement) + ' de plus que le montant autorisé au départ.',
+                '/?paid=' + encodeURIComponent(reqId),
+                (tok) => db.collection('users').doc(after.clientUid).update({pushTokens: FieldValue.arrayRemove(tok)}).catch(() => {}));
+            }
+          } catch (_) {}
+          try {
+            await sendMail(db, ADMIN_EMAIL, {
+              subject: 'Supplément à encaisser — ' + (after.serviceName || after.service || 'prestation'),
+              html: '<p>Le montant validé dépasse l\'empreinte posée à la commande, et le prélèvement direct n\'a pas pu se faire.</p>'
+                + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li>'
+                + '<li><b>Supplément :</b> ' + eurTxt(complement) + '</li>'
+                + '<li><b>Cause :</b> ' + escHtmlS(r2.reason || 'inconnue') + '</li></ul>'
+                + (r2.checkoutUrl ? ('<p>Lien de paiement à transmettre au client :<br>' + escHtmlS(r2.checkoutUrl) + '</p>') : '')
+                + '<p>Tant qu\'il n\'est pas réglé, ce supplément n\'est PAS versé à l\'artisan.</p>',
+            });
+          } catch (_) {}
+        }
+        console.log('Supplément reqId=' + reqId + ' ' + complement + ' € — ' + r2.reason);
+      } catch (e) { console.warn('settleCommission complement', e); }
+    }
+
+    // 3 ter) VERSEMENT MOLLIE : route le NET vers l'organisation de l'artisan et garde
     //    la commission sur le solde plateforme. Uniquement si la capture a réussi.
     try {
       const orgId = after.mollieOrgId || (await db.collection('artisans').doc(providerUid).get()).get('mollieOrgId');
+      // On ne verse JAMAIS plus que ce qui a été encaissé sur ce paiement. La commission
+      // est intégralement prélevée ici ; le supplément éventuel sera reversé en entier à
+      // l'artisan quand il sera payé (webhook), pour un total identique à net.
+      const netA = round2(Math.max(0, capte - commission));
       if (after.molliePaymentId && captureOk) {
-        const routed = orgId ? await mollieRouteNet(after.molliePaymentId, orgId, net,
-          'Ti-Services · ' + (after.serviceName || after.service || 'prestation') + ' · ' + saleInvoiceNo) : false;
+        const routed = (orgId && netA > 0) ? await mollieRouteNet(after.molliePaymentId, orgId, netA,
+          'Ti-Services · ' + (after.serviceName || after.service || 'prestation') + ' · ' + saleInvoiceNo) : (netA <= 0);
         if (routed) {
           await event.data.after.ref.update({molliePayout: 'routed'});
         } else {
@@ -1468,7 +1576,7 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
               html: '<p>Le client a été débité, mais le versement du net à l\'artisan n\'a pas pu être routé automatiquement.</p>'
                 + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li>'
                 + '<li><b>Artisan :</b> ' + escHtmlS(after.providerName || providerUid) + '</li>'
-                + '<li><b>Net dû :</b> ' + eurTxt(net) + '</li>'
+                + '<li><b>Net dû :</b> ' + eurTxt(netA) + '</li>'
                 + '<li><b>Cause :</b> ' + (orgId ? 'routage refusé par Mollie (onboarding probablement incomplet)' : 'aucune organisation Mollie connectée') + '</li></ul>'
                 + '<p>À faire : vérifier l\'onboarding Mollie de l\'artisan, puis re-router le paiement (ou virement manuel). L\'argent est en sécurité sur le solde plateforme.</p>',
             });
@@ -1792,6 +1900,59 @@ exports.mollieWebhook = onRequest({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (req
     if (out.ok && out.data) {
       const pay = out.data;
       const reqId = (pay.metadata && pay.metadata.reqId) || '';
+      const genre = (pay.metadata && pay.metadata.kind) || '';
+      // SUPPLÉMENT (heures en plus, pourboire, coup de pouce ajouté après coup). C'est un
+      // SECOND paiement, distinct de l'empreinte : il doit être traité avant le garde-fou
+      // ci-dessous, qui écarte justement tout paiement autre que celui de la demande.
+      // Tant qu'il n'est pas encaissé, sa part n'est PAS versée à l'artisan.
+      if (reqId && genre === 'complement') {
+        const db = getFirestore();
+        const ref = db.collection('requests').doc(reqId);
+        const snap = await ref.get();
+        const r = snap.exists ? (snap.data() || {}) : {};
+        if (r.complementPaymentId && r.complementPaymentId !== pay.id) { res.status(200).send('ok'); return; }
+        if (pay.status === 'paid') {
+          const montant = round2(Number((pay.amount && pay.amount.value) || r.complementAmount) || 0);
+          let verse = false;
+          try {
+            const orgId = r.mollieOrgId || (r.providerUid
+              ? (await db.collection('artisans').doc(r.providerUid).get()).get('mollieOrgId') : '');
+            // La commission a déjà été intégralement prélevée sur l'empreinte : le
+            // supplément revient donc EN ENTIER à l'artisan.
+            if (orgId && montant > 0) {
+              verse = await mollieRouteNet(pay.id, orgId, montant,
+                'Ti-Services · supplément · ' + (r.serviceName || r.service || 'prestation'));
+            }
+          } catch (e) { console.warn('mollieWebhook complement route', e); }
+          try { await ref.set({complementStatus: 'paye', complementPaidAt: Date.now(), complementPayout: verse ? 'routed' : 'unrouted'}, {merge: true}); } catch (_) {}
+          if (!verse) {
+            try {
+              await sendMail(db, ADMIN_EMAIL, {
+                subject: 'Supplément encaissé mais non reversé — ' + escHtmlS(r.serviceName || r.service || 'prestation'),
+                html: '<p>Le supplément a bien été prélevé au client, mais le versement à l\'artisan n\'a pas pu être routé.</p>'
+                  + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li>'
+                  + '<li><b>Montant :</b> ' + eurTxt(montant) + '</li></ul>'
+                  + '<p>L\'argent est en sécurité sur le solde plateforme — à reverser à la main.</p>',
+              });
+            } catch (_) {}
+          }
+          console.log('Supplément payé reqId=' + reqId + ' ' + montant + ' € — versement ' + (verse ? 'ok' : 'à régulariser'));
+        } else if (['failed', 'canceled', 'expired'].indexOf(pay.status) >= 0) {
+          // Non encaissé : on le dit, et surtout on ne verse rien qu'on n'a pas.
+          try { await ref.set({complementStatus: 'echec'}, {merge: true}); } catch (_) {}
+          try {
+            await sendMail(db, ADMIN_EMAIL, {
+              subject: 'Supplément NON encaissé — ' + escHtmlS(r.serviceName || r.service || 'prestation'),
+              html: '<p>Le prélèvement du supplément a échoué (' + escHtmlS(pay.status || '') + ').</p>'
+                + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li>'
+                + '<li><b>Montant :</b> ' + eurTxt(Number(r.complementAmount) || 0) + '</li></ul>'
+                + '<p>L\'artisan n\'a PAS été réglé de cette part. À voir avec le client.</p>',
+            });
+          } catch (_) {}
+        }
+        res.status(200).send('ok');
+        return;
+      }
       if (reqId) {
         const db = getFirestore();
         // Un paiement qui n'est PLUS celui de la demande ne doit plus parler en son nom.
