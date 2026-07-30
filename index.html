@@ -8822,7 +8822,11 @@
       FB.fn.httpsCallable(FB.functions,'clientCard')({action:'get'}).then(function(r){
         const d=(r&&r.data)||{};
         S._payCard={done:true,card:d.card||null,setup:((d.setupMethods||[]).length>0)};
-        if(S.persona==='client'&&S.clientNav==='profile')render();
+        // La réponse arrive APRÈS le dessin de l'écran : sans ce redessin, l'invitation
+        // à enregistrer sa carte (accueil) et l'aperçu de la carte (profil) n'apparaissent
+        // jamais — on ne les voit qu'en changeant d'écran à la main. Jamais pendant qu'une
+        // commande se remplit : on ne redessine pas sous les doigts de quelqu'un qui saisit.
+        if(S.persona==='client'&&!S.draft)render();
       }).catch(function(){S._payCard={done:true,card:null};});
     }
     return undefined;
@@ -9492,7 +9496,15 @@
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-act="card-save">${I.lock} Enregistrer ma carte</button><p class="mini" style="text-align:center;margin-top:10px">Maquette — aucune donnée réelle n'est envoyée ni conservée.</p></div></div>`;
   }
   // Signature d'une demande : sert à empêcher tout doublon strictement identique.
-  function missionSig(m){return [m.svc,m.zone||'',m.when||'',m.slot||'',(m.slotFlex||0),m.unit||'h',m.duration||1,m.rate||0,(m.boost||0),(peopleOf(m)),(locModeOf(m)),m.frequency||'ponctuelle',(m.address||''),(m.notes||'').trim()].join('|');}
+  // Un colis n'a ni horaire ni durée : ce qui distingue deux retraits, c'est le bureau,
+  // la fenêtre de dates, le destinataire et les objets déclarés.
+  function colisSig(m){const c=(m&&m.colis)||{};return [m.poste||'',m.dateFrom||'',m.dateTo||'',(c.recipient||'').trim(),c.deadline||'',(c.items||[]).map(function(it){return (it.type||'')+':'+((it.num||'').trim());}).join(',')].join('~');}
+  function missionSig(m){return [m.svc,m.zone||'',m.when||'',m.slot||'',(m.slotFlex||0),m.unit||'h',m.duration||1,m.rate||0,(m.boost||0),(peopleOf(m)),(locModeOf(m)),m.frequency||'ponctuelle',(m.address||''),(m.notes||'').trim(),(m.svc==='colis'?colisSig(m):'')].join('|');}
+  // …mais deux colis se commandent réellement deux fois, même bureau, même fenêtre : ce
+  // sont deux retraits, pas un doublon. Pour ces prestations, le garde-fou ne vaut donc
+  // que le temps d'un envoi qui bégaye (double appui, réseau lent) — pas au-delà.
+  const SVC_REPETABLES=['colis'];
+  function missionCreeMs(m){const t=reqCreatedMs(m);if(t)return t;const x=/^m(\d{10,})$/.exec(String((m&&m._id)||''));return x?Number(x[1]):0;}
   // Artisans déjà eus par le client (issus de l'historique) — sert à en redemander un
   // en priorité, SANS jamais exposer l'annuaire complet des prestataires.
   // Prestataires déjà employés par le client. Filtrés par SERVICE quand `svc` est fourni :
@@ -9607,7 +9619,14 @@
     // Garde-fou doublon : une demande active strictement identique existe déjà →
     // on l'ouvre au lieu d'en créer une seconde (peu importe la cause : double
     // appui, réseau lent, renvoi du même formulaire…).
-    const sig=missionSig(d);const dup=activeMissions().find(function(x){return missionSig(x)===sig;});
+    const sig=missionSig(d);
+    const fenetre=(SVC_REPETABLES.indexOf(d.svc)>=0)?120000:0;   // 0 = doublon quelle que soit l'ancienneté
+    const dup=activeMissions().find(function(x){
+      if(missionSig(x)!==sig)return false;
+      if(!fenetre)return true;
+      const t=missionCreeMs(x);
+      return !t||(Date.now()-t)<fenetre;
+    });
     if(dup){S.mission=dup;S.draft=null;S.payStep=false;S.payEdit=false;S.clientNav='wallet';render();toast('Cette demande existe déjà — nous l’avons rouverte.');return;}
     if(S.avgOffers[d.svc]){S.avgOffers[d.svc].sum+=d.rate;S.avgOffers[d.svc].n++;}d._id=d._id||('m'+Date.now());S.missions=S.missions||[];if(S.missions.indexOf(d)<0)S.missions.unshift(d);S.mission=d;S.draft=null;S.payStep=false;S.payEdit=false;S.clientNav='wallet';
     if(payReal()){d.status='pending_payment';(async function(){try{await persistRequest(d);}catch(e){console.warn('pay persist',e);}recurUpsert(d);cacheClientLocal();const ok=await startMolliePayment(d);if(!ok){
