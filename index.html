@@ -2134,7 +2134,7 @@
   // (le navigateur peut quitter la page à tout instant) : on injecte directement, pour
   // que ce soit visible même si rien d'autre n'a le temps de s'exécuter. Et si l'onglet
   // se referme sans payer, c'est cet écran qu'on retrouve — pas une page muette.
-  function attentePaiement(){
+  function attentePaiement(url){
     try{
       let v=document.getElementById('payWait');
       if(!v){
@@ -2142,10 +2142,25 @@
         v.style.cssText='position:fixed;inset:0;z-index:200;background:var(--sand,#FBF7F4);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:32px;gap:14px';
         v.innerHTML='<div style="width:30px;height:30px;border:3px solid var(--hair,#e8ded8);border-top-color:var(--coral,#F26A4B);border-radius:50%;animation:busyspin .8s linear infinite"></div>'
           +'<b style="font-size:16px">Ouverture du paiement sécurisé…</b>'
-          +'<p class="mini" style="max-width:280px;line-height:1.5;color:var(--muted,#8A8391)">La page de Mollie met quelques secondes à s\'afficher, et reste blanche en attendant. C\'est normal — ne fermez pas la fenêtre.</p>';
+          +'<p class="mini" style="max-width:290px;line-height:1.5;color:var(--muted,#8A8391)">La page de Mollie met quelques secondes à s\'afficher, et reste blanche en attendant. C\'est normal — ne fermez pas la fenêtre.</p>'
+          +'<div id="payWaitAlt" style="display:none;margin-top:6px"></div>';
         document.body.appendChild(v);
       }
       v.style.display='flex';
+      // ISSUE DE SECOURS. La page de règlement s'ouvre dans le navigateur intégré à
+      // l'application, où l'authentification 3-D Secure de la banque se déclare parfois
+      // « incompatible » : écran blanc interminable, puis mode dégradé. Au bout de
+      // quelques secondes, on propose de rouvrir la même page dans le vrai navigateur,
+      // où 3-D Secure fonctionne normalement. Jamais imposé — juste offert à qui attend.
+      if(url){
+        setTimeout(function(){ try{
+          const z=document.getElementById('payWaitAlt');
+          if(!z)return;
+          z.innerHTML='<a class="btn ghost sm" href="'+String(url).replace(/"/g,'&quot;')+'" target="_blank" rel="noopener" style="width:auto;padding:10px 16px;text-decoration:none">Ouvrir dans mon navigateur</a>'
+            +'<p class="mini" style="margin-top:8px;max-width:290px;line-height:1.45;color:var(--muted,#8A8391)">Si la page reste blanche ou refuse la validation par votre banque, ouvrez-la ici.</p>';
+          z.style.display='block';
+        }catch(_){} },4000);
+      }
     }catch(_){}
   }
   function busyMonte(){
@@ -8833,7 +8848,7 @@
       const base=location.origin+location.pathname;
       const r=await FB.fn.httpsCallable(FB.functions,'clientCard')({action:'setup',returnUrl:base+'?card=1'});
       const url=r&&r.data&&r.data.checkoutUrl;
-      if(url){attentePaiement();location.href=url;return;}
+      if(url){attentePaiement(url);location.href=url;return;}
       // Motif technique renvoyé par Mollie : affiché uniquement à l'administrateur,
       // pour diagnostiquer sans avoir à fouiller les journaux serveur.
       S.cardSetupErr=(isAdminAccount()&&r&&r.data&&r.data.reason)?String(r.data.reason):'';
@@ -9581,7 +9596,7 @@
       const res=await call({reqId:m.reqId,returnUrl:base+'?paid='+encodeURIComponent(m.reqId)});
       const d=(res&&res.data)||{};
       if(d.simulated)return false;
-      if(d.checkoutUrl){attentePaiement();location.href=d.checkoutUrl;return true;}
+      if(d.checkoutUrl){attentePaiement(d.checkoutUrl);location.href=d.checkoutUrl;return true;}
       return false;
     }catch(e){console.warn('startMolliePayment',e);toast('\u26a0\ufe0e Paiement indisponible — réessayez');return false;}
   }
