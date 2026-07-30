@@ -10,7 +10,7 @@
  *   firebase deploy --only functions
  * (nécessite le plan Blaze, déjà activé.)
  */
-const {onDocumentCreated, onDocumentUpdated, onDocumentWritten} = require('firebase-functions/v2/firestore');
+const {onDocumentCreated, onDocumentUpdated, onDocumentWritten, onDocumentDeleted} = require('firebase-functions/v2/firestore');
 const {onRequest, onCall, HttpsError} = require('firebase-functions/v2/https');
 const {onSchedule} = require('firebase-functions/v2/scheduler');
 const {setGlobalOptions} = require('firebase-functions/v2');
@@ -3073,6 +3073,56 @@ exports.sendMollieRelance = onCall({secrets: [SMTP_PASS]}, async (request) => {
   if (!ok) throw new HttpsError('internal', 'L\'envoi a échoué — réessayez.');
   try { await ref.set({mollieRelances: n, mollieRelanceAt: Date.now()}, {merge: true}); } catch (_) {}
   return {sent: true, email: email, relances: n};
+});
+
+/**
+ * releaseHoldOnDelete : rend au client la somme RÉSERVÉE quand sa demande disparaît.
+ *
+ * L'empreinte est posée à la commande, avant même qu'un prestataire voie la demande —
+ * c'est ce qui garantit le paiement. Mais quand le client annulait (ou qu'une demande
+ * était supprimée pour une autre raison), on effaçait la demande sans rien dire à
+ * Mollie : la somme restait immobilisée sur sa carte jusqu'à expiration de
+ * l'autorisation, plusieurs jours plus tard, sans explication. Sur un déménagement,
+ * c'est plusieurs centaines d'euros bloqués pour rien.
+ *
+ * On se branche sur la SUPPRESSION plutôt que sur le bouton « Annuler » : tous les
+ * chemins passent par là, présents et futurs, et il n'y a pas de course entre le
+ * client qui efface et le serveur qui libère.
+ *
+ * Deux cas volontairement épargnés :
+ *  - un paiement déjà capturé (prestation réglée) — il n'y a plus rien à libérer ;
+ *  - une annulation tardive, qui ne supprime PAS la demande (le prestataire décide de
+ *    l'indemnité) — l'empreinte doit rester en place pour pouvoir la prélever.
+ */
+exports.releaseHoldOnDelete = onDocumentDeleted({document: 'requests/{reqId}', secrets: ['MOLLIE_ACCESS_TOKEN']}, async (event) => {
+  const reqId = event.params.reqId;
+  const r = (event.data && typeof event.data.data === 'function' && event.data.data()) || {};
+  const id = r.molliePaymentId || '';
+  if (!id || !mollieApiConfigured()) return;
+  if (r.mollieCaptured) return;   // déjà débité : plus rien à rendre
+  try {
+    const p = await mollieApi('/payments/' + encodeURIComponent(id), 'GET');
+    const st = (p.ok && p.data) ? (p.data.status || '') : '';
+    if (['open', 'pending', 'authorized'].indexOf(st) < 0) return;   // rien de retenu
+    if (p.data.isCancelable === false) {
+      // Mollie refuse l'annulation : l'argent se libérera à l'expiration, mais on ne
+      // laisse PAS ça passer en silence — l'admin doit pouvoir prévenir le client.
+      console.warn('Empreinte non libérable reqId=' + reqId + ' ' + id + ' (' + st + ')');
+      try {
+        await sendMail(getFirestore(), ADMIN_EMAIL, {
+          subject: 'Empreinte à libérer à la main — demande annulée',
+          html: '<p>Une demande a été annulée, mais Mollie refuse d\'annuler l\'autorisation : la somme reste réservée sur la carte du client jusqu\'à expiration.</p>'
+            + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li>'
+            + '<li><b>Paiement :</b> ' + escHtmlS(id) + ' (' + escHtmlS(st) + ')</li>'
+            + '<li><b>Montant réservé :</b> ' + eurTxt(Number(r.molliePaymentAmount) || 0) + '</li></ul>'
+            + '<p>À faire : annuler le paiement depuis le tableau de bord Mollie, et prévenir le client.</p>',
+        });
+      } catch (_) {}
+      return;
+    }
+    const del = await mollieApi('/payments/' + encodeURIComponent(id), 'DELETE');
+    console.log('Empreinte rendue reqId=' + reqId + ' ' + id + ' (' + st + ') — ' + (del.ok ? 'ok' : 'échec'));
+  } catch (e) { console.warn('releaseHoldOnDelete', e); }
 });
 
 exports.welcomeClientEmail = onDocumentCreated({document: 'users/{uid}', secrets: [SMTP_PASS]}, async (event) => {
