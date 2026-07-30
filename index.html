@@ -5289,7 +5289,8 @@
     "de l'heure":"per hour",
     "par prestation":"per job",
     "Ti-Services examine votre proposition et vous confirme le prix public avant l'ouverture aux clients.":"Ti-Services reviews your proposal and confirms the public price with you before it opens to clients.",
-    "ce service.":"this service."
+    "ce service.":"this service.",
+    "Connectez-vous avec le compte Mollie créé pendant l'activation. Avec un autre compte, la page tourne en boucle sans s'ouvrir.":"Sign in with the Mollie account you created during activation. With any other account, the page loops without ever opening."
   };
   var MO_PT={'janvier':'janeiro','février':'fevereiro','fevrier':'fevereiro','mars':'março','avril':'abril','mai':'maio','juin':'junho','juillet':'julho','août':'agosto','aout':'agosto','septembre':'setembro','octobre':'outubro','novembre':'novembro','décembre':'dezembro','decembre':'dezembro','janv':'janeiro','févr':'fevereiro','fevr':'fevereiro','avr':'abril','juil':'julho','sept':'setembro','oct':'outubro','nov':'novembro','déc':'dezembro','dec':'dezembro'};
   var TIER_PT={'bronze':'Bronze','argent':'Prata','or':'Ouro','platine':'Platina','diamant':'Diamante'};
@@ -6862,7 +6863,8 @@
     "de l'heure":"por hora",
     "par prestation":"por serviço",
     "Ti-Services examine votre proposition et vous confirme le prix public avant l'ouverture aux clients.":"A Ti-Services analisa a sua proposta e confirma-lhe o preço público antes da abertura aos clientes.",
-    "ce service.":"este serviço."
+    "ce service.":"este serviço.",
+    "Connectez-vous avec le compte Mollie créé pendant l'activation. Avec un autre compte, la page tourne en boucle sans s'ouvrir.":"Inicie sessão com a conta Mollie criada durante a ativação. Com outra conta, a página fica em ciclo sem abrir."
   };
   var T_RE_PT=[
     [/^dès (\d+) € net$/,'desde $1 € líquidos'],
@@ -9979,6 +9981,10 @@
     S.proName='';S.proLegal='';S.proAddress='';S.proSiret='';S.proStatusType='entreprise';S.proLegalForm='';S.proCapital='';S.proRcsCity='';S.proCats=[];S.proPendingCats=[];S.proPendingOther='';S.proAddView=false;S.proAddForm=null;S.proBio='';S.proPhone='';S.proPhoto=null;
     S.proInsured=false;S.proInsurer='';S.proInsuranceUrl='';S.proInsuranceStatus='none';
     S.proFounder=false;S.proOnline=false;S.proRating=0;S.proStatus='pending';
+    // Les alertes sont le canal par lequel les missions arrivent : un prestataire qui
+    // les découvre éteintes rate ses premières demandes sans comprendre pourquoi.
+    // Elles partent donc actives ; il reste libre de les couper depuis son compte.
+    S.proNotifPush=true;
     S.proMollie='none';S.proMollieOrgId='';S.proIban='';S.proIbanHolder='';S.proBic='';
     S.proAcceptedCharte=false;S.proAcceptedTerms=false;S.proTermsVersion='';S.proTermsAt=null;
     // Identité conciergerie.
@@ -10225,6 +10231,7 @@
         <b style="font-size:16px;font-family:var(--f-disp)">Il manque des éléments à votre dossier</b>
         <p class="sub" style="margin-top:6px">Votre dossier Mollie est <b>commencé mais incomplet</b> — Mollie attend encore une information (souvent la pièce d'identité ou l'IBAN). <b>2-3 minutes</b> suffisent pour finir.</p>
         <button class="btn primary" data-act="mollie-start" style="margin-top:14px">${I.check} Compléter mon dossier →</button>
+        <p class="mini" style="margin-top:7px;color:var(--muted);line-height:1.45">Connectez-vous avec le compte Mollie créé pendant l'activation. Avec un autre compte, la page tourne en boucle sans s'ouvrir.</p>
       </div>
       ${idRow}
       ${(S.demoMode||isDemo())?`<button class="btn ghost sm" data-act="mollie-sim-approve" style="margin-top:12px">🧪 Simuler la validation Mollie (démo)</button>`:''}`;
@@ -10236,6 +10243,7 @@
       </div>
       ${idRow}
       <button class="btn ghost sm" data-act="mollie-start" style="margin-top:12px">${I.card}&nbsp;Reprendre / finaliser sur Mollie</button>
+      <p class="mini" style="margin-top:7px;color:var(--muted);line-height:1.45">Connectez-vous avec le compte Mollie créé pendant l'activation. Avec un autre compte, la page tourne en boucle sans s'ouvrir.</p>
       ${(S.demoMode||isDemo())?`<button class="btn ghost sm" data-act="mollie-sim-approve" style="margin-top:12px">🧪 Simuler la validation Mollie (démo)</button>`:''}`;
     } else {
       body=`<p class="sub" style="margin-top:6px">Activez vos paiements pour être réglé <b>automatiquement</b> après chaque prestation. C'est <b>une seule fois</b>, en quelques minutes.</p>
@@ -12858,7 +12866,14 @@
       case 'mollie-guide-open':S.mollieGuideView=true;render();break;
       case 'mollie-guide-close':S.mollieGuideView=false;render();break;
       case 'mollie-copy':{const t=b.dataset.copytext||'';if(t&&navigator.clipboard){navigator.clipboard.writeText(t).then(function(){toast('Copié ✓ — collez-le dans Mollie');}).catch(function(){toast('Copié : '+t);});}else{toast(t||'—');}break;}
-      case 'mollie-start':startMollieOnboarding();break;
+      case 'mollie-start':{
+        // Compte Mollie DÉJÀ relié : refaire la liaison ne montre rien — le parcours OAuth
+        // repasse par l'écran de consentement et retombe sur Ti-Services, sans jamais
+        // afficher le dossier. On ouvre donc directement la page Mollie de complétion.
+        if(S.proMollieDashboard&&/^https:\/\//.test(S.proMollieDashboard)&&S.proMollieOrgId&&!S._mollieWrongAccount){
+          toast('Ouverture de votre dossier Mollie…');openMollieAccount();break;
+        }
+        startMollieOnboarding();break;}
       case 'mollie-sim-approve':setMollieStatus('active');toast('Paiements activés ✓');break;
       case 'pro-payout':S.payoutForm={holder:(S.proIbanHolder||S.proName||''),iban:(S.proIban||''),bic:(S.proBic||'')};S.proPayoutView=true;render();break;
       case 'pro-payout-close':S.proPayoutView=false;render();break;
@@ -14102,8 +14117,17 @@
       // pas encore écrite → surtout NE PAS créer de compte client. On route vers l'espace pro.
       if(signupAsArtisan&&(!data||data.role!=='client')){
         S.account={name:name,email:user.email||'',uid:user.uid,role:'artisan'};
-        S.persona='pro';S.proName=name;S.proStatus='pending';S.onboarded=true;S.authView=null;S.proNav='home';render();
+        S.persona='pro';S.proName=name;S.proStatus='pending';S.onboarded=true;S.authView=null;S.proNav='home';
+        S.proNotifPush=true;render();
         subscribeProStatus(user.uid);
+        // Demande d'autorisation dans la foulée de l'envoi : c'est le seul moment où
+        // l'artisan comprend à quoi elle sert. Jamais si l'appareil a déjà refusé — on
+        // ne rejoue pas une demande que le navigateur bloquerait de toute façon.
+        setTimeout(function(){ try{
+          if(typeof Notification==='undefined'||Notification.permission==='denied')return;
+          if(Notification.permission==='granted'){registerPush('artisan');saveProSettings();return;}
+          requestPush();
+        }catch(_){} },1200);
         return;
       }
       // Compte conciergerie (mandataire) : espace concierge, données propres persistées
