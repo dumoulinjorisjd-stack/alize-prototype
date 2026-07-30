@@ -2130,6 +2130,24 @@
   // écran gelé. Le bouton qu'on vient d'appuyer porte le sablier : c'est lui qu'on
   // regarde, pas le haut de l'écran.
   var _busyN=0,_busyT=null,_busyBtn=null,_busyCle='';
+  // Voile plein écran affiché juste avant de partir chez Mollie. Ce n'est pas un rendu
+  // (le navigateur peut quitter la page à tout instant) : on injecte directement, pour
+  // que ce soit visible même si rien d'autre n'a le temps de s'exécuter. Et si l'onglet
+  // se referme sans payer, c'est cet écran qu'on retrouve — pas une page muette.
+  function attentePaiement(){
+    try{
+      let v=document.getElementById('payWait');
+      if(!v){
+        v=document.createElement('div');v.id='payWait';
+        v.style.cssText='position:fixed;inset:0;z-index:200;background:var(--sand,#FBF7F4);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:32px;gap:14px';
+        v.innerHTML='<div style="width:30px;height:30px;border:3px solid var(--hair,#e8ded8);border-top-color:var(--coral,#F26A4B);border-radius:50%;animation:busyspin .8s linear infinite"></div>'
+          +'<b style="font-size:16px">Ouverture du paiement sécurisé…</b>'
+          +'<p class="mini" style="max-width:280px;line-height:1.5;color:var(--muted,#8A8391)">La page de Mollie met quelques secondes à s\'afficher, et reste blanche en attendant. C\'est normal — ne fermez pas la fenêtre.</p>';
+        document.body.appendChild(v);
+      }
+      v.style.display='flex';
+    }catch(_){}
+  }
   function busyMonte(){
     try{
       if(!document.querySelector('.busybar')){
@@ -8815,7 +8833,7 @@
       const base=location.origin+location.pathname;
       const r=await FB.fn.httpsCallable(FB.functions,'clientCard')({action:'setup',returnUrl:base+'?card=1'});
       const url=r&&r.data&&r.data.checkoutUrl;
-      if(url){location.href=url;return;}
+      if(url){attentePaiement();location.href=url;return;}
       // Motif technique renvoyé par Mollie : affiché uniquement à l'administrateur,
       // pour diagnostiquer sans avoir à fouiller les journaux serveur.
       S.cardSetupErr=(isAdminAccount()&&r&&r.data&&r.data.reason)?String(r.data.reason):'';
@@ -8968,6 +8986,20 @@
               <div class="mini" style="margin-top:3px;color:var(--muted)">Débloqué sur cet appareil seulement. Les autres clients ne voient rien de changé.</div></div>
             <button class="btn ghost sm" data-act="testsvc-off" style="width:auto;padding:7px 11px;flex:none">Arrêter</button>
           </div></div>`;})()}
+      ${(function(){
+        if(!payReal())return '';
+        const dejaCommande=((S.history||[]).length>0)||((S.missions||[]).some(function(x){return !!x.reqId;}));
+        if(!dejaCommande)return '';
+        const c=payCard();
+        if(c!==null)return '';                                   // carte connue, ou lecture en cours
+        if(S._payCard&&S._payCard.setup===false)return '';        // Mollie refuse l'enregistrement
+        return `<button class="card" data-act="card-setup" style="width:100%;text-align:left;padding:14px;margin-top:12px;display:block;border-left:4px solid var(--teal-deep)">
+          <div class="row between" style="gap:12px;align-items:center">
+            <div style="flex:1;min-width:0"><b style="font-size:14px">Enregistrer ma carte</b>
+              <div class="mini" style="margin-top:3px;color:var(--muted);line-height:1.45">Vous ne la ressaisirez plus&nbsp;: vos prochaines réservations partent en un geste. Aucun débit, aucune empreinte.</div></div>
+            <span class="mini" style="color:var(--teal-deep);font-weight:700;white-space:nowrap;flex:none">${S.cardSetupBusy?'…':'Enregistrer ›'}</span>
+          </div></button>`;
+      })()}
       ${notifCTA('client')}
       <div class="trust"><span>${I.shield}Prestataires vérifiés</span><span>${I.lock}Prestataires assurés</span><span>${I.check}Payé après la presta</span></div>
       ${zoutiLine('Choisissez'+(first?', '+esc(first):'')+' — je m’occupe de trouver le bon prestataire.')}
@@ -9549,7 +9581,7 @@
       const res=await call({reqId:m.reqId,returnUrl:base+'?paid='+encodeURIComponent(m.reqId)});
       const d=(res&&res.data)||{};
       if(d.simulated)return false;
-      if(d.checkoutUrl){toast('Redirection vers le paiement sécurisé…');location.href=d.checkoutUrl;return true;}
+      if(d.checkoutUrl){attentePaiement();location.href=d.checkoutUrl;return true;}
       return false;
     }catch(e){console.warn('startMolliePayment',e);toast('\u26a0\ufe0e Paiement indisponible — réessayez');return false;}
   }
@@ -10028,10 +10060,21 @@
     toast('« '+svcNm(cat)+' » retiré — vous ne recevrez plus ces demandes');
   }
   // Annulation d'une demande encore ouverte : suppression du doc Firestore + arrêt de l'écoute.
-  function cancelActiveRequest(m){
-    if(!m)return;const id=m.reqId;if(!id)return;
-    unsubClientRequest(id);
-    try{ if(FB&&FB.db&&FB.f.deleteDoc){ FB.f.deleteDoc(FB.f.doc(FB.db,'requests',id)); } }catch(_){}
+  async function cancelActiveRequest(m){
+    if(!m)return false;
+    const id=m.reqId;
+    if(!id)return true;                       // jamais partie au serveur : rien à supprimer
+    if(!(FB&&FB.db&&FB.f&&FB.f.deleteDoc))return true;   // bêta / démo : local uniquement
+    try{
+      await withBusy(FB.f.deleteDoc(FB.f.doc(FB.db,'requests',id)));
+      unsubClientRequest(id);
+      return true;
+    }catch(e){
+      // On NE retire RIEN de l'écran : la demande existe encore, elle doit rester
+      // annulable — c'est elle qui porte l'empreinte à libérer.
+      console.warn('cancelActiveRequest',e);
+      return false;
+    }
   }
   // Le scénario de DÉMO (toutes les données pré-remplies). Utilisé par « Voir la démo ».
   function seedDemo(){
@@ -12440,7 +12483,12 @@
         S.adminSupervise=false;S.support=false;S.mission=null;
       }}
       render();return;}
-    if(b.dataset.act&&b.dataset.act.indexOf('del-demand:')===0){const id=b.dataset.act.slice('del-demand:'.length);const m=(S.missions||[]).find(function(x){return (x._id||'')===id;});if(m){cancelActiveRequest(m);removeMission(m);if(S.mission===m)S.mission=null;cacheClientLocal();toast('Demande supprimée');}render();return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('del-demand:')===0){const id=b.dataset.act.slice('del-demand:'.length);const m=(S.missions||[]).find(function(x){return (x._id||'')===id;});if(m){(async function(){
+      const ok=await cancelActiveRequest(m);
+      if(!ok){toast('⚠︎ Annulation non enregistrée — la demande est toujours active, réessayez');render();return;}
+      removeMission(m);if(S.mission===m)S.mission=null;cacheClientLocal();
+      toast(m.reqId&&payReal()?'Demande annulée — la somme réservée vous est rendue':'Demande supprimée');render();
+    })();}else render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('dismiss-mission:')===0){const id=b.dataset.act.slice('dismiss-mission:'.length);const m=(S.missions||[]).find(function(x){return (x._id||'')===id;});if(m){removeMission(m);if(S.mission===m)S.mission=null;cacheClientLocal();}render();return;}
     if(b.dataset.follow){const orow=b.closest('.swipe-row');if(orow&&orow.classList.contains('open')){orow.classList.remove('open');return;}const mm=(S.missions||[]).find(function(x){return (x._id||'')===b.dataset.follow;});if(mm){S.mission=mm;S.cancelAsk=false;S.clientNav='wallet';render();}return;}
     if(b.dataset.cnav){S.advantages=false;S.chat=false;S.support=false;S.referral=false;S.interv=false;S.invoiceId=null;S.histInvoice=null;S.histCat=null;S.signPad=false;S.colisProc=false;S.imgView=null;S._sigCanvas=null;S.addrForm=null;S.profileForm=null;S.mission=null;S.cancelAsk=false;S.catView=null;S.clientNav=b.dataset.cnav;if(b.dataset.cnav==='wallet')refreshClientRequests();render();return;}
@@ -12664,8 +12712,13 @@
           else{const c=Object.assign({},m);c._id='pm'+Date.now();proAddMission(c);} // démo : décision testable côté prestataire
           cacheClientLocal();S.mission=null;S.clientNav='wallet';render();toast('Annulée — le prestataire décide de l’indemnité');
         } else {
-          const _retenu=!!(m&&m.reqId&&payReal());cancelActiveRequest(m);removeMission(m);S.mission=null;S.clientNav='wallet';render();
-          toast(_retenu?'Demande annulée — la somme réservée vous est rendue':'Demande annulée');
+          const _retenu=!!(m&&m.reqId&&payReal());
+          (async function(){
+            const ok=await cancelActiveRequest(m);
+            if(!ok){toast('⚠︎ Annulation non enregistrée — réessayez dans un instant');render();return;}
+            removeMission(m);S.mission=null;S.clientNav='wallet';render();
+            toast(_retenu?'Demande annulée — la somme réservée vous est rendue':'Demande annulée');
+          })();
         }
         break;}
       case 'pro-cancel-back':S.mission=null;S.proNav='home';render();break;
