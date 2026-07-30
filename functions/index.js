@@ -2067,6 +2067,65 @@ exports.rebookNudges = onSchedule({schedule: 'every day 14:00'}, async () => {
   console.log('rebookNudges : ' + sent + ' rappel(s) envoyé(s)');
 });
 
+/**
+ * mollieActivationReminder : RELANCE HEBDOMADAIRE des prestataires VALIDÉS qui ne peuvent
+ * pas encore encaisser.
+ *
+ * Ce qu'elle répare : un prestataire validé sans compte de paiement connecté voit les
+ * demandes arriver et ne peut en accepter AUCUNE — la règle Firestore l'exige. L'e-mail de
+ * validation le dit déjà, mais une seule fois, le jour même. Beaucoup remettent à plus tard
+ * et n'y reviennent jamais ; on ne s'en aperçoit que le jour de l'ouverture aux clients.
+ *
+ * Une fois par semaine, pas plus : c'est un rappel, pas du harcèlement. Il s'arrête de
+ * lui-même dès que les paiements sont actifs, la sélection ne retenant que ceux qui ne le
+ * sont pas. `mollieRelances` alimente la console (« relancé 3 fois »).
+ * Lundi 13 h UTC = 9 h à Saint-Barthélemy : jour ouvré, heure ouvrable.
+ */
+exports.mollieActivationReminder = onSchedule({schedule: 'every monday 13:00', secrets: [SMTP_PASS]}, async () => {
+  const db = getFirestore();
+  const nowMs = Date.now();
+  const snap = await db.collection('artisans').where('status', '==', 'valide').get();
+  const attachments = [];
+  try {
+    const logo = require('fs').readFileSync(require('path').join(__dirname, 'mail-logo.png'));
+    attachments.push({filename: 'ti-services.png', content: logo, cid: 'tilogo'});
+  } catch (_) {}
+  let sent = 0; let actifs = 0;
+  for (const d of snap.docs) {
+    const a = d.data() || {};
+    if (a.mollieStatus === 'active') { actifs++; continue; }
+    // Garde-fou : jamais deux relances à moins de 6 jours, même si la tâche est rejouée à
+    // la main ou si l'ordonnanceur double un déclenchement.
+    const last = Number(a.mollieRelanceAt) || 0;
+    if (last && (nowMs - last) < 6 * 86400 * 1000) continue;
+    const n = (Number(a.mollieRelances) || 0) + 1;
+    // Notification : le canal qui porte le mieux sur un téléphone.
+    try {
+      const u = (await db.collection('users').doc(d.id).get()).data() || {};
+      const tokens = u.pushTokens || [];
+      if (tokens.length) {
+        await pushMulticast(tokens, 'Vos paiements ne sont pas encore activés',
+          'Sans cette étape, vous ne pourrez accepter aucune mission. Quelques minutes suffisent.',
+          '/?open=missions',
+          (tok) => db.collection('users').doc(d.id).update({pushTokens: FieldValue.arrayRemove(tok)}).catch(() => {}));
+      }
+    } catch (e) { console.warn('mollieActivationReminder push', d.id, e); }
+    // E-mail : le seul canal qui atteigne encore quelqu'un ayant désinstallé l'application.
+    if (a.email) {
+      try {
+        await sendMail(db, a.email, {
+          subject: 'Il vous reste une étape pour recevoir des missions',
+          html: mollieReminderHtml(String(a.name || '').trim(), n),
+          attachments,
+        });
+      } catch (e) { console.warn('mollieActivationReminder mail', d.id, e); }
+    }
+    try { await d.ref.set({mollieRelances: n, mollieRelanceAt: nowMs}, {merge: true}); } catch (_) {}
+    sent++;
+  }
+  console.log('mollieActivationReminder : ' + sent + ' relance(s), ' + actifs + ' déjà actif(s) sur ' + snap.size + ' validé(s).');
+});
+
 exports.mollieOnboardingSweep = onSchedule({schedule: 'every 15 minutes', secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET', 'MOLLIE_ACCESS_TOKEN', SMTP_PASS]}, async () => {
   if (!mollieOAuthConfigured()) return;
   const db = getFirestore();
@@ -2699,6 +2758,59 @@ function inviteArtisanHtml(name, message) {
  * Mollie peut prendre jusqu'à 48 h, et qu'à partir de là l'artisan peut recevoir
  * des missions. Le bouton ouvre directement l'écran d'activation des paiements.
  * ========================================================================== */
+/**
+ * mollieReminderHtml : e-mail de relance hebdomadaire « activez vos paiements ».
+ * Ton : factuel, jamais culpabilisant. On rappelle la conséquence concrète (aucune mission
+ * acceptable) plutôt que de réclamer une démarche administrative. Au fil des relances le
+ * message se resserre : on ne répète pas mot pour mot une chose déjà lue trois fois.
+ */
+function mollieReminderHtml(name, n) {
+  const app = APP_URL.replace(/\/$/, '');
+  const c1 = '#0FA896'; const c2 = '#14C2A8'; const btn = '#0FA896';
+  const hi = name ? escHtmlS(String(name).split(/\s+/)[0]) : '';
+  const relance = Number(n) || 1;
+  const accroche = relance >= 3
+    ? 'Votre profil est validé depuis un moment, mais vous ne pouvez toujours <b>pas accepter de mission</b>.'
+    : (relance === 2
+      ? 'Petit rappel&nbsp;: sans compte de paiement, vous ne pouvez <b>pas encore accepter de mission</b>.'
+      : 'Votre profil est validé — il ne manque plus que vos <b>paiements</b>.');
+  return '' +
+  '<div style="margin:0;padding:0;background:#FBF7F4;font-family:-apple-system,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;color:#231E33">' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FBF7F4;padding:24px 12px">' +
+      '<tr><td align="center">' +
+        '<table role="presentation" width="520" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%;background:#ffffff;border-radius:18px;overflow:hidden">' +
+          '<tr><td style="height:6px;background:linear-gradient(90deg,' + c1 + ',' + c2 + ')"></td></tr>' +
+          '<tr><td align="center" style="padding:26px 30px 4px">' +
+            '<img src="cid:tilogo" width="60" height="60" alt="Ti-Services" style="display:block;border-radius:16px;margin:0 auto 10px">' +
+            '<div style="font-size:24px;font-weight:800;letter-spacing:-.02em"><span style="color:' + c1 + '">Ti</span><span style="color:#231E33">-Services</span></div>' +
+            '<div style="font-size:12px;color:#8a8494;margin-top:2px">Services à la demande · Saint-Barthélemy</div>' +
+          '</td></tr>' +
+          '<tr><td style="padding:16px 30px 0">' +
+            '<h1 style="font-size:21px;margin:6px 0 0;color:#231E33">' + (hi ? (hi + ', il') : 'Il') + ' vous reste une étape</h1>' +
+            '<p style="font-size:14.5px;line-height:1.6;color:#4a4556;margin:12px 0 0">' + accroche + '</p>' +
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#EAF6F3;border:1px solid #cfece7;border-radius:14px;margin-top:16px">' +
+              '<tr><td style="padding:16px 18px">' +
+                '<div style="font-size:15px;font-weight:800;color:#231E33">Pourquoi c\'est obligatoire</div>' +
+                '<div style="font-size:13.5px;color:#4a4556;line-height:1.55;margin-top:7px">Votre gain vous est versé <b>automatiquement</b> après chaque prestation, sans facture à courir ni virement à réclamer. Pour cela il faut un compte de paiement à votre nom chez <b>Mollie</b>, notre prestataire agréé. C\'est <b>une seule fois</b>, et l\'application vous guide question par question.</div>' +
+                '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px"><tr><td align="center">' +
+                  '<a href="' + app + '/?open=missions" style="display:inline-block;background:' + btn + ';color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 24px;border-radius:11px">Activer mes paiements</a>' +
+                '</td></tr></table>' +
+                '<div style="font-size:12px;color:#8a8494;line-height:1.5;margin-top:10px;text-align:center">Comptez quelques minutes — c\'est plus simple depuis un <b>ordinateur</b>.</div>' +
+              '</td></tr>' +
+            '</table>' +
+            '<p style="font-size:13px;line-height:1.6;color:#8a8494;margin:16px 0 0">La vérification par Mollie (identité, IBAN) peut prendre jusqu\'à 48&nbsp;h&nbsp;: mieux vaut ne pas s\'y prendre au dernier moment. Vous recevez ce message chaque semaine tant que vos paiements ne sont pas actifs — il s\'arrête tout seul dès que c\'est fait.</p>' +
+            '<p style="font-size:13px;line-height:1.6;color:#8a8494;margin:12px 0 0">Un blocage, une question&nbsp;? Répondez simplement à cet e-mail.</p>' +
+          '</td></tr>' +
+          '<tr><td style="padding:22px 30px 26px">' +
+            '<div style="height:1px;background:#EEE5DF"></div>' +
+            '<div style="font-size:11px;color:#a79fa8;line-height:1.5;padding-top:10px">C.C.S (Ti-Services) — Carrefour des 4 Chemins, Marigot, 97133 Saint-Barthélemy</div>' +
+          '</td></tr>' +
+        '</table>' +
+      '</td></tr>' +
+    '</table>' +
+  '</div>';
+}
+
 function approvedArtisanHtml(name) {
   const app = APP_URL.replace(/\/$/, '');
   // Accent sarcelle (teal) : même code couleur que l'e-mail de bienvenue intervenant.

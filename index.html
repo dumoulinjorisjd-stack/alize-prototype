@@ -1411,7 +1411,7 @@
 
     <div class="land-founder">
       <b>★ Le programme Ambassadeur</b>
-      <p>Les premiers inscrits rejoignent le programme Ambassadeur&nbsp;: commission réduite et mise en avant dans l'app. Places limitées.</p>
+      <p>Tout prestataire inscrit avant le 1er octobre 2026 est Ambassadeur&nbsp;: commission réduite et mise en avant dans l'app. Aucune place limitée — seule la date compte.</p>
     </div>
     </div>
 
@@ -4651,7 +4651,7 @@
     "tout service, même hors de ces catégories":"any service, even beyond these categories",
     ". Décrivez le vôtre à l'inscription — on vous trouve des clients.":". Describe yours when signing up — we'll find you clients.",
     "★ Le programme Ambassadeur":"★ The Ambassador programme",
-    "Les premiers inscrits rejoignent le programme Ambassadeur : commission réduite et mise en avant dans l'app. Places limitées.":"The first to join get the Ambassador programme: reduced commission and featured placement in the app. Limited spots.",
+    "Tout prestataire inscrit avant le 1er octobre 2026 est Ambassadeur : commission réduite et mise en avant dans l'app. Aucune place limitée — seule la date compte.":"Every provider who joins before 1 October 2026 is an Ambassador: reduced commission and featured placement in the app. No limited spots — only the date counts.",
     "Ti-Services — services à la demande à Saint-Barthélemy, édité par C.C.S.":"Ti-Services — on-demand services in Saint-Barthélemy, published by C.C.S.",
     "Suivez-nous sur Facebook":"Follow us on Facebook",
     // --- Connexion / inscription ---
@@ -5931,7 +5931,7 @@
     "tout service, même hors de ces catégories":"qualquer serviço, mesmo fora destas categorias",
     ". Décrivez le vôtre à l'inscription — on vous trouve des clients.":". Descreva o seu ao inscrever-se — encontramos-lhe clientes.",
     "★ Le programme Ambassadeur":"★ O programa Embaixador",
-    "Les premiers inscrits rejoignent le programme Ambassadeur : commission réduite et mise en avant dans l'app. Places limitées.":"Os primeiros inscritos entram no programa Embaixador: comissão reduzida e destaque na app. Vagas limitadas.",
+    "Tout prestataire inscrit avant le 1er octobre 2026 est Ambassadeur : commission réduite et mise en avant dans l'app. Aucune place limitée — seule la date compte.":"Todos os prestadores que se inscrevam antes de 1 de outubro de 2026 são Embaixadores: comissão reduzida e destaque na app. Não há vagas limitadas — conta apenas a data.",
     "Ti-Services — services à la demande à Saint-Barthélemy, édité par C.C.S.":"Ti-Services — serviços a pedido em Saint-Barthélemy, editado por C.C.S.",
     "Suivez-nous sur Facebook":"Siga-nos no Facebook",
     // --- Connexion / inscription ---
@@ -7585,6 +7585,43 @@
       <p class="mini" style="margin:6px 0 2px;color:var(--muted)">Missions où un client a signalé que le prestataire engagé ne s'est pas présenté. Signal de fiabilité — <b>aucune sanction automatique</b>, à vous d'apprécier.</p>
       ${nsArts.map(a=>`<button class="card" data-adm="art:${a.id}" style="padding:13px;margin-top:8px;width:100%;text-align:left;display:block;border-left:4px solid var(--coral)"><div class="row between"><b style="font-size:14px">${esc(a.name)}</b><span class="chip coral">${a.noShowCount} absence${a.noShowCount>1?'s':''}</span></div><div class="mini" style="margin-top:2px">${catNames(a.cats)} · ${a.zone}${a.lastNoShowAt?' · dernière : '+new Date(a.lastNoShowAt).toLocaleDateString('fr-FR'):''}</div></button>`).join('')}`:'';
     const chip=(cls,txt)=>`<span class="chip ${cls}" style="flex:none">${txt}</span>`;
+    /* ── Qui pourra RÉELLEMENT travailler le 1er octobre ──────────────────────────
+       Un prestataire validé sans compte de paiement connecté ne peut accepter AUCUNE
+       mission (la règle Firestore l'exige) : il verra les demandes passer sans pouvoir
+       les prendre. Fiche par fiche, l'information existait déjà ; ce qui manquait,
+       c'est le total — impossible de savoir combien seront opérationnels le jour J.
+       Cette carte donne le chiffre, nomme ceux qui bloquent, et met le téléphone à
+       portée de doigt : à ce stade, un appel vaut mieux qu'un e-mail de plus. */
+    const molOk=function(a){return a.mollieStatus==='active';};
+    const molValides=activeArts.filter(function(a){return a.status==='valide';});
+    const molPrets=molValides.filter(molOk);
+    const molBloques=molValides.filter(function(a){return !molOk(a);})
+      .sort(function(x,y){return (Number(y.mollieRelances)||0)-(Number(x.mollieRelances)||0);});
+    const molEtat=function(a){
+      const st=a.mollieStatus||'none';
+      if(st==='pending'&&a.mollieOnb==='needs-data')return ['coral','Dossier à compléter chez Mollie'];
+      if(st==='pending')return ['warn','En examen chez Mollie'];
+      return ['coral','Jamais commencé'];
+    };
+    const molBlock=(function(){
+      if(!S.adminArtsLoaded)return '';
+      if(!molValides.length)return `<p class="mini" style="margin-top:8px;color:var(--muted)">Aucun prestataire validé pour l’instant.</p>`;
+      const entete=`<div class="row" style="gap:9px">${stat('Validés',molValides.length,'prestataires')}${stat('Prêts',molPrets.length,'peuvent encaisser')}${stat('À relancer',molBloques.length,'bloqués')}</div>`;
+      if(!molBloques.length)return entete+`<div class="banner good" style="margin-top:12px">${I.check}<span><b>Tout le monde est opérationnel.</b> Chaque prestataire validé peut accepter une mission et être réglé automatiquement.</span></div>`;
+      const lignes=molBloques.map(function(a){
+        const e=molEtat(a);
+        const n=Number(a.mollieRelances)||0;
+        return `<div class="card" style="padding:13px;margin-top:9px;border-left:3px solid var(--coral)">
+          <div class="row between" style="gap:8px;align-items:center"><button class="linklike" data-adm="art:${esc(a.id)}" style="font-size:14px;font-weight:700;text-align:left;color:var(--ink)">${esc(a.name)}</button><span class="chip ${e[0]}" style="flex:none">${e[1]}</span></div>
+          <div class="mini" style="margin-top:3px;color:var(--muted)">${catShort(a.cats)} · ${esc(migZone(a.zone))}${n?' · relancé '+n+' fois':' · jamais relancé'}</div>
+          ${contactRow(a)}</div>`;
+      }).join('');
+      return entete
+        +`<div class="banner coral" style="margin-top:12px">${I.shield}<span>${molBloques.length>1
+            ?`<b>${molBloques.length} prestataires ne pourront accepter aucune mission</b> tant que leurs paiements ne sont pas activés.`
+            :`<b>1 prestataire ne pourra accepter aucune mission</b> tant que ses paiements ne sont pas activés.`} Une relance automatique part chaque lundi&nbsp;; un appel va plus vite.</span></div>`
+        +lignes;
+    })();
     return `<div class="pad">
       <div class="row between isle-wm" style="margin-top:10px"><div><span class="eyebrow">Console admin · Ti-Services</span><div class="h-hello">Tableau de bord</div></div><div class="avatar" style="background:linear-gradient(135deg,var(--ink),#000)">TS</div></div>
       <div class="row" style="gap:9px;margin-top:12px">${stat('En cours',allB.length,'réservations')}${stat('Artisans',validA,pendA.length+' en attente')}${stat('Clients',clis.length,pendC.length+' en attente')}</div>
@@ -7601,6 +7638,7 @@
       <p class="mini" style="margin:6px 0 0;color:var(--muted)">Touchez une carte pour la déplier.</p>
       ${foldCard('a-bookings',I.cal,'Réservations en cours','Recherche → acceptée → en cours → validée → réglée',bookings,chip(allB.length?'good':'grey',allB.length))}
       ${foldCard('a-arts',I.hardhat,'Fiches artisans',validA+' validé'+(validA>1?'s':'')+(pendA.length?' · '+pendA.length+' en attente':'')+(refA.length?' · '+refA.length+' refusé'+(refA.length>1?'s':''):'')+(nbAmb?' · '+nbAmb+' ambassadeur'+(nbAmb>1?'s':''):''),artList+(refA.length?`<hr class="dashed" style="margin:14px 0 2px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Prestataires refusés (${refA.length})</div>${refList}`:''),chip('grey',activeArts.length))}
+      ${molBlock?foldCard('a-mollie',I.card,'Prêts à encaisser','Qui pourra vraiment accepter une mission le 1er octobre',molBlock,molBloques.length?chip('coral',molBloques.length+' à relancer'):chip('good',molPrets.length+' prêts')):''}
       ${(function(){
         // Un compte prestataire SANS fiche `artisans`, c'est quelqu'un qui a monté son
         // dossier et ne l'a jamais envoyé. Il n'apparaît dans aucune autre liste : sans
@@ -14279,7 +14317,7 @@
       adminArtUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'artisans'),function(snap){
         const list=[],pending=new Set();
         snap.forEach(function(d){ const a=d.data()||{}; const cats=Array.isArray(a.cats)?a.cats:[]; const rr=a.rates||{}; const st=a.status||'attente';
-          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Prestataire',status:st,type:(a.statusType==='particulier')?'particulier':'entreprise',statusType:a.statusType||'entreprise',legalName:a.legalName||'',legalForm:a.legalForm||'',capital:a.capital||'',rcsCity:a.rcsCity||'',birth:a.birth||'',referralCode:a.referralCode||'',referredByCode:a.referredByCode||'',acceptedTerms:!!a.acceptedTerms,acceptedCharte:!!a.acceptedCharte,acceptedMandat:!!a.acceptedMandat,acceptsGrille:!!a.acceptsGrille,termsVersion:a.termsVersion||'',termsAt:(a.termsAt&&a.termsAt.toMillis)?a.termsAt.toMillis():0,createdAt:(a.createdAt&&a.createdAt.toMillis)?a.createdAt.toMillis():0,cats:cats,other:a.other||'',pendingCats:Array.isArray(a.pendingCats)?a.pendingCats:[],pendingOther:a.pendingOther||'',rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,founderSince:(a.founderSince&&a.founderSince.toMillis)?a.founderSince.toMillis():(typeof a.founderSince==='number'?a.founderSince:null),founderGross:Number(a.founderGross)||0,rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,online:!!a.online,siteMode:a.siteMode||'',salonAddress:a.salonAddress||'',salonZone:a.salonZone||'',push:(Array.isArray(a.pushTokens)?a.pushTokens.length:0),mollieStatus:a.mollieStatus||'none',mollieOnb:a.mollieOnboardingStatus||'',lastNoShowAt:(a.lastNoShowAt&&a.lastNoShowAt.toDate)?a.lastNoShowAt.toDate().getTime():0});
+          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Prestataire',status:st,type:(a.statusType==='particulier')?'particulier':'entreprise',statusType:a.statusType||'entreprise',legalName:a.legalName||'',legalForm:a.legalForm||'',capital:a.capital||'',rcsCity:a.rcsCity||'',birth:a.birth||'',referralCode:a.referralCode||'',referredByCode:a.referredByCode||'',acceptedTerms:!!a.acceptedTerms,acceptedCharte:!!a.acceptedCharte,acceptedMandat:!!a.acceptedMandat,acceptsGrille:!!a.acceptsGrille,termsVersion:a.termsVersion||'',termsAt:(a.termsAt&&a.termsAt.toMillis)?a.termsAt.toMillis():0,createdAt:(a.createdAt&&a.createdAt.toMillis)?a.createdAt.toMillis():0,cats:cats,other:a.other||'',pendingCats:Array.isArray(a.pendingCats)?a.pendingCats:[],pendingOther:a.pendingOther||'',rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,founderSince:(a.founderSince&&a.founderSince.toMillis)?a.founderSince.toMillis():(typeof a.founderSince==='number'?a.founderSince:null),founderGross:Number(a.founderGross)||0,rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,online:!!a.online,siteMode:a.siteMode||'',salonAddress:a.salonAddress||'',salonZone:a.salonZone||'',push:(Array.isArray(a.pushTokens)?a.pushTokens.length:0),mollieStatus:a.mollieStatus||'none',mollieOnb:a.mollieOnboardingStatus||'',mollieRelances:Number(a.mollieRelances)||0,mollieRelanceAt:Number(a.mollieRelanceAt)||0,lastNoShowAt:(a.lastNoShowAt&&a.lastNoShowAt.toDate)?a.lastNoShowAt.toDate().getTime():0});
           if(st==='attente')pending.add(d.id); });
         S.adminArtisans=list;S.adminArtsLoaded=true;
         // Recalcule la liste des services actifs (au moins un prestataire validé) et la publie
