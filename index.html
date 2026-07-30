@@ -3068,7 +3068,18 @@
   }
   // Persistance du catalogue partagé (settings/catalog) — écrit par l'admin, lu par tous.
   function saveCatalog(){ try{ if(FB&&FB.auth&&FB.auth.currentUser){ FB.f.setDoc(FB.f.doc(FB.db,'settings','catalog'),{services:S.customServices||[],catalog:S.adminCatalog||{},options:S.adminOptions||{}},{merge:true}); } }catch(_){} }
-  function applyCatalogDoc(d){ if(!d)return; if(Array.isArray(d.services)){ S.customServices=d.services.map(function(s){return {id:s.id,nm:s.nm,rate:s.rate,custom:true};}); } if(d.catalog&&typeof d.catalog==='object'){ S.adminCatalog=d.catalog; } if(d.options&&typeof d.options==='object'){ S.adminOptions=d.options; } render(); }
+  // Le catalogue est écouté en temps réel : chaque écriture nous revient par l'écoute,
+  // et applyCatalogDoc redessine. Sauver à CHAQUE lettre tapée déclenchait donc un
+  // rendu par lettre — l'input était détruit et recréé, le curseur sautait, le clavier
+  // se refermait sur téléphone. On regroupe la frappe avant d'écrire.
+  var _catSaveT=null;
+  function saveCatalogSoon(){ if(_catSaveT)clearTimeout(_catSaveT); _catSaveT=setTimeout(function(){_catSaveT=null;saveCatalog();},600); }
+  function flushCatalogSave(){ if(_catSaveT){clearTimeout(_catSaveT);_catSaveT=null;saveCatalog();} }
+  // Champs texte du catalogue : tant qu'on écrit dedans, on ne redessine sous aucun
+  // prétexte — même si la mise à jour vient d'ailleurs. L'état, lui, est bien à jour.
+  function ecritDansCatalogue(){ try{ const a=document.activeElement;
+    return !!(a&&a.matches&&a.matches('[data-optname],[data-actname]')); }catch(_){return false;} }
+  function applyCatalogDoc(d){ if(!d)return; if(Array.isArray(d.services)){ S.customServices=d.services.map(function(s){return {id:s.id,nm:s.nm,rate:s.rate,custom:true};}); } if(d.catalog&&typeof d.catalog==='object'){ S.adminCatalog=d.catalog; } if(d.options&&typeof d.options==='object'){ S.adminOptions=d.options; } if(ecritDansCatalogue())return; render(); }
   // Catalogue partagé écouté EN TEMPS RÉEL : toute modification admin (prix, prestations,
   // options, métiers) se propage à l'app de chacun sans rechargement. Une seule écoute.
   async function loadCatalog(){ try{ if(!FB||_catalogSub)return; _catalogSub=FB.f.onSnapshot(FB.f.doc(FB.db,'settings','catalog'),function(snap){ applyCatalogDoc(snap.exists()?(snap.data()||{}):{}); },function(e){ console.warn('catalog load',e); }); }catch(e){ console.warn('catalog sub',e); } }
@@ -13155,8 +13166,8 @@
       const cd=e.target.closest('[data-colisdeadline]');if(cd)cc.deadline=cd.value;
     }
     // Renommage d'un acte de la grille (console admin) — pas de re-render (garde le focus).
-    const an=e.target.closest('[data-actname]');if(an){const p=an.dataset.actname.split(':');const arr=ensureCatalogCopy(p[0]);const a=arr.find(function(x){return x.id===p[1];});if(a){a.nm=an.value;saveCatalog();}}
-    const on=e.target.closest('[data-optname]');if(on){const p=on.dataset.optname.split(':');const arr=ensureOptions(p[0]);const o=arr.find(function(x){return x.id===p[1];});if(o){o.nm=on.value;saveCatalog();}}
+    const an=e.target.closest('[data-actname]');if(an){const p=an.dataset.actname.split(':');const arr=ensureCatalogCopy(p[0]);const a=arr.find(function(x){return x.id===p[1];});if(a){a.nm=an.value;saveCatalogSoon();}}
+    const on=e.target.closest('[data-optname]');if(on){const p=on.dataset.optname.split(':');const arr=ensureOptions(p[0]);const o=arr.find(function(x){return x.id===p[1];});if(o){o.nm=on.value;saveCatalogSoon();}}
     const al=e.target.closest('[data-addrlabel]');if(al&&S.draft){S.draft.addrLabel=al.value;}
     const aa=e.target.closest('[data-addraccess]');if(aa&&S.draft){S.draft.access=aa.value;}
     const af=e.target.closest('[data-af]');if(af&&S.addrForm){S.addrForm[af.dataset.af]=af.value;
@@ -13178,6 +13189,10 @@
     // résultats, sans re-render, pour conserver le focus dans le champ.
     const fq=e.target.closest('[data-factq]');if(fq){S.admin.factQ=fq.value;const box=document.getElementById('factSearchResults');if(box)box.innerHTML=factSearchResultsHtml();}
   });
+  view.addEventListener('focusout',function(e){
+    const t=e.target;
+    if(t&&t.matches&&t.matches('[data-optname],[data-actname]'))flushCatalogSave();
+  },true);
   view.addEventListener('change',(e)=>{
     // Renfort (bêta) : secteur, date et choix nominatif du confrère.
     const rfc=e.target.closest('[data-rfi]');
