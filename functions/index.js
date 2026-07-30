@@ -1706,13 +1706,24 @@ exports.createClientPayment = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (
   const amount = round2(Number(r.total) || 0);
   if (!(amount > 0)) throw new HttpsError('failed-precondition', 'Montant invalide.');
 
-  // Idempotence : si une empreinte est déjà en cours (open/pending/authorized), on
-  // renvoie son lien plutôt que de bloquer les fonds une seconde fois.
+  // Idempotence — mais SEULEMENT quand les fonds sont réellement retenus. Un paiement
+  // « authorized » a bloqué la somme : on renvoie son lien, sûrement pas une seconde
+  // empreinte. Un paiement resté « open » ou « pending » n'a rien bloqué, et son écran
+  // de règlement ne vit qu'un temps : le resservir renvoyait le client sur un « page
+  // not found » chez Mollie, sans aucun moyen d'en sortir. On l'annule et on repart sur
+  // un lien neuf — aucun risque de double blocage, puisque rien n'était retenu.
   if (r.molliePaymentId) {
     const ex = await mollieApi('/payments/' + encodeURIComponent(r.molliePaymentId), 'GET');
-    if (ex.ok && ex.data && ['open', 'pending', 'authorized'].indexOf(ex.data.status) >= 0) {
+    const st = (ex.ok && ex.data) ? ex.data.status : '';
+    if (st === 'authorized') {
       const link = ex.data._links && ex.data._links.checkout && ex.data._links.checkout.href;
-      return {paymentId: ex.data.id, checkoutUrl: link || null, status: ex.data.status, reused: true};
+      if (link) return {paymentId: ex.data.id, checkoutUrl: link, status: st, reused: true};
+    }
+    if (st === 'open' || st === 'pending') {
+      try {
+        if (ex.data.isCancelable) await mollieApi('/payments/' + encodeURIComponent(r.molliePaymentId), 'DELETE');
+      } catch (_) {}
+      console.log('Empreinte inaboutie remplacée reqId=' + reqId + ' (' + st + ')');
     }
   }
 
@@ -1749,22 +1760,14 @@ exports.createClientPayment = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (
     metadata: {reqId: reqId, clientUid: uid},
   };
   if (customerId) payBody.customerId = customerId;
-  // `sequenceType:'first'` fait mémoriser la carte (mandat) pour l'afficher au prochain
-  // paiement — inutile si le client en a DÉJÀ un (carte enregistrée au profil ou lors
-  // d'une commande précédente) : on éviterait juste d'empiler des mandats en double, le
-  // parcours Mollie proposant de toute façon la carte connue. REPLI robuste : si Mollie
-  // refuse la combinaison (ex. incompatibilité avec la capture manuelle), on retombe sur
-  // un paiement simple — l'encaissement n'est JAMAIS bloqué par cette fonctionnalité.
-  let hasMandate = false;
-  if (customerId) {
-    try {
-      const mds = await mollieApi('/customers/' + encodeURIComponent(customerId) + '/mandates?limit=50', 'GET');
-      const arr = (mds.ok && mds.data && mds.data._embedded && mds.data._embedded.mandates) || [];
-      hasMandate = arr.some((m) => m && m.status === 'valid');
-    } catch (_) {}
-  }
-  let out = await mollieApi('/payments', 'POST', (customerId && !hasMandate) ? Object.assign({sequenceType: 'first'}, payBody) : payBody);
-  if (!out.ok && customerId) out = await mollieApi('/payments', 'POST', payBody);
+  // PAS de `sequenceType:'first'` ici. Mémoriser la carte et poser une empreinte (capture
+  // manuelle) sont deux choses que Mollie ne combine pas : la demande passait, mais
+  // l'écran de règlement s'ouvrait VIDE — et seulement au tout premier paiement d'un
+  // client, donc au pire moment. L'empreinte ne fait qu'une chose : autoriser la somme.
+  // La carte se mémorise par le chemin dédié (Profil → moyen de paiement, autorisation à
+  // 0 €), qui crée un mandat propre ; le `customerId` suffit d'ailleurs à ce que Mollie
+  // propose la carte déjà connue.
+  const out = await mollieApi('/payments', 'POST', payBody);
   if (!out.ok || !out.data) throw new HttpsError('internal', 'Création du paiement Mollie échouée.');
   const pay = out.data;
   await db.collection('requests').doc(reqId).set({
