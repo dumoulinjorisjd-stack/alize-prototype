@@ -3785,7 +3785,13 @@
     // l'historique des artisans — celui-ci contient d'anciennes prestations de TEST
     // (antérieures aux vrais paiements) qui polluaient la commission du tableau de bord.
     // Registre vide → 0 €, ce qui reflète l'absence de vraie transaction Mollie.
-    if(!(S.demoMode||isDemo())) return (S.adminLedger||[]).filter(function(e){return !!e.molliePaymentId;});
+    // LES COMPTES SE CALQUENT SUR MOLLIE. Une prestation n'entre au chiffre d'affaires que
+    // si Mollie répond « paid » (`mollieEncaisse`) : un identifiant de paiement ne prouve
+    // rien — une empreinte simplement autorisée, un essai jamais capturé, en portent un
+    // sans que personne n'ait été débité. S'y ajoute `exclu`, écartement manuel : dans les
+    // deux cas l'écriture RESTE au registre — on ne supprime jamais — mais sort des
+    // totaux, de l'export comptable et du justificatif de revenus.
+    if(!(S.demoMode||isDemo())) return (S.adminLedger||[]).filter(function(e){return e.mollieEncaisse===true&&!e.exclu;});
     if(S.adminLedger&&S.adminLedger.length)return S.adminLedger;
     const out=[];(S.adminArtisans||[]).forEach(function(a){(a.history||[]).forEach(function(h){const b=histBreakdown(h);if(b.commission>0)out.push({dateISO:h.dateISO,reqId:h.reqId||'',invNo:h.invNo||'',clientName:h.clientFull||h.client||'',providerName:a.name,service:h.svc,serviceName:svcName(h.svc),base:b.gross,commissionPct:b.pct,commissionAmount:b.commission,netAmount:b.net,grossTotal:b.gross});});});return out;
   }
@@ -7924,7 +7930,8 @@
   // être vide ou d'un ancien format). Repli sur les historiques si le registre est vide.
   function adminLedgerGroups(){
     const by={},r2=function(n){return Math.round(n*100)/100;};
-    (S.adminLedger||[]).forEach(function(e){if(!((e.commissionAmount||0)>0))return;const k=e.providerUid||e.providerName||e.reqId;if(!by[k])by[k]={id:e.providerUid||k,uid:e.providerUid||'',name:e.providerName||'Artisan',entries:[],gross:0,comm:0,net:0};const g=by[k];g.entries.push(e);g.gross+=(e.grossTotal||e.base||0);g.comm+=(e.commissionAmount||0);g.net+=(e.netAmount||0);});
+    const reel=!(S.demoMode||isDemo());
+    (S.adminLedger||[]).forEach(function(e){if(!((e.commissionAmount||0)>0)||e.exclu)return;if(reel&&e.mollieEncaisse!==true)return;const k=e.providerUid||e.providerName||e.reqId;if(!by[k])by[k]={id:e.providerUid||k,uid:e.providerUid||'',name:e.providerName||'Artisan',entries:[],gross:0,comm:0,net:0};const g=by[k];g.entries.push(e);g.gross+=(e.grossTotal||e.base||0);g.comm+=(e.commissionAmount||0);g.net+=(e.netAmount||0);});
     return Object.keys(by).map(function(k){const g=by[k];return {a:{id:g.id,uid:g.uid,name:g.name},c:{count:g.entries.length,gross:r2(g.gross),comm:r2(g.comm),net:r2(g.net)},entries:g.entries};});
   }
   // Groupes affichés : registre serveur si disponible, sinon repli sur les historiques.
@@ -7944,6 +7951,17 @@
   // Recherche transversale d'une facture de prestation (tout l'historique) par N°,
   // client, artisan ou service — pour en retrouver une précise et la retransmettre.
   // Rend UNIQUEMENT la liste de résultats (rafraîchie sans re-render → garde le focus).
+  // Ce que Mollie répond, dit en français. `mollieEncaisse` (Mollie = « paid ») est la
+  // SEULE porte d'entrée dans la comptabilité : tout le reste est signalé ici, en clair,
+  // plutôt que laissé à l'interprétation.
+  function mollieEtatTxt(e){
+    if(!e.molliePaymentId)return 'Aucun paiement Mollie';
+    if(!e.mollieVerifie)return 'À rapprocher de Mollie';
+    return {authorized:'Empreinte autorisée, jamais débitée',open:'Paiement jamais finalisé',
+      expired:'Autorisation expirée — personne n’a été débité',canceled:'Paiement annulé',
+      failed:'Paiement refusé',pending:'Paiement en cours chez Mollie'}[e.mollieStatus]
+      ||('Non encaissé chez Mollie'+(e.mollieStatus?(' ('+e.mollieStatus+')'):''));
+  }
   function factSearchResultsHtml(){
     const q=(S.admin.factQ||'').trim().toLowerCase();
     if(q.length<2)return '';
@@ -7962,12 +7980,25 @@
     const rows=cap.map(function(e){
       const provid=e.providerUid||e.providerName||e.reqId||'';
       const gross=e.grossTotal||e.base||0;
-      return `<button class="card" style="padding:13px;margin-top:9px;width:100%;text-align:left;display:block" data-adm="fact-doc:${esc(provid)}:${esc(e.invNo||'')}">
-        <div class="row between"><b style="font-size:14px">${esc(e.serviceName||svcName(e.service))}</b><span class="money" style="font-weight:700">${eur(gross)}</span></div>
-        <div class="mini" style="margin-top:3px">Facture ${esc(e.invNo||'—')} · ${e.dateISO?fmtLong(e.dateISO):'—'} · ${esc(e.clientName||'')} · ${esc(e.providerName||'')}</div>
-        <div class="mini" style="margin-top:2px;color:var(--muted)">commission ${eur(e.commissionAmount||0)} · net ${eur(e.netAmount||0)}</div>
-        ${e.molliePaymentId?'':`<div class="mini" style="margin-top:4px"><span class="chip warn">${I.clock} Hors paiement Mollie</span></div>`}
-      </button>`;
+      // Deux boutons empilés, pas un bouton dans un bouton : ouvrir la facture, et
+      // l'écarter des comptes. L'écriture n'est JAMAIS supprimée — elle reste ici,
+      // signalée, mais sort des totaux, de l'export et du justificatif de revenus.
+      const arme=(S._excluArm===e.reqId);
+      return `<div class="card" style="padding:13px;margin-top:9px;${e.exclu?'opacity:.72':''}">
+        <button style="all:unset;display:block;width:100%;cursor:pointer" data-adm="fact-doc:${esc(provid)}:${esc(e.invNo||'')}">
+          <div class="row between"><b style="font-size:14px">${esc(e.serviceName||svcName(e.service))}</b><span class="money" style="font-weight:700;${e.exclu?'text-decoration:line-through':''}">${eur(gross)}</span></div>
+          <div class="mini" style="margin-top:3px">Facture ${esc(e.invNo||'—')} · ${e.dateISO?fmtLong(e.dateISO):'—'} · ${esc(e.clientName||'')} · ${esc(e.providerName||'')}</div>
+          <div class="mini" style="margin-top:2px;color:var(--muted)">commission ${eur(e.commissionAmount||0)} · net ${eur(e.netAmount||0)}</div>
+          ${e.mollieEncaisse?'':`<div class="mini" style="margin-top:4px"><span class="chip warn">${I.clock} ${esc(mollieEtatTxt(e))}</span> <span style="color:var(--muted)">— hors comptes</span></div>`}
+          ${e.exclu?`<div class="mini" style="margin-top:4px"><span class="chip grey">${I.shield} Écartée des comptes</span></div>
+            ${e.excluMotif?`<div class="mini" style="margin-top:3px;color:var(--muted)">${esc(e.excluMotif)}</div>`:''}`:''}
+        </button>
+        ${e.reqId?`<div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button class="btn ghost sm" data-adm="exclu:${esc(e.reqId)}:${e.exclu?'0':'1'}" style="width:auto;padding:8px 12px">${e.exclu?(I.check+'&nbsp;Réintégrer dans les comptes'):(arme?(I.shield+'&nbsp;Confirmer&nbsp;: écarter'):(I.shield+'&nbsp;Écarter des comptes'))}</button>
+          <button class="btn ghost sm" data-adm="factdel:${esc(e.reqId)}" style="width:auto;padding:8px 12px;color:var(--coral-deep)">${(S._factDelArm===e.reqId)?(I.trash+'&nbsp;Confirmer&nbsp;: supprimer'):(I.trash+'&nbsp;Supprimer')}</button>
+        </div>
+        ${(S._factDelArm===e.reqId)?`<p class="mini" style="margin-top:6px;color:var(--coral-deep)">La facture disparaîtra de la console et des comptes. Le numéro ${esc(e.invNo||'')} ne sera pas réattribué.</p>`:''}`:''}
+      </div>`;
     }).join('');
     const more=hits.length>cap.length?`<p class="mini" style="text-align:center;color:var(--muted);margin-top:8px">${hits.length-cap.length} autre${hits.length-cap.length>1?'s':''} résultat${hits.length-cap.length>1?'s':''} — précisez la recherche.</p>`:'';
     return `<div class="mini" style="margin-top:10px;color:var(--muted)">${hits.length} facture${hits.length>1?'s':''} trouvée${hits.length>1?'s':''}</div>${rows}${more}`;
@@ -7996,7 +8027,16 @@
     const totFee=round2(_led.reduce(function(t,e){return t+(Number(e.mollieFee)||0);},0));
     const feePending=_led.filter(function(e){return e.commissionAmount>0&&e.mollieFee==null;}).length;
     const netRev=round2(totComm-totRetro-totFee);
-    const accBody=`<div class="row between"><span class="sub">Commissions encaissées (produit)</span><b>${eur(totComm)}</b></div>
+    // Écritures hors comptes : celles que Mollie n'a pas (encore) encaissées, et celles
+    // écartées à la main. On les compte pour le dire — pas pour les additionner.
+    const horsCompte=(S.demoMode||isDemo())?[]:(S.adminLedger||[]).filter(function(e){return e.mollieEncaisse!==true||e.exclu;});
+    const aRapprocher=horsCompte.filter(function(e){return !!e.molliePaymentId&&!e.mollieVerifie&&!e.exclu;}).length;
+    const accBody=`<div class="banner teal">${I.shield}<span>Ces chiffres sont <b>calqués sur Mollie</b>&nbsp;: une prestation n’y entre que si Mollie l’a <b>réellement encaissée</b>. Une empreinte autorisée mais jamais débitée — un essai, par exemple — porte pourtant un identifiant de paiement&nbsp;: elle est écartée.</span></div>
+      ${horsCompte.length?`<div class="banner warn" style="margin-top:10px">${I.clock}<span><b>${horsCompte.length} prestation${horsCompte.length>1?'s':''} facturée${horsCompte.length>1?'s':''} hors comptes</b>${aRapprocher?(' — dont '+aRapprocher+' pas encore rapprochée'+(aRapprocher>1?'s':'')+' de Mollie'):''}. Détail dans « Retrouver une facture ».</span></div>`:''}
+      <button class="btn ghost sm" data-adm="ledger-reco" style="margin-top:12px">${I.card}&nbsp;Rapprocher avec Mollie</button>
+      <p class="mini" style="margin:8px 0 12px;color:var(--muted)">Interroge Mollie sur chaque paiement et inscrit son état réel. Fait automatiquement chaque matin.</p>
+      <hr class="dashed" style="margin:10px 0">
+      <div class="row between"><span class="sub">Commissions encaissées (produit)</span><b>${eur(totComm)}</b></div>
       <div class="row between" style="margin-top:6px"><span class="sub">Frais Mollie (charge)</span><b style="color:var(--muted)">−${eur(totFee)}</b></div>
       <div class="row between" style="margin-top:6px"><span class="sub">Rétributions apport versées (charge)</span><b style="color:var(--muted)">−${eur(totRetro)}</b></div>
       <hr class="dashed" style="margin:10px 0"><div class="row between"><span class="sub"><b>Revenu net réel Ti-Services</b></span><b class="money" style="color:var(--teal-deep)">${eur(netRev)}</b></div>
@@ -8016,9 +8056,10 @@
         :(orphList.length?`<div class="mini" style="margin-top:11px;color:var(--muted)">${orphList.length} prestation${orphList.length>1?'s':''} concernée${orphList.length>1?'s':''}</div>
           ${orphList.map(function(o){return `<div class="card" style="padding:13px;margin-top:9px">
             <div class="row between"><b style="font-size:14px">${esc(o.serviceName||'Prestation')}</b><span class="money" style="font-weight:700">${eur(Number(o.total)||0)}</span></div>
-            <div class="mini" style="margin-top:3px">${o.dateISO?fmtLong(o.dateISO):'—'} · ${esc(o.clientName||'')} · ${esc(o.providerName||'')}</div></div>`;}).join('')}
-          <button class="btn primary sm" data-adm="orph-run" style="margin-top:12px">${I.bolt}&nbsp;Relancer le règlement</button>
-          <p class="mini" style="margin-top:8px;color:var(--muted)">Le registre se met à jour en quelques secondes&nbsp;: les factures réapparaissent dans la recherche ci-dessus, avec leur numéro.</p>`
+            <div class="mini" style="margin-top:3px">${o.dateISO?fmtLong(o.dateISO):'—'} · ${esc(o.clientName||'')} · ${esc(o.providerName||'')}</div>
+            <button class="btn ghost sm" data-adm="orph-one:${esc(o.reqId)}" style="margin-top:9px">${I.bolt}&nbsp;Régler celle-ci</button></div>`;}).join('')}
+          <button class="btn primary sm" data-adm="orph-run" style="margin-top:12px">${I.bolt}&nbsp;Régler les ${orphList.length}</button>
+          <p class="mini" style="margin-top:8px;color:var(--muted)">Une par une, ou toutes d'un coup&nbsp;— une prestation d'essai n'a rien à faire dans la comptabilité. Le registre se met à jour en quelques secondes&nbsp;: les factures réapparaissent dans la recherche ci-dessus, avec leur numéro.</p>`
         :`<div class="banner good" style="margin-top:12px">${I.check}<span>Aucune&nbsp;: toutes les prestations payées sont inscrites au registre.</span></div>
           <button class="btn ghost sm" data-adm="orph-scan" style="margin-top:12px">${I.search}&nbsp;Revérifier</button>`)}`;
     return `<div class="pad">
@@ -8346,15 +8387,14 @@
     if(!(FB&&FB.db))return;
     try{ if(adminLedgerUnsub){try{adminLedgerUnsub();}catch(_){}}
       adminLedgerUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'ledger'),function(snap){
-        const realOnly=!(S.demoMode||isDemo());
+        // ON CHARGE TOUT LE REGISTRE, ON NE FILTRE RIEN ICI. Une facture émise doit
+        // pouvoir être retrouvée, même si elle n'entre pas dans la comptabilité. Le tri
+        // comptable — calqué sur ce que MOLLIE a réellement encaissé (`mollieEncaisse`)
+        // et sur les écritures écartées à la main (`exclu`) — se fait plus bas, à un seul
+        // endroit (adminCommissionLedger / adminLedgerGroups), et les écritures hors
+        // comptes restent visibles dans la recherche, signalées comme telles.
         const list=[];snap.forEach(function(d){const e=d.data()||{};if(!((e.commissionAmount||0)>0))return;
-          // COMPTABILITÉ RÉELLE, CALQUÉE SUR MOLLIE : on n'inscrit que les transactions
-          // réellement encaissées via Mollie (identifiant de paiement `molliePaymentId`
-          // présent). Les missions de TEST / paiements jamais effectués (sans identifiant
-          // Mollie) sont ignorés → ils ne polluent plus la comptabilité, qui reflète
-          // exactement ce que Mollie a encaissé.
-          if(realOnly&&!e.molliePaymentId)return;
-          list.push({id:d.id,reqId:e.reqId||d.id,invNo:e.invNo||'',molliePaymentId:e.molliePaymentId||'',providerUid:e.providerUid||'',clientUid:e.clientUid||'',dateISO:(e.settledAt&&e.settledAt.toDate)?e.settledAt.toDate().toISOString().slice(0,10):'',clientName:e.clientName||'',providerName:e.providerName||'',service:e.service||'',serviceName:e.serviceName||'',unit:e.unit||'h',hours:e.hours||0,rate:e.rate||0,base:e.base||0,commissionPct:e.commissionPct||0,commissionAmount:e.commissionAmount||0,netAmount:e.netAmount||0,grossTotal:e.grossTotal||0,rateFlag:!!e.rateFlag,rateExpected:e.rateExpected||null,mollieFee:(e.mollieFee!=null?e.mollieFee:null),netTiServices:(e.netTiServices!=null?e.netTiServices:null)});});
+          list.push({id:d.id,reqId:e.reqId||d.id,invNo:e.invNo||'',molliePaymentId:e.molliePaymentId||'',providerUid:e.providerUid||'',clientUid:e.clientUid||'',dateISO:(e.settledAt&&e.settledAt.toDate)?e.settledAt.toDate().toISOString().slice(0,10):'',clientName:e.clientName||'',providerName:e.providerName||'',service:e.service||'',serviceName:e.serviceName||'',unit:e.unit||'h',hours:e.hours||0,rate:e.rate||0,base:e.base||0,commissionPct:e.commissionPct||0,commissionAmount:e.commissionAmount||0,netAmount:e.netAmount||0,grossTotal:e.grossTotal||0,rateFlag:!!e.rateFlag,rateExpected:e.rateExpected||null,exclu:!!e.exclu,excluMotif:e.excluMotif||'',mollieStatus:e.mollieStatus||'',mollieEncaisse:(e.mollieEncaisse===true),mollieVerifie:!!e.mollieVerifieAt,mollieMontantPaye:(e.mollieMontantPaye!=null?e.mollieMontantPaye:null),mollieFee:(e.mollieFee!=null?e.mollieFee:null),netTiServices:(e.netTiServices!=null?e.netTiServices:null)});});
         list.sort(function(a,b){return (b.dateISO||'').localeCompare(a.dateISO||'');});
         S.adminLedger=list;
         // Rafraîchit l'onglet Factures ET le tableau de bord (« Commission ce mois »
@@ -12557,20 +12597,63 @@
           render();
         }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
       })();return;}
-      else if(act==='orph-scan'||act==='orph-run'){(function(){
+      else if(act==='ledger-reco'){(function(){
+        if(!isAdminAccount()){toast('Réservé à l’administrateur (compte réel)');return;}
+        if(!(FB&&FB.functions&&FB.fn&&FB.fn.httpsCallable)){toast('Indisponible hors ligne — réessayez connecté');return;}
+        toast('Rapprochement avec Mollie…');
+        FB.fn.httpsCallable(FB.functions,'ledgerReconcile')({}).then(function(r){
+          const d=(r&&r.data)||{};
+          if(d.simulated){toast('Mollie n’est pas configuré sur cet environnement');return;}
+          // L'écoute du registre rafraîchit l'écran : on annonce ce que le serveur a
+          // vérifié, pas ce qu'on espérait.
+          toast(d.encaissees+' encaissée'+(d.encaissees>1?'s':'')+' · '+d.autres+' hors comptes');
+        }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
+      })();return;}
+      else if(act==='factdel'){(function(){
+        // Suppression d'une facture : double appui (armé 6 s), et le texte du bouton dit
+        // ce qui va se passer avant de le faire.
+        if(!isAdminAccount()){toast('Réservé à l’administrateur (compte réel)');return;}
+        if(!(FB&&FB.functions&&FB.fn&&FB.fn.httpsCallable)){toast('Indisponible hors ligne — réessayez connecté');return;}
+        if(S._factDelArm!==id){S._factDelArm=id;render();setTimeout(function(){if(S._factDelArm===id){S._factDelArm=null;try{render();}catch(_){}}},6000);return;}
+        S._factDelArm=null;
+        FB.fn.httpsCallable(FB.functions,'ledgerDelete')({reqId:id}).then(function(r){
+          const d=(r&&r.data)||{};
+          toast('Facture '+(d.invNo||'')+' supprimée');
+        }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
+        render();
+      })();return;}
+      else if(act==='exclu'){(function(){
+        // Écarter une écriture des comptes n'est pas anodin : premier appui = armé
+        // (le bouton demande confirmation, 6 s), second appui = c'est fait. La
+        // réintégration, elle, ne casse rien : pas de confirmation.
+        const rid=parts[1],vers=(parts[2]==='1');
+        if(!isAdminAccount()){toast('Réservé à l’administrateur (compte réel)');return;}
+        if(!(FB&&FB.functions&&FB.fn&&FB.fn.httpsCallable)){toast('Indisponible hors ligne — réessayez connecté');return;}
+        if(vers&&S._excluArm!==rid){S._excluArm=rid;render();setTimeout(function(){if(S._excluArm===rid){S._excluArm=null;try{render();}catch(_){}}},6000);return;}
+        S._excluArm=null;
+        FB.fn.httpsCallable(FB.functions,'ledgerExclude')({reqId:rid,exclu:vers}).then(function(){
+          // Le registre est réécrit côté serveur ; l'écoute en direct rafraîchira l'écran.
+          toast(vers?'Écartée des comptes — l’écriture reste au registre':'Réintégrée dans les comptes');
+        }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
+        render();
+      })();return;}
+      else if(act==='orph-scan'||act==='orph-run'||act==='orph-one'){(function(){
         // Inventaire (scan) puis rattrapage (run) des prestations payées jamais inscrites
         // au registre. Le serveur ne fait que « toucher » la demande : c'est le règlement
         // lui-même qui se rejoue, avec son propre verrou anti-doublon.
         if(!isAdminAccount()){toast('Réservé à l’administrateur (compte réel)');return;}
         if(!(FB&&FB.functions&&FB.fn&&FB.fn.httpsCallable)){toast('Indisponible hors ligne — réessayez connecté');return;}
-        const relance=(act==='orph-run');
+        // `orph-one` ne règle QUE la prestation désignée : le lot n'est pas toujours
+        // homogène, une prestation d'essai n'a rien à faire dans la comptabilité.
+        const cible=(act==='orph-one')?id:'';
+        const relance=(act==='orph-run'||act==='orph-one');
         toast(relance?'Relance du règlement…':'Vérification…');
-        FB.fn.httpsCallable(FB.functions,'resettlePending')({action:relance?'run':'list'}).then(function(r){
+        FB.fn.httpsCallable(FB.functions,'resettlePending')(relance?{action:'run',reqId:cible}:{action:'list'}).then(function(r){
           const d=(r&&r.data)||{};
           S.adminOrph={loaded:true,list:d.pending||[]};
           if(relance){
             const n=Number(d.relances)||0;
-            toast(n?(n+' règlement'+(n>1?'s':'')+' relancé'+(n>1?'s':'')+' — les factures arrivent'):'Rien à relancer');
+            toast(d.introuvable?'Cette prestation est déjà réglée':(n?(n+' règlement'+(n>1?'s':'')+' relancé'+(n>1?'s':'')+' — la facture arrive'):'Rien à relancer'));
             // Le registre est réécrit par le serveur : on redemande l'inventaire après
             // quelques secondes plutôt que d'annoncer un résultat qu'on n'a pas vérifié.
             setTimeout(function(){

@@ -303,18 +303,43 @@ async function mollieOnboardingReady(accessToken) {
 // on ne fait rien, le balayage quotidien re-tentera. No-op si Mollie non configuré /
 // paiement simulé. NB : n'affecte NI le versement à l'artisan NI le débit du client
 // (déjà exacts) — c'est de la comptabilité interne (marge réelle Ti-Services).
+// LES COMPTES SE CALQUENT SUR MOLLIE, PAS SUR CE QUE L'APPLICATION CROIT. On interroge le
+// paiement chez Mollie et on inscrit son ÉTAT RÉEL au registre :
+//   • `mollieStatus` — ce que Mollie répond (paid, authorized, expired, failed, canceled…) ;
+//   • `mollieEncaisse` — vrai UNIQUEMENT si Mollie dit « paid ». C'est ce champ, et lui
+//     seul, qui fait entrer une prestation dans la comptabilité. Une empreinte simplement
+//     autorisée (essai, mission jamais capturée) porte un identifiant de paiement mais
+//     n'a jamais débité personne : elle ne doit pas peser dans les comptes ;
+//   • `mollieMontantPaye` — la somme RÉELLEMENT capturée (jamais l'autorisation) ;
+//   • `mollieFee` / `netTiServices` — dès que Mollie connaît son règlement (1 à 2 jours).
+// Renvoie true quand l'état a pu être relevé.
 async function recordMollieFee(db, reqId, molliePaymentId, commission) {
   if (!mollieApiConfigured() || !molliePaymentId) return false;
   try {
     const p = await mollieApi('/payments/' + encodeURIComponent(molliePaymentId), 'GET');
     if (!p.ok || !p.data) return false;
-    const amt = Number(p.data.amount && p.data.amount.value);
-    const settle = (p.data.settlementAmount && p.data.settlementAmount.value != null) ? Number(p.data.settlementAmount.value) : null;
-    if (!(amt > 0) || settle == null || isNaN(settle)) return false; // règlement Mollie pas encore connu
-    const fee = round2(amt - settle);
-    const netTs = round2((Number(commission) || 0) - fee);
-    await db.collection('ledger').doc(reqId).set({mollieFee: fee, mollieSettlementAmount: settle, netTiServices: netTs}, {merge: true});
-    try { await db.collection('requests').doc(reqId).set({mollieFee: fee, netTiServices: netTs}, {merge: true}); } catch (_) {}
+    const d = p.data;
+    const statut = String(d.status || '');
+    // Capture partielle : `amount` reste l'autorisation, `amountCaptured` est le débit réel.
+    const capture = (d.amountCaptured && d.amountCaptured.value != null) ? Number(d.amountCaptured.value) : null;
+    const autorise = (d.amount && d.amount.value != null) ? Number(d.amount.value) : null;
+    const paye = (capture != null && !isNaN(capture)) ? capture : autorise;
+    const patch = {
+      mollieStatus: statut,
+      mollieEncaisse: (statut === 'paid'),
+      mollieVerifieAt: FieldValue.serverTimestamp(),
+    };
+    if (paye != null && !isNaN(paye)) patch.mollieMontantPaye = round2(paye);
+    const settle = (d.settlementAmount && d.settlementAmount.value != null) ? Number(d.settlementAmount.value) : null;
+    if (paye > 0 && settle != null && !isNaN(settle)) {
+      patch.mollieFee = round2(paye - settle);
+      patch.mollieSettlementAmount = settle;
+      patch.netTiServices = round2((Number(commission) || 0) - patch.mollieFee);
+    }
+    await db.collection('ledger').doc(reqId).set(patch, {merge: true});
+    if (patch.mollieFee != null) {
+      try { await db.collection('requests').doc(reqId).set({mollieFee: patch.mollieFee, netTiServices: patch.netTiServices}, {merge: true}); } catch (_) {}
+    }
     return true;
   } catch (e) { console.warn('recordMollieFee', e); return false; }
 }
@@ -1389,6 +1414,15 @@ async function mollieProfil(db) {
 //   • assiette de commission = prestation (× personnes, + options) + coup de pouce ;
 //   • forfait de déplacement et POURBOIRE : intégralement au prestataire, hors commission ;
 //   • le brut est ce que le client paie ; le net de l'artisan = brut − commission.
+// Code de série de facturation : 1 → A, 26 → Z, 27 → AA… Attribué une fois par
+// prestataire, il rend chaque numéro de facture unique et non ambigu (deux prestataires
+// pouvaient sinon porter le même « 2026-0002 »).
+function serieCode(n) {
+  let s = '';
+  n = Math.max(1, Math.floor(Number(n) || 1));
+  while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); }
+  return s;
+}
 const TRAVEL_MIN = 50, TRAVEL_FEE = 20;
 function montantsDemande(r) {
   r = r || {};
@@ -1513,15 +1547,37 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
   // du CGI) — impossible à obtenir avec des compteurs locaux multi-appareils. Le compteur
   // démarre à zéro tant qu'aucune facture n'a été émise (donc « remis à zéro » au
   // lancement officiel une fois les données de test purgées).
+  //
+  // SÉRIE PAR PRESTATAIRE. Le mandat autorise une série distincte par mandant, mais le
+  // numéro doit alors désigner sa série sans ambiguïté. Sans elle, deux prestataires
+  // atteignaient tous deux « 2026-0002 » : deux factures différentes, même numéro. Chaque
+  // prestataire reçoit donc, à sa première facture, un code de série attribué une fois
+  // pour toutes (A, B, … Z, AA…) → « 2026-B-0002 ». Les numéros déjà émis ne changent
+  // PAS : une numérotation se poursuit, elle ne se réécrit jamais.
   let saleInvoiceNo = after.saleInvoiceNo || '';
   if (!saleInvoiceNo) {
     try {
       saleInvoiceNo = await db.runTransaction(async (tx) => {
         const cref = db.collection('counters').doc(providerUid);
+        const aref = db.collection('artisans').doc(providerUid);
+        const sref = db.collection('counters').doc('_series');
+        // TOUTES les lectures avant la moindre écriture (contrainte des transactions).
         const csnap = await tx.get(cref);
+        const asnap = await tx.get(aref);
+        let serie = String((asnap.exists && asnap.data().invoiceSerie) || '').trim();
+        let serieN = 0;
+        if (!serie) {
+          const ssnap = await tx.get(sref);
+          serieN = ((ssnap.exists ? (ssnap.data().next || 0) : 0)) + 1;
+          serie = serieCode(serieN);
+        }
         const seq = ((csnap.exists ? (csnap.data().saleSeq || 0) : 0)) + 1;
-        tx.set(cref, { saleSeq: seq, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-        return (new Date()).getFullYear() + '-' + String(seq).padStart(4, '0');
+        if (serieN) {
+          tx.set(sref, { next: serieN }, { merge: true });
+          tx.set(aref, { invoiceSerie: serie }, { merge: true });
+        }
+        tx.set(cref, { saleSeq: seq, invoiceSerie: serie, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        return (new Date()).getFullYear() + '-' + serie + '-' + String(seq).padStart(4, '0');
       });
     } catch (e) { console.warn('settleCommission numbering', e); saleInvoiceNo = ''; }
   }
@@ -1933,12 +1989,128 @@ exports.resettlePending = onCall(async (request) => {
     };
   });
   if (action !== 'run') return {pending: pending};
+  // UNE SEULE, OU TOUTES. Le lot n'est pas toujours homogène : une prestation d'essai
+  // peut s'y trouver et n'a rien à faire dans la comptabilité. On peut donc désigner
+  // précisément la demande à régler.
+  const cible = String((request.data && request.data.reqId) || '').trim();
+  const aRegler = cible ? docs.filter((d) => d.id === cible) : docs;
+  if (cible && !aRegler.length) return {relances: 0, pending: pending, introuvable: true};
   let relances = 0;
-  for (const d of docs) {
+  for (const d of aRegler) {
     try { await d.ref.update({resettleAt: FieldValue.serverTimestamp()}); relances++; } catch (e) { console.warn('resettlePending', d.id, e); }
   }
-  console.log('resettlePending : ' + relances + ' règlement(s) relancé(s) par ' + who);
+  console.log('resettlePending : ' + relances + ' règlement(s) relancé(s) par ' + who + (cible ? (' (ciblé ' + cible + ')') : ''));
   return {relances: relances, pending: pending};
+});
+
+/**
+ * ledgerExclude : écarte de la comptabilité une prestation qui y figure à tort — un essai
+ * réalisé avec une carte qui n'a jamais été réellement débitée, par exemple. Réservé à
+ * l'administrateur.
+ *
+ * On n'EFFACE JAMAIS une écriture : le registre est immuable, et une ligne supprimée est
+ * une piste d'audit perdue. On pose un indicateur `exclu` — la ligne reste consultable et
+ * signalée comme telle, mais elle sort des totaux, de l'export comptable et du
+ * justificatif de revenus. L'opération est réversible, et l'on garde qui l'a faite, quand
+ * et pourquoi.
+ */
+/**
+ * ledgerReconcile : rapproche le registre comptable de la RÉALITÉ MOLLIE. Pour chaque
+ * écriture, on demande à Mollie l'état du paiement et on l'inscrit — état, montant
+ * réellement capturé, frais, règlement. Réservé à l'administrateur.
+ *
+ * C'est ce rapprochement qui donne son sens aux comptes : une prestation n'entre au
+ * chiffre d'affaires que si Mollie répond « paid ». Une empreinte simplement autorisée
+ * (essai, mission jamais capturée) porte pourtant un identifiant de paiement — sans ce
+ * relevé, elle passerait pour un encaissement.
+ *
+ * Le balayage quotidien fait la même chose ; ce bouton évite d'attendre le lendemain.
+ */
+exports.ledgerReconcile = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) => {
+  const who = (request.auth && request.auth.token && request.auth.token.email) || '';
+  if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+    throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
+  }
+  if (!mollieApiConfigured()) return {simulated: true, releves: 0, encaissees: 0, autres: 0};
+  const db = getFirestore();
+  const led = await db.collection('ledger').where('type', '==', 'commission').orderBy('settledAt', 'desc').limit(200).get();
+  let releves = 0;
+  for (const d of led.docs) {
+    const e = d.data() || {};
+    if (!e.molliePaymentId) continue;
+    if (await recordMollieFee(db, d.id, e.molliePaymentId, e.commissionAmount)) releves++;
+  }
+  // On relit APRÈS écriture : on annonce un état vérifié, jamais un état supposé.
+  const apres = await db.collection('ledger').where('type', '==', 'commission').orderBy('settledAt', 'desc').limit(200).get();
+  let encaissees = 0; let autres = 0;
+  apres.docs.forEach((d) => { const e = d.data() || {}; if (e.exclu) return; if (e.mollieEncaisse === true) encaissees++; else autres++; });
+  console.log('ledgerReconcile : ' + releves + ' relevé(s), ' + encaissees + ' encaissée(s), ' + autres + ' non encaissée(s) — par ' + who);
+  return {releves: releves, encaissees: encaissees, autres: autres};
+});
+
+/**
+ * ledgerDelete : SUPPRIME une facture du registre comptable. Rare, mais nécessaire — une
+ * écriture peut être erronée au point de ne pas devoir survivre (essai passé en réel,
+ * doublon). Réservé à l'administrateur.
+ *
+ * La facture disparaît de la console, de la recherche, des relevés et des comptes. Une
+ * copie intégrale est d'abord versée dans `ledgerSupprime` avec l'auteur, la date et le
+ * motif : rien n'est reconstitué de mémoire si une question se pose plus tard, et cette
+ * collection n'est lisible par aucun client. Le numéro de facture n'est PAS réattribué —
+ * une numérotation ne se réutilise jamais, c'est ce qui la rend vérifiable.
+ *
+ * La demande est marquée pour que le rattrapage automatique ne la ressuscite pas.
+ */
+exports.ledgerDelete = onCall(async (request) => {
+  const who = (request.auth && request.auth.token && request.auth.token.email) || '';
+  if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+    throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
+  }
+  const reqId = String((request.data && request.data.reqId) || '').trim().slice(0, 128);
+  if (!reqId) throw new HttpsError('invalid-argument', 'Prestation non désignée.');
+  const motif = String((request.data && request.data.motif) || '').trim().slice(0, 200);
+  const db = getFirestore();
+  const ref = db.collection('ledger').doc(reqId);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Aucune facture pour cette prestation.');
+  const avant = snap.data() || {};
+  await db.collection('ledgerSupprime').doc(reqId).set(Object.assign({}, avant, {
+    supprimePar: who,
+    supprimeAt: FieldValue.serverTimestamp(),
+    supprimeMotif: motif || 'supprimée depuis la console',
+  }), {merge: true});
+  await ref.delete();
+  // `commissionSettled` reste vrai : sans cela le rattrapage quotidien la recréerait.
+  try {
+    await db.collection('requests').doc(reqId).set({
+      comptaExclue: true, factureSupprimee: true, factureSupprimeeAt: FieldValue.serverTimestamp(),
+    }, {merge: true});
+  } catch (_) {}
+  console.log('ledgerDelete ' + reqId + ' (facture ' + (avant.invNo || '—') + ') par ' + who + ' — ' + (motif || 'sans motif'));
+  return {ok: true, invNo: String(avant.invNo || '')};
+});
+
+exports.ledgerExclude = onCall(async (request) => {
+  const who = (request.auth && request.auth.token && request.auth.token.email) || '';
+  if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+    throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
+  }
+  const reqId = String((request.data && request.data.reqId) || '').trim().slice(0, 128);
+  if (!reqId) throw new HttpsError('invalid-argument', 'Prestation non désignée.');
+  const exclu = !!(request.data && request.data.exclu);
+  const motif = String((request.data && request.data.motif) || '').trim().slice(0, 200);
+  const db = getFirestore();
+  const ref = db.collection('ledger').doc(reqId);
+  if (!(await ref.get()).exists) throw new HttpsError('not-found', 'Aucune écriture pour cette prestation.');
+  await ref.set({
+    exclu: exclu,
+    excluMotif: exclu ? (motif || 'prestation d\'essai — jamais réellement encaissée') : '',
+    excluPar: exclu ? who : '',
+    excluAt: exclu ? FieldValue.serverTimestamp() : null,
+  }, {merge: true});
+  try { await db.collection('requests').doc(reqId).set({comptaExclue: exclu}, {merge: true}); } catch (_) {}
+  console.log('ledgerExclude ' + reqId + ' → ' + (exclu ? 'écartée' : 'réintégrée') + ' par ' + who);
+  return {ok: true, exclu: exclu};
 });
 
 exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) => {
@@ -2850,10 +3022,34 @@ exports.paymentReconciliation = onSchedule({schedule: '0 9 * * *', secrets: [SMT
     let filled = 0;
     for (const d of led.docs) {
       const e = d.data() || {};
-      if (e.mollieFee == null && e.molliePaymentId) { if (await recordMollieFee(db, d.id, e.molliePaymentId, e.commissionAmount)) filled++; }
+      if (!e.molliePaymentId) continue;
+      // On relève l'état réel tant que le frais n'est pas connu OU que Mollie n'a pas
+      // encore dit « payé » : une empreinte autorisée aujourd'hui peut être capturée
+      // demain, et une autorisation non capturée finira par expirer. Les comptes suivent.
+      if (e.mollieFee == null || e.mollieEncaisse !== true) {
+        if (await recordMollieFee(db, d.id, e.molliePaymentId, e.commissionAmount)) filled++;
+      }
     }
-    if (filled) console.log('paymentReconciliation : ' + filled + ' frais Mollie complété(s).');
+    if (filled) console.log('paymentReconciliation : ' + filled + ' écriture(s) rapprochée(s) de Mollie.');
   } catch (e) { console.warn('reco mollieFee backfill', e); }
+
+  // 7. ÉCRITURES QUE MOLLIE N'A JAMAIS ENCAISSÉES. Après rapprochement, une prestation
+  //    facturée dont le paiement n'est pas « paid » chez Mollie n'a rien à faire dans la
+  //    comptabilité — et surtout, elle signale que personne n'a été débité.
+  try {
+    const items = [];
+    const led = await db.collection('ledger').where('type', '==', 'commission').orderBy('settledAt', 'desc').limit(200).get();
+    for (const d of led.docs) {
+      const e = d.data() || {};
+      if (e.exclu) continue;
+      if (e.mollieEncaisse === true) continue;
+      items.push('<li><b>' + escHtmlS(e.serviceName || e.service || 'prestation') + '</b> — ' +
+        escHtmlS(e.clientName || '?') + ' / ' + escHtmlS(e.providerName || '?') + ' — ' +
+        eurTxt(Number(e.grossTotal) || 0) + ' — facture ' + escHtmlS(e.invNo || '—') +
+        ' — état Mollie : <b>' + escHtmlS(e.mollieStatus || (e.molliePaymentId ? 'non relevé' : 'aucun paiement')) + '</b></li>');
+    }
+    if (items.length) sections.push('<h3>🏦 Facturé mais jamais encaissé chez Mollie (' + items.length + ')</h3><ul>' + items.join('') + '</ul><p>Ces prestations <b>ne comptent pas</b> dans le chiffre d\'affaires ni dans les commissions&nbsp;: les comptes se calquent sur ce que Mollie a réellement encaissé. Une empreinte « authorized » peut encore être capturée&nbsp;; « expired » ou « failed » veut dire que personne n\'a été débité.</p>');
+  } catch (e) { console.warn('reco non encaissees', e); }
 
   if (!sections.length) { console.log('paymentReconciliation : aucune anomalie ✓'); return; }
   try {
