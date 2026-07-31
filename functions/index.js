@@ -261,7 +261,7 @@ async function mollieChargeComplement(db, reqId, clientUid, amount, label) {
     }
   }
   const one = await mollieApi('/payments', 'POST', Object.assign(
-    {redirectUrl: app + '/?paid=' + encodeURIComponent(reqId)},
+    {redirectUrl: app + '/?paid=' + encodeURIComponent(reqId), method: 'creditcard'},
     customerId ? {customerId: customerId} : {}, body));
   if (one.ok && one.data && one.data.id) {
     out.ok = true; out.paymentId = one.data.id;
@@ -1967,14 +1967,11 @@ exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) 
       customerId: customerId,
       metadata: {clientUid: uid, cardSetup: true},
     };
-    let out = await mollieApi('/payments', 'POST', body);
-    // Certains comptes Mollie n'autorisent pas encore le montant nul : on retente alors
-    // en laissant Mollie choisir la méthode (PayPal accepte aussi le 0,00 €).
-    if (!out.ok) {
-      const alt = Object.assign({}, body);
-      delete alt.method;
-      out = await mollieApi('/payments', 'POST', alt);
-    }
+    // Un seul essai, et en carte. Le repli qui laissait Mollie choisir la méthode pouvait
+    // créer un mandat PayPal : il n'aurait pas porté l'empreinte d'une commande, et la
+    // carte annoncée au client n'aurait pas existé. Un refus est désormais dit, pas
+    // contourné par un moyen de paiement que le reste du parcours ne sait pas honorer.
+    const out = await mollieApi('/payments', 'POST', body);
     if (!out.ok || !out.data) {
       // On remonte le motif Mollie (message technique sur NOTRE usage de l'API, aucune
       // donnée personnelle) : sans lui, l'échec est indiagnosticable côté exploitation.
@@ -2076,12 +2073,19 @@ exports.createClientPayment = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (
     }
   } catch (_) {}
 
+  // CARTE UNIQUEMENT, et c'est structurel. Tout le modèle repose sur trois choses que
+  // seule la carte permet : autoriser sans débiter (l'empreinte), débiter plus tard à la
+  // validation du client, et prélever hors session un pourboire ou des heures en plus.
+  // Sans cette contrainte, le client se verrait proposer TOUTES les méthodes activées sur
+  // le compte Mollie de Ti-Services — Mollie peut en ouvrir de nouvelles de son côté — et
+  // une commande réglée autrement ferait tomber la garantie sans que personne le voie.
   const payBody = {
     amount: {currency: 'EUR', value: amount.toFixed(2)},
     description: ('Ti-Services \u00b7 ' + (r.serviceName || r.service || 'prestation')).toString().slice(0, 100),
     redirectUrl: redirectUrl,
     webhookUrl: webhookUrl,
     captureMode: 'manual',
+    method: 'creditcard',
     metadata: {reqId: reqId, clientUid: uid},
   };
   if (customerId) payBody.customerId = customerId;
