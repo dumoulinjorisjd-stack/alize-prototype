@@ -241,7 +241,7 @@ async function mollieChargeComplement(db, reqId, clientUid, amount, label) {
     webhookUrl: 'https://europe-west1-t-service-prod.cloudfunctions.net/mollieWebhook',
     metadata: {reqId: reqId, clientUid: clientUid, kind: 'complement', produit: PRODUIT},
   };
-  Object.assign(body, mollieProfil());
+  Object.assign(body, await mollieProfil(db));
   if (customerId) {
     let mandateId = '';
     try {
@@ -1360,8 +1360,22 @@ exports.notifyBoosted = onDocumentUpdated('requests/{reqId}', async (event) => {
 //     sépare alors nativement tableau de bord, règlements et rapports. La variable est
 //     FACULTATIVE : absente, rien ne change (et aucun déploiement ne casse).
 const PRODUIT = 'ti-services';
-function mollieProfil() {
-  const id = String(process.env.MOLLIE_PROFILE_ID || '').trim();
+// Le profil retenu est rangé dans Firestore (settings/mollie.profileId) et choisi depuis
+// la console : pas de variable d'environnement à poser, pas de redéploiement. Court cache
+// mémoire pour ne pas relire à chaque paiement.
+let _profilCache = {id: null, at: 0};
+async function mollieProfilId(db) {
+  const env = String(process.env.MOLLIE_PROFILE_ID || '').trim();
+  if (env) return env;
+  const now = Date.now();
+  if (_profilCache.id !== null && (now - _profilCache.at) < 60000) return _profilCache.id;
+  let id = '';
+  try { id = String(((await db.collection('settings').doc('mollie').get()).data() || {}).profileId || '').trim(); } catch (_) {}
+  _profilCache = {id: id, at: now};
+  return id;
+}
+async function mollieProfil(db) {
+  const id = await mollieProfilId(db);
   return id ? {profileId: id} : {};
 }
 // MONTANTS D'UNE DEMANDE — SOURCE UNIQUE. La facture (PDF) et le règlement calculaient
@@ -1380,11 +1394,14 @@ function montantsDemande(r) {
   r = r || {};
   const rate = Number(r.rate) || 0;
   const acts = Array.isArray(r.acts) ? r.acts : null;
+  // Heures facturées : celles corrigées par l'artisan en fin de mission si elles existent,
+  // sinon celles commandées. Ressortie plus bas (M.hours) : le registre comptable en a
+  // besoin et doit lire EXACTEMENT la valeur qui a servi au calcul du montant.
+  const hours = (r.unit === 'forfait') ? 1 : ((r.finalHours != null) ? Number(r.finalHours) : (Number(r.duration) || 1));
   let base;
   if (acts && acts.length) {
     base = round2(acts.reduce((t, a) => t + (Number(a.price) || 0) * (Number(a.qty) || 1), 0));
   } else {
-    const hours = (r.unit === 'forfait') ? 1 : ((r.finalHours != null) ? Number(r.finalHours) : (Number(r.duration) || 1));
     base = round2(rate * hours);
   }
   base = round2(base * peopleCount(r.service, r.people));
@@ -1400,16 +1417,20 @@ function montantsDemande(r) {
     : ((acts && acts.length && base > 0 && base < TRAVEL_MIN) ? TRAVEL_FEE : 0);
   const tip = Math.max(0, round2(Number(r.tip) || 0));
   return {
-    base: base, boostPct: boostPct, maj: maj, travel: travel, tip: tip,
+    base: base, boostPct: boostPct, maj: maj, travel: travel, tip: tip, hours: hours,
     assiette: round2(base + maj),          // ce sur quoi porte la commission
     gross: round2(base + maj + travel + tip),
   };
 }
 exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secrets: ['MOLLIE_ACCESS_TOKEN', SMTP_PASS]}, async (event) => {
-  const before = (event.data && event.data.before && event.data.before.data()) || {};
   const after = (event.data && event.data.after && event.data.after.data()) || {};
-  // On agit UNIQUEMENT sur la transition -> « paid », et une seule fois.
-  if (before.status === 'paid' || after.status !== 'paid') return;
+  // RATTRAPABLE. On ne se limite plus à l'instant précis de la transition vers « paid » :
+  // si ce règlement échoue (panne, bug, quota), la demande resterait réglée côté client
+  // et JAMAIS inscrite au registre — donc sans numéro de facture, sans commission, et
+  // introuvable dans la console. C'est exactement ce qui est arrivé. Désormais toute
+  // modification ultérieure d'une prestation payée mais non réglée relance le règlement ;
+  // `commissionSettled` reste le verrou qui garantit qu'il ne s'exécute qu'une fois.
+  if (after.status !== 'paid') return;
   if (after.commissionSettled) return;
 
   const providerUid = after.providerUid;
@@ -1520,7 +1541,7 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
       service: after.service || '',
       serviceName: (after.serviceName || '').toString().slice(0, 80),
       unit: after.unit || 'h',
-      hours: hours,
+      hours: M.hours,
       rate: rate,
       base: base,
       boost: boost,
@@ -1841,6 +1862,85 @@ exports.recordNoShow = onDocumentUpdated('requests/{reqId}', async (event) => {
  *   action 'revoke' → révoque le mandat : la prochaine réservation redemande la carte.
  * Inerte (card:null) tant que Mollie n'est pas configuré : la bêta simulée continue.
  */
+/**
+ * mollieProfiles : liste les profils du compte Mollie et indique celui rattaché à
+ * Ti-Services. Réservé à l'administrateur. Deux produits (Ti-Services, Archipel BTP)
+ * partagent le même compte : sans profil dédié, le tableau de bord, les règlements et les
+ * rapports Mollie les mélangent. Les identifiants « pfl_… » ne sont pas commodes à
+ * retrouver dans l'interface : on les demande à Mollie, et le choix se fait d'un geste
+ * depuis la console — rangé dans Firestore, donc sans variable d'environnement ni
+ * redéploiement.
+ *   action 'get' (défaut) → {profiles:[…], current:'pfl_…'}
+ *   action 'set'          → enregistre profileId (chaîne vide = revenir au profil par défaut)
+ */
+exports.mollieProfiles = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) => {
+  const who = (request.auth && request.auth.token && request.auth.token.email) || '';
+  if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+    throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
+  }
+  const db = getFirestore();
+  const action = String((request.data && request.data.action) || 'get');
+  if (action === 'set') {
+    const id = String((request.data && request.data.profileId) || '').trim().slice(0, 64);
+    if (id && !/^pfl_[A-Za-z0-9]+$/.test(id)) throw new HttpsError('invalid-argument', 'Identifiant de profil invalide.');
+    await db.collection('settings').doc('mollie').set({profileId: id, profileAt: Date.now()}, {merge: true});
+    _profilCache = {id: id, at: Date.now()};
+    console.log('Profil Mollie Ti-Services : ' + (id || '(par défaut)'));
+    return {ok: true, current: id};
+  }
+  if (!mollieApiConfigured()) return {profiles: [], current: '', simulated: true};
+  const out = await mollieApi('/profiles?limit=50', 'GET');
+  const arr = (out.ok && out.data && out.data._embedded && out.data._embedded.profiles) || [];
+  return {
+    current: await mollieProfilId(db),
+    fige: !!String(process.env.MOLLIE_PROFILE_ID || '').trim(),
+    profiles: arr.map((p) => ({
+      id: String(p.id || ''), name: String(p.name || ''), website: String(p.website || ''),
+      mode: String(p.mode || ''), status: String(p.status || ''),
+    })),
+  };
+});
+
+/**
+ * resettlePending : relance le règlement des prestations payées par le client mais jamais
+ * inscrites au registre comptable (donc sans numéro de facture, sans commission, sans
+ * versement à l'artisan, et introuvables dans la console). Réservé à l'administrateur.
+ *
+ * Le rattrapage passe par une simple modification de la demande : `settleCommission` se
+ * redéclenche alors, et son verrou `commissionSettled` garantit qu'il ne s'exécute qu'une
+ * fois. Le balayage quotidien fait la même chose tout seul ; ce bouton évite d'attendre
+ * jusqu'au lendemain.
+ *   action 'list' (défaut) → {pending:[…]} — inventaire, sans rien modifier
+ *   action 'run'           → relance, retourne le nombre de demandes touchées
+ */
+exports.resettlePending = onCall(async (request) => {
+  const who = (request.auth && request.auth.token && request.auth.token.email) || '';
+  if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+    throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
+  }
+  const db = getFirestore();
+  const action = String((request.data && request.data.action) || 'list');
+  const docs = (await db.collection('requests').where('status', '==', 'paid').get()).docs
+    .filter((d) => { const r = d.data() || {}; return !r.commissionSettled && !!r.providerUid; });
+  const pending = docs.map((d) => {
+    const r = d.data() || {};
+    return {
+      reqId: d.id,
+      clientName: String(r.clientName || ''), providerName: String(r.providerName || ''),
+      serviceName: String(r.serviceName || r.service || ''),
+      total: montantsDemande(r).gross,
+      dateISO: String(r.dateISO || ''),
+    };
+  });
+  if (action !== 'run') return {pending: pending};
+  let relances = 0;
+  for (const d of docs) {
+    try { await d.ref.update({resettleAt: FieldValue.serverTimestamp()}); relances++; } catch (e) { console.warn('resettlePending', d.id, e); }
+  }
+  console.log('resettlePending : ' + relances + ' règlement(s) relancé(s) par ' + who);
+  return {relances: relances, pending: pending};
+});
+
 exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) => {
   const uid = request.auth && request.auth.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Connexion requise.');
@@ -2005,7 +2105,7 @@ exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) 
       customerId: customerId,
       metadata: {clientUid: uid, cardSetup: true, produit: PRODUIT},
     };
-    Object.assign(body, mollieProfil());
+    Object.assign(body, await mollieProfil(db));
     // Un seul essai, et en carte. Le repli qui laissait Mollie choisir la méthode pouvait
     // créer un mandat PayPal : il n'aurait pas porté l'empreinte d'une commande, et la
     // carte annoncée au client n'aurait pas existé. Un refus est désormais dit, pas
@@ -2127,7 +2227,7 @@ exports.createClientPayment = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (
     method: 'creditcard',
     metadata: {reqId: reqId, clientUid: uid, produit: PRODUIT},
   };
-  Object.assign(payBody, mollieProfil());
+  Object.assign(payBody, await mollieProfil(db));
   if (customerId) payBody.customerId = customerId;
   // PAS de `sequenceType:'first'` ici. Mémoriser la carte et poser une empreinte (capture
   // manuelle) sont deux choses que Mollie ne combine pas : la demande passait, mais
@@ -2717,6 +2817,29 @@ exports.paymentReconciliation = onSchedule({schedule: '0 9 * * *', secrets: [SMT
       }
     } catch (e) { console.warn('reco complements', e); }
     if (items.length) sections.push('<h3>💛 Suppléments facturés mais non encaissés (' + items.length + ')</h3><ul>' + items.join('') + '</ul><p>Ces montants figurent sur la facture du client sans avoir été prélevés. Ils ne sont pas versés à l\'artisan tant qu\'ils ne sont pas encaissés.</p>');
+  }
+
+  // 6. PRESTATIONS PAYÉES MAIS JAMAIS INSCRITES AU REGISTRE — rattrapage automatique.
+  //    Une prestation réglée par le client dont le règlement serveur n'a pas abouti n'a
+  //    ni numéro de facture, ni commission, ni versement : elle est invisible dans la
+  //    console et l'artisan n'est pas payé. On ne se contente pas de le signaler : on
+  //    touche la demande, ce qui relance `settleCommission` (rejouable tant que
+  //    `commissionSettled` est absent). On signale ensuite ce qui résiste.
+  {
+    const items = [];
+    try {
+      let relances = 0;
+      for (const d of await scan('paid')) {
+        const r = d.data() || {};
+        if (r.commissionSettled) continue;
+        if (!r.providerUid) continue;            // sans prestataire, rien à régler
+        const a = ageH(r.paidAt || r.settledAt || r.acceptedAt || r.createdAt);
+        try { await d.ref.update({resettleAt: FieldValue.serverTimestamp()}); relances++; } catch (_) {}
+        items.push(row(d.id, r, 'jamais inscrite au registre' + (a !== null ? (' depuis ' + a + ' h') : '') + ' — règlement relancé'));
+      }
+      if (relances) console.log('paymentReconciliation : ' + relances + ' règlement(s) relancé(s).');
+    } catch (e) { console.warn('reco resettle', e); }
+    if (items.length) sections.push('<h3>🧾 Prestations payées jamais inscrites au registre (' + items.length + ')</h3><ul>' + items.join('') + '</ul><p>Le client a payé mais aucune facture n\'a été numérotée et aucune commission n\'a été prélevée. Le règlement vient d\'être relancé automatiquement — si la ligne revient demain, c\'est qu\'il échoue à chaque fois : consulter les journaux de <code>settleCommission</code>.</p>');
   }
 
   // BACKFILL DES FRAIS MOLLIE RÉELS : le règlement (settlementAmount) n'est souvent connu

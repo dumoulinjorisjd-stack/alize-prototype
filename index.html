@@ -3497,7 +3497,7 @@
     chat:false,advantages:false,referral:false,fidDetail:false,interv:false,invoiceId:null,clientInv:false,histInvoice:null,histCat:null,signPad:false,colisProc:false,imgView:null,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,delAcct:false,
     proJobsTotal:214,fidTiers:FID_TIERS.map(t=>({...t})),referralCode:'MARILOU-SBH',
     filleuls:[{name:'Kevin Questel',status:'valide',bonus:40},{name:'Rosa Almeida',status:'attente',bonus:0}],
-    admin:{view:'home',sel:null,fact:null},adminLedger:[],adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,adminPrices:ADMIN_PRICES(),
+    admin:{view:'home',sel:null,fact:null},adminLedger:[],adminOrph:{loaded:false,list:[]},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,adminPrices:ADMIN_PRICES(),
     avail:{lun:{n:0,m:1,a:1,s:0},mar:{n:0,m:1,a:1,s:0},mer:{n:0,m:1,a:1,s:1},jeu:{n:0,m:1,a:1,s:0},ven:{n:0,m:1,a:1,s:1},sam:{n:0,m:1,a:0,s:0},dim:{n:0,m:0,a:0,s:0}}
   };
   function newMission(svc){const a=S.addresses.find(x=>x.id===S.addrDefault)||S.addresses[0]||null;const day=svc.id==='animaux';const colis=svc.id==='colis';const cat=isCatalogForfait(svc.id);const forf=colis||cat;const px=(S.adminPrices&&S.adminPrices[svc.id]!=null)?S.adminPrices[svc.id]:svcBase(svc.id);const m={svc:svc.id,svcName:svc.nm,unit:forf?'forfait':(day?'j':'h'),rate:day?DAY_RECO:px,boost:0,finalHours:null,disputeMsg:null,frequency:'ponctuelle',people:1,locationMode:'domicile',duration:forf?1:(day?2:3),zone:a?a.zone:'Gustavia',address:a?a.address:'',addressId:a?a.id:'__manual',geo:a?a.geo:null,access:a?(a.access||''):'',notes:'',photos:[],when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',slotMode:null,slotFlex:0,proposedSlot:null,status:'draft',provider:null,rating:0,competitors:0,chat:[],support:{client:[],pro:[]}};
@@ -7978,6 +7978,24 @@
       ${feePending?`<p class="mini" style="margin-top:9px;color:var(--muted)">${I.clock} ${feePending} prestation${feePending>1?'s':''} en attente du règlement Mollie — le frais réel se complète automatiquement sous 1 à 2 jours.</p>`:''}
       <button class="btn primary sm" data-adm="export-accounting" style="margin-top:12px;width:auto;padding:9px 14px">${I.card}&nbsp;Export comptable (CSV)</button>
       <p class="mini" style="margin-top:8px;color:var(--muted)">Journal détaillé (une ligne par commission et par rétribution) pour votre comptable. Chiffres issus du <b>registre serveur immuable</b> — <b>seules les transactions réellement encaissées via Mollie</b> sont comptées (les missions de test n'apparaissent pas).</p>`;
+    // ── Prestations payées mais absentes du registre ──────────────────────────────
+    // Une prestation réglée par le client dont le règlement serveur a échoué n'a ni
+    // numéro de facture, ni commission, ni versement : elle est introuvable ici et
+    // l'artisan n'est pas payé. Le balayage de 9 h la rattrape tout seul ; cette carte
+    // permet de ne pas attendre jusqu'au lendemain.
+    const orph=S.adminOrph||{};
+    const orphList=orph.list||[];
+    const orphChip=!orph.loaded?'':(orphList.length?chip('coral',orphList.length):chip('good','aucune'));
+    const orphBody=`<div class="banner warn">${I.clock}<span>Le client a payé, mais la prestation n’a <b>jamais été inscrite au registre</b>&nbsp;: pas de numéro de facture, pas de commission, et rien n’a été versé au prestataire. Relancer le règlement répare tout d’un coup.</span></div>
+      ${!orph.loaded?`<button class="btn ghost sm" data-adm="orph-scan" style="margin-top:12px">${I.search}&nbsp;Vérifier maintenant</button>`
+        :(orphList.length?`<div class="mini" style="margin-top:11px;color:var(--muted)">${orphList.length} prestation${orphList.length>1?'s':''} concernée${orphList.length>1?'s':''}</div>
+          ${orphList.map(function(o){return `<div class="card" style="padding:13px;margin-top:9px">
+            <div class="row between"><b style="font-size:14px">${esc(o.serviceName||'Prestation')}</b><span class="money" style="font-weight:700">${eur(Number(o.total)||0)}</span></div>
+            <div class="mini" style="margin-top:3px">${o.dateISO?fmtLong(o.dateISO):'—'} · ${esc(o.clientName||'')} · ${esc(o.providerName||'')}</div></div>`;}).join('')}
+          <button class="btn primary sm" data-adm="orph-run" style="margin-top:12px">${I.bolt}&nbsp;Relancer le règlement</button>
+          <p class="mini" style="margin-top:8px;color:var(--muted)">Le registre se met à jour en quelques secondes&nbsp;: les factures réapparaissent dans la recherche ci-dessus, avec leur numéro.</p>`
+        :`<div class="banner good" style="margin-top:12px">${I.check}<span>Aucune&nbsp;: toutes les prestations payées sont inscrites au registre.</span></div>
+          <button class="btn ghost sm" data-adm="orph-scan" style="margin-top:12px">${I.search}&nbsp;Revérifier</button>`)}`;
     return `<div class="pad">
       <div class="row between isle-wm" style="margin-top:10px"><div><span class="eyebrow">Console admin · Factures</span><div class="h-hello">Factures &amp; commissions</div></div><div class="avatar" style="background:linear-gradient(135deg,var(--ink),#000)">TS</div></div>
       <div class="mini" style="margin-top:4px;color:var(--muted)">Tout l'historique — chaque facture reste accessible et retrouvable.</div>
@@ -7994,6 +8012,7 @@
       ${foldCard('f-search',I.search,'Retrouver une facture','N° de facture, client, artisan ou service',searchBody,(S.admin.factQ||'').trim().length>1?chip('grey','recherche en cours'):'')}
       ${foldCard('f-art',I.card,'Factures par artisan','Facture de commission + factures de prestation (mandat)',artBody,chip(groups.length?'good':'grey',groups.length))}
       ${foldCard('f-conc',I.concierge,'Rétributions conciergerie','Virement mensuel groupé + export SEPA',concBody,dueList.length?chip('coral',dueList.length+' à verser'):chip('good','à jour'))}
+      ${foldCard('f-orph',I.clock,'Prestations payées non facturées','Payées par le client, jamais inscrites au registre',orphBody,orphChip)}
 
       <div style="height:18px"></div><span class="eyebrow">${I.euro} Comptabilité</span>
       ${foldCard('f-acc',I.card,'Justificatif de revenus','Commissions − frais Mollie − rétributions versées',accBody,chip('grey',eur(netRev)))}
@@ -12491,6 +12510,31 @@
       else if(act==='manual-all'||act==='manual-none'){document.querySelectorAll('.manbook details').forEach(function(d){d.open=(act==='manual-all');});return;}
       else if(act==='manual-print'){document.querySelectorAll('.manbook details').forEach(function(d){d.open=true;});setTimeout(function(){try{window.print();}catch(_){}},80);return;}
       else if(act==='prospect'){S.admin.view='prospect';S.admin.sel=null;S.mission=null;S.support=false;S.supportSide=null;S.adminSupervise=false;S.generalSupport=false;S.genUser=null;render();view.scrollTop=0;return;}
+      else if(act==='orph-scan'||act==='orph-run'){(function(){
+        // Inventaire (scan) puis rattrapage (run) des prestations payées jamais inscrites
+        // au registre. Le serveur ne fait que « toucher » la demande : c'est le règlement
+        // lui-même qui se rejoue, avec son propre verrou anti-doublon.
+        if(!isAdminAccount()){toast('Réservé à l’administrateur (compte réel)');return;}
+        if(!(FB&&FB.functions&&FB.fn&&FB.fn.httpsCallable)){toast('Indisponible hors ligne — réessayez connecté');return;}
+        const relance=(act==='orph-run');
+        toast(relance?'Relance du règlement…':'Vérification…');
+        FB.fn.httpsCallable(FB.functions,'resettlePending')({action:relance?'run':'list'}).then(function(r){
+          const d=(r&&r.data)||{};
+          S.adminOrph={loaded:true,list:d.pending||[]};
+          if(relance){
+            const n=Number(d.relances)||0;
+            toast(n?(n+' règlement'+(n>1?'s':'')+' relancé'+(n>1?'s':'')+' — les factures arrivent'):'Rien à relancer');
+            // Le registre est réécrit par le serveur : on redemande l'inventaire après
+            // quelques secondes plutôt que d'annoncer un résultat qu'on n'a pas vérifié.
+            setTimeout(function(){
+              FB.fn.httpsCallable(FB.functions,'resettlePending')({action:'list'}).then(function(r2){
+                S.adminOrph={loaded:true,list:((r2&&r2.data)||{}).pending||[]};render();
+              }).catch(function(){});
+            },6000);
+          } else if(!(d.pending||[]).length) toast('Aucune prestation en attente ✓');
+          render();
+        }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
+      })();return;}
       else if(act==='prospect-filter'){S._prospectFilter=id||'all';render();return;}
       else if(act==='prospect-cat'){S._prospectCats=S._prospectCats||{};S._prospectCats[id]=!S._prospectCats[id];render();return;}
       else if(act==='molrelance'){(function(){
