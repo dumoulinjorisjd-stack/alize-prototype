@@ -393,6 +393,29 @@ async function notifyArtisanMollieActivated(db, uid) {
 // mollieIssueNotified / mollieActiveNotified) pour ne jamais spammer. Renvoie {status,
 // active} ou null si rien à faire (pas d'organisation / pas de jeton / erreur). Partagé
 // par mollieCheckStatus (app), le webhook Mollie (temps réel) et le balayage planifié.
+// RATTRAPAGE DES VERSEMENTS EN ATTENTE. Un artisan peut travailler dès que Mollie
+// l'autorise à encaisser ; si ses virements ne sont pas encore ouverts, son net reste sur
+// le solde plateforme (jamais perdu, mais pas versé). Dès que Mollie les ouvre, on repasse
+// sur tout ce qui l'attendait et on le lui route — sans intervention humaine.
+async function rerouteArtisanPayouts(db, uid, orgId) {
+  if (!orgId) return 0;
+  const q = await db.collection('requests')
+    .where('providerUid', '==', uid).where('molliePayout', '==', 'unrouted').get();
+  let n = 0;
+  for (const d of q.docs) {
+    const r = d.data() || {};
+    const net = round2(Number(r.molliePayoutNet) || 0);
+    if (!r.molliePaymentId || net <= 0) continue;   // net inconnu : régularisation à la main
+    let ok = false;
+    try {
+      ok = await mollieRouteNet(r.molliePaymentId, orgId, net,
+        'Ti-Services · ' + (r.serviceName || r.service || 'prestation') + (r.saleInvoiceNo ? (' · ' + r.saleInvoiceNo) : ''));
+    } catch (e) { console.warn('rerouteArtisanPayouts', e); }
+    if (ok) { try { await d.ref.update({molliePayout: 'routed', molliePayoutIssue: ''}); } catch (_) {} n++; }
+  }
+  if (n) console.log('Versements rattrapés pour ' + uid + ' : ' + n);
+  return n;
+}
 async function syncArtisanMollie(db, uid) {
   if (!mollieOAuthConfigured()) return null;
   const artSnap = await db.collection('artisans').doc(uid).get();
@@ -431,8 +454,20 @@ async function syncArtisanMollie(db, uid) {
   // Lien vers le compte Mollie de l'artisan (page hébergée : compléter / gérer son dossier).
   // On le conserve pour que l'app puisse TOUJOURS proposer l'accès au compte Mollie.
   const dashboard = ready.dashboard || ad.mollieDashboardUrl || '';
+  // PEUT TRAVAILLER : Mollie ouvre l'encaissement AVANT de finir de vérifier le dossier,
+  // et cette vérification ne se déclenche qu'après une première transaction. Exiger le
+  // dossier validé pour accepter une mission enfermait donc l'artisan dans un cercle :
+  // pas de mission → pas de transaction → pas de validation → pas de mission. Dès que
+  // Mollie l'autorise à encaisser, il peut travailler ; son net est mis de côté sur le
+  // solde plateforme tant que ses virements ne sont pas ouverts, et part tout seul après.
+  const peutTravailler = !!(ad.mollieOrgId && ready.canPay === true);
   const upd = {mollieStatus: ready.ok ? 'active' : 'pending', mollieOnboardingStatus: ready.status,
-    mollieCanPay: ready.canPay !== false, mollieCanSettle: ready.canSettle !== false, mollieDashboardUrl: dashboard};
+    mollieCanPay: ready.canPay !== false, mollieCanSettle: ready.canSettle !== false,
+    mollieCanWork: peutTravailler, mollieDashboardUrl: dashboard};
+  // Ses virements viennent de s'ouvrir : on rattrape tout de suite ce qui l'attendait.
+  if (ready.canSettle === true && ad.mollieCanSettle === false) {
+    try { await rerouteArtisanPayouts(db, uid, ad.mollieOrgId); } catch (e) { console.warn('reroute', e); }
+  }
   if (ready.status === 'needs-data' && prevNotified !== 'needs-data') {
     upd.mollieIssueNotified = 'needs-data';
     try { await notifyArtisanMollieProblem(db, uid, 'needs-data'); } catch (_) {}
@@ -1572,7 +1607,9 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
           // à l'artisan (onboarding Mollie incomplet, organisation absente, refus API).
           // L'argent reste sur le solde plateforme — on ne le perd JAMAIS en silence :
           // on marque la mission et on alerte l'admin pour régularisation manuelle.
-          await event.data.after.ref.update({molliePayout: 'unrouted', molliePayoutIssue: orgId ? 'route_failed' : 'no_org'});
+          // On inscrit le NET DÛ : sans lui, aucun rattrapage automatique n'est possible
+          // quand Mollie ouvre enfin les virements de l'artisan.
+          await event.data.after.ref.update({molliePayout: 'unrouted', molliePayoutIssue: orgId ? 'route_failed' : 'no_org', molliePayoutNet: netA});
           // On prévient AUSSI l'artisan : son compte Mollie n'est pas validé, un versement
           // n'a pas pu lui être fait (la somme est en sécurité en attendant).
           try { await notifyArtisanMollieProblem(db, providerUid, orgId ? 'route_failed' : 'no_org'); } catch (_) {}
@@ -2107,9 +2144,10 @@ exports.mollieOnboardingReturn = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLI
       res.redirect(302, MOLLIE_APP_RETURN + '?mollie=platform');
       return;
     }
-    // On ne passe « active » QUE si l'onboarding Mollie est réellement terminé (identité +
-    // IBAN vérifiés). Sinon « pending » — l'artisan ne pourra pas accepter tant que Mollie
-    // n'a pas validé, ce qui évite tout versement dans le vide.
+    // « active » = dossier Mollie réellement terminé (identité + IBAN vérifiés). Sinon
+    // « pending ». Mais accepter une mission ne demande QUE l'autorisation d'encaisser
+    // (mollieCanWork) : Mollie ne finit sa vérification qu'après une première transaction,
+    // exiger le dossier complet enfermerait l'artisan dans un cercle sans issue.
     const ready = orgId ? await mollieOnboardingReady(tok.access_token) : {ok: false, status: 'needs-data', dashboard: ''};
     const db = getFirestore();
     await db.collection('artisans').doc(uid).set({
@@ -2118,6 +2156,7 @@ exports.mollieOnboardingReturn = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLI
       mollieOnboardingStatus: ready.status,
       mollieCanPay: ready.canPay !== false,
       mollieCanSettle: ready.canSettle !== false,
+      mollieCanWork: !!(orgId && ready.canPay === true),
       mollieDashboardUrl: ready.dashboard || '',
       mollieOnboardedAt: FieldValue.serverTimestamp(),
     }, {merge: true});
@@ -2313,6 +2352,10 @@ exports.mollieActivationReminder = onSchedule({schedule: 'every monday 13:00', s
   for (const d of snap.docs) {
     const a = d.data() || {};
     if (a.mollieStatus === 'active') { actifs++; continue; }
+    // Celui qui peut déjà encaisser et à qui Mollie ne réclame aucune pièce n'a RIEN à
+    // faire : il attend seulement la validation. Le relancer serait un reproche sans objet
+    // — et il peut déjà accepter des missions.
+    if (a.mollieCanWork === true && a.mollieOnboardingStatus !== 'needs-data') { actifs++; continue; }
     // Garde-fou : jamais deux relances à moins de 6 jours, même si la tâche est rejouée à
     // la main ou si l'ordonnanceur double un déclenchement.
     const last = Number(a.mollieRelanceAt) || 0;
@@ -3256,6 +3299,12 @@ exports.sendMollieRelance = onCall({secrets: [SMTP_PASS]}, async (request) => {
   const a = snap.data() || {};
   // Ne jamais relancer quelqu'un qui a terminé : ce serait le message le plus décourageant.
   if (a.mollieStatus === 'active') return {sent: false, reason: 'active'};
+  // Ni quelqu'un qui n'a plus rien à faire : Mollie l'autorise déjà à encaisser et son
+  // dossier ne réclame aucune pièce — il attend simplement la validation. Le relancer
+  // serait un reproche sans objet.
+  if (a.mollieCanWork === true && a.mollieOnboardingStatus !== 'needs-data') {
+    return {sent: false, reason: 'attente-mollie'};
+  }
   let email = a.email || '';
   if (!email) {
     try { email = ((await db.collection('users').doc(uid).get()).data() || {}).email || ''; } catch (_) {}

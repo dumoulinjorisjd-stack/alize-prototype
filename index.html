@@ -920,6 +920,10 @@
   .banner.teal{background:var(--teal-wash);color:var(--teal-deep)}
   .banner.coral{background:var(--coral-wash);color:var(--coral-deep)}
 .banner.good{background:var(--good-wash);color:var(--good)}
+  /* Ambre : « ce n'est pas un problème, mais il faut le savoir ». Pas de jeton --warn-wash
+     dans la charte : on le dérive, et on garde le texte en encre pour rester lisible en
+     clair comme en sombre. */
+  .banner.warn{background:color-mix(in srgb,var(--warn) 16%, transparent);color:var(--ink)}
 
   .paycap{height:200px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center}
   .checkmark{width:80px;height:80px;border-radius:50%;background:var(--good);display:flex;align-items:center;justify-content:center;color:#fff;animation:pop .45s cubic-bezier(.2,1.2,.4,1)}
@@ -7669,7 +7673,10 @@
     const artList=activeArts.length?activeArts.map(a=>{const c=acctChip(a.status);
       const al=[];
       if((a.noShowCount||0)>0)al.push(`<span class="chip coral">${I.clock} ${a.noShowCount} absence${a.noShowCount>1?'s':''}</span>`);
-      if(a.status==='valide'&&a.mollieStatus!=='active')al.push(`<span class="chip coral" title="Paiements non activés">€ inactif</span>`);
+      // « € inactif » = ne peut pas travailler. Celui que Mollie autorise déjà à encaisser
+      // le peut : le marquer en rouge serait faux, et il n'y a rien à relancer chez lui.
+      if(a.status==='valide'&&a.mollieStatus!=='active'&&!a.mollieCanWork)al.push(`<span class="chip coral" title="Paiements non activés">€ inactif</span>`);
+      if(a.status==='valide'&&a.mollieStatus!=='active'&&a.mollieCanWork)al.push(`<span class="chip warn" title="Mollie l'autorise à encaisser ; ses virements s'ouvriront après validation">€ virements en attente</span>`);
       return `<button class="card listrow" data-adm="art:${a.id}">${avatarFounder(a.photo,inits(a.name),'sm',founderActiveFor(a))}<div class="lr-main">
         <div class="row between" style="gap:8px;align-items:center"><b class="lr-name">${esc(a.name)}</b><span class="chip ${c[0]}" style="flex:none">${c[1]}</span></div>
         <div class="mini lr-sub">${catShort(a.cats)} · ${artPriceShort(a)} · ${esc(migZone(a.zone))}</div>
@@ -7748,7 +7755,10 @@
        c'est le total — impossible de savoir combien seront opérationnels le jour J.
        Cette carte donne le chiffre, nomme ceux qui bloquent, et met le téléphone à
        portée de doigt : à ce stade, un appel vaut mieux qu'un e-mail de plus. */
-    const molOk=function(a){return a.mollieStatus==='active';};
+    // Opérationnel = peut accepter une mission. Cela inclut celui dont Mollie a ouvert
+    // l'encaissement sans avoir fini de valider son dossier : il travaille, et son gain
+    // lui part dès l'ouverture de ses virements. Le relancer n'aurait aucun objet.
+    const molOk=function(a){return a.mollieStatus==='active'||a.mollieCanWork===true;};
     const molValides=activeArts.filter(function(a){return a.status==='valide';});
     const molPrets=molValides.filter(molOk);
     const molBloques=molValides.filter(function(a){return !molOk(a);})
@@ -7768,7 +7778,7 @@
     const molBlock=(function(){
       if(!S.adminArtsLoaded)return '';
       if(!molValides.length)return `<p class="mini" style="margin-top:8px;color:var(--muted)">Aucun prestataire validé pour l’instant.</p>`;
-      const entete=`<div class="row" style="gap:9px">${stat('Validés',molValides.length,'prestataires')}${stat('Prêts',molPrets.length,'peuvent encaisser')}${stat('À relancer',molBloques.length,'bloqués')}</div>`;
+      const entete=`<div class="row" style="gap:9px">${stat('Validés',molValides.length,'prestataires')}${stat('Prêts',molPrets.length,'peuvent travailler')}${stat('À relancer',molBloques.length,'bloqués')}</div>`;
       if(!molBloques.length)return entete+`<div class="banner good" style="margin-top:12px">${I.check}<span><b>Tout le monde est opérationnel.</b> Chaque prestataire validé peut accepter une mission et être réglé automatiquement.</span></div>`;
       const lignes=molBloques.map(function(a){
         const e=molEtat(a);
@@ -10343,11 +10353,19 @@
   // gain net (commission déduite) part alors automatiquement vers ce compte Mollie, sans
   // aucun virement manuel. Remplace l'ancienne obligation de RIB dans l'app.
   function mollieReady(){return mollieState()==='active'&&!!S.proMollieOrgId;}
-  // Peut-on accepter une mission ? En paiement RÉEL (prod), l'activation Mollie est requise
-  // (versement automatique du gain net). En BÊTA/démo, aucun versement réel → l'activation
-  // Mollie n'est PAS exigée, pour pouvoir dérouler la démonstration complète (accepter,
-  // réaliser, valider) sans passer par l'onboarding Mollie.
-  function canAcceptMissions(){return !payReal()||mollieReady();}
+  // MOLLIE AUTORISE DÉJÀ L'ENCAISSEMENT, sans avoir fini de vérifier le dossier. Il faut
+  // pouvoir travailler dans cet état : Mollie ne termine sa vérification qu'APRÈS une
+  // première transaction — exiger le dossier validé enfermerait l'artisan dans un cercle
+  // sans issue (pas de mission → pas de transaction → pas de validation → pas de mission).
+  // Son gain est alors gardé sur le compte Ti-Services et lui part tout seul à l'ouverture
+  // de ses virements. On le lui dit noir sur blanc (bandeau ci-dessous).
+  function molliePeutTravailler(){return !!(S.proMollieCanWork&&S.proMollieOrgId);}
+  function versementDiffere(){return payReal()&&!mollieReady()&&molliePeutTravailler();}
+  // Peut-on accepter une mission ? En paiement RÉEL (prod), Mollie doit au minimum
+  // autoriser l'encaissement. En BÊTA/démo, aucun versement réel → l'activation Mollie
+  // n'est PAS exigée, pour dérouler la démonstration complète (accepter, réaliser,
+  // valider) sans passer par l'onboarding Mollie.
+  function canAcceptMissions(){return !payReal()||mollieReady()||molliePeutTravailler();}
   // BÊTA uniquement : il n'y a pas de vrai versement, donc l'onboarding Mollie n'a pas lieu
   // d'être. Pour dérouler la démonstration complète (le prestataire doit pouvoir ACCEPTER),
   // on marque son compte « paiements actifs » côté bêta — ce qui satisfait aussi la règle
@@ -11138,8 +11156,12 @@
         // où l'artisan essaie d'accepter et découvre qu'il ne peut pas.
         const nd=(st==='pending'&&S.proMollieOnb==='needs-data');
         const pend=(st==='pending'&&!nd);
-        const ttl=nd?'Finissez votre dossier de paiement (2 min)':pend?'Paiements en cours de validation':'Dernière étape pour être payé';
+        // Quand Mollie autorise déjà l'encaissement, l'artisan PEUT accepter : le dire, au
+        // lieu de l'inquiéter avec une étape qui ne le concerne plus.
+        const trav=molliePeutTravailler();
+        const ttl=nd?'Finissez votre dossier de paiement (2 min)':trav?'Vous pouvez accepter des missions':pend?'Paiements en cours de validation':'Dernière étape pour être payé';
         const txt=nd?'Il manque des éléments à votre dossier Mollie — sans lui, impossible d\'accepter des missions.'
+          :trav?'Mollie vous autorise à encaisser. Il finit de valider votre dossier : d\'ici là, vos gains sont mis de côté et vous seront versés automatiquement.'
           :pend?'Dossier complet — en examen chez Mollie. Vous serez prévenu dès l\'activation.'
           :'Activez vos paiements (~5 min, une seule fois) pour pouvoir accepter des missions.';
         return `<button class="card" data-act="pro-mollie" style="padding:14px;margin-top:12px;width:100%;text-align:left;display:block${pend?'':';border:1.5px solid color-mix(in srgb,var(--coral) 45%,transparent)'}">
@@ -11986,7 +12008,7 @@
           // Rappel des actions IMPORTANTES encore à faire (surfacées en haut, pas enfouies).
           const todos=[];
           const ms=mollieState();
-          if(ms!=='active')todos.push(`<button class="banner ${ms==='pending'?'teal':'coral'}" data-act="pro-mollie" style="margin-top:10px;width:100%;text-align:left;cursor:pointer">${I.card}<span>${ms==='pending'?`<b>Paiements en cours de vérification</b> — suivez l'activation.`:`<b>Activez vos paiements</b> — indispensable pour accepter des missions.`}</span></button>`);
+          if(ms!=='active'&&!molliePeutTravailler())todos.push(`<button class="banner ${ms==='pending'?'teal':'coral'}" data-act="pro-mollie" style="margin-top:10px;width:100%;text-align:left;cursor:pointer">${I.card}<span>${ms==='pending'?`<b>Paiements en cours de vérification</b> — suivez l'activation.`:`<b>Activez vos paiements</b> — indispensable pour accepter des missions.`}</span></button>`);
           if(!insOk){const pend=!!S.proInsuranceUrl;todos.push(`<button class="banner ${pend?'teal':'coral'}" data-act="pro-docs" style="margin-top:10px;width:100%;text-align:left;cursor:pointer">${I.shield}<span>${pend?`<b>Attestation d'assurance en vérification</b> — rien à faire, on vous prévient.`:`<b>Joignez votre attestation d'assurance</b> — requise pour accepter des missions.`}</span></button>`);}
           return todos.join('');
         })()}
@@ -12039,7 +12061,7 @@
           <button class="btn primary sm" data-act="salon-save" style="margin-top:11px;width:auto;padding:9px 16px">${I.check} Enregistrer mon salon</button></div>`:''}`);})()}
 
       <div class="eyebrow" style="margin:26px 4px 6px;color:var(--muted)">Compte</div>
-      ${(function(){const st=mollieState();const needsData=(st==='pending'&&S.proMollieOnb==='needs-data');const badge=st==='active'?`<span class="chip good" style="flex:none">${I.check} Actif</span>`:needsData?`<span class="chip coral" style="flex:none">${I.clip} À compléter</span>`:st==='pending'?`<span class="chip warn" style="flex:none">${I.clock} En vérification</span>`:`<span class="chip coral" style="flex:none">À activer</span>`;
+      ${(function(){const st=mollieState();const needsData=(st==='pending'&&S.proMollieOnb==='needs-data');const badge=st==='active'?`<span class="chip good" style="flex:none">${I.check} Actif</span>`:needsData?`<span class="chip coral" style="flex:none">${I.clip} À compléter</span>`:st==='pending'?`<span class="chip warn" style="flex:none">${I.clock} ${molliePeutTravailler()?'Encaissement ouvert':'En vérification'}</span>`:`<span class="chip coral" style="flex:none">À activer</span>`;
       return foldCard('p-pay',I.card,'Recevoir mes paiements','',`
         ${st==='active'?`<p class="mini">${I.lock} Réglé automatiquement, net, après chaque prestation.</p><button class="btn ghost sm" data-act="pro-mollie" style="margin-top:11px;width:auto;padding:9px 14px">Voir mes paiements</button>`
         :needsData?`<p class="mini"><b>Il manque des éléments à votre dossier Mollie</b> — 2-3 minutes suffisent pour finir et pouvoir être payé.</p><button class="btn primary sm" data-act="pro-mollie" style="margin-top:11px;width:auto;padding:9px 14px">${I.check} Compléter mon dossier</button>`
@@ -14278,7 +14300,7 @@
         S.proLegal=(ad&&(ad.legalName||ad.name))||name; S.proAddress=(ad&&ad.address)||''; S.proStatusType=(ad&&ad.statusType)||'entreprise'; S.proLegalForm=(ad&&ad.legalForm)||''; S.proCapital=(ad&&ad.capital)||''; S.proRcsCity=(ad&&ad.rcsCity)||'';
         if(ad&&Array.isArray(ad.cats)&&ad.cats.length){S.proCats=ad.cats.slice();const rr=ad.rates||{};S.proRate=Math.min.apply(null,ad.cats.map(c=>(rr[c]!=null?rr[c]:svcBase(c))));}
         if(ad){S.proPendingCats=Array.isArray(ad.pendingCats)?ad.pendingCats.slice():[];S.proPendingOther=ad.pendingOther||'';S.proSkipped=Array.isArray(ad.skippedRequests)?ad.skippedRequests.slice():[];S.proSkipAt=(ad.skippedAt&&typeof ad.skippedAt==='object')?ad.skippedAt:{};}
-        if(ad){ S.proFounder=!!ad.founder; S.proFounderSince=(ad.founderSince&&ad.founderSince.toMillis)?ad.founderSince.toMillis():(typeof ad.founderSince==='number'?ad.founderSince:null); S.proFounderGross=Number(ad.founderGross)||0; S.proRating=ad.rating||0; S.proIban=ad.iban||''; S.proIbanHolder=ad.ibanHolder||''; S.proBic=ad.bic||''; S.proInsured=!!ad.insured; S.proInsurer=ad.insurer||''; S.proInsuranceUrl=ad.insuranceUrl||''; S.proInsuranceStatus=ad.insuranceStatus||(ad.status==='valide'&&ad.insured?'valide':(ad.insuranceUrl||ad.insured?'attente':'none')); S.proSiret=ad.siret||''; S.proBirth=ad.birth||''; S.proBio=ad.bio||''; S.proDiplomas=Array.isArray(ad.diplomas)?ad.diplomas:[]; S.proDiplomaOther=ad.diplomaOther||''; S.proPhoto=ad.photo||S.proPhoto||loadPhotoLocal(user.uid)||null; if(S.proPhoto)savePhotoLocal(user.uid,S.proPhoto); if(!ad.photo&&S.proPhoto){try{FB.f.setDoc(FB.f.doc(FB.db,'artisans',user.uid),{photo:S.proPhoto},{merge:true});}catch(_){}} S.proAcceptedCharte=!!ad.acceptedCharte; S.proAcceptedTerms=!!ad.acceptedTerms; S.proTermsVersion=ad.termsVersion||''; S.proTermsAt=(ad.termsAt&&ad.termsAt.toDate)?ad.termsAt.toDate():null; S.proMollie=ad.mollieStatus||'none'; S.proMollieOnb=ad.mollieOnboardingStatus||''; S.proMollieOrgId=ad.mollieOrgId||''; S.proMollieDashboard=ad.mollieDashboardUrl||''; ensureBetaMollie(); if(S.proMollieOrgId&&!S._mollieAutoChecked){S._mollieAutoChecked=true;setTimeout(function(){try{refreshMollieStatus();}catch(_){}},1500);}
+        if(ad){ S.proFounder=!!ad.founder; S.proFounderSince=(ad.founderSince&&ad.founderSince.toMillis)?ad.founderSince.toMillis():(typeof ad.founderSince==='number'?ad.founderSince:null); S.proFounderGross=Number(ad.founderGross)||0; S.proRating=ad.rating||0; S.proIban=ad.iban||''; S.proIbanHolder=ad.ibanHolder||''; S.proBic=ad.bic||''; S.proInsured=!!ad.insured; S.proInsurer=ad.insurer||''; S.proInsuranceUrl=ad.insuranceUrl||''; S.proInsuranceStatus=ad.insuranceStatus||(ad.status==='valide'&&ad.insured?'valide':(ad.insuranceUrl||ad.insured?'attente':'none')); S.proSiret=ad.siret||''; S.proBirth=ad.birth||''; S.proBio=ad.bio||''; S.proDiplomas=Array.isArray(ad.diplomas)?ad.diplomas:[]; S.proDiplomaOther=ad.diplomaOther||''; S.proPhoto=ad.photo||S.proPhoto||loadPhotoLocal(user.uid)||null; if(S.proPhoto)savePhotoLocal(user.uid,S.proPhoto); if(!ad.photo&&S.proPhoto){try{FB.f.setDoc(FB.f.doc(FB.db,'artisans',user.uid),{photo:S.proPhoto},{merge:true});}catch(_){}} S.proAcceptedCharte=!!ad.acceptedCharte; S.proAcceptedTerms=!!ad.acceptedTerms; S.proTermsVersion=ad.termsVersion||''; S.proTermsAt=(ad.termsAt&&ad.termsAt.toDate)?ad.termsAt.toDate():null; S.proMollie=ad.mollieStatus||'none'; S.proMollieOnb=ad.mollieOnboardingStatus||''; S.proMollieCanWork=ad.mollieCanWork===true; S.proMollieCanSettle=ad.mollieCanSettle!==false; S.proMollieOrgId=ad.mollieOrgId||''; S.proMollieDashboard=ad.mollieDashboardUrl||''; ensureBetaMollie(); if(S.proMollieOrgId&&!S._mollieAutoChecked){S._mollieAutoChecked=true;setTimeout(function(){try{refreshMollieStatus();}catch(_){}},1500);}
           // Revenus / missions réalisées, rechargés depuis la fiche (persistés à chaque paiement).
           S.proEarnings=ad.earnings||0; S.proJobsTotal=ad.jobsTotal||0; S.proHistory=Array.isArray(ad.history)?ad.history:[];
           // Parrainage : filleuls validés (crédités par le serveur) + code propre de l'artisan.
@@ -14685,7 +14707,7 @@
       adminArtUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'artisans'),function(snap){
         const list=[],pending=new Set();
         snap.forEach(function(d){ const a=d.data()||{}; const cats=Array.isArray(a.cats)?a.cats:[]; const rr=a.rates||{}; const st=a.status||'attente';
-          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Prestataire',status:st,type:(a.statusType==='particulier')?'particulier':'entreprise',statusType:a.statusType||'entreprise',legalName:a.legalName||'',legalForm:a.legalForm||'',capital:a.capital||'',rcsCity:a.rcsCity||'',birth:a.birth||'',referralCode:a.referralCode||'',referredByCode:a.referredByCode||'',acceptedTerms:!!a.acceptedTerms,acceptedCharte:!!a.acceptedCharte,acceptedMandat:!!a.acceptedMandat,acceptsGrille:!!a.acceptsGrille,termsVersion:a.termsVersion||'',termsAt:(a.termsAt&&a.termsAt.toMillis)?a.termsAt.toMillis():0,createdAt:(a.createdAt&&a.createdAt.toMillis)?a.createdAt.toMillis():0,cats:cats,other:a.other||'',otherPrice:Number(a.otherPrice)||0,otherUnit:(a.otherUnit==='forfait'?'forfait':'h'),pendingCats:Array.isArray(a.pendingCats)?a.pendingCats:[],pendingOther:a.pendingOther||'',pendingOtherPrice:Number(a.pendingOtherPrice)||0,pendingOtherUnit:(a.pendingOtherUnit==='forfait'?'forfait':'h'),rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,founderSince:(a.founderSince&&a.founderSince.toMillis)?a.founderSince.toMillis():(typeof a.founderSince==='number'?a.founderSince:null),founderGross:Number(a.founderGross)||0,rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,online:!!a.online,siteMode:a.siteMode||'',salonAddress:a.salonAddress||'',salonZone:a.salonZone||'',push:(Array.isArray(a.pushTokens)?a.pushTokens.length:0),mollieStatus:a.mollieStatus||'none',mollieOnb:a.mollieOnboardingStatus||'',mollieCanPay:a.mollieCanPay!==false,mollieCanSettle:a.mollieCanSettle!==false,mollieRelances:Number(a.mollieRelances)||0,mollieRelanceAt:Number(a.mollieRelanceAt)||0,lastNoShowAt:(a.lastNoShowAt&&a.lastNoShowAt.toDate)?a.lastNoShowAt.toDate().getTime():0});
+          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Prestataire',status:st,type:(a.statusType==='particulier')?'particulier':'entreprise',statusType:a.statusType||'entreprise',legalName:a.legalName||'',legalForm:a.legalForm||'',capital:a.capital||'',rcsCity:a.rcsCity||'',birth:a.birth||'',referralCode:a.referralCode||'',referredByCode:a.referredByCode||'',acceptedTerms:!!a.acceptedTerms,acceptedCharte:!!a.acceptedCharte,acceptedMandat:!!a.acceptedMandat,acceptsGrille:!!a.acceptsGrille,termsVersion:a.termsVersion||'',termsAt:(a.termsAt&&a.termsAt.toMillis)?a.termsAt.toMillis():0,createdAt:(a.createdAt&&a.createdAt.toMillis)?a.createdAt.toMillis():0,cats:cats,other:a.other||'',otherPrice:Number(a.otherPrice)||0,otherUnit:(a.otherUnit==='forfait'?'forfait':'h'),pendingCats:Array.isArray(a.pendingCats)?a.pendingCats:[],pendingOther:a.pendingOther||'',pendingOtherPrice:Number(a.pendingOtherPrice)||0,pendingOtherUnit:(a.pendingOtherUnit==='forfait'?'forfait':'h'),rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,founderSince:(a.founderSince&&a.founderSince.toMillis)?a.founderSince.toMillis():(typeof a.founderSince==='number'?a.founderSince:null),founderGross:Number(a.founderGross)||0,rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,online:!!a.online,siteMode:a.siteMode||'',salonAddress:a.salonAddress||'',salonZone:a.salonZone||'',push:(Array.isArray(a.pushTokens)?a.pushTokens.length:0),mollieStatus:a.mollieStatus||'none',mollieOnb:a.mollieOnboardingStatus||'',mollieCanPay:a.mollieCanPay!==false,mollieCanSettle:a.mollieCanSettle!==false,mollieCanWork:a.mollieCanWork===true,mollieRelances:Number(a.mollieRelances)||0,mollieRelanceAt:Number(a.mollieRelanceAt)||0,lastNoShowAt:(a.lastNoShowAt&&a.lastNoShowAt.toDate)?a.lastNoShowAt.toDate().getTime():0});
           if(st==='attente')pending.add(d.id); });
         S.adminArtisans=list;S.adminArtsLoaded=true;
         // Recalcule la liste des services actifs (au moins un prestataire validé) et la publie
@@ -15110,6 +15132,7 @@
         return `<p class="mini" style="margin-top:10px;color:var(--teal-deep)">${I.check} Aucun conflit avec votre agenda Google sur ce créneau.</p>`;})()}
       ${(r.locationMode==='salon')?`<div class="card" style="padding:14px;margin-top:12px"><div class="row" style="gap:10px;align-items:flex-start"><span class="benic">${I.shop}</span><div><b style="font-size:13px">Chez vous — le client se déplace</b><p class="mini" style="margin-top:3px">Cette prestation a lieu dans <b>votre salon / studio</b>. En acceptant, votre adresse est communiquée au client pour qu'il vous rejoigne. ${S.proSalonAddress?'':I.warn+' Renseignez d’abord l’adresse de votre salon dans votre profil.'}</p></div></div></div>`:`<div class="card" style="padding:14px;margin-top:12px"><div class="row" style="gap:10px;align-items:flex-start"><span class="benic">${I.lock}</span><div><b style="font-size:13px">Adresse exacte masquée</b><p class="mini" style="margin-top:3px">L'adresse précise, le point GPS et les infos d'accès s'affichent <b>dès que vous acceptez</b> la mission.</p></div></div></div>`}
       ${!canAcceptMissions()?`<div class="banner coral" style="margin-top:12px">${I.card}<span><b>Paiements à activer pour accepter.</b> Activez vos paiements sécurisés (Mollie) — votre gain net vous sera versé <b>automatiquement</b> après la prestation.</span></div>`:''}
+      ${versementDiffere()?`<div class="banner warn" style="margin-top:12px">${I.clock}<span><b>Vous pouvez accepter — votre virement partira un peu plus tard.</b> Mollie vous autorise déjà à encaisser mais n'a pas fini de valider votre dossier. Votre gain est <b>mis de côté sur le compte Ti-Services</b> et vous est versé <b>automatiquement</b> dès que Mollie ouvre vos virements. Rien à faire de votre côté&nbsp;: c'est justement cette première mission qui déclenche sa vérification.</span></div>`:''}
       <div class="footcta" style="position:static;background:none;padding:18px 0 0">
         ${canAcceptMissions()
           ? `<button class="btn accept" data-act="accept-req:${r.id}">${I.flame} Accepter${accLabel||' cette mission'}</button>`
