@@ -8182,15 +8182,18 @@
     </div>`;
   }
   function esc(s){return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-  function chatName(){return S.persona==='client'?(S.mission&&S.mission.provider?S.mission.provider.nm.split(' ')[0]:'votre prestataire'):proClientName(S.mission);}
+  // La conversation d'une prestation TERMINÉE se rouvre depuis l'historique : elle ne
+  // vit donc plus seulement sur la mission en cours.
+  function chatMission(){return S.pastChat||S.mission;}
+  function chatName(){const m=chatMission();return S.persona==='client'?(m&&m.provider?m.provider.nm.split(' ')[0]:'votre prestataire'):proClientName(m);}
   // Fusionne les messages LOCAUX (déjà affichés, y compris ceux qu'on vient d'envoyer)
   // avec ceux du SERVEUR, sans jamais perdre les siens le temps que l'écriture se
   // propage (sinon l'expéditeur ne voyait plus son propre message après resync).
   function mergeChat(local,server){const map=new Map();(local||[]).concat(server||[]).forEach(function(x){if(x&&x.text!=null){map.set((x.from||'')+'|'+(x.at||0)+'|'+x.text,x);}});return Array.from(map.values()).sort(function(a,b){return (a.at||0)-(b.at||0);});}
-  function chatInits(){return S.persona==='client'?(S.mission&&S.mission.provider?S.mission.provider.ini:'··'):inits(proClientName(S.mission)||'client');}
-  function sendChat(){const el=document.getElementById('chatInput');if(!el||!S.mission)return;const v=el.value.trim();if(!v)return;el.value='';const m=S.mission;const msg={from:S.persona,text:v,at:Date.now()};m.chat=m.chat||[];m.chat.push(msg);render();view.scrollTop=view.scrollHeight;if(FB&&m.reqId&&!isDemo()){const p=FB.f.updateDoc(FB.f.doc(FB.db,'requests',m.reqId),{messages:FB.f.arrayUnion(msg)});if(p&&p.catch)p.catch(function(e){toast('⚠︎ Message non envoyé — réessayez');console.warn('chat send',e);});}}
+  function chatInits(){const m=chatMission();return S.persona==='client'?(m&&m.provider?m.provider.ini:'··'):inits(proClientName(m)||'client');}
+  function sendChat(){const el=document.getElementById('chatInput');const m=chatMission();if(!el||!m)return;const v=el.value.trim();if(!v)return;el.value='';const msg={from:S.persona,text:v,at:Date.now()};m.chat=m.chat||[];m.chat.push(msg);render();view.scrollTop=view.scrollHeight;if(FB&&m.reqId&&!isDemo()){const p=FB.f.updateDoc(FB.f.doc(FB.db,'requests',m.reqId),{messages:FB.f.arrayUnion(msg)});if(p&&p.catch)p.catch(function(e){toast('⚠︎ Message non envoyé — réessayez');console.warn('chat send',e);});}}
   // Marque la conversation comme lue par le rôle courant (accusé « Lu » pour l'autre).
-  function markChatRead(){const m=S.mission;if(!m||(S.persona!=='client'&&S.persona!=='pro'))return;const field=(S.persona==='pro')?'readProAt':'readClientAt';const now=Date.now();m[field]=now;if(FB&&m.reqId&&!isDemo()){try{FB.f.updateDoc(FB.f.doc(FB.db,'requests',m.reqId),{[field]:now});}catch(_){}}}
+  function markChatRead(){const m=chatMission();if(!m||(S.persona!=='client'&&S.persona!=='pro'))return;const field=(S.persona==='pro')?'readProAt':'readClientAt';const now=Date.now();m[field]=now;if(FB&&m.reqId&&!isDemo()){try{FB.f.updateDoc(FB.f.doc(FB.db,'requests',m.reqId),{[field]:now});}catch(_){}}}
   // Accusés de lecture de la messagerie SUPPORT (par prestation). L'admin marque avoir lu
   // les messages de l'utilisateur (supXReadAdmin) ; l'utilisateur marque avoir lu les
   // réponses de Ti-Services (supXReadUser). X = C (client) ou P (artisan).
@@ -8200,8 +8203,30 @@
     // Persistance bêta : la messagerie support vit dans le document de la demande
     // (supportClient / supportPro), lisible par le client/artisan concerné et l'admin.
     if(FB&&m.reqId&&!isDemo()){try{const field=(side==='pro')?'supportPro':'supportClient';FB.f.updateDoc(FB.f.doc(FB.db,'requests',m.reqId),{[field]:FB.f.arrayUnion(msg)});}catch(_){}}}
+  // ROUVRIR LA CONVERSATION D'UNE PRESTATION TERMINÉE. Les messages ne sont pas conservés
+  // dans l'historique local — ils alourdiraient chaque sauvegarde — mais ils vivent sur la
+  // demande. On les relit à l'ouverture, et l'échange reprend là où il s'était arrêté.
+  function ouvrirChatPasse(h){
+    if(!h)return;
+    S.pastChat=Object.assign({},h,{chat:Array.isArray(h.chat)?h.chat:[]});
+    S.chat=true;S.support=false;S.advantages=false;S.histInvoice=null;render();
+    if(!(FB&&FB.db&&FB.f&&h.reqId)||isDemo())return;
+    FB.f.getDoc(FB.f.doc(FB.db,'requests',h.reqId)).then(function(d){
+      if(!d||!d.exists())return;
+      const r=d.data()||{};
+      if(!S.pastChat||S.pastChat.reqId!==h.reqId)return;   // l'écran a changé entre-temps
+      S.pastChat.chat=Array.isArray(r.messages)?r.messages:[];
+      S.pastChat.readClientAt=r.readClientAt||0;S.pastChat.readProAt=r.readProAt||0;
+      S.pastChat.support=S.pastChat.support||{};
+      if(Array.isArray(r.supportClient))S.pastChat.support.client=r.supportClient;
+      if(Array.isArray(r.supportPro))S.pastChat.support.pro=r.supportPro;
+      if(!S.pastChat.clientPhone&&r.clientPhone)S.pastChat.clientPhone=r.clientPhone;
+      if(!S.pastChat.providerPhone&&r.providerPhone)S.pastChat.providerPhone=r.providerPhone;
+      markChatRead();render();
+    }).catch(function(e){console.warn('chat archive',e);toast('Conversation indisponible — réessayez');});
+  }
   function chatScreen(){
-    const m=S.mission,other=chatName();
+    const m=chatMission(),other=chatName();
     // Le numéro n'apparaît qu'une fois la mission actée des deux côtés (cf. bothAccepted).
     const reveal=bothAccepted(m);
     const otherPhone=reveal?((S.persona==='pro')?(m.clientPhone||''):(m.providerPhone||'')):'';
@@ -8793,7 +8818,7 @@
     if(S.signPad&&m)return colisSignPad(m);
     if(S.colisProc&&m)return colisProcuration(m);
     if(S.support&&m)return supportChat();
-    if(S.chat&&m)return chatScreen();
+    if(S.chat&&(m||S.pastChat))return chatScreen();
     if(S.cardForm)return clientCardEdit();
     if(S.profileForm)return clientEditProfile();
     if(S.clientInv&&m)return clientInvoiceDoc();
@@ -9146,7 +9171,7 @@
   }
   // Carte d'une prestation passée (facture + « Refaire »). `i` = index dans
   // doneHistory() pour que les actions histinv:/renew: restent valides.
-  function histCard(h,i){const t=totals(h);return `<div class="card" style="padding:14px;margin-top:10px"><button data-act="histinv:${i}" style="width:100%;text-align:left;background:none;border:none;padding:0;display:block;cursor:pointer"><div class="row" style="gap:11px"><div class="avatar" style="width:40px;height:40px;font-size:14px${h.provider&&h.provider.photo?`;background-image:url('${h.provider.photo}');background-size:cover;background-position:center;color:transparent`:''}">${h.provider?esc(h.provider.ini||'--'):'--'}</div><div style="flex:1"><div class="row between"><b style="font-size:14px">${esc(h.svcName||'Prestation')}</b><span class="money" style="font-weight:700">${eur(t.total)}</span></div><div class="mini" style="margin-top:2px">${esc(h.when||'')}${h.provider&&h.provider.nm?' · '+esc(h.provider.nm):''}</div></div></div><div class="row between" style="margin-top:10px"><span class="chip good">${I.check} Bien exécuté &amp; réglé</span><span class="mini" style="color:var(--teal-deep);font-weight:700">${I.card} Voir ma facture ›</span></div></button><button class="btn ghost sm" data-act="renew:${i}" style="margin-top:11px">${I.repeat} Refaire${h.provider&&h.provider.nm?' avec '+esc(h.provider.nm.split(' ')[0]):''}</button></div>`;}
+  function histCard(h,i){const t=totals(h);return `<div class="card" style="padding:14px;margin-top:10px"><button data-act="histinv:${i}" style="width:100%;text-align:left;background:none;border:none;padding:0;display:block;cursor:pointer"><div class="row" style="gap:11px"><div class="avatar" style="width:40px;height:40px;font-size:14px${h.provider&&h.provider.photo?`;background-image:url('${h.provider.photo}');background-size:cover;background-position:center;color:transparent`:''}">${h.provider?esc(h.provider.ini||'--'):'--'}</div><div style="flex:1"><div class="row between"><b style="font-size:14px">${esc(h.svcName||'Prestation')}</b><span class="money" style="font-weight:700">${eur(t.total)}</span></div><div class="mini" style="margin-top:2px">${esc(h.when||'')}${h.provider&&h.provider.nm?' · '+esc(h.provider.nm):''}</div></div></div><div class="row between" style="margin-top:10px"><span class="chip good">${I.check} Bien exécuté &amp; réglé</span><span class="mini" style="color:var(--teal-deep);font-weight:700">${I.card} Voir ma facture ›</span></div></button><button class="btn ghost sm" data-act="histchat:${i}" style="margin-top:11px;justify-content:flex-start;gap:8px">${I.chat}&nbsp;Écrire à ${h.provider&&h.provider.nm?esc(h.provider.nm.split(' ')[0]):'votre prestataire'}</button><button class="btn ghost sm" data-act="renew:${i}" style="margin-top:9px">${I.repeat} Refaire${h.provider&&h.provider.nm?' avec '+esc(h.provider.nm.split(' ')[0]):''}</button></div>`;}
   // Historique replié en 2 niveaux (évite une liste interminable) :
   //  1) tuiles de CATÉGORIES (type de prestation) ;
   //  2) au clic, prestations de la catégorie RANGÉES PAR PRESTATAIRE.
@@ -10392,7 +10417,7 @@
     if(S.fidDetail)return proFidelity();
     if(S.colisTournee)return colisTournee();
     if(S.colisProc&&S.mission)return colisProcuration(S.mission);
-    if(S.chat&&S.mission)return chatScreen();
+    if(S.chat&&(S.mission||S.pastChat))return chatScreen();
     const m=S.mission;
     if(!m&&S.proReqView)return proReqFiche(S.proReqView);
     if(m){if(m.status==='cancelled'&&m.feeDecision!=='applied'&&m.feeDecision!=='waived')return proCancelDecision(m);if(m.status==='pending')return proRequest();if(m.status==='working'&&S.finishing)return proFinish();if(m.status==='accepted'||m.status==='working')return proActive();if(m.status==='done_pro'||m.status==='disputed')return proWaiting();if(m.status==='paid'||m.status==='rated')return proPaid();}
@@ -11879,7 +11904,7 @@
       <div class="mini" style="margin-top:3px">${fmtLong(h.dateISO)} · ${durTxt({unit:h.unit},h.duration)}</div>
       ${b.commission>0?`<div class="mini" style="margin-top:4px;color:var(--muted)">Prestation ${eur(b.gross)} · commission Ti-Services −${eur(b.commission)} (${b.pct}&nbsp;%)</div>`:''}
       ${(h.tip>0)?`<div class="mini" style="margin-top:4px;color:var(--good);font-weight:650">${I.heart} dont ${eur(h.tip)} de pourboire du client (100&nbsp;% pour vous)</div>`:''}
-      <div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap;align-items:center"><span class="chip good">${I.check} Réglée · ${esc(h.invNo)}</span><button class="btn ghost sm" style="width:auto;padding:8px 12px" data-act="invoice:${h.id}">${I.card}&nbsp;Facture</button>${b.commission>0?`<button class="btn ghost sm" style="width:auto;padding:8px 12px" data-act="comm-invoice:${h.id}">${I.card}&nbsp;Commission</button>`:''}</div></div>`;}
+      <div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap;align-items:center"><span class="chip good">${I.check} Réglée · ${esc(h.invNo)}</span><button class="btn ghost sm" style="width:auto;padding:8px 12px" data-act="invoice:${h.id}">${I.card}&nbsp;Facture</button>${h.reqId?`<button class="btn ghost sm" style="width:auto;padding:8px 12px" data-act="prohistchat:${esc(h.reqId)}">${I.chat}&nbsp;Écrire au client</button>`:''}${b.commission>0?`<button class="btn ghost sm" style="width:auto;padding:8px 12px" data-act="comm-invoice:${h.id}">${I.card}&nbsp;Commission</button>`:''}</div></div>`;}
   function proClientAgg(gs){var net=0,tips=0;gs.forEach(function(h){net+=histBreakdown(h).net;tips+=Number(h.tip)||0;});return {net:Math.round(net*100)/100,tips:Math.round(tips*100)/100,count:gs.length};}
   // Factures par mission, organisées PAR CLIENT : d'abord une FICHE par client (montant
   // global de ses missions + pourboires) ; on clique dessus pour voir ses factures.
@@ -12745,6 +12770,10 @@
     if(b.dataset.act&&b.dataset.act.indexOf('histcat:')===0){S.histCat=b.dataset.act.split(':')[1]||null;render();try{view.scrollTop=0;}catch(_){}return;}
     if(b.dataset.act==='histcat-back'){S.histCat=null;render();try{view.scrollTop=0;}catch(_){}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('histinv:')===0){const h=doneHistory()[+b.dataset.act.split(':')[1]];if(h)downloadInvoicePdf(h);return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('histchat:')===0){const h=doneHistory()[+b.dataset.act.split(':')[1]];if(h)ouvrirChatPasse(h);return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('prohistchat:')===0){const id=b.dataset.act.slice('prohistchat:'.length);
+      const h=(S.proHistory||[]).find(function(x){return x.reqId===id;});
+      if(h)ouvrirChatPasse(Object.assign({},h,{clientName:h.clientFull||h.client||'Client'}));return;}
     if(b.dataset.act&&b.dataset.act.indexOf('renew:')===0){const h=doneHistory()[+b.dataset.act.split(':')[1]];if(h)renewMission(h);return;}
     if(b.dataset.act&&b.dataset.act.indexOf('recur-confirm:')===0){recurConfirm(b.dataset.act.slice('recur-confirm:'.length));return;}
     if(b.dataset.act&&b.dataset.act.indexOf('recur-skip:')===0){recurSkip(b.dataset.act.slice('recur-skip:'.length));return;}
@@ -12992,7 +13021,7 @@
       case 'conc-client-save':{const f=S.concForm;if(!f)break;if(!(f.name||'').trim()){toast('Indiquez le nom du client');break;}const addr={label:f.alabel||f.name,address:f.aaddr,zone:f.azone,geo:f.ageo||null};if(f.id){const c=concClient(f.id);if(c){c.name=f.name;c.email=f.email;c.phone=f.phone;c.addr=addr;c.notes=f.notes||'';c.authorized=f.authorized;c.card=f.card;}}else{S.concClients.push({id:'cc'+Date.now(),name:f.name,email:f.email,phone:f.phone,addr,notes:f.notes||'',authorized:f.authorized,card:f.card});}S.concForm=null;saveConcCloud();render();toast('Client enregistré');break;}
       case 'conc-client-delete':if(S.concForm&&S.concForm.id){S.concClients=S.concClients.filter(x=>x.id!==S.concForm.id);S.concForm=null;saveConcCloud();render();toast('Client supprimé');}break;
       case 'open-chat':S.chat=true;markChatRead();render();view.scrollTop=view.scrollHeight;break;
-      case 'close-chat':S.chat=false;render();break;
+      case 'close-chat':S.chat=false;S.pastChat=null;render();break;
       case 'chat-send':sendChat();view.scrollTop=view.scrollHeight;break;
       case 'rm-insurance':if(S.proForm){S.proForm.insuranceFile=null;S.proForm.insuranceDoc=false;S.proForm.insuranceName='';}render();toast('Attestation retirée');break;
       case 'siret-lookup':lookupSiret();break;
@@ -14152,7 +14181,7 @@
     if(S.referral){S.referral=false;render();return;}
     if(S.fidDetail){S.fidDetail=false;render();return;}
     if(S.share){S.share=false;render();return;}
-    if(S.chat){S.chat=false;render();return;}
+    if(S.chat){S.chat=false;S.pastChat=null;render();return;}
     if(S.histCat&&S.persona==='client'&&S.clientNav==='wallet'){S.histCat=null;render();return;}
     if(S.persona==='admin'){if(S.admin.view==='fact'&&S.admin.fact){S.admin.fact=null;render();return;}
       // Catégorie dépliée sur l'accueil admin : le retour Android la REPLIE d'abord (au lieu

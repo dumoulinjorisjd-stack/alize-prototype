@@ -1807,6 +1807,11 @@ exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) 
   const uid = request.auth && request.auth.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Connexion requise.');
   if (!mollieApiConfigured()) return {card: null, simulated: true};
+  // Cette fonction n'avait PAS de `db` : chaque `db.collection(...)` levait une
+  // ReferenceError, avalée par les try/catch alentour. L'identifiant du client Mollie
+  // n'était donc jamais relu ni jamais écrit — la carte enregistrée chez Mollie restait
+  // introuvable chez nous, indéfiniment, et sans la moindre trace.
+  const db = getFirestore();
   const action = String((request.data && request.data.action) || 'get');
   let customerId = '';
   let udoc = {};
@@ -1814,21 +1819,41 @@ exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) 
     const snap = await db.collection('users').doc(uid).get();
     udoc = (snap.exists && snap.data()) || {};
     customerId = udoc.mollieCustomerId || '';
-  } catch (_) {}
+  } catch (e) { console.error('clientCard: fiche client illisible pour ' + uid, e); }
 
   // Le « client Mollie » porte les cartes mémorisées. Il naissait au premier paiement —
   // mais on doit pouvoir enregistrer sa carte AVANT toute commande, justement pour ne
   // pas la saisir le jour J. On le crée donc ici, à la demande.
+  const memoriser = async (id) => {
+    customerId = String(id);
+    // Écriture NON silencieuse : c'est elle qui manquait, et son échec muet a fait
+    // disparaître des cartes réellement enregistrées chez Mollie.
+    try { await db.collection('users').doc(uid).set({mollieCustomerId: customerId}, {merge: true}); } catch (e) {
+      console.error('clientCard: mollieCustomerId NON enregistré pour ' + uid, e);
+    }
+    return customerId;
+  };
   const ensureCustomer = async () => {
     if (customerId) return customerId;
+    // RATTRAPAGE : un client Mollie a pu être créé lors d'une tentative précédente sans
+    // que son identifiant nous revienne. On le retrouve par la marque qu'on y laisse
+    // (metadata.uid) plutôt que d'en créer un second — sinon la carte déjà enregistrée
+    // resterait accrochée à un client orphelin.
+    try {
+      const liste = await mollieApi('/customers?limit=250', 'GET');
+      const arr = (liste.ok && liste.data && liste.data._embedded && liste.data._embedded.customers) || [];
+      const deja = arr.filter((c) => c && c.metadata && String(c.metadata.uid || '') === uid);
+      if (deja.length) {
+        deja.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+        console.log('clientCard: client Mollie retrouvé pour ' + uid + ' → ' + deja[0].id);
+        return await memoriser(deja[0].id);
+      }
+    } catch (e) { console.warn('clientCard: recherche du client Mollie', e); }
     const body = {name: String(udoc.name || 'Client Ti-Services').slice(0, 100), metadata: {uid: uid}};
     const em = String(udoc.email || (request.auth.token && request.auth.token.email) || '').slice(0, 100);
     if (em) body.email = em;
     const cust = await mollieApi('/customers', 'POST', body);
-    if (cust.ok && cust.data && cust.data.id) {
-      customerId = String(cust.data.id);
-      try { await db.collection('users').doc(uid).set({mollieCustomerId: customerId}, {merge: true}); } catch (_) {}
-    }
+    if (cust.ok && cust.data && cust.data.id) return await memoriser(cust.data.id);
     return customerId;
   };
 
@@ -1889,6 +1914,7 @@ exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) 
   // client, mandat inscrit sur la fiche, et la liste des mandats avec leur état. Aucun
   // numéro de carte, aucune donnée d'un tiers.
   if (action === 'diag') {
+    if (!customerId) { try { await ensureCustomer(); } catch (_) {} }
     const out = {customerId: customerId || '', mandatInscrit: String(udoc.mollieMandateId || ''),
       cardSetupAt: Number(udoc.mollieCardSetupAt) || 0, dernierRefus: String(udoc.cardSetupReason || ''),
       mandats: [], httpMandats: 0, erreur: ''};
@@ -1975,6 +2001,9 @@ exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) 
     const link = out.data._links && out.data._links.checkout && out.data._links.checkout.href;
     return {checkoutUrl: link || null, paymentId: String(out.data.id || '')};
   }
+  // Aperçu : si la fiche ne porte pas encore d'identifiant, on va voir si Mollie connaît
+  // déjà ce client — une carte enregistrée ne doit jamais rester invisible.
+  if (!customerId) { try { await ensureCustomer(); } catch (_) {} }
   return {card: await readCard(), setupMethods: setupMethods()};
 });
 
