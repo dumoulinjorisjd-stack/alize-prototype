@@ -1193,6 +1193,13 @@ exports.notifyClientStatus = onDocumentUpdated('requests/{reqId}', async (event)
   const aStatus = after.status || '';
   if (bStatus === aStatus) return;
 
+  // HORODATAGE SERVEUR de la fin de prestation. C'est lui, et jamais une date envoyée par
+  // un téléphone, qui fait courir le délai de validation automatique : l'horloge d'un
+  // appareil se règle à la main.
+  if (aStatus === 'done_pro' && !after.doneProAt) {
+    try { await event.data.after.ref.update({doneProAt: FieldValue.serverTimestamp()}); } catch (e) { console.warn('doneProAt', e); }
+  }
+
   const clientUid = after.clientUid;
   if (!clientUid) return;
 
@@ -2904,6 +2911,124 @@ exports.mollieOnboardingSweep = onSchedule({schedule: 'every 15 minutes', secret
  *   4. versements artisan non routés (molliePayout = 'unrouted') pas encore régularisés.
  * Aucune anomalie => aucun e-mail. Tourne chaque matin à ~5 h (heure de Saint-Barth).
  */
+/**
+ * autoValidate : VALIDATION AUTOMATIQUE APRÈS 48 H.
+ *
+ * Une prestation terminée par le prestataire attend la validation du client pour être
+ * débitée et versée. Un client qui ne fait simplement rien bloquait donc son prestataire
+ * INDÉFINIMENT — et l'empreinte bancaire finissait par expirer, si bien que plus personne
+ * ne pouvait être payé. Passé 48 h sans réponse, la prestation est considérée comme
+ * acceptée : elle passe en « payée », ce qui déclenche le règlement habituel (capture de
+ * l'empreinte, facture, versement du net au prestataire).
+ *
+ * Deux garde-fous, parce qu'un débit automatique n'est acceptable que prévenu et évitable :
+ *   • à 24 h, un rappel part au client — notification et e-mail — indiquant la date et
+ *     l'heure exactes de la validation automatique, et comment contester avant ;
+ *   • une prestation CONTESTÉE (statut « disputed ») n'est jamais validée automatiquement :
+ *     le litige se règle d'abord.
+ * Le délai court depuis l'horodatage SERVEUR de la fin de prestation, jamais depuis une
+ * date envoyée par un téléphone.
+ */
+const AUTO_VALID_H = 48, AUTO_RAPPEL_H = 24;
+exports.autoValidate = onSchedule({schedule: 'every 1 hours', secrets: [SMTP_PASS]}, async () => {
+  const db = getFirestore();
+  const now = Date.now();
+  const ms = (ts) => { try { return (ts && ts.toMillis) ? ts.toMillis() : (Number(ts) || 0); } catch (_) { return 0; } };
+  let valides = 0; let rappels = 0;
+  let docs = [];
+  try { docs = (await db.collection('requests').where('status', '==', 'done_pro').get()).docs; } catch (e) { console.warn('autoValidate scan', e); return; }
+  for (const d of docs) {
+    const r = d.data() || {};
+    const depuis = ms(r.doneProAt);
+    if (!depuis) continue;                    // pas d'horodatage serveur → on ne décide rien
+    const heures = (now - depuis) / 3600000;
+
+    // JAMAIS AU-DELÀ DE CE QUI A ÉTÉ ACCEPTÉ. L'écran de validation promet au client
+    // qu'un ajustement À LA HAUSSE exige son feu vert : pas de silence valant accord sur
+    // une somme qu'il n'a pas vue. On écarte donc les heures revues à la hausse, et tout
+    // total qui dépasserait l'empreinte posée à la commande.
+    const hausse = (r.finalHours != null && Number(r.finalHours) > (Number(r.duration) || 0));
+    const autorise = Number(r.molliePaymentAmount) || 0;
+    const duTotal = montantsDemande(r).gross;
+    if (hausse || (autorise > 0 && duTotal > autorise + 0.009)) continue;
+
+    if (heures >= AUTO_VALID_H) {
+      // On relit dans une transaction : si le client valide à la seconde près, c'est lui
+      // qui gagne — on ne double jamais une validation.
+      try {
+        const fait = await db.runTransaction(async (tx) => {
+          const s = await tx.get(d.ref);
+          const cur = s.data() || {};
+          if (cur.status !== 'done_pro') return false;
+          tx.update(d.ref, {
+            status: 'paid',
+            validationAuto: true,
+            validationAutoAt: FieldValue.serverTimestamp(),
+            paidAt: FieldValue.serverTimestamp(),
+          });
+          return true;
+        });
+        if (!fait) continue;
+        valides++;
+        console.log('autoValidate : ' + d.id + ' validée automatiquement après ' + Math.round(heures) + ' h');
+        // On le dit au client — un débit qu'on découvre sur son relevé n'est pas acceptable.
+        try {
+          const u = (await db.collection('users').doc(r.clientUid).get()).data() || {};
+          const nom = (r.serviceName || r.service || 'votre prestation').toString().slice(0, 60);
+          if ((u.pushTokens || []).length) {
+            await pushMulticast(u.pushTokens, 'Prestation validée automatiquement',
+              nom + ' — sans réponse de votre part sous ' + AUTO_VALID_H + ' h, la prestation a été validée et réglée.',
+              '/?paid=' + encodeURIComponent(d.id),
+              (tok) => db.collection('users').doc(r.clientUid).update({pushTokens: FieldValue.arrayRemove(tok)}).catch(() => {}));
+          }
+          if (u.email) {
+            await sendMail(db, u.email, {
+              subject: 'Ti-Services · ' + nom + ' — prestation validée automatiquement',
+              html: '<p>Bonjour,</p><p>Votre prestataire a déclaré la prestation « ' + escHtmlS(nom) + ' » terminée il y a plus de ' + AUTO_VALID_H + '&nbsp;heures. Sans réponse de votre part, elle a été <b>validée automatiquement</b> et le montant convenu a été prélevé sur votre carte, comme prévu par nos conditions générales.</p>'
+                + '<p>Votre facture est disponible dans l\'application, rubrique « Historique &amp; factures ».</p>'
+                + '<p><b>Un problème sur cette prestation&nbsp;?</b> Répondez à cet e-mail ou écrivez-nous depuis l\'application&nbsp;: nous examinons chaque situation.</p>'
+                + '<p>L\'équipe Ti-Services</p>',
+            });
+          }
+        } catch (e) { console.warn('autoValidate avis client', e); }
+      } catch (e) { console.warn('autoValidate', d.id, e); }
+      continue;
+    }
+
+    if (heures >= AUTO_RAPPEL_H && !r.autoValidRappel) {
+      // Rappel unique, à mi-parcours : la date exacte, et la porte de sortie.
+      try {
+        const limite = new Date(depuis + AUTO_VALID_H * 3600000);
+        // Saint-Barthélemy est à UTC−4 : on annonce l'heure locale, pas l'heure serveur.
+        const loc = new Date(limite.getTime() - 4 * 3600000);
+        const quand = String(loc.getUTCDate()).padStart(2, '0') + '/' + String(loc.getUTCMonth() + 1).padStart(2, '0') +
+          ' à ' + String(loc.getUTCHours()).padStart(2, '0') + 'h' + String(loc.getUTCMinutes()).padStart(2, '0');
+        const nom = (r.serviceName || r.service || 'votre prestation').toString().slice(0, 60);
+        const u = (await db.collection('users').doc(r.clientUid).get()).data() || {};
+        if ((u.pushTokens || []).length) {
+          await pushMulticast(u.pushTokens, 'Validez votre prestation',
+            nom + ' — sans réponse, elle sera validée et réglée automatiquement le ' + quand + '.',
+            '/?open=' + encodeURIComponent(d.id),
+            (tok) => db.collection('users').doc(r.clientUid).update({pushTokens: FieldValue.arrayRemove(tok)}).catch(() => {}));
+        }
+        if (u.email) {
+          await sendMail(db, u.email, {
+            subject: 'Ti-Services · ' + nom + ' — à valider avant le ' + quand,
+            html: '<p>Bonjour,</p><p>Votre prestataire a déclaré la prestation « ' + escHtmlS(nom) + ' » terminée.</p>'
+              + '<p>Sans réponse de votre part, elle sera <b>validée automatiquement le ' + escHtmlS(quand) + '</b> (heure de Saint-Barthélemy) et le montant convenu sera prélevé sur votre carte.</p>'
+              + '<p><b>Tout s\'est bien passé&nbsp;?</b> Validez dès maintenant depuis l\'application&nbsp;: votre prestataire est payé immédiatement.</p>'
+              + '<p><b>Un souci&nbsp;?</b> Signalez-le depuis l\'application avant cette date&nbsp;: rien ne sera prélevé tant que la situation n\'est pas réglée.</p>'
+              + '<p>L\'équipe Ti-Services</p>',
+          });
+        }
+        await d.ref.update({autoValidRappel: true, autoValidRappelAt: FieldValue.serverTimestamp()});
+        rappels++;
+      } catch (e) { console.warn('autoValidate rappel', d.id, e); }
+    }
+  }
+  if (valides || rappels) console.log('autoValidate : ' + valides + ' validée(s), ' + rappels + ' rappel(s).');
+});
+
 exports.paymentReconciliation = onSchedule({schedule: '0 9 * * *', secrets: [SMTP_PASS]}, async () => {
   const db = getFirestore();
   const now = Date.now();
@@ -2946,11 +3071,16 @@ exports.paymentReconciliation = onSchedule({schedule: '0 9 * * *', secrets: [SMT
   // 3. Terminées côté pro, jamais validées (> 72 h).
   {
     const items = [];
+    // Depuis la validation automatique à 48 h, rester ici plus longtemps est ANORMAL :
+    // soit l'horodatage serveur de fin de prestation manque, soit la validation
+    // automatique échoue. Dans les deux cas le prestataire n'est pas payé.
     for (const d of await scan('done_pro')) {
-      const r = d.data() || {}; const a = ageH(r.acceptedAt || r.createdAt);
-      if (a !== null && a >= 72) items.push(row(d.id, r, 'en attente de validation client'));
+      const r = d.data() || {}; const a = ageH(r.doneProAt || r.acceptedAt || r.createdAt);
+      if (a !== null && a >= AUTO_VALID_H + 2) {
+        items.push(row(d.id, r, 'terminée depuis ' + a + ' h' + (r.doneProAt ? '' : ' — fin de prestation jamais horodatée')));
+      }
     }
-    if (items.length) sections.push('<h3>⚠️ Prestations terminées non validées depuis > 72 h (' + items.length + ')</h3><ul>' + items.join('') + '</ul><p>Ni capture ni versement tant que le client ne valide pas — relancer le client.</p>');
+    if (items.length) sections.push('<h3>⚠️ Prestations non validées au-delà du délai automatique (' + items.length + ')</h3><ul>' + items.join('') + '</ul><p>Elles auraient dû être validées et réglées automatiquement au bout de ' + AUTO_VALID_H + '&nbsp;h. Ni capture ni versement tant qu\'elles restent ici — consulter les journaux de <code>autoValidate</code>.</p>');
   }
   // 4. Versements artisan non routés, à régulariser.
   {
