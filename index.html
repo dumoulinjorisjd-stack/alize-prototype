@@ -321,9 +321,14 @@
   /* Cartes repliables des écrans Compte : repliées par défaut (pages plus courtes),
      la tête garde le titre + l'état (pastille) ; un toucher déplie. */
   .foldc{padding:0!important;overflow:hidden}
-  .fold-head{width:100%;display:flex;align-items:center;gap:11px 11px;flex-wrap:wrap;padding:14px 16px;background:none;border:none;text-align:left;font-family:inherit;color:inherit;cursor:pointer}
-  /* Le bloc titre garde la ligne à lui seul si la pastille ne tient pas à côté. */
-  .fold-head>div{overflow:hidden}
+  .fold-head{width:100%;display:flex;align-items:center;gap:8px 11px;flex-wrap:wrap;padding:14px 16px;background:none;border:none;text-align:left;font-family:inherit;color:inherit;cursor:pointer}
+  /* Icône et titre forment un bloc insécable : l'icône ne doit jamais rester seule sur sa
+     ligne. Seule la pastille passe dessous, et à droite, quand la place manque. */
+  .fh-main{display:flex;align-items:center;gap:11px;flex:1 1 200px;min-width:0}
+  .fh-main>div{min-width:0;overflow:hidden}
+  /* Pastille et chevron restent solidaires : le chevron ne se retrouve jamais seul sur
+     une ligne, et le bloc s'aligne à droite quand il passe dessous. */
+  .fh-end{display:flex;align-items:center;gap:9px;flex:0 0 auto;margin-left:auto}
   .fold-head .chip{white-space:normal}
   /* Vidéo du guide d'installation : format téléphone, jamais plus haute que l'écran. */
   .ig-video{margin-top:14px}
@@ -2130,7 +2135,7 @@
   function foldCard(id,icon,title,sub,body,chip){
     const open=!!(S._fold&&S._fold[id]);
     return `<div class="card foldc${open?' open':''}" style="margin-top:12px">
-      <button class="fold-head" data-fold="${id}" aria-expanded="${open?'true':'false'}"><span class="benic" style="flex:none">${icon}</span><div style="flex:1 1 auto;min-width:140px"><b style="font-size:14px">${title}</b>${sub?`<div class="mini" style="margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sub}</div>`:''}</div>${chip||''}<span class="fold-chev" aria-hidden="true">${I.chevron}</span></button>
+      <button class="fold-head" data-fold="${id}" aria-expanded="${open?'true':'false'}"><span class="fh-main"><span class="benic" style="flex:none">${icon}</span><div style="flex:1 1 auto;min-width:0"><b style="font-size:14px">${title}</b>${sub?`<div class="mini" style="margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sub}</div>`:''}</div></span><span class="fh-end">${chip||''}<span class="fold-chev" aria-hidden="true">${I.chevron}</span></span></button>
       ${open?`<div class="fold-body">${body}</div>`:''}
     </div>`;
   }
@@ -7917,7 +7922,10 @@
   function factSearchResultsHtml(){
     const q=(S.admin.factQ||'').trim().toLowerCase();
     if(q.length<2)return '';
-    const all=adminCommissionLedger();
+    // TOUT le registre, y compris les prestations réglées hors Mollie : une facture
+    // envoyée à un client doit pouvoir être retrouvée, même si elle n'entre pas dans la
+    // comptabilité Mollie. Les résultats concernés sont signalés comme tels.
+    const all=(S.demoMode||isDemo())?adminCommissionLedger():(S.adminLedger||[]);
     const hits=all.filter(function(e){
       return String(e.invNo||'').toLowerCase().indexOf(q)>=0
         || String(e.clientName||'').toLowerCase().indexOf(q)>=0
@@ -7933,6 +7941,7 @@
         <div class="row between"><b style="font-size:14px">${esc(e.serviceName||svcName(e.service))}</b><span class="money" style="font-weight:700">${eur(gross)}</span></div>
         <div class="mini" style="margin-top:3px">Facture ${esc(e.invNo||'—')} · ${e.dateISO?fmtLong(e.dateISO):'—'} · ${esc(e.clientName||'')} · ${esc(e.providerName||'')}</div>
         <div class="mini" style="margin-top:2px;color:var(--muted)">commission ${eur(e.commissionAmount||0)} · net ${eur(e.netAmount||0)}</div>
+        ${e.molliePaymentId?'':`<div class="mini" style="margin-top:4px"><span class="chip warn">${I.clock} Hors paiement Mollie</span></div>`}
       </button>`;
     }).join('');
     const more=hits.length>cap.length?`<p class="mini" style="text-align:center;color:var(--muted);margin-top:8px">${hits.length-cap.length} autre${hits.length-cap.length>1?'s':''} résultat${hits.length-cap.length>1?'s':''} — précisez la recherche.</p>`:'';
