@@ -1554,6 +1554,28 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
     //    mémorisée quand c'est possible. Sans ça la facture annonçait une somme qui
     //    n'était jamais prélevée, et le versement à l'artisan échouait.
     const complement = round2(Math.max(0, gross - capte));
+    // AUCUN SUPPLÉMENT NE DISPARAÎT EN SILENCE. Sans empreinte sur la demande (paiement
+    // jamais abouti, demande créée hors carte, Mollie non configuré), il n'y a personne à
+    // débiter : le pourboire figurait alors sur la facture sans laisser la moindre trace,
+    // ni chez Mollie ni côté client. On l'inscrit sur la demande et on alerte l'exploitant.
+    if (complement > 0.009 && !after.complementPaymentId && (!mollieApiConfigured() || !after.molliePaymentId)) {
+      const motif = !mollieApiConfigured() ? 'Mollie non configuré sur cet environnement'
+        : 'aucun paiement par carte n’est rattaché à cette demande';
+      try {
+        await event.data.after.ref.update({complementAmount: complement, complementStatus: 'impossible', complementIssue: motif});
+      } catch (_) {}
+      console.warn('Supplément NON prélevable reqId=' + reqId + ' ' + complement + ' € — ' + motif);
+      try {
+        await sendMail(db, ADMIN_EMAIL, {
+          subject: 'Supplément impossible à prélever — ' + (after.serviceName || after.service || 'prestation'),
+          html: '<p>La facture porte un supplément (pourboire, heures en plus, coup de pouce) qui n\'a pas pu être prélevé : <b>aucun prélèvement n\'a même été tenté</b>.</p>'
+            + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li>'
+            + '<li><b>Supplément :</b> ' + eurTxt(complement) + '</li>'
+            + '<li><b>Cause :</b> ' + escHtmlS(motif) + '</li></ul>'
+            + '<p>Cette part n\'est PAS versée à l\'artisan. Si la prestation elle-même n\'a pas été réglée par carte, c\'est toute la demande qu\'il faut vérifier.</p>',
+        });
+      } catch (_) {}
+    }
     if (complement > 0.009 && mollieApiConfigured() && after.molliePaymentId && !after.complementPaymentId) {
       try {
         const r2 = await mollieChargeComplement(db, reqId, after.clientUid,
@@ -1777,15 +1799,16 @@ exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) 
     return customerId;
   };
 
-  // Le mandat valide le plus récent = la carte que Mollie proposera à la réservation.
-  const readCard = async () => {
-    if (!customerId) return null;
-    const out = await mollieApi('/customers/' + encodeURIComponent(customerId) + '/mandates?limit=50', 'GET');
-    const arr = (out.ok && out.data && out.data._embedded && out.data._embedded.mandates) || [];
-    const valid = arr.filter((m) => m && m.status === 'valid' && m.details);
-    if (!valid.length) return null;
-    valid.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
-    const m = valid[0], d = m.details || {};
+  // La carte mémorisée = un mandat Mollie valide. Deux chemins, dans cet ordre :
+  //   1. le mandat que Mollie nous a NOMMÉ à l'enregistrement (inscrit sur la fiche par le
+  //      webhook) — la source sûre, qui ne dépend d'aucune recherche ;
+  //   2. à défaut, le mandat valide le plus récent du client.
+  // Le premier chemin existe parce que le second pouvait ne rien rendre : le client
+  // validait son enregistrement auprès de sa banque et retrouvait « Aucune carte
+  // mémorisée ».
+  const carteDeMandat = (m) => {
+    if (!m || m.status !== 'valid') return null;
+    const d = m.details || {};
     return {
       id: String(m.id || ''),
       brand: String(d.cardLabel || (m.method === 'creditcard' ? 'Carte' : m.method) || 'Carte'),
@@ -1793,6 +1816,23 @@ exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) 
       exp: String(d.cardExpiryDate || '').slice(0, 7),   // AAAA-MM
       holder: String(d.cardHolder || ''),
     };
+  };
+  const readCard = async () => {
+    if (!customerId) return null;
+    const base = '/customers/' + encodeURIComponent(customerId) + '/mandates';
+    if (udoc.mollieMandateId) {
+      try {
+        const un = await mollieApi(base + '/' + encodeURIComponent(String(udoc.mollieMandateId)), 'GET');
+        const c = (un.ok && un.data) ? carteDeMandat(un.data) : null;
+        if (c) return c;
+      } catch (_) {}
+    }
+    const out = await mollieApi(base + '?limit=50', 'GET');
+    const arr = (out.ok && out.data && out.data._embedded && out.data._embedded.mandates) || [];
+    const valid = arr.filter((m) => m && m.status === 'valid');
+    if (!valid.length) return null;
+    valid.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+    return carteDeMandat(valid[0]);
   };
 
   // Peut-on proposer l'enregistrement ? On interrogeait l'API Methods avec un montant
@@ -1807,6 +1847,12 @@ exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) 
     if (!cur || !cur.id) return {card: null, revoked: false, setupMethods: setupMethods()};
     // Mollie répond 204 sans corps : mollieApi renvoie {ok:true, data:null}.
     const del = await mollieApi('/customers/' + encodeURIComponent(customerId) + '/mandates/' + encodeURIComponent(cur.id), 'DELETE');
+    // Le mandat nommé sur la fiche n'existe plus : sans ce nettoyage, la lecture suivante
+    // irait interroger un mandat révoqué.
+    if (del.ok && String(udoc.mollieMandateId || '') === cur.id) {
+      udoc.mollieMandateId = '';
+      try { await db.collection('users').doc(uid).set({mollieMandateId: ''}, {merge: true}); } catch (_) {}
+    }
     return {card: await readCard(), revoked: !!del.ok, setupMethods: setupMethods()};
   }
 
@@ -1979,6 +2025,36 @@ exports.mollieWebhook = onRequest({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (req
       const pay = out.data;
       const reqId = (pay.metadata && pay.metadata.reqId) || '';
       const genre = (pay.metadata && pay.metadata.kind) || '';
+      // ENREGISTREMENT DE CARTE (autorisation à 0,00 €). Mollie confirme ici, et LUI SEUL
+      // sait quel mandat vient d'être créé : il le donne sur le paiement. On l'inscrit
+      // donc tout de suite sur la fiche du client, au lieu d'aller le redemander plus tard
+      // en fouillant la liste des mandats — une recherche qui pouvait ne rien rendre et
+      // laissait le client devant « Aucune carte mémorisée » alors qu'il venait de la
+      // valider auprès de sa banque.
+      if ((pay.metadata && pay.metadata.cardSetup) || genre === 'cardSetup') {
+        const uid = String((pay.metadata && pay.metadata.clientUid) || '');
+        if (uid && pay.status === 'paid') {
+          const db = getFirestore();
+          const patch = {mollieCardSetupAt: Date.now()};
+          if (pay.customerId) patch.mollieCustomerId = String(pay.customerId);
+          if (pay.mandateId) patch.mollieMandateId = String(pay.mandateId);
+          try { await db.collection('users').doc(uid).set(patch, {merge: true}); } catch (_) {}
+          console.log('Carte enregistrée uid=' + uid + ' mandat=' + (pay.mandateId || '(absent)'));
+          // Aucun mandat sur un paiement d'enregistrement réussi : anomalie côté Mollie,
+          // le client croirait sa carte mémorisée sans qu'elle le soit. On le signale.
+          if (!pay.mandateId) {
+            try {
+              await sendMail(db, ADMIN_EMAIL, {
+                subject: 'Enregistrement de carte payé mais SANS mandat',
+                html: '<p>Un client a validé l\'autorisation à 0,00 € (paiement <code>' + escHtmlS(String(pay.id || '')) + '</code>) mais Mollie n\'a rattaché aucun mandat.</p>'
+                  + '<p>Sa carte ne sera donc pas proposée à la réservation. À vérifier dans le tableau de bord Mollie.</p>',
+              });
+            } catch (_) {}
+          }
+        }
+        res.status(200).send('ok');
+        return;
+      }
       // SUPPLÉMENT (heures en plus, pourboire, coup de pouce ajouté après coup). C'est un
       // SECOND paiement, distinct de l'empreinte : il doit être traité avant le garde-fou
       // ci-dessous, qui écarte justement tout paiement autre que celui de la demande.
@@ -2472,6 +2548,23 @@ exports.paymentReconciliation = onSchedule({schedule: '0 9 * * *', secrets: [SMT
       }
     } catch (e) { console.warn('reco unrouted', e); }
     if (items.length) sections.push('<h3>💸 Versements artisan à régulariser (' + items.length + ')</h3><ul>' + items.join('') + '</ul><p>Le client a payé, l\'artisan n\'a pas reçu son net (fonds en sécurité sur le solde plateforme). Vérifier son onboarding Mollie puis re-router (ou virement manuel).</p>');
+  }
+  // 5. Suppléments facturés mais non encaissés — pourboire, heures en plus, coup de pouce.
+  //    Une somme qui figure sur une facture sans avoir été prélevée ne doit jamais
+  //    dormir : ni le client ne l'a payée, ni l'artisan ne l'a touchée.
+  {
+    const items = [];
+    const mots = {impossible: 'aucun prélèvement possible', echec: 'prélèvement refusé', a_regler: 'lien de paiement en attente'};
+    try {
+      for (const st of ['impossible', 'echec', 'a_regler']) {
+        for (const d of (await db.collection('requests').where('complementStatus', '==', st).get()).docs) {
+          const r = d.data() || {};
+          items.push(row(d.id, r, eurTxt(Number(r.complementAmount) || 0) + ' — ' + mots[st] +
+            (r.complementIssue ? (' (' + escHtmlS(r.complementIssue) + ')') : '')));
+        }
+      }
+    } catch (e) { console.warn('reco complements', e); }
+    if (items.length) sections.push('<h3>💛 Suppléments facturés mais non encaissés (' + items.length + ')</h3><ul>' + items.join('') + '</ul><p>Ces montants figurent sur la facture du client sans avoir été prélevés. Ils ne sont pas versés à l\'artisan tant qu\'ils ne sont pas encaissés.</p>');
   }
 
   // BACKFILL DES FRAIS MOLLIE RÉELS : le règlement (settlementAmount) n'est souvent connu
