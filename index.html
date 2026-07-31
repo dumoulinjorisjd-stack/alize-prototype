@@ -7795,7 +7795,8 @@
               <button class="uidtap" data-adm="copyuid:${esc(x.id)}" title="Copier l'identifiant du profil" style="margin-top:8px">${I.copy} <span class="money">${esc(x.id)}</span></button>
               ${actif?'':`<button class="btn primary sm" data-adm="molprof-set:${esc(x.id)}" style="margin-top:9px">${I.check}&nbsp;Utiliser pour Ti-Services</button>`}
             </div>`;}).join('')
-            :`<div class="card" style="padding:18px;text-align:center;color:var(--muted);margin-top:9px">Aucun profil renvoyé par Mollie.</div>`)
+            :`<div class="banner warn" style="margin-top:10px">${I.shield}<span>${prof.motif?esc(prof.motif):'Aucun profil renvoyé par Mollie.'}</span></div>
+              ${prof.httpStatus?`<p class="mini" style="margin-top:6px;color:var(--muted)">Réponse Mollie&nbsp;: ${esc(String(prof.httpStatus))}</p>`:''}`)
           +`<button class="btn ghost sm" data-adm="molprof-load" style="margin-top:12px">${I.search}&nbsp;Rafraîchir</button>
             <p class="mini" style="margin-top:8px;color:var(--muted)">Pense-bête&nbsp;: <b>Archipel BTP doit être pointé sur son propre profil</b> de son côté, sinon il continuera d'atterrir sur le profil par défaut — et le tri ne servira à rien.</p>`}`;
     /* ── Qui pourra RÉELLEMENT travailler le 1er octobre ──────────────────────────
@@ -12592,10 +12593,10 @@
             toast('Profil enregistré ✓');
             return call({action:'get'}).then(function(r2){
               const d2=(r2&&r2.data)||{};
-              S.adminMollieProf={loaded:true,profiles:d2.profiles||[],current:d2.current||'',fige:!!d2.fige};render();
+              S.adminMollieProf={loaded:true,profiles:d2.profiles||[],current:d2.current||'',fige:!!d2.fige,motif:d2.motif||'',httpStatus:d2.httpStatus||0};render();
             });
           }
-          S.adminMollieProf={loaded:true,profiles:d.profiles||[],current:d.current||'',fige:!!d.fige};
+          S.adminMollieProf={loaded:true,profiles:d.profiles||[],current:d.current||'',fige:!!d.fige,motif:d.motif||'',httpStatus:d.httpStatus||0};
           if(d.simulated)toast('Mollie n’est pas configuré sur cet environnement');
           render();
         }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
@@ -12607,9 +12608,12 @@
         FB.fn.httpsCallable(FB.functions,'ledgerReconcile')({}).then(function(r){
           const d=(r&&r.data)||{};
           if(d.simulated){toast('Mollie n’est pas configuré sur cet environnement');return;}
+          // Une panne serveur doit se lire, pas se deviner : on affiche la cause.
+          if(d.erreur){toast('⚠︎ '+d.erreur);return;}
           // L'écoute du registre rafraîchit l'écran : on annonce ce que le serveur a
           // vérifié, pas ce qu'on espérait.
-          toast(d.encaissees+' encaissée'+(d.encaissees>1?'s':'')+' · '+d.autres+' hors comptes');
+          toast(d.encaissees+' encaissée'+(d.encaissees>1?'s':'')+' · '+d.autres+' hors comptes'
+            +(d.echecs?(' · '+d.echecs+' sans réponse de Mollie'):''));
         }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
       })();return;}
       else if(act==='factdel'){(function(){

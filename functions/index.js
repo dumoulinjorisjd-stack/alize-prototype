@@ -313,6 +313,16 @@ async function mollieOnboardingReady(accessToken) {
 //   • `mollieMontantPaye` — la somme RÉELLEMENT capturée (jamais l'autorisation) ;
 //   • `mollieFee` / `netTiServices` — dès que Mollie connaît son règlement (1 à 2 jours).
 // Renvoie true quand l'état a pu être relevé.
+// LECTURE DU REGISTRE — SANS INDEX COMPOSITE. La requête « type == commission ORDER BY
+// settledAt » réclame un index composite que le projet ne déclare pas : elle échouait donc
+// systématiquement (FAILED_PRECONDITION), silencieusement là où elle était sous try/catch —
+// et le rapprochement Mollie ne s'est jamais fait. On trie sur un seul champ (index
+// automatique) et on filtre le type en mémoire : même résultat, aucun index à créer,
+// aucune attente de construction.
+async function lireRegistre(db, n) {
+  const snap = await db.collection('ledger').orderBy('settledAt', 'desc').limit(n || 300).get();
+  return snap.docs.filter((d) => ((d.data() || {}).type || 'commission') === 'commission');
+}
 async function recordMollieFee(db, reqId, molliePaymentId, commission) {
   if (!mollieApiConfigured() || !molliePaymentId) return false;
   try {
@@ -1954,9 +1964,22 @@ exports.mollieProfiles = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (reque
   if (!mollieApiConfigured()) return {profiles: [], current: '', simulated: true};
   const out = await mollieApi('/profiles?limit=50', 'GET');
   const arr = (out.ok && out.data && out.data._embedded && out.data._embedded.profiles) || [];
+  // POURQUOI LA LISTE EST VIDE. « Aucun profil » peut vouloir dire deux choses très
+  // différentes : le compte n'en a aucun, ou notre jeton n'a pas le droit de les lire.
+  // La liste des profils exige un jeton d'ORGANISATION ; une clé API, elle, est rattachée
+  // à UN profil et ne peut pas les énumérer. Sans ce diagnostic on cherche à l'aveugle.
+  let motif = '';
+  if (!out.ok) {
+    motif = (out.status === 401 || out.status === 403)
+      ? 'Le jeton Mollie configuré est une CLÉ API, rattachée à un seul profil : il ne peut pas lister les profils. Le profil est alors déterminé par la clé elle-même — c\'est la clé qu\'il faut changer, pas ce réglage.'
+      : ('Mollie a répondu ' + (out.status || '—') + '.');
+  } else if (!arr.length) {
+    motif = 'Mollie répond, mais ne renvoie aucun profil sur ce compte.';
+  }
   return {
     current: await mollieProfilId(db),
     fige: !!String(process.env.MOLLIE_PROFILE_ID || '').trim(),
+    motif: motif, httpStatus: (out.status || (out.ok ? 200 : 0)),
     profiles: arr.map((p) => ({
       id: String(p.id || ''), name: String(p.name || ''), website: String(p.website || ''),
       mode: String(p.mode || ''), status: String(p.status || ''),
@@ -2040,19 +2063,25 @@ exports.ledgerReconcile = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (requ
   }
   if (!mollieApiConfigured()) return {simulated: true, releves: 0, encaissees: 0, autres: 0};
   const db = getFirestore();
-  const led = await db.collection('ledger').where('type', '==', 'commission').orderBy('settledAt', 'desc').limit(200).get();
-  let releves = 0;
-  for (const d of led.docs) {
-    const e = d.data() || {};
-    if (!e.molliePaymentId) continue;
-    if (await recordMollieFee(db, d.id, e.molliePaymentId, e.commissionAmount)) releves++;
+  try {
+    const led = await lireRegistre(db);
+    let releves = 0; let echecs = 0;
+    for (const d of led) {
+      const e = d.data() || {};
+      if (!e.molliePaymentId) continue;
+      // Un paiement introuvable chez Mollie ne doit pas faire tomber tout le rapprochement.
+      try { if (await recordMollieFee(db, d.id, e.molliePaymentId, e.commissionAmount)) releves++; else echecs++; } catch (_) { echecs++; }
+    }
+    // On relit APRÈS écriture : on annonce un état vérifié, jamais un état supposé.
+    let encaissees = 0; let autres = 0;
+    (await lireRegistre(db)).forEach((d) => { const e = d.data() || {}; if (e.exclu) return; if (e.mollieEncaisse === true) encaissees++; else autres++; });
+    console.log('ledgerReconcile : ' + releves + ' relevé(s), ' + echecs + ' sans réponse, ' + encaissees + ' encaissée(s), ' + autres + ' non encaissée(s) — par ' + who);
+    return {releves: releves, echecs: echecs, encaissees: encaissees, autres: autres};
+  } catch (e) {
+    // Plutôt qu'une « erreur interne » opaque : on remonte la cause, telle quelle.
+    console.error('ledgerReconcile', e);
+    return {erreur: String((e && e.message) || e).slice(0, 300)};
   }
-  // On relit APRÈS écriture : on annonce un état vérifié, jamais un état supposé.
-  const apres = await db.collection('ledger').where('type', '==', 'commission').orderBy('settledAt', 'desc').limit(200).get();
-  let encaissees = 0; let autres = 0;
-  apres.docs.forEach((d) => { const e = d.data() || {}; if (e.exclu) return; if (e.mollieEncaisse === true) encaissees++; else autres++; });
-  console.log('ledgerReconcile : ' + releves + ' relevé(s), ' + encaissees + ' encaissée(s), ' + autres + ' non encaissée(s) — par ' + who);
-  return {releves: releves, encaissees: encaissees, autres: autres};
 });
 
 /**
@@ -3148,9 +3177,9 @@ exports.paymentReconciliation = onSchedule({schedule: '0 9 * * *', secrets: [SMT
   // qu'un jour ou deux après la prestation. On complète ici, chaque matin, les frais des
   // prestations réglées dont le frais Mollie n'est pas encore renseigné (200 plus récentes).
   try {
-    const led = await db.collection('ledger').where('type', '==', 'commission').orderBy('settledAt', 'desc').limit(200).get();
+    const led = await lireRegistre(db);
     let filled = 0;
-    for (const d of led.docs) {
+    for (const d of led) {
       const e = d.data() || {};
       if (!e.molliePaymentId) continue;
       // On relève l'état réel tant que le frais n'est pas connu OU que Mollie n'a pas
@@ -3168,8 +3197,8 @@ exports.paymentReconciliation = onSchedule({schedule: '0 9 * * *', secrets: [SMT
   //    comptabilité — et surtout, elle signale que personne n'a été débité.
   try {
     const items = [];
-    const led = await db.collection('ledger').where('type', '==', 'commission').orderBy('settledAt', 'desc').limit(200).get();
-    for (const d of led.docs) {
+    const led = await lireRegistre(db);
+    for (const d of led) {
       const e = d.data() || {};
       if (e.exclu) continue;
       if (e.mollieEncaisse === true) continue;
