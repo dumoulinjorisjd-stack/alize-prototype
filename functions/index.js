@@ -1976,8 +1976,24 @@ exports.mollieProfiles = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (reque
   } else if (!arr.length) {
     motif = 'Mollie répond, mais ne renvoie aucun profil sur ce compte.';
   }
+  // SUR QUEL PROFIL ENCAISSONS-NOUS, EN FAIT ? Un refus de lister ne dit pas laquelle des
+  // deux boutiques reçoit l'argent — et supposer serait faire refaire un réglage peut-être
+  // déjà bon. `/profiles/me` répond précisément cela : le profil auquel la clé configurée
+  // est rattachée. C'est la seule réponse qui vaille.
+  let actuel = null;
+  try {
+    const me = await mollieApi('/profiles/me', 'GET');
+    if (me.ok && me.data && me.data.id) {
+      actuel = {
+        id: String(me.data.id || ''), name: String(me.data.name || ''),
+        website: String(me.data.website || ''), mode: String(me.data.mode || ''),
+        status: String(me.data.status || ''),
+      };
+    }
+  } catch (_) {}
   return {
     current: await mollieProfilId(db),
+    actuel: actuel,
     fige: !!String(process.env.MOLLIE_PROFILE_ID || '').trim(),
     motif: motif, httpStatus: (out.status || (out.ok ? 200 : 0)),
     profiles: arr.map((p) => ({

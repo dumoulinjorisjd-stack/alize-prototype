@@ -7787,7 +7787,14 @@
     // UN profil, et c'est elle — pas ce réglage — qui décide où l'argent atterrit. Dans ce
     // cas la carte cesse de proposer un choix sans effet et explique la vraie manœuvre.
     const cleParProfil=(prof.httpStatus===403||prof.httpStatus===401);
-    const profChip=!prof.loaded?'':(cleParProfil?chip('warn','réglé par la clé'):(prof.current?chip('good',esc(profActuel?profActuel.name:'profil réglé')):chip('coral','non réglé')));
+    // LA SEULE RÉPONSE QUI VAILLE : sur quel profil la clé configurée encaisse-t-elle
+    // réellement. Mollie la donne (/profiles/me). Sans elle on suppose — et on fait
+    // peut-être refaire un réglage déjà bon.
+    const profReel=prof.actuel||null;
+    const versTiServices=!!(profReel&&/ti[\s-]?service/i.test((profReel.name||'')+' '+(profReel.website||'')));
+    const profReelBloc=!profReel?'':`<div class="banner ${versTiServices?'good':'warn'}" style="margin-top:11px">${versTiServices?I.check:I.shield}<span>Les encaissements de Ti-Services arrivent sur le profil <b>${esc(profReel.name||profReel.id)}</b>${profReel.website?(' ('+esc(profReel.website)+')'):''}.${versTiServices?' C’est le bon — rien à changer de ce côté.':' Ce n’est pas celui de Ti-Services : c’est là que part l’argent aujourd’hui.'}</span></div>
+      <button class="uidtap" data-adm="copyuid:${esc(profReel.id)}" title="Copier l'identifiant du profil" style="margin-top:8px">${I.copy} <span class="money">${esc(profReel.id)}</span></button>`;
+    const profChip=!prof.loaded?'':(profReel?(versTiServices?chip('good','Ti-Services'):chip('coral',esc(profReel.name||'autre profil'))):cleParProfil?chip('warn','réglé par la clé'):(prof.current?chip('good',esc(profActuel?profActuel.name:'profil réglé')):chip('coral','non réglé')));
     const profBody=`<p class="mini" style="margin:0;color:var(--muted);line-height:1.55">${cleParProfil
       ?'Ti-Services et Archipel BTP encaissent sur le même compte Mollie. Pour savoir ce que rapporte l’une et l’autre, chacune doit encaisser sur <b>son</b> profil.'
       :'Tant que les deux applications encaissent sur le même profil, impossible de savoir ce que rapporte l\'une ou l\'autre autrement qu\'à l\'œil. Choisissez ici celui de <b>Ti-Services</b>&nbsp;: Mollie séparera alors tableau de bord, règlements et rapports.'}</p>
@@ -7801,9 +7808,10 @@
               <button class="uidtap" data-adm="copyuid:${esc(x.id)}" title="Copier l'identifiant du profil" style="margin-top:8px">${I.copy} <span class="money">${esc(x.id)}</span></button>
               ${actif?'':`<button class="btn primary sm" data-adm="molprof-set:${esc(x.id)}" style="margin-top:9px">${I.check}&nbsp;Utiliser pour Ti-Services</button>`}
             </div>`;}).join('')
-            :`<div class="banner warn" style="margin-top:10px">${I.shield}<span>${prof.motif?esc(prof.motif):'Aucun profil renvoyé par Mollie.'}</span></div>
+            :`${profReelBloc}
+              <div class="banner warn" style="margin-top:10px">${I.shield}<span>${prof.motif?esc(prof.motif):'Aucun profil renvoyé par Mollie.'}</span></div>
               ${prof.httpStatus?`<p class="mini" style="margin-top:6px;color:var(--muted)">Réponse Mollie&nbsp;: ${esc(String(prof.httpStatus))}</p>`:''}
-              ${cleParProfil?`<div class="card" style="padding:14px;margin-top:11px">
+              ${(cleParProfil&&!versTiServices)?`<div class="card" style="padding:14px;margin-top:11px">
                 <b style="font-size:14px">Ce qu'il faut faire, alors</b>
                 <p class="mini" style="margin-top:7px;line-height:1.6">Chez Mollie, <b>chaque profil a ses propres clés API</b>, et c'est la clé qui décide où atterrit l'argent — ce réglage-ci n'a aucun effet.</p>
                 <ol class="mini" style="margin:8px 0 0;padding-left:18px;line-height:1.7">
@@ -12609,10 +12617,10 @@
             toast('Profil enregistré ✓');
             return call({action:'get'}).then(function(r2){
               const d2=(r2&&r2.data)||{};
-              S.adminMollieProf={loaded:true,profiles:d2.profiles||[],current:d2.current||'',fige:!!d2.fige,motif:d2.motif||'',httpStatus:d2.httpStatus||0};render();
+              S.adminMollieProf={loaded:true,profiles:d2.profiles||[],current:d2.current||'',fige:!!d2.fige,motif:d2.motif||'',httpStatus:d2.httpStatus||0,actuel:d2.actuel||null};render();
             });
           }
-          S.adminMollieProf={loaded:true,profiles:d.profiles||[],current:d.current||'',fige:!!d.fige,motif:d.motif||'',httpStatus:d.httpStatus||0};
+          S.adminMollieProf={loaded:true,profiles:d.profiles||[],current:d.current||'',fige:!!d.fige,motif:d.motif||'',httpStatus:d.httpStatus||0,actuel:d.actuel||null};
           if(d.simulated)toast('Mollie n’est pas configuré sur cet environnement');
           render();
         }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
