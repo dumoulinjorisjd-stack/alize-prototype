@@ -1883,6 +1883,29 @@ exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) 
   // fois, refus consigné (avec son motif) sur la fiche du client.
   const setupMethods = () => ['creditcard'];
 
+  // DIAGNOSTIC. Trois causes plausibles ont été corrigées sans que l'enregistrement
+  // aboutisse : il faut cesser de supposer et REGARDER. On renvoie ici, pour le seul
+  // compte appelant et sur ses seules données, ce que Mollie répond vraiment — identifiant
+  // client, mandat inscrit sur la fiche, et la liste des mandats avec leur état. Aucun
+  // numéro de carte, aucune donnée d'un tiers.
+  if (action === 'diag') {
+    const out = {customerId: customerId || '', mandatInscrit: String(udoc.mollieMandateId || ''),
+      cardSetupAt: Number(udoc.mollieCardSetupAt) || 0, dernierRefus: String(udoc.cardSetupReason || ''),
+      mandats: [], httpMandats: 0, erreur: ''};
+    if (!customerId) { out.erreur = 'aucun client Mollie sur la fiche'; return out; }
+    try {
+      const r = await mollieApi('/customers/' + encodeURIComponent(customerId) + '/mandates?limit=50', 'GET');
+      out.httpMandats = r.status || (r.ok ? 200 : 0);
+      const arr = (r.ok && r.data && r.data._embedded && r.data._embedded.mandates) || [];
+      out.mandats = arr.map((m) => ({id: String(m.id || ''), statut: String(m.status || ''),
+        methode: String(m.method || ''), cree: String(m.createdAt || '').slice(0, 19),
+        detail: !!(m.details && (m.details.cardNumber || m.details.cardLabel))}));
+      if (!r.ok) out.erreur = 'Mollie a refusé la lecture des mandats (HTTP ' + out.httpMandats + ')';
+      else if (!arr.length) out.erreur = 'Mollie ne rattache AUCUN mandat à ce client';
+    } catch (e) { out.erreur = String((e && e.message) || e).slice(0, 160); }
+    return out;
+  }
+
   if (action === 'revoke') {
     const cur = await readCard();
     if (!cur || !cur.id) return {card: null, revoked: false, setupMethods: setupMethods()};

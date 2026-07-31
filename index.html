@@ -8864,8 +8864,15 @@
     const suite=function(c,setup){
       S._payCard={done:true,card:c||null,setup:setup};
       if(S.persona==='client'&&!S.draft)render();
-      if(c)toast('Carte enregistrée — ' + (c.last4?('•••• '+c.last4):'elle vous sera proposée à la réservation'));
-      else toast('Enregistrement non confirmé par Mollie — réessayez');
+      if(c){S.cardDiag=null;toast('Carte enregistrée — ' + (c.last4?('•••• '+c.last4):'elle vous sera proposée à la réservation'));return;}
+      toast('Enregistrement non confirmé par Mollie');
+      // Rien trouvé : on demande à Mollie ce qu'il voit, et on l'affiche. Diagnostiquer à
+      // l'aveugle a coûté trois corrections pour rien.
+      appel({action:'diag'}).then(function(r){
+        S.cardDiag=(r&&r.data)||{erreur:'réponse vide'};
+        if(S.persona==='client'&&!S.draft)render();
+      }).catch(function(e){S.cardDiag={erreur:String((e&&e.message)||e).slice(0,160)};
+        if(S.persona==='client'&&!S.draft)render();});
     };
     appel({action:'get'}).then(function(r){
       const d=(r&&r.data)||{};
@@ -8877,6 +8884,32 @@
       if(n>=6){suite(null,true);return;}
       setTimeout(function(){attendreCarte(n+1);},2500);
     });
+  }
+  // À la demande : interroger Mollie sans refaire tout le parcours d'enregistrement.
+  function diagPayCard(){
+    if(!payReal())return;
+    S.cardDiag={erreur:'lecture en cours…'};render();
+    FB.fn.httpsCallable(FB.functions,'clientCard')({action:'diag'}).then(function(r){
+      S.cardDiag=(r&&r.data)||{erreur:'réponse vide'};render();
+    }).catch(function(e){S.cardDiag={erreur:String((e&&e.message)||e).slice(0,160)};render();});
+  }
+  // Ce que Mollie répond, tel quel, quand la carte reste introuvable. Affiché seulement
+  // après un enregistrement qui n'a pas abouti — jamais en temps normal.
+  function cardDiagBloc(){
+    const d=S.cardDiag;
+    if(!d)return '';
+    const l=[];
+    l.push('Client Mollie : '+(d.customerId?esc(d.customerId):'aucun'));
+    l.push('Mandat inscrit : '+(d.mandatInscrit?esc(d.mandatInscrit):'aucun'));
+    l.push('Mandats chez Mollie : '+((d.mandats&&d.mandats.length)||0)
+      +(d.httpMandats?(' (HTTP '+esc(String(d.httpMandats))+')'):''));
+    (d.mandats||[]).slice(0,4).forEach(function(m){
+      l.push('&nbsp;&nbsp;· '+esc(m.id)+' — '+esc(m.statut)+' — '+esc(m.methode||'?')
+        +(m.detail?' — carte lisible':' — sans détail'));
+    });
+    if(d.erreur)l.push('<b>'+esc(d.erreur)+'</b>');
+    return `<div class="banner coral" style="margin-top:10px"><span><b>Carte introuvable après l'enregistrement.</b><br>
+      <span style="font-weight:500;opacity:.85;font-size:12px;line-height:1.5">${l.join('<br>')}</span></span></div>`;
   }
   // Retire la carte mémorisée chez Mollie : la prochaine réservation en redemandera une,
   // qui sera mémorisée à son tour. C'est la seule façon honnête de « changer de carte »
@@ -9243,7 +9276,9 @@
             :((S._payCard&&S._payCard.setup)?`<p class="mini" style="margin-top:2px;color:var(--muted)">Enregistrez-la maintenant et vos réservations partiront en un geste. Sinon elle vous sera demandée à la première.</p>
               <button class="btn primary sm" data-act="card-setup" style="margin-top:12px;width:auto;padding:9px 14px"${S.cardSetupBusy?' disabled':''}>${I.card}&nbsp;${S.cardSetupBusy?'Ouverture…':'Enregistrer ma carte'}</button>
               <div class="banner good" style="margin-top:12px">${I.lock}<span><b>Aucun débit</b> — carte simplement vérifiée sur <b>Mollie</b> (0,00&nbsp;€).</span></div>
-              ${S.cardSetupErr?`<div class="banner coral" style="margin-top:10px"><span><b>Mollie a refusé l'enregistrement.</b> Votre carte vous sera demandée à la réservation, comme d'habitude.<br><span style="font-weight:500;opacity:.85">Motif technique&nbsp;: ${esc(S.cardSetupErr)}</span></span></div>`:''}`
+              ${S.cardSetupErr?`<div class="banner coral" style="margin-top:10px"><span><b>Mollie a refusé l'enregistrement.</b> Votre carte vous sera demandée à la réservation, comme d'habitude.<br><span style="font-weight:500;opacity:.85">Motif technique&nbsp;: ${esc(S.cardSetupErr)}</span></span></div>`:''}
+              ${cardDiagBloc()}
+              ${S.cardDiag?'':`<button class="reset mini" data-act="card-diag" style="margin-top:10px;color:var(--muted);text-decoration:underline">Vous venez d'enregistrer votre carte et elle n'apparaît pas&nbsp;?</button>`}`
             :`<p class="mini" style="margin-top:2px">Aucune carte mémorisée. L'enregistrement n'est pas disponible pour l'instant&nbsp;: votre carte vous sera demandée sur <b>Mollie</b> au moment de la réservation.</p>
               <div class="banner good" style="margin-top:12px">${I.lock}<span>Ti-Services ne voit jamais votre numéro de carte.</span></div>`));
           const chip=(c===undefined)?'':(c?(c.status==='pending'
@@ -13140,6 +13175,7 @@
       case 'add-card':S.cardForm=true;render();break;
       case 'card-cancel':S.cardForm=false;render();break;
       case 'card-setup':setupPayCard();break;
+      case 'card-diag':diagPayCard();break;
       case 'card-forget':S.cardForgetAsk=true;render();break;
       case 'card-forget-no':S.cardForgetAsk=false;render();break;
       case 'card-forget-yes':S.cardForgetAsk=false;forgetPayCard();break;
