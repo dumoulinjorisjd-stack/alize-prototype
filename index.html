@@ -7783,8 +7783,14 @@
     const prof=S.adminMollieProf||{};
     const profList=prof.profiles||[];
     const profActuel=profList.find(function(x){return x.id===prof.current;});
-    const profChip=!prof.loaded?'':(prof.current?chip('good',esc(profActuel?profActuel.name:'profil réglé')):chip('coral','non réglé'));
-    const profBody=`<p class="mini" style="margin:0;color:var(--muted);line-height:1.55">Tant que les deux applications encaissent sur le même profil, impossible de savoir ce que rapporte l'une ou l'autre autrement qu'à l'œil. Choisissez ici celui de <b>Ti-Services</b>&nbsp;: Mollie séparera alors tableau de bord, règlements et rapports.</p>
+    // Mollie refuse d'énumérer les profils à une CLÉ API (403/401) : elle est rattachée à
+    // UN profil, et c'est elle — pas ce réglage — qui décide où l'argent atterrit. Dans ce
+    // cas la carte cesse de proposer un choix sans effet et explique la vraie manœuvre.
+    const cleParProfil=(prof.httpStatus===403||prof.httpStatus===401);
+    const profChip=!prof.loaded?'':(cleParProfil?chip('warn','réglé par la clé'):(prof.current?chip('good',esc(profActuel?profActuel.name:'profil réglé')):chip('coral','non réglé')));
+    const profBody=`<p class="mini" style="margin:0;color:var(--muted);line-height:1.55">${cleParProfil
+      ?'Ti-Services et Archipel BTP encaissent sur le même compte Mollie. Pour savoir ce que rapporte l’une et l’autre, chacune doit encaisser sur <b>son</b> profil.'
+      :'Tant que les deux applications encaissent sur le même profil, impossible de savoir ce que rapporte l\'une ou l\'autre autrement qu\'à l\'œil. Choisissez ici celui de <b>Ti-Services</b>&nbsp;: Mollie séparera alors tableau de bord, règlements et rapports.'}</p>
       ${!prof.loaded?`<button class="btn ghost sm" data-adm="molprof-load" style="margin-top:12px">${I.search}&nbsp;Voir mes profils Mollie</button>`
         :(prof.fige?`<div class="banner warn" style="margin-top:12px">${I.shield}<span>Le profil est <b>figé par une variable d'environnement</b> (MOLLIE_PROFILE_ID)&nbsp;: le choix ci-dessous n'aurait aucun effet tant qu'elle est posée.</span></div>`:'')
           +(profList.length?profList.map(function(x){const actif=(x.id===prof.current);
@@ -7796,9 +7802,19 @@
               ${actif?'':`<button class="btn primary sm" data-adm="molprof-set:${esc(x.id)}" style="margin-top:9px">${I.check}&nbsp;Utiliser pour Ti-Services</button>`}
             </div>`;}).join('')
             :`<div class="banner warn" style="margin-top:10px">${I.shield}<span>${prof.motif?esc(prof.motif):'Aucun profil renvoyé par Mollie.'}</span></div>
-              ${prof.httpStatus?`<p class="mini" style="margin-top:6px;color:var(--muted)">Réponse Mollie&nbsp;: ${esc(String(prof.httpStatus))}</p>`:''}`)
+              ${prof.httpStatus?`<p class="mini" style="margin-top:6px;color:var(--muted)">Réponse Mollie&nbsp;: ${esc(String(prof.httpStatus))}</p>`:''}
+              ${cleParProfil?`<div class="card" style="padding:14px;margin-top:11px">
+                <b style="font-size:14px">Ce qu'il faut faire, alors</b>
+                <p class="mini" style="margin-top:7px;line-height:1.6">Chez Mollie, <b>chaque profil a ses propres clés API</b>, et c'est la clé qui décide où atterrit l'argent — ce réglage-ci n'a aucun effet.</p>
+                <ol class="mini" style="margin:8px 0 0;padding-left:18px;line-height:1.7">
+                  <li>Mollie → profil <b>Ti-services</b> → Développeurs → clés API → copier la clé <b>live</b>.</li>
+                  <li>La placer dans le secret <b>MOLLIE_ACCESS_TOKEN</b> de Ti-Services, puis redéployer.</li>
+                  <li>Même chose côté Archipel BTP avec la clé du profil <b>Archipel-BTP</b>.</li>
+                </ol>
+                <div class="banner warn" style="margin-top:11px">${I.clock}<span>À faire <b>avant l'ouverture aux clients</b>&nbsp;: les cartes déjà mémorisées appartiennent au profil de l'ancienne clé. Après le changement, les clients concernés devront réenregistrer leur carte — sans risque aujourd'hui, coûteux une fois les clients arrivés.</span></div>
+              </div>`:''}`)
           +`<button class="btn ghost sm" data-adm="molprof-load" style="margin-top:12px">${I.search}&nbsp;Rafraîchir</button>
-            <p class="mini" style="margin-top:8px;color:var(--muted)">Pense-bête&nbsp;: <b>Archipel BTP doit être pointé sur son propre profil</b> de son côté, sinon il continuera d'atterrir sur le profil par défaut — et le tri ne servira à rien.</p>`}`;
+            ${cleParProfil?'':`<p class="mini" style="margin-top:8px;color:var(--muted)">Pense-bête&nbsp;: <b>Archipel BTP doit être pointé sur son propre profil</b> de son côté, sinon il continuera d'atterrir sur le profil par défaut — et le tri ne servira à rien.</p>`}`}`;
     /* ── Qui pourra RÉELLEMENT travailler le 1er octobre ──────────────────────────
        Un prestataire validé sans compte de paiement connecté ne peut accepter AUCUNE
        mission (la règle Firestore l'exige) : il verra les demandes passer sans pouvoir
