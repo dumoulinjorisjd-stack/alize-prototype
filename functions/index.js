@@ -287,8 +287,13 @@ async function mollieOnboardingReady(accessToken) {
     const canSettle = ob.canReceiveSettlements !== false;
     // Lien de complétion hébergé par Mollie (pour finir le dossier : identité, IBAN…).
     const dashboard = (ob._links && ob._links.dashboard && ob._links.dashboard.href) || '';
-    return {ok: status === 'completed' && canPay && canSettle, status: status, dashboard: dashboard};
-  } catch (e) { console.warn('mollieOnboardingReady', e); return {ok: false, status: 'error', dashboard: ''}; }
+    // On remonte AUSSI les deux capacités séparément : Mollie autorise souvent à encaisser
+    // avant d'avoir fini de vérifier le dossier, et son tableau de bord le dit à l'artisan
+    // (« vous pouvez commencer à accepter des paiements »). Sans cette nuance, la console
+    // affichait « en examen » en face d'un artisan à qui Mollie disait le contraire.
+    return {ok: status === 'completed' && canPay && canSettle, status: status, dashboard: dashboard,
+      canPay: canPay, canSettle: canSettle};
+  } catch (e) { console.warn('mollieOnboardingReady', e); return {ok: false, status: 'error', dashboard: '', canPay: false, canSettle: false}; }
 }
 // FRAIS MOLLIE RÉELS d'un paiement. Mollie expose `settlementAmount` = ce qu'il verse
 // vraiment après ses frais ; le frais exact = amount − settlementAmount. On enregistre ce
@@ -426,7 +431,8 @@ async function syncArtisanMollie(db, uid) {
   // Lien vers le compte Mollie de l'artisan (page hébergée : compléter / gérer son dossier).
   // On le conserve pour que l'app puisse TOUJOURS proposer l'accès au compte Mollie.
   const dashboard = ready.dashboard || ad.mollieDashboardUrl || '';
-  const upd = {mollieStatus: ready.ok ? 'active' : 'pending', mollieOnboardingStatus: ready.status, mollieDashboardUrl: dashboard};
+  const upd = {mollieStatus: ready.ok ? 'active' : 'pending', mollieOnboardingStatus: ready.status,
+    mollieCanPay: ready.canPay !== false, mollieCanSettle: ready.canSettle !== false, mollieDashboardUrl: dashboard};
   if (ready.status === 'needs-data' && prevNotified !== 'needs-data') {
     upd.mollieIssueNotified = 'needs-data';
     try { await notifyArtisanMollieProblem(db, uid, 'needs-data'); } catch (_) {}
@@ -1711,14 +1717,32 @@ exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) 
   if (!mollieApiConfigured()) return {card: null, simulated: true};
   const action = String((request.data && request.data.action) || 'get');
   let customerId = '';
+  let udoc = {};
   try {
     const snap = await db.collection('users').doc(uid).get();
-    customerId = (snap.exists && snap.data() && snap.data().mollieCustomerId) || '';
+    udoc = (snap.exists && snap.data()) || {};
+    customerId = udoc.mollieCustomerId || '';
   } catch (_) {}
-  if (!customerId) return {card: null};
+
+  // Le « client Mollie » porte les cartes mémorisées. Il naissait au premier paiement —
+  // mais on doit pouvoir enregistrer sa carte AVANT toute commande, justement pour ne
+  // pas la saisir le jour J. On le crée donc ici, à la demande.
+  const ensureCustomer = async () => {
+    if (customerId) return customerId;
+    const body = {name: String(udoc.name || 'Client Ti-Services').slice(0, 100), metadata: {uid: uid}};
+    const em = String(udoc.email || (request.auth.token && request.auth.token.email) || '').slice(0, 100);
+    if (em) body.email = em;
+    const cust = await mollieApi('/customers', 'POST', body);
+    if (cust.ok && cust.data && cust.data.id) {
+      customerId = String(cust.data.id);
+      try { await db.collection('users').doc(uid).set({mollieCustomerId: customerId}, {merge: true}); } catch (_) {}
+    }
+    return customerId;
+  };
 
   // Le mandat valide le plus récent = la carte que Mollie proposera à la réservation.
   const readCard = async () => {
+    if (!customerId) return null;
     const out = await mollieApi('/customers/' + encodeURIComponent(customerId) + '/mandates?limit=50', 'GET');
     const arr = (out.ok && out.data && out.data._embedded && out.data._embedded.mandates) || [];
     const valid = arr.filter((m) => m && m.status === 'valid' && m.details);
@@ -1734,21 +1758,19 @@ exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) 
     };
   };
 
-  // L'enregistrement à 0,00 € n'est pas ouvert sur tous les comptes Mollie. On le
-  // DEMANDE à Mollie au lieu de le supposer : l'API Methods dit quelles méthodes
-  // acceptent un premier paiement de montant nul. Vide → l'app n'affiche pas le bouton.
-  const canSetup = async () => {
-    const out = await mollieApi('/methods?amount[value]=0.00&amount[currency]=EUR&sequenceType=first', 'GET');
-    const arr = (out.ok && out.data && out.data._embedded && out.data._embedded.methods) || [];
-    return arr.map((m) => String((m && m.id) || '')).filter(Boolean);
-  };
+  // Peut-on proposer l'enregistrement ? On interrogeait l'API Methods avec un montant
+  // nul ; sur ce compte elle répondait VIDE, et le bouton ne s'affichait donc jamais —
+  // le client ne pouvait pas enregistrer sa carte, sans qu'aucune erreur soit visible.
+  // On le propose désormais, et on ne le retire que si Mollie a réellement refusé une
+  // fois, refus consigné (avec son motif) sur la fiche du client.
+  const setupMethods = () => (udoc.cardSetupOff ? [] : ['creditcard']);
 
   if (action === 'revoke') {
     const cur = await readCard();
-    if (!cur || !cur.id) return {card: null, revoked: false};
+    if (!cur || !cur.id) return {card: null, revoked: false, setupMethods: setupMethods()};
     // Mollie répond 204 sans corps : mollieApi renvoie {ok:true, data:null}.
     const del = await mollieApi('/customers/' + encodeURIComponent(customerId) + '/mandates/' + encodeURIComponent(cur.id), 'DELETE');
-    return {card: await readCard(), revoked: !!del.ok, setupMethods: await canSetup()};
+    return {card: await readCard(), revoked: !!del.ok, setupMethods: setupMethods()};
   }
 
   // ENREGISTREMENT AVANT TOUTE RÉSERVATION : Mollie accepte un « premier paiement » de
@@ -1756,6 +1778,10 @@ exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) 
   // débit ni empreinte. Le client peut donc enregistrer sa carte dès l'inscription ;
   // elle sera proposée d'office à sa première commande.
   if (action === 'setup') {
+    // Un client qui n'a encore rien commandé n'a pas de « client Mollie » : on le crée
+    // ici, sinon l'enregistrement de la carte serait réservé à ceux qui ont déjà payé.
+    await ensureCustomer();
+    if (!customerId) return {checkoutUrl: null, error: 'setup_refused', reason: 'client Mollie non créé'};
     const returnUrl = String((request.data && request.data.returnUrl) || '').slice(0, 400);
     const appUrl = APP_URL.replace(/\/$/, '');
     const body = {
@@ -1782,12 +1808,25 @@ exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) 
       const d = out.data || {};
       const reason = String(d.detail || d.title || ('HTTP ' + (out.status || '?'))).slice(0, 160);
       console.warn('clientCard setup refusé', out.status, reason);
+      // Refus consigné : on cesse de proposer un bouton qui ne peut pas aboutir, et
+      // l'exploitant est prévenu — un refus silencieux serait invisible en production.
+      try { await db.collection('users').doc(uid).set({cardSetupOff: true, cardSetupReason: reason, cardSetupAt: Date.now()}, {merge: true}); } catch (_) {}
+      try {
+        await sendMail(db, ADMIN_EMAIL, {
+          subject: 'Enregistrement de carte refusé par Mollie',
+          html: '<p>Un client a tenté d\'enregistrer sa carte (autorisation à 0,00 €) et Mollie a refusé.</p>'
+            + '<ul><li><b>Client :</b> ' + escHtmlS(String(udoc.email || uid)) + '</li>'
+            + '<li><b>Statut HTTP :</b> ' + escHtmlS(String(out.status || '?')) + '</li>'
+            + '<li><b>Motif Mollie :</b> ' + escHtmlS(reason) + '</li></ul>'
+            + '<p>Le bouton ne lui est plus proposé. Sa carte lui sera demandée à la réservation.</p>',
+        });
+      } catch (_) {}
       return {checkoutUrl: null, error: 'setup_refused', reason: reason};
     }
     const link = out.data._links && out.data._links.checkout && out.data._links.checkout.href;
     return {checkoutUrl: link || null, paymentId: String(out.data.id || '')};
   }
-  return {card: await readCard(), setupMethods: await canSetup()};
+  return {card: await readCard(), setupMethods: setupMethods()};
 });
 
 /**
@@ -2077,6 +2116,8 @@ exports.mollieOnboardingReturn = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLI
       mollieOrgId: orgId,
       mollieStatus: (orgId && ready.ok) ? 'active' : 'pending',
       mollieOnboardingStatus: ready.status,
+      mollieCanPay: ready.canPay !== false,
+      mollieCanSettle: ready.canSettle !== false,
       mollieDashboardUrl: ready.dashboard || '',
       mollieOnboardedAt: FieldValue.serverTimestamp(),
     }, {merge: true});

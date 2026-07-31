@@ -7753,10 +7753,16 @@
     const molPrets=molValides.filter(molOk);
     const molBloques=molValides.filter(function(a){return !molOk(a);})
       .sort(function(x,y){return (Number(y.mollieRelances)||0)-(Number(x.mollieRelances)||0);});
+    // ATTENTION AU MOT : Mollie annonce à l'artisan « vous pouvez commencer à accepter des
+    // paiements » dès que son compte encaisse — alors que son dossier n'est PAS encore
+    // validé et que les versements, eux, restent retenus. Écrire « en examen » sans cette
+    // nuance donnait l'impression de contredire Mollie. On distingue les deux temps.
     const molEtat=function(a){
       const st=a.mollieStatus||'none';
       if(st==='pending'&&a.mollieOnb==='needs-data')return ['coral','Dossier à compléter chez Mollie'];
-      if(st==='pending')return ['warn','En examen chez Mollie'];
+      if(st==='pending'&&a.mollieCanPay&&!a.mollieCanSettle)return ['warn','Encaisse déjà · versements pas encore ouverts'];
+      if(st==='pending'&&a.mollieOnb==='in-review')return ['warn','Dossier en cours de validation chez Mollie'];
+      if(st==='pending')return ['warn','Activation Mollie inachevée'];
       return ['coral','Jamais commencé'];
     };
     const molBlock=(function(){
@@ -8084,7 +8090,9 @@
           ${fRow('Paiements (Mollie)',`${(function(){const st=a.mollieStatus||'none';
             if(st==='active')return `<span class="chip good">${I.check} Actif</span>`;
             if(st==='pending'&&a.mollieOnb==='needs-data')return `<span class="chip coral">${I.clip} Dossier à compléter</span><div class="mini" style="margin-top:4px">Un appel de 2 min peut débloquer — il ne lui manque qu'une pièce ou l'IBAN.</div>`;
-            if(st==='pending')return `<span class="chip warn">${I.clock} En examen chez Mollie</span>`;
+            if(st==='pending'&&a.mollieCanPay&&!a.mollieCanSettle)return `<span class="chip warn">${I.clock} Encaisse déjà · versements pas encore ouverts</span><div class="mini" style="margin-top:4px">Mollie l'autorise à encaisser — c'est ce que lui dit son tableau de bord — mais retient encore ses virements. Nous attendons cette ouverture avant de lui confier une mission&nbsp;: sinon l'argent du client partirait sans pouvoir lui être versé. Rien à faire de son côté.</div>`;
+            if(st==='pending'&&a.mollieOnb==='in-review')return `<span class="chip warn">${I.clock} Dossier en cours de validation</span><div class="mini" style="margin-top:4px">Mollie vérifie son identité et son IBAN. Rien à faire de son côté — dès que c'est validé, il passe « Actif » tout seul.</div>`;
+            if(st==='pending')return `<span class="chip warn">${I.clock} Activation Mollie inachevée</span><div class="mini" style="margin-top:4px">Son compte existe mais n'est pas encore pleinement ouvert chez Mollie.</div>`;
             return `<span class="chip coral">Jamais commencé</span><div class="mini" style="margin-top:4px">Sans activation, il ne peut pas accepter de missions.</div>`;})()}`)}
           ${a.insuranceUrl?`<div style="padding:11px 0;border-top:1px solid var(--hair)"><div class="row" style="gap:8px">${insStatus(a)!=='valide'?`<button class="btn good sm" data-adm="valid-ins:${a.id}">${I.check} Valider l'attestation</button>`:''}${insStatus(a)!=='refuse'?`<button class="btn ghost sm" data-adm="rej-ins:${a.id}">Refuser l'attestation</button>`:''}</div><p class="mini" style="margin-top:7px;color:var(--muted)">Ouvrez le document ci-dessus, puis validez ou refusez l'attestation. Rien n'est validé automatiquement.</p></div>`:''}
           ${a.bio?fRow('Présentation',`<span style="font-weight:500">${esc(a.bio)}</span>`):''}
@@ -8838,8 +8846,8 @@
     if(!payReal())return;
     S._payCard={loading:true};render();
     FB.fn.httpsCallable(FB.functions,'clientCard')({action:'revoke'}).then(function(r){
-      S._payCard={done:true,card:(r&&r.data&&r.data.card)||null};
-      render();toast('Carte retirée — la prochaine réservation vous en demandera une');
+      S._payCard={done:true,card:(r&&r.data&&r.data.card)||null,setup:(((r&&r.data&&r.data.setupMethods)||[]).length>0)};
+      render();toast('Carte retirée — vous pouvez en enregistrer une autre');
     }).catch(function(){S._payCard={done:true,card:null};render();toast('Retrait impossible pour le moment');});
   }
   // ENREGISTRER SA CARTE AVANT TOUTE RÉSERVATION : Mollie accepte un « premier
@@ -9194,7 +9202,7 @@
               <div class="banner good" style="margin-top:12px">${I.lock}<span><b>Aucun débit</b> — carte simplement vérifiée sur <b>Mollie</b> (0,00&nbsp;€).</span></div>
               <p class="mini" style="margin-top:8px;color:var(--muted)">Facultatif — sinon elle vous sera demandée à votre première réservation.</p>
               ${S.cardSetupErr?`<p class="mini" style="margin-top:8px;color:var(--coral-deep)">Mollie&nbsp;: ${esc(S.cardSetupErr)}</p>`:''}`
-            :`<p class="mini" style="margin-top:2px">Aucune carte mémorisée pour l'instant. Elle le sera à votre première réservation&nbsp;: saisie sur <b>Mollie</b>, elle vous sera ensuite proposée en un clic.</p>
+            :`<p class="mini" style="margin-top:2px">Aucune carte mémorisée. L'enregistrement n'est pas disponible pour l'instant&nbsp;: votre carte vous sera demandée sur <b>Mollie</b> au moment de la réservation.</p>
               <div class="banner good" style="margin-top:12px">${I.lock}<span>Ti-Services ne voit jamais votre numéro de carte.</span></div>`));
           const chip=(c===undefined)?'':(c?`<span class="chip good" style="flex:none">${I.check} Enregistré</span>`:`<span class="chip grey" style="flex:none">À la 1re réservation</span>`);
           const sub=c?(esc(c.brand)+' •••• '+esc(c.last4)):'';
@@ -14677,7 +14685,7 @@
       adminArtUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'artisans'),function(snap){
         const list=[],pending=new Set();
         snap.forEach(function(d){ const a=d.data()||{}; const cats=Array.isArray(a.cats)?a.cats:[]; const rr=a.rates||{}; const st=a.status||'attente';
-          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Prestataire',status:st,type:(a.statusType==='particulier')?'particulier':'entreprise',statusType:a.statusType||'entreprise',legalName:a.legalName||'',legalForm:a.legalForm||'',capital:a.capital||'',rcsCity:a.rcsCity||'',birth:a.birth||'',referralCode:a.referralCode||'',referredByCode:a.referredByCode||'',acceptedTerms:!!a.acceptedTerms,acceptedCharte:!!a.acceptedCharte,acceptedMandat:!!a.acceptedMandat,acceptsGrille:!!a.acceptsGrille,termsVersion:a.termsVersion||'',termsAt:(a.termsAt&&a.termsAt.toMillis)?a.termsAt.toMillis():0,createdAt:(a.createdAt&&a.createdAt.toMillis)?a.createdAt.toMillis():0,cats:cats,other:a.other||'',otherPrice:Number(a.otherPrice)||0,otherUnit:(a.otherUnit==='forfait'?'forfait':'h'),pendingCats:Array.isArray(a.pendingCats)?a.pendingCats:[],pendingOther:a.pendingOther||'',pendingOtherPrice:Number(a.pendingOtherPrice)||0,pendingOtherUnit:(a.pendingOtherUnit==='forfait'?'forfait':'h'),rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,founderSince:(a.founderSince&&a.founderSince.toMillis)?a.founderSince.toMillis():(typeof a.founderSince==='number'?a.founderSince:null),founderGross:Number(a.founderGross)||0,rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,online:!!a.online,siteMode:a.siteMode||'',salonAddress:a.salonAddress||'',salonZone:a.salonZone||'',push:(Array.isArray(a.pushTokens)?a.pushTokens.length:0),mollieStatus:a.mollieStatus||'none',mollieOnb:a.mollieOnboardingStatus||'',mollieRelances:Number(a.mollieRelances)||0,mollieRelanceAt:Number(a.mollieRelanceAt)||0,lastNoShowAt:(a.lastNoShowAt&&a.lastNoShowAt.toDate)?a.lastNoShowAt.toDate().getTime():0});
+          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Prestataire',status:st,type:(a.statusType==='particulier')?'particulier':'entreprise',statusType:a.statusType||'entreprise',legalName:a.legalName||'',legalForm:a.legalForm||'',capital:a.capital||'',rcsCity:a.rcsCity||'',birth:a.birth||'',referralCode:a.referralCode||'',referredByCode:a.referredByCode||'',acceptedTerms:!!a.acceptedTerms,acceptedCharte:!!a.acceptedCharte,acceptedMandat:!!a.acceptedMandat,acceptsGrille:!!a.acceptsGrille,termsVersion:a.termsVersion||'',termsAt:(a.termsAt&&a.termsAt.toMillis)?a.termsAt.toMillis():0,createdAt:(a.createdAt&&a.createdAt.toMillis)?a.createdAt.toMillis():0,cats:cats,other:a.other||'',otherPrice:Number(a.otherPrice)||0,otherUnit:(a.otherUnit==='forfait'?'forfait':'h'),pendingCats:Array.isArray(a.pendingCats)?a.pendingCats:[],pendingOther:a.pendingOther||'',pendingOtherPrice:Number(a.pendingOtherPrice)||0,pendingOtherUnit:(a.pendingOtherUnit==='forfait'?'forfait':'h'),rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,founderSince:(a.founderSince&&a.founderSince.toMillis)?a.founderSince.toMillis():(typeof a.founderSince==='number'?a.founderSince:null),founderGross:Number(a.founderGross)||0,rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,online:!!a.online,siteMode:a.siteMode||'',salonAddress:a.salonAddress||'',salonZone:a.salonZone||'',push:(Array.isArray(a.pushTokens)?a.pushTokens.length:0),mollieStatus:a.mollieStatus||'none',mollieOnb:a.mollieOnboardingStatus||'',mollieCanPay:a.mollieCanPay!==false,mollieCanSettle:a.mollieCanSettle!==false,mollieRelances:Number(a.mollieRelances)||0,mollieRelanceAt:Number(a.mollieRelanceAt)||0,lastNoShowAt:(a.lastNoShowAt&&a.lastNoShowAt.toDate)?a.lastNoShowAt.toDate().getTime():0});
           if(st==='attente')pending.add(d.id); });
         S.adminArtisans=list;S.adminArtsLoaded=true;
         // Recalcule la liste des services actifs (au moins un prestataire validé) et la publie
