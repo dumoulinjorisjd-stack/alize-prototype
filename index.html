@@ -8865,19 +8865,21 @@
   // ni empreinte. La carte est ensuite proposée d'office dès la première commande.
   async function setupPayCard(){
     if(!payReal())return;
-    S.cardSetupBusy=true;render();
+    S.cardSetupBusy=true;S.cardSetupErr='';render();
     try{
       const base=location.origin+location.pathname;
       const r=await FB.fn.httpsCallable(FB.functions,'clientCard')({action:'setup',returnUrl:base+'?card=1'});
       const url=r&&r.data&&r.data.checkoutUrl;
       if(url){attentePaiement(url);location.href=url;return;}
-      // Motif technique renvoyé par Mollie : affiché uniquement à l'administrateur,
-      // pour diagnostiquer sans avoir à fouiller les journaux serveur.
-      S.cardSetupErr=(isAdminAccount()&&r&&r.data&&r.data.reason)?String(r.data.reason):'';
-      if(S._payCard)S._payCard.setup=false;   // refusé par Mollie : on n'insiste pas
+      // MOTIF MOLLIE MONTRÉ À TOUT LE MONDE. Il l'était seulement à l'administrateur :
+      // un client — ou l'éditeur en train de tester avec un compte client — ne voyait
+      // qu'un refus sans cause, impossible à décrire et donc à corriger. Le message reste
+      // discret et sans donnée personnelle : c'est un retour technique sur NOTRE appel.
+      S.cardSetupErr=(r&&r.data&&r.data.reason)?String(r.data.reason).slice(0,200):'';
       S.cardSetupBusy=false;render();
-      toast('Enregistrement indisponible — votre carte vous sera demandée à la réservation');
-    }catch(e){S.cardSetupErr=isAdminAccount()?String((e&&e.message)||e).slice(0,160):'';S.cardSetupBusy=false;render();toast('Enregistrement indisponible pour le moment');}
+      toast('Enregistrement refusé par Mollie'+(S.cardSetupErr?(' : '+S.cardSetupErr):''));
+    }catch(e){S.cardSetupErr=String((e&&e.message)||e).slice(0,200);S.cardSetupBusy=false;render();
+      toast('Enregistrement impossible'+(S.cardSetupErr?(' : '+S.cardSetupErr):''));}
   }
   // Échéance Mollie « AAAA-MM » → « MM/AAAA ».
   function payCardExp(c){const m=/^(\d{4})-(\d{2})/.exec(String((c&&c.exp)||''));return m?(m[2]+'/'+m[1]):'';}
@@ -9035,7 +9037,8 @@
             <div style="flex:1;min-width:0"><b style="font-size:14px">Enregistrer ma carte</b>
               <div class="mini" style="margin-top:3px;color:var(--muted);line-height:1.45">Vous ne la ressaisirez plus&nbsp;: vos prochaines réservations partent en un geste. Aucun débit, aucune empreinte.</div></div>
             <span class="mini" style="color:var(--teal-deep);font-weight:700;white-space:nowrap;flex:none">${S.cardSetupBusy?'…':'Enregistrer ›'}</span>
-          </div></button>`;
+          </div></button>
+          ${S.cardSetupErr?`<div class="banner coral" style="margin-top:8px"><span><b>Mollie a refusé l'enregistrement.</b> Votre carte vous sera demandée à la réservation.<br><span style="font-weight:500;opacity:.85">Motif technique&nbsp;: ${esc(S.cardSetupErr)}</span></span></div>`:''}`;
       })()}
       ${notifCTA('client')}
       <div class="trust"><span>${I.shield}Prestataires vérifiés</span><span>${I.lock}Prestataires assurés</span><span>${I.check}Payé après la presta</span></div>
@@ -9211,7 +9214,7 @@
               <button class="btn primary sm" data-act="card-setup" style="margin-top:12px;width:auto;padding:9px 14px"${S.cardSetupBusy?' disabled':''}>${I.card}&nbsp;${S.cardSetupBusy?'Ouverture…':'Enregistrer ma carte'}</button>
               <div class="banner good" style="margin-top:12px">${I.lock}<span><b>Aucun débit</b> — carte simplement vérifiée sur <b>Mollie</b> (0,00&nbsp;€).</span></div>
               <p class="mini" style="margin-top:8px;color:var(--muted)">Facultatif — sinon elle vous sera demandée à votre première réservation.</p>
-              ${S.cardSetupErr?`<p class="mini" style="margin-top:8px;color:var(--coral-deep)">Mollie&nbsp;: ${esc(S.cardSetupErr)}</p>`:''}`
+              ${S.cardSetupErr?`<div class="banner coral" style="margin-top:10px"><span><b>Mollie a refusé l'enregistrement.</b> Votre carte vous sera demandée à la réservation, comme d'habitude.<br><span style="font-weight:500;opacity:.85">Motif technique&nbsp;: ${esc(S.cardSetupErr)}</span></span></div>`:''}`
             :`<p class="mini" style="margin-top:2px">Aucune carte mémorisée. L'enregistrement n'est pas disponible pour l'instant&nbsp;: votre carte vous sera demandée sur <b>Mollie</b> au moment de la réservation.</p>
               <div class="banner good" style="margin-top:12px">${I.lock}<span>Ti-Services ne voit jamais votre numéro de carte.</span></div>`));
           const chip=(c===undefined)?'':(c?`<span class="chip good" style="flex:none">${I.check} Enregistré</span>`:`<span class="chip grey" style="flex:none">À la 1re réservation</span>`);

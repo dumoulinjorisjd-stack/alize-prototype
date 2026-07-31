@@ -1800,7 +1800,7 @@ exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) 
   // le client ne pouvait pas enregistrer sa carte, sans qu'aucune erreur soit visible.
   // On le propose désormais, et on ne le retire que si Mollie a réellement refusé une
   // fois, refus consigné (avec son motif) sur la fiche du client.
-  const setupMethods = () => (udoc.cardSetupOff ? [] : ['creditcard']);
+  const setupMethods = () => ['creditcard'];
 
   if (action === 'revoke') {
     const cur = await readCard();
@@ -1845,9 +1845,11 @@ exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) 
       const d = out.data || {};
       const reason = String(d.detail || d.title || ('HTTP ' + (out.status || '?'))).slice(0, 160);
       console.warn('clientCard setup refusé', out.status, reason);
-      // Refus consigné : on cesse de proposer un bouton qui ne peut pas aboutir, et
-      // l'exploitant est prévenu — un refus silencieux serait invisible en production.
-      try { await db.collection('users').doc(uid).set({cardSetupOff: true, cardSetupReason: reason, cardSetupAt: Date.now()}, {merge: true}); } catch (_) {}
+      // Refus CONSERVÉ mais pas bloquant : on garde la trace (motif, date) pour
+      // l'exploitation, sans condamner le bouton. Un refus peut tenir à un réglage Mollie
+      // qui change du jour au lendemain ; masquer définitivement l'enregistrement sur un
+      // seul échec priverait le client d'une fonction redevenue disponible.
+      try { await db.collection('users').doc(uid).set({cardSetupReason: reason, cardSetupAt: Date.now()}, {merge: true}); } catch (_) {}
       try {
         await sendMail(db, ADMIN_EMAIL, {
           subject: 'Enregistrement de carte refusé par Mollie',
