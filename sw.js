@@ -1,5 +1,5 @@
 /* Ti-Services — service worker (coquille hors-ligne) */
-const CACHE = 'ti-services-v650';
+const CACHE = 'ti-services-v651';
 const SHELL = [
   './',
   './index.html',
@@ -68,6 +68,10 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   // Ne pas intercepter le cross-origin (Firebase, gstatic, googleapis…) : réseau direct.
   if (new URL(req.url).origin !== self.location.origin) return;
+  // VIDÉOS : le navigateur les demande par TRANCHES (en-tête Range). Servir une réponse
+  // complète depuis le cache casse la lecture sur iPhone, et une réponse partielle (206)
+  // ne se met pas en cache. On ne s'en mêle donc pas : réseau direct.
+  if (req.headers.has('range') || /\.mp4($|\?)/i.test(req.url)) return;
   // Navigations : COQUILLE EN CACHE D'ABORD (affichage quasi instantané), et on
   // rafraîchit la copie en arrière-plan. C'est cohérent avec la mise à jour sur
   // consentement : la nouvelle version s'installe en attente et n'est appliquée
