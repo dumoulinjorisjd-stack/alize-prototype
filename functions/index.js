@@ -1350,6 +1350,47 @@ exports.notifyBoosted = onDocumentUpdated('requests/{reqId}', async (event) => {
   } catch (e) { console.warn('notifyBoosted push', e); }
 });
 
+// MONTANTS D'UNE DEMANDE — SOURCE UNIQUE. La facture (PDF) et le règlement calculaient
+// chacun de leur côté et ne tombaient pas d'accord : la facture ajoutait un forfait de
+// déplacement même quand le client s'était rendu chez le prestataire, oubliait le
+// multiplicateur « par personne » et les options ; le règlement, lui, ignorait le forfait
+// de déplacement — donc l'encaissait jamais alors qu'il figurait sur la facture. Un
+// document légal ne peut pas annoncer un montant différent de celui qui est prélevé.
+//
+// Règles, identiques à celles annoncées au client :
+//   • assiette de commission = prestation (× personnes, + options) + coup de pouce ;
+//   • forfait de déplacement et POURBOIRE : intégralement au prestataire, hors commission ;
+//   • le brut est ce que le client paie ; le net de l'artisan = brut − commission.
+const TRAVEL_MIN = 50, TRAVEL_FEE = 20;
+function montantsDemande(r) {
+  r = r || {};
+  const rate = Number(r.rate) || 0;
+  const acts = Array.isArray(r.acts) ? r.acts : null;
+  let base;
+  if (acts && acts.length) {
+    base = round2(acts.reduce((t, a) => t + (Number(a.price) || 0) * (Number(a.qty) || 1), 0));
+  } else {
+    const hours = (r.unit === 'forfait') ? 1 : ((r.finalHours != null) ? Number(r.finalHours) : (Number(r.duration) || 1));
+    base = round2(rate * hours);
+  }
+  base = round2(base * peopleCount(r.service, r.people));
+  const opts = Array.isArray(r.options) ? r.options : null;
+  if (opts && opts.length) {
+    base = round2(base + opts.reduce((t, o) => t + (Number(o.price) || 0) * (Number(o.qty) || 1), 0));
+  }
+  const boostPct = Number(r.boost) || 0;
+  const boostEur = Math.max(0, Math.round(Number(r.boostEur) || 0));
+  const maj = round2(round2(base * boostPct / 100) + boostEur);
+  // Jamais de déplacement quand c'est le CLIENT qui se déplace (prestation en salon).
+  const travel = (r.locationMode === 'salon') ? 0
+    : ((acts && acts.length && base > 0 && base < TRAVEL_MIN) ? TRAVEL_FEE : 0);
+  const tip = Math.max(0, round2(Number(r.tip) || 0));
+  return {
+    base: base, boostPct: boostPct, maj: maj, travel: travel, tip: tip,
+    assiette: round2(base + maj),          // ce sur quoi porte la commission
+    gross: round2(base + maj + travel + tip),
+  };
+}
 exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secrets: ['MOLLIE_ACCESS_TOKEN', SMTP_PASS]}, async (event) => {
   const before = (event.data && event.data.before && event.data.before.data()) || {};
   const after = (event.data && event.data.after && event.data.after.data()) || {};
@@ -1363,31 +1404,14 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
   const rate = Number(after.rate) || 0;
   // Base = montant de la prestation. Prestation À L'ACTE (catalogue) : somme des actes.
   // Forfait sans acte : le prix fixe (1×). Sinon horaire : tarif × heures facturées.
-  const acts = Array.isArray(after.acts) ? after.acts : null;
-  let base;
-  if (acts && acts.length) {
-    base = round2(acts.reduce((t, a) => t + (Number(a.price) || 0) * (Number(a.qty) || 1), 0));
-  } else {
-    const hours = (after.unit === 'forfait') ? 1 : ((after.finalHours != null) ? Number(after.finalHours) : (Number(after.duration) || 1));
-    base = round2(rate * hours);
-  }
-  // Prestations « par personne » (sport, massage) : le prix est multiplié par le nombre
-  // de participants — l'assiette de commission doit l'être aussi.
-  base = round2(base * peopleCount(after.service, after.people));
-  // Prestations / options additionnelles (à l'unité ou à l'heure) : elles s'ajoutent à
-  // l'assiette de commission (après le multiplicateur « par personne », comme côté client).
-  const opts = Array.isArray(after.options) ? after.options : null;
-  if (opts && opts.length) {
-    base = round2(base + opts.reduce((t, o) => t + (Number(o.price) || 0) * (Number(o.qty) || 1), 0));
-  }
-  const boost = Number(after.boost) || 0;
-  // Coup de pouce en euros (relance pendant la recherche) : montant fixe soumis à la
-  // commission (comme la majoration en %). S'ajoute à l'assiette et au brut.
-  const boostEur = Math.max(0, Math.round(Number(after.boostEur) || 0));
-  // Pourboire laissé par le client à la validation : versé EN TOTALITÉ à l'artisan
-  // (aucune commission Ti-Services). Il s'ajoute donc au brut ET au net.
-  const tip = Math.max(0, round2(Number(after.tip) || 0));
-  const gross = round2(base + round2(base * boost / 100) + boostEur + tip);
+  // Un seul calcul pour la facture ET le règlement (montantsDemande) : ce qui est écrit
+  // sur le document est exactement ce qui est prélevé.
+  const M = montantsDemande(after);
+  const base = M.base, boost = M.boostPct;
+  // Le POURBOIRE et le forfait de déplacement reviennent en totalité au prestataire :
+  // ils sont dans le brut payé par le client, jamais dans l'assiette de commission.
+  const tip = M.tip;
+  const gross = M.gross;
 
   const db = getFirestore();
   let jobsTotal = 0; let isFounder = false; let founderSinceMs = null; let founderGross = 0; let refBonusJobs = 0;
@@ -1419,7 +1443,7 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
   const basePct = founderActive ? FOUNDER_COMM_PCT : commissionTierPct(jobsTotal + refBonusJobs, cfgTiers);
   // Plancher « petits montants » : au moins SMALL_COMM_PCT % sous SMALL_COMM_MIN € de base.
   const pct = (base < SMALL_COMM_MIN) ? Math.max(basePct, SMALL_COMM_PCT) : basePct;
-  const commission = round2((base + round2(base * boost / 100) + boostEur) * pct / 100);
+  const commission = round2(M.assiette * pct / 100);
   const net = round2(gross - commission);
 
   const reqId = event.params.reqId;
@@ -1502,7 +1526,7 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
     await event.data.after.ref.update({
       commissionSettled: true,
       commissionPct: pct,
-      commissionBase: base,
+      commissionBase: M.assiette,   // prestation + coup de pouce : ce sur quoi la commission est calculée
       commissionAmount: commission,
       grossTotal: gross,
       netAmount: net,
@@ -2726,36 +2750,46 @@ function frDate(ts) {
   const mois = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
   return d.getDate() + ' ' + mois[d.getMonth()] + ' ' + d.getFullYear();
 }
-// Reconstitue lignes + total EXACTEMENT comme l'app (totals()) : à l'acte =
-// somme des actes + coup de pouce + forfait déplacement (< 50 €) ; horaire =
-// tarif × heures facturées (finalHours si déclarées) + coup de pouce.
+// Lignes et total de la facture — calculés par la SOURCE UNIQUE (montantsDemande), la
+// même que celle du règlement. Chacun calculait de son côté et ils divergeaient : la
+// facture ajoutait un forfait de déplacement même quand le client s'était rendu chez le
+// prestataire, et oubliait le multiplicateur « par personne » ainsi que les options ; le
+// règlement, lui, ignorait le forfait de déplacement. Un document légal ne peut pas
+// annoncer un montant différent de celui qui est prélevé.
 function invoiceLines(r) {
-  const acts = Array.isArray(r.acts) ? r.acts : null;
-  const boost = Number(r.boost) || 0;
+  const M = montantsDemande(r);
   const lines = [];
-  let sub = 0;
+  const acts = Array.isArray(r.acts) ? r.acts : null;
+  const per = peopleCount(r.service, r.people);
+  const perTxt = (per > 1) ? (' \u00d7 ' + per + ' pers.') : '';
   if (acts && acts.length) {
     acts.forEach((a) => {
       const q = Number(a.qty) || 1; const pu = Number(a.price) || 0;
-      lines.push({ label: a.nm || 'Prestation', qty: String(q), unit: eurTxt(pu), total: pu * q });
-      sub += pu * q;
+      lines.push({ label: (a.nm || 'Prestation') + perTxt, qty: String(q), unit: eurTxt(pu), total: round2(pu * q * per) });
     });
   } else {
     const rate = Number(r.rate) || 0;
     const forfait = r.unit === 'forfait';
     const hours = forfait ? 1 : ((r.finalHours != null) ? Number(r.finalHours) : (Number(r.duration) || 1));
     const dayU = r.unit === 'j';
-    lines.push({ label: r.serviceName || 'Prestation', qty: forfait ? 'forfait' : (hours + (dayU ? ' j' : ' h')), unit: eurTxt(rate), total: rate * hours });
-    sub += rate * hours;
+    lines.push({ label: (r.serviceName || 'Prestation') + perTxt,
+      qty: forfait ? 'forfait' : (hours + (dayU ? ' j' : ' h')), unit: eurTxt(rate), total: round2(rate * hours * per) });
   }
-  const maj = Math.round(sub * boost / 100);
-  if (maj > 0) lines.push({ label: 'Coup de pouce +' + boost + '%', qty: '1', unit: eurTxt(maj), total: maj });
-  const travel = (acts && acts.length && sub > 0 && sub < 50) ? 20 : 0;
-  if (travel > 0) lines.push({ label: 'Forfait de déplacement', qty: '1', unit: eurTxt(travel), total: travel });
-  // Pourboire (facultatif, laissé à la validation) — reversé intégralement à l'artisan.
-  const tip = Math.max(0, Math.round((Number(r.tip) || 0) * 100) / 100);
-  if (tip > 0) lines.push({ label: 'Pourboire', qty: '1', unit: eurTxt(tip), total: tip });
-  return { lines, total: Math.round((sub + maj + travel + tip) * 100) / 100 };
+  // Options / prestations additionnelles : elles étaient prélevées sans jamais apparaître
+  // sur la facture. Chacune a désormais sa ligne.
+  const opts = Array.isArray(r.options) ? r.options : null;
+  if (opts && opts.length) {
+    opts.forEach((o) => {
+      const q = Number(o.qty) || 1; const pu = Number(o.price) || 0;
+      if (pu * q > 0) lines.push({ label: o.nm || 'Prestation complémentaire', qty: String(q), unit: eurTxt(pu), total: round2(pu * q) });
+    });
+  }
+  if (M.maj > 0) lines.push({ label: 'Coup de pouce' + (M.boostPct ? (' +' + M.boostPct + '%') : ''), qty: '1', unit: eurTxt(M.maj), total: M.maj });
+  if (M.travel > 0) lines.push({ label: 'Forfait de d\u00e9placement', qty: '1', unit: eurTxt(M.travel), total: M.travel });
+  // Le pourboire est une LIBÉRALITÉ du client, hors prix de la prestation et hors
+  // commission, reversée en totalité au prestataire. La facture doit le dire.
+  if (M.tip > 0) lines.push({ label: 'Pourboire \u2014 libéralité, revers\u00e9e int\u00e9gralement au prestataire', qty: '1', unit: eurTxt(M.tip), total: M.tip });
+  return { lines, total: M.gross, tip: M.tip };
 }
 function wrapPdf(page, font, size, color, text, x, y, maxW, lh) {
   const words = String(text).split(' ');
