@@ -393,6 +393,40 @@ async function notifyArtisanMollieActivated(db, uid) {
 // mollieIssueNotified / mollieActiveNotified) pour ne jamais spammer. Renvoie {status,
 // active} ou null si rien à faire (pas d'organisation / pas de jeton / erreur). Partagé
 // par mollieCheckStatus (app), le webhook Mollie (temps réel) et le balayage planifié.
+// RATTRAPAGE DES SUPPLÉMENTS EN ATTENTE. Pourboire, heures déclarées en plus, coup de
+// pouce : ces montants dépassent la somme réservée à la commande et se prélèvent à part.
+// Sans carte mémorisée, le prélèvement direct est impossible et un lien de paiement est
+// envoyé — que le client ne suit pas toujours. Dès qu'une carte est mémorisée (ou lors du
+// balayage quotidien), on repasse sur tout ce qui reste dû et on le prélève, sans rien
+// redemander. Renvoie le nombre de suppléments réellement encaissés ou relancés.
+async function relancerComplements(db, clientUid) {
+  if (!mollieApiConfigured() || !clientUid) return 0;
+  let docs = [];
+  try {
+    docs = (await db.collection('requests').where('clientUid', '==', clientUid)
+      .where('complementStatus', 'in', ['impossible', 'echec', 'a_regler']).get()).docs;
+  } catch (e) { console.warn('relancerComplements requête', e); return 0; }
+  let n = 0;
+  for (const d of docs) {
+    const r = d.data() || {};
+    const montant = round2(Number(r.complementAmount) || 0);
+    if (!(montant > 0.009)) continue;
+    let out;
+    try {
+      out = await mollieChargeComplement(db, d.id, clientUid, montant,
+        'Ti-Services · supplément · ' + (r.serviceName || r.service || 'prestation'));
+    } catch (e) { console.warn('relancerComplements', d.id, e); continue; }
+    if (!out || !out.ok) continue;                       // on retentera plus tard
+    try {
+      await d.ref.update({complementStatus: out.direct ? 'en_cours' : 'a_regler',
+        complementPaymentId: out.paymentId || '', complementCheckoutUrl: out.checkoutUrl || '',
+        complementIssue: ''});
+    } catch (_) {}
+    if (out.direct) n++;
+    console.log('Supplément relancé reqId=' + d.id + ' ' + montant + ' € — ' + out.reason);
+  }
+  return n;
+}
 // RATTRAPAGE DES VERSEMENTS EN ATTENTE. Un artisan peut travailler dès que Mollie
 // l'autorise à encaisser ; si ses virements ne sont pas encore ouverts, son net reste sur
 // le solde plateforme (jamais perdu, mais pas versé). Dès que Mollie les ouvre, on repasse
@@ -1558,9 +1592,8 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
     // jamais abouti, demande créée hors carte, Mollie non configuré), il n'y a personne à
     // débiter : le pourboire figurait alors sur la facture sans laisser la moindre trace,
     // ni chez Mollie ni côté client. On l'inscrit sur la demande et on alerte l'exploitant.
-    if (complement > 0.009 && !after.complementPaymentId && (!mollieApiConfigured() || !after.molliePaymentId)) {
-      const motif = !mollieApiConfigured() ? 'Mollie non configuré sur cet environnement'
-        : 'aucun paiement par carte n’est rattaché à cette demande';
+    if (complement > 0.009 && !after.complementPaymentId && !mollieApiConfigured()) {
+      const motif = 'Mollie non configuré sur cet environnement';
       try {
         await event.data.after.ref.update({complementAmount: complement, complementStatus: 'impossible', complementIssue: motif});
       } catch (_) {}
@@ -1576,7 +1609,7 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
         });
       } catch (_) {}
     }
-    if (complement > 0.009 && mollieApiConfigured() && after.molliePaymentId && !after.complementPaymentId) {
+    if (complement > 0.009 && mollieApiConfigured() && !after.complementPaymentId) {
       try {
         const r2 = await mollieChargeComplement(db, reqId, after.clientUid,
           complement, 'Ti-Services · supplément · ' + (after.serviceName || after.service || 'prestation'));
@@ -2048,6 +2081,11 @@ exports.mollieWebhook = onRequest({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (req
           if (pay.mandateId) patch.mollieMandateId = String(pay.mandateId);
           try { await db.collection('users').doc(uid).set(patch, {merge: true}); } catch (_) {}
           console.log('Carte enregistrée uid=' + uid + ' mandat=' + (pay.mandateId || '(absent)'));
+          // La carte vient d'arriver : tout supplément resté en souffrance (pourboire,
+          // heures en plus, coup de pouce) se prélève maintenant, sans rien redemander.
+          if (pay.mandateId) {
+            try { await relancerComplements(db, uid); } catch (e) { console.warn('relance après carte', e); }
+          }
           // Aucun mandat sur un paiement d'enregistrement réussi : anomalie côté Mollie,
           // le client croirait sa carte mémorisée sans qu'elle le soit. On le signale.
           if (!pay.mandateId) {
@@ -2563,6 +2601,16 @@ exports.paymentReconciliation = onSchedule({schedule: '0 9 * * *', secrets: [SMT
   {
     const items = [];
     const mots = {impossible: 'aucun prélèvement possible', echec: 'prélèvement refusé', a_regler: 'lien de paiement en attente'};
+    // On RETENTE avant de se plaindre : entre-temps le client a pu mémoriser sa carte.
+    try {
+      const clients = new Set();
+      for (const st of ['impossible', 'echec', 'a_regler']) {
+        for (const d of (await db.collection('requests').where('complementStatus', '==', st).get()).docs) {
+          const c = (d.data() || {}).clientUid; if (c) clients.add(c);
+        }
+      }
+      for (const c of clients) { try { await relancerComplements(db, c); } catch (_) {} }
+    } catch (e) { console.warn('reco relance complements', e); }
     try {
       for (const st of ['impossible', 'echec', 'a_regler']) {
         for (const d of (await db.collection('requests').where('complementStatus', '==', st).get()).docs) {

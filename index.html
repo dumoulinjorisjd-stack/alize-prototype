@@ -9507,7 +9507,16 @@
       <p class="sub">${adj?'Le prestataire a <b>ajusté la durée</b>. Vérifiez, puis validez l’ajustement — ou signalez votre désaccord.':'Vérifiez que tout est bon, puis confirmez&nbsp;: <b>le paiement part alors tout seul.</b>'}</p>
       <div class="card" style="padding:16px;margin-top:16px"><div class="row" style="gap:12px"><div class="avatar">${p.ini}</div><div style="flex:1"><b style="font-size:15px">${m.svcName}</b><div class="mini">${durTxt(m,billHours(m))} · ${m.when} · ${m.slot}</div></div></div><hr class="dashed">
       ${adj?`<div class="receipt-line"><span>Estimation convenue</span><span class="mini">${durTxt(m)} · ${eur(agreed)}</span></div><div class="receipt-line"><span>${isDayU(m)?'Jours déclarés':'Durée déclarée'} par le prestataire</span><b>${durTxt(m,m.finalHours)}</b></div><div class="receipt-line"><span>Montant ajusté (${d>0?'+':''}${d} ${isDayU(m)?'j':'h'})</span><b class="money" style="color:${d>0?'var(--coral-deep)':'var(--good)'}">${eur(t.total)}</b></div>`:(t.tip?`<div class="receipt-line"><span>Prestation</span><b>${eur(t.total-t.tip)}</b></div><div class="receipt-line"><span>${I.heart} Pourboire (au prestataire)</span><b>${eur(t.tip)}</b></div><div class="receipt-line"><span><b>Total</b></span><b>${eur(t.total)}</b></div>`:`<div class="receipt-line"><span>Montant (débit auto)</span><b>${eur(t.total)}</b></div>`)}
-      ${(t.tip>0||(adj&&d>0))?`<p class="mini" style="margin-top:6px;color:var(--muted)">${t.tip>0&&adj&&d>0?'Le pourboire et les heures en plus dépassent':(t.tip>0?'Le pourboire dépasse':'Les heures en plus dépassent')} le montant réservé à la commande&nbsp;: cette part est prélevée à part, sur la même carte.</p>`:''}
+      ${(t.tip>0||(adj&&d>0))?(function(){
+        const quoi=(t.tip>0&&adj&&d>0)?'Le pourboire et les heures en plus dépassent':(t.tip>0?'Le pourboire dépasse':'Les heures en plus dépassent');
+        // Sans carte mémorisée, ce second prélèvement obligerait le client à ressaisir sa
+        // carte. On le lui dit AVANT, et on lui propose de l'enregistrer une bonne fois.
+        const c=payReal()?payCard():null;
+        if(payReal()&&c===null&&!(S._payCard&&S._payCard.setup===false))
+          return `<div class="banner warn" style="margin-top:10px">${I.card}<span>${quoi} le montant réservé à la commande&nbsp;: cette part sera prélevée à part. <b>Enregistrez votre carte</b> pour ne pas avoir à la ressaisir.</span></div>
+            <button class="btn ghost sm" data-act="card-setup" style="margin-top:8px;width:auto;padding:8px 13px"${S.cardSetupBusy?' disabled':''}>${I.card}&nbsp;${S.cardSetupBusy?'Ouverture…':'Enregistrer ma carte'}</button>`;
+        return `<p class="mini" style="margin-top:6px;color:var(--muted)">${quoi} le montant réservé à la commande&nbsp;: cette part est prélevée à part, sur ${c?('votre carte '+esc(c.brand)+(c.last4?(' ••••&nbsp;'+esc(c.last4)):'')):'la même carte'}.</p>`;
+      })():''}
       ${(adj&&t.tip)?`<div class="receipt-line"><span>${I.heart} dont pourboire (prestataire)</span><b>${eur(t.tip)}</b></div>`:''}
       <div class="receipt-line"><span>Réglé sur</span><b>${cardTxt()}</b></div></div>
       <div class="banner coral" style="margin-top:14px">${I.shield}<span>${adj?'Vous ne pouvez refuser l’ajustement sans en informer Ti-Services, qui tranchera le désaccord.':'Un souci ? Signalez au lieu de valider — vous ne serez pas débité.'}</span></div>
