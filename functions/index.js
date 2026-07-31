@@ -239,8 +239,9 @@ async function mollieChargeComplement(db, reqId, clientUid, amount, label) {
     amount: {currency: 'EUR', value: round2(amount).toFixed(2)},
     description: (label || 'Ti-Services · supplément').toString().slice(0, 100),
     webhookUrl: 'https://europe-west1-t-service-prod.cloudfunctions.net/mollieWebhook',
-    metadata: {reqId: reqId, clientUid: clientUid, kind: 'complement'},
+    metadata: {reqId: reqId, clientUid: clientUid, kind: 'complement', produit: PRODUIT},
   };
+  Object.assign(body, mollieProfil());
   if (customerId) {
     let mandateId = '';
     try {
@@ -1350,6 +1351,19 @@ exports.notifyBoosted = onDocumentUpdated('requests/{reqId}', async (event) => {
   } catch (e) { console.warn('notifyBoosted push', e); }
 });
 
+// DEUX PRODUITS SUR LE MÊME COMPTE MOLLIE. Ti-Services et Archipel BTP encaissent via le
+// même compte : le tableau de bord Mollie les mélange, et distinguer « ce que rapporte
+// l'un ou l'autre » se fait à l'œil, sur le libellé. Deux repères sont posés ici :
+//   • une étiquette `produit` dans les métadonnées de CHAQUE paiement — elle ressort dans
+//     les exports Mollie et permet de trier sans dépendre du texte du libellé ;
+//   • un profil Mollie dédié, si la variable MOLLIE_PROFILE_ID est renseignée. Mollie
+//     sépare alors nativement tableau de bord, règlements et rapports. La variable est
+//     FACULTATIVE : absente, rien ne change (et aucun déploiement ne casse).
+const PRODUIT = 'ti-services';
+function mollieProfil() {
+  const id = String(process.env.MOLLIE_PROFILE_ID || '').trim();
+  return id ? {profileId: id} : {};
+}
 // MONTANTS D'UNE DEMANDE — SOURCE UNIQUE. La facture (PDF) et le règlement calculaient
 // chacun de leur côté et ne tombaient pas d'accord : la facture ajoutait un forfait de
 // déplacement même quand le client s'était rendu chez le prestataire, oubliait le
@@ -1989,8 +2003,9 @@ exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) 
       method: 'creditcard',            // seules la carte et PayPal acceptent le 0,00 €
       sequenceType: 'first',
       customerId: customerId,
-      metadata: {clientUid: uid, cardSetup: true},
+      metadata: {clientUid: uid, cardSetup: true, produit: PRODUIT},
     };
+    Object.assign(body, mollieProfil());
     // Un seul essai, et en carte. Le repli qui laissait Mollie choisir la méthode pouvait
     // créer un mandat PayPal : il n'aurait pas porté l'empreinte d'une commande, et la
     // carte annoncée au client n'aurait pas existé. Un refus est désormais dit, pas
@@ -2110,8 +2125,9 @@ exports.createClientPayment = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (
     webhookUrl: webhookUrl,
     captureMode: 'manual',
     method: 'creditcard',
-    metadata: {reqId: reqId, clientUid: uid},
+    metadata: {reqId: reqId, clientUid: uid, produit: PRODUIT},
   };
+  Object.assign(payBody, mollieProfil());
   if (customerId) payBody.customerId = customerId;
   // PAS de `sequenceType:'first'` ici. Mémoriser la carte et poser une empreinte (capture
   // manuelle) sont deux choses que Mollie ne combine pas : la demande passait, mais
