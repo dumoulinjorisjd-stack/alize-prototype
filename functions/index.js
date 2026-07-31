@@ -246,7 +246,7 @@ async function mollieChargeComplement(db, reqId, clientUid, amount, label) {
     try {
       const mds = await mollieApi('/customers/' + encodeURIComponent(customerId) + '/mandates?limit=50', 'GET');
       const arr = (mds.ok && mds.data && mds.data._embedded && mds.data._embedded.mandates) || [];
-      const m = arr.find((x) => x && x.status === 'valid');
+      const m = arr.find((x) => x && x.status === 'valid');   // « pending » ne peut rien porter
       if (m) mandateId = m.id;
     } catch (_) {}
     if (mandateId) {
@@ -1806,8 +1806,12 @@ exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) 
   // Le premier chemin existe parce que le second pouvait ne rien rendre : le client
   // validait son enregistrement auprès de sa banque et retrouvait « Aucune carte
   // mémorisée ».
+  // On accepte AUSSI un mandat « pending ». Après une autorisation à 0,00 €, Mollie peut
+  // ne le rendre « valid » qu'une fois sa vérification faite : le filtrer sans le dire
+  // revenait à annoncer « Aucune carte » à quelqu'un qui venait de l'enregistrer. On le
+  // remonte donc avec son état, et l'écran dit lequel des deux c'est.
   const carteDeMandat = (m) => {
-    if (!m || m.status !== 'valid') return null;
+    if (!m || ['valid', 'pending'].indexOf(m.status) < 0) return null;
     const d = m.details || {};
     return {
       id: String(m.id || ''),
@@ -1815,6 +1819,7 @@ exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) 
       last4: String(d.cardNumber || '').slice(-4),
       exp: String(d.cardExpiryDate || '').slice(0, 7),   // AAAA-MM
       holder: String(d.cardHolder || ''),
+      status: String(m.status || ''),
     };
   };
   const readCard = async () => {
@@ -1829,10 +1834,13 @@ exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) 
     }
     const out = await mollieApi(base + '?limit=50', 'GET');
     const arr = (out.ok && out.data && out.data._embedded && out.data._embedded.mandates) || [];
-    const valid = arr.filter((m) => m && m.status === 'valid');
-    if (!valid.length) return null;
-    valid.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
-    return carteDeMandat(valid[0]);
+    const utiles = arr.filter((m) => m && ['valid', 'pending'].indexOf(m.status) >= 0);
+    if (!utiles.length) return null;
+    // Un mandat valide prime toujours sur un mandat en attente ; à état égal, le plus récent.
+    utiles.sort((a, b) => (a.status === b.status
+      ? String(b.createdAt || '').localeCompare(String(a.createdAt || ''))
+      : (a.status === 'valid' ? -1 : 1)));
+    return carteDeMandat(utiles[0]);
   };
 
   // Peut-on proposer l'enregistrement ? On interrogeait l'API Methods avec un montant
