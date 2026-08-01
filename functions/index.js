@@ -241,7 +241,6 @@ async function mollieChargeComplement(db, reqId, clientUid, amount, label) {
     webhookUrl: 'https://europe-west1-t-service-prod.cloudfunctions.net/mollieWebhook',
     metadata: {reqId: reqId, clientUid: clientUid, kind: 'complement', produit: PRODUIT},
   };
-  Object.assign(body, await mollieProfil(db));
   if (customerId) {
     let mandateId = '';
     try {
@@ -1394,32 +1393,14 @@ exports.notifyBoosted = onDocumentUpdated('requests/{reqId}', async (event) => {
 });
 
 // DEUX PRODUITS SUR LE MÊME COMPTE MOLLIE. Ti-Services et Archipel BTP encaissent via le
-// même compte : le tableau de bord Mollie les mélange, et distinguer « ce que rapporte
-// l'un ou l'autre » se fait à l'œil, sur le libellé. Deux repères sont posés ici :
-//   • une étiquette `produit` dans les métadonnées de CHAQUE paiement — elle ressort dans
-//     les exports Mollie et permet de trier sans dépendre du texte du libellé ;
-//   • un profil Mollie dédié, si la variable MOLLIE_PROFILE_ID est renseignée. Mollie
-//     sépare alors nativement tableau de bord, règlements et rapports. La variable est
-//     FACULTATIVE : absente, rien ne change (et aucun déploiement ne casse).
+// même compte. La séparation se joue au niveau du PROFIL Mollie, et c'est la CLÉ API qui
+// détermine le profil — vérifié auprès de Mollie (/profiles/me) : la clé de Ti-Services
+// est rattachée au profil « Ti-services ». Il n'y a donc rien à régler côté code, et un
+// `profileId` envoyé avec une clé de profil n'aurait rien changé : ce réglage, ainsi que
+// l'écran de console qui allait avec, ont été retirés.
+// Reste ici une étiquette `produit` dans les métadonnées de CHAQUE paiement : elle ressort
+// dans les exports Mollie et permet de trier sans dépendre du texte du libellé.
 const PRODUIT = 'ti-services';
-// Le profil retenu est rangé dans Firestore (settings/mollie.profileId) et choisi depuis
-// la console : pas de variable d'environnement à poser, pas de redéploiement. Court cache
-// mémoire pour ne pas relire à chaque paiement.
-let _profilCache = {id: null, at: 0};
-async function mollieProfilId(db) {
-  const env = String(process.env.MOLLIE_PROFILE_ID || '').trim();
-  if (env) return env;
-  const now = Date.now();
-  if (_profilCache.id !== null && (now - _profilCache.at) < 60000) return _profilCache.id;
-  let id = '';
-  try { id = String(((await db.collection('settings').doc('mollie').get()).data() || {}).profileId || '').trim(); } catch (_) {}
-  _profilCache = {id: id, at: now};
-  return id;
-}
-async function mollieProfil(db) {
-  const id = await mollieProfilId(db);
-  return id ? {profileId: id} : {};
-}
 // MONTANTS D'UNE DEMANDE — SOURCE UNIQUE. La facture (PDF) et le règlement calculaient
 // chacun de leur côté et ne tombaient pas d'accord : la facture ajoutait un forfait de
 // déplacement même quand le client s'était rendu chez le prestataire, oubliait le
@@ -1936,74 +1917,6 @@ exports.recordNoShow = onDocumentUpdated('requests/{reqId}', async (event) => {
  * Inerte (card:null) tant que Mollie n'est pas configuré : la bêta simulée continue.
  */
 /**
- * mollieProfiles : liste les profils du compte Mollie et indique celui rattaché à
- * Ti-Services. Réservé à l'administrateur. Deux produits (Ti-Services, Archipel BTP)
- * partagent le même compte : sans profil dédié, le tableau de bord, les règlements et les
- * rapports Mollie les mélangent. Les identifiants « pfl_… » ne sont pas commodes à
- * retrouver dans l'interface : on les demande à Mollie, et le choix se fait d'un geste
- * depuis la console — rangé dans Firestore, donc sans variable d'environnement ni
- * redéploiement.
- *   action 'get' (défaut) → {profiles:[…], current:'pfl_…'}
- *   action 'set'          → enregistre profileId (chaîne vide = revenir au profil par défaut)
- */
-exports.mollieProfiles = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) => {
-  const who = (request.auth && request.auth.token && request.auth.token.email) || '';
-  if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
-    throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
-  }
-  const db = getFirestore();
-  const action = String((request.data && request.data.action) || 'get');
-  if (action === 'set') {
-    const id = String((request.data && request.data.profileId) || '').trim().slice(0, 64);
-    if (id && !/^pfl_[A-Za-z0-9]+$/.test(id)) throw new HttpsError('invalid-argument', 'Identifiant de profil invalide.');
-    await db.collection('settings').doc('mollie').set({profileId: id, profileAt: Date.now()}, {merge: true});
-    _profilCache = {id: id, at: Date.now()};
-    console.log('Profil Mollie Ti-Services : ' + (id || '(par défaut)'));
-    return {ok: true, current: id};
-  }
-  if (!mollieApiConfigured()) return {profiles: [], current: '', simulated: true};
-  const out = await mollieApi('/profiles?limit=50', 'GET');
-  const arr = (out.ok && out.data && out.data._embedded && out.data._embedded.profiles) || [];
-  // POURQUOI LA LISTE EST VIDE. « Aucun profil » peut vouloir dire deux choses très
-  // différentes : le compte n'en a aucun, ou notre jeton n'a pas le droit de les lire.
-  // La liste des profils exige un jeton d'ORGANISATION ; une clé API, elle, est rattachée
-  // à UN profil et ne peut pas les énumérer. Sans ce diagnostic on cherche à l'aveugle.
-  let motif = '';
-  if (!out.ok) {
-    motif = (out.status === 401 || out.status === 403)
-      ? 'Le jeton Mollie configuré est une CLÉ API, rattachée à un seul profil : il ne peut pas lister les profils. Le profil est alors déterminé par la clé elle-même — c\'est la clé qu\'il faut changer, pas ce réglage.'
-      : ('Mollie a répondu ' + (out.status || '—') + '.');
-  } else if (!arr.length) {
-    motif = 'Mollie répond, mais ne renvoie aucun profil sur ce compte.';
-  }
-  // SUR QUEL PROFIL ENCAISSONS-NOUS, EN FAIT ? Un refus de lister ne dit pas laquelle des
-  // deux boutiques reçoit l'argent — et supposer serait faire refaire un réglage peut-être
-  // déjà bon. `/profiles/me` répond précisément cela : le profil auquel la clé configurée
-  // est rattachée. C'est la seule réponse qui vaille.
-  let actuel = null;
-  try {
-    const me = await mollieApi('/profiles/me', 'GET');
-    if (me.ok && me.data && me.data.id) {
-      actuel = {
-        id: String(me.data.id || ''), name: String(me.data.name || ''),
-        website: String(me.data.website || ''), mode: String(me.data.mode || ''),
-        status: String(me.data.status || ''),
-      };
-    }
-  } catch (_) {}
-  return {
-    current: await mollieProfilId(db),
-    actuel: actuel,
-    fige: !!String(process.env.MOLLIE_PROFILE_ID || '').trim(),
-    motif: motif, httpStatus: (out.status || (out.ok ? 200 : 0)),
-    profiles: arr.map((p) => ({
-      id: String(p.id || ''), name: String(p.name || ''), website: String(p.website || ''),
-      mode: String(p.mode || ''), status: String(p.status || ''),
-    })),
-  };
-});
-
-/**
  * resettlePending : relance le règlement des prestations payées par le client mais jamais
  * inscrites au registre comptable (donc sans numéro de facture, sans commission, sans
  * versement à l'artisan, et introuvables dans la console). Réservé à l'administrateur.
@@ -2329,8 +2242,7 @@ exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) 
       customerId: customerId,
       metadata: {clientUid: uid, cardSetup: true, produit: PRODUIT},
     };
-    Object.assign(body, await mollieProfil(db));
-    // Un seul essai, et en carte. Le repli qui laissait Mollie choisir la méthode pouvait
+      // Un seul essai, et en carte. Le repli qui laissait Mollie choisir la méthode pouvait
     // créer un mandat PayPal : il n'aurait pas porté l'empreinte d'une commande, et la
     // carte annoncée au client n'aurait pas existé. Un refus est désormais dit, pas
     // contourné par un moyen de paiement que le reste du parcours ne sait pas honorer.
@@ -2451,7 +2363,6 @@ exports.createClientPayment = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (
     method: 'creditcard',
     metadata: {reqId: reqId, clientUid: uid, produit: PRODUIT},
   };
-  Object.assign(payBody, await mollieProfil(db));
   if (customerId) payBody.customerId = customerId;
   // PAS de `sequenceType:'first'` ici. Mémoriser la carte et poser une empreinte (capture
   // manuelle) sont deux choses que Mollie ne combine pas : la demande passait, mais

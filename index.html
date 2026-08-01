@@ -3500,7 +3500,7 @@
     chat:false,advantages:false,referral:false,fidDetail:false,interv:false,invoiceId:null,clientInv:false,histInvoice:null,histCat:null,signPad:false,colisProc:false,imgView:null,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,delAcct:false,
     proJobsTotal:214,fidTiers:FID_TIERS.map(t=>({...t})),referralCode:'MARILOU-SBH',
     filleuls:[{name:'Kevin Questel',status:'valide',bonus:40},{name:'Rosa Almeida',status:'attente',bonus:0}],
-    admin:{view:'home',sel:null,fact:null},adminLedger:[],adminOrph:{loaded:false,list:[]},adminMollieProf:{loaded:false,profiles:[],current:'',fige:false},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,adminPrices:ADMIN_PRICES(),
+    admin:{view:'home',sel:null,fact:null},adminLedger:[],adminOrph:{loaded:false,list:[]},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,adminPrices:ADMIN_PRICES(),
     avail:{lun:{n:0,m:1,a:1,s:0},mar:{n:0,m:1,a:1,s:0},mer:{n:0,m:1,a:1,s:1},jeu:{n:0,m:1,a:1,s:0},ven:{n:0,m:1,a:1,s:1},sam:{n:0,m:1,a:0,s:0},dim:{n:0,m:0,a:0,s:0}}
   };
   function newMission(svc){const a=S.addresses.find(x=>x.id===S.addrDefault)||S.addresses[0]||null;const day=svc.id==='animaux';const colis=svc.id==='colis';const cat=isCatalogForfait(svc.id);const forf=colis||cat;const px=(S.adminPrices&&S.adminPrices[svc.id]!=null)?S.adminPrices[svc.id]:svcBase(svc.id);const m={svc:svc.id,svcName:svc.nm,unit:forf?'forfait':(day?'j':'h'),rate:day?DAY_RECO:px,boost:0,finalHours:null,disputeMsg:null,frequency:'ponctuelle',people:1,locationMode:'domicile',duration:forf?1:(day?2:3),zone:a?a.zone:'Gustavia',address:a?a.address:'',addressId:a?a.id:'__manual',geo:a?a.geo:null,access:a?(a.access||''):'',notes:'',photos:[],when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',slotMode:null,slotFlex:0,proposedSlot:null,status:'draft',provider:null,rating:0,competitors:0,chat:[],support:{client:[],pro:[]}};
@@ -7774,62 +7774,6 @@
       <p class="mini" style="margin:6px 0 2px;color:var(--muted)">Missions où un client a signalé que le prestataire engagé ne s'est pas présenté. Signal de fiabilité — <b>aucune sanction automatique</b>, à vous d'apprécier.</p>
       ${nsArts.map(a=>`<button class="card" data-adm="art:${a.id}" style="padding:13px;margin-top:8px;width:100%;text-align:left;display:block;border-left:4px solid var(--coral)"><div class="row between"><b style="font-size:14px">${esc(a.name)}</b><span class="chip coral">${a.noShowCount} absence${a.noShowCount>1?'s':''}</span></div><div class="mini" style="margin-top:2px">${catNames(a.cats)} · ${a.zone}${a.lastNoShowAt?' · dernière : '+new Date(a.lastNoShowAt).toLocaleDateString('fr-FR'):''}</div></button>`).join('')}`:'';
     const chip=(cls,txt)=>`<span class="chip ${cls}" style="flex:none">${txt}</span>`;
-    // ── Profil Mollie de Ti-Services ──────────────────────────────────────────────
-    // Ti-Services et Archipel BTP encaissent sur le même compte Mollie : sans profil
-    // dédié, le tableau de bord, les règlements et les rapports mélangent les deux. Les
-    // identifiants « pfl_… » ne se trouvent pas facilement dans l'interface de Mollie —
-    // on les demande donc à Mollie, et le choix se fait ici. Il est rangé côté serveur :
-    // aucune variable d'environnement à poser, aucun redéploiement.
-    const prof=S.adminMollieProf||{};
-    const profList=prof.profiles||[];
-    const profActuel=profList.find(function(x){return x.id===prof.current;});
-    // Mollie refuse d'énumérer les profils à une CLÉ API (403/401) : elle est rattachée à
-    // UN profil, et c'est elle — pas ce réglage — qui décide où l'argent atterrit. Dans ce
-    // cas la carte cesse de proposer un choix sans effet et explique la vraie manœuvre.
-    const cleParProfil=(prof.httpStatus===403||prof.httpStatus===401);
-    // LA SEULE RÉPONSE QUI VAILLE : sur quel profil la clé configurée encaisse-t-elle
-    // réellement. Mollie la donne (/profiles/me). Sans elle on suppose — et on fait
-    // peut-être refaire un réglage déjà bon.
-    const profReel=prof.actuel||null;
-    const versTiServices=!!(profReel&&/ti[\s-]?service/i.test((profReel.name||'')+' '+(profReel.website||'')));
-    const profReelBloc=!profReel?'':`<div class="banner ${versTiServices?'good':'warn'}" style="margin-top:11px">${versTiServices?I.check:I.shield}<span>Les encaissements de Ti-Services arrivent sur le profil <b>${esc(profReel.name||profReel.id)}</b>${profReel.website?(' ('+esc(profReel.website)+')'):''}.${versTiServices?' C’est le bon — rien à changer de ce côté.':' Ce n’est pas celui de Ti-Services : c’est là que part l’argent aujourd’hui.'}</span></div>
-      <button class="uidtap" data-adm="copyuid:${esc(profReel.id)}" title="Copier l'identifiant du profil" style="margin-top:8px">${I.copy} <span class="money">${esc(profReel.id)}</span></button>`;
-    const profChip=!prof.loaded?'':(profReel?(versTiServices?chip('good','Ti-Services'):chip('coral',esc(profReel.name||'autre profil'))):cleParProfil?chip('warn','réglé par la clé'):(prof.current?chip('good',esc(profActuel?profActuel.name:'profil réglé')):chip('coral','non réglé')));
-    const profBody=`<p class="mini" style="margin:0;color:var(--muted);line-height:1.55">${cleParProfil
-      ?'Ti-Services et Archipel BTP encaissent sur le même compte Mollie. Pour savoir ce que rapporte l’une et l’autre, chacune doit encaisser sur <b>son</b> profil.'
-      :'Tant que les deux applications encaissent sur le même profil, impossible de savoir ce que rapporte l\'une ou l\'autre autrement qu\'à l\'œil. Choisissez ici celui de <b>Ti-Services</b>&nbsp;: Mollie séparera alors tableau de bord, règlements et rapports.'}</p>
-      ${!prof.loaded?`<button class="btn ghost sm" data-adm="molprof-load" style="margin-top:12px">${I.search}&nbsp;Voir mes profils Mollie</button>`
-        :(prof.fige?`<div class="banner warn" style="margin-top:12px">${I.shield}<span>Le profil est <b>figé par une variable d'environnement</b> (MOLLIE_PROFILE_ID)&nbsp;: le choix ci-dessous n'aurait aucun effet tant qu'elle est posée.</span></div>`:'')
-          +(profList.length?profList.map(function(x){const actif=(x.id===prof.current);
-            return `<div class="card" style="padding:13px;margin-top:9px;${actif?'border-left:4px solid var(--teal-deep)':''}">
-              <div class="row between" style="align-items:center;gap:8px"><b style="font-size:14px;min-width:0;overflow:hidden;text-overflow:ellipsis">${esc(x.name||'Profil')}</b>${actif?`<span class="chip good" style="flex:none">${I.check} Ti-Services</span>`:''}</div>
-              ${x.website?`<div class="mini" style="margin-top:3px;color:var(--muted);word-break:break-all">${esc(x.website)}</div>`:''}
-              <div class="mini" style="margin-top:3px;color:var(--muted)">${esc(x.mode==='live'?'production':(x.mode||'—'))}${x.status?(' · '+esc(x.status)):''}</div>
-              <button class="uidtap" data-adm="copyuid:${esc(x.id)}" title="Copier l'identifiant du profil" style="margin-top:8px">${I.copy} <span class="money">${esc(x.id)}</span></button>
-              ${actif?'':`<button class="btn primary sm" data-adm="molprof-set:${esc(x.id)}" style="margin-top:9px">${I.check}&nbsp;Utiliser pour Ti-Services</button>`}
-            </div>`;}).join('')
-            :`${profReelBloc}
-              ${versTiServices
-                // Le profil est le bon : la liste vide n'est plus un problème, seulement une
-                // explication. Garder l'alerte « c'est la clé qu'il faut changer » à côté
-                // d'un « rien à changer » serait se contredire sur le même écran.
-                ?`<p class="mini" style="margin-top:9px;color:var(--muted)">La liste complète des profils n'est pas lisible avec une clé API — sans conséquence ici, puisque la clé désigne déjà le bon profil.</p>`
-                :`<div class="banner warn" style="margin-top:10px">${I.shield}<span>${prof.motif?esc(prof.motif):'Aucun profil renvoyé par Mollie.'}</span></div>
-                  ${prof.httpStatus?`<p class="mini" style="margin-top:6px;color:var(--muted)">Réponse Mollie&nbsp;: ${esc(String(prof.httpStatus))}</p>`:''}`}
-              ${(cleParProfil&&!versTiServices)?`<div class="card" style="padding:14px;margin-top:11px">
-                <b style="font-size:14px">Ce qu'il faut faire, alors</b>
-                <p class="mini" style="margin-top:7px;line-height:1.6">Chez Mollie, <b>chaque profil a ses propres clés API</b>, et c'est la clé qui décide où atterrit l'argent — ce réglage-ci n'a aucun effet.</p>
-                <ol class="mini" style="margin:8px 0 0;padding-left:18px;line-height:1.7">
-                  <li>Mollie → profil <b>Ti-services</b> → Développeurs → clés API → copier la clé <b>live</b>.</li>
-                  <li>La placer dans le secret <b>MOLLIE_ACCESS_TOKEN</b> de Ti-Services, puis redéployer.</li>
-                  <li>Même chose côté Archipel BTP avec la clé du profil <b>Archipel-BTP</b>.</li>
-                </ol>
-                <div class="banner warn" style="margin-top:11px">${I.clock}<span>À faire <b>avant l'ouverture aux clients</b>&nbsp;: les cartes déjà mémorisées appartiennent au profil de l'ancienne clé. Après le changement, les clients concernés devront réenregistrer leur carte — sans risque aujourd'hui, coûteux une fois les clients arrivés.</span></div>
-              </div>`:''}`)
-          +`<button class="btn ghost sm" data-adm="molprof-load" style="margin-top:12px">${I.search}&nbsp;Rafraîchir</button>
-            ${versTiServices
-              ?`<p class="mini" style="margin-top:9px;color:var(--muted)">Reste à vérifier <b>de l'autre côté</b>&nbsp;: qu'Archipel BTP encaisse bien sur le profil <b>Archipel-BTP</b>. Chez Mollie, ouvrez ce profil et regardez ses paiements — si les deux applications y figurent, c'est sa clé qu'il faut changer.</p>`
-              :(cleParProfil?'':`<p class="mini" style="margin-top:8px;color:var(--muted)">Pense-bête&nbsp;: <b>Archipel BTP doit être pointé sur son propre profil</b> de son côté, sinon il continuera d'atterrir sur le profil par défaut — et le tri ne servira à rien.</p>`)}`}`;
     /* ── Qui pourra RÉELLEMENT travailler le 1er octobre ──────────────────────────
        Un prestataire validé sans compte de paiement connecté ne peut accepter AUCUNE
        mission (la règle Firestore l'exige) : il verra les demandes passer sans pouvoir
@@ -7951,7 +7895,6 @@
       ${foldCard('a-bookings',I.cal,'Réservations en cours','Recherche → acceptée → en cours → validée → réglée',bookings,chip(allB.length?'good':'grey',allB.length))}
       ${foldCard('a-prices',I.euro,'Prestations · artisans &amp; tarifs',svcAll.length+' métiers'+(svcNoPro?' · '+svcNoPro+' sans prestataire':''),pricesBody,svcNoPro?chip('coral',svcNoPro+' sans pro'):chip('good',svcAll.length))}
       ${foldCard('a-funnel',I.install,"Entonnoir d'installation",'Visiteurs, guide ouvert, applications installées',funnelBody,S.adminFunnelLoaded?chip('grey',(Number((S.adminFunnel||{}).u_installed_total)||0)+' installées'):'')}
-      ${foldCard('a-mollieprof',I.card,'Profil Mollie de Ti-Services','Séparer les encaissements de ceux d’Archipel BTP',profBody,profChip)}
       <button class="card" data-adm="manual" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block"><div class="row between" style="align-items:center"><b style="font-size:14px">Manuel d'exploitation</b><span class="mini" style="color:var(--teal-deep);font-weight:700">Ouvrir ›</span></div><p class="sub" style="margin-top:8px">Tout le fonctionnement de la plateforme (commandes, prestataire choisi, paiements, récurrences, annulations…) — pour vous, un employé ou un médiateur. Imprimable.</p></button>
       <div style="height:24px"></div>
     </div>`;
@@ -12610,28 +12553,6 @@
       else if(act==='manual-all'||act==='manual-none'){document.querySelectorAll('.manbook details').forEach(function(d){d.open=(act==='manual-all');});return;}
       else if(act==='manual-print'){document.querySelectorAll('.manbook details').forEach(function(d){d.open=true;});setTimeout(function(){try{window.print();}catch(_){}},80);return;}
       else if(act==='prospect'){S.admin.view='prospect';S.admin.sel=null;S.mission=null;S.support=false;S.supportSide=null;S.adminSupervise=false;S.generalSupport=false;S.genUser=null;render();view.scrollTop=0;return;}
-      else if(act==='molprof-load'||act==='molprof-set'){(function(){
-        if(!isAdminAccount()){toast('Réservé à l’administrateur (compte réel)');return;}
-        if(!(FB&&FB.functions&&FB.fn&&FB.fn.httpsCallable)){toast('Indisponible hors ligne — réessayez connecté');return;}
-        const choisir=(act==='molprof-set');
-        toast(choisir?'Enregistrement…':'Lecture des profils Mollie…');
-        const call=FB.fn.httpsCallable(FB.functions,'mollieProfiles');
-        call(choisir?{action:'set',profileId:id}:{action:'get'}).then(function(r){
-          const d=(r&&r.data)||{};
-          if(choisir){
-            // Le serveur ne renvoie que le profil retenu : on redemande la liste pour
-            // afficher un état vérifié, jamais un état supposé.
-            toast('Profil enregistré ✓');
-            return call({action:'get'}).then(function(r2){
-              const d2=(r2&&r2.data)||{};
-              S.adminMollieProf={loaded:true,profiles:d2.profiles||[],current:d2.current||'',fige:!!d2.fige,motif:d2.motif||'',httpStatus:d2.httpStatus||0,actuel:d2.actuel||null};render();
-            });
-          }
-          S.adminMollieProf={loaded:true,profiles:d.profiles||[],current:d.current||'',fige:!!d.fige,motif:d.motif||'',httpStatus:d.httpStatus||0,actuel:d.actuel||null};
-          if(d.simulated)toast('Mollie n’est pas configuré sur cet environnement');
-          render();
-        }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
-      })();return;}
       else if(act==='ledger-reco'){(function(){
         if(!isAdminAccount()){toast('Réservé à l’administrateur (compte réel)');return;}
         if(!(FB&&FB.functions&&FB.fn&&FB.fn.httpsCallable)){toast('Indisponible hors ligne — réessayez connecté');return;}
