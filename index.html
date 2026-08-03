@@ -332,8 +332,15 @@
   .fold-head .chip{white-space:normal}
   /* Vidéo du guide d'installation : format téléphone, jamais plus haute que l'écran. */
   .ig-video{margin-top:14px}
-  .ig-video video{display:block;width:100%;max-width:230px;margin:0 auto;border-radius:18px;
-    background:#111;aspect-ratio:576/1248;max-height:52vh;object-fit:contain;
+  .ig-video>summary{cursor:pointer;list-style:none;text-align:center;font-size:13px;font-weight:650;
+    color:var(--teal-deep);padding:10px 12px;border-radius:12px;background:var(--sand-2)}
+  .ig-video>summary::-webkit-details-marker{display:none}
+  .ig-video>summary::before{content:'▶';margin-right:7px;font-size:11px}
+  .ig-video[open]>summary::before{content:'▼'}
+  .ig-video>summary span{font-weight:500;color:var(--muted)}
+  /* Même dépliée, elle ne doit jamais reprendre tout l'écran : 40 % de la hauteur utile. */
+  .ig-video video{display:block;width:100%;max-width:200px;margin:12px auto 0;border-radius:18px;
+    background:#111;aspect-ratio:576/1248;max-height:40vh;max-height:40dvh;object-fit:contain;
     box-shadow:0 8px 28px var(--shadow)}
   .ig-vcap{margin:8px 0 0;text-align:center;font-size:12px;color:var(--muted);line-height:1.4}
   .fold-chev{flex:none;color:var(--muted);display:flex;transition:transform .18s ease}
@@ -347,10 +354,18 @@
   /* ——— Feuille « Installer l'application » (instructions selon le navigateur) ——— */
   .ig-back{position:fixed;inset:0;z-index:10000;background:rgba(30,20,25,.5);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);display:flex;align-items:flex-end;justify-content:center;opacity:0;transition:opacity .25s ease}
   .ig-back.show{opacity:1}
-  .ig-sheet{width:100%;max-width:520px;background:var(--card);border-radius:22px 22px 0 0;padding:22px 20px calc(26px + env(safe-area-inset-bottom));box-shadow:0 -20px 50px -20px rgba(0,0,0,.4);transform:translateY(18px);transition:transform .3s cubic-bezier(.2,.7,.3,1);position:relative}
+  /* LA FEUILLE DOIT POUVOIR DÉFILER. Sans hauteur maximale ni défilement, un contenu plus
+     haut que l'écran débordait PAR LE HAUT (la feuille est collée en bas du conteneur) —
+     et ce débordement était injoignable : impossible de remonter pour voir la vidéo ou le
+     titre. C'est ce qui arrivait sur iPhone, où la barre du navigateur rogne encore la
+     hauteur utile. `dvh` suit cette barre quand elle se rétracte ; `vh` sert de repli. */
+  .ig-sheet{width:100%;max-width:520px;background:var(--card);border-radius:22px 22px 0 0;padding:22px 20px calc(26px + env(safe-area-inset-bottom));box-shadow:0 -20px 50px -20px rgba(0,0,0,.4);transform:translateY(18px);transition:transform .3s cubic-bezier(.2,.7,.3,1);position:relative;
+    max-height:92vh;max-height:92dvh;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
   .ig-back.show .ig-sheet{transform:none}
   @media(min-width:560px){.ig-back{align-items:center}.ig-sheet{border-radius:22px}}
-  .ig-x{position:absolute;top:12px;right:14px;width:32px;height:32px;border-radius:50%;background:var(--sand-2);color:var(--ink-soft);font-size:20px;line-height:1;display:flex;align-items:center;justify-content:center}
+  /* La feuille défile : une croix en `absolute` partirait avec le contenu. En `sticky`,
+     elle reste sous la main quel que soit l'endroit où l'on se trouve. */
+  .ig-x{position:sticky;top:0;float:right;margin:-8px -6px 0 0;width:32px;height:32px;border-radius:50%;background:var(--sand-2);color:var(--ink-soft);font-size:20px;line-height:1;display:flex;align-items:center;justify-content:center;z-index:2}
   .ig-head{display:flex;gap:13px;align-items:center;margin:0 32px 18px 0}
   .ig-head img{flex:none;filter:drop-shadow(0 6px 14px rgba(226,80,63,.2))}
   .ig-head b{display:block;font-family:var(--f-disp);font-weight:800;font-size:18px;letter-spacing:-.02em;color:var(--ink)}
@@ -377,7 +392,9 @@
   .ig-txt b{color:var(--ink)}
   .ig-txt .ig-sub{display:block;font-size:12px;color:var(--muted);margin-top:2px}
   .ig-phone{display:block;margin:2px auto 6px;width:132px;height:auto}
-  .ig-anim{width:162px;margin:0 auto 8px}
+  /* L'animation prenait 264 px : la première étape se retrouvait sous le bord de l'écran
+     sur un iPhone. On la borne — elle illustre, elle n'a pas à occuper la moitié du guide. */
+  .ig-anim{width:auto;max-width:162px;max-height:190px;margin:0 auto 8px}
   /* Coquille native (App Store/Play Store) : ni bouton « Installer », ni Google (WebView). */
   body.native-shell [data-act="get-app"],body.native-shell [data-act="google-client"],body.native-shell [data-act="google-pro"],body.native-shell [data-act="google-soon"],body.native-shell #installSteps{display:none!important}
   /* …et le séparateur « ou » qui précède le bouton Google du login devient orphelin. */
@@ -14209,18 +14226,22 @@
       body=`<p class="ig-intro">Regardez le geste — puis reproduisez-le dans ${bname}. En <b>3 secondes</b>, Ti-Services s'installe comme une vraie application, en <b>plein écran</b>.</p>
         ${igPhoneAnim('chrome')}
         <p class="ig-cap">Dans ${bname}, le bouton <b>Partager</b> est <b>en haut</b>, dans la barre d'adresse</p>
-        <div class="ig-video">
-          <video controls playsinline preload="none" poster="install-iphone.jpg"
-            aria-label="Vidéo : installer Ti-Services sur iPhone, filmée dans Chrome">
-            <source src="install-iphone.mp4" type="video/mp4">
-          </video>
-          <p class="ig-vcap">La manipulation en vidéo (15&nbsp;s, sans son) — filmée sur un iPhone dans Chrome.</p>
-        </div>
         <div class="ig-cards">
           ${card('1',IG_GLYPH.share,`Touchez le bouton <b>Partager</b> ${blogo}<span class="ig-sub">en haut à droite de la barre d'adresse</span>`)}
           ${card('2',IG_GLYPH.expand,`Faites défiler la liste<span class="ig-sub">si « Sur l'écran d'accueil » n'apparaît pas déjà</span>`)}
           ${card('3',IG_GLYPH.addhome,`Touchez <b>« Sur l'écran d'accueil »</b>, puis <b>Ajouter</b> — l'icône Ti-Services apparaît sur votre écran. ${I.party}`)}
         </div>
+        <!-- La vidéo vient APRÈS les trois étapes, et repliée : au format téléphone elle
+             occupait presque tout l'écran et repoussait l'essentiel hors de vue. Celui qui
+             veut la voir la déplie ; les autres lisent les étapes tout de suite. -->
+        <details class="ig-video">
+          <summary>Voir la manipulation en vidéo <span>(15&nbsp;s, sans son)</span></summary>
+          <video controls playsinline preload="none" poster="install-iphone.jpg"
+            aria-label="Vidéo : installer Ti-Services sur iPhone, filmée dans Chrome">
+            <source src="install-iphone.mp4" type="video/mp4">
+          </video>
+          <p class="ig-vcap">Filmée sur un iPhone dans Chrome.</p>
+        </details>
         <p class="ig-or">l'option n'apparaît pas&nbsp;? (iPhone en iOS 16 ou plus ancien)</p>
         <div class="ig-cards">
           ${card('★',IG_GLYPH.safari,`Ouvrez <b>Safari</b> ${IG_LOGO.safari}, tapez <b>ti-services.fr</b>, puis touchez <b>« Installer l'application »</b>`)}
