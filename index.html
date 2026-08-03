@@ -2083,10 +2083,10 @@
   function notifCTA(role){
     const bell='<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>';
     const pro=(role==='pro');
-    const title='Activez les notifications';
+    const title=pro?'Ne manquez aucune mission':'Ne manquez aucune étape';
     const body=pro
-      ?'C’est ainsi que les clients vous atteignent. Sans elles, vous ne verrez pas les nouvelles missions.'
-      :'Soyez prévenu à chaque étape : artisan trouvé, prestation démarrée, terminée.';
+      ?'C’est ainsi que les clients vous atteignent.'
+      :'Artisan trouvé, prestation démarrée, terminée — on vous prévient.';
     const wrap=function(inner){return `<div class="notifcta"><div class="nc-ic">${bell}</div><div class="nc-body"><b>${title}</b><span>${body}</span>${inner}</div></div>`;};
     // Coquille native : permission via le plugin push. Bouton tant que non activées.
     if(typeof isNativeShell==='function'&&isNativeShell()){
@@ -2711,7 +2711,53 @@
   // gonfler le document users (limite Firestore 1 Mo) et le cache localStorage.
   function histClean(m){if(!m||typeof m!=='object')return m;const h=Object.assign({},m);delete h.photos;delete h.clientPhoto;delete h.chat;delete h.support;return h;}
   function histSlim(arr){return (arr||[]).slice(0,50).map(histClean);}
-  function fbErrTxt(e){return (e&&(e.code||e.message))||'erreur inconnue';}
+  // UN CODE TECHNIQUE N'ARRIVE JAMAIS SUR UN ÉCRAN. Cette fonction renvoyait le code brut
+  // de l'erreur — « permission-denied », « unavailable », « functions/internal » — et il
+  // s'affichait tel quel dans une trentaine de messages. Personne ne sait quoi en faire,
+  // et ça donne l'impression d'un logiciel inachevé. On traduit en une phrase qui dit ce
+  // qui s'est passé et, quand c'est possible, quoi faire. Le code part dans le journal,
+  // là où il sert vraiment : au dépannage.
+  const ERR_TXT={
+    'permission-denied':'vous n’avez pas les droits pour cette action',
+    'unauthenticated':'votre session a expiré — reconnectez-vous',
+    'unavailable':'connexion perdue — réessayez dans un instant',
+    'network-request-failed':'connexion perdue — vérifiez votre réseau',
+    'deadline-exceeded':'le serveur met trop de temps à répondre — réessayez',
+    'resource-exhausted':'trop de tentatives — patientez un instant',
+    'failed-precondition':'action impossible dans l’état actuel',
+    'invalid-argument':'informations incomplètes ou invalides',
+    'not-found':'introuvable',
+    'already-exists':'existe déjà',
+    'cancelled':'action interrompue',
+    'internal':'incident technique de notre côté — réessayez',
+    'unknown':'incident technique de notre côté — réessayez',
+    'wrong-password':'mot de passe incorrect',
+    'user-not-found':'aucun compte avec cette adresse',
+    'email-already-in-use':'cette adresse est déjà utilisée',
+    'invalid-email':'adresse e-mail invalide',
+    'weak-password':'mot de passe trop court',
+    'too-many-requests':'trop de tentatives — patientez quelques minutes',
+    'unauthorized':'accès refusé',
+    'quota-exceeded':'espace de stockage saturé',
+  };
+  function fbErrTxt(e){
+    const brut=(e&&(e.code||e.message))||'';
+    if(brut)try{console.warn('erreur',brut,e);}catch(_){}
+    // Les codes arrivent préfixés par leur service : « functions/internal », « auth/… ».
+    const cle=String(brut).toLowerCase().split('/').pop().trim();
+    if(ERR_TXT[cle])return ERR_TXT[cle];
+    // Nos propres fonctions renvoient des messages RÉDIGÉS EN FRANÇAIS (« Réservé à
+    // l'administrateur. ») : ceux-là sont utiles, on les garde. Mais un message d'API en
+    // anglais n'a rien à faire sous les yeux d'un client — d'où le test de langue plutôt
+    // qu'un simple « c'est une phrase ».
+    // Un accent ou un mot outil français tranchent tout de suite. À défaut, on accepte une
+    // phrase correctement ponctuée où AUCUN mot anglais courant n'apparaît : c'est le cas
+    // de « Connexion requise. », qui ne contient ni accent ni article.
+    const anglais=/\b(the|is|are|was|were|not|must|invalid|failed|error|unexpected|amount|state|required|allowed|token|request|missing|denied)\b/i.test(brut);
+    const francais=/[éèêàçùôîïû]/i.test(brut)||/\b(le|la|les|une|des|vous|votre|est|pas|aucun|impossible|requise|requis|connexion)\b/i.test(brut);
+    if(brut.length<120&&!anglais&&(francais||/[.!?]$/.test(String(brut).trim())))return brut;
+    return 'incident technique — réessayez dans un instant';
+  }
   function saveClientCloud(){try{ if(FB&&FB.auth&&FB.auth.currentUser&&typeof isDemo==='function'&&!isDemo()){ FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{addresses:S.addresses||[],addrDefault:S.addrDefault||null,card:S.card||null,history:histSlim(S.history),recurring:S.recurring||[]},{merge:true}).then(function(){S._lastSaveOk=true;}).catch(function(e){toast('⚠︎ Sauvegarde compte échouée : '+fbErrTxt(e));}); } }catch(e){toast('⚠︎ Sauvegarde compte : '+fbErrTxt(e));} cacheClientLocal(); }
   // Cache local (par compte) : commande en cours + historique survivent au
   // redémarrage instantanément, même avant/malgré le rechargement Firestore.
@@ -4752,6 +4798,16 @@
     "Vos prestations terminées apparaîtront ici, un dossier par client.":"Your completed services will appear here, one folder per client.",
     "Votre RIB":"Your bank details",
     "Votre attestation est":"Your certificate is",
+    "Ne manquez aucune mission":"Don't miss a single job",
+    "Ne manquez aucune étape":"Don't miss a step",
+    "C’est ainsi que les clients vous atteignent.":"That is how clients reach you.",
+    "Artisan trouvé, prestation démarrée, terminée — on vous prévient.":"Pro found, job started, job done — we let you know.",
+    "Facultatif, et versé en totalité au prestataire.":"Optional, and paid in full to the pro.",
+    "Vérifiez que tout est bon, puis confirmez.":"Check everything is right, then confirm.",
+    "L'enregistrement n'a pas abouti. Votre carte vous sera demandée à la réservation, comme d'habitude.":"Registration did not go through. Your card will be requested at booking, as usual.",
+    "L'enregistrement n'a pas abouti. Votre carte vous sera demandée à la réservation.":"Registration did not go through. Your card will be requested at booking.",
+    "Conservée chez notre prestataire de paiement agréé — nous ne voyons jamais votre numéro.":"Held by our licensed payment provider — we never see your number.",
+    "Carte mémorisée":"Card saved",
     "Votre code de parrainage":"Your referral code",
     "Votre commission d'apport":"Your referral commission",
     "Votre conciergerie":"Your concierge service",
@@ -6040,6 +6096,16 @@
     "Vos prestations terminées apparaîtront ici, un dossier par client.":"Os seus serviços concluídos aparecerão aqui, uma pasta por cliente.",
     "Votre RIB":"Os seus dados bancários",
     "Votre attestation est":"O seu comprovativo está",
+    "Ne manquez aucune mission":"Não perca nenhum trabalho",
+    "Ne manquez aucune étape":"Não perca nenhuma etapa",
+    "C’est ainsi que les clients vous atteignent.":"É assim que os clientes o contactam.",
+    "Artisan trouvé, prestation démarrée, terminée — on vous prévient.":"Profissional encontrado, serviço iniciado, concluído — avisamos.",
+    "Facultatif, et versé en totalité au prestataire.":"Opcional, e pago integralmente ao prestador.",
+    "Vérifiez que tout est bon, puis confirmez.":"Verifique se está tudo bem e confirme.",
+    "L'enregistrement n'a pas abouti. Votre carte vous sera demandée à la réservation, comme d'habitude.":"O registo não foi concluído. O seu cartão será pedido na reserva, como habitualmente.",
+    "L'enregistrement n'a pas abouti. Votre carte vous sera demandée à la réservation.":"O registo não foi concluído. O seu cartão será pedido na reserva.",
+    "Conservée chez notre prestataire de paiement agréé — nous ne voyons jamais votre numéro.":"Guardado no nosso prestador de pagamentos autorizado — nunca vemos o seu número.",
+    "Carte mémorisée":"Cartão memorizado",
     "Votre code de parrainage":"O seu código de indicação",
     "Votre commission d'apport":"A sua comissão de angariação",
     "Votre conciergerie":"O seu serviço de concierge",
@@ -9231,7 +9297,7 @@
               <div class="mini" style="margin-top:3px;color:var(--muted);line-height:1.45">Vous ne la ressaisirez plus&nbsp;: vos prochaines réservations partent en un geste. Aucun débit, aucune empreinte.</div></div>
             <span class="mini" style="color:var(--teal-deep);font-weight:700;white-space:nowrap;flex:none">${S.cardSetupBusy?'…':'Enregistrer ›'}</span>
           </div></button>
-          ${S.cardSetupErr?`<div class="banner coral" style="margin-top:8px"><span><b>Mollie a refusé l'enregistrement.</b> Votre carte vous sera demandée à la réservation.<br><span style="font-weight:500;opacity:.85">Motif technique&nbsp;: ${esc(S.cardSetupErr)}</span></span></div>`:''}`;
+          ${S.cardSetupErr?`<div class="banner coral" style="margin-top:8px"><span>L'enregistrement n'a pas abouti. Votre carte vous sera demandée à la réservation, comme d'habitude.</span></div>`:''}`;
       })()}
       ${notifCTA('client')}
       <div class="trust"><span>${I.shield}Prestataires vérifiés</span><span>${I.lock}Prestataires assurés</span><span>${I.check}Payé après la presta</span></div>
@@ -9399,15 +9465,15 @@
           const c=payCard();
           const body=(c===undefined)
             ?`<p class="mini" style="margin-top:2px;color:var(--muted)">${I.clock} Vérification de votre carte enregistrée…</p>`
-            :(c?`<div class="row" style="gap:11px;align-items:center;margin-top:12px"><span class="benic">${I.card}</span><div class="mini">${payCardExp(c)?('Expire '+payCardExp(c)):'Carte mémorisée chez Mollie'}${c.holder?' · '+esc(c.holder):''}</div></div>
-              ${c.status==='pending'?`<div class="banner warn" style="margin-top:12px">${I.clock}<span><b>Vérification en cours chez Mollie.</b> Votre carte est bien enregistrée&nbsp;; elle sera utilisable dès que Mollie l'aura confirmée — en général quelques minutes.</span></div>`:''}
-              <div class="banner good" style="margin-top:12px">${I.lock}<span>Conservée chez <b>Mollie</b> — nous ne voyons jamais votre numéro.</span></div>
-              ${S.cardForgetAsk?`<div class="card" style="padding:14px;margin-top:12px;border-left:4px solid var(--coral)"><b style="font-size:14px">Retirer cette carte&nbsp;?</b><p class="mini" style="margin-top:4px">À votre prochaine réservation, vous saisirez la nouvelle sur Mollie — elle sera mémorisée à son tour. Aucune prestation en cours n'est affectée.</p><div class="row" style="gap:8px;margin-top:10px"><button class="btn primary sm" data-act="card-forget-yes" style="width:auto;padding:9px 14px">Retirer</button><button class="btn ghost sm" data-act="card-forget-no" style="width:auto;padding:9px 14px">Garder</button></div></div>`:`<button class="btn ghost sm" data-act="card-forget" style="margin-top:12px;width:auto;padding:9px 14px">${I.card} Changer de carte</button>
+            :(c?`<div class="row" style="gap:11px;align-items:center;margin-top:12px"><span class="benic">${I.card}</span><div class="mini">${payCardExp(c)?('Expire '+payCardExp(c)):'Carte mémorisée'}${c.holder?' · '+esc(c.holder):''}</div></div>
+              ${c.status==='pending'?`<div class="banner warn" style="margin-top:12px">${I.clock}<span><b>Vérification en cours.</b> Votre carte est enregistrée&nbsp;; elle sera utilisable dans quelques minutes.</span></div>`:''}
+              <div class="banner good" style="margin-top:12px">${I.lock}<span>Conservée chez notre prestataire de paiement agréé — nous ne voyons jamais votre numéro.</span></div>
+              ${S.cardForgetAsk?`<div class="card" style="padding:14px;margin-top:12px;border-left:4px solid var(--coral)"><b style="font-size:14px">Retirer cette carte&nbsp;?</b><p class="mini" style="margin-top:4px">À votre prochaine réservation, vous saisirez la nouvelle — elle sera mémorisée à son tour. Aucune prestation en cours n'est affectée.</p><div class="row" style="gap:8px;margin-top:10px"><button class="btn primary sm" data-act="card-forget-yes" style="width:auto;padding:9px 14px">Retirer</button><button class="btn ghost sm" data-act="card-forget-no" style="width:auto;padding:9px 14px">Garder</button></div></div>`:`<button class="btn ghost sm" data-act="card-forget" style="margin-top:12px;width:auto;padding:9px 14px">${I.card} Changer de carte</button>
               <p class="mini" style="margin-top:8px;color:var(--muted)">Retire cette carte&nbsp;: votre prochaine réservation vous demandera la nouvelle, qui sera mémorisée à son tour.</p>`}`
             :((S._payCard&&S._payCard.setup)?`<p class="mini" style="margin-top:2px;color:var(--muted)">Enregistrez-la maintenant et vos réservations partiront en un geste. Sinon elle vous sera demandée à la première.</p>
               <button class="btn primary sm" data-act="card-setup" style="margin-top:12px;width:auto;padding:9px 14px"${S.cardSetupBusy?' disabled':''}>${I.card}&nbsp;${S.cardSetupBusy?'Ouverture…':'Enregistrer ma carte'}</button>
-              <div class="banner good" style="margin-top:12px">${I.lock}<span><b>Aucun débit</b> — carte simplement vérifiée sur <b>Mollie</b> (0,00&nbsp;€).</span></div>
-              ${S.cardSetupErr?`<div class="banner coral" style="margin-top:10px"><span><b>Mollie a refusé l'enregistrement.</b> Votre carte vous sera demandée à la réservation, comme d'habitude.<br><span style="font-weight:500;opacity:.85">Motif technique&nbsp;: ${esc(S.cardSetupErr)}</span></span></div>`:''}
+              <div class="banner good" style="margin-top:12px">${I.lock}<span><b>Aucun débit</b> — simple vérification à 0,00&nbsp;€.</span></div>
+              ${S.cardSetupErr?`<div class="banner coral" style="margin-top:10px"><span>L'enregistrement n'a pas abouti. Votre carte vous sera demandée à la réservation, comme d'habitude.</span></div>`:''}
               ${cardDiagBloc()}
               ${S.cardDiag?'':`<button class="reset mini" data-act="card-diag" style="margin-top:10px;color:var(--muted);text-decoration:underline">Vous venez d'enregistrer votre carte et elle n'apparaît pas&nbsp;?</button>`}`
             :`<p class="mini" style="margin-top:2px">Aucune carte mémorisée. L'enregistrement n'est pas disponible pour l'instant&nbsp;: votre carte vous sera demandée sur <b>Mollie</b> au moment de la réservation.</p>
@@ -9661,7 +9727,7 @@
     const presets=[0,10,20];const isPreset=presets.indexOf(cur)>=0;
     return `<div class="card" style="padding:16px;margin-top:14px">
       <b style="font-size:14px">${I.heart} Remercier votre prestataire&nbsp;?</b>
-      <p class="mini" style="margin-top:4px">Un pourboire facultatif, versé en totalité au prestataire — vous décidez selon votre satisfaction.</p>
+      <p class="mini" style="margin-top:4px">Facultatif, et versé en totalité au prestataire.</p>
       <div class="segs" style="margin-top:10px">${presets.map(function(v){return `<button class="seg ${(!custom&&cur===v)?'on':''}" data-tip="${v}">${v===0?'Aucun':('+ '+v+' €')}</button>`;}).join('')}<button class="seg ${custom?'on':''}" data-tip="custom">Autre</button></div>
       ${custom?`<div class="field" style="margin:10px 0 0"><input class="txt" inputmode="decimal" data-tipcustom value="${(cur||!isPreset)&&cur?cur:''}" placeholder="Montant du pourboire (€)"></div>`:''}
     </div>`;
@@ -9670,7 +9736,7 @@
     const m=S.mission,t=totals(m),p=m.provider||{nm:'Votre prestataire',ini:'AR',jobs:0};
     const adj=(m.finalHours!=null&&m.finalHours!==m.duration);const agreed=m.rate*m.duration;const d=(m.finalHours||m.duration)-m.duration;
     return `<div class="pad"><div style="height:10px"></div><span class="eyebrow">Prestation terminée</span><div class="h-hello">${esc(p.nm)} a terminé</div>
-      <p class="sub">${adj?'Le prestataire a <b>ajusté la durée</b>. Vérifiez, puis validez l’ajustement — ou signalez votre désaccord.':'Vérifiez que tout est bon, puis confirmez&nbsp;: <b>le paiement part alors tout seul.</b>'}</p>
+      <p class="sub">${adj?'Le prestataire a <b>ajusté la durée</b>. Vérifiez, puis validez l’ajustement — ou signalez votre désaccord.':'Vérifiez que tout est bon, puis confirmez.'}</p>
       <div class="card" style="padding:16px;margin-top:16px"><div class="row" style="gap:12px"><div class="avatar">${p.ini}</div><div style="flex:1"><b style="font-size:15px">${m.svcName}</b><div class="mini">${durTxt(m,billHours(m))} · ${m.when} · ${m.slot}</div></div></div><hr class="dashed">
       ${adj?`<div class="receipt-line"><span>Estimation convenue</span><span class="mini">${durTxt(m)} · ${eur(agreed)}</span></div><div class="receipt-line"><span>${isDayU(m)?'Jours déclarés':'Durée déclarée'} par le prestataire</span><b>${durTxt(m,m.finalHours)}</b></div><div class="receipt-line"><span>Montant ajusté (${d>0?'+':''}${d} ${isDayU(m)?'j':'h'})</span><b class="money" style="color:${d>0?'var(--coral-deep)':'var(--good)'}">${eur(t.total)}</b></div>`:(t.tip?`<div class="receipt-line"><span>Prestation</span><b>${eur(t.total-t.tip)}</b></div><div class="receipt-line"><span>${I.heart} Pourboire (au prestataire)</span><b>${eur(t.tip)}</b></div><div class="receipt-line"><span><b>Total</b></span><b>${eur(t.total)}</b></div>`:`<div class="receipt-line"><span>Montant (débit auto)</span><b>${eur(t.total)}</b></div>`)}
       ${(t.tip>0||(adj&&d>0))?(function(){
@@ -9685,13 +9751,13 @@
       })():''}
       ${(adj&&t.tip)?`<div class="receipt-line"><span>${I.heart} dont pourboire (prestataire)</span><b>${eur(t.tip)}</b></div>`:''}
       <div class="receipt-line"><span>Réglé sur</span><b>${cardTxt()}</b></div></div>
-      <div class="banner coral" style="margin-top:14px">${I.shield}<span>${adj?'Vous ne pouvez refuser l’ajustement sans en informer Ti-Services, qui tranchera le désaccord.':'Un souci&nbsp;? <b>Signalez-le au lieu de valider</b> — le prélèvement automatique est alors suspendu, et rien ne part tant que la situation n’est pas réglée.'}</span></div>
+      ${adj?`<div class="banner coral" style="margin-top:14px">${I.shield}<span>Vous ne pouvez refuser l’ajustement sans en informer Ti-Services, qui tranchera le désaccord.</span></div>`:''}
       ${tipCard(m)}
       <div class="stack" style="margin-top:18px"><button class="btn good" data-act="confirm-done">${I.check} ${adj?'Valider '+m.finalHours+' h · '+eur(t.total):('Confirmer la prestation'+(t.tip?'<span> · '+eur(t.total)+'</span>':''))}</button>
       ${adj?`<button class="btn ghost sm" data-act="dispute-open">Je ne suis pas d’accord avec l’ajustement</button>`:`<button class="btn ghost sm" data-act="report-issue">Signaler un problème</button>`}
       ${(adj&&d>0)
         ? `<p class="mini" style="text-align:center;display:flex;align-items:center;justify-content:center;gap:5px">${I.shield} Cet ajustement <b>à la hausse</b> demande <b>votre validation</b> — pas de validation automatique, et rien n'est débité au-delà de l'accord sans votre feu vert.</p>`
-        : `<p class="mini" style="text-align:center;display:flex;align-items:center;justify-content:center;gap:5px">${I.clock} Sans réponse de votre part sous <b>48&nbsp;h</b>, la prestation est validée et réglée automatiquement. Un rappel vous est envoyé avant.</p>`}</div></div>`;
+        : `<p class="mini" style="text-align:center;display:flex;align-items:center;justify-content:center;gap:5px">${I.clock} Sans réponse de votre part sous <b>48&nbsp;h</b>, la prestation est validée et réglée automatiquement — un rappel vous est envoyé avant. <b>Signaler un problème suspend le prélèvement.</b></p>`}</div></div>`;
   }
   function clientDispute(){
     const m=S.mission,t=totals(m),agreed=m.rate*m.duration;
