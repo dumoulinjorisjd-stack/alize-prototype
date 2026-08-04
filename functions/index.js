@@ -2140,6 +2140,7 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
         providerName: String(r.providerName || ''), clientName: String(r.clientName || ''),
         net: net, invNo: String(r.saleInvoiceNo || ''), org: orgId ? 'oui' : 'non',
         motif: String(r.molliePayoutMotif || ''), etat: '', routes: -1, verse: false,
+        lecture: '', liensRoutes: null,
       };
       if (mollieApiConfigured() && r.molliePaymentId) {
         // L'état RÉEL du paiement : une empreinte autorisée mais jamais capturée n'a
@@ -2147,9 +2148,16 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
         try {
           const p = await mollieApi('/payments/' + encodeURIComponent(r.molliePaymentId));
           ligne.etat = (p.ok && p.data) ? String(p.data.status || '') : ('introuvable (HTTP ' + (p.status || '?') + ')');
+          // Mollie annonce lui-même les sous-ressources d'un paiement. Si `routes` n'y
+          // figure pas, le partage n'existe PAS pour ce compte — la cause n'est pas le
+          // dossier du prestataire, et il est inutile de le chercher de ce côté.
+          if (p.ok && p.data && p.data._links) ligne.liensRoutes = !!p.data._links.routes;
         } catch (_) {}
         // Les routes DÉJÀ posées. Si Mollie en a une, le versement est parti et c'est
         // NOTRE fiche qui est en retard — on la corrige au lieu de re-router en double.
+        // On garde AUSSI la réponse en clair quand la lecture échoue : lire et écrire
+        // passent par la même adresse, donc un échec en LECTURE distingue une adresse
+        // que Mollie ne reconnaît pas d'un refus portant sur ce versement précis.
         try {
           const l = await mollieApi('/payments/' + encodeURIComponent(r.molliePaymentId) + '/routes');
           if (l.ok && l.data) {
@@ -2160,6 +2168,9 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
               ligne.motif = 'déjà versé — Mollie a bien la route, notre fiche était en retard';
               try { await d.ref.update({molliePayout: 'routed', molliePayoutIssue: '', molliePayoutMotif: ''}); } catch (_) {}
             }
+          } else {
+            ligne.lecture = 'HTTP ' + (l.status || '?')
+              + ((l.data && (l.data.detail || l.data.title)) ? (' — ' + String(l.data.detail || l.data.title).slice(0, 160)) : '');
           }
         } catch (_) {}
       }
