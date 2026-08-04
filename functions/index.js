@@ -201,8 +201,18 @@ function verifyMollieState(state) {
 // Crée une route de versement du NET vers l'organisation Mollie de l'artisan, en
 // gardant la commission sur le solde plateforme. No-op tant que Mollie n'est pas
 // configuré ou que le paiement n'a pas d'identifiant Mollie (paiements simulés).
+// Motif du dernier refus de routage, relevé juste après l'appel (le versement se joue
+// dans un seul fil : pas de course possible).
+let _routeMotif = '';
+function routeMotif() { return _routeMotif; }
 async function mollieRouteNet(molliePaymentId, orgId, netAmount, label) {
-  if (!mollieApiConfigured() || !molliePaymentId || !orgId || !(netAmount > 0)) return false;
+  _routeMotif = '';
+  if (!mollieApiConfigured() || !molliePaymentId || !orgId || !(netAmount > 0)) {
+    _routeMotif = !molliePaymentId ? 'aucun paiement Mollie sur la demande'
+      : !orgId ? 'aucune organisation Mollie pour ce prestataire'
+        : !(netAmount > 0) ? 'net à verser nul' : 'Mollie non configuré';
+    return false;
+  }
   try {
     const res = await fetch(MOLLIE_API + '/payments/' + encodeURIComponent(molliePaymentId) + '/routes', {
       method: 'POST',
@@ -213,9 +223,20 @@ async function mollieRouteNet(molliePaymentId, orgId, netAmount, label) {
         destination: {type: 'organization', organizationId: orgId},
       }),
     });
-    if (!res.ok) { console.warn('mollieRouteNet HTTP', res.status, await res.text()); return false; }
+    if (!res.ok) {
+      // LA RAISON DU REFUS, CONSERVÉE. « routage refusé par Mollie » n'apprend rien et
+      // laisse chercher à l'aveugle — on a déjà perdu des jours ainsi sur la carte
+      // bancaire. Mollie explique son refus : on garde son explication.
+      const txt = await res.text();
+      let motif = '';
+      try { const j = JSON.parse(txt); motif = j.detail || j.title || ''; } catch (_) { motif = (txt || '').slice(0, 200); }
+      console.warn('mollieRouteNet HTTP', res.status, txt);
+      _routeMotif = 'HTTP ' + res.status + (motif ? (' — ' + String(motif).slice(0, 220)) : '');
+      return false;
+    }
+    _routeMotif = '';
     return true;
-  } catch (e) { console.warn('mollieRouteNet', e); return false; }
+  } catch (e) { console.warn('mollieRouteNet', e); _routeMotif = String((e && e.message) || e).slice(0, 220); return false; }
 }
 /**
  * mollieChargeComplement : encaisse un SUPPLÉMENT au-delà de l'empreinte — heures
@@ -480,7 +501,8 @@ async function rerouteArtisanPayouts(db, uid, orgId) {
       ok = await mollieRouteNet(r.molliePaymentId, orgId, net,
         'Ti-Services · ' + (r.serviceName || r.service || 'prestation') + (r.saleInvoiceNo ? (' · ' + r.saleInvoiceNo) : ''));
     } catch (e) { console.warn('rerouteArtisanPayouts', e); }
-    if (ok) { try { await d.ref.update({molliePayout: 'routed', molliePayoutIssue: ''}); } catch (_) {} n++; }
+    if (ok) { try { await d.ref.update({molliePayout: 'routed', molliePayoutIssue: '', molliePayoutMotif: ''}); } catch (_) {} n++; }
+    else { try { await d.ref.update({molliePayoutMotif: routeMotif() || ''}); } catch (_) {} }
   }
   if (n) console.log('Versements rattrapés pour ' + uid + ' : ' + n);
   return n;
@@ -1777,7 +1799,8 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
           // on marque la mission et on alerte l'admin pour régularisation manuelle.
           // On inscrit le NET DÛ : sans lui, aucun rattrapage automatique n'est possible
           // quand Mollie ouvre enfin les virements de l'artisan.
-          await event.data.after.ref.update({molliePayout: 'unrouted', molliePayoutIssue: orgId ? 'route_failed' : 'no_org', molliePayoutNet: netA});
+          await event.data.after.ref.update({molliePayout: 'unrouted', molliePayoutIssue: orgId ? 'route_failed' : 'no_org',
+            molliePayoutMotif: routeMotif() || '', molliePayoutNet: netA});
           // On prévient AUSSI l'artisan : son compte Mollie n'est pas validé, un versement
           // n'a pas pu lui être fait (la somme est en sécurité en attendant).
           try { await notifyArtisanMollieProblem(db, providerUid, orgId ? 'route_failed' : 'no_org'); } catch (_) {}
@@ -2076,6 +2099,99 @@ exports.ledgerExclude = onCall(async (request) => {
   try { await db.collection('requests').doc(reqId).set({comptaExclue: exclu}, {merge: true}); } catch (_) {}
   console.log('ledgerExclude ' + reqId + ' → ' + (exclu ? 'écartée' : 'réintégrée') + ' par ' + who);
   return {ok: true, exclu: exclu};
+});
+
+/**
+ * payoutRetry : DEMANDER À MOLLIE POURQUOI, plutôt que de le deviner. Un versement non
+ * routé n'était signalé que par « routage refusé par Mollie » — une phrase qui n'apprend
+ * rien et laisse chercher à l'aveugle. Ici on interroge Mollie sur le paiement, on relit
+ * les routes déjà posées, on retente, et on renvoie SA réponse, mot pour mot.
+ *
+ * Trois choses que seul Mollie sait, et qu'aucune supposition ne remplace :
+ *   • l'état réel du paiement (une empreinte jamais capturée n'est pas routable) ;
+ *   • les routes DÉJÀ créées — le versement a pu partir sans que nous l'ayons noté ;
+ *   • le motif exact du refus (dossier de l'artisan incomplet, paiement pas encore
+ *     routable, fenêtre de routage dépassée…).
+ *
+ * `list` inventorie, `run` retente (une prestation désignée, ou toutes). Rien n'est
+ * détruit : au pire la demande garde le motif du dernier refus. Réservé à l'administrateur.
+ */
+exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) => {
+  const who = (request.auth && request.auth.token && request.auth.token.email) || '';
+  if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+    throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
+  }
+  const db = getFirestore();
+  const relance = String((request.data && request.data.action) || 'list') === 'run';
+  const cible = String((request.data && request.data.reqId) || '').trim().slice(0, 128);
+  const bloques = [];
+  try {
+    const q = await db.collection('requests').where('molliePayout', '==', 'unrouted').get();
+    for (const d of q.docs) {
+      if (cible && d.id !== cible) continue;
+      const r = d.data() || {};
+      const net = round2(Number(r.molliePayoutNet) || 0);
+      let orgId = r.mollieOrgId || '';
+      if (!orgId && r.providerUid) {
+        try { orgId = (await db.collection('artisans').doc(r.providerUid).get()).get('mollieOrgId') || ''; } catch (_) {}
+      }
+      const ligne = {
+        reqId: d.id, serviceName: String(r.serviceName || r.service || 'Prestation'),
+        providerName: String(r.providerName || ''), clientName: String(r.clientName || ''),
+        net: net, invNo: String(r.saleInvoiceNo || ''), org: orgId ? 'oui' : 'non',
+        motif: String(r.molliePayoutMotif || ''), etat: '', routes: -1, verse: false,
+      };
+      if (mollieApiConfigured() && r.molliePaymentId) {
+        // L'état RÉEL du paiement : une empreinte autorisée mais jamais capturée n'a
+        // rien à router, et le dire évite de chercher du côté de l'artisan.
+        try {
+          const p = await mollieApi('/payments/' + encodeURIComponent(r.molliePaymentId));
+          ligne.etat = (p.ok && p.data) ? String(p.data.status || '') : ('introuvable (HTTP ' + (p.status || '?') + ')');
+        } catch (_) {}
+        // Les routes DÉJÀ posées. Si Mollie en a une, le versement est parti et c'est
+        // NOTRE fiche qui est en retard — on la corrige au lieu de re-router en double.
+        try {
+          const l = await mollieApi('/payments/' + encodeURIComponent(r.molliePaymentId) + '/routes');
+          if (l.ok && l.data) {
+            const arr = (l.data._embedded && l.data._embedded.routes) || l.data.routes || [];
+            ligne.routes = Array.isArray(arr) ? arr.length : 0;
+            if (ligne.routes > 0) {
+              ligne.verse = true;
+              ligne.motif = 'déjà versé — Mollie a bien la route, notre fiche était en retard';
+              try { await d.ref.update({molliePayout: 'routed', molliePayoutIssue: '', molliePayoutMotif: ''}); } catch (_) {}
+            }
+          }
+        } catch (_) {}
+      }
+      if (relance && !ligne.verse) {
+        if (r.molliePaymentId && orgId && net > 0) {
+          let ok = false;
+          try {
+            ok = await mollieRouteNet(r.molliePaymentId, orgId, net, 'Ti-Services · '
+              + (r.serviceName || r.service || 'prestation') + (r.saleInvoiceNo ? (' · ' + r.saleInvoiceNo) : ''));
+          } catch (e) { console.warn('payoutRetry', d.id, e); }
+          ligne.verse = ok;
+          ligne.motif = ok ? '' : (routeMotif() || 'refus sans explication de Mollie');
+          try {
+            await d.ref.update(ok ? {molliePayout: 'routed', molliePayoutIssue: '', molliePayoutMotif: ''}
+              : {molliePayoutMotif: ligne.motif});
+          } catch (_) {}
+        } else {
+          ligne.motif = !r.molliePaymentId ? 'aucun paiement Mollie sur cette prestation'
+            : !orgId ? 'aucun compte Mollie connecté pour ce prestataire'
+              : 'net à verser inconnu — régularisation à la main';
+        }
+      }
+      bloques.push(ligne);
+    }
+  } catch (e) {
+    console.error('payoutRetry', e);
+    return {erreur: String((e && e.message) || e).slice(0, 300)};
+  }
+  const verses = bloques.filter((b) => b.verse).length;
+  console.log('payoutRetry (' + (relance ? 'relance' : 'inventaire') + ') : ' + bloques.length
+    + ' versement(s) bloqué(s), ' + verses + ' réglé(s) — par ' + who);
+  return {bloques: bloques, verses: verses};
 });
 
 exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) => {
@@ -3044,7 +3160,9 @@ exports.paymentReconciliation = onSchedule({schedule: '0 9 * * *', secrets: [SMT
     try {
       for (const d of (await db.collection('requests').where('molliePayout', '==', 'unrouted').get()).docs) {
         const r = d.data() || {};
-        items.push(row(d.id, r, r.molliePayoutIssue === 'no_org' ? 'aucun compte Mollie connecté' : 'routage refusé par Mollie'));
+        const pourquoi = r.molliePayoutIssue === 'no_org' ? 'aucun compte Mollie connecté'
+          : ('routage refusé par Mollie' + (r.molliePayoutMotif ? (' — ' + escHtmlS(String(r.molliePayoutMotif))) : ''));
+        items.push(row(d.id, r, pourquoi));
       }
     } catch (e) { console.warn('reco unrouted', e); }
     if (items.length) sections.push('<h3>💸 Versements artisan à régulariser (' + items.length + ')</h3><ul>' + items.join('') + '</ul><p>Le client a payé, l\'artisan n\'a pas reçu son net (fonds en sécurité sur le solde plateforme). Vérifier son onboarding Mollie puis re-router (ou virement manuel).</p>');

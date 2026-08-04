@@ -8128,6 +8128,28 @@
           <p class="mini" style="margin-top:8px;color:var(--muted)">Une par une, ou toutes d'un coup&nbsp;— une prestation d'essai n'a rien à faire dans la comptabilité. Le registre se met à jour en quelques secondes&nbsp;: les factures réapparaissent dans la recherche ci-dessus, avec leur numéro.</p>`
         :`<div class="banner good" style="margin-top:12px">${I.check}<span>Aucune&nbsp;: toutes les prestations payées sont inscrites au registre.</span></div>
           <button class="btn ghost sm" data-adm="orph-scan" style="margin-top:12px">${I.search}&nbsp;Revérifier</button>`)}`;
+    // ── Versements prestataires bloqués ───────────────────────────────────────────
+    // Le client a été débité, la facture existe, mais le net n'a PAS pu être routé vers
+    // le compte du prestataire : son gain dort sur le solde Ti-Services. On ne se
+    // contente pas de le signaler — on demande à Mollie POURQUOI, et on l'affiche tel
+    // quel. Sans ce motif, on cherche à l'aveugle (on y a déjà perdu des jours).
+    const vers=S.adminVers||{};
+    const versList=vers.list||[];
+    const versDu=round2(versList.reduce(function(t,v){return t+(Number(v.net)||0);},0));
+    const versChip=!vers.loaded?'':(versList.length?chip('coral',versList.length):chip('good','aucun'));
+    const versBody=`<div class="banner warn">${I.clock}<span>Le client a payé et la facture existe, mais le net n’a <b>pas pu être versé</b> au prestataire&nbsp;: la somme est <b>en sécurité sur le solde Ti-Services</b>. Cause la plus fréquente&nbsp;: Mollie n’a pas encore ouvert les virements du prestataire.</span></div>
+      ${!vers.loaded?`<button class="btn ghost sm" data-adm="vers-scan" style="margin-top:12px">${I.search}&nbsp;Vérifier maintenant</button>`
+        :(versList.length?`<div class="mini" style="margin-top:11px;color:var(--muted)">${versList.length} versement${versList.length>1?'s':''} en attente · ${eur(versDu)} dû${versList.length>1?'s':''} au total</div>
+          ${versList.map(function(v){return `<div class="card" style="padding:13px;margin-top:9px">
+            <div class="row between"><b style="font-size:14px">${esc(v.serviceName||'Prestation')}</b><span class="money" style="font-weight:700">${eur(Number(v.net)||0)}</span></div>
+            <div class="mini" style="margin-top:3px">${esc(v.providerName||'—')}${v.invNo?(' · '+esc(v.invNo)):''}${v.etat?(' · état Mollie&nbsp;: '+esc(v.etat)):''}</div>
+            ${v.motif?`<div class="mini" style="margin-top:6px;color:var(--coral-deep)"><b>Réponse de Mollie&nbsp;:</b> ${esc(v.motif)}</div>`:''}
+            ${v.org==='non'?`<div class="mini" style="margin-top:6px;color:var(--muted)">Ce prestataire n’a aucun compte Mollie connecté&nbsp;: le versement ne peut pas partir tant qu’il ne l’a pas fait.</div>`:''}
+            <button class="btn ghost sm" data-adm="vers-one:${esc(v.reqId)}" style="margin-top:9px">${I.bolt}&nbsp;Réessayer ce versement</button></div>`;}).join('')}
+          <button class="btn primary sm" data-adm="vers-run" style="margin-top:12px">${I.bolt}&nbsp;Réessayer les ${versList.length}</button>
+          <p class="mini" style="margin-top:8px;color:var(--muted)">Chaque tentative interroge Mollie&nbsp;: état réel du paiement, versements déjà partis, et motif exact du refus. Rien n’est perdu — le rattrapage repart aussi tout seul dès que Mollie ouvre les virements du prestataire.</p>`
+        :`<div class="banner good" style="margin-top:12px">${I.check}<span>Aucun&nbsp;: tous les prestataires ont reçu leur net.</span></div>
+          <button class="btn ghost sm" data-adm="vers-scan" style="margin-top:12px">${I.search}&nbsp;Revérifier</button>`)}`;
     return `<div class="pad">
       <div class="row between isle-wm" style="margin-top:10px"><div><span class="eyebrow">Console admin · Factures</span><div class="h-hello">Factures &amp; commissions</div></div><div class="avatar" style="background:linear-gradient(135deg,var(--ink),#000)">TS</div></div>
       <div class="mini" style="margin-top:4px;color:var(--muted)">Tout l'historique — chaque facture reste accessible et retrouvable.</div>
@@ -8145,6 +8167,7 @@
       ${foldCard('f-art',I.card,'Factures par artisan','Facture de commission + factures de prestation (mandat)',artBody,chip(groups.length?'good':'grey',groups.length))}
       ${foldCard('f-conc',I.concierge,'Rétributions conciergerie','Virement mensuel groupé + export SEPA',concBody,dueList.length?chip('coral',dueList.length+' à verser'):chip('good','à jour'))}
       ${foldCard('f-orph',I.clock,'Prestations payées non facturées','Payées par le client, jamais inscrites au registre',orphBody,orphChip)}
+      ${foldCard('f-vers',I.euro,'Versements prestataires bloqués','Le client a payé, le prestataire n’a pas reçu son net',versBody,versChip)}
 
       <div style="height:18px"></div><span class="eyebrow">${I.euro} Comptabilité</span>
       ${foldCard('f-acc',I.card,'Justificatif de revenus','Commissions − frais Mollie − rétributions versées',accBody,chip('grey',eur(netRev)))}
@@ -12713,6 +12736,32 @@
               }).catch(function(){});
             },6000);
           } else if(!(d.pending||[]).length) toast('Aucune prestation en attente ✓');
+          render();
+        }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
+      })();return;}
+      else if(act==='vers-scan'||act==='vers-run'||act==='vers-one'){(function(){
+        // Inventaire (scan) puis nouvelle tentative (run) des versements bloqués. La
+        // réponse de Mollie est affichée TELLE QUELLE : « routage refusé » sans motif
+        // n'apprend rien et fait chercher à l'aveugle.
+        if(!isAdminAccount()){toast('Réservé à l’administrateur (compte réel)');return;}
+        if(!(FB&&FB.functions&&FB.fn&&FB.fn.httpsCallable)){toast('Indisponible hors ligne — réessayez connecté');return;}
+        const cible=(act==='vers-one')?id:'';
+        const relance=(act==='vers-run'||act==='vers-one');
+        toast(relance?'Nouvelle tentative auprès de Mollie…':'Vérification…');
+        FB.fn.httpsCallable(FB.functions,'payoutRetry')(relance?{action:'run',reqId:cible}:{action:'list'}).then(function(r){
+          const d=(r&&r.data)||{};
+          if(d.erreur){toast('⚠︎ '+d.erreur);return;}
+          const list=d.bloques||[];
+          // Ce qui vient d'être versé sort de la liste : on n'affiche que ce qui reste.
+          S.adminVers={loaded:true,list:list.filter(function(v){return !v.verse;})};
+          if(relance){
+            const n=Number(d.verses)||0;
+            if(n)toast(n+' versement'+(n>1?'s':'')+' parti'+(n>1?'s':'')+' ✓');
+            else{
+              const m=(list[0]||{}).motif||'';
+              toast(m?('Refusé — '+m):'Toujours refusé, sans explication de Mollie');
+            }
+          } else if(!list.length) toast('Aucun versement bloqué ✓');
           render();
         }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
       })();return;}
