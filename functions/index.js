@@ -1865,7 +1865,7 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
                 + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li>'
                 + '<li><b>Artisan :</b> ' + escHtmlS(after.providerName || providerUid) + '</li>'
                 + '<li><b>Net dû :</b> ' + eurTxt(netA) + '</li>'
-                + '<li><b>Cause :</b> ' + (orgId ? 'routage refusé par Mollie (onboarding probablement incomplet)' : 'aucune organisation Mollie connectée') + '</li></ul>'
+                + '<li><b>Cause :</b> ' + (orgId ? ('routage refusé par Mollie' + (routeMotif() ? (' — ' + escHtmlS(routeMotif())) : '')) : 'aucune organisation Mollie connectée') + '</li></ul>'
                 + '<p>À faire : vérifier l\'onboarding Mollie de l\'artisan, puis re-router le paiement (ou virement manuel). L\'argent est en sécurité sur le solde plateforme.</p>',
             });
           } catch (_) {}
