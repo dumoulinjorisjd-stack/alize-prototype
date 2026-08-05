@@ -8319,7 +8319,7 @@
           ${fRow('Paiements (Mollie)',`${(function(){const st=a.mollieStatus||'none';
             if(st==='active')return `<span class="chip good">${I.check} Actif</span>`;
             if(st==='pending'&&a.mollieOnb==='needs-data')return `<span class="chip coral">${I.clip} Dossier à compléter</span><div class="mini" style="margin-top:4px">Un appel de 2 min peut débloquer — il ne lui manque qu'une pièce ou l'IBAN.</div>`;
-            if(st==='pending'&&a.mollieCanWork)return `<span class="chip warn">${I.clock} Encaisse · virements en attente</span><div class="mini" style="margin-top:4px"><b>Il peut accepter des missions.</b> Mollie l'autorise à encaisser — c'est ce que lui dit son tableau de bord — mais retient encore ses virements le temps de valider son dossier. Son gain reste sur le compte Ti-Services et lui part automatiquement dès l'ouverture. Rien à faire de son côté&nbsp;: c'est sa première mission qui déclenche la vérification de Mollie.</div>`;
+            if(st==='pending'&&a.mollieCanWork)return `<span class="chip warn">${I.clock} Encaisse · virements en attente</span><div class="mini" style="margin-top:4px"><b>Il peut accepter des missions.</b> Mollie l'autorise à encaisser mais <b>retient ses virements</b> tant que son dossier n'est pas complet. Son gain reste sur le compte Ti-Services et lui partira dès l'ouverture. <b>Il a une démarche à faire</b>&nbsp;: ajouter son IBAN et une pièce d'identité chez Mollie.</div>`;
             if(st==='pending'&&a.mollieOnb==='in-review')return `<span class="chip warn">${I.clock} Validation Mollie en cours</span><div class="mini" style="margin-top:4px">Mollie vérifie son identité et son IBAN. Rien à faire de son côté — dès que c'est validé, il passe « Actif » tout seul.</div>`;
             if(st==='pending')return `<span class="chip warn">${I.clock} Activation Mollie inachevée</span><div class="mini" style="margin-top:4px">Son compte existe mais n'est pas encore pleinement ouvert chez Mollie.</div>`;
             return `<span class="chip coral">Jamais commencé</span><div class="mini" style="margin-top:4px">Sans activation, il ne peut pas accepter de missions.</div>`;})()}`)}
@@ -10271,6 +10271,12 @@
         if(r.acceptedSlot&&m.slot!==r.acceptedSlot){m.slot=r.acceptedSlot;if(r.slotFlex)m.proposedSlot=r.acceptedSlot;touched=true;}
         if(r.finalHours!=null&&m.finalHours!==r.finalHours){m.finalHours=r.finalHours;touched=true;}
         if(r.disputeMsg&&m.disputeMsg!==r.disputeMsg){m.disputeMsg=r.disputeMsg;touched=true;}
+        // ÉTAT RÉEL DU VERSEMENT. L'écran « Vous avez été payé » l'affirmait sans jamais le
+        // vérifier : le prestataire lisait « +4,50 € versés sur votre compte » à la seconde
+        // où il recevait une notification lui disant l'inverse. C'est Mollie qui dit la
+        // vérité, et elle est écrite ici par le serveur.
+        if(r.molliePayout!=null&&m.molliePayout!==r.molliePayout){m.molliePayout=r.molliePayout;touched=true;}
+        if(r.molliePayoutNet!=null&&m.molliePayoutNet!==r.molliePayoutNet){m.molliePayoutNet=r.molliePayoutNet;touched=true;}
         // Annulation tardive : montant de l'indemnité + décision du prestataire.
         if(r.lateCancel!=null&&m.lateCancel!==r.lateCancel){m.lateCancel=r.lateCancel;touched=true;}
         if(r.cancelFee!=null&&m.cancelFee!==r.cancelFee){m.cancelFee=r.cancelFee;touched=true;}
@@ -11511,7 +11517,7 @@
         const trav=molliePeutTravailler();
         const ttl=nd?'Finissez votre dossier de paiement (2 min)':trav?'Vous pouvez accepter des missions':pend?'Paiements en cours de validation':'Dernière étape pour être payé';
         const txt=nd?'Il manque des éléments à votre dossier Mollie — sans lui, impossible d\'accepter des missions.'
-          :trav?'Mollie vous autorise à encaisser. Il finit de valider votre dossier : d\'ici là, vos gains sont mis de côté et vous seront versés automatiquement.'
+          :trav?'Mollie vous autorise à encaisser mais retient vos virements : vos gains sont conservés et partiront dès que votre dossier sera complet (IBAN + pièce d\'identité).'
           :pend?'Dossier complet — en examen chez Mollie. Vous serez prévenu dès l\'activation.'
           :'Activez vos paiements (~5 min, une seule fois) pour pouvoir accepter des missions.';
         return `<button class="card" data-act="pro-mollie" style="padding:14px;margin-top:12px;width:100%;text-align:left;display:block${pend?'':';border:1.5px solid color-mix(in srgb,var(--coral) 45%,transparent)'}">
@@ -12094,7 +12100,20 @@
   }
   function proPaid(){
     const m=S.mission,t=totals(m);
-    return `<div class="pad"><div class="paycap"><div class="checkmark">${I.bigcheck}</div><div><div class="h-hello" style="text-align:center">Vous avez été payé</div><p class="sub" style="text-align:center">+${eur(t.payout)} versés sur votre compte</p></div></div>
+    // « Vous avez été payé » n'était vrai qu'une fois sur deux. Le client est bien débité et
+    // le gain est bien ACQUIS — mais le versement vers le compte du prestataire peut avoir
+    // été refusé (dossier Mollie incomplet, virements pas encore ouverts). Dire « versés sur
+    // votre compte » dans ce cas, c'est un mensonge que le prestataire vérifie en dix
+    // secondes sur son relevé : il ne nous croira plus jamais. On ne l'affirme donc que
+    // lorsque le serveur l'a constaté.
+    const verse=(m.molliePayout==='routed'||m.molliePayout==='manuel');
+    const bloque=(m.molliePayout==='unrouted');
+    const titre=verse?'Vous avez été payé':(bloque?'Votre gain est acquis':'Prestation réglée');
+    const soustitre=verse?('+'+eur(t.payout)+' versés sur votre compte')
+      :(bloque?(eur(t.payout)+' vous reviennent — versement en attente')
+        :('+'+eur(t.payout)+' pour vous'));
+    return `<div class="pad"><div class="paycap"><div class="checkmark">${I.bigcheck}</div><div><div class="h-hello" style="text-align:center">${titre}</div><p class="sub" style="text-align:center">${soustitre}</p></div></div>
+      ${bloque?`<div class="banner warn" style="margin-bottom:12px">${I.clock}<span>Le client a bien payé et <b>cette somme vous est due</b>. Elle est conservée par Ti-Services et vous partira <b>automatiquement</b> dès que Mollie ouvrira vos virements. ${molliePeutTravailler()?'Il ne vous manque que votre <b>IBAN</b> et une <b>pièce d’identité</b> sur le parcours Mollie — depuis Compte&nbsp;→&nbsp;Recevoir mes paiements.':'Vérifiez votre dossier depuis Compte&nbsp;→&nbsp;Recevoir mes paiements.'}</span></div>`:''}
       <div class="card" style="padding:16px"><div class="eyebrow" style="color:var(--muted)">Détail du versement</div><div class="receipt-line" style="margin-top:8px"><span>${m.svcName} · ${durTxt(m)}</span><span class="mini">${m.when} · ${m.slot}</span></div><hr class="dashed"><div class="receipt-line"><span>Prestation</span><b>${eur(t.total-t.tip)}</b></div>${t.tip?`<div class="receipt-line"><span>${I.heart} Pourboire du client</span><b style="color:var(--good)">+${eur(t.tip)}</b></div>`:''}${t.commission>0?`<div class="receipt-line"><span>Commission Ti-Services (${t.commPct}&nbsp;%)</span><b style="color:var(--muted)">−${eur(t.commission)}</b></div>`:''}<hr class="dashed"><div class="receipt-line"><span>Net perçu</span><b style="color:var(--good)">${eur(t.payout)}</b></div></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-act="pro-back-home">Retour aux missions</button></div></div>`;
   }
@@ -12421,7 +12440,7 @@
       return foldCard('p-pay',I.card,'Recevoir mes paiements','',`
         ${st==='active'?`<p class="mini">${I.lock} Réglé automatiquement, net, après chaque prestation.</p><button class="btn ghost sm" data-act="pro-mollie" style="margin-top:11px;width:auto;padding:9px 14px">Voir mes paiements</button>`
         :needsData?`<p class="mini"><b>Il manque des éléments à votre dossier Mollie</b> — 2-3 minutes suffisent pour finir et pouvoir être payé.</p><button class="btn primary sm" data-act="pro-mollie" style="margin-top:11px;width:auto;padding:9px 14px">${I.check} Compléter mon dossier</button>`
-        :(st==='pending'&&molliePeutTravailler())?`<p class="mini"><b>Vous pouvez accepter des missions.</b> Mollie vous autorise à encaisser et finit de valider votre dossier. D'ici là, vos gains sont mis de côté et vous seront versés automatiquement dès l'ouverture de vos virements — rien à faire de votre côté.</p><button class="btn ghost sm" data-act="pro-mollie" style="margin-top:11px;width:auto;padding:9px 14px">Suivre l'activation</button>`
+        :(st==='pending'&&molliePeutTravailler())?`<p class="mini"><b>Vous pouvez accepter des missions.</b> Mollie vous autorise à encaisser, mais <b>retient vos virements</b> tant que votre dossier n'est pas complet. Vos gains sont conservés et vous partiront automatiquement dès l'ouverture. Pour l'obtenir&nbsp;: ajoutez votre <b>IBAN</b> et une <b>pièce d'identité</b> chez Mollie.</p><button class="btn ghost sm" data-act="pro-mollie" style="margin-top:11px;width:auto;padding:9px 14px">Compléter mon dossier</button>`
         :st==='pending'?`<p class="mini">Dossier complet — <b>en cours d'examen</b> chez Mollie. Rien d'autre à faire : vous serez prévenu dès l'activation.</p><button class="btn ghost sm" data-act="pro-mollie" style="margin-top:11px;width:auto;padding:9px 14px">Suivre l'activation</button>`
         :`<p class="mini"><b>Obligatoire pour accepter des missions.</b> Activez vos paiements en quelques minutes pour être réglé <b>automatiquement</b> après chaque prestation. Sécurisé par Mollie.</p><button class="btn primary sm" data-act="pro-mollie" style="margin-top:11px;width:auto;padding:9px 14px">${I.lock} Activer mes paiements</button>`}`,badge);})()}
       <button class="card" data-act="pro-docs" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between" style="gap:12px;align-items:flex-start"><div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="margin-top:1px">${I.shield}</span><div><b style="font-size:14px">Mes documents</b></div></div>${insOk?`<span class="chip good" style="flex:none">${I.check} Assurance OK</span>`:`<span class="mini" style="color:var(--teal-deep);font-weight:650;white-space:nowrap;flex:none">Assurance &amp; décharge ›</span>`}</div></button>
