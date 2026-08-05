@@ -32,15 +32,32 @@ console.log('B — ce qu’on demande au prestataire suit ce que MOLLIE demande'
 ok(/needsData=\(st==='pending'&&S\.proMollieOnb==='needs-data'\)/.test(src),
   'l’état « il manque des pièces » vient de Mollie, pas d’une supposition');
 const iNeeds = src.indexOf("needsData?`<p class=\"mini\"><b>Il manque des éléments");
-const iTrav = src.indexOf("(st==='pending'&&molliePeutTravailler())?`<p class=\"mini\"><b>Vous pouvez accepter");
+const iTrav = src.indexOf("(st==='pending'&&molliePeutTravailler())?`<p class=\"mini\"><b>Rien à faire.</b>");
 ok(iNeeds > 0 && iTrav > iNeeds,
   'et il est traité AVANT : la branche suivante ne concerne que les dossiers auxquels Mollie ne demande rien');
-ok(/contrôle de sécurité — il se déclenche à votre première transaction/.test(src),
-  'à qui Mollie ne demande rien, on dit la vraie raison de l’attente');
-ok(/rien à faire de votre côté/.test(src),
-  'et donc bien « rien à faire » — l’inventer serait envoyer quelqu’un remplir un dossier déjà complet');
-ok(/S\.proMollieOnb==='needs-data'\?'Il manque des éléments à votre dossier Mollie/.test(src),
+ok(/<b>Rien à faire\.<\/b> Vous pouvez accepter des missions/.test(src),
+  'à qui Mollie ne demande rien, on le dit en trois mots — et on s’arrête là');
+ok(!/déclenche à votre première transaction/.test(src),
+  'sans lui expliquer la plomberie bancaire : il n’a rien à en faire');
+ok(/S\.proMollieOnb==='needs-data'\?' Il manque une pièce à votre dossier/.test(src),
   'l’écran de fin de mission fait la même distinction');
+
+console.log('B bis — on n’alerte QUE s’il y a une action à faire');
+const fnSrv = fs.readFileSync(path.join(RACINE, 'functions', 'index.js'), 'utf8');
+const NP = fnSrv.slice(fnSrv.indexOf('async function notifyArtisanMollieProblem'),
+  fnSrv.indexOf('// Bonne nouvelle proactive'));
+ok(/const manquePiece = \(reason === 'needs-data'\) \|\| \(reason === 'route_failed' && onb === 'needs-data'\);/.test(NP),
+  'un versement bloqué ne l’alerte que si Mollie lui réclame quelque chose');
+ok(/const pasDeCompte = \(reason === 'no_org'\);/.test(NP),
+  'ou s’il n’a pas encore connecté de compte de paiement');
+ok(/if \(!manquePiece && !pasDeCompte\) \{/.test(NP) && /return;/.test(NP),
+  'sinon on ne lui envoie RIEN — l’administrateur, lui, est prévenu dans tous les cas');
+ok(/rien à faire de son côté'\);/.test(NP),
+  'et le journal garde la trace de l’alerte qu’on a choisi de ne pas envoyer');
+// La bannière de la fiche de demande disait la même chose une troisième fois, au moment
+// précis où le prestataire décide s'il accepte — c'est-à-dire au pire moment.
+ok(!/Vous pouvez accepter — votre virement partira un peu plus tard/.test(src),
+  'et le pavé qui s’affichait sur CHAQUE demande a disparu');
 
 console.log('C — sur l’écran réel de fin de mission');
 (async () => {
@@ -76,14 +93,16 @@ console.log('C — sur l’écran réel de fin de mission');
   ok(/Votre gain est acquis/.test(bloque),
     'il dit ce qui est vrai : le gain est acquis');
   ok(/versement en attente/.test(bloque), 'et que le versement, lui, attend');
-  ok(/cette somme vous est due/.test(bloque),
+  ok(/Cette somme vous est due/.test(bloque),
     'la somme est explicitement dite DUE — c’est la seule question du prestataire');
-  ok(/rien à faire de votre côté/.test(bloque),
-    'et on ne lui invente pas de démarche : Mollie ne lui demande rien');
+  ok(!/rien à faire|contrôle de sécurité|première transaction/.test(bloque),
+    'et on ne lui explique PAS la plomberie : il n’a rien à faire, donc rien à lire');
+  ok(bloque.split(/\s+/).length < 120,
+    'l’écran reste court (' + bloque.split(/\s+/).length + ' mots)');
 
   const manque = await ecran('unrouted', 'needs-data');
-  ok(/Il manque des éléments à votre dossier Mollie/.test(manque),
-    'en revanche, quand Mollie réclame des pièces, c’est dit là où il le lit');
+  ok(/Il manque une pièce à votre dossier/.test(manque),
+    'en revanche, quand Mollie réclame une pièce, c’est dit — là, il a une action');
   ok(/Recevoir mes paiements/.test(manque), 'avec l’endroit exact où aller');
 
   const verse = await ecran('routed');

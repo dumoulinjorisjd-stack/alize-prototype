@@ -376,7 +376,25 @@ async function recordMollieFee(db, reqId, molliePaymentId, commission) {
 // Prévient l'ARTISAN (push + e-mail) quand son compte de paiement Mollie n'est pas
 // validé et requiert son action (dossier refusé / informations manquantes), ou quand un
 // versement n'a pas pu lui être fait. `reason` : 'needs-data' | 'route_failed' | 'no_org'.
+//
+// RÈGLE, ET ELLE EST SIMPLE : ON N'ALERTE LE PRESTATAIRE QUE S'IL A UNE ACTION À FAIRE.
+// Un versement retenu parce que Mollie termine son contrôle de sécurité — celui qui se
+// déclenche à la première transaction — n'appelle AUCUN geste de sa part. L'en avertir,
+// c'est l'inquiéter pour rien, l'envoyer chercher une démarche qui n'existe pas, et surtout
+// lui apprendre à ignorer nos notifications. Le jour où l'une d'elles comptera vraiment, il
+// ne la lira plus. L'administrateur, lui, est prévenu dans tous les cas : un versement
+// bloqué est NOTRE problème tant que le prestataire n'y peut rien.
 async function notifyArtisanMollieProblem(db, uid, reason) {
+  let onb = '';
+  try { onb = (await db.collection('artisans').doc(uid).get()).get('mollieOnboardingStatus') || ''; } catch (_) {}
+  // Les deux seuls cas où il a la main : Mollie réclame une pièce, ou aucun compte n'est
+  // connecté. Un « route_failed » sans demande de Mollie ne le concerne pas.
+  const manquePiece = (reason === 'needs-data') || (reason === 'route_failed' && onb === 'needs-data');
+  const pasDeCompte = (reason === 'no_org');
+  if (!manquePiece && !pasDeCompte) {
+    console.log('Alerte Mollie NON envoyée à ' + uid + ' (' + reason + ', onboarding « ' + (onb || 'inconnu') + ' ») : rien à faire de son côté');
+    return;
+  }
   let email = '', tokens = [], name = '';
   try {
     const u = await db.collection('users').doc(uid).get();
@@ -384,31 +402,29 @@ async function notifyArtisanMollieProblem(db, uid, reason) {
     email = ud.email || ''; tokens = ud.pushTokens || []; name = (ud.name || '').toString().slice(0, 60);
   } catch (_) {}
   const link = APP_URL.replace(/\/$/, '') + '/?open=missions';
-  const blocked = (reason === 'route_failed' || reason === 'no_org');
-  const pushBody = blocked
-    ? 'Un paiement n\'a pas pu vous être versé : votre compte Mollie n\'est pas encore validé. Ouvrez l\'app pour le finaliser.'
-    : 'Votre compte de paiement Mollie n\'est pas encore validé. Ouvrez l\'app pour finaliser — sans cela vous ne pouvez pas accepter de missions.';
+  // Un titre qui dit l'action, un corps qui dit laquelle. Rien d'autre.
+  const titre = pasDeCompte ? 'Ti-Services · Une action pour être payé' : 'Ti-Services · Un document pour être payé';
+  const corps = pasDeCompte
+    ? 'Connectez votre compte de paiement pour recevoir vos gains — quelques minutes, une seule fois.'
+    : 'Mollie a besoin d\'un justificatif pour ouvrir vos virements. Ouvrez l\'app pour le fournir.';
   if (tokens.length) {
     try {
       await getMessaging().sendEachForMulticast({
         tokens,
-        data: {title: 'Ti-Services · Paiements à finaliser', body: pushBody, url: './?open=missions'},
+        data: {title: titre, body: corps, url: './?open=missions'},
         webpush: {fcmOptions: {link: '/?open=missions'}, headers: {Urgency: 'high'}},
       });
     } catch (e) { console.warn('mollieProblem push', e); }
   }
   if (email) {
-    const intro = blocked
-      ? '<p>Une prestation a été validée, mais nous n\'avons <b>pas pu vous verser votre gain</b> : votre compte de paiement <b>Mollie</b> n\'est pas encore validé.</p><p>Rassurez-vous, la somme est en sécurité et vous sera versée dès que votre compte sera activé.</p>'
-      : '<p>Votre compte de paiement <b>Mollie</b> n\'est pas encore validé : il manque une information ou un justificatif (pièce d\'identité, IBAN…).</p><p><b>Mollie vous indique précisément ce qui manque</b> sur sa page sécurisée — et vous a peut-être déjà écrit à ce sujet. Tant que le dossier n\'est pas complet, vous <b>ne pouvez pas accepter de missions</b> ni être payé.</p>';
     try {
       await sendMail(db, email, {
-        subject: 'Ti-Services · Finalisez vos paiements pour recevoir vos missions',
-        html: '<p>Bonjour ' + escHtmlS(name || '') + ',</p>' + intro +
-              '<p>C\'est rapide : ouvrez l\'application Ti-Services, allez dans <b>« Recevoir mes paiements »</b> et suivez le parcours Mollie (identité + IBAN). Mollie est un établissement de paiement agréé — vos coordonnées bancaires ne transitent jamais par Ti-Services.</p>' +
-              '<p><a href="' + link + '" style="display:inline-block;background:#e8613c;color:#fff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:700">Finaliser mes paiements</a></p>' +
-              '<p>Besoin d\'aide ? Répondez simplement à cet e-mail.</p>' +
-              '<p>À très vite,<br>L\'équipe Ti-Services</p>',
+        subject: titre.replace('Ti-Services · ', ''),
+        html: '<p>Bonjour ' + escHtmlS(name || '') + ',</p>'
+          + '<p>' + escHtmlS(corps) + '</p>'
+          + (manquePiece ? '<p>Mollie vous indique précisément ce qui manque (pièce d\'identité, IBAN…). Vos gains déjà acquis vous restent dus et partiront dès l\'ouverture.</p>' : '')
+          + '<p><a href="' + link + '" style="display:inline-block;background:#e8613c;color:#fff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:700">Ouvrir Ti-Services</a></p>'
+          + '<p>Une question ? Répondez à cet e-mail.</p>',
       });
     } catch (e) { console.warn('mollieProblem email', e); }
   }
