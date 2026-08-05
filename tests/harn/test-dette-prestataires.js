@@ -31,9 +31,8 @@ ok(/const _duList=_led\.filter\(function\(e\)\{return e\.molliePayout==='unroute
 ok(/const duInconnu=_led\.filter\(function\(e\)\{return e\.molliePayout==null;\}\)\.length;/.test(src),
   'les écritures antérieures au suivi sont comptées à part — on dit qu’on ne sait pas, on n’invente pas');
 ok(/Dû aux prestataires/.test(src), 'la ligne existe');
-ok(/c'est une <b>dette<\/b>, pas un revenu/.test(src), 'et elle nomme sa nature');
-ok(/Elle n'entre donc pas dans le résultat ci-dessus/.test(src),
-  'en précisant qu’elle ne se soustrait PAS du résultat — une dette n’est pas une charge');
+ok(/<b>dette<\/b>, hors résultat/.test(src),
+  'elle nomme sa nature et sa place, en trois mots — une dette n’est pas une charge');
 
 console.log('C — et l’export comptable la porte aussi');
 ok(/DÛ AUX PRESTATAIRES \(dette — hors résultat\)/.test(src), 'un bloc dédié dans le CSV');
@@ -74,15 +73,23 @@ console.log('D — sur l’écran réel');
   ok(/Dû aux prestataires/.test(du), 'la dette apparaît dès qu’un versement n’est pas parti');
   ok(/4,50/.test(du), 'avec son montant — le NET du prestataire, pas la commission');
   ok(/1 versement non parti/.test(du), 'et le nombre concerné');
+  const phrase = du.slice(du.indexOf('Dû aux prestataires')).split('hors résultat')[0] + 'hors résultat.';
+  ok(phrase.split(/\s+/).length <= 14, 'en une ligne, pas en paragraphe (' + phrase.split(/\s+/).length + ' mots)');
   ok(/Commissions encaissées/.test(du) && /1,00/.test(du),
     'le revenu, lui, compte les DEUX commissions : elle est acquise dès que le client est débité');
 
   const sain = await ecran([base({molliePayout: 'routed'})]);
   ok(!/Dû aux prestataires/.test(sain), 'rien ne s’affiche quand tout est versé');
 
+  // Un pavé expliquant la nature d'une dette de 0,00 € — et noyant dedans la seule
+  // information utile — est exactement l'inverse du but recherché.
   const flou = await ecran([base({})]);
-  ok(/état inconnu/.test(flou),
+  ok(/sans état de versement connu/.test(flou),
     'une écriture antérieure au suivi est signalée comme inconnue, pas comptée d’office');
+  ok(!/Dû aux prestataires/.test(flou),
+    'et SANS afficher une dette de 0,00 € accompagnée de son explication');
+  ok(!/0,00 €/.test(flou.slice(flou.indexOf('sans état de versement'))),
+    'aucun montant nul n’est mis en avant');
 
   const vrais = errs.filter((e) => !/net::ERR|Failed to load|firebase|firestore|ERR_FAILED/i.test(e));
   ok(vrais.length === 0, 'aucune erreur JS (' + vrais.join(' | ').slice(0, 150) + ')');
