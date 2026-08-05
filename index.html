@@ -2757,7 +2757,13 @@
     if(brut.length<120&&!anglais&&(francais||/[.!?]$/.test(String(brut).trim())))return brut;
     return 'incident technique — réessayez dans un instant';
   }
-  function saveClientCloud(){try{ if(FB&&FB.auth&&FB.auth.currentUser&&typeof isDemo==='function'&&!isDemo()){ FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{addresses:S.addresses||[],addrDefault:S.addrDefault||null,card:S.card||null,history:histSlim(S.history),recurring:S.recurring||[]},{merge:true}).then(function(){S._lastSaveOk=true;}).catch(function(e){toast('⚠︎ Sauvegarde compte échouée : '+fbErrTxt(e));}); } }catch(e){toast('⚠︎ Sauvegarde compte : '+fbErrTxt(e));} cacheClientLocal(); }
+  // ADRESSES : une liste VIDE n'est jamais écrite « en passant ». Cet enregistrement est
+  // déclenché par tout et n'importe quoi — un historique qui bouge, une carte retirée — y
+  // compris à des instants où les adresses ne sont pas encore revenues du cloud. Il suffisait
+  // d'un de ces instants pour écraser la liste par [] , définitivement et sur TOUS les
+  // appareils. Une liste vide n'est enregistrée que si l'utilisateur vient de supprimer sa
+  // dernière adresse (`opts.addresses`) ; sinon le champ est omis et Firestore garde l'ancien.
+  function saveClientCloud(opts){try{ if(FB&&FB.auth&&FB.auth.currentUser&&typeof isDemo==='function'&&!isDemo()){ const _p={addrDefault:S.addrDefault||null,card:S.card||null,history:histSlim(S.history),recurring:S.recurring||[]}; if((S.addresses||[]).length||(opts&&opts.addresses))_p.addresses=S.addresses||[]; FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),_p,{merge:true}).then(function(){S._lastSaveOk=true;}).catch(function(e){toast('⚠︎ Sauvegarde compte échouée : '+fbErrTxt(e));}); } }catch(e){toast('⚠︎ Sauvegarde compte : '+fbErrTxt(e));} cacheClientLocal(); }
   // Cache local (par compte) : commande en cours + historique survivent au
   // redémarrage instantanément, même avant/malgré le rechargement Firestore.
   function clientCacheKey(uid){return 'ti_client_'+(uid||'anon');}
@@ -13089,6 +13095,10 @@
         if(!cc.consent){toast('Cochez l’autorisation de transmettre les documents');renderConfig();return;}
         if(!S.draft.dateFrom||!S.draft.dateTo||S.draft.dateTo<S.draft.dateFrom){toast('Vérifiez la fenêtre de dates');renderConfig();return;}
         if(cc.deadline&&S.draft.dateTo>cc.deadline){toast('La fin de fenêtre dépasse la date limite de l’avis');renderConfig();return;}
+        // Une LIVRAISON a besoin d'un point GPS autant qu'une intervention : le prestataire
+        // doit trouver la porte. Ce contrôle manquait — la validation colis rendait la main
+        // avant d'y arriver, et l'écran ne proposait même pas d'enregistrer un point.
+        if(!(S.draft.geo&&isFinite(+S.draft.geo.lat))){toast('Enregistrez le point GPS du lieu de livraison — c’est obligatoire');S._focusAddr=true;renderConfig();return;}
         proceedToPay();return;}
       const mm=minSlotToday(S.draft);if(mm>=0&&!S.draft.slotFlex&&slotToMin(S.draft.slot)<mm){toast('Choisissez une heure à venir');renderConfig();return;}
       // Point GPS OBLIGATOIRE pour toute prestation à domicile : à Saint-Barth, c'est le seul
@@ -13361,7 +13371,7 @@
       case 'addr-cancel':S.addrForm=null;render();break;
       case 'addr-geo':geolocate(g=>{if(S.addrForm){S.addrForm.geo=g;render();}});break;
       case 'addr-default':if(S.addrForm&&S.addrForm.id){S.addrDefault=S.addrForm.id;saveClientCloud();toast('Adresse par défaut mise à jour');render();}break;
-      case 'addr-delete':if(S.addrForm&&S.addrForm.id){S.addresses=S.addresses.filter(x=>x.id!==S.addrForm.id);if(S.addrDefault===S.addrForm.id)S.addrDefault=(S.addresses[0]&&S.addresses[0].id)||null;S.addrForm=null;saveClientCloud();render();toast('Adresse supprimée');}break;
+      case 'addr-delete':if(S.addrForm&&S.addrForm.id){S.addresses=S.addresses.filter(x=>x.id!==S.addrForm.id);if(S.addrDefault===S.addrForm.id)S.addrDefault=(S.addresses[0]&&S.addresses[0].id)||null;S.addrForm=null;saveClientCloud({addresses:true});render();toast('Adresse supprimée');}break;
       case 'addr-save':{const f=S.addrForm;if(!f)break;if(!(f.label||'').trim()){toast('Donnez un nom au lieu');break;}if(f.id){const a=S.addresses.find(x=>x.id===f.id);if(a){a.label=f.label;a.address=f.address;a.zone=f.zone;a.geo=f.geo;a.access=f.access||'';}}else{const id='ad'+Date.now();S.addresses.push({id,label:f.label,address:f.address,zone:f.zone,geo:f.geo,access:f.access||''});if(S.addresses.length===1)S.addrDefault=id;}S.addrForm=null;saveClientCloud();render();toast('Adresse enregistrée');break;}
       case 'open-support':S.support=true;markSupportReadUser(S.mission,S.persona==='pro'?'pro':'client');render();view.scrollTop=view.scrollHeight;break;
       case 'close-support':S.support=false;if(S.persona==='admin')S.supportSide=null;render();break;
@@ -13644,7 +13654,7 @@
       <div class="field" style="margin-top:16px"><label>Où vous livrer&nbsp;?</label>
         <div class="stack" style="gap:8px">${S.addresses.map(a=>`<button class="addr-opt${m.addressId===a.id?' on':''}" data-addr="${a.id}"><div class="row between"><b>${esc(a.label)}</b>${a.geo?`<span class="chip good">${I.pin} GPS</span>`:''}</div><div class="mini" style="margin-top:2px">${esc(a.address)} · ${a.zone}</div></button>`).join('')}
         <button class="addr-opt${m.addressId==='__manual'?' on':''}" data-addr="__manual"><b>＋ Autre adresse</b></button></div>
-        ${m.addressId==='__manual'?`<div class="card" style="padding:14px;margin-top:10px"><div class="field" style="margin-top:0"><input class="txt" data-addrmanual value="${esc(m.address||'')}" placeholder="Adresse de livraison"></div><div class="field" style="margin-bottom:0"><label style="font-size:12px">Secteur</label>${zoneSelect}</div></div>`:''}
+        ${m.addressId==='__manual'?blocAdresseManuelle(m,zoneSelect,{titre:'Adresse de livraison',placeholder:'Nom du lieu, quartier',intro:'Nouvelle adresse pour cette livraison.',introVide:'Indiquez où vous faire livrer.'}):''}
       </div>
 
       <div class="card" style="padding:14px;margin-top:16px">
@@ -13655,6 +13665,28 @@
       <div class="est"><div class="total"><span>Forfait retrait</span><b>${eur(t.total)}</b></div><small>${I.shield} Prix fixe, quel que soit le nombre d'objets. Débité seulement après la remise, à votre validation.</small></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm">${I.search} Trouver un prestataire · ${eur(t.total)}</button></div>
     </div>`,'config');
+  }
+  // BLOC « AUTRE ADRESSE » — LE MÊME PARTOUT. Il en existait TROIS versions : la complète
+  // (nom du lieu, point GPS obligatoire avec carte, infos d'accès, enregistrement dans le
+  // profil) sur l'écran des prestations à l'heure ; une intermédiaire sur les prestations à
+  // l'acte ; et, sur les colis, une version réduite à une ligne d'adresse et un secteur. On
+  // ne pouvait donc PAS donner de point GPS ni de code de portail pour une livraison — alors
+  // qu'à Saint-Barth le point GPS est le seul repère fiable. Une seule version désormais.
+  function blocAdresseManuelle(m,zoneSelect,o){
+    o=o||{};
+    const titre=o.titre||'Adresse / description du lieu';
+    const ph=o.placeholder||'Nom du lieu, quartier';
+    const intro=S.addresses.length?(I.pin+' '+(o.intro||'Nouvelle adresse pour cette prestation.')):(o.introVide||'Indiquez où le prestataire doit intervenir.');
+    return `<div id="manualAddr"${S.addresses.length?' class="card" style="padding:14px;margin-top:10px;border:1.5px solid var(--teal-deep)"':''}>
+      <p class="mini" style="margin:0 0 4px;color:var(--muted)">${intro}</p>
+      <div class="field" style="margin-top:12px"><label style="font-size:12px">Nom du lieu <span style="font-weight:500;color:var(--muted)">(facultatif)</span></label><input class="txt" data-addrlabel value="${esc(m.addrLabel||'')}" placeholder="Nom du lieu"></div>
+      <div class="field"><label style="font-size:12px">${titre}</label><input class="txt" data-addrmanual value="${esc(m.address||'')}" placeholder="${esc(ph)}"></div>
+      <div class="field"><label style="font-size:12px">Secteur</label>${zoneSelect}</div>
+      <div class="field"><label style="font-size:12px">Point GPS ${RQ}</label><button class="btn ${m.geo?'ghost':'primary'} sm" data-cfg="geoloc">${I.pin} ${m.geo?'Actualiser le point GPS':'Enregistrer le point GPS'}</button>
+      ${m.geo?miniMap(m.geo,'edit','draft'):`<p class="mini" style="margin-top:6px;color:var(--coral-deep)">Obligatoire — à Saint-Barth, le point GPS est le seul repère fiable pour qu'on vous trouve.</p>`}</div>
+      <div class="field"><label style="font-size:12px">${I.key} Infos d'accès (transmises au prestataire)</label><textarea rows="2" data-addraccess placeholder="Ex. Code portail 4521 · chat à la maison · clé sous le pot">${esc(m.access||'')}</textarea></div>
+      <button class="btn primary sm" data-cfg="addr-save-draft" style="margin-top:4px"${(m.address||'').trim()?'':' disabled'}>${I.pin} Enregistrer cette adresse dans mon profil</button>
+      </div>`;
   }
   // Écran de commande d'un métier « à l'acte » (coiffure, manucure, plomberie…) :
   // le client compose sa prestation à partir de la grille catalogue → total ferme,
@@ -13716,7 +13748,7 @@
           ${S.addresses.map(a=>`<button class="addr-opt${m.addressId===a.id?' on':''}" data-addr="${a.id}"><div class="row between"><b>${esc(a.label)}</b>${a.geo?`<span class="chip good">${I.pin} GPS</span>`:`<span class="chip coral">Sans repère</span>`}</div><div class="mini" style="margin-top:2px">${esc(a.address)} · ${a.zone}</div></button>`).join('')}
           <button class="addr-opt${m.addressId==='__manual'?' on':''}" data-addr="__manual"><b>＋ Autre adresse (ponctuelle)</b></button>
         </div>`:''}
-        ${m.addressId==='__manual'?`<div class="card" style="padding:14px;margin-top:10px"><div class="field" style="margin-top:0"><label style="font-size:12px">Adresse / description du lieu</label><input class="txt" data-addrmanual value="${esc(m.address||'')}" placeholder="Nom du lieu, quartier"></div><div class="field"><label style="font-size:12px">Secteur</label>${zoneSelect}</div><div class="field"><label style="font-size:12px">Point GPS</label><button class="btn ghost sm" data-cfg="geoloc">${I.pin} ${m.geo?'Actualiser le point GPS':'Enregistrer le point GPS'}</button>${m.geo?miniMap(m.geo,'edit','draft'):''}</div><div class="field" style="margin-bottom:0"><label style="font-size:12px">${I.key} Infos d'accès</label><textarea rows="2" data-addraccess placeholder="Ex. Code portail 4521 · clé sous le pot">${esc(m.access||'')}</textarea></div></div>`:''}
+        ${m.addressId==='__manual'?blocAdresseManuelle(m,zoneSelect):''}
       </div>`}
 
       <div class="est">${nSel?m.acts.map(a=>`<div class="line"><span>${esc(a.nm)}</span><b>${eur(a.price*(a.qty||1))}</b></div>`).join(''):`<div class="line"><span style="color:var(--muted)">Aucune prestation sélectionnée</span><b>—</b></div>`}${optionsEstLines(m)}${(nSel&&needsPeople(m.svc)&&t.people>1)?`<div class="line"><span>${I.users} Pour ${peopleLbl(t.people)} (× ${t.people})</span><b>${eur(t.sub)}</b></div>`:''}${t.travel?`<div class="line"><span>${I.pin} Forfait déplacement</span><b>+${eur(t.travel)}</b></div>`:''}${(nSel&&!t.travel)?`<div class="line"><span style="color:var(--good)">${I.check} Déplacement offert</span><b style="color:var(--good)">0 €</b></div>`:''}<div class="total"><span>Total</span><b>${nSel?eur(t.total):'—'}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité${S.card?` (sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — encaissement agréé)`:` (moyen de paiement demandé juste après, via Mollie)`}. Aucun supplément sans votre accord.</small></div>
@@ -13791,19 +13823,8 @@
           ${S.addresses.map(a=>`<button class="addr-opt${m.addressId===a.id?' on':''}" data-addr="${a.id}"><div class="row between"><b>${esc(a.label)}</b>${a.geo?`<span class="chip good">${I.pin} GPS</span>`:`<span class="chip coral">Sans repère</span>`}</div><div class="mini" style="margin-top:2px">${esc(a.address)} · ${a.zone}</div></button>`).join('')}
           <button class="addr-opt${m.addressId==='__manual'?' on':''}" data-addr="__manual"><b>＋ Autre adresse (ponctuelle)</b><div class="mini" style="margin-top:2px">Un lieu occasionnel, non enregistré</div></button>
         </div>`:''}
-        ${m.addressId==='__manual'?`
-          <div id="manualAddr"${S.addresses.length?' class="card" style="padding:14px;margin-top:10px;border:1.5px solid var(--teal-deep)"':''}>
-          <p class="mini" style="margin:0 0 4px;color:var(--muted)">${S.addresses.length?I.pin+' Nouvelle adresse pour cette prestation.':"Indiquez où le prestataire doit intervenir."}</p>
-          <div class="field" style="margin-top:12px"><label style="font-size:12px">Nom du lieu <span style="font-weight:500;color:var(--muted)">(facultatif)</span></label><input class="txt" data-addrlabel value="${esc(m.addrLabel||'')}" placeholder="Nom du lieu"></div>
-          <div class="field"><label style="font-size:12px">Adresse / description du lieu</label><input class="txt" data-addrmanual value="${esc(m.address||'')}" placeholder="Nom du lieu, quartier"></div>
-          <div class="field"><label style="font-size:12px">Secteur</label>${zoneSelect}</div>
-          <div class="field"><label style="font-size:12px">Point GPS ${RQ}</label><button class="btn ${m.geo?'ghost':'primary'} sm" data-cfg="geoloc">${I.pin} ${m.geo?'Actualiser le point GPS':'Enregistrer le point GPS'}</button>
-          ${m.geo?miniMap(m.geo,'edit','draft'):`<p class="mini" style="margin-top:6px;color:var(--coral-deep)">Obligatoire — à Saint-Barth, le point GPS est le seul repère fiable pour que le prestataire vous trouve.</p>`}</div>
-          <div class="field"><label style="font-size:12px">${I.key} Infos d'accès (transmises au prestataire)</label><textarea rows="2" data-addraccess placeholder="Ex. Code portail 4521 · chat à la maison · clé sous le pot">${esc(m.access||'')}</textarea></div>
-          <button class="btn primary sm" data-cfg="addr-save-draft" style="margin-top:4px"${(m.address||'').trim()?'':' disabled'}>${I.pin} Enregistrer cette adresse dans mon profil</button>
-          
-          </div>
-        `:`${m.geo?`<div class="banner teal" style="margin-top:10px">${I.pin}<span><b>Point GPS déjà enregistré</b> depuis votre fiche.</span></div>`:`<div class="field" style="margin-top:10px"><label style="font-size:12px">Point GPS ${RQ}</label><button class="btn primary sm" data-cfg="geoloc">${I.pin} Enregistrer le point GPS</button><p class="mini" style="margin-top:6px;color:var(--coral-deep)">Obligatoire — cette adresse n'a pas encore de point GPS. Placez-vous sur le lieu et enregistrez-le.</p></div>`}`}
+        ${m.addressId==='__manual'?blocAdresseManuelle(m,zoneSelect)
+        :`${m.geo?`<div class="banner teal" style="margin-top:10px">${I.pin}<span><b>Point GPS déjà enregistré</b> depuis votre fiche.</span></div>`:`<div class="field" style="margin-top:10px"><label style="font-size:12px">Point GPS ${RQ}</label><button class="btn primary sm" data-cfg="geoloc">${I.pin} Enregistrer le point GPS</button><p class="mini" style="margin-top:6px;color:var(--coral-deep)">Obligatoire — cette adresse n'a pas encore de point GPS. Placez-vous sur le lieu et enregistrez-le.</p></div>`}`}
       </div>`}
       <div class="est"><div class="line"><span>${m.svcName} · ${t.rate} ${rateUnit(m)} × ${durTxt(m)}${(needsPeople(m.svc)&&t.people>1)?' × '+t.people+' pers.':''}</span><b>${eur(((forfaitSub(m)!=null?forfaitSub(m):t.rate*billHours(m))*t.people))}</b></div>${optionsEstLines(m)}<div class="total"><span>Total</span><b>${eur(t.total)}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité ${S.card?`(sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie — encaissement agréé)`:`(moyen de paiement demandé juste après, via Mollie — encaissement agréé)`}. Aucun supplément sans votre accord.</small></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm">${m.preferredUid?`${I.user} Envoyer à ${esc((m.preferredName||'').split(' ')[0])}`:`${I.search} Trouver un prestataire`} · ${eur(t.total)}</button></div></div>`,'config');
@@ -14841,7 +14862,10 @@
       S.clientForm=Object.assign({},S.clientForm,{name:name,email:user.email||'',zone:zone,photo:photo,password:'',password2:''});
       // Cache local d'abord (instantané), puis les données Firestore prennent le relais.
       restoreClientLocal(user.uid);
-      S.addresses=(data&&Array.isArray(data.addresses))?data.addresses:(S.addresses||[]);S.addrDefault=(data&&data.addrDefault)||S.addrDefault||null;
+      // Une liste vide venue du cloud n'écrase pas des adresses présentes ici : c'est le
+      // symptôme d'un enregistrement parasite, jamais une intention. Si le cloud est vide et
+      // qu'on a des adresses, on les garde — et le prochain enregistrement les y remet.
+      S.addresses=(data&&Array.isArray(data.addresses)&&(data.addresses.length||!(S.addresses||[]).length))?data.addresses:(S.addresses||[]);S.addrDefault=(data&&data.addrDefault)||S.addrDefault||null;
       S.history=(data&&Array.isArray(data.history)&&data.history.length)?data.history:(S.history||[]);S.recurring=(data&&Array.isArray(data.recurring)&&data.recurring.length)?data.recurring:(S.recurring||[]);S.card=(data&&data.card)||S.card||null;
       S.onboarded=true;S.authView=null;S.cardForm=false;
       // Inscription CLIENT via Google (nouveau compte) : on ouvre le profil pour compléter

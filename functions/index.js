@@ -752,7 +752,57 @@ exports.assignFounderSpot = onDocumentCreated('artisans/{artisanId}', async (eve
  * notifie par push tous les artisans validés proposant le service demandé
  * (premier arrivé, premier servi). Les jetons sont lus dans users/{uid}.pushTokens.
  */
-exports.notifyArtisansNewRequest = onDocumentCreated('requests/{reqId}', async (event) => {
+/**
+ * FILET E-MAIL. La notification d'une nouvelle demande ne partait QUE par push. Or le push
+ * exige que l'artisan ait installé l'application ET accepté les alertes — sa propre fiche
+ * admin le dit quand ce n'est pas le cas : « Aucun appareil notifié — il ne verra pas les
+ * demandes ». On s'arrêtait alors sur « aucun jeton enregistré » et RIEN ne partait : le
+ * client attendait une réponse qui ne pouvait pas venir. L'e-mail, lui, marche toujours.
+ *
+ * Il ne part qu'à ceux qui n'ont AUCUN appareil joignable — jamais en double d'un push.
+ * Appelé aux DEUX endroits qui diffusent une demande : la création (demandes sans verrou
+ * de paiement) et le passage à « pending » (le cas normal, après autorisation de la carte).
+ */
+async function mailArtisansSansAppareil(db, artById, targetUids, tokenToUid, r, dirigee) {
+  try {
+    const joignables = {};
+    Object.keys(tokenToUid || {}).forEach((tok) => { joignables[tokenToUid[tok]] = true; });
+    const sansAppareil = (targetUids || []).filter((uid) => !joignables[uid]);
+    if (!sansAppareil.length) return 0;
+    const svcM = (r.serviceName || 'une prestation').toString().slice(0, 60);
+    const zoneM = (r.zone || '').toString().slice(0, 40);
+    const quandM = ((r.when || '') + (r.slot ? (' à ' + r.slot) : '')).trim().slice(0, 60);
+    const lien = APP_URL.replace(/\/$/, '') + '/?open=missions';
+    await Promise.all(sansAppareil.map(async (uid) => {
+      const a = artById[uid] || {};
+      const mail = (a.email || '').trim();
+      if (!mail) return;
+      try {
+        await sendMail(db, mail, {
+          subject: (dirigee ? 'Une demande vous est réservée — ' : 'Nouvelle demande — ') + svcM,
+          html: '<p>Bonjour ' + escHtmlS((a.name || '').split(' ')[0] || '') + ',</p>'
+            + (dirigee
+              ? '<p>Un client vous demande <b>directement</b> sur Ti-Services.</p>'
+              : '<p>Une nouvelle demande vient d\'être publiée sur Ti-Services.</p>')
+            + '<ul><li><b>Prestation :</b> ' + escHtmlS(svcM) + '</li>'
+            + (zoneM ? ('<li><b>Secteur :</b> ' + escHtmlS(zoneM) + '</li>') : '')
+            + (quandM ? ('<li><b>Quand :</b> ' + escHtmlS(quandM) + '</li>') : '')
+            + '</ul>'
+            + (dirigee
+              ? '<p>Elle vous est réservée : elle n\'est proposée à personne d\'autre tant que vous n\'avez pas répondu.</p>'
+              : '<p>Premier arrivé, premier servi.</p>')
+            + '<p><a href="' + lien + '">Ouvrir mes missions</a></p>'
+            + '<p style="color:#666;font-size:13px">Vous recevez cet e-mail parce qu\'aucun appareil n\'est encore relié à votre compte. '
+            + 'Activez les notifications dans l\'application : vous serez prévenu en quelques secondes au lieu de quelques minutes.</p>',
+        });
+      } catch (e) { console.warn('mailArtisansSansAppareil', uid, e); }
+    }));
+    console.log('E-mail « nouvelle demande » à ' + sansAppareil.length + ' artisan(s) sans appareil notifié.');
+    return sansAppareil.length;
+  } catch (e) { console.warn('mailArtisansSansAppareil', e); return 0; }
+}
+
+exports.notifyArtisansNewRequest = onDocumentCreated({document: 'requests/{reqId}', secrets: [SMTP_PASS]}, async (event) => {
   const snap = event.data;
   if (!snap) return;
   const r = snap.data() || {};
@@ -787,9 +837,9 @@ exports.notifyArtisansNewRequest = onDocumentCreated('requests/{reqId}', async (
   // Alerte WhatsApp (officielle) EN PLUS du push — surtout pour une demande dirigée,
   // où l'artisan choisi doit être prévenu à coup sûr. No-op tant que WhatsApp n'est
   // pas configuré. On n'écrit qu'aux artisans ayant coché l'opt-in WhatsApp (notifWa).
+  const artById = {};
+  artsSnap.docs.forEach((d) => { artById[d.id] = d.data() || {}; });
   if (whatsAppConfigured()) {
-    const artById = {};
-    artsSnap.docs.forEach((d) => { artById[d.id] = d.data() || {}; });
     await Promise.all(targetUids.map(async (uid) => {
       const a = artById[uid] || {};
       if (!a.notifWa || !a.phone) return;
@@ -831,7 +881,9 @@ exports.notifyArtisansNewRequest = onDocumentCreated('requests/{reqId}', async (
     } catch (_) {}
   }));
   const tokens = Object.keys(tokenToUid);
-  if (!tokens.length) { console.log('Aucun jeton artisan enregistré.'); return; }
+
+  await mailArtisansSansAppareil(db, artById, targetUids, tokenToUid, r, !!preferred);
+  if (!tokens.length) { console.log('Aucun jeton artisan enregistré — e-mail(s) envoyé(s) à la place.'); return; }
 
   const svcName = (r.serviceName || 'Nouvelle prestation').toString().slice(0, 60);
   const zone = (r.zone || '').toString().slice(0, 40);
@@ -1830,7 +1882,7 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
  * celui qui s'est désisté) ET on prévient le client que la recherche est relancée.
  * Concrétise l'engagement « on relance la recherche » — sans en faire une garantie.
  */
-exports.notifyReopenedRequest = onDocumentUpdated('requests/{reqId}', async (event) => {
+exports.notifyReopenedRequest = onDocumentUpdated({document: 'requests/{reqId}', secrets: [SMTP_PASS]}, async (event) => {
   const before = (event.data && event.data.before && event.data.before.data()) || {};
   const after = (event.data && event.data.after && event.data.after.data()) || {};
   const wasActive = ['accepted', 'working', 'done_pro'].indexOf(before.status) >= 0;
@@ -1877,6 +1929,13 @@ exports.notifyReopenedRequest = onDocumentUpdated('requests/{reqId}', async (eve
       await pushMulticast(tokens, title, body, '/?open=missions',
         (t) => db.collection('users').doc(tokenToUid[t]).update({ pushTokens: FieldValue.arrayRemove(t) }));
     }
+    // C'EST ICI que part l'alerte d'une commande réelle : une demande naît en
+    // « pending_payment » et ne devient « pending » qu'une fois la carte autorisée. La
+    // fonction de création ne la voit donc jamais. Le filet e-mail doit être des DEUX
+    // côtés, sinon il ne sert à rien là où ça compte.
+    const artById = {};
+    artsSnap.docs.forEach((d) => { artById[d.id] = d.data() || {}; });
+    await mailArtisansSansAppareil(db, artById, uids, tokenToUid, after, !!preferred);
   } catch (e) { console.warn('reopen notify artisans', e); }
 
   // 2) Prévenir le client que la recherche est relancée — uniquement en cas de
