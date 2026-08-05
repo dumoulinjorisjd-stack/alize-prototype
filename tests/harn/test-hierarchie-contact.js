@@ -79,6 +79,15 @@ console.log('B — sur l’écran réel du prestataire');
   ok(mesures.aIcs > 0 && mesures.telY < mesures.icsY,
     'l’agenda reste un bouton ordinaire, seul, sous le bloc du client');
   ok(mesures.icsY < mesures.supY, 'et il passe AVANT le support');
+  // La mission est DÉJÀ dans l'agenda Ti-Services : sans le mot « externe », le bouton
+  // laisse croire qu'il faut faire cette démarche pour la voir dans l'application.
+  ok(/Ajouter à mon agenda externe/.test(mesures.texte),
+    'le bouton dit « externe » — l’agenda Ti-Services, lui, se remplit tout seul');
+  ok(/"Ajouter à mon agenda externe":"Add to my external calendar"/.test(src)
+    && /"Ajouter à mon agenda externe":"Adicionar à minha agenda externa"/.test(src),
+    'et ses traductions suivent — le texte français EST la clé, l’oublier casse l’anglais et le portugais en silence');
+  ok(!/Ajouter à mon calendrier \(\.ics\)/.test(src),
+    'aucune clé de traduction orpheline ne subsiste');
 
   ok(/Un problème \? Contacter Ti-Services/.test(mesures.texte),
     'le support est reformulé : on ne le contacte pas pour rien');
