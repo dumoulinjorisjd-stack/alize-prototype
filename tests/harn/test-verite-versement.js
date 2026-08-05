@@ -25,15 +25,22 @@ ok(/if\(r\.molliePayoutNet!=null&&m\.molliePayoutNet!==r\.molliePayoutNet\)/.tes
 ok(/const verse=\(m\.molliePayout==='routed'\|\|m\.molliePayout==='manuel'\);/.test(src),
   'et « payé » n’est vrai que si le serveur l’a constaté — routé par Mollie, ou viré à la main');
 
-console.log('B — plus aucun « rien à faire de votre côté »');
-ok(!/rien à faire de votre côté/.test(src), 'la phrase a disparu de l’espace prestataire');
-ok(!/Rien à faire de son côté&nbsp;: c'est sa première mission/.test(src),
-  'et de la fiche admin — là où elle était fausse');
-ok(/Mollie vérifie son identité et son IBAN\. Rien à faire de son côté/.test(src),
-  'elle reste là où elle est VRAIE : pendant que Mollie vérifie, il n’y a effectivement rien à faire');
-ok(/ajoutez votre <b>IBAN<\/b> et une <b>pièce d'identité<\/b> chez Mollie/.test(src),
-  'à la place, la démarche exacte est nommée');
-ok(/Compléter mon dossier/.test(src), 'et le bouton dit ce qu’il fait');
+console.log('B — ce qu’on demande au prestataire suit ce que MOLLIE demande');
+// Réclamer un IBAN à qui n'en doit pas est aussi faux que promettre un virement non parti.
+// Mollie distingue trois états, et l'app doit les distinguer aussi : « needs-data » (il
+// manque vraiment des pièces), et les autres (Mollie vérifie — rien à faire).
+ok(/needsData=\(st==='pending'&&S\.proMollieOnb==='needs-data'\)/.test(src),
+  'l’état « il manque des pièces » vient de Mollie, pas d’une supposition');
+const iNeeds = src.indexOf("needsData?`<p class=\"mini\"><b>Il manque des éléments");
+const iTrav = src.indexOf("(st==='pending'&&molliePeutTravailler())?`<p class=\"mini\"><b>Vous pouvez accepter");
+ok(iNeeds > 0 && iTrav > iNeeds,
+  'et il est traité AVANT : la branche suivante ne concerne que les dossiers auxquels Mollie ne demande rien');
+ok(/contrôle de sécurité — il se déclenche à votre première transaction/.test(src),
+  'à qui Mollie ne demande rien, on dit la vraie raison de l’attente');
+ok(/rien à faire de votre côté/.test(src),
+  'et donc bien « rien à faire » — l’inventer serait envoyer quelqu’un remplir un dossier déjà complet');
+ok(/S\.proMollieOnb==='needs-data'\?'Il manque des éléments à votre dossier Mollie/.test(src),
+  'l’écran de fin de mission fait la même distinction');
 
 console.log('C — sur l’écran réel de fin de mission');
 (async () => {
@@ -46,12 +53,12 @@ console.log('C — sur l’écran réel de fin de mission');
   await p.goto(INDEX, {waitUntil: 'load'});
   await p.waitForTimeout(1400);
 
-  const ecran = (payout) => p.evaluate((payout) => {
+  const ecran = (payout, onb) => p.evaluate(({payout, onb}) => {
     const S = window.__S;
     document.body.classList.add('standalone');
     S.onboarded = true; S.guest = false; S.persona = 'pro'; S.lang = 'fr';
     S.demoMode = false; S.proNav = 'home'; S.proStatus = 'approved'; S.proName = 'Laureguyon';
-    S.proMollieCanWork = true; S.proMollieOrgId = 'org_1'; S.proMollieStatus = 'pending';
+    S.proMollieCanWork = true; S.proMollieOrgId = 'org_1'; S.proMollieStatus = 'pending'; S.proMollieOnb = onb || 'in-review';
     S.mission = {reqId: 'r1', _id: 'pm1', status: 'paid', svc: 'colis', svcName: 'Colis & courrier',
       when: 'Aujourd’hui', slot: '14:00', duration: 1, unit: 'forfait', rate: 5, zone: 'Gustavia',
       tip: 0, molliePayout: payout, molliePayoutNet: 4.5,
@@ -59,7 +66,7 @@ console.log('C — sur l’écran réel de fin de mission');
     S.proMissions = [S.mission];
     window.__render();
     return (document.querySelector('.phone') || document.body).innerText.replace(/\s+/g, ' ');
-  }, payout);
+  }, {payout, onb});
 
   const bloque = await ecran('unrouted');
   ok(!/Vous avez été payé/.test(bloque),
@@ -71,8 +78,13 @@ console.log('C — sur l’écran réel de fin de mission');
   ok(/versement en attente/.test(bloque), 'et que le versement, lui, attend');
   ok(/cette somme vous est due/.test(bloque),
     'la somme est explicitement dite DUE — c’est la seule question du prestataire');
-  ok(/IBAN/.test(bloque) && /pièce d’identité|pièce d'identité/.test(bloque),
-    'et la démarche qui la débloquera est nommée, là où il la lit');
+  ok(/rien à faire de votre côté/.test(bloque),
+    'et on ne lui invente pas de démarche : Mollie ne lui demande rien');
+
+  const manque = await ecran('unrouted', 'needs-data');
+  ok(/Il manque des éléments à votre dossier Mollie/.test(manque),
+    'en revanche, quand Mollie réclame des pièces, c’est dit là où il le lit');
+  ok(/Recevoir mes paiements/.test(manque), 'avec l’endroit exact où aller');
 
   const verse = await ecran('routed');
   ok(/Vous avez été payé/.test(verse), 'versement routé : là, on peut le dire');
