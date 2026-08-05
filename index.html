@@ -3955,6 +3955,17 @@
     rows.push(['Total frais Mollie (charge)','','','','','','','','','',num(totFee)]);
     rows.push(['Total rétributions apport (charge)','','','','','','','','',num(totRetro),'']);
     rows.push(['Revenu net réel Ti-Services','','','','','','','','',num(totComm-totRetro-totFee),'']);
+    // La dette envers les prestataires figure APRÈS le résultat, et n'y est pas mêlée : ce
+    // n'est pas une charge, c'est de l'argent détenu pour le compte d'un tiers.
+    const duLed=led.filter(function(e){return e.molliePayout==='unrouted';});
+    if(duLed.length){
+      rows.push([]);
+      rows.push(['DÛ AUX PRESTATAIRES (dette — hors résultat)']);
+      duLed.forEach(function(e){
+        rows.push(['Net non versé',e.invNo||'',e.providerName||'',e.serviceName||'',e.reqId||'','','','','',num(Number(e.netAmount)||0),'']);
+      });
+      rows.push(['Total dû aux prestataires','','','','','','','','',num(round2(duLed.reduce(function(t,e){return t+(Number(e.netAmount)||0);},0))),'']);
+    }
     const csv=rows.map(function(r){return r.map(csvCell).join(';');}).join('\r\n');
     const ok=downloadTextFile('comptabilite-ti-services-2026-07.csv','﻿'+csv,'text/csv;charset=utf-8');
     if(ok)toast('Export comptable — '+led.length+' commission'+(led.length>1?'s':'')+', '+concs.length+' rétribution'+(concs.length>1?'s':''));
@@ -8121,6 +8132,16 @@
     const totFee=round2(_led.reduce(function(t,e){return t+(Number(e.mollieFee)||0);},0));
     const feePending=_led.filter(function(e){return e.commissionAmount>0&&e.mollieFee==null;}).length;
     const netRev=round2(totComm-totRetro-totFee);
+    // CE QUI EST SUR LE COMPTE N'EST PAS CE QU'ON A GAGNÉ. Quand le partage Mollie
+    // fonctionne, la banque ne reçoit que la commission — le net part directement chez le
+    // prestataire. Quand il échoue, elle reçoit la TOTALITÉ de l'encaissement : la part du
+    // prestataire y transite et devient une DETTE. Le justificatif affichait un revenu
+    // exact et taisait ce passif, ce qui donnait une image fausse au comptable.
+    const _duList=_led.filter(function(e){return e.molliePayout==='unrouted';});
+    const totDu=round2(_duList.reduce(function(t,e){return t+(Number(e.netAmount)||0);},0));
+    // Écritures antérieures au suivi du versement : on ne les compte NI en dette NI en
+    // réglées — on dit qu'on ne sait pas, plutôt que d'inventer un chiffre.
+    const duInconnu=_led.filter(function(e){return e.molliePayout==null;}).length;
     // Écritures hors comptes : celles que Mollie n'a pas (encore) encaissées, et celles
     // écartées à la main. On les compte pour le dire — pas pour les additionner.
     const horsCompte=(S.demoMode||isDemo())?[]:(S.adminLedger||[]).filter(function(e){return e.mollieEncaisse!==true||e.exclu;});
@@ -8134,6 +8155,7 @@
       <div class="row between" style="margin-top:6px"><span class="sub">Frais Mollie (charge)</span><b style="color:var(--muted)">−${eur(totFee)}</b></div>
       <div class="row between" style="margin-top:6px"><span class="sub">Rétributions apport versées (charge)</span><b style="color:var(--muted)">−${eur(totRetro)}</b></div>
       <hr class="dashed" style="margin:10px 0"><div class="row between"><span class="sub"><b>Revenu net réel Ti-Services</b></span><b class="money" style="color:var(--teal-deep)">${eur(netRev)}</b></div>
+      ${(totDu>0||duInconnu)?`<div class="banner warn" style="margin-top:11px">${I.clock}<span><b>Dû aux prestataires&nbsp;: ${eur(totDu)}</b> — ${_duList.length} versement${_duList.length>1?'s':''} non parti${_duList.length>1?'s':''}. Cette somme est passée par le compte Ti-Services mais ne lui appartient pas&nbsp;: c'est une <b>dette</b>, pas un revenu. Elle n'entre donc pas dans le résultat ci-dessus.${duInconnu?` <b>${duInconnu}</b> écriture${duInconnu>1?'s':''} antérieure${duInconnu>1?'s':''} au suivi des versements — état inconnu, à vérifier dans « Versements prestataires bloqués ».`:''}</span></div>`:''}
       ${feePending?`<p class="mini" style="margin-top:9px;color:var(--muted)">${I.clock} ${feePending} prestation${feePending>1?'s':''} en attente du règlement Mollie — le frais réel se complète automatiquement sous 1 à 2 jours.</p>`:''}
       <button class="btn primary sm" data-adm="export-accounting" style="margin-top:12px;width:auto;padding:9px 14px">${I.card}&nbsp;Export comptable (CSV)</button>
       <p class="mini" style="margin-top:8px;color:var(--muted)">Journal détaillé (une ligne par commission et par rétribution) pour votre comptable. Chiffres issus du <b>registre serveur immuable</b> — <b>seules les transactions réellement encaissées via Mollie</b> sont comptées (les missions de test n'apparaissent pas).</p>`;

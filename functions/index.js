@@ -517,7 +517,8 @@ async function rerouteArtisanPayouts(db, uid, orgId) {
       ok = await mollieRouteNet(r.molliePaymentId, orgId, net,
         'Ti-Services · ' + (r.serviceName || r.service || 'prestation') + (r.saleInvoiceNo ? (' · ' + r.saleInvoiceNo) : ''));
     } catch (e) { console.warn('rerouteArtisanPayouts', e); }
-    if (ok) { try { await d.ref.update({molliePayout: 'routed', molliePayoutIssue: '', molliePayoutMotif: ''}); } catch (_) {} n++; }
+    if (ok) { try { await d.ref.update({molliePayout: 'routed', molliePayoutIssue: '', molliePayoutMotif: ''}); } catch (_) {}
+      try { await db.collection('ledger').doc(d.id).set({molliePayout: 'routed'}, {merge: true}); } catch (_) {} n++; }
     else { try { await d.ref.update({molliePayoutMotif: routeMotif() || ''}); } catch (_) {} }
   }
   if (n) console.log('Versements rattrapés pour ' + uid + ' : ' + n);
@@ -1862,6 +1863,11 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
           'Ti-Services · ' + (after.serviceName || after.service || 'prestation') + ' · ' + saleInvoiceNo) : (netA <= 0);
         if (routed) {
           await event.data.after.ref.update({molliePayout: 'routed'});
+          // LE REGISTRE DOIT SAVOIR CE QUI EST PARTI. Tant que le net n'est pas versé, la
+          // TOTALITÉ de l'encaissement transite par le compte Ti-Services : la part de
+          // l'artisan y est une DETTE, pas un revenu. Sans cette information au registre,
+          // le justificatif comptable affiche un revenu juste… et tait un passif.
+          try { await db.collection('ledger').doc(reqId).set({molliePayout: 'routed'}, {merge: true}); } catch (_) {}
         } else {
           // FILET DE SÉCURITÉ : le client a été débité mais le NET n'a PAS pu être versé
           // à l'artisan (onboarding Mollie incomplet, organisation absente, refus API).
@@ -1871,6 +1877,7 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
           // quand Mollie ouvre enfin les virements de l'artisan.
           await event.data.after.ref.update({molliePayout: 'unrouted', molliePayoutIssue: orgId ? 'route_failed' : 'no_org',
             molliePayoutMotif: routeMotif() || '', molliePayoutNet: netA});
+          try { await db.collection('ledger').doc(reqId).set({molliePayout: 'unrouted'}, {merge: true}); } catch (_) {}
           // On prévient AUSSI l'artisan : son compte Mollie n'est pas validé, un versement
           // n'a pas pu lui être fait (la somme est en sécurité en attendant).
           try { await notifyArtisanMollieProblem(db, providerUid, orgId ? 'route_failed' : 'no_org'); } catch (_) {}
@@ -2244,6 +2251,7 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
               ligne.verse = true;
               ligne.motif = 'déjà versé — Mollie a bien la route, notre fiche était en retard';
               try { await d.ref.update({molliePayout: 'routed', molliePayoutIssue: '', molliePayoutMotif: ''}); } catch (_) {}
+              try { await db.collection('ledger').doc(d.id).set({molliePayout: 'routed'}, {merge: true}); } catch (_) {}
             }
           } else {
             ligne.lecture = 'HTTP ' + (l.status || '?')
@@ -2263,6 +2271,7 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
           try {
             await d.ref.update(ok ? {molliePayout: 'routed', molliePayoutIssue: '', molliePayoutMotif: ''}
               : {molliePayoutMotif: ligne.motif});
+            await db.collection('ledger').doc(d.id).set({molliePayout: ok ? 'routed' : 'unrouted'}, {merge: true});
           } catch (_) {}
         } else {
           ligne.motif = !r.molliePaymentId ? 'aucun paiement Mollie sur cette prestation'
@@ -2313,6 +2322,7 @@ exports.payoutManual = onCall(async (request) => {
     molliePayoutManuelAt: FieldValue.serverTimestamp(),
     molliePayoutManuelRef: String((request.data && request.data.ref) || '').trim().slice(0, 140),
   });
+  try { await ref.firestore.collection('ledger').doc(reqId).set({molliePayout: 'manuel'}, {merge: true}); } catch (_) {}
   console.log('payoutManual ' + reqId + ' — ' + (Number(r.molliePayoutNet) || 0) + ' € versés à la main par ' + who);
   return {ok: true, net: round2(Number(r.molliePayoutNet) || 0)};
 });
