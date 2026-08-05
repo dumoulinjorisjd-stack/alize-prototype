@@ -806,7 +806,9 @@ exports.notifyArtisansNewRequest = onDocumentCreated({document: 'requests/{reqId
   const snap = event.data;
   if (!snap) return;
   const r = snap.data() || {};
-  if ((r.status || 'pending') !== 'pending') return;
+  // Statut EXPLICITE exigé. Le repli « || 'pending' » traitait un document sans statut —
+  // par exemple recréé par accident — comme une demande ouverte, et l'envoyait à tous.
+  if (r.status !== 'pending') return;
 
   const svc = r.service;
   const db = getFirestore();
@@ -2745,7 +2747,18 @@ exports.mollieWebhook = onRequest({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (req
             if (cur.exists && (cur.data() || {}).status === 'pending_payment') upd.status = 'payment_failed';
           } catch (_) {}
         }
-        try { await db.collection('requests').doc(reqId).set(upd, {merge: true}); } catch (e) { console.warn('mollieWebhook update', e); }
+        // NE JAMAIS RESSUSCITER UNE DEMANDE SUPPRIMÉE. `set(..., {merge:true})` CRÉE le
+        // document quand il n'existe plus. Un client qui annule supprime sa demande ; si
+        // l'empreinte Mollie s'autorisait ensuite — ce qui arrive, le webhook est différé —
+        // la demande renaissait, sans statut, et le notificateur de création la traitait
+        // comme « pending » : TOUS les prestataires étaient alertés d'une prestation
+        // annulée, qu'aucun ne pouvait honorer. On écrit donc en `update`, qui échoue
+        // proprement sur un document absent.
+        try { await db.collection('requests').doc(reqId).update(upd); }
+        catch (e) {
+          if (e && e.code === 5) console.log('mollieWebhook : demande ' + reqId + ' supprimée (annulée) — rien à mettre à jour');
+          else console.warn('mollieWebhook update', e);
+        }
       }
     }
     res.status(200).send('ok');
