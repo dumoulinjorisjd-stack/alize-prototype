@@ -8148,7 +8148,7 @@
     const versOption=versList.some(function(v){
       return v.liensRoutes===false||/404/.test(String(v.motif||''))||/404/.test(String(v.lecture||''));
     });
-    const versBody=`<div class="banner warn">${I.clock}<span>Le client a payé et la facture existe, mais le net n’a <b>pas pu être versé</b> au prestataire&nbsp;: la somme est <b>en sécurité sur le solde Ti-Services</b>. Cause la plus fréquente&nbsp;: Mollie n’a pas encore ouvert les virements du prestataire.</span></div>
+    const versBody=`<div class="banner warn">${I.clock}<span>Le client a payé et la facture existe, mais le net n’a <b>pas pu être versé</b> au prestataire&nbsp;: la somme est restée <b>du côté de Ti-Services</b> — sur le solde Mollie, puis virée sur le compte bancaire une fois le paiement réglé. Elle <b>reste due</b> au prestataire&nbsp;: il faut la lui virer, puis l’acter ici.</span></div>
       ${versOption?`<div class="banner coral" style="margin-top:10px">${I.shield}<span><b>Ici, ce n’est pas le prestataire.</b> Mollie répond que l’adresse de partage n’existe pas sur le compte Ti-Services&nbsp;: le <b>partage de paiement</b> est une option que Mollie active <b>sur demande</b>, elle ne l’est pas par défaut. Tant qu’elle ne l’est pas, aucun versement automatique ne peut partir — il faut en faire la demande auprès de Mollie.</span></div>`:''}
       ${!vers.loaded?`<button class="btn ghost sm" data-adm="vers-scan" style="margin-top:12px">${I.search}&nbsp;Vérifier maintenant</button>`
         :(versList.length?`<div class="mini" style="margin-top:11px;color:var(--muted)">${versList.length} versement${versList.length>1?'s':''} en attente · ${eur(versDu)} dû${versList.length>1?'s':''} au total</div>
@@ -8158,7 +8158,8 @@
             ${v.motif?`<div class="mini" style="margin-top:6px;color:var(--coral-deep)"><b>Réponse de Mollie&nbsp;:</b> ${esc(v.motif)}</div>`:''}
             ${v.lecture?`<div class="mini" style="margin-top:4px;color:var(--muted)">Même réponse en simple lecture&nbsp;: ${esc(v.lecture)} — donc rien à voir avec ce versement-ci.</div>`:''}
             ${v.org==='non'?`<div class="mini" style="margin-top:6px;color:var(--muted)">Ce prestataire n’a aucun compte Mollie connecté&nbsp;: le versement ne peut pas partir tant qu’il ne l’a pas fait.</div>`:''}
-            <button class="btn ghost sm" data-adm="vers-one:${esc(v.reqId)}" style="margin-top:9px">${I.bolt}&nbsp;Réessayer ce versement</button></div>`;}).join('')}
+            <button class="btn ghost sm" data-adm="vers-one:${esc(v.reqId)}" style="margin-top:9px">${I.bolt}&nbsp;Réessayer ce versement</button>
+            <button class="btn ghost sm" data-adm="vers-main:${esc(v.reqId)}" style="margin-top:7px">${S._versMainArm===v.reqId?'Confirmer&nbsp;: je l’ai bien viré':(I.check+'&nbsp;Je l’ai versé à la main')}</button></div>`;}).join('')}
           <button class="btn primary sm" data-adm="vers-run" style="margin-top:12px">${I.bolt}&nbsp;Réessayer les ${versList.length}</button>
           <p class="mini" style="margin-top:8px;color:var(--muted)">Chaque tentative interroge Mollie&nbsp;: état réel du paiement, versements déjà partis, et motif exact du refus. Rien n’est perdu — le rattrapage repart aussi tout seul dès que Mollie ouvre les virements du prestataire.</p>`
         :`<div class="banner good" style="margin-top:12px">${I.check}<span>Aucun&nbsp;: tous les prestataires ont reçu leur net.</span></div>
@@ -12777,6 +12778,24 @@
           } else if(!list.length) toast('Aucun versement bloqué ✓');
           render();
         }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
+      })();return;}
+      else if(act==='vers-main'){(function(){
+        // Acter un virement fait à la main. Toucher à de l'argent ne se fait pas d'un
+        // doigt qui glisse : premier appui = armé (6 s), second = c'est noté. Et rien
+        // n'est écrit dans les comptes — la prestation, la commission et la facture
+        // restent ce qu'elles sont ; on note seulement que le net a été réglé autrement.
+        if(!isAdminAccount()){toast('Réservé à l’administrateur (compte réel)');return;}
+        if(!(FB&&FB.functions&&FB.fn&&FB.fn.httpsCallable)){toast('Indisponible hors ligne — réessayez connecté');return;}
+        if(S._versMainArm!==id){S._versMainArm=id;render();setTimeout(function(){if(S._versMainArm===id){S._versMainArm=null;try{render();}catch(_){}}},6000);return;}
+        S._versMainArm=null;
+        FB.fn.httpsCallable(FB.functions,'payoutManual')({reqId:id}).then(function(r){
+          const d=(r&&r.data)||{};
+          // On retire la ligne de l'écran : elle n'attend plus rien.
+          S.adminVers={loaded:true,list:((S.adminVers||{}).list||[]).filter(function(v){return v.reqId!==id;})};
+          toast(d.deja?'Déjà noté comme versé à la main':'Noté — versement réglé à la main ✓');
+          render();
+        }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
+        render();
       })();return;}
       else if(act==='prospect-filter'){S._prospectFilter=id||'all';render();return;}
       else if(act==='prospect-cat'){S._prospectCats=S._prospectCats||{};S._prospectCats[id]=!S._prospectCats[id];render();return;}

@@ -2205,6 +2205,41 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
   return {bloques: bloques, verses: verses};
 });
 
+/**
+ * payoutManual : ACTER UN VERSEMENT FAIT À LA MAIN. Quand Mollie ne peut pas partager le
+ * paiement, la totalité finit par être virée sur le compte bancaire de Ti-Services — la
+ * part du prestataire comprise. Elle ne lui est pas due un peu moins pour autant : elle
+ * est simplement passée par nous. Il faut alors la lui virer, et pouvoir le dire ici.
+ *
+ * Ce n'est PAS une exclusion comptable : la prestation, la commission et la facture
+ * restent exactement ce qu'elles étaient. On note seulement que le net a été réglé
+ * autrement — avec qui l'a fait, quand, et la référence du virement. Sans cette trace,
+ * la console réclamerait indéfiniment un versement déjà payé, et rien ne prouverait
+ * qu'il l'a été. Réservé à l'administrateur.
+ */
+exports.payoutManual = onCall(async (request) => {
+  const who = (request.auth && request.auth.token && request.auth.token.email) || '';
+  if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+    throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
+  }
+  const reqId = String((request.data && request.data.reqId) || '').trim().slice(0, 128);
+  if (!reqId) throw new HttpsError('invalid-argument', 'Prestation manquante.');
+  const ref = getFirestore().collection('requests').doc(reqId);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Prestation introuvable.');
+  const r = snap.data() || {};
+  if (r.molliePayout === 'routed') throw new HttpsError('failed-precondition', 'Ce versement est déjà parti par Mollie.');
+  if (r.molliePayout === 'manuel') return {ok: true, deja: true};
+  await ref.update({
+    molliePayout: 'manuel',
+    molliePayoutManuelPar: who,
+    molliePayoutManuelAt: FieldValue.serverTimestamp(),
+    molliePayoutManuelRef: String((request.data && request.data.ref) || '').trim().slice(0, 140),
+  });
+  console.log('payoutManual ' + reqId + ' — ' + (Number(r.molliePayoutNet) || 0) + ' € versés à la main par ' + who);
+  return {ok: true, net: round2(Number(r.molliePayoutNet) || 0)};
+});
+
 exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) => {
   const uid = request.auth && request.auth.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Connexion requise.');
