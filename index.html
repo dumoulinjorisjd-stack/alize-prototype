@@ -9704,6 +9704,9 @@
     // visible des prestataires — on invite le client à finaliser (ou annuler).
     if(m.status==='pending_payment'||m.status==='payment_failed'){
       const failed=m.status==='payment_failed';
+      // On interroge Mollie à l'affichage : si la carte est autorisée depuis un moment et
+      // que le webhook n'est jamais arrivé, la demande s'ouvre ici plutôt que jamais.
+      try{ verifierPaiementCommande(m.reqId); }catch(_){}
       return `<div class="pad"><div style="height:8px"></div>
         <div class="row between"><span class="chip coral">${failed?'Paiement non abouti':'Paiement à finaliser'}</span><span class="mini">${esc(m.svcName||'')} · ${durTxt(m)}</span></div>
         <div class="card" style="padding:20px 18px;margin-top:14px;text-align:center">
@@ -10438,6 +10441,27 @@
     toast('« '+svcNm(cat)+' » retiré — vous ne recevrez plus ces demandes');
   }
   // Annulation d'une demande encore ouverte : suppression du doc Firestore + arrêt de l'écoute.
+  // NE PAS DÉPENDRE D'UN SEUL CANAL POUR LE MOMENT DÉCISIF. Une commande n'est proposée
+  // aux prestataires qu'une fois la carte autorisée, et SEUL le webhook de Mollie le
+  // déclenchait. S'il se perd ou arrive en retard, le client voit sa carte débitée (une
+  // autorisation apparaît comme un débit en attente) et croit avoir commandé, alors que
+  // personne ne cherche. On demande donc nous-mêmes l'état réel à Mollie, à chaque fois
+  // qu'on affiche une commande bloquée au paiement. Idempotent : si le webhook a déjà
+  // fait le travail, l'appel ne change rien.
+  var _payChkAt={};
+  function verifierPaiementCommande(reqId){
+    if(!reqId)return;
+    if(!(FB&&FB.functions&&FB.fn&&FB.fn.httpsCallable&&FB.auth&&FB.auth.currentUser))return;
+    if(typeof isDemo==='function'&&isDemo())return;
+    const now=Date.now();
+    if(_payChkAt[reqId]&&(now-_payChkAt[reqId])<8000)return;   // pas plus d'une fois par 8 s
+    _payChkAt[reqId]=now;
+    FB.fn.httpsCallable(FB.functions,'orderPaymentCheck')({reqId:reqId}).then(function(r){
+      const d=(r&&r.data)||{};
+      if(d.ouverte)toast('Paiement confirmé — votre demande est envoyée aux prestataires');
+      // L'écoute en direct de la demande met l'écran à jour ; rien à forcer ici.
+    }).catch(function(){});
+  }
   async function cancelActiveRequest(m){
     if(!m)return false;
     const id=m.reqId;
@@ -11568,7 +11592,10 @@
         ov.split(',').forEach(function(x){x=(x||'').trim();if(x&&l.indexOf(x)<0)l.push(x);});
         localStorage.setItem('tiOuvrir',l.join(','));}
     }catch(_){}
-    const paid=q.get('paid'); if(paid){S._openReq=paid;S.onboarded=true;S.persona='client';S.clientNav='wallet';try{history.replaceState(null,'',location.origin+location.pathname);}catch(_){}}
+    const paid=q.get('paid'); if(paid){S._openReq=paid;S.onboarded=true;S.persona='client';S.clientNav='wallet';
+      // Retour de la page bancaire : on vérifie tout de suite, sans attendre le webhook.
+      // Deux essais — l'autorisation peut n'être visible chez Mollie qu'une seconde après.
+      try{ setTimeout(function(){verifierPaiementCommande(paid);},1200); setTimeout(function(){verifierPaiementCommande(paid);},9000); }catch(_){}try{history.replaceState(null,'',location.origin+location.pathname);}catch(_){}}
     // Retour du parcours « enregistrer ma carte » (paiement Mollie de 0,00 €).
     if(q.get('card')==='1'){S.onboarded=true;S.persona='client';S.clientNav='profile';S._payCard=null;S.cardSetupBusy=false;
       S._fold=Object.assign({},S._fold,{'c-pay':true});

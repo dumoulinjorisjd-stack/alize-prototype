@@ -2301,6 +2301,56 @@ exports.payoutManual = onCall(async (request) => {
   return {ok: true, net: round2(Number(r.molliePayoutNet) || 0)};
 });
 
+/**
+ * orderPaymentCheck : NE PLUS DÉPENDRE D'UN SEUL CANAL POUR LE MOMENT DÉCISIF.
+ *
+ * Une commande naît en « pending_payment » : invisible des prestataires tant que la carte
+ * n'est pas autorisée. Le SEUL chemin qui la faisait basculer en « pending » — et donc qui
+ * déclenchait l'alerte aux prestataires — était le webhook de Mollie. S'il se perd, arrive
+ * en retard, ou tombe pendant un déploiement, la commande reste bloquée : le client voit
+ * sa carte débitée (une autorisation apparaît comme un débit en attente sur son relevé),
+ * il croit avoir commandé, et PERSONNE ne cherche. Le balayage quotidien ne faisait que le
+ * signaler, six heures plus tard.
+ *
+ * Ici, c'est le client lui-même qui déclenche la vérification en revenant dans l'app : on
+ * demande à Mollie l'état réel du paiement et on ouvre la demande si elle doit l'être.
+ * Idempotent : si le webhook a déjà fait le travail, on ne fait rien.
+ */
+exports.orderPaymentCheck = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) => {
+  const uid = request.auth && request.auth.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Connexion requise.');
+  const reqId = String((request.data && request.data.reqId) || '').trim().slice(0, 128);
+  if (!reqId) throw new HttpsError('invalid-argument', 'Demande manquante.');
+  const db = getFirestore();
+  const ref = db.collection('requests').doc(reqId);
+  const snap = await ref.get();
+  if (!snap.exists) return {absente: true};
+  const r = snap.data() || {};
+  // On ne renseigne QUE le client de cette demande : l'état d'un paiement ne regarde
+  // personne d'autre.
+  if (r.clientUid && r.clientUid !== uid) throw new HttpsError('permission-denied', 'Demande non autorisée.');
+  const st = r.status || '';
+  if (st !== 'pending_payment' && st !== 'payment_failed') return {status: st, ouverte: st === 'pending'};
+  if (!mollieApiConfigured() || !r.molliePaymentId) return {status: st, attente: true};
+
+  const pay = await mollieApi('/payments/' + encodeURIComponent(r.molliePaymentId));
+  if (!pay.ok || !pay.data) return {status: st, attente: true};
+  const etat = String(pay.data.status || '');
+
+  if (etat === 'authorized' || etat === 'paid') {
+    const upd = {status: 'pending', molliePaymentStatus: etat, molliePaymentAuthorized: true};
+    if (etat === 'paid') upd.molliePaymentCaptured = true;
+    await ref.update(upd);
+    console.log('orderPaymentCheck : demande ' + reqId + ' ouverte au pool (' + etat + ') — webhook non parvenu à temps');
+    return {status: 'pending', ouverte: true, etat: etat};
+  }
+  if (['expired', 'canceled', 'failed'].indexOf(etat) >= 0) {
+    if (st !== 'payment_failed') await ref.update({status: 'payment_failed', molliePaymentStatus: etat});
+    return {status: 'payment_failed', echec: true, etat: etat};
+  }
+  return {status: st, attente: true, etat: etat};
+});
+
 exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) => {
   const uid = request.auth && request.auth.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Connexion requise.');
