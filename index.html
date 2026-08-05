@@ -8140,14 +8140,17 @@
     const versList=vers.list||[];
     const versDu=round2(versList.reduce(function(t,v){return t+(Number(v.net)||0);},0));
     const versChip=!vers.loaded?'':(versList.length?chip('coral',versList.length):chip('good','aucun'));
-    // LA PANNE N'EST PAS TOUJOURS CHEZ LE PRESTATAIRE. Un 404 sur l'adresse de partage
-    // veut dire que Mollie ne reconnaît pas cette fonction sur le compte Ti-Services —
-    // le partage de paiement (« routing ») est une option que Mollie ouvre sur demande,
-    // elle n'est pas active par défaut. Sans cette distinction, on passe des jours à
-    // chercher du côté du dossier d'un prestataire qui n'y est pour rien.
-    const versOption=versList.some(function(v){
-      return v.liensRoutes===false||/404/.test(String(v.motif||''))||/404/.test(String(v.lecture||''));
-    });
+    // DEUX « 404 » QUI N'ONT RIEN À VOIR, et les confondre fait chercher au mauvais endroit.
+    //  • « Invalid resource endpoint » : Mollie ne reconnaît pas l'ADRESSE de partage —
+    //    l'option n'est pas ouverte sur le compte. Rien ne partira tant qu'elle ne l'est pas.
+    //  • « Payment not found » : l'adresse existe (donc l'option est bien active), c'est CE
+    //    paiement-là que le partage ne connaît plus — un paiement déjà réglé et viré en
+    //    banque n'est plus partageable. Seul recours : virer le net à la main.
+    // On ne déclenchait que sur « 404 », si bien que le second cas affichait le message du
+    // premier : « faites la demande auprès de Mollie » alors qu'elle était déjà accordée.
+    const versAdresse=function(v){return /invalid resource endpoint/i.test(String(v.motif||'')+' '+String(v.lecture||''));};
+    const versRegle=function(v){return /payment not found|no payment exists/i.test(String(v.motif||'')+' '+String(v.lecture||''));};
+    const versOption=versList.some(versAdresse);
     const versBody=`<div class="banner warn">${I.clock}<span>Le client a payé et la facture existe, mais le net n’a <b>pas pu être versé</b> au prestataire&nbsp;: la somme est restée <b>du côté de Ti-Services</b> — sur le solde Mollie, puis virée sur le compte bancaire une fois le paiement réglé. Elle <b>reste due</b> au prestataire&nbsp;: il faut la lui virer, puis l’acter ici.</span></div>
       ${versOption?`<div class="banner coral" style="margin-top:10px">${I.shield}<span><b>Ici, ce n’est pas le prestataire.</b> Mollie répond que l’adresse de partage n’existe pas sur le compte Ti-Services&nbsp;: le <b>partage de paiement</b> est une option que Mollie active <b>sur demande</b>, elle ne l’est pas par défaut. Tant qu’elle ne l’est pas, aucun versement automatique ne peut partir — il faut en faire la demande auprès de Mollie.</span></div>`:''}
       ${!vers.loaded?`<button class="btn ghost sm" data-adm="vers-scan" style="margin-top:12px">${I.search}&nbsp;Vérifier maintenant</button>`
@@ -8156,7 +8159,8 @@
             <div class="row between"><b style="font-size:14px">${esc(v.serviceName||'Prestation')}</b><span class="money" style="font-weight:700">${eur(Number(v.net)||0)}</span></div>
             <div class="mini" style="margin-top:3px">${esc(v.providerName||'—')}${v.invNo?(' · '+esc(v.invNo)):''}${v.etat?(' · état Mollie&nbsp;: '+esc(v.etat)):''}</div>
             ${v.motif?`<div class="mini" style="margin-top:6px;color:var(--coral-deep)"><b>Réponse de Mollie&nbsp;:</b> ${esc(v.motif)}</div>`:''}
-            ${v.lecture?`<div class="mini" style="margin-top:4px;color:var(--muted)">Même réponse en simple lecture&nbsp;: ${esc(v.lecture)} — donc rien à voir avec ce versement-ci.</div>`:''}
+            ${(v.lecture&&versAdresse(v))?`<div class="mini" style="margin-top:4px;color:var(--muted)">Même réponse en simple lecture&nbsp;: ${esc(v.lecture)} — donc rien à voir avec ce versement-ci.</div>`:''}
+            ${versRegle(v)?`<div class="mini" style="margin-top:6px;color:var(--muted)">Le partage fonctionne, mais Mollie ne connaît plus <b>ce paiement-ci</b>&nbsp;: un paiement déjà réglé et viré sur le compte bancaire n’est plus partageable. Virez le net au prestataire, puis appuyez sur «&nbsp;Je l’ai versé à la main&nbsp;».</div>`:''}
             ${v.org==='non'?`<div class="mini" style="margin-top:6px;color:var(--muted)">Ce prestataire n’a aucun compte Mollie connecté&nbsp;: le versement ne peut pas partir tant qu’il ne l’a pas fait.</div>`:''}
             <button class="btn ghost sm" data-adm="vers-one:${esc(v.reqId)}" style="margin-top:9px">${I.bolt}&nbsp;Réessayer ce versement</button>
             <button class="btn ghost sm" data-adm="vers-main:${esc(v.reqId)}" style="margin-top:7px">${S._versMainArm===v.reqId?'Confirmer&nbsp;: je l’ai bien viré':(I.check+'&nbsp;Je l’ai versé à la main')}</button></div>`;}).join('')}
