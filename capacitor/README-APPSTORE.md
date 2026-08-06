@@ -100,6 +100,17 @@ dans l'app, sans repasser par Apple**. On ne re-soumet un build que pour changer
 la coquille (icône, plugins, réglages natifs) : incrémenter Version/Build → Archive
 → Upload → Soumettre.
 
+## Version minimale d'iOS
+
+Le projet vise **iOS 15.0**. Cette valeur vit à DEUX endroits qui doivent rester
+alignés : `platform :ios` dans le `Podfile`, et les quatre
+`IPHONEOS_DEPLOYMENT_TARGET` du projet Xcode. N'en changer qu'un laisse les Pods
+compilés pour l'ancienne cible, et l'avertissement revient à la validation.
+
+Apple refuse tout envoi visant moins de 15.0 **à partir du printemps 2027**.
+Après un `git pull` qui touche à ces valeurs :
+`cd capacitor/ios/App && pod install` avant de réarchiver.
+
 ## Dépannage rapide
 
 - **Build échoue « No such module FirebaseCore »** → `pod install` pas fait, ou
