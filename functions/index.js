@@ -1107,9 +1107,10 @@ exports.notifyServiceAddition = onDocumentUpdated({document: 'artisans/{artisanI
 
   const db = getFirestore();
   const name = (after.name || 'Un artisan').toString().slice(0, 80);
+  const dnp = (after.pendingDesiredNet && typeof after.pendingDesiredNet === 'object') ? after.pendingDesiredNet : {};
   const labels = added.map((c) => (c === 'autre'
     ? ('Autre : ' + (after.pendingOther || '').toString().slice(0, 80))
-    : c)).join(', ');
+    : (c + (dnp[c] ? ' (souhaite ' + dnp[c] + ' € net/h)' : '')))).join(', ');
   try {
     await sendMail(db, ADMIN_EMAIL, {
       subject: 'Ti-Services · Métier à valider — ' + name,
