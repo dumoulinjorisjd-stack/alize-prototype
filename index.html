@@ -3583,6 +3583,8 @@
     // le PDF, et il n'y avait AUCUN moyen de revoir l'adresse, l'horaire, la durée
     // facturée ou l'état du règlement. {h, side, r, det, loaded}.
     detail:null,
+    // Remboursement en cours de saisie dans la console (reqId), et son verrou d'armement.
+    _rembFor:null,_rembArm:null,
     proJobsTotal:214,fidTiers:FID_TIERS.map(t=>({...t})),referralCode:'MARILOU-SBH',
     filleuls:[{name:'Kevin Questel',status:'valide',bonus:40},{name:'Rosa Almeida',status:'attente',bonus:0}],
     admin:{view:'home',sel:null,fact:null},adminLedger:[],adminOrph:{loaded:false,list:[]},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,adminPrices:ADMIN_PRICES(),
@@ -8060,7 +8062,7 @@
     const g=adminLedgerGroups().find(function(x){return x.a.id===artId;});
     if(g){const doc=(S.adminArtisans||[]).find(function(x){return x.id===artId||x.uid===artId;});
       return {name:g.a.name,uid:g.a.uid||artId,siret:(doc&&doc.siret)||'',type:(doc&&doc.type)||'entreprise',comm:g.c.comm,gross:g.c.gross,net:g.c.net,count:g.c.count,
-        lines:g.entries.map(function(e){return {invNo:e.invNo||'',dateISO:e.dateISO||'',svc:e.service,svcName:e.serviceName||svcName(e.service),client:e.clientName||'',clientZone:'',unit:e.unit||'h',duration:e.hours||0,rate:e.rate||0,gross:e.grossTotal||e.base||0,pct:e.commissionPct||0,commission:e.commissionAmount||0,net:e.netAmount||0,rateFlag:!!e.rateFlag};})};}
+        lines:g.entries.map(function(e){return {invNo:e.invNo||'',dateISO:e.dateISO||'',svc:e.service,svcName:e.serviceName||svcName(e.service),client:e.clientName||'',clientZone:'',unit:e.unit||'h',duration:e.hours||0,rate:e.rate||0,gross:e.grossTotal||e.base||0,pct:e.commissionPct||0,commission:e.commissionAmount||0,net:e.netAmount||0,rateFlag:!!e.rateFlag,reqId:e.reqId||e.id||'',refundedTotal:Number(e.refundedTotal)||0};})};}
     const a=adminFactArt();if(!a)return null;const c=commMonthly(a.history);
     return {name:a.name,uid:a.uid||a.id,siret:a.siret||'',type:a.type||'entreprise',comm:c.comm,gross:c.gross,net:c.net,count:c.count,
       lines:c.list.map(function(x){return {invNo:x.h.invNo||'',dateISO:x.h.dateISO||'',svc:x.h.svc,svcName:svcName(x.h.svc),client:x.h.clientFull||x.h.client||'',clientZone:x.h.clientZone||'',unit:x.h.unit||'h',duration:x.h.duration||0,rate:x.h.rate||0,gross:x.b.gross,pct:x.b.pct,commission:x.b.commission,net:x.b.net};})};
@@ -8329,6 +8331,47 @@
       <p class="sub" style="margin-top:6px">Factures établies par Ti-Services au nom et pour le compte du prestataire.</p>${rows}
       <div style="height:24px"></div></div>`;
   }
+
+  // RENDRE L'ARGENT. L'application savait encaisser, capturer, verser — jamais rembourser.
+  // Aucun écran, aucune fonction : le seul recours était le tableau de bord Mollie, hors
+  // de toute comptabilité. On le fait donc ici, depuis la facture concernée, et le geste
+  // est inscrit au registre.
+  //
+  // LE MOTIF DÉCIDE DU SORT DE LA PART DU PRESTATAIRE, et c'est le seul choix à faire :
+  // prestation non faite → il n'a rien à percevoir, Mollie récupère sa part ; geste
+  // commercial → la prestation a eu lieu, il garde ce qu'il a gagné et Ti-Services paie.
+  function adminRembBloc(x){
+    if(!x||!x.reqId)return '';
+    const rendu=Number(x.refundedTotal)||0;
+    const restant=round2(Math.max(0,(Number(x.gross)||0)-rendu));
+    const ouvert=(S._rembFor===x.reqId);
+    if(!ouvert){
+      return `<div class="card noprint" style="padding:14px;margin-top:14px">
+        ${rendu>0?`<div class="row between"><span class="sub">Déjà remboursé</span><b>${eur(rendu)}</b></div>`:''}
+        ${restant>0.009
+          ?`<button class="btn ghost sm" data-adm="remb-open:${esc(x.reqId)}" style="margin-top:${rendu>0?'10':'0'}px">${I.card}&nbsp;Rembourser le client</button>`
+          :`<p class="mini" style="color:var(--muted)">${I.check} Intégralement remboursée.</p>`}
+      </div>`;
+    }
+    return `<div class="card noprint" style="padding:14px;margin-top:14px">
+      <b style="font-size:14px">Rembourser le client</b>
+      <p class="mini" style="margin-top:4px;color:var(--muted)">Encaissé ${eur(Number(x.gross)||0)}${rendu>0?` · déjà rendu ${eur(rendu)}`:''} · <b>${eur(restant)}</b> remboursables.</p>
+      <div class="field" style="margin-top:11px;margin-bottom:0"><label style="font-size:12px">Montant à rendre</label>
+        <input class="txt" type="number" step="0.01" min="0.01" max="${restant}" id="rembMontant" value="${restant.toFixed(2)}"></div>
+      <div class="field" style="margin-top:10px;margin-bottom:0"><label style="font-size:12px">Motif</label>
+        <select class="txt" id="rembMotif">
+          <option value="geste">Geste commercial — la prestation a eu lieu</option>
+          <option value="non_faite">Prestation non faite</option>
+        </select></div>
+      <p class="mini" style="margin-top:8px;color:var(--muted)"><b>Geste commercial</b> : le prestataire garde sa part, Ti-Services paie le remboursement.<br><b>Prestation non faite</b> : sa part lui est reprise par Mollie.</p>
+      <div class="field" style="margin-top:10px;margin-bottom:0"><label style="font-size:12px">Note interne (facultatif)</label>
+        <input class="txt" id="rembNote" placeholder="Ex. artisan absent, client prévenu"></div>
+      <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap">
+        <button class="btn primary sm" data-adm="remb-go:${esc(x.reqId)}" style="width:auto;padding:9px 16px">${S._rembArm===x.reqId?'Confirmer&nbsp;: rendre l\'argent':(I.card+'&nbsp;Rembourser')}</button>
+        <button class="btn ghost sm" data-adm="remb-close" style="width:auto;padding:9px 14px">Annuler</button></div>
+      ${S._rembArm===x.reqId?`<p class="mini" style="margin-top:8px;color:var(--coral-deep)">${I.info} Un remboursement est <b>irréversible</b> : l'argent repart chez le client.</p>`:''}
+    </div>`;
+  }
   function adminArtInvoiceDoc(){
     const d=adminArtLines(S.admin.fact&&S.admin.fact.art);if(!d)return adminInvoices();
     const x=d.lines.find(function(l){return l.invNo===(S.admin.fact&&S.admin.fact.inv);});if(!x)return adminArtInvoices();
@@ -8342,7 +8385,9 @@
         <tbody><tr><td>${esc(x.svcName)} — prestation à domicile</td><td class="r">${durTxt({unit:x.unit},x.duration)}</td><td class="r">${eur(x.rate)}</td><td class="r">${eur(x.gross)}</td></tr></tbody></table>
         <div class="row between sec"><span class="mut">Total réglé</span><span class="tot">${eur(x.gross)}</span></div>
         <div class="legal">TVA non applicable — Saint-Barthélemy (COM). Facture établie par Ti-Services au nom et pour le compte du prestataire (mandat de facturation, art. 289 du CGI).</div>
-      </div></div><div style="height:12px"></div></div>`;
+      </div></div>
+      ${adminRembBloc(x)}
+      <div style="height:12px"></div></div>`;
   }
   function adminInvoicesRouter(){
     const f=S.admin.fact||{};
@@ -8667,7 +8712,7 @@
         // endroit (adminCommissionLedger / adminLedgerGroups), et les écritures hors
         // comptes restent visibles dans la recherche, signalées comme telles.
         const list=[];snap.forEach(function(d){const e=d.data()||{};if(!((e.commissionAmount||0)>0))return;
-          list.push({id:d.id,reqId:e.reqId||d.id,invNo:e.invNo||'',molliePaymentId:e.molliePaymentId||'',providerUid:e.providerUid||'',clientUid:e.clientUid||'',dateISO:(e.settledAt&&e.settledAt.toDate)?e.settledAt.toDate().toISOString().slice(0,10):'',clientName:e.clientName||'',providerName:e.providerName||'',service:e.service||'',serviceName:e.serviceName||'',unit:e.unit||'h',hours:e.hours||0,rate:e.rate||0,base:e.base||0,commissionPct:e.commissionPct||0,commissionAmount:e.commissionAmount||0,netAmount:e.netAmount||0,grossTotal:e.grossTotal||0,rateFlag:!!e.rateFlag,rateExpected:e.rateExpected||null,exclu:!!e.exclu,excluMotif:e.excluMotif||'',mollieStatus:e.mollieStatus||'',mollieEncaisse:(e.mollieEncaisse===true),mollieVerifie:!!e.mollieVerifieAt,mollieMontantPaye:(e.mollieMontantPaye!=null?e.mollieMontantPaye:null),mollieFee:(e.mollieFee!=null?e.mollieFee:null),netTiServices:(e.netTiServices!=null?e.netTiServices:null),molliePayout:(e.molliePayout||null)});});
+          list.push({id:d.id,reqId:e.reqId||d.id,invNo:e.invNo||'',molliePaymentId:e.molliePaymentId||'',providerUid:e.providerUid||'',clientUid:e.clientUid||'',dateISO:(e.settledAt&&e.settledAt.toDate)?e.settledAt.toDate().toISOString().slice(0,10):'',clientName:e.clientName||'',providerName:e.providerName||'',service:e.service||'',serviceName:e.serviceName||'',unit:e.unit||'h',hours:e.hours||0,rate:e.rate||0,base:e.base||0,commissionPct:e.commissionPct||0,commissionAmount:e.commissionAmount||0,netAmount:e.netAmount||0,grossTotal:e.grossTotal||0,rateFlag:!!e.rateFlag,rateExpected:e.rateExpected||null,exclu:!!e.exclu,excluMotif:e.excluMotif||'',mollieStatus:e.mollieStatus||'',mollieEncaisse:(e.mollieEncaisse===true),mollieVerifie:!!e.mollieVerifieAt,mollieMontantPaye:(e.mollieMontantPaye!=null?e.mollieMontantPaye:null),mollieFee:(e.mollieFee!=null?e.mollieFee:null),netTiServices:(e.netTiServices!=null?e.netTiServices:null),molliePayout:(e.molliePayout||null),refundedTotal:(Number(e.refundedTotal)||0)});});
         list.sort(function(a,b){return (b.dateISO||'').localeCompare(a.dateISO||'');});
         S.adminLedger=list;
         // Rafraîchit l'onglet Factures ET le tableau de bord (« Commission ce mois »
@@ -13038,6 +13083,29 @@
           } else if(!list.length) toast('Aucun versement bloqué ✓');
           render();
         }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
+      })();return;}
+      else if(act==='remb-open'){S._rembFor=id;S._rembArm=null;render();return;}
+      else if(act==='remb-close'){S._rembFor=null;S._rembArm=null;render();return;}
+      else if(act==='remb-go'){(function(){
+        // RENDRE DE L'ARGENT NE SE FAIT PAS D'UN DOIGT QUI GLISSE. Premier appui = armé
+        // (6 s), second = c'est parti. Et c'est irréversible : la somme repart chez le
+        // client, on ne la reprend pas.
+        if(!isAdminAccount()){toast('Réservé à l’administrateur (compte réel)');return;}
+        if(!(FB&&FB.functions&&FB.fn&&FB.fn.httpsCallable)){toast('Indisponible hors ligne — réessayez connecté');return;}
+        const em=document.getElementById('rembMontant'),eo=document.getElementById('rembMotif'),en=document.getElementById('rembNote');
+        const montant=Math.round((parseFloat((em&&em.value)||'0')||0)*100)/100;
+        const motif=(eo&&eo.value)||'geste';
+        const note=((en&&en.value)||'').trim();
+        if(!(montant>0.009)){toast('Indiquez un montant à rembourser');return;}
+        if(S._rembArm!==id){S._rembArm=id;render();setTimeout(function(){if(S._rembArm===id){S._rembArm=null;try{render();}catch(_){}}},6000);return;}
+        S._rembArm=null;
+        toast('Remboursement en cours…');
+        FB.fn.httpsCallable(FB.functions,'refundOrder')({reqId:id,amount:montant,motif:motif,note:note}).then(function(r){
+          const d=(r&&r.data)||{};
+          S._rembFor=null;
+          toast(eur(d.montant||montant)+' rendus au client ✓'+(d.repriseArtisan?' — part prestataire reprise':''));
+          render();
+        }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));render();});
       })();return;}
       else if(act==='vers-main'){(function(){
         // Acter un virement fait à la main. Toucher à de l'argent ne se fait pas d'un

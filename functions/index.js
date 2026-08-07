@@ -2367,6 +2367,113 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
  * la console réclamerait indéfiniment un versement déjà payé, et rien ne prouverait
  * qu'il l'a été. Réservé à l'administrateur.
  */
+/**
+ * refundOrder : RENDRE L'ARGENT. L'application savait encaisser, capturer, verser — jamais
+ * rendre. Aucune fonction de remboursement n'existait, ni serveur ni console : le seul
+ * recours était le tableau de bord Mollie, hors de toute comptabilité. Sur un essai à 2 €
+ * ça ne se voit pas ; face à un client mécontent, c'est une crise.
+ *
+ * LE MOTIF DÉCIDE DU SORT DE LA PART DU PRESTATAIRE, parce que les deux situations n'ont
+ * rien à voir :
+ *   • « prestation non faite » → il n'a rien à percevoir : on récupère sa part via le
+ *     mécanisme de Mollie (reverseRouting sur un remboursement total, routingReversals
+ *     sur un partiel), qui ramène la somme vers le solde de la plateforme ;
+ *   • « geste commercial » → la prestation a bien eu lieu, il garde ce qu'il a gagné :
+ *     le remboursement sort de la poche de Ti-Services, sans toucher à sa part.
+ *
+ * Jamais plus que ce qui a été réellement encaissé, remboursements précédents déduits.
+ * Et si Mollie refuse, on garde SA raison mot pour mot : « refus » n'apprend rien.
+ */
+exports.refundOrder = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) => {
+  const who = (request.auth && request.auth.token && request.auth.token.email) || '';
+  if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+    throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
+  }
+  if (!mollieApiConfigured()) throw new HttpsError('failed-precondition', 'Mollie n\'est pas configuré sur cet environnement.');
+
+  const reqId = String((request.data && request.data.reqId) || '').trim().slice(0, 128);
+  if (!reqId) throw new HttpsError('invalid-argument', 'Prestation manquante.');
+  const motif = (String((request.data && request.data.motif) || '') === 'non_faite') ? 'non_faite' : 'geste';
+  const note = String((request.data && request.data.note) || '').trim().slice(0, 200);
+
+  const db = getFirestore();
+  const ref = db.collection('requests').doc(reqId);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Prestation introuvable.');
+  const r = snap.data() || {};
+  if (!r.molliePaymentId) throw new HttpsError('failed-precondition', 'Aucun paiement Mollie sur cette prestation.');
+
+  // CE QUI A ÉTÉ ENCAISSÉ, PAS CE QUI A ÉTÉ FACTURÉ. Une empreinte autorisée mais jamais
+  // capturée n'a rien prélevé : il n'y a rien à rendre, et le prétendre créerait une
+  // dette imaginaire. On lit l'état réel chez Mollie plutôt que de faire confiance à
+  // notre propre fiche, qui a déjà eu tort.
+  let encaisse = 0; let orgId = String(r.mollieOrgId || '');
+  try {
+    const p = await mollieApi('/payments/' + encodeURIComponent(r.molliePaymentId), 'GET');
+    if (!p.ok || !p.data) throw new HttpsError('failed-precondition', 'Mollie ne retrouve pas ce paiement (HTTP ' + (p.status || '?') + ').');
+    if (String(p.data.status || '') !== 'paid') {
+      throw new HttpsError('failed-precondition', 'Ce paiement n\'a pas été encaissé (état Mollie : ' + String(p.data.status || 'inconnu') + ') — il n\'y a rien à rembourser.');
+    }
+    const a = p.data.amount || {};
+    encaisse = round2(Number(a.value) || 0);
+    const dejaM = round2(Number((p.data.amountRefunded || {}).value) || 0);
+    encaisse = round2(encaisse - dejaM);
+  } catch (e) {
+    if (e instanceof HttpsError) throw e;
+    throw new HttpsError('unavailable', 'Mollie injoignable — réessayez dans un instant.');
+  }
+  if (!(encaisse > 0.009)) throw new HttpsError('failed-precondition', 'Ce paiement est déjà intégralement remboursé.');
+
+  const demande = (request.data && request.data.amount != null) ? round2(Number(request.data.amount) || 0) : encaisse;
+  if (!(demande > 0.009)) throw new HttpsError('invalid-argument', 'Montant à rembourser invalide.');
+  if (demande > encaisse + 0.009) {
+    throw new HttpsError('invalid-argument', 'On ne peut pas rendre plus que ce qui a été encaissé (' + eurTxt(encaisse) + ' restant).');
+  }
+  const total = (demande >= encaisse - 0.009);
+  const reprise = (motif === 'non_faite');
+
+  const body = {
+    amount: {currency: 'EUR', value: demande.toFixed(2)},
+    description: ('Ti-Services · remboursement · ' + (r.serviceName || r.service || 'prestation')).slice(0, 100),
+  };
+  // La reprise de la part du prestataire n'a de sens que si elle lui a été routée.
+  if (reprise && r.molliePayout === 'routed') {
+    if (total) body.reverseRouting = true;
+    else if (orgId) {
+      body.routingReversals = [{amount: {currency: 'EUR', value: demande.toFixed(2)},
+        source: {type: 'organization', organizationId: orgId}}];
+    }
+  }
+
+  const res = await mollieApi('/payments/' + encodeURIComponent(r.molliePaymentId) + '/refunds', 'POST', body);
+  if (!res.ok) {
+    // LA RAISON DE MOLLIE, MOT POUR MOT. On a déjà perdu des jours à chercher à l'aveugle
+    // derrière un « refus » sans explication.
+    const d = res.data || {};
+    const motifM = String(d.detail || d.title || '').slice(0, 220);
+    console.warn('refundOrder HTTP', res.status, reqId, motifM);
+    throw new HttpsError('failed-precondition', 'Mollie a refusé le remboursement (HTTP ' + (res.status || '?') + ')'
+      + (motifM ? (' — ' + motifM) : '') + '.');
+  }
+
+  const ligne = {
+    montant: demande, motif: motif, total: total, repriseArtisan: !!body.reverseRouting || !!body.routingReversals,
+    refundId: String((res.data && res.data.id) || ''), par: who, note: note, at: Date.now(),
+  };
+  const cumul = round2((Number(r.refundedTotal) || 0) + demande);
+  try {
+    await ref.update({refundedTotal: cumul, refunds: FieldValue.arrayUnion(ligne)});
+    // Le registre doit le savoir : sans ça, le justificatif continue d'annoncer un revenu
+    // sur une somme rendue au client.
+    await db.collection('ledger').doc(reqId).set({refundedTotal: cumul, refundMotif: motif,
+      refundRepriseArtisan: ligne.repriseArtisan}, {merge: true});
+  } catch (e) { console.warn('refundOrder écriture', e); }
+
+  console.log('refundOrder ' + reqId + ' — ' + demande + ' € rendus (' + motif
+    + (ligne.repriseArtisan ? ', part artisan reprise' : ', absorbé par Ti-Services') + ') par ' + who);
+  return {ok: true, montant: demande, total: total, repriseArtisan: ligne.repriseArtisan, restant: round2(encaisse - demande)};
+});
+
 exports.payoutManual = onCall(async (request) => {
   const who = (request.auth && request.auth.token && request.auth.token.email) || '';
   if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
