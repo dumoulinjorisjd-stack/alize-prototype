@@ -749,10 +749,20 @@ exports.notifyAdminNewArtisan = onDocumentCreated({document: 'artisans/{artisanI
   const name = (a.name || 'Un artisan').toString().slice(0, 80);
   // E-MAIL SYSTÉMATIQUE : une candidature est rare et importante — sans jeton admin
   // enregistré, elle passait totalement inaperçue (aucun repli n'existait).
+  // Grille refusée : le souhait tarifaire du candidat est LA matière de la discussion —
+  // il doit sauter aux yeux dès l'e-mail, pas se découvrir en ouvrant la fiche.
+  let grille = '';
+  if (a.acceptsGrille === false) {
+    const dn = a.desiredNetRates || {};
+    const lignes = Object.keys(dn).map((c) => '<li>' + escHtmlS(c) + ' : <b>' + escHtmlS(String(dn[c])) + ' € net/h</b></li>').join('');
+    grille = '<p>⚠️ <b>Il n\'applique pas la grille tarifaire.</b>' + (lignes
+      ? ' Prix net souhaité :</p><ul>' + lignes + '</ul>'
+      : ' Aucun prix souhaité indiqué.</p>');
+  }
   try {
     await sendMail(db, ADMIN_EMAIL, {
-      subject: 'Ti-Services · Nouvelle candidature — ' + name,
-      html: '<p><b>' + escHtmlS(name) + '</b> souhaite rejoindre Ti-Services.</p>'
+      subject: 'Ti-Services · Nouvelle candidature — ' + name + (a.acceptsGrille === false ? ' (hors grille)' : ''),
+      html: '<p><b>' + escHtmlS(name) + '</b> souhaite rejoindre Ti-Services.</p>' + grille
         + '<p>Ouvrez la console admin pour examiner le dossier et valider ou refuser.</p>',
     });
   } catch (e) { console.warn('newArtisan mail', e && e.message); }
