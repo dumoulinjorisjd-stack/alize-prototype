@@ -18,8 +18,8 @@ const src = fs.readFileSync(path.join(RACINE, 'index.html'), 'utf8');
 const fn = fs.readFileSync(path.join(RACINE, 'functions', 'index.js'), 'utf8');
 
 console.log('A — le registre sait ce qui est parti, et ce qui ne l’est pas');
-ok((fn.match(/collection\('ledger'\)\.doc\([^)]*\)\.set\(\{molliePayout/g) || []).length === 6,
-  'les six endroits qui décident d’un versement l’inscrivent au registre');
+ok((fn.match(/collection\('ledger'\)\.doc\([^)]*\)\.set\(\{molliePayout/g) || []).length === 7,
+  'les sept endroits qui décident d’un versement l’inscrivent au registre (dont l’indemnité d’annulation)');
 ok(/collection\('ledger'\)\.doc\(reqId\)\.set\(\{molliePayout: 'unrouted'\}/.test(fn),
   'un versement refusé y est marqué « non parti »');
 ok(/collection\('ledger'\)\.doc\(reqId\)\.set\(\{molliePayout: 'manuel'\}/.test(fn),
