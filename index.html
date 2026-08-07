@@ -10478,6 +10478,10 @@
         status:'pending', providerUid:null, providerName:'',
         service:order.svc, serviceName:order.svcName,
         zone:(c.addr&&c.addr.zone)||'',
+        // dateISO : sans elle, les rappels « dans 1 h » et les relances serveur ne
+        // voyaient JAMAIS les commandes conciergerie (le formulaire ne propose
+        // qu'aujourd'hui ou demain).
+        dateISO:(function(){try{const d=new Date();if(order.when==='Demain')d.setDate(d.getDate()+1);return d.toISOString().slice(0,10);}catch(_){return '';}})(),
         when:order.when||'', slot:order.slot||'', slotFlex:0,
         unit:'h', duration:order.duration||1,
         rate:order.rate, boost:0, total:order.rate*order.duration,
@@ -10749,7 +10753,12 @@
     }else if(S.persona==='pro'){
       if(newS==='paid'){const _t=totals(m);const _cli=((m.clientName||m.client||'Le client')+'').split(' ')[0];const _msg=(_t.tip>0)?(_cli+' a validé et vous a laissé '+eur(_t.tip)+' de pourboire — vous percevez '+eur(_t.payout)):(_cli+' a validé votre prestation — vous percevez '+eur(_t.payout));notify('Ti-Services · Prestation validée',_msg,'ti-'+m.reqId);if(_t.tip>0)toast('Pourboire de '+eur(_t.tip)+' — merci '+_cli+' !');if(!m._paidCounted){m._paidCounted=true;recordProPaid(m);}}
       else if(newS==='disputed')notify('Ti-Services','Le client conteste la durée déclarée.','ti-'+m.reqId);
-      else if(newS==='cancelled'){if(!(S.proMissions||[]).some(function(x){return x===m;}))proAddMission(m);notify('Ti-Services','Annulation tardive d’un client — à vous de décider de l’indemnité.','ti-'+m.reqId);toast('Annulation tardive — décidez de l’indemnité');}
+      else if(newS==='cancelled'){
+        // Tardive (indemnité à décider) OU gratuite (≥ 8 h : rien à décider, le créneau
+        // se libère). L'ancien code traitait TOUTE annulation comme tardive.
+        if(m.lateCancel||m.feeDecision==='pending'){if(!(S.proMissions||[]).some(function(x){return x===m;}))proAddMission(m);notify('Ti-Services','Annulation tardive d’un client — à vous de décider de l’indemnité.','ti-'+m.reqId);toast('Annulation tardive — décidez de l’indemnité');}
+        else{const j=(S.proMissions||[]).indexOf(m);if(j>=0)S.proMissions.splice(j,1);if(S.mission===m)S.mission=null;notify('Ti-Services','Le client a annulé — le créneau est de nouveau libre.','ti-'+m.reqId);toast('Mission annulée par le client');}
+      }
     }
   }
   // Prestation validée par le client : on l'inscrit dans les revenus/missions de
@@ -11088,7 +11097,7 @@
     if(S.detail&&S.detail.side==='pro')return detailPrestation();
     const m=S.mission;
     if(!m&&S.proReqView)return proReqFiche(S.proReqView);
-    if(m){if(m.status==='cancelled'&&m.feeDecision!=='applied'&&m.feeDecision!=='waived')return proCancelDecision(m);if(m.status==='pending')return proRequest();if(m.status==='working'&&S.finishing)return proFinish();if(m.status==='accepted'||m.status==='working')return proActive();if(m.status==='done_pro'||m.status==='disputed')return proWaiting();if(m.status==='paid'||m.status==='rated')return proPaid();}
+    if(m){if(m.status==='cancelled'&&m.feeDecision!=='applied'&&m.feeDecision!=='waived'&&m.feeDecision!=='none')return proCancelDecision(m);if(m.status==='pending')return proRequest();if(m.status==='working'&&S.finishing)return proFinish();if(m.status==='accepted'||m.status==='working')return proActive();if(m.status==='done_pro'||m.status==='disputed')return proWaiting();if(m.status==='paid'||m.status==='rated')return proPaid();}
     if(S.proNav==='agenda')return proAgenda();
     if(S.proNav==='earnings')return proEarnings();
     if(S.proNav==='account')return proAccount();
@@ -13790,6 +13799,15 @@
           if(!isDemo())pushReqUpdate(m,{status:'cancelled',lateCancel:true,cancelFee:pol.fee,feeBase:pol.base,feeDecision:'pending',cancelledAt:Date.now()});
           else{const c=Object.assign({},m);c._id='pm'+Date.now();proAddMission(c);} // démo : décision testable côté prestataire
           cacheClientLocal();S.mission=null;S.clientNav='wallet';render();toast('Annulée — le prestataire décide de l’indemnité');
+        } else if(m&&m.provider&&m.reqId&&!isDemo()){
+          // Annulation GRATUITE d'une mission DÉJÀ ACCEPTÉE (≥ 8 h du rendez-vous) : la
+          // suppression du document est interdite par les règles (pièce du prestataire)
+          // — elle échouait toujours avec « Annulation non enregistrée ». On passe par
+          // le statut « cancelled » : le serveur libère l'empreinte et prévient l'artisan.
+          m.status='cancelled';m.lateCancel=false;m.cancelFee=0;m.feeDecision='none';m.cancelledAt=Date.now();
+          pushReqUpdate(m,{status:'cancelled',lateCancel:false,cancelFee:0,feeDecision:'none',cancelledAt:Date.now()});
+          removeMission(m);S.mission=null;S.clientNav='wallet';render();
+          toast(payReal()?'Demande annulée — la somme réservée vous est rendue':'Demande annulée');
         } else {
           const _retenu=!!(m&&m.reqId&&payReal());
           (async function(){
@@ -15834,7 +15852,18 @@
   // empêchait donc le second compte de s'enregistrer — il semblait avoir perdu son
   // souhait de recevoir les notifications, alors qu'il ne l'avait jamais inscrit. On
   // mémorise POUR QUEL compte l'enregistrement a été fait.
-  let pushRegUid=null, pushRegTok=null;
+  let pushRegUid=null, pushRegTok=null, pushRegAt=0, pushRegRole='client';
+  // ROTATION DU JETON FCM : getToken n'était appelé qu'UNE fois par session — une app
+  // laissée ouverte plusieurs jours pouvait garder un jeton périmé et ne plus rien
+  // recevoir. Au retour au premier plan, si l'enregistrement date de plus de 24 h, on
+  // re-demande le jeton (no-op s'il n'a pas changé : arrayUnion ne duplique pas).
+  try{document.addEventListener('visibilitychange',function(){try{
+    if(document.visibilityState!=='visible')return;
+    if(!(FB&&FB.auth&&FB.auth.currentUser))return;
+    if(pushRegUid!==FB.auth.currentUser.uid)return;
+    if(Date.now()-pushRegAt<24*3600*1000)return;
+    pushRegUid=null;registerPush(pushRegRole);
+  }catch(_){}});}catch(_){}
   // Faut-il (ré)enregistrer ? Oui dès que le compte connecté n'est pas celui pour
   // lequel l'enregistrement a été fait. C'est LE point qui manquait : l'ancien
   // drapeau ne disait que « on l'a déjà fait », sans dire pour qui.
@@ -15865,7 +15894,7 @@
         if(!FB||!FB.auth||!FB.auth.currentUser)return;
         if(!pushNeedsRegister(FB.auth.currentUser.uid))return;
         const tok=await nativeFcmToken(); if(!tok)return;
-        pushRegUid=FB.auth.currentUser.uid; pushRegTok=tok;
+        pushRegUid=FB.auth.currentUser.uid; pushRegTok=tok; pushRegAt=Date.now(); pushRegRole=role||'client';
         try{ await FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{pushTokens:FB.f.arrayUnion(tok),role:role,notifOn:true,notifAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
         try{ await FB.f.setDoc(FB.f.doc(FB.db,'fcmOwners',tok),{uid:FB.auth.currentUser.uid,role:role,at:FB.f.serverTimestamp()}); }catch(_){}
       }catch(e){ console.warn('push natif',e); }
@@ -15880,7 +15909,7 @@
       const reg=await navigator.serviceWorker.ready;
       const messaging=msgM.getMessaging(FB.app);
       const token=await msgM.getToken(messaging,{vapidKey:CONFIG.vapidKey,serviceWorkerRegistration:reg});
-      if(token){ pushRegUid=FB.auth.currentUser.uid; pushRegTok=token;
+      if(token){ pushRegUid=FB.auth.currentUser.uid; pushRegTok=token; pushRegAt=Date.now(); pushRegRole=role||'client';
         try{ await FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{pushTokens:FB.f.arrayUnion(token),role:role,notifOn:true,notifAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
         // Propriété EXCLUSIVE du jeton par ce compte : si l'appareil a déjà servi à un
         // autre compte (ex. ancien profil prestataire), on récupère la propriété du jeton

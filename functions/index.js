@@ -1215,6 +1215,35 @@ exports.notifyAdminDispute = onDocumentUpdated({document: 'requests/{reqId}', se
             '<p>Ouvrez la <b>console admin → Messagerie</b> (ou le tableau de bord) pour <b>valider la durée déclarée</b> ou <b>revenir à l\'accord initial</b>. Le client n\'est pas débité tant que le litige n\'est pas réglé.</p>',
     });
   } catch (e) { console.warn('dispute notify', e); }
+  // L'ARTISAN dont la durée est contestée doit le savoir tout de suite (seul l'admin
+  // était prévenu — l'artisan attendait un paiement sans comprendre le silence), et le
+  // CLIENT reçoit un accusé de réception : sa contestation est bien prise en compte.
+  try {
+    if (after.providerUid) {
+      const tokens = await userPushTokens(db, after.providerUid);
+      await pushMulticast(tokens, 'Durée contestée — ' + svc,
+        cli + ' conteste la durée déclarée (' + fin + ' h au lieu de ' + dur + ' h prévues). Ti-Services arbitre : votre paiement est suspendu le temps de l\'examen.',
+        '/?open=promissions',
+        (tok) => db.collection('users').doc(after.providerUid).update({pushTokens: FieldValue.arrayRemove(tok)}), 'ti-litige-' + event.params.reqId);
+      const u = (await db.collection('users').doc(after.providerUid).get()).data() || {};
+      if (u.email) {
+        await sendMail(db, u.email, {
+          subject: 'Ti-Services · Durée contestée — ' + svc,
+          html: '<p>' + escHtmlS(cli) + ' conteste la durée déclarée sur « ' + escHtmlS(svc) + ' » (' + fin + ' h déclarées, ' + dur + ' h prévues).</p>'
+            + '<p>Ti-Services examine la situation et arbitre — votre paiement est suspendu le temps de l\'examen. Vous pouvez apporter des précisions depuis la messagerie de la mission.</p>',
+        });
+      }
+    }
+  } catch (e) { console.warn('dispute artisan notify', e); }
+  try {
+    if (after.clientUid) {
+      const tokens = await userPushTokens(db, after.clientUid);
+      await pushMulticast(tokens, 'Contestation bien reçue',
+        'Votre signalement sur « ' + svc + ' » est pris en compte : rien ne sera prélevé tant que Ti-Services n\'a pas arbitré.',
+        '/?open=wallet&r=' + event.params.reqId,
+        (tok) => db.collection('users').doc(after.clientUid).update({pushTokens: FieldValue.arrayRemove(tok)}), 'ti-litige-' + event.params.reqId);
+    }
+  } catch (e) { console.warn('dispute client ack', e); }
 });
 
 /**
@@ -3504,7 +3533,7 @@ exports.mollieOnboardingWebhook = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLL
  */
 /* ── Rappel 1 h avant : push au prestataire pour chaque mission acceptée qui
    démarre dans l'heure (balayage toutes les 15 min, heure de Saint-Barthélemy). ── */
-exports.missionReminders = onSchedule({schedule: 'every 15 minutes'}, async () => {
+exports.missionReminders = onSchedule({schedule: 'every 15 minutes', secrets: [SMTP_PASS]}, async () => {
   const db = getFirestore();
   const nowMs = Date.now();
   // Aujourd'hui ET demain en heure locale (une mission de 00:30 se rappelle la veille à 23:30).
@@ -3519,16 +3548,35 @@ exports.missionReminders = onSchedule({schedule: 'every 15 minutes'}, async () =
     const startMs = Date.parse(r.dateISO + 'T' + (slot.length < 5 ? '0' : '') + slot + ':00-04:00');
     const delta = startMs - nowMs;
     if (!(delta > 0 && delta <= 60 * 60 * 1000)) continue;
-    let tokens = [];
-    try { tokens = ((await db.collection('users').doc(r.providerUid).get()).data() || {}).pushTokens || []; } catch (_) {}
-    await doc.ref.update({ reminded1h: true });
-    if (!tokens.length) continue;
-    const first = (((r.clientName || '').trim().split(/\s+/)[0]) || 'votre client');
-    const where = (r.locationMode === 'salon') ? 'dans votre salon' : ('à ' + (r.zone || 'Saint-Barthélemy'));
-    await pushMulticast(tokens, 'Dans 1 h · ' + (r.serviceName || 'Mission'),
-      slot + ' — ' + first + ' ' + where + '.', '/?open=promissions',
-      (tok) => db.collection('users').doc(r.providerUid).update({ pushTokens: FieldValue.arrayRemove(tok) }));
-    console.log('Rappel 1 h envoyé pour ' + doc.id);
+    // PRESTATAIRE : push, et REPLI E-MAIL s'il n'a aucun appareil — avant, le drapeau
+    // reminded1h était posé AVANT l'envoi : un artisan sans jeton perdait son rappel
+    // pour toujours, sans même une trace.
+    try {
+      const u = (await db.collection('users').doc(r.providerUid).get()).data() || {};
+      const tokens = (u.notifOn === false) ? [] : (u.pushTokens || []);
+      const first = (((r.clientName || '').trim().split(/\s+/)[0]) || 'votre client');
+      const where = (r.locationMode === 'salon') ? 'dans votre salon' : ('à ' + (r.zone || 'Saint-Barthélemy'));
+      const corps = slot + ' — ' + first + ' ' + where + '.';
+      if (tokens.length) {
+        await pushMulticast(tokens, 'Dans 1 h · ' + (r.serviceName || 'Mission'), corps, '/?open=promissions',
+          (tok) => db.collection('users').doc(r.providerUid).update({ pushTokens: FieldValue.arrayRemove(tok) }), 'ti-rappel-' + doc.id);
+      } else if (u.email) {
+        await sendMail(db, u.email, {
+          subject: 'Dans 1 h · ' + (r.serviceName || 'Mission') + ' — ' + slot,
+          html: '<p>Rappel : votre mission « ' + escHtmlS(r.serviceName || 'Mission') + ' » commence à ' + escHtmlS(slot) + ' (' + escHtmlS(corps) + ').</p>',
+        });
+      }
+      // CLIENT : lui aussi a rendez-vous — il n'avait AUCUN rappel.
+      if (r.clientUid) {
+        const ctokens = await userPushTokens(db, r.clientUid);
+        const qui = (r.providerName || 'Votre prestataire').toString().slice(0, 60);
+        await pushMulticast(ctokens, 'Dans 1 h · ' + (r.serviceName || 'votre prestation'),
+          slot + ' — ' + qui + ' arrive comme prévu.', '/?open=wallet&r=' + doc.id,
+          (tok) => db.collection('users').doc(r.clientUid).update({ pushTokens: FieldValue.arrayRemove(tok) }), 'ti-rappel-' + doc.id);
+      }
+      await doc.ref.update({ reminded1h: true });
+      console.log('Rappel 1 h envoyé pour ' + doc.id);
+    } catch (e) { console.warn('missionReminders', doc.id, e); }
   }
 });
 
@@ -4855,9 +4903,7 @@ exports.sendMollieRelance = onCall({secrets: [SMTP_PASS]}, async (request) => {
  *  - une annulation tardive, qui ne supprime PAS la demande (le prestataire décide de
  *    l'indemnité) — l'empreinte doit rester en place pour pouvoir la prélever.
  */
-exports.releaseHoldOnDelete = onDocumentDeleted({document: 'requests/{reqId}', secrets: ['MOLLIE_ACCESS_TOKEN']}, async (event) => {
-  const reqId = event.params.reqId;
-  const r = (event.data && typeof event.data.data === 'function' && event.data.data()) || {};
+async function releaseMollieHold(db, reqId, r, contexte) {
   const id = r.molliePaymentId || '';
   if (!id || !mollieApiConfigured()) return;
   if (r.mollieCaptured) return;   // déjà débité : plus rien à rendre
@@ -4870,9 +4916,9 @@ exports.releaseHoldOnDelete = onDocumentDeleted({document: 'requests/{reqId}', s
       // laisse PAS ça passer en silence — l'admin doit pouvoir prévenir le client.
       console.warn('Empreinte non libérable reqId=' + reqId + ' ' + id + ' (' + st + ')');
       try {
-        await sendMail(getFirestore(), ADMIN_EMAIL, {
-          subject: 'Empreinte à libérer à la main — demande annulée',
-          html: '<p>Une demande a été annulée, mais Mollie refuse d\'annuler l\'autorisation : la somme reste réservée sur la carte du client jusqu\'à expiration.</p>'
+        await sendMail(db, ADMIN_EMAIL, {
+          subject: 'Empreinte à libérer à la main — ' + (contexte || 'demande annulée'),
+          html: '<p>Une demande a été ' + escHtmlS(contexte || 'annulée') + ', mais Mollie refuse d\'annuler l\'autorisation : la somme reste réservée sur la carte du client jusqu\'à expiration.</p>'
             + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li>'
             + '<li><b>Paiement :</b> ' + escHtmlS(id) + ' (' + escHtmlS(st) + ')</li>'
             + '<li><b>Montant réservé :</b> ' + eurTxt(Number(r.molliePaymentAmount) || 0) + '</li></ul>'
@@ -4883,7 +4929,184 @@ exports.releaseHoldOnDelete = onDocumentDeleted({document: 'requests/{reqId}', s
     }
     const del = await mollieApi('/payments/' + encodeURIComponent(id), 'DELETE');
     console.log('Empreinte rendue reqId=' + reqId + ' ' + id + ' (' + st + ') — ' + (del.ok ? 'ok' : 'échec'));
-  } catch (e) { console.warn('releaseHoldOnDelete', e); }
+  } catch (e) { console.warn('releaseMollieHold', e); }
+}
+exports.releaseHoldOnDelete = onDocumentDeleted({document: 'requests/{reqId}', secrets: ['MOLLIE_ACCESS_TOKEN']}, async (event) => {
+  const r = (event.data && typeof event.data.data === 'function' && event.data.data()) || {};
+  await releaseMollieHold(getFirestore(), event.params.reqId, r, 'supprimée');
+});
+
+/**
+ * settleCancellation : les ANNULATIONS et EXPIRATIONS, enfin traitées côté serveur.
+ * Jusqu'ici, un statut « cancelled » ou « expired » ne déclenchait RIEN :
+ *  - l'artisan assigné n'apprenait l'annulation qu'en rouvrant l'app ;
+ *  - l'empreinte bancaire du client restait réservée jusqu'à expiration naturelle
+ *    (seule la SUPPRESSION du document la libérait) ;
+ *  - l'indemnité d'annulation tardive « appliquée » par l'artisan n'existait que dans
+ *    ses statistiques locales : rien n'était réellement prélevé au client, rien n'était
+ *    versé à l'artisan, rien n'entrait au registre.
+ */
+exports.settleCancellation = onDocumentUpdated({document: 'requests/{reqId}', secrets: ['MOLLIE_ACCESS_TOKEN', SMTP_PASS]}, async (event) => {
+  const before = (event.data && event.data.before && event.data.before.data()) || {};
+  const after = (event.data && event.data.after && event.data.after.data()) || {};
+  const reqId = event.params.reqId;
+  const db = getFirestore();
+  const svc = (after.serviceName || after.service || 'prestation').toString().slice(0, 60);
+
+  const notifieArtisan = async (titre, corps) => {
+    const uid = after.providerUid || before.providerUid;
+    if (!uid) return;
+    const tokens = await userPushTokens(db, uid);
+    await pushMulticast(tokens, titre, corps, '/?open=promissions',
+      (tok) => db.collection('users').doc(uid).update({pushTokens: FieldValue.arrayRemove(tok)}), 'ti-annul-' + reqId);
+    try {
+      const u = (await db.collection('users').doc(uid).get()).data() || {};
+      if (u.email) await sendMail(db, u.email, {subject: 'Ti-Services · ' + titre, html: '<p>' + escHtmlS(corps) + '</p><p>Le détail est dans votre espace Missions.</p>'});
+    } catch (_) {}
+  };
+  const notifieClient = async (titre, corps, mailAussi) => {
+    const uid = after.clientUid;
+    if (!uid) return;
+    const tokens = await userPushTokens(db, uid);
+    await pushMulticast(tokens, titre, corps, '/?open=wallet&r=' + reqId,
+      (tok) => db.collection('users').doc(uid).update({pushTokens: FieldValue.arrayRemove(tok)}), 'ti-annul-' + reqId);
+    if (mailAussi) {
+      try {
+        const u = (await db.collection('users').doc(uid).get()).data() || {};
+        if (u.email) await sendMail(db, u.email, {subject: 'Ti-Services · ' + titre, html: '<p>' + escHtmlS(corps) + '</p>'});
+      } catch (_) {}
+    }
+  };
+
+  // 1) ANNULATION. Tardive (lateCancel) : l'empreinte RESTE en place — le prestataire
+  //    décide de l'indemnité. Sinon : on libère la somme réservée et on prévient.
+  if (before.status !== 'cancelled' && after.status === 'cancelled') {
+    if (after.lateCancel) {
+      await notifieArtisan('Mission annulée à moins de 8 h',
+        (after.clientName || 'Le client') + ' a annulé « ' + svc + ' ». C\'est à vous de décider : appliquer l\'indemnité de 50 % ou y renoncer, depuis votre espace Missions.');
+    } else {
+      await releaseMollieHold(db, reqId, after, 'annulée');
+      await notifieArtisan('Mission annulée', (after.clientName || 'Le client') + ' a annulé « ' + svc + ' ». Le créneau est de nouveau libre.');
+    }
+    return;
+  }
+
+  // 2) EXPIRATION (demande non honorée, purgée 12 h après son créneau) : on libère
+  //    l'empreinte et on informe les deux parties — avant, PERSONNE n'était prévenu et
+  //    la somme restait réservée sur la carte du client jusqu'à expiration bancaire.
+  if (before.status !== 'expired' && after.status === 'expired') {
+    await releaseMollieHold(db, reqId, after, 'expirée');
+    if (after.molliePaymentId && !after.mollieCaptured) {
+      await notifieClient('Demande expirée', 'Votre demande de ' + svc + ' n\'a pas été honorée : rien n\'est prélevé, la somme réservée vous est rendue.', true);
+    }
+    await notifieArtisan('Mission expirée', 'La mission « ' + svc + ' » n\'a pas été honorée dans les temps — elle est retirée de votre planning.');
+    return;
+  }
+
+  // 3) DÉCISION SUR L'INDEMNITÉ d'une annulation tardive.
+  if (after.status !== 'cancelled' || before.feeDecision === after.feeDecision) return;
+
+  if (after.feeDecision === 'waived') {
+    // Le prestataire renonce : la somme réservée est rendue au client.
+    await releaseMollieHold(db, reqId, after, 'annulée (indemnité levée)');
+    await notifieClient('Annulation sans frais', 'Le prestataire a renoncé à l\'indemnité pour « ' + svc + ' » : rien n\'est prélevé, la somme réservée vous est rendue.', true);
+    return;
+  }
+
+  if (after.feeDecision !== 'applied' || after.cancelFeeSettled) return;
+  // Le prestataire applique l'indemnité de 50 % : on la PRÉLÈVE réellement (capture
+  // partielle de l'empreinte), on retient la commission, on VERSE le net à l'artisan et
+  // on inscrit le tout au registre. L'app de l'artisan affichait déjà tout cela — mais
+  // aucun argent ne bougeait.
+  const fee = round2(Number(after.cancelFee) || 0);
+  const payId = after.molliePaymentId || '';
+  if (!(fee > 0) || !payId || !mollieApiConfigured()) {
+    console.warn('Indemnité inapplicable reqId=' + reqId + ' fee=' + fee + ' pay=' + (payId || 'aucun'));
+    try {
+      await sendMail(db, ADMIN_EMAIL, {
+        subject: 'Indemnité d\'annulation NON prélevable — ' + svc,
+        html: '<p>Le prestataire a appliqué l\'indemnité, mais elle ne peut pas être prélevée automatiquement.</p>'
+          + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li><li><b>Indemnité :</b> ' + eurTxt(fee) + '</li>'
+          + '<li><b>Cause :</b> ' + (payId ? 'montant nul' : 'aucun paiement Mollie sur la demande') + '</li></ul>',
+      });
+    } catch (_) {}
+    return;
+  }
+  try {
+    const p = await mollieApi('/payments/' + encodeURIComponent(payId), 'GET');
+    const st = (p.ok && p.data) ? (p.data.status || '') : '';
+    if (st !== 'authorized') {
+      console.warn('Indemnité : empreinte non capturable reqId=' + reqId + ' (' + st + ')');
+      try {
+        await sendMail(db, ADMIN_EMAIL, {
+          subject: 'Indemnité d\'annulation à régulariser — ' + svc,
+          html: '<p>Le prestataire a appliqué l\'indemnité de 50 %, mais l\'empreinte n\'est plus capturable (statut Mollie : ' + escHtmlS(st || 'inconnu') + ').</p>'
+            + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li><li><b>Indemnité :</b> ' + eurTxt(fee) + '</li>'
+            + '<li><b>Paiement :</b> ' + escHtmlS(payId) + '</li></ul>'
+            + '<p>À faire : prélever ou facturer à la main, puis régler l\'artisan.</p>',
+        });
+      } catch (_) {}
+      return;
+    }
+    const cap = await mollieApi('/payments/' + encodeURIComponent(payId) + '/captures', 'POST',
+      {amount: {currency: 'EUR', value: fee.toFixed(2)}, description: ('Ti-Services · indemnité annulation · ' + svc).slice(0, 100)});
+    if (!cap.ok) {
+      console.warn('Indemnité : capture refusée reqId=' + reqId, cap.status);
+      try {
+        await sendMail(db, ADMIN_EMAIL, {
+          subject: 'Indemnité d\'annulation : capture refusée — ' + svc,
+          html: '<p>Mollie a refusé la capture de l\'indemnité (' + eurTxt(fee) + ') sur la demande ' + escHtmlS(reqId) + ' (HTTP ' + escHtmlS(String(cap.status || '?')) + ').</p>',
+        });
+      } catch (_) {}
+      return;
+    }
+    // Commission sur l'indemnité : même règle que l'app de l'artisan (taux de fidélité,
+    // avantage fondateur, plancher petits montants sur l'assiette de l'indemnité).
+    let jobsTotal = 0; let isFounder = false; let founderSinceMs = null; let founderGross = 0; let refBonusJobs = 0;
+    try {
+      const a = (await db.collection('artisans').doc(after.providerUid).get()).data() || {};
+      jobsTotal = a.jobsTotal || 0; isFounder = !!a.founder; founderGross = Number(a.founderGross) || 0;
+      founderSinceMs = (a.founderSince && a.founderSince.toMillis) ? a.founderSince.toMillis() : (typeof a.founderSince === 'number' ? a.founderSince : null);
+      refBonusJobs = Number(a.refBonusJobs) || 0;
+    } catch (_) {}
+    let cfgTiers = null;
+    try { const cfg = (await db.collection('settings').doc('config').get()).data() || {}; if (Array.isArray(cfg.fidTiers)) cfgTiers = cfg.fidTiers; } catch (_) {}
+    const founderStartMs = Math.max(founderSinceMs || 0, FOUNDER_LAUNCH_MS);
+    const founderActive = isFounder && (Date.now() - founderStartMs) < FOUNDER_DAYS * 86400000 && founderGross < FOUNDER_GROSS_CAP;
+    const basePct = founderActive ? FOUNDER_COMM_PCT : commissionTierPct(jobsTotal + refBonusJobs, cfgTiers);
+    const pct = (fee < SMALL_COMM_MIN) ? Math.max(basePct, SMALL_COMM_PCT) : basePct;
+    const commission = round2(fee * pct / 100);
+    const net = round2(fee - commission);
+    // Registre comptable (document distinct : la demande n'a jamais été réglée).
+    try {
+      await db.collection('ledger').doc(reqId + '-annulation').set({
+        type: 'cancel-fee', reqId: reqId,
+        clientUid: after.clientUid || null, clientName: (after.clientName || '').toString().slice(0, 80),
+        providerUid: after.providerUid || null, providerName: (after.providerName || '').toString().slice(0, 80),
+        service: after.service || '', serviceName: svc,
+        grossTotal: fee, commissionPct: pct, commissionAmount: commission, netAmount: net,
+        molliePaymentId: payId, settledAt: FieldValue.serverTimestamp(),
+      }, {merge: true});
+    } catch (e) { console.warn('ledger annulation', e); }
+    // Versement du net à l'artisan — même circuit que les prestations : en cas de refus,
+    // la fiche passe « unrouted » et tous les rattrapages existants prennent le relais.
+    let orgId = '';
+    try { orgId = ((await db.collection('artisans').doc(after.providerUid).get()).data() || {}).mollieOrgId || ''; } catch (_) {}
+    const routed = (orgId && net > 0) ? await mollieRouteNet(payId, orgId, net, 'Ti-Services · indemnité annulation · ' + svc) : false;
+    await event.data.after.ref.update({
+      cancelFeeSettled: true, cancelFeeCommissionPct: pct, cancelFeeCommission: commission, cancelFeeNet: net,
+      mollieCaptured: true, mollieCaptureAmount: fee,
+      molliePayout: routed ? 'routed' : 'unrouted',
+      molliePayoutIssue: routed ? '' : (orgId ? 'route_failed' : 'no_org'),
+      molliePayoutMotif: routed ? '' : (routeMotif() || ''), molliePayoutNet: net,
+    });
+    try { await db.collection('ledger').doc(reqId + '-annulation').set({molliePayout: routed ? 'routed' : 'unrouted'}, {merge: true}); } catch (_) {}
+    await notifieClient('Indemnité d\'annulation prélevée',
+      'Annulation à moins de 8 h de « ' + svc + ' » : le prestataire a appliqué l\'indemnité de 50 %, soit ' + eurTxt(fee) + ', prélevée sur votre carte comme prévu par les conditions générales.', true);
+    await notifieArtisan('Indemnité appliquée · ' + eurTxt(fee),
+      'L\'indemnité d\'annulation de « ' + svc + ' » a été prélevée au client — vous percevez ' + eurTxt(net) + (routed ? '.' : ' (versement en cours).'));
+    console.log('Indemnité réglée reqId=' + reqId + ' ' + fee + ' € (net ' + net + ' €, ' + (routed ? 'routé' : 'à router') + ')');
+  } catch (e) { console.warn('settleCancellation', reqId, e); }
 });
 
 exports.welcomeClientEmail = onDocumentCreated({document: 'users/{uid}', secrets: [SMTP_PASS]}, async (event) => {

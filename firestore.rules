@@ -112,6 +112,20 @@ service cloud.firestore {
                         && request.resource.data.get('founderReleased', false) == resource.data.get('founderReleased', false)
                         && request.resource.data.get('refBonusJobs', 0) == resource.data.get('refBonusJobs', 0)
                         && request.resource.data.get('referralCredited', false) == resource.data.get('referralCredited', false)
+                        // Les champs MOLLIE de garde sont écrits par le SERVEUR seul (retour
+                        // OAuth, synchro, webhook). L'acceptation de mission repose sur
+                        // mollieOrgId + mollieStatus/mollieCanWork : sans ces verrous, un
+                        // artisan pouvait se poser mollieCanWork:true (accepter sans compte
+                        // Mollie → tous ses versements en « no_org ») ou éteindre ses
+                        // relances/notifications en écrivant les drapeaux de garde.
+                        && request.resource.data.get('mollieOrgId', '') == resource.data.get('mollieOrgId', '')
+                        && request.resource.data.get('mollieStatus', '') == resource.data.get('mollieStatus', '')
+                        && request.resource.data.get('mollieCanWork', false) == resource.data.get('mollieCanWork', false)
+                        && request.resource.data.get('mollieCanPay', false) == resource.data.get('mollieCanPay', false)
+                        && request.resource.data.get('mollieCanSettle', false) == resource.data.get('mollieCanSettle', false)
+                        && request.resource.data.get('mollieActiveNotified', false) == resource.data.get('mollieActiveNotified', false)
+                        && request.resource.data.get('mollieIssueNotified', '') == resource.data.get('mollieIssueNotified', '')
+                        && request.resource.data.get('mollieRelanceAt', 0) == resource.data.get('mollieRelanceAt', 0)
                         && request.resource.data.get('cats', []).hasOnly(resource.data.get('cats', [])));
       // Droit à l'effacement (RGPD) : l'artisan peut supprimer son propre dossier.
       allow delete: if isAdmin() || uid() == artisanId;
@@ -176,7 +190,11 @@ service cloud.firestore {
       // Le montant, la commission, le net, le n° de facture… viennent du registre serveur.
       function serverKeys() {
         return ['grossTotal','netAmount','commissionAmount','commissionPct','commissionBase',
-                'saleInvoiceNo','commissionSettled','settledAt','molliePaymentId','molliePayout'];
+                'saleInvoiceNo','commissionSettled','settledAt','molliePaymentId','molliePayout',
+                // Règlement de l'indemnité d'annulation : écrit par le SERVEUR seul
+                // (capture Mollie + commission + net). Sans ce verrou, une partie
+                // pourrait se marquer « indemnité réglée » sans qu'aucun argent n'ait bougé.
+                'cancelFeeSettled','cancelFeeCommission','cancelFeeCommissionPct','cancelFeeNet'];
       }
       // TERMES DU CONTRAT, figés dès l'acceptation : le tarif €/h, la majoration, l'unité,
       // le service et l'estimation convenue ne changent plus. Seule la DURÉE RÉELLE
