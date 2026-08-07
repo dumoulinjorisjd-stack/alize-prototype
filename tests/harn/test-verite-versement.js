@@ -22,8 +22,14 @@ ok(/if\(r\.molliePayout!=null&&m\.molliePayout!==r\.molliePayout\)/.test(src),
   'l’écoute de la demande recopie l’état du versement écrit par le serveur');
 ok(/if\(r\.molliePayoutNet!=null&&m\.molliePayoutNet!==r\.molliePayoutNet\)/.test(src),
   'ainsi que le net réellement dû');
-ok(/const verse=\(m\.molliePayout==='routed'\|\|m\.molliePayout==='manuel'\);/.test(src),
-  'et « payé » n’est vrai que si le serveur l’a constaté — routé par Mollie, ou viré à la main');
+// ROUTÉ N'EST PAS REÇU : une route acceptée par Mollie réserve la somme, elle ne la
+// verse pas — le tableau de bord Mollie l'a montré noir sur blanc (« Montant routé
+// 4,50 € » et « Règlement en attente » sur le même paiement). Seul le virement fait à
+// la main a réellement quitté nos comptes pour les siens.
+ok(/const verse=\(m\.molliePayout==='manuel'\);/.test(src),
+  '« payé » n’est vrai que pour un virement réellement fait à la main');
+ok(/const reserve=\(m\.molliePayout==='routed'\);/.test(src),
+  'et « routé » a son propre état : réservé, pas encaissé');
 
 console.log('B — ce qu’on demande au prestataire suit ce que MOLLIE demande');
 // Réclamer un IBAN à qui n'en doit pas est aussi faux que promettre un virement non parti.
@@ -106,9 +112,12 @@ console.log('C — sur l’écran réel de fin de mission');
   ok(/Recevoir mes paiements/.test(manque), 'avec l’endroit exact où aller');
 
   const verse = await ecran('routed');
-  ok(/Vous avez été payé/.test(verse), 'versement routé : là, on peut le dire');
-  ok(/versés sur votre compte/.test(verse), 'et l’annoncer sans réserve');
-  ok(!/versement en attente/.test(verse), 'sans mélanger les deux messages');
+  ok(!/Vous avez été payé/.test(verse),
+    'versement routé : on ne dit PLUS « payé » — l’argent n’a pas encore quitté Mollie');
+  ok(/réservée|mise de côté/.test(verse), 'on dit que la part est réservée');
+  ok(/prochain règlement/.test(verse),
+    'et quand elle partira — un prestataire qui regarde son relevé ne doit pas nous prendre en défaut');
+  ok(!/versement en attente/.test(verse), 'sans mélanger avec le message d’un versement refusé');
 
   const main = await ecran('manuel');
   ok(/Vous avez été payé/.test(main), 'un virement fait à la main compte aussi comme un paiement');
