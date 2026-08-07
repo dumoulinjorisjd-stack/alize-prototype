@@ -8249,6 +8249,15 @@
 
       <div style="height:18px"></div><span class="eyebrow">${I.user} Clients</span>
       ${foldCard('a-clis',I.user,'Fiches clients',pendC.length?pendC.length+' en attente de validation':'Comptes clients inscrits',cliList,chip('grey',clis.length))}
+      ${foldCard('a-restore',I.shield,'Récupérer un compte supprimé','Lecture à un instant donné (PITR) — fenêtre de 7 jours',(function(){
+        const f=S._arst||{};
+        const out=S._arstOut?`<div class="banner ${S._arstOut.ok?'good':'coral'}" style="margin-top:12px">${S._arstOut.ok?I.check:I.shield}<span>${esc(S._arstOut.msg)}</span></div>`:'';
+        return `<p class="mini" style="color:var(--muted);line-height:1.55">Firestore garde l'historique des données pendant <b>7 jours</b> (récupération à un instant donné, à activer dans la console Google Cloud). Indiquez l'e-mail du compte et une date/heure <b>où il existait encore</b> : ses fiches (client, artisan, conciergerie) sont relues telles quelles et réécrites — personne d'autre ne bouge. L'accès (e-mail/mot de passe) supprimé ne revient pas : si la personne s'est réinscrite, indiquez son nouvel identifiant pour tout raccrocher.</p>
+        <div class="field" style="margin-top:12px"><label>E-mail du compte supprimé</label><input class="txt" data-arst="email" value="${esc(f.email||'')}" inputmode="email" placeholder="ex. laure@exemple.com"></div>
+        <div class="field" style="margin-top:10px"><label>Le compte existait encore le…</label><input class="txt" data-arst="at" type="datetime-local" value="${esc(f.at||'')}"></div>
+        <div class="field" style="margin-top:10px"><label>Nouvel identifiant (si réinscription — facultatif)</label><input class="txt" data-arst="target" value="${esc(f.target||'')}" placeholder="uid du nouveau compte"></div>
+        <button class="btn primary" data-act="admin-restore-run" style="margin-top:12px" ${S._arstBusy?'disabled':''}>${S._arstBusy?'Récupération en cours…':'Récupérer ce compte'}</button>${out}`;
+      })(),'')}
       <button class="card" data-adm="wishes" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block"><div class="row between" style="align-items:center"><b style="font-size:14px">Services réclamés par les clients</b>${(S.adminWishes&&S.adminWishes.length)?`<span class="chip coral">${S.adminWishes.length}</span>`:`<span class="mini" style="color:var(--muted)">Aucune pour l'instant</span>`}</div><p class="sub" style="margin-top:8px">Voir ce que les clients aimeraient trouver sur la plateforme.</p></button>
 
       <div style="height:18px"></div><span class="eyebrow">${I.shield} Fonctionnement</span>
@@ -13665,6 +13674,14 @@
     // correspondante et y amènent l'écran ; « En cours » ouvre le suivi (messagerie).
     if(b.dataset.act&&b.dataset.act.indexOf('adm-list:')===0){const id=b.dataset.act.split(':')[1];S._fold=S._fold||{};S._fold[id]=true;render();setTimeout(function(){try{const el=document.querySelector('[data-fold="'+id+'"]');if(el)el.scrollIntoView({behavior:'smooth',block:'start'});}catch(_){}},60);return;}
     if(b.dataset.act==='adm-encours'){S.admin.view='msg';S.admin.sel=null;render();return;}
+    if(b.dataset.act==='admin-restore-run'){const f=S._arst||{};
+      if(!f.email||!f.at){toast('E-mail et date/heure requis');return;}
+      if(!(FB&&FB.fn&&FB.functions)){toast('Indisponible hors connexion');return;}
+      S._arstBusy=true;S._arstOut=null;render();
+      FB.fn.httpsCallable(FB.functions,'adminRestoreAccount')({email:f.email,at:new Date(f.at).toISOString(),targetUid:(f.target||'').trim()})
+        .then(function(r){const d=(r&&r.data)||{};S._arstBusy=false;S._arstOut={ok:true,msg:'Récupéré ('+(d.restored||[]).join(', ')+') vers '+(d.wroteTo||'?')+'. '+(d.warning||'')};S._fold=Object.assign({},S._fold,{'a-restore':true});render();})
+        .catch(function(e){S._arstBusy=false;S._arstOut={ok:false,msg:fbErrTxt(e)};S._fold=Object.assign({},S._fold,{'a-restore':true});render();});
+      return;}
     if(b.dataset.act&&b.dataset.act.indexOf('extcal-del:')===0){(function(){
       const i=parseInt(b.dataset.act.slice('extcal-del:'.length),10);
       let ext=[];try{ext=JSON.parse(localStorage.getItem('tiExtCals')||'[]');}catch(_){}
@@ -14528,6 +14545,7 @@
     const pap=e.target.closest('[data-paprice]');if(pap&&S.proAddForm){S.proAddForm.price=pap.value;const sb=document.querySelector('[data-act="pro-add-submit"]');if(sb)sb.disabled=!paAddOk(S.proAddForm);}
     const wi=e.target.closest('[data-wish]');if(wi){S.wishText=wi.value;S.wishSent=false;const wb=document.querySelector('[data-act="wish-send"]');if(wb)wb.disabled=!wi.value.trim();}
     const pf=e.target.closest('[data-pf]');if(pf){S.proForm[pf.dataset.pf]=pf.value;refreshProSubmit();}
+    const ar=e.target.closest('[data-arst]');if(ar){S._arst=S._arst||{};S._arst[ar.dataset.arst]=ar.value;}
     const dn=e.target.closest('[data-dnet]');if(dn&&S.proForm){S.proForm.desiredNet=S.proForm.desiredNet||{};S.proForm.desiredNet[dn.dataset.dnet]=dn.value;refreshProSubmit();}
     const csf=e.target.closest('[data-csf]');if(csf&&S.concSignup){S.concSignup[csf.dataset.csf]=csf.value;const b2=document.querySelector('[data-act="conc-submit"]');if(b2)b2.disabled=!concSignupOk(S.concSignup);}
     const cf=e.target.closest('[data-cf]');if(cf){S.clientForm[cf.dataset.cf]=cf.value;const fb=document.querySelector('[data-act="finish-onboard"]');const c=S.clientForm;if(fb)fb.disabled=!((c.name||'').trim().length>1&&/.+@.+\..+/.test(c.email||'')&&(c.password||'').length>=6&&c.password===c.password2&&!!c.terms);}

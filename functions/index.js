@@ -2193,7 +2193,7 @@ exports.notifyReopenedRequest = onDocumentUpdated({document: 'requests/{reqId}',
       const svcName = (after.serviceName || 'Une mission').toString().slice(0, 60);
       const zone = (after.zone || '').toString().slice(0, 40);
       const title = wasPendingPayment ? 'Espace artisan · Nouvelle mission' : 'Espace artisan · Mission de nouveau disponible';
-      const body = svcName + (zone ? ' · ' + zone : '') + (wasPendingPayment ? ' — une nouvelle demande de votre zone, à saisir.' : ' — un créneau se libère, à saisir.');
+      const body = svcName + (zone ? ' · ' + zone : '') + (wasPendingPayment ? ' — une nouvelle demande, à saisir.' : ' — un créneau se libère, à saisir.');
       await pushMulticast(tokens, title, body, '/?open=missions',
         (t) => db.collection('users').doc(tokenToUid[t]).update({ pushTokens: FieldValue.arrayRemove(t) }));
     }
@@ -4456,13 +4456,13 @@ function welcomeHtml(first, role) {
   const intro = isPro ?
     ('Votre <b>compte intervenant</b> Ti-Services est créé&nbsp;! Dernière étape&nbsp;: <b>complétez votre profil</b> ' +
      'dans l\'application (en quelques minutes) pour <b>envoyer votre candidature</b>. Dès qu\'elle est validée par ' +
-     'notre équipe, vous recevrez vos premières <b>demandes de mission</b> près de chez vous, à Saint-Barthélemy.') :
+     'notre équipe, vous recevrez vos premières <b>demandes de mission</b>, partout à Saint-Barthélemy.') :
     ('Votre compte <b>Ti-Services</b> est créé, votre inscription est confirmée. Réservez en quelques minutes un ' +
      'intervenant local et de confiance, où que vous soyez à Saint-Barth : ménage, jardinage, coiffure, sport, ' +
      'garde d\'enfants, et bien plus.');
 
   const feats = isPro ? (
-    welcomeFeatureRow(dot, 'Des missions près de chez vous', 'Recevez les demandes de votre zone, selon les créneaux que vous choisissez.') +
+    welcomeFeatureRow(dot, 'Des missions dans toute l\'île', 'Recevez toutes les demandes de Saint-Barthélemy pour vos métiers, selon les créneaux que vous choisissez.') +
     welcomeFeatureRow(dot, 'Vous gardez la main', 'Vous acceptez uniquement les missions qui vous conviennent et gérez votre agenda.') +
     welcomeFeatureRow(dot, 'Un cadre sérieux', 'Profils vérifiés et assurés : un environnement de confiance pour vous et vos clients.')
   ) : (
@@ -4483,7 +4483,7 @@ function welcomeHtml(first, role) {
   const crossText = isPro ?
     ('Ti-Services marche dans les deux sens&nbsp;: avec <b>une autre adresse e-mail</b>, créez aussi votre ' +
      '<b>compte client</b> pour réserver ménage, jardinage, coiffure, sport et plus — près de chez vous.') :
-    ('Proposez vos services sur Ti-Services et recevez des missions près de chez vous. Créez votre ' +
+    ('Proposez vos services sur Ti-Services et recevez des missions dans toute l\'île. Créez votre ' +
      '<b>profil intervenant</b> — avec <b>une autre adresse e-mail</b> que celle de ce compte.');
   const crossHref = app + (isPro ? '/?open=client-signup' : '/?open=pro-signup');
   const crossLabel = isPro ? 'Créer mon compte client' : 'Devenir intervenant';
@@ -4541,7 +4541,7 @@ function inviteArtisanHtml(name, message) {
   // Salutation sans prénom par défaut (envoi rapide sans risque) ; prénom seulement si fourni.
   const hi = name ? ('Bonjour ' + escHtmlS(name) + ',') : 'Bonjour,';
   const feats =
-    welcomeFeatureRow(dot, 'Des missions près de chez vous', 'Recevez les demandes de votre zone, sur les créneaux que vous choisissez.') +
+    welcomeFeatureRow(dot, 'Des missions dans toute l\'île', 'Recevez toutes les demandes de Saint-Barthélemy pour vos métiers, sur les créneaux que vous choisissez.') +
     welcomeFeatureRow(dot, 'Vous gardez la main', 'Vous acceptez seulement les missions qui vous conviennent et gérez votre agenda.') +
     welcomeFeatureRow(dot, 'Un cadre sérieux', 'Profils vérifiés et assurés : un environnement de confiance pour vous et vos clients.') +
     welcomeFeatureRow(dot, 'Inscription gratuite', 'Créez votre profil en quelques minutes, sans engagement.');
@@ -4848,6 +4848,119 @@ exports.sendArtisanInvite = onCall({secrets: [SMTP_PASS]}, async (request) => {
   });
   if (!ok) throw new HttpsError('internal', 'L\'envoi a échoué — réessayez.');
   return { sent: true };
+});
+
+/* ============================================================================
+ * RÉCUPÉRATION D'UN COMPTE SUPPRIMÉ — PITR (lecture à un instant donné).
+ *
+ * Firestore garde un historique des versions (1 h par défaut, 7 jours une fois la
+ * « récupération à un instant donné » activée dans la console Google Cloud). Cette
+ * fonction relit, À LA DATE DEMANDÉE, la fiche users + artisans + concierges d'un
+ * compte (retrouvé par e-mail), puis la réécrit — sur le compte d'origine, ou sur le
+ * NOUVEAU compte si la personne s'est réinscrite (l'authentification supprimée ne se
+ * restaure pas : seule la base revient). Lecture CIBLÉE : personne d'autre ne bouge.
+ *
+ * REST + readTime plutôt que le SDK : c'est l'API documentée de PITR, et elle dit
+ * clairement pourquoi elle refuse (fenêtre dépassée, PITR non activé…).
+ * ========================================================================== */
+async function pitToken() {
+  const {GoogleAuth} = require('google-auth-library');
+  const auth = new GoogleAuth({scopes: ['https://www.googleapis.com/auth/datastore']});
+  return await auth.getAccessToken();
+}
+// Valeur REST Firestore -> valeur JS/SDK (récursif). Les horodatages redeviennent des
+// Timestamps (sinon ils reviendraient en chaînes et cassaient les .toMillis() de l'app).
+function pitVal(v) {
+  const {Timestamp} = require('firebase-admin/firestore');
+  if (v == null || typeof v !== 'object') return null;
+  if ('stringValue' in v) return v.stringValue;
+  if ('integerValue' in v) return Number(v.integerValue);
+  if ('doubleValue' in v) return v.doubleValue;
+  if ('booleanValue' in v) return v.booleanValue;
+  if ('nullValue' in v) return null;
+  if ('timestampValue' in v) return Timestamp.fromDate(new Date(v.timestampValue));
+  if ('mapValue' in v) { const o = {}; const f = (v.mapValue && v.mapValue.fields) || {}; for (const k of Object.keys(f)) o[k] = pitVal(f[k]); return o; }
+  if ('arrayValue' in v) return ((v.arrayValue && v.arrayValue.values) || []).map(pitVal);
+  return null;   // bytes/référence/géopoint : inutilisés dans nos fiches
+}
+function pitFields(doc) { const o = {}; const f = (doc && doc.fields) || {}; for (const k of Object.keys(f)) o[k] = pitVal(f[k]); return o; }
+exports.adminRestoreAccount = onCall({timeoutSeconds: 120}, async (request) => {
+  const who = (request.auth && request.auth.token && request.auth.token.email) || '';
+  if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+    throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
+  }
+  const email = String((request.data && request.data.email) || '').trim().toLowerCase().slice(0, 200);
+  const atISO = String((request.data && request.data.at) || '').trim();
+  const targetUid = String((request.data && request.data.targetUid) || '').trim().slice(0, 128);
+  if (!/.+@.+\..+/.test(email)) throw new HttpsError('invalid-argument', 'E-mail du compte à récupérer manquant.');
+  const at = new Date(atISO);
+  if (isNaN(at.getTime())) throw new HttpsError('invalid-argument', 'Date/heure invalide.');
+  if (at.getTime() >= Date.now()) throw new HttpsError('invalid-argument', 'La date doit être dans le passé (au moment où le compte existait encore).');
+  if (Date.now() - at.getTime() > 7 * 86400000) throw new HttpsError('invalid-argument', 'Au-delà de 7 jours : hors fenêtre de récupération Firestore.');
+
+  const projet = process.env.GCLOUD_PROJECT || 't-service-prod';
+  const base = 'https://firestore.googleapis.com/v1/projects/' + projet + '/databases/(default)';
+  const readTime = at.toISOString();
+  const tok = await pitToken();
+  const appel = async (chemin, corps) => {
+    const res = await fetch(base + chemin, {
+      method: 'POST',
+      headers: {'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json'},
+      body: JSON.stringify(corps),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      const msg = (data && data.error && data.error.message) || ('HTTP ' + res.status);
+      // FAILED_PRECONDITION = readTime hors fenêtre (PITR non activé => 1 h seulement).
+      throw new HttpsError('failed-precondition', 'Firestore refuse la lecture à cette date : ' + String(msg).slice(0, 300)
+        + ' — si la récupération 7 jours n\'est pas activée sur le projet, seule la dernière heure est lisible.');
+    }
+    return data;
+  };
+
+  // 1) Retrouver le compte tel qu'il était à cette date, par son e-mail.
+  const q = await appel('/documents:runQuery', {
+    structuredQuery: {from: [{collectionId: 'users'}], where: {fieldFilter: {field: {fieldPath: 'email'}, op: 'EQUAL', value: {stringValue: email}}}, limit: 5},
+    readTime,
+  });
+  const ligne = (Array.isArray(q) ? q : []).find((x) => x.document && x.document.name);
+  if (!ligne) throw new HttpsError('not-found', 'Aucun compte « ' + email + ' » à cette date. Essayez une date où le compte existait encore (avant la suppression).');
+  const oldUid = ligne.document.name.split('/').pop();
+  const usersDoc = pitFields(ligne.document);
+
+  // 2) Relire les fiches artisan / conciergerie du même compte, à la même date.
+  const bg = await appel('/documents:batchGet', {
+    documents: [base.replace('https://firestore.googleapis.com/v1/', '') + '/documents/artisans/' + oldUid,
+      base.replace('https://firestore.googleapis.com/v1/', '') + '/documents/concierges/' + oldUid],
+    readTime,
+  });
+  let artDoc = null; let concDoc = null;
+  for (const r of (Array.isArray(bg) ? bg : [])) {
+    if (r.found && r.found.name) {
+      if (r.found.name.indexOf('/artisans/') >= 0) artDoc = pitFields(r.found);
+      if (r.found.name.indexOf('/concierges/') >= 0) concDoc = pitFields(r.found);
+    }
+  }
+
+  // 3) Réécrire — sur le nouveau compte si fourni (réinscription), sinon sur l'ancien.
+  const cible = targetUid || oldUid;
+  const db = getFirestore();
+  // Jetons push d'époque écartés (appareils re-enregistrés par le nouveau compte) ;
+  // l'e-mail reste celui du compte CIBLE s'il existe déjà (réinscription).
+  delete usersDoc.pushTokens;
+  if (targetUid && targetUid !== oldUid) delete usersDoc.email;
+  const marque = {restoredFromPIT: readTime, restoredFromUid: oldUid, restoredAt: FieldValue.serverTimestamp()};
+  const restaure = [];
+  await db.collection('users').doc(cible).set(Object.assign({}, usersDoc, marque), {merge: true}); restaure.push('users');
+  if (artDoc) { await db.collection('artisans').doc(cible).set(Object.assign({}, artDoc, marque), {merge: true}); restaure.push('artisans'); }
+  if (concDoc) { await db.collection('concierges').doc(cible).set(Object.assign({}, concDoc, marque), {merge: true}); restaure.push('concierges'); }
+  console.log('adminRestoreAccount : ' + email + ' (' + oldUid + ') → ' + cible + ' [' + restaure.join(', ') + '] à ' + readTime);
+  return {
+    oldUid, wroteTo: cible, restored: restaure,
+    warning: (cible === oldUid)
+      ? 'Fiches restaurées sur le compte d\'origine. Son ACCÈS (e-mail/mot de passe) reste supprimé : si la personne se réinscrit, relancez la récupération en indiquant son nouvel identifiant pour tout raccrocher.'
+      : 'Fiches raccrochées au nouveau compte. Les anciennes réservations et factures restent liées à l\'ancien identifiant au registre (la comptabilité ne se réécrit pas).',
+  };
 });
 
 // Relance manuelle depuis la console admin : exactement le même e-mail que la relance
