@@ -118,12 +118,19 @@
 </script>
 <style>
   /* ============ TOKENS ============ */
+  /* CONTRASTE — les valeurs claires de --muted, --good, --warn et --teal-deep ne sont pas
+     décoratives : elles sont calées pour atteindre 4,5:1 sur le sable et sur les fonds de
+     pastilles (seuil WCAG AA pour du texte sous 18 px). Avant ce calage, la ligne grise
+     qui explique chaque carte tombait à 3,4:1 et les pastilles vertes « Vérifié · Assuré »
+     à 2,85:1 — illisibles en plein soleil, qui est la condition normale d'usage ici.
+     Les éclaircir, c'est reperdre la lisibilité : mesurer avant de toucher. Le mode
+     sombre passe déjà (5,2:1 et 9,8:1), il n'a pas bougé. */
   :root{
     --sand:#FBF7F4; --sand-2:#F2EAE4; --card:#FFFFFF; --card-2:#FCF6F2;
-    --ink:#231E33; --ink-soft:#4E4757; --muted:#8A8391; --hair:#EEE5DF;
-    --teal:#FF6A5B; --teal-deep:#E23F2B; --teal-wash:#FFEDE8;
+    --ink:#231E33; --ink-soft:#4E4757; --muted:#766F7D; --hair:#EEE5DF;
+    --teal:#FF6A5B; --teal-deep:#CE301C; --teal-wash:#FFEDE8;
     --coral:#E5484D; --coral-deep:#BE343B; --coral-wash:#FBE7E8;
-    --good:#12A268; --good-wash:#E2F3EA; --warn:#EC9A12; --shadow:rgba(70,40,32,.15);
+    --good:#0E7B4F; --good-wash:#E2F3EA; --warn:#A26A0C; --shadow:rgba(70,40,32,.15);
     --frame:#231D33; --frame-line:#372E48;
     --r-lg:26px; --r-md:18px; --r-sm:12px;
     --f-disp:"SF Pro Display",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
@@ -152,10 +159,10 @@
   }
   :root[data-theme="light"]{
     --sand:#FBF7F4; --sand-2:#F3ECE6; --card:#FFFFFF; --card-2:#FCF6F2;
-    --ink:#2A2233; --ink-soft:#5A5262; --muted:#948B98; --hair:#EEE4DD;
-    --teal:#F26A4B; --teal-deep:#D6421F; --teal-wash:#FDEDE6;
+    --ink:#2A2233; --ink-soft:#5A5262; --muted:#786E7C; --hair:#EEE4DD;
+    --teal:#F26A4B; --teal-deep:#C63D1D; --teal-wash:#FDEDE6;
     --coral:#E5484D; --coral-deep:#BE343B; --coral-wash:#FBE7E8;
-    --good:#12A268; --good-wash:#E1F3EA; --warn:#E08A0B; --shadow:rgba(74,42,28,.16);
+    --good:#0E7B4F; --good-wash:#E1F3EA; --warn:#A76708; --shadow:rgba(74,42,28,.16);
     --frame:#241C2E; --frame-line:#3A3046;
   }
   :root[data-theme="dark"]{
@@ -692,6 +699,9 @@
   .cat .rt{font-size:12px;color:var(--muted);margin-top:auto;padding-top:3px}
   .cat .rt b{color:var(--ink);font-family:var(--f-num);font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
   .cat .cat-more{position:absolute;top:12px;right:12px;color:var(--muted);opacity:.55}
+  /* Chevron collé à « N prestations » : il annonce la liste qui s'ouvre, à l'endroit même
+     où on lit le nombre. */
+  .cat .cat-go{font-weight:800}
   /* Service pas encore ouvert (aucun pro validé) : grisé, « Bientôt » */
   .cat.soon{opacity:.82;background:var(--sand)}
   .cat.soon .ic{filter:grayscale(.55)}
@@ -4242,7 +4252,27 @@
     [/^(\d+)\s+jours?$/i,'$1 days'],
     [/^(\d+)-(\d+) ans$/i,'$1-$2 yrs'],
     [/^(.+?) · (\d+) €\/jour × (\d+) jours?$/i,function(m,cat,rate,d){return (EN_DICT[cat.trim()]||cat)+' · '+rate+' €/day × '+d+' days';}],
-    [/^📅 Du (.+?) → (.+?) · (\d+) jours? de garde$/i,function(m,a,bb,d){return '📅 From '+a+' to '+bb+' · '+d+' days of care';}]
+    [/^📅 Du (.+?) → (.+?) · (\d+) jours? de garde$/i,function(m,a,bb,d){return '📅 From '+a+' to '+bb+' · '+d+' days of care';}],
+    // ——— Chaînes composées : le nombre, le mois ou le métier changent à chaque rendu ———
+    // On ne peut pas les enregistrer une par une ; on reconnaît la forme et on traduit
+    // les parties fixes. Sans ça, l'écran affiche une phrase moitié anglaise.
+    [/^Net perçu · ([A-Za-zÀ-ÿ]+) (\d{4})$/,function(m,mo,y){var M=MO_EN[mo.toLowerCase()];return M?('Net earned · '+M+' '+y):m;}],
+    [/^(\d+) missions? au total ›$/,'$1 jobs in total ›'],
+    [/^(\d+) missions? au total$/,'$1 jobs in total'],
+    [/^(\d+) actifs?$/,'$1 active'],
+    [/^(\d+) interventions?$/,function(m,n){return n+(n==='1'?' job':' jobs');}],
+    [/^Taux d'apport\s*: (\d+) % · versé par Ti-Services en fin de mois$/,'Referral rate: $1 % · paid by Ti-Services at month end'],
+    [/^Taux d'apport\s*: (\d+) % · réglé par Ti-Services$/,'Referral rate: $1 % · settled by Ti-Services'],
+    [/^(\d+) filleuls?$/,function(m,n){return n+(n==='1'?' referral':' referrals');}],
+    [/^Mon profil · (.+)$/,function(m,z){return 'My profile · '+(EN_DICT[z]||z);}],
+    [/^Mon compte · (.+)$/,function(m,z){return 'My account · '+(EN_DICT[z]||z);}],
+    [/^Choisissez, (.+?) — je m’occupe de trouver le bon prestataire\.$/,"Pick one, $1 — I'll find the right pro."],
+    [/^Bonjour (.+)$/,'Hello $1'],[/^Bonsoir (.+)$/,'Good evening $1'],
+    // Listes de métiers séparées par « · » : on ne traduit que si TOUTES les parties sont
+    // connues — sinon on laisse le français entier plutôt qu'un mélange.
+    [/^[^·]+( · [^·]+)+$/,function(m){var ps=m.split(' · ').map(function(x){return x.trim();});
+      if(!ps.every(function(x){return EN_DICT[x];}))return m;
+      return ps.map(function(x){return EN_DICT[x];}).join(' · ');}]
   ];
   function trOne(v){if(S.lang==='fr')return v;var D=(S.lang==='pt')?PT_DICT:EN_DICT;var RE=(S.lang==='pt')?T_RE_PT:T_RE;var k=(''+v);var kt=k.trim();if(!kt)return v;
     // Normalise les espaces insécables (typographie FR : « ? », « : », « » ») pour la recherche.
@@ -5558,7 +5588,66 @@
     "par prestation":"per job",
     "Ti-Services examine votre proposition et vous confirme le prix public avant l'ouverture aux clients.":"Ti-Services reviews your proposal and confirms the public price with you before it opens to clients.",
     "ce service.":"this service.",
-    "Connectez-vous avec le compte Mollie créé pendant l'activation. Avec un autre compte, la page tourne en boucle sans s'ouvrir.":"Sign in with the Mollie account you created during activation. With any other account, the page loops without ever opening."
+    "Connectez-vous avec le compte Mollie créé pendant l'activation. Avec un autre compte, la page tourne en boucle sans s'ouvrir.":"Sign in with the Mollie account you created during activation. With any other account, the page loops without ever opening.",
+    // ——— Complement de couverture : espaces prestataire et conciergerie ———
+    "Activer les notifications":"Turn on notifications",
+    "Aucune adresse enregistrée":"No address saved",
+    "Langue / Language":"Language",
+    "Support ›":"Support ›",
+    "Conciergerie":"Concierge",
+    "Carnet":"Address book",
+    "Mes clients":"My clients",
+    "Clients":"Clients",
+    "Commandes":"Orders",
+    "commandes":"orders",
+    "Apport":"Referrals",
+    "ce mois":"this month",
+    "＋ Nouvelle commande":"＋ New order",
+    "Rétribution":"Payout",
+    "Chaque client autorise sa carte":"Each client authorizes their card",
+    "(lien sécurisé). Ensuite vous commandez pour lui : débit et facture restent à son nom.":"(secure link). After that you order for them: the charge and the invoice stay in their name.",
+    "Versement en attente":"Payment pending",
+    "Éditer ma facture de rétribution":"Edit my payout invoice",
+    "Pour être payé — votre RIB":"To get paid — your bank details",
+    "Requis":"Required",
+    "Enregistrer mon RIB":"Save my bank details",
+    "Raison sociale / nom":"Company name / name",
+    "Missions":"Jobs",
+    "Revenus":"Earnings",
+    "Mon planning":"My schedule",
+    "Aujourd’hui":"Today",
+    "Ce mois-ci":"This month",
+    "Connecter mon agenda":"Connect my calendar",
+    "créneaux actifs. Vous ne recevez de missions que sur ces créneaux — pensez à les tenir à jour.":"active slots. You only receive jobs during these slots — keep them up to date.",
+    "Liste indisponible pour l'instant — vérifiez votre connexion. Elle reviendra d'elle-même.":"List unavailable right now — check your connection. It will come back on its own.",
+    "D'ici là, préparez-vous : profil complet, agenda connecté, paiements activés — vous serez prêt dès le premier jour.":"Until then, get ready: complete profile, connected calendar, activated payments — you'll be set from day one.",
+    "Chaque prestation facturée automatiquement à votre nom.":"Every job invoiced automatically in your name.",
+    "Voir ›":"View ›",
+    "Documents":"Documents",
+    "Relevé mensuel":"Monthly statement",
+    "Total encaissé du mois — dès le 1er du mois suivant.":"Total collected for the month — from the 1st of the following month.",
+    "Facture de commission":"Commission invoice",
+    "Une par mois, charge déductible.":"One per month, a deductible expense.",
+    "Attestation annuelle":"Annual statement",
+    "Vos encaissements de l'année, pour vos déclarations.":"Your earnings for the year, for your tax return.",
+    ": réglé sous 48 h après chaque prestation validée, sans relance.":": paid within 48 h of each approved job, with nothing to chase.",
+    "Recevoir mes paiements":"Receive my payments",
+    "Actif":"Active",
+    "Avantages":"Benefits",
+    "Parrainez d'autres artisans et faites grimper votre statut —":"Refer other pros and raise your status —",
+    "+5 missions":"+5 jobs",
+    "par filleul validé.":"per approved referral.",
+    "Ouvrir":"Open",
+    "Besoin d'un renfort ?":"Need a hand?",
+    "Nouveau":"New",
+    "Demandez un confrère pour un chantier — le vôtre ou celui d'un client. Un seul règlement, facture à votre entreprise.":"Call in a fellow pro for a job — yours or a client's. One single payment, invoiced to your business.",
+    "Alertes nouvelles demandes":"New-request alerts",
+    "Charte intervenant":"Provider charter",
+    "Changer ma photo de profil":"Change my profile photo",
+    "Mes documents":"My documents",
+    "CGU":"Terms of use",
+    "CGV":"Terms of sale",
+    "CGU/CGV":"Terms"
   };
   var MO_PT={'janvier':'janeiro','février':'fevereiro','fevrier':'fevereiro','mars':'março','avril':'abril','mai':'maio','juin':'junho','juillet':'julho','août':'agosto','aout':'agosto','septembre':'setembro','octobre':'outubro','novembre':'novembro','décembre':'dezembro','decembre':'dezembro','janv':'janeiro','févr':'fevereiro','fevr':'fevereiro','avr':'abril','juil':'julho','sept':'setembro','oct':'outubro','nov':'novembro','déc':'dezembro','dec':'dezembro'};
   var TIER_PT={'bronze':'Bronze','argent':'Prata','or':'Ouro','platine':'Platina','diamant':'Diamante'};
@@ -7146,7 +7235,64 @@
     "par prestation":"por serviço",
     "Ti-Services examine votre proposition et vous confirme le prix public avant l'ouverture aux clients.":"A Ti-Services analisa a sua proposta e confirma-lhe o preço público antes da abertura aos clientes.",
     "ce service.":"este serviço.",
-    "Connectez-vous avec le compte Mollie créé pendant l'activation. Avec un autre compte, la page tourne en boucle sans s'ouvrir.":"Inicie sessão com a conta Mollie criada durante a ativação. Com outra conta, a página fica em ciclo sem abrir."
+    "Connectez-vous avec le compte Mollie créé pendant l'activation. Avec un autre compte, la page tourne en boucle sans s'ouvrir.":"Inicie sessão com a conta Mollie criada durante a ativação. Com outra conta, a página fica em ciclo sem abrir.",
+    // ——— Complement de couverture : espaces prestataire et conciergerie ———
+    "Activer les notifications":"Ativar as notificações",
+    "Aucune adresse enregistrée":"Nenhuma morada registada",
+    "Langue / Language":"Idioma",
+    "Conciergerie":"Concierge",
+    "Carnet":"Lista de clientes",
+    "Mes clients":"Os meus clientes",
+    "Clients":"Clientes",
+    "Commandes":"Encomendas",
+    "commandes":"encomendas",
+    "Apport":"Angariação",
+    "ce mois":"este mês",
+    "＋ Nouvelle commande":"＋ Nova encomenda",
+    "Rétribution":"Remuneração",
+    "Chaque client autorise sa carte":"Cada cliente autoriza o seu cartão",
+    "(lien sécurisé). Ensuite vous commandez pour lui : débit et facture restent à son nom.":"(ligação segura). Depois encomenda por ele: o débito e a fatura ficam em nome dele.",
+    "Versement en attente":"Pagamento pendente",
+    "Éditer ma facture de rétribution":"Editar a minha fatura de remuneração",
+    "Pour être payé — votre RIB":"Para receber — os seus dados bancários",
+    "Requis":"Obrigatório",
+    "Enregistrer mon RIB":"Guardar os meus dados bancários",
+    "Raison sociale / nom":"Denominação social / nome",
+    "Missions":"Serviços",
+    "Revenus":"Rendimentos",
+    "Mon planning":"O meu horário",
+    "Aujourd’hui":"Hoje",
+    "Ce mois-ci":"Este mês",
+    "Connecter mon agenda":"Ligar a minha agenda",
+    "créneaux actifs. Vous ne recevez de missions que sur ces créneaux — pensez à les tenir à jour.":"períodos ativos. Só recebe serviços nesses períodos — mantenha-os atualizados.",
+    "Liste indisponible pour l'instant — vérifiez votre connexion. Elle reviendra d'elle-même.":"Lista indisponível de momento — verifique a sua ligação. Voltará sozinha.",
+    "D'ici là, préparez-vous : profil complet, agenda connecté, paiements activés — vous serez prêt dès le premier jour.":"Até lá, prepare-se: perfil completo, agenda ligada, pagamentos ativados — estará pronto no primeiro dia.",
+    "Chaque prestation facturée automatiquement à votre nom.":"Cada serviço faturado automaticamente em seu nome.",
+    "Voir ›":"Ver ›",
+    "Documents":"Documentos",
+    "Relevé mensuel":"Extrato mensal",
+    "Total encaissé du mois — dès le 1er du mois suivant.":"Total recebido no mês — a partir do dia 1 do mês seguinte.",
+    "Facture de commission":"Fatura de comissão",
+    "Une par mois, charge déductible.":"Uma por mês, despesa dedutível.",
+    "Attestation annuelle":"Declaração anual",
+    "Vos encaissements de l'année, pour vos déclarations.":"Os seus recebimentos do ano, para as suas declarações.",
+    ": réglé sous 48 h après chaque prestation validée, sans relance.":": pago em 48 h após cada serviço validado, sem ter de insistir.",
+    "Recevoir mes paiements":"Receber os meus pagamentos",
+    "Actif":"Ativo",
+    "Avantages":"Vantagens",
+    "Parrainez d'autres artisans et faites grimper votre statut —":"Indique outros profissionais e suba de estatuto —",
+    "+5 missions":"+5 serviços",
+    "par filleul validé.":"por indicado validado.",
+    "Ouvrir":"Abrir",
+    "Besoin d'un renfort ?":"Precisa de reforço?",
+    "Nouveau":"Novo",
+    "Demandez un confrère pour un chantier — le vôtre ou celui d'un client. Un seul règlement, facture à votre entreprise.":"Peça a um colega para um trabalho — seu ou de um cliente. Um único pagamento, fatura em nome da sua empresa.",
+    "Alertes nouvelles demandes":"Alertas de novos pedidos",
+    "Charte intervenant":"Carta do prestador",
+    "Changer ma photo de profil":"Mudar a minha foto de perfil",
+    "CGU":"Termos de utilização",
+    "CGV":"Condições de venda",
+    "CGU/CGV":"Termos"
   };
   var T_RE_PT=[
     [/^dès (\d+) € net$/,'desde $1 € líquidos'],
@@ -7210,7 +7356,23 @@
     [/^(\d+)\s+jours?$/i,'$1 dias'],
     [/^(\d+)-(\d+) ans$/i,'$1-$2 anos'],
     [/^(.+?) · (\d+) €\/jour × (\d+) jours?$/i,function(m,cat,rate,d){return (PT_DICT[cat.trim()]||cat)+' · '+rate+' €/dia × '+d+' dias';}],
-    [/^📅 Du (.+?) → (.+?) · (\d+) jours? de garde$/i,function(m,a,bb,d){return '📅 De '+a+' a '+bb+' · '+d+' dias de cuidado';}]
+    [/^📅 Du (.+?) → (.+?) · (\d+) jours? de garde$/i,function(m,a,bb,d){return '📅 De '+a+' a '+bb+' · '+d+' dias de cuidado';}],
+    // ——— Chaînes composées (voir le commentaire côté anglais) ———
+    [/^Net perçu · ([A-Za-zÀ-ÿ]+) (\d{4})$/,function(m,mo,y){var M=MO_PT[mo.toLowerCase()];return M?('Líquido recebido · '+M+' '+y):m;}],
+    [/^(\d+) missions? au total ›$/,'$1 serviços no total ›'],
+    [/^(\d+) missions? au total$/,'$1 serviços no total'],
+    [/^(\d+) actifs?$/,'$1 activos'],
+    [/^(\d+) interventions?$/,function(m,n){return n+(n==='1'?' intervenção':' intervenções');}],
+    [/^Taux d'apport\s*: (\d+) % · versé par Ti-Services en fin de mois$/,'Taxa de angariação: $1 % · pago pela Ti-Services no fim do mês'],
+    [/^Taux d'apport\s*: (\d+) % · réglé par Ti-Services$/,'Taxa de angariação: $1 % · liquidado pela Ti-Services'],
+    [/^(\d+) filleuls?$/,function(m,n){return n+(n==='1'?' indicado':' indicados');}],
+    [/^Mon profil · (.+)$/,function(m,z){return 'O meu perfil · '+(PT_DICT[z]||z);}],
+    [/^Mon compte · (.+)$/,function(m,z){return 'A minha conta · '+(PT_DICT[z]||z);}],
+    [/^Choisissez, (.+?) — je m’occupe de trouver le bon prestataire\.$/,'Escolha, $1 — eu trato de encontrar o prestador certo.'],
+    [/^Bonjour (.+)$/,'Olá $1'],[/^Bonsoir (.+)$/,'Boa noite $1'],
+    [/^[^·]+( · [^·]+)+$/,function(m){var ps=m.split(' · ').map(function(x){return x.trim();});
+      if(!ps.every(function(x){return PT_DICT[x];}))return m;
+      return ps.map(function(x){return PT_DICT[x];}).join(' · ');}]
   ];
 
   // Bandeau de marque (bicolore) rappelé en haut de chaque écran de l'app.
@@ -9073,7 +9235,7 @@
     const list=S.concClients.map(c=>{const n=S.concOrders.filter(o=>o.clientId===c.id).length;return `<button class="card" data-act="conc-client-view:${c.id}" style="padding:13px;margin-top:9px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${esc(c.name)}</b>${c.authorized?`<span class="chip good">${I.check} Carte OK</span>`:`<span class="chip coral">Carte à autoriser</span>`}</div><div class="mini" style="margin-top:2px">${c.addr?esc(c.addr.address):''}${n?` · ${n} commande${n>1?'s':''}`:''}</div></button>`;}).join('');
     return `<div class="pad"><div style="height:12px"></div><div class="row between"><div><span class="eyebrow">${I.user} Carnet</span><div class="h-hello">Mes clients</div></div><button class="btn ghost sm" style="width:auto;padding:8px 14px" data-act="conc-client-new">＋ Ajouter</button></div>
       ${list||`<p class="mini" style="margin-top:12px;color:var(--muted)">Aucun client enregistré.</p>`}
-      <div class="banner teal" style="margin-top:14px">${I.shield}<span>Chaque client autorise <b>sa</b> carte une seule fois (lien sécurisé). Ensuite vous commandez pour lui&nbsp;: débit et facture restent à son nom.</span></div>
+      <div class="banner teal" style="margin-top:14px">${I.shield}<span>Chaque client autorise sa carte <b>une seule fois</b> (lien sécurisé). Ensuite vous commandez pour lui&nbsp;: débit et facture restent à son nom.</span></div>
       <div style="height:8px"></div></div>${conciergeNavbar()}`;
   }
   function conciergeClientDetail(){
@@ -9526,7 +9688,11 @@
     // puis soumis à la disponibilité réelle par métier).
     const revDemo=(function(){try{return REVIEW_DEMO_EMAILS.indexOf(((S.account&&S.account.email)||'').toLowerCase().trim())>=0;}catch(_){return false;}})();
     const svcTile=function(s){const soon=(revDemo||svcForce(s.id))?false:(!svcAvailable(s.id)||closed);const c=soon?'#9a94a6':svcColor(s.id);const px=(S.adminPrices&&S.adminPrices[s.id]!=null?S.adminPrices[s.id]:s.rate);const rt=soon?'<span style="color:var(--muted)">Bientôt disponible</span>':(isForfaitSvc(s.id)?`<b>${px}</b> <b>€</b> forfait`:(isCatalogForfait(s.id)?`dès <b>${minActPrice(s.id)}</b> <b>€</b>`:`dès <b>${px}</b> <b>€</b>/h`));return `<button class="cat${soon?' soon':''}" ${soon?'data-act="svc-soon"':`data-svc="${s.id}"`}>${soon?'<span class="soon-badge">Bientôt</span>':''}<div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${svcIco(s.id)}</div><div class="nm">${esc(s.nm)}</div><div class="rt">${rt}</div></button>`;};
-    const catTile=function(cat){const forcee=!!(cat&&cat.subs&&cat.subs.some(svcForce));const soon=(revDemo||forcee)?false:(!catAvailable(cat)||closed);const c=soon?'#9a94a6':svcColor(cat.id);return `<button class="cat${soon?' soon':''}" ${soon?'data-act="svc-soon"':`data-catopen="${cat.id}"`}>${soon?'<span class="soon-badge">Bientôt</span>':`<span class="cat-more">${I.chevron}</span>`}<div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[cat.id]||I.other}</div><div class="nm">${esc(cat.nm)}</div><div class="rt">${soon?'<span style="color:var(--muted)">Bientôt disponible</span>':cat.subs.length+' prestations'}</div></button>`;};
+    // Le chevron ne flotte plus au plafond de la tuile, loin de ce qu'il annonce : il se
+    // pose au bout de « N prestations », dans la couleur du métier. La ligne du bas dit
+    // alors d'elle-même la différence entre une tuile qui ouvre une liste et une tuile qui
+    // annonce un prix ferme — plus besoin d'un glyphe orphelin dans un coin.
+    const catTile=function(cat){const forcee=!!(cat&&cat.subs&&cat.subs.some(svcForce));const soon=(revDemo||forcee)?false:(!catAvailable(cat)||closed);const c=soon?'#9a94a6':svcColor(cat.id);return `<button class="cat${soon?' soon':''}" ${soon?'data-act="svc-soon"':`data-catopen="${cat.id}"`}>${soon?'<span class="soon-badge">Bientôt</span>':''}<div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[cat.id]||I.other}</div><div class="nm">${esc(cat.nm)}</div><div class="rt">${soon?'<span style="color:var(--muted)">Bientôt disponible</span>':cat.subs.length+' prestations<span class="cat-go" style="color:'+c+'">&nbsp;›</span>'}</div></button>`;};
     // Vue « sous-catégorie » : on a ouvert une catégorie (ex. Beauté) → liste ses prestations.
     const catView=S.catView?CATEGORIES.find(function(c){return c.id===S.catView;}):null;
     if(catView){
@@ -9956,15 +10122,15 @@
       <div class="h-hello" style="margin-top:8px;text-align:center">${head.t}</div><p class="sub" style="text-align:center">${head.d}</p>
       ${(m.slotFlex&&m.status==='pending')?`<p class="mini" style="text-align:center;margin-top:4px">${I.clock} Créneau souhaité&nbsp;: ${m.when} · ${flexTxtClient(m)} — un prestataire vous proposera une heure précise.</p>`:''}
       ${(m.slotFlex&&m.proposedSlot&&m.status!=='pending')?`<div class="banner teal" style="margin-top:10px">${I.clock}<span>${p?esc(p.nm.split(' ')[0]):'Le prestataire'} a confirmé son passage à <b>${m.slot}</b> (votre souhait&nbsp;: ${flexTxtClient(m)}).</span></div>`:''}
-      ${m.status==='pending'?(m.preferredUid?`<div class="card" style="padding:16px;margin-top:12px"><div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="background:var(--teal-wash);color:var(--teal-deep)">${I.clock}</span><div><b style="font-size:14px">Demande réservée à ${esc((m.preferredName||'votre prestataire').split(' ')[0])}</b><p class="mini" style="margin-top:4px">Votre demande est adressée <b>uniquement à ${esc(m.preferredName||'votre prestataire')}</b> — pas aux autres artisans, puisque vous l'avez choisi. L'attente est normale&nbsp;: elle dure tant qu'il n'a pas encore répondu. Dès qu'il accepte ou décline, vous êtes prévenu.</p></div></div></div>`:`<div class="card" style="padding:16px;margin-top:12px;text-align:center">${searchRadar(true)}<p class="sub" style="margin:0">Vous saurez qui intervient dès l'acceptation.</p></div>`):((m.svc==='baby'&&p)?babyConfirmBlock(m):(p?`<div class="card provider-pop" style="padding:14px;margin-top:12px"><div class="row" style="gap:12px">${avatarFounder(m.providerPhoto,p.ini,'',p.founder)}<div style="flex:1"><b style="font-size:15px">${esc(p.nm)}</b><div class="mini">${I.pin} ${m.zone}${m.providerAgeBand?' · '+esc(m.providerAgeBand):''}</div></div><div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">${p.founder?`<span class="chip founder-chip">${I.star} Ambassadeur</span>`:''}<span class="chip good">${I.check} Vérifié · Assuré</span></div></div></div>`:''))}
+      ${m.status==='pending'?(m.preferredUid?`<div class="card" style="padding:16px;margin-top:12px"><div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="background:var(--teal-wash);color:var(--teal-deep)">${I.clock}</span><div><b style="font-size:14px">Demande réservée à ${esc((m.preferredName||'votre prestataire').split(' ')[0])}</b><p class="mini" style="margin-top:4px">Votre demande est adressée <b>uniquement à ${esc(m.preferredName||'votre prestataire')}</b> — pas aux autres artisans, puisque vous l'avez choisi. L'attente est normale&nbsp;: elle dure tant qu'il n'a pas encore répondu. Dès qu'il accepte ou décline, vous êtes prévenu.</p></div></div></div>`:`<div class="card" style="padding:16px;margin-top:12px;text-align:center">${searchRadar(true)}<p class="sub" style="margin:0">Vous saurez qui intervient dès l'acceptation.</p></div>`):((m.svc==='baby'&&p)?babyConfirmBlock(m):(p?`<div class="card provider-pop" style="padding:14px;margin-top:12px"><div class="row" style="gap:12px">${avatarFounder(m.providerPhoto,p.ini,'',p.founder)}<div style="flex:1"><b style="font-size:15px">${esc(p.nm)}</b><div class="mini">${I.pin} ${m.zone}${m.providerAgeBand?' · '+esc(m.providerAgeBand):''}</div></div><div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">${p.founder?`<span class="chip founder-chip">${I.star} Ambassadeur</span>`:''}<span class="chip good">${I.check} Vérifié · Assuré</span></div></div>${boutonsContact({tel:(bothAccepted(m)&&m.providerPhone)?m.providerPhone:'',nom:p.nm,nMsg:(m.chat&&m.chat.length)||0,dot:unreadDot(m)})}</div>`:''))}
       ${waitEscalation(m)}
       ${(m.status==='pending'&&!m.preferredUid)?liveBoostBlock(m):''}
       ${(p&&locModeOf(m)==='salon')?`<div class="card" style="padding:16px;margin-top:12px;border-left:4px solid var(--teal-deep)"><div class="row" style="gap:10px;align-items:flex-start"><span class="benic" style="background:var(--teal-wash);color:var(--teal-deep)">${I.pin}</span><div style="flex:1"><b style="font-size:14px">Vous vous rendez chez le prestataire</b>${m.providerSalonAddress?`<p class="sub" style="margin-top:4px;color:var(--ink)">${esc(m.providerSalonAddress)}${m.providerSalonZone?' · '+esc(m.providerSalonZone):''}</p>`:`<p class="mini" style="margin-top:4px;color:var(--muted)">Le prestataire va vous communiquer son adresse.</p>`}</div></div>${m.providerSalonGeo?miniMap(m.providerSalonGeo,'view','salon'):''}${m.providerSalonGeo?`<a class="btn ghost sm" href="${navUrl(m.providerSalonGeo.lat,m.providerSalonGeo.lng)}" target="_blank" rel="noopener" style="margin-top:10px;text-decoration:none;justify-content:center;gap:8px">${I.pin} Ouvrir l'itinéraire (${navAppName()})</a>`:''}</div>`:''}
       ${(m.svc==='colis'&&p)?colisDossier(m,false):''}
       <div class="card" style="padding:16px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Suivi</div><div class="timeline" style="margin-top:12px">${tls}</div></div>
-      ${blocContact({tel:(p&&bothAccepted(m)&&m.providerPhone)?m.providerPhone:'', nom:(p&&p.nm)||'le prestataire', titre:'Votre prestataire',
-        nMsg:(m.chat&&m.chat.length)||0, ics:false, masquerContact:!p,
-        nSup:((m.support&&m.support.client)||[]).length, dot:unreadDot(m)})}
+      ${/* On joint son prestataire depuis SA carte, en haut : c'est là qu'on le regarde.
+           Il ne reste ici que le recours ultime, à sa juste taille. */''}
+      ${lienSupport(((m.support&&m.support.client)||[]).length)}
       <div class="est" style="background:var(--card-2);border-color:var(--hair)"><div class="line"><span>Montant garanti</span><b>${eur(t.total)}</b></div><div class="line"><span>Sur ${cardTxt()}</span><b>${S.card?'bloqué':'à la validation'}</b></div><small>${I.shield} Rien à faire&nbsp;: débité automatiquement à la fin (jamais plus que ce montant), seulement si vous validez.</small></div>
       ${m.status==='pending'?`<div class="footcta" style="position:static;background:none;padding:16px 0 0">${isDemo()?`<button class="demobtn" data-act="demo-go-pro">${I.hardhat} Voir côté prestataire (démo)</button>`:''}${S.cancelAsk?cancelConfirmCard(m):`<button class="btn ghost" data-act="cancel-mission" style="margin-top:12px">Annuler la demande</button>`}</div>`:'<div style="height:18px"></div>'}
       ${m.status==='accepted'?`<div class="card" style="padding:14px;margin-top:12px;background:var(--card-2)"><p class="mini" style="text-align:center;margin:0">${S.clientNoShowAsk?`<span style="color:var(--coral-deep)">Le prestataire ne s'est pas présenté&nbsp;? Nous <b>relançons aussitôt</b> la recherche auprès des autres artisans — et <b>vous ne payez rien</b> pour une absence.</span><br><button class="linklike" data-act="client-noshow-confirm" style="color:var(--coral-deep);font-weight:700;margin-top:6px;display:inline-block">Oui, relancer la recherche</button> &nbsp;·&nbsp; <button class="linklike" data-act="client-noshow-cancel">Annuler</button>`:`${I.clock} <button class="linklike" data-act="client-noshow" style="color:var(--muted)">Le prestataire ne s'est pas présenté&nbsp;?</button>`}</p></div>`:''}
@@ -12357,22 +12523,32 @@
   //   1. Joindre l'autre partie — deux gestes côte à côte, dans une carte qui les nomme.
   //   2. L'agenda — utile, secondaire, seul.
   //   3. Ti-Services — un lien discret, en petit, à sa juste place.
-  function blocContact(o){
-    o=o||{};
+  // Les deux gestes pour joindre l'autre partie, sans carte autour : à réutiliser tel quel
+  // sous une identité (client) ou dans une carte à part (prestataire).
+  function boutonsContact(o){
     const tel=o.tel?telClean(o.tel):'';
     const prenom=esc(String(o.nom||'').split(' ')[0]);
-    const nSup=Number(o.nSup)||0;
-    const contact=o.masquerContact?'':`<div class="card" style="padding:14px;margin-top:12px">
-      <div class="eyebrow" style="color:var(--muted)">${esc(o.titre||'Contact')}</div>
-      <div class="row" style="gap:8px;margin-top:9px">
+    return `<div class="row" style="gap:8px;margin-top:12px">
         ${tel?`<a class="btn ghost sm" href="tel:${tel}" style="flex:1;min-width:0;text-decoration:none;gap:7px">${I.phone}&nbsp;Appeler</a>`:''}
         <button class="btn ghost sm" data-act="open-chat" style="flex:1;min-width:0;gap:7px">${o.dot||''}${I.chat}&nbsp;Message${(Number(o.nMsg)||0)?` · ${Number(o.nMsg)}`:''}</button>
       </div>
-      ${tel?'':`<p class="mini" style="margin:7px 0 0;color:var(--muted)">Le numéro de ${prenom} s’affiche dès que la mission est confirmée des deux côtés.</p>`}
+      ${tel?'':`<p class="mini" style="margin:7px 0 0;color:var(--muted)">Le numéro de ${prenom} s’affiche dès que la mission est confirmée des deux côtés.</p>`}`;
+  }
+  // Le recours ultime, discret, en bas de page — jamais au même rang que joindre son
+  // prestataire.
+  function lienSupport(n){
+    n=Number(n)||0;
+    return `<div style="text-align:center;margin-top:15px"><button class="linklike" data-act="open-support" style="font-size:12.5px;font-weight:500;color:var(--muted);text-decoration:none">Un problème&nbsp;? Contacter Ti-Services${n?` · ${n}`:''}</button></div>`;
+  }
+  function blocContact(o){
+    o=o||{};
+    const contact=o.masquerContact?'':`<div class="card" style="padding:14px;margin-top:12px">
+      <div class="eyebrow" style="color:var(--muted)">${esc(o.titre||'Contact')}</div>
+      ${boutonsContact(o)}
     </div>`;
     return contact
       + (o.ics?`<button class="btn ghost sm" data-act="mission-ics" style="margin-top:10px;justify-content:flex-start;gap:8px">${I.cal}&nbsp;Ajouter à mon agenda externe</button>`:'')
-      + `<div style="text-align:center;margin-top:15px"><button class="linklike" data-act="open-support" style="font-size:12.5px;font-weight:500;color:var(--muted);text-decoration:none">Un problème&nbsp;? Contacter Ti-Services${nSup?` · ${nSup}`:''}</button></div>`;
+      + lienSupport(o.nSup);
   }
   function proPaid(){
     const m=S.mission,t=totals(m);

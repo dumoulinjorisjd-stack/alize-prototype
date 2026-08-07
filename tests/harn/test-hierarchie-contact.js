@@ -18,8 +18,17 @@ const src = fs.readFileSync(path.join(RACINE, 'index.html'), 'utf8');
 
 console.log('A — un seul bloc, partagé par les deux côtés');
 ok(/function blocContact\(o\)/.test(src), 'le bloc de contact est écrit une fois');
-ok((src.match(/blocContact\(\{/g) || []).length === 2,
-  'et sert au prestataire comme au client — pas un écran soigné et l’autre oublié');
+// Les deux gestes sont écrits une seule fois (boutonsContact) et réutilisés des deux
+// côtés — mais plus dans la même enveloppe. Côté client ils vivent DANS la carte du
+// prestataire : on joint quelqu'un depuis sa fiche, pas depuis une carte anonyme placée
+// trois blocs plus bas. Côté prestataire, le client n'a pas de carte à lui : blocContact
+// garde son enveloppe titrée.
+ok(/function boutonsContact\(o\)/.test(src),
+  'les deux gestes eux-mêmes sont écrits une seule fois');
+ok(/boutonsContact\(\{/.test(src) && /blocContact\(\{/.test(src),
+  'et servent au prestataire comme au client — pas un écran soigné et l’autre oublié');
+ok(/function lienSupport\(n\)/.test(src),
+  'le recours au support est écrit une seule fois, séparément');
 ok(!/Contacter le client par messagerie<\/button>/.test(src),
   'les quatre boutons de même poids ont disparu');
 
@@ -111,13 +120,25 @@ console.log('B — sur l’écran réel du prestataire');
     S.missions = [S.mission];
     window.__render();
     const sup = document.querySelector('[data-act="open-support"]');
+    const carte = document.querySelector('.card.provider-pop');
+    const msg = document.querySelector('[data-act="open-chat"]');
+    const tel = document.querySelector('a[href^="tel:"]');
     return {
       texte: (document.querySelector('.phone') || document.body).innerText.replace(/\s+/g, ' '),
       lien: sup ? sup.className : '',
+      // Les boutons vivent-ils DANS la carte du prestataire ?
+      dansLaCarte: !!(carte && msg && carte.contains(msg) && tel && carte.contains(tel)),
+      nomAvantBoutons: !!(carte && msg &&
+        carte.querySelector('b') &&
+        carte.querySelector('b').getBoundingClientRect().top < msg.getBoundingClientRect().top),
+      supApres: !!(sup && msg && sup.getBoundingClientRect().top > msg.getBoundingClientRect().top),
     };
   });
-  ok(/VOTRE PRESTATAIRE/i.test(cli.texte), 'le client aussi a ses deux gestes réunis sous un titre');
+  ok(cli.dansLaCarte, 'côté client, Appeler et Message vivent dans la carte du prestataire');
+  ok(cli.nomAvantBoutons, 'le nom se lit avant les boutons — on joint quelqu’un, pas un bloc');
+  ok(!/VOTRE PRESTATAIRE/i.test(cli.texte), 'la carte de contact séparée a disparu — un titre en moins');
   ok(/Un problème \? Contacter Ti-Services/.test(cli.texte), 'et le même support discret');
+  ok(cli.supApres, 'le support reste sous les gestes courants, jamais au-dessus');
   ok(/linklike/.test(cli.lien), 'en lien, pas en bouton');
 
   const vrais = errs.filter((e) => !/net::ERR|Failed to load|firebase|firestore|ERR_FAILED/i.test(e));

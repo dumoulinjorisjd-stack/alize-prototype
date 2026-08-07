@@ -8,9 +8,10 @@ sed 's/function render(){/function render(){window.__S=S;window.__render=render;
      s/^  function fbErrTxt(e){/  window.__err=function(e){return fbErrTxt(e);};\n  function fbErrTxt(e){/
      s/^  function newMission(svc){/  window.__newMission=function(s){return newMission(s);};\n  function newMission(svc){/
      s/^  function molliePeutTravailler(){/  window.__peutTravailler=function(){return molliePeutTravailler();};window.__differe=function(){return versementDiffere();};\n  function molliePeutTravailler(){/
-     s/^  function adminLedgerGroups(){/  window.__ledgerTotal=function(){var l=adminCommissionLedger();return {lignes:l.length,commission:l.reduce(function(t,e){return t+(e.commissionAmount||0);},0)};};\n  function adminLedgerGroups(){/' \
+     s/^  function adminLedgerGroups(){/  window.__ledgerTotal=function(){var l=adminCommissionLedger();return {lignes:l.length,commission:l.reduce(function(t,e){return t+(e.commissionAmount||0);},0)};};\n  function adminLedgerGroups(){/
+     s/^  function i18nApply(root){/  window.__tr=function(v,lang){var av=S.lang;S.lang=lang;try{return trOne(v);}finally{S.lang=av;}};window.__dict=function(lang){return lang===String.fromCharCode(112,116)?PT_DICT:EN_DICT;};\n  function i18nApply(root){/' \
   "$SRC" > "$OUT"
-for f in __S __render __err __newMission __peutTravailler; do
+for f in __S __render __err __newMission __peutTravailler __tr; do
   grep -q "window.$f" "$OUT" || { echo "MANQUE $f"; exit 1; }
 done
 echo "harnais complet"
