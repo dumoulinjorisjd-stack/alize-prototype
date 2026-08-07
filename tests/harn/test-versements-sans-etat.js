@@ -23,7 +23,10 @@ ok(/const led = await db\.collection\('ledger'\)\.get\(\)/.test(fn),
 ok(/orphelins\.push\(/.test(fn)&&/for \(const o of orphelins\)/.test(fn),
   'une écriture dont la demande a disparu est quand même remontée');
 ok(/sansDemande: true/.test(fn),'et signalée comme telle : rien à router, virement à la main');
-ok(/if \(x\.molliePayout\) continue;/.test(fn),'les écritures dont l’état est connu sont écartées');
+// Écarter dès qu'un état existe laissait passer les « unrouted » dont la demande a été
+// supprimée : introuvables par la requête sur les demandes, ignorées ici. Invisibles.
+ok(/x\.molliePayout === 'routed' \|\| x\.molliePayout === 'manuel'/.test(fn),
+  'seules les écritures RÉELLEMENT réglées sont écartées, pas toutes celles qui portent un état');
 ok(/round2\(Number\(x\.netAmount\) \|\| 0\) > 0\.009/.test(fn),
   'et seules celles avec un net réellement dû sont retenues — un net nul n’est dû à personne');
 ok(/Number\(r\.molliePayoutNet\) \|\| \(reg \? Number\(reg\.netAmount\) : 0\)/.test(fn),
@@ -41,6 +44,16 @@ ok(i>0,'le bandeau existe toujours');
 // ce qui garantit qu'il ne s'affiche jamais tant qu'une ligne subsiste.
 ok(src.lastIndexOf('versList.length?',i)>0 && src.lastIndexOf('versList.length?',i)<i,
   'il ne s’affiche que si la liste est vide — laquelle contient désormais les deux cas');
+
+console.log('D — la console recopie l’état du versement');
+// Le champ existait au registre mais n'était pas recopié au chargement : le justificatif
+// comptait TOUTES les écritures comme « sans état », et la dette ne pouvait jamais
+// s'afficher. Un oubli d'une ligne, invisible, qui rendait l'écran comptable menteur.
+ok(/molliePayout:\(e\.molliePayout\|\|null\)/.test(src),
+  'molliePayout est copié du registre vers la console');
+const iLoad=src.indexOf('molliePayout:(e.molliePayout||null)');
+ok(iLoad>0 && src.lastIndexOf('netAmount:e.netAmount',iLoad)>0,
+  'au même endroit que le net — les deux servent au même calcul de dette');
 
 console.log(f?'\n'+f+' ÉCHEC(S)':'\nTOUT EST VERT');
 process.exit(f?1:0);

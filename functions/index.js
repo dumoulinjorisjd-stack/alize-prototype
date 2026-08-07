@@ -2238,7 +2238,11 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
       const led = await db.collection('ledger').get();
       for (const e of led.docs) {
         const x = e.data() || {};
-        if (x.molliePayout) continue;                                 // état déjà connu
+        // ON N'ÉCARTE QUE CE QUI EST RÉELLEMENT RÉGLÉ. Écarter dès qu'un état existe
+        // laissait passer les écritures marquées « unrouted » dont la DEMANDE a été
+        // supprimée : la requête sur les demandes ne les trouve plus, et cette
+        // seconde passe les ignorait aussi. De l'argent dû, invisible des deux côtés.
+        if (x.molliePayout === 'routed' || x.molliePayout === 'manuel') continue;
         if (!(round2(Number(x.netAmount) || 0) > 0.009)) continue;     // rien n'est dû
         vus++;
         duRegistre.set(e.id, x);
