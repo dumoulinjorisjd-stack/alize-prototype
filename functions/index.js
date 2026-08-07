@@ -2229,18 +2229,30 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
     // même source que l'écran qui signalait l'anomalie : les deux ne peuvent plus se
     // contredire, puisqu'ils lisent la même chose.
     const duRegistre = new Map();
+    const orphelins = [];
+    let vus = 0;
     try {
-      const led = await db.collection('ledger').where('type', '==', 'commission').get();
+      // Pas de filtre sur `type` : une écriture dont le frais Mollie a été enregistré
+      // avant le règlement existe sans ce champ, et la filtrer la ferait disparaître —
+      // exactement le genre d'angle mort qu'on est en train de corriger.
+      const led = await db.collection('ledger').get();
       for (const e of led.docs) {
         const x = e.data() || {};
         if (x.molliePayout) continue;                                 // état déjà connu
         if (!(round2(Number(x.netAmount) || 0) > 0.009)) continue;     // rien n'est dû
+        vus++;
         duRegistre.set(e.id, x);
         if (!aTraiter.has(e.id)) {
-          try { const dd = await db.collection('requests').doc(e.id).get(); if (dd.exists) aTraiter.set(e.id, dd); } catch (_) {}
+          let dd = null;
+          try { dd = await db.collection('requests').doc(e.id).get(); } catch (_) {}
+          // LA DEMANDE PEUT AVOIR DISPARU (essai supprimé, ménage) — le registre, lui,
+          // ne s'efface jamais. Sans ce repli, l'écriture était silencieusement ignorée
+          // et l'argent dû redevenait invisible : la panne qu'on répare ici.
+          if (dd && dd.exists) aTraiter.set(e.id, dd); else orphelins.push({id: e.id, x: x});
         }
       }
     } catch (e) { console.warn('payoutRetry : lecture du registre', e); }
+    console.log('payoutRetry : ' + vus + ' écriture(s) sans état au registre, dont ' + orphelins.length + ' sans demande associée');
     for (const d of aTraiter.values()) {
       if (cible && d.id !== cible) continue;
       const r = d.data() || {};
@@ -2314,6 +2326,20 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
         }
       }
       bloques.push(ligne);
+    }
+    // Écritures dont la DEMANDE a disparu : elles doivent quand même se voir, sinon on
+    // recrée exactement le trou qu'on répare. Rien à réessayer automatiquement — sans
+    // demande, il n'y a plus d'identifiant de paiement à router : c'est un virement à la
+    // main, puis « Je l'ai versé à la main ».
+    for (const o of orphelins) {
+      if (cible && o.id !== cible) continue;
+      bloques.push({
+        reqId: o.id, serviceName: String(o.x.serviceName || o.x.service || 'Prestation'),
+        providerName: String(o.x.providerName || ''), clientName: String(o.x.clientName || ''),
+        net: round2(Number(o.x.netAmount) || 0), invNo: String(o.x.invNo || ''), org: 'non',
+        motif: 'La demande n\'existe plus (essai supprimé ou ménage) : le registre garde la trace du net dû, mais il n\'y a plus de paiement à partager. Virement à la main.',
+        etat: 'demande absente', routes: -1, verse: false, lecture: '', liensRoutes: null, tente: false, sansDemande: true,
+      });
     }
   } catch (e) {
     console.error('payoutRetry', e);

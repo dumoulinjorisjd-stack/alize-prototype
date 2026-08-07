@@ -16,8 +16,13 @@ ok(/where\('molliePayout', '==', 'unrouted'\)/.test(fn),'les versements refusés
 // trouvait rien pour un partage jamais tenté. Le registre, lui, connaît le net de
 // chaque prestation réglée — et c'est lui que compte le justificatif. Même source
 // pour les deux écrans : ils ne peuvent plus se contredire.
-ok(/collection\('ledger'\)\.where\('type', '==', 'commission'\)/.test(fn),
-  'le manque est cherché dans le REGISTRE, la même source que le justificatif comptable');
+ok(/const led = await db\.collection\('ledger'\)\.get\(\)/.test(fn),
+  'le manque est cherché dans le REGISTRE ENTIER — filtrer sur le type ferait disparaître les écritures créées avant le règlement');
+// Une demande peut avoir été supprimée (essai, ménage) ; le registre, lui, ne s'efface
+// jamais. Sans repli, l'argent dû redevenait invisible — le trou qu'on répare.
+ok(/orphelins\.push\(/.test(fn)&&/for \(const o of orphelins\)/.test(fn),
+  'une écriture dont la demande a disparu est quand même remontée');
+ok(/sansDemande: true/.test(fn),'et signalée comme telle : rien à router, virement à la main');
 ok(/if \(x\.molliePayout\) continue;/.test(fn),'les écritures dont l’état est connu sont écartées');
 ok(/round2\(Number\(x\.netAmount\) \|\| 0\) > 0\.009/.test(fn),
   'et seules celles avec un net réellement dû sont retenues — un net nul n’est dû à personne');
