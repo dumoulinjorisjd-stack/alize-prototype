@@ -13,10 +13,17 @@ const o={headless:true}; if(fs.existsSync('/opt/pw-browsers/chromium'))o.executa
 let f=0; const ok=(c,l)=>{if(c)console.log('  ✓ '+l);else{f++;console.log('  ✗ ÉCHEC : '+l);}};
 const src=fs.readFileSync(path.join(RACINE,'index.html'),'utf8');
 
-console.log('A — le lien existe et ne dépend plus de l’état du dossier');
+console.log('A — deux destinations, selon l’avancement du dossier');
+// Le lien fourni par Mollie reprend l'inscription là où elle s'est arrêtée : c'est le bon
+// endroit tant que le dossier n'est pas fini. Une fois complet, il continue pourtant
+// d'ouvrir « Commencer / Progression de l'intégration » — inutile à qui cherche son
+// argent. On l'envoie alors sur sa plateforme.
+ok(/const fini=\(S\.proMollieOnb==='completed'\);/.test(src),'la destination dépend de l’état du dossier');
+ok(/const url=fini\?'https:\/\/my\.mollie\.com\/dashboard':\(lien\|\|'https:\/\/my\.mollie\.com\/'\);/.test(src),
+  'dossier fini → sa plateforme ; sinon → le lien d’inscription de Mollie');
 ok(/data-act="mollie-manage">\$\{I\.card\} Voir mon compte Mollie ›/.test(src),'le raccourci est présent');
-ok(/\$\{S\.proMollieOrgId\?`<p class="mini" style="margin-top:12px"><button class="linklike" data-act="mollie-manage"/.test(src),
-  'affiché dès qu’un compte Mollie existe, quel que soit l’avancement du dossier');
+ok(/\(S\.proMollieOrgId&&S\.proMollieOnb==='completed'\)\?`<p class="mini" style="margin-top:12px"><button class="linklike" data-act="mollie-manage"/.test(src),
+  'le raccourci discret n’apparaît qu’une fois le dossier terminé — avant, la carte a déjà son bouton d’inscription, et deux chemins vers deux pages égarent');
 ok(/"Voir mon compte Mollie ›":"View my Mollie account ›"/.test(src)
   && /"Voir mon compte Mollie ›":"Ver a minha conta Mollie ›"/.test(src),'traduit en anglais et en portugais');
 
@@ -33,7 +40,7 @@ console.log('B — sur l’écran réel, dans l’état où il manquait');
     S.onboarded=true;S.guest=false;S.lang='fr';S.demoMode=false;S.persona='pro';S.proNav='account';
     S.proStatus='approved';S.proName='Laure G.';S.mission=null;S.detail=null;
     // L'état exact de la capture : dossier complet, en vérification, encaissement ouvert.
-    S.proMollieOrgId='org_1';S.proMollieStatus='pending';S.proMollieOnb='in-review';S.proMollieCanWork=true;
+    S.proMollieOrgId='org_1';S.proMollieStatus='active';S.proMollieOnb='completed';S.proMollieCanWork=true;S.proMollie='active';
     S._fold=Object.assign({},S._fold,{'p-pay':true});
     window.__render();
     const l=document.querySelector('[data-act="mollie-manage"]');
@@ -46,8 +53,8 @@ console.log('B — sur l’écran réel, dans l’état où il manquait');
   // Selon que Mollie a déjà ouvert l'encaissement ou non, la carte affiche l'un ou
   // l'autre message d'attente. Le test ne fige pas lequel : ce qui compte est que le
   // raccourci coexiste avec le message, au lieu de le remplacer.
-  ok(/Rien à faire|examen|Activez vos paiements|Réglé automatiquement/.test(vue.carte||vue.txt),
-    'le message d’attente de cet état est conservé — le lien s’ajoute, il ne remplace rien');
+  ok(/Réglé automatiquement|Voir mes paiements/.test(vue.carte||vue.txt),
+    'le contenu propre à cet état est conservé — le lien s’ajoute, il ne remplace rien');
   ok(/linklike/.test(vue.cls),
     'c’est un lien discret, pas un bouton : utile, mais ce n’est pas le geste principal de l’écran');
   ok(/avant d’arriver sur votre banque|avant d'arriver sur votre banque/.test(vue.txt),
