@@ -12,9 +12,17 @@ const src=fs.readFileSync('/home/user/alize-work/index.html','utf8');
 
 console.log('A — le serveur ratisse les deux cas');
 ok(/where\('molliePayout', '==', 'unrouted'\)/.test(fn),'les versements refusés sont toujours cherchés');
-ok(/where\('commissionSettled', '==', true\)/.test(fn),'et les prestations réglées le sont aussi');
-ok(/!x\.molliePayout && round2\(Number\(x\.molliePayoutNet\) \|\| 0\) > 0\.009/.test(fn),
-  'on ne retient que celles SANS état ET avec un net réellement dû — un net nul n’est dû à personne');
+// Le net dû n'est écrit sur la demande QUE si un routage a échoué : chercher là ne
+// trouvait rien pour un partage jamais tenté. Le registre, lui, connaît le net de
+// chaque prestation réglée — et c'est lui que compte le justificatif. Même source
+// pour les deux écrans : ils ne peuvent plus se contredire.
+ok(/collection\('ledger'\)\.where\('type', '==', 'commission'\)/.test(fn),
+  'le manque est cherché dans le REGISTRE, la même source que le justificatif comptable');
+ok(/if \(x\.molliePayout\) continue;/.test(fn),'les écritures dont l’état est connu sont écartées');
+ok(/round2\(Number\(x\.netAmount\) \|\| 0\) > 0\.009/.test(fn),
+  'et seules celles avec un net réellement dû sont retenues — un net nul n’est dû à personne');
+ok(/Number\(r\.molliePayoutNet\) \|\| \(reg \? Number\(reg\.netAmount\) : 0\)/.test(fn),
+  'le montant affiché vient de la demande si elle le porte, du registre sinon');
 ok(/tente: !!r\.molliePayout/.test(fn),'chaque ligne dit si le partage a seulement été tenté');
 
 console.log('B — la console ne confond pas « refusé » et « jamais tenté »');

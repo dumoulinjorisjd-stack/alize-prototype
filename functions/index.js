@@ -2221,26 +2221,39 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
     const aTraiter = new Map();
     const q = await db.collection('requests').where('molliePayout', '==', 'unrouted').get();
     q.docs.forEach((d) => aTraiter.set(d.id, d));
+    // LE NET DÛ N'EST PAS SUR LA DEMANDE. Il n'y est inscrit QUE lorsqu'un routage a été
+    // tenté et refusé : quand le partage n'a jamais été lancé, la demande ne porte ni
+    // état ni net, et la chercher là ne donne rien — c'est ce qui laissait ces deux
+    // prestations invisibles. Le REGISTRE, lui, connaît le net de chaque prestation
+    // réglée, et c'est déjà lui que compte le justificatif comptable. On part donc de la
+    // même source que l'écran qui signalait l'anomalie : les deux ne peuvent plus se
+    // contredire, puisqu'ils lisent la même chose.
+    const duRegistre = new Map();
     try {
-      const q2 = await db.collection('requests').where('commissionSettled', '==', true).get();
-      q2.docs.forEach((d) => {
-        const x = d.data() || {};
-        // Sans état ET avec un net réellement dû : un net nul n'est dû à personne.
-        if (!aTraiter.has(d.id) && !x.molliePayout && round2(Number(x.molliePayoutNet) || 0) > 0.009) aTraiter.set(d.id, d);
-      });
-    } catch (e) { console.warn('payoutRetry : scan des versements sans état', e); }
+      const led = await db.collection('ledger').where('type', '==', 'commission').get();
+      for (const e of led.docs) {
+        const x = e.data() || {};
+        if (x.molliePayout) continue;                                 // état déjà connu
+        if (!(round2(Number(x.netAmount) || 0) > 0.009)) continue;     // rien n'est dû
+        duRegistre.set(e.id, x);
+        if (!aTraiter.has(e.id)) {
+          try { const dd = await db.collection('requests').doc(e.id).get(); if (dd.exists) aTraiter.set(e.id, dd); } catch (_) {}
+        }
+      }
+    } catch (e) { console.warn('payoutRetry : lecture du registre', e); }
     for (const d of aTraiter.values()) {
       if (cible && d.id !== cible) continue;
       const r = d.data() || {};
-      const net = round2(Number(r.molliePayoutNet) || 0);
+      const reg = duRegistre.get(d.id) || null;
+      const net = round2(Number(r.molliePayoutNet) || (reg ? Number(reg.netAmount) : 0) || 0);
       let orgId = r.mollieOrgId || '';
       if (!orgId && r.providerUid) {
         try { orgId = (await db.collection('artisans').doc(r.providerUid).get()).get('mollieOrgId') || ''; } catch (_) {}
       }
       const ligne = {
-        reqId: d.id, serviceName: String(r.serviceName || r.service || 'Prestation'),
-        providerName: String(r.providerName || ''), clientName: String(r.clientName || ''),
-        net: net, invNo: String(r.saleInvoiceNo || ''), org: orgId ? 'oui' : 'non',
+        reqId: d.id, serviceName: String(r.serviceName || (reg && reg.serviceName) || r.service || 'Prestation'),
+        providerName: String(r.providerName || (reg && reg.providerName) || ''), clientName: String(r.clientName || (reg && reg.clientName) || ''),
+        net: net, invNo: String(r.saleInvoiceNo || (reg && reg.invNo) || ''), org: orgId ? 'oui' : 'non',
         motif: String(r.molliePayoutMotif || ''), etat: '', routes: -1, verse: false,
         // `false` = le partage n'a JAMAIS été tenté (aucun état enregistré). La console
         // doit le dire autrement qu'un refus : il n'y a pas de motif à afficher.
