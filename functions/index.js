@@ -2210,8 +2210,26 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
   const cible = String((request.data && request.data.reqId) || '').trim().slice(0, 128);
   const bloques = [];
   try {
+    // DEUX FAÇONS DE NE PAS ÊTRE VERSÉ, ET UNE SEULE ÉTAIT CHERCHÉE.
+    //   • `unrouted` : le partage a été tenté et refusé — on connaît le motif.
+    //   • AUCUN état : le partage n'a jamais été tenté, le champ n'a jamais été écrit.
+    // La console n'interrogeait que le premier cas. Les secondes étaient invisibles :
+    // absentes des « versements bloqués », donc réputées versées, alors que le
+    // prestataire n'avait rien reçu et qu'aucune route n'existait chez Mollie. Le
+    // bandeau vert « tous les prestataires ont reçu leur net » s'affichait pendant que
+    // de l'argent était dû. On ratisse donc aussi les prestations réglées sans état.
+    const aTraiter = new Map();
     const q = await db.collection('requests').where('molliePayout', '==', 'unrouted').get();
-    for (const d of q.docs) {
+    q.docs.forEach((d) => aTraiter.set(d.id, d));
+    try {
+      const q2 = await db.collection('requests').where('commissionSettled', '==', true).get();
+      q2.docs.forEach((d) => {
+        const x = d.data() || {};
+        // Sans état ET avec un net réellement dû : un net nul n'est dû à personne.
+        if (!aTraiter.has(d.id) && !x.molliePayout && round2(Number(x.molliePayoutNet) || 0) > 0.009) aTraiter.set(d.id, d);
+      });
+    } catch (e) { console.warn('payoutRetry : scan des versements sans état', e); }
+    for (const d of aTraiter.values()) {
       if (cible && d.id !== cible) continue;
       const r = d.data() || {};
       const net = round2(Number(r.molliePayoutNet) || 0);
@@ -2224,6 +2242,9 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
         providerName: String(r.providerName || ''), clientName: String(r.clientName || ''),
         net: net, invNo: String(r.saleInvoiceNo || ''), org: orgId ? 'oui' : 'non',
         motif: String(r.molliePayoutMotif || ''), etat: '', routes: -1, verse: false,
+        // `false` = le partage n'a JAMAIS été tenté (aucun état enregistré). La console
+        // doit le dire autrement qu'un refus : il n'y a pas de motif à afficher.
+        tente: !!r.molliePayout,
         lecture: '', liensRoutes: null,
       };
       if (mollieApiConfigured() && r.molliePaymentId) {
