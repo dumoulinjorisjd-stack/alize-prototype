@@ -610,8 +610,13 @@ async function syncArtisanMollie(db, uid) {
   const upd = {mollieStatus: ready.ok ? 'active' : 'pending', mollieOnboardingStatus: ready.status,
     mollieCanPay: ready.canPay !== false, mollieCanSettle: ready.canSettle !== false,
     mollieCanWork: peutTravailler, mollieDashboardUrl: dashboard};
-  // Ses virements viennent de s'ouvrir : on rattrape tout de suite ce qui l'attendait.
-  if (ready.canSettle === true && ad.mollieCanSettle === false) {
+  // Ses virements sont ouverts : on rattrape ce qui l'attendait. L'ancienne garde
+  // (`=== false`) exigeait une transition observée ICI ; or le retour OAuth écrivait
+  // déjà mollieCanSettle:true sans rerouter — la transition était « consommée » et le
+  // rattrapage ne se déclenchait plus jamais (idem pour les fiches où le champ était
+  // absent : undefined !== false). `!== true` couvre les deux cas, et une fois la fiche
+  // à true, on ne repasse plus ici.
+  if (ready.canSettle === true && ad.mollieCanSettle !== true) {
     try { await rerouteArtisanPayouts(db, uid, ad.mollieOrgId); } catch (e) { console.warn('reroute', e); }
   }
   if (ready.status === 'needs-data' && prevNotified !== 'needs-data') {
@@ -730,7 +735,7 @@ async function sendWhatsAppTemplate(toPhone, param1, param2) {
   } catch (e) { console.warn('sendWhatsAppTemplate', e); return false; }
 }
 
-exports.notifyAdminNewArtisan = onDocumentCreated('artisans/{artisanId}', async (event) => {
+exports.notifyAdminNewArtisan = onDocumentCreated({document: 'artisans/{artisanId}', secrets: [SMTP_PASS]}, async (event) => {
   const snap = event.data;
   if (!snap) return;
   const a = snap.data() || {};
@@ -741,12 +746,20 @@ exports.notifyAdminNewArtisan = onDocumentCreated('artisans/{artisanId}', async 
   const db = getFirestore();
   const tokensSnap = await db.collection('adminTokens').get();
   const tokens = tokensSnap.docs.map((d) => d.id).filter(Boolean);
+  const name = (a.name || 'Un artisan').toString().slice(0, 80);
+  // E-MAIL SYSTÉMATIQUE : une candidature est rare et importante — sans jeton admin
+  // enregistré, elle passait totalement inaperçue (aucun repli n'existait).
+  try {
+    await sendMail(db, ADMIN_EMAIL, {
+      subject: 'Ti-Services · Nouvelle candidature — ' + name,
+      html: '<p><b>' + escHtmlS(name) + '</b> souhaite rejoindre Ti-Services.</p>'
+        + '<p>Ouvrez la console admin pour examiner le dossier et valider ou refuser.</p>',
+    });
+  } catch (e) { console.warn('newArtisan mail', e && e.message); }
   if (!tokens.length) {
-    console.log('Aucun jeton admin enregistré — notification ignorée.');
+    console.log('Aucun jeton admin enregistré — e-mail seul.');
     return;
   }
-
-  const name = (a.name || 'Un artisan').toString().slice(0, 80);
   const message = {
     tokens,
     data: {
@@ -1098,6 +1111,82 @@ exports.notifyServiceAddition = onDocumentUpdated({document: 'artisans/{artisanI
 });
 
 /**
+ * notifyArtisanDecisions : les DÉCISIONS de l'admin sur une fiche artisan, notifiées à
+ * l'artisan lui-même. Jusqu'ici, seule la VALIDATION du compte partait (notifyArtisanApproved) ;
+ * le refus de candidature, la validation ou le refus d'un métier ajouté et le verdict sur
+ * l'attestation d'assurance ne prévenaient PERSONNE — l'artisan restait devant « en cours
+ * d'examen » à vie. Push + e-mail, best-effort chacun.
+ */
+exports.notifyArtisanDecisions = onDocumentUpdated({document: 'artisans/{artisanId}', secrets: [SMTP_PASS]}, async (event) => {
+  const before = (event.data && event.data.before && event.data.before.data()) || {};
+  const after = (event.data && event.data.after && event.data.after.data()) || {};
+  const uid = event.params.artisanId;
+  const db = getFirestore();
+
+  // Ce qu'on annonce : {titre, corps} — on collecte puis on envoie en une passe.
+  const avis = [];
+
+  // 1) Candidature refusée (attente -> refuse). La remise en attente ou la validation
+  //    ont déjà leurs circuits ; le refus n'en avait aucun.
+  if (before.status !== 'refuse' && after.status === 'refuse') {
+    avis.push({
+      titre: 'Espace artisan · Candidature non retenue',
+      corps: 'Votre dossier n\'a pas été retenu en l\'état. Contactez-nous depuis l\'application pour en savoir plus ou compléter votre dossier.',
+    });
+  }
+
+  // 2) Métier(s) ajouté(s) : validés (déplacés de pendingCats vers cats) ou refusés
+  //    (retirés de pendingCats sans apparaître dans cats).
+  const bp = Array.isArray(before.pendingCats) ? before.pendingCats : [];
+  const ap = Array.isArray(after.pendingCats) ? after.pendingCats : [];
+  const bc = Array.isArray(before.cats) ? before.cats : [];
+  const ac = Array.isArray(after.cats) ? after.cats : [];
+  const sortis = bp.filter((c) => ap.indexOf(c) < 0);
+  const valides = sortis.filter((c) => ac.indexOf(c) >= 0 && bc.indexOf(c) < 0);
+  const refuses = sortis.filter((c) => ac.indexOf(c) < 0);
+  if (valides.length) {
+    avis.push({
+      titre: 'Espace artisan · Métier validé 🎉',
+      corps: 'Votre nouveau métier (' + valides.join(', ') + ') est validé — les clients peuvent désormais vous solliciter.',
+    });
+  }
+  if (refuses.length) {
+    avis.push({
+      titre: 'Espace artisan · Métier non retenu',
+      corps: 'Votre demande de métier (' + refuses.join(', ') + ') n\'a pas été retenue. Contactez-nous depuis l\'application pour en savoir plus.',
+    });
+  }
+
+  // 3) Attestation d'assurance : verdict de l'admin.
+  if (before.insuranceStatus !== after.insuranceStatus) {
+    if (after.insuranceStatus === 'valide') {
+      avis.push({titre: 'Espace artisan · Attestation validée', corps: 'Votre attestation d\'assurance est validée. Rien d\'autre à faire.'});
+    } else if (after.insuranceStatus === 'refuse') {
+      avis.push({titre: 'Espace artisan · Attestation refusée', corps: 'Votre attestation d\'assurance n\'a pas pu être validée — merci d\'en déposer une nouvelle depuis votre espace.'});
+    }
+  }
+
+  if (!avis.length) return;
+
+  let email = '';
+  try { email = ((await db.collection('users').doc(uid).get()).data() || {}).email || ''; } catch (_) {}
+  if (!email) email = (after.email || '').toString();
+  const tokens = await userPushTokens(db, uid);
+  for (const n of avis) {
+    await pushMulticast(tokens, n.titre, n.corps, '/?open=missions',
+      (tok) => db.collection('users').doc(uid).update({pushTokens: FieldValue.arrayRemove(tok)}), 'ti-compte-' + uid);
+    if (email) {
+      try {
+        await sendMail(db, email, {
+          subject: 'Ti-Services · ' + n.titre.replace('Espace artisan · ', ''),
+          html: '<p>Bonjour' + (after.name ? ' ' + escHtmlS(String(after.name).split(' ')[0]) : '') + ',</p><p>' + escHtmlS(n.corps) + '</p><p>L\'équipe Ti-Services</p>',
+        });
+      } catch (e) { console.warn('notifyArtisanDecisions mail', e && e.message); }
+    }
+  }
+});
+
+/**
  * notifyAdminDispute : le client conteste la durée déclarée (statut -> disputed). On alerte
  * l'admin par e-mail pour qu'il arbitre depuis la console (valider la durée déclarée, ou
  * revenir à l'accord initial). Le client n'est pas débité tant que le litige n'est pas réglé.
@@ -1180,54 +1269,41 @@ exports.notifyNewMessage = onDocumentUpdated('requests/{reqId}', async (event) =
   const aMsgs = Array.isArray(after.messages) ? after.messages : [];
   if (aMsgs.length <= bMsgs.length) return; // aucun nouveau message
 
+  // UNE RAFALE PEUT PORTER LES DEUX VOIX. Reconnexion après coupure réseau, écritures
+  // coalescées : le lot peut contenir un message du client PUIS un de l'artisan. Ne
+  // regarder que le dernier privait l'une des deux parties de sa notification. On
+  // notifie donc chaque partie qui a AU MOINS un message de l'autre dans le lot, sur
+  // la base du dernier message qui la concerne.
   const fresh = aMsgs.slice(bMsgs.length);
-  const last = fresh[fresh.length - 1] || {};
-  const from = last.from;
-  if (from !== 'client' && from !== 'pro') return;
-
-  // Destinataire = l'autre partie.
-  const recipientUid = (from === 'client') ? after.providerUid : after.clientUid;
-  if (!recipientUid) return;
-
   const db = getFirestore();
-  let tokens = [];
-  try {
-    const u = await db.collection('users').doc(recipientUid).get();
-    tokens = (u.data() || {}).pushTokens || [];
-  } catch (_) {}
-  if (!tokens.length) { console.log('Message : aucun jeton pour le destinataire.'); return; }
+  for (const from of ['client', 'pro']) {
+    const lot = fresh.filter((x) => x && x.from === from);
+    if (!lot.length) continue;
+    const last = lot[lot.length - 1];
+    // Destinataire = l'autre partie (opt-out notifOn respecté).
+    const recipientUid = (from === 'client') ? after.providerUid : after.clientUid;
+    if (!recipientUid) continue;
+    const tokens = await userPushTokens(db, recipientUid);
+    if (!tokens.length) { console.log('Message : aucun jeton pour le destinataire.'); continue; }
 
-  const senderName = (from === 'client'
-    ? (after.clientName || 'Le client')
-    : (after.providerName || 'Votre artisan')).toString().slice(0, 60);
-  const body = (last.text || 'Nouveau message').toString().slice(0, 140);
-  // L'artisan travaille depuis l'espace Missions ; le client depuis la réservation
-  // concernée (deep-link direct). Le titre indique l'espace visé (multi-comptes).
-  const link = (from === 'client')
-    ? '/?open=missions'
-    : ('/?open=wallet&r=' + event.params.reqId);
-  const spaceLabel = (from === 'client') ? 'Espace artisan' : 'Vos réservations';
-  const title = (spaceLabel + ' · ' + senderName).slice(0, 90);
-
-  const res = await getMessaging().sendEachForMulticast({
-    tokens,
-    data: { title: title, body: body, url: '.' + link },
-    webpush: { fcmOptions: { link: link }, headers: { Urgency: 'high' } },
-  });
-  console.log(`Push message : ${res.successCount}/${tokens.length}`);
-
-  const dels = [];
-  res.responses.forEach((rp, i) => {
-    if (!rp.success) {
-      const code = rp.error && rp.error.code;
-      if (code === 'messaging/registration-token-not-registered' ||
-          code === 'messaging/invalid-argument' ||
-          code === 'messaging/invalid-registration-token') {
-        dels.push(db.collection('users').doc(recipientUid).update({ pushTokens: FieldValue.arrayRemove(tokens[i]) }));
-      }
-    }
-  });
-  if (dels.length) await Promise.all(dels);
+    const senderName = (from === 'client'
+      ? (after.clientName || 'Le client')
+      : (after.providerName || 'Votre artisan')).toString().slice(0, 60);
+    const body = (last.text || 'Nouveau message').toString().slice(0, 140);
+    // L'artisan travaille depuis l'espace Missions ; le client depuis la réservation
+    // concernée (deep-link direct). Le titre indique l'espace visé (multi-comptes).
+    const link = (from === 'client')
+      ? '/?open=missions'
+      : ('/?open=wallet&r=' + event.params.reqId);
+    const spaceLabel = (from === 'client') ? 'Espace artisan' : 'Vos réservations';
+    const title = (spaceLabel + ' · ' + senderName).slice(0, 90);
+    // Tag = le fil : même valeur que la notification locale de la page
+    // (« ti-msg-<reqId> »), pour que le push serveur et l'alerte locale se
+    // REGROUPENT au lieu de s'afficher en double quand l'app est ouverte.
+    await pushMulticast(tokens, title, body, link,
+      (tok) => db.collection('users').doc(recipientUid).update({ pushTokens: FieldValue.arrayRemove(tok) }),
+      'ti-msg-' + event.params.reqId);
+  }
 });
 
 /**
@@ -1236,27 +1312,55 @@ exports.notifyNewMessage = onDocumentUpdated('requests/{reqId}', async (event) =
  *  - message d'un utilisateur (client/pro) -> push à l'admin (collection adminTokens) ;
  *  - réponse de l'admin -> push à l'utilisateur concerné (clientUid / providerUid).
  */
-async function pushMulticast(tokens, title, body, link, onInvalid) {
+// UN ENVOI QUI ÉCHOUE NE DOIT JAMAIS FAIRE ÉCHOUER L'APPELANT : pushMulticast est
+// appelée en chaîne (support client PUIS support artisan) et au milieu de traitements
+// financiers — une exception FCM sacrifiait tout ce qui suivait. On encaisse, on
+// journalise (avant : zéro trace des échecs), on continue. FCM refuse aussi les lots
+// de plus de 500 jetons (adminTokens n'est pas borné) : on découpe. Le `tag` regroupe
+// les notifications d'un même fil sur l'appareil — sans lui, tout retombait sur le tag
+// unique du service worker et chaque push ÉCRASAIT le précédent dans le centre de
+// notifications. Enfin, `messaging/invalid-argument` peut venir de la CHARGE UTILE et
+// pas du jeton : supprimer le jeton sur ce code purgeait des appareils valides.
+async function pushMulticast(tokens, title, body, link, onInvalid, tag) {
   if (!tokens.length) return;
-  const res = await getMessaging().sendEachForMulticast({
-    tokens,
-    data: { title: title, body: body, url: '.' + (link || '/') },
-    webpush: { fcmOptions: { link: link || '/' }, headers: { Urgency: 'high' } },
-  });
-  if (onInvalid) {
-    const dels = [];
-    res.responses.forEach((r, i) => {
-      if (!r.success) {
-        const c = r.error && r.error.code;
-        if (c === 'messaging/registration-token-not-registered' ||
-            c === 'messaging/invalid-argument' ||
-            c === 'messaging/invalid-registration-token') {
-          dels.push(onInvalid(tokens[i]));
+  try {
+    const msg = getMessaging();
+    let ok = 0; let ko = 0;
+    for (let off = 0; off < tokens.length; off += 450) {
+      const lot = tokens.slice(off, off + 450);
+      const res = await msg.sendEachForMulticast({
+        tokens: lot,
+        data: Object.assign({ title: title, body: body, url: '.' + (link || '/') }, tag ? { tag: tag } : {}),
+        webpush: { fcmOptions: { link: link || '/' }, headers: { Urgency: 'high' } },
+      });
+      ok += res.successCount; ko += res.failureCount;
+      const dels = [];
+      res.responses.forEach((r, i) => {
+        if (!r.success) {
+          const c = r.error && r.error.code;
+          if (onInvalid && (c === 'messaging/registration-token-not-registered' ||
+              c === 'messaging/invalid-registration-token')) {
+            dels.push(Promise.resolve(onInvalid(lot[i])).catch(() => {}));
+          } else {
+            console.warn('pushMulticast échec', c || (r.error && r.error.message) || 'inconnu');
+          }
         }
-      }
-    });
-    if (dels.length) await Promise.all(dels);
-  }
+      });
+      if (dels.length) await Promise.all(dels);
+    }
+    if (ko) console.warn('pushMulticast : ' + ok + ' envoyés, ' + ko + ' échecs sur ' + tokens.length + ' jetons');
+  } catch (e) { console.warn('pushMulticast', (e && e.message) || e); }
+}
+// Jetons push d'un utilisateur, en RESPECTANT son choix : notifOn === false (il a coupé
+// les notifications) => aucun jeton. Seul le pool « nouvelle mission » faisait ce
+// contrôle ; la messagerie et les statuts continuaient d'envoyer malgré l'opt-out.
+async function userPushTokens(db, uid) {
+  if (!uid) return [];
+  try {
+    const u = (await db.collection('users').doc(uid).get()).data() || {};
+    if (u.notifOn === false) return [];
+    return Array.isArray(u.pushTokens) ? u.pushTokens : [];
+  } catch (_) { return []; }
 }
 
 exports.notifySupportMessage = onDocumentUpdated('requests/{reqId}', async (event) => {
@@ -1264,32 +1368,42 @@ exports.notifySupportMessage = onDocumentUpdated('requests/{reqId}', async (even
   const after = (event.data && event.data.after && event.data.after.data()) || {};
   const db = getFirestore();
 
-  async function handle(field, userUidField, userNameField, fallbackName) {
+  async function handle(field, userUidField, userNameField, fallbackName, side) {
     const b = Array.isArray(before[field]) ? before[field] : [];
     const a = Array.isArray(after[field]) ? after[field] : [];
     if (a.length <= b.length) return;
-    const last = a[a.length - 1] || {};
-    const body = String(last.text || 'Nouveau message').slice(0, 140);
-    if (last.from === 'admin') {
-      // Réponse de l'admin -> notifier l'utilisateur concerné.
+    // La rafale peut contenir un message de l'utilisateur ET la réponse de l'admin
+    // (reconnexion, écritures coalescées) : ne lire que le dernier privait l'un des
+    // deux de sa notification. On traite chaque sens présent dans le lot.
+    const fresh = a.slice(b.length);
+    const tag = 'ti-sup-' + event.params.reqId + '-' + side;   // même tag que l'alerte locale de la page
+    const fromAdmin = fresh.filter((x) => x && x.from === 'admin');
+    const fromUser = fresh.filter((x) => x && x.from !== 'admin');
+    if (fromAdmin.length) {
+      // Réponse de l'admin -> notifier l'utilisateur concerné (opt-out respecté).
       const uid = after[userUidField];
-      if (!uid) return;
-      let tokens = [];
-      try { const u = await db.collection('users').doc(uid).get(); tokens = (u.data() || {}).pushTokens || []; } catch (_) {}
-      await pushMulticast(tokens, 'Ti-Services · Support', body, '/',
-        (tok) => db.collection('users').doc(uid).update({ pushTokens: FieldValue.arrayRemove(tok) }));
-    } else {
+      if (uid) {
+        const body = String((fromAdmin[fromAdmin.length - 1] || {}).text || 'Nouveau message').slice(0, 140);
+        const tokens = await userPushTokens(db, uid);
+        // Le clic ouvre la réservation concernée, pas l'accueil.
+        const link = (side === 'client') ? ('/?open=wallet&r=' + event.params.reqId) : '/?open=missions';
+        await pushMulticast(tokens, 'Ti-Services · Support', body, link,
+          (tok) => db.collection('users').doc(uid).update({ pushTokens: FieldValue.arrayRemove(tok) }), tag);
+      }
+    }
+    if (fromUser.length) {
       // Message d'un utilisateur -> notifier l'admin.
       let tokens = [];
       try { const ts = await db.collection('adminTokens').get(); tokens = ts.docs.map((d) => d.id).filter(Boolean); } catch (_) {}
+      const body = String((fromUser[fromUser.length - 1] || {}).text || 'Nouveau message').slice(0, 140);
       const who = (after[userNameField] || fallbackName || 'Un utilisateur').toString().slice(0, 60);
       await pushMulticast(tokens, 'Support — ' + who, body, '/',
-        (tok) => db.collection('adminTokens').doc(tok).delete());
+        (tok) => db.collection('adminTokens').doc(tok).delete(), tag);
     }
   }
 
-  await handle('supportClient', 'clientUid', 'clientName', 'Client');
-  await handle('supportPro', 'providerUid', 'providerName', 'Artisan');
+  await handle('supportClient', 'clientUid', 'clientName', 'Client', 'client');
+  await handle('supportPro', 'providerUid', 'providerName', 'Artisan', 'pro');
 });
 
 /**
@@ -1303,20 +1417,26 @@ exports.notifyGeneralSupport = onDocumentUpdated('users/{uid}', async (event) =>
   const b = Array.isArray(before.support) ? before.support : [];
   const a = Array.isArray(after.support) ? after.support : [];
   if (a.length <= b.length) return;
-  const last = a[a.length - 1] || {};
-  const body = String(last.text || 'Nouveau message').slice(0, 140);
   const db = getFirestore();
   const uid = event.params.uid;
-  if (last.from === 'admin') {
-    const tokens = after.pushTokens || [];
+  // Comme pour la messagerie de réservation : une rafale peut contenir les deux voix.
+  const fresh = a.slice(b.length);
+  const tag = 'ti-supg-' + uid;
+  const fromAdmin = fresh.filter((x) => x && x.from === 'admin');
+  const fromUser = fresh.filter((x) => x && x.from !== 'admin');
+  if (fromAdmin.length) {
+    const body = String((fromAdmin[fromAdmin.length - 1] || {}).text || 'Nouveau message').slice(0, 140);
+    const tokens = (after.notifOn === false) ? [] : (after.pushTokens || []);
     await pushMulticast(tokens, 'Ti-Services · Support', body, '/',
-      (tok) => db.collection('users').doc(uid).update({ pushTokens: FieldValue.arrayRemove(tok) }));
-  } else {
+      (tok) => db.collection('users').doc(uid).update({ pushTokens: FieldValue.arrayRemove(tok) }), tag);
+  }
+  if (fromUser.length) {
     let tokens = [];
     try { const ts = await db.collection('adminTokens').get(); tokens = ts.docs.map((d) => d.id).filter(Boolean); } catch (_) {}
+    const body = String((fromUser[fromUser.length - 1] || {}).text || 'Nouveau message').slice(0, 140);
     const who = (after.name || 'Un utilisateur').toString().slice(0, 60);
     await pushMulticast(tokens, 'Support général — ' + who, body, '/',
-      (tok) => db.collection('adminTokens').doc(tok).delete());
+      (tok) => db.collection('adminTokens').doc(tok).delete(), tag);
   }
 });
 
@@ -1351,6 +1471,11 @@ exports.notifyClientStatus = onDocumentUpdated('requests/{reqId}', async (event)
   if (bStatus === 'pending' && aStatus === 'accepted') {
     title = 'Vos réservations · Artisan trouvé';
     body = provider + ' a accepté votre demande de ' + svcName + '.';
+  } else if (aStatus === 'working') {
+    // Début de mission : le client n'était prévenu par RIEN — il découvrait la
+    // prestation démarrée en rouvrant l'app par hasard.
+    title = 'Vos réservations · Prestation en cours';
+    body = provider + ' a démarré ' + svcName + '.';
   } else if (aStatus === 'done_pro') {
     title = 'Vos réservations · Prestation terminée';
     body = provider + ' a terminé — validez pour finaliser.';
@@ -1360,16 +1485,17 @@ exports.notifyClientStatus = onDocumentUpdated('requests/{reqId}', async (event)
     const who = (after.declinedName || after.preferredProviderName || 'Votre artisan').toString().slice(0, 60);
     title = 'Vos réservations · Artisan indisponible';
     body = who + ' n\'est pas disponible pour ' + svcName + ' — à vous de décider.';
+  } else if (aStatus === 'payment_failed') {
+    // Paiement refusé à la commande : sans ce message, la demande n'était JAMAIS
+    // diffusée aux artisans et le client ne l'apprenait nulle part.
+    title = 'Vos réservations · Paiement non abouti';
+    body = 'Votre réservation de ' + svcName + ' n\'est pas confirmée — réessayez le paiement.';
   } else {
     return; // autres transitions : pas de notification client
   }
 
   const db = getFirestore();
-  let tokens = [];
-  try {
-    const u = await db.collection('users').doc(clientUid).get();
-    tokens = (u.data() || {}).pushTokens || [];
-  } catch (_) {}
+  const tokens = await userPushTokens(db, clientUid);
   if (!tokens.length) { console.log('Statut client : aucun jeton pour ' + clientUid); return; }
 
   await pushMulticast(tokens, title, body, '/?open=wallet&r=' + event.params.reqId,
@@ -1425,7 +1551,7 @@ const round2 = (x) => Math.round((Number(x) || 0) * 100) / 100;
  * prévient l'ARTISAN par push — même application fermée. Le pourboire est mis en
  * avant s'il y en a un ; le montant net exact reste affiché dans l'app.
  */
-exports.notifyArtisanPaid = onDocumentUpdated('requests/{reqId}', async (event) => {
+exports.notifyArtisanPaid = onDocumentUpdated({document: 'requests/{reqId}', secrets: [SMTP_PASS]}, async (event) => {
   const before = (event.data && event.data.before && event.data.before.data()) || {};
   const after = (event.data && event.data.after && event.data.after.data()) || {};
   if (before.status === 'paid' || after.status !== 'paid') return; // transition -> paid, une seule fois
@@ -1435,7 +1561,6 @@ exports.notifyArtisanPaid = onDocumentUpdated('requests/{reqId}', async (event) 
   const db = getFirestore();
   let tokens = [];
   try { const u = await db.collection('users').doc(uid).get(); tokens = (u.data() || {}).pushTokens || []; } catch (_) {}
-  if (!tokens.length) { console.log('notifyArtisanPaid : aucun jeton pour ' + uid); return; }
 
   const cli = (after.clientName || 'Le client').toString().split(' ')[0].slice(0, 30);
   const tip = Math.max(0, round2(Number(after.tip) || 0));
@@ -1444,6 +1569,25 @@ exports.notifyArtisanPaid = onDocumentUpdated('requests/{reqId}', async (event) 
   const body = tip > 0
     ? ('💛 ' + cli + ' a validé et vous a laissé ' + eurTxt(tip) + ' de pourboire' + amt)
     : (cli + ' a validé votre prestation' + amt + '. Vous êtes payé 🎉');
+
+  // Artisan sans appareil enregistré : REPLI E-MAIL. Le circuit « nouvelle demande »
+  // a ce filet depuis toujours (mailArtisansSansAppareil) ; « vous êtes payé » — le
+  // message le plus important pour lui — n'en avait aucun.
+  if (!tokens.length) {
+    console.log('notifyArtisanPaid : aucun jeton pour ' + uid + ' — repli e-mail');
+    try {
+      const u = (await db.collection('users').doc(uid).get()).data() || {};
+      const a = (await db.collection('artisans').doc(uid).get()).data() || {};
+      const em = u.email || a.email || '';
+      if (em) {
+        await sendMail(db, em, {
+          subject: 'Prestation validée — vous êtes payé',
+          html: '<p>' + escHtmlS(body) + '</p><p>Le détail est dans votre espace Missions sur <a href="' + APP_URL + '">ti-services.fr</a>.</p>',
+        });
+      }
+    } catch (e) { console.warn('notifyArtisanPaid mail', e && e.message); }
+    return;
+  }
 
   try {
     const res = await getMessaging().sendEachForMulticast({
@@ -3217,7 +3361,7 @@ exports.mollieOnboardingStart = onRequest((req, res) => {
  * (mollieOrgId + mollieStatus). Puis on renvoie l'artisan dans l'app.
  * Inerte tant que Mollie n'est pas configuré.
  */
-exports.mollieOnboardingReturn = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET', 'MOLLIE_ACCESS_TOKEN']}, async (req, res) => {
+exports.mollieOnboardingReturn = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET', 'MOLLIE_ACCESS_TOKEN', SMTP_PASS]}, async (req, res) => {
   if (!mollieOAuthConfigured()) { res.status(503).json({error: 'Mollie non configuré'}); return; }
   const code = (req.query.code || '').toString();
   // Le `state` DOIT être un jeton signé par notre serveur (mollieOnboardingLink). Sinon on
@@ -3254,7 +3398,13 @@ exports.mollieOnboardingReturn = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLI
     // exiger le dossier complet enfermerait l'artisan dans un cercle sans issue.
     const ready = orgId ? await mollieOnboardingReady(tok.access_token) : {ok: false, status: 'needs-data', dashboard: ''};
     const db = getFirestore();
-    await db.collection('artisans').doc(uid).set({
+    // Fiche AVANT écriture : ce chemin est le premier à voir un compte déjà vérifié
+    // (« active » dès la liaison). Sans lecture préalable, il consommait la transition —
+    // ni notification « paiements activés », ni rattrapage des versements en attente,
+    // et les synchros suivantes ne pouvaient plus les déclencher (prevStatus déjà actif).
+    let avant = {};
+    try { avant = (await db.collection('artisans').doc(uid).get()).data() || {}; } catch (_) {}
+    const patch = {
       mollieOrgId: orgId,
       mollieStatus: (orgId && ready.ok) ? 'active' : 'pending',
       mollieOnboardingStatus: ready.status,
@@ -3263,7 +3413,15 @@ exports.mollieOnboardingReturn = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLI
       mollieCanWork: !!(orgId && ready.canPay === true),
       mollieDashboardUrl: ready.dashboard || '',
       mollieOnboardedAt: FieldValue.serverTimestamp(),
-    }, {merge: true});
+    };
+    if (orgId && ready.ok && avant.mollieActiveNotified !== true) patch.mollieActiveNotified = true;
+    await db.collection('artisans').doc(uid).set(patch, {merge: true});
+    if (orgId && ready.ok && avant.mollieActiveNotified !== true) {
+      try { await notifyArtisanMollieActivated(db, uid); } catch (e) { console.warn('return notify', e && e.message); }
+    }
+    if (orgId && ready.canSettle === true) {
+      try { await rerouteArtisanPayouts(db, uid, orgId); } catch (e) { console.warn('return reroute', e && e.message); }
+    }
     // Refresh-token conservé CÔTÉ SERVEUR UNIQUEMENT (collection verrouillée, illisible par
     // le client) : permet de re-vérifier le statut plus tard — l'artisan finit souvent sa
     // vérification Mollie APRÈS être revenu dans l'app (statut « in-review » au retour).
@@ -3500,6 +3658,24 @@ exports.mollieOnboardingSweep = onSchedule({schedule: 'every 15 minutes', secret
     if (!(d.data() || {}).mollieOrgId) continue;
     try { await syncArtisanMollie(db, d.id); } catch (e) { console.warn('mollieSweep', d.id, e); }
   }
+  // FILET : les versements restés « unrouted » (mission ou supplément) chez des artisans
+  // dont les virements sont OUVERTS. Le rattrapage ne se déclenchait que sur la
+  // transition canSettle false→true observée par une synchro ; un refus ponctuel de
+  // Mollie (ou une transition consommée par le retour OAuth) laissait l'argent bloqué
+  // pour toujours. Ici, on retente à chaque passage — zéro document = zéro coût.
+  try {
+    const uids = new Set();
+    for (const champ of ['molliePayout', 'complementPayout']) {
+      const q = await db.collection('requests').where(champ, '==', 'unrouted').limit(50).get();
+      q.forEach((d) => { const u = (d.data() || {}).providerUid; if (u) uids.add(u); });
+    }
+    for (const uid of uids) {
+      const a = (await db.collection('artisans').doc(uid).get()).data() || {};
+      if (a.mollieOrgId && a.mollieCanSettle === true) {
+        try { await rerouteArtisanPayouts(db, uid, a.mollieOrgId); } catch (e) { console.warn('sweep reroute', uid, e); }
+      }
+    }
+  } catch (e) { console.warn('sweep filet unrouted', e); }
   console.log('mollieOnboardingSweep : ' + pend.size + ' dossier(s) en attente re-vérifié(s).');
 });
 
@@ -3555,9 +3731,13 @@ exports.autoValidate = onSchedule({schedule: 'every 1 hours', secrets: [SMTP_PAS
     const hausse = (r.finalHours != null && Number(r.finalHours) > (Number(r.duration) || 0));
     const autorise = Number(r.molliePaymentAmount) || 0;
     const duTotal = montantsDemande(r).gross;
-    if (hausse || (autorise > 0 && duTotal > autorise + 0.009)) continue;
+    // Montant revu à la hausse : pas de validation automatique — mais SURTOUT pas le
+    // silence. Le `continue` d'avant sautait AUSSI le rappel : c'était précisément le
+    // cas qui exige l'accord du client, et le seul où il ne recevait aucune relance
+    // (la demande restait en done_pro pour toujours, l'artisan jamais payé).
+    const accordRequis = hausse || (autorise > 0 && duTotal > autorise + 0.009);
 
-    if (heures >= AUTO_VALID_H) {
+    if (!accordRequis && heures >= AUTO_VALID_H) {
       // On relit dans une transaction : si le client valide à la seconde près, c'est lui
       // qui gagne — on ne double jamais une validation.
       try {
@@ -3601,7 +3781,9 @@ exports.autoValidate = onSchedule({schedule: 'every 1 hours', secrets: [SMTP_PAS
     }
 
     if (heures >= AUTO_RAPPEL_H && !r.autoValidRappel) {
-      // Rappel unique, à mi-parcours : la date exacte, et la porte de sortie.
+      // Rappel unique, à mi-parcours : la date exacte, et la porte de sortie. Quand le
+      // montant a été revu à la hausse (accordRequis), pas d'échéance automatique à
+      // annoncer : on demande simplement la validation explicite.
       try {
         const limite = new Date(depuis + AUTO_VALID_H * 3600000);
         // Saint-Barthélemy est à UTC−4 : on annonce l'heure locale, pas l'heure serveur.
@@ -3610,19 +3792,23 @@ exports.autoValidate = onSchedule({schedule: 'every 1 hours', secrets: [SMTP_PAS
           ' à ' + String(loc.getUTCHours()).padStart(2, '0') + 'h' + String(loc.getUTCMinutes()).padStart(2, '0');
         const nom = (r.serviceName || r.service || 'votre prestation').toString().slice(0, 60);
         const u = (await db.collection('users').doc(r.clientUid).get()).data() || {};
-        if ((u.pushTokens || []).length) {
-          await pushMulticast(u.pushTokens, 'Validez votre prestation',
-            nom + ' — sans réponse, elle sera validée et réglée automatiquement le ' + quand + '.',
+        const corpsPush = accordRequis
+          ? (nom + ' — le montant a été ajusté : votre validation est nécessaire pour régler votre prestataire.')
+          : (nom + ' — sans réponse, elle sera validée et réglée automatiquement le ' + quand + '.');
+        if (u.notifOn !== false && (u.pushTokens || []).length) {
+          await pushMulticast(u.pushTokens, 'Validez votre prestation', corpsPush,
             '/?open=' + encodeURIComponent(d.id),
             (tok) => db.collection('users').doc(r.clientUid).update({pushTokens: FieldValue.arrayRemove(tok)}).catch(() => {}));
         }
         if (u.email) {
           await sendMail(db, u.email, {
-            subject: 'Ti-Services · ' + nom + ' — à valider avant le ' + quand,
+            subject: 'Ti-Services · ' + nom + (accordRequis ? ' — votre validation est attendue' : ' — à valider avant le ' + quand),
             html: '<p>Bonjour,</p><p>Votre prestataire a déclaré la prestation « ' + escHtmlS(nom) + ' » terminée.</p>'
-              + '<p>Sans réponse de votre part, elle sera <b>validée automatiquement le ' + escHtmlS(quand) + '</b> (heure de Saint-Barthélemy) et le montant convenu sera prélevé sur votre carte.</p>'
+              + (accordRequis
+                ? '<p>La durée déclarée dépasse ce qui était prévu à la commande&nbsp;: <b>rien ne sera prélevé sans votre accord</b>. Ouvrez l\'application pour vérifier le détail, puis validez — votre prestataire n\'est payé qu\'à ce moment-là.</p>'
+                : '<p>Sans réponse de votre part, elle sera <b>validée automatiquement le ' + escHtmlS(quand) + '</b> (heure de Saint-Barthélemy) et le montant convenu sera prélevé sur votre carte.</p>')
               + '<p><b>Tout s\'est bien passé&nbsp;?</b> Validez dès maintenant depuis l\'application&nbsp;: votre prestataire est payé immédiatement.</p>'
-              + '<p><b>Un souci&nbsp;?</b> Signalez-le depuis l\'application avant cette date&nbsp;: rien ne sera prélevé tant que la situation n\'est pas réglée.</p>'
+              + '<p><b>Un souci&nbsp;?</b> Signalez-le depuis l\'application&nbsp;: rien ne sera prélevé tant que la situation n\'est pas réglée.</p>'
               + '<p>L\'équipe Ti-Services</p>',
           });
         }
