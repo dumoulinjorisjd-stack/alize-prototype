@@ -10969,7 +10969,11 @@
     // réelle est ensuite chargée depuis Firestore (loadUserProfile).
     S.proName='';S.proLegal='';S.proAddress='';S.proSiret='';S.proStatusType='entreprise';S.proLegalForm='';S.proCapital='';S.proRcsCity='';S.proCats=[];S.proPendingCats=[];S.proPendingOther='';S.proAddView=false;S.proAddForm=null;S.proBio='';S.proPhone='';S.proPhoto=null;
     S.proInsured=false;S.proInsurer='';S.proInsuranceUrl='';S.proInsuranceStatus='none';
-    S.proFounder=false;S.proOnline=false;S.proRating=0;S.proStatus='pending';
+    // Une INSCRIPTION EN COURS n'est pas une donnée de démo : le lien « Devenir
+    // intervenant » des e-mails (?open=pro-signup) pose proStatus='signup' AVANT ce
+    // nettoyage — l'écraser en 'pending' affichait « candidature en cours d'examen »
+    // à quelqu'un qui n'a encore rien envoyé.
+    S.proFounder=false;S.proOnline=false;S.proRating=0;if(S.proStatus!=='signup')S.proStatus='pending';
     // Les alertes sont le canal par lequel les missions arrivent : un prestataire qui
     // les découvre éteintes rate ses premières demandes sans comprendre pourquoi.
     // Elles partent donc actives ; il reste libre de les couper depuis son compte.
@@ -12137,6 +12141,16 @@
     if(open==='alerts'){S.onboarded=true;S.persona='pro';if(S.proStatus!=='approved')S.proStatus='approved';S.proNav='account';S._fold=Object.assign({},S._fold,{'p-alerts':true});return true;}
     if(open==='admin'){S.onboarded=true;S.persona='admin';S.admin={view:'home',sel:null};return true;}
     if(open==='wallet'){S.clientNav='wallet';return true;}
+    // Liens croisés des e-mails de bienvenue : « ?open=pro-signup » ouvre directement
+    // l'inscription intervenant, « ?open=client-signup » l'inscription client (avec une
+    // AUTRE adresse e-mail — le mail le précise). Si un compte est déjà connecté sur
+    // l'appareil, l'app repeindra son espace après la restauration de session : la
+    // personne se déconnecte d'abord, comme indiqué dans l'e-mail.
+    if(open==='pro-signup'){S.onboarded=false;S.authView=null;S.showPitch=false;S.persona='pro';S.proStatus='signup';
+      if(!CONCIERGE_OPEN){S.signupKind='artisan';S.proForm=S.proForm||{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,cgu:false,charte:false,rates:{},otherService:'',photo:'',refCode:storedParrain()};}
+      else S.signupKind=null;
+      return true;}
+    if(open==='client-signup'){S.onboarded=false;S.showPitch=false;S.persona='client';S.proStatus='approved';S.authView='signup';S.onbStep=1;S.clientForm=S.clientForm||{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''};return true;}
   }catch(e){}return false;}
   // Ouvre la réservation ciblée par une notification, une fois chargée (deep-link).
   function applyPendingOpen(){try{ if(!S._openReq)return; const m=(S.missions||[]).find(function(x){return x.reqId===S._openReq;}); if(m){S._openReq=null;S.persona='client';S.clientNav='wallet';S.mission=m;render();} }catch(_){}}

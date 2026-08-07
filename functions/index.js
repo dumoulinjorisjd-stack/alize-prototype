@@ -4471,29 +4471,31 @@ function welcomeHtml(first, role) {
     welcomeFeatureRow(dot, 'Suivi en direct', 'Vous suivez votre intervention et échangez avec votre intervenant dans l\'app.')
   );
 
-  const installIntro = isPro ?
-    'Installez l\'app et activez les notifications pour ne manquer aucune demande de mission&nbsp;:' :
-    'Ajoutez Ti-Services à votre écran d\'accueil — vous la retrouverez comme une vraie application, avec les notifications&nbsp;:';
-
   const ctaLabel = isPro ? 'Ouvrir mon espace' : 'Ouvrir Ti-Services';
 
-  const installBlock =
+  // BLOC CROISÉ : chacun des deux mondes propose l'autre. Un client peut aussi être
+  // professionnel (et inversement) — avec une AUTRE adresse e-mail, chaque compte ayant
+  // la sienne. Le lien ouvre DIRECTEMENT le bon formulaire d'inscription dans l'app
+  // (deep-links ?open=pro-signup / ?open=client-signup). Plus de bloc « installez
+  // l'application » : l'inscription ne se fait aujourd'hui qu'APRÈS l'installation,
+  // ce mail arrive donc toujours chez quelqu'un qui a déjà l'app.
+  const crossTitle = isPro ? 'Besoin d\'un service pour vous ?' : 'Vous êtes aussi professionnel ?';
+  const crossText = isPro ?
+    ('Ti-Services marche dans les deux sens&nbsp;: avec <b>une autre adresse e-mail</b>, créez aussi votre ' +
+     '<b>compte client</b> pour réserver ménage, jardinage, coiffure, sport et plus — près de chez vous.') :
+    ('Proposez vos services sur Ti-Services et recevez des missions près de chez vous. Créez votre ' +
+     '<b>profil intervenant</b> — avec <b>une autre adresse e-mail</b> que celle de ce compte.');
+  const crossHref = app + (isPro ? '/?open=client-signup' : '/?open=pro-signup');
+  const crossLabel = isPro ? 'Créer mon compte client' : 'Devenir intervenant';
+  const crossBtn = isPro ? '#FF6A5B' : '#0FA896';   // l'accent de l'AUTRE monde
+  const crossBlock =
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FBF7F4;border:1px solid #efeae4;border-radius:14px;margin-top:6px">' +
       '<tr><td style="padding:16px 18px">' +
-        '<div style="font-size:14px;font-weight:700;color:#231E33">Installez l\'application</div>' +
-        '<div style="font-size:13px;color:#6b6577;line-height:1.5;margin:6px 0 12px">' + installIntro + '</div>' +
-        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:12px"><tr><td align="center">' +
-          '<a href="' + app + '/?install=1" style="display:inline-block;background:' + btn + ';color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 22px;border-radius:11px">Installer l\'application</a>' +
+        '<div style="font-size:14px;font-weight:700;color:#231E33">' + crossTitle + '</div>' +
+        '<div style="font-size:13px;color:#6b6577;line-height:1.55;margin:6px 0 12px">' + crossText + '</div>' +
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">' +
+          '<a href="' + crossHref + '" style="display:inline-block;background:' + crossBtn + ';color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 22px;border-radius:11px">' + crossLabel + '</a>' +
         '</td></tr></table>' +
-        '<div style="font-size:12px;color:#8a8494;line-height:1.5;margin-bottom:10px">Le bouton ci-dessus ouvre l\'app et lance l\'installation. Ou à la main&nbsp;:</div>' +
-        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:8px"><tr>' +
-          '<td width="86" valign="top"><span style="display:inline-block;font-size:11px;font-weight:700;color:' + c1 + ';background:#ffffff;border:1px solid #efeae4;border-radius:8px;padding:4px 8px">iPhone</span></td>' +
-          '<td style="font-size:13px;color:#4a4556;line-height:1.5">Ouvrez ce lien dans <b>Safari</b>, touchez le bouton <b>Partager</b> (le carré avec une flèche), puis <b>« Sur l\'écran d\'accueil »</b>.</td>' +
-        '</tr></table>' +
-        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>' +
-          '<td width="86" valign="top"><span style="display:inline-block;font-size:11px;font-weight:700;color:' + c1 + ';background:#ffffff;border:1px solid #efeae4;border-radius:8px;padding:4px 8px">Android</span></td>' +
-          '<td style="font-size:13px;color:#4a4556;line-height:1.5">Ouvrez ce lien dans <b>Chrome</b>, touchez le menu <b>⋮</b> en haut à droite, puis <b>« Installer l\'application »</b>.</td>' +
-        '</tr></table>' +
       '</td></tr>' +
     '</table>';
 
@@ -4513,7 +4515,7 @@ function welcomeHtml(first, role) {
             '<p style="font-size:15px;line-height:1.6;color:#4a4556;margin:12px 0 0">' + intro + '</p>' +
           '</td></tr>' +
           '<tr><td style="padding:22px 30px 4px">' + feats + '</td></tr>' +
-          '<tr><td style="padding:6px 30px 0">' + installBlock + '</td></tr>' +
+          '<tr><td style="padding:6px 30px 0">' + crossBlock + '</td></tr>' +
           '<tr><td align="center" style="padding:20px 30px 28px">' +
             '<a href="' + app + '" style="display:inline-block;background:' + btn + ';color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:13px 30px;border-radius:12px">' + ctaLabel + '</a>' +
           '</td></tr>' +
