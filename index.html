@@ -3759,7 +3759,14 @@
   // Consolidation mensuelle des commissions d'un historique : c'est la base de la
   // FACTURE DE COMMISSION mensuelle (une ligne par mission). Modèle standard des
   // plateformes : le relevé mensuel EST la facture.
-  const COMM_PERIOD='Juillet 2026';
+  // MOIS_FR / MOIS_FR_MIN sont déclarés plus bas (relevés mensuels) : on ne redéclare pas,
+  // on nomme le mois sans dépendre d'eux pour rester utilisable dès ici.
+  const _MOIS_PER=['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+  function moisLabel(d){d=d||new Date();return _MOIS_PER[d.getMonth()]+' '+d.getFullYear();}
+  function moisCleISO(d){d=d||new Date();return d.toISOString().slice(0,7);}
+  // Période de facturation COURANTE, jamais figée : elle date les factures de commission,
+  // les relevés de rétribution, et sert de marqueur « versé pour ce mois-ci ».
+  const COMM_PERIOD=moisLabel();
   // Relevé/facture de commission mensuels du prestataire : ils fonctionnent DE FAÇON
   // IDENTIQUE chaque mois. Chaque mois a son propre document (ses seules missions), qui
   // ne devient consultable qu'à partir du 1er du mois SUIVANT — avant, le mois n'est pas
@@ -11698,10 +11705,15 @@
   // (parlant), action à faire = point orange. Le simple point rouge est réservé
   // aux boutons de messagerie (où le libellé dit déjà « messagerie »).
   function proDots(m){const badge=unreadBadge(m);const a=proMissionAction(m)?'<span class="pdots"><span class="pdot orange" aria-label="Action à faire" title="Action à faire"></span></span>':'';return badge+a;}
+  // Pastille de métier — même gabarit que celles du Compte, teinte du service.
+  function svcPastille(id){
+    const c=SVC_COLORS[id]||'var(--coral)';
+    return `<span class="benic" style="flex:none;margin-top:1px;background:color-mix(in srgb,${c} 15%,transparent);color:${c}">${svcIco(id)}</span>`;
+  }
   function proTodoBlock(){
     const list=proActiveMissions();
     if(!list.length)return '';
-    return `<div style="margin-top:26px"><span class="eyebrow" style="color:var(--muted)">${I.check} Missions en cours · ${list.length}</span>${list.map(function(m){const sm=proMissionMeta(m.status);return `<button class="card" data-act="promiss:${m._id||''}" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block;border-left:4px solid ${sm.c==='good'?'var(--good)':'var(--coral)'}"><div class="row between"><b style="font-size:14px">${proDots(m)}${esc(m.svcName||svcNm(m.svc))}</b><span class="chip ${sm.c}">${sm.l}</span></div><div class="mini" style="margin-top:3px">${I.pin} ${esc(migZone(m.zone))} · ${esc(m.when||'')} · ${esc(m.slot||'')} · ${m.duration||1} ${m.unit==='j'?'j':'h'}</div><div class="row between" style="margin-top:9px"><span class="mini" style="color:var(--ink);font-weight:700">Vous percevez ${eur(totals(m).payout)}</span><span class="mini" style="color:var(--muted)">Ouvrir ›</span></div></button>`;}).join('')}</div>`;
+    return `<div style="margin-top:26px"><span class="eyebrow" style="color:var(--muted)">${I.check} Missions en cours · ${list.length}</span>${list.map(function(m){const sm=proMissionMeta(m.status);return `<button class="card" data-act="promiss:${m._id||''}" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block;border-left:4px solid ${sm.c==='good'?'var(--good)':'var(--coral)'}"><div class="row" style="gap:11px;align-items:flex-start">${svcPastille(m.svc)}<div style="flex:1;min-width:0"><div class="row between" style="gap:8px"><b style="font-size:14px">${proDots(m)}${esc(m.svcName||svcNm(m.svc))}</b><span class="chip ${sm.c}" style="flex:none">${sm.l}</span></div><div class="mini" style="margin-top:3px">${I.pin} ${esc(migZone(m.zone))} · ${esc(m.when||'')} · ${esc(m.slot||'')} · ${m.duration||1} ${m.unit==='j'?'j':'h'}</div></div></div><div class="row between" style="margin-top:9px"><span class="mini" style="color:var(--ink);font-weight:700">Vous percevez ${eur(totals(m).payout)}</span><span class="mini" style="color:var(--muted)">Ouvrir ›</span></div></button>`;}).join('')}</div>`;
   }
   // En-tête d'onglet, commun au mode client ET au mode prestataire : intitulé + titre
   // à gauche, action de la page puis photo à droite, silhouette de l'île en filigrane.
@@ -12494,17 +12506,21 @@
       <div style="height:12px"></div></div>`;
   }
   function proEarnings(){
-    const nbDone=(S.proHistory||[]).length;
+    const _ym=moisCleISO();
+    const _mois=(S.proHistory||[]).filter(function(h){return String(h.dateISO||'').slice(0,7)===_ym&&!h.cancelFee;});
+    const nbDone=_mois.length;
+    const netMois=Math.round(_mois.reduce(function(t,h){return t+(histBreakdown(h).net||0);},0)*100)/100;
     const totComm=(S.proHistory||[]).reduce(function(t,h){return t+histBreakdown(h).commission;},0);
     const tier=fidFor(S.proJobsTotal||0);
     return `<div class="pad">${proHead(I.wallet+' Revenus','Ce mois-ci',proHeadBtn('open-interv','Mes factures par mission',I.card))}
-      <div class="card" style="padding:18px;margin-top:12px"><div class="mini">Net perçu (juillet)</div><b class="money" style="font-size:30px;font-family:var(--f-disp)">${eur(S.proEarnings)}</b><div class="row between" style="margin-top:14px"><span class="sub">Missions réalisées</span><b>${nbDone}</b></div>${nbDone?`<div class="row between" style="margin-top:6px"><span class="sub">Prochain virement</span><b>sous 48 h après validation</b></div>`:''}</div>
+      <div class="card" style="padding:18px;margin-top:12px"><div class="mini">Net perçu · ${moisLabel().toLowerCase()}</div><b class="money" style="font-size:30px;font-family:var(--f-disp)">${eur(netMois)}</b><div class="row between" style="margin-top:14px"><span class="sub">Missions réalisées</span><b>${nbDone}</b></div>${nbDone?`<div class="row between" style="margin-top:6px"><span class="sub">Prochain virement</span><b>sous 48 h après validation</b></div>`:''}</div>
       ${nbDone?'':`<div class="card" style="padding:22px;margin-top:12px;text-align:center;color:var(--muted)"><div style="display:flex;justify-content:center">${octoMini(64,'wave')}</div><div style="margin-top:8px;font-weight:600;color:var(--ink-soft)">Pas encore de mission réglée</div><div style="margin-top:3px">Vos revenus et vos factures apparaîtront ici après votre première prestation validée.</div></div>`}
-      <button class="card" data-act="open-interv" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.card}&nbsp;Mes factures par mission</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Chaque prestation facturée automatiquement à votre nom.</p></button>
-      <button class="card" data-act="open-statement" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.doc}&nbsp;Relevé mensuel</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Un relevé par mois — total encaissé. Dès le 1er du mois suivant.</p></button>
-      <button class="card" data-act="open-comm-statement" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.doc}&nbsp;Facture de commission (mensuelle)</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Une par mois — charge déductible. Dès le 1er du mois suivant.</p></button>
-      <button class="card" data-act="open-year-statement" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between"><b style="font-size:14px">${I.cal}&nbsp;Attestation annuelle de revenus</b><span class="mini" style="color:var(--teal-deep);font-weight:650">Voir ›</span></div><p class="sub" style="margin-top:8px">Vos encaissements de l'année — pour vos déclarations.</p></button>
-      <div class="banner teal" style="margin-top:12px">${I.lock}<span><b>Paiement garanti</b> : réglé sous 48 h après chaque prestation validée — sans relance.</span></div>
+      <button class="card" data-act="open-interv" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between" style="gap:12px;align-items:flex-start"><div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="margin-top:1px;flex:none">${I.card}</span><div><b style="font-size:14px">Mes factures par mission</b><p class="mini" style="margin-top:3px;color:var(--muted)">Chaque prestation facturée automatiquement à votre nom.</p></div></div><span class="mini" style="color:var(--muted);white-space:nowrap;flex:none">Voir ›</span></div></button>
+      <div class="eyebrow" style="margin:26px 4px 6px;color:var(--muted)">Documents</div>
+      <button class="card" data-act="open-statement" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block"><div class="row between" style="gap:12px;align-items:flex-start"><div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="margin-top:1px;flex:none">${I.doc}</span><div><b style="font-size:14px">Relevé mensuel</b><p class="mini" style="margin-top:3px;color:var(--muted)">Total encaissé du mois — dès le 1er du mois suivant.</p></div></div><span class="mini" style="color:var(--muted);white-space:nowrap;flex:none">Voir ›</span></div></button>
+      <button class="card" data-act="open-comm-statement" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block"><div class="row between" style="gap:12px;align-items:flex-start"><div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="margin-top:1px;flex:none">${I.doc}</span><div><b style="font-size:14px">Facture de commission</b><p class="mini" style="margin-top:3px;color:var(--muted)">Une par mois, charge déductible.</p></div></div><span class="mini" style="color:var(--muted);white-space:nowrap;flex:none">Voir ›</span></div></button>
+      <button class="card" data-act="open-year-statement" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block"><div class="row between" style="gap:12px;align-items:flex-start"><div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="margin-top:1px;flex:none">${I.cal}</span><div><b style="font-size:14px">Attestation annuelle</b><p class="mini" style="margin-top:3px;color:var(--muted)">Vos encaissements de l'année, pour vos déclarations.</p></div></div><span class="mini" style="color:var(--muted);white-space:nowrap;flex:none">Voir ›</span></div></button>
+      <p class="mini" style="margin-top:26px;color:var(--muted);line-height:1.5">${I.lock} <b>Paiement garanti</b> : réglé sous 48 h après chaque prestation validée, sans relance.</p>
       </div>${proNavbar()}`;
   }
   // Ajout d'un métier par un prestataire déjà inscrit. Le choix part en « pendingCats »
@@ -12622,17 +12638,12 @@
     const catNames=cats.map(function(c){const s=SERVICES.find(x=>x.id===c);return s?s.nm:c;}).slice(0,3).join(' · ');
     const insOk=S.proInsuranceStatus==='valide';const isNew=(S.proJobsTotal||0)===0;
     return `<div class="pad">
-      ${headRow(I.user+' Mon compte · '+artPriceShort({cats:S.proCats,rates:S.proRates}),esc(S.proName||'Mon compte'),proHeadBtn('open-share','Partager Ti-Services',I.share),
+      ${headRow(I.user+' Mon compte',esc(S.proName||'Mon compte'),proHeadBtn('open-share','Partager Ti-Services',I.share),
         `<button data-act="photopick:proPhoto" aria-label="Changer ma photo de profil" style="position:relative;background:none;border:none;padding:0;flex:none;line-height:0;border-radius:50%">`
         +avatarFounder(S.proPhoto,inits(S.proName||'Mon compte'),'',S.proFounder)
         +`<span aria-hidden="true" style="position:absolute;left:-3px;bottom:-3px;width:21px;height:21px;border-radius:50%;background:var(--teal-deep);color:#fff;display:flex;align-items:center;justify-content:center;border:2px solid var(--card);box-shadow:0 2px 6px -2px rgba(0,0,0,.4)">${I.camera}</span></button>`)}
       <input type="file" accept="image/*" capture="user" data-avatarinput="proPhoto" data-pcam hidden><input type="file" accept="image/*" data-avatarinput="proPhoto" data-pgal hidden>
 
-      ${FEAT_RENFORT?`<button class="card listrow" data-rf="open" style="margin-top:16px;align-items:center">
-        <span class="benic" style="flex:none">${I.hardhat}</span>
-        <div class="lr-main"><div class="row between" style="gap:8px;align-items:center"><b style="font-size:14px">Besoin d'un renfort&nbsp;?</b>${(S.renforts||[]).length?`<span class="chip grey" style="flex:none">${(S.renforts||[]).length}</span>`:`<span class="chip" style="flex:none">Nouveau</span>`}</div>
-        <div class="mini lr-sub">Demandez un confrère pour un chantier — le vôtre ou celui d'un client. Un seul règlement, facture à votre entreprise.</div></div>
-      </button>`:''}
 
       <div class="card" style="padding:16px;margin-top:16px">
         <span class="eyebrow" style="color:var(--muted)">Votre statut</span>
@@ -12709,6 +12720,12 @@
       ${fidCard()}
       <button class="card" data-act="open-referral" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between" style="gap:12px;align-items:center"><div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="margin-top:1px">${I.heart}</span><div><b style="font-size:14px">Parrainer un prestataire</b><p class="sub" style="margin-top:4px">Parrainez d'autres artisans et faites grimper votre statut — <b>+5 missions</b> par filleul validé.</p></div></div><span class="chip good" style="flex:none">${refValidated()?refValidated()+' filleul'+(refValidated()>1?'s':''):'Ouvrir'}</span></div></button>
       <p class="mini" style="text-align:center;margin-top:14px"><button class="linklike" data-act="show-advantages">${I.shield} Pourquoi passer par Ti-Services ›</button></p>
+      ${FEAT_RENFORT?`<button class="card listrow" data-rf="open" style="margin-top:12px;align-items:center">
+        <span class="benic" style="flex:none">${I.hardhat}</span>
+        <div class="lr-main"><div class="row between" style="gap:8px;align-items:center"><b style="font-size:14px">Besoin d'un renfort&nbsp;?</b>${(S.renforts||[]).length?`<span class="chip grey" style="flex:none">${(S.renforts||[]).length}</span>`:`<span class="chip" style="flex:none">Nouveau</span>`}</div>
+        <div class="mini lr-sub">Demandez un confrère pour un chantier — le vôtre ou celui d'un client. Un seul règlement, facture à votre entreprise.</div></div>
+      </button>`:''}
+
       
       <div class="eyebrow" style="margin:26px 4px 6px;color:var(--muted)">Aide & réglages</div>
       <div class="card" style="padding:16px;margin-top:12px"><div class="row between" style="gap:12px"><div class="row" style="gap:11px;align-items:center"><span class="benic">${I.globe}</span><div><b style="font-size:14px">Langue</b></div></div><div class="langsel"><button class="langsel-opt ${S.lang==='fr'?'on':''}" data-act="lang-fr">FR</button><button class="langsel-opt ${S.lang==='en'?'on':''}" data-act="lang-en">EN</button><button class="langsel-opt ${S.lang==='pt'?'on':''}" data-act="lang-pt">PT</button></div></div></div>
@@ -15900,7 +15917,7 @@
     }catch(_){}})();
     const confCount=list.filter(function(r){return S._calList&&S._calList[r.id];}).length;
     const shown=(S.proHideConf&&confCount)?list.filter(function(r){return !(S._calList&&S._calList[r.id]);}):list;
-    return `<div style="margin-top:12px"><div class="row between" style="align-items:center"><span class="eyebrow" style="color:var(--teal-deep)">${I.flame} Missions disponibles · ${shown.length}</span>${confCount?`<button class="linklike" data-act="toggle-hideconf" style="font-size:12px">${S.proHideConf?'Afficher':'Masquer'} les conflits (${confCount})</button>`:''}</div>${shown.map(function(r){const win=reqWinTxt(r);const forMe=(r.preferredProviderUid&&r.preferredProviderUid===myUid);return `<div class="swipe-row"><button class="swipe-del skip" data-act="pro-skip:${r.id}" aria-label="Passer cette mission">Passer</button><button class="card swipe-card" data-act="reqview:${r.id}" style="padding:14px;width:100%;text-align:left;display:block${forMe?';border-left:4px solid var(--teal-deep)':''}"><div class="row between"><b style="font-size:14px">${esc(r.serviceName||svcNm(r.service))}</b><b class="money" style="color:var(--teal-deep);font-family:var(--f-disp)">${eur(reqPayout(r))}</b></div>${forMe?`<span class="chip" style="background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.star} Demande réservée pour vous</span>`:''}<div class="mini" style="margin-top:4px">${I.pin} ${esc(migZone(r.zone))} · ${esc(r.when||'')} · ${esc(win)} · ${r.duration||1} ${r.unit==='j'?'j':'h'}${(needsPeople(r.service)&&(Number(r.people)||1)>1)?' · '+I.users+' '+peopleLbl(Number(r.people)||1):''}${canOnSite(r.service)?' · '+(r.locationMode==='salon'?I.shop+' chez vous':I.home+' domicile'):''}${(S._calList&&S._calList[r.id])?` · <span style="color:var(--coral-deep);font-weight:700">${I.warn} conflit agenda</span>`:''}</div>${(r.boostEur||r.boost)?`<span class="chip" style="background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.bolt} Coup de pouce ${r.boostEur?('+'+eur(r.boostEur)):('+'+r.boost+'%')}</span>`:''}${r.notes?`<div class="row between" style="margin-top:10px"><span class="mini" style="color:var(--muted)">${I.info} Détails du besoin fournis</span><span class="mini" style="color:var(--muted)">Voir la fiche ›</span></div>`:''}</button></div>`;}).join('')}</div>`;
+    return `<div style="margin-top:12px"><div class="row between" style="align-items:center"><span class="eyebrow" style="color:var(--teal-deep)">${I.flame} Missions disponibles · ${shown.length}</span>${confCount?`<button class="linklike" data-act="toggle-hideconf" style="font-size:12px">${S.proHideConf?'Afficher':'Masquer'} les conflits (${confCount})</button>`:''}</div>${shown.map(function(r){const win=reqWinTxt(r);const forMe=(r.preferredProviderUid&&r.preferredProviderUid===myUid);return `<div class="swipe-row"><button class="swipe-del skip" data-act="pro-skip:${r.id}" aria-label="Passer cette mission">Passer</button><button class="card swipe-card" data-act="reqview:${r.id}" style="padding:14px;width:100%;text-align:left;display:block${forMe?';border-left:4px solid var(--teal-deep)':''}"><div class="row" style="gap:11px;align-items:flex-start">${svcPastille(r.service)}<div style="flex:1;min-width:0"><div class="row between" style="gap:8px"><b style="font-size:14px">${esc(r.serviceName||svcNm(r.service))}</b><b class="money" style="color:var(--teal-deep);font-family:var(--f-disp);flex:none">${eur(reqPayout(r))}</b></div>${forMe?`<span class="chip" style="background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.star} Demande réservée pour vous</span>`:''}<div class="mini" style="margin-top:4px">${I.pin} ${esc(migZone(r.zone))} · ${esc(r.when||'')} · ${esc(win)} · ${r.duration||1} ${r.unit==='j'?'j':'h'}${(needsPeople(r.service)&&(Number(r.people)||1)>1)?' · '+I.users+' '+peopleLbl(Number(r.people)||1):''}${canOnSite(r.service)?' · '+(r.locationMode==='salon'?I.shop+' chez vous':I.home+' domicile'):''}${(S._calList&&S._calList[r.id])?` · <span style="color:var(--coral-deep);font-weight:700">${I.warn} conflit agenda</span>`:''}</div>${(r.boostEur||r.boost)?`<span class="chip" style="background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.bolt} Coup de pouce ${r.boostEur?('+'+eur(r.boostEur)):('+'+r.boost+'%')}</span>`:''}</div></div>${r.notes?`<div class="row between" style="margin-top:10px"><span class="mini" style="color:var(--muted)">${I.info} Détails du besoin fournis</span><span class="mini" style="color:var(--muted)">Voir la fiche ›</span></div>`:''}</button></div>`;}).join('')}</div>`;
   }
   // Alerte de conflit d'agenda : le prestataire a déjà une intervention qui chevauche
   // ce créneau. Il confirme explicitement qu'il peut assurer, sinon « passe son tour ».
