@@ -321,11 +321,17 @@
   /* Cartes repliables des écrans Compte : repliées par défaut (pages plus courtes),
      la tête garde le titre + l'état (pastille) ; un toucher déplie. */
   .foldc{padding:0!important;overflow:hidden}
-  .fold-head{width:100%;display:flex;align-items:center;gap:8px 11px;flex-wrap:wrap;padding:14px 16px;background:none;border:none;text-align:left;font-family:inherit;color:inherit;cursor:pointer}
-  /* Icône et titre forment un bloc insécable : l'icône ne doit jamais rester seule sur sa
-     ligne. Seule la pastille passe dessous, et à droite, quand la place manque. */
-  .fh-main{display:flex;align-items:center;gap:11px;flex:1 1 200px;min-width:0}
+  .fold-head{width:100%;display:flex;align-items:center;gap:8px 11px;padding:14px 16px;background:none;border:none;text-align:left;font-family:inherit;color:inherit;cursor:pointer}
+  /* Une seule ligne : icône · texte · pastille · chevron. Faire passer la pastille dessous
+     ouvrait un trou au milieu de la carte ; ici le texte se replie dans sa colonne et le
+     bord droit reste tenu, carte après carte. */
+  .fh-main{display:flex;align-items:center;gap:11px;flex:1 1 auto;min-width:0}
   .fh-main>div{min-width:0;overflow:hidden}
+  /* La ligne d'explication EST le contenu utile de ces cartes : la couper à la première
+     ligne (« Payées par le client, jamais inscrites au regis… ») les rend muettes. On la
+     laisse respirer sur deux lignes ; au-delà seulement, elle s'arrête. */
+  .fh-sub{margin-top:2px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;
+    line-clamp:2;overflow:hidden}
   /* Pastille et chevron restent solidaires : le chevron ne se retrouve jamais seul sur
      une ligne, et le bloc s'aligne à droite quand il passe dessous. */
   .fh-end{display:flex;align-items:center;gap:9px;flex:0 0 auto;margin-left:auto}
@@ -954,6 +960,9 @@
   .compbar .live{width:8px;height:8px;border-radius:50%;background:var(--teal);animation:beat 1.2s infinite}
 
   .banner{padding:12px 15px;border-radius:14px;font-size:13px;font-weight:600;display:flex;gap:10px;align-items:center;line-height:1.35}
+  /* Sans ce flex:none, l'icône se fait écraser à 0 dès que le texte du bandeau dépasse
+     deux lignes : il ne restait qu'un point, et le bandeau perdait son signe. */
+  .banner>svg{flex:none}
   .banner.teal{background:var(--teal-wash);color:var(--teal-deep)}
   .banner.coral{background:var(--coral-wash);color:var(--coral-deep)}
 .banner.good{background:var(--good-wash);color:var(--good)}
@@ -2158,7 +2167,7 @@
   function foldCard(id,icon,title,sub,body,chip){
     const open=!!(S._fold&&S._fold[id]);
     return `<div class="card foldc${open?' open':''}" style="margin-top:12px">
-      <button class="fold-head" data-fold="${id}" aria-expanded="${open?'true':'false'}"><span class="fh-main"><span class="benic" style="flex:none">${icon}</span><div style="flex:1 1 auto;min-width:0"><b style="font-size:14px">${title}</b>${sub?`<div class="mini" style="margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${sub}</div>`:''}</div></span><span class="fh-end">${chip||''}<span class="fold-chev" aria-hidden="true">${I.chevron}</span></span></button>
+      <button class="fold-head" data-fold="${id}" aria-expanded="${open?'true':'false'}"><span class="fh-main"><span class="benic" style="flex:none">${icon}</span><div style="flex:1 1 auto;min-width:0"><b style="font-size:14px">${title}</b>${sub?`<div class="mini fh-sub">${sub}</div>`:''}</div></span><span class="fh-end">${chip||''}<span class="fold-chev" aria-hidden="true">${I.chevron}</span></span></button>
       ${open?`<div class="fold-body">${body}</div>`:''}
     </div>`;
   }
@@ -7981,8 +7990,11 @@
     return `<div class="pad">
       <div class="row between isle-wm" style="margin-top:10px"><div><span class="eyebrow">Console admin · Ti-Services</span><div class="h-hello">Tableau de bord</div></div><div class="avatar" style="background:linear-gradient(135deg,var(--ink),#000)">TS</div></div>
       <div class="row" style="gap:9px;margin-top:12px">${stat('En cours',allB.length,'réservations')}${stat('Artisans',validA,pendA.length+' en attente')}${stat('Clients',clis.length,pendC.length+' en attente')}</div>
-      ${(typeof Notification!=='undefined'&&Notification.permission!=='granted')?`<button class="banner teal" data-act="admin-notif" style="margin-top:10px;width:100%;text-align:left;cursor:pointer">${I.bolt}<span>Activez les <b>alertes de candidature</b> — soyez prévenu dès qu'un prestataire postule, même en dehors de la console.</span></button>`:''}
-      <div class="card" style="padding:14px;margin-top:10px"><div class="row between"><span class="sub">Commission ce mois</span><b class="money" style="font-size:18px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(adminMonthCommission())}</b></div></div>
+      <div class="card listrow" style="margin-top:10px"><span class="benic" style="flex:none">${I.card}</span><div class="lr-main"><span class="sub">Commission ce mois</span></div><b class="money" style="font-size:18px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(adminMonthCommission())}</b></div>
+      ${/* L'alerte de candidature parle de la file « À traiter » : elle se lit juste au-dessus
+           d'elle, pas au milieu des compteurs. Une fois les notifications acceptées, elle
+           disparaît d'elle-même. */''}
+      ${(typeof Notification!=='undefined'&&Notification.permission!=='granted')?`<button class="banner teal" data-act="admin-notif" style="margin-top:16px;width:100%;text-align:left;cursor:pointer">${I.bolt}<span>Activez les <b>alertes de candidature</b> — soyez prévenu dès qu'un prestataire postule, même en dehors de la console.</span></button>`:''}
 
       <div style="height:18px"></div><span class="eyebrow"${q.length?' style="color:var(--coral-deep)"':''}>${I.bolt} À traiter${q.length?' · '+q.length:''}</span>
       ${queue}
@@ -9154,15 +9166,17 @@
     const paid=S.concOrders.filter(o=>o.status==='paid');
     const rows=paid.length?paid.map(o=>`<div class="card" style="padding:13px;margin-top:9px"><div class="row between"><b style="font-size:14px">${esc(o.svcName)}</b><span class="money" style="color:var(--good);font-weight:700">+${eur(o.retro)}</span></div><div class="mini" style="margin-top:3px">${esc(o.clientName)} · ${o.when} · prestation ${eur(o.amount)}</div></div>`).join(''):`<div class="card" style="padding:20px;text-align:center;color:var(--muted);margin-top:10px">Aucune rétrocession pour l'instant.</div>`;
     return `<div class="pad"><div style="height:12px"></div><span class="eyebrow">${I.wallet} Rétribution</span><div class="h-hello">Vos commissions d'apport</div>
-      <div class="card" style="padding:18px;margin-top:12px"><div class="row between" style="align-items:flex-start"><div class="mini">Rétrocessions ce mois</div>${S.concRetroPaid?`<span class="chip good">${I.check} Versé</span>`:`<span class="chip coral">Versement en attente</span>`}</div><b class="money" style="font-size:30px;font-family:var(--f-disp)">${eur(S.concEarn)}</b><div class="mini" style="margin-top:6px">Taux d'apport&nbsp;: ${S.retroRate} % · ${S.concRetroPaid?'réglé par Ti-Services':'versé par Ti-Services en fin de mois'}</div><button class="btn ghost sm" data-act="conc-retinv" style="margin-top:12px">${I.card} Éditer ma facture de rétribution (mensuelle)</button></div>
-      <div class="banner teal" style="margin-top:12px">${I.shield}<span>Vous êtes rémunéré par Ti-Services sur sa commission — <b>le prix du client ne change pas</b> et le prestataire perçoit la même chose. Versement mensuel, relevé d'auto-facturation.</span></div>
-      <div class="card" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">${I.card}&nbsp;Pour être payé — votre RIB</b>${(S.concIban&&ibanValid(S.concIban))?`<span class="chip good">${I.check} Enregistré</span>`:`<span class="chip coral">Requis</span>`}</div>
+      <div class="card" style="padding:18px;margin-top:12px"><div class="row between" style="align-items:flex-start"><div class="mini">Rétrocessions ce mois</div>${S.concRetroPaid?`<span class="chip good">${I.check} Versé</span>`:`<span class="chip coral">Versement en attente</span>`}</div><b class="money" style="font-size:30px;font-family:var(--f-disp)">${eur(S.concEarn)}</b><div class="mini" style="margin-top:6px">Taux d'apport&nbsp;: ${S.retroRate} % · ${S.concRetroPaid?'réglé par Ti-Services':'versé par Ti-Services en fin de mois'}</div><button class="btn ghost sm" data-act="conc-retinv" style="margin-top:12px">${I.card} Éditer ma facture de rétribution</button></div>
+      ${/* Le RIB passe devant l'explication : sans lui, rien n'est versé. L'explication du
+           mécanisme, elle, se lit une fois — elle descend au-dessus du détail. */''}
+      <div class="card" style="padding:16px;margin-top:12px"><div class="row between" style="gap:10px"><div class="row" style="gap:11px;align-items:center;min-width:0"><span class="benic" style="flex:none">${I.card}</span><b style="font-size:14px">Pour être payé — votre RIB</b></div>${(S.concIban&&ibanValid(S.concIban))?`<span class="chip good" style="flex:none">${I.check} Enregistré</span>`:`<span class="chip coral" style="flex:none">Requis</span>`}</div>
         <div class="field" style="margin-top:10px"><label>Titulaire du compte</label><input class="txt" data-cib="holder" value="${esc(S.concIbanHolder||'')}" placeholder="Raison sociale / nom"></div>
         <div class="field" style="margin:0"><label>IBAN</label><input class="txt" data-cib="iban" value="${esc(S.concIban||'')}" placeholder="FR76 ..." autocomplete="off">${(S.concIban&&!ibanValid(S.concIban))?`<p class="mini" style="margin-top:5px;color:var(--coral-deep)">IBAN incomplet ou invalide.</p>`:''}</div>
         <button class="btn ${(S.concIban&&ibanValid(S.concIban))?'ghost':'primary'} sm" data-act="conc-save-iban" style="margin-top:12px">${I.check} Enregistrer mon RIB</button>
         <p class="mini" style="margin-top:8px;color:var(--muted)">Ti-Services y verse votre rétribution une fois par mois. Coordonnées privées, jamais visibles des clients.</p></div>
       ${backupCard()}
-      <div style="height:16px"></div><span class="eyebrow">Détail des prestations réglées</span>${rows}
+      <div class="banner teal" style="margin-top:14px">${I.shield}<span>Vous êtes rémunéré par Ti-Services sur sa commission — <b>le prix du client ne change pas</b> et le prestataire perçoit la même chose. Versement mensuel, relevé d'auto-facturation.</span></div>
+      <div style="height:16px"></div><span class="eyebrow">${I.wallet} Détail des prestations réglées</span>${rows}
       <div style="height:8px"></div></div>${conciergeNavbar()}`;
   }
   // Proposition de bascule vers le compte prestataire, à l'initiative de Ti-Services.
