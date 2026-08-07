@@ -47,6 +47,16 @@ const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; console.log
   await p.evaluate(() => { document.body.classList.remove('standalone'); window.__render(); });
   await p.waitForTimeout(300);
   ok(/Votre compte se crée/.test(await texte()), 'la barrière se représente si on retente hors application');
+
+  console.log('C — la FLÈCHE RETOUR du navigateur ramène aussi à l’accueil (pas au formulaire)');
+  // Même parcours, mais on presse le retour du navigateur (popstate → goBack) au lieu
+  // du bouton de la page. L'ancien code effaçait authView en laissant onbStep=1 :
+  // le routeur repeignait le formulaire « Vos informations ».
+  await p.evaluate(() => { window.dispatchEvent(new PopStateEvent('popstate')); });
+  await p.waitForTimeout(500);
+  const apresFleche = await texte();
+  ok(/Je cherche un service/.test(apresFleche), 'le retour navigateur ramène à l’ACCUEIL');
+  ok(!/Vos informations/.test(apresFleche), 'et pas au formulaire d’inscription');
   ok(errs.length === 0, 'aucune erreur JS (' + errs.join(' · ') + ')');
 
   await b.close();
