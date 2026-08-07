@@ -7979,11 +7979,24 @@
     const inMsg=(S.admin.view==='msg'||(S.support&&S.mission)||S.adminSupervise);
     const onHome=(S.admin.view==='home'&&!inMsg);
     const exitIco='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>';
-    const pend=adminPendingCount();const sup=(typeof adminSupportPending==='function')?adminSupportPending():0;
+    const pend=adminNewCount();const sup=(typeof adminSupportPending==='function')?adminSupportPending():0;
     const onFact=(S.admin.view==='fact');
     const onProspect=(S.admin.view==='prospect');
     return `<div class="navbar"><button data-adm="home" class="${onHome?'on':''}"><span class="nb-ic">${I.shield}${pend?`<span class="nb-count">${pend}</span>`:''}</span>Console</button><button data-adm="msg" class="${inMsg?'on':''}"><span class="nb-ic">${I.chat}${sup?`<span class="nb-count">${sup}</span>`:''}</span>Messagerie</button><button data-adm="fact" class="${onFact?'on':''}"><span class="nb-ic">${I.card}</span>Factures</button><button data-adm="prospect" class="${onProspect?'on':''}"><span class="nb-ic">${I.users||I.user}</span>Démarchage</button><button data-adm="quit"><span class="nb-ic">${exitIco}</span>${(!isDemo()&&isAdminAccount())?'Déconnexion':'Quitter'}</button></div>`;
   }
+  // « DU NOUVEAU À REGARDER » : pastille rouge par fiche, effacée à l'OUVERTURE de la
+  // fiche (mémoire locale de l'appareil admin). La signature capture ce qui appelle un
+  // regard — candidature en attente, métier demandé, attestation à vérifier — pour que
+  // la pastille REVIENNE si un nouvel événement survient après consultation.
+  function admSeenGet(){try{return JSON.parse(localStorage.getItem('tiAdmSeen')||'{}');}catch(_){return {};}}
+  function admSeenSet(k,v){try{const m=admSeenGet();m[k]=v;localStorage.setItem('tiAdmSeen',JSON.stringify(m));}catch(_){}}
+  function admArtSig(a){return (a.status==='attente'?'A':'')+'|'+((a.pendingCats||[]).join('+'))+'|'+(a.insuranceStatus==='attente'?'I':'');}
+  function admArtNew(a){const seen=admSeenGet()['art:'+a.id];if(seen==null)return true;return admArtSig(a)!==seen&&(a.status==='attente'||(a.pendingCats||[]).length>0||a.insuranceStatus==='attente');}
+  function admCliSig(c){return (c.status==='attente'?'A':'');}
+  function admCliNew(c){const seen=admSeenGet()['cli:'+c.id];if(seen==null)return true;return admCliSig(c)!==seen&&c.status==='attente';}
+  function admThreadNew(t){return admSeenGet()['req:'+t.reqId]==null;}
+  function admDot(on){return on?'<span aria-hidden="true" style="flex:none;width:9px;height:9px;border-radius:50%;background:var(--coral-deep);box-shadow:0 0 0 3px var(--coral-wash)"></span>':'';}
+  function adminNewCount(){let n=0;try{(S.adminArtisans||[]).forEach(function(a){if(a&&admArtNew(a))n++;});(S.adminClients||[]).forEach(function(c){if(c&&admCliNew(c))n++;});(S.adminThreads||[]).forEach(function(t){if(t&&t.reqId&&admThreadNew(t))n++;});}catch(_){ }return n;}
   function adminPendingCount(){return ((S.adminArtisans||[]).filter(function(a){return a.status==='attente';}).length)+((S.adminClients||[]).filter(function(c){return c.status==='attente';}).length);}
   function catNames(cats){return cats.map(svcNm).join(', ');}
   // Version courte pour les listes : au-delà de deux métiers, la ligne devient un pavé
@@ -8087,12 +8100,12 @@
       // le peut : le marquer en rouge serait faux, et il n'y a rien à relancer chez lui.
       if(a.status==='valide'&&a.mollieStatus!=='active'&&!a.mollieCanWork)al.push(`<span class="chip coral" title="Paiements non activés">€ inactif</span>`);
       if(a.status==='valide'&&a.mollieStatus!=='active'&&a.mollieCanWork)al.push(`<span class="chip warn" title="Mollie l'autorise à encaisser ; ses virements s'ouvriront après validation">€ virements en attente</span>`);
-      return `<button class="card listrow" data-adm="art:${a.id}">${avatarFounder(a.photo,inits(a.name),'sm',founderActiveFor(a))}<div class="lr-main">
+      return `<button class="card listrow" data-adm="art:${a.id}">${admDot(admArtNew(a))}${avatarFounder(a.photo,inits(a.name),'sm',founderActiveFor(a))}<div class="lr-main">
         <div class="row between" style="gap:8px;align-items:center"><b class="lr-name">${esc(a.name)}</b><span class="chip ${c[0]}" style="flex:none">${c[1]}</span></div>
         <div class="mini lr-sub">${catShort(a.cats)} · ${artPriceShort(a)} · ${esc(migZone(a.zone))}</div>
         ${al.length?`<div class="row" style="gap:5px;margin-top:6px;flex-wrap:wrap">${al.join('')}</div>`:''}
       </div></button>`;}).join(''):`<p class="mini" style="margin-top:8px;color:var(--muted)">Aucun prestataire inscrit pour l’instant.</p>`;
-    const cliList=clis.length?clis.map(cc=>{const c=acctChip(cc.status);return `<button class="card listrow" data-adm="cli:${cc.id}">${avatarPhoto(cc.photo,inits(cc.name),'sm')}<div class="lr-main">
+    const cliList=clis.length?clis.map(cc=>{const c=acctChip(cc.status);return `<button class="card listrow" data-adm="cli:${cc.id}">${admDot(admCliNew(cc))}${avatarPhoto(cc.photo,inits(cc.name),'sm')}<div class="lr-main">
       <div class="row between" style="gap:8px;align-items:center"><b class="lr-name">${esc(cc.name)}</b><span class="chip ${cc.alsoPro?'teal':c[0]}" style="flex:none">${cc.alsoPro?'Devenu prestataire':c[1]}</span></div>
       <div class="mini lr-sub">${esc(migZone(cc.zone))} · ${cc.bookings} réservation${cc.bookings>1?'s':''}</div>
     </div></button>`;}).join(''):`<p class="mini" style="margin-top:8px;color:var(--muted)">Aucun client inscrit pour l’instant.</p>`;
@@ -9027,7 +9040,7 @@
       const tkey='thread:'+t.reqId,tarm=(S._msgDelArm===tkey);
       const disp=(t.status==='disputed');
       return `<div class="card" style="padding:14px;margin-top:10px;${(disp||cPend||pPend)?'border-left:4px solid var(--coral)':''}">
-        <div class="row between"><b style="font-size:14px">${esc(t.svcName)}</b><span class="row" style="gap:8px;align-items:center"><span class="chip ${sm.c}">${sm.l}</span><button data-adm="delmsg:${tkey}" aria-label="Supprimer la conversation" title="Supprimer la conversation" style="flex:none;background:${tarm?'var(--coral-wash)':'none'};border:${tarm?'1px solid var(--coral)':'none'};border-radius:8px;padding:4px 6px;color:var(--coral-deep);font-size:11px;font-weight:800;display:inline-flex;align-items:center;gap:4px">${tarm?I.check+'Sûr&nbsp;?':I.trash}</button></span></div>
+        <div class="row between"><span class="row" style="gap:7px;align-items:center">${admDot(admThreadNew(t))}<b style="font-size:14px">${esc(t.svcName)}</b></span><span class="row" style="gap:8px;align-items:center"><span class="chip ${sm.c}">${sm.l}</span><button data-adm="delmsg:${tkey}" aria-label="Supprimer la conversation" title="Supprimer la conversation" style="flex:none;background:${tarm?'var(--coral-wash)':'none'};border:${tarm?'1px solid var(--coral)':'none'};border-radius:8px;padding:4px 6px;color:var(--coral-deep);font-size:11px;font-weight:800;display:inline-flex;align-items:center;gap:4px">${tarm?I.check+'Sûr&nbsp;?':I.trash}</button></span></div>
         <div class="mini" style="margin-top:3px">${esc(t.clientName)}${t.providerName?' · '+esc(t.providerName):' · en recherche'} · ${esc(t.when)} ${esc(t.slot)}</div>
         <div class="stack" style="gap:7px;margin-top:11px">${disp?`<button class="btn sm" data-adm="supervise:${t.reqId}" style="background:var(--coral-deep);color:#fff;justify-content:center">${I.scales} Litige — arbitrer</button>`:''}${acts.join('')}</div>
       </div>`;
@@ -13313,6 +13326,7 @@
     if(b.dataset.act==='land-client-signup'){document.body.classList.add('standalone');S.onboarded=false;S.persona='client';S.showPitch=false;S.authView='signup';S.onbStep=1;S.clientForm=S.clientForm||{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''};render();try{window.scrollTo(0,0);}catch(_){}return;}
     if(b.dataset.persona){go(b.dataset.persona);return;}
     if(b.dataset.adm){const parts=b.dataset.adm.split(':'),act=parts[0],id=parts[1];
+      if(act==='supervise'||act==='sup'){try{admSeenSet('req:'+id,'1');}catch(_){}}
       if(act==='quit'){
         // Vrai compte admin (back-office) : « Quitter » = se déconnecter, jamais
         // basculer dans l'espace client. En démo seulement, on explore les autres espaces.
@@ -13566,11 +13580,11 @@
       else if(act==='fact-doc'){S.admin.view='fact';S.admin.fact={art:id,mode:'doc',inv:parts[2]};render();view.scrollTop=0;return;}
       else if(act==='fact-back'){S.admin.fact=null;render();view.scrollTop=0;return;}
       else if(act==='home'){S.admin.view='home';S.admin.sel=null;S.admin.fact=null;}
-      else if(act==='art'){S.admin.view='art';S.admin.sel=id;}
+      else if(act==='art'){S.admin.view='art';S.admin.sel=id;try{const a=(S.adminArtisans||[]).find(function(x){return x.id===id;});admSeenSet('art:'+id,a?admArtSig(a):'');}catch(_){}}
       // Ouvre la messagerie interne Ti-Services avec ce prestataire (même s'il n'a pas
       // encore de conversation). L'admin peut ainsi l'écrire directement depuis sa fiche.
       else if(act==='art-msg'){const a=(S.adminArtisans||[]).find(x=>x.id===id||x.uid===id);const uid2=(a&&a.uid)||id;const ex=(S.adminGeneral||[]).find(x=>x.uid===uid2);S.genUser=ex||{uid:uid2,name:(a&&a.name)||'Prestataire',role:'artisan',support:[],supReadUser:0,supReadAdmin:0};S.generalSupport=true;S.support=false;S.supportSide=null;S.adminSupervise=false;S.admin.view='msg';S.mission=null;markGenSupportReadAdmin();render();return;}
-      else if(act==='cli'){S.admin.view='cli';S.admin.sel=id;}
+      else if(act==='cli'){S.admin.view='cli';S.admin.sel=id;try{const c=(S.adminClients||[]).find(function(x){return x.id===id;});admSeenSet('cli:'+id,c?admCliSig(c):'');}catch(_){}}
       else if(act==='valid-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a&&a.insured&&a.siret){a.status='valide';adminWriteStatus(a,'valide');saveAvailability();toast('Artisan validé');}else{toast('Dossier incomplet (SIRET / assurance)');}}
       else if(act==='rej-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.status='refuse';if(!a.reason)a.reason=(!a.siret?'SIRET manquant. ':'')+(!a.insured?'Assurance manquante. ':'')||'Ne correspond pas aux critères Ti-Services';adminWriteStatus(a,'refuse');saveAvailability();}S.admin.view='home';toast('Candidature refusée — conservée dans l’historique');}
       else if(act==='reexam-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.status='attente';adminWriteStatus(a,'attente');toast('Candidature remise en attente');}}
