@@ -2691,6 +2691,30 @@
   // Deux inputs cachés (caméra avec capture / galerie sans capture) partagent le
   // même gestionnaire data-avatarinput ; on déclenche celui choisi dans le geste.
   function photoPicker(current,who){return `<div class="photopick" data-act="photopick:${who}" role="button" tabindex="0"><span class="pp-ring">${current?`<span class="pp-img" style="background-image:url('${current}')"></span>`:`<span class="pp-plus">${I.camera}</span>`}</span><div class="pp-txt"><b>${current?I.check+' Photo ajoutée':'Ajouter une photo'}</b><span class="pp-hint">${current?'Appuyez pour la changer':'Appareil photo ou galerie'}</span></div><input type="file" accept="image/*" capture="user" data-avatarinput="${who}" data-pcam hidden><input type="file" accept="image/*" data-avatarinput="${who}" data-pgal hidden></div>`;}
+  // Détail des prix d'une prestation, à l'INSCRIPTION prestataire : au clic sur
+  // « Détails » d'une fiche métier, la feuille montre — prestation par prestation —
+  // le NET qui lui revient (grille de la console admin ; jamais le prix client ni la
+  // commission, fidèle à la règle « il ne voit QUE son net »).
+  function openSvcPriceSheet(id){
+    const old=document.getElementById('svcpricesheet');if(old)old.remove();
+    const plat=(S.adminPrices&&S.adminPrices[id]!=null)?S.adminPrices[id]:svcBase(id);
+    const forf=isCatalogForfait(id);
+    const amb=founderOpen();
+    const unite=isForfaitSvc(id)?'':(id==='colis'?'/retrait':'/h');
+    const lignes=forf
+      ?catalogFor(id).map(function(a){return '<div class="row between" style="gap:10px;align-items:baseline;padding:7px 0;border-bottom:1px dashed var(--hair)"><span class="mini" style="flex:1;min-width:0">'+esc(a.nm||a.id)+'</span><span class="mini" style="flex:none;color:var(--good);font-weight:800">'+proNetHint(Number(a.price)||0)+' \u20ac net</span></div>';}).join('')
+        +'<p class="mini" style="margin-top:8px;color:var(--muted)">Le client choisit ses prestations, le total est ferme.</p>'
+      :'<div style="text-align:center;padding:14px 0"><b style="font-size:24px;color:var(--good);font-family:var(--f-disp)">'+proNetHint(plat)+' \u20ac net'+unite+'</b><div class="mini" style="color:var(--muted);margin-top:3px">pour vous</div></div>';
+    const wrap=document.createElement('div');wrap.id='svcpricesheet';wrap.className='sheet-back';
+    wrap.innerHTML='<div class="sheet" style="max-height:78vh;overflow:auto;padding:14px 18px calc(16px + env(safe-area-inset-bottom))">'
+      +'<div class="row" style="gap:10px;align-items:center;margin-top:4px"><span style="display:inline-flex;width:34px;height:34px;border-radius:10px;background:var(--teal-wash);color:var(--teal-deep);align-items:center;justify-content:center">'+svcIco(id)+'</span><b style="font-size:16px">'+esc(svcNm(id))+'</b></div>'
+      +(amb?'<div class="row" style="gap:8px;align-items:flex-start;margin-top:10px"><span class="chip" style="background:#FFEFC9;color:#8A5A00;flex:none">\u2605 Ambassadeur</span><span class="mini" style="color:var(--muted);line-height:1.5">Montants nets d\'ambassadeur (inscription avant le 1er octobre 2026).</span></div>':'')
+      +'<div style="margin-top:10px">'+lignes+'</div>'
+      +'<p class="mini" style="margin-top:10px;color:var(--muted);line-height:1.5">Prix fix\u00e9s par Ti-Services, identiques pour tous \u2014 votre net augmente avec votre anciennet\u00e9.</p>'
+      +'<button class="sheet-btn cancel" data-svcsheet="x" style="margin-top:12px">Fermer</button></div>';
+    document.body.appendChild(wrap);
+    wrap.addEventListener('click',function(ev){ if(ev.target===wrap||ev.target.closest('[data-svcsheet]'))wrap.remove(); });
+  }
   // Feuille d'action « Ajouter une photo » : déclenchée au clic sur le +.
   function openPhotoSheet(who){
     const old=document.getElementById('photosheet');if(old)old.remove();
@@ -11112,6 +11136,9 @@
     if(S.delAcct)return deleteAccountView();
     if(S.generalSupport)return generalSupportChat();
     if(S.proConflict)return proConflictView();
+    // « Déjà un compte ? Se connecter » depuis l'inscription prestataire : le routeur
+    // pro ignorait authView — le clic posait l'état mais l'écran ne changeait pas.
+    if(S.authView==='login'&&(S.proStatus==='signup'||S.proStatus==='draft'))return loginView();
     if(S.proStatus==='signup'){
       // Conciergerie masquée : toute entrée dans l'inscription pro va à l'artisan.
       if(!CONCIERGE_OPEN)S.signupKind='artisan';
@@ -11649,7 +11676,7 @@
       </div>`}</div>`+autre;
   }
   function proServicesSection(f){
-    const psvc=function(id){const s=findSvc(id);if(!s)return '';const on=f.cats.includes(s.id);const c=svcColor(s.id);const px=(S.adminPrices&&S.adminPrices[s.id]!=null?S.adminPrices[s.id]:s.rate);const rt=isForfaitSvc(s.id)?`${proNetHint(px)} € net`:(isCatalogForfait(s.id)?`dès ${proNetHint(minActPrice(s.id))} € net`:`${proNetHint(px)} € net/h`);return `<button class="cat ${on?'sel':''}" data-pcat="${s.id}"><div class="pick">${I.check}</div><div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[s.id]||svcIco(s.id)}</div><div class="nm">${esc(s.nm)}</div><div class="rt">${rt}</div></button>`;};
+    const psvc=function(id){const s=findSvc(id);if(!s)return '';const on=f.cats.includes(s.id);const c=svcColor(s.id);const px=(S.adminPrices&&S.adminPrices[s.id]!=null?S.adminPrices[s.id]:s.rate);const rt=isForfaitSvc(s.id)?`${proNetHint(px)} € net`:(isCatalogForfait(s.id)?`dès ${proNetHint(minActPrice(s.id))} € net`:`${proNetHint(px)} € net/h`);return `<button class="cat ${on?'sel':''}" data-pcat="${s.id}"><div class="pick">${I.check}</div><div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[s.id]||svcIco(s.id)}</div><div class="nm">${esc(s.nm)}</div><div class="rt">${rt}</div><span class="mini" data-psvcinfo="${s.id}" style="display:inline-block;margin-top:5px;color:var(--teal-deep);font-weight:800;text-decoration:underline;text-underline-offset:2px">D\u00e9tails \u203a</span></button>`;};
     const pcatCount=function(cat){return cat.subs.filter(function(id){return f.cats.includes(id);}).length;};
     const pcatTile=function(cat){const open=f.openCat===cat.id;const n=pcatCount(cat);const c=svcColor(cat.id);return `<button class="cat" data-pcatopen="${cat.id}" style="${open?'border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-wash)':''}"><span class="cat-more" style="${open?'transform:rotate(90deg)':''}">${I.chevron}</span><div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[cat.id]||I.other}</div><div class="nm">${esc(cat.nm)}</div><div class="rt">${n?`<b style="color:var(--teal-deep)">${n} sélectionnée${n>1?'s':''}</b>`:cat.subs.length+' prestations'}</div></button>`;};
     const cats=homeItems().map(function(it){
@@ -13658,6 +13685,7 @@
     if(b.dataset.agmonth){S.agendaMonth=monthShift(S.agendaMonth||curMonthKey(),b.dataset.agmonth==='next'?1:-1);S.agendaSel='';render();return;}
     if(b.dataset.agday!=null){S.agendaSel=b.dataset.agday||'';render();return;}
     if(b.dataset.pcatopen){if(S.proForm)S.proForm.openCat=(S.proForm.openCat===b.dataset.pcatopen)?null:b.dataset.pcatopen;render();return;}
+    const svcInfo=e.target.closest('[data-psvcinfo]');if(svcInfo){openSvcPriceSheet(svcInfo.dataset.psvcinfo);return;}
     if(b.dataset.pcat){const c=b.dataset.pcat,i=S.proForm.cats.indexOf(c);S.proForm.rates=S.proForm.rates||{};if(i<0){S.proForm.cats.push(c);if(S.proForm.rates[c]==null)S.proForm.rates[c]=(S.adminPrices&&S.adminPrices[c]!=null)?S.adminPrices[c]:svcBase(c);}else{S.proForm.cats.splice(i,1);}render();return;}
     if(b.dataset.pstatustype){if(S.proForm)S.proForm.statusType=b.dataset.pstatustype;render();return;}
     if(b.dataset.srate){const parts=b.dataset.srate.split(':'),id=parts[0],dir=parts[1];S.proForm.rates=S.proForm.rates||{};const plat=(S.adminPrices&&S.adminPrices[id]!=null)?S.adminPrices[id]:svcBase(id);const cur=(S.proForm.rates[id]!=null)?S.proForm.rates[id]:plat;S.proForm.rates[id]=Math.max(5,Math.min(200,cur+(dir==='up'?1:-1)));render();return;}
