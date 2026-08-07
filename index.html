@@ -7991,10 +7991,16 @@
   function admSeenGet(){try{return JSON.parse(localStorage.getItem('tiAdmSeen')||'{}');}catch(_){return {};}}
   function admSeenSet(k,v){try{const m=admSeenGet();m[k]=v;localStorage.setItem('tiAdmSeen',JSON.stringify(m));}catch(_){}}
   function admArtSig(a){return (a.status==='attente'?'A':'')+'|'+((a.pendingCats||[]).join('+'))+'|'+(a.insuranceStatus==='attente'?'I':'');}
-  function admArtNew(a){const seen=admSeenGet()['art:'+a.id];if(seen==null)return true;return admArtSig(a)!==seen&&(a.status==='attente'||(a.pendingCats||[]).length>0||a.insuranceStatus==='attente');}
+  // Une pastille = quelque chose qui DEMANDE une action. Un compte ancien jamais
+  // ouvert mais sans rien à traiter n'est pas « nouveau » (sinon tout l'existant
+  // s'allume à jamais au premier lancement — vu en production).
+  function admArtNew(a){if(!(a.status==='attente'||(a.pendingCats||[]).length>0||a.insuranceStatus==='attente'))return false;return admSeenGet()['art:'+a.id]!==admArtSig(a);}
   function admCliSig(c){return (c.status==='attente'?'A':'');}
-  function admCliNew(c){const seen=admSeenGet()['cli:'+c.id];if(seen==null)return true;return admCliSig(c)!==seen&&c.status==='attente';}
-  function admThreadNew(t){return admSeenGet()['req:'+t.reqId]==null;}
+  function admCliNew(c){if(c.status!=='attente')return false;return admSeenGet()['cli:'+c.id]!==admCliSig(c);}
+  // Seules les demandes ENCORE dans le tunnel comptent : la conversation d'une
+  // mission réglée/terminée n'a rien de nouveau (elle n'apparaît même pas dans la
+  // carte « Réservations en cours » — la pastille y restait allumée à vide).
+  function admThreadNew(t){if(!/^(pending|accepted|working|done_pro)$/.test(t.status||''))return false;return admSeenGet()['req:'+t.reqId]==null;}
   function admDot(on){return on?'<span class="admdot" aria-hidden="true" style="flex:none;width:9px;height:9px;border-radius:50%;background:var(--coral-deep);box-shadow:0 0 0 3px var(--coral-wash)"></span>':'';}
   function adminNewCount(){let n=0;try{(S.adminArtisans||[]).forEach(function(a){if(a&&admArtNew(a))n++;});(S.adminClients||[]).forEach(function(c){if(c&&admCliNew(c))n++;});(S.adminThreads||[]).forEach(function(t){if(t&&t.reqId&&admThreadNew(t))n++;});}catch(_){ }return n;}
   function adminPendingCount(){return ((S.adminArtisans||[]).filter(function(a){return a.status==='attente';}).length)+((S.adminClients||[]).filter(function(c){return c.status==='attente';}).length);}
