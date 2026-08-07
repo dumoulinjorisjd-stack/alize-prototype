@@ -8009,7 +8009,11 @@
     const pendConc=(S.adminConcierges||[]).filter(c=>c.status==='attente');
     const live=(S.mission&&['pending','accepted','working','done_pro'].includes(S.mission.status))?1:0;
     const validA=arts.filter(a=>a.status==='valide').length;
-    const stat=(lbl,val,sub)=>`<div class="card" style="padding:13px;flex:1;min-width:0"><div class="mini">${lbl}</div><b class="money" data-count="adm-${lbl}:${val}" style="font-size:22px;font-family:var(--f-disp);display:block">${val}</b><div class="mini">${sub}</div></div>`;
+    // `act` : les compteurs sont des BOUTONS — toucher « Artisans » ou « Clients »
+    // ouvre la liste correspondante (avant, il ne se passait rien).
+    const stat=(lbl,val,sub,act)=>act
+      ?`<button class="card" data-act="${act}" style="padding:13px;flex:1;min-width:0;text-align:left;cursor:pointer"><div class="mini">${lbl}</div><b class="money" data-count="adm-${lbl}:${val}" style="font-size:22px;font-family:var(--f-disp);display:block">${val}</b><div class="mini">${sub}</div></button>`
+      :`<div class="card" style="padding:13px;flex:1;min-width:0"><div class="mini">${lbl}</div><b class="money" data-count="adm-${lbl}:${val}" style="font-size:22px;font-family:var(--f-disp);display:block">${val}</b><div class="mini">${sub}</div></div>`;
     const q=[];
     pendA.forEach(a=>q.push(`<div class="card" style="padding:14px;margin-top:10px;border-left:4px solid var(--warn)">
       <div class="row between" style="align-items:flex-start"><div class="row" style="gap:10px;align-items:center">${avatarPhoto(a.photo,inits(a.name||'A'),'')}<b style="font-size:14px">${esc(a.name)}</b></div><span class="chip grey">Prestataire</span></div>
@@ -8176,7 +8180,7 @@
     })();
     return `<div class="pad">
       <div class="row between isle-wm" style="margin-top:10px"><div><span class="eyebrow">Console admin · Ti-Services</span><div class="h-hello">Tableau de bord</div></div><div class="avatar" style="background:linear-gradient(135deg,var(--ink),#000)">TS</div></div>
-      <div class="row" style="gap:9px;margin-top:12px">${stat('En cours',allB.length,'réservations')}${stat('Artisans',validA,pendA.length+' en attente')}${stat('Clients',clis.length,pendC.length+' en attente')}</div>
+      <div class="row" style="gap:9px;margin-top:12px">${stat('En cours',allB.length,'réservations','adm-encours')}${stat('Artisans',validA,pendA.length+' en attente','adm-list:a-arts')}${stat('Clients',clis.length,pendC.length+' en attente','adm-list:a-clis')}</div>
       <div class="card listrow" style="margin-top:10px"><span class="benic" style="flex:none">${I.card}</span><div class="lr-main"><span class="sub">Commission ce mois</span></div><b class="money" style="font-size:18px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(adminMonthCommission())}</b></div>
       ${/* L'alerte de candidature parle de la file « À traiter » : elle se lit juste au-dessus
            d'elle, pas au milieu des compteurs. Une fois les notifications acceptées, elle
@@ -13623,6 +13627,10 @@
     if(b.dataset.slotflex!=null){if(S.draft){const v=b.dataset.slotflex;S.draft.slotFlex=(v==='day'||v==='week')?v:(+v);}renderConfig();return;}
     if(b.dataset.loc!=null){if(S.draft){S.draft.locationMode=(b.dataset.loc==='salon')?'salon':'domicile';}renderConfig();return;}
     if(b.dataset.fold){S._fold=S._fold||{};S._fold[b.dataset.fold]=!S._fold[b.dataset.fold];render();return;}
+    // Compteurs du tableau de bord admin : « Artisans » / « Clients » déplient la liste
+    // correspondante et y amènent l'écran ; « En cours » ouvre le suivi (messagerie).
+    if(b.dataset.act&&b.dataset.act.indexOf('adm-list:')===0){const id=b.dataset.act.split(':')[1];S._fold=S._fold||{};S._fold[id]=true;render();setTimeout(function(){try{const el=document.querySelector('[data-fold="'+id+'"]');if(el)el.scrollIntoView({behavior:'smooth',block:'start'});}catch(_){}},60);return;}
+    if(b.dataset.act==='adm-encours'){S.admin.view='msg';S.admin.sel=null;render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('extcal-del:')===0){(function(){
       const i=parseInt(b.dataset.act.slice('extcal-del:'.length),10);
       let ext=[];try{ext=JSON.parse(localStorage.getItem('tiExtCals')||'[]');}catch(_){}
