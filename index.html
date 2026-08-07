@@ -11701,7 +11701,7 @@
   function proTodoBlock(){
     const list=proActiveMissions();
     if(!list.length)return '';
-    return `<div style="margin-top:14px"><span class="eyebrow" style="color:var(--teal-deep)">${I.check} Missions en cours · ${list.length}</span>${list.map(function(m){const sm=proMissionMeta(m.status);return `<button class="card" data-act="promiss:${m._id||''}" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block;border-left:4px solid ${sm.c==='good'?'var(--good)':'var(--coral)'}"><div class="row between"><b style="font-size:14px">${proDots(m)}${esc(m.svcName||svcNm(m.svc))}</b><span class="chip ${sm.c}">${sm.l}</span></div><div class="mini" style="margin-top:3px">${I.pin} ${esc(migZone(m.zone))} · ${esc(m.when||'')} · ${esc(m.slot||'')} · ${m.duration||1} ${m.unit==='j'?'j':'h'}</div><div class="row between" style="margin-top:9px"><span class="mini" style="color:var(--muted)">Vous percevez ${eur(totals(m).payout)}</span><span class="mini" style="color:var(--teal-deep);font-weight:700">Ouvrir ›</span></div></button>`;}).join('')}</div>`;
+    return `<div style="margin-top:26px"><span class="eyebrow" style="color:var(--muted)">${I.check} Missions en cours · ${list.length}</span>${list.map(function(m){const sm=proMissionMeta(m.status);return `<button class="card" data-act="promiss:${m._id||''}" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block;border-left:4px solid ${sm.c==='good'?'var(--good)':'var(--coral)'}"><div class="row between"><b style="font-size:14px">${proDots(m)}${esc(m.svcName||svcNm(m.svc))}</b><span class="chip ${sm.c}">${sm.l}</span></div><div class="mini" style="margin-top:3px">${I.pin} ${esc(migZone(m.zone))} · ${esc(m.when||'')} · ${esc(m.slot||'')} · ${m.duration||1} ${m.unit==='j'?'j':'h'}</div><div class="row between" style="margin-top:9px"><span class="mini" style="color:var(--ink);font-weight:700">Vous percevez ${eur(totals(m).payout)}</span><span class="mini" style="color:var(--muted)">Ouvrir ›</span></div></button>`;}).join('')}</div>`;
   }
   // En-tête d'onglet, commun au mode client ET au mode prestataire : intitulé + titre
   // à gauche, action de la page puis photo à droite, silhouette de l'île en filigrane.
@@ -11720,9 +11720,17 @@
     const catNames=cats.map(c=>{const s=SERVICES.find(x=>x.id===c);return s?s.nm:c;}).slice(0,2).join(' · ');
     const d=openDemand();const isNew=(S.proJobsTotal||0)===0;
     const online=S.proOnline;
-    return `<div class="pad">${proHead('Prestataire · '+catNames,'Mes missions',proHeadBtn('open-share','Partager Ti-Services',I.share))}
-      ${notifCTA('pro')}
-      ${(function(){const st=mollieState();if(st==='active')return '';
+    // HIÉRARCHIE : CE QUI ATTEND UN GESTE PASSE DEVANT, CE QUI N'ATTEND RIEN DESCEND.
+    // Le prestataire traversait quatre blocs avant d'apercevoir sa première mission.
+    // Mais trois d'entre eux sont là POUR RÂLER, et ils s'effacent tout seuls une fois la
+    // chose faite : notifCTA disparaît dès que les notifications sont activées, la carte
+    // Mollie dès que le dossier est actif. Les enterrer sous les missions leur retirait
+    // exactement ce qui fait leur utilité — ces gestes sont indispensables AVANT
+    // d'accepter une mission. Ne descend donc que ce qui n'appelle aucune action : le
+    // rappel « rien à faire de votre côté », le bandeau d'ouverture, et l'interrupteur
+    // quand il est déjà allumé.
+    const _mollieBloque=(mollieState()!=='active'&&!molliePeutTravailler());
+    const _carteMollie=(function(){const st=mollieState();if(st==='active')return '';
         // Paiements non actifs : le rappeler ICI, sur l'écran missions — pas au moment
         // où l'artisan essaie d'accepter et découvre qu'il ne peut pas.
         const nd=(st==='pending'&&S.proMollieOnb==='needs-data');
@@ -11738,20 +11746,24 @@
         return `<button class="card" data-act="pro-mollie" style="padding:14px;margin-top:12px;width:100%;text-align:left;display:block${pend?'':';border:1.5px solid color-mix(in srgb,var(--coral) 45%,transparent)'}">
           <div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="${pend?'':'background:var(--coral-wash);color:var(--coral-deep)'}">${pend?I.clock:I.card}</span>
           <div style="flex:1;min-width:0"><b style="font-size:14px">${ttl}</b><p class="mini" style="margin-top:3px">${txt}</p></div>
-          <span class="mini" style="color:var(--teal-deep);font-weight:700;white-space:nowrap;flex:none">${pend?'Suivre ›':'Activer ›'}</span></div></button>`;})()}
-      ${(function(){
+          <span class="mini" style="color:var(--teal-deep);font-weight:700;white-space:nowrap;flex:none">${pend?'Suivre ›':'Activer ›'}</span></div></button>`;})();
+    const _bandeauOuverture=(function(){
         // Avant l'ouverture aux clients : expliquer POURQUOI le fil est calme, et
         // transformer l'attente en préparation. Se retire tout seul le 1er octobre.
         try{ if((new Date().toISOString().slice(0,10))>=CLIENT_LAUNCH)return ''; }catch(_){ return ''; }
-        return `<div class="banner teal" style="margin-top:12px">${I.cal}<span><b>Ouverture aux clients le 1er octobre 2026</b> — les premières demandes arriveront à cette date. D'ici là, préparez-vous : profil complet, agenda connecté, paiements activés — vous serez prêt dès le premier jour.</span></div>`;})()}
-
-      <div class="card" style="padding:14px;margin-top:12px;${online?'':'border:1.5px solid color-mix(in srgb,var(--coral) 45%,transparent)'}"><div class="row between"><div><b style="font-size:15px">${online?'Vous êtes en ligne':'Hors ligne'}</b><div class="mini">${online?'Vous recevez les nouvelles demandes':'Activez pour recevoir des missions'}</div></div><button class="switch" data-act="toggle-online" style="background:${online?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${online?'25px':'3px'}"></span></button></div></div>
-
+        return `<p class="mini" style="margin-top:12px;color:var(--muted);line-height:1.5">${I.cal} <b>Ouverture aux clients le 1er octobre 2026.</b> D'ici là, préparez-vous : profil complet, agenda connecté, paiements activés — vous serez prêt dès le premier jour.</p>`;})();
+    const _carteEnLigne=`<div class="card" style="padding:14px;margin-top:12px;${online?'':'border:1.5px solid color-mix(in srgb,var(--coral) 45%,transparent)'}"><div class="row between"><div><b style="font-size:15px">${online?'Vous êtes en ligne':'Hors ligne'}</b><div class="mini">${online?'Vous recevez les nouvelles demandes':'Activez pour recevoir des missions'}</div></div><button class="switch" data-act="toggle-online" style="background:${online?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${online?'25px':'3px'}"></span></button></div></div>`;
+    // Hors ligne, l'interrupteur commande tout : il passe en tête. En ligne, il n'a plus
+    // rien à dire d'urgent et redescend sous les missions.
+    const _enTete=(online?'':_carteEnLigne)+notifCTA('pro')+(_mollieBloque?_carteMollie:'');
+    const _pied=(online?_carteEnLigne:'')+(_mollieBloque?'':_carteMollie)+_bandeauOuverture;
+    return `<div class="pad">${proHead('Prestataire · '+catNames,'Mes missions',proHeadBtn('open-share','Partager Ti-Services',I.share))}
+      ${_enTete}
       ${proTodoBlock()}
 
       ${(FB&&!isDemo())?openRequestsBlock():(isDemo()
         // DÉMONSTRATION : chiffres d'illustration, assumés comme tels.
-        ? `<div style="margin-top:14px"><span class="eyebrow" style="color:var(--teal-deep)">${I.flame} Missions disponibles</span>
+        ? `<div style="margin-top:14px"><span class="eyebrow" style="color:var(--muted)">${I.flame} Missions disponibles</span>
         <div class="card" style="padding:16px;margin-top:10px;background:var(--teal-wash);border:1.5px solid color-mix(in srgb,var(--teal) 32%,transparent)">
         <div><b style="font-size:23px;font-family:var(--f-disp)">${d.count} demandes</b> <span class="sub">non pourvues cette semaine</span></div>
         <div class="mini" style="margin-top:3px">${d.names} · Saint-Barth · <b style="color:var(--teal-deep)">~${d.amount.toLocaleString('fr-FR')} € de missions à prendre</b></div>
@@ -11761,12 +11773,11 @@
         // HORS LIGNE / SERVEUR INJOIGNABLE : aucun chiffre inventé — on dit simplement
         // que la liste n'a pas pu être chargée. Un prestataire réel ne doit jamais voir
         // de fausses missions, même une seconde.
-        : `<div style="margin-top:14px"><span class="eyebrow" style="color:var(--teal-deep)">${I.flame} Missions disponibles</span>
-        <div class="card" style="padding:16px;margin-top:10px">
-        <b style="font-size:14px">Liste indisponible pour l'instant</b>
-        <p class="mini" style="margin-top:4px">Les missions n'ont pas pu être chargées — vérifiez votre connexion. Elles réapparaîtront d'elles-mêmes dès le réseau retrouvé.</p>
-      </div></div>`)}
+        : `<div style="margin-top:14px"><span class="eyebrow" style="color:var(--muted)">${I.flame} Missions disponibles</span>
+        <p class="mini" style="margin-top:10px;color:var(--muted)">${I.info} Liste indisponible pour l'instant — vérifiez votre connexion. Elle reviendra d'elle-même.</p>
+      </div>`)}
 
+      <div style="margin-top:28px">${_pied}</div>
       ${isDemo()?`<p class="mini" style="text-align:center;margin-top:16px"><button class="linklike" data-act="demo-go-client">${I.user} Voir l'espace client (démo)</button> · <button class="linklike" data-act="demo-go-admin">${I.gear} Admin (démo)</button></p>`:''}
       <div style="height:12px"></div></div>${proNavbar()}`;
   }
@@ -15870,7 +15881,7 @@
       return (!was||reboostedAfter)&&!isStaleMission(r);
     });
     // Premier chargement du fil (avant le 1er instantané) : squelettes, pas « aucune mission ».
-    if(S._openReqLoading&&!list.length)return `<div style="margin-top:12px"><span class="eyebrow" style="color:var(--teal-deep)">${I.flame} Missions disponibles</span>${reqSkeleton(2)}</div>`;
+    if(S._openReqLoading&&!list.length)return `<div style="margin-top:12px"><span class="eyebrow" style="color:var(--muted)">${I.flame} Missions disponibles</span>${reqSkeleton(2)}</div>`;
     if(!list.length)return `<div class="card" style="padding:18px;margin-top:12px;text-align:center;border-style:dashed"><div class="radar sm"><div class="ring r1"></div><div class="ring r2"></div><div class="core bare">${octoMini(64,'bob')}</div></div><p class="sub" style="margin:6px 0 0">Aucune mission disponible pour l'instant.</p><p class="mini" style="margin-top:4px">Vous serez notifié dès qu'une nouvelle demande arrive.</p></div>`;
     const myUid=(FB&&FB.auth&&FB.auth.currentUser)?FB.auth.currentUser.uid:'';
     // Agenda connecté : vérification GROUPÉE des conflits (badge « conflit agenda » sur
@@ -15889,7 +15900,7 @@
     }catch(_){}})();
     const confCount=list.filter(function(r){return S._calList&&S._calList[r.id];}).length;
     const shown=(S.proHideConf&&confCount)?list.filter(function(r){return !(S._calList&&S._calList[r.id]);}):list;
-    return `<div style="margin-top:12px"><div class="row between" style="align-items:center"><span class="eyebrow" style="color:var(--teal-deep)">${I.flame} Missions disponibles · ${shown.length}</span>${confCount?`<button class="linklike" data-act="toggle-hideconf" style="font-size:12px">${S.proHideConf?'Afficher':'Masquer'} les conflits (${confCount})</button>`:''}</div>${shown.map(function(r){const win=reqWinTxt(r);const forMe=(r.preferredProviderUid&&r.preferredProviderUid===myUid);return `<div class="swipe-row"><button class="swipe-del skip" data-act="pro-skip:${r.id}" aria-label="Passer cette mission">Passer</button><button class="card swipe-card" data-act="reqview:${r.id}" style="padding:14px;width:100%;text-align:left;display:block${forMe?';border-left:4px solid var(--teal-deep)':''}"><div class="row between"><b style="font-size:14px">${esc(r.serviceName||svcNm(r.service))}</b><b class="money" style="color:var(--teal-deep);font-family:var(--f-disp)">${eur(reqPayout(r))}</b></div>${forMe?`<span class="chip" style="background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.star} Demande réservée pour vous</span>`:''}<div class="mini" style="margin-top:4px">${I.pin} ${esc(migZone(r.zone))} · ${esc(r.when||'')} · ${esc(win)} · ${r.duration||1} ${r.unit==='j'?'j':'h'}${(needsPeople(r.service)&&(Number(r.people)||1)>1)?' · '+I.users+' '+peopleLbl(Number(r.people)||1):''}${canOnSite(r.service)?' · '+(r.locationMode==='salon'?I.shop+' chez vous':I.home+' domicile'):''}${(S._calList&&S._calList[r.id])?` · <span style="color:var(--coral-deep);font-weight:700">${I.warn} conflit agenda</span>`:''}</div>${(r.boostEur||r.boost)?`<span class="chip" style="background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.bolt} Coup de pouce ${r.boostEur?('+'+eur(r.boostEur)):('+'+r.boost+'%')}</span>`:''}<div class="row between" style="margin-top:10px"><span class="mini" style="color:var(--muted)">${r.notes?'Détails du besoin fournis':'Voir la mission'}</span><span class="mini" style="color:var(--teal-deep);font-weight:700">Voir la fiche ›</span></div></button></div>`;}).join('')}</div>`;
+    return `<div style="margin-top:12px"><div class="row between" style="align-items:center"><span class="eyebrow" style="color:var(--teal-deep)">${I.flame} Missions disponibles · ${shown.length}</span>${confCount?`<button class="linklike" data-act="toggle-hideconf" style="font-size:12px">${S.proHideConf?'Afficher':'Masquer'} les conflits (${confCount})</button>`:''}</div>${shown.map(function(r){const win=reqWinTxt(r);const forMe=(r.preferredProviderUid&&r.preferredProviderUid===myUid);return `<div class="swipe-row"><button class="swipe-del skip" data-act="pro-skip:${r.id}" aria-label="Passer cette mission">Passer</button><button class="card swipe-card" data-act="reqview:${r.id}" style="padding:14px;width:100%;text-align:left;display:block${forMe?';border-left:4px solid var(--teal-deep)':''}"><div class="row between"><b style="font-size:14px">${esc(r.serviceName||svcNm(r.service))}</b><b class="money" style="color:var(--teal-deep);font-family:var(--f-disp)">${eur(reqPayout(r))}</b></div>${forMe?`<span class="chip" style="background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.star} Demande réservée pour vous</span>`:''}<div class="mini" style="margin-top:4px">${I.pin} ${esc(migZone(r.zone))} · ${esc(r.when||'')} · ${esc(win)} · ${r.duration||1} ${r.unit==='j'?'j':'h'}${(needsPeople(r.service)&&(Number(r.people)||1)>1)?' · '+I.users+' '+peopleLbl(Number(r.people)||1):''}${canOnSite(r.service)?' · '+(r.locationMode==='salon'?I.shop+' chez vous':I.home+' domicile'):''}${(S._calList&&S._calList[r.id])?` · <span style="color:var(--coral-deep);font-weight:700">${I.warn} conflit agenda</span>`:''}</div>${(r.boostEur||r.boost)?`<span class="chip" style="background:var(--teal-wash);color:var(--teal-deep);margin-top:7px;display:inline-block">${I.bolt} Coup de pouce ${r.boostEur?('+'+eur(r.boostEur)):('+'+r.boost+'%')}</span>`:''}${r.notes?`<div class="row between" style="margin-top:10px"><span class="mini" style="color:var(--muted)">${I.info} Détails du besoin fournis</span><span class="mini" style="color:var(--muted)">Voir la fiche ›</span></div>`:''}</button></div>`;}).join('')}</div>`;
   }
   // Alerte de conflit d'agenda : le prestataire a déjà une intervention qui chevauche
   // ce créneau. Il confirme explicitement qu'il peut assurer, sinon « passe son tour ».
