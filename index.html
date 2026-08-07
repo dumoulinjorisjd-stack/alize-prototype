@@ -12018,8 +12018,11 @@
   function icsBuild(list){return ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Ti-Services//FR','CALSCALE:GREGORIAN','METHOD:PUBLISH']
     .concat(list.flatMap(icsEvent)).concat(['END:VCALENDAR']).join('\r\n');}
   function downloadIcs(text,name){try{const blob=new Blob([text],{type:'text/calendar;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name||'ti-services.ics';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>{try{URL.revokeObjectURL(url);}catch(_){}} ,1500);toast('Ajouté à votre agenda');}catch(e){toast('Impossible d’ouvrir l’agenda');}}
-  // Notifications push : demande d'autorisation (le vrai envoi = Cloud Function FCM, Phase 2).
-  function requestPush(){try{if('Notification'in window&&typeof Notification.requestPermission==='function'){const r=Notification.requestPermission();if(r&&r.then){r.then(perm=>{S.proNotifPush=(perm==='granted');toast(perm==='granted'?'Notifications activées':'Autorisez les notifications dans les réglages du téléphone');render();});}else{S.proNotifPush=(r==='granted');}}else{toast('Notifications non disponibles sur cet appareil');}}catch(e){}}
+  // Notifications push : demande d'autorisation PUIS enregistrement du jeton. L'ancienne
+  // version s'arrêtait à la permission : « Notifications activées » s'affichait, mais
+  // aucun jeton n'était écrit sur la fiche — l'artisan ne recevait rien avant un
+  // redémarrage complet de l'app.
+  function requestPush(){try{if('Notification'in window&&typeof Notification.requestPermission==='function'){const r=Notification.requestPermission();const fin=perm=>{S.proNotifPush=(perm==='granted');toast(perm==='granted'?'Notifications activées':'Autorisez les notifications dans les réglages du téléphone');if(perm==='granted')try{registerPush(S.persona==='pro'?'artisan':'client',true);}catch(_){}render();};if(r&&r.then){r.then(fin);}else{fin(r);}}else{toast('Notifications non disponibles sur cet appareil');}}catch(e){}}
   // Deep link : une notif / un lien WhatsApp « Ouvrir Ti-Services » ouvre l'app sur l'espace Missions.
   function handleDeepLink(){try{const q=new URLSearchParams(location.search);
     try{const rp=q.get('realpay');if(rp==='1')localStorage.setItem('tiPayReal','1');else if(rp==='0')localStorage.removeItem('tiPayReal');}catch(_){}
@@ -14041,10 +14044,10 @@
       }
       case 'enable-notif':{
         // Coquille native : la permission système passe par le plugin push (APNs/FCM).
-        if(isNativeShell()){ S.proNotifPush=true; if(FB){ if(isAdminAccount())initAdminPush(); else registerPush(S.persona==='pro'?'artisan':'client'); } toast('Notifications activées'); render(); break; }
+        if(isNativeShell()){ S.proNotifPush=true; if(FB){ if(isAdminAccount())initAdminPush(); else registerPush(S.persona==='pro'?'artisan':'client',true); } toast('Notifications activées'); render(); break; }
         if(typeof Notification==='undefined'){toast('Notifications non disponibles sur cet appareil');break;}
         if(typeof Notification.requestPermission!=='function'){toast('Notifications non disponibles sur cet appareil');break;}
-        const after=function(perm){ if(perm==='granted'){ toast('Notifications activées'); S.proNotifPush=true; if(FB){ if(isAdminAccount())initAdminPush(); else registerPush(S.persona==='pro'?'artisan':'client'); } } else { toast('Autorisez les notifications dans les réglages de votre navigateur'); } render(); };
+        const after=function(perm){ if(perm==='granted'){ toast('Notifications activées'); S.proNotifPush=true; if(FB){ if(isAdminAccount())initAdminPush(); else registerPush(S.persona==='pro'?'artisan':'client',true); } } else { toast('Autorisez les notifications dans les réglages de votre navigateur'); } render(); };
         const r=Notification.requestPermission(); if(r&&r.then){r.then(after);}else{after(r);} break;}
       case 'view-cgu':S.legalView='cgu';render();break;
       case 'view-cgv':S.legalView='cgv';render();break;
@@ -15391,7 +15394,7 @@
         // ne rejoue pas une demande que le navigateur bloquerait de toute façon.
         setTimeout(function(){ try{
           if(typeof Notification==='undefined'||Notification.permission==='denied')return;
-          if(Notification.permission==='granted'){registerPush('artisan');saveProSettings();return;}
+          if(Notification.permission==='granted'){registerPush('artisan',true);saveProSettings();return;}
           requestPush();
         }catch(_){} },1200);
         return;
@@ -15848,7 +15851,15 @@
       if(pushRegUid===u.uid)pushRegUid=null;   // il pourra se réabonner plus tard
     }catch(_){}
   }
-  async function registerPush(role){
+  // `force` : action EXPLICITE de l'utilisateur (bouton « activer les notifications »).
+  // Sans force (ré-inscription automatique au démarrage), on respecte son opt-out :
+  // notifOn:false sur sa fiche => on ne ré-enregistre RIEN. Avant, chaque lancement
+  // remettait notifOn:true et ré-ajoutait le jeton — le refus était annulé en silence.
+  async function pushConsentRevoked(uid){
+    try{ const s=await FB.f.getDoc(FB.f.doc(FB.db,'users',uid)); return !!(s&&s.exists()&&s.data().notifOn===false); }catch(_){ return false; }
+  }
+  async function registerPush(role,force){
+    if(!force){ try{ const u=FB&&FB.auth&&FB.auth.currentUser; if(u&&await pushConsentRevoked(u.uid))return; }catch(_){} }
     if(isNativeShell()){
       try{
         if(!FB||!FB.auth||!FB.auth.currentUser)return;
