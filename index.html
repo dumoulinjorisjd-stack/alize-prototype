@@ -2189,10 +2189,10 @@
   }
   // Carte repliable (écrans Compte) : la tête affiche titre + résumé + pastille ;
   // le corps ne se rend que déplié (S._fold). Tout est replié par défaut.
-  function foldCard(id,icon,title,sub,body,chip){
+  function foldCard(id,icon,title,sub,body,chip,dot){
     const open=!!(S._fold&&S._fold[id]);
     return `<div class="card foldc${open?' open':''}" style="margin-top:12px">
-      <button class="fold-head" data-fold="${id}" aria-expanded="${open?'true':'false'}"><span class="fh-main"><span class="benic" style="flex:none">${icon}</span><div style="flex:1 1 auto;min-width:0"><b style="font-size:14px">${title}</b>${sub?`<div class="mini fh-sub">${sub}</div>`:''}</div></span><span class="fh-end">${chip||''}<span class="fold-chev" aria-hidden="true">${I.chevron}</span></span></button>
+      <button class="fold-head" data-fold="${id}" aria-expanded="${open?'true':'false'}"><span class="fh-main">${dot?admDot(true):''}<span class="benic" style="flex:none">${icon}</span><div style="flex:1 1 auto;min-width:0"><b style="font-size:14px">${title}</b>${sub?`<div class="mini fh-sub">${sub}</div>`:''}</div></span><span class="fh-end">${chip||''}<span class="fold-chev" aria-hidden="true">${I.chevron}</span></span></button>
       ${open?`<div class="fold-body">${body}</div>`:''}
     </div>`;
   }
@@ -7995,7 +7995,7 @@
   function admCliSig(c){return (c.status==='attente'?'A':'');}
   function admCliNew(c){const seen=admSeenGet()['cli:'+c.id];if(seen==null)return true;return admCliSig(c)!==seen&&c.status==='attente';}
   function admThreadNew(t){return admSeenGet()['req:'+t.reqId]==null;}
-  function admDot(on){return on?'<span aria-hidden="true" style="flex:none;width:9px;height:9px;border-radius:50%;background:var(--coral-deep);box-shadow:0 0 0 3px var(--coral-wash)"></span>':'';}
+  function admDot(on){return on?'<span class="admdot" aria-hidden="true" style="flex:none;width:9px;height:9px;border-radius:50%;background:var(--coral-deep);box-shadow:0 0 0 3px var(--coral-wash)"></span>':'';}
   function adminNewCount(){let n=0;try{(S.adminArtisans||[]).forEach(function(a){if(a&&admArtNew(a))n++;});(S.adminClients||[]).forEach(function(c){if(c&&admCliNew(c))n++;});(S.adminThreads||[]).forEach(function(t){if(t&&t.reqId&&admThreadNew(t))n++;});}catch(_){ }return n;}
   function adminPendingCount(){return ((S.adminArtisans||[]).filter(function(a){return a.status==='attente';}).length)+((S.adminClients||[]).filter(function(c){return c.status==='attente';}).length);}
   function catNames(cats){return cats.map(svcNm).join(', ');}
@@ -8243,7 +8243,7 @@
 
       <div style="height:18px"></div><span class="eyebrow">${I.hardhat} Prestataires</span>
       <p class="mini" style="margin:6px 0 0;color:var(--muted)">Touchez une carte pour la déplier.</p>
-      ${foldCard('a-arts',I.hardhat,'Fiches artisans',validA+' validé'+(validA>1?'s':'')+(pendA.length?' · '+pendA.length+' en attente':'')+(refA.length?' · '+refA.length+' refusé'+(refA.length>1?'s':''):'')+(nbAmb?' · '+nbAmb+' ambassadeur'+(nbAmb>1?'s':''):''),artList+(refA.length?`<hr class="dashed" style="margin:14px 0 2px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Prestataires refusés (${refA.length})</div>${refList}`:''),chip('grey',activeArts.length))}
+      ${foldCard('a-arts',I.hardhat,'Fiches artisans',validA+' validé'+(validA>1?'s':'')+(pendA.length?' · '+pendA.length+' en attente':'')+(refA.length?' · '+refA.length+' refusé'+(refA.length>1?'s':''):'')+(nbAmb?' · '+nbAmb+' ambassadeur'+(nbAmb>1?'s':''):''),artList+(refA.length?`<hr class="dashed" style="margin:14px 0 2px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Prestataires refusés (${refA.length})</div>${refList}`:''),chip('grey',activeArts.length),(S.adminArtisans||[]).some(function(x){return x&&admArtNew(x);}))}
       ${(function(){
         // Un compte prestataire SANS fiche `artisans`, c'est quelqu'un qui a monté son
         // dossier et ne l'a jamais envoyé. Il n'apparaît dans aucune autre liste : sans
@@ -8288,7 +8288,7 @@
       ${foldCard('a-retro',I.concierge,'Rétrocession conciergerie','Commission d’apport reversée au concierge',retroBody,chip('grey',S.retroRate+'&nbsp;%'))}
 
       <div style="height:18px"></div><span class="eyebrow">${I.user} Clients</span>
-      ${foldCard('a-clis',I.user,'Fiches clients',pendC.length?pendC.length+' en attente de validation':'Comptes clients inscrits',cliList,chip('grey',clis.length))}
+      ${foldCard('a-clis',I.user,'Fiches clients',pendC.length?pendC.length+' en attente de validation':'Comptes clients inscrits',cliList,chip('grey',clis.length),(S.adminClients||[]).some(function(x){return x&&admCliNew(x);}))}
       ${foldCard('a-restore',I.shield,'Récupérer un compte supprimé','Lecture à un instant donné (PITR) — fenêtre de 7 jours',(function(){
         const f=S._arst||{};
         const out=S._arstOut?`<div class="banner ${S._arstOut.ok?'good':'coral'}" style="margin-top:12px">${S._arstOut.ok?I.check:I.shield}<span>${esc(S._arstOut.msg)}</span></div>`:'';
@@ -8301,7 +8301,7 @@
       <button class="card" data-adm="wishes" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block"><div class="row between" style="align-items:center"><b style="font-size:14px">Services réclamés par les clients</b>${(S.adminWishes&&S.adminWishes.length)?`<span class="chip coral">${S.adminWishes.length}</span>`:`<span class="mini" style="color:var(--muted)">Aucune pour l'instant</span>`}</div><p class="sub" style="margin-top:8px">Voir ce que les clients aimeraient trouver sur la plateforme.</p></button>
 
       <div style="height:18px"></div><span class="eyebrow">${I.shield} Fonctionnement</span>
-      ${foldCard('a-bookings',I.cal,'Réservations en cours','Recherche → acceptée → en cours → validée → réglée',bookings,chip(allB.length?'good':'grey',allB.length))}
+      ${foldCard('a-bookings',I.cal,'Réservations en cours','Recherche → acceptée → en cours → validée → réglée',bookings,chip(allB.length?'good':'grey',allB.length),(S.adminThreads||[]).some(function(t){return t&&t.reqId&&admThreadNew(t);}))}
       ${foldCard('a-prices',I.euro,'Prestations · artisans &amp; tarifs',svcAll.length+' métiers'+(svcNoPro?' · '+svcNoPro+' sans prestataire':''),pricesBody,svcNoPro?chip('coral',svcNoPro+' sans pro'):chip('good',svcAll.length))}
       ${foldCard('a-funnel',I.install,"Entonnoir d'installation",'Visiteurs, guide ouvert, applications installées',funnelBody,S.adminFunnelLoaded?chip('grey',(Number((S.adminFunnel||{}).u_installed_total)||0)+' installées'):'')}
       <button class="card" data-adm="manual" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block"><div class="row between" style="align-items:center"><b style="font-size:14px">Manuel d'exploitation</b><span class="mini" style="color:var(--teal-deep);font-weight:700">Ouvrir ›</span></div><p class="sub" style="margin-top:8px">Tout le fonctionnement de la plateforme (commandes, prestataire choisi, paiements, récurrences, annulations…) — pour vous, un employé ou un médiateur. Imprimable.</p></button>
