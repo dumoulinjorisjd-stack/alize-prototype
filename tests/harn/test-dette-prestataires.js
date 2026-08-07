@@ -24,6 +24,12 @@ ok(/collection\('ledger'\)\.doc\(reqId\)\.set\(\{molliePayout: 'unrouted'\}/.tes
   'un versement refusé y est marqué « non parti »');
 ok(/collection\('ledger'\)\.doc\(reqId\)\.set\(\{molliePayout: 'manuel'\}/.test(fn),
   'et un virement fait à la main solde la dette');
+// Les SUPPLÉMENTS (pourboire, heures en plus) ont leur propre versement, sur un second
+// paiement : chaque endroit qui en décide doit l'inscrire au registre lui aussi.
+ok((fn.match(/collection\('ledger'\)\.doc\([^)]*\)\.set\(\{complementPayout/g) || []).length === 5,
+  'les cinq endroits qui décident du versement d’un supplément l’inscrivent au registre');
+ok(/collection\('ledger'\)\.doc\(reqId\)\.set\(\{complementPayout: 'manuel'\}/.test(fn),
+  'et un supplément viré à la main solde sa dette');
 
 console.log('B — le justificatif distingue le revenu de la dette');
 ok(/const _duList=_led\.filter\(function\(e\)\{return e\.molliePayout==='unrouted';\}\);/.test(src),

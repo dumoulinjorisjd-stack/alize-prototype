@@ -293,6 +293,23 @@ async function mollieChargeComplement(db, reqId, clientUid, amount, label) {
   out.reason = 'echec';
   return out;
 }
+// Commission due sur un SUPPLÉMENT encaissé : celle du pourboire qu'il transporte, figée
+// dans `complementCommission` au règlement de la prestation. Repli (suppléments réglés
+// avant cette règle) : recalcul au taux figé de la prestation — jamais plus que le
+// supplément lui-même. Sans elle, le supplément était reversé EN ENTIER : les frais
+// bancaires de ce second paiement restaient à la charge de Ti-Services, et la route
+// portait 100 % du paiement.
+function commissionDuComplement(r, montant) {
+  r = r || {};
+  let com;
+  if (r.complementCommission != null) com = round2(Number(r.complementCommission) || 0);
+  else {
+    const tip = Math.max(0, round2(Number(r.tip) || 0));
+    const pct = Number(r.commissionPct) || 0;
+    com = round2(Math.min(tip, montant) * pct / 100);
+  }
+  return Math.max(0, Math.min(com, montant));
+}
 // Vérifie l'onboarding RÉEL de l'organisation liée au jeton d'accès fourni. Avoir
 // une organisation connectée ne suffit PAS : Mollie doit avoir vérifié l'identité et
 // le compte bancaire (statut « completed » + capable de recevoir paiements ET
@@ -520,6 +537,27 @@ async function rerouteArtisanPayouts(db, uid, orgId) {
     if (ok) { try { await d.ref.update({molliePayout: 'routed', molliePayoutIssue: '', molliePayoutMotif: ''}); } catch (_) {}
       try { await db.collection('ledger').doc(d.id).set({molliePayout: 'routed'}, {merge: true}); } catch (_) {} n++; }
     else { try { await d.ref.update({molliePayoutMotif: routeMotif() || ''}); } catch (_) {} }
+  }
+  // MÊME RATTRAPAGE POUR LES SUPPLÉMENTS (pourboire, heures en plus, coup de pouce) :
+  // encaissés sur un SECOND paiement, ils ont leur propre état de versement
+  // (complementPayout) et restaient invisibles de ce rattrapage — un pourboire refusé au
+  // routage ne repartait JAMAIS tout seul, même quand Mollie ouvrait les virements.
+  const qc = await db.collection('requests')
+    .where('providerUid', '==', uid).where('complementPayout', '==', 'unrouted').get();
+  for (const d of qc.docs) {
+    const r = d.data() || {};
+    const montant = round2(Number(r.complementAmount) || 0);
+    const net = (r.complementNet != null) ? round2(Number(r.complementNet) || 0)
+      : round2(Math.max(0, montant - commissionDuComplement(r, montant)));
+    if (!r.complementPaymentId || net <= 0) continue;
+    let ok = false;
+    try {
+      ok = await mollieRouteNet(r.complementPaymentId, orgId, net,
+        'Ti-Services · supplément · ' + (r.serviceName || r.service || 'prestation'));
+    } catch (e) { console.warn('rerouteArtisanPayouts supplément', e); }
+    if (ok) { try { await d.ref.update({complementPayout: 'routed', complementPayoutIssue: '', complementPayoutMotif: ''}); } catch (_) {}
+      try { await db.collection('ledger').doc(d.id).set({complementPayout: 'routed'}, {merge: true}); } catch (_) {} n++; }
+    else { try { await d.ref.update({complementPayoutMotif: routeMotif() || ''}); } catch (_) {} }
   }
   if (n) console.log('Versements rattrapés pour ' + uid + ' : ' + n);
   return n;
@@ -1503,7 +1541,10 @@ const PRODUIT = 'ti-services';
 //
 // Règles, identiques à celles annoncées au client :
 //   • assiette de commission = prestation (× personnes, + options) + coup de pouce ;
-//   • forfait de déplacement et POURBOIRE : intégralement au prestataire, hors commission ;
+//   • le POURBOIRE porte la même commission que la prestation (taux de l'artisan) :
+//     versé en entier, chaque pourboire coûtait de l'argent à Ti-Services — les frais
+//     bancaires de son prélèvement séparé restaient à la charge de la plateforme ;
+//   • forfait de déplacement : intégralement au prestataire, hors commission ;
 //   • le brut est ce que le client paie ; le net de l'artisan = brut − commission.
 // Code de série de facturation : 1 → A, 26 → Z, 27 → AA… Attribué une fois par
 // prestataire, il rend chaque numéro de facture unique et non ambigu (deux prestataires
@@ -1568,8 +1609,9 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
   // sur le document est exactement ce qui est prélevé.
   const M = montantsDemande(after);
   const base = M.base, boost = M.boostPct;
-  // Le POURBOIRE et le forfait de déplacement reviennent en totalité au prestataire :
-  // ils sont dans le brut payé par le client, jamais dans l'assiette de commission.
+  // Le forfait de déplacement revient en totalité au prestataire. Le POURBOIRE, lui,
+  // porte la même commission que la prestation — calculée à part pour être retenue sur
+  // le paiement qui le transporte (le supplément, dans la quasi-totalité des cas).
   const tip = M.tip;
   const gross = M.gross;
 
@@ -1603,8 +1645,13 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
   const basePct = founderActive ? FOUNDER_COMM_PCT : commissionTierPct(jobsTotal + refBonusJobs, cfgTiers);
   // Plancher « petits montants » : au moins SMALL_COMM_PCT % sous SMALL_COMM_MIN € de base.
   const pct = (base < SMALL_COMM_MIN) ? Math.max(basePct, SMALL_COMM_PCT) : basePct;
-  const commission = round2(M.assiette * pct / 100);
-  const net = round2(gross - commission);
+  const commission = round2(M.assiette * pct / 100);   // prestation + coup de pouce
+  // Commission sur le POURBOIRE, au même taux, arrondie à part : elle est retenue sur le
+  // paiement qui transporte le pourboire (empreinte ou supplément — voir plus bas),
+  // jamais deux fois. L'app fait le même arrondi séparé (totals) : mêmes centimes partout.
+  const tipCommission = round2(tip * pct / 100);
+  const commissionTotale = round2(commission + tipCommission);
+  const net = round2(gross - commissionTotale);
 
   const reqId = event.params.reqId;
 
@@ -1692,10 +1739,11 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
       rate: rate,
       base: base,
       boost: boost,
-      tip: tip,                   // pourboire — 100 % artisan, hors commission
+      tip: tip,                   // pourboire — commissionné au même taux que la prestation
+      tipCommission: tipCommission, // part de la commission assise sur le pourboire
       grossTotal: gross,          // réglé par le client
       commissionPct: pct,
-      commissionAmount: commission, // revenu Ti-Services
+      commissionAmount: commissionTotale, // revenu Ti-Services (part pourboire comprise)
       netAmount: net,             // net perçu par l'artisan
       invNo: saleInvoiceNo,       // numéro de facture séquentiel (mandat, au nom de l'artisan)
       molliePaymentId: after.molliePaymentId || '', // pour rapprocher le frais Mollie réel
@@ -1708,15 +1756,17 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
     await event.data.after.ref.update({
       commissionSettled: true,
       commissionPct: pct,
-      commissionBase: M.assiette,   // prestation + coup de pouce : ce sur quoi la commission est calculée
-      commissionAmount: commission,
+      commissionBase: M.assiette,   // prestation + coup de pouce (le pourboire est commissionné à part, même taux)
+      commissionAmount: commissionTotale,
+      tipCommission: tipCommission,
       grossTotal: gross,
       netAmount: net,
       saleInvoiceNo: saleInvoiceNo,
       settledAt: FieldValue.serverTimestamp(),
     });
     console.log('Commission figée + registre reqId=' + reqId +
-      ' base=' + base + ' pct=' + pct + '% comm=' + commission + ' net=' + net);
+      ' base=' + base + ' pct=' + pct + '% comm=' + commissionTotale
+      + (tipCommission ? (' (dont pourboire ' + tipCommission + ')') : '') + ' net=' + net);
 
     // Cumul du CA fondateur (pour couper l'avantage à 2 000 €) + démarrage de la fenêtre
     // si elle n'a pas encore de date (fondateurs créés avant l'automatisation).
@@ -1794,6 +1844,14 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
     //    mémorisée quand c'est possible. Sans ça la facture annonçait une somme qui
     //    n'était jamais prélevée, et le versement à l'artisan échouait.
     const complement = round2(Math.max(0, gross - capte));
+    // OÙ VIT LE POURBOIRE ? Ajouté à la validation, il dépasse presque toujours
+    // l'empreinte posée à la commande : il voyage alors dans le SUPPLÉMENT, et sa
+    // commission est retenue sur ce second paiement. Cas particulier (durée revue à la
+    // baisse) : le pourboire tient dans l'empreinte — sa commission est alors retenue
+    // sur le versement de l'empreinte, comme celle de la prestation.
+    const tipDansComplement = Math.min(tip, complement);
+    const commTipComplement = round2(tipDansComplement * pct / 100);
+    const commTipEmpreinte = round2(tipCommission - commTipComplement);
     // AUCUN SUPPLÉMENT NE DISPARAÎT EN SILENCE. Sans empreinte sur la demande (paiement
     // jamais abouti, demande créée hors carte, Mollie non configuré), il n'y a personne à
     // débiter : le pourboire figurait alors sur la facture sans laisser la moindre trace,
@@ -1819,7 +1877,8 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
       try {
         const r2 = await mollieChargeComplement(db, reqId, after.clientUid,
           complement, 'Ti-Services · supplément · ' + (after.serviceName || after.service || 'prestation'));
-        const patch = {complementAmount: complement, complementStatus: r2.ok ? (r2.direct ? 'en_cours' : 'a_regler') : 'echec',
+        const patch = {complementAmount: complement, complementCommission: commTipComplement,
+          complementStatus: r2.ok ? (r2.direct ? 'en_cours' : 'a_regler') : 'echec',
           complementPaymentId: r2.paymentId || '', complementCheckoutUrl: r2.checkoutUrl || ''};
         await event.data.after.ref.update(patch);
         if (!r2.ok || !r2.direct) {
@@ -1855,9 +1914,10 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
     try {
       const orgId = after.mollieOrgId || (await db.collection('artisans').doc(providerUid).get()).get('mollieOrgId');
       // On ne verse JAMAIS plus que ce qui a été encaissé sur ce paiement. La commission
-      // est intégralement prélevée ici ; le supplément éventuel sera reversé en entier à
-      // l'artisan quand il sera payé (webhook), pour un total identique à net.
-      const netA = round2(Math.max(0, capte - commission));
+      // de la prestation est retenue ici (plus celle du pourboire s'il tient dans
+      // l'empreinte) ; celle du pourboire porté par le supplément est retenue sur le
+      // paiement du supplément (webhook) — le total versé à l'artisan reste `net`.
+      const netA = round2(Math.max(0, capte - commission - commTipEmpreinte));
       if (after.molliePaymentId && captureOk) {
         const routed = (orgId && netA > 0) ? await mollieRouteNet(after.molliePaymentId, orgId, netA,
           'Ti-Services · ' + (after.serviceName || after.service || 'prestation') + ' · ' + saleInvoiceNo) : (netA <= 0);
@@ -2331,6 +2391,82 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
       }
       bloques.push(ligne);
     }
+    // LES SUPPLÉMENTS BLOQUÉS AUSSI. Pourboire, heures en plus, coup de pouce :
+    // encaissés sur un SECOND paiement, leur versement a son propre état
+    // (complementPayout) — et cet écran ne les cherchait pas. Un pourboire prélevé au
+    // client mais refusé au routage restait invisible : ni listé, ni retenté, sans le
+    // moindre motif. On les inventorie et on les retente exactement comme le net de la
+    // mission, identifiés par « c~ » devant la demande (deux lignes possibles pour une
+    // même prestation : son net ET son supplément).
+    try {
+      const qc = await db.collection('requests').where('complementPayout', '==', 'unrouted').get();
+      for (const d of qc.docs) {
+        const cle = 'c~' + d.id;
+        if (cible && cible !== cle) continue;
+        const r = d.data() || {};
+        const montant = round2(Number(r.complementAmount) || 0);
+        const net = (r.complementNet != null) ? round2(Number(r.complementNet) || 0)
+          : round2(Math.max(0, montant - commissionDuComplement(r, montant)));
+        let orgId = r.mollieOrgId || '';
+        if (!orgId && r.providerUid) {
+          try { orgId = (await db.collection('artisans').doc(r.providerUid).get()).get('mollieOrgId') || ''; } catch (_) {}
+        }
+        const ligne = {
+          reqId: cle, genre: 'supplement',
+          serviceName: 'Supplément · ' + String(r.serviceName || r.service || 'Prestation'),
+          providerName: String(r.providerName || ''), clientName: String(r.clientName || ''),
+          net: net, invNo: String(r.saleInvoiceNo || ''), org: orgId ? 'oui' : 'non',
+          motif: String(r.complementPayoutMotif || ''), etat: '', routes: -1, verse: false,
+          tente: !!r.complementPayout, lecture: '', liensRoutes: null,
+        };
+        if (mollieApiConfigured() && r.complementPaymentId) {
+          try {
+            const p = await mollieApi('/payments/' + encodeURIComponent(r.complementPaymentId));
+            ligne.etat = (p.ok && p.data) ? String(p.data.status || '') : ('introuvable (HTTP ' + (p.status || '?') + ')');
+            if (p.ok && p.data && p.data._links) ligne.liensRoutes = !!p.data._links.routes;
+          } catch (_) {}
+          // Une route déjà posée chez Mollie = le versement est parti, c'est notre fiche
+          // qui est en retard — on la corrige au lieu de re-router en double.
+          try {
+            const l = await mollieApi('/payments/' + encodeURIComponent(r.complementPaymentId) + '/routes');
+            if (l.ok && l.data) {
+              const arr = (l.data._embedded && l.data._embedded.routes) || l.data.routes || [];
+              ligne.routes = Array.isArray(arr) ? arr.length : 0;
+              if (ligne.routes > 0) {
+                ligne.verse = true;
+                ligne.motif = 'déjà versé — Mollie a bien la route, notre fiche était en retard';
+                try { await d.ref.update({complementPayout: 'routed', complementPayoutIssue: '', complementPayoutMotif: ''}); } catch (_) {}
+                try { await db.collection('ledger').doc(d.id).set({complementPayout: 'routed'}, {merge: true}); } catch (_) {}
+              }
+            } else {
+              ligne.lecture = 'HTTP ' + (l.status || '?')
+                + ((l.data && (l.data.detail || l.data.title)) ? (' — ' + String(l.data.detail || l.data.title).slice(0, 160)) : '');
+            }
+          } catch (_) {}
+        }
+        if (relance && !ligne.verse) {
+          if (r.complementPaymentId && orgId && net > 0) {
+            let ok = false;
+            try {
+              ok = await mollieRouteNet(r.complementPaymentId, orgId, net,
+                'Ti-Services · supplément · ' + (r.serviceName || r.service || 'prestation'));
+            } catch (e) { console.warn('payoutRetry supplément', d.id, e); }
+            ligne.verse = ok;
+            ligne.motif = ok ? '' : (routeMotif() || 'refus sans explication de Mollie');
+            try {
+              await d.ref.update(ok ? {complementPayout: 'routed', complementPayoutIssue: '', complementPayoutMotif: ''}
+                : {complementPayoutMotif: ligne.motif});
+              await db.collection('ledger').doc(d.id).set({complementPayout: ok ? 'routed' : 'unrouted'}, {merge: true});
+            } catch (_) {}
+          } else {
+            ligne.motif = !r.complementPaymentId ? 'aucun paiement Mollie sur ce supplément'
+              : !orgId ? 'aucun compte Mollie connecté pour ce prestataire'
+                : 'net à verser nul — rien à router';
+          }
+        }
+        bloques.push(ligne);
+      }
+    } catch (e) { console.warn('payoutRetry suppléments', e); }
     // Écritures dont la DEMANDE a disparu : elles doivent quand même se voir, sinon on
     // recrée exactement le trou qu'on répare. Rien à réessayer automatiquement — sans
     // demande, il n'y a plus d'identifiant de paiement à router : c'est un virement à la
@@ -2479,23 +2615,38 @@ exports.payoutManual = onCall(async (request) => {
   if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
     throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
   }
-  const reqId = String((request.data && request.data.reqId) || '').trim().slice(0, 128);
-  if (!reqId) throw new HttpsError('invalid-argument', 'Prestation manquante.');
+  const brut = String((request.data && request.data.reqId) || '').trim().slice(0, 132);
+  if (!brut) throw new HttpsError('invalid-argument', 'Prestation manquante.');
+  // « c~<demande> » désigne le SUPPLÉMENT de la demande (pourboire, heures en plus…) :
+  // son versement a son propre état, distinct du net de la mission — acter l'un ne doit
+  // jamais éteindre l'autre.
+  const estComplement = brut.indexOf('c~') === 0;
+  const reqId = estComplement ? brut.slice(2) : brut;
   const ref = getFirestore().collection('requests').doc(reqId);
   const snap = await ref.get();
   if (!snap.exists) throw new HttpsError('not-found', 'Prestation introuvable.');
   const r = snap.data() || {};
-  if (r.molliePayout === 'routed') throw new HttpsError('failed-precondition', 'Ce versement est déjà parti par Mollie.');
-  if (r.molliePayout === 'manuel') return {ok: true, deja: true};
-  await ref.update({
-    molliePayout: 'manuel',
-    molliePayoutManuelPar: who,
-    molliePayoutManuelAt: FieldValue.serverTimestamp(),
-    molliePayoutManuelRef: String((request.data && request.data.ref) || '').trim().slice(0, 140),
-  });
-  try { await ref.firestore.collection('ledger').doc(reqId).set({molliePayout: 'manuel'}, {merge: true}); } catch (_) {}
-  console.log('payoutManual ' + reqId + ' — ' + (Number(r.molliePayoutNet) || 0) + ' € versés à la main par ' + who);
-  return {ok: true, net: round2(Number(r.molliePayoutNet) || 0)};
+  const champ = estComplement ? 'complementPayout' : 'molliePayout';
+  if (r[champ] === 'routed') throw new HttpsError('failed-precondition', 'Ce versement est déjà parti par Mollie.');
+  if (r[champ] === 'manuel') return {ok: true, deja: true};
+  const upd = {};
+  upd[champ] = 'manuel';
+  upd[champ + 'ManuelPar'] = who;
+  upd[champ + 'ManuelAt'] = FieldValue.serverTimestamp();
+  upd[champ + 'ManuelRef'] = String((request.data && request.data.ref) || '').trim().slice(0, 140);
+  await ref.update(upd);
+  // Écritures au registre en toutes lettres (une par nature de versement) : le registre
+  // est la source de vérité de la dette, et le harnais vérifie que chaque endroit qui
+  // décide d'un versement l'y inscrit.
+  try {
+    if (estComplement) await ref.firestore.collection('ledger').doc(reqId).set({complementPayout: 'manuel'}, {merge: true});
+    else await ref.firestore.collection('ledger').doc(reqId).set({molliePayout: 'manuel'}, {merge: true});
+  } catch (_) {}
+  const net = estComplement
+    ? round2(Number(r.complementNet != null ? r.complementNet : r.complementAmount) || 0)
+    : round2(Number(r.molliePayoutNet) || 0);
+  console.log('payoutManual ' + brut + ' — ' + net + ' € versés à la main par ' + who);
+  return {ok: true, net: net};
 });
 
 /**
@@ -2914,30 +3065,47 @@ exports.mollieWebhook = onRequest({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (req
         if (r.complementPaymentId && r.complementPaymentId !== pay.id) { res.status(200).send('ok'); return; }
         if (pay.status === 'paid') {
           const montant = round2(Number((pay.amount && pay.amount.value) || r.complementAmount) || 0);
-          let verse = false;
+          // La commission de la PRESTATION a été retenue sur l'empreinte ; celle du
+          // POURBOIRE se retient ici, sur le paiement qui le transporte. Elle couvre les
+          // frais bancaires de ce second encaissement (reversé en entier, chaque
+          // pourboire coûtait de l'argent à Ti-Services) — et la route ne porte plus
+          // jamais 100 % du paiement.
+          const commC = commissionDuComplement(r, montant);
+          const netC = round2(Math.max(0, montant - commC));
+          let verse = false; let orgId = '';
           try {
-            const orgId = r.mollieOrgId || (r.providerUid
+            orgId = r.mollieOrgId || (r.providerUid
               ? (await db.collection('artisans').doc(r.providerUid).get()).get('mollieOrgId') : '');
-            // La commission a déjà été intégralement prélevée sur l'empreinte : le
-            // supplément revient donc EN ENTIER à l'artisan.
-            if (orgId && montant > 0) {
-              verse = await mollieRouteNet(pay.id, orgId, montant,
+            if (orgId && netC > 0) {
+              verse = await mollieRouteNet(pay.id, orgId, netC,
                 'Ti-Services · supplément · ' + (r.serviceName || r.service || 'prestation'));
             }
           } catch (e) { console.warn('mollieWebhook complement route', e); }
-          try { await ref.set({complementStatus: 'paye', complementPaidAt: Date.now(), complementPayout: verse ? 'routed' : 'unrouted'}, {merge: true}); } catch (_) {}
+          // LE MOTIF DU REFUS EST CONSERVÉ sur la demande (comme pour le net de la
+          // mission) : « non reversé » sans explication fait chercher à l'aveugle, et le
+          // net figé (`complementNet`) permet au rattrapage de re-router le bon montant.
+          try {
+            await ref.set({complementStatus: 'paye', complementPaidAt: Date.now(),
+              complementCommission: commC, complementNet: netC,
+              complementPayout: verse ? 'routed' : 'unrouted',
+              complementPayoutIssue: verse ? '' : (orgId ? 'route_failed' : 'no_org'),
+              complementPayoutMotif: verse ? '' : (routeMotif() || '')}, {merge: true});
+          } catch (_) {}
+          try { await db.collection('ledger').doc(reqId).set({complementPayout: verse ? 'routed' : 'unrouted', complementNet: netC}, {merge: true}); } catch (_) {}
           if (!verse) {
             try {
               await sendMail(db, ADMIN_EMAIL, {
                 subject: 'Supplément encaissé mais non reversé — ' + escHtmlS(r.serviceName || r.service || 'prestation'),
                 html: '<p>Le supplément a bien été prélevé au client, mais le versement à l\'artisan n\'a pas pu être routé.</p>'
                   + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li>'
-                  + '<li><b>Montant :</b> ' + eurTxt(montant) + '</li></ul>'
-                  + '<p>L\'argent est en sécurité sur le solde plateforme — à reverser à la main.</p>',
+                  + '<li><b>Encaissé :</b> ' + eurTxt(montant) + '</li>'
+                  + '<li><b>Net à reverser :</b> ' + eurTxt(netC) + (commC ? (' (commission pourboire ' + eurTxt(commC) + ')') : '') + '</li>'
+                  + '<li><b>Cause :</b> ' + (orgId ? (routeMotif() ? escHtmlS(routeMotif()) : 'routage refusé par Mollie, sans explication') : 'aucune organisation Mollie connectée') + '</li></ul>'
+                  + '<p>L\'argent est en sécurité sur le solde plateforme. Console → Factures → «&nbsp;Versements prestataires bloqués&nbsp;»&nbsp;: réessayer, ou acter un virement manuel.</p>',
               });
             } catch (_) {}
           }
-          console.log('Supplément payé reqId=' + reqId + ' ' + montant + ' € — versement ' + (verse ? 'ok' : 'à régulariser'));
+          console.log('Supplément payé reqId=' + reqId + ' ' + montant + ' € (net ' + netC + ') — versement ' + (verse ? 'ok' : 'à régulariser'));
         } else if (['failed', 'canceled', 'expired'].indexOf(pay.status) >= 0) {
           // Non encaissé : on le dit, et surtout on ne verse rien qu'on n'a pas.
           try { await ref.set({complementStatus: 'echec'}, {merge: true}); } catch (_) {}
@@ -3530,7 +3698,18 @@ exports.paymentReconciliation = onSchedule({schedule: '0 9 * * *', secrets: [SMT
         items.push(row(d.id, r, pourquoi));
       }
     } catch (e) { console.warn('reco unrouted', e); }
-    if (items.length) sections.push('<h3>💸 Versements artisan à régulariser (' + items.length + ')</h3><ul>' + items.join('') + '</ul><p>Le client a payé, l\'artisan n\'a pas reçu son net (fonds en sécurité sur le solde plateforme). Vérifier son onboarding Mollie puis re-router (ou virement manuel).</p>');
+    // Les SUPPLÉMENTS encaissés mais non reversés (pourboire, heures en plus, coup de
+    // pouce) : même situation, autre état (complementPayout) — ils n'apparaissaient
+    // nulle part dans ce rapport.
+    try {
+      for (const d of (await db.collection('requests').where('complementPayout', '==', 'unrouted').get()).docs) {
+        const r = d.data() || {};
+        items.push(row(d.id, r, 'supplément encaissé non reversé ('
+          + eurTxt(Number(r.complementNet != null ? r.complementNet : r.complementAmount) || 0) + ')'
+          + (r.complementPayoutMotif ? (' — ' + escHtmlS(String(r.complementPayoutMotif))) : '')));
+      }
+    } catch (e) { console.warn('reco unrouted complements', e); }
+    if (items.length) sections.push('<h3>💸 Versements artisan à régulariser (' + items.length + ')</h3><ul>' + items.join('') + '</ul><p>Le client a payé, l\'artisan n\'a pas reçu son net (fonds en sécurité sur le solde plateforme). Vérifier son onboarding Mollie puis re-router (ou virement manuel) — Console → Factures → «&nbsp;Versements prestataires bloqués&nbsp;».</p>');
   }
   // 5. Suppléments facturés mais non encaissés — pourboire, heures en plus, coup de pouce.
   //    Une somme qui figure sur une facture sans avoir été prélevée ne doit jamais
