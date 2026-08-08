@@ -159,6 +159,64 @@ const RELEVE = [
   ok(fige === 1, 'une fois la grille enregistrée à jour, plus aucun ajout automatique');
   await p.evaluate(() => { window.__S.adminCatalog = null; window.__S.catalogSeed = 0; });
 
+  console.log('H — CONSOLE ADMIN : régler les prix à l’euro près');
+  // Vu en production : « pour la coiffure les boutons plus et moins ne marchent pas du
+  // tout ». La console gardait une copie ANTÉRIEURE de la grille (7 lignes) ; les 41
+  // nouvelles prestations s'affichaient (fusion) mais étaient introuvables à l'édition,
+  // donc le clic ne faisait rien du tout. On rejoue exactement cet état.
+  await p.evaluate(() => {
+    const S = window.__S;
+    S.persona = 'admin'; S.admin = {view: 'home', sel: null}; S.proStep = null; S.draft = null;
+    S.adminCatalog = {coiffure: [
+      {id: 'cf_cpf', nm: 'Coupe femme + brushing', price: 70}, {id: 'cf_cph', nm: 'Coupe homme', price: 45},
+      {id: 'cf_cpe', nm: 'Coupe enfant', price: 30}, {id: 'cf_br', nm: 'Brushing', price: 45},
+      {id: 'cf_coul', nm: 'Couleur / racines', price: 85}, {id: 'cf_bal', nm: 'Balayage / mèches', price: 150},
+      {id: 'cf_chig', nm: 'Chignon', price: 110}]};
+    S.catalogSeed = 0;
+    window.__render();
+  });
+  await p.waitForTimeout(300);
+  await p.evaluate(() => { document.querySelector('[data-fold="a-prices"]').click(); });
+  await p.waitForTimeout(350);
+  await p.evaluate(() => { document.querySelector('[data-adm="priceopen:coiffure"]').click(); });
+  await p.waitForTimeout(450);
+  const prix = (id) => p.evaluate((i) => {
+    const a = window.__cat.list('coiffure').find((x) => x.id === i); return a ? a.price : null;
+  }, id);
+  ok((await p.evaluate(() => document.querySelectorAll('[data-actprice]').length)) === 96,
+    'les 48 prestations ont leurs deux boutons');
+  const avant = await prix('cf_fco_cbl');
+  await p.evaluate(() => { document.querySelector('[data-actprice="coiffure:cf_fco_cbl:up"]').click(); });
+  await p.waitForTimeout(350);
+  ok((await prix('cf_fco_cbl')) === avant + 1,
+    '« + » sur une prestation récente monte d’UN euro (avant : le clic ne faisait rien)');
+  // Chaque clic redessine : il faut re-viser le bouton, l'ancien nœud est détaché.
+  for (let i = 0; i < 2; i++) {
+    await p.evaluate(() => { document.querySelector('[data-actprice="coiffure:cf_fco_cbl:down"]').click(); });
+    await p.waitForTimeout(250);
+  }
+  ok((await prix('cf_fco_cbl')) === avant - 1, '« − » descend d’un euro à chaque clic');
+  ok((await prix('cf_cpf')) === 70, 'les prix déjà réglés par l’admin ne sont pas écrasés');
+
+  console.log('I — et on peut taper le prix directement');
+  ok((await p.evaluate(() => document.querySelectorAll('[data-actpricev]').length)) === 48,
+    'chaque prestation a un champ de saisie');
+  await p.evaluate(() => {
+    const i = document.querySelector('[data-actpricev="coiffure:cf_fco_cbl"]');
+    i.value = '153'; i.dispatchEvent(new Event('input', {bubbles: true}));
+  });
+  await p.waitForTimeout(300);
+  ok((await prix('cf_fco_cbl')) === 153, 'le prix tapé au clavier est pris tel quel (153 €)');
+  await p.evaluate(() => {
+    const i = document.querySelector('[data-actpricev="coiffure:cf_fco_cbl"]');
+    i.value = ''; i.dispatchEvent(new Event('input', {bubbles: true}));
+    i.focus(); i.blur(); // focusout : c'est lui qui recadre et enregistre
+  });
+  await p.waitForTimeout(350);
+  ok((await prix('cf_fco_cbl')) === 1,
+    'un champ laissé vide retombe à 1 € en sortant (jamais 0 : la commission serait faussée)');
+  await p.evaluate(() => { window.__S.adminCatalog = null; window.__S.catalogSeed = 0; });
+
   ok(errs.length === 0, 'aucune erreur JS (' + errs.join(' · ') + ')');
   await b.close();
   process.exitCode = f ? 1 : 0;
