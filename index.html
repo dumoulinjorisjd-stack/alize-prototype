@@ -716,6 +716,20 @@
   .actrow.on .actck{background:var(--teal);border-color:var(--teal)}
   .actnm{flex:1;min-width:0;font-weight:650;font-size:14px;line-height:1.2}
   .actpr{flex:0 0 auto;font-family:var(--f-num);font-variant-numeric:tabular-nums;font-feature-settings:"tnum";font-weight:700;color:var(--ink)}
+  /* Familles de prestations : au-delà d'une poignée de lignes, la grille se replie par
+     familles (Homme, Femme · coloration…) — sinon on fait défiler 50 lignes à plat. */
+  .actgrps{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+  .actgrp{border:1px solid var(--hair);border-radius:var(--r-md);background:var(--card);overflow:hidden}
+  .actgrp-h{width:100%;display:flex;align-items:center;gap:10px;padding:12px 13px;background:none;border:none;text-align:left}
+  .actgrp-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+  .actgrp-t b{font-size:14px;line-height:1.25}
+  .actgrp-t .mini{color:var(--muted)}
+  .actgrp-n{flex:none;min-width:21px;height:21px;padding:0 6px;border-radius:11px;background:var(--teal);color:#fff;font-size:11px;font-weight:800;display:inline-flex;align-items:center;justify-content:center}
+  .actgrp .fold-chev{flex:none;color:var(--muted);transition:transform .2s}
+  .actgrp.open .fold-chev{transform:rotate(90deg)}
+  .actgrp .actlist{margin:0;padding:0 9px 10px}
+  .actgrp .actmain{background:var(--sand-2)}
+  .actgrp .gridacts{margin:0 9px 10px}
   .actqty{flex:0 0 auto;display:flex;align-items:center;gap:2px;background:var(--card);border:1px solid var(--hair);border-radius:var(--r-md);padding:2px}
   .actqty button{width:34px;height:100%;min-height:38px;border:none;background:none;font-size:19px;font-weight:600;color:var(--teal-deep);cursor:pointer}
   .actqty span{min-width:22px;text-align:center;font-family:var(--f-num);font-variant-numeric:tabular-nums;font-feature-settings:"tnum";font-weight:700}
@@ -2704,8 +2718,19 @@
     const net=enSignup?proNetHint:myNetHint;
     const amb=enSignup&&founderOpen();
     const unite=isForfaitSvc(id)?'':(id==='colis'?'/retrait':'/h');
+    const ligneAct=function(a){return '<div class="row between" style="gap:10px;align-items:baseline;padding:7px 0;border-bottom:1px dashed var(--hair)"><span class="mini" style="flex:1;min-width:0">'+esc(a.nm||a.id)+'</span><span class="mini" style="flex:none;color:var(--good);font-weight:800">'+net(Number(a.price)||0)+' \u20ac net</span></div>';};
+    // Feuille de d\u00e9tail : pas de repli ici (on l'ouvre justement pour TOUT voir), mais
+    // un intertitre par famille et sa fourchette de net \u2014 sinon c'est un mur de lignes.
+    const grpsSheet=forf?catalogGroups(id):[];
     const lignes=forf
-      ?catalogFor(id).map(function(a){return '<div class="row between" style="gap:10px;align-items:baseline;padding:7px 0;border-bottom:1px dashed var(--hair)"><span class="mini" style="flex:1;min-width:0">'+esc(a.nm||a.id)+'</span><span class="mini" style="flex:none;color:var(--good);font-weight:800">'+net(Number(a.price)||0)+' \u20ac net</span></div>';}).join('')
+      ?(grpsSheet.length<2
+        ?catalogFor(id).map(ligneAct).join('')
+        :grpsSheet.map(function(G){
+          const nets=G.acts.map(function(a){return net(Number(a.price)||0);});
+          const mn=Math.min.apply(null,nets),mx=Math.max.apply(null,nets);
+          return '<div style="margin-top:14px"><div class="row between" style="align-items:baseline;gap:10px"><b style="font-size:13px">'+esc(G.g)+'</b><span class="mini" style="flex:none;color:var(--muted)">'+grpCount(G.acts.length)+' \u00b7 '+(mn===mx?mn+' \u20ac':mn+' \u00e0 '+mx+' \u20ac')+' net</span></div>'
+            +G.acts.map(ligneAct).join('')+'</div>';
+        }).join(''))
         +'<p class="mini" style="margin-top:8px;color:var(--muted)">Le client choisit ses prestations, le total est ferme.</p>'
       :'<div style="text-align:center;padding:14px 0"><b style="font-size:24px;color:var(--good);font-family:var(--f-disp)">'+net(plat)+' \u20ac net'+unite+'</b><div class="mini" style="color:var(--muted);margin-top:3px">pour vous</div></div>';
     const wrap=document.createElement('div');wrap.id='svcpricesheet';wrap.className='sheet-back';
@@ -2944,14 +2969,62 @@
   //   adopte cette grille à l'inscription. Valeurs par défaut (estimations SBH, fourchette
   //   haute) modifiables dans la console admin. Prix en euros.
   const CATALOG={
+    // COIFFURE — grille détaillée (relevé salon de référence + 5 %), rangée par
+    // familles (`grp`) : une liste de ~50 lignes à plat est illisible, autant pour
+    // l'artisan qui l'accepte à l'inscription que pour le client qui commande.
+    // `seed` marque les prestations ajoutées après coup (cf. CATALOG_SEED).
     coiffure:[
+      {id:'cf_h_coupe',grp:'Homme',nm:'Coupe homme « classique »',price:41,seed:2},
+      {id:'cf_h_cb',grp:'Homme',nm:'Forfait coupe et barbe (bain relaxant + coupe personnalisée + taille barbe)',price:51,seed:2},
+      {id:'cf_h_barbe',grp:'Homme',nm:'Barbe (tondeuse + rasoir électrique + baume)',price:26,seed:2},
+      {id:'cf_h_coul',grp:'Homme',nm:'Couleur homme',price:42,seed:2},
+      {id:'cf_h_deco',grp:'Homme',nm:'Décoloration homme',price:63,seed:2},
+      {id:'cf_fb_c',grp:'Femme · brushing',nm:'Shampoing + soin + brushing — cheveux courts',price:58,seed:2},
+      {id:'cf_fb_m',grp:'Femme · brushing',nm:'Shampoing + soin + brushing — cheveux mi-longs',price:68,seed:2},
+      {id:'cf_fb_l',grp:'Femme · brushing',nm:'Shampoing + soin + brushing — cheveux longs',price:79,seed:2},
+      {id:'cf_fcb_tc',grp:'Femme · coupe & brushing',nm:'Shampoing + soin + coupe + brushing — cheveux très courts (coupe garçonne)',price:51,seed:2},
+      {id:'cf_fcb_c',grp:'Femme · coupe & brushing',nm:'Shampoing + soin + coupe + brushing — cheveux courts',price:72,seed:2},
+      {id:'cf_fcb_m',grp:'Femme · coupe & brushing',nm:'Shampoing + soin + coupe + brushing — cheveux mi-longs',price:83,seed:2},
+      {id:'cf_fcb_l',grp:'Femme · coupe & brushing',nm:'Shampoing + soin + coupe + brushing — cheveux longs',price:93,seed:2},
+      {id:'cf_fco_sn',grp:'Femme · coloration',nm:'Coloration + séchage naturel',price:69,seed:2},
+      {id:'cf_fco_bc',grp:'Femme · coloration',nm:'Coloration + brushing — cheveux courts',price:117,seed:2},
+      {id:'cf_fco_bm',grp:'Femme · coloration',nm:'Coloration + brushing — cheveux mi-longs',price:127,seed:2},
+      {id:'cf_fco_bl',grp:'Femme · coloration',nm:'Coloration + brushing — cheveux longs',price:138,seed:2},
+      {id:'cf_fco_cbc',grp:'Femme · coloration',nm:'Coloration + coupe + brushing — cheveux courts',price:131,seed:2},
+      {id:'cf_fco_cbm',grp:'Femme · coloration',nm:'Coloration + coupe + brushing — cheveux mi-longs',price:137,seed:2},
+      {id:'cf_fco_cbl',grp:'Femme · coloration',nm:'Coloration + coupe + brushing — cheveux longs',price:147,seed:2},
+      {id:'cf_fm_bc',grp:'Femme · mèches & balayages',nm:'Mèches / balayage + brushing — cheveux courts',price:168,seed:2},
+      {id:'cf_fm_bm',grp:'Femme · mèches & balayages',nm:'Mèches / balayage + brushing — cheveux mi-longs (aux épaules)',price:179,seed:2},
+      {id:'cf_fm_bl',grp:'Femme · mèches & balayages',nm:'Mèches / balayage + brushing — cheveux longs',price:200,seed:2},
+      {id:'cf_fm_cbc',grp:'Femme · mèches & balayages',nm:'Mèches / balayage + coupe + brushing — cheveux courts',price:179,seed:2},
+      {id:'cf_fm_cbm',grp:'Femme · mèches & balayages',nm:'Mèches / balayage + coupe + brushing — cheveux mi-longs (aux épaules)',price:189,seed:2},
+      {id:'cf_fm_cbl',grp:'Femme · mèches & balayages',nm:'Mèches / balayage + coupe + brushing — cheveux longs',price:210,seed:2},
+      {id:'cf_fm_flash',grp:'Femme · mèches & balayages',nm:'Flash',price:63,seed:2},
+      {id:'cf_fp_bc',grp:'Femme · permanente',nm:'Permanente + brushing — cheveux courts',price:116,seed:2},
+      {id:'cf_fp_bm',grp:'Femme · permanente',nm:'Permanente + brushing — cheveux mi-longs',price:137,seed:2},
+      {id:'cf_fp_bl',grp:'Femme · permanente',nm:'Permanente + brushing — cheveux longs',price:158,seed:2},
+      {id:'cf_fp_cbc',grp:'Femme · permanente',nm:'Permanente + coupe + brushing — cheveux courts',price:142,seed:2},
+      {id:'cf_fp_cbm',grp:'Femme · permanente',nm:'Permanente + coupe + brushing — cheveux mi-longs',price:163,seed:2},
+      {id:'cf_fp_cbl',grp:'Femme · permanente',nm:'Permanente + coupe + brushing — cheveux longs',price:184,seed:2},
+      {id:'cf_fl_bc',grp:'Femme · lissage',nm:'Lissage brésilien + brushing — cheveux courts',price:158,seed:2},
+      {id:'cf_fl_bm',grp:'Femme · lissage',nm:'Lissage brésilien + brushing — cheveux mi-longs',price:263,seed:2},
+      {id:'cf_fl_bl',grp:'Femme · lissage',nm:'Lissage + brushing — cheveux longs',price:368,seed:2},
+      {id:'cf_fl_cbc',grp:'Femme · lissage',nm:'Lissage brésilien + coupe + brushing — cheveux courts',price:173,seed:2},
+      {id:'cf_fl_cbm',grp:'Femme · lissage',nm:'Lissage brésilien + coupe + brushing — cheveux mi-longs',price:278,seed:2},
+      {id:'cf_fl_cbl',grp:'Femme · lissage',nm:'Lissage + coupe + brushing — cheveux longs',price:383,seed:2},
+      {id:'cf_e_g10',grp:'Enfants',nm:'Garçon — moins de 10 ans',price:32,seed:2},
+      {id:'cf_e_g15',grp:'Enfants',nm:'Garçon — moins de 15 ans',price:34,seed:2},
+      {id:'cf_e_f',grp:'Enfants',nm:'Fille',price:37,seed:2},
+      {id:'cf_chig',grp:'Coiffure événement',nm:'Chignon / coiffure événement',price:110},
+      // Lignes génériques de la première grille — conservées (les identifiants sont
+      // référencés par les commandes déjà passées). La liste détaillée ci-dessus les
+      // recoupe : à retirer depuis la console si vous ne voulez plus les proposer.
       {id:'cf_cpf',nm:'Coupe femme + brushing',price:70},
       {id:'cf_cph',nm:'Coupe homme',price:45},
       {id:'cf_cpe',nm:'Coupe enfant (–10 ans)',price:30},
       {id:'cf_br',nm:'Brushing',price:45},
       {id:'cf_coul',nm:'Couleur / racines',price:85},
-      {id:'cf_bal',nm:'Balayage / mèches',price:150},
-      {id:'cf_chig',nm:'Chignon / coiffure événement',price:110}
+      {id:'cf_bal',nm:'Balayage / mèches',price:150}
     ],
     manucure:[
       {id:'mn_vc',nm:'Vernis classique (mains)',price:45},
@@ -3072,8 +3145,45 @@
       {id:'yo_pack5',nm:'Pack 5 cours',price:240}
     ]
   };
-  // Catalogue effectif d'un métier : la grille éditée par l'admin sinon la grille par défaut.
-  function baseCatalog(id){return (S.adminCatalog&&S.adminCatalog[id])||CATALOG[id]||null;}
+  // Version du catalogue de référence. À monter quand on AJOUTE des prestations par
+  // défaut : sans cela, un métier dont l'admin a touché la grille une seule fois reste
+  // figé pour toujours sur la copie enregistrée, et les nouveautés n'arrivent jamais
+  // en production.
+  const CATALOG_SEED=2;
+  // Catalogue effectif d'un métier : la grille éditée par l'admin sinon la grille par
+  // défaut. Si l'admin a une copie ANTÉRIEURE au dernier enrichissement, on y ajoute
+  // les prestations qu'il n'a jamais pu voir (jamais celles qu'il a supprimées : elles
+  // datent d'un `seed` déjà couvert par sa copie).
+  function baseCatalog(id){
+    const copie=S.adminCatalog&&S.adminCatalog[id];const def=CATALOG[id]||null;
+    if(!copie)return def;
+    if(!def||(S.catalogSeed||0)>=CATALOG_SEED)return copie;
+    const vus={};copie.forEach(function(a){if(a&&a.id)vus[a.id]=1;});
+    const neuves=def.filter(function(a){return (a.seed||0)>(S.catalogSeed||0)&&!vus[a.id];});
+    return neuves.length?copie.concat(neuves):copie;
+  }
+  // — REGROUPEMENT PAR FAMILLES —
+  // Une grille de 50 lignes à plat est illisible. Chaque prestation peut porter un
+  // `grp` ; celles qui n'en ont pas (grilles anciennes, ajouts admin) tombent dans un
+  // fourre-tout affiché en dernier. Un seul groupe => on n'affiche aucun en-tête.
+  const GRP_AUTRES='Autres prestations';
+  function catalogGroups(id){
+    const ordre=[],par={};
+    catalogFor(id).forEach(function(a){const g=(a&&a.grp)?String(a.grp):GRP_AUTRES;if(!par[g]){par[g]=[];ordre.push(g);}par[g].push(a);});
+    const i=ordre.indexOf(GRP_AUTRES);if(i>=0&&i<ordre.length-1){ordre.splice(i,1);ordre.push(GRP_AUTRES);}
+    return ordre.map(function(g){return {g:g,acts:par[g]};});
+  }
+  // Groupe ouvert ? Clé « contexte|métier|famille » pour que les trois écrans (grille
+  // d'inscription, feuille de détail, commande client) gardent chacun leur état.
+  function grpKey(ctx,svc,g){return ctx+'|'+svc+'|'+g;}
+  function grpOpen(k,parDefaut){S.grpOpen=S.grpOpen||{};return (S.grpOpen[k]!=null)?!!S.grpOpen[k]:!!parDefaut;}
+  function grpHead(k,titre,sousTitre,ouvert,badge){
+    return '<button class="actgrp-h" data-actgrp="'+esc(k)+'" aria-expanded="'+(ouvert?'true':'false')+'">'
+      +'<span class="actgrp-t"><b>'+esc(titre)+'</b><span class="mini">'+esc(sousTitre)+'</span></span>'
+      +(badge?'<span class="actgrp-n">'+badge+'</span>':'')
+      +'<span class="fold-chev" aria-hidden="true">'+I.chevron+'</span></button>';
+  }
+  function grpCount(n){return n+' prestation'+(n>1?'s':'');}
   // Un métier est « à l'acte » (forfait catalogue) s'il possède une grille d'actes.
   function isCatalogForfait(id){return !!baseCatalog(id);}
   function catalogFor(id){return baseCatalog(id)||[];}
@@ -3336,7 +3446,19 @@
     saveCatalog(); render(); toast('« '+name+' » ajouté au catalogue ✓');
   }
   // Persistance du catalogue partagé (settings/catalog) — écrit par l'admin, lu par tous.
-  function saveCatalog(){ try{ if(FB&&FB.auth&&FB.auth.currentUser){ FB.f.setDoc(FB.f.doc(FB.db,'settings','catalog'),{services:S.customServices||[],catalog:S.adminCatalog||{},options:S.adminOptions||{}},{merge:true}); } }catch(_){} }
+  // Avant d'écrire : on fige dans la copie admin les prestations que la fusion de
+  // `baseCatalog` faisait apparaître, sinon les enregistrer avec le nouveau `catalogSeed`
+  // les ferait disparaître au rechargement.
+  function materialiserSeeds(){
+    if(!S.adminCatalog)return;
+    Object.keys(S.adminCatalog).forEach(function(id){
+      const fusion=baseCatalog(id);
+      if(fusion&&fusion.length!==(S.adminCatalog[id]||[]).length){
+        S.adminCatalog[id]=fusion.map(function(a){return {id:a.id,nm:a.nm,price:a.price,grp:a.grp||''};});
+      }
+    });
+  }
+  function saveCatalog(){ try{ if(FB&&FB.auth&&FB.auth.currentUser){ materialiserSeeds(); S.catalogSeed=CATALOG_SEED; FB.f.setDoc(FB.f.doc(FB.db,'settings','catalog'),{services:S.customServices||[],catalog:S.adminCatalog||{},options:S.adminOptions||{},catalogSeed:CATALOG_SEED},{merge:true}); } }catch(_){} }
   // Le catalogue est écouté en temps réel : chaque écriture nous revient par l'écoute,
   // et applyCatalogDoc redessine. Sauver à CHAQUE lettre tapée déclenchait donc un
   // rendu par lettre — l'input était détruit et recréé, le curseur sautait, le clavier
@@ -3347,8 +3469,8 @@
   // Champs texte du catalogue : tant qu'on écrit dedans, on ne redessine sous aucun
   // prétexte — même si la mise à jour vient d'ailleurs. L'état, lui, est bien à jour.
   function ecritDansCatalogue(){ try{ const a=document.activeElement;
-    return !!(a&&a.matches&&a.matches('[data-optname],[data-actname]')); }catch(_){return false;} }
-  function applyCatalogDoc(d){ if(!d)return; if(Array.isArray(d.services)){ S.customServices=d.services.map(function(s){return {id:s.id,nm:s.nm,rate:s.rate,custom:true};}); } if(d.catalog&&typeof d.catalog==='object'){ S.adminCatalog=d.catalog; } if(d.options&&typeof d.options==='object'){ S.adminOptions=d.options; } if(ecritDansCatalogue())return; render(); }
+    return !!(a&&a.matches&&a.matches('[data-optname],[data-actname],[data-actgrpname]')); }catch(_){return false;} }
+  function applyCatalogDoc(d){ if(!d)return; if(Array.isArray(d.services)){ S.customServices=d.services.map(function(s){return {id:s.id,nm:s.nm,rate:s.rate,custom:true};}); } if(d.catalog&&typeof d.catalog==='object'){ S.adminCatalog=d.catalog; } S.catalogSeed=Number(d.catalogSeed)||0; if(d.options&&typeof d.options==='object'){ S.adminOptions=d.options; } if(ecritDansCatalogue())return; render(); }
   // Catalogue partagé écouté EN TEMPS RÉEL : toute modification admin (prix, prestations,
   // options, métiers) se propage à l'app de chacun sans rechargement. Une seule écoute.
   async function loadCatalog(){ try{ if(!FB||_catalogSub)return; _catalogSub=FB.f.onSnapshot(FB.f.doc(FB.db,'settings','catalog'),function(snap){ applyCatalogDoc(snap.exists()?(snap.data()||{}):{}); },function(e){ console.warn('catalog load',e); }); }catch(e){ console.warn('catalog sub',e); } }
@@ -3384,7 +3506,7 @@
   // Copie éditable de la grille d'un métier dans S.adminCatalog (à partir de la grille
   // par défaut si l'admin n'y a jamais touché) — pour modifier prix / actes sans perdre
   // le catalogue de référence.
-  function ensureCatalogCopy(svcId){S.adminCatalog=S.adminCatalog||{};if(!S.adminCatalog[svcId]){S.adminCatalog[svcId]=(CATALOG[svcId]||[]).map(function(a){return {id:a.id,nm:a.nm,price:a.price};});}return S.adminCatalog[svcId];}
+  function ensureCatalogCopy(svcId){S.adminCatalog=S.adminCatalog||{};if(!S.adminCatalog[svcId]){S.adminCatalog[svcId]=(baseCatalog(svcId)||[]).map(function(a){return {id:a.id,nm:a.nm,price:a.price,grp:a.grp||''};});}return S.adminCatalog[svcId];}
   // Grille de prix officielle (settings/prices) — écrite par l'admin, lue par tous ET par
   // le serveur (settleCommission) pour VÉRIFIER le tarif d'une demande (anti-manipulation).
   function savePrices(){ try{ if(FB&&FB.auth&&FB.auth.currentUser){ FB.f.setDoc(FB.f.doc(FB.db,'settings','prices'),{prices:S.adminPrices||{},updatedAt:FB.f.serverTimestamp()},{merge:true}); } }catch(_){} }
@@ -8150,7 +8272,9 @@
         let priceEditor;
         if(s.id==='animaux'){const pj=(S.adminPrices&&S.adminPrices['animaux_j']!=null)?S.adminPrices['animaux_j']:DAY_RECO;priceEditor=priceCtl('animaux',px,'/h','À l’heure')+priceCtl('animaux_j',pj,'/jour','À la journée');}
         else if(s.id==='colis'){priceEditor=priceCtl('colis',px,' forfait','Forfait retrait');}
-        else if(isCatalogForfait(s.id)){priceEditor=`<div class="mini" style="color:var(--muted);margin-bottom:2px">Grille à l'acte</div>${catalogFor(s.id).map(function(a){return `<div style="margin-top:9px;padding:10px;border-radius:12px;background:var(--card)"><input class="txt" data-actname="${s.id}:${a.id}" value="${esc(a.nm)}" placeholder="Nom de la prestation" style="width:100%;padding:11px 12px;font-size:14px"><span class="row" style="gap:6px;align-items:center;justify-content:flex-end;margin-top:8px"><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actprice="${s.id}:${a.id}:down">−</button><b class="money" style="min-width:48px;text-align:center;white-space:nowrap">${a.price} €</b><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actprice="${s.id}:${a.id}:up">+</button><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actdel="${s.id}:${a.id}" aria-label="Retirer">${I.trash}</button></span></div>`;}).join('')}<button class="btn ghost sm" data-actadd="${s.id}" style="margin-top:10px;width:auto;padding:8px 12px">${I.plus} Ajouter une prestation</button>`;}
+        // Console : les prestations sont rangées par FAMILLE (intertitre + champ « famille »
+        // sur chaque ligne), sinon une grille de 50 actes est impossible à tenir à jour.
+        else if(isCatalogForfait(s.id)){priceEditor=`<div class="mini" style="color:var(--muted);margin-bottom:2px">Grille à l'acte</div>${catalogGroups(s.id).map(function(G){return (catalogGroups(s.id).length<2?'':`<div class="mini" style="margin-top:14px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:var(--teal-deep)">${esc(G.g)} · ${grpCount(G.acts.length)}</div>`)+G.acts.map(function(a){return `<div style="margin-top:9px;padding:10px;border-radius:12px;background:var(--card)"><input class="txt" data-actname="${s.id}:${a.id}" value="${esc(a.nm)}" placeholder="Nom de la prestation" style="width:100%;padding:11px 12px;font-size:14px"><input class="txt" data-actgrpname="${s.id}:${a.id}" value="${esc(a.grp||'')}" placeholder="Famille (ex. Femme · coloration)" style="width:100%;padding:9px 12px;font-size:12px;margin-top:6px"><span class="row" style="gap:6px;align-items:center;justify-content:flex-end;margin-top:8px"><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actprice="${s.id}:${a.id}:down">−</button><b class="money" style="min-width:48px;text-align:center;white-space:nowrap">${a.price} €</b><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actprice="${s.id}:${a.id}:up">+</button><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actdel="${s.id}:${a.id}" aria-label="Retirer">${I.trash}</button></span></div>`;}).join('');}).join('')}<button class="btn ghost sm" data-actadd="${s.id}" style="margin-top:10px;width:auto;padding:8px 12px">${I.plus} Ajouter une prestation</button>`;}
         else{priceEditor=priceCtl(s.id,px,'/h','Tarif horaire')+(s.custom?`<button class="btn ghost sm" data-adm="delcat:${s.id}" style="margin-top:10px;width:auto;padding:8px 12px;color:var(--coral-deep)">${I.trash} Retirer ce métier</button>`:'');}
         const artLines=catArts.length?catArts.map(function(a){return `<div class="row between" style="align-items:center;margin-top:8px"><button class="linklike" data-adm="art:${a.id}" style="font-size:13px;text-align:left;color:var(--ink)">${esc(a.name)}</button><span class="chip ${acctChip(a.status)[0]}">${acctChip(a.status)[1]}</span></div>`;}).join(''):`<p class="mini" style="margin-top:6px;color:var(--muted)">Aucun prestataire sur ce métier — « Bientôt disponible » côté client.</p>`;
         return `${header}<div class="card" style="padding:13px;margin:6px 0 0;background:var(--sand)"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Artisans (${catArts.length})</div>${artLines}<hr class="dashed" style="margin:12px 0 2px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Tarif client</div>${priceEditor}${optionsEditorHtml(s.id)}
@@ -11682,8 +11806,21 @@
       // signer une grille que la personne n'a pas sous les yeux.
       const actes=forf?catalogFor(id):[];
       return `<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--hair)"><div class="row between" style="align-items:flex-start"><span class="sub" style="display:flex;align-items:center;gap:8px"><span style="display:inline-flex;width:26px;height:26px;border-radius:8px;background:var(--teal-wash);color:var(--teal-deep);align-items:center;justify-content:center">${svcIco(id)}</span>${svcNm(id)}</span><div style="text-align:right"><b style="color:var(--good)">${netTxt}</b><div class="mini" style="color:var(--muted);margin-top:1px">pour vous</div></div></div>
-        ${actes.length?`<div class="gridacts">${actes.map(function(a){return `<div class="row between" style="gap:10px;align-items:baseline"><span class="mini" style="flex:1;min-width:0">${esc(a.nm||a.id)}</span><span class="mini" style="flex:none;text-align:right;color:var(--good);font-weight:800">${proNetHint(Number(a.price)||0)} € net</span></div>`;}).join('')}</div>
-          <p class="mini" style="margin-top:6px;color:var(--muted)"><b>${actes.length}</b> ${actes.length>1?'prestations':'prestation'} — le client choisit, le total est ferme.</p>`:''}
+        ${actes.length?(function(){
+          const ligne=function(a){return `<div class="row between" style="gap:10px;align-items:baseline"><span class="mini" style="flex:1;min-width:0">${esc(a.nm||a.id)}</span><span class="mini" style="flex:none;text-align:right;color:var(--good);font-weight:800">${proNetHint(Number(a.price)||0)} € net</span></div>`;};
+          const pied=`<p class="mini" style="margin-top:6px;color:var(--muted)"><b>${actes.length}</b> ${actes.length>1?'prestations':'prestation'} — le client choisit, le total est ferme.</p>`;
+          const gs=catalogGroups(id);
+          // Grille courte : tout déplié, elle se lit d'un coup d'œil. Grille détaillée :
+          // une famille par carte repliable — chacune annonçant sa fourchette de NET avant
+          // même d'être ouverte, pour ne pas faire accepter une grille à l'aveugle.
+          if(gs.length<2)return `<div class="gridacts">${actes.map(ligne).join('')}</div>`+pied;
+          return `<div class="actgrps" style="margin-top:9px">${gs.map(function(G){
+            const k=grpKey('grille',id,G.g),ouv=grpOpen(k,false);
+            const nets=G.acts.map(function(a){return proNetHint(Number(a.price)||0);});
+            const mn=Math.min.apply(null,nets),mx=Math.max.apply(null,nets);
+            return `<div class="actgrp${ouv?' open':''}">${grpHead(k,G.g,grpCount(G.acts.length)+' · '+(mn===mx?mn+' € net':mn+' à '+mx+' € net'),ouv,0)}${ouv?`<div class="gridacts">${G.acts.map(ligne).join('')}</div>`:''}</div>`;
+          }).join('')}</div>`+pied;
+        })():''}
       </div>`;
     }).join('');
     return `<div class="card" style="padding:16px;margin-top:14px"><div class="eyebrow" style="color:var(--muted)">Grille tarifaire Ti-Services</div>
@@ -13273,7 +13410,7 @@
     // photo du client) s'ouvre en plein écran au clic — consultation sans téléchargement.
     const _iv=e.target.closest&&e.target.closest('img.viewable');
     if(_iv&&_iv.getAttribute('src')){S.imgView={src:_iv.getAttribute('src'),name:_iv.getAttribute('data-docname')||'document'};render();return;}
-    const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actqty],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-loc],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday],[data-tip],[data-pac],[data-sitemode],[data-invclient],[data-fold],[data-optpick],[data-optqty],[data-optadd],[data-optdel],[data-optprice],[data-optunit],[data-rf]');
+    const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actqty],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-loc],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday],[data-tip],[data-pac],[data-sitemode],[data-invclient],[data-fold],[data-actgrp],[data-optpick],[data-optqty],[data-optadd],[data-optdel],[data-optprice],[data-optunit],[data-rf]');
     if(!b)return;
     // Un clic ISSU d'un <input type=file> (notamment déclenché par programme, ex. la
     // feuille « appareil photo / galerie ») remonte jusqu'ici : on ne le traite pas
@@ -13777,6 +13914,11 @@
     // Ajout de métier (artisan) : coche/décoche un service dans le formulaire d'ajout.
     if(b.dataset.pac){const f=S.proAddForm;if(f){const id=b.dataset.pac,i=f.cats.indexOf(id);if(i>=0)f.cats.splice(i,1);else f.cats.push(id);render();}return;}
     if(b.dataset.price){const [id,dir]=b.dataset.price.split(':');if(!S.adminPrices)S.adminPrices=ADMIN_PRICES();const cur=(S.adminPrices[id]!=null)?S.adminPrices[id]:(/_j$/.test(id)?DAY_RECO:svcBase(id));S.adminPrices[id]=Math.max(5,cur+(dir==='up'?1:-1));savePrices();render();return;}
+    // Familles de prestations : plier / déplier. On se cale sur l'état RÉELLEMENT affiché
+    // (aria-expanded) plutôt que sur la mémoire : selon l'écran, une famille peut être
+    // ouverte par défaut (celle où le client a déjà coché) — inverser la mémoire vide
+    // l'aurait alors laissée ouverte. Le contexte « cli » vit dans l'écran de commande.
+    if(b.dataset.actgrp){const k=b.dataset.actgrp;S.grpOpen=S.grpOpen||{};S.grpOpen[k]=(b.getAttribute('aria-expanded')!=='true');if(/^cli\|/.test(k)&&S.draft)renderConfig();else render();return;}
     // Grille catalogue (admin) : prix d'un acte, retrait, ajout.
     if(b.dataset.actprice){const p=b.dataset.actprice.split(':');const svc=p[0],aid=p[1],dir=p[2];const arr=ensureCatalogCopy(svc);const a=arr.find(function(x){return x.id===aid;});if(a){a.price=Math.max(5,(Number(a.price)||0)+(dir==='up'?5:-5));saveCatalog();render();}return;}
     if(b.dataset.actdel){const p=b.dataset.actdel.split(':');const svc=p[0],aid=p[1];const arr=ensureCatalogCopy(svc);S.adminCatalog[svc]=arr.filter(function(x){return x.id!==aid;});saveCatalog();render();return;}
@@ -14444,14 +14586,26 @@
     const zoneSelect=`<select class="txt" data-cfgzone>${ZONES.map(z=>`<option value="${esc(z)}"${migZone(m.zone)===z?' selected':''}>${esc(z)}</option>`).join('')}</select>`;
     // Menu des actes de la grille : coche + quantité, total ferme en direct.
     const pickOf=id=>m.acts.find(a=>a.id===id);
-    const actRows=catalogFor(m.svc).map(a=>{const p=pickOf(a.id);return `<div class="actrow${p?' on':''}"><button class="actmain" data-actpick="${esc(a.id)}"><span class="actck">${p?I.check:''}</span><span class="actnm">${esc(a.nm)}</span><span class="actpr">${a.price} €</span></button></div>`;}).join('');
+    const actLigne=a=>{const p=pickOf(a.id);return `<div class="actrow${p?' on':''}"><button class="actmain" data-actpick="${esc(a.id)}"><span class="actck">${p?I.check:''}</span><span class="actnm">${esc(a.nm)}</span><span class="actpr">${a.price} €</span></button></div>`;};
+    // Grille courte : tout à plat. Grille détaillée (coiffure et ses ~50 lignes) : une
+    // famille par carte repliée, avec son nombre de prestations, son prix d'appel et un
+    // pastillage du nombre choisi — une famille où l'on a déjà coché reste ouverte.
+    const grpsCli=catalogGroups(m.svc);
+    const actRows=(grpsCli.length<2)
+      ? `<div class="actlist">${catalogFor(m.svc).map(actLigne).join('')}</div>`
+      : `<div class="actgrps">${grpsCli.map(function(G){
+          const n=G.acts.filter(function(a){return !!pickOf(a.id);}).length;
+          const k=grpKey('cli',m.svc,G.g),ouv=grpOpen(k,n>0);
+          const mini=Math.min.apply(null,G.acts.map(function(a){return Number(a.price)||0;}));
+          return `<div class="actgrp${ouv?' open':''}">${grpHead(k,G.g,grpCount(G.acts.length)+' · dès '+mini+' €',ouv,n)}${ouv?`<div class="actlist">${G.acts.map(actLigne).join('')}</div>`:''}</div>`;
+        }).join('')}</div>`;
     const nSel=m.acts.length;
     const c=svcColor(m.svc);
     paintView(`<div class="pad"><div class="cfghead"><button class="reset" data-cfg="back">← Retour</button><span class="eyebrow" style="flex:1;justify-content:center;color:${c}">${svcIco(m.svc)} ${esc(m.svcName)}</span><button class="iconbtn" data-act="go-home" aria-label="Accueil" title="Accueil"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg></button></div>
       <div class="h-hello">Votre prestation</div>
       <p class="sub" style="margin-top:4px">Composez votre commande — prix fixes Ti-Services, total ferme.</p>
 
-      <div class="field" style="margin-top:14px"><label>Choisissez vos prestations</label><div class="actlist">${actRows}</div>
+      <div class="field" style="margin-top:14px"><label>Choisissez vos prestations</label>${actRows}
         ${minActPrice(m.svc)<TRAVEL_MIN?`<p class="mini" style="margin-top:8px">${I.pin} Déplacement <b>offert dès ${TRAVEL_MIN} €</b> de prestation — sinon forfait de ${TRAVEL_FEE} €.</p>`:''}</div>
       ${optionsPickerHtml(m)}
 
@@ -14625,6 +14779,7 @@
     }
     // Renommage d'un acte de la grille (console admin) — pas de re-render (garde le focus).
     const an=e.target.closest('[data-actname]');if(an){const p=an.dataset.actname.split(':');const arr=ensureCatalogCopy(p[0]);const a=arr.find(function(x){return x.id===p[1];});if(a){a.nm=an.value;saveCatalogSoon();}}
+    const ag=e.target.closest('[data-actgrpname]');if(ag){const p=ag.dataset.actgrpname.split(':');const arr=ensureCatalogCopy(p[0]);const a=arr.find(function(x){return x.id===p[1];});if(a){a.grp=ag.value;saveCatalogSoon();}}
     const on=e.target.closest('[data-optname]');if(on){const p=on.dataset.optname.split(':');const arr=ensureOptions(p[0]);const o=arr.find(function(x){return x.id===p[1];});if(o){o.nm=on.value;saveCatalogSoon();}}
     const al=e.target.closest('[data-addrlabel]');if(al&&S.draft){S.draft.addrLabel=al.value;}
     const aa=e.target.closest('[data-addraccess]');if(aa&&S.draft){S.draft.access=aa.value;}
@@ -14649,7 +14804,7 @@
   });
   view.addEventListener('focusout',function(e){
     const t=e.target;
-    if(t&&t.matches&&t.matches('[data-optname],[data-actname]'))flushCatalogSave();
+    if(t&&t.matches&&t.matches('[data-optname],[data-actname],[data-actgrpname]'))flushCatalogSave();
   },true);
   view.addEventListener('change',(e)=>{
     // Renfort (bêta) : secteur, date et choix nominatif du confrère.
