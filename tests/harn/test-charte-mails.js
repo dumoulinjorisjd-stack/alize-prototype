@@ -20,7 +20,8 @@ console.log('B — l’enveloppe elle-même (exécutée pour de vrai)');
 // elles ne dépendent que de fs/path (logo) et de chaînes.
 const bloc = fn.slice(fn.indexOf('let _tiLogoBuf;'), fn.indexOf('async function sendMail'));
 const bac = {require: (m) => require(m), __dirname: path.join(RACINE, 'functions')};
-const fab = new Function('require', '__dirname', bloc +
+const fab = new Function('require', '__dirname',
+  'const APP_URL = \'https://ti-services.fr\';\n' + bloc +
   '\nreturn {tiCharteHtml, tiCharteMessage, tiLogoAttachment};');
 const {tiCharteHtml, tiCharteMessage, tiLogoAttachment} = fab(bac.require, bac.__dirname);
 
@@ -33,6 +34,18 @@ ok(enveloppe.indexOf('C.C.S — Construction Conseils et Services') >= 0, 'le pi
 ok(enveloppe.indexOf('Votre attestation d\'assurance est validée') >= 0, 'le corps du message est conservé');
 ok((enveloppe.match(/L'équipe Ti-Services/g) || []).length === 1,
   'la signature n’apparaît qu’UNE fois (celle du corps brut est retirée, le pied signe)');
+ok(/href="https:\/\/ti-services\.fr"[^>]*>Ouvrir Ti-Services<\/a>/.test(enveloppe),
+  'le bouton « Ouvrir Ti-Services » est là (chaque e-mail ramène vers l’app)');
+
+console.log('B2 — les verdicts artisan ont un corps e-mail étoffé, distinct du push');
+ok(/mail: 'Bonne nouvelle : votre nouveau métier \(<b>'/.test(fn),
+  'métier validé : version e-mail enrichie (le push garde sa phrase courte)');
+ok(/mail: 'Bonne nouvelle : votre attestation d\\'assurance a été vérifiée/.test(fn),
+  'attestation validée : version e-mail enrichie');
+ok(/n\.mail \|\| escHtmlS\(n\.corps\)/.test(fn),
+  'l’e-mail préfère la version étoffée et retombe sur le texte du push sinon');
+ok(/escHtmlS\(valides\.join\(', '\)\)/.test(fn) && /escHtmlS\(refuses\.join\(', '\)\)/.test(fn),
+  'les noms de métiers sont échappés dans les corps e-mail');
 
 console.log('C — tiCharteMessage : qui est enveloppé, qui ne l’est pas');
 const nu = tiCharteMessage({subject: 's', html: brut});
