@@ -3468,8 +3468,11 @@
   function flushCatalogSave(){ if(_catSaveT){clearTimeout(_catSaveT);_catSaveT=null;saveCatalog();} }
   // Champs texte du catalogue : tant qu'on écrit dedans, on ne redessine sous aucun
   // prétexte — même si la mise à jour vient d'ailleurs. L'état, lui, est bien à jour.
+  // Prix tapé à la main : on ne garde que des euros entiers, 0 accepté le temps de la
+  // saisie (recadré à 1 € à la sortie du champ, cf. prixFinal).
+  function prixSaisi(v){const n=Math.round(parseFloat(String(v).replace(',','.'))||0);return Math.max(0,Math.min(99999,n));}
   function ecritDansCatalogue(){ try{ const a=document.activeElement;
-    return !!(a&&a.matches&&a.matches('[data-optname],[data-actname],[data-actgrpname]')); }catch(_){return false;} }
+    return !!(a&&a.matches&&a.matches('[data-optname],[data-actname],[data-actgrpname],[data-actpricev],[data-optpricev]')); }catch(_){return false;} }
   function applyCatalogDoc(d){ if(!d)return; if(Array.isArray(d.services)){ S.customServices=d.services.map(function(s){return {id:s.id,nm:s.nm,rate:s.rate,custom:true};}); } if(d.catalog&&typeof d.catalog==='object'){ S.adminCatalog=d.catalog; } S.catalogSeed=Number(d.catalogSeed)||0; if(d.options&&typeof d.options==='object'){ S.adminOptions=d.options; } if(ecritDansCatalogue())return; render(); }
   // Catalogue partagé écouté EN TEMPS RÉEL : toute modification admin (prix, prestations,
   // options, métiers) se propage à l'app de chacun sans rechargement. Une seule écoute.
@@ -3506,7 +3509,19 @@
   // Copie éditable de la grille d'un métier dans S.adminCatalog (à partir de la grille
   // par défaut si l'admin n'y a jamais touché) — pour modifier prix / actes sans perdre
   // le catalogue de référence.
-  function ensureCatalogCopy(svcId){S.adminCatalog=S.adminCatalog||{};if(!S.adminCatalog[svcId]){S.adminCatalog[svcId]=(baseCatalog(svcId)||[]).map(function(a){return {id:a.id,nm:a.nm,price:a.price,grp:a.grp||''};});}return S.adminCatalog[svcId];}
+  // ATTENTION : la copie admin doit contenir EXACTEMENT ce qui est affiché. Si elle est
+  // antérieure au dernier enrichissement du catalogue, les prestations récentes sont
+  // bien à l'écran (baseCatalog les fusionne) mais absentes de la copie : les boutons
+  // +/−, la suppression et la saisie ne trouvaient pas la ligne et ne faisaient RIEN.
+  function ensureCatalogCopy(svcId){
+    S.adminCatalog=S.adminCatalog||{};
+    const fusion=baseCatalog(svcId)||[];
+    const copie=S.adminCatalog[svcId];
+    if(!copie||copie.length!==fusion.length){
+      S.adminCatalog[svcId]=fusion.map(function(a){return {id:a.id,nm:a.nm,price:a.price,grp:a.grp||''};});
+    }
+    return S.adminCatalog[svcId];
+  }
   // Grille de prix officielle (settings/prices) — écrite par l'admin, lue par tous ET par
   // le serveur (settleCommission) pour VÉRIFIER le tarif d'une demande (anti-manipulation).
   function savePrices(){ try{ if(FB&&FB.auth&&FB.auth.currentUser){ FB.f.setDoc(FB.f.doc(FB.db,'settings','prices'),{prices:S.adminPrices||{},updatedAt:FB.f.serverTimestamp()},{merge:true}); } }catch(_){} }
@@ -8161,7 +8176,7 @@
         <div class="row between" style="align-items:center;margin-top:8px;gap:6px">
           <button class="btn ghost sm" style="width:auto;padding:6px 10px;font-size:11.5px;flex:none;${h?'color:var(--teal-deep);font-weight:700':''}" data-optunit="${svcId}:${o.id}" title="Basculer unité / heure">${h?'à l’heure':'à l’unité'}</button>
           <span class="row" style="gap:6px;align-items:center;flex:none">
-            <button class="btn ghost sm" style="width:30px;padding:5px 0;flex:none" data-optprice="${svcId}:${o.id}:down">−</button><b class="money" style="min-width:54px;text-align:center;white-space:nowrap;font-size:13px">${o.price} €${h?'/h':''}</b><button class="btn ghost sm" style="width:30px;padding:5px 0;flex:none" data-optprice="${svcId}:${o.id}:up">+</button>
+            <button class="btn ghost sm" style="width:30px;padding:5px 0;flex:none" data-optprice="${svcId}:${o.id}:down">−</button><span class="row" style="flex:none;gap:3px;align-items:baseline"><input class="txt money" data-optpricev="${svcId}:${o.id}" value="${o.price}" inputmode="numeric" aria-label="Prix en euros" style="width:60px;padding:7px 8px;text-align:right;font-size:13px"><b class="mini">€${h?'/h':''}</b></span><button class="btn ghost sm" style="width:30px;padding:5px 0;flex:none" data-optprice="${svcId}:${o.id}:up">+</button>
             <button class="btn ghost sm" style="width:30px;padding:5px 0;flex:none" data-optdel="${svcId}:${o.id}" aria-label="Retirer">${I.trash}</button>
           </span>
         </div>
@@ -8274,7 +8289,7 @@
         else if(s.id==='colis'){priceEditor=priceCtl('colis',px,' forfait','Forfait retrait');}
         // Console : les prestations sont rangées par FAMILLE (intertitre + champ « famille »
         // sur chaque ligne), sinon une grille de 50 actes est impossible à tenir à jour.
-        else if(isCatalogForfait(s.id)){priceEditor=`<div class="mini" style="color:var(--muted);margin-bottom:2px">Grille à l'acte</div>${catalogGroups(s.id).map(function(G){return (catalogGroups(s.id).length<2?'':`<div class="mini" style="margin-top:14px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:var(--teal-deep)">${esc(G.g)} · ${grpCount(G.acts.length)}</div>`)+G.acts.map(function(a){return `<div style="margin-top:9px;padding:10px;border-radius:12px;background:var(--card)"><input class="txt" data-actname="${s.id}:${a.id}" value="${esc(a.nm)}" placeholder="Nom de la prestation" style="width:100%;padding:11px 12px;font-size:14px"><input class="txt" data-actgrpname="${s.id}:${a.id}" value="${esc(a.grp||'')}" placeholder="Famille (ex. Femme · coloration)" style="width:100%;padding:9px 12px;font-size:12px;margin-top:6px"><span class="row" style="gap:6px;align-items:center;justify-content:flex-end;margin-top:8px"><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actprice="${s.id}:${a.id}:down">−</button><b class="money" style="min-width:48px;text-align:center;white-space:nowrap">${a.price} €</b><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actprice="${s.id}:${a.id}:up">+</button><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actdel="${s.id}:${a.id}" aria-label="Retirer">${I.trash}</button></span></div>`;}).join('');}).join('')}<button class="btn ghost sm" data-actadd="${s.id}" style="margin-top:10px;width:auto;padding:8px 12px">${I.plus} Ajouter une prestation</button>`;}
+        else if(isCatalogForfait(s.id)){priceEditor=`<div class="mini" style="color:var(--muted);margin-bottom:2px">Grille à l'acte</div>${catalogGroups(s.id).map(function(G){return (catalogGroups(s.id).length<2?'':`<div class="mini" style="margin-top:14px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:var(--teal-deep)">${esc(G.g)} · ${grpCount(G.acts.length)}</div>`)+G.acts.map(function(a){return `<div style="margin-top:9px;padding:10px;border-radius:12px;background:var(--card)"><input class="txt" data-actname="${s.id}:${a.id}" value="${esc(a.nm)}" placeholder="Nom de la prestation" style="width:100%;padding:11px 12px;font-size:14px"><input class="txt" data-actgrpname="${s.id}:${a.id}" value="${esc(a.grp||'')}" placeholder="Famille (ex. Femme · coloration)" style="width:100%;padding:9px 12px;font-size:12px;margin-top:6px"><span class="row" style="gap:6px;align-items:center;justify-content:flex-end;margin-top:8px"><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actprice="${s.id}:${a.id}:down">−</button><span class="row" style="flex:none;gap:3px;align-items:baseline"><input class="txt money" data-actpricev="${s.id}:${a.id}" value="${a.price}" inputmode="numeric" aria-label="Prix client en euros" style="width:64px;padding:7px 8px;text-align:right;font-size:14px"><b class="mini">€</b></span><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actprice="${s.id}:${a.id}:up">+</button><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actdel="${s.id}:${a.id}" aria-label="Retirer">${I.trash}</button></span></div>`;}).join('');}).join('')}<button class="btn ghost sm" data-actadd="${s.id}" style="margin-top:10px;width:auto;padding:8px 12px">${I.plus} Ajouter une prestation</button>`;}
         else{priceEditor=priceCtl(s.id,px,'/h','Tarif horaire')+(s.custom?`<button class="btn ghost sm" data-adm="delcat:${s.id}" style="margin-top:10px;width:auto;padding:8px 12px;color:var(--coral-deep)">${I.trash} Retirer ce métier</button>`:'');}
         const artLines=catArts.length?catArts.map(function(a){return `<div class="row between" style="align-items:center;margin-top:8px"><button class="linklike" data-adm="art:${a.id}" style="font-size:13px;text-align:left;color:var(--ink)">${esc(a.name)}</button><span class="chip ${acctChip(a.status)[0]}">${acctChip(a.status)[1]}</span></div>`;}).join(''):`<p class="mini" style="margin-top:6px;color:var(--muted)">Aucun prestataire sur ce métier — « Bientôt disponible » côté client.</p>`;
         return `${header}<div class="card" style="padding:13px;margin:6px 0 0;background:var(--sand)"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Artisans (${catArts.length})</div>${artLines}<hr class="dashed" style="margin:12px 0 2px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Tarif client</div>${priceEditor}${optionsEditorHtml(s.id)}
@@ -13920,11 +13935,11 @@
     // l'aurait alors laissée ouverte. Le contexte « cli » vit dans l'écran de commande.
     if(b.dataset.actgrp){const k=b.dataset.actgrp;S.grpOpen=S.grpOpen||{};S.grpOpen[k]=(b.getAttribute('aria-expanded')!=='true');if(/^cli\|/.test(k)&&S.draft)renderConfig();else render();return;}
     // Grille catalogue (admin) : prix d'un acte, retrait, ajout.
-    if(b.dataset.actprice){const p=b.dataset.actprice.split(':');const svc=p[0],aid=p[1],dir=p[2];const arr=ensureCatalogCopy(svc);const a=arr.find(function(x){return x.id===aid;});if(a){a.price=Math.max(5,(Number(a.price)||0)+(dir==='up'?5:-5));saveCatalog();render();}return;}
+    if(b.dataset.actprice){const p=b.dataset.actprice.split(':');const svc=p[0],aid=p[1],dir=p[2];const arr=ensureCatalogCopy(svc);const a=arr.find(function(x){return x.id===aid;});if(a){a.price=Math.max(1,(Number(a.price)||0)+(dir==='up'?1:-1));saveCatalog();render();}return;}
     if(b.dataset.actdel){const p=b.dataset.actdel.split(':');const svc=p[0],aid=p[1];const arr=ensureCatalogCopy(svc);S.adminCatalog[svc]=arr.filter(function(x){return x.id!==aid;});saveCatalog();render();return;}
     if(b.dataset.actadd){const svc=b.dataset.actadd;const arr=ensureCatalogCopy(svc);S._actSeq=(S._actSeq||0)+1;arr.push({id:'usr'+S._actSeq+'_'+arr.length,nm:'',price:50});saveCatalog();render();return;}
     // Prestations / options (admin) : prix, unité (u/h), retrait, ajout.
-    if(b.dataset.optprice){const p=b.dataset.optprice.split(':');const arr=ensureOptions(p[0]);const o=arr.find(function(x){return x.id===p[1];});if(o){o.price=Math.max(5,(Number(o.price)||0)+(p[2]==='up'?5:-5));saveCatalog();render();}return;}
+    if(b.dataset.optprice){const p=b.dataset.optprice.split(':');const arr=ensureOptions(p[0]);const o=arr.find(function(x){return x.id===p[1];});if(o){o.price=Math.max(1,(Number(o.price)||0)+(p[2]==='up'?1:-1));saveCatalog();render();}return;}
     if(b.dataset.optunit){const p=b.dataset.optunit.split(':');const arr=ensureOptions(p[0]);const o=arr.find(function(x){return x.id===p[1];});if(o){o.unit=(optUnit(o)==='h')?'u':'h';saveCatalog();render();}return;}
     if(b.dataset.optdel){const p=b.dataset.optdel.split(':');const arr=ensureOptions(p[0]);S.adminOptions[p[0]]=arr.filter(function(x){return x.id!==p[1];});saveCatalog();render();return;}
     if(b.dataset.optadd){const svc=b.dataset.optadd;const arr=ensureOptions(svc);S._optSeq=(S._optSeq||0)+1;arr.push({id:'opt'+S._optSeq+'_'+arr.length,nm:'',price:30,unit:'u'});saveCatalog();render();return;}
@@ -14780,6 +14795,11 @@
     // Renommage d'un acte de la grille (console admin) — pas de re-render (garde le focus).
     const an=e.target.closest('[data-actname]');if(an){const p=an.dataset.actname.split(':');const arr=ensureCatalogCopy(p[0]);const a=arr.find(function(x){return x.id===p[1];});if(a){a.nm=an.value;saveCatalogSoon();}}
     const ag=e.target.closest('[data-actgrpname]');if(ag){const p=ag.dataset.actgrpname.split(':');const arr=ensureCatalogCopy(p[0]);const a=arr.find(function(x){return x.id===p[1];});if(a){a.grp=ag.value;saveCatalogSoon();}}
+    // Prix saisis au clavier, à l'euro près. On accepte le champ vide le temps de la
+    // frappe (sinon impossible d'effacer « 150 » pour taper « 90 ») ; la valeur est
+    // recadrée à 1 € minimum quand on quitte le champ.
+    const av=e.target.closest('[data-actpricev]');if(av){const p=av.dataset.actpricev.split(':');const arr=ensureCatalogCopy(p[0]);const a=arr.find(function(x){return x.id===p[1];});if(a){a.price=prixSaisi(av.value);saveCatalogSoon();}}
+    const ov=e.target.closest('[data-optpricev]');if(ov){const p=ov.dataset.optpricev.split(':');const arr=ensureOptions(p[0]);const o=arr.find(function(x){return x.id===p[1];});if(o){o.price=prixSaisi(ov.value);saveCatalogSoon();}}
     const on=e.target.closest('[data-optname]');if(on){const p=on.dataset.optname.split(':');const arr=ensureOptions(p[0]);const o=arr.find(function(x){return x.id===p[1];});if(o){o.nm=on.value;saveCatalogSoon();}}
     const al=e.target.closest('[data-addrlabel]');if(al&&S.draft){S.draft.addrLabel=al.value;}
     const aa=e.target.closest('[data-addraccess]');if(aa&&S.draft){S.draft.access=aa.value;}
@@ -14804,7 +14824,13 @@
   });
   view.addEventListener('focusout',function(e){
     const t=e.target;
-    if(t&&t.matches&&t.matches('[data-optname],[data-actname],[data-actgrpname]'))flushCatalogSave();
+    if(t&&t.matches&&t.matches('[data-optname],[data-actname],[data-actgrpname],[data-actpricev],[data-optpricev]')){
+      // Sortie d'un champ de prix : un champ laissé vide ou à 0 vaut 1 € (une prestation
+      // gratuite fausserait la commission et le net annoncé au prestataire).
+      if(t.matches('[data-actpricev]')){const p=t.dataset.actpricev.split(':');const a=ensureCatalogCopy(p[0]).find(function(x){return x.id===p[1];});if(a&&(Number(a.price)||0)<1){a.price=1;render();}}
+      if(t.matches('[data-optpricev]')){const p=t.dataset.optpricev.split(':');const o=ensureOptions(p[0]).find(function(x){return x.id===p[1];});if(o&&(Number(o.price)||0)<1){o.price=1;render();}}
+      flushCatalogSave();
+    }
   },true);
   view.addEventListener('change',(e)=>{
     // Renfort (bêta) : secteur, date et choix nominatif du confrère.
