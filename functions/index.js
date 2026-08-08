@@ -107,7 +107,10 @@ function tiCharteHtml(inner) {
             '<div style="font-size:24px;font-weight:800;letter-spacing:-.02em"><span style="color:#FF6A5B">Ti</span><span style="color:#231E33">-Services</span></div>' +
             '<div style="font-size:12px;color:#8a8494;margin-top:2px">Services à la demande · Saint-Barthélemy</div>' +
           '</td></tr>' +
-          '<tr><td style="padding:14px 30px 20px"><div style="font-size:15px;line-height:1.6;color:#4a4556">' + body + '</div></td></tr>' +
+          '<tr><td style="padding:14px 30px 6px"><div style="font-size:15px;line-height:1.6;color:#4a4556">' + body + '</div></td></tr>' +
+          '<tr><td align="center" style="padding:14px 30px 26px">' +
+            '<a href="' + APP_URL.replace(/\/$/, '') + '" style="display:inline-block;background:#FF6A5B;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 26px;border-radius:11px">Ouvrir Ti-Services</a>' +
+          '</td></tr>' +
           '<tr><td style="padding:16px 30px;border-top:1px solid #efeae4;background:#FBF7F4">' +
             '<div style="font-size:12px;color:#8a8494;line-height:1.6">L\'équipe Ti-Services<br>' +
             '<span style="color:#b0aab8">Service édité par C.C.S — Construction Conseils et Services, SAS · Saint-Barthélemy</span></div>' +
@@ -1193,10 +1196,14 @@ exports.notifyArtisanDecisions = onDocumentUpdated({document: 'artisans/{artisan
 
   // 1) Candidature refusée (attente -> refuse). La remise en attente ou la validation
   //    ont déjà leurs circuits ; le refus n'en avait aucun.
+  // `corps` = notification push (courte) ; `mail` = version e-mail un peu plus
+  // étoffée (2-3 phrases, HTML léger), enveloppée dans la charte par sendMail.
   if (before.status !== 'refuse' && after.status === 'refuse') {
     avis.push({
       titre: 'Espace artisan · Candidature non retenue',
       corps: 'Votre dossier n\'a pas été retenu en l\'état. Contactez-nous depuis l\'application pour en savoir plus ou compléter votre dossier.',
+      mail: 'Votre dossier n\'a pas été retenu en l\'état — cela ne veut pas dire jamais. ' +
+        'Écrivez-nous depuis l\'application : nous vous dirons ce qui manque et comment compléter votre dossier pour retenter votre chance.',
     });
   }
 
@@ -1213,21 +1220,38 @@ exports.notifyArtisanDecisions = onDocumentUpdated({document: 'artisans/{artisan
     avis.push({
       titre: 'Espace artisan · Métier validé 🎉',
       corps: 'Votre nouveau métier (' + valides.join(', ') + ') est validé — les clients peuvent désormais vous solliciter.',
+      mail: 'Bonne nouvelle : votre nouveau métier (<b>' + escHtmlS(valides.join(', ')) + '</b>) vient d\'être validé par notre équipe. ' +
+        'Il apparaît dès maintenant sur votre profil et les clients de toute l\'île peuvent vous solliciter. ' +
+        'Pensez à garder vos disponibilités à jour dans votre agenda pour recevoir les demandes au bon moment.',
     });
   }
   if (refuses.length) {
     avis.push({
       titre: 'Espace artisan · Métier non retenu',
       corps: 'Votre demande de métier (' + refuses.join(', ') + ') n\'a pas été retenue. Contactez-nous depuis l\'application pour en savoir plus.',
+      mail: 'Votre demande de métier (<b>' + escHtmlS(refuses.join(', ')) + '</b>) n\'a pas été retenue pour le moment. ' +
+        'Contactez-nous depuis l\'application : nous vous expliquerons ce qui manque et comment la représenter — votre profil actuel, lui, reste pleinement actif.',
     });
   }
 
   // 3) Attestation d'assurance : verdict de l'admin.
   if (before.insuranceStatus !== after.insuranceStatus) {
     if (after.insuranceStatus === 'valide') {
-      avis.push({titre: 'Espace artisan · Attestation validée', corps: 'Votre attestation d\'assurance est validée. Rien d\'autre à faire.'});
+      avis.push({
+        titre: 'Espace artisan · Attestation validée',
+        corps: 'Votre attestation d\'assurance est validée. Rien d\'autre à faire.',
+        mail: 'Bonne nouvelle : votre attestation d\'assurance a été vérifiée et validée par notre équipe. ' +
+          'Votre profil est en règle et vous continuez de recevoir les demandes normalement — rien d\'autre à faire de votre côté. ' +
+          'Merci de contribuer au sérieux de la plateforme.',
+      });
     } else if (after.insuranceStatus === 'refuse') {
-      avis.push({titre: 'Espace artisan · Attestation refusée', corps: 'Votre attestation d\'assurance n\'a pas pu être validée — merci d\'en déposer une nouvelle depuis votre espace.'});
+      avis.push({
+        titre: 'Espace artisan · Attestation refusée',
+        corps: 'Votre attestation d\'assurance n\'a pas pu être validée — merci d\'en déposer une nouvelle depuis votre espace.',
+        mail: 'Votre attestation d\'assurance n\'a pas pu être validée — document illisible, incomplet ou arrivé à échéance, le plus souvent. ' +
+          'Déposez-en une nouvelle depuis votre espace : notre équipe la vérifiera rapidement. ' +
+          'En cas de doute sur le document attendu, écrivez-nous depuis l\'application.',
+      });
     }
   }
 
@@ -1244,7 +1268,8 @@ exports.notifyArtisanDecisions = onDocumentUpdated({document: 'artisans/{artisan
       try {
         await sendMail(db, email, {
           subject: 'Ti-Services · ' + n.titre.replace('Espace artisan · ', ''),
-          html: '<p>Bonjour' + (after.name ? ' ' + escHtmlS(String(after.name).split(' ')[0]) : '') + ',</p><p>' + escHtmlS(n.corps) + '</p><p>L\'équipe Ti-Services</p>',
+          // La signature vient du pied de la charte (tiCharteHtml) — pas ici.
+          html: '<p>Bonjour' + (after.name ? ' ' + escHtmlS(String(after.name).split(' ')[0]) : '') + ',</p><p>' + (n.mail || escHtmlS(n.corps)) + '</p>',
         });
       } catch (e) { console.warn('notifyArtisanDecisions mail', e && e.message); }
     }
