@@ -1126,7 +1126,9 @@ exports.notifyServiceAddition = onDocumentUpdated({document: 'artisans/{artisanI
  * l'artisan lui-même. Jusqu'ici, seule la VALIDATION du compte partait (notifyArtisanApproved) ;
  * le refus de candidature, la validation ou le refus d'un métier ajouté et le verdict sur
  * l'attestation d'assurance ne prévenaient PERSONNE — l'artisan restait devant « en cours
- * d'examen » à vie. Push + e-mail, best-effort chacun.
+ * d'examen » à vie. Notification push d'abord ; l'e-mail ne sert que de FILET quand
+ * l'artisan n'a aucun jeton push (application sans notifications) — sinon il recevait
+ * chaque verdict en double, push + courriel.
  */
 exports.notifyArtisanDecisions = onDocumentUpdated({document: 'artisans/{artisanId}', secrets: [SMTP_PASS]}, async (event) => {
   const before = (event.data && event.data.before && event.data.before.data()) || {};
@@ -1186,7 +1188,7 @@ exports.notifyArtisanDecisions = onDocumentUpdated({document: 'artisans/{artisan
   for (const n of avis) {
     await pushMulticast(tokens, n.titre, n.corps, '/?open=missions',
       (tok) => db.collection('users').doc(uid).update({pushTokens: FieldValue.arrayRemove(tok)}), 'ti-compte-' + uid);
-    if (email) {
+    if (email && !tokens.length) {
       try {
         await sendMail(db, email, {
           subject: 'Ti-Services · ' + n.titre.replace('Espace artisan · ', ''),
