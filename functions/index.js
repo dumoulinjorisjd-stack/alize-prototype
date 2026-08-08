@@ -79,7 +79,59 @@ function withBcc(to, message) {
   if (MAIL_BCC && String(to).toLowerCase() !== MAIL_BCC) d.bcc = MAIL_BCC;
   return d;
 }
+// ============================================================================
+// CHARTE E-MAIL — aucun message ne part « nu ». Les gabarits soignés (bienvenue,
+// invitation…) portent déjà la charte complète (repérable à leur logo cid:tilogo) ;
+// tout autre HTML est enveloppé ici dans le même écrin : bandeau dégradé, logo,
+// nom Ti-Services, carte blanche, pied C.C.S. Branché DANS sendMail pour couvrir
+// aussi les e-mails futurs.
+let _tiLogoBuf;
+function tiLogoAttachment() {
+  if (_tiLogoBuf === undefined) {
+    try { _tiLogoBuf = require('fs').readFileSync(require('path').join(__dirname, 'mail-logo.png')); } catch (_) { _tiLogoBuf = null; }
+  }
+  return _tiLogoBuf ? {filename: 'ti-services.png', content: _tiLogoBuf, cid: 'tilogo'} : null;
+}
+function tiCharteHtml(inner) {
+  // Le pied signe déjà « L'équipe Ti-Services » : on retire la signature du corps
+  // brut pour ne pas la voir deux fois.
+  const body = String(inner || '').replace(/<p>(?:À très vite,\s*<br\s*\/?>\s*)?L'équipe Ti-Services\s*\.?<\/p>\s*$/, '');
+  return '' +
+  '<div style="margin:0;padding:0;background:#FBF7F4;font-family:-apple-system,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;color:#231E33">' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FBF7F4;padding:24px 12px">' +
+      '<tr><td align="center">' +
+        '<table role="presentation" width="520" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%;background:#ffffff;border-radius:18px;overflow:hidden">' +
+          '<tr><td style="height:6px;background:linear-gradient(90deg,#FF6A5B,#FF9F54)"></td></tr>' +
+          '<tr><td align="center" style="padding:26px 30px 4px">' +
+            '<img src="cid:tilogo" width="60" height="60" alt="Ti-Services" style="display:block;border-radius:16px;margin:0 auto 10px">' +
+            '<div style="font-size:24px;font-weight:800;letter-spacing:-.02em"><span style="color:#FF6A5B">Ti</span><span style="color:#231E33">-Services</span></div>' +
+            '<div style="font-size:12px;color:#8a8494;margin-top:2px">Services à la demande · Saint-Barthélemy</div>' +
+          '</td></tr>' +
+          '<tr><td style="padding:14px 30px 20px"><div style="font-size:15px;line-height:1.6;color:#4a4556">' + body + '</div></td></tr>' +
+          '<tr><td style="padding:16px 30px;border-top:1px solid #efeae4;background:#FBF7F4">' +
+            '<div style="font-size:12px;color:#8a8494;line-height:1.6">L\'équipe Ti-Services<br>' +
+            '<span style="color:#b0aab8">Service édité par C.C.S — Construction Conseils et Services, SAS · Saint-Barthélemy</span></div>' +
+          '</td></tr>' +
+        '</table>' +
+      '</td></tr>' +
+    '</table>' +
+  '</div>';
+}
+function tiCharteMessage(message) {
+  if (!message || !message.html) return message;
+  let m = message;
+  if (m.html.indexOf('cid:tilogo') < 0) m = Object.assign({}, m, {html: tiCharteHtml(m.html)});
+  // Le logo doit accompagner tout gabarit qui le référence (y compris ceux qui
+  // avaient oublié la pièce jointe : l'image apparaissait cassée).
+  const deja = (Array.isArray(m.attachments) ? m.attachments : []).some((a) => a && a.cid === 'tilogo');
+  if (!deja) {
+    const lg = tiLogoAttachment();
+    if (lg) m = Object.assign({}, m, {attachments: (Array.isArray(m.attachments) ? m.attachments : []).concat([lg])});
+  }
+  return m;
+}
 async function sendMail(db, to, message) {
+  message = tiCharteMessage(message);
   const tx = mailTransport();
   if (tx) {
     try {
