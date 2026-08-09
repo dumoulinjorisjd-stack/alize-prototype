@@ -665,6 +665,18 @@ async function syncArtisanMollie(db, uid) {
   const upd = {mollieStatus: ready.ok ? 'active' : 'pending', mollieOnboardingStatus: ready.status,
     mollieCanPay: ready.canPay !== false, mollieCanSettle: ready.canSettle !== false,
     mollieCanWork: peutTravailler, mollieDashboardUrl: dashboard};
+  // DEPUIS QUAND CE DOSSIER ATTEND-IL ? Sans repère de temps, impossible de distinguer
+  // dans la console une vérification qui suit son cours d'un dossier bloqué depuis des
+  // semaines — ni de relancer Mollie avec une date. On horodate l'entrée en attente, et
+  // on efface le repère à l'activation (le prochain blocage repartira de zéro).
+  if (ready.ok) {
+    if (ad.mollieSince) { upd.mollieSince = FieldValue.delete(); upd.mollieSinceEstime = FieldValue.delete(); }
+  } else if (!ad.mollieSince) {
+    upd.mollieSince = Date.now();
+    // Le dossier existait AVANT qu'on se mette à compter : la vraie date de départ est
+    // antérieure. On le dit plutôt que d'afficher un « depuis 0 jour » mensonger.
+    if (prevStatus === 'pending') upd.mollieSinceEstime = true;
+  }
   // Ses virements sont ouverts : on rattrape ce qui l'attendait. L'ancienne garde
   // (`=== false`) exigeait une transition observée ICI ; or le retour OAuth écrivait
   // déjà mollieCanSettle:true sans rerouter — la transition était « consommée » et le
