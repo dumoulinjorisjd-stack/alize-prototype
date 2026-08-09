@@ -10928,6 +10928,16 @@
             if(r.feeDecision==='applied')notify('Ti-Services','Indemnité d’annulation de 50 % appliquée par le prestataire.','ti-'+m.reqId);
             else notify('Ti-Services','Le prestataire a renoncé à l’indemnité — geste commercial.','ti-'+m.reqId);
           }}
+        // MONTANTS. Le pourboire est ajouté par le client À LA VALIDATION, depuis SON
+        // téléphone : sans cette synchro, l'appareil du prestataire ne le voyait jamais et
+        // inscrivait dans ses revenus un net amputé d'autant — Mollie versait 6,30 €,
+        // l'application affichait 4,50 €. Idem pour le coup de pouce, relevé en cours de
+        // recherche.
+        if(r.tip!=null&&(Number(m.tip)||0)!==(Number(r.tip)||0)){m.tip=Number(r.tip)||0;touched=true;}
+        if(r.boostEur!=null&&(Number(m.boostEur)||0)!==(Number(r.boostEur)||0)){m.boostEur=Number(r.boostEur)||0;touched=true;}
+        ['grossTotal','commissionAmount','commissionPct','netAmount','saleInvoiceNo','complementNet','complementStatus'].forEach(function(k){
+          if(r[k]!=null&&m[k]!==r[k]){m[k]=r[k];touched=true;}
+        });
         // Messagerie (stockée dans le doc de demande → lisible par client, artisan assigné, admin)
         if(Array.isArray(r.messages)&&(m.chat||[]).length!==r.messages.length){
           const prevLen=(m.chat||[]).length;
@@ -10964,6 +10974,14 @@
         syncSupport('supportPro','pro');
         // Statut (source de vérité serveur)
         if(r.status&&r.status!==m.status){const old=m.status;m.status=r.status;touched=true;onRemoteStatus(m,old,r.status);}
+        // Le serveur fige les montants définitifs JUSTE APRÈS le passage en « réglée » :
+        // la ligne de revenus, déjà écrite, est recalée dès qu'ils arrivent.
+        if(S.persona==='pro'&&(r.status==='paid'||r.status==='rated')){
+          const hh=(S.proHistory||[]).find(function(x){return x.reqId===id;});
+          if(hh){const rc=recaleHist(hh,r);
+            if(rc.delta)S.proEarnings=Math.round(((S.proEarnings||0)+rc.delta)*100)/100;
+            if(rc.chg){saveProStats();touched=true;}}
+        }
         if(touched){cacheClientLocal();render();if((S.chat||S.support)&&S.mission===m)view.scrollTop=view.scrollHeight;}
       },function(err){console.warn('watchRequest',err);});
     }catch(e){console.warn(e);}
@@ -10993,15 +11011,46 @@
   }
   // Prestation validée par le client : on l'inscrit dans les revenus/missions de
   // le prestataire et on persiste (survit aux sessions et aux appareils).
+  // LES MONTANTS QUI FONT FOI SONT CEUX DU SERVEUR (settleCommission). Ils intègrent le
+  // pourboire — que l'appareil du prestataire peut très bien n'avoir jamais vu passer,
+  // puisque le client l'ajoute à la validation depuis SON téléphone. netAmount contient
+  // déjà le net du pourboire : on ne lui ajoute surtout pas complementNet, qui n'en est
+  // que la part prélevée sur le second paiement (ce serait compter deux fois).
+  function srvMontants(src){
+    if(!src||src.netAmount==null||src.commissionAmount==null)return null;
+    return {gross:Number(src.grossTotal)||0,commission:Number(src.commissionAmount)||0,
+      net:Number(src.netAmount)||0,pct:Number(src.commissionPct)||0,tip:Number(src.tip)||0,
+      invNo:String(src.saleInvoiceNo||src.invNo||'')};
+  }
+  // Recale une ligne de revenus sur les montants du serveur. Renvoie l'écart de net pour
+  // ajuster le cumul sans tout recompter.
+  function recaleHist(h,src){
+    const v=srvMontants(src);if(!h||!v)return {chg:false,delta:0};
+    const avant=Number(h.net)||0;let chg=false;
+    if(v.invNo&&h.invNo!==v.invNo){h.invNo=v.invNo;chg=true;}
+    if((Number(h.tip)||0)!==v.tip){h.tip=v.tip;chg=true;}
+    if(Math.abs((Number(h.amount)||0)-v.gross)>0.005){h.amount=v.gross;chg=true;}
+    if(Math.abs((Number(h.commission)||0)-v.commission)>0.005){h.commission=v.commission;chg=true;}
+    if(v.pct&&h.commPct!==v.pct){h.commPct=v.pct;chg=true;}
+    let delta=0;
+    if(Math.abs(avant-v.net)>0.005){h.net=v.net;chg=true;delta=Math.round((v.net-avant)*100)/100;}
+    return {chg:chg,delta:delta};
+  }
   function recordProPaid(m){
     if(m.commPct==null)m.commPct=totals(m).commPct; // taux figé au règlement (plancher petits montants inclus)
     const t=totals(m);
-    S.proEarnings=Math.round(((S.proEarnings||0)+t.payout)*100)/100;
+    // Montants du serveur s'ils sont déjà là ; sinon calcul local (le serveur les écrit
+    // juste après le passage en « réglée » — watchRequest recalera la ligne à ce
+    // moment-là).
+    const v=srvMontants(m);
+    const _gross=v?v.gross:t.total,_comm=v?v.commission:t.commission,_net=v?v.net:t.payout;
+    const _pct=(v&&v.pct)?v.pct:t.commPct,_tip=v?v.tip:(t.tip||0);
+    S.proEarnings=Math.round(((S.proEarnings||0)+_net)*100)/100;
     S.proJobsTotal=(S.proJobsTotal||0)+1;
     S.proHistory=S.proHistory||[];
     const key=m.reqId||m._id;
     if(!S.proHistory.some(function(h){return key&&h.reqId===key;})){
-      S.proHistory.unshift({id:'hm'+(key||''+S.proHistory.length),reqId:key,dateISO:(m.dateISO||todayISO()),svc:m.svc,client:(m.clientName||'Client'),clientFull:(m.clientName||'Client'),clientZone:m.zone||'',duration:billHours(m),unit:m.unit||'h',acts:(m.acts&&m.acts.length)?m.acts.map(function(a){return {id:a.id,nm:a.nm,price:a.price,qty:a.qty||1};}):null,travel:t.travel||0,tip:t.tip||0,rate:t.rate,amount:t.total,commPct:t.commPct,commission:t.commission,net:t.payout,invNo:m.invNo||('2026-'+String(1000+S.proHistory.length).padStart(4,'0')),paidVia:'carte'});
+      S.proHistory.unshift({id:'hm'+(key||''+S.proHistory.length),reqId:key,dateISO:(m.dateISO||todayISO()),svc:m.svc,client:(m.clientName||'Client'),clientFull:(m.clientName||'Client'),clientZone:m.zone||'',duration:billHours(m),unit:m.unit||'h',acts:(m.acts&&m.acts.length)?m.acts.map(function(a){return {id:a.id,nm:a.nm,price:a.price,qty:a.qty||1};}):null,travel:t.travel||0,tip:_tip,rate:t.rate,amount:_gross,commPct:_pct,commission:_comm,net:_net,invNo:(v&&v.invNo)||m.invNo||('2026-'+String(1000+S.proHistory.length).padStart(4,'0')),paidVia:'carte'});
     }
     saveProStats();
   }
@@ -15914,7 +15963,15 @@
         const srvNo=r.saleInvoiceNo||r.invNo||'';
         // Entrée déjà connue : on adopte simplement le numéro serveur s'il diffère
         // (la numérotation officielle est celle attribuée par le serveur).
-        if(known[docu.id]){const ex=S.proHistory.find(function(h){return h.reqId===docu.id;});if(ex){if(srvNo&&ex.invNo!==srvNo){ex.invNo=srvNo;changed=true;}if((ex.tip==null||ex.tip===0)&&(Number(r.tip)>0)){ex.tip=Number(r.tip);changed=true;}}continue;}
+        // Ligne déjà connue : elle a pu être écrite AVANT que le serveur ne fige les
+        // montants (pourboire compris). On la recale entièrement — se contenter du numéro
+        // de facture laissait un net faux pour toujours.
+        if(known[docu.id]){const ex=S.proHistory.find(function(h){return h.reqId===docu.id;});
+          if(ex){const rc=recaleHist(ex,r);
+            if(rc.delta)S.proEarnings=Math.round(((S.proEarnings||0)+rc.delta)*100)/100;
+            if(rc.chg)changed=true;
+            if(srvNo&&ex.invNo!==srvNo){ex.invNo=srvNo;changed=true;}}
+          continue;}
         const dur=(r.finalHours!=null?r.finalHours:(r.duration||1));
         const hasSrv=(r.commissionAmount!=null&&r.netAmount!=null);
         const gross=(r.grossTotal!=null?r.grossTotal:(r.total||((r.rate||0)*dur)));
