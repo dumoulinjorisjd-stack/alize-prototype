@@ -5845,3 +5845,116 @@ exports.gcalSyncEvent = onDocumentUpdated({ document: 'requests/{reqId}', secret
 
 // Export interne pour les tests unitaires (inerte en production : TI_TEST non défini).
 if (process.env.TI_TEST) { module.exports.__test = { buildInvoicePdf, buildProcurationPdf, invoiceLines, eurTxt, frDate, welcomeHtml, inviteArtisanHtml, approvedArtisanHtml, resetPasswordEmail, buildIcs, icsEscape, gcalWindow, parseIcsBusy }; }
+
+/* ============================================================================
+ * PURGE D'UN COMPTE — depuis la console admin, et rien ne survit en silence.
+ *
+ * Deux modes, parce que deux besoins réels :
+ *   • 'profil' — efface l'identifiant de connexion et les fiches (client, artisan,
+ *     conciergerie, jetons). GARDE la comptabilité (registre `ledger`) et les
+ *     commandes, qui appartiennent AUSSI à l'autre partie et que la loi impose de
+ *     conserver. C'est le mode pour un vrai compte qui s'en va.
+ *   • 'total' — efface en plus les commandes du compte, leurs sous-documents privés,
+ *     leurs lignes de registre et les événements d'agenda liés. Pour les comptes de
+ *     TEST, dont il ne doit rien rester.
+ *
+ * Écrit côté serveur uniquement : le client n'a jamais le droit de toucher au
+ * registre, et l'admin n'a pas les droits pour supprimer un compte d'authentification
+ * depuis le navigateur.
+ * ========================================================================== */
+async function effacerDocs(refs) {
+  let n = 0;
+  for (const ref of refs) { try { await ref.delete(); n++; } catch (_) {} }
+  return n;
+}
+// Supprime les documents rendus par une requête, sous-collection `private` comprise.
+async function effacerRequetes(db, snapDocs) {
+  let n = 0;
+  for (const d of snapDocs) {
+    try {
+      const priv = await d.ref.collection('private').get();
+      for (const p of priv.docs) { try { await p.ref.delete(); } catch (_) {} }
+    } catch (_) {}
+    try { await d.ref.delete(); n++; } catch (_) {}
+  }
+  return n;
+}
+// Cœur de la purge, partagé par l'appel admin et le déclencheur Authentication.
+async function purgerCompte(db, uid, mode) {
+  const bilan = {profils: 0, jetons: 0, demandes: 0, registre: 0, agenda: 0, auth: false};
+
+  // 1) FICHES DE PROFIL (toujours) — une par collection, l'uid EST l'identifiant.
+  bilan.profils = await effacerDocs(['users', 'artisans', 'concierges']
+    .map((c) => db.collection(c).doc(uid)));
+
+  // 2) JETONS ET COMPTEURS liés à la personne (toujours) : Mollie, Google Agenda,
+  //    numérotation de facture. Un compte purgé ne doit plus rien pouvoir signer.
+  bilan.jetons = await effacerDocs(['mollieTokens', 'gcalTokens', 'counters']
+    .map((c) => db.collection(c).doc(uid)));
+  // Jetons dont l'identifiant est le jeton lui-même : on les retrouve par leur champ uid.
+  for (const col of ['icalTokens', 'fcmOwners']) {
+    try {
+      const q = await db.collection(col).where('uid', '==', uid).get();
+      bilan.jetons += await effacerDocs(q.docs.map((d) => d.ref));
+    } catch (_) {}
+  }
+
+  // 3) COMMANDES, REGISTRE, AGENDA — mode 'total' seulement.
+  if (mode === 'total') {
+    const vues = new Set();
+    for (const champ of ['clientUid', 'providerUid']) {
+      try {
+        const q = await db.collection('requests').where(champ, '==', uid).get();
+        q.docs.forEach((d) => vues.add(d.id));
+        bilan.demandes += await effacerRequetes(db, q.docs);
+      } catch (_) {}
+    }
+    for (const reqId of vues) {
+      bilan.registre += await effacerDocs([db.collection('ledger').doc(reqId),
+        db.collection('ledgerSupprime').doc(reqId)]);
+      bilan.agenda += await effacerDocs([db.collection('gcalEvents').doc(reqId)]);
+    }
+  }
+
+  // 4) IDENTIFIANT DE CONNEXION (toujours, s'il existe encore). Volontairement EN
+  //    DERNIER : si une étape précédente échouait, le compte resterait joignable
+  //    plutôt que de laisser des données orphelines et inaccessibles.
+  try { await getAuth().deleteUser(uid); bilan.auth = true; }
+  catch (e) { if (!(e && e.code === 'auth/user-not-found')) throw e; }
+
+  return bilan;
+}
+
+exports.adminPurgeAccount = onCall({timeoutSeconds: 300}, async (request) => {
+  const who = (request.auth && request.auth.token && request.auth.token.email) || '';
+  if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+    throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
+  }
+  const uid = String((request.data && request.data.uid) || '').trim().slice(0, 128);
+  const mode = ((request.data && request.data.mode) === 'total') ? 'total' : 'profil';
+  if (!uid) throw new HttpsError('invalid-argument', 'Compte à purger manquant.');
+  if (uid === (request.auth && request.auth.uid)) {
+    throw new HttpsError('failed-precondition', 'Vous ne pouvez pas purger votre propre compte administrateur.');
+  }
+  const db = getFirestore();
+  const bilan = await purgerCompte(db, uid, mode);
+  console.log('Purge ' + mode + ' uid=' + uid + ' → ' + JSON.stringify(bilan));
+  return bilan;
+});
+
+/**
+ * onUserDeleted : LA CONSOLE SUIT, QUELLE QUE SOIT L'ORIGINE. Supprimer un compte
+ * depuis l'onglet Authentication de Firebase n'efface QUE l'identifiant de connexion :
+ * les fiches Firestore survivaient, et la console admin continuait de les afficher —
+ * avec, à la réinscription, une seconde fiche portant la même adresse.
+ * Ce déclencheur n'existe pas en v2 : on emprunte l'ancienne interface, qui cohabite
+ * sans problème. Nettoyage de PROFIL uniquement : une suppression faite dans la console
+ * Firebase n'est pas une instruction d'effacer la comptabilité.
+ */
+exports.onUserDeleted = require('firebase-functions/v1')
+  .region('europe-west1').auth.user().onDelete(async (user) => {
+    try {
+      const bilan = await purgerCompte(getFirestore(), user.uid, 'profil');
+      console.log('Compte supprimé (Authentication) uid=' + user.uid + ' → ' + JSON.stringify(bilan));
+    } catch (e) { console.warn('onUserDeleted', e); }
+  });

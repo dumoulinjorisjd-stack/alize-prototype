@@ -8141,6 +8141,28 @@
   function molDepuisTxt(a){const d=molDepuis(a);if(!d)return '';
     return '<div class="mini" style="margin-top:4px;color:'+(molLong(a)?'var(--coral-deep);font-weight:700':'var(--muted)')+'">'
       +(molLong(a)?I.warn+' ':'')+'En attente '+esc(d)+(molLong(a)?' \u2014 inhabituel, relancez Mollie.':'')+'</div>';}
+  // — PURGER UN COMPTE DEPUIS LA CONSOLE —
+  // Deux besoins distincts, donc deux boutons. « Retirer la fiche » efface le compte de
+  // connexion et les profils, mais GARDE la comptabilité et les commandes (elles
+  // appartiennent aussi à l'autre partie, et la loi impose de les conserver) : c'est le
+  // mode pour un vrai compte qui s'en va. « Tout effacer » emporte en plus les commandes,
+  // le registre et l'agenda — pour les comptes de test, dont il ne doit rien rester.
+  // Les deux passent par le serveur : le navigateur n'a pas le droit de supprimer un
+  // compte d'authentification ni de toucher au registre.
+  function purgeBtns(uid,nom){
+    const k=function(m){return 'purge:'+m+':'+uid;};
+    const armed=function(m){return S._purgeArm===k(m);};
+    const busy=S._purgeBusy===uid;
+    return `<div style="margin-top:16px">
+      <div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Supprimer ce compte</div>
+      <button class="btn ghost" data-purge="profil:${esc(uid)}" ${busy?'disabled':''} style="margin-top:9px;color:var(--coral-deep);border:1px solid var(--coral)">${armed('profil')?I.check+' Confirmer — retirer la fiche ?':I.trash+' Retirer la fiche (garder la comptabilité)'}</button>
+      <p class="mini" style="margin-top:6px;color:var(--muted);line-height:1.5">Efface l'accès et les fiches (client, prestataire, jetons). <b>Conserve</b> les commandes passées et le registre comptable — ils appartiennent aussi à l'autre partie.</p>
+      <button class="btn ghost" data-purge="total:${esc(uid)}" ${busy?'disabled':''} style="margin-top:12px;color:#fff;background:var(--coral-deep);border:1px solid var(--coral-deep)">${armed('total')?I.warn+' Confirmer — TOUT effacer ?':I.trash+' Tout effacer (compte de test)'}</button>
+      <p class="mini" style="margin-top:6px;color:var(--muted);line-height:1.5">Efface <b>en plus</b> ses commandes, leurs pièces privées, ses lignes de registre et son agenda. <b>Irréversible</b> — réservé aux comptes de test.</p>
+      ${busy?`<p class="mini" style="margin-top:8px;color:var(--teal-deep)">${I.clock} Purge en cours…</p>`:''}
+      ${(S._purgeBilan&&S._purgeBilan.uid===uid)?`<p class="mini" style="margin-top:8px;color:var(--good);line-height:1.5">${I.check} ${esc(S._purgeBilan.txt)}</p>`:''}
+    </div>`;
+  }
   function admSeenGet(){try{return JSON.parse(localStorage.getItem('tiAdmSeen')||'{}');}catch(_){return {};}}
   function admSeenSet(k,v){try{const m=admSeenGet();m[k]=v;localStorage.setItem('tiAdmSeen',JSON.stringify(m));}catch(_){}}
   function admArtSig(a){return (a.status==='attente'?'A':'')+'|'+((a.pendingCats||[]).join('+'))+'|'+(a.insuranceStatus==='attente'?'I':'');}
@@ -8894,8 +8916,8 @@
         ${a.status==='attente'?`<div class="row" style="gap:8px;margin-top:14px"><button class="btn good" data-adm="valid-art:${a.id}" ${(insStatus(a)==='valide'&&a.siret)?'':'disabled'}>Valider le prestataire</button><button class="btn ghost" data-adm="rej-art:${a.id}">Refuser</button></div>${(insStatus(a)!=='valide'||!a.siret)?`<p class="mini" style="margin-top:8px;color:var(--coral-deep)">${!a.siret?'SIRET manquant. ':''}${insStatus(a)==='none'?'Attestation d’assurance manquante. ':insStatus(a)==='attente'?'Attestation à vérifier et valider ci-dessus. ':insStatus(a)==='refuse'?'Attestation refusée. ':''}Validation du prestataire impossible tant que le dossier n'est pas complet.</p>`:''}`:''}
         ${a.status==='refuse'?`<div class="row" style="gap:8px;margin-top:14px"><button class="btn ghost" data-adm="reexam-art:${a.id}">Réexaminer la candidature</button></div>`:''}
         <div style="height:20px"></div>
-        <button class="btn ghost" data-adm="delart:${a.id}" style="color:var(--coral-deep);border:1px solid var(--coral)">${S._artDelArm===a.id?I.check+' Confirmer la suppression ?':I.trash+' Supprimer ce prestataire'}</button>
-        <p class="mini" style="margin-top:7px;color:var(--muted)">Retire définitivement la fiche de la console (artisan désinscrit ou doublon). Ses métiers repassent en « Bientôt disponible » s'il était le dernier. N'affecte pas les factures déjà émises.</p>
+        ${purgeBtns(a.uid||a.id,a.name)}
+        <p class="mini" style="margin-top:7px;color:var(--muted)">Ses métiers repassent en « Bientôt disponible » s'il était le dernier à les proposer.</p>
       </div>`;
     }
     const cc=S.adminClients.find(x=>x.id===S.admin.sel);if(!cc)return adminHome();
@@ -8942,9 +8964,8 @@
           <button class="btn ghost sm" data-adm="prosug-off:${cc.id}" style="margin-top:9px;width:auto;padding:9px 14px">Annuler la proposition</button>`
         :`<p class="mini" style="margin-top:8px;color:var(--muted);line-height:1.55">Si vous pensez que c'est un professionnel qui s'est trompé de porte, proposez-lui de basculer. Il verra la question à sa prochaine ouverture et décidera lui-même — rien n'est imposé.</p>
           <button class="btn ghost sm" data-adm="prosug-on:${cc.id}" style="margin-top:10px;width:auto;padding:9px 14px">${I.hardhat||I.other} Proposer de devenir prestataire</button>`}
-      </div>
-      <div style="margin-top:14px"><button class="btn ghost" data-adm="delcli:${cc.id}" style="color:var(--coral-deep);border:1px solid var(--coral)">${S._cliDelArm===cc.id?I.check+' Confirmer la suppression ?':I.trash+' Supprimer cette fiche'}</button>
-        <p class="mini" style="margin-top:7px;color:var(--muted);line-height:1.5">Retire la fiche de la console. Le compte de connexion, lui, se supprime depuis la console Firebase&nbsp;: tant qu'il existe, la personne peut se reconnecter et la fiche réapparaîtra.</p></div>`:''}
+      </div>`:''}
+      ${cc.real?purgeBtns(cc.uid||cc.id,cc.name):''}
       <div style="height:12px"></div>
     </div>`;
   }
@@ -13504,7 +13525,7 @@
     // photo du client) s'ouvre en plein écran au clic — consultation sans téléchargement.
     const _iv=e.target.closest&&e.target.closest('img.viewable');
     if(_iv&&_iv.getAttribute('src')){S.imgView={src:_iv.getAttribute('src'),name:_iv.getAttribute('data-docname')||'document'};render();return;}
-    const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actqty],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-loc],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday],[data-tip],[data-pac],[data-sitemode],[data-invclient],[data-fold],[data-actgrp],[data-optpick],[data-optqty],[data-optadd],[data-optdel],[data-optprice],[data-optunit],[data-rf]');
+    const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actqty],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-loc],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday],[data-tip],[data-pac],[data-sitemode],[data-invclient],[data-fold],[data-actgrp],[data-purge],[data-optpick],[data-optqty],[data-optadd],[data-optdel],[data-optprice],[data-optunit],[data-rf]');
     if(!b)return;
     // Un clic ISSU d'un <input type=file> (notamment déclenché par programme, ex. la
     // feuille « appareil photo / galerie ») remonte jusqu'ici : on ne le traite pas
@@ -13825,17 +13846,6 @@
       else if(act==='valid-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a&&a.insured&&a.siret){a.status='valide';adminWriteStatus(a,'valide');saveAvailability();toast('Artisan validé');}else{toast('Dossier incomplet (SIRET / assurance)');}}
       else if(act==='rej-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.status='refuse';if(!a.reason)a.reason=(!a.siret?'SIRET manquant. ':'')+(!a.insured?'Assurance manquante. ':'')||'Ne correspond pas aux critères Ti-Services';adminWriteStatus(a,'refuse');saveAvailability();}S.admin.view='home';toast('Candidature refusée — conservée dans l’historique');}
       else if(act==='reexam-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.status='attente';adminWriteStatus(a,'attente');toast('Candidature remise en attente');}}
-      else if(act==='delart'){
-        // Suppression admin d'une fiche artisan (désinscrit / doublon). Double-clic de sécurité.
-        if(S._artDelArm!==id){ S._artDelArm=id; render(); setTimeout(function(){ if(S._artDelArm===id){S._artDelArm=null;try{render();}catch(_){}} },4000); return; }
-        S._artDelArm=null;
-        const a=S.adminArtisans.find(x=>x.id===id); const uid=(a&&a.uid)||id;
-        if(!FB||isDemo()){ S.adminArtisans=(S.adminArtisans||[]).filter(function(x){return x.id!==id;}); S.admin.view='home';S.admin.sel=null; toast('Artisan supprimé'); render(); return; }
-        try{
-          FB.f.deleteDoc(FB.f.doc(FB.db,'artisans',uid)).then(function(){ try{ if(FB.f.deleteDoc)FB.f.deleteDoc(FB.f.doc(FB.db,'users',uid)); }catch(_){}; toast('Artisan supprimé ✓'); }).catch(function(e){ toast('⚠︎ Échec : '+fbErrTxt(e)); });
-        }catch(e){ toast('⚠︎ Échec : '+fbErrTxt(e)); }
-        S.admin.view='home';S.admin.sel=null; render(); return;
-      }
       else if(act==='copysiret'){
         const a=(S.adminArtisans||[]).find(x=>x.id===id); const v=(a&&a.siret)||'';
         if(!v)return;
@@ -13863,19 +13873,6 @@
                 .catch(function(e){toast('⚠︎ Échec : '+fbErrTxt(e));}); }catch(e){ toast('⚠︎ Échec : '+fbErrTxt(e)); }
         } else { toast(on?'Proposition envoyée':'Proposition annulée'); }
         c.proSuggestAnswer=''; render(); return;
-      }
-      else if(act==='delcli'){
-        // Suppression admin d'une fiche client (compte de test, doublon). Double-clic
-        // de sécurité, comme pour les prestataires.
-        if(S._cliDelArm!==id){ S._cliDelArm=id; render(); setTimeout(function(){ if(S._cliDelArm===id){S._cliDelArm=null;try{render();}catch(_){}} },4000); return; }
-        S._cliDelArm=null;
-        const c=(S.adminClients||[]).find(x=>x.id===id); const uid=(c&&c.uid)||id;
-        if(!FB||isDemo()){ S.adminClients=(S.adminClients||[]).filter(function(x){return x.id!==id;}); S.admin.view='home';S.admin.sel=null; toast('Fiche supprimée'); render(); return; }
-        try{
-          FB.f.deleteDoc(FB.f.doc(FB.db,'users',uid)).then(function(){ toast('Fiche supprimée ✓'); }).catch(function(e){ toast('⚠︎ Échec : '+fbErrTxt(e)); });
-        }catch(e){ toast('⚠︎ Échec : '+fbErrTxt(e)); }
-        S.adminClients=(S.adminClients||[]).filter(function(x){return x.id!==id;});
-        S.admin.view='home';S.admin.sel=null; render(); return;
       }
       else if(act==='priceopen'){ S.admPriceOpen=S.admPriceOpen||{}; S.admPriceOpen[id]=!S.admPriceOpen[id]; render(); return; }
       // Validation d'un métier ajouté par le prestataire : on le déplace de pendingCats vers cats
@@ -14008,6 +14005,38 @@
     // Ajout de métier (artisan) : coche/décoche un service dans le formulaire d'ajout.
     if(b.dataset.pac){const f=S.proAddForm;if(f){const id=b.dataset.pac,i=f.cats.indexOf(id);if(i>=0)f.cats.splice(i,1);else f.cats.push(id);render();}return;}
     if(b.dataset.price){const [id,dir]=b.dataset.price.split(':');if(!S.adminPrices)S.adminPrices=ADMIN_PRICES();const cur=(S.adminPrices[id]!=null)?S.adminPrices[id]:(/_j$/.test(id)?DAY_RECO:svcBase(id));S.adminPrices[id]=Math.max(5,cur+(dir==='up'?1:-1));savePrices();render();return;}
+    // PURGE D'UN COMPTE. Deux appuis : le premier arme (et se désarme seul au bout de
+    // 5 s), le second lance. C'est le serveur qui fait le travail — lui seul peut
+    // supprimer un compte d'authentification et toucher au registre.
+    if(b.dataset.purge){
+      const parts=b.dataset.purge.split(':');const mode=parts[0],uid=parts[1];
+      const cle='purge:'+mode+':'+uid;
+      if(S._purgeArm!==cle){S._purgeArm=cle;S._purgeBilan=null;render();
+        setTimeout(function(){if(S._purgeArm===cle){S._purgeArm=null;try{render();}catch(_){}}},5000);return;}
+      S._purgeArm=null;
+      if(!(FB&&FB.fn&&FB.functions&&FB.fn.httpsCallable)){toast('Purge indisponible hors ligne');render();return;}
+      S._purgeBusy=uid;render();
+      FB.fn.httpsCallable(FB.functions,'adminPurgeAccount')({uid:uid,mode:mode}).then(function(r){
+        const d=(r&&r.data)||{};
+        const bouts=[];
+        if(d.profils)bouts.push(d.profils+' fiche'+(d.profils>1?'s':''));
+        if(d.jetons)bouts.push(d.jetons+' jeton'+(d.jetons>1?'s':''));
+        if(d.demandes)bouts.push(d.demandes+' commande'+(d.demandes>1?'s':''));
+        if(d.registre)bouts.push(d.registre+' ligne'+(d.registre>1?'s':'')+' de registre');
+        if(d.auth)bouts.push('accès supprimé');
+        S._purgeBusy=null;
+        S._purgeBilan={uid:uid,txt:'Purge terminée — '+(bouts.length?bouts.join(', '):'rien à effacer')+'.'};
+        // La fiche vient de disparaître : on revient à la liste.
+        S.adminClients=(S.adminClients||[]).filter(function(x){return (x.uid||x.id)!==uid;});
+        S.adminArtisans=(S.adminArtisans||[]).filter(function(x){return (x.uid||x.id)!==uid;});
+        S.admin.view='home';S.admin.sel=null;render();
+        toast('Compte purgé ✓');
+      }).catch(function(e){
+        S._purgeBusy=null;render();
+        toast('⚠︎ Purge impossible : '+fbErrTxt(e));
+      });
+      return;
+    }
     // Familles de prestations : plier / déplier. On se cale sur l'état RÉELLEMENT affiché
     // (aria-expanded) plutôt que sur la mémoire : selon l'écran, une famille peut être
     // ouverte par défaut (celle où le client a déjà coché) — inverser la mémoire vide
