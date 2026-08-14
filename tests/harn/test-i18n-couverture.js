@@ -14,7 +14,7 @@ const o={headless:true}; if(fs.existsSync('/opt/pw-browsers/chromium'))o.executa
 let f=0; const ok=(c,l)=>{if(c)console.log('  ✓ '+l);else{f++;console.log('  ✗ ÉCHEC : '+l);}};
 
 // Données de démonstration et marques : rien à traduire.
-const HORS=/^(Joris Dumoulin|Joris|Laure G\.|Laure Guyon EI|Villa Rose|Sophie B\.|JD|LG|CG|TS|SB|Ti|-Services|Ti-Services|FR76 \.\.\.|Gustavia · Saint-Barth|Gustavia|Lorient|Bronze|Argent|Platine|Mollie|Google|Apple|Planity|WhatsApp|Visa|Mastercard|AXA|Google · Apple|IBAN|SIRET|FR|EN|PT|PRO)$/;
+const HORS=/^(Joris Dumoulin|Joris|Laure G\.|Laure Guyon EI|Villa Rose|Sophie B\.|JD|LG|CG|TS|SB|Ti|-Services|Ti-Services|FR76 \.\.\.|Gustavia · Saint-Barth|Gustavia|Lorient|Bronze|Argent|Platine|Mollie|Google|Apple|Planity|WhatsApp|Visa|Mastercard|AXA|Google · Apple|IBAN|SIRET|FR|EN|PT|PRO|Laure|Laure G\.|LG)$/;
 const ATRADUIRE=(t)=>{
   if(t.length<2)return false;
   if(!/[A-Za-zÀ-ÿ]/.test(t))return false;
@@ -26,6 +26,10 @@ const ECRANS=[
   ['pro','home'],['pro','agenda'],['pro','earnings'],['pro','account'],
   ['concierge','home'],['concierge','clients'],['concierge','retrib'],
 ];
+// Écrans qui vivent par-dessus un onglet (messagerie, signalement, personnes bloquées).
+// Sans eux, la couverture s'arrêtait aux onglets — et les écrans les plus récents, donc
+// les plus exposés à l'oubli, n'étaient gardés par rien.
+const SURCOUCHES=['chat','chat-bloque','chat-confirme','signalement','bloques'];
 
 (async()=>{
   const b=await chromium.launch(o);
@@ -67,6 +71,37 @@ const ECRANS=[
     return out;
   },cfg);
 
+  // Les surcouches se rendent depuis une mission en cours, avec l'autre partie identifiée
+  // (sans uid, ni « Bloquer » ni « Signaler » n'ont de cible et l'écran serait creux).
+  const releveSurcouche=(k)=>p.evaluate((e)=>{
+    const S=window.__S; document.body.classList.add('standalone');
+    S.lang='fr';S.onboarded=true;S.guest=false;S.demoMode=false;S.persona='client';S.clientNav='wallet';
+    S.account={name:'Joris',email:'j@e.fr',zone:'Gustavia'};
+    const m={_id:'m1',reqId:'r1',svc:'menage',svcName:'Ménage',status:'accepted',when:'Aujourd’hui',
+      slot:'14:00',duration:3,unit:'h',rate:35,zone:'Gustavia',chat:[],support:{client:[]},
+      clientAccepted:true,proAccepted:true,accepted:true,clientUid:'c1',providerUid:'p1',
+      providerPhone:'+590690445566',provider:{nm:'Laure G.',ini:'LG'}};
+    S.missions=[m];S.mission=m;
+    S.chat=false;S.report=null;S.blockedView=false;S.blockAsk=false;S.blocked=[];S.blockNoms={p1:'Laure G.'};
+    if(e.k==='chat')S.chat=true;
+    if(e.k==='chat-bloque'){S.chat=true;S.blocked=['p1'];}
+    if(e.k==='chat-confirme'){S.chat=true;S.blockAsk=true;}
+    if(e.k==='signalement')S.report={motif:'autre',texte:'',uid:'p1',nom:'Laure G.',reqId:'r1'};
+    if(e.k==='bloques'){S.blockedView=true;S.blocked=['p1'];}
+    window.__render();
+    const racine=document.querySelector('.phone')||document.body;
+    const w=document.createTreeWalker(racine,NodeFilter.SHOW_TEXT,null);
+    const out=[];let n;
+    while(n=w.nextNode()){
+      const pa=n.parentNode; if(pa&&/^(SCRIPT|STYLE|TEXTAREA)$/.test(pa.nodeName))continue;
+      const t=(n.nodeValue||'').trim(); if(!t)continue;
+      out.push({t:t,
+        en:(!!window.__dict('en')[t])||window.__tr(t,'en').trim()!==t,
+        pt:(!!window.__dict('pt')[t])||window.__tr(t,'pt').trim()!==t});
+    }
+    return out;
+  },{k});
+
   const restentEN=[], restentPT=[];
   for(const [persona,nav] of ECRANS){
     for(const x of await releve({persona,nav})){
@@ -75,14 +110,24 @@ const ECRANS=[
       if(!x.pt)restentPT.push(persona+'/'+nav+' · '+x.t.slice(0,70));
     }
   }
+  for(const k of SURCOUCHES){
+    for(const x of await releveSurcouche(k)){
+      if(!ATRADUIRE(x.t))continue;
+      if(!x.en)restentEN.push(k+' · '+x.t.slice(0,70));
+      if(!x.pt)restentPT.push(k+' · '+x.t.slice(0,70));
+    }
+  }
 
-  console.log('\nCOUVERTURE — dix écrans, trois langues');
+  console.log('\nCOUVERTURE — quinze écrans, trois langues');
   ok(restentEN.length===0,'aucun texte français ne subsiste en anglais'+(restentEN.length?'\n      '+restentEN.slice(0,12).join('\n      '):''));
   ok(restentPT.length===0,'aucun texte français ne subsiste en portugais'+(restentPT.length?'\n      '+restentPT.slice(0,12).join('\n      '):''));
 
   console.log('\nPHRASES COUPÉES PAR UN <b> — les trois morceaux doivent tomber ensemble');
   const phrase=await p.evaluate(()=>{
-    const S=window.__S;S.persona='concierge';S.concNav='clients';S.lang='en';window.__render();
+    // Les surcouches rendues juste avant laissent leur état : sans ce nettoyage, le
+    // routeur afficherait « Personnes bloquées » au lieu de l'écran conciergerie.
+    const S=window.__S;S.chat=false;S.report=null;S.blockedView=false;S.blockAsk=false;S.mission=null;
+    S.persona='concierge';S.concNav='clients';S.lang='en';window.__render();
     const t=(document.querySelector('.phone')||document.body).innerText;
     S.lang='pt';window.__render();
     const t2=(document.querySelector('.phone')||document.body).innerText;

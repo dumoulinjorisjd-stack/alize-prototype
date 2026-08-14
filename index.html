@@ -3954,7 +3954,7 @@
     proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proReqSlot:null,proReqPick:false,proMissions:[],proSkipped:[],proSkipAt:{},proConflict:null,proStmt:false,commInvId:null,commStmt:false,signupKind:null,concSignup:null,concStatus:'approved',adminConcierges:[],
     proHistory:PRO_HISTORY(),
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),
-    chat:false,advantages:false,referral:false,fidDetail:false,interv:false,invoiceId:null,clientInv:false,histInvoice:null,histCat:null,signPad:false,colisProc:false,imgView:null,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,delAcct:false,
+    chat:false,advantages:false,referral:false,fidDetail:false,interv:false,invoiceId:null,clientInv:false,blocked:[],report:null,blockAsk:null,blockedView:false,histInvoice:null,histCat:null,signPad:false,colisProc:false,imgView:null,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,delAcct:false,
     // Détail d'une prestation TERMINÉE (client ou prestataire). Jusqu'ici une prestation
     // passée n'existait plus que sous forme de facture : toucher la carte téléchargeait
     // le PDF, et il n'y avait AUCUN moyen de revoir l'adresse, l'horaire, la durée
@@ -4324,6 +4324,18 @@
   }
   // Carte « Sauvegarde de mes factures » + décharge de responsabilité, insérée dans les
   // écrans « compte » de chaque rôle. Rappel mensuel tant que la sauvegarde n'est pas faite.
+  // Ligne « Personnes bloquées » du profil : toujours visible, même vide. Une liste qui
+  // n'apparaît qu'une fois qu'on a bloqué quelqu'un se cherche au mauvais moment ; et
+  // Apple demande que le blocage soit trouvable, pas seulement possible.
+  function blockedRow(){
+    const n=blockedList().length;
+    return `<button class="card listrow" data-act="blocked-open" style="width:100%;text-align:left;margin-top:10px">
+      <span class="benic" style="flex:none">${I.shield}</span>
+      <div class="lr-main"><b class="lr-name">Personnes bloquées</b>
+        <div class="mini lr-sub">${n?(n+' personne'+(n>1?'s':'')+' bloquée'+(n>1?'s':'')):'Vous n’avez bloqué personne'}</div></div>
+      ${n?`<span class="chip grey" style="flex:none">${n}</span>`:''}
+      <span class="fold-chev" aria-hidden="true">${I.chevron}</span></button>`;
+  }
   function backupCard(){
     if(isDemo())return '';
     // « À faire » ne s'affiche QUE s'il y a réellement des factures à sauvegarder ce
@@ -4632,6 +4644,12 @@
     [/^Taux d'apport\s*: (\d+) % · versé par Ti-Services en fin de mois$/,'Referral rate: $1 % · paid by Ti-Services at month end'],
     [/^Taux d'apport\s*: (\d+) % · réglé par Ti-Services$/,'Referral rate: $1 % · settled by Ti-Services'],
     [/^(\d+) filleuls?$/,function(m,n){return n+(n==='1'?' referral':' referrals');}],
+    [/^Bloquer (.+?) \?$/,'Block $1?'],
+    [/^Bloquer (.+)$/,'Block $1'],
+    [/^Débloquer (.+)$/,'Unblock $1'],
+    [/^Signaler (.+)$/,'Report $1'],
+    [/^Vous avez bloqué (.+?)\. Vous ne recevez plus ses messages et vous ne serez plus mis en relation\.$/,
+      "You have blocked $1. You no longer receive their messages and you will not be matched with them again."],
     [/^Mon profil · (.+)$/,function(m,z){return 'My profile · '+(EN_DICT[z]||z);}],
     [/^Mon compte · (.+)$/,function(m,z){return 'My account · '+(EN_DICT[z]||z);}],
     [/^Choisissez, (.+?) — je m’occupe de trouver le bon prestataire\.$/,"Pick one, $1 — I'll find the right pro."],
@@ -6015,7 +6033,44 @@
     "Mes documents":"My documents",
     "CGU":"Terms of use",
     "CGV":"Terms of sale",
-    "CGU/CGV":"Terms"
+    "CGU/CGV":"Terms",
+    // ——— Signaler & bloquer ———
+    "Signaler":"Report",
+    "Bloquer":"Block",
+    "Débloquer":"Unblock",
+    "Vous ne recevrez plus ses messages et vous ne serez plus mis en relation à l'avenir.":"You will no longer receive their messages and you will not be matched with them again.",
+    "La prestation en cours n'est pas annulée":"The job under way is not cancelled",
+    "— pour un problème urgent, passez par le support ci-dessus. Vous pourrez débloquer à tout moment depuis votre profil.":"— for an urgent problem, use the support link above. You can unblock at any time from your profile.",
+    "Signalement":"Report",
+    "Ti-Services examine chaque signalement. Rien n'est communiqué à la personne signalée.":"Ti-Services reviews every report. Nothing is passed on to the person reported.",
+    "Motif":"Reason",
+    "Propos ou contenu offensant":"Offensive language or content",
+    "Harcèlement ou intimidation":"Harassment or intimidation",
+    "Tentative d’arnaque ou de paiement hors plateforme":"Scam attempt or payment outside the platform",
+    "Usurpation d’identité":"Impersonation",
+    "Photo ou contenu inapproprié":"Inappropriate photo or content",
+    "Décrivez ce qui s'est passé *":"Describe what happened *",
+    "Décrivez ce qui s'est passé (facultatif)":"Describe what happened (optional)",
+    "Ce qui vous a alerté, et quand.":"What alerted you, and when.",
+    "Envoyer le signalement":"Send report",
+    "En cas de danger immédiat, appelez les secours. Ti-Services n'est pas un service d'urgence.":"In case of immediate danger, call the emergency services. Ti-Services is not an emergency service.",
+    "Signalement envoyé — Ti-Services l’examine.":"Report sent — Ti-Services is reviewing it.",
+    "Choisissez un motif.":"Choose a reason.",
+    "Décrivez le problème en quelques mots.":"Describe the problem in a few words.",
+    "Personnes bloquées":"Blocked people",
+    "Vous n’avez bloqué personne":"You haven't blocked anyone",
+    "Vous n'avez bloqué personne.":"You haven't blocked anyone.",
+    "Vous ne serez plus mis en relation avec elles, et vous ne recevez plus leurs messages.":"You will no longer be matched with them, and you no longer receive their messages.",
+    "Compte bloqué":"Blocked account",
+    "Confidentialité":"Privacy",
+    "Bloqué — vous ne recevrez plus ses messages.":"Blocked — you will no longer receive their messages.",
+    "Débloqué.":"Unblocked.",
+    "Impossible d’identifier cette personne.":"Could not identify this person.",
+    "Signalements":"Reports",
+    "Aucun signalement en attente.":"No report pending.",
+    "Marquer traité":"Mark as handled",
+    "Signalement marqué traité.":"Report marked as handled.",
+    "Traité":"Handled"
   };
   var MO_PT={'janvier':'janeiro','février':'fevereiro','fevrier':'fevereiro','mars':'março','avril':'abril','mai':'maio','juin':'junho','juillet':'julho','août':'agosto','aout':'agosto','septembre':'setembro','octobre':'outubro','novembre':'novembro','décembre':'dezembro','decembre':'dezembro','janv':'janeiro','févr':'fevereiro','fevr':'fevereiro','avr':'abril','juil':'julho','sept':'setembro','oct':'outubro','nov':'novembro','déc':'dezembro','dec':'dezembro'};
   var TIER_PT={'bronze':'Bronze','argent':'Prata','or':'Ouro','platine':'Platina','diamant':'Diamante'};
@@ -7660,7 +7715,43 @@
     "Changer ma photo de profil":"Mudar a minha foto de perfil",
     "CGU":"Termos de utilização",
     "CGV":"Condições de venda",
-    "CGU/CGV":"Termos"
+    "CGU/CGV":"Termos",
+    // ——— Signaler & bloquer ———
+    "Signaler":"Denunciar",
+    "Bloquer":"Bloquear",
+    "Débloquer":"Desbloquear",
+    "Vous ne recevrez plus ses messages et vous ne serez plus mis en relation à l'avenir.":"Deixará de receber as suas mensagens e não voltará a ser colocado em contacto com esta pessoa.",
+    "La prestation en cours n'est pas annulée":"O serviço em curso não é anulado",
+    "— pour un problème urgent, passez par le support ci-dessus. Vous pourrez débloquer à tout moment depuis votre profil.":"— para um problema urgente, use o apoio acima. Pode desbloquear a qualquer momento no seu perfil.",
+    "Signalement":"Denúncia",
+    "Ti-Services examine chaque signalement. Rien n'est communiqué à la personne signalée.":"A Ti-Services analisa cada denúncia. Nada é comunicado à pessoa denunciada.",
+    "Motif":"Motivo",
+    "Propos ou contenu offensant":"Linguagem ou conteúdo ofensivo",
+    "Harcèlement ou intimidation":"Assédio ou intimidação",
+    "Tentative d’arnaque ou de paiement hors plateforme":"Tentativa de burla ou pagamento fora da plataforma",
+    "Usurpation d’identité":"Usurpação de identidade",
+    "Photo ou contenu inapproprié":"Fotografia ou conteúdo inadequado",
+    "Décrivez ce qui s'est passé *":"Descreva o que aconteceu *",
+    "Décrivez ce qui s'est passé (facultatif)":"Descreva o que aconteceu (opcional)",
+    "Ce qui vous a alerté, et quand.":"O que o alertou, e quando.",
+    "Envoyer le signalement":"Enviar denúncia",
+    "En cas de danger immédiat, appelez les secours. Ti-Services n'est pas un service d'urgence.":"Em caso de perigo imediato, contacte os serviços de emergência. A Ti-Services não é um serviço de emergência.",
+    "Signalement envoyé — Ti-Services l’examine.":"Denúncia enviada — a Ti-Services está a analisá-la.",
+    "Choisissez un motif.":"Escolha um motivo.",
+    "Décrivez le problème en quelques mots.":"Descreva o problema em poucas palavras.",
+    "Personnes bloquées":"Pessoas bloqueadas",
+    "Vous n’avez bloqué personne":"Não bloqueou ninguém",
+    "Vous n'avez bloqué personne.":"Não bloqueou ninguém.",
+    "Vous ne serez plus mis en relation avec elles, et vous ne recevez plus leurs messages.":"Deixará de ser colocado em contacto com elas e já não recebe as suas mensagens.",
+    "Compte bloqué":"Conta bloqueada",
+    "Bloqué — vous ne recevrez plus ses messages.":"Bloqueado — deixará de receber as suas mensagens.",
+    "Débloqué.":"Desbloqueado.",
+    "Impossible d’identifier cette personne.":"Não foi possível identificar esta pessoa.",
+    "Signalements":"Denúncias",
+    "Aucun signalement en attente.":"Nenhuma denúncia pendente.",
+    "Marquer traité":"Marcar como tratada",
+    "Signalement marqué traité.":"Denúncia marcada como tratada.",
+    "Traité":"Tratada"
   };
   var T_RE_PT=[
     [/^dès (\d+) € net$/,'desde $1 € líquidos'],
@@ -7734,6 +7825,12 @@
     [/^Taux d'apport\s*: (\d+) % · versé par Ti-Services en fin de mois$/,'Taxa de angariação: $1 % · pago pela Ti-Services no fim do mês'],
     [/^Taux d'apport\s*: (\d+) % · réglé par Ti-Services$/,'Taxa de angariação: $1 % · liquidado pela Ti-Services'],
     [/^(\d+) filleuls?$/,function(m,n){return n+(n==='1'?' indicado':' indicados');}],
+    [/^Bloquer (.+?) \?$/,'Bloquear $1?'],
+    [/^Bloquer (.+)$/,'Bloquear $1'],
+    [/^Débloquer (.+)$/,'Desbloquear $1'],
+    [/^Signaler (.+)$/,'Denunciar $1'],
+    [/^Vous avez bloqué (.+?)\. Vous ne recevez plus ses messages et vous ne serez plus mis en relation\.$/,
+      'Bloqueou $1. Já não recebe as suas mensagens e não voltará a ser colocado em contacto.'],
     [/^Mon profil · (.+)$/,function(m,z){return 'O meu perfil · '+(PT_DICT[z]||z);}],
     [/^Mon compte · (.+)$/,function(m,z){return 'A minha conta · '+(PT_DICT[z]||z);}],
     [/^Choisissez, (.+?) — je m’occupe de trouver le bon prestataire\.$/,'Escolha, $1 — eu trato de encontrar o prestador certo.'],
@@ -8606,6 +8703,7 @@
       <div style="height:18px"></div><span class="eyebrow"${q.length?' style="color:var(--coral-deep)"':''}>${I.bolt} À traiter${q.length?' · '+q.length:''}</span>
       ${queue}
       ${disputeArbitrationHtml(S.mission)}
+      ${adminReportsBloc()}
       ${supBlocks.length?`<div style="height:14px"></div><span class="eyebrow">Messages support · ${supBlocks.length}</span>${supBlocks.join('')}`:''}
       ${nsBlock}
 
@@ -9288,8 +9386,88 @@
       ${h.reqId?`<button class="btn ghost sm" data-act="detail-chat" style="margin-top:9px">${I.chat}&nbsp;Écrire à ${esc(String(qui).split(' ')[0])}</button>`:''}
       <div style="height:18px"></div></div>`;
   }
+  /* ————————————— SIGNALER & BLOQUER —————————————
+     Deux gestes distincts, qu'on confond souvent.
+       · SIGNALER s'adresse à Ti-Services : « regardez ce qui se passe ». Ça n'a aucun
+         effet immédiat sur l'autre personne, et c'est volontaire — une accusation se
+         vérifie avant de produire une sanction.
+       · BLOQUER s'adresse à soi-même : « je ne veux plus rien avoir à faire avec cette
+         personne ». Effet immédiat, réversible, sans intervention de personne.
+     Le blocage NE remet PAS en cause une mission en cours : sinon il suffirait de
+     bloquer son prestataire à la fin du chantier pour ne pas le payer. On le dit
+     clairement au moment de bloquer, et on renvoie vers le support pour l'urgence. */
+  const REPORT_MOTIFS=[
+    ['offensant','Propos ou contenu offensant'],
+    ['harcelement','Harcèlement ou intimidation'],
+    ['arnaque','Tentative d’arnaque ou de paiement hors plateforme'],
+    ['usurpation','Usurpation d’identité'],
+    ['inapproprie','Photo ou contenu inapproprié'],
+    ['autre','Autre'],
+  ];
+  function blockedList(){return Array.isArray(S.blocked)?S.blocked:[];}
+  function estBloque(uid){return !!uid&&blockedList().indexOf(uid)>=0;}
+  // L'autre partie d'une mission, vue depuis MON rôle.
+  function autreUid(m){ if(!m)return ''; return (S.persona==='pro')?(m.clientUid||''):(m.providerUid||''); }
+  function autreNom(m){ if(!m)return ''; return (S.persona==='pro')?(proClientName(m)||'le client')
+    :(((m.provider&&m.provider.nm)||m.providerName||'le prestataire')); }
+  async function bloquerUid(uid,nom){
+    if(!uid)return;
+    if(!estBloque(uid))S.blocked=blockedList().concat([uid]);
+    S.blockNoms=Object.assign({},S.blockNoms||{});S.blockNoms[uid]=String(nom||'').slice(0,80);
+    try{ if(FB&&FB.auth&&FB.auth.currentUser){
+      await FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),
+        {blocked:FB.f.arrayUnion(uid),blockedNames:S.blockNoms},{merge:true});
+    } }catch(e){ console.warn('bloquer',e); }
+  }
+  async function debloquerUid(uid){
+    S.blocked=blockedList().filter(function(x){return x!==uid;});
+    try{ if(FB&&FB.auth&&FB.auth.currentUser){
+      await FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),
+        {blocked:FB.f.arrayRemove(uid)},{merge:true});
+    } }catch(e){ console.warn('débloquer',e); }
+  }
+  // Écran de signalement : motif obligatoire, description libre. Le texte part vers une
+  // Cloud Function qui l'échappe et prévient Ti-Services — jamais écrit en base depuis ici.
+  function signalementView(){
+    const r=S.report||{};
+    const choisi=r.motif||'';
+    const libre=(choisi==='autre');
+    const pret=!!choisi&&(!libre||((r.texte||'').trim().length>2));
+    return `<div class="pad"><button class="reset" data-act="report-close" style="margin:8px 0 2px">← Retour</button>
+      <span class="eyebrow" style="color:var(--coral-deep)">${I.shield} Signalement</span>
+      <div class="h-hello">Signaler${r.nom?' '+esc(r.nom):''}</div>
+      <p class="sub" style="margin-top:6px">Ti-Services examine chaque signalement. Rien n'est communiqué à la personne signalée.</p>
+      <div class="card" style="padding:16px;margin-top:14px">
+        <div class="eyebrow" style="color:var(--muted)">Motif</div>
+        <div style="margin-top:9px">${REPORT_MOTIFS.map(function(mo){
+          const on=(choisi===mo[0]);
+          return `<button class="btn ${on?'primary':'ghost'} sm" data-act="report-motif:${mo[0]}" style="width:100%;justify-content:flex-start;gap:9px;margin-top:7px;text-align:left">${on?I.check:'<span style="width:16px;display:inline-block"></span>'}${esc(mo[1])}</button>`;
+        }).join('')}</div>
+        <div class="field" style="margin-top:14px"><label>Décrivez ce qui s'est passé${libre?' *':' (facultatif)'}</label>
+          <textarea class="txt" id="reportTxt" rows="4" maxlength="1000" placeholder="Ce qui vous a alerté, et quand.">${esc(r.texte||'')}</textarea></div>
+        <button class="btn primary" data-act="report-send" ${pret?'':'disabled'} style="margin-top:12px">${I.mail} Envoyer le signalement</button>
+        <p class="mini" style="margin-top:8px;color:var(--muted)">En cas de danger immédiat, appelez les secours. Ti-Services n'est pas un service d'urgence.</p>
+      </div>
+      <div style="height:18px"></div></div>`;
+  }
+  // Liste des personnes bloquées, depuis le profil. Sans cet écran, un blocage serait
+  // une porte qui ne se rouvre pas.
+  function blockedView(){
+    const l=blockedList();const noms=S.blockNoms||{};
+    return `<div class="pad"><button class="reset" data-act="blocked-close" style="margin:8px 0 2px">← Retour</button>
+      <span class="eyebrow">${I.shield} Confidentialité</span>
+      <div class="h-hello">Personnes bloquées</div>
+      <p class="sub" style="margin-top:6px">Vous ne serez plus mis en relation avec elles, et vous ne recevez plus leurs messages.</p>
+      ${l.length?l.map(function(uid){
+        return `<div class="card listrow" style="margin-top:10px"><span class="benic" style="flex:none">${I.user}</span>
+          <div class="lr-main"><b class="lr-name">${esc(noms[uid]||'Compte bloqué')}</b></div>
+          <button class="btn ghost sm" data-act="unblock:${esc(uid)}" style="width:auto;padding:8px 12px;flex:none">Débloquer</button></div>`;
+      }).join(''):`<div class="card" style="padding:20px;text-align:center;color:var(--muted);margin-top:12px">Vous n'avez bloqué personne.</div>`}
+      <div style="height:18px"></div></div>`;
+  }
   function chatScreen(){
     const m=chatMission(),other=chatName();
+    const uidAutre=autreUid(m),bloqueIci=estBloque(uidAutre);
     // Le numéro n'apparaît qu'une fois la mission actée des deux côtés (cf. bothAccepted).
     const reveal=bothAccepted(m);
     const otherPhone=reveal?((S.persona==='pro')?(m.clientPhone||''):(m.providerPhone||'')):'';
@@ -9307,9 +9485,26 @@
       <div class="banner teal" style="margin-top:12px">${I.shield}<span>Réglez et échangez dans l'app : la garantie et le paiement Ti-Services ne s'appliquent que si tout s'y passe.</span></div>
       <div class="chat-msgs">${list}${readStatus}</div>
       ${(!tel&&m.svc==='baby'&&!m.clientConfirmed)?`<p class="mini" style="text-align:center;color:var(--muted);margin-top:12px">${I.lock} Le numéro de téléphone s'affichera sur le suivi de la prestation dès que la garde sera confirmée.</p>`:''}
-      <div class="chatbar"><input id="chatInput" placeholder="Écrire à ${other}…" autocomplete="off" maxlength="500"><button class="btn primary" data-act="chat-send">Envoyer</button></div>
+      ${bloqueIci?`<div class="banner coral" style="margin-top:12px">${I.shield}<span>Vous avez bloqué ${other}. Vous ne recevez plus ses messages et vous ne serez plus mis en relation.</span></div>
+        <button class="btn ghost sm" data-act="unblock:${esc(uidAutre)}" style="margin-top:10px">Débloquer ${other}</button>`
+      :`<div class="chatbar"><input id="chatInput" placeholder="Écrire à ${other}…" autocomplete="off" maxlength="500"><button class="btn primary" data-act="chat-send">Envoyer</button></div>`}
       <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--hair)"><p class="mini" style="margin-bottom:8px;color:var(--muted)">Un souci, un litige, une question sur cette prestation&nbsp;?</p>
         <button class="btn ghost sm" data-act="open-support" style="justify-content:flex-start;gap:8px">${I.shield}&nbsp;Contacter Ti-Services (support)${(()=>{const th=(m.support&&m.support[S.persona])||[];return th.length?` · ${th.length}`:'';})()}</button></div>
+      ${/* Signaler et bloquer : discrets, en bas, à leur juste rang — mais toujours
+           accessibles depuis la conversation, là où le problème se produit. */''}
+      <div style="margin-top:14px;text-align:center">
+        <button class="linklike" data-act="report-open" style="font-size:12.5px;font-weight:500;color:var(--muted);text-decoration:none">${I.shield} Signaler</button>
+        ${/* Le séparateur ne s'affiche que s'il sépare vraiment deux choses : une fois la
+             personne bloquée, le second lien disparaît, et le point avec lui. */''}
+        ${(uidAutre&&!bloqueIci)?`<span class="mini" style="color:var(--muted)">&nbsp;·&nbsp;</span><button class="linklike" data-act="block-ask" style="font-size:12.5px;font-weight:500;color:var(--muted);text-decoration:none">Bloquer ${other}</button>`:''}
+      </div>
+      ${S.blockAsk?`<div class="card" style="padding:16px;margin-top:12px;border-left:4px solid var(--coral)">
+        <b style="font-size:14px">Bloquer ${other} ?</b>
+        <p class="mini" style="margin-top:6px;line-height:1.55">Vous ne recevrez plus ses messages et vous ne serez plus mis en relation à l'avenir. <b>La prestation en cours n'est pas annulée</b> — pour un problème urgent, passez par le support ci-dessus. Vous pourrez débloquer à tout moment depuis votre profil.</p>
+        <div class="row" style="gap:8px;margin-top:12px">
+          <button class="btn ghost sm" data-act="block-cancel" style="flex:1">Annuler</button>
+          <button class="btn sm" data-act="block-confirm" style="flex:1;background:var(--coral-deep);color:#fff">Bloquer</button>
+        </div></div>`:''}
       <div style="height:6px"></div></div>`;
   }
   function supportChat(){
@@ -9339,6 +9534,45 @@
   // à traiter, et discussions client↔artisan consultables (supervision).
   // Écoute du registre comptable immuable (collection ledger) : alimente l'export
   // comptable et le justificatif de revenus. Lecture admin autorisée par les règles.
+  // Signalements : chargés en continu comme le registre. Un signalement qui attend qu'on
+  // pense à aller le chercher n'est pas traité — il doit venir se poser sous les yeux.
+  let adminReportsUnsub=null;
+  function subscribeAdminReports(){
+    if(!(FB&&FB.db))return;
+    try{ if(adminReportsUnsub){try{adminReportsUnsub();}catch(_){}}
+      adminReportsUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'reports'),function(snap){
+        const list=[];snap.forEach(function(d){const r=d.data()||{};
+          list.push({id:d.id,auteurNom:r.auteurNom||'',auteurEmail:r.auteurEmail||'',auteurUid:r.auteurUid||'',
+            cibleNom:r.cibleNom||'',cibleUid:r.cibleUid||'',reqId:r.reqId||'',motif:r.motif||'',
+            motifLabel:r.motifLabel||r.motif||'',texte:r.texte||'',statut:r.statut||'nouveau',
+            at:(r.createdAt&&r.createdAt.toDate)?r.createdAt.toDate().getTime():0});});
+        list.sort(function(a,b){return (b.at||0)-(a.at||0);});
+        S.adminReports=list;
+        if(S.persona==='admin'&&S.admin.view==='home'&&!S.admin.sel)render();
+      },function(err){console.warn('admin reports',err);});
+    }catch(e){console.warn('admin reports',e);}
+  }
+  // Bloc « Signalements » du tableau de bord : les nouveaux d'abord, avec de quoi
+  // marquer le dossier traité. Rien n'est affiché tant qu'aucun signalement n'existe.
+  function adminReportsBloc(){
+    const l=S.adminReports||[];
+    if(!l.length)return '';
+    const nouveaux=l.filter(function(r){return r.statut!=='traite';});
+    const ligne=function(r){
+      const neuf=(r.statut!=='traite');
+      return `<div class="card" style="padding:14px;margin-top:10px${neuf?';border-left:4px solid var(--coral)':''}">
+        <div class="row between" style="gap:8px;align-items:flex-start">
+          <b style="font-size:14px">${esc(r.motifLabel)}</b>
+          <span class="chip ${neuf?'coral':'good'}" style="flex:none">${neuf?'Nouveau':'Traité'}</span></div>
+        <div class="mini" style="margin-top:5px;color:var(--muted)">Par <b>${esc(r.auteurNom||r.auteurEmail||'un utilisateur')}</b>${r.cibleNom?' — vise <b>'+esc(r.cibleNom)+'</b>':''}${r.at?' · '+new Date(r.at).toLocaleDateString('fr-FR'):''}</div>
+        ${r.texte?`<p class="sub" style="margin-top:8px;color:var(--ink-soft)">${esc(r.texte)}</p>`:''}
+        ${neuf?`<button class="btn good sm" data-adm="reportdone:${esc(r.id)}" style="width:auto;padding:8px 12px;margin-top:10px">${I.check} Marquer traité</button>`:''}
+        </div>`;
+    };
+    return `<div style="height:18px"></div><span class="eyebrow"${nouveaux.length?' style="color:var(--coral-deep)"':''}>${I.shield} Signalements${nouveaux.length?' · '+nouveaux.length:''}</span>
+      ${nouveaux.length?nouveaux.map(ligne).join('')
+        :`<div class="banner good" style="margin-top:10px">${I.check}<span>Aucun signalement en attente.</span></div>`}`;
+  }
   let adminLedgerUnsub=null;
   function subscribeAdminLedger(){
     if(!(FB&&FB.db))return;
@@ -9664,6 +9898,8 @@
   }
   function renderConcierge(){
     if(S.delAcct)return deleteAccountView();
+    if(S.report)return signalementView();
+    if(S.blockedView)return blockedView();
     if(S.generalSupport)return generalSupportChat();
     if(S.concStatus==='pending')return conciergePending();
     if(S.concRetInv)return conciergeRetribInvoice();
@@ -9795,6 +10031,7 @@
         <button class="btn ${(S.concIban&&ibanValid(S.concIban))?'ghost':'primary'} sm" data-act="conc-save-iban" style="margin-top:12px">${I.check} Enregistrer mon RIB</button>
         <p class="mini" style="margin-top:8px;color:var(--muted)">Ti-Services y verse votre rétribution une fois par mois. Coordonnées privées, jamais visibles des clients.</p></div>
       ${backupCard()}
+      ${blockedRow()}
       <div class="banner teal" style="margin-top:14px">${I.shield}<span>Vous êtes rémunéré par Ti-Services sur sa commission — <b>le prix du client ne change pas</b> et le prestataire perçoit la même chose. Versement mensuel, relevé d'auto-facturation.</span></div>
       <div style="height:16px"></div><span class="eyebrow">${I.wallet} Détail des prestations réglées</span>${rows}
       <div style="height:8px"></div></div>${conciergeNavbar()}`;
@@ -9875,6 +10112,8 @@
     // s'ouvre là-dessus ; s'il dit non, on ne le sollicite plus.
     if(S.proSuggest)return proSuggestView();
     if(S.delAcct)return deleteAccountView();
+    if(S.report)return signalementView();
+    if(S.blockedView)return blockedView();
     if(S.generalSupport)return generalSupportChat();
     if(S.share)return shareCard();
     if(S.addrForm)return clientAddrEdit();
@@ -10401,6 +10640,7 @@
       <div class="card" style="padding:16px;margin-top:12px"><div class="row between" style="gap:12px"><div class="row" style="gap:11px;align-items:center"><span class="benic">${I.globe}</span><div><b style="font-size:14px">Langue</b></div></div><div class="langsel"><button class="langsel-opt ${S.lang==='fr'?'on':''}" data-act="lang-fr">FR</button><button class="langsel-opt ${S.lang==='en'?'on':''}" data-act="lang-en">EN</button><button class="langsel-opt ${S.lang==='pt'?'on':''}" data-act="lang-pt">PT</button></div></div></div>
       ${notifCard('client')}
       ${backupCard()}
+      ${blockedRow()}
       ${(window.innerWidth>=768)?`<div class="card" style="padding:16px;margin-top:12px"><div class="row between" style="gap:12px"><div class="row" style="gap:11px;align-items:center"><span class="benic">${I.gear}</span><div><b style="font-size:14px">Affichage ordinateur</b><div class="mini" style="margin-top:1px">Menu latéral et colonne large — pratique sur tablette et grand écran.</div></div></div><button class="btn ${forceDesktopPref()?'primary':'ghost'} sm" style="width:auto;padding:8px 14px;white-space:nowrap" data-act="toggle-desktop">${forceDesktopPref()?I.check+' Activé':'Activer'}</button></div></div>`:''}
       <!-- Les cartes « Ti-Services » (garantie, partage, suggestion, aide) viennent APRÈS
            les réglages : on ouvre son profil pour gérer son compte, pas pour découvrir
@@ -10766,6 +11006,9 @@
       if(seen[p.uid]){const e=list.find(function(x){return x.uid===p.uid;});e.cal=p.cal;e.photo=p.photo;e.founder=p.founder;return;}
       list.push(p);
     });
+    // Une personne bloquée ne réapparaît pas dans la liste de choix : ce serait le
+    // premier endroit où le blocage se démentirait.
+    for(let i=list.length-1;i>=0;i--){if(estBloque(list[i].uid))list.splice(i,1);}
     if(dir!==null&&!list.length)return '';
     const card=function(p){
       // Chaque segment dans son propre <span> : nœuds texte distincts pour le traducteur.
@@ -10859,6 +11102,10 @@
       m.reqId=ref.id;
       await FB.f.setDoc(ref,{
         clientUid:u.uid,
+        // Personnes que CE client a bloquées : la demande les porte, pour que le
+        // filtre côté prestataire puisse s'appliquer — un prestataire bloqué ne doit
+        // pas voir passer la demande de celui qui l'a bloqué.
+        blockedUids:blockedList().slice(0,200),
         clientName:first,
         clientPhoto:(S.account&&S.account.photo)||null,
         // VERROU PAIEMENT : sur le vrai site, la demande naît en 'pending_payment' (invisible
@@ -10922,6 +11169,10 @@
       order.reqId=ref.id;
       await FB.f.setDoc(ref,{
         clientUid:u.uid,
+        // Personnes que CE client a bloquées : la demande les porte, pour que le
+        // filtre côté prestataire puisse s'appliquer — un prestataire bloqué ne doit
+        // pas voir passer la demande de celui qui l'a bloqué.
+        blockedUids:blockedList().slice(0,200),
         clientName:c.name||'Client final',          // nom du client FINAL (vu par le prestataire)
         viaConcierge:true, conciergeUid:u.uid,
         conciergeName:(S.concLegal||S.concName||'').slice(0,80),
@@ -11055,6 +11306,7 @@
       const ref=FB.f.doc(FB.f.collection(FB.db,'requests'));
       await FB.f.setDoc(ref,{
         clientUid:u.uid, clientName:who, clientPhoto:S.proPhoto||null,
+        blockedUids:blockedList().slice(0,200),
         // Marqueur du renfort : c'est un prestataire qui commande, pas un particulier.
         renfort:true, renfortByUid:u.uid, renfortByName:who,
         status:(payReal()?'pending_payment':'pending'), providerUid:null, providerName:'',
@@ -11566,6 +11818,8 @@
     if(S.imgView)return imgViewer();
     if(S.share)return shareCard();
     if(S.delAcct)return deleteAccountView();
+    if(S.report)return signalementView();
+    if(S.blockedView)return blockedView();
     if(S.generalSupport)return generalSupportChat();
     if(S.proConflict)return proConflictView();
     // « Déjà un compte ? Se connecter » depuis l'inscription prestataire : le routeur
@@ -13533,6 +13787,7 @@
       ${foldCard('p-faq',I.support,'Questions fréquentes','Paiement, agenda, missions…',faqQA(FAQ_PRO))}
       <button class="card" data-act="open-general-support" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block"><div class="row between" style="gap:12px;align-items:flex-start"><div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="margin-top:1px">${I.support}</span><div><b style="font-size:14px">Contacter Ti-Services</b></div></div><span class="mini" style="color:var(--teal-deep);font-weight:650;white-space:nowrap;flex:none">Support ›</span></div></button>
       ${backupCard()}
+      ${blockedRow()}
       ${S.demoMode?`<p class="mini" style="text-align:center;margin-top:12px"><button class="linklike" data-act="demo-go-client">${I.user} Voir l'espace client (démo)</button> · <button class="linklike" data-act="demo-go-admin">${I.gear} Admin (démo)</button></p>`:(FB?`<button class="btn ghost sm" data-act="logout" style="margin-top:14px">Se déconnecter</button>`:'')}
       ${(!S.demoMode&&FB)?`<p class="mini" style="text-align:center;margin-top:14px"><button class="linklike" data-act="account-delete" style="color:var(--coral-deep)">Supprimer mon compte</button></p>`:''}
       ${legalFooter('pro')}
@@ -13761,6 +14016,12 @@
         // basculer dans l'espace client. En démo seulement, on explore les autres espaces.
         if(!isDemo()&&isAdminAccount()){ S.demoMode=false;clearClientCache();S.support=false;S.supportSide=null;S.adminSupervise=false;S.generalSupport=false;S.genUser=null;if(FB)blankAll();fbLogout();if(!FB){S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;S.missions=[];}render();return; }
         S.persona='client';S.admin.view='home';S.admin.sel=null;S.admin.fact=null;S.support=false;S.supportSide=null;S.adminSupervise=false;S.generalSupport=false;S.genUser=null;}
+      // Signalement traité : l'écriture passe par la règle admin de la collection reports.
+      else if(act==='reportdone'){
+        (S.adminReports||[]).forEach(function(r){if(r.id===id)r.statut='traite';});
+        try{ if(FB&&FB.db)FB.f.setDoc(FB.f.doc(FB.db,'reports',id),
+          {statut:'traite',traiteAt:FB.f.serverTimestamp()},{merge:true}); }catch(e){console.warn('report done',e);}
+        render();toast('Signalement marqué traité.');return;}
       else if(act==='support'){S.support=true;S.supportSide=id;render();view.scrollTop=view.scrollHeight;return;}
       else if(act==='msg'){S.admin.view='msg';S.admin.fact=null;S.support=false;S.supportSide=null;S.adminSupervise=false;S.generalSupport=false;S.genUser=null;S.mission=null;render();return;}
       else if(act==='sup'){const th=(S.adminThreads||[]).find(function(x){return x.reqId===id;});if(th){S.mission=th;S.supportSide=(parts[2]==='pro'?'pro':'client');S.support=true;S.adminSupervise=false;S.admin.view='msg';markSupportReadAdmin(th,S.supportSide);watchRequest(th.reqId);render();view.scrollTop=view.scrollHeight;}return;}
@@ -14255,6 +14516,15 @@
     if(b.dataset.act==='histcat-back'){S.histCat=null;render();try{view.scrollTop=0;}catch(_){}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('histinv:')===0){const h=doneHistory()[+b.dataset.act.split(':')[1]];if(h)downloadInvoicePdf(h);return;}
     if(b.dataset.act&&b.dataset.act.indexOf('histchat:')===0){const h=doneHistory()[+b.dataset.act.split(':')[1]];if(h)ouvrirChatPasse(h);return;}
+    // Motif de signalement : un choix parmi une liste fermée, mémorisé sans quitter l'écran.
+    if(b.dataset.act&&b.dataset.act.indexOf('report-motif:')===0){
+      const ta=document.getElementById('reportTxt');
+      S.report=Object.assign({},S.report||{},{motif:b.dataset.act.slice('report-motif:'.length)},ta?{texte:ta.value}:{});
+      render();return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('unblock:')===0){
+      const u=b.dataset.act.slice('unblock:'.length);
+      debloquerUid(u).then(function(){render();});
+      render();toast('Débloqué.');return;}
     if(b.dataset.act&&b.dataset.act.indexOf('histdet:')===0){const h=doneHistory()[+b.dataset.act.split(':')[1]];if(h)ouvrirDetailPrestation(h,'client');return;}
     if(b.dataset.act&&b.dataset.act.indexOf('prohistdet:')===0){const id=b.dataset.act.slice('prohistdet:'.length);
       const h=(S.proHistory||[]).find(function(x){return String(x.id)===id;});
@@ -14364,6 +14634,37 @@
       case 'account-delete':S.delAcct=true;render();break;
       case 'account-delete-cancel':S.delAcct=false;render();break;
       case 'account-delete-confirm':deleteAccountReal();break;
+      // ——— Signaler : ça part chez Ti-Services, pas chez la personne signalée ———
+      case 'report-open':{const m=chatMission()||S.mission;
+        S.report={motif:'',texte:'',uid:autreUid(m),nom:autreNom(m),reqId:(m&&m.reqId)||''};
+        S.blockAsk=false;render();break;}
+      case 'report-close':S.report=null;render();break;
+      case 'report-send':{const r=S.report||{};
+        const ta=document.getElementById('reportTxt');if(ta)r.texte=ta.value;
+        if(!r.motif){toast('Choisissez un motif.');break;}
+        if(r.motif==='autre'&&(r.texte||'').trim().length<3){toast('Décrivez le problème en quelques mots.');break;}
+        (async function(){
+          try{
+            if(FB&&FB.fn&&!isDemo()){
+              await FB.fn.httpsCallable(FB.functions,'reportContent')({
+                motif:r.motif,texte:(r.texte||'').trim(),reqId:r.reqId||'',
+                cibleUid:r.uid||'',cibleNom:r.nom||''});
+            }
+            S.report=null;render();
+            toast('Signalement envoyé — Ti-Services l’examine.');
+          }catch(e){ toast(fbErrTxt(e)); }
+        })();
+        break;}
+      // ——— Bloquer : effet immédiat, réversible, sans arbitrage de personne ———
+      case 'block-ask':S.blockAsk=true;render();break;
+      case 'block-cancel':S.blockAsk=false;render();break;
+      case 'block-confirm':{const m=chatMission()||S.mission;const u=autreUid(m);
+        S.blockAsk=false;
+        if(!u){toast('Impossible d’identifier cette personne.');render();break;}
+        bloquerUid(u,autreNom(m)).then(function(){render();});
+        render();toast('Bloqué — vous ne recevrez plus ses messages.');break;}
+      case 'blocked-open':S.blockedView=true;render();break;
+      case 'blocked-close':S.blockedView=false;render();break;
       case 'cancel-mission':S.cancelAsk=true;render();break;
       case 'cancel-dismiss':S.cancelAsk=false;render();break;
       case 'cancel-confirm':{const m=S.mission;S.cancelAsk=false;const pol=cancelPolicy(m);
@@ -15919,7 +16220,7 @@
         S.account={name:'Ti-Services',email:user.email||'',uid:user.uid,role:'admin'};
         S.referralCode=genReferralCode('Ti-Services',user.uid);
         S.persona='admin';S.admin={view:'home',sel:null};S.onboarded=true;S.authView=null;render();
-        refreshAdminArtisans();refreshAdminConcierges();refreshAdminWishes();initAdminPush();subscribeAdminThreads();subscribeAdminGeneralSupport();subscribeAdminLedger();return;
+        refreshAdminArtisans();refreshAdminConcierges();refreshAdminWishes();initAdminPush();subscribeAdminThreads();subscribeAdminGeneralSupport();subscribeAdminLedger();subscribeAdminReports();return;
       }
       // Lecture du compte, sous garde-fou de temps : sans lui, une requête qui reste
       // sans réponse (réseau capricieux, blocage) laisse la personne devant un écran
@@ -15945,6 +16246,9 @@
       const typedZone=(S.clientForm&&(S.clientForm.zone||'').trim())||'';
       const name=(data&&data.name)||user.displayName||typedName||((user.email||'').split('@')[0]||'Client');
       S.referralCode=genReferralCode(name,user.uid); // code réel du compte (pas la démo)
+      // Personnes bloquées : lues AVANT le routage, parce qu'elles valent pour les deux
+      // espaces — un prestataire bloque un client comme un client bloque un prestataire.
+      S.blocked=(data&&Array.isArray(data.blocked))?data.blocked.slice():[];
       // Rôle déterminé de façon ROBUSTE : la fiche artisans / concierges fait foi, même
       // si le champ role de la fiche users est absent ou incorrect — sinon un prestataire
       // pouvait basculer par erreur dans l'espace client (et s'y voir créer un compte
@@ -16671,6 +16975,12 @@
           // Jamais sa propre demande : un prestataire qui commande un renfort ne doit
           // pas pouvoir se l'attribuer à lui-même (mission fictive, statistiques faussées).
           if(myUid&&r.clientUid===myUid)return;
+          // BLOCAGE, dans les deux sens. Le prestataire ne voit pas les demandes des
+          // clients qu'il a bloqués ; et il ne voit pas non plus celles d'un client qui
+          // l'a bloqué, lui — la demande porte la liste du client (blockedUids), sinon
+          // le blocage n'aurait aucun effet sur la partie qui compte le plus.
+          if(estBloque(r.clientUid))return;
+          if(myUid&&Array.isArray(r.blockedUids)&&r.blockedUids.indexOf(myUid)>=0)return;
           if(cats.length&&cats.indexOf(r.service)<0)return;
           // Filtre LIEU : un prestataire « domicile seul » ne voit pas les demandes « en salon »
           // et inversement. « Les deux » (ou métier non concerné) voit tout.

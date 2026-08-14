@@ -184,6 +184,17 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Signalements de contenu ou de comportement. Créés par la Cloud Function
+    // `reportContent` (Admin SDK, qui contourne ces règles) et par elle seule :
+    // l'auteur d'un signalement est celui qui est authentifié côté serveur, jamais un
+    // champ que le client remplit. Lecture réservée à l'admin — un signalement nomme
+    // une personne, il n'a rien à faire sous les yeux d'un autre utilisateur, pas même
+    // de la personne signalée.
+    match /reports/{reportId} {
+      allow read:  if isAdmin();
+      allow write: if isAdmin();
+    }
+
     // Demandes de prestation
     match /requests/{reqId} {
       function isClient()   { return signedIn() && resource.data.clientUid == uid(); }

@@ -1411,10 +1411,11 @@ exports.notifyNewMessage = onDocumentUpdated('requests/{reqId}', async (event) =
     const lot = fresh.filter((x) => x && x.from === from);
     if (!lot.length) continue;
     const last = lot[lot.length - 1];
-    // Destinataire = l'autre partie (opt-out notifOn respecté).
+    // Destinataire = l'autre partie (opt-out notifOn respecté, blocage respecté aussi).
     const recipientUid = (from === 'client') ? after.providerUid : after.clientUid;
+    const senderUid = (from === 'client') ? after.clientUid : after.providerUid;
     if (!recipientUid) continue;
-    const tokens = await userPushTokens(db, recipientUid);
+    const tokens = await userPushTokens(db, recipientUid, senderUid);
     if (!tokens.length) { console.log('Message : aucun jeton pour le destinataire.'); continue; }
 
     const senderName = (from === 'client'
@@ -1485,11 +1486,20 @@ async function pushMulticast(tokens, title, body, link, onInvalid, tag) {
 // Jetons push d'un utilisateur, en RESPECTANT son choix : notifOn === false (il a coupé
 // les notifications) => aucun jeton. Seul le pool « nouvelle mission » faisait ce
 // contrôle ; la messagerie et les statuts continuaient d'envoyer malgré l'opt-out.
-async function userPushTokens(db, uid) {
+//
+// `senderUid` — quand la notification vient d'une PERSONNE (un message), on vérifie en
+// plus que le destinataire n'a pas bloqué cet expéditeur. Bloquer quelqu'un et continuer
+// de recevoir ses notifications ferait du blocage une décoration : le filtre est ici,
+// côté serveur, là où l'application cliente ne peut pas être contournée.
+async function userPushTokens(db, uid, senderUid) {
   if (!uid) return [];
   try {
     const u = (await db.collection('users').doc(uid).get()).data() || {};
     if (u.notifOn === false) return [];
+    if (senderUid && Array.isArray(u.blocked) && u.blocked.indexOf(senderUid) >= 0) {
+      console.log('Notification retenue : le destinataire a bloqué l\'expéditeur.');
+      return [];
+    }
     return Array.isArray(u.pushTokens) ? u.pushTokens : [];
   } catch (_) { return []; }
 }
@@ -2468,6 +2478,77 @@ exports.ledgerReconcile = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (requ
  *
  * La demande est marquée pour que le rattrapage automatique ne la ressuscite pas.
  */
+/**
+ * reportContent : un utilisateur signale un contenu ou un comportement.
+ *
+ * Écrit côté SERVEUR et pas directement en base, pour trois raisons : l'auteur du
+ * signalement est celui qui est authentifié (personne ne signale au nom d'un autre),
+ * le texte est borné et échappé avant de partir par courriel, et Ti-Services est
+ * prévenue immédiatement — un signalement qui dort trois jours dans une collection
+ * que personne ne regarde ne vaut rien.
+ *
+ * Les motifs sont une liste fermée : « autre » reste possible, avec un texte libre.
+ */
+const REPORT_MOTIFS = {
+  offensant: 'Propos ou contenu offensant',
+  harcelement: 'Harcèlement ou intimidation',
+  arnaque: 'Tentative d\'arnaque ou de paiement hors plateforme',
+  usurpation: 'Usurpation d\'identité',
+  inapproprie: 'Photo ou contenu inapproprié',
+  autre: 'Autre',
+};
+
+exports.reportContent = onCall({secrets: [SMTP_PASS]}, async (request) => {
+  const uid = (request.auth && request.auth.uid) || '';
+  if (!uid) throw new HttpsError('unauthenticated', 'Connectez-vous pour signaler.');
+
+  const d = request.data || {};
+  const motif = String(d.motif || '').trim();
+  if (!REPORT_MOTIFS[motif]) throw new HttpsError('invalid-argument', 'Motif de signalement inconnu.');
+  const texte = String(d.texte || '').trim().slice(0, 1000);
+  if (motif === 'autre' && texte.length < 3) {
+    throw new HttpsError('invalid-argument', 'Décrivez le problème en quelques mots.');
+  }
+  const reqId = String(d.reqId || '').trim().slice(0, 128);
+  const cibleUid = String(d.cibleUid || '').trim().slice(0, 128);
+  const cibleNom = String(d.cibleNom || '').trim().slice(0, 80);
+
+  const db = getFirestore();
+  const auteurEmail = (request.auth.token && request.auth.token.email) || '';
+  let auteurNom = '';
+  try { auteurNom = String(((await db.collection('users').doc(uid).get()).data() || {}).name || ''); } catch (_) {}
+
+  const ref = await db.collection('reports').add({
+    auteurUid: uid,
+    auteurEmail: auteurEmail,
+    auteurNom: auteurNom.slice(0, 80),
+    cibleUid: cibleUid,
+    cibleNom: cibleNom,
+    reqId: reqId,
+    motif: motif,
+    motifLabel: REPORT_MOTIFS[motif],
+    texte: texte,
+    statut: 'nouveau',
+    createdAt: FieldValue.serverTimestamp(),
+  });
+
+  try {
+    await sendMail(db, ADMIN_EMAIL, {
+      subject: 'Ti-Services · Signalement — ' + REPORT_MOTIFS[motif],
+      html: '<p><b>' + escHtmlS(auteurNom || auteurEmail || 'Un utilisateur') + '</b> signale ' +
+            (cibleNom ? '<b>' + escHtmlS(cibleNom) + '</b>' : 'un contenu') + '.</p>' +
+            '<p><b>Motif :</b> ' + escHtmlS(REPORT_MOTIFS[motif]) + '</p>' +
+            (texte ? '<p><b>Description :</b><br>' + escHtmlS(texte).replace(/\n/g, '<br>') + '</p>' : '') +
+            (reqId ? '<p><b>Prestation concernée :</b> ' + escHtmlS(reqId) + '</p>' : '') +
+            '<p>Ouvrez la console admin, section <b>Signalements</b>, pour examiner et répondre. ' +
+            'Un contenu manifestement illicite doit être retiré sans attendre.</p>',
+    });
+  } catch (e) { console.warn('report mail', (e && e.message) || e); }
+
+  console.log('Signalement ' + ref.id + ' — ' + motif + ' — par ' + uid + (cibleUid ? ' contre ' + cibleUid : ''));
+  return {ok: true, id: ref.id};
+});
+
 exports.ledgerDelete = onCall(async (request) => {
   const who = (request.auth && request.auth.token && request.auth.token.email) || '';
   if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
