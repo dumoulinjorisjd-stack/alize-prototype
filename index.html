@@ -1628,6 +1628,17 @@
     try{ return (new Date().toISOString().slice(0,10))>=CLIENT_LAUNCH; }catch(_){ return true; }
   }
   function servicesSoon(){ toast('Nos services ouvrent le 1er octobre — vous serez prévenu !'); }
+  // Compte d'examen (Apple, Google). Il ouvre les services, MAIS ça ne suffisait pas :
+  // une commande réelle exige une autorisation de carte, et aucun prestataire n'accepte
+  // une demande d'examinateur. L'examinateur n'atteignait donc jamais la messagerie —
+  // c'est-à-dire ni « Signaler » ni « Bloquer », qu'Apple demande justement à voir.
+  // D'où ce bac à sable : pour ces comptes-là, la commande reste LOCALE. Aucune écriture,
+  // aucun paiement, aucun vrai prestataire dérangé.
+  function isReviewDemo(){
+    try{ const em=((S.account&&S.account.email)||'').toLowerCase().trim();
+         return IS_PROD&&REVIEW_DEMO_EMAILS.indexOf(em)>=0; }catch(_){ return false; }
+  }
+  const DEMO_PRESTA={uid:'demo-prestataire-examen',nm:'Laure G.',ini:'LG',tel:'+590690000000'};
   // Inscription CONCIERGERIE : masquée pour l'instant (mode pas encore prêt à être
   // déployé). Repasser à true pour rouvrir — tout le parcours est conservé, et les
   // conciergeries déjà inscrites continuent de fonctionner normalement.
@@ -11051,7 +11062,7 @@
   // Garde-fous conservés : uniquement le domaine prod (ti-services.fr / t-service-prod),
   // jamais en démo, et un compte connecté. La beta et la démo restent en simulation.
   function isProdHost(){try{var h=(location.hostname||'').toLowerCase();return /(^|\.)ti-services\.fr$/.test(h)||/^t-service-prod\.(web\.app|firebaseapp\.com)$/.test(h);}catch(_){return false;}}
-  function payReal(){try{return isProdHost()&&!isDemo()&&!!(FB&&FB.auth&&FB.auth.currentUser);}catch(_){return false;}}
+  function payReal(){try{return isProdHost()&&!isDemo()&&!isReviewDemo()&&!!(FB&&FB.auth&&FB.auth.currentUser);}catch(_){return false;}}
   async function startMolliePayment(m){
     try{
       if(!m||!m.reqId||!(FB&&FB.fn&&FB.functions))return false;
@@ -11067,6 +11078,17 @@
   function placeMission(){const d=S.draft;if(!d)return;
     // Anti-rebond : deux appuis trop rapprochés ne créent qu'une seule demande.
     if(S._placing&&(Date.now()-S._placing)<1800){return;}
+    // Compte d'examen : la commande aboutit sans toucher ni à Mollie ni à Firestore.
+    // Un prestataire de démonstration l'accepte au bout de deux secondes, et la
+    // conversation s'ouvre — c'est là que vivent « Signaler » et « Bloquer ».
+    if(isReviewDemo()){
+      d._id=d._id||('m'+Date.now());d._demoExamen=true;
+      S.missions=S.missions||[];if(S.missions.indexOf(d)<0)S.missions.unshift(d);
+      S.mission=d;S.draft=null;S.payStep=false;S.payEdit=false;S.clientNav='wallet';
+      d.status='pending';d.competitors=0;render();
+      setTimeout(function(){ if(S.missions.indexOf(d)<0)return; accepterDemo(d); },2000);
+      return;
+    }
     S._placing=Date.now();
     // Garde-fou doublon : une demande active strictement identique existe déjà →
     // on l'ouvre au lieu d'en créer une seconde (peu importe la cause : double
@@ -11088,6 +11110,35 @@
       d.status='payment_failed';render();toast('Paiement non finalisé — votre demande n’a pas été proposée.');
     }})();render();return;}
     persistRequest(d);recurUpsert(d);startSearch();cacheClientLocal();}
+  // Un prestataire de démonstration accepte la mission et ouvre la conversation.
+  // Rien n'est écrit : la mission n'a pas de reqId, donc sendChat() reste local et
+  // l'écoute temps réel ne l'écrase jamais (elle ne touche pas aux missions sans reqId).
+  function accepterDemo(m){
+    if(!m)return;
+    m.status='accepted';m.accepted=true;m.clientAccepted=true;m.proAccepted=true;
+    m.providerUid=DEMO_PRESTA.uid;m.providerPhone=DEMO_PRESTA.tel;
+    m.provider={nm:DEMO_PRESTA.nm,ini:DEMO_PRESTA.ini,rating:0,jobs:0,founder:false};
+    m.chat=(m.chat&&m.chat.length)?m.chat:[
+      {from:'pro',text:'Bonjour, je prends votre demande. À tout à l’heure !',at:Date.now()-60000}
+    ];
+    render();
+    if(S.persona==='client')toast('Un prestataire a accepté votre demande');
+  }
+  // À la connexion d'un compte d'examen : une prestation est déjà en cours, avec sa
+  // conversation. Sans elle, l'examinateur ouvre « Mes réservations » sur du vide et
+  // ne trouve nulle part les deux mécanismes qu'on lui demande de vérifier.
+  function seedReviewDemo(){
+    if(!isReviewDemo())return;
+    S.missions=S.missions||[];
+    if(S.missions.some(function(x){return x&&x._demoExamen;}))return;
+    const base=findSvc('menage')||{id:'menage',nm:'Ménage',rate:svcBase('menage')};
+    const m=Object.assign(newMission(base),{_id:'mdemo'+Date.now(),_demoExamen:true});
+    accepterDemo(m);
+    m.chat=[{from:'pro',text:'Bonjour, je prends votre demande. À tout à l’heure !',at:Date.now()-3600000},
+            {from:'client',text:'Parfait, merci — le portail sera ouvert.',at:Date.now()-3540000}];
+    S.missions.unshift(m);
+    render();
+  }
   // Étape 0 : la demande devient une fiche Firestore `requests/{id}` (vrais comptes uniquement).
   // Sans adresse exacte ni GPS — révélés seulement au prestataire qui accepte. Base des notifications.
   async function persistRequest(m){
@@ -16377,6 +16428,7 @@
       if(typeof Notification!=='undefined'&&Notification.permission==='granted')registerPush('client');
       S.genSupport=(data&&Array.isArray(data.support))?data.support.slice():[];subscribeUserSupport(user.uid);
       loadActiveRequests(user.uid);
+      seedReviewDemo();
     }catch(e){ console.warn(e); }
   }
   // Recharge EN TEMPS RÉEL les demandes en cours du client (réouverture de l'app,
