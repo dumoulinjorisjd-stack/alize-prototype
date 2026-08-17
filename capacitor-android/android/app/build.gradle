@@ -1,0 +1,75 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace = "fr.tiservices.app"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "fr.tiservices.app"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        // Le numéro de build vient de l'intégration continue : Google refuse deux envois
+        // portant le même versionCode, et personne ne pense à l'incrémenter à la main.
+        versionCode (System.getenv("TS_VERSION_CODE") ?: "1") as Integer
+        versionName System.getenv("TS_VERSION_NAME") ?: "1.0.0"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    // Signature de publication. Le magasin de clés n'est JAMAIS dans le dépôt : il arrive
+    // par l'intégration continue (secret encodé en base64, écrit dans app/ avant le build).
+    // Sans lui, seul le build de débogage fonctionne — et c'est très bien ainsi.
+    signingConfigs {
+        release {
+            def chemin = System.getenv("TS_KEYSTORE_FILE") ?: "ti-services-upload.jks"
+            def f = file(chemin)
+            if (f.exists()) {
+                storeFile f
+                storePassword System.getenv("TS_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("TS_KEY_ALIAS") ?: "upload"
+                keyPassword System.getenv("TS_KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (file(System.getenv("TS_KEYSTORE_FILE") ?: "ti-services-upload.jks").exists()) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}
