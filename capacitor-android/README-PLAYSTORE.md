@@ -64,5 +64,7 @@ en même temps que Capacitor.
 - **Google refuse l'AAB : « versionCode déjà utilisé »** → relancer le workflow suffit,
   le numéro de run aura changé.
 - **Pas de notifications sur Android** → l'app Android doit exister dans le projet
-  Firebase `t-service-prod` avec le nom de paquet `fr.tiservices.app`, et
-  l'empreinte SHA-256 de la clé de signature Play doit y être déclarée.
+  Firebase `t-service-prod` avec le nom de paquet `fr.tiservices.app`, et le secret
+  `ANDROID_GOOGLE_SERVICES_JSON_B64` doit correspondre à CETTE app. L'empreinte SHA
+  n'est pas nécessaire pour les notifications — elle ne l'est que pour la connexion
+  Google, que la coquille n'utilise pas (Google la bloque en WebView).
