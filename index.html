@@ -418,6 +418,9 @@
   body.native-shell [data-act="get-app"],body.native-shell [data-act="google-client"],body.native-shell [data-act="google-pro"],body.native-shell [data-act="google-soon"],body.native-shell #installSteps{display:none!important}
   /* …et le séparateur « ou » qui précède le bouton Google du login devient orphelin. */
   body.native-shell .or-sep:has(+ [data-act="google-soon"]){display:none}
+  /* Message réservé à l'application installée : sur le site, il n'aurait aucun sens. */
+  .native-only{display:none}
+  body.native-shell .native-only{display:block}
   .ig-cap{text-align:center;font-size:12.5px;font-weight:650;color:#007AFF;margin:0 0 14px}
   .ig-warn{display:flex;gap:11px;align-items:flex-start;background:#FFF3E0;border:1px solid #F3C583;border-radius:16px;padding:13px 14px;margin:0 0 14px;color:#8a4b12;font-size:13px;line-height:1.45}
   .ig-warn b{color:#7a3f0c}
@@ -1063,6 +1066,14 @@
     padding:6px 0 clamp(6px, env(safe-area-inset-bottom), 10px)}
   /* Espace réservé sous le contenu pour ne rien masquer derrière la barre fixe. */
   .view>div:has(>.navbar)>.pad{padding-bottom:calc(62px + clamp(6px, env(safe-area-inset-bottom), 10px))}
+  /* ANDROID, application installée. Le plafond de 10px ci-dessus est un choix iPhone :
+     la zone du trait d'accueil vaut 34px et laissait une bande blanche. Sur Android,
+     depuis la version 15, l'application est dessinée BORD À BORD — la page passe sous
+     la barre de navigation du système, qui vaut 24px en gestes et jusqu'à 48px en trois
+     boutons. Plafonner à 10px y cachait purement et simplement la barre des onglets.
+     On y prend donc la mesure réelle, sans plafond. */
+  body.native-android .navbar{padding-bottom:max(6px, env(safe-area-inset-bottom))}
+  body.native-android .view>div:has(>.navbar)>.pad{padding-bottom:calc(62px + max(6px, env(safe-area-inset-bottom)))}
   .navbar button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;font-weight:650;color:var(--muted);padding:3px}
   .navbar button.on{color:var(--teal-deep)}
   .navbar .nb-ic{position:relative}
@@ -4644,7 +4655,28 @@
     setInfo('Localisation…');
     navigator.geolocation.getCurrentPosition(function(pos){geoCacheSet(pos.coords.latitude,pos.coords.longitude);render(pos.coords.latitude,pos.coords.longitude);},function(){setInfo('Appuyez sur « Navigation » pour le guidage.');},{enableHighAccuracy:true,timeout:8000,maximumAge:600000});
   }
-  function geolocate(apply){const fb={lat:17.8962,lng:-62.8498};const set=(g)=>{apply(g);toast('Point GPS enregistré');};if(navigator.geolocation){toast('Localisation en cours…');navigator.geolocation.getCurrentPosition(p=>set({lat:+p.coords.latitude.toFixed(5),lng:+p.coords.longitude.toFixed(5)}),()=>set(fb),{enableHighAccuracy:true,timeout:6000,maximumAge:0});}else set(fb);}
+  // POINT GPS. L'ancienne version enregistrait le CENTRE DE L'ÎLE dès que la position
+  // échouait — en annonçant « Point GPS enregistré ». Le client croyait avoir pointé sa
+  // maison, et le prestataire était envoyé à deux kilomètres de là. On n'enregistre plus
+  // rien quand ça échoue, et on dit la précision obtenue : un point à ±2 km n'est pas
+  // un point à ±10 m, et seul celui qui est sur place peut en juger.
+  // Le délai passe de 6 à 20 secondes : un GPS qui démarre froid met facilement dix
+  // secondes à accrocher, et c'est justement le cas au premier usage.
+  function geolocate(apply){
+    if(!navigator.geolocation){toast('Ce téléphone ne sait pas donner sa position');return;}
+    toast('Localisation en cours…');
+    navigator.geolocation.getCurrentPosition(function(p){
+      const m=Math.round(p.coords.accuracy||0);
+      apply({lat:+p.coords.latitude.toFixed(5),lng:+p.coords.longitude.toFixed(5)});
+      if(m>150)toast('Position approximative à ±'+m+' m — dehors, elle s’affine.');
+      else toast('Point GPS enregistré — précision ±'+m+' m');
+    },function(e){
+      const c=(e&&e.code)||0;
+      toast(c===1?'Localisation refusée — autorisez-la dans les réglages du téléphone'
+        :c===3?'Position trop longue à obtenir — réessayez à l’extérieur'
+        :'Position introuvable — saisissez l’adresse à la main');
+    },{enableHighAccuracy:true,timeout:20000,maximumAge:15000});
+  }
   const availCount=()=>Object.values(S.avail).reduce((t,d)=>t+(d.n||0)+(d.m||0)+(d.a||0)+(d.s||0),0);
 
   const view=document.getElementById('view');
@@ -4708,6 +4740,8 @@
   var TIER_EN={'bronze':'Bronze','argent':'Silver','or':'Gold','platine':'Platinum','diamant':'Diamond'};
   var DOW_EN={'lun':'Mon','mar':'Tue','mer':'Wed','jeu':'Thu','ven':'Fri','sam':'Sat','dim':'Sun'};
   var T_RE=[
+    [/^Point GPS enregistré — précision ±(\d+) m$/,'GPS point saved — accuracy ±$1 m'],
+    [/^Position approximative à ±(\d+) m — dehors, elle s’affine\.$/,'Rough position, ±$1 m — it sharpens outdoors.'],
     [/^dès (\d+) € net$/,'from $1 € net'],
     [/^(\d+) € net\/h$/,'$1 € net\/h'],
     [/^(\d+) € net\/retrait$/,'$1 € net per pickup'],
@@ -6208,7 +6242,13 @@
     "Marquer traité":"Mark as handled",
     "Signalement marqué traité.":"Report marked as handled.",
     "Traité":"Handled",
-    "Suppression de compte":"Account deletion"
+    "Suppression de compte":"Account deletion",
+    "Vous vous êtes inscrit avec Google ?":"Did you sign up with Google?",
+    "Google interdit sa propre connexion à l'intérieur d'une application : le bouton n'existe donc pas ici. Touchez Mot de passe oublié ? ci-dessus, choisissez un mot de passe, et il vous connectera aussi bien dans l'application que sur le site.":"Google does not allow its own sign-in inside an app, so the button is not here. Tap Forgot password? above, choose a password, and it will log you in both in the app and on the website.",
+    "Ce téléphone ne sait pas donner sa position":"This phone cannot provide its location",
+    "Localisation refusée — autorisez-la dans les réglages du téléphone":"Location denied — allow it in the phone's settings",
+    "Position trop longue à obtenir — réessayez à l’extérieur":"Location is taking too long — try again outdoors",
+    "Position introuvable — saisissez l’adresse à la main":"Location unavailable — type the address by hand"
   };
   var MO_PT={'janvier':'janeiro','février':'fevereiro','fevrier':'fevereiro','mars':'março','avril':'abril','mai':'maio','juin':'junho','juillet':'julho','août':'agosto','aout':'agosto','septembre':'setembro','octobre':'outubro','novembre':'novembro','décembre':'dezembro','decembre':'dezembro','janv':'janeiro','févr':'fevereiro','fevr':'fevereiro','avr':'abril','juil':'julho','sept':'setembro','oct':'outubro','nov':'novembro','déc':'dezembro','dec':'dezembro'};
   var TIER_PT={'bronze':'Bronze','argent':'Prata','or':'Ouro','platine':'Platina','diamant':'Diamante'};
@@ -7890,9 +7930,17 @@
     "Marquer traité":"Marcar como tratada",
     "Signalement marqué traité.":"Denúncia marcada como tratada.",
     "Traité":"Tratada",
-    "Suppression de compte":"Eliminação de conta"
+    "Suppression de compte":"Eliminação de conta",
+    "Vous vous êtes inscrit avec Google ?":"Registou-se com o Google?",
+    "Google interdit sa propre connexion à l'intérieur d'une application : le bouton n'existe donc pas ici. Touchez Mot de passe oublié ? ci-dessus, choisissez un mot de passe, et il vous connectera aussi bien dans l'application que sur le site.":"A Google não permite a sua própria autenticação dentro de uma aplicação, por isso o botão não existe aqui. Toque em Esqueceu-se da palavra-passe? acima, escolha uma palavra-passe, e ela servirá tanto na aplicação como no site.",
+    "Ce téléphone ne sait pas donner sa position":"Este telemóvel não consegue indicar a sua posição",
+    "Localisation refusée — autorisez-la dans les réglages du téléphone":"Localização recusada — autorize-a nas definições do telemóvel",
+    "Position trop longue à obtenir — réessayez à l’extérieur":"A localização demora demasiado — tente de novo no exterior",
+    "Position introuvable — saisissez l’adresse à la main":"Localização indisponível — introduza a morada manualmente"
   };
   var T_RE_PT=[
+    [/^Point GPS enregistré — précision ±(\d+) m$/,'Ponto GPS guardado — precisão ±$1 m'],
+    [/^Position approximative à ±(\d+) m — dehors, elle s’affine\.$/,'Posição aproximada, ±$1 m — no exterior fica mais precisa.'],
     [/^dès (\d+) € net$/,'desde $1 € líquidos'],
     [/^(\d+) € net\/h$/,'$1 € líquidos\/h'],
     [/^(\d+) € net\/retrait$/,'$1 € líquidos por levantamento'],
@@ -10518,6 +10566,10 @@
           <button type="submit" id="loginSubmit" class="btn primary">${I.lock} Se connecter</button>
         </div>
       </form>
+      <div class="native-only card" style="padding:14px;margin-top:16px;border-left:4px solid var(--teal)">
+        <b style="font-size:13px">Vous vous êtes inscrit avec Google&nbsp;?</b>
+        <p class="sub" style="margin-top:6px">Google interdit sa propre connexion à l'intérieur d'une application&nbsp;: le bouton n'existe donc pas ici. Touchez <b>Mot de passe oublié&nbsp;?</b> ci-dessus, choisissez un mot de passe, et il vous connectera aussi bien dans l'application que sur le site.</p>
+      </div>
       <div class="or-sep"><span>ou</span></div>
       <button class="btn ghost" data-act="google-soon" style="${FB?'':'opacity:.65'}"><svg width="17" height="17" viewBox="0 0 24 24"><path fill="#4285F4" d="M23 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.2a5.3 5.3 0 0 1-2.3 3.5v2.9h3.7C21.7 18.9 23 15.9 23 12.3z"/><path fill="#34A853" d="M12 24c3.1 0 5.7-1 7.6-2.8l-3.7-2.9c-1 .7-2.3 1.1-3.9 1.1-3 0-5.5-2-6.4-4.8H1.8v3C3.7 21.3 7.5 24 12 24z"/><path fill="#FBBC05" d="M5.6 14.3a7.2 7.2 0 0 1 0-4.6v-3H1.8a12 12 0 0 0 0 10.6z"/><path fill="#EA4335" d="M12 4.8c1.7 0 3.2.6 4.4 1.7l3.3-3.3C17.7 1.2 15.1 0 12 0 7.5 0 3.7 2.7 1.8 6.7l3.8 3c.9-2.8 3.4-4.9 6.4-4.9z"/></svg>&nbsp;Continuer avec Google ${FB?"":'<span class="chip grey" style="margin-left:4px">bientôt</span>'}</button>
       <p class="mini" style="text-align:center;margin-top:14px">Pas encore de compte&nbsp;? <button class="linklike" data-act="login-to-signup">Créer un compte</button></p>
@@ -15661,7 +15713,11 @@
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
   // Coquille native (App Store / Play Store) : se comporte comme installée + masque
   // ce qui n'a pas de sens en natif (bouton Installer, connexion Google en WebView).
-  if(isNativeShell()){document.body.classList.add('standalone','native-shell');}
+  if(isNativeShell()){document.body.classList.add('standalone','native-shell');
+    // Android et iOS ne demandent PAS la même marge basse : voir la règle .navbar.
+    try{ if(window.Capacitor&&window.Capacitor.getPlatform&&window.Capacitor.getPlatform()==='android')
+      document.body.classList.add('native-android'); }catch(_){}
+  }
   // Aide PROACTIVE limitée aux navigateurs INTÉGRÉS (WhatsApp, Instagram, Messenger…) : là,
   // l'installation « Sur l'écran d'accueil » n'existe PAS — la seule info utile et vraie est
   // « ouvrez d'abord ce lien dans Safari ». En vrai Safari on n'affiche rien (l'accueil montre
@@ -16289,6 +16345,20 @@
   function pushGuard(){try{history.pushState({app:1},'');}catch(e){}}
   window.addEventListener('popstate',function(){goBack();pushGuard();});
   pushGuard();
+  // BOUTON RETOUR D'ANDROID. Dans un navigateur, il déclenche « popstate » et la garde
+  // ci-dessus suffit. Dans l'application installée, non : Capacitor ne relie plus le
+  // bouton système à l'historique de la page — sans écouteur, il ferme l'application,
+  // quel que soit l'écran affiché. On le rattache donc au même goBack() que la flèche,
+  // et on ne quitte que depuis la racine, là où il n'y a plus rien à remonter.
+  try{
+    const C=window.Capacitor, A=C&&C.Plugins&&C.Plugins.App;
+    if(A&&A.addListener){
+      A.addListener('backButton',function(){
+        if(canGoBack()){ goBack(); return; }
+        try{ A.exitApp(); }catch(_){}
+      });
+    }
+  }catch(_){}
 
   /* ============ FIREBASE (bêta) — Auth + profil Firestore ============
      Actif seulement si CONFIG.firebase est renseigné (et hors tests: window.__NOFB).
