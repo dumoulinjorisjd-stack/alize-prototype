@@ -53,6 +53,13 @@ const ADRESSES=[
     'elle dit ce qui est CONSERVÉ, et sur quel fondement');
   ok(/cinq ans/.test(t),'y compris les pièces d’un intervenant');
   ok(/immédiate et définitive/.test(t),'et que la suppression ne se rattrape pas');
+  // Google pose DEUX questions distinctes : supprimer le compte, et faire effacer une
+  // partie de ses données SANS le fermer. Déclarer la seconde oblige la page à décrire
+  // la procédure « de manière bien distincte » — un article à elle, pas une incise.
+  ok(/Effacer certaines données sans fermer son compte/.test(t),
+    'la suppression partielle a son propre article');
+  ok(/Suppression de données/.test(t),'avec l’objet d’e-mail exact à employer');
+  ok(/reste ouvert et utilisable/.test(t),'et dit que le compte survit');
 
   // Le changement de langue passe par l'état interne : on repasse donc par le harnais,
   // qui l'expose. L'adresse publique, elle, se teste sur le fichier livré.
