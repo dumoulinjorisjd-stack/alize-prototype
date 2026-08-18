@@ -50,13 +50,9 @@ ok(/Localisation refusée/.test(g)&&/Position trop longue/.test(g),
 ok(!/toast\('Point GPS enregistré'\)/.test(src),
   'plus aucun « enregistré » qui ne corresponde à rien');
 
-console.log('\nD — personne n’est enfermé dehors');
+console.log('\nD — les boutons Google restent masqués dans l’app');
 ok(/body\.native-shell \[data-act="google-client"\]/.test(src),
-  'les boutons Google restent masqués dans l’app — Google les y interdit');
-ok(/native-only/.test(src)&&/Vous vous êtes inscrit avec Google/.test(src),
-  'mais l’application explique enfin comment se connecter malgré tout');
-ok(/\.native-only\{display:none\}/.test(src)&&/body\.native-shell \.native-only\{display:block\}/.test(src),
-  'et ce message n’apparaît QUE dans l’app, où il a un sens');
+  'Google interdit sa propre connexion en WebView — le bouton reste masqué');
 
 console.log('\nF — la mise à jour ne s’annonce plus dans l’app installée');
 ok(/function handleUpdateAvailable\(reg\)\{/.test(src),'un aiguillage existe avant le bandeau');
@@ -78,6 +74,20 @@ ok(/ACCESS_FINE_LOCATION/.test(man)&&/ACCESS_COARSE_LOCATION/.test(man),
   'Android demande les deux permissions');
 const plist=fs.readFileSync(path.join(RACINE,'capacitor','ios','App','App','Info.plist'),'utf8');
 ok(/NSLocationWhenInUseUsageDescription/.test(plist),'iOS porte sa phrase d’explication');
+
+console.log('\nG — la marge basse ne manque plus, même sans barre d’onglets');
+// Chaque écran SANS barre d'onglets (connexion, inscription, documents légaux,
+// conversation…) perdait sa marge basse : .pad ne consultait jamais
+// env(safe-area-inset-bottom), contrairement à .footcta/.sheet qui le font déjà
+// sans condition — la valeur vaut 0 partout ailleurs, un plein écran seul la rend
+// non nulle. La barre système Android passait donc par-dessus les boutons.
+ok(/\.pad\{padding:6px 18px calc\(26px \+ env\(safe-area-inset-bottom\)\)\}/.test(src),
+  'la marge basse de .pad suit désormais la zone sûre, comme .footcta le fait déjà');
+ok(!/style="padding:6px 18px 26px"/.test(src),'aucune trace de l’ancienne valeur fixe');
+
+console.log('\nH — plus d’encart Google dans l’écran de connexion');
+ok(!/Vous vous êtes inscrit avec Google/.test(src),'le texte a été retiré, à la demande');
+ok(!/\.native-only\{display:none\}/.test(src),'et son habillage CSS avec lui — rien d’orphelin');
 
 console.log(f?('\n'+f+' ÉCHEC(S)'):'\nTOUT EST VERT');
 process.exit(f?1:0);
