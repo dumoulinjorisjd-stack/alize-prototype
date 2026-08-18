@@ -16235,6 +16235,24 @@
   // Pastille discrète « mettre à jour » : proposée quand une nouvelle version est
   // prête. On NE recharge JAMAIS l'app tout seul — c'est l'utilisateur qui décide,
   // pour ne pas interrompre une saisie en cours (inscription, commande…).
+  // DANS L'APPLICATION INSTALLÉE, PAS DE BANDEAU. Un « nouvelle version » au milieu
+  // de l'écran ne se voit dans aucune application native — c'est le magasin qui gère
+  // ça d'ordinaire, en silence. La mise à jour s'applique donc sans un mot, au moment
+  // le plus sûr : quand l'app repasse en arrière-plan (jamais pendant que quelqu'un la
+  // regarde), pour qu'elle soit déjà à jour au réveil suivant.
+  let _pendingNativeUpdate=null;
+  function applyNativeUpdate(reg){ try{ if(reg&&reg.waiting)reg.waiting.postMessage({type:'SKIP_WAITING'}); }catch(_){} }
+  function scheduleNativeUpdate(reg){
+    if(document.visibilityState==='hidden'){ applyNativeUpdate(reg); return; }
+    _pendingNativeUpdate=reg;
+  }
+  document.addEventListener('visibilitychange',function(){
+    if(document.visibilityState==='hidden'&&_pendingNativeUpdate){ applyNativeUpdate(_pendingNativeUpdate); _pendingNativeUpdate=null; }
+  });
+  function handleUpdateAvailable(reg){
+    if(isNativeShell()){ scheduleNativeUpdate(reg); return; }
+    showUpdatePill(reg);
+  }
   function showUpdatePill(reg){
     if(document.getElementById('swUpdate'))return;
     const el=document.createElement('button');
@@ -16256,12 +16274,12 @@
     navigator.serviceWorker.addEventListener('controllerchange',()=>{ if(refreshing)return; refreshing=true; if(hadController)location.reload(); });
     navigator.serviceWorker.register('sw.js').then(function(reg){
       // Une version déjà en attente au chargement ? On propose la mise à jour.
-      if(reg.waiting&&navigator.serviceWorker.controller)showUpdatePill(reg);
+      if(reg.waiting&&navigator.serviceWorker.controller)handleUpdateAvailable(reg);
       reg.addEventListener('updatefound',function(){
         const nw=reg.installing;if(!nw)return;
         nw.addEventListener('statechange',function(){
           // « installed » avec un contrôleur déjà présent = mise à jour prête (pas 1ʳᵉ install).
-          if(nw.state==='installed'&&navigator.serviceWorker.controller)showUpdatePill(reg);
+          if(nw.state==='installed'&&navigator.serviceWorker.controller)handleUpdateAvailable(reg);
         });
       });
       try{reg.update();}catch(_){}

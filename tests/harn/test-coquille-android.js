@@ -58,6 +58,20 @@ ok(/native-only/.test(src)&&/Vous vous êtes inscrit avec Google/.test(src),
 ok(/\.native-only\{display:none\}/.test(src)&&/body\.native-shell \.native-only\{display:block\}/.test(src),
   'et ce message n’apparaît QUE dans l’app, où il a un sens');
 
+console.log('\nF — la mise à jour ne s’annonce plus dans l’app installée');
+ok(/function handleUpdateAvailable\(reg\)\{/.test(src),'un aiguillage existe avant le bandeau');
+const hu=src.slice(src.indexOf('function handleUpdateAvailable('));
+ok(/if\(isNativeShell\(\)\)\{ scheduleNativeUpdate\(reg\); return; \}/.test(hu.slice(0,200)),
+  'dans l’app, la mise à jour ne passe plus par le bandeau visible');
+ok(/if\(document\.visibilityState==='hidden'\)\{ applyNativeUpdate\(reg\); return; \}/.test(src),
+  'elle attend que l’écran ne soit plus regardé');
+ok(/document\.visibilityState==='hidden'&&_pendingNativeUpdate/.test(src),
+  'et se déclenche au moment où l’app repasse en arrière-plan');
+ok(/handleUpdateAvailable\(reg\);\s*\n\s*reg\.addEventListener\('updatefound'/.test(src),
+  'l’aiguillage couvre la mise à jour déjà prête au chargement');
+ok(/nw\.state==='installed'&&navigator\.serviceWorker\.controller\)handleUpdateAvailable\(reg\);/.test(src),
+  'et celle qui arrive pendant que l’app tourne');
+
 console.log('\nE — la localisation est déclarée dans les deux coquilles');
 const man=fs.readFileSync(path.join(RACINE,'capacitor-android','android','app','src','main','AndroidManifest.xml'),'utf8');
 ok(/ACCESS_FINE_LOCATION/.test(man)&&/ACCESS_COARSE_LOCATION/.test(man),
