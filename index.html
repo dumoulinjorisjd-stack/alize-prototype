@@ -1071,6 +1071,14 @@
      On y prend donc la mesure réelle, sans plafond. */
   body.native-android .navbar{padding-bottom:max(6px, env(safe-area-inset-bottom))}
   body.native-android .view>div:has(>.navbar)>.pad{padding-bottom:calc(62px + max(6px, env(safe-area-inset-bottom)))}
+  /* Le bouton retour matériel d'Android fait déjà exactement ce que ces boutons
+     font (voir tryVisibleBackLink() dans goBack()) : les garder à l'écran revient à
+     montrer deux fois le même geste. Sur iPhone ils restent affichés — iOS n'a pas
+     d'équivalent matériel. « Réinitialiser » (démo) et « ↻ Actualiser » ne sont PAS
+     des boutons retour : ils restent visibles partout, y compris ici. */
+  body.native-android .backfab{display:none!important}
+  body.native-android .reset[data-act]:not([data-act="mollie-refresh"]),
+  body.native-android .reset[data-adm]{display:none!important}
   .navbar button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;font-weight:650;color:var(--muted);padding:3px}
   .navbar button.on{color:var(--teal-deep)}
   .navbar .nb-ic{position:relative}
@@ -13313,12 +13321,28 @@
   // base64 → Blob → vrai téléchargement de fichier (.pdf enregistré dans « Fichiers »
   // / le dossier de téléchargement, sans boîte d'impression). Sur iOS PWA, le clic
   // ouvre le PDF dans le lecteur système d'où l'on peut « Partager / Enregistrer ».
-  function downloadB64Pdf(b64,name){
+  // DANS L'APPLICATION INSTALLÉE, UN LIEN <a download> NE DÉCLENCHE RIEN. La WebView
+  // de Capacitor n'a ni onglets ni gestionnaire de téléchargements pour le recevoir —
+  // le clic sur le lien invisible ne produit aucun effet, aucune erreur non plus :
+  // le code continuait donc tout droit vers « Facture enregistrée ✓ », qui ne
+  // correspondait à rien. On écrit le PDF sur l'appareil puis on ouvre la feuille de
+  // partage native (Filesystem + Share) : l'utilisateur choisit où le voir ou
+  // l'enregistrer, et une vraie erreur remonte si ça échoue au lieu d'être avalée.
+  async function downloadB64Pdf(b64,name){
+    const filename=name||'Facture-Ti-Services.pdf';
+    if(isNativeShell()){
+      const P=(window.Capacitor&&window.Capacitor.Plugins)||{};
+      if(P.Filesystem&&P.Share){
+        const w=await P.Filesystem.writeFile({path:filename,data:b64,directory:'CACHE'});
+        await P.Share.share({title:filename,url:w.uri});
+        return;
+      }
+    }
     const bin=atob(b64);const len=bin.length;const arr=new Uint8Array(len);
     for(let i=0;i<len;i++)arr[i]=bin.charCodeAt(i);
     const blob=new Blob([arr],{type:'application/pdf'});
     const url=URL.createObjectURL(blob);
-    const a=document.createElement('a');a.href=url;a.download=name||'Facture-Ti-Services.pdf';a.rel='noopener';
+    const a=document.createElement('a');a.href=url;a.download=filename;a.rel='noopener';
     document.body.appendChild(a);a.click();
     setTimeout(function(){try{URL.revokeObjectURL(url);a.remove();}catch(_){}} ,1100);
   }
@@ -13355,7 +13379,7 @@
         const call=FB.fn.httpsCallable(FB.functions,'invoicePdf');
         const res=await call({reqId:rid});
         const d=(res&&res.data)||{};
-        if(d.pdf){ downloadB64Pdf(d.pdf,d.filename); toast('Facture enregistrée ✓'); return; }
+        if(d.pdf){ try{ await downloadB64Pdf(d.pdf,d.filename); if(!isNativeShell())toast('Facture enregistrée ✓'); }catch(_){ toast('Impossible d’ouvrir la facture — réessayez.'); } return; }
       }catch(e){ console.warn('invoicePdf',e); /* repli impression ci-dessous */ }
     }
     printInvoiceFallback(m);
@@ -13372,7 +13396,7 @@
         const call=FB.fn.httpsCallable(FB.functions,'procurationPdf');
         const res=await call({reqId:rid});
         const d=(res&&res.data)||{};
-        if(d.pdf){ downloadB64Pdf(d.pdf,d.filename||'Procuration-Ti-Services.pdf'); toast('Procuration enregistrée ✓'); return; }
+        if(d.pdf){ try{ await downloadB64Pdf(d.pdf,d.filename||'Procuration-Ti-Services.pdf'); if(!isNativeShell())toast('Procuration enregistrée ✓'); }catch(_){ toast('Impossible d’ouvrir la procuration — réessayez.'); } return; }
       }catch(e){ console.warn('procurationPdf',e); }
     }
     printProcurationFallback(m);
@@ -16278,7 +16302,23 @@
   });}
 
   /* ---------- Bouton retour du téléphone : revient à l'écran précédent (ne quitte pas l'app) ---------- */
+  // BOUTON RETOUR DU TÉLÉPHONE — FILET GÉNÉRAL. Une bonne partie des écrans porte
+  // déjà SON PROPRE bouton « ← ... » (ci-dessous, en CSS, masqué sur Android). À un
+  // instant donné un seul écran est jamais peint — paintView() remplace tout le
+  // contenu — donc CE bouton, quand il existe, EST le geste que l'auteur de cet écran
+  // a prévu pour reculer. On le déclenche plutôt que de tenir à jour une liste
+  // parallèle d'états : c'est exactement le défaut trouvé sur S.catView et
+  // S.invClient — un état ajouté à un endroit, oublié dans goBack(), et le bouton
+  // matériel qui ne fait plus rien. .click() fonctionne même sur un bouton masqué.
+  function tryVisibleBackLink(){
+    try{
+      const b=view.querySelector('.reset[data-act]:not([data-act="mollie-refresh"]), .reset[data-adm]');
+      if(b){ b.click(); return true; }
+    }catch(_){}
+    return false;
+  }
   function goBack(){
+    if(tryVisibleBackLink())return;
     if(S.imgView){S.imgView=null;render();return;}
     if(S.legalView){S.legalView=null;render();return;}
     if(S.showPitch){S.showPitch=false;render();return;}

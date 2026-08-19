@@ -12,10 +12,11 @@ sed 's/function render(){/function render(){window.__S=S;window.__render=render;
      s/^  function srvMontants(src){/  window.__rev={srv:function(x){return srvMontants(x);},recale:function(h,r){return recaleHist(h,r);},record:function(m){return recordProPaid(m);}};\n  function srvMontants(src){/
      s/^  function catalogGroups(id){/  window.__cat={list:function(i){return catalogFor(i);},groups:function(i){return catalogGroups(i);}};\n  function catalogGroups(id){/
      s/^  function admSeenGet(){/  window.__adm={artNew:function(a){return admArtNew(a);},cliNew:function(c){return admCliNew(c);},thNew:function(t){return admThreadNew(t);},seen:function(k,v){return admSeenSet(k,v);},artSig:function(a){return admArtSig(a);},cliSig:function(c){return admCliSig(c);},count:function(){return adminNewCount();}};\n  function admSeenGet(){/
+     s/^  function tryVisibleBackLink(){/  window.__back=function(){return goBack();};\n  function tryVisibleBackLink(){/
      s/^  function accepterDemo(m){/  window.__demo={accepte:function(m){return accepterDemo(m);},estExamen:function(){return isReviewDemo();}};\n  function accepterDemo(m){/
      s/^  function i18nApply(root){/  window.__tr=function(v,lang){var av=S.lang;S.lang=lang;try{return trOne(v);}finally{S.lang=av;}};window.__dict=function(lang){return lang===String.fromCharCode(112,116)?PT_DICT:EN_DICT;};\n  function i18nApply(root){/' \
   "$SRC" > "$OUT"
-for f in __S __render __err __newMission __peutTravailler __tr __adm __cat __rev __demo; do
+for f in __S __render __err __newMission __peutTravailler __tr __adm __cat __rev __demo __back; do
   grep -q "window.$f" "$OUT" || { echo "MANQUE $f"; exit 1; }
 done
 echo "harnais complet"

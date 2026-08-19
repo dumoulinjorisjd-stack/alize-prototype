@@ -13,7 +13,9 @@
    Et un quatrième, de conception : la connexion Google est masquée dans l'app (Google
    l'interdit en WebView), ce qui laissait sans issue ceux qui s'étaient inscrits ainsi. */
 const fs=require('fs'),path=require('path');
+const {chromium}=require('playwright-core');
 const RACINE='/home/user/alize-work';
+const o={headless:true}; if(fs.existsSync('/opt/pw-browsers/chromium'))o.executablePath='/opt/pw-browsers/chromium';
 let f=0; const ok=(c,l)=>{if(c)console.log('  ✓ '+l);else{f++;console.log('  ✗ ÉCHEC : '+l);}};
 const src=fs.readFileSync(path.join(RACINE,'index.html'),'utf8');
 
@@ -89,5 +91,57 @@ console.log('\nH — plus d’encart Google dans l’écran de connexion');
 ok(!/Vous vous êtes inscrit avec Google/.test(src),'le texte a été retiré, à la demande');
 ok(!/\.native-only\{display:none\}/.test(src),'et son habillage CSS avec lui — rien d’orphelin');
 
-console.log(f?('\n'+f+' ÉCHEC(S)'):'\nTOUT EST VERT');
-process.exit(f?1:0);
+console.log('\nI — le bouton retour matériel ferme réellement ce que le bouton retiré fermait');
+ok(/function tryVisibleBackLink\(\)\{/.test(src),'un filet général existe, avant la longue liste d’états');
+ok(/if\(tryVisibleBackLink\(\)\)return;/.test(src),'goBack() le consulte en premier');
+ok(/'\.reset\[data-act\]:not\(\[data-act="mollie-refresh"\]\), \.reset\[data-adm\]'/.test(src),
+  'il ignore le bouton « Actualiser », qui n’est pas un bouton retour');
+ok(/body\.native-android \.backfab\{display:none!important\}/.test(src),
+  'la bulle flottante disparaît sur Android — elle appelait déjà goBack(), donc rien à couvrir en plus');
+ok(/body\.native-android \.reset\[data-act\]:not\(\[data-act="mollie-refresh"\]\),/.test(src),
+  'les liens « ← ... » disparaissent avec elle, avec la même exception');
+
+(async()=>{
+  const b2=await chromium.launch(o);
+  const p=await (await b2.newContext({locale:'fr-FR',viewport:{width:420,height:1300}})).newPage();
+  const errs=[]; p.on('pageerror',e=>errs.push(e.message));
+  await p.route('**/*',r=>/gstatic|googleapis|firebase|cloudfunctions|maps|tile/.test(r.request().url())?r.abort():r.continue());
+  await p.goto('file://'+path.join(RACINE,'tests','harn','app.html'),{waitUntil:'load'});
+  await p.waitForTimeout(1300);
+
+  console.log('\nJ — deux écrans qui n’avaient AUCUN moyen de se fermer au bouton matériel');
+  // Sous-catégorie ouverte sur l'accueil client. Avant le filet général, goBack() ne
+  // connaissait pas S.catView : le bouton matériel n'y faisait RIEN.
+  const cat=await p.evaluate(()=>{
+    const S=window.__S; document.body.classList.add('standalone');
+    S.lang='fr';S.onboarded=true;S.guest=false;S.demoMode=false;S.persona='client';S.clientNav='home';
+    S.account={name:'Joris',email:'j@e.fr',zone:'Gustavia'};S.catView='beaute';S.mission=null;S.draft=null;
+    window.__render();
+    const avant=window.__S.catView;
+    window.__back();
+    return {avant, apres:window.__S.catView};
+  });
+  ok(cat.avant==='beaute','la sous-catégorie était bien ouverte avant le geste');
+  ok(cat.apres===null,'le bouton retour matériel la ferme désormais');
+
+  // Détail des factures d'un client, côté prestataire. Même défaut, côté S.invClient.
+  const inv=await p.evaluate(()=>{
+    const S=window.__S;S.persona='pro';S.proNav='earnings';S.mission=null;
+    // Prestataire VALIDÉ, sinon l'écran affiché est « Candidature envoyée », pas les
+    // factures. Le détail d'un client n'existe que s'il a au moins une mission à son nom.
+    S.proStatus='approved';S.proMollie='active';S.proMollieCanWork=true;S.proInsured=true;
+    S.proHistory=[{id:'h1',clientFull:'Villa Rose',svc:'menage',dateISO:'2026-08-01',unit:'h',duration:3,invNo:'FA-1',tip:0}];
+    S.interv=true;S.invClient='Villa Rose';
+    window.__render();
+    const avant=window.__S.invClient;
+    window.__back();
+    return {avant, apres:window.__S.invClient};
+  });
+  ok(inv.avant==='Villa Rose','le détail du client était bien ouvert avant le geste');
+  ok(inv.apres===null,'le bouton retour matériel le ferme désormais aussi');
+
+  ok(errs.length===0,'aucune erreur JS pendant ces deux gestes ('+errs.join(' | ')+')');
+  await b2.close();
+  console.log(f?('\n'+f+' ÉCHEC(S)'):'\nTOUT EST VERT');
+  process.exit(f?1:0);
+})().catch(function(e){console.error(e);process.exit(1);});
