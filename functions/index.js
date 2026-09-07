@@ -4054,6 +4054,15 @@ exports.autoValidate = onSchedule({schedule: 'every 1 hours', secrets: [SMTP_PAS
 exports.paymentReconciliation = onSchedule({schedule: '0 9 * * *', secrets: [SMTP_PASS]}, async () => {
   const db = getFirestore();
   const now = Date.now();
+  // JOURNAL DES DÉPARTS : on efface les lignes échues. Il répond à « qui a disparu
+  // ces dernières semaines », pas à « qui est parti il y a deux ans » — garder au-delà
+  // reviendrait à conserver indéfiniment les coordonnées de gens qui ont demandé leur
+  // effacement.
+  try {
+    const vieux = await db.collection('comptesSupprimes').where('expireLe', '<=', now).limit(400).get();
+    for (const d of vieux.docs) { try { await d.ref.delete(); } catch (_) {} }
+    if (vieux.size) console.log('journal des départs : ' + vieux.size + ' ligne(s) échue(s) effacée(s)');
+  } catch (e) { console.warn('purge journal départs', e && e.message); }
   const H = 3600 * 1000;
   const ageH = (ts) => {
     let t = 0;
@@ -5961,8 +5970,48 @@ async function effacerRequetes(db, snapDocs) {
   return n;
 }
 // Cœur de la purge, partagé par l'appel admin et le déclencheur Authentication.
-async function purgerCompte(db, uid, mode) {
+// JOURNAL DES DÉPARTS. « Je reçois un e-mail de candidature, j'y vais plus tard, la
+// personne n'y est plus » : sans trace, impossible de savoir si quelqu'un s'est
+// désinscrit avant validation ou s'il ne s'est jamais vraiment inscrit. On inscrit donc
+// le DÉPART lui-même, avant d'effacer quoi que ce soit.
+// Volontairement MAIGRE et TEMPORAIRE : la personne a demandé son effacement, on ne
+// garde que ce qui répond à la question — qui, quand, quel rôle, où en était le
+// dossier — et le journal se purge tout seul au bout de JOURNAL_JOURS.
+const JOURNAL_JOURS = 90;
+async function journaliserDepart(db, uid, origine, authUser) {
+  try {
+    let u = {}; let a = {};
+    try { u = (await db.collection('users').doc(uid).get()).data() || {}; } catch (_) {}
+    try { a = (await db.collection('artisans').doc(uid).get()).data() || {}; } catch (_) {}
+    // Les fiches ont pu être effacées AVANT nous (l'application supprime ses documents
+    // puis le compte) : le compte d'authentification, lui, nous parvient toujours.
+    const au = authUser || {};
+    const inscrit = (a.createdAt && a.createdAt.toMillis) ? a.createdAt.toMillis()
+      : (u.createdAt && u.createdAt.toMillis) ? u.createdAt.toMillis()
+      : (au.metadata && au.metadata.creationTime) ? Date.parse(au.metadata.creationTime) || 0 : 0;
+    await db.collection('comptesSupprimes').doc(uid).set({
+      uid: uid,
+      nom: String(a.name || u.name || au.displayName || '').slice(0, 80),
+      email: String(u.email || a.email || au.email || '').slice(0, 200),
+      role: String(u.role || (a.name ? 'artisan' : 'client')).slice(0, 20),
+      // Où en était le dossier au moment du départ — c'est LA réponse à la question :
+      // « attente » = il s'est désinscrit avant que je le valide.
+      statut: String(a.status || '').slice(0, 20),
+      avaitCandidature: !!a.name,
+      metiers: Array.isArray(a.cats) ? a.cats.slice(0, 12) : [],
+      inscritLe: inscrit,
+      supprimeLe: Date.now(),
+      origine: origine,          // console-total | console-profil | auth
+      expireLe: Date.now() + JOURNAL_JOURS * 86400000,
+    }, {merge: true});
+  } catch (e) { console.warn('journaliserDepart', e && e.message); }
+}
+
+async function purgerCompte(db, uid, mode, authUser) {
   const bilan = {profils: 0, jetons: 0, demandes: 0, registre: 0, agenda: 0, auth: false};
+
+  // 0) ON NOTE LE DÉPART AVANT D'EFFACER — après, il ne resterait rien à noter.
+  await journaliserDepart(db, uid, (authUser ? 'auth' : ('console-' + mode)), authUser);
 
   // 1) FICHES DE PROFIL (toujours) — une par collection, l'uid EST l'identifiant.
   bilan.profils = await effacerDocs(['users', 'artisans', 'concierges']
@@ -6035,7 +6084,7 @@ exports.adminPurgeAccount = onCall({timeoutSeconds: 300}, async (request) => {
 exports.onUserDeleted = require('firebase-functions/v1')
   .region('europe-west1').auth.user().onDelete(async (user) => {
     try {
-      const bilan = await purgerCompte(getFirestore(), user.uid, 'profil');
+      const bilan = await purgerCompte(getFirestore(), user.uid, 'profil', user);
       console.log('Compte supprimé (Authentication) uid=' + user.uid + ' → ' + JSON.stringify(bilan));
     } catch (e) { console.warn('onUserDeleted', e); }
   });

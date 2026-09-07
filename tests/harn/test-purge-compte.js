@@ -55,7 +55,7 @@ console.log('C — le déclencheur Authentication : la console suit enfin');
 ok(/exports\.onUserDeleted = require\('firebase-functions\/v1'\)/.test(fn),
   'un déclencheur sur la suppression d’un compte existe (interface v1, seule à le proposer)');
 ok(/\.auth\.user\(\)\.onDelete\(async \(user\) => \{/.test(fn), 'il écoute bien la suppression');
-ok(/purgerCompte\(getFirestore\(\), user\.uid, 'profil'\)/.test(fn),
+ok(/purgerCompte\(getFirestore\(\), user\.uid, 'profil'[,)]/.test(fn),
   'il nettoie les PROFILS seulement : une suppression faite dans Firebase n’ordonne pas d’effacer la comptabilité');
 ok(/\.region\('europe-west1'\)/.test(fn), 'déployé dans la même région que le reste');
 
