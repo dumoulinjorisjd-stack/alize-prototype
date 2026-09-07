@@ -170,6 +170,15 @@ service cloud.firestore {
     // (Cloud Function via l'Admin SDK, qui contourne ces règles) : aucun client ne peut
     // créer, modifier ni supprimer une écriture — donc rien ne se perd par bug ou manip.
     // Lecture : l'admin, plus la partie concernée (artisan / client) pour ses propres pièces.
+    // Journal des départs : qui a supprimé son compte, quand, et où en était son dossier.
+    // Écrit par le SERVEUR seul (avant l'effacement des fiches), lu par l'administrateur
+    // seul — il y figure des personnes qui ont justement demandé leur effacement, et le
+    // serveur purge les lignes échues chaque jour.
+    match /comptesSupprimes/{uid} {
+      allow read:  if isAdmin();
+      allow write: if false;
+    }
+
     match /ledger/{entryId} {
       allow read:  if isAdmin()
                    || (signedIn() && resource.data.providerUid == uid())

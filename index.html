@@ -2231,6 +2231,9 @@
   }
   // Carte repliable (écrans Compte) : la tête affiche titre + résumé + pastille ;
   // le corps ne se rend que déplié (S._fold). Tout est replié par défaut.
+  // Date courte, au niveau du module : plusieurs écrans en ont besoin et un helper
+  // défini dans UNE fonction n'est pas visible depuis les autres.
+  function dateFr(ms){try{return ms?new Date(ms).toLocaleDateString('fr-FR'):'';}catch(_){return '';}}
   function foldCard(id,icon,title,sub,body,chip,dot){
     const open=!!(S._fold&&S._fold[id]);
     return `<div class="card foldc${open?' open':''}" style="margin-top:12px">
@@ -8943,6 +8946,27 @@
 
       <div style="height:18px"></div><span class="eyebrow">${I.user} Clients</span>
       ${foldCard('a-clis',I.user,'Fiches clients',pendC.length?pendC.length+' en attente de validation':'Comptes clients inscrits',cliList,chip('grey',clis.length),(S.adminClients||[]).some(function(x){return x&&admCliNew(x);}))}
+      ${(function(){
+        // COMPTES DISPARUS. Une candidature reçue par e-mail puis introuvable dans la
+        // console a UNE explication vérifiable : la personne s'est désinscrite. On le dit,
+        // avec la date et l'état du dossier au moment du départ.
+        const dep=S.adminDeparts||[];
+        const cand=dep.filter(function(d){return d.avaitCandidature&&d.statut==='attente';});
+        const corps=dep.length?`<p class="mini" style="margin:0;color:var(--muted);line-height:1.55">Chaque départ est inscrit <b>avant</b> l'effacement des fiches, quelle que soit son origine — désinscription depuis l'application, purge depuis cette console, ou suppression depuis Firebase. Le journal se vide tout seul au bout de 90&nbsp;jours.</p>
+          ${cand.length?`<div class="banner coral" style="margin-top:11px">${I.warn}<span><b>${cand.length} candidature${cand.length>1?'s':''} partie${cand.length>1?'s':''} avant validation.</b> C'est la réponse à « je reçois l'e-mail, et il n'y a plus personne ».</span></div>`:''}
+          ${dep.slice(0,40).map(function(d){
+            const av=d.avaitCandidature&&d.statut==='attente';
+            const jours=(d.inscritLe&&d.supprimeLe)?Math.max(0,Math.round((d.supprimeLe-d.inscritLe)/86400000)):null;
+            return `<div class="card" style="padding:12px;margin-top:9px${av?';border-left:3px solid var(--coral)':''}">
+              <div class="row between" style="gap:8px;align-items:flex-start;flex-wrap:wrap">
+                <b style="font-size:14px;flex:1 1 auto;min-width:0">${esc(d.nom||'Sans nom')}</b>
+                <span class="chip ${av?'coral':'grey'}" style="flex:none">${av?'Candidature perdue':(d.role==='artisan'?'Prestataire':'Client')}</span></div>
+              <div class="mini" style="margin-top:4px;color:var(--muted);line-height:1.5">${esc(d.email||'—')}${d.metiers.length?' · '+esc(d.metiers.map(svcNm).join(', ')):''}</div>
+              <div class="mini" style="margin-top:3px;color:var(--muted)">Parti le ${d.supprimeLe?dateFr(d.supprimeLe):'—'}${jours!=null?' · '+(jours<1?'moins d\'un jour':jours+' jour'+(jours>1?'s':''))+' après son inscription':''}</div>
+            </div>`;}).join('')}`
+          :`<p class="mini" style="margin:0;color:var(--muted);line-height:1.55">Aucun départ enregistré. Le journal démarre à la mise en service&nbsp;: les comptes partis <b>avant</b> n'y figurent pas.</p>`;
+        return foldCard('a-departs',I.trash,'Comptes supprimés',dep.length?(dep.length+' départ'+(dep.length>1?'s':'')+(cand.length?' · '+cand.length+' avant validation':'')):'Qui s\'est désinscrit, et quand',corps,cand.length?chip('coral',cand.length):chip('grey',dep.length));
+      })()}
       ${foldCard('a-restore',I.shield,'Récupérer un compte supprimé','Lecture à un instant donné (PITR) — fenêtre de 7 jours',(function(){
         const f=S._arst||{};
         const out=S._arstOut?`<div class="banner ${S._arstOut.ok?'good':'coral'}" style="margin-top:12px">${S._arstOut.ok?I.check:I.shield}<span>${esc(S._arstOut.msg)}</span></div>`:'';
@@ -10005,6 +10029,24 @@
     });
     out.sort(function(a,b){return (b.createdAt||0)-(a.createdAt||0);});
     S.adminDrafts=out;
+  }
+  // JOURNAL DES DÉPARTS. Répond à « je reçois une candidature, j'y vais plus tard, la
+  // personne n'y est plus » : le serveur inscrit chaque départ AVANT d'effacer les
+  // fiches. Lecture admin seule, et le serveur purge les lignes de plus de 90 jours.
+  let adminPartisUnsub=null;
+  function subscribeAdminDeparts(){
+    if(!(FB&&FB.db))return;
+    try{ if(adminPartisUnsub){try{adminPartisUnsub();}catch(_){}}
+      adminPartisUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'comptesSupprimes'),function(snap){
+        const out=[];
+        snap.forEach(function(d){const x=d.data()||{};out.push({uid:d.id,nom:x.nom||'',email:x.email||'',
+          role:x.role||'',statut:x.statut||'',avaitCandidature:!!x.avaitCandidature,
+          metiers:Array.isArray(x.metiers)?x.metiers:[],
+          inscritLe:Number(x.inscritLe)||0,supprimeLe:Number(x.supprimeLe)||0,origine:x.origine||''});});
+        out.sort(function(a,b){return (b.supprimeLe||0)-(a.supprimeLe||0);});
+        S.adminDeparts=out;render();
+      },function(e){console.warn('journal départs',e);});
+    }catch(e){console.warn('journal départs',e);}
   }
   // Admin : écoute des supports généraux de tous les utilisateurs.
   let adminGeneralUnsub=null;
@@ -16529,7 +16571,7 @@
         S.account={name:'Ti-Services',email:user.email||'',uid:user.uid,role:'admin'};
         S.referralCode=genReferralCode('Ti-Services',user.uid);
         S.persona='admin';S.admin={view:'home',sel:null};S.onboarded=true;S.authView=null;render();
-        refreshAdminArtisans();refreshAdminConcierges();refreshAdminWishes();initAdminPush();subscribeAdminThreads();subscribeAdminGeneralSupport();subscribeAdminLedger();subscribeAdminReports();return;
+        refreshAdminArtisans();refreshAdminConcierges();refreshAdminWishes();initAdminPush();subscribeAdminThreads();subscribeAdminGeneralSupport();subscribeAdminDeparts();subscribeAdminLedger();subscribeAdminReports();return;
       }
       // Lecture du compte, sous garde-fou de temps : sans lui, une requête qui reste
       // sans réponse (réseau capricieux, blocage) laisse la personne devant un écran
