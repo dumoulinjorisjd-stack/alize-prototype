@@ -975,6 +975,11 @@
   .tl.future .lbl .t{color:var(--muted);font-weight:600}
 
   .reqcard{position:relative;overflow:hidden}
+  /* `type=search` donne au téléphone la bonne touche de clavier, mais le navigateur y
+     ajoute SA croix : on en avait deux côte à côte. On garde la nôtre, qui est à la bonne
+     taille pour un pouce et qu'on sait placer. */
+  input[type=search]::-webkit-search-cancel-button,
+  input[type=search]::-webkit-search-decoration{-webkit-appearance:none;appearance:none}
   .compbar{display:flex;align-items:center;gap:8px;padding:9px 12px;border-radius:12px;background:var(--teal-wash);color:var(--teal-deep);font-size:12px;font-weight:650}
   .compbar .live{width:8px;height:8px;border-radius:50%;background:var(--teal);animation:beat 1.2s infinite}
 
@@ -3247,6 +3252,86 @@
     allSvc().forEach(function(s){if(!cover[s.id]&&!svcCategory(s.id)){out.push({type:'svc',svc:s});cover[s.id]=1;}});
     return out;
   }
+  // Ces quatre-là vivaient DANS clientHome : la recherche repeint la grille toute seule,
+  // depuis le gestionnaire de frappe, et ne pouvait donc pas les voir. Rien ne change de
+  // leur contenu — seulement leur portée.
+  function _ferme(){return !servicesOpen();}
+  // Compte de DÉMONSTRATION (examen App Store) : il voit TOUTES les tuiles actives,
+  // y compris les métiers sans artisan validé — l'examinateur ne doit rien voir de
+  // grisé. Sans effet pour les vrais clients (tout reste grisé jusqu'au 1er octobre,
+  // puis soumis à la disponibilité réelle par métier).
+  function _revDemo(){try{return REVIEW_DEMO_EMAILS.indexOf(((S.account&&S.account.email)||'').toLowerCase().trim())>=0;}catch(_){return false;}}
+  function svcTile(s){const closed=_ferme(),revDemo=_revDemo();const soon=(revDemo||svcForce(s.id))?false:(!svcAvailable(s.id)||closed);const c=soon?'#9a94a6':svcColor(s.id);const px=(S.adminPrices&&S.adminPrices[s.id]!=null?S.adminPrices[s.id]:s.rate);const rt=soon?'<span style="color:var(--muted)">Bientôt disponible</span>':(isForfaitSvc(s.id)?`<b>${px}</b> <b>€</b> forfait`:(isCatalogForfait(s.id)?`dès <b>${minActPrice(s.id)}</b> <b>€</b>`:`dès <b>${px}</b> <b>€</b>/h`));return `<button class="cat${soon?' soon':''}" ${soon?'data-act="svc-soon"':`data-svc="${s.id}"`}>${soon?'<span class="soon-badge">Bientôt</span>':''}<div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${svcIco(s.id)}</div><div class="nm">${esc(s.nm)}</div><div class="rt">${rt}</div></button>`;}
+  // Le chevron ne flotte plus au plafond de la tuile, loin de ce qu'il annonce : il se
+  // pose au bout de « N prestations », dans la couleur du métier. La ligne du bas dit
+  // alors d'elle-même la différence entre une tuile qui ouvre une liste et une tuile qui
+  // annonce un prix ferme — plus besoin d'un glyphe orphelin dans un coin.
+  function catTile(cat){const closed=_ferme(),revDemo=_revDemo();const forcee=!!(cat&&cat.subs&&cat.subs.some(svcForce));const soon=(revDemo||forcee)?false:(!catAvailable(cat)||closed);const c=soon?'#9a94a6':svcColor(cat.id);return `<button class="cat${soon?' soon':''}" ${soon?'data-act="svc-soon"':`data-catopen="${cat.id}"`}>${soon?'<span class="soon-badge">Bientôt</span>':''}<div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[cat.id]||I.other}</div><div class="nm">${esc(cat.nm)}</div><div class="rt">${soon?'<span style="color:var(--muted)">Bientôt disponible</span>':cat.subs.length+' prestations<span class="cat-go" style="color:'+c+'">&nbsp;›</span>'}</div></button>`;}
+  // Le champ de recherche de l'accueil. Une CROIX plutôt qu'un simple vidage au clavier :
+  // sur un téléphone, effacer « climatisation » lettre à lettre est un geste qu'on n'a pas
+  // à demander.
+  function _champRecherche(){
+    const v=String(S.rech||'');
+    return `<div class="row" style="gap:8px;align-items:center;margin-top:12px;position:relative">
+      <span style="position:absolute;left:12px;color:var(--muted);display:flex;pointer-events:none">${I.search}</span>
+      <input class="txt" data-rech type="search" inputmode="search" autocomplete="off" enterkeyhint="search"
+        value="${esc(v)}" placeholder="Chercher un service (ménage, plomberie…)"
+        aria-label="Chercher un service"
+        style="width:100%;padding:12px 38px 12px 40px;font-size:14.5px">
+      ${v?`<button class="iconbtn" data-act="rech-vider" aria-label="Effacer la recherche" style="position:absolute;right:6px;width:30px;height:30px;flex:none">✕</button>`:''}
+    </div>`;
+  }
+  // La grille de l'accueil, filtrée par la recherche. Fabriquée à part pour être REPEINTE
+  // SEULE : redessiner tout l'écran à chaque lettre détruirait le champ et ferait sauter le
+  // curseur — le défaut déjà corrigé sur les champs du catalogue de la console.
+  function _grilleHome(){
+    const r=rechercheServices(S.rech);
+    const items=(r===null)?homeItems():r;
+    const grille=`<div class="cats">${items.map(function(it){return it.type==='cat'?catTile(it.cat):svcTile(it.svc);}).join('')}</div>`;
+    if(r!==null&&!r.length){
+      // RIEN NE CORRESPOND. C'était un cul-de-sac : la boîte « un service qui manque »
+      // vivait trois écrans plus loin, dans le profil — donc hors de portée d'un invité,
+      // et loin du seul moment où l'on a quelque chose à dire. Elle vient ici.
+      const q=esc(String(S.rech||'').trim());
+      return `<div class="card" style="padding:16px;margin-top:12px">
+        <b style="font-size:14.5px">Aucun service ne correspond à votre recherche</b>
+        <p class="sub" style="margin-top:5px">Dites-nous ce qu'il vous faut : vos demandes décident des prochains métiers ouverts à Saint-Barth.</p>
+        ${S.onboarded?`<textarea rows="2" data-wish placeholder="Ex. Vitrier, promenade de chien, réparation de vélo…" style="margin-top:10px">${esc(S.wishText||q)}</textarea>
+        <button class="btn ghost sm" data-act="wish-send" style="margin-top:10px;width:auto;padding:9px 15px" ${((S.wishText||q).trim())?'':'disabled'}>${I.check} Demander ce service</button>
+        ${S.wishSent?`<p class="mini" style="margin-top:9px;color:var(--good)">${I.check} Merci&nbsp;! Votre suggestion a bien été transmise à Ti-Services.</p>`:''}`
+        :`<button class="btn ghost sm" data-act="guest-signup" style="margin-top:10px;width:auto;padding:9px 15px">Créer mon compte pour demander ce service</button>`}
+      </div>`;
+    }
+    return grille;
+  }
+  // — CHERCHER UN SERVICE —
+  // Il n'existait AUCUNE recherche : pour trouver « Plomberie », un client devait balayer
+  // dix tuiles à l'œil puis ouvrir la bonne catégorie. On compare ce qui SE LIT et non ce
+  // qui s'écrit — accents, casse et espaces ne font pas une différence pour quelqu'un qui
+  // tape « epilation » ou « ELECTRICITE ».
+  function rechNet(v){return String(v==null?'':v).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim();}
+  const RECH_MIN=2;
+  // Rend `null` tant qu'on n'a pas de quoi filtrer (la grille reste entière), une LISTE
+  // sinon — vide si rien ne correspond, ce qui n'est pas la même chose que « pas de
+  // recherche » et n'appelle pas le même écran.
+  // Une CATÉGORIE répond aussi par les métiers qu'elle réunit : « plomb » doit trouver
+  // quelque chose, alors que « Plomberie » est rangée sous « Dépannage & entretien ».
+  // Quand c'est le métier qui répond, on montre LE MÉTIER et non sa catégorie — sinon il
+  // faudrait encore deviner dans laquelle il se cache.
+  function rechercheServices(q){
+    const n=rechNet(q); if(n.length<RECH_MIN)return null;
+    const out=[],vus={};
+    const pousser=function(it){const k=(it.type==='cat'?'c:':'s:')+(it.type==='cat'?it.cat.id:it.svc.id);
+      if(vus[k])return; vus[k]=1; out.push(it);};
+    homeItems().forEach(function(it){
+      if(it.type==='cat'){
+        if(rechNet(it.cat.nm).indexOf(n)>=0){pousser(it);return;}
+        it.cat.subs.forEach(function(id){const sv=findSvc(id);
+          if(sv&&rechNet(sv.nm).indexOf(n)>=0)pousser({type:'svc',svc:sv});});
+      }else if(rechNet(it.svc.nm).indexOf(n)>=0)pousser(it);
+    });
+    return out;
+  }
   // Quartiers OFFICIELS de Saint-Barthélemy (découpage « référents de quartier » de la
   // Collectivité). Les anciens libellés sont convertis par migZone().
   const ZONES=["Anse des Cayes · Quartier du Roy", "Anse des Flamands", "Colombier", "Corossol", "Cul-de-Sac · Toiny", "Grand Fond", "Grande & Petite Saline", "Gustavia", "Lorient · Camaruche", "Lurin · Gouverneur", "Marigot", "Pointe Milou · Mont-Jean", "Public", "Saint-Jean", "Terre Neuve · Merlette", "Vitet · Dévé"];
@@ -4183,7 +4268,7 @@
   const S={
     lang:initLang(),
     persona:'client',clientNav:'home',proNav:'home',customServices:[],wishText:'',wishSent:false,adminWishes:[],onboarded:false,guest:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},
-    card:null,cardForm:false,payStep:false,payEdit:false,paySaveCard:true,finishing:false,disputing:false,disputeKind:null,support:false,supportSide:null,mission:null,missions:[],draft:null,
+    card:null,cardForm:false,payStep:false,payEdit:false,paySaveCard:true,finishing:false,disputing:false,disputeKind:null,rech:'',support:false,supportSide:null,mission:null,missions:[],draft:null,
     addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,
     concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,concRetroPaid:'',concIban:'',concIbanHolder:'',concLegal:'',concSiret:'',concAddress:'',retroRate:8,
     // Renfort entre prestataires (bêta) : ses propres demandes de renfort, et le
@@ -5300,6 +5385,12 @@
     "Désaccord durée":"Duration dispute",
     "Désaccord en cours d'arbitrage":"Dispute under arbitration",
     "Désaccord transmis":"Dispute submitted",
+    "Chercher un service (ménage, plomberie…)":"Search for a service (cleaning, plumbing…)",
+    "Chercher un service":"Search for a service",
+    "Effacer la recherche":"Clear search",
+    "Aucun service ne correspond à votre recherche":"No service matches your search",
+    "Dites-nous ce qu'il vous faut : vos demandes décident des prochains métiers ouverts à Saint-Barth.":"Tell us what you need — your requests decide which trades open next in Saint-Barth.",
+    "Créer mon compte pour demander ce service":"Create my account to request this service",
     "Problème signalé":"Problem reported",
     "Signalement transmis":"Report submitted",
     "En cours d’examen":"Under review",
@@ -6709,6 +6800,12 @@
     "Désaccord durée":"Desacordo de duração",
     "Désaccord en cours d'arbitrage":"Desacordo em arbitragem",
     "Désaccord transmis":"Desacordo transmitido",
+    "Chercher un service (ménage, plomberie…)":"Procurar um serviço (limpeza, canalização…)",
+    "Chercher un service":"Procurar um serviço",
+    "Effacer la recherche":"Limpar a pesquisa",
+    "Aucun service ne correspond à votre recherche":"Nenhum serviço corresponde à sua pesquisa",
+    "Dites-nous ce qu'il vous faut : vos demandes décident des prochains métiers ouverts à Saint-Barth.":"Diga-nos do que precisa: os seus pedidos decidem quais os próximos ofícios abertos em Saint-Barth.",
+    "Créer mon compte pour demander ce service":"Criar a minha conta para pedir este serviço",
     "Problème signalé":"Problema assinalado",
     "Signalement transmis":"Comunicação enviada",
     "En cours d’examen":"Em análise",
@@ -10743,18 +10840,6 @@
   function clientHome(){
     // Avant l'ouverture publique (prod, avant le 1er octobre) : tous les services grisés et
     // non commandables (bannière + clic = message date). Le client s'inscrit et sera prévenu.
-    const closed=!servicesOpen();
-    // Compte de DÉMONSTRATION (examen App Store) : il voit TOUTES les tuiles actives,
-    // y compris les métiers sans artisan validé — l'examinateur ne doit rien voir de
-    // grisé. Sans effet pour les vrais clients (tout reste grisé jusqu'au 1er octobre,
-    // puis soumis à la disponibilité réelle par métier).
-    const revDemo=(function(){try{return REVIEW_DEMO_EMAILS.indexOf(((S.account&&S.account.email)||'').toLowerCase().trim())>=0;}catch(_){return false;}})();
-    const svcTile=function(s){const soon=(revDemo||svcForce(s.id))?false:(!svcAvailable(s.id)||closed);const c=soon?'#9a94a6':svcColor(s.id);const px=(S.adminPrices&&S.adminPrices[s.id]!=null?S.adminPrices[s.id]:s.rate);const rt=soon?'<span style="color:var(--muted)">Bientôt disponible</span>':(isForfaitSvc(s.id)?`<b>${px}</b> <b>€</b> forfait`:(isCatalogForfait(s.id)?`dès <b>${minActPrice(s.id)}</b> <b>€</b>`:`dès <b>${px}</b> <b>€</b>/h`));return `<button class="cat${soon?' soon':''}" ${soon?'data-act="svc-soon"':`data-svc="${s.id}"`}>${soon?'<span class="soon-badge">Bientôt</span>':''}<div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${svcIco(s.id)}</div><div class="nm">${esc(s.nm)}</div><div class="rt">${rt}</div></button>`;};
-    // Le chevron ne flotte plus au plafond de la tuile, loin de ce qu'il annonce : il se
-    // pose au bout de « N prestations », dans la couleur du métier. La ligne du bas dit
-    // alors d'elle-même la différence entre une tuile qui ouvre une liste et une tuile qui
-    // annonce un prix ferme — plus besoin d'un glyphe orphelin dans un coin.
-    const catTile=function(cat){const forcee=!!(cat&&cat.subs&&cat.subs.some(svcForce));const soon=(revDemo||forcee)?false:(!catAvailable(cat)||closed);const c=soon?'#9a94a6':svcColor(cat.id);return `<button class="cat${soon?' soon':''}" ${soon?'data-act="svc-soon"':`data-catopen="${cat.id}"`}>${soon?'<span class="soon-badge">Bientôt</span>':''}<div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[cat.id]||I.other}</div><div class="nm">${esc(cat.nm)}</div><div class="rt">${soon?'<span style="color:var(--muted)">Bientôt disponible</span>':cat.subs.length+' prestations<span class="cat-go" style="color:'+c+'">&nbsp;›</span>'}</div></button>`;};
     // Vue « sous-catégorie » : on a ouvert une catégorie (ex. Beauté) → liste ses prestations.
     const catView=S.catView?CATEGORIES.find(function(c){return c.id===S.catView;}):null;
     if(catView){
@@ -10767,7 +10852,7 @@
         ${zoutiLine('Dites-moi ce qu’il vous faut — je trouve le bon pro.')}
         <div style="height:16px"></div></div>${clientNavbar()}`;
     }
-    const cats=homeItems().map(function(it){return it.type==='cat'?catTile(it.cat):svcTile(it.svc);}).join('');
+    const cats=_grilleHome();
     // MODE INVITÉ : aucun nom / photo / secteur du compte (S.account peut rester chargé
     // d'une session précédente). L'accueil invité reste anonyme.
     const fullName=S.onboarded?(((S.account&&S.account.name)||(S.clientForm&&S.clientForm.name)||'').trim()):'';
@@ -10775,7 +10860,9 @@
     const zone=S.onboarded?((S.account&&S.account.zone)||(S.clientForm&&S.clientForm.zone)||'Gustavia'):'';
     return `<div class="pad">${headRow(I.pin+' '+(zone?esc(zone)+' · ':'')+'Saint-Barth',greetWord()+(first?' '+esc(first):'')+greetIco(),(!S.onboarded?headBtn('lang-toggle','Langue / Language',I.globe):'')+headBtn('open-share','Partager Ti-Services',I.share),S.onboarded?cliAvatar():'')}
       ${!S.onboarded?`<button class="card" data-act="guest-signup" style="width:100%;text-align:left;padding:12px 14px;margin-top:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;border-left:4px solid var(--teal-deep)"><div><b style="font-size:13px">${I.wave} Explorez librement</b><div class="mini" style="margin-top:2px">Compte requis seulement pour commander — c'est gratuit.</div></div><span class="chip good" style="flex:none">Créer un compte</span></button>`:''}
-      ${closed?`<div class="card" style="padding:16px;margin-top:12px;border-left:4px solid var(--teal);text-align:center"><b style="font-size:15px">${I.party||I.bolt} Nos services ouvrent le 1ᵉʳ octobre&nbsp;!</b><p class="mini" style="margin-top:5px">Votre compte est prêt — on vous prévient par e-mail dès l'ouverture. Découvrez déjà tout ce qui vous attend&nbsp;:</p></div>`:`<p class="sub" style="margin-top:4px">De quel service avez-vous besoin&nbsp;?</p>`}<div class="cats">${cats}</div>
+      ${closed?`<div class="card" style="padding:16px;margin-top:12px;border-left:4px solid var(--teal);text-align:center"><b style="font-size:15px">${I.party||I.bolt} Nos services ouvrent le 1ᵉʳ octobre&nbsp;!</b><p class="mini" style="margin-top:5px">Votre compte est prêt — on vous prévient par e-mail dès l'ouverture. Découvrez déjà tout ce qui vous attend&nbsp;:</p></div>`:`<p class="sub" style="margin-top:4px">De quel service avez-vous besoin&nbsp;?</p>`}
+      ${_champRecherche()}
+      <div id="home-catalogue">${cats}</div>
       ${(function(){const l=testSvcList();if(!l.length)return '';
         // Rappel permanent : on ne doit jamais confondre un déblocage d'essai avec une
         // vraie ouverture. Un appui remet l'appareil dans l'état des vrais clients.
@@ -10934,7 +11021,11 @@
   // Boîte à idées client : suggestion d'un service à proposer sur la plateforme.
   // Écrit dans la collection `serviceWishes` (lecture admin seule) pour recenser la demande.
   async function sendWish(){
-    const t=(S.wishText||'').trim();if(!t)return;
+    // On lit le champ AFFICHÉ et non seulement l'état : l'état vide de la recherche
+    // prérempli la demande avec ce qui a été cherché, et sans cette lecture le bouton
+    // aurait envoyé du vide sous un texte visible.
+    const el=document.querySelector('[data-wish]');
+    const t=(((el&&el.value)||S.wishText)||'').trim();if(!t)return;
     const nm=(((S.account&&S.account.name)||'Client').split(' ')[0])||'Client';
     const zone=(S.account&&S.account.zone)||'';
     S.adminWishes=S.adminWishes||[];S.adminWishes.unshift({id:'w'+Date.now(),clientUid:'me',clientName:nm,text:t.slice(0,300),zone:zone,at:Date.now()});
@@ -15187,6 +15278,7 @@
       // existait déjà — le seul qui suspende réellement, puisque `autoValidate` ne balaie
       // que les prestations restées `done_pro`. Ce mécanisme ne servait qu'à contester des
       // HEURES : on ne pouvait pas contester la QUALITÉ, c'est-à-dire le motif le plus courant.
+      case 'rech-vider':S.rech='';render();break;
       case 'report-issue':S.disputeKind='qualite';S.disputing=true;render();break;
       case 'pro-finish-start':{const m=S.mission;
         // Forfait (prix fixe : coiffure, colis…) : pas de durée réelle à déclarer —
@@ -15827,6 +15919,17 @@
     const paAddOk=function(f){return f.cats.length>0&&f.assur&&(f.cats.indexOf('autre')<0||((f.other||'').trim()&&Number(String(f.price||'').replace(',','.'))>0));};
     const pao=e.target.closest('[data-paother]');if(pao&&S.proAddForm){S.proAddForm.other=pao.value;const sb=document.querySelector('[data-act="pro-add-submit"]');if(sb)sb.disabled=!paAddOk(S.proAddForm);}
     const pap=e.target.closest('[data-paprice]');if(pap&&S.proAddForm){S.proAddForm.price=pap.value;const sb=document.querySelector('[data-act="pro-add-submit"]');if(sb)sb.disabled=!paAddOk(S.proAddForm);}
+    // Recherche de l'accueil : on ne redessine QUE le catalogue. Un `render()` complet
+    // recréerait le champ à chaque lettre et le curseur sauterait au début.
+    const rq=e.target.closest('[data-rech]');
+    if(rq){S.rech=rq.value;const box=document.getElementById('home-catalogue');
+      if(box)box.innerHTML=_grilleHome();
+      // La croix apparaît dès la première lettre et disparaît avec la dernière : elle vit
+      // hors du catalogue, on la pose et on la retire à la main.
+      const bar=rq.parentElement,old=bar&&bar.querySelector('[data-act="rech-vider"]');
+      if(S.rech&&!old&&bar)bar.insertAdjacentHTML('beforeend','<button class="iconbtn" data-act="rech-vider" aria-label="Effacer la recherche" style="position:absolute;right:6px;width:30px;height:30px;flex:none">✕</button>');
+      if(!S.rech&&old)old.remove();
+      return;}
     const wi=e.target.closest('[data-wish]');if(wi){S.wishText=wi.value;S.wishSent=false;const wb=document.querySelector('[data-act="wish-send"]');if(wb)wb.disabled=!wi.value.trim();}
     const pf=e.target.closest('[data-pf]');if(pf){S.proForm[pf.dataset.pf]=pf.value;refreshProSubmit();}
     const ar=e.target.closest('[data-arst]');if(ar){S._arst=S._arst||{};S._arst[ar.dataset.arst]=ar.value;}
@@ -15964,7 +16067,7 @@
     const pins=e.target.closest('[data-proinsurance]');
     if(pins&&pins.files&&pins.files[0]){const file=pins.files[0];pins.value='';uploadProInsurance(file);return;}
   });
-  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,card:null,cardForm:false,payStep:false,payEdit:false,finishing:false,disputing:false,disputeKind:null,support:false,supportSide:null,addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,proHistory:PRO_HISTORY(),fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,guest:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,adminPrices:ADMIN_PRICES(),proPhoto:null,proStatus:'approved',proFounder:true,proNotifPush:true,proNotifWa:true,proPhone:'0690 00 00 00',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:'',photo:''}});render();toast('Scénario réinitialisé');});
+  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,card:null,cardForm:false,payStep:false,payEdit:false,finishing:false,disputing:false,disputeKind:null,rech:'',support:false,supportSide:null,addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,proHistory:PRO_HISTORY(),fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,guest:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,adminPrices:ADMIN_PRICES(),proPhoto:null,proStatus:'approved',proFounder:true,proNotifPush:true,proNotifWa:true,proPhone:'0690 00 00 00',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:'',photo:''}});render();toast('Scénario réinitialisé');});
 
   /* ---------- PWA: install + service worker ---------- */
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
