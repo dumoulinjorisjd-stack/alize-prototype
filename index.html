@@ -3719,6 +3719,24 @@
   // le compare bien plus vite ainsi. La copie, elle, reste en chiffres collés.
   function fmtSiret(v){ const d=String(v||'').replace(/\D/g,''); return d.length===14?(d.slice(0,3)+' '+d.slice(3,6)+' '+d.slice(6,9)+' '+d.slice(9)):d; }
   function artSvcLabel(a){return (a&&a.cats?a.cats:[]).map(function(c){return c==='autre'?('Autre'+(a.other?' : '+a.other:'')):svcNm(c);}).join(', ');}
+  // — LES MÉTIERS D'UN PRESTATAIRE, COCHABLES DEPUIS SA FICHE —
+  // Ils n'étaient qu'une ligne de texte : le seul moyen d'en ajouter un était d'attendre que
+  // le prestataire le DEMANDE lui-même (`pendingCats`), et son écran de demande ne montrait
+  // même pas les métiers créés depuis la console. Un prestataire pouvait donc rester sans
+  // aucun rattachement réel, sans que personne puisse y remédier.
+  // Ce que l'on DIT, parce que cocher ne suffit pas toujours : les métiers d'un prestataire
+  // NON VALIDÉ n'ouvrent rien aux clients (la liste des services ouverts ne compte que les
+  // prestataires validés), et un prestataire sans aucun métier ne reçoit aucune commande.
+  function artCatsEditor(a){
+    const cats=(a&&a.cats)||[],pend=(a&&a.pendingCats)||[];
+    const chips=allSvc().map(function(s){const on=cats.indexOf(s.id)>=0,att=pend.indexOf(s.id)>=0;
+      return `<button class="btn ghost sm" data-adm="artcat:${a.id}:${s.id}" aria-pressed="${on?'true':'false'}" title="${on?'Retirer':'Rattacher'} — ${esc(s.nm)}" style="flex:none;width:auto;padding:7px 11px;margin:0;${on?'border-color:var(--teal-deep);background:var(--teal-wash);color:var(--teal-deep);font-weight:700':(att?'border-style:dashed':'')}">${on?I.check:I.plus} ${esc(s.nm)}${att&&!on?' ·  demandé':''}</button>`;}).join('');
+    return `<div class="row" style="flex-wrap:wrap;gap:6px;margin-top:9px">${chips}</div>`
+      +(cats.indexOf('autre')>=0&&a.other?`<div class="mini" style="color:var(--muted);margin-top:7px">Service libre déclaré&nbsp;: « ${esc(a.other)} » — pas encore un métier du catalogue.</div>`:'')
+      +`<div class="mini" style="color:var(--muted);margin-top:7px">C'est ce rattachement — et lui seul — qui lui envoie les commandes des clients.</div>`
+      +(!cats.filter(function(c){return c!=='autre';}).length?`<div class="mini" style="margin-top:5px;color:var(--coral-deep);font-weight:600">${I.warn} Aucun métier rattaché : il ne recevra aucune commande.</div>`:'')
+      +(a.status!=='valide'?`<div class="mini" style="margin-top:5px;color:var(--coral-deep);font-weight:600">${I.warn} Prestataire non validé : ses métiers ne s'ouvrent pas encore aux clients.</div>`:'');
+  }
   // Tarifs d'un prestataire, pour la fiche admin. Un prestataire NE FIXE PAS ses
   // prix : à l'inscription il coche « J'applique la grille tarifaire Ti-Services »
   // (case obligatoire) et le champ `rates` reçoit une simple COPIE de la grille du
@@ -3843,6 +3861,7 @@
     S.customServices=(S.customServices||[]).concat([{id:sid,nm:name,rate:rate,custom:true,ico:''}]);
     if(!S.adminPrices)S.adminPrices=ADMIN_PRICES(); S.adminPrices[sid]=rate;
     saveCatalog(); render(); toast('« '+name+' » ajouté au catalogue ✓');
+    return sid; // l'appelant en a besoin pour rattacher le prestataire au métier créé
   }
   // Persistance du catalogue partagé (settings/catalog) — écrit par l'admin, lu par tous.
   // Avant d'écrire : on fige dans la copie admin les prestations que la fusion de
@@ -9472,6 +9491,10 @@
           ${fRow('Palier fidélité · commission',founderActiveFor(a)?`<span class="chip founder-chip">${I.star} Ambassadeur</span> ${FOUNDER_COMM_PCT} %`:`${a.founder?`<span class="chip" style="background:var(--hair);color:var(--muted)">${I.star} Ambassadeur — expiré</span> `:''}<span class="chip" style="background:${fidColor(fidFor(a.jobs).key)}22;color:${fidColor(fidFor(a.jobs).key)}">${I.star} ${fidFor(a.jobs).nm}</span> ${fidFor(a.jobs).pct} %`)}
           ${(a.status==='refuse'&&a.reason)?fRow('Motif du refus',`<span style="color:var(--coral-deep)">${esc(a.reason)}</span>`):''}
         </div>
+        <div class="card" style="padding:16px;margin-top:12px">
+          <span class="eyebrow">${I.users} Métiers de ce prestataire</span>
+          ${artCatsEditor(a)}
+        </div>
         ${(a.pendingCats&&a.pendingCats.length)?`<div class="card" style="padding:16px;margin-top:12px;border-left:4px solid var(--warn)">
           <span class="eyebrow" style="color:var(--warn)">${I.clock} Métiers à valider</span>
           <p class="mini" style="margin-top:6px">Le prestataire demande à proposer ${a.pendingCats.length>1?'ces nouveaux métiers':'ce nouveau métier'}. Vérifiez l'assurance (et les diplômes pour la garde d'enfants) avant de valider.</p>
@@ -13930,7 +13953,10 @@
   function proAddService(){
     const f=S.proAddForm||(S.proAddForm={cats:[],other:'',assur:false});
     const owned=(S.proCats||[]).concat(S.proPendingCats||[]);
-    const avail=SERVICES.filter(function(s){return owned.indexOf(s.id)<0;});
+    // `allSvc()` et non `SERVICES` : les métiers créés depuis la console n'apparaissaient
+    // PAS ici, donc un prestataire ne pouvait même pas demander celui que l'admin venait
+    // d'ajouter pour lui — l'écran d'inscription, lui, les montrait déjà.
+    const avail=allSvc().filter(function(s){return owned.indexOf(s.id)<0;});
     const svcCard=function(s){const on=f.cats.indexOf(s.id)>=0;const c=svcColor(s.id);const forf=isCatalogForfait(s.id);const px=(S.adminPrices&&S.adminPrices[s.id]!=null?S.adminPrices[s.id]:s.rate);const rt=isForfaitSvc(s.id)?`${myNetHint(px)} € net`:(forf?`dès ${myNetHint(minActPrice(s.id))} € net`:`${myNetHint(px)} € net/h`);
       return `<button class="cat ${on?'sel':''}" data-pac="${s.id}"><div class="pick">${I.check}</div><div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${svcIco(s.id)}</div><div class="nm">${esc(s.nm)}</div><div class="rt">${rt}</div><span class="mini" data-psvcinfo="${s.id}" style="display:inline-block;margin-top:5px;color:var(--teal-deep);font-weight:800;text-decoration:underline;text-underline-offset:2px">Détails ›</span></button>`;};
     const otherOn=f.cats.indexOf('autre')>=0;const nSel=f.cats.length;const cataAdd=f.cats.filter(function(id){return id!=='autre';});
@@ -14708,7 +14734,30 @@
       else if(act==='export-accounting'){adminExportAccounting();return;}
       else if(act==='valid-ins'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.insuranceStatus='valide';a.insured=true;adminWriteField(a,{insuranceStatus:'valide',insured:true});toast('Attestation validée ✓');}}
       else if(act==='rej-ins'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.insuranceStatus='refuse';adminWriteField(a,{insuranceStatus:'refuse'});toast('Attestation refusée');}}
-      else if(act==='addcat'){const a=S.adminArtisans.find(x=>x.id===id);if(a&&a.other){addCustomService(a.other,(a.rates&&a.rates.autre)||40);}}
+      // « Ajouter au catalogue » CRÉAIT le métier et s'arrêtait là : le prestataire restait
+      // sur « Autre », donc rattaché à rien. Le seul signe visible était une ligne verte
+      // « figure déjà au catalogue », obtenue en comparant son texte libre au NOM du métier
+      // — une ressemblance, pas un lien. Le métier affichait « 0 artisan » et restait
+      // « Bientôt disponible » : aucune commande n'aurait jamais pu lui parvenir.
+      else if(act==='addcat'){const a=S.adminArtisans.find(x=>x.id===id);
+        if(a&&a.other){
+          const ex=(S.customServices||[]).find(function(x){return x.nm.toLowerCase()===a.other.toLowerCase();});
+          const sid=ex?ex.id:addCustomService(a.other,(a.rates&&a.rates.autre)||40);
+          if(sid){
+            // Le prix qu'il demandait pour ce service le suit : sans lui, il repartirait au
+            // tarif de base du métier, que personne n'a discuté avec lui.
+            if(a.otherPrice>0){a.rates=a.rates||{};a.rates[sid]=a.otherPrice;adminWriteField(a,{rates:a.rates});}
+            adminSetCat(a,sid,true);
+            // Et il quitte « Autre » : sinon la fiche reproposerait « Ajouter au catalogue »
+            // et un second métier jumeau serait créé au clic suivant.
+            adminSetCat(a,'autre',false);
+            toast('« '+a.other+' » ajouté et rattaché — il recevra les commandes');
+          }
+        }}
+      // Rattachement d'un métier à la main, depuis la fiche du prestataire.
+      else if(act==='artcat'){const a=(S.adminArtisans||[]).find(function(x){return x.id===id;}),sv=parts[2];
+        if(a&&sv){const on=(a.cats||[]).indexOf(sv)<0;adminSetCat(a,sv,on);
+          toast(on?('Rattaché à « '+svcNm(sv)+' »'):('Retiré de « '+svcNm(sv)+' »'));}}
       else if(act==='delcat'){S.customServices=(S.customServices||[]).filter(function(s){return s.id!==id;});saveCatalog();toast('Service retiré du catalogue');}
       // Icône d'un métier créé depuis la console. On enregistre une CLÉ de la liste fermée
       // et jamais un dessin : le catalogue est relu par tous en `innerHTML`.
@@ -17132,6 +17181,23 @@
   // Validation admin d'un métier ajouté : cats += sv, pendingCats -= sv (admin seul).
   function adminWriteAddCat(a,sv){ if(FB&&a&&a.real&&a.uid){ try{ const patch={cats:FB.f.arrayUnion(sv),pendingCats:FB.f.arrayRemove(sv)}; if(sv==='autre'&&a.pendingOther){patch.other=a.pendingOther;if(a.pendingOtherPrice>0){patch.otherPrice=a.pendingOtherPrice;patch.otherUnit=a.pendingOtherUnit||'h';}} FB.f.updateDoc(FB.f.doc(FB.db,'artisans',a.uid),patch); }catch(_){} } }
   function adminWriteRefuseCat(a,sv){ if(FB&&a&&a.real&&a.uid){ try{ FB.f.updateDoc(FB.f.doc(FB.db,'artisans',a.uid),{pendingCats:FB.f.arrayRemove(sv)}); }catch(_){} } }
+  // — RATTACHER OU DÉTACHER UN MÉTIER DEPUIS LA CONSOLE —
+  // `cats` EST LE SEUL LIEN QUI COMPTE. Une commande ne trouve un prestataire que par lui :
+  // l'application du prestataire filtre dessus (`cats.indexOf(r.service)`), les trois envois
+  // de notification du serveur aussi, et l'annuaire « choisir un prestataire » également.
+  // Un nom qui se ressemble ne rattache RIEN — c'est ce qui laissait croire le contraire.
+  // Et la liste des services ouverts aux clients se recalcule dans la foulée : sans elle, le
+  // métier resterait « Bientôt disponible » et personne ne pourrait rien commander.
+  function adminSetCat(a,sv,on){
+    if(!a||!sv)return;
+    if(!Array.isArray(a.cats))a.cats=[];
+    const i=a.cats.indexOf(sv);
+    if(on&&i<0)a.cats.push(sv);else if(!on&&i>=0)a.cats.splice(i,1);
+    a.pendingCats=(a.pendingCats||[]).filter(function(x){return x!==sv;});
+    if(FB&&a.real&&a.uid){try{FB.f.updateDoc(FB.f.doc(FB.db,'artisans',a.uid),
+      {cats:on?FB.f.arrayUnion(sv):FB.f.arrayRemove(sv),pendingCats:FB.f.arrayRemove(sv)});}catch(_){}}
+    saveAvailability();
+  }
   function adminWriteField(a,obj){ if(FB&&a&&a.real&&a.uid){ try{ FB.f.setDoc(FB.f.doc(FB.db,'artisans',a.uid),obj,{merge:true}); }catch(_){} } }
   // Statut d'une conciergerie écrit en base par l'admin (validation / refus).
   function adminWriteConcStatus(c,status){ if(FB&&c&&c.uid){ try{ FB.f.updateDoc(FB.f.doc(FB.db,'concierges',c.uid),{status:status}); }catch(_){} } }
