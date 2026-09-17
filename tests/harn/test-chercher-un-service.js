@@ -27,14 +27,20 @@ const accueil=async(onb)=>p.evaluate((o)=>{const S=window.__S;document.body.clas
   S.lang='fr';S.onboarded=o;S.guest=!o;S.demoMode=true;S.persona='client';S.clientNav='home';
   S.account={name:'Camille',email:'c@e.fr',zone:'Gustavia'};
   S.mission=null;S.draft=null;S.catView=null;S.rech='';S.wishText='';S.wishSent=false;
+  S.authView=null;S.onbStep=0;
   window.__render();},onb);
 
-console.log('\nA — le champ existe, et la grille entière avec');
+console.log('\nA — le champ est SOUS le catalogue, et discret');
 await accueil(true);
 const dep=await p.evaluate(()=>({champ:!!document.querySelector('[data-rech]'),
   tuiles:document.querySelectorAll('#home-catalogue .cat').length}));
 ok(dep.champ,'un champ de recherche est offert sur l’accueil');
 ok(dep.tuiles>=8,'sans rien taper, toutes les tuiles restent ('+dep.tuiles+')');
+const place=await p.evaluate(()=>{const g=document.getElementById('home-catalogue').getBoundingClientRect();
+  const i=document.querySelector('[data-rech]').getBoundingClientRect();
+  return {sous:i.top>=g.bottom-2, h:Math.round(i.height)};});
+ok(place.sous,'il vient APRÈS les tuiles : elles sont le geste principal, on ne leur met rien devant');
+ok(place.h<=40,'et il reste discret ('+place.h+' px de haut)');
 
 console.log('\nB — une lettre ne filtre rien, deux suffisent');
 const court=await p.evaluate(()=>{window.__S.rech='p';return (window.__rech?0:0)||document.querySelectorAll('#home-catalogue .cat').length;});
@@ -67,27 +73,27 @@ ok(/Ménage/.test(r3),'les espaces autour ne comptent pas non plus');
 
 console.log('\nF — rien ne correspond : ce n’est plus un cul-de-sac');
 await p.fill('[data-rech]',''); await p.type('[data-rech]','vitrier',{delay:15});
-const r4=await p.evaluate(()=>{const t=document.querySelector('[data-wish]');
-  return {n:document.querySelectorAll('#home-catalogue .cat').length,
-    vide:/Aucun service ne correspond/.test(document.body.innerText),
-    boite:!!t, prerempli:t?t.value:'',
-    bouton:!!document.querySelector('[data-act="wish-send"]:not([disabled])')};});
+const r4=await p.evaluate(()=>{const b=document.getElementById('home-catalogue');
+  return {n:b.querySelectorAll('.cat').length, h:Math.round(b.getBoundingClientRect().height),
+    vide:/Aucun service ne correspond/.test(b.innerText),
+    fiche:!!b.querySelector('.card'), champ:!!b.querySelector('textarea'),
+    lien:!!document.querySelector('[data-act="demander-service"]')};});
 ok(r4.n===0&&r4.vide,'aucune tuile, et on le dit');
-ok(r4.boite,'la boîte « demandez ce service » vient jusqu’ici, au lieu de vivre dans le profil');
-ok(r4.prerempli==='vitrier','elle reprend ce qui a été cherché — on ne le retape pas');
-ok(r4.bouton,'et le bouton est actif : sans lecture du champ réel, il aurait envoyé du vide');
-ok(/const el=document\.querySelector\('\[data-wish\]'\);/.test(src),
-  'l’envoi lit le champ AFFICHÉ, pas seulement l’état');
+ok(!r4.fiche&&!r4.champ,
+  'UNE LIGNE et pas une fiche : un premier jet posait ici une carte avec titre, paragraphe, '+
+  'champ et bouton — quatre fois la hauteur de ce qu’elle avait à dire, sur l’écran le plus consulté');
+ok(r4.h<=40,'le message tient en une ligne ('+r4.h+' px)');
+ok(r4.lien,'et il MÈNE à la demande de service, qui existe déjà au complet dans le profil');
 
-console.log('\nG — un invité n’est pas envoyé dans un mur');
+console.log('\nG — un invité est mené quelque part, pas dans un mur');
 await accueil(false);
 await p.click('[data-rech]'); await p.type('[data-rech]','vitrier',{delay:15});
-const r5=await p.evaluate(()=>({wish:!!document.querySelector('[data-wish]'),
-  compte:!!document.querySelector('[data-act="guest-signup"]'),
-  vide:/Aucun service ne correspond/.test(document.body.innerText)}));
-ok(r5.vide,'il voit lui aussi que rien ne correspond');
-ok(!r5.wish,'on ne lui montre pas un champ dont l’envoi exige un compte');
-ok(r5.compte,'on lui propose de créer son compte pour demander ce service');
+const r5=await p.evaluate(()=>{
+  document.querySelector('[data-act="demander-service"]').click();
+  return {authView:window.__S.authView};});
+ok(r5.authView==='signup',
+  'un invité qui clique « Demandez-le » est envoyé créer son compte — une demande anonyme '+
+  'n’aurait ni nom ni secteur, donc rien pour y répondre');
 
 console.log('\nH — la croix efface, et il n’y en a qu’une');
 await accueil(true);
