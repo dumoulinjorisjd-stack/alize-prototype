@@ -2,8 +2,8 @@
 
    Dépôt INPI du 17/09/2026 : marque VERBALE française « Ti services », n° 5299123,
    classe 35, déposée par C.C.S (SAS, SIREN 933 820 664, Carrefour des 4 Chemins - Marigot,
-   97133 Saint-Barthélemy), représentant légal M. Joris Dumoulin. C.C.S est à la fois
-   l'ÉDITEUR du site et la TITULAIRE de la marque.
+   97133 Saint-Barthélemy). C.C.S est à la fois l'ÉDITEUR du site et la TITULAIRE de la
+   marque.
 
    Trois choses tenues ici :
 
@@ -28,12 +28,16 @@ const MENTIONS={FR:bloc('LEGAL_MENTIONS'),EN:bloc('LEGAL_MENTIONS_EN'),PT:bloc('
 const CGU={FR:bloc('LEGAL_CGU'),EN:bloc('LEGAL_CGU_EN'),PT:bloc('LEGAL_CGU_PT')};
 
 console.log('\nA — l’éditeur est identifié, dans les trois langues');
+// LE DIRECTEUR DE LA PUBLICATION RESTE ANONYME, ET C'EST UN CHOIX, PAS UN OUBLI.
+// Il avait été nommé (la LCEN demande un nom, pas une fonction) puis l'éditeur a demandé
+// de revenir à la formule impersonnelle. On le consigne ici pour que personne ne « corrige »
+// dans l'autre sens en croyant réparer un manque — la question a été posée et tranchée.
 ['FR','EN','PT'].forEach(function(l){
   ok(/C\.C\.S/.test(MENTIONS[l]),l+' : l’éditeur est nommé');
   ok(/933 820 664/.test(MENTIONS[l]),l+' : le SIREN du dépôt y figure');
   ok(/Carrefour des 4 Chemins/i.test(MENTIONS[l]),l+' : l’adresse du dépôt aussi');
-  ok(/Joris Dumoulin/.test(MENTIONS[l]),
-    l+' : le directeur de la publication est NOMMÉ — la loi demande un nom, pas une fonction');
+  ok(/(représentant légal|legal representative|representante legal)/.test(MENTIONS[l]),
+    l+' : le directeur de la publication est désigné par sa QUALITÉ');
 });
 
 console.log('\nB — la marque est nommée, avec son numéro et sa classe');
