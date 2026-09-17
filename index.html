@@ -3656,8 +3656,60 @@
   const CONCIERGE_ORDERS=()=>[
     {id:'co1',clientName:'M. & Mme Hartley',svc:'menage',svcName:'Ménage',duration:3,rate:40,amount:120,when:'Hier',slot:'10:00',status:'paid',artisan:'Marie-Lou Cagan',retro:10,invNo:'2026-0039'}
   ];
+  // — RENOMMER UN MÉTIER ÉCRIT DANS LE CODE —
+  // « Fais en sorte que je puisse changer les noms des catégories dans la console. »
+  // Les vingt métiers de base et les trois catégories d'accueil portaient leur nom EN DUR :
+  // la seule façon de corriger « Garde d'animaux » était une mise en ligne. On ne déplace
+  // pas ces noms dans la base pour autant — le code reste la SOURCE, et le compte ne garde
+  // QUE CE QUI DIFFÈRE : remettre le nom d'origine retire la clé au lieu de la recopier.
+  // Un parc qui n'a jamais renommé ne pèse pas un octet de plus, et une correction faite
+  // dans le code arrive à tout le monde tant que personne n'a réécrit ce nom-là.
+  // L'IDENTIFIANT NE BOUGE JAMAIS : missions, historiques et métiers des prestataires le
+  // portent. Renommer ne change qu'un libellé.
+  const NOM_MAX=40;
+  function nomNet(v){return String(v==null?'':v).replace(/\s+/g,' ').trim().slice(0,NOM_MAX);}
+  const NOMS_CODE=(function(){const m={};SERVICES.forEach(function(s){m[s.id]=s.nm;});CATEGORIES.forEach(function(c){m[c.id]=c.nm;});return m;})();
+  function nomDeCode(id){return NOMS_CODE[id]||'';}
+  // Les noms réécrits sont REPOSÉS sur les objets eux-mêmes : une vingtaine d'endroits font
+  // `SERVICES.find(...).nm` sans passer par `svcNm`, et les faire tous passer par une porte
+  // d'affichage aurait laissé un oubli quelque part — ici, il n'y a rien à énumérer.
+  function appliquerNoms(){const n=S.nomsMetiers||{};
+    SERVICES.forEach(function(s){s.nm=n[s.id]||NOMS_CODE[s.id];});
+    CATEGORIES.forEach(function(c){c.nm=n[c.id]||NOMS_CODE[c.id];});}
+  // Ce qui revient du document partagé : un identifiant CONNU, un texte borné, et seulement
+  // s'il diffère du code. Une clé inventée ou un nom de 50 000 signes n'entre pas.
+  // UNE LISTE, PAS UN OBJET : le catalogue s'écrit en `merge: true`, qui fusionne les maps
+  // CLÉ PAR CLÉ — un nom rendu à sa valeur d'origine aurait disparu du compte sans jamais
+  // quitter le serveur, et serait revenu au rechargement suivant. Une liste se remplace en
+  // entier. C'est déjà la forme des services ajoutés par l'admin.
+  function nomsEnListe(){const n=S.nomsMetiers||{};return Object.keys(n).map(function(k){return {id:k,nm:n[k]};});}
+  function nomsValides(d){const out={};if(!Array.isArray(d))return out;
+    d.forEach(function(e){if(!e||!NOMS_CODE[e.id])return;const v=nomNet(e.nm);if(v&&v!==NOMS_CODE[e.id])out[e.id]=v;});
+    return out;}
   // Catalogue complet = services de base + services « Autre » ajoutés par l'admin.
   function allSvc(){return SERVICES.concat(S.customServices||[]);}
+  // UNE SEULE PORTE POUR RENOMMER, que le métier vienne du code ou de la console. Deux
+  // refus : sans nom (une tuile vide chez tous les clients), ou un nom DÉJÀ porté par un
+  // autre métier — deux libellés identiques à l'écran restent deux catalogues distincts.
+  // Rendre le nom d'origine RETIRE la clé : on n'enregistre que ce qui diffère.
+  function renommerMetier(id,v){
+    const val=nomNet(v),sv=(S.customServices||[]).find(function(x){return x.id===id;});
+    if(!val)return {ok:false,raison:'Un métier ne peut pas être sans nom'};
+    const pris=allSvc().concat(CATEGORIES).some(function(x){return x.id!==id&&(x.nm||'').toLowerCase()===val.toLowerCase();});
+    if(pris)return {ok:false,raison:'« '+val+' » est déjà au catalogue'};
+    if(sv)sv.nm=val;
+    else{S.nomsMetiers=S.nomsMetiers||{};
+      if(val===nomDeCode(id))delete S.nomsMetiers[id];else S.nomsMetiers[id]=val;
+      appliquerNoms();}
+    return {ok:true,nom:val};
+  }
+  function nomCourant(id){const s=findSvc(id);if(s)return s.nm;const c=CATEGORIES.find(function(x){return x.id===id;});return c?c.nm:nomDeCode(id);}
+  // Le champ de renommage, et — seulement s'il y a quelque chose à défaire — le nom écrit
+  // dans le code avec le moyen d'y revenir. Sans cette porte, rendre son nom d'origine à un
+  // métier demanderait de le retaper à la lettre près.
+  function nomChamp(id,nm){const def=nomDeCode(id),chg=!!def&&nomNet(nm)!==def;
+    return `<input class="txt" data-catname="${id}" data-catwas="${esc(nm)}" value="${esc(nm)}" placeholder="Nom du métier" autocomplete="off" autocapitalize="words" style="width:100%;margin-top:8px;padding:11px 12px;font-size:14px">`
+      +(chg?`<div class="row between" style="align-items:center;gap:8px;margin-top:5px"><span class="mini" style="color:var(--muted);min-width:0">Nom d’origine&nbsp;: ${esc(def)}</span><button class="linklike mini" data-adm="catnomdef:${id}" style="flex:none">Rétablir</button></div>`:'');}
   function findSvc(id){return allSvc().find(function(s){return s.id===id;});}
   function svcBase(id){const s=findSvc(id);return s?s.rate:30;}
   // Nom/icône d'une catégorie, y compris la catégorie « autre » (service hors liste).
@@ -3805,7 +3857,7 @@
       }
     });
   }
-  function saveCatalog(){ try{ if(FB&&FB.auth&&FB.auth.currentUser){ materialiserSeeds(); S.catalogSeed=CATALOG_SEED; FB.f.setDoc(FB.f.doc(FB.db,'settings','catalog'),{services:S.customServices||[],catalog:S.adminCatalog||{},options:S.adminOptions||{},catalogSeed:CATALOG_SEED},{merge:true}); } }catch(_){} }
+  function saveCatalog(){ try{ if(FB&&FB.auth&&FB.auth.currentUser){ materialiserSeeds(); S.catalogSeed=CATALOG_SEED; FB.f.setDoc(FB.f.doc(FB.db,'settings','catalog'),{services:S.customServices||[],catalog:S.adminCatalog||{},options:S.adminOptions||{},noms:nomsEnListe(),catalogSeed:CATALOG_SEED},{merge:true}); } }catch(_){} }
   // Le catalogue est écouté en temps réel : chaque écriture nous revient par l'écoute,
   // et applyCatalogDoc redessine. Sauver à CHAQUE lettre tapée déclenchait donc un
   // rendu par lettre — l'input était détruit et recréé, le curseur sautait, le clavier
@@ -3820,7 +3872,7 @@
   function prixSaisi(v){const n=Math.round(parseFloat(String(v).replace(',','.'))||0);return Math.max(0,Math.min(99999,n));}
   function ecritDansCatalogue(){ try{ const a=document.activeElement;
     return !!(a&&a.matches&&a.matches('[data-optname],[data-actname],[data-actgrpname],[data-actpricev],[data-optpricev],[data-catname]')); }catch(_){return false;} }
-  function applyCatalogDoc(d){ if(!d)return; if(Array.isArray(d.services)){ S.customServices=d.services.map(function(s){return {id:s.id,nm:s.nm,rate:s.rate,custom:true,ico:icoValide(s.ico)};}); } if(d.catalog&&typeof d.catalog==='object'){ S.adminCatalog=d.catalog; } S.catalogSeed=Number(d.catalogSeed)||0; if(d.options&&typeof d.options==='object'){ S.adminOptions=d.options; } if(ecritDansCatalogue())return; render(); }
+  function applyCatalogDoc(d){ if(!d)return; S.nomsMetiers=nomsValides(d.noms); appliquerNoms(); if(Array.isArray(d.services)){ S.customServices=d.services.map(function(s){return {id:s.id,nm:nomNet(s.nm),rate:s.rate,custom:true,ico:icoValide(s.ico)};}); } if(d.catalog&&typeof d.catalog==='object'){ S.adminCatalog=d.catalog; } S.catalogSeed=Number(d.catalogSeed)||0; if(d.options&&typeof d.options==='object'){ S.adminOptions=d.options; } if(ecritDansCatalogue())return; render(); }
   // Catalogue partagé écouté EN TEMPS RÉEL : toute modification admin (prix, prestations,
   // options, métiers) se propage à l'app de chacun sans rechargement. Une seule écoute.
   async function loadCatalog(){ try{ if(!FB||_catalogSub)return; _catalogSub=FB.f.onSnapshot(FB.f.doc(FB.db,'settings','catalog'),function(snap){ applyCatalogDoc(snap.exists()?(snap.data()||{}):{}); },function(e){ console.warn('catalog load',e); }); }catch(e){ console.warn('catalog sub',e); } }
@@ -8791,7 +8843,7 @@
         ${legacy?`<div class="mini" style="margin-top:6px;color:var(--muted)">Ancien comptage (avec doublons, archivé)&nbsp;: ${n('visit_total')} visites · ${n('installed_total')} installées</div>`:''}`;})();
     const svcAll=allSvc();
     const svcNoPro=svcAll.filter(function(s){return !(S.adminArtisans||[]).some(function(a){return a.status==='valide'&&Array.isArray(a.cats)&&a.cats.indexOf(s.id)>=0;});}).length;
-    const pricesBody=`<p class="mini" style="margin:0;color:var(--muted)">Chaque métier est <b>replié</b> : le nombre d'artisans validés est indiqué. Dépliez pour voir qui le pratique et régler le tarif client.</p>
+    const pricesBody=`<p class="mini" style="margin:0;color:var(--muted)">Chaque métier est <b>replié</b> : le nombre d'artisans validés est indiqué. Dépliez pour voir qui le pratique, le renommer et régler le tarif client. Un nom réécrit s'affiche <b>tel quel</b> en anglais et en portugais — les traductions ne suivent que les noms d'origine.</p>
       ${svcAll.map(s=>{
         const px=(S.adminPrices&&S.adminPrices[s.id]!=null)?S.adminPrices[s.id]:s.rate;
         const open=!!((S.admPriceOpen||{})[s.id]);
@@ -8816,12 +8868,12 @@
         // Le bloc vit dans le corps de la carte et non dans l'éditeur de tarif : un métier à
         // qui l'on avait ajouté des prestations basculait dans la grille à l'acte, où même
         // « Retirer ce métier » avait disparu.
-        const metierEditor=!s.custom?'':`<hr class="dashed" style="margin:13px 0 2px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Ce métier</div>
-          <input class="txt" data-catname="${s.id}" data-catwas="${esc(s.nm)}" value="${esc(s.nm)}" placeholder="Nom du métier" autocomplete="off" autocapitalize="words" style="width:100%;margin-top:8px;padding:11px 12px;font-size:14px">
+        const metierEditor=`<hr class="dashed" style="margin:13px 0 2px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Ce métier</div>
+          ${nomChamp(s.id,s.nm)}${!s.custom?'':`
           <div class="mini" style="color:var(--muted);margin-top:9px">Icône</div>
           <div class="row" style="flex-wrap:wrap;gap:7px;margin-top:6px">${SVC_ICOS.map(function(p){const on=icoValide(s.ico)===p[0]||(!icoValide(s.ico)&&p[0]==='other');
             return `<button class="btn ghost sm" data-adm="catico:${s.id}:${p[0]}" title="${esc(p[1])}" aria-label="${esc(p[1])}" aria-pressed="${on?'true':'false'}" style="flex:none;width:40px;height:40px;padding:0;display:inline-flex;align-items:center;justify-content:center;${on?'border-color:var(--teal-deep);background:var(--teal-wash);color:var(--teal-deep)':''}">${I[p[0]]}</button>`;}).join('')}</div>
-          <button class="btn ghost sm" data-adm="delcat:${s.id}" style="margin-top:11px;width:auto;padding:8px 12px;color:var(--coral-deep)">${I.trash} Retirer ce métier</button>`;
+          <button class="btn ghost sm" data-adm="delcat:${s.id}" style="margin-top:11px;width:auto;padding:8px 12px;color:var(--coral-deep)">${I.trash} Retirer ce métier</button>`}`;
         const artLines=catArts.length?catArts.map(function(a){return `<div class="row between" style="align-items:center;margin-top:8px"><button class="linklike" data-adm="art:${a.id}" style="font-size:13px;text-align:left;color:var(--ink)">${esc(a.name)}</button><span class="chip ${acctChip(a.status)[0]}">${acctChip(a.status)[1]}</span></div>`;}).join(''):`<p class="mini" style="margin-top:6px;color:var(--muted)">Aucun prestataire sur ce métier — « Bientôt disponible » côté client.</p>`;
         return `${header}<div class="card" style="padding:13px;margin:6px 0 0;background:var(--sand)"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Artisans (${catArts.length})</div>${artLines}<hr class="dashed" style="margin:12px 0 2px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Tarif client</div>${priceEditor}${optionsEditorHtml(s.id)}${metierEditor}
         <hr class="dashed" style="margin:13px 0 2px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Essai sur cet appareil</div>
@@ -8831,6 +8883,11 @@
           <button class="switch" data-adm="testsvc:${s.id}" style="flex:none;background:${svcForce(s.id)?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${svcForce(s.id)?'25px':'3px'}"></span></button>
         </div></div>`;
       }).join('')}
+      <div class="card" style="padding:14px;margin-top:12px">
+        <b style="font-size:14px">${I.folder} Catégories d'accueil</b>
+        <p class="sub" style="margin-top:5px">Les trois regroupements de la page d'accueil. Les renommer ne change que le libellé : les métiers qu'ils réunissent ne bougent pas.</p>
+        ${CATEGORIES.map(function(c){return `<div style="margin-top:11px"><div class="mini" style="color:var(--muted)">${c.subs.map(function(x){return esc(svcNm(x));}).join(' · ')}</div>${nomChamp(c.id,c.nm)}</div>`;}).join('')}
+      </div>
       <div class="card" style="padding:14px;margin-top:12px;border:1px dashed var(--hair)">
         <b style="font-size:14px">${I.plus} Ajouter un métier</b>
         <p class="sub" style="margin-top:5px">Créez une nouvelle catégorie de service, sans code. Elle apparaît côté client dès qu'un artisan validé la propose (« Bientôt disponible » en attendant).</p>
@@ -14657,6 +14714,9 @@
       // et jamais un dessin : le catalogue est relu par tous en `innerHTML`.
       else if(act==='catico'){const sv=(S.customServices||[]).find(function(x){return x.id===id;});
         if(sv){sv.ico=icoValide(parts[2]);saveCatalog();}}
+      // Rendre à un métier du code le nom qui y est écrit — la clé est RETIRÉE du compte,
+      // et la correction suivante faite dans le code lui reviendra.
+      else if(act==='catnomdef'){if(S.nomsMetiers&&S.nomsMetiers[id]!=null){delete S.nomsMetiers[id];appliquerNoms();saveCatalog();toast('Nom d’origine rétabli');}}
       // Suppression d'une demande de service supplémentaire (souhait client) une fois traitée :
       // retrait local immédiat + suppression Firestore (l'écoute temps réel confirme).
       else if(act==='wish-del'){S.adminWishes=(S.adminWishes||[]).filter(function(w){return w.id!==id;});if(FB&&FB.f&&FB.db&&!isDemo()){try{FB.f.deleteDoc(FB.f.doc(FB.db,'serviceWishes',id));}catch(_){}}toast('Demande supprimée');}
@@ -15713,7 +15773,14 @@
     // prestataires qui le portent déjà dans leurs métiers y restent attachés. C'est tout
     // l'intérêt : jusqu'ici la seule façon de corriger un nom était de supprimer et recréer,
     // ce qui forge un identifiant neuf et détache tout le monde en silence.
-    const cnm=e.target.closest('[data-catname]');if(cnm){const sv=(S.customServices||[]).find(function(x){return x.id===cnm.dataset.catname;});if(sv){sv.nm=cnm.value;saveCatalogSoon();}}
+    // La frappe s'écrit telle quelle — on ne corrige pas sous les doigts, la validation
+    // attend la sortie du champ. Un métier du code vidé en cours de frappe retombe sur son
+    // nom d'origine (appliquerNoms), donc aucune tuile ne se retrouve sans nom entre-temps.
+    const cnm=e.target.closest('[data-catname]');
+    if(cnm){const id=cnm.dataset.catname,sv=(S.customServices||[]).find(function(x){return x.id===id;});
+      if(sv)sv.nm=cnm.value;
+      else if(NOMS_CODE[id]){S.nomsMetiers=S.nomsMetiers||{};S.nomsMetiers[id]=cnm.value;appliquerNoms();}
+      saveCatalogSoon();}
     // Renommage d'un acte de la grille (console admin) — pas de re-render (garde le focus).
     const an=e.target.closest('[data-actname]');if(an){const p=an.dataset.actname.split(':');const arr=ensureCatalogCopy(p[0]);const a=arr.find(function(x){return x.id===p[1];});if(a){a.nm=an.value;saveCatalogSoon();}}
     const ag=e.target.closest('[data-actgrpname]');if(ag){const p=ag.dataset.actgrpname.split(':');const arr=ensureCatalogCopy(p[0]);const a=arr.find(function(x){return x.id===p[1];});if(a){a.grp=ag.value;saveCatalogSoon();}}
@@ -15761,12 +15828,10 @@
     // On ne corrige pas en devinant : on rend le nom précédent et on dit lequel des deux
     // refus s'applique.
     const cnb=e.target.closest('[data-catname]');
-    if(cnb){const sv=(S.customServices||[]).find(function(x){return x.id===cnb.dataset.catname;});
-      if(sv){const v=(cnb.value||'').trim(),av=cnb.dataset.catwas||sv.nm;
-        const pris=v&&allSvc().some(function(x){return x.id!==sv.id&&(x.nm||'').toLowerCase()===v.toLowerCase();});
-        if(!v||pris){sv.nm=av;cnb.value=av;toast(v?'« '+v+' » est déjà au catalogue':'Un métier ne peut pas être sans nom');}
-        else{sv.nm=v;cnb.value=v;cnb.dataset.catwas=v;}
-        saveCatalog();return;}}
+    if(cnb){const id=cnb.dataset.catname,av=cnb.dataset.catwas||nomCourant(id);
+      const r=renommerMetier(id,cnb.value);
+      if(!r.ok){renommerMetier(id,av);toast(r.raison);}
+      saveCatalog();render();return;}
     // Renfort (bêta) : secteur, date et choix nominatif du confrère.
     const rfc=e.target.closest('[data-rfi]');
     if(rfc&&S.renfortForm){const k=rfc.dataset.rfi;

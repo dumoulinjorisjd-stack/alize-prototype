@@ -69,7 +69,8 @@ ok(choix.every(c=>c.nom&&c.nom.length>1),'chacune porte un nom lisible, pour l�
 ok(choix[0].k==='other','« Par défaut » vient en tête — c’est ce que porte un métier qu’on n’a pas réglé');
 
 console.log('\nD — le nom se corrige SUR PLACE, l’identifiant ne bouge pas');
-ok(/data-catname="\$\{s\.id\}"/.test(src),'la carte du métier porte un champ de renommage');
+ok(/data-catname="\$\{id\}"/.test(src)&&/\$\{nomChamp\(s\.id,s\.nm\)\}/.test(src),
+  'la carte de CHAQUE métier porte un champ de renommage, par un gabarit commun');
 ok(/const cnm=e\.target\.closest\('\[data-catname\]'\)/.test(src),'la frappe est écoutée sans redessiner — le curseur reste dans le champ');
 ok(/\[data-catpricev\]|\[data-catname\]/.test(src)&&/ecritDansCatalogue/.test(src)
   &&/\[data-optpricev\],\[data-catname\]/.test(src),
@@ -88,7 +89,8 @@ ok(idStable.ico,'et l’icône choisie survit au renommage');
 console.log('\nE — deux refus, les mêmes qu’à la création');
 ok(/Un métier ne peut pas être sans nom/.test(src),'un métier SANS NOM est refusé — il s’afficherait en tuile vide chez tous les clients');
 ok(/est déjà au catalogue/.test(src),'un nom DÉJÀ PRIS est refusé — deux métiers identiques à l’écran, deux catalogues distincts');
-ok(/sv\.nm=av;cnb\.value=av/.test(src),'le refus rend le nom précédent au lieu de laisser le champ dans un état faux');
+ok(/if\(!r\.ok\)\{renommerMetier\(id,av\);toast\(r\.raison\);\}/.test(src),
+  'le refus rend le nom précédent au lieu de laisser le champ dans un état faux');
 
 console.log('\nF — le bloc vit dans le corps de la carte, pas dans l’éditeur de tarif');
 ok(/\$\{optionsEditorHtml\(s\.id\)\}\$\{metierEditor\}/.test(src),
@@ -96,7 +98,71 @@ ok(/\$\{optionsEditorHtml\(s\.id\)\}\$\{metierEditor\}/.test(src),
 ok(!/priceCtl\(s\.id,px,'\/h','Tarif horaire'\)\+\(s\.custom/.test(src),
   '« Retirer ce métier » n’est plus enfermé dans la branche horaire — un métier à qui on avait '+
   'ajouté des prestations basculait dans la grille à l’acte, où il devenait irretirable');
-ok(/const metierEditor=!s\.custom\?''/.test(src),'et rien de tout cela ne paraît sur les vingt métiers du code');
+ok(/\$\{nomChamp\(s\.id,s\.nm\)\}\$\{!s\.custom\?'':`/.test(src),
+  'le NOM se corrige partout, mais l’icône et le retrait restent aux seuls métiers créés '+
+  'sans code — les vingt du fichier ont leur dessin fait pour eux');
+
+console.log('\nH — les vingt métiers du code se renomment aussi');
+const bi=await p.evaluate(()=>{
+  const S=window.__S; S.customServices=[]; S.nomsMetiers={};
+  const r=window.__svc.renomme('menage','Ménage à domicile');
+  return {ok:r.ok, nom:window.__svc.nom('menage'), liste:window.__svc.liste(),
+          defaut:window.__svc.defaut('menage'),
+          // le même objet que lisent les vingt `SERVICES.find(...)` du fichier
+          direct:(function(){const S=window.__S;return window.__svc.nom('menage');})()};
+});
+ok(bi.ok&&bi.nom==='Ménage à domicile','« Ménage » se renomme sans mise en ligne');
+ok(bi.defaut==='Ménage','le nom écrit dans le code reste connu — il y a de quoi revenir en arrière');
+ok(bi.liste.length===1&&bi.liste[0].id==='menage','et SEUL ce qui diffère est enregistré');
+
+const cat=await p.evaluate(()=>{
+  const r=window.__svc.renomme('beaute','Beauté & bien-être');
+  return {ok:r.ok, nom:window.__svc.nom('beaute'), n:window.__svc.liste().length};
+});
+ok(cat.ok&&cat.nom==='Beauté & bien-être','les trois regroupements de l’accueil se renomment par la même porte');
+ok(cat.n===2,'chacun compte pour une seule entrée');
+
+const retour=await p.evaluate(()=>{
+  window.__svc.renomme('menage','Ménage');
+  return {nom:window.__svc.nom('menage'), liste:window.__svc.liste().map(x=>x.id)};
+});
+ok(retour.nom==='Ménage','rendre le nom d’origine le rétablit');
+ok(retour.liste.indexOf('menage')<0,
+  'et RETIRE la clé — sans quoi une correction faite dans le code ne reviendrait plus jamais');
+
+console.log('\nI — ce qui est enregistré est une LISTE, pas un objet');
+ok(/noms:nomsEnListe\(\)/.test(src),'le catalogue écrit une liste');
+ok(/function nomsEnListe\(\)/.test(src)&&/function nomsValides\(d\)\{const out=\{\};if\(!Array\.isArray\(d\)\)/.test(src),
+  'et la relit comme telle — un OBJET écrit en « merge » fusionne clé par clé, donc un nom '+
+  'rendu à sa valeur d’origine n’aurait jamais quitté le serveur');
+const relu=await p.evaluate(()=>{
+  window.__svc.relit({noms:[{id:'menage',nm:'Ménage complet'},{id:'c_inconnu',nm:'X'},
+                            {id:'jardin',nm:'   '},{id:'baby',nm:'Baby-sitting'}]});
+  return {menage:window.__svc.nom('menage'), jardin:window.__svc.nom('jardin'),
+          ids:window.__svc.liste().map(x=>x.id)};
+});
+ok(relu.menage==='Ménage complet','un nom réécrit revient du document partagé');
+ok(relu.ids.indexOf('c_inconnu')<0,'un identifiant inconnu n’entre pas');
+ok(relu.jardin==='Jardinage','un nom vide ne vide pas la tuile — elle reprend le nom du code');
+ok(relu.ids.indexOf('baby')<0,'un nom ÉGAL au code n’est pas gardé — on n’enregistre que ce qui diffère');
+const long=await p.evaluate(()=>{
+  window.__svc.relit({noms:[{id:'menage',nm:'M'.repeat(5000)}]});
+  return window.__svc.nom('menage').length;
+});
+ok(long<=40,'un nom démesuré est borné ('+long+' signes) — il casserait la mise en page de tous les clients');
+
+console.log('\nJ — les deux refus valent pour les métiers du code');
+const ref=await p.evaluate(()=>{
+  window.__svc.relit({noms:[]});
+  return {vide:window.__svc.renomme('menage',''), pris:window.__svc.renomme('menage','Jardinage'),
+          apres:window.__svc.nom('menage')};
+});
+ok(!ref.vide.ok&&/sans nom/.test(ref.vide.raison),'un métier du code ne peut pas non plus être sans nom');
+ok(!ref.pris.ok&&/déjà au catalogue/.test(ref.pris.raison),'ni prendre le nom d’un autre');
+ok(ref.apres==='Ménage','et un refus ne laisse rien d’écrit');
+ok(/Un nom réécrit s'affiche <b>tel quel<\/b> en anglais et en portugais/.test(src),
+  'la conséquence sur les traductions est DITE — un nom réécrit n’a pas d’entrée au dictionnaire');
+ok(/data-adm="catnomdef:\$\{id\}"/.test(src),'et « Rétablir » évite de retaper le nom d’origine à la lettre près');
 
 console.log('\nG — une seule porte pour l’icône d’un service');
 ok(!/I\[s\.id\]\|\|svcIco\(s\.id\)/.test(src),
