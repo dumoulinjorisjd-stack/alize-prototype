@@ -1297,7 +1297,8 @@ exports.notifyArtisanDecisions = onDocumentUpdated({document: 'artisans/{artisan
 });
 
 /**
- * notifyAdminDispute : le client conteste la durée déclarée (statut -> disputed). On alerte
+ * notifyAdminDispute : le client conteste — soit la DURÉE déclarée, soit la QUALITÉ de la
+ * prestation (`disputeKind`), les deux arrivant par le statut `disputed`. On alerte
  * l'admin par e-mail pour qu'il arbitre depuis la console (valider la durée déclarée, ou
  * revenir à l'accord initial). Le client n'est pas débité tant que le litige n'est pas réglé.
  */
@@ -1313,16 +1314,26 @@ exports.notifyAdminDispute = onDocumentUpdated({document: 'requests/{reqId}', se
   const dur = Number(after.duration) || 0;
   const fin = (after.finalHours != null) ? Number(after.finalHours) : dur;
   const msg = (after.disputeMsg || '').toString().slice(0, 500);
+  // DEUX MOTIFS. La DURÉE (l'artisan a déclaré plus que convenu) et la QUALITÉ (le travail
+  // n'a pas été fait) arrivent par le même statut `disputed`, mais ne se disent pas pareil :
+  // écrire « durée contestée » à un artisan dont on conteste le ménage l'envoie vérifier des
+  // heures que personne ne discute. Liste FERMÉE — une valeur inconnue retombe sur la durée,
+  // qui était le seul motif possible jusqu'ici.
+  const qual = after.disputeKind === 'qualite';
   const money = (x) => (Math.round((Number(x) || 0) * 100) / 100).toFixed(2).replace('.', ',') + ' €';
   try {
     await sendMail(db, ADMIN_EMAIL, {
-      subject: 'Ti-Services · Litige à arbitrer — ' + svc,
-      html: '<p><b>Un désaccord de durée est à arbitrer</b> sur une prestation :</p>' +
+      subject: (qual ? 'Ti-Services · Problème signalé — ' : 'Ti-Services · Litige à arbitrer — ') + svc,
+      html: (qual ? '<p><b>Un client signale un problème sur une prestation</b> :</p>'
+                  : '<p><b>Un désaccord de durée est à arbitrer</b> sur une prestation :</p>') +
             '<p><b>' + escHtmlS(svc) + '</b> — ' + escHtmlS(cli) + ' → ' + escHtmlS(pro) + '</p>' +
-            '<p>Accord initial : <b>' + dur + ' h</b> (' + money(rate * dur) + ')<br>' +
-            'Déclaré par le prestataire : <b>' + fin + ' h</b> (' + money(rate * fin) + ')</p>' +
+            (qual ? '<p>Montant en attente : <b>' + money(rate * fin) + '</b> (' + fin + ' h)</p>'
+                  : '<p>Accord initial : <b>' + dur + ' h</b> (' + money(rate * dur) + ')<br>' +
+                    'Déclaré par le prestataire : <b>' + fin + ' h</b> (' + money(rate * fin) + ')</p>') +
             (msg ? '<p>Message du client :<br>« ' + escHtmlS(msg) + ' »</p>' : '') +
-            '<p>Ouvrez la <b>console admin → Messagerie</b> (ou le tableau de bord) pour <b>valider la durée déclarée</b> ou <b>revenir à l\'accord initial</b>. Le client n\'est pas débité tant que le litige n\'est pas réglé.</p>',
+            (qual
+              ? '<p>Ouvrez la <b>console admin → Messagerie</b> (ou le tableau de bord) pour examiner le signalement. Aucune heure n\'est en cause : régler débite au montant convenu, un geste commercial se décide à part. Le client n\'est pas débité tant que ce n\'est pas réglé.</p>'
+              : '<p>Ouvrez la <b>console admin → Messagerie</b> (ou le tableau de bord) pour <b>valider la durée déclarée</b> ou <b>revenir à l\'accord initial</b>. Le client n\'est pas débité tant que le litige n\'est pas réglé.</p>'),
     });
   } catch (e) { console.warn('dispute notify', e); }
   // L'ARTISAN dont la durée est contestée doit le savoir tout de suite (seul l'admin
@@ -1331,15 +1342,19 @@ exports.notifyAdminDispute = onDocumentUpdated({document: 'requests/{reqId}', se
   try {
     if (after.providerUid) {
       const tokens = await userPushTokens(db, after.providerUid);
-      await pushMulticast(tokens, 'Durée contestée — ' + svc,
-        cli + ' conteste la durée déclarée (' + fin + ' h au lieu de ' + dur + ' h prévues). Ti-Services arbitre : votre paiement est suspendu le temps de l\'examen.',
+      await pushMulticast(tokens, (qual ? 'Problème signalé — ' : 'Durée contestée — ') + svc,
+        (qual
+          ? cli + ' a signalé un problème sur cette prestation. Ti-Services examine : votre paiement est suspendu le temps de l\'examen.'
+          : cli + ' conteste la durée déclarée (' + fin + ' h au lieu de ' + dur + ' h prévues). Ti-Services arbitre : votre paiement est suspendu le temps de l\'examen.'),
         '/?open=promissions',
         (tok) => db.collection('users').doc(after.providerUid).update({pushTokens: FieldValue.arrayRemove(tok)}), 'ti-litige-' + event.params.reqId);
       const u = (await db.collection('users').doc(after.providerUid).get()).data() || {};
       if (u.email) {
         await sendMail(db, u.email, {
-          subject: 'Ti-Services · Durée contestée — ' + svc,
-          html: '<p>' + escHtmlS(cli) + ' conteste la durée déclarée sur « ' + escHtmlS(svc) + ' » (' + fin + ' h déclarées, ' + dur + ' h prévues).</p>'
+          subject: (qual ? 'Ti-Services · Problème signalé — ' : 'Ti-Services · Durée contestée — ') + svc,
+          html: (qual
+              ? '<p>' + escHtmlS(cli) + ' a signalé un problème sur « ' + escHtmlS(svc) + ' ».</p>'
+              : '<p>' + escHtmlS(cli) + ' conteste la durée déclarée sur « ' + escHtmlS(svc) + ' » (' + fin + ' h déclarées, ' + dur + ' h prévues).</p>')
             + '<p>Ti-Services examine la situation et arbitre — votre paiement est suspendu le temps de l\'examen. Vous pouvez apporter des précisions depuis la messagerie de la mission.</p>',
         });
       }

@@ -4183,7 +4183,7 @@
   const S={
     lang:initLang(),
     persona:'client',clientNav:'home',proNav:'home',customServices:[],wishText:'',wishSent:false,adminWishes:[],onboarded:false,guest:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},
-    card:null,cardForm:false,payStep:false,payEdit:false,paySaveCard:true,finishing:false,disputing:false,support:false,supportSide:null,mission:null,missions:[],draft:null,
+    card:null,cardForm:false,payStep:false,payEdit:false,paySaveCard:true,finishing:false,disputing:false,disputeKind:null,support:false,supportSide:null,mission:null,missions:[],draft:null,
     addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,
     concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,concRetroPaid:'',concIban:'',concIbanHolder:'',concLegal:'',concSiret:'',concAddress:'',retroRate:8,
     // Renfort entre prestataires (bêta) : ses propres demandes de renfort, et le
@@ -5300,6 +5300,12 @@
     "Désaccord durée":"Duration dispute",
     "Désaccord en cours d'arbitrage":"Dispute under arbitration",
     "Désaccord transmis":"Dispute submitted",
+    "Problème signalé":"Problem reported",
+    "Signalement transmis":"Report submitted",
+    "En cours d’examen":"Under review",
+    "Décrivez ce qui n’a pas été. Ti-Services examine votre signalement et vous répond — le prélèvement reste suspendu tant que ce n’est pas réglé.":"Describe what went wrong. Ti-Services will review your report and get back to you — the charge stays on hold until it is settled.",
+    "Ti-Services examine votre signalement et revient vers vous. Aucun débit tant que ce n’est pas réglé.":"Ti-Services is reviewing your report and will get back to you. No charge until it is settled.",
+    "Montant en attente":"Amount on hold",
     "Détail":"Details",
     "Détail des prestations réglées":"Breakdown of paid services",
     "En attente de vérification par Ti-Services":"Awaiting verification by Ti-Services",
@@ -6703,6 +6709,12 @@
     "Désaccord durée":"Desacordo de duração",
     "Désaccord en cours d'arbitrage":"Desacordo em arbitragem",
     "Désaccord transmis":"Desacordo transmitido",
+    "Problème signalé":"Problema assinalado",
+    "Signalement transmis":"Comunicação enviada",
+    "En cours d’examen":"Em análise",
+    "Décrivez ce qui n’a pas été. Ti-Services examine votre signalement et vous répond — le prélèvement reste suspendu tant que ce n’est pas réglé.":"Descreva o que correu mal. A Ti-Services analisa a sua comunicação e responde-lhe — a cobrança fica suspensa enquanto não estiver resolvida.",
+    "Ti-Services examine votre signalement et revient vers vous. Aucun débit tant que ce n’est pas réglé.":"A Ti-Services está a analisar a sua comunicação e voltará a contactá-lo. Nenhuma cobrança enquanto não estiver resolvida.",
+    "Montant en attente":"Montante pendente",
     "Détail":"Detalhe",
     "Détail des prestations réglées":"Detalhe dos serviços pagos",
     "En attente de vérification par Ti-Services":"A aguardar verificação pela Ti-Services",
@@ -9934,7 +9946,7 @@
             // Champs nécessaires à l'arbitrage d'un litige directement depuis la messagerie
             // admin (carte « Litige à arbitrer » + règlement à la durée arbitrée, synchronisé
             // en base → le serveur capture le paiement Mollie sur finalHours).
-            duration:(r.duration!=null?r.duration:1),rate:(r.rate!=null?r.rate:0),finalHours:(r.finalHours!=null?r.finalHours:null),disputeMsg:r.disputeMsg||'',unit:r.unit||'h',acts:Array.isArray(r.acts)?r.acts:null,options:Array.isArray(r.options)?r.options:null,boost:r.boost||0,boostEur:r.boostEur||0,people:(r.people!=null?r.people:1),tip:r.tip||0,locationMode:r.locationMode||'',forfaitTotal:(r.forfaitTotal!=null?r.forfaitTotal:null),commPct:(r.commPct!=null?r.commPct:null),molliePaymentId:r.molliePaymentId||'',
+            duration:(r.duration!=null?r.duration:1),rate:(r.rate!=null?r.rate:0),finalHours:(r.finalHours!=null?r.finalHours:null),disputeMsg:r.disputeMsg||'',disputeKind:r.disputeKind||'duree',unit:r.unit||'h',acts:Array.isArray(r.acts)?r.acts:null,options:Array.isArray(r.options)?r.options:null,boost:r.boost||0,boostEur:r.boostEur||0,people:(r.people!=null?r.people:1),tip:r.tip||0,locationMode:r.locationMode||'',forfaitTotal:(r.forfaitTotal!=null?r.forfaitTotal:null),commPct:(r.commPct!=null?r.commPct:null),molliePaymentId:r.molliePaymentId||'',
             chat:chat,support:{client:supC,pro:supP},supCReadAdmin:r.supCReadAdmin||0,supCReadUser:r.supCReadUser||0,supPReadAdmin:r.supPReadAdmin||0,supPReadUser:r.supPReadUser||0,provider:r.providerName?{nm:r.providerName,ini:inits(r.providerName)}:null,ts:Math.max(lastAt(chat),lastAt(supC),lastAt(supP))});
         });
         list.sort(function(a,b){return b.ts-a.ts;});
@@ -9996,10 +10008,15 @@
       <div class="card" style="padding:14px;margin-top:10px;border-left:4px solid var(--coral)">
         <div class="row between"><b style="font-size:14px">${esc(m.svcName)}</b><span class="chip coral">Désaccord durée</span></div>
         <div class="mini" style="margin-top:3px">${esc(m.clientName||(isDemo()?'Camille Magras':'Client'))} → ${esc(provNm)}</div>
-        <div class="receipt-line" style="margin-top:8px"><span>Accord initial</span><b>${m.duration} h · ${eur(m.rate*m.duration)}</b></div>
-        <div class="receipt-line"><span>Déclaré par le prestataire</span><b>${m.finalHours} h · ${eur(m.rate*m.finalHours)}</b></div>
+        ${m.disputeKind==='qualite'
+          ?`<div class="receipt-line" style="margin-top:8px"><span>Montant en attente</span><b>${m.finalHours||m.duration} h · ${eur(m.rate*(m.finalHours||m.duration))}</b></div>`
+          :`<div class="receipt-line" style="margin-top:8px"><span>Accord initial</span><b>${m.duration} h · ${eur(m.rate*m.duration)}</b></div>
+        <div class="receipt-line"><span>Déclaré par le prestataire</span><b>${m.finalHours} h · ${eur(m.rate*m.finalHours)}</b></div>`}
         ${m.disputeMsg?`<div class="banner teal" style="margin-top:10px">${I.chat}<span>« ${esc(m.disputeMsg)} »</span></div>`:''}
-        <div class="row" style="gap:8px;margin-top:11px"><button class="btn good sm" data-adm="dispute-accept">Valider la modification</button><button class="btn ghost sm" data-adm="dispute-revert">Revenir à l'accord initial</button></div>
+        ${m.disputeKind==='qualite'
+          ? `<p class="mini" style="margin-top:9px;color:var(--muted)">Aucune heure n'est contestée ici : le client conteste la PRESTATION. Régler la débite au montant convenu ; un geste commercial ou un remboursement se décide à part.</p>
+        <div class="row" style="gap:8px;margin-top:9px"><button class="btn good sm" data-adm="dispute-revert">Régler la prestation</button></div>`
+          : `<div class="row" style="gap:8px;margin-top:11px"><button class="btn good sm" data-adm="dispute-accept">Valider la modification</button><button class="btn ghost sm" data-adm="dispute-revert">Revenir à l'accord initial</button></div>`}
       </div>`;
   }
   function adminSupervise(){
@@ -11253,17 +11270,30 @@
   }
   function clientDispute(){
     const m=S.mission,t=totals(m),agreed=m.rate*m.duration;
+    // DEUX MOTIFS, UN SEUL MÉCANISME. La durée (l'artisan a déclaré plus que convenu) et la
+    // QUALITÉ (le travail n'a pas été fait) n'appellent pas les mêmes mots ni le même
+    // récapitulatif : montrer « Accord initial / Déclaré » à qui se plaint du ménage parle
+    // d'heures que personne ne conteste. Le mécanisme, lui, est le même — et c'est le seul
+    // qui suspend vraiment le prélèvement.
+    const qual=(S.disputeKind==='qualite');
     return `<div class="pad"><button class="reset" data-act="dispute-cancel" style="margin:8px 0 2px">← Retour</button>
-      <span class="eyebrow" style="color:var(--coral-deep)">Désaccord</span><div class="h-hello">Signaler un désaccord</div>
-      <p class="sub" style="margin-top:6px">Refuser l’ajustement nécessite d’en informer Ti-Services. Décrivez votre désaccord — un médiateur tranchera : validation de la durée déclarée, ou retour à l’accord initial.</p>
-      <div class="card" style="padding:16px;margin-top:14px"><div class="receipt-line"><span>Accord initial</span><b>${m.duration} h · ${eur(agreed)}</b></div><div class="receipt-line"><span>Déclaré par le prestataire</span><b>${m.finalHours} h · ${eur(t.total)}</b></div></div>
-      <div class="field" style="margin-top:14px"><label>Votre message à Ti-Services</label><textarea rows="4" id="disputeMsg" placeholder="Ex. La prestation a duré 2 h, pas 3 h comme déclaré."></textarea></div>
+      <span class="eyebrow" style="color:var(--coral-deep)">${qual?'Problème signalé':'Désaccord'}</span><div class="h-hello">${qual?'Signaler un problème':'Signaler un désaccord'}</div>
+      <p class="sub" style="margin-top:6px">${qual
+        ?'Décrivez ce qui n’a pas été. Ti-Services examine votre signalement et vous répond — le prélèvement reste suspendu tant que ce n’est pas réglé.'
+        :'Refuser l’ajustement nécessite d’en informer Ti-Services. Décrivez votre désaccord — un médiateur tranchera : validation de la durée déclarée, ou retour à l’accord initial.'}</p>
+      <div class="card" style="padding:16px;margin-top:14px">${qual
+        ?`<div class="receipt-line"><span>Prestation</span><b>${esc(m.svcName||'')}</b></div><div class="receipt-line"><span>Montant en attente</span><b>${eur(t.total)}</b></div>`
+        :`<div class="receipt-line"><span>Accord initial</span><b>${m.duration} h · ${eur(agreed)}</b></div><div class="receipt-line"><span>Déclaré par le prestataire</span><b>${m.finalHours} h · ${eur(t.total)}</b></div>`}</div>
+      <div class="field" style="margin-top:14px"><label>Votre message à Ti-Services</label><textarea rows="4" id="disputeMsg" placeholder="${qual?'Ex. La salle de bain n’a pas été nettoyée, et le prestataire est parti avant la fin.':'Ex. La prestation a duré 2 h, pas 3 h comme déclaré.'}"></textarea></div>
       <div class="footcta" style="position:static;background:none;padding:16px 0 0"><button class="btn primary" data-act="dispute-send">Envoyer à Ti-Services</button><p class="mini" style="text-align:center;margin-top:10px">Vous ne serez pas débité tant que le litige n’est pas réglé.</p></div></div>`;
   }
   function clientDisputed(){
     const m=S.mission;
-    return `<div class="pad"><div style="height:10px"></div><span class="eyebrow" style="color:var(--coral-deep)">Désaccord transmis</span><div class="h-hello">En cours d’arbitrage</div>
-      <p class="sub">Ti-Services examine votre désaccord et tranchera : validation de la durée déclarée (${m.finalHours} h), ou retour à l’accord initial (${m.duration} h). Aucun débit tant que ce n’est pas réglé.</p>
+    const qual=(m.disputeKind==='qualite');
+    return `<div class="pad"><div style="height:10px"></div><span class="eyebrow" style="color:var(--coral-deep)">${qual?'Signalement transmis':'Désaccord transmis'}</span><div class="h-hello">${qual?'En cours d’examen':'En cours d’arbitrage'}</div>
+      <p class="sub">${qual
+        ?'Ti-Services examine votre signalement et revient vers vous. Aucun débit tant que ce n’est pas réglé.'
+        :`Ti-Services examine votre désaccord et tranchera : validation de la durée déclarée (${m.finalHours} h), ou retour à l’accord initial (${m.duration} h). Aucun débit tant que ce n’est pas réglé.`}</p>
       ${m.disputeMsg?`<div class="card" style="padding:16px;margin-top:14px"><div class="eyebrow" style="color:var(--muted)">Votre message</div><p class="sub" style="margin-top:6px;color:var(--ink-soft)">« ${esc(m.disputeMsg)} »</p></div>`:''}
       <div class="card" style="padding:14px;margin-top:12px"><div class="radar sm"><div class="ring r1"></div><div class="ring r2"></div><div class="core">${I.shield}</div></div><p class="sub" style="text-align:center;margin:0">Médiation en cours…</p></div>
       <div class="footcta" style="position:static;background:none;padding:16px 0 0">${isDemo()?`<button class="demobtn" data-act="demo-go-admin">${I.gear} Voir côté admin pour trancher (démo)</button>`:''}</div></div>`;
@@ -11767,6 +11797,7 @@
         if(r.acceptedSlot&&m.slot!==r.acceptedSlot){m.slot=r.acceptedSlot;if(r.slotFlex)m.proposedSlot=r.acceptedSlot;touched=true;}
         if(r.finalHours!=null&&m.finalHours!==r.finalHours){m.finalHours=r.finalHours;touched=true;}
         if(r.disputeMsg&&m.disputeMsg!==r.disputeMsg){m.disputeMsg=r.disputeMsg;touched=true;}
+        if(r.disputeKind&&m.disputeKind!==r.disputeKind){m.disputeKind=r.disputeKind;touched=true;}
         // ÉTAT RÉEL DU VERSEMENT. L'écran « Vous avez été payé » l'affirmait sans jamais le
         // vérifier : le prestataire lisait « +4,50 € versés sur votre compte » à la seconde
         // où il recevait une notification lui disant l'inverse. C'est Mollie qui dit la
@@ -15149,7 +15180,14 @@
       case 'show-pitch':S.showPitch=true;render();break;
       case 'pitch-start':S.showPitch=false;S.authView='signup';S.onbStep=1;render();break;
       case 'pitch-close':S.showPitch=false;render();break;
-      case 'report-issue':toast('Signalement transmis — vous ne serez pas débité');break;
+      // « SIGNALER UN PROBLÈME » NE SIGNALAIT RIEN. Le bouton affichait « vous ne serez pas
+      // débité » et n'écrivait nulle part : 48 h plus tard `autoValidate` validait la
+      // prestation et débitait la carte. L'écran promet pourtant, deux lignes plus bas, que
+      // signaler SUSPEND le prélèvement. Il emprunte désormais le mécanisme de litige qui
+      // existait déjà — le seul qui suspende réellement, puisque `autoValidate` ne balaie
+      // que les prestations restées `done_pro`. Ce mécanisme ne servait qu'à contester des
+      // HEURES : on ne pouvait pas contester la QUALITÉ, c'est-à-dire le motif le plus courant.
+      case 'report-issue':S.disputeKind='qualite';S.disputing=true;render();break;
       case 'pro-finish-start':{const m=S.mission;
         // Forfait (prix fixe : coiffure, colis…) : pas de durée réelle à déclarer —
         // on marque directement la prestation terminée, en attente de validation client.
@@ -15159,9 +15197,9 @@
       case 'finhours-up':S.mission.finalHours=Math.min(24,(S.mission.finalHours||S.mission.duration)+1);render();break;
       case 'finhours-down':S.mission.finalHours=Math.max(1,(S.mission.finalHours||S.mission.duration)-1);render();break;
       case 'pro-finish-confirm':S.mission.status='done_pro';S.finishing=false;if(S.mission._appt)S.mission._appt.status='tovalidate';pushMissionStatus(S.mission,{finalHours:(S.mission.finalHours!=null?S.mission.finalHours:S.mission.duration)});render();toast('Durée envoyée au client pour validation');break;
-      case 'dispute-open':S.disputing=true;render();break;
-      case 'dispute-cancel':S.disputing=false;render();break;
-      case 'dispute-send':{const el=document.getElementById('disputeMsg');const v=(el?el.value:'').trim();if(v.length<3){toast('Décrivez votre désaccord pour l’envoyer');break;}S.mission.disputeMsg=v;S.mission.status='disputed';S.disputing=false;pushMissionStatus(S.mission,{disputeMsg:v});render();toast('Désaccord transmis à Ti-Services');break;}
+      case 'dispute-open':S.disputeKind='duree';S.disputing=true;render();break;
+      case 'dispute-cancel':S.disputing=false;S.disputeKind=null;render();break;
+      case 'dispute-send':{const el=document.getElementById('disputeMsg');const v=(el?el.value:'').trim();if(v.length<3){toast('Décrivez votre désaccord pour l’envoyer');break;}const k=(S.disputeKind==='qualite')?'qualite':'duree';S.mission.disputeMsg=v;S.mission.disputeKind=k;S.mission.status='disputed';S.disputing=false;S.disputeKind=null;pushMissionStatus(S.mission,{disputeMsg:v,disputeKind:k});render();toast(k==='qualite'?'Problème transmis — le prélèvement est suspendu':'Désaccord transmis à Ti-Services');break;}
       case 'submit-rating':S.mission.status='rated';render();break;
       case 'new-mission':archiveMission(S.mission);S.mission=null;S.clientNav='home';render();break;
       case 'app-back':goBack();break;
@@ -15926,7 +15964,7 @@
     const pins=e.target.closest('[data-proinsurance]');
     if(pins&&pins.files&&pins.files[0]){const file=pins.files[0];pins.value='';uploadProInsurance(file);return;}
   });
-  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,card:null,cardForm:false,payStep:false,payEdit:false,finishing:false,disputing:false,support:false,supportSide:null,addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,proHistory:PRO_HISTORY(),fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,guest:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,adminPrices:ADMIN_PRICES(),proPhoto:null,proStatus:'approved',proFounder:true,proNotifPush:true,proNotifWa:true,proPhone:'0690 00 00 00',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:'',photo:''}});render();toast('Scénario réinitialisé');});
+  document.getElementById('reset').addEventListener('click',()=>{Object.assign(S,{persona:'client',clientNav:'home',proNav:'home',mission:null,draft:null,card:null,cardForm:false,payStep:false,payEdit:false,finishing:false,disputing:false,disputeKind:null,support:false,supportSide:null,addresses:ADDRESSES_INIT(),addrDefault:'ad1',addrForm:null,concNav:'home',concClients:CONCIERGE_CLIENTS(),concOrders:CONCIERGE_ORDERS(),concEarn:640,retroRate:8,concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,chat:false,advantages:false,referral:false,interv:false,invoiceId:null,clientInv:false,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,proHistory:PRO_HISTORY(),fidTiers:FID_TIERS.map(t=>({...t})),onboarded:false,guest:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},history:[],agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),admin:{view:'home',sel:null},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,adminPrices:ADMIN_PRICES(),proPhoto:null,proStatus:'approved',proFounder:true,proNotifPush:true,proNotifWa:true,proPhone:'0690 00 00 00',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proForm:{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:'',photo:''}});render();toast('Scénario réinitialisé');});
 
   /* ---------- PWA: install + service worker ---------- */
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
@@ -16565,7 +16603,7 @@
     if(S.generalSupport){S.generalSupport=false;if(S.persona==='admin')S.genUser=null;render();return;}
     if(S.adminSupervise){S.adminSupervise=false;render();return;}
     if(S.finishing){S.finishing=false;render();return;}
-    if(S.disputing){S.disputing=false;render();return;}
+    if(S.disputing){S.disputing=false;S.disputeKind=null;render();return;}
     if(S.persona==='pro'){
       if(S.proConflict){S.proConflict=null;render();return;}
       // Artisan RÉEL : le retour reste dans l'espace pro — jamais de bascule vers le
@@ -16934,7 +16972,7 @@
           m.preferredUid=r.preferredProviderUid||null;m.preferredName=r.preferredProviderName||'';m.directed=!!r.directed;
           if(r.providerUid){m.providerUid=r.providerUid;if(!m.provider||m.provider.nm==='Votre prestataire')m.provider={nm:r.providerName||'Votre prestataire',ini:inits(r.providerName||'Artisan'),rating:0,jobs:(r.providerJobs||0),founder:!!r.providerFounder};}
           if(r.providerPhoto)m.providerPhoto=r.providerPhoto;if(r.providerPhone!=null)m.providerPhone=r.providerPhone;if(r.providerBio!=null)m.providerBio=r.providerBio;if(Array.isArray(r.providerDiplomas))m.providerDiplomas=r.providerDiplomas;if(r.clientConfirmed!=null)m.clientConfirmed=r.clientConfirmed;
-          if(r.finalHours!=null)m.finalHours=r.finalHours;if(r.disputeMsg)m.disputeMsg=r.disputeMsg;
+          if(r.finalHours!=null)m.finalHours=r.finalHours;if(r.disputeMsg)m.disputeMsg=r.disputeMsg;if(r.disputeKind)m.disputeKind=r.disputeKind;
           if(Array.isArray(r.messages))m.chat=mergeChat(m.chat,r.messages);
         });
         // Réconciliation de l'HISTORIQUE : toute réservation réglée (paid/rated) rejoint
