@@ -183,6 +183,13 @@ function slotToMin(s) { const p = (s || '0:0').split(':'); return (+p[0]) * 60 +
 function slotBlockAt(min) { min = ((min % 1440) + 1440) % 1440; return min < 360 ? 'n' : (min < 720 ? 'm' : (min < 1080 ? 'a' : 's')); }
 function windowBlocks(startMin, flex) { const end = startMin + Math.max(0, Number(flex) || 0); const set = {}; for (let t = startMin; t <= end; t += 30) set[slotBlockAt(t)] = 1; set[slotBlockAt(end)] = 1; return Object.keys(set); }
 function dowKey(dateISO) { const q = (dateISO || '').split('-'); if (q.length < 3) return null; const d = new Date(Date.UTC(+q[0], (+q[1]) - 1, +q[2])); return ['dim', 'lun', 'mar', 'mer', 'jeu', 'ven', 'sam'][d.getUTCDay()]; }
+// Interrupteur « Hors ligne » du prestataire. Il annonce « Activez pour recevoir des
+// missions » et n'était lu NULLE PART — ni ici, ni dans le flux de l'application : il
+// coupait à 19 h et continuait de recevoir tout. On compare à `false` et jamais à
+// « pas vrai » : une fiche qui n'a pas encore ce champ est EN LIGNE, sinon tout le parc
+// existant deviendrait invisible à la première mise en ligne. Une demande ADRESSÉE à un
+// prestataire précis passe quand même — le client l'a choisi, il déclinera s'il le veut.
+function enLigne(v) { return v !== false; }
 function availOk(avail, r) {
   if (!avail || typeof avail !== 'object') return true;
   if (r.slotFlex === 'week') { for (const d in avail) { const rw = avail[d]; if (rw && (rw.n || rw.m || rw.a || rw.s)) return true; } return false; }
@@ -973,9 +980,10 @@ exports.notifyArtisansNewRequest = onDocumentCreated({document: 'requests/{reqId
   // Demande DIRIGÉE : l'artisan choisi est notifié quelle que soit sa grille de dispo (le
   // client l'a demandé ; il déclinera au besoin). Pour le POOL, on filtre par disponibilité.
   const availById = {}; artsSnap.docs.forEach((d) => { availById[d.id] = (d.data() || {}).avail; });
+  const onlineById = {}; artsSnap.docs.forEach((d) => { onlineById[d.id] = (d.data() || {}).online; });
   const targetUids = preferred
     ? (uids.indexOf(preferred) >= 0 ? [preferred] : [])
-    : uids.filter((uid) => availOk(availById[uid], r));
+    : uids.filter((uid) => availOk(availById[uid], r) && enLigne(onlineById[uid]));
   if (!targetUids.length) { console.log('Aucun artisan disponible pour ce créneau.'); return; }
 
   const svcNm = (r.serviceName || 'Nouvelle prestation').toString().slice(0, 60);
@@ -1768,7 +1776,7 @@ exports.notifyBoosted = onDocumentUpdated('requests/{reqId}', async (event) => {
   const db = getFirestore();
   const artsSnap = await db.collection('artisans').where('status', '==', 'valide').get();
   const uids = artsSnap.docs
-    .filter((d) => { const dd = d.data() || {}; const c = dd.cats || []; return (!svc || c.indexOf(svc) >= 0) && siteOk(dd, svc, after.locationMode) && availOk(dd.avail, after); })
+    .filter((d) => { const dd = d.data() || {}; const c = dd.cats || []; return (!svc || c.indexOf(svc) >= 0) && siteOk(dd, svc, after.locationMode) && availOk(dd.avail, after) && enLigne(dd.online); })
     .map((d) => d.id);
   if (!uids.length) return;
   // « Re-solliciter TOUS les artisans, même ceux qui avaient passé » : on RETIRE cette
@@ -2276,7 +2284,7 @@ exports.notifyReopenedRequest = onDocumentUpdated({document: 'requests/{reqId}',
   try {
     const artsSnap = await db.collection('artisans').where('status', '==', 'valide').get();
     let uids = artsSnap.docs
-      .filter((d) => { const dd = d.data() || {}; const c = dd.cats || []; return (!svc || c.indexOf(svc) >= 0) && d.id !== exclude && siteOk(dd, svc, after.locationMode); })
+      .filter((d) => { const dd = d.data() || {}; const c = dd.cats || []; return (!svc || c.indexOf(svc) >= 0) && d.id !== exclude && siteOk(dd, svc, after.locationMode) && enLigne(dd.online); })
       .map((d) => d.id);
     const preferred = after.directed ? (after.preferredProviderUid || '') : '';
     if (preferred) {
