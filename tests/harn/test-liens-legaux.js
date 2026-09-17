@@ -48,7 +48,12 @@ const ADRESSES=[
   const t=await p.evaluate(()=>(document.body.innerText||'').replace(/\s+/g,' '));
   ok(/Supprimer mon compte/.test(t),'elle indique le chemin exact dans l’application');
   ok(/contact@ti-services\.fr/.test(t),'elle donne une adresse pour ceux qui n’ont plus l’app');
-  ok(/trente jours/.test(t),'elle annonce un délai — Google le demande');
+  // Google exige qu'un DÉLAI soit annoncé, pas une formule particulière. Il disait
+  // « trente jours » sans condition, là où la politique de confidentialité annonçait un mois
+  // prolongeable de deux : deux documents, deux maxima pour la même demande. On garde le
+  // délai du règlement, celui qu'on peut tenir.
+  ok(/un mois/.test(t)&&/deux mois/.test(t),
+    'elle annonce un délai — Google le demande — et c’est le même que dans la politique de confidentialité');
   ok(/dix ans/.test(t)&&/L. 123-22/.test(t.replace(/ /g,' ')),
     'elle dit ce qui est CONSERVÉ, et sur quel fondement');
   ok(/cinq ans/.test(t),'y compris les pièces d’un intervenant');

@@ -15,10 +15,11 @@ sed 's/function render(){/function render(){window.__S=S;window.__render=render;
      s/^  function tryVisibleBackLink(){/  window.__back=function(){return goBack();};\n  function tryVisibleBackLink(){/
      s/^  function accepterDemo(m){/  window.__demo={accepte:function(m){return accepterDemo(m);},estExamen:function(){return isReviewDemo();}};\n  function accepterDemo(m){/
      s/^  function icoValide(k){/  window.__svc={ico:function(i){return svcIco(i);},valide:function(k){return icoValide(k);},choix:function(){return SVC_ICOS;},ajoute:function(n,r){return addCustomService(n,r);},relit:function(d){return applyCatalogDoc(d);},table:function(){return I;},renomme:function(i,v){return renommerMetier(i,v);},nom:function(i){return nomCourant(i);},liste:function(){return nomsEnListe();},defaut:function(i){return nomDeCode(i);}};\n  function icoValide(k){/
+     s/^  function lireBrouillon(){/  window.__brouillon={lire:function(){return lireBrouillon();},oublier:function(){return oublierBrouillon();},cle:function(){return brouillonCle();}};\n  function lireBrouillon(){/
      s/^  function adminSetCat(a,sv,on){/  window.__art={cat:function(a,s,o){return adminSetCat(a,s,o);},ouverts:function(){return activeServicesFromArtisans();},fiche:function(a){return artCatsEditor(a);}};\n  function adminSetCat(a,sv,on){/
      s/^  function i18nApply(root){/  window.__tr=function(v,lang){var av=S.lang;S.lang=lang;try{return trOne(v);}finally{S.lang=av;}};window.__dict=function(lang){return lang===String.fromCharCode(112,116)?PT_DICT:EN_DICT;};\n  function i18nApply(root){/' \
   "$SRC" > "$OUT"
-for f in __S __render __err __newMission __peutTravailler __tr __adm __cat __rev __demo __back __svc __art; do
+for f in __S __render __err __newMission __peutTravailler __tr __adm __cat __rev __demo __back __svc __art __brouillon; do
   grep -q "window.$f" "$OUT" || { echo "MANQUE $f"; exit 1; }
 done
 echo "harnais complet"

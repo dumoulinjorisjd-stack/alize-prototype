@@ -40,23 +40,29 @@ console.log('\nA — l’éditeur est identifié, dans les trois langues');
     l+' : le directeur de la publication est désigné par sa QUALITÉ');
 });
 
-console.log('\nB — la marque est nommée, avec son numéro et sa classe');
+console.log('\nB — la marque est revendiquée, sans publier le dossier');
 ['FR','EN','PT'].forEach(function(l){
-  ok(/5299123/.test(MENTIONS[l])&&/5299123/.test(CGU[l]),
-    l+' : le numéro de dépôt figure dans les mentions ET dans les CGU');
-  ok(/INPI/.test(MENTIONS[l])&&/INPI/.test(CGU[l]),l+' : l’office est nommé');
-  ok(/35/.test(MENTIONS[l]),l+' : la classe est dite — une marque ne protège que ce qu’elle couvre');
-  ok(/Ti services/.test(MENTIONS[l]),l+' : le signe déposé est cité tel qu’il a été déposé');
+  ok(/Ti-Services/.test(MENTIONS[l])&&/INPI/.test(MENTIONS[l]),
+    l+' : les mentions disent que le signe est une marque de C.C.S déposée à l’INPI');
+  ok(/INPI/.test(CGU[l]),l+' : les CGU aussi, à l’appui de l’interdiction d’usage');
 });
+// CE QU'ON NE PUBLIE PLUS, ET POURQUOI. Rien n'oblige à donner le numéro de dossier, la
+// date ni la classe — ce ne sont pas des mentions légales obligatoires. Et « demande en
+// cours d'examen » ANNONCE à un concurrent que la fenêtre d'opposition est ouverte : c'est
+// public au registre de toute façon, autant ne pas le mettre en avant.
+const LEG=['FR','EN','PT'].map(function(l){return MENTIONS[l]+CGU[l];}).join(' ');
+ok(!/5299123/.test(src),'le numéro de dépôt n’est publié nulle part');
+ok(!/en cours d'examen|under examination|em análise/.test(LEG),
+  'ni le calendrier de l’examen — la formule existe ailleurs pour le dossier d’un artisan, '+
+  'c’est dans les PIÈCES LÉGALES qu’elle ne doit plus être');
+ok(!/classe 35|class 35/.test(LEG),'ni la classe');
 
 console.log('\nC — déposée, et pas enregistrée');
 ok(!/®/.test(src),'aucun ® nulle part : ce symbole annonce un enregistrement qui n’existe pas encore');
 ok(!/marque enregistrée|registered trade ?mark|marca registada/i.test(src),
   'et aucune formule qui le dirait en toutes lettres');
-ok(/en cours d'examen/.test(MENTIONS.FR)&&/under examination/.test(MENTIONS.EN)&&/em análise/.test(MENTIONS.PT),
-  'les trois langues disent que l’examen est EN COURS');
-ok(/demande d'enregistrement de marque verbale française/.test(CGU.FR),
-  'les CGU parlent d’une DEMANDE d’enregistrement, pas d’un droit acquis');
+ok(/ayant fait l'objet d'un dépôt/.test(MENTIONS.FR)&&/filed with/.test(MENTIONS.EN)&&/objeto de um depósito/.test(MENTIONS.PT),
+  'on dit le DÉPÔT, qui est un fait, et non un enregistrement qui n’est pas acquis');
 
 console.log('\nD — le renvoi des mentions vers les CGU tombe juste');
 ['FR','EN','PT'].forEach(function(l){
@@ -67,10 +73,15 @@ console.log('\nD — le renvoi des mentions vers les CGU tombe juste');
     l+' : l’ancien renvoi, qui pointait vers un autre article, a disparu');
 });
 
-console.log('\nE — ce que l’interdiction couvre est dit');
+console.log('\nE — l’interdiction vise le SIGNE, quelle que soit sa graphie');
+// Un dépôt VERBAL protège le MOT, indépendamment des majuscules, de l'espace et du trait
+// d'union : « Ti services », « Ti-Services » et « TI SERVICES » sont le même signe. La
+// clause énumérait deux orthographes — une énumération laisse croire qu'une troisième
+// échappe.
+ok(/sous quelque graphie que ce soit/.test(CGU.FR)&&/in any spelling/.test(CGU.EN)&&/sob qualquer grafia/.test(CGU.PT),
+  'aucune orthographe n’est énumérée : c’est le signe qui est visé');
 ok(/nom de domaine/.test(CGU.FR)&&/domain name/.test(CGU.EN)&&/nome de domínio/.test(CGU.PT),
-  'l’usage du signe comme nom de domaine, enseigne ou dénomination sociale est visé — '+
-  'pas seulement la copie du code');
+  'et son usage comme nom de domaine, enseigne ou dénomination sociale, pas seulement la copie du code');
 
 console.log(f?('\n'+f+' ÉCHEC(S)'):'\nTOUT PASSE');
 process.exit(f?1:0);
