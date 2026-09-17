@@ -38,6 +38,10 @@ console.log('\nA — l’éditeur est identifié, dans les trois langues');
   ok(/Carrefour des 4 Chemins/i.test(MENTIONS[l]),l+' : l’adresse du dépôt aussi');
   ok(/(représentant légal|legal representative|representante legal)/.test(MENTIONS[l]),
     l+' : le directeur de la publication est désigné par sa QUALITÉ');
+  // LCEN art. 6 III-1 : ces trois-là sont OBLIGATOIRES et manquaient dans les trois langues.
+  ok(/Basse-Terre/.test(MENTIONS[l]),l+' : le greffe d’immatriculation (RCS Basse-Terre)');
+  ok(/55 04 21/.test(MENTIONS[l]),l+' : un téléphone pour joindre l’éditeur');
+  ok(/543 1000/.test(MENTIONS[l]),l+' : et le téléphone de l’hébergeur, exigé au même titre que son adresse');
 });
 
 console.log('\nB — la marque est revendiquée, sans publier le dossier');
