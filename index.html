@@ -8297,7 +8297,22 @@
   // notifié ne voit jamais passer une mission. Le site présente et fait installer.
   // (Échappatoire d'exploitation : ?admin sur l'adresse rouvre la connexion dans un
   // navigateur — pour l'administration depuis un ordinateur, jamais montré à personne.)
-  function accountsHere(){ try{ return appInstalled()||_adminWebFlag; }catch(_){ return true; } }
+  // ——— MÉMOIRE DE L'INSTALLATION ———
+  // `appInstalled()` répond à « suis-je AFFICHÉ en plein écran À CET INSTANT ? ». C'est la
+  // bonne question pour la mesure d'entonnoir, et la MAUVAISE pour décider si quelqu'un a
+  // le droit de créer un compte : les deux se séparent dès qu'on quitte le téléphone.
+  // Sur Mac, Chrome ouvre un ONGLET pour tout lien ti-services.fr, et le menu ⋮ de la
+  // fenêtre d'app propose « Ouvrir dans Chrome » — choix qu'il retient. Or à cette largeur
+  // la classe .desktop masque la vitrine : l'onglet ressemble trait pour trait à
+  // l'application. On lisait donc « Votre compte se crée dans l'application » DANS
+  // l'application, sans autre sortie que ?admin, qui n'est écrit nulle part.
+  // La marque est posée aux deux seuls instants où l'on SAIT : l'événement `appinstalled`
+  // (il se déclenche dans l'onglet où l'on vient d'accepter) et un démarrage en plein
+  // écran. Elle ne s'efface pas — la barrière ne protège rien, elle pousse à installer :
+  // la laisser fermée devant quelqu'un qui a déjà installé est le seul défaut qui coûte.
+  function noterInstallation(){ try{ localStorage.setItem('ti_installee','1'); }catch(_){} }
+  function appDejaInstallee(){ try{ return appInstalled()||localStorage.getItem('ti_installee')==='1'; }catch(_){ return false; } }
+  function accountsHere(){ try{ return appDejaInstallee()||_adminWebFlag; }catch(_){ return true; } }
   // Écran qui remplace toute inscription / connexion tentée hors de l'application.
   function installGate(){
     const ios=/iPad|iPhone|iPod/.test(navigator.userAgent||'');
@@ -16073,6 +16088,8 @@
 
   /* ---------- PWA: install + service worker ---------- */
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
+  // Ouverture en plein écran : l'app est installée sur cet appareil, et on s'en souvient.
+  try{ if(appInstalled())noterInstallation(); }catch(_){}
   // Coquille native (App Store / Play Store) : se comporte comme installée + masque
   // ce qui n'a pas de sens en natif (bouton Installer, connexion Google en WebView).
   if(isNativeShell()){document.body.classList.add('standalone','native-shell');
@@ -16245,7 +16262,7 @@
   // On mémorise l'invite native (Android/Chrome) pour la déclencher depuis la feuille.
   window.addEventListener('beforeinstallprompt',(e)=>{e.preventDefault();deferredPrompt=e;});
   // Entonnoir : installation native confirmée (Android/desktop).
-  window.addEventListener('appinstalled',function(){ try{ trackFunnel('installed'); }catch(_){} });
+  window.addEventListener('appinstalled',function(){ try{ noterInstallation(); }catch(_){} try{ trackFunnel('installed'); }catch(_){} });
   // Feuille « Installer l'application » : instructions selon le navigateur reconnu.
   // Glyphes fidèles aux vraies icônes des systèmes (aident à reconnaître le bouton).
   const IG_GLYPH={
