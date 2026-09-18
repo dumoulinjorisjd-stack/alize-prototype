@@ -855,6 +855,16 @@
   .sheet-btn{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;padding:15px;border:none;background:var(--card-2,#f4f1ee);color:var(--ink);font-size:15px;font-weight:700;border-radius:14px;margin-top:8px;cursor:pointer}
   .sheet-btn svg{width:20px;height:20px}
   .sheet-btn.cancel{background:transparent;color:var(--muted);font-weight:600}
+  /* ORDINATEUR : une feuille collée en bas est un idiome de TÉLÉPHONE, où le bas de
+     l'écran est sous le pouce. Sur un grand écran elle apparaît à un mètre du bouton
+     qu'on vient de cliquer — mesuré à 1280 × 860 : le bouton « Ajouter une photo » en
+     haut du formulaire, la feuille tout en bas, et « Annuler » rogné par le bord de la
+     fenêtre. Elle se centre donc, exactement comme la feuille d'installation le fait
+     déjà (`.ig-back`), et perd ses coins carrés du bas, qui n'ont de sens que collés.
+     Le téléphone ne bouge pas, ni la maquette : c'est là que l'idiome est juste. */
+  body.desktop .sheet-back{align-items:center}
+  body.desktop .sheet{border-radius:20px;padding-bottom:12px;box-shadow:0 18px 50px rgba(30,24,44,.28)}
+  body.desktop .sheet{animation:none}
   @keyframes sheetup{from{transform:translateY(100%)}to{transform:translateY(0)}}
   @keyframes sheetfade{from{opacity:0}to{opacity:1}}
   .pp-actions{display:flex;gap:7px;margin-top:7px;flex-wrap:wrap}
@@ -8364,18 +8374,38 @@
   // Elle arrive de façon ASYNCHRONE, donc on redessine — sans quoi la barrière resterait
   // affichée sous les yeux jusqu'au prochain geste. On ne redessine QUE si la marque est
   // neuve : un `render()` gratuit à chaque ouverture remettrait l'écran à plat.
+  // ET ELLE SE REPREND. Relevé par l'éditeur le 18/09/2026, une heure après la pose :
+  // « je l'ai désinstallée pour tester, donc l'application n'est pas installée » — et
+  // l'application continuait de croire le contraire. Le raisonnement d'origine ne
+  // regardait qu'un sens (ne pas enfermer dehors quelqu'un qui a installé) et ignorait
+  // l'autre : sur ordinateur, la barrière était le SEUL endroit qui proposait
+  // l'installation, donc une marque qui ne s'efface pas rend l'application muette pour
+  // de bon. Une mémoire qui ne sait pas se dédire n'est pas une mémoire, c'est une
+  // croyance. Le système répond DANS LES DEUX SENS, on l'écoute dans les deux sens.
+  // « NON » NE COMPTE QUE SI LE « OUI » ÉTAIT POSSIBLE. Sans l'API (Safari, Firefox) on
+  // n'efface rien : on perdrait la mémoire d'une installation sur iPhone, c'est-à-dire
+  // le seul cas où la barrière compte vraiment. Et si le manifeste est un BLOB — la
+  // bêta s'en fabrique un à la volée — il ne peut pas se citer lui-même, donc l'API ne
+  // pourra JAMAIS dire oui : son « non » ne prouve rien et l'on n'efface pas non plus.
+  function manifesteSeCite(){
+    try{ const l=document.querySelector('link[rel="manifest"]'); return !!l && !/^blob:/i.test(l.href||''); }
+    catch(_){ return false; }
+  }
   function demanderAuSysteme(){
     try{
-      if(!navigator.getInstalledRelatedApps)return;                 // Safari, Firefox : rien
-      let deja=false; try{ deja=localStorage.getItem('ti_installee')==='1'; }catch(_){}
-      if(deja)return;
+      if(!navigator.getInstalledRelatedApps)return;                 // Safari, Firefox : aucune réponse
+      const refutable=manifesteSeCite();
       navigator.getInstalledRelatedApps().then(function(apps){
-        if(!apps||!apps.length)return;                              // le système dit non
-        noterInstallation();
+        const installee=!!(apps&&apps.length);
+        if(!installee&&!refutable)return;                           // un « non » qui ne prouve rien
+        let marque=false; try{ marque=localStorage.getItem('ti_installee')==='1'; }catch(_){}
+        if(installee===marque)return;                               // rien de neuf : on ne redessine pas
+        if(installee)noterInstallation(); else oublierInstallation();
         try{ if(typeof render==='function')render(); }catch(_){}
       }).catch(function(){});
     }catch(_){}
   }
+  function oublierInstallation(){ try{ localStorage.removeItem('ti_installee'); }catch(_){} }
   function appDejaInstallee(){ try{ return appInstalled()||localStorage.getItem('ti_installee')==='1'; }catch(_){ return false; } }
   function accountsHere(){ try{ return appDejaInstallee()||_adminWebFlag; }catch(_){ return true; } }
   // Écran qui remplace toute inscription / connexion tentée hors de l'application.

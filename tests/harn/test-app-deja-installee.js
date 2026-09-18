@@ -86,6 +86,44 @@ ok(/related_applications/.test(fs.readFileSync(path.join(RACINE,'manifest.webman
 ok(/"url": "\.\/manifest\.webmanifest"/.test(fs.readFileSync(path.join(RACINE,'manifest.webmanifest'),'utf8')),
   'et il le fait par une adresse RELATIVE : elle tombe juste sur chaque hôte');
 
+console.log('\nE bis — et la mémoire SAIT SE DÉDIRE : l’éditeur a désinstallé pour tester');
+// « Je l'ai désinstallée pour tester, donc l'application n'est pas installée » — et l'app
+// continuait de croire le contraire. Une mémoire qui ne sait pas se dédire n'est pas une
+// mémoire, c'est une croyance ; et sur ordinateur la barrière était le SEUL endroit qui
+// proposait l'installation, donc l'application devenait muette pour de bon.
+// Le harnais est servi depuis un fichier, donc l'app s'y croit en BÊTA et se fabrique un
+// manifeste blob: — le cas « non réfutable ». On règle donc l'adresse du manifeste, puis
+// on repose la question nous-mêmes.
+async function apresReponse(opt){
+  const api=(opt&&'api' in opt)?opt.api:true, reponse=!!(opt&&opt.reponse), blob=!!(opt&&opt.blob);
+  const ctx=await b.newContext({viewport:{width:1280,height:860},locale:'fr-FR'});
+  const p2=await ctx.newPage();
+  await p2.goto('file://'+path.join(RACINE,'tests/harn/app.html'));
+  await p2.waitForFunction(()=>window.__S&&window.__inst);
+  const r=await p2.evaluate(async ([a,rep,bl])=>{
+    try{ localStorage.setItem('ti_installee','1'); }catch(_){}       // l’appareil se croit installé
+    const l=document.querySelector('link[rel="manifest"]');
+    if(l) l.href = bl ? URL.createObjectURL(new Blob(['{}'],{type:'application/manifest+json'}))
+                      : new URL('manifest.webmanifest', location.href).href;
+    if(a) navigator.getInstalledRelatedApps=()=>Promise.resolve(rep?[{platform:'webapp'}]:[]);
+    else  try{ Object.defineProperty(navigator,'getInstalledRelatedApps',{get:()=>undefined,configurable:true}); }catch(_){}
+    window.__inst.systeme();
+    await new Promise(r2=>setTimeout(r2,250));
+    let m=null; try{ m=localStorage.getItem('ti_installee'); }catch(_){}
+    return {marque:m, seCite:window.__inst.seCite(), mani:((l&&l.href)||'').slice(0,5)};
+  },[api,reponse,blob]);
+  await ctx.close(); return r;
+}
+const non=await apresReponse({reponse:false});
+ok(non.seCite&&non.marque!=='1',
+  'le système dit « non » → la marque est EFFACÉE, et l’installation se propose à nouveau');
+ok((await apresReponse({reponse:true})).marque==='1','il dit « oui » → elle reste');
+const bl=await apresReponse({reponse:false,blob:true});
+ok(bl.mani==='blob:'&&!bl.seCite&&bl.marque==='1',
+  'manifeste fabriqué à la volée (bêta) : il ne peut pas se citer, son « non » ne prouve rien — on n’efface pas');
+ok((await apresReponse({api:false})).marque==='1',
+  'pas d’API du tout (Safari, Firefox) : on n’efface pas — on perdrait la mémoire d’une installation sur iPhone');
+
 console.log('\nF — une porte sur le mur, et seulement sur ordinateur');
 const porte=await p.evaluate(()=>{const S=window.__S;
   document.body.classList.remove('standalone');
