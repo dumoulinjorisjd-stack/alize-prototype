@@ -8353,6 +8353,29 @@
   // écran. Elle ne s'efface pas — la barrière ne protège rien, elle pousse à installer :
   // la laisser fermée devant quelqu'un qui a déjà installé est le seul défaut qui coûte.
   function noterInstallation(){ try{ localStorage.setItem('ti_installee','1'); }catch(_){} }
+  // ——— ET SURTOUT : ON DEMANDE AU SYSTÈME ———
+  // Mesuré chez l'éditeur, le 18/09/2026 : fenêtre d'application Chrome sur Mac (bandeau
+  // corail, titre de la page, menu ⋮ — c'est bien la fenêtre installée), et la barrière
+  // tombait quand même. `display-mode: standalone` répond « suis-je AFFICHÉ en plein
+  // écran », pas « suis-je INSTALLÉ », et sur ordinateur les deux se séparent.
+  // Chrome sait répondre à la vraie question, depuis une fenêtre d'app comme depuis un
+  // onglet, à condition que le manifeste SE CITE lui-même dans `related_applications`.
+  // C'est une réponse, plus une déduction : on ne parie plus sur la forme de la fenêtre.
+  // Elle arrive de façon ASYNCHRONE, donc on redessine — sans quoi la barrière resterait
+  // affichée sous les yeux jusqu'au prochain geste. On ne redessine QUE si la marque est
+  // neuve : un `render()` gratuit à chaque ouverture remettrait l'écran à plat.
+  function demanderAuSysteme(){
+    try{
+      if(!navigator.getInstalledRelatedApps)return;                 // Safari, Firefox : rien
+      let deja=false; try{ deja=localStorage.getItem('ti_installee')==='1'; }catch(_){}
+      if(deja)return;
+      navigator.getInstalledRelatedApps().then(function(apps){
+        if(!apps||!apps.length)return;                              // le système dit non
+        noterInstallation();
+        try{ if(typeof render==='function')render(); }catch(_){}
+      }).catch(function(){});
+    }catch(_){}
+  }
   function appDejaInstallee(){ try{ return appInstalled()||localStorage.getItem('ti_installee')==='1'; }catch(_){ return false; } }
   function accountsHere(){ try{ return appDejaInstallee()||_adminWebFlag; }catch(_){ return true; } }
   // Écran qui remplace toute inscription / connexion tentée hors de l'application.
@@ -8366,6 +8389,16 @@
         <button class="btn primary" data-act="get-app">${I.install||''} Installer l'application</button>
         <button class="btn ghost" data-act="gate-back" style="margin-top:10px">← Retour à l'accueil</button>
       </div>
+      ${/* UNE PORTE SUR LE MUR, ET SEULEMENT SUR ORDINATEUR. On RECONNAÎT une application
+            installée ; toute reconnaissance peut se tromper, et c'est arrivé — sur un Mac,
+            dans la fenêtre d'application elle-même. Sur téléphone la barrière garde tout son
+            sens (sans installation, pas de notification, donc pas de mission vue), et l'écran
+            d'accueil rend l'installation évidente. Sur ordinateur, elle n'en a déjà plus
+            beaucoup : les notifications y marchent dans un onglet, et il n'y a pas d'« écran
+            d'accueil » à peupler. Entre laisser quelqu'un enfermé et le croire sur parole,
+            on le croit — il n'a rien à y gagner. */''}
+      ${detectPlatform().desktop?`<p class="mini" style="text-align:center;margin-top:16px">
+        <a href="#" data-act="gate-installee" style="color:var(--muted);text-decoration:underline">Vous l'avez déjà installée&nbsp;? Continuer ici</a></p>`:''}
       <p class="mini" style="text-align:center;margin-top:14px;color:var(--muted);line-height:1.55">${ios?'Sur iPhone&nbsp;: touchez le bouton Partager de Safari, puis « Sur l\'écran d\'accueil ».':'Votre navigateur vous proposera d\'ajouter Ti-Services à votre écran d\'accueil.'}</p>
       <div style="height:24px"></div></div>`;
   }
@@ -14568,6 +14601,8 @@
     // Vitrine : « Installer l'application » ouvre la feuille d'installation adaptée
     // au navigateur (au lieu de la simulation de téléphone).
     if(b.dataset.act==='get-app'){showInstallGuide();return;}
+    // Elle est installée, il le dit : on le retient, et la barrière ne se reposera plus.
+    if(b.dataset.act==='gate-installee'){noterInstallation();render();return;}
     // « Découvrir Ti-Services » depuis la vitrine mobile (navigateur, non installé) :
     // on révèle l'app en plein écran et on ouvre la présentation. Le visiteur explore
     // sans installer ; « ← Retour » depuis la présentation le mène à la création de compte.
@@ -16132,6 +16167,8 @@
   if(window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone){document.body.classList.add('standalone');}
   // Ouverture en plein écran : l'app est installée sur cet appareil, et on s'en souvient.
   try{ if(appInstalled())noterInstallation(); }catch(_){}
+  // Puis on pose la question à Chrome lui-même, qui connaît la réponse.
+  try{ demanderAuSysteme(); }catch(_){}
   // Coquille native (App Store / Play Store) : se comporte comme installée + masque
   // ce qui n'a pas de sens en natif (bouton Installer, connexion Google en WebView).
   if(isNativeShell()){document.body.classList.add('standalone','native-shell');

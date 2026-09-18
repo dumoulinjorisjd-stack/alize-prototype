@@ -63,6 +63,61 @@ ok(/if\(appInstalled\(\)\)trackFunnel\('installed'\)/.test(src),
 ok(!/appDejaInstallee\(\)\)trackFunnel/.test(src),
   'la mémoire ne franchit jamais la frontière de la mesure');
 
+console.log('\nE — on DEMANDE au système, au lieu de déduire de la forme de la fenêtre');
+// Mesuré chez l'éditeur : fenêtre d'application Chrome sur Mac, et la barrière tombait
+// quand même. `display-mode` dit comment on est AFFICHÉ, pas si l'on est INSTALLÉ.
+async function avecSysteme(reponse){
+  const ctx=await b.newContext({viewport:{width:1280,height:860},locale:'fr-FR'});
+  await ctx.addInitScript(([r])=>{
+    navigator.getInstalledRelatedApps=()=>Promise.resolve(r?[{platform:'webapp',id:'ti'}]:[]);
+  },[reponse]);
+  const p2=await ctx.newPage();
+  await p2.goto('file://'+path.join(RACINE,'tests/harn/app.html'));
+  await p2.waitForFunction(()=>window.__S&&window.__render);
+  await p2.waitForTimeout(700);
+  const r=await p2.evaluate(()=>{let m=null;try{m=localStorage.getItem('ti_installee');}catch(_){}
+    return {marque:m};});
+  await ctx.close(); return r;
+}
+ok((await avecSysteme(true)).marque==='1','Chrome répond « installée » → la marque est posée, sans plein écran');
+ok((await avecSysteme(false)).marque!=='1','Chrome répond « non » → rien n’est écrit : on n’invente pas une installation');
+ok(/related_applications/.test(fs.readFileSync(path.join(RACINE,'manifest.webmanifest'),'utf8')),
+  'le manifeste se cite lui-même, sans quoi l’API ne peut rien reconnaître');
+ok(/"url": "\.\/manifest\.webmanifest"/.test(fs.readFileSync(path.join(RACINE,'manifest.webmanifest'),'utf8')),
+  'et il le fait par une adresse RELATIVE : elle tombe juste sur chaque hôte');
+
+console.log('\nF — une porte sur le mur, et seulement sur ordinateur');
+const porte=await p.evaluate(()=>{const S=window.__S;
+  document.body.classList.remove('standalone');
+  try{localStorage.removeItem('ti_installee');}catch(_){}
+  S.account=null;S.onboarded=false;S.authView='signup';S.showPitch=false;S.legalView=null;
+  window.__render();
+  const a=document.querySelector('[data-act="gate-installee"]');
+  return {la:!!a, texte:a?a.innerText.trim():''};});
+ok(porte.la,'sur ordinateur, une sortie discrète existe — « '+porte.texte+' »');
+await p.evaluate(()=>{document.querySelector('[data-act="gate-installee"]').click();});
+await p.waitForTimeout(250);
+const apres=await p.evaluate(()=>{let m=null;try{m=localStorage.getItem('ti_installee');}catch(_){}
+  return {marque:m, gate:!!document.querySelector('[data-act="gate-back"]')};});
+ok(!apres.gate,'elle lève la barrière sur-le-champ');
+ok(apres.marque==='1','et durablement : on ne le redemandera pas à chaque ouverture');
+
+const tel=await b.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,locale:'fr-FR',
+  userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1'});
+const pt=await tel.newPage();
+await pt.goto('file://'+path.join(RACINE,'tests/harn/app.html'));
+await pt.waitForFunction(()=>window.__S&&window.__render); await pt.waitForTimeout(300);
+const surTel=await pt.evaluate(()=>{const S=window.__S;
+  document.body.classList.remove('standalone');
+  try{localStorage.removeItem('ti_installee');}catch(_){}
+  S.account=null;S.onboarded=false;S.authView='signup';S.showPitch=false;S.legalView=null;
+  window.__render();
+  return {gate:!!document.querySelector('[data-act="gate-back"]'),
+          porte:!!document.querySelector('[data-act="gate-installee"]')};});
+ok(surTel.gate,'sur téléphone la barrière reste');
+ok(!surTel.porte,'et SANS porte : là, sans installation il n’y a pas de notification, donc pas de mission vue');
+await tel.close();
+
 await b.close();
 console.log(f?('\n'+f+' ÉCHEC(S)\n'):'\nTout est vert.\n');
 process.exit(f?1:0);
