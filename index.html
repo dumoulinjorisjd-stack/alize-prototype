@@ -4639,11 +4639,29 @@
     if(isDemo())return '';
     // « À faire » ne s'affiche QUE s'il y a réellement des factures à sauvegarder ce
     // mois-ci. Sans aucune facture (nouveau compte), pas d'alerte : rien n'est en retard.
-    const hasData=(S.proHistory||[]).length>0;
-    const due=hasData&&backupDue();
-    const badge=due?`<span class="chip coral" style="white-space:nowrap;flex:none">À faire</span>`:(hasData?`<span class="chip good" style="white-space:nowrap;flex:none">${I.check} À jour</span>`:'');
+    // LA CARTE INTERROGEAIT L'HISTORIQUE DU PRESTATAIRE, POUR TOUT LE MONDE. Un client qui
+    // a dix factures a `S.proHistory` vide : la carte lui annonçait donc « dès vos premières
+    // missions… » indéfiniment, et le bouton de téléchargement n'apparaissait JAMAIS —
+    // alors que l'export, lui, sait très bien produire ses factures (`myBackupData`).
+    // On demande donc à l'export lui-même s'il a quelque chose à rendre : une seule source,
+    // et le cas de la conciergerie se règle du même coup.
+    const _bk=myBackupData();
+    const hasData=!!(_bk&&_bk.rows&&_bk.rows.length>1);
+    // Un client n'a pas de comptabilité : il a des factures. Le texte venait d'une carte
+    // partagée avec les prestataires, à qui « données comptables » et « conservation des
+    // justificatifs » parlent — pas à lui.
+    const _pro=(S.persona!=='client');
+    // « À faire » en corail annonce un RETARD. Un prestataire a une obligation comptable
+    // mensuelle ; un client n'a rien à tenir — sa facture est un service qu'on lui offre,
+    // pas une échéance. Aucune pastille chez lui.
+    const due=_pro&&hasData&&backupDue();
+    const badge=due?`<span class="chip coral" style="white-space:nowrap;flex:none">À faire</span>`:((_pro&&hasData)?`<span class="chip good" style="white-space:nowrap;flex:none">${I.check} À jour</span>`:'');
     return foldCard('backup',I.card,'Sauvegarde des factures','',`
-      <p class="mini" style="color:var(--muted);line-height:1.5">${hasData?`Téléchargez chaque mois une copie de vos factures et données comptables. <b>Vous êtes seul responsable de la conservation de vos justificatifs</b> — Ti-Services fournit l'outil sans garantir la conservation au-delà de ses obligations légales.`:`Dès vos premières missions, vous pourrez télécharger ici une copie de vos factures et données comptables (à conserver de votre côté).`}</p>
+      <p class="mini" style="color:var(--muted);line-height:1.5">${hasData
+        ?(_pro?`Téléchargez chaque mois une copie de vos factures et données comptables. <b>Vous êtes seul responsable de la conservation de vos justificatifs</b> — Ti-Services fournit l'outil sans garantir la conservation au-delà de ses obligations légales.`
+              :`Téléchargez une copie de vos factures, à conserver de votre côté. Ti-Services les garde le temps prévu par la loi, sans garantie au-delà.`)
+        :(_pro?`Dès vos premières missions, vous pourrez télécharger ici une copie de vos factures et données comptables (à conserver de votre côté).`
+              :`Dès votre première réservation, vous pourrez télécharger ici une copie de vos factures.`)}</p>
       ${hasData?`<button class="btn ${due?'primary':'ghost'} sm" data-act="download-backup" style="margin-top:10px">${I.card}&nbsp;Télécharger (CSV)</button>`:''}`,badge);
   }
   function adminExportAccounting(){
