@@ -181,6 +181,19 @@ const CARTES = [
   }
 ];
 
+/* LE QR À MÊME LE CORAIL. `qrSvgFrom` pose un rectangle blanc sous le code : c'est la
+   zone de silence, obligatoire, mais elle n'a pas à être BLANCHE — elle doit seulement
+   être claire et unie autour des modules. On la retire, le corail la remplace, et le
+   contraste reste de 6,6 contre 1 entre l'encre et le fond. On ne le suppose pas : le
+   décodeur indépendant relit chaque code, sur le PNG ET sur le JPEG compressé, à chaque
+   génération — la marge des modules du code est exactement là où la compression loge ses
+   artefacts. */
+function qrNu(svg) {
+  const nu = svg.replace(/<rect [^>]*fill="#fff"\/>/, '');
+  if (nu === svg) throw new Error('Fond du QR introuvable — `qrSvgFrom` a changé');
+  return nu;
+}
+
 /* LA CARTE UNIQUE — une seule carte pour les deux publics. Le recto est celui du client,
    le verso celui du prestataire, et sur ce verso le QR-code prend la place de Zouti : on
    ne met pas deux fois la mascotte sur la même carte, et le geste attendu d'un
@@ -213,7 +226,7 @@ function feuille(c, polices) {
      trois voiles de couleur sur le sable. À l'écran c'est une atmosphère ; imprimé, c'est
      une teinte pâle irrégulière qui ne se retrouve pas d'un tirage à l'autre et qui salit
      le blanc. Un aplat blanc franc ne pose aucune de ces questions. */
-  .recto{background:#fff}
+  .recto{background:${c['teal-wash']}}
   /* LE DÉGRADÉ NE DESCEND PLUS JUSQU'AU CORAIL PROFOND. Il allait de #FF6A5B à #CE301C :
      à l'impression, ce bas de dégradé vire au rouge sombre — une encre saturée perd
      toujours de la clarté en passant en CMJN, et c'est le point le plus foncé qui donne
@@ -262,8 +275,9 @@ function feuille(c, polices) {
   .v-mot b{color:${c['teal-deep']};font-weight:800} .v-mot span{color:${c['ink']}}
   .v-titre{margin-top:.8mm;font-size:2.5mm;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
     color:#fff;opacity:.86}
-  .tuile{margin:3mm 0 2.6mm;background:#fff;border-radius:2.6mm;padding:2mm;
-    box-shadow:0 1mm 3mm rgba(60,20,14,.18);line-height:0}
+  /* Plus de carré blanc : le code est posé à même le corail. Le bloc ne garde que sa
+     place et son espacement. */
+  .tuile{margin:3mm 0 2.6mm;line-height:0}
   .tuile svg{display:block;width:27mm;height:27mm}
   /* LE QR PREND LA PLACE DU DESSIN : même bloc de tête, même axe, même largeur à peu de
      chose près (22 mm de code contre 18,5 de mascotte). */
@@ -483,12 +497,12 @@ async function main() {
     plan.push({ cle: carte.cle, face: 'recto', titre: 'Carte ' + carte.cle + ' — recto',
       html: () => recto(c, carte, logo, style, metier) });
     plan.push({ cle: carte.cle, face: 'verso', titre: 'Carte ' + carte.cle + ' — verso',
-      url: carte.url, html: () => verso(carte, qr(carte.url, 400), style) });
+      url: carte.url, html: () => verso(carte, qrNu(qr(carte.url, 400)), style) });
   }
   plan.push({ cle: DUO.cle, face: 'recto', titre: 'Carte unique — recto (client)',
     html: () => recto(c, CARTES[0], logo, style, metier, 'Ti-Services — carte unique, recto client') });
   plan.push({ cle: DUO.cle, face: 'verso', titre: 'Carte unique — verso (prestataire)', url: DUO.url,
-    html: () => recto(c, CARTES[1], `<div class="tuile tete">${qr(DUO.url, 400)}</div>`,
+    html: () => recto(c, CARTES[1], `<div class="tuile tete">${qrNu(qr(DUO.url, 400))}</div>`,
       style, metier, 'Ti-Services — carte unique, verso prestataire', 'verso') });
 
   const faces = plan.map(f => ({ cle: f.cle, face: f.face, titre: f.titre, url: f.url,

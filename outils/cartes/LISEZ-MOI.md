@@ -106,9 +106,21 @@ la face. Il va maintenant de **`#FF8275`** (le corail de marque plus un voile de
 `outils/cartes-visite.js`, en PROPORTION de deux jetons de la charte — jamais en teinte
 choisie à la main.
 
-**Le recto est un blanc franc, sans dégradé.** Il portait le fond « lagon » de
-l'application : à l'écran c'est une atmosphère, imprimé c'est une teinte pâle irrégulière
-qui ne se retrouve pas d'un tirage à l'autre.
+**Le recto est un aplat de corail très clair** (`#FFEDE8`, le corail de la charte), sans
+dégradé. Il portait le fond « lagon » de l'application : à l'écran c'est une atmosphère,
+imprimé c'est une teinte pâle irrégulière qui ne se retrouve pas d'un tirage à l'autre.
+
+**Le QR-code est posé à même le corail, sans carré blanc.** La zone de silence autour des
+modules est obligatoire, mais elle n'a pas à être blanche : elle doit être claire et unie,
+et le corail l'est. Contraste encre/fond : 6,6 contre 1.
+
+*Ce que ça coûte, mesuré* — on réduit l'image de la carte jusqu'à ce que le décodeur
+échoue : le code se lit jusqu'à **170 px** de côté de carte posé sur le corail, contre
+**150 px** sur le carré blanc. Treize pour cent de marge en moins, sur une marge qui est
+énorme — un téléphone qui photographie une carte de 65 mm en capture entre 800 et 2 000 px.
+**Réserve** : ces mesures portent sur le fichier, pas sur le papier. À l'impression, l'encre
+s'étale légèrement et un fond saturé pardonne moins qu'un blanc. Scannez le BAT avec deux
+ou trois téléphones avant de lancer le tirage — c'est le seul essai qui compte.
 
 **Ce que le fond clair coûte, mesuré.** Le nom garde ses deux teintes du recto sur les
 deux faces — c'est la signature de la marque. Sur le blanc du recto, le « Ti » corail tient
