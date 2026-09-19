@@ -64,30 +64,38 @@ ok(tel.mots===226,'le compte de mots y est inchangé ('+tel.mots+')');
 ok(tel.etapes===3&&tel.ile===1&&tel.hauteurBrief>1000,
   'et la vitrine garde ses étapes, son île et sa hauteur ('+tel.hauteurBrief+' px)');
 
-console.log('\nC bis — c’est une VITRINE : un seul axe, et la largeur employée');
+console.log('\nC bis — c’est une VITRINE : le client, les boutons, le professionnel');
 {
   const ctx=await b.newContext({viewport:{width:1512,height:950},locale:'fr-FR'});
   const p2=await ctx.newPage();
   await p2.goto(F); await p2.waitForFunction(()=>window.__S&&window.__render); await p2.waitForTimeout(700);
   const g=await p2.evaluate(()=>{
-    const secs=[...document.querySelectorAll('.welcome-plus .wp-cols > section')];
+    const y=e=>e?Math.round(e.getBoundingClientRect().top):null;
+    const secs=[...document.querySelectorAll('.wp-cols>section')];
+    const cta=document.querySelector('.wp-cta');
     const axes=new Set();
     secs.forEach(s2=>[...s2.children].forEach(e=>{
       const a=getComputedStyle(e).textAlign; axes.add(a==='start'?'left':a);}));
-    const y=e=>e?Math.round(e.getBoundingClientRect().top):null;
     const pad=document.querySelector('.pad.welcome').getBoundingClientRect();
     const hero=document.querySelector('.welcome-hero').getBoundingClientRect();
     const bas=document.querySelector('.welcome-bas').getBoundingClientRect();
-    return {axes:[...axes], titres:secs.map(s2=>y(s2.querySelector('.pitch-h'))),
-      largeur:Math.round(pad.width), part:Math.round(pad.width/window.innerWidth*100),
-      colonne:Math.round(secs[0].getBoundingClientRect().width),
-      vide:Math.round(bas.top-hero.bottom)};});
+    const rangees=secs.map(s2=>{const st=s2.querySelector('.pitch-steps');
+      return st?new Set([...st.children].map(e=>Math.round(e.getBoundingClientRect().top))).size:null;});
+    return {axes:[...axes], sections:secs.length, yClient:y(secs[0]), yCta:y(cta), yPro:y(secs[1]),
+      boutons:cta?[...cta.querySelectorAll('button')].map(x=>x.dataset.act):[],
+      largeurSection:Math.round(secs[0].getBoundingClientRect().width),
+      part:Math.round(pad.width/window.innerWidth*100),
+      rangees, vide:Math.round(bas.top-hero.bottom)};});
+  ok(g.sections===2&&g.yClient<g.yCta&&g.yCta<g.yPro,
+    'le client d’abord, les boutons, puis le professionnel — jamais côte à côte ('+g.yClient+' → '+g.yCta+' → '+g.yPro+')');
+  ok(g.boutons.join(',')==='onb-start,go-artisan-signup',
+    'et ce sont les deux boutons d’inscription, dans l’ordre — '+g.boutons.join(' · '));
+  ok(g.rangees[0]===1&&g.rangees[1]===1,
+    'chaque partie déploie ses trois étapes sur UNE rangée : c’est elle qui emploie la largeur, pas deux discours qui se concurrencent');
   ok(g.axes.length===1&&g.axes[0]==='left',
-    'tous les blocs d’une colonne sont sur le MÊME axe ('+g.axes.join(', ')+') — avant, ils alternaient start et center');
-  ok(g.titres[0]===g.titres[1],
-    'les deux titres de colonne démarrent à la même ligne ('+g.titres.join(' / ')+')');
-  ok(g.part>=88,'la vitrine occupe '+g.part+' % de la fenêtre ('+g.largeur+' px) — elle en occupait 55');
-  ok(g.colonne>=560,'chaque colonne fait '+g.colonne+' px de large (390 avant)');
+    'tous les blocs sont sur le MÊME axe ('+g.axes.join(', ')+') — avant, ils alternaient start et center');
+  ok(g.part>=88,'la vitrine occupe '+g.part+' % de la fenêtre — elle en occupait 55');
+  ok(g.largeurSection>=1200,'chaque partie prend toute la largeur ('+g.largeurSection+' px, contre 390 en deux colonnes)');
   ok(g.vide<=40,'et le vide entre le héros et la suite tombe à '+g.vide+' px (136 avant)');
   await ctx.close();
 }
