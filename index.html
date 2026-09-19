@@ -1283,6 +1283,27 @@
   body.desktop .welcome .welcome-word{font-size:34px}
   body.desktop .welcome .footcta{max-width:400px;width:100%;margin:14px auto 0;padding:0}
   body.desktop .welcome .btn.choice{font-size:17px;padding-top:16px;padding-bottom:16px}
+  /* CE QUE LA VITRINE DIT, L'ORDINATEUR LE DIT AUSSI. Le contenu est CLONÉ depuis
+     l'accueil public (une seule source), et il n'apparaît QUE sur grand écran : sur
+     téléphone la vitrine est déjà là, au complet, et cet écran doit rester court.
+     Le bas traverse les deux colonnes de la grille ; sans cela il se glisserait dans
+     l'une d'elles et pousserait les arguments à la ligne suivante. */
+  .welcome-plus{display:none}
+  .welcome-bas{margin-top:8px}
+  body.desktop .welcome-bas{grid-column:1 / -1;margin-top:64px;padding-top:44px;border-top:1px solid var(--hair)}
+  body.desktop .welcome-plus{display:block;margin-bottom:26px}
+  body.desktop .wp-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:52px;align-items:start}
+  body.desktop .wp-cols>section>.eyebrow{margin-bottom:10px}
+  /* Deux règles de la vitrine sont écrites pour `.brief` : le clone ne les reçoit pas. */
+  .welcome-plus .pitch-h,.welcome-plus .pitch-sub,.welcome-plus .pro-hook{text-align:center}
+  .welcome-plus .pitch-sub{max-width:44ch;margin-left:auto;margin-right:auto}
+  .welcome-plus .pitch-h{font-size:26px}
+  .wp-mobile{display:flex;gap:14px;align-items:flex-start;background:var(--card);border:1px solid var(--hair);
+    border-radius:18px;padding:18px 20px;margin-bottom:34px}
+  .wp-mobile svg{flex:none;width:26px;height:26px;color:var(--teal-deep);margin-top:2px}
+  .wp-mobile b{display:block;font-size:15px}
+  .wp-mobile p{margin:5px 0 12px;font-size:13.5px;line-height:1.55;color:var(--ink-soft)}
+  .wp-mobile .btn{width:auto;padding:10px 16px}
   body.desktop #splash{background:var(--sand)}
   /* Le rail latéral reste un panneau net (opaque) sur le lagon. */
   body.desktop .view>div:has(>.navbar)>.navbar{background:var(--card)}
@@ -3118,6 +3139,53 @@
   //               App Store / Play Store continuent de pointer dessus.
   //   'client'  — dans un compte : la suppression de compte revient.
   //   'pro'     — dans un compte prestataire : la charte aussi.
+  // ——— L'ACCUEIL SUR GRAND ÉCRAN REPREND LA VITRINE ———
+  // Mesuré le 19/09/2026 : au-delà de 1024 px, `body.desktop .brief{display:none}` masque
+  // la vitrine entière et c'est l'écran d'accueil de l'application qu'on découvre — 121
+  // mots contre 200 sur téléphone, et une page qui NE DÉFILE PAS, donc rien en dessous.
+  // Un visiteur sur ordinateur n'apprenait ni comment ça marche, ni quels services
+  // existent, ni qu'on couvre les 16 quartiers, ni — en pleine campagne de recrutement —
+  // que l'ouverture est le 1er octobre et qu'il y a un programme Ambassadeur.
+  //
+  // ON NE RÉÉCRIT RIEN. Deux textes qui disent la même chose divergent, et c'est la copie
+  // oubliée qui reste en ligne — le piège qu'on vient d'éviter sur les documents légaux.
+  // Le contenu est CLONÉ depuis la vitrine : une seule source, traduite une seule fois
+  // (les nœuds clonés repassent par `i18nApply`, donc l'espagnol et le portugais suivent
+  // sans qu'on ajoute une clé).
+  //
+  // Le clone est pris UNE fois, sur le français d'origine (`_briefFR`), et débarrassé de
+  // ce que l'écran porte déjà : les appels à l'action du haut, et la carte de l'île en
+  // double — elle dit la même chose des deux côtés. Les identifiants partent aussi : deux
+  // éléments qui portent le même `id` dans une page, c'est une animation qui vise le
+  // mauvais, et un lecteur d'écran qui trébuche.
+  var _accueilLargeHtml=null;
+  function accueilLargeHtml(){
+    if(_accueilLargeHtml!=null)return _accueilLargeHtml;
+    _accueilLargeHtml='';
+    try{
+      const br=document.querySelector('.brief'); if(!br)return '';
+      const src=document.createElement('div');
+      src.innerHTML=(_briefFR!=null?_briefFR:br.innerHTML);
+      const bloc=(sel)=>{const n=src.querySelector(sel);return n?n.cloneNode(true):null;};
+      const cli=bloc('#briefClient'), pro=bloc('#briefPro');
+      [cli,pro].forEach(function(n){ if(!n)return;
+        n.querySelectorAll('.pitch-cta,.pitch-disco,#installSteps').forEach(e=>e.remove());
+        n.removeAttribute('id');
+        n.querySelectorAll('[id]').forEach(e=>e.removeAttribute('id'));
+      });
+      if(pro)pro.querySelectorAll('.cover-isle').forEach(e=>e.remove());
+      if(!cli&&!pro)return '';
+      _accueilLargeHtml=`
+        <div class="wp-mobile">${I.install}<div><b>Ti-Services s'utilise sur téléphone</b>
+          <p>C'est l'application installée qui vous prévient — dès qu'un prestataire répond pour vous, dès qu'une mission tombe pour lui — même fermée. Tout se fait ensuite en deux gestes, sans se connecter à quoi que ce soit.</p>
+          <button class="btn primary sm" data-act="get-app">Installer sur mon téléphone</button></div></div>
+        <div class="wp-cols">
+          <section><div class="eyebrow">Vous cherchez un service</div>${cli?cli.innerHTML:''}</section>
+          <section><div class="eyebrow">Vous êtes professionnel</div>${pro?pro.innerHTML:''}</section>
+        </div>`;
+    }catch(_){ _accueilLargeHtml=''; }
+    return _accueilLargeHtml;
+  }
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -5299,6 +5367,12 @@
     "sera consultable et téléchargeable":"will be viewable and downloadable",
     "seul responsable de ses déclarations fiscales et sociales":"solely responsible for their tax and social declarations",
     "seul responsable de vos déclarations fiscales et sociales":"solely responsible for your tax and social declarations",
+    "Partout sur l'île":"All over the island",
+    "Vous cherchez un service":"You're looking for a service",
+    "Vous êtes professionnel":"You're a professional",
+    "Ti-Services s'utilise sur téléphone":"Ti-Services is made for your phone",
+    "Installer sur mon téléphone":"Install on my phone",
+    "C'est l'application installée qui vous prévient — dès qu'un prestataire répond pour vous, dès qu'une mission tombe pour lui — même fermée. Tout se fait ensuite en deux gestes, sans se connecter à quoi que ce soit.":"It's the installed app that alerts you — the moment a provider replies to you, the moment a job comes up for them — even when it's closed. Everything then takes two taps, with nothing to log into.",
     "Sur l'écran":"To Home",
     "d'accueil":"Screen",
     "Regardez le geste — puis reproduisez-le. En":"Watch the gesture — then copy it. In",
@@ -6727,6 +6801,12 @@
     "sera consultable et téléchargeable":"poderá ser consultado e descarregado",
     "seul responsable de ses déclarations fiscales et sociales":"único responsável pelas suas declarações fiscais e sociais",
     "seul responsable de vos déclarations fiscales et sociales":"único responsável pelas suas declarações fiscais e sociais",
+    "Partout sur l'île":"Em toda a ilha",
+    "Vous cherchez un service":"Procura um serviço",
+    "Vous êtes professionnel":"É profissional",
+    "Ti-Services s'utilise sur téléphone":"A Ti-Services usa-se no telemóvel",
+    "Installer sur mon téléphone":"Instalar no meu telemóvel",
+    "C'est l'application installée qui vous prévient — dès qu'un prestataire répond pour vous, dès qu'une mission tombe pour lui — même fermée. Tout se fait ensuite en deux gestes, sans se connecter à quoi que ce soit.":"É a aplicação instalada que o avisa — assim que um prestador lhe responde, assim que um serviço surge para ele — mesmo fechada. Depois, tudo se faz em dois gestos, sem ter de iniciar sessão.",
     "Sur l'écran":"No ecrã",
     "d'accueil":"principal",
     "Regardez le geste — puis reproduisez-le. En":"Veja o gesto — depois repita-o. Em",
@@ -11041,8 +11121,11 @@
            la seule page, et elle ne portait aucun lien légal. Le pied de l'accueil public
            ne pouvait pas servir — il n'est pas affiché. Même raison que pour l'écran
            « Découvrir », même remède. -->
-      ${legalFooter('public')}
-      </div><aside class="welcome-desk" aria-label="Pourquoi Ti-Services">${desk}</aside></div>`;
+      </div><aside class="welcome-desk" aria-label="Pourquoi Ti-Services">${desk}</aside>
+      <div class="welcome-bas">
+        <div class="welcome-plus">${accueilLargeHtml()}</div>
+        ${legalFooter('public')}
+      </div></div>`;
   }
   function onbInfos(){
     const f=S.clientForm;
