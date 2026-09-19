@@ -2,6 +2,12 @@
 
 Carré **65 × 65 mm**, recto présentation / verso QR-code. Deux jeux :
 
+Le recto de la carte **client** porte les huit métiers dessinés — icône et nom — parce
+qu'un nom de service se lit, mais qu'un dessin se comprend avant d'être lu. Huit et non
+vingt et un : sur 49 mm de large, la liste complète donnerait des noms de deux
+millimètres que personne ne lit. Les icônes, les noms et les teintes viennent du
+catalogue de l'application, comme sur la vitrine.
+
 | Fichier | Pour qui | Ce que le QR ouvre |
 |---|---|---|
 | `carte-client-recto` / `-verso` | à donner aux **clients** | `https://ti-services.fr/?client` |
@@ -27,6 +33,11 @@ exactement dans n'importe quel logiciel — ne les rééchantillonnez pas « à 
   déborder du trait de coupe : sans cela, un liseré blanc apparaît au massicot.
 - **Marge de sécurité : 5 mm** après la coupe. Aucun texte ne s'en approche — une coupe
   se déplace toujours d'un demi-millimètre.
+
+**La marge est vérifiée à chaque génération.** Le script mesure, dans le navigateur, où
+commence et où finit vraiment le contenu de chaque face, et refuse d'écrire un PDF qui
+entre dans les 5 mm de sécurité. C'est ce qui a rattrapé la grille des métiers de la carte
+client : elle descendait à 3,1 mm du bord, soit en pleine zone que le massicot peut mordre.
 
 **Une réserve honnête sur le PDF** : Chromium arrondit la page au pixel CSS, la planche
 sort donc à **70,87 mm** au lieu de 71,00 — 0,13 mm de moins, absorbés par les 3 mm de

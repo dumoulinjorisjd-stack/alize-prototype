@@ -65,6 +65,39 @@ function qrDeLApp(src) {
   return f();
 }
 
+/* LES MÉTIERS VIENNENT DU CATALOGUE, COMME SUR LA VITRINE. Trois déclarations
+   d'`index.html` — la table des icônes, la liste des services, les teintes — sont
+   découpées et exécutées telles quelles : un métier renommé ou une icône redessinée
+   arrive sur la prochaine carte, et le dessin est EXACTEMENT celui que le client
+   retrouvera dans l'application. On lit la déclaration en comptant les accolades
+   (les tracés SVG sont dans des chaînes, on les saute) plutôt qu'en devinant sa fin. */
+function declaration(src, debut, ouvre, ferme) {
+  const i = src.indexOf(debut);
+  if (i < 0) throw new Error('Déclaration introuvable dans index.html : ' + debut);
+  let j = src.indexOf(ouvre, i), p2 = 0, q = null;
+  for (let k = j; k < src.length; k++) {
+    const ch = src[k];
+    if (q) { if (ch === '\\') k++; else if (ch === q) q = null; continue; }
+    if (ch === "'" || ch === '"' || ch === '`') { q = ch; continue; }
+    if (ch === ouvre) p2++;
+    else if (ch === ferme) { p2--; if (!p2) return src.slice(j, k + 1); }
+  }
+  throw new Error('Déclaration non refermée : ' + debut);
+}
+function metiersDeLApp(src) {
+  const I = declaration(src, '  const I = {', '{', '}');
+  const SERVICES = declaration(src, '  const SERVICES=[', '[', ']');
+  const COULEURS = declaration(src, '  const SVC_COLORS={', '{', '}');
+  const f = new Function('return {I:' + I + ',SERVICES:' + SERVICES + ',COULEURS:' + COULEURS + '};');
+  const o = f();
+  return function (id) {
+    const s2 = o.SERVICES.find(x => x.id === id);
+    if (!s2) throw new Error('Métier absent du catalogue : ' + id);
+    if (!o.I[id]) throw new Error('Icône absente pour : ' + id);
+    return { nm: s2.nm, ico: o.I[id], col: o.COULEURS[id] || '#CE301C' };
+  };
+}
+
 // Zouti : le fichier statique, pas la version animée — une carte ne bouge pas.
 function zouti() {
   const svg = fs.readFileSync(path.join(RACINE, 'zouti-logo.svg'), 'utf8').trim();
@@ -97,7 +130,12 @@ const CARTES = [
     cle: 'client',
     url: 'https://ti-services.fr/?client',
     punch: 'Un pro de confiance,<br>chez vous en quelques minutes.',
-    services: 'Ménage · Garde d’enfants · Jardinage · Coiffure · Massage · Plomberie · Piscine',
+    // HUIT MÉTIERS DESSINÉS PLUTÔT QU'UNE LIGNE DE NOMS : c'est ce qui fait comprendre
+    // en une seconde de quoi il s'agit. Huit et pas vingt et un — sur 49 mm de large, la
+    // liste complète donnerait des noms de deux millimètres que personne ne lit. Ceux-ci
+    // couvrent les huit familles (maison, extérieur, enfants, beauté, bien-être,
+    // dépannage, piscine, transport) et portent des noms assez courts pour tenir.
+    metiers: ['menage', 'jardin', 'baby', 'coiffure', 'massage', 'plomberie', 'piscine', 'demenagement'],
     versoTitre: 'Réservez en deux gestes',
     versoPied: 'Gratuit · sans abonnement'
   },
@@ -106,6 +144,7 @@ const CARTES = [
     url: 'https://ti-services.fr/?pro',
     punch: 'Des clients,<br>sans prospecter.',
     services: 'Vous choisissez vos missions · Vous êtes payé après validation',
+    metiers: null,
     versoTitre: 'Inscrivez-vous',
     versoPied: 'Les services ouvrent le 1er octobre'
   }
@@ -137,23 +176,36 @@ function feuille(c, polices) {
       ${c['sand']}}
   .verso{background:linear-gradient(155deg, ${c['teal']} 0%, ${c['teal-deep']} 100%);color:#fff}
 
-  .zouti{width:16mm;height:auto;display:block}
-  .mot{font-weight:800;font-size:6mm;letter-spacing:-.02em;line-height:1;margin-top:2.4mm}
+  /* LES TAILLES DU RECTO SONT CELLES QUI TIENNENT DANS LA MARGE DE SÉCURITÉ, mesurées
+     après coup : la grille des métiers a coûté une dizaine de millimètres de hauteur, et
+     tout le bloc du haut les a rendus. Toucher l'une de ces valeurs demande de relancer —
+     le script refuse d'écrire un PDF dont le contenu déborde. */
+  .zouti{width:11.5mm;height:auto;display:block}
+  .mot{font-weight:800;font-size:5.2mm;letter-spacing:-.02em;line-height:1;margin-top:1.8mm}
   .mot b{color:${c['teal-deep']};font-weight:800}
   .mot span{color:${c['ink']}}
-  .lieu{display:flex;align-items:center;justify-content:center;gap:.9mm;margin-top:1.5mm;
-    font-size:2.2mm;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:${c['teal-deep']}}
-  .lieu svg{width:2.3mm;height:2.3mm}
-  .filet{width:8mm;height:.4mm;border-radius:.4mm;background:${c['teal-deep']};opacity:.38;margin:3.2mm 0}
-  .punch{font-size:3.5mm;font-weight:800;line-height:1.25;letter-spacing:-.015em;color:${c['ink']};
+  .lieu{display:flex;align-items:center;justify-content:center;gap:.9mm;margin-top:1.2mm;
+    font-size:2.1mm;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:${c['teal-deep']}}
+  .lieu svg{width:2.2mm;height:2.2mm}
+  .filet{width:8mm;height:.4mm;border-radius:.4mm;background:${c['teal-deep']};opacity:.38;margin:2.2mm 0}
+  .punch{font-size:3.1mm;font-weight:800;line-height:1.25;letter-spacing:-.015em;color:${c['ink']};
     text-wrap:balance}
   .services{margin-top:2.8mm;font-size:2.05mm;line-height:1.55;font-weight:500;color:${c['muted']};
     max-width:45mm;text-wrap:balance}
+  /* LA GRILLE DES MÉTIERS. Quatre colonnes, deux rangées : l'icône dit le métier avant
+     qu'on ait lu son nom, et c'est ce qui fait comprendre « service à domicile » d'un
+     regard. Les colonnes sont égales et le nom tient sur UNE ligne — un nom qui passerait
+     à deux décalerait sa rangée. */
+  .metiers{margin-top:2.6mm;display:grid;grid-template-columns:repeat(4,1fr);gap:2mm 1mm;width:100%}
+  .metier{display:flex;flex-direction:column;align-items:center;gap:.8mm;min-width:0}
+  .metier svg{width:3.6mm;height:3.6mm;display:block;stroke-width:1.9}
+  .metier span{font-size:1.9mm;font-weight:600;line-height:1;color:${c['ink-soft']};
+    white-space:nowrap}
 
   .v-mot{font-weight:800;font-size:4.2mm;letter-spacing:-.02em;color:#fff;opacity:.96}
   .v-titre{margin-top:.7mm;font-size:2.2mm;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
     color:#fff;opacity:.86}
-  .tuile{margin:3.2mm 0 3mm;background:#fff;border-radius:2.6mm;padding:2mm;
+  .tuile{margin:3mm 0 2.6mm;background:#fff;border-radius:2.6mm;padding:2mm;
     box-shadow:0 1mm 3mm rgba(60,20,14,.18);line-height:0}
   .tuile svg{display:block;width:25mm;height:25mm}
   .v-url{font-size:3.4mm;font-weight:800;letter-spacing:-.01em;color:#fff}
@@ -161,7 +213,7 @@ function feuille(c, polices) {
      sur la ligne du dessus dès que celle-ci prenait trois lignes — et rien ne le disait
      avant le rendu. Une carte n'a pas de place à gaspiller : ce qui tient dans la colonne
      est ce qui rentre. */
-  .v-pied{margin-top:2.6mm;font-size:2.1mm;font-weight:700;letter-spacing:.06em;
+  .v-pied{margin-top:2.2mm;font-size:2mm;font-weight:700;letter-spacing:.06em;
     text-transform:uppercase;color:#fff;opacity:.78;max-width:46mm;text-wrap:balance}
 
   @page{size:${MM.page}mm ${MM.page}mm;margin:0}
@@ -175,14 +227,19 @@ function pageHtml(titre, style, corps) {
 <title>${titre}</title><style>${style}</style></head><body>${corps}</body></html>`;
 }
 
-function recto(c, carte, logo, style) {
+function recto(c, carte, logo, style, metier) {
+  const bas = carte.metiers
+    ? `<div class="metiers">${carte.metiers.map(id => { const m = metier(id);
+        return `<div class="metier"><span style="color:${m.col};line-height:0">${m.ico}</span><span>${m.nm}</span></div>`;
+      }).join('')}</div>`
+    : `<div class="services">${carte.services}</div>`;
   return pageHtml(`Ti-Services — carte ${carte.cle}, recto`, style, `<div class="carte recto">
   ${logo}
   <div class="mot"><b>Ti</b><span>-Services</span></div>
   <div class="lieu">${PIN}Saint-Barthélemy</div>
   <div class="filet"></div>
   <div class="punch">${carte.punch}</div>
-  <div class="services">${carte.services}</div>
+  ${bas}
 </div>`);
 }
 
@@ -299,6 +356,7 @@ async function main() {
   const src = lireSource();
   const c = couleurs(src);
   const { qrEncode, qrSvgFrom } = qrDeLApp(src);
+  const metier = metiersDeLApp(src);
   const logo = zouti();
   const b64 = police();
   const style = feuille(c, b64);
@@ -311,7 +369,7 @@ async function main() {
       if (!mat) throw new Error('QR non encodable : ' + carte.url);
       const svg = qrSvgFrom(400, mat, 'QR-code Ti-Services');
       const paires = [
-        ['recto', recto(c, carte, logo, style), 'Carte ' + carte.cle + ' — recto'],
+        ['recto', recto(c, carte, logo, style, metier), 'Carte ' + carte.cle + ' — recto'],
         ['verso', verso(carte, svg, style), 'Carte ' + carte.cle + ' — verso']
       ];
       for (const [face, html, titre] of paires) {
@@ -347,6 +405,32 @@ async function main() {
       // la planche sortait à 71,29 mm — un quart de millimètre qu'un imprimeur relève.
       await p.pdf({ path: path.join(SORTIE, pdf), preferCSSPageSize: true,
         printBackground: true, margin: { top: 0, right: 0, bottom: 0, left: 0 }, pageRanges: '1' });
+    }
+    /* LA MARGE DE SÉCURITÉ SE MESURE, ELLE NE SE SUPPOSE PAS. Une composition un peu
+       trop haute déborde du rembourrage sans que rien ne le dise : le premier jet de la
+       grille des métiers sortait à 66,7 mm du haut, soit 3,7 mm DANS la zone que le
+       massicot peut mordre. On demande donc au navigateur où commence et où finit
+       vraiment le contenu, et on refuse d'écrire un PDF qui déborde. */
+    f.debord = await p.evaluate((marge) => {
+      const carte = document.querySelector('.carte');
+      const r = carte.getBoundingClientRect();
+      const px = (marge / 25.4) * 96;
+      let haut = Infinity, bas = -Infinity, g = Infinity, d = -Infinity;
+      for (const e of carte.children) { const b = e.getBoundingClientRect();
+        if (!b.height) continue;
+        haut = Math.min(haut, b.top - r.top); bas = Math.max(bas, b.bottom - r.top);
+        g = Math.min(g, b.left - r.left); d = Math.max(d, b.right - r.left); }
+      const mm = v => +(v / 96 * 25.4).toFixed(2);
+      // Aucune tolérance : la marge de sécurité EST la tolérance. Un dixième de
+      // millimètre rendu ici, c'est un dixième de moins face au massicot.
+      return { haut: mm(haut), bas: mm(r.height - bas), gauche: mm(g), droite: mm(r.width - d),
+        depasse: Math.min(haut, r.height - bas, g, r.width - d) < px - 0.2 };
+    }, MM.marge);
+    if (f.debord.depasse) {
+      console.log('  ✗ ' + f.fichier + ' déborde de la marge de sécurité — haut ' + f.debord.haut +
+        ' bas ' + f.debord.bas + ' gauche ' + f.debord.gauche + ' droite ' + f.debord.droite +
+        ' mm (minimum ' + MM.marge + ')');
+      process.exitCode = 1;
     }
     const png = f.fichier.replace('.html', '.png');
     await p.locator('.carte').screenshot({ path: path.join(SORTIE, png) });
