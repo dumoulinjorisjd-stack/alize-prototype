@@ -84,6 +84,40 @@ for(const [lg,mot] of [['en','Legal notice'],['pt','Menções legais']]){
     lg.toUpperCase()+' : aucun mot français ne subsiste — '+t.join(' · '));
 }
 
+console.log('\nF — sur une TABLETTE en paysage, la vitrine est masquée : l’écran d’accueil les porte');
+// Au-delà de 1024 px, `body.desktop .brief{display:none}` : ce n'est plus la vitrine
+// qu'on découvre mais l'écran d'accueil de l'application, qui ne portait rien. Sur une
+// tablette en paysage, c'est la première et la seule page.
+{
+  const large=await b.newContext({viewport:{width:1280,height:800},locale:'fr-FR'});
+  const pl=await large.newPage(); pl.on('pageerror',e=>console.log('ERREUR PAGE:',e.message));
+  await pl.goto('file://'+path.join(RACINE,'tests/harn/app.html'));
+  await pl.waitForFunction(()=>window.__S&&window.__render); await pl.waitForTimeout(600);
+  const t=await pl.evaluate(()=>{
+    const vis=e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0;};
+    const br=document.querySelector('.brief').getBoundingClientRect();
+    return {desktop:document.body.classList.contains('desktop'),
+      vitrine:br.width>0&&br.height>0,
+      liens:[...document.querySelectorAll('#view [data-act^="view-"]')].filter(vis).length};});
+  ok(t.desktop&&!t.vitrine,'à 1280 px la vitrine est bien masquée — son pied ne peut pas servir');
+  ok(t.liens>=6,'et l’écran d’accueil porte les six documents ('+t.liens+')');
+  await large.close();
+}
+
+console.log('\nG — et sur téléphone, le pied tient sur UN axe');
+await p.goto('file://'+path.join(RACINE,'tests/harn/app.html'));
+await p.waitForFunction(()=>window.__S&&window.__render); await p.waitForTimeout(500);
+const pied=await p.evaluate(()=>{
+  const c=e=>{const r=document.querySelector(e).getBoundingClientRect();
+    return Math.round((r.left+r.right)/2);};
+  const pd=document.querySelector('.lp-pied');
+  return {editeur:c('.lp-pied .pitch-foot'), liens:c('.lp-legal'), fb:c('.lp-pied .fb-link'),
+    filet:getComputedStyle(pd).borderTopWidth,
+    milieu:Math.round(window.innerWidth/2)};});
+const ecart=Math.max(Math.abs(pied.editeur-pied.milieu),Math.abs(pied.liens-pied.milieu),Math.abs(pied.fb-pied.milieu));
+ok(ecart<=2,'les trois blocs partagent le même centre ('+pied.editeur+' · '+pied.liens+' · '+pied.fb+' pour un milieu à '+pied.milieu+')');
+ok(pied.filet!=='0px','et un filet les détache de ce qui précède ('+pied.filet+')');
+
 await b.close();
 console.log(f?('\n'+f+' ÉCHEC(S)\n'):'\nTout est vert.\n');
 process.exit(f?1:0);
