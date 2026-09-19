@@ -140,11 +140,19 @@ async function centrerIcones(nav, metier, ids) {
   await ctx.close();
   return cadres;
 }
-// La fenêtre de 24 × 24 se déplace pour que le centre du dessin tombe au centre de la boîte.
+/* ET ELLES ONT TOUTES LA MÊME TAILLE APPARENTE. Centrer ne suffisait pas : le carton du
+   colis remplit sa boîte, le lotus du massage en occupe les deux tiers — côte à côte, l'un
+   pèse visiblement plus que l'autre. La fenêtre devient donc un carré proportionnel au PLUS
+   GRAND CÔTÉ du dessin : chaque icône remplit la même fraction de sa case, quelle que soit
+   sa forme. On prend le plus grand côté et non la hauteur seule, sans quoi une icône large
+   et basse (le lotus) déborderait en largeur pour rattraper sa hauteur. */
+const ICO_REMPLISSAGE = .80;
 function icoCentree(svg, cadre) {
   if (!cadre) return svg;
-  const dx = +(cadre.x + cadre.w / 2 - 12).toFixed(3), dy = +(cadre.y + cadre.h / 2 - 12).toFixed(3);
-  const nu = svg.replace('viewBox="0 0 24 24"', 'viewBox="' + dx + ' ' + dy + ' 24 24"');
+  const cote = Math.max(cadre.w, cadre.h) / ICO_REMPLISSAGE;
+  const v = [cadre.x + cadre.w / 2 - cote / 2, cadre.y + cadre.h / 2 - cote / 2, cote, cote]
+    .map(n => +n.toFixed(3)).join(' ');
+  const nu = svg.replace('viewBox="0 0 24 24"', 'viewBox="' + v + '"');
   if (nu === svg) throw new Error('viewBox 24×24 introuvable — une icône a changé de gabarit');
   return nu;
 }

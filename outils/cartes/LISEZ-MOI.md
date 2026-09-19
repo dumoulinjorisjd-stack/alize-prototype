@@ -19,6 +19,14 @@ boîte pour que ce rectangle tombe au centre : jusqu'à 3,2 unités de correctio
 un septième de l'icône. Rien n'est redessiné, aucune valeur n'est écrite à la main, et une
 icône redessinée dans l'application est remesurée à la génération suivante.
 
+**Et elles ont toutes la même taille apparente.** Centrer ne suffisait pas : le carton du
+colis remplissait sa boîte, le lotus du massage en occupait les deux tiers — côte à côte,
+l'un pesait visiblement plus que l'autre. La fenêtre est donc un carré proportionnel au
+**plus grand côté du dessin**, si bien que chaque icône remplit la même fraction de sa
+case quelle que soit sa forme. Mesuré : les six ont exactement **2,8 mm** de plus grand
+côté. Le prix est que l'épaisseur du trait suit l'échelle — elle varie de 0,243 à
+0,281 mm selon les icônes, quatre centièmes d'écart, invisibles à cette taille.
+
 **Un nom trop long pour sa colonne arrête la génération.** « Colis & courrier » demande
 20,9 mm là où la colonne en offre 18,3 : la carte dit donc « Colis », raccourci déclaré
 dans `LIBELLES_COURTS` et nulle part ailleurs. Tout autre métier garde le nom du
