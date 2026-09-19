@@ -106,8 +106,11 @@ la face. Il va maintenant de **`#FF8275`** (le corail de marque plus un voile de
 `outils/cartes-visite.js`, en PROPORTION de deux jetons de la charte — jamais en teinte
 choisie à la main.
 
-**Le recto est un aplat de corail très clair** (`#FFEDE8`, le corail de la charte), sans
-dégradé. Il portait le fond « lagon » de l'application : à l'écran c'est une atmosphère,
+**Le recto est un aplat de corail très clair** (`#FFDEDB`), sans dégradé. C'est un mélange
+— deux dixièmes de corail sur du blanc — et non le jeton `--teal-wash` (`#FFEDE8`) : celui-ci
+est fait pour le fond d'une pastille à l'écran, où il suffit à détacher un bloc de son
+voisin, mais imprimé en aplat sur 65 mm il ne se voit plus, l'œil n'ayant rien à quoi le
+comparer. Le texte encre y tient à 12,8 contre 1. Il portait le fond « lagon » de l'application : à l'écran c'est une atmosphère,
 imprimé c'est une teinte pâle irrégulière qui ne se retrouve pas d'un tirage à l'autre.
 
 **Le QR-code est posé à même le corail, sans carré blanc.** La zone de silence autour des

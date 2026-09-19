@@ -226,7 +226,12 @@ function feuille(c, polices) {
      trois voiles de couleur sur le sable. À l'écran c'est une atmosphère ; imprimé, c'est
      une teinte pâle irrégulière qui ne se retrouve pas d'un tirage à l'autre et qui salit
      le blanc. Un aplat blanc franc ne pose aucune de ces questions. */
-  .recto{background:${c['teal-wash']}}
+  /* LA TEINTE DU RECTO EST UN MÉLANGE, PAS LE JETON « WASH ». le jeton --teal-wash (#FFEDE8) est
+     fait pour le fond d'une pastille à l'écran, où il suffit à détacher un bloc de son
+     voisin ; imprimé en aplat sur 65 mm, il ne se voit plus — l'œil n'a rien à quoi le
+     comparer. Deux dixièmes de corail sur du blanc (#FFDEDB) se perçoivent comme une
+     teinte sans cesser d'être légers, et le texte encre y tient à 12 contre 1. */
+  .recto{background:${melange(c['teal'], '#ffffff', .78)}}
   /* LE DÉGRADÉ NE DESCEND PLUS JUSQU'AU CORAIL PROFOND. Il allait de #FF6A5B à #CE301C :
      à l'impression, ce bas de dégradé vire au rouge sombre — une encre saturée perd
      toujours de la clarté en passant en CMJN, et c'est le point le plus foncé qui donne
