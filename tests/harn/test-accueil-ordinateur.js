@@ -64,6 +64,34 @@ ok(tel.mots===226,'le compte de mots y est inchangé ('+tel.mots+')');
 ok(tel.etapes===3&&tel.ile===1&&tel.hauteurBrief>1000,
   'et la vitrine garde ses étapes, son île et sa hauteur ('+tel.hauteurBrief+' px)');
 
+console.log('\nC bis — c’est une VITRINE : un seul axe, et la largeur employée');
+{
+  const ctx=await b.newContext({viewport:{width:1512,height:950},locale:'fr-FR'});
+  const p2=await ctx.newPage();
+  await p2.goto(F); await p2.waitForFunction(()=>window.__S&&window.__render); await p2.waitForTimeout(700);
+  const g=await p2.evaluate(()=>{
+    const secs=[...document.querySelectorAll('.welcome-plus .wp-cols > section')];
+    const axes=new Set();
+    secs.forEach(s2=>[...s2.children].forEach(e=>{
+      const a=getComputedStyle(e).textAlign; axes.add(a==='start'?'left':a);}));
+    const y=e=>e?Math.round(e.getBoundingClientRect().top):null;
+    const pad=document.querySelector('.pad.welcome').getBoundingClientRect();
+    const hero=document.querySelector('.welcome-hero').getBoundingClientRect();
+    const bas=document.querySelector('.welcome-bas').getBoundingClientRect();
+    return {axes:[...axes], titres:secs.map(s2=>y(s2.querySelector('.pitch-h'))),
+      largeur:Math.round(pad.width), part:Math.round(pad.width/window.innerWidth*100),
+      colonne:Math.round(secs[0].getBoundingClientRect().width),
+      vide:Math.round(bas.top-hero.bottom)};});
+  ok(g.axes.length===1&&g.axes[0]==='left',
+    'tous les blocs d’une colonne sont sur le MÊME axe ('+g.axes.join(', ')+') — avant, ils alternaient start et center');
+  ok(g.titres[0]===g.titres[1],
+    'les deux titres de colonne démarrent à la même ligne ('+g.titres.join(' / ')+')');
+  ok(g.part>=88,'la vitrine occupe '+g.part+' % de la fenêtre ('+g.largeur+' px) — elle en occupait 55');
+  ok(g.colonne>=560,'chaque colonne fait '+g.colonne+' px de large (390 avant)');
+  ok(g.vide<=40,'et le vide entre le héros et la suite tombe à '+g.vide+' px (136 avant)');
+  await ctx.close();
+}
+
 console.log('\nD — une seule source : le contenu est CLONÉ, pas recopié');
 const src=fs.readFileSync(path.join(RACINE,'index.html'),'utf8');
 ok(/src\.innerHTML=\(_briefFR!=null\?_briefFR:br\.innerHTML\)/.test(src),

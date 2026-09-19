@@ -1274,14 +1274,14 @@
      strictement AUCUN changement de rendu téléphone. */
   .welcome-hero{display:contents}
   .welcome-desk{display:none}
-  body.desktop .pad.welcome{display:grid;grid-template-columns:minmax(400px,540px) minmax(360px,440px);gap:72px;justify-content:center;align-content:center;align-items:center;min-height:100dvh;max-width:1200px;padding:40px 48px}
+  body.desktop .pad.welcome{display:grid;grid-template-columns:minmax(440px,1fr) minmax(380px,460px);gap:22px 64px;justify-content:center;align-content:start;align-items:center;max-width:1420px;padding:34px 44px 44px}
   body.desktop .welcome-hero{display:flex;flex-direction:column;justify-content:center;min-height:0}
   body.desktop .welcome-hero>div[style*="flex:1 0 auto"]{flex:0 0 auto!important}
   body.desktop .welcome-desk{display:flex;flex-direction:column;gap:16px}
   body.desktop .welcome-desk .wd-card{padding:18px 20px;margin:0}
   body.desktop .welcome .octo-hero{max-width:230px;margin-left:auto;margin-right:auto}
   body.desktop .welcome .welcome-word{font-size:34px}
-  body.desktop .welcome .footcta{max-width:400px;width:100%;margin:14px auto 0;padding:0}
+  body.desktop .welcome .footcta{max-width:400px;width:100%;margin:14px auto 0;padding:0!important}
   body.desktop .welcome .btn.choice{font-size:17px;padding-top:16px;padding-bottom:16px}
   /* CE QUE LA VITRINE DIT, L'ORDINATEUR LE DIT AUSSI. Le contenu est CLONÉ depuis
      l'accueil public (une seule source), et il n'apparaît QUE sur grand écran : sur
@@ -1290,10 +1290,32 @@
      l'une d'elles et pousserait les arguments à la ligne suivante. */
   .welcome-plus{display:none}
   .welcome-bas{margin-top:8px}
-  body.desktop .welcome-bas{grid-column:1 / -1;margin-top:64px;padding-top:44px;border-top:1px solid var(--hair)}
+  body.desktop .welcome-bas{grid-column:1 / -1;margin-top:0;padding-top:26px;border-top:1px solid var(--hair)}
   body.desktop .welcome-plus{display:block;margin-bottom:26px}
-  body.desktop .wp-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:52px;align-items:start}
+  body.desktop .wp-cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:64px;align-items:start}
   body.desktop .wp-cols>section>.eyebrow{margin-bottom:10px}
+  /* UN SEUL AXE PAR COLONNE. Mesuré avant : dans la colonne de gauche, les blocs
+     alternaient start · center · center · start · center · start · center · start — la
+     vitrine se lisait en zigzag. Sur une page étroite l'œil ne le remarque pas, il
+     descend ; sur deux colonnes larges, si. On fer à gauche : les intertitres et toutes
+     les cartes l'étaient déjà (la majorité), c'est donc le moindre déplacement, et un
+     paragraphe de trois lignes se lit mieux au fer qu'au centre. La vitrine du téléphone
+     ne reçoit RIEN de tout cela : ses règles sont écrites pour `.brief`, celles-ci pour
+     `.welcome-plus`. */
+  body.desktop .welcome-plus .pitch-h,
+  body.desktop .welcome-plus .pitch-sub,
+  body.desktop .welcome-plus .pro-hook,
+  body.desktop .welcome-plus .cover-isle,
+  body.desktop .welcome-plus .cover-isle p{text-align:left}
+  body.desktop .welcome-plus .pitch-sub{max-width:none;margin-left:0;margin-right:0}
+  body.desktop .welcome-plus .cover-isle p{margin-left:0;max-width:none}
+  body.desktop .welcome-plus .cover-isle svg{margin-left:0}
+  body.desktop .welcome-plus .pitch-trust{justify-content:flex-start}
+  /* Les deux colonnes démarrent leurs cartes à la MÊME ligne : à gauche un titre de trois
+     lignes, à droite une accroche plus un titre de deux — sans plancher commun, les
+     premières étapes se retrouvaient décalées d'une quarantaine de pixels. */
+  body.desktop .wp-cols>section>.pro-hook{margin-top:0}
+  body.desktop .wp-cols .wp-tete{min-height:118px;display:flex;flex-direction:column;justify-content:flex-end}
   /* Deux règles de la vitrine sont écrites pour `.brief` : le clone ne les reçoit pas. */
   .welcome-plus .pitch-h,.welcome-plus .pitch-sub,.welcome-plus .pro-hook{text-align:center}
   .welcome-plus .pitch-sub{max-width:44ch;margin-left:auto;margin-right:auto}
@@ -1322,6 +1344,7 @@
   body.desktop .view>div:has(>.navbar)>.pad{grid-column:2;grid-row:1;max-width:920px;width:100%;margin:0 auto;padding:34px 40px 72px}
   /* écrans sans onglets (sous-pages, onboarding) : colonne centrée */
   body.desktop .view>div:not(:has(>.navbar))>.pad{max-width:780px;margin:0 auto;padding:30px 40px 72px}
+  body.desktop .view>div:not(:has(>.navbar))>.pad.welcome{max-width:1420px;padding:34px 44px 44px}
   body.desktop .footcta{position:static;background:none;padding:18px 0 0;max-width:920px;margin-left:auto;margin-right:auto}
   body.desktop .cats{grid-template-columns:repeat(3,1fr);gap:14px}
   body.desktop .h-hello{font-size:30px}
@@ -3168,20 +3191,38 @@
       src.innerHTML=(_briefFR!=null?_briefFR:br.innerHTML);
       const bloc=(sel)=>{const n=src.querySelector(sel);return n?n.cloneNode(true):null;};
       const cli=bloc('#briefClient'), pro=bloc('#briefPro');
+      if(!cli&&!pro)return '';
       [cli,pro].forEach(function(n){ if(!n)return;
         n.querySelectorAll('.pitch-cta,.pitch-disco,#installSteps').forEach(e=>e.remove());
+        // Les ENVELOPPES devenues vides partent avec leur contenu : un `<p>` centré qui ne
+        // contient plus rien reste un élément centré au milieu d'une colonne ferrée à
+        // gauche, et c'est ce qui se voyait — un bloc « center » que rien ne justifiait.
+        n.querySelectorAll('p,div').forEach(function(e){
+          if(!e.textContent.trim() && !e.querySelector('svg,img,input,button')) e.remove(); });
         n.removeAttribute('id');
         n.querySelectorAll('[id]').forEach(e=>e.removeAttribute('id'));
       });
       if(pro)pro.querySelectorAll('.cover-isle').forEach(e=>e.remove());
-      if(!cli&&!pro)return '';
+      // LES DEUX COLONNES DÉMARRENT LEURS CARTES À LA MÊME LIGNE. À gauche un titre de
+      // trois lignes, à droite une accroche PUIS un titre de deux : sans zone de titre
+      // commune, les premières étapes se retrouvaient décalées. On enveloppe tout ce qui
+      // précède le titre, titre compris, et on donne un plancher à cette zone.
+      const tete=function(n){ if(!n)return;
+        const h=n.querySelector('.pitch-h'); if(!h)return;
+        const box=document.createElement('div'); box.className='wp-tete';
+        const avant=[]; for(const e of n.children){ avant.push(e); if(e===h)break; }
+        n.insertBefore(box,avant[0]); avant.forEach(e=>box.appendChild(e));
+      };
+      tete(cli); tete(pro);
+      const sec=function(titre,n){ return n
+        ? `<section><div class="eyebrow">${titre}</div>${n.innerHTML}</section>` : ''; };
       _accueilLargeHtml=`
         <div class="wp-mobile">${I.install}<div><b>Ti-Services s'utilise sur téléphone</b>
           <p>C'est l'application installée qui vous prévient — dès qu'un prestataire répond pour vous, dès qu'une mission tombe pour lui — même fermée. Tout se fait ensuite en deux gestes, sans se connecter à quoi que ce soit.</p>
           <button class="btn primary sm" data-act="get-app">Installer sur mon téléphone</button></div></div>
         <div class="wp-cols">
-          <section><div class="eyebrow">Vous cherchez un service</div>${cli?cli.innerHTML:''}</section>
-          <section><div class="eyebrow">Vous êtes professionnel</div>${pro?pro.innerHTML:''}</section>
+          ${sec('Vous cherchez un service',cli)}
+          ${sec('Vous êtes professionnel',pro)}
         </div>`;
     }catch(_){ _accueilLargeHtml=''; }
     return _accueilLargeHtml;
