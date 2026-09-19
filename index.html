@@ -423,6 +423,13 @@
   /* …et le séparateur « ou » qui précède le bouton Google du login devient orphelin. */
   body.native-shell .or-sep:has(+ [data-act="google-soon"]){display:none}
   .ig-cap{text-align:center;font-size:12.5px;font-weight:650;color:#007AFF;margin:0 0 14px}
+  /* Pied légal de la vitrine : discret, mais atteignable. Il passe à la ligne tout seul
+     sur un téléphone, et chaque lien garde une cible confortable au doigt sans que la
+     rangée s'étale — l'espacement vertical fait la cible, pas un rembourrage qui
+     éloignerait les liens les uns des autres. */
+  .lp-legal{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 14px;margin:10px auto 0;max-width:520px;padding:0 12px}
+  .lp-legal a{font-size:12px;line-height:2.1;color:var(--muted);text-decoration:none;border-bottom:1px solid transparent}
+  .lp-legal a:hover,.lp-legal a:focus-visible{color:var(--ink-soft);border-bottom-color:var(--hair)}
   .ig-warn{display:flex;gap:11px;align-items:flex-start;background:#FFF3E0;border:1px solid #F3C583;border-radius:16px;padding:13px 14px;margin:0 0 14px;color:#8a4b12;font-size:13px;line-height:1.45}
   .ig-warn b{color:#7a3f0c}
   .ig-warn svg{flex:none;color:#C77A1E}
@@ -1547,6 +1554,24 @@
     </div>
 
     <p class="pitch-foot">Ti-Services — services à la demande à Saint-Barthélemy, édité par C.C.S.</p>
+    <!-- LES DOCUMENTS LÉGAUX N'ÉTAIENT ACCESSIBLES QUE DEPUIS UN COMPTE. Mesuré : zéro
+         lien sur l'accueil public comme sur l'écran « Découvrir » — or les mentions
+         légales doivent être accessibles au VISITEUR, et la politique de confidentialité
+         avec elles ; « Suppression de compte » est en outre une adresse que les deux
+         magasins d'applications exigent publique.
+         CE SONT DE VRAIS LIENS, et c'est ce qui compte : `?legal=…` est la porte déjà en
+         place (celle vers laquelle pointent les fiches App Store et Play Store), donc
+         l'adresse se copie, se partage et s'indexe, et elle ouvre le texte même sans
+         JavaScript. Le clic est intercepté pour éviter un rechargement, pas pour
+         remplacer le lien. -->
+    <nav class="lp-legal" aria-label="Documents légaux">
+      <a href="?legal=mentions" data-legal="mentions">Mentions légales</a>
+      <a href="?legal=cgu" data-legal="cgu">CGU</a>
+      <a href="?legal=cgv" data-legal="cgv">CGV</a>
+      <a href="?legal=confidentialite" data-legal="confidentialite">Confidentialité</a>
+      <a href="?legal=charte" data-legal="charte">Charte intervenant</a>
+      <a href="?legal=suppression" data-legal="suppression">Suppression de compte</a>
+    </nav>
     <a class="fb-link" href="https://www.facebook.com/profile.php?id=61592349291885" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" fill="#1877F2" aria-hidden="true"><path d="M24 12.07C24 5.4 18.63 0 12 0S0 5.4 0 12.07C0 18.1 4.39 23.1 10.13 24v-8.44H7.08v-3.49h3.05V9.41c0-3.02 1.79-4.69 4.53-4.69 1.31 0 2.68.24 2.68.24v2.97h-1.51c-1.49 0-1.96.93-1.96 1.89v2.25h3.33l-.53 3.49h-2.8V24C19.61 23.1 24 18.1 24 12.07z"/></svg>Suivez-nous sur Facebook</a>
   </aside>
   <script>/* Lien de démarchage : ?pro (ou #pro, role=pro, /?artisan) ouvre l'accueil directement sur le discours prestataire. */
@@ -8524,7 +8549,8 @@
       <div class="card" style="padding:15px;margin-top:16px"><div class="row" style="gap:10px;align-items:flex-start"><span class="benic">${I.bolt}</span><div><b style="font-size:14px">Sans abonnement, au juste prix</b><p class="mini" style="margin-top:3px">Vous ne payez que les prestations. Le montant affiché est <b>ferme</b> — aucun supplément sans votre accord. La commission de Ti-Services est déjà comprise, jamais ajoutée à votre facture.</p></div></div></div>
       <div class="footcta" style="position:static;background:none;padding:22px 0 0">
         <button class="btn primary" data-act="pitch-start">${I.bolt} Commencer maintenant</button>
-      </div></div>`;
+      </div>
+      ${legalFooter()}</div>`;
   }
 
   /* ---------- CLIENT ---------- */
@@ -14682,6 +14708,24 @@
     // photo du client) s'ouvre en plein écran au clic — consultation sans téléchargement.
     const _iv=e.target.closest&&e.target.closest('img.viewable');
     if(_iv&&_iv.getAttribute('src')){S.imgView={src:_iv.getAttribute('src'),name:_iv.getAttribute('data-docname')||'document'};render();return;}
+    // PIED LÉGAL DE LA VITRINE. Ce sont de vrais liens (`?legal=…`, la porte vers
+    // laquelle pointent déjà les fiches App Store et Play Store) : l'adresse se copie,
+    // se partage, s'indexe et ouvre le texte même sans JavaScript. On ne l'intercepte
+    // que pour éviter un rechargement — si cette branche disparaissait, le lien
+    // marcherait encore. La classe « standalone » est ce qui masque la vitrine : sans
+    // elle le document serait préparé mais resterait derrière l'accueil ; `_legalLien`
+    // la fait retirer au retour. La clé passe par une LISTE FERMÉE avant de devenir un
+    // état d'écran.
+    const _lgA=e.target.closest&&e.target.closest('a[data-legal]');
+    if(_lgA){
+      const k=_lgA.getAttribute('data-legal')||'';
+      if(['cgu','cgv','charte','mentions','confidentialite','suppression'].indexOf(k)>=0){
+        e.preventDefault();
+        S.legalView=k;S._legalLien=true;document.body.classList.add('standalone');
+        render();try{window.scrollTo(0,0);}catch(_){}
+        return;
+      }
+    }
     const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actqty],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-loc],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday],[data-tip],[data-pac],[data-sitemode],[data-invclient],[data-fold],[data-actgrp],[data-purge],[data-optpick],[data-optqty],[data-optadd],[data-optdel],[data-optprice],[data-optunit],[data-rf]');
     if(!b)return;
     // Un clic ISSU d'un <input type=file> (notamment déclenché par programme, ex. la
@@ -14713,7 +14757,7 @@
     }
     if(b.dataset.act==='pw-toggle'){const w=b.closest('.pw-wrap');const inp=w&&w.querySelector('input');if(inp){const reveal=inp.type==='password';inp.type=reveal?'text':'password';b.innerHTML=reveal?I.eyeoff:I.eye;}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('photopick:')===0){openPhotoSheet(b.dataset.act.slice('photopick:'.length));return;}
-    // Vitrine : « Installer l'application » ouvre la feuille d'installation adaptée
+  // Vitrine : « Installer l'application » ouvre la feuille d'installation adaptée
     // au navigateur (au lieu de la simulation de téléphone).
     if(b.dataset.act==='get-app'){showInstallGuide();return;}
     // Elle est installée, il le dit : on le retient, et la barrière ne se reposera plus.
