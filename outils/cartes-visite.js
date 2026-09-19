@@ -165,29 +165,24 @@ async function centrerIcones(nav, metier, ids) {
    sa forme. On prend le plus grand côté et non la hauteur seule, sans quoi une icône large
    et basse (le lotus) déborderait en largeur pour rattraper sa hauteur. */
 const ICO_REMPLISSAGE = .80;
-/* LE DERNIER RÉGLAGE EST À L'ŒIL, ET IL EST DÉCLARÉ. Trois icônes paraissaient basses —
-   ménage, coiffure, massage — alors que la mesure ne trouvait rien : leur encre est
-   centrée à un demi-dixième d'unité près. Ce n'est donc pas leur MASSE qui est basse,
-   c'est leur FORME qui se lit basse — le flacon du pulvérisateur sous ses gouttelettes,
-   les deux gros anneaux des ciseaux, la coupe des pétales. Aucune mesure ne rend ce
-   jugement-là ; l'œil, si. On le pose donc ici, en clair, en unités de la boîte (positif
-   = le dessin remonte), plutôt que de le maquiller en calcul. */
-const ICO_OPTIQUE = { menage: 1.4, coiffure: 1.4, massage: 1.4 };
+/* LE PLACEMENT EST GÉOMÉTRIQUE, LA CORRECTION EST À L'ŒIL, ET LES DEUX SONT SÉPARÉS.
+   On a essayé de centrer sur le CENTRE DE GRAVITÉ de l'encre : c'était une fausse bonne
+   idée. Il ne corrigeait rien là où l'œil voyait un défaut — ménage, coiffure et massage
+   ont leur masse centrée à un demi-dixième d'unité près — et il en créait là où il n'y en
+   avait pas : le jardinage, dont les feuilles pèsent lourd en haut et la tige rien en bas,
+   se retrouvait poussé de 2,7 unités vers le bas, donc bas à l'œil. Une tige, une queue,
+   une antenne : tout tracé fin et long trompe une moyenne pondérée.
+   On centre donc sur le RECTANGLE dessiné, qui ne ment pas, et ce qui reste se règle à
+   l'œil — en clair, ici, en unités de la boîte, positif = le dessin remonte. Ce n'est pas
+   un calcul déguisé : c'est un jugement, il se lit comme tel et se change sur une ligne. */
+const ICO_OPTIQUE = { menage: 1.4, coiffure: 1.4, massage: 1.4, baby: 0.9 };
 function icoCentree(svg, cadre) {
   if (!cadre) return svg;
   const cote = Math.max(cadre.w, cadre.h) / ICO_REMPLISSAGE;
-  /* ON CENTRE SUR LE CENTRE DE GRAVITÉ DE L'ENCRE, PAS SUR LE RECTANGLE. Trois icônes
-     paraissaient basses alors que leur rectangle était centré au centième : le
-     pulvérisateur du ménage porte des gouttelettes légères en haut et un flacon plein en
-     bas, les ciseaux ont deux gros anneaux sous des lames fines, le lotus étale ses pétales
-     sous une pointe. Leur masse est en bas, donc l'œil les voit basses. On pèse chaque
-     pixel (opacité × position) et on met CE point au centre.
-     PUIS ON RETIENT : si la correction sortait une partie du dessin de la fenêtre, on la
-     borne — une icône rognée serait pire qu'une icône un peu basse. */
   // La fenêtre doit contenir tout le dessin : son centre ne peut sortir de cet intervalle.
   const borne = (c, a, b) => Math.max(b - cote / 2, Math.min(a + cote / 2, c));
-  const cx = borne(cadre.cx, cadre.x, cadre.x + cadre.w);
-  const cy = borne(cadre.cy + (cadre.optique || 0), cadre.y, cadre.y + cadre.h);
+  const cx = cadre.x + cadre.w / 2;
+  const cy = borne(cadre.y + cadre.h / 2 - (cadre.optique || 0), cadre.y, cadre.y + cadre.h);
   const v = [cx - cote / 2, cy - cote / 2, cote, cote]
     .map(n => +n.toFixed(3)).join(' ');
   const nu = svg.replace('viewBox="0 0 24 24"', 'viewBox="' + v + '"');
