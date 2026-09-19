@@ -111,6 +111,32 @@ ok(/data-legal/.test(src)&&/_lgA/.test(src),
     'et la page rendue est bien le document, pas l’accueil de l’app — « '+vu.t+' »');
   ok(/legal/.test(fs.readFileSync(path.join(RACINE,'sw.js'),'utf8').match(/req\.mode === 'navigate'[^\n]*/)[0]),
     'l’exception est écrite sur la règle de navigation elle-même');
+
+  /* G — ET ON PEUT Y ARRIVER SANS JAVASCRIPT. Les pages sont lisibles telles quelles,
+     mais encore faut-il les ATTEINDRE : l'écran de démarrage est retiré PAR LE SCRIPT,
+     donc sans script il restait à 390 × 844, opaque, par-dessus tout — le visiteur
+     voyait une pieuvre sur fond crème, définitivement, et jamais le bloc `noscript`
+     écrit pour lui juste en dessous. Mesuré avant : `elementFromPoint` au centre de
+     l'écran rendait l'écran de démarrage. */
+  console.log('\nG — sans JavaScript du tout, on voit et on atteint les textes');
+  const ctx2=await b.newContext({viewport:{width:390,height:844},locale:'fr-FR',javaScriptEnabled:false});
+  const p3=await ctx2.newPage();
+  await p3.goto(base+'/index.html',{waitUntil:'load'});
+  const sansJs=await p3.evaluate(()=>{
+    const sp=document.getElementById('splash');
+    const l=[...document.querySelectorAll('a[href^="legal/"]')].filter(a=>a.getBoundingClientRect().height>0);
+    return {splash:sp?getComputedStyle(sp).display:'absent', liens:l.length,
+      devant:(()=>{const t=document.elementFromPoint(195,300);return t?(t.id||t.tagName):'?';})()};});
+  ok(sansJs.splash==='none','l’écran de démarrage s’efface de lui-même ('+sansJs.splash+')');
+  ok(sansJs.devant!=='splash','et il n’intercepte plus les clics — au centre de l’écran : '+sansJs.devant);
+  ok(sansJs.liens>=6,'les liens vers les documents sont visibles et cliquables ('+sansJs.liens+')');
+  await p3.click('a[href="legal/cgv.html"]'); await p3.waitForLoadState('load');
+  const lu=await p3.evaluate(()=>({t:document.title,
+    mots:(document.body.innerText||'').split(/\s+/).filter(Boolean).length}));
+  ok(/Conditions Générales de Vente/.test(lu.t)&&lu.mots>400,
+    'et le texte entier se lit, sans qu’une ligne de l’application ne s’exécute ('+lu.mots+' mots)');
+  await ctx2.close();
+
   await b.close(); serveur.close();
   console.log(f?('\n'+f+' ÉCHEC(S)\n'):'\nTout est vert.\n');
   process.exit(f?1:0);
