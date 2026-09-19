@@ -357,6 +357,50 @@ for(const [lg,mot] of [['en','made for your phone'],['pt','no telemóvel']]){
   await ctx.close();
 }
 
+console.log('\nF bis — la signature tient sur une ligne, tout respire, et plus un seul tiret cadratin');
+for(const [lg,larg] of [['fr',1512],['fr',1025],['en',1512],['pt',1512]]){
+  const ctx=await b.newContext({viewport:{width:larg,height:1000},locale:'fr-FR'});
+  const p7=await ctx.newPage();
+  await p7.goto(F); await p7.waitForFunction(()=>window.__S&&window.__render); await p7.waitForTimeout(600);
+  if(lg!=='fr'){ await p7.evaluate(l=>{const x=document.querySelector('#view [data-act="lang-'+l+'"]');if(x)x.click();},lg);
+    await p7.waitForTimeout(900); }
+  const r=await p7.evaluate(()=>{
+    // ON COMPTE LES RECTANGLES DE LA LIGNE, on ne lit pas la feuille de style : `nowrap`
+    // écrit quelque part ne prouve pas qu'une phrase tienne, et un débordement masqué se
+    // lirait comme une réussite.
+    const t=document.querySelector('.welcome-title'), g=document.createRange();
+    g.selectNodeContents(t);
+    const lignes=new Set([...g.getClientRects()].map(x=>Math.round(x.top))).size;
+    const R=e=>e.getBoundingClientRect();
+    const octo=R(document.querySelector('.welcome .octo-hero')), mot=R(document.querySelector('.welcome-word'));
+    const cta=R(document.querySelector('.welcome .footcta')), desk=R(document.querySelector('.welcome-desk'));
+    const titre=R(t);
+    // LE TIRET CADRATIN EST BANNI DE LA COPIE. On regarde le texte RENDU des deux blocs
+    // qui portent l'argumentaire — la mention légale, elle, garde le sien : c'est un
+    // séparateur de copyright, pas une phrase.
+    const txt=[document.querySelector('.welcome-desk'),document.querySelector('.welcome-plus')]
+      .filter(Boolean).map(e=>e.innerText).join('\n');
+    return {lignes, deborde:Math.round(t.scrollWidth-t.clientWidth),
+      largeurTitre:Math.round(Math.max(...[...g.getClientRects()].map(x=>x.width))),
+      dispo:Math.round(R(document.querySelector('.pad.welcome')).width),
+      airNom:Math.round(mot.top-octo.bottom), airCta:Math.round(cta.top-titre.bottom),
+      airCartes:Math.round(desk.top-cta.bottom),
+      cadratins:txt.split('\n').filter(l=>l.includes('—'))};
+  });
+  const q=lg.toUpperCase()+' '+larg+' px';
+  ok(r.lignes===1&&r.deborde<=0,
+    q+' : « Créateur de lien… » tient sur UNE ligne ('+r.largeurTitre+' px pour '+r.dispo+' disponibles)');
+  if(lg==='fr'&&larg===1512){
+    ok(r.airNom>=12&&r.airCta>=30&&r.airCartes>=30,
+      'et tout respire : '+r.airNom+' px sous la mascotte, '+r.airCta+' sous la signature, '+
+      r.airCartes+' avant les arguments (2, 34 et 8 avant)');
+  }
+  ok(!r.cadratins.length,
+    q+' : plus un seul tiret cadratin dans l’argumentaire'+
+    (r.cadratins.length?' — '+r.cadratins[0].slice(0,70):''));
+  await ctx.close();
+}
+
 await b.close();
 console.log(f?('\n'+f+' ÉCHEC(S)\n'):'\nTout est vert.\n');
 process.exit(f?1:0);
