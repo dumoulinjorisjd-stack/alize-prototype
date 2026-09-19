@@ -7,10 +7,12 @@
    accessibles au VISITEUR, la politique de confidentialité avec elles, et « Suppression
    de compte » est une adresse que les deux magasins d'applications exigent publique.
 
-   CE SONT DE VRAIS LIENS. `?legal=…` est la porte déjà en place — celle vers laquelle
-   pointent les fiches App Store et Play Store — donc l'adresse se copie, se partage,
-   s'indexe, et ouvre le texte même sans JavaScript. Le clic n'est intercepté que pour
-   éviter un rechargement ; si le gestionnaire disparaissait, le lien marcherait encore. */
+   CE SONT DE VRAIS LIENS, et ils mènent aux pages STATIQUES (`legal/<clé>.html`) : un
+   moteur qui les suit lit le texte sans exécuter l'application. Le clic est intercepté
+   pour rester dans l'app — on ne quitte pas Ti-Services pour lire ses propres
+   conditions — mais si ce gestionnaire disparaissait, le lien marcherait encore.
+   `?legal=…` continue d'ouvrir le texte dans l'application : c'est l'adresse inscrite
+   dans les fiches App Store et Play Store. */
 const fs=require('fs'),path=require('path');
 const {chromium}=require('playwright-core');
 const RACINE='/home/user/alize-work';
@@ -40,9 +42,10 @@ ok(!a.deborde,'rien ne dépasse à 390 px : la rangée passe à la ligne au lieu
 
 console.log('\nB — ce sont de VRAIS liens, pas des boutons');
 const hrefs=await p.$$eval('.brief .lp-legal a',l=>l.map(x=>x.tagName+' '+x.getAttribute('href')));
-ok(hrefs.every(h=>/^A \?legal=/.test(h)),'chacun porte son adresse — « '+hrefs[0]+' »');
+ok(hrefs.every(h=>/^A legal\/[a-z]+\.html$/.test(h)),
+  'chacun porte son adresse, et c’est celle de la page STATIQUE — « '+hrefs[0]+' »');
 ok(/\?legal=/.test(fs.readFileSync(path.join(RACINE,'index.html'),'utf8')),
-  'et `?legal=` est la porte qui existait déjà : celle des fiches App Store et Play Store');
+  'et `?legal=` reste lu au démarrage : c’est l’adresse des fiches App Store et Play Store, on ne la casse pas');
 
 console.log('\nC — le clic ouvre le texte, et le retour ramène à l’accueil');
 const avant=p.url();

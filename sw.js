@@ -1,5 +1,5 @@
 /* Ti-Services — service worker (coquille hors-ligne) */
-const CACHE = 'ti-services-v741';
+const CACHE = 'ti-services-v742';
 const SHELL = [
   './',
   './index.html',
@@ -77,7 +77,13 @@ self.addEventListener('fetch', (e) => {
   // consentement : la nouvelle version s'installe en attente et n'est appliquée
   // qu'au clic sur « mettre à jour ». Avant, chaque lancement retéléchargeait
   // l'application entière — plusieurs secondes en 4G.
-  if (req.mode === 'navigate') {
+  // PAGES LÉGALES : ce sont de VRAIES pages, pas l'application. La règle ci-dessous rend
+  // la coquille pour TOUTE navigation — elle aurait donc servi l'app à quelqu'un qui ouvre
+  // /legal/cgu.html dans un nouvel onglet, ou qui le suit sans JavaScript. Les moteurs,
+  // eux, n'exécutent aucun service worker et n'auraient rien vu du problème : il ne se
+  // serait manifesté que chez les visiteurs déjà venus une fois. Elles passent donc par
+  // la règle ordinaire, en bas : cache d'abord, réseau ensuite.
+  if (req.mode === 'navigate' && !/\/legal\//.test(new URL(req.url).pathname)) {
     e.respondWith(
       caches.match('./index.html').then((hit) => {
         const net = fetch(req).then((res) => {
