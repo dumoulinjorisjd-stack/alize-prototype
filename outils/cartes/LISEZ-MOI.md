@@ -47,9 +47,24 @@ reste largement lisible).
 **Les PDF.** Un fichier par face, police intégrée (Inter, découpée en TrueType), fond
 jusqu'au bord. C'est le format que toutes les imprimeries en ligne acceptent.
 
-Les **PNG** sont là pour un imprimeur qui demande une image, ou pour un aperçu : ils
-portent leur densité réelle (≈ 301 ppp) dans le fichier, donc ils se posent à 71 mm
-exactement dans n'importe quel logiciel — ne les rééchantillonnez pas « à 300 ppp ».
+Les **JPEG** sont là pour un imprimeur qui demande une image : **1 681 px de côté, soit
+601 ppp**, qualité maximale et sans sous-échantillonnage de la couleur. Deux fois plus fin
+que les 300 ppp habituels, parce qu'un JPEG fige le texte en pixels là où le PDF le garde
+en courbes : à 300 ppp les contre-formes d'un texte de 2 mm et les modules du QR-code
+tombent sur un pixel et demi, à 601 ils en ont trois.
+
+Les **PNG** (301 ppp) servent d'aperçu, ou pour un logiciel qui préfère un format sans
+perte.
+
+Les deux portent leur **densité réelle dans le fichier** — pHYs pour le PNG, en-tête JFIF
+pour le JPEG — donc ils se posent à 71 mm tout seuls dans n'importe quel logiciel (71,04
+pour le JPEG : la densité d'un JPEG s'écrit en points par pouce entiers, quatre centièmes
+de millimètre sont le plancher). **Ne les rééchantillonnez pas « à 300 ppp ».**
+
+**Le QR-code est relu dans les DEUX images.** La compression JPEG loge ses artefacts
+précisément sur les transitions noir/blanc franches, c'est-à-dire sur les modules du code :
+un QR qui se lit dans le PNG ne prouve rien du JPEG. Les deux sont décodés à chaque
+génération.
 
 ## Les trois mesures qui comptent
 

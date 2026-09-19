@@ -345,9 +345,10 @@ function apercu(faces, c) {
 <div class="grille">${vign}</div>
 <p class="note"><b>À l'impression</b> — envoyez les PDF : ils font ${MM.page} × ${MM.page} mm
   (carte + fond perdu, planche mesurée 70,87 mm — Chromium arrondit au pixel, l'écart est
-  absorbé par le fond perdu) et portent la police intégrée. Les PNG portent leur densité
-  réelle (≈ 301 ppp) dans le fichier : ils se posent à ${MM.page} mm exactement, ne les
-  rééchantillonnez pas « à 300 ppp ». Les couleurs sont en RVB : la plupart
+  absorbé par le fond perdu) et portent la police intégrée. Les <b>JPEG</b> sont là pour un
+  imprimeur qui demande une image : 1 681 px de côté, soit <b>601 ppp</b>, qualité maximale.
+  Les PNG font 301 ppp. Les deux portent leur densité réelle dans le fichier et se posent à
+  ${MM.page} mm tout seuls — ne les rééchantillonnez pas « à 300 ppp ». Les couleurs sont en RVB : la plupart
   des imprimeries en ligne convertissent elles-mêmes en CMJN ; si la vôtre exige un CMJN
   profilé, demandez-lui le profil et faites la conversion à l'ouverture du PDF.</p>
 <script>
@@ -382,6 +383,46 @@ function poserDensite(fichier) {
   fs.writeFileSync(fichier, Buffer.concat([sansAncien.slice(0, finIhdr), morceau, sansAncien.slice(finIhdr)]));
   return Math.round(ppm * 0.0254);
 }
+/* UN JPEG DIT AUSSI SA TAILLE PHYSIQUE. Il n'a pas de morceau pHYs mais un en-tête JFIF
+   qui porte une unité et deux densités ; Chromium écrit « unité 0 » (aucune, simple
+   rapport d'aspect), ce qui fait qu'un logiciel de mise en page pose l'image à la taille
+   qui l'arrange. On écrit donc la densité RÉELLE en points par pouce — l'image se pose à
+   71 mm exactement, comme le PNG. Si l'en-tête JFIF manque, on l'insère. */
+function poserDensiteJpeg(fichier, mm) {
+  const buf = fs.readFileSync(fichier);
+  if (buf.readUInt16BE(0) !== 0xFFD8) throw new Error('JPEG inattendu : ' + fichier);
+  const largeur = tailleJpeg(buf);
+  const ppp = Math.round(largeur / (mm / 25.4));
+  let out = buf;
+  if (buf.readUInt16BE(2) === 0xFFE0 && buf.toString('ascii', 6, 10) === 'JFIF') {
+    out = Buffer.from(buf);
+    out[13] = 1;                    // unité : 1 = point par pouce
+    out.writeUInt16BE(ppp, 14); out.writeUInt16BE(ppp, 16);
+  } else {
+    const app0 = Buffer.alloc(20);
+    app0.writeUInt16BE(0xFFE0, 0); app0.writeUInt16BE(16, 2);
+    app0.write('JFIF\0', 4, 'ascii');
+    app0[9] = 1; app0[10] = 2;      // version 1.02
+    app0[11] = 1;                   // unité : ppp
+    app0.writeUInt16BE(ppp, 12); app0.writeUInt16BE(ppp, 14);
+    app0[16] = 0; app0[17] = 0;     // pas de vignette
+    out = Buffer.concat([buf.slice(0, 2), app0.slice(0, 18), buf.slice(2)]);
+  }
+  fs.writeFileSync(fichier, out);
+  return ppp;
+}
+// Largeur en pixels, lue dans le segment SOF — on ne se fie pas au facteur d'échelle.
+function tailleJpeg(buf) {
+  let i = 2;
+  while (i + 4 <= buf.length) {
+    if (buf[i] !== 0xFF) { i++; continue; }
+    const m = buf[i + 1];
+    if (m >= 0xC0 && m <= 0xCF && m !== 0xC4 && m !== 0xC8 && m !== 0xCC) return buf.readUInt16BE(i + 7);
+    i += 2 + buf.readUInt16BE(i + 2);
+  }
+  throw new Error('Largeur JPEG introuvable');
+}
+
 function retirerPhys(buf, i) {
   // Chromium n'en pose pas, mais une exécution sur un PNG déjà traité en poserait un second.
   let p2 = i;
@@ -449,6 +490,7 @@ async function main() {
   const nav = await chromium.launch(opts);
   // 300 ppp : 1 mm = 300/25.4 px. Le PNG sort donc à la taille exacte d'un tirage.
   const ppmm = 300 / 25.4;
+  const JPEG_PPP = 600;
   const ctx = await nav.newContext({ deviceScaleFactor: ppmm / (96 / 25.4) });
   const p = await ctx.newPage();
   for (const f of faces) {
@@ -502,24 +544,49 @@ async function main() {
     f.png = png;
     f.ppp = poserDensite(path.join(SORTIE, png));
   }
+  await ctx.close();
+
+  /* LE JPEG EST RENDU À PART, ET DEUX FOIS PLUS FIN. Un JPEG est une image de POINTS : là
+     où le PDF garde le texte en courbes, le JPEG le fige en pixels. À 300 ppp les
+     contre-formes d'un texte de 2 mm et les modules du QR-code tombent sur un pixel et
+     demi ; à 600 ils en ont trois. La compression est poussée au maximum de qualité et
+     sans sous-échantillonnage de la couleur : sur des aplats et du trait, c'est le
+     réglage qui ne laisse pas de franges autour des lettres corail. */
+  const ctxJ = await nav.newContext({ deviceScaleFactor: JPEG_PPP / 96 });
+  const pj = await ctxJ.newPage();
+  for (const f of faces) {
+    await pj.goto('file://' + path.join(SORTIE, f.fichier), { waitUntil: 'load' });
+    await pj.evaluate(() => document.fonts.ready);
+    const jpg = f.fichier.replace('.html', '.jpg');
+    await pj.locator('.carte').screenshot({ path: path.join(SORTIE, jpg), type: 'jpeg', quality: 100 });
+    f.jpg = jpg;
+    f.pppJpeg = poserDensiteJpeg(path.join(SORTIE, jpg), MM.page);
+  }
+  await ctxJ.close();
   await nav.close();
 
   // VÉRIFICATION DU QR SUR L'IMAGE RENDUE, avec un décodeur indépendant. Une carte de
   // visite ne se corrige pas après tirage : on ne se fie pas à l'encodeur pour se relire.
   const { execFileSync } = require('child_process');
   let decodeur = true;
+  // ON RELIT LES DEUX IMAGES. Le JPEG est compressé : ses artefacts se logent justement
+  // sur les transitions noir/blanc franches, c'est-à-dire sur les modules du QR-code. Un
+  // code qui se lit dans le PNG ne prouve donc rien du JPEG — on vérifie les deux.
   for (const f of faces.filter(x => x.url)) {
-    let lu = '';
-    try { lu = execFileSync('zbarimg', ['-q', '--raw', path.join(SORTIE, f.png)], { encoding: 'utf8' }).trim(); }
-    catch (e) { decodeur = false; lu = '(zbarimg absent ou muet)'; }
-    const ok = lu === f.url;
-    console.log((ok ? '  ✓ ' : '  ✗ ') + f.png + ' → ' + lu + (ok ? '' : '   ATTENDU ' + f.url));
-    if (!ok && decodeur) process.exitCode = 1;
+    for (const img of [f.png, f.jpg]) {
+      let lu = '';
+      try { lu = execFileSync('zbarimg', ['-q', '--raw', path.join(SORTIE, img)], { encoding: 'utf8' }).trim(); }
+      catch (e) { decodeur = false; lu = '(zbarimg absent ou muet)'; }
+      const ok = lu === f.url;
+      console.log((ok ? '  ✓ ' : '  ✗ ') + img + ' → ' + lu + (ok ? '' : '   ATTENDU ' + f.url));
+      if (!ok && decodeur) process.exitCode = 1;
+    }
   }
   if (!decodeur) console.log('  ⚠︎ décodeur indépendant indisponible — QR NON vérifié');
   console.log('\n' + faces.length + ' faces dans outils/cartes/ · ' +
     MM.carte + '×' + MM.carte + ' mm, fond perdu ' + MM.fond + ' mm (planche ' + MM.page + '×' + MM.page + ' mm)');
-  if (faces[0] && faces[0].ppp) console.log('PNG : ' + faces[0].ppp + ' ppp réels, densité écrite dans le fichier — posé à 71 mm exactement');
+  if (faces[0] && faces[0].ppp) console.log('PNG : ' + faces[0].ppp + ' ppp · JPEG : ' + faces[0].pppJpeg +
+    ' ppp — densité écrite dans les deux, posés à ' + MM.page + ' mm exactement');
 }
 
 main().catch(e => { console.error(e); process.exit(1); });
