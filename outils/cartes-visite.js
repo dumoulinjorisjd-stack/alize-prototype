@@ -60,6 +60,16 @@ function couleurs(src) {
   return c;
 }
 
+/* MÉLANGER DEUX TEINTES DE MARQUE. On ne choisit pas une couleur « à la main » : on
+   déclare une PROPORTION entre deux jetons du `:root`, et le fichier porte l'hexadécimal
+   calculé — lisible par qui ouvre le PDF, et refait tout seul si la marque change. */
+function melange(a, b, part) {
+  const lire = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const [r1, g1, b1] = lire(a), [r2, g2, b2] = lire(b);
+  const m = (x, y) => Math.round(x * (1 - part) + y * part).toString(16).padStart(2, '0');
+  return '#' + m(r1, r2) + m(g1, g2) + m(b1, b2);
+}
+
 // L'encodeur de QR-code de l'application, exécuté tel quel. On le délimite par deux
 // repères stables ; s'ils bougent, on lève plutôt que de produire un QR d'une autre source.
 function qrDeLApp(src) {
@@ -206,7 +216,14 @@ function feuille(c, polices) {
       radial-gradient(64% 52% at 106% 6%, #A26A0C14, transparent 58%),
       radial-gradient(76% 60% at 60% 112%, #5EC9C11A, transparent 60%),
       ${c['sand']}}
-  .verso{background:linear-gradient(155deg, ${c['teal']} 0%, ${c['teal-deep']} 100%);color:#fff}
+  /* LE DÉGRADÉ NE DESCEND PLUS JUSQU'AU CORAIL PROFOND. Il allait de #FF6A5B à #CE301C :
+     à l'impression, ce bas de dégradé vire au rouge sombre — une encre saturée perd
+     toujours de la clarté en passant en CMJN, et c'est le point le plus foncé qui donne
+     son poids à toute la face. On garde le corail de marque en HAUT, là où se lit le nom
+     (rien ne change donc pour le contraste du texte blanc, déjà le plus faible à cet
+     endroit), et on remonte seulement le BAS : trois dixièmes de corail profond au lieu
+     de la teinte pure. La face s'éclaircit sans quitter la marque. */
+  .verso{background:linear-gradient(155deg, ${c['teal']} 0%, ${melange(c['teal'], c['teal-deep'], .3)} 100%);color:#fff}
 
   /* LES TAILLES DU RECTO SONT CELLES QUI TIENNENT DANS LA MARGE DE SÉCURITÉ, mesurées
      après coup : la grille des métiers a coûté une dizaine de millimètres de hauteur, et

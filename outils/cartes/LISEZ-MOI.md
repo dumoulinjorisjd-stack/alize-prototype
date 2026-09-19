@@ -99,6 +99,15 @@ Le corail du verso est un aplat saturé : sur un papier non couché il paraîtra
 et légèrement plus sombre qu'à l'écran. C'est normal, et c'est la raison de demander un
 **BAT** ou un échantillon avant un gros tirage.
 
+**Le dégradé a été éclairci** pour cette raison : il descendait jusqu'au corail profond
+(`#CE301C`), qui vire au rouge sombre en CMJN et donnait son poids à toute la face. Il
+s'arrête maintenant à trois dixièmes de cette teinte (`#F05948`). Le haut ne bouge pas :
+c'est là que se lit le nom, et son contraste avec le blanc était déjà le plus faible de la
+face — l'éclaircir aurait coûté de la lisibilité. Si c'est encore trop sombre au tirage,
+la proportion se règle sur une ligne (`melange(c['teal'], c['teal-deep'], .3)` dans
+`outils/cartes-visite.js`) ; en dessous de deux dixièmes, le texte blanc commence à
+manquer de tenue.
+
 ## Régénérer
 
 ```bash
