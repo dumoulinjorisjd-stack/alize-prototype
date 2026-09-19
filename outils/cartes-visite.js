@@ -123,20 +123,38 @@ let CADRES = {};
 async function centrerIcones(nav, metier, ids) {
   const ctx = await nav.newContext();
   const p = await ctx.newPage();
-  await p.setContent('<body style="margin:0">' +
-    ids.map(id => '<span data-id="' + id + '">' + metier(id).ico + '</span>').join('') + '</body>');
-  const cadres = await p.evaluate(() => {
-    const o = {};
-    document.querySelectorAll('[data-id]').forEach(sp => {
-      const svg = sp.querySelector('svg');
-      // getBBox ignore l'épaisseur du trait : on l'ajoute, sinon un tracé épais déborde du
-      // rectangle mesuré et le centrage penche du côté du trait le plus long.
-      const e = parseFloat(svg.getAttribute('stroke-width') || 0) || 0;
-      const b = svg.getBBox();
-      o[sp.dataset.id] = { x: b.x - e / 2, y: b.y - e / 2, w: b.width + e, h: b.height + e };
-    });
+  await p.setContent('<body></body>');
+  const cadres = await p.evaluate(async (icones) => {
+    const N = 256, o = {};
+    for (const [id, svgTexte] of icones) {
+      // On DESSINE l'icône pour la peser. Un SVG chargé comme image doit se déclarer :
+      // on lui pose son espace de noms et une taille, sinon le navigateur ne le rend pas.
+      const src = svgTexte
+        .replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"')
+        .replace(/\swidth="[^"]*"/, '').replace(/\sheight="[^"]*"/, '')
+        .replace('<svg', `<svg width="${N}" height="${N}"`);
+      const url = URL.createObjectURL(new Blob([src], { type: 'image/svg+xml' }));
+      const img = new Image();
+      await new Promise((ok, ko) => { img.onload = ok; img.onerror = ko; img.src = url; });
+      const cv = document.createElement('canvas'); cv.width = cv.height = N;
+      const g = cv.getContext('2d'); g.drawImage(img, 0, 0, N, N);
+      const d = g.getImageData(0, 0, N, N).data;
+      URL.revokeObjectURL(url);
+      let sx = 0, sy = 0, sa = 0, x0 = N, y0 = N, x1 = -1, y1 = -1;
+      for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+        const a = d[(y * N + x) * 4 + 3];
+        if (a < 16) continue;
+        sx += x * a; sy += y * a; sa += a;
+        if (x < x0) x0 = x; if (x > x1) x1 = x;
+        if (y < y0) y0 = y; if (y > y1) y1 = y;
+      }
+      if (!sa) throw new Error('Icône vide au rendu : ' + id);
+      const u = 24 / N;                       // du pixel vers l'unité de la boîte
+      o[id] = { x: x0 * u, y: y0 * u, w: (x1 - x0 + 1) * u, h: (y1 - y0 + 1) * u,
+        cx: (sx / sa) * u, cy: (sy / sa) * u };
+    }
     return o;
-  });
+  }, ids.map(id => [id, metier(id).ico]));
   await ctx.close();
   return cadres;
 }
@@ -147,10 +165,30 @@ async function centrerIcones(nav, metier, ids) {
    sa forme. On prend le plus grand côté et non la hauteur seule, sans quoi une icône large
    et basse (le lotus) déborderait en largeur pour rattraper sa hauteur. */
 const ICO_REMPLISSAGE = .80;
+/* LE DERNIER RÉGLAGE EST À L'ŒIL, ET IL EST DÉCLARÉ. Trois icônes paraissaient basses —
+   ménage, coiffure, massage — alors que la mesure ne trouvait rien : leur encre est
+   centrée à un demi-dixième d'unité près. Ce n'est donc pas leur MASSE qui est basse,
+   c'est leur FORME qui se lit basse — le flacon du pulvérisateur sous ses gouttelettes,
+   les deux gros anneaux des ciseaux, la coupe des pétales. Aucune mesure ne rend ce
+   jugement-là ; l'œil, si. On le pose donc ici, en clair, en unités de la boîte (positif
+   = le dessin remonte), plutôt que de le maquiller en calcul. */
+const ICO_OPTIQUE = { menage: 1.4, coiffure: 1.4, massage: 1.4 };
 function icoCentree(svg, cadre) {
   if (!cadre) return svg;
   const cote = Math.max(cadre.w, cadre.h) / ICO_REMPLISSAGE;
-  const v = [cadre.x + cadre.w / 2 - cote / 2, cadre.y + cadre.h / 2 - cote / 2, cote, cote]
+  /* ON CENTRE SUR LE CENTRE DE GRAVITÉ DE L'ENCRE, PAS SUR LE RECTANGLE. Trois icônes
+     paraissaient basses alors que leur rectangle était centré au centième : le
+     pulvérisateur du ménage porte des gouttelettes légères en haut et un flacon plein en
+     bas, les ciseaux ont deux gros anneaux sous des lames fines, le lotus étale ses pétales
+     sous une pointe. Leur masse est en bas, donc l'œil les voit basses. On pèse chaque
+     pixel (opacité × position) et on met CE point au centre.
+     PUIS ON RETIENT : si la correction sortait une partie du dessin de la fenêtre, on la
+     borne — une icône rognée serait pire qu'une icône un peu basse. */
+  // La fenêtre doit contenir tout le dessin : son centre ne peut sortir de cet intervalle.
+  const borne = (c, a, b) => Math.max(b - cote / 2, Math.min(a + cote / 2, c));
+  const cx = borne(cadre.cx, cadre.x, cadre.x + cadre.w);
+  const cy = borne(cadre.cy + (cadre.optique || 0), cadre.y, cadre.y + cadre.h);
+  const v = [cx - cote / 2, cy - cote / 2, cote, cote]
     .map(n => +n.toFixed(3)).join(' ');
   const nu = svg.replace('viewBox="0 0 24 24"', 'viewBox="' + v + '"');
   if (nu === svg) throw new Error('viewBox 24×24 introuvable — une icône a changé de gabarit');
@@ -569,6 +607,7 @@ async function main() {
   if (fs.existsSync('/opt/pw-browsers/chromium')) opts.executablePath = '/opt/pw-browsers/chromium';
   const nav = await chromium.launch(opts);
   CADRES = await centrerIcones(nav, metierBrut, [...new Set(CARTES.flatMap(x => x.metiers || []))]);
+  for (const id in CADRES) CADRES[id].optique = ICO_OPTIQUE[id] || 0;
 
   if (!verifierSeul) {
     plan.forEach((f, i) => fs.writeFileSync(path.join(SORTIE, faces[i].fichier), f.html()));

@@ -27,6 +27,15 @@ case quelle que soit sa forme. Mesuré : les six ont exactement **2,8 mm** de pl
 côté. Le prix est que l'épaisseur du trait suit l'échelle — elle varie de 0,243 à
 0,281 mm selon les icônes, quatre centièmes d'écart, invisibles à cette taille.
 
+**Et un dernier réglage est à l'œil, déclaré comme tel.** Trois icônes — ménage, coiffure,
+massage — paraissaient basses alors que la mesure ne trouvait rien : leur encre est centrée
+à un demi-dixième d'unité près. Ce n'est donc pas leur *masse* qui est basse, c'est leur
+*forme* qui se lit basse : le flacon du pulvérisateur sous ses gouttelettes, les deux gros
+anneaux des ciseaux, la coupe des pétales. Aucune mesure ne rend ce jugement-là ; l'œil,
+si. Il vit dans `ICO_OPTIQUE`, en unités de la boîte, positif = le dessin remonte —
+1,4 unité sur 24 pour ces trois. Une icône remontée reste entièrement dans sa fenêtre : le
+script le vérifie.
+
 **Un nom trop long pour sa colonne arrête la génération.** « Colis & courrier » demande
 20,9 mm là où la colonne en offre 18,3 : la carte dit donc « Colis », raccourci déclaré
 dans `LIBELLES_COURTS` et nulle part ailleurs. Tout autre métier garde le nom du
