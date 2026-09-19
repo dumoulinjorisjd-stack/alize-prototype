@@ -130,12 +130,15 @@ const CARTES = [
     cle: 'client',
     url: 'https://ti-services.fr/?client',
     punch: 'Un pro de confiance,<br>chez vous en quelques minutes.',
-    // HUIT MÉTIERS DESSINÉS PLUTÔT QU'UNE LIGNE DE NOMS : c'est ce qui fait comprendre
-    // en une seconde de quoi il s'agit. Huit et pas vingt et un — sur 49 mm de large, la
-    // liste complète donnerait des noms de deux millimètres que personne ne lit. Ceux-ci
-    // couvrent les huit familles (maison, extérieur, enfants, beauté, bien-être,
-    // dépannage, piscine, transport) et portent des noms assez courts pour tenir.
-    metiers: ['menage', 'jardin', 'baby', 'coiffure', 'massage', 'plomberie', 'piscine', 'demenagement'],
+    // SIX MÉTIERS DESSINÉS, EN LIGNE. C'est ce qui fait comprendre en une seconde de quoi
+    // il s'agit — et six, pas vingt et un : sur 49 mm de large, la liste complète donnerait
+    // des noms de deux millimètres que personne ne lit. Ils couvrent six familles (maison,
+    // extérieur, piscine, enfants, beauté, dépannage) et portent des noms assez courts
+    // pour tenir à côté de leur icône.
+    // ILS ÉTAIENT HUIT, EMPILÉS — nom sous l'icône, quatre colonnes. C'est la disposition
+    // qui coûtait cher : 5,9 mm par rangée contre 3,4 côte à côte. Rendre ces cinq
+    // millimètres est ce qui a permis au dessin de grandir et au reste de respirer.
+    metiers: ['menage', 'jardin', 'piscine', 'baby', 'coiffure', 'plomberie'],
     versoTitre: 'Réservez en deux gestes',
     versoPied: 'Gratuit · sans abonnement'
   },
@@ -185,26 +188,31 @@ function feuille(c, polices) {
   /* ZOUTI EST CE QUI ATTIRE L'ŒIL : c'est lui qu'on agrandit, et les millimètres qu'il
      prend viennent des espacements — jamais de la marge de sécurité, que le script
      vérifie. */
-  .zouti{width:16mm;height:auto;display:block}
-  .mot{font-weight:800;font-size:5.2mm;letter-spacing:-.02em;line-height:1;margin-top:1.4mm}
+  .zouti{width:18.5mm;height:auto;display:block}
+  .mot{font-weight:800;font-size:5.2mm;letter-spacing:-.02em;line-height:1;margin-top:2.2mm}
   .mot b{color:${c['teal-deep']};font-weight:800}
   .mot span{color:${c['ink']}}
-  .lieu{display:flex;align-items:center;justify-content:center;gap:.9mm;margin-top:1.2mm;
+  .lieu{display:flex;align-items:center;justify-content:center;gap:.9mm;margin-top:1.6mm;
     font-size:2.1mm;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:${c['teal-deep']}}
   .lieu svg{width:2.2mm;height:2.2mm}
-  .filet{width:8mm;height:.4mm;border-radius:.4mm;background:${c['teal-deep']};opacity:.38;margin:1.4mm 0}
-  .punch{font-size:3.1mm;font-weight:800;line-height:1.25;letter-spacing:-.015em;color:${c['ink']};
-    text-wrap:balance}
-  .services{margin-top:2.8mm;font-size:2.05mm;line-height:1.55;font-weight:500;color:${c['muted']};
+  /* LE FILET EST PARTI. Un trait de huit millimètres séparait deux blocs que rien ne
+     confondait, et ses marges coûtaient 3,2 mm de hauteur — sur une carte pleine, c'est
+     ce qu'il faut pour que le dessin grandisse et que le reste respire. */
+  .punch{margin-top:3.4mm;font-size:3.05mm;font-weight:800;line-height:1.28;letter-spacing:-.015em;
+    color:${c['ink']};text-wrap:balance}
+  .services{margin-top:3.4mm;font-size:2.05mm;line-height:1.55;font-weight:500;color:${c['muted']};
     max-width:45mm;text-wrap:balance}
   /* LA GRILLE DES MÉTIERS. Quatre colonnes, deux rangées : l'icône dit le métier avant
      qu'on ait lu son nom, et c'est ce qui fait comprendre « service à domicile » d'un
      regard. Les colonnes sont égales et le nom tient sur UNE ligne — un nom qui passerait
      à deux décalerait sa rangée. */
-  .metiers{margin-top:2mm;display:grid;grid-template-columns:repeat(4,1fr);gap:1.6mm 1mm;width:100%}
-  .metier{display:flex;flex-direction:column;align-items:center;gap:.8mm;min-width:0}
-  .metier svg{width:3.6mm;height:3.6mm;display:block;stroke-width:1.9}
-  .metier span{font-size:1.9mm;font-weight:600;line-height:1;color:${c['ink-soft']};
+  .metiers{margin-top:3.2mm;display:grid;grid-template-columns:repeat(3,1fr);gap:2mm 1mm;width:100%}
+  /* CHAQUE ICÔNE SUR L'AXE DE SA COLONNE. Centré dans sa cellule, un couple icône + nom se
+     déplace avec la longueur du nom : « Piscine » commençait deux millimètres à droite de
+     « Plomberie », juste au-dessus. C'est la colonne d'icônes que l'œil suit. */
+  .metier{display:flex;align-items:center;justify-content:start;gap:.9mm;min-width:0}
+  .metier svg{width:3.4mm;height:3.4mm;display:block;stroke-width:1.9;flex:none}
+  .metier span{font-size:1.95mm;font-weight:600;line-height:1;color:${c['ink-soft']};
     white-space:nowrap}
 
   .v-mot{font-weight:800;font-size:4.2mm;letter-spacing:-.02em;color:#fff;opacity:.96}
@@ -242,7 +250,6 @@ function recto(c, carte, logo, style, metier) {
   ${logo}
   <div class="mot"><b>Ti</b><span>-Services</span></div>
   <div class="lieu">${PIN}Saint-Barthélemy</div>
-  <div class="filet"></div>
   <div class="punch">${carte.punch}</div>
   ${bas}
 </div>`);

@@ -2,11 +2,16 @@
 
 Carré **65 × 65 mm**, recto présentation / verso QR-code. Deux jeux :
 
-Le recto de la carte **client** porte les huit métiers dessinés — icône et nom — parce
-qu'un nom de service se lit, mais qu'un dessin se comprend avant d'être lu. Huit et non
-vingt et un : sur 49 mm de large, la liste complète donnerait des noms de deux
+Le recto de la carte **client** porte six métiers dessinés — icône et nom côte à côte —
+parce qu'un nom de service se lit, mais qu'un dessin se comprend avant d'être lu. Six et
+non vingt et un : sur 49 mm de large, la liste complète donnerait des noms de deux
 millimètres que personne ne lit. Les icônes, les noms et les teintes viennent du
 catalogue de l'application, comme sur la vitrine.
+
+Pour en montrer plus, la place se prend quelque part : la carte est pleine (8,0 mm de
+marge, le minimum). Ajouter deux métiers demande de rendre au dessin ou aux blancs les
+millimètres qu'ils prennent — c'est la liste `metiers` de `outils/cartes-visite.js`, et le
+script refuse d'écrire un PDF qui déborde.
 
 | Fichier | Pour qui | Ce que le QR ouvre |
 |---|---|---|
