@@ -18,7 +18,12 @@ const {chromium}=require('playwright-core');
 const RACINE='/home/user/alize-work';
 const o={headless:true}; if(fs.existsSync('/opt/pw-browsers/chromium'))o.executablePath='/opt/pw-browsers/chromium';
 let f=0; const ok=(c,l)=>{if(c)console.log('  ✓ '+l);else{f++;console.log('  ✗ ÉCHEC : '+l);}};
-const ATTENDUS=['mentions','cgu','cgv','confidentialite','charte','suppression'];
+// QUATRE sur les pages publiques. La charte de l'intervenant et la suppression de compte
+// ne concernent que quelqu'un qui a déjà un compte : elles reparaissent DANS le compte, et
+// restent atteignables par leur adresse — c'est sur l'adresse que portent les exigences
+// des deux magasins d'applications, pas sur un lien en pied d'accueil.
+const ATTENDUS=['mentions','cgu','cgv','confidentialite'];
+const RESERVES=['charte','suppression'];
 
 (async()=>{
 const b=await chromium.launch(o);
@@ -36,8 +41,10 @@ const a=await p.evaluate(()=>{
   return {n:l.length, visibles:l.filter(vis).length, cles:l.map(e=>e.getAttribute('data-legal')),
     rangees:rows.size, deborde:l.some(e=>e.getBoundingClientRect().right>window.innerWidth+1),
     cible:Math.min(...l.map(e=>Math.round(e.getBoundingClientRect().height)))};});
-ok(a.n===6&&a.visibles===6,'les six documents sont là et visibles ('+a.visibles+'/'+a.n+')');
+ok(a.n===4&&a.visibles===4,'les quatre documents du visiteur sont là et visibles ('+a.visibles+'/'+a.n+')');
 ok(ATTENDUS.every(k=>a.cles.includes(k)),'aucun ne manque — '+a.cles.join(', '));
+ok(!RESERVES.some(k=>a.cles.includes(k)),
+  'et ni la charte ni la suppression de compte : elles ne concernent que qui a un compte');
 ok(!a.deborde,'rien ne dépasse à 390 px : la rangée passe à la ligne au lieu de défiler ('+a.rangees+' rangées)');
 
 console.log('\nB — ce sont de VRAIS liens, pas des boutons');
@@ -72,7 +79,7 @@ const d=await p.evaluate(()=>{
   const br=document.querySelector('.brief').getBoundingClientRect();
   return {n:l.length, vitrineVisible:br.width>0&&br.height>0};});
 ok(!d.vitrineVisible,'la vitrine y est bien masquée — son pied ne pouvait donc pas servir');
-ok(d.n>=5,'l’écran de découverte porte ses propres liens ('+d.n+')');
+ok(d.n===4,'l’écran de découverte porte les mêmes quatre ('+d.n+')');
 
 console.log('\nE — et ils se lisent dans les trois langues');
 await p.goto('file://'+path.join(RACINE,'tests/harn/app.html'));
@@ -100,7 +107,7 @@ console.log('\nF — sur une TABLETTE en paysage, la vitrine est masquée : l’
       vitrine:br.width>0&&br.height>0,
       liens:[...document.querySelectorAll('#view [data-act^="view-"]')].filter(vis).length};});
   ok(t.desktop&&!t.vitrine,'à 1280 px la vitrine est bien masquée — son pied ne peut pas servir');
-  ok(t.liens>=6,'et l’écran d’accueil porte les six documents ('+t.liens+')');
+  ok(t.liens===4,'et l’écran d’accueil porte les mêmes quatre ('+t.liens+')');
   await large.close();
 }
 
@@ -117,6 +124,32 @@ const pied=await p.evaluate(()=>{
 const ecart=Math.max(Math.abs(pied.editeur-pied.milieu),Math.abs(pied.liens-pied.milieu),Math.abs(pied.fb-pied.milieu));
 ok(ecart<=2,'les trois blocs partagent le même centre ('+pied.editeur+' · '+pied.liens+' · '+pied.fb+' pour un milieu à '+pied.milieu+')');
 ok(pied.filet!=='0px','et un filet les détache de ce qui précède ('+pied.filet+')');
+
+console.log('\nH — les deux réservés reparaissent DANS le compte, et restent atteignables');
+{
+  const c2=await b.newContext({viewport:{width:1280,height:800},locale:'fr-FR'});
+  const pc=await c2.newPage();
+  await pc.goto('file://'+path.join(RACINE,'tests/harn/app.html'));
+  await pc.waitForFunction(()=>window.__S&&window.__render); await pc.waitForTimeout(500);
+  const cli=await pc.evaluate(()=>{const S=window.__S;
+    S.onboarded=true;S.persona='client';S.clientNav='profile';S.authView=null;S.showPitch=false;S.legalView=null;
+    S.account={name:'Camille',email:'c@e.fr',zone:'Gustavia'};window.__render();
+    return [...document.querySelectorAll('#view [data-act^="view-"]')].map(x=>x.innerText.trim());});
+  ok(cli.includes('Suppression de compte')&&!cli.includes('Charte intervenant'),
+    'profil client : la suppression de compte revient, pas la charte — '+cli.join(' · '));
+  const pro=await pc.evaluate(()=>{const S=window.__S;
+    S.persona='pro';S.proStatus='pending';S.proNav='home';window.__render();
+    return [...document.querySelectorAll('#view [data-act^="view-"]')].map(x=>x.innerText.trim());});
+  ok(pro.includes('Charte intervenant')&&pro.includes('Suppression de compte'),
+    'compte prestataire : les deux — '+pro.join(' · '));
+  await c2.close();
+}
+for(const k of RESERVES){
+  ok(fs.existsSync(path.join(RACINE,'legal/'+k+'.html')),
+    'la page '+k+' reste en ligne : c’est l’ADRESSE qu’exigent App Store et Play Store');
+  ok(fs.readFileSync(path.join(RACINE,'sitemap.xml'),'utf8').includes('/legal/'+k+'.html'),
+    'et elle reste au sitemap, donc indexée');
+}
 
 await b.close();
 console.log(f?('\n'+f+' ÉCHEC(S)\n'):'\nTout est vert.\n');

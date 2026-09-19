@@ -69,8 +69,15 @@ ok(!absents.length,'les dix-huit adresses sont au sitemap'+(absents.length?' —
 ok(/<loc>https:\/\/ti-services\.fr\/<\/loc>/.test(sm),'et l’accueil y reste');
 ok(/Allow: \/\s/.test(lire('robots.txt')||'')&&/Sitemap: https:\/\/ti-services\.fr\/sitemap\.xml/.test(lire('robots.txt')||''),
   'robots.txt ouvre le site et nomme le sitemap');
-const piedOk=gen.DOCS.every(d=>src.includes('<a href="legal/'+d.cle+'.html" data-legal="'+d.cle+'">'));
+// Le pied de l'accueil ne porte que les quatre documents du VISITEUR ; la charte et la
+// suppression de compte ne concernent que qui a un compte. Ce qu'on vérifie ici est que
+// les liens visent bien les pages STATIQUES — leur nombre est l'affaire de
+// test-legal-accueil.js.
+const PUBLICS=['mentions','cgu','cgv','confidentialite'];
+const piedOk=PUBLICS.every(k=>src.includes('<a href="legal/'+k+'.html" data-legal="'+k+'">'));
 ok(piedOk,'le pied de l’accueil pointe vers les pages STATIQUES, celles qu’un moteur peut lire');
+ok(!src.includes('<a href="legal/suppression.html" data-legal="suppression">'),
+  'et il ne porte plus ce qui ne concerne qu’un titulaire de compte — la page, elle, reste en ligne');
 
 console.log('\nE — et l’ancienne porte n’est pas cassée');
 ok(/q\.get\('legal'\)/.test(src),
