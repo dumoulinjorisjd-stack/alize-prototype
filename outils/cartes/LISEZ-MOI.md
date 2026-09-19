@@ -39,12 +39,15 @@ exactement dans n'importe quel logiciel — ne les rééchantillonnez pas « à 
   `outils/cartes-visite.js` et relancez.
 - **Fond perdu : 3 mm par côté**, donc une planche de **71 × 71 mm**. Le fond doit
   déborder du trait de coupe : sans cela, un liseré blanc apparaît au massicot.
-- **Marge de sécurité : 5 mm** après la coupe. Aucun texte ne s'en approche — une coupe
-  se déplace toujours d'un demi-millimètre.
+- **Marge de sécurité : 4 mm** après la coupe. Aucun texte ne s'en approche — une coupe
+  se déplace toujours d'un demi-millimètre. Elle valait 5 mm ; le millimètre rendu est ce
+  qui a permis d'agrandir le texte sans rétrécir le dessin. Quatre reste au-dessus du
+  minimum que demandent les imprimeurs en ligne (trois) ; en dessous de trois, on ne le
+  ferait pas.
 
 **La marge est vérifiée à chaque génération.** Le script mesure, dans le navigateur, où
 commence et où finit vraiment le contenu de chaque face, et refuse d'écrire un PDF qui
-entre dans les 5 mm de sécurité. C'est ce qui a rattrapé la grille des métiers de la carte
+entre dans les 4 mm de sécurité. C'est ce qui a rattrapé la grille des métiers de la carte
 client : elle descendait à 3,1 mm du bord, soit en pleine zone que le massicot peut mordre.
 
 **Une réserve honnête sur le PDF** : Chromium arrondit la page au pixel CSS, la planche
