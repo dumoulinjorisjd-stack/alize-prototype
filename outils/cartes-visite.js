@@ -1,0 +1,376 @@
+#!/usr/bin/env node
+/* CARTES DE VISITE TI-SERVICES — carré, recto présentation, verso QR-code.
+
+   RIEN N'EST RECOPIÉ DE L'APPLICATION. Les couleurs, le dessin de Zouti et l'encodeur
+   de QR-code sont LUS dans `index.html` et `zouti-logo.svg` au moment de la génération :
+   une teinte de marque changée dans l'application se retrouve sur la prochaine carte
+   imprimée, et le QR-code est fabriqué par le MÊME code que celui qui le dessine à
+   l'écran — pas par une bibliothèque tierce dont le tracé pourrait différer.
+
+   POURQUOI ON FABRIQUE LE QR PLUTÔT QUE DE REPRENDRE LE TRACÉ STATIQUE : `index.html`
+   porte deux tracés pré-calculés, mais rien dans le fichier ne dit avec certitude quelle
+   adresse ils encodent — et une carte de visite ne se corrige pas après tirage. On
+   encode donc l'adresse ICI, et `outils/cartes-visite.js --verifier` la relit sur le PNG
+   rendu avec un décodeur indépendant (zbarimg).
+
+   LA POLICE EST EMBARQUÉE. L'application s'affiche en SF Pro sur un Mac ; un conteneur
+   Linux n'a pas cette police et retomberait sur DejaVu, qui ne ressemble à rien de ce
+   que l'éditeur voit. Inter (SIL OFL, dans outils/cartes/) est l'équivalent libre le
+   plus proche, encodée en base64 dans chaque fichier : le PDF part complet chez
+   l'imprimeur, sans dépendance réseau.
+
+   Usage :  node outils/cartes-visite.js            (écrit HTML, PDF et PNG)
+            node outils/cartes-visite.js --verifier (relit les QR des PNG produits)
+*/
+'use strict';
+const fs = require('fs');
+const path = require('path');
+
+const RACINE = path.resolve(__dirname, '..');
+const SORTIE = path.join(RACINE, 'outils', 'cartes');
+
+/* ---------- Format ----------
+   65 × 65 mm est le carré des imprimeurs en ligne français (MOO, Vistaprint). Le fond
+   perdu de 3 mm par côté est ce qu'ils demandent tous : le fond doit déborder du trait
+   de coupe, sinon un liseré blanc apparaît au massicot. La marge de sécurité tient le
+   texte à distance de ce même trait — une coupe se déplace toujours d'un demi-millimètre. */
+const MM = { carte: 65, fond: 3, securite: 5 };
+MM.page = MM.carte + 2 * MM.fond;     // 71 mm
+MM.marge = MM.fond + MM.securite;     // 8 mm depuis le bord de la planche
+
+/* ---------- Ce qu'on lit dans l'application ---------- */
+function lireSource() {
+  return fs.readFileSync(path.join(RACINE, 'index.html'), 'utf8');
+}
+
+// Les teintes de marque : on les prend dans `:root`, pas dans une copie.
+function couleurs(src) {
+  const bloc = src.slice(src.indexOf(':root{'), src.indexOf('@media (prefers-color-scheme:dark)'));
+  const c = {};
+  bloc.replace(/--([a-z0-9-]+)\s*:\s*(#[0-9A-Fa-f]{3,8})/g, (m, k, v) => { c[k] = v; return m; });
+  const exige = ['sand', 'sand-2', 'card', 'ink', 'ink-soft', 'muted', 'hair', 'teal', 'teal-deep', 'coral', 'coral-deep'];
+  const manque = exige.filter(k => !c[k]);
+  if (manque.length) throw new Error('Teintes introuvables dans :root — ' + manque.join(', '));
+  return c;
+}
+
+// L'encodeur de QR-code de l'application, exécuté tel quel. On le délimite par deux
+// repères stables ; s'ils bougent, on lève plutôt que de produire un QR d'une autre source.
+function qrDeLApp(src) {
+  const a = src.indexOf('  const QRC_DATA =');
+  const b = src.indexOf('  function qrSvg(px,kind){');
+  if (a < 0 || b < 0 || b < a) throw new Error('Encodeur QR introuvable dans index.html');
+  const bloc = src.slice(a, b);
+  const f = new Function(bloc + '\n;return {qrEncode,qrSvgFrom};');
+  return f();
+}
+
+// Zouti : le fichier statique, pas la version animée — une carte ne bouge pas.
+function zouti() {
+  const svg = fs.readFileSync(path.join(RACINE, 'zouti-logo.svg'), 'utf8').trim();
+  // On retire les dimensions fixes : la carte décide de la taille.
+  return svg.replace(/\s(width|height)="[^"]*"/g, '').replace('<svg', '<svg class="zouti"');
+}
+
+/* TROIS GRAISSES FIXES, PAS UNE POLICE VARIABLE. Le premier jet embarquait Inter en
+   variable : Chromium ne sait pas en découper une instance pour un PDF et retombe sur des
+   glyphes de TYPE 3 — mesuré, `pdffonts` le disait. Un Type 3 n'est ni cherchable ni
+   sélectionnable, et plusieurs RIP d'imprimerie le rendent mal ou le refusent. Les trois
+   instances fixes (500, 700, 800) sont tirées de la variable par `fontTools` et
+   s'embarquent en TrueType découpé. C'est pour cela que les graisses du gabarit sont
+   exactement 500, 700 et 800 : une valeur intermédiaire ferait synthétiser un gras à
+   l'imprimeur, et deux tirages ne se ressembleraient plus. */
+const GRAISSES = [500, 700, 800];
+function police() {
+  return GRAISSES.map(g => {
+    const f = path.join(SORTIE, 'Inter-' + g + '.ttf');
+    if (!fs.existsSync(f)) throw new Error('Police absente : ' + f);
+    return { g, b64: fs.readFileSync(f).toString('base64') };
+  });
+}
+
+/* ---------- Les deux cartes ----------
+   Le recto PRÉSENTE, le verso DONNE L'ADRESSE. Les phrases ne sont pas inventées ici :
+   ce sont celles de la vitrine, dont la formulation a déjà été arbitrée. */
+const CARTES = [
+  {
+    cle: 'client',
+    url: 'https://ti-services.fr/?client',
+    punch: 'Un pro de confiance,<br>chez vous en quelques minutes.',
+    services: 'Ménage · Garde d’enfants · Jardinage · Coiffure · Massage · Plomberie · Piscine',
+    versoTitre: 'Réservez en deux gestes',
+    versoPied: 'Gratuit · sans abonnement'
+  },
+  {
+    cle: 'pro',
+    url: 'https://ti-services.fr/?pro',
+    punch: 'Des clients,<br>sans prospecter.',
+    services: 'Vous choisissez vos missions · Vous êtes payé après validation',
+    versoTitre: 'Inscrivez-vous',
+    versoPied: 'Les services ouvrent le 1er octobre'
+  }
+];
+
+/* ---------- Le gabarit ---------- */
+function feuille(c, polices) {
+  return `
+  ${polices.map(p => `@font-face{font-family:'Inter';font-style:normal;font-weight:${p.g};
+    font-display:block;src:url(data:font/ttf;base64,${p.b64}) format('truetype')}`).join('\n  ')}
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:${MM.page}mm;height:${MM.page}mm}
+  body{font-family:'Inter',sans-serif;-webkit-font-smoothing:antialiased;
+    text-rendering:geometricPrecision;font-feature-settings:"kern" 1}
+  .carte{position:relative;width:${MM.page}mm;height:${MM.page}mm;overflow:hidden;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:${MM.marge}mm;text-align:center}
+  /* AUCUN BLOC NE SE LAISSE ÉCRASER. Dans une colonne souple, un contenu un peu trop haut
+     rétrécit ce qui peut l'être — et c'est le dessin qui cède le premier : Zouti est sorti
+     à 7 mm au lieu de 21. On fixe donc chaque bloc, et c'est la composition qui doit tenir
+     dans la hauteur, pas le logo qui doit rapetisser pour elle. */
+  .carte>*{flex:none}
+  /* Le fond « lagon » de l'application, ramené à ce qu'un aplat imprimé sait rendre :
+     deux voiles de couleur sur le sable, sans transparence empilée. */
+  .recto{background:
+      radial-gradient(70% 55% at 14% -6%, ${c['teal']}22, transparent 62%),
+      radial-gradient(64% 52% at 106% 6%, #A26A0C14, transparent 58%),
+      radial-gradient(76% 60% at 60% 112%, #5EC9C11A, transparent 60%),
+      ${c['sand']}}
+  .verso{background:linear-gradient(155deg, ${c['teal']} 0%, ${c['teal-deep']} 100%);color:#fff}
+
+  .zouti{width:16mm;height:auto;display:block}
+  .mot{font-weight:800;font-size:6mm;letter-spacing:-.02em;line-height:1;margin-top:2.4mm}
+  .mot b{color:${c['teal-deep']};font-weight:800}
+  .mot span{color:${c['ink']}}
+  .lieu{display:flex;align-items:center;justify-content:center;gap:.9mm;margin-top:1.5mm;
+    font-size:2.2mm;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:${c['teal-deep']}}
+  .lieu svg{width:2.3mm;height:2.3mm}
+  .filet{width:8mm;height:.4mm;border-radius:.4mm;background:${c['teal-deep']};opacity:.38;margin:3.2mm 0}
+  .punch{font-size:3.5mm;font-weight:800;line-height:1.25;letter-spacing:-.015em;color:${c['ink']};
+    text-wrap:balance}
+  .services{margin-top:2.8mm;font-size:2.05mm;line-height:1.55;font-weight:500;color:${c['muted']};
+    max-width:45mm;text-wrap:balance}
+
+  .v-mot{font-weight:800;font-size:4.2mm;letter-spacing:-.02em;color:#fff;opacity:.96}
+  .v-titre{margin-top:.7mm;font-size:2.2mm;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
+    color:#fff;opacity:.86}
+  .tuile{margin:3.2mm 0 3mm;background:#fff;border-radius:2.6mm;padding:2mm;
+    box-shadow:0 1mm 3mm rgba(60,20,14,.18);line-height:0}
+  .tuile svg{display:block;width:25mm;height:25mm}
+  .v-url{font-size:3.4mm;font-weight:800;letter-spacing:-.01em;color:#fff}
+  /* LE PIED RESTE DANS LE FLUX. Posé en absolu au bas de la carte, il venait se coucher
+     sur la ligne du dessus dès que celle-ci prenait trois lignes — et rien ne le disait
+     avant le rendu. Une carte n'a pas de place à gaspiller : ce qui tient dans la colonne
+     est ce qui rentre. */
+  .v-pied{margin-top:2.6mm;font-size:2.1mm;font-weight:700;letter-spacing:.06em;
+    text-transform:uppercase;color:#fff;opacity:.78;max-width:46mm;text-wrap:balance}
+
+  @page{size:${MM.page}mm ${MM.page}mm;margin:0}
+  @media print{html,body{margin:0}}`;
+}
+
+const PIN = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>`;
+
+function pageHtml(titre, style, corps) {
+  return `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">
+<title>${titre}</title><style>${style}</style></head><body>${corps}</body></html>`;
+}
+
+function recto(c, carte, logo, style) {
+  return pageHtml(`Ti-Services — carte ${carte.cle}, recto`, style, `<div class="carte recto">
+  ${logo}
+  <div class="mot"><b>Ti</b><span>-Services</span></div>
+  <div class="lieu">${PIN}Saint-Barthélemy</div>
+  <div class="filet"></div>
+  <div class="punch">${carte.punch}</div>
+  <div class="services">${carte.services}</div>
+</div>`);
+}
+
+function verso(carte, qrSvg, style) {
+  return pageHtml(`Ti-Services — carte ${carte.cle}, verso`, style, `<div class="carte verso">
+  <div class="v-mot">Ti-Services</div>
+  <div class="v-titre">${carte.versoTitre}</div>
+  <div class="tuile">${qrSvg}</div>
+  <div class="v-url">ti-services.fr</div>
+  <div class="v-pied">${carte.versoPied}</div>
+</div>`);
+}
+
+/* ---------- Aperçu : les quatre faces côte à côte, à l'échelle ---------- */
+function apercu(faces, c) {
+  const vign = faces.map(f => `<figure>
+    <div class="cadre"><iframe src="${f.fichier}" scrolling="no" title="${f.titre}"></iframe>
+      <span class="coupe" aria-hidden="true"></span></div>
+    <figcaption>${f.titre}</figcaption></figure>`).join('');
+  return `<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cartes de visite Ti-Services</title><style>
+  :root{color-scheme:light}
+  body{margin:0;padding:34px 24px 46px;background:${c['sand-2']};
+    font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;color:${c['ink']}}
+  h1{margin:0 auto 6px;max-width:980px;font-size:24px;letter-spacing:-.02em}
+  .sous{margin:0 auto 26px;max-width:980px;color:${c['muted']}}
+  /* DEUX COLONNES, PAS « autant qu'il rentre » : on regarde un recto ET son verso, pas
+     quatre faces à la file — à trois par rangée, le verso d'une carte se retrouvait à
+     côté du recto de l'autre. */
+  .grille{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:26px 30px;
+    max-width:720px;margin:0 auto}
+  @media (max-width:620px){.grille{grid-template-columns:1fr}}
+  figure{margin:0}
+  .cadre{position:relative;width:100%;aspect-ratio:1;background:#fff;border-radius:14px;
+    box-shadow:0 10px 30px -14px rgba(60,30,20,.45);overflow:hidden}
+  iframe{position:absolute;inset:0;width:${MM.page}mm;height:${MM.page}mm;border:0;
+    transform-origin:0 0}
+  /* Le trait de coupe : ce qui sera VRAIMENT sur la carte est à l'intérieur. */
+  .coupe{position:absolute;inset:${(MM.fond / MM.page * 100).toFixed(3)}%;
+    border:1px dashed rgba(206,48,28,.5);border-radius:2px;pointer-events:none}
+  figcaption{margin-top:10px;font-size:13px;font-weight:650;color:${c['ink-soft']}}
+  .note{max-width:980px;margin:30px auto 0;font-size:13px;line-height:1.7;color:${c['ink-soft']}}
+  .note b{color:${c['ink']}}
+</style></head><body>
+<h1>Cartes de visite Ti-Services</h1>
+<p class="sous">Carré ${MM.carte} × ${MM.carte} mm, fond perdu ${MM.fond} mm.
+  Le pointillé corail est le trait de coupe : tout ce qui est en dehors sera massicoté.</p>
+<div class="grille">${vign}</div>
+<p class="note"><b>À l'impression</b> — envoyez les PDF : ils font ${MM.page} × ${MM.page} mm
+  (carte + fond perdu, planche mesurée 70,87 mm — Chromium arrondit au pixel, l'écart est
+  absorbé par le fond perdu) et portent la police intégrée. Les PNG portent leur densité
+  réelle (≈ 301 ppp) dans le fichier : ils se posent à ${MM.page} mm exactement, ne les
+  rééchantillonnez pas « à 300 ppp ». Les couleurs sont en RVB : la plupart
+  des imprimeries en ligne convertissent elles-mêmes en CMJN ; si la vôtre exige un CMJN
+  profilé, demandez-lui le profil et faites la conversion à l'ouverture du PDF.</p>
+<script>
+  // L'iframe rend la carte à sa taille réelle ; on la met à l'échelle du cadre.
+  function caler(){document.querySelectorAll('.cadre').forEach(function(d){
+    var f=d.querySelector('iframe'), k=d.clientWidth/f.offsetWidth;
+    f.style.transform='scale('+k+')';});}
+  addEventListener('load',caler);addEventListener('resize',caler);caler();
+</script>
+</body></html>`;
+}
+
+/* UN PNG DIT SA TAILLE PHYSIQUE, PAS SEULEMENT SON NOMBRE DE PIXELS. La planche fait
+   71 mm, soit 268,35 px CSS ; le navigateur ne sait pas rendre une fraction de pixel et
+   sort 841 px au lieu des 838,58 attendus à 300 ppp. Placée « à 300 ppp », l'image
+   mesurerait donc 71,2 mm — deux dixièmes de trop. On n'étire pas l'image : on écrit sa
+   densité RÉELLE dans le morceau pHYs (pixels par mètre), et n'importe quel logiciel la
+   pose alors à 71 mm exactement. */
+function poserDensite(fichier) {
+  const buf = fs.readFileSync(fichier);
+  if (buf.readUInt32BE(12) !== 0x49484452) throw new Error('PNG inattendu : ' + fichier);
+  const largeur = buf.readUInt32BE(16);
+  const ppm = Math.round(largeur / (MM.page / 1000));
+  const data = Buffer.alloc(9);
+  data.writeUInt32BE(ppm, 0); data.writeUInt32BE(ppm, 4); data[8] = 1;   // 1 = mètre
+  const type = Buffer.from('pHYs');
+  const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(Buffer.concat([type, data])) >>> 0, 0);
+  const lg = Buffer.alloc(4); lg.writeUInt32BE(9, 0);
+  const morceau = Buffer.concat([lg, type, data, crc]);
+  const finIhdr = 8 + 4 + 4 + buf.readUInt32BE(8) + 4;   // signature + IHDR complet
+  const sansAncien = retirerPhys(buf, finIhdr);
+  fs.writeFileSync(fichier, Buffer.concat([sansAncien.slice(0, finIhdr), morceau, sansAncien.slice(finIhdr)]));
+  return Math.round(ppm * 0.0254);
+}
+function retirerPhys(buf, i) {
+  // Chromium n'en pose pas, mais une exécution sur un PNG déjà traité en poserait un second.
+  let p2 = i;
+  while (p2 + 8 <= buf.length) {
+    const lg = buf.readUInt32BE(p2), type = buf.toString('ascii', p2 + 4, p2 + 8);
+    if (type === 'pHYs') return Buffer.concat([buf.slice(0, p2), buf.slice(p2 + 12 + lg)]);
+    if (type === 'IDAT' || type === 'IEND') break;
+    p2 += 12 + lg;
+  }
+  return buf;
+}
+let TABLE_CRC = null;
+function crc32(b) {
+  if (!TABLE_CRC) { TABLE_CRC = new Int32Array(256);
+    for (let n = 0; n < 256; n++) { let c = n;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      TABLE_CRC[n] = c; } }
+  let c = -1;
+  for (let i = 0; i < b.length; i++) c = TABLE_CRC[(c ^ b[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ -1) >>> 0;
+}
+
+/* ---------- Écriture ---------- */
+async function main() {
+  const verifierSeul = process.argv.includes('--verifier');
+  const src = lireSource();
+  const c = couleurs(src);
+  const { qrEncode, qrSvgFrom } = qrDeLApp(src);
+  const logo = zouti();
+  const b64 = police();
+  const style = feuille(c, b64);
+  fs.mkdirSync(SORTIE, { recursive: true });
+
+  const faces = [];
+  if (!verifierSeul) {
+    for (const carte of CARTES) {
+      const mat = qrEncode(carte.url);
+      if (!mat) throw new Error('QR non encodable : ' + carte.url);
+      const svg = qrSvgFrom(400, mat, 'QR-code Ti-Services');
+      const paires = [
+        ['recto', recto(c, carte, logo, style), 'Carte ' + carte.cle + ' — recto'],
+        ['verso', verso(carte, svg, style), 'Carte ' + carte.cle + ' — verso']
+      ];
+      for (const [face, html, titre] of paires) {
+        const nom = `carte-${carte.cle}-${face}`;
+        fs.writeFileSync(path.join(SORTIE, nom + '.html'), html);
+        faces.push({ cle: carte.cle, face, fichier: nom + '.html', titre, url: carte.url });
+      }
+    }
+    fs.writeFileSync(path.join(SORTIE, 'apercu.html'), apercu(faces, c));
+  } else {
+    for (const carte of CARTES) for (const face of ['recto', 'verso'])
+      faces.push({ cle: carte.cle, face, fichier: `carte-${carte.cle}-${face}.html`,
+        titre: 'Carte ' + carte.cle + ' — ' + face, url: carte.url });
+  }
+
+  // Rendu PDF + PNG. Playwright n'est là que pour ça : le dessin est du HTML.
+  const { chromium } = require(path.join(RACINE, 'node_modules', 'playwright-core'));
+  const opts = { args: ['--no-sandbox', '--font-render-hinting=none'] };
+  if (fs.existsSync('/opt/pw-browsers/chromium')) opts.executablePath = '/opt/pw-browsers/chromium';
+  const nav = await chromium.launch(opts);
+  // 300 ppp : 1 mm = 300/25.4 px. Le PNG sort donc à la taille exacte d'un tirage.
+  const ppmm = 300 / 25.4;
+  const ctx = await nav.newContext({ deviceScaleFactor: ppmm / (96 / 25.4) });
+  const p = await ctx.newPage();
+  for (const f of faces) {
+    const url = 'file://' + path.join(SORTIE, f.fichier);
+    await p.goto(url, { waitUntil: 'load' });
+    await p.evaluate(() => document.fonts.ready);
+    if (!verifierSeul) {
+      const pdf = f.fichier.replace('.html', '.pdf');
+      // `preferCSSPageSize` fait foi de `@page{size:71mm 71mm}`. Passer la taille en
+      // millimètres à `pdf()` la convertissait d'abord en pixels à 96 ppp, puis en points :
+      // la planche sortait à 71,29 mm — un quart de millimètre qu'un imprimeur relève.
+      await p.pdf({ path: path.join(SORTIE, pdf), preferCSSPageSize: true,
+        printBackground: true, margin: { top: 0, right: 0, bottom: 0, left: 0 }, pageRanges: '1' });
+    }
+    const png = f.fichier.replace('.html', '.png');
+    await p.locator('.carte').screenshot({ path: path.join(SORTIE, png) });
+    f.png = png;
+    f.ppp = poserDensite(path.join(SORTIE, png));
+  }
+  await nav.close();
+
+  // VÉRIFICATION DU QR SUR L'IMAGE RENDUE, avec un décodeur indépendant. Une carte de
+  // visite ne se corrige pas après tirage : on ne se fie pas à l'encodeur pour se relire.
+  const { execFileSync } = require('child_process');
+  let decodeur = true;
+  for (const f of faces.filter(x => x.face === 'verso')) {
+    let lu = '';
+    try { lu = execFileSync('zbarimg', ['-q', '--raw', path.join(SORTIE, f.png)], { encoding: 'utf8' }).trim(); }
+    catch (e) { decodeur = false; lu = '(zbarimg absent ou muet)'; }
+    const ok = lu === f.url;
+    console.log((ok ? '  ✓ ' : '  ✗ ') + f.png + ' → ' + lu + (ok ? '' : '   ATTENDU ' + f.url));
+    if (!ok && decodeur) process.exitCode = 1;
+  }
+  if (!decodeur) console.log('  ⚠︎ décodeur indépendant indisponible — QR NON vérifié');
+  console.log('\n' + faces.length + ' faces dans outils/cartes/ · ' +
+    MM.carte + '×' + MM.carte + ' mm, fond perdu ' + MM.fond + ' mm (planche ' + MM.page + '×' + MM.page + ' mm)');
+  if (faces[0] && faces[0].ppp) console.log('PNG : ' + faces[0].ppp + ' ppp réels, densité écrite dans le fichier — posé à 71 mm exactement');
+}
+
+main().catch(e => { console.error(e); process.exit(1); });
