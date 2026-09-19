@@ -3907,13 +3907,20 @@ exports.mollieActivationReminder = onSchedule({schedule: 'every monday 13:00', s
     const last = Number(a.mollieRelanceAt) || 0;
     if (last && (nowMs - last) < 6 * 86400 * 1000) continue;
     const n = (Number(a.mollieRelances) || 0) + 1;
+    // Arrivé ici avec mollieCanWork à true, c'est forcément le cas « pièce réclamée »
+    // (le filtre du dessus a écarté les autres) : il travaille, seuls ses virements
+    // sont retenus. On ne lui dit pas qu'il ne peut pas travailler.
+    const peutTravailler = a.mollieCanWork === true;
     // Notification : le canal qui porte le mieux sur un téléphone.
     try {
       const u = (await db.collection('users').doc(d.id).get()).data() || {};
       const tokens = u.pushTokens || [];
       if (tokens.length) {
-        await pushMulticast(tokens, 'Tes paiements ne sont pas encore activés',
-          'Sans cette étape tu ne peux accepter aucune mission. Quelques minutes suffisent.',
+        await pushMulticast(tokens,
+          peutTravailler ? 'Mollie attend encore une pièce' : 'Tes paiements ne sont pas encore activés',
+          peutTravailler
+            ? 'Tu peux travailler, mais tes virements restent fermés tant que la pièce manque.'
+            : 'Sans cette étape tu ne peux accepter aucune mission. Quelques minutes suffisent.',
           '/?open=missions',
           (tok) => db.collection('users').doc(d.id).update({pushTokens: FieldValue.arrayRemove(tok)}).catch(() => {}));
       }
@@ -3922,8 +3929,10 @@ exports.mollieActivationReminder = onSchedule({schedule: 'every monday 13:00', s
     if (a.email) {
       try {
         await sendMail(db, a.email, {
-          subject: 'Il te reste une étape pour recevoir des missions',
-          html: mollieReminderHtml(String(a.name || '').trim(), n),
+          subject: peutTravailler
+            ? 'Mollie attend une pièce pour ouvrir tes virements'
+            : 'Il te reste une étape pour recevoir des missions',
+          html: mollieReminderHtml(String(a.name || '').trim(), n, peutTravailler),
           attachments,
         });
       } catch (e) { console.warn('mollieActivationReminder mail', d.id, e); }
@@ -4834,17 +4843,44 @@ function inviteArtisanHtml(name, message) {
  * culpabilisant : on rappelle la conséquence concrète plutôt que de réclamer une
  * démarche. Au fil des relances le message se resserre — on ne répète pas mot pour mot
  * une chose déjà lue trois fois. Sert aussi à la relance manuelle (sendMollieRelance).
+ *
+ * `peutTravailler` (mollieCanWork) choisit LEQUEL des deux messages part. Faux : aucun
+ * compte de paiement, il ne peut accepter aucune mission. Vrai : Mollie l'autorise déjà
+ * à encaisser et lui réclame seulement une pièce — il travaille, ce sont ses VIREMENTS
+ * qui sont retenus. Confondre les deux revient à lui écrire chaque semaine qu'il ne
+ * peut pas travailler alors qu'il travaille.
  */
-function mollieReminderHtml(name, n) {
+function mollieReminderHtml(name, n, peutTravailler) {
   const app = APP_URL.replace(/\/$/, '');
   const c1 = '#0FA896'; const c2 = '#14C2A8'; const btn = '#0FA896';
   const hi = name ? escHtmlS(String(name).split(/\s+/)[0]) : '';
   const relance = Number(n) || 1;
-  const accroche = relance >= 3
-    ? 'Ton profil est validé depuis un moment, et tu ne peux toujours <b>pas accepter de mission</b>. Il ne manque qu\'une chose.'
-    : (relance === 2
-      ? 'Petit rappel&nbsp;: sans compte de paiement, tu ne peux <b>pas encore accepter de mission</b>.'
-      : 'Ton profil est validé — il ne manque plus que tes <b>paiements</b>.');
+  // DEUX SITUATIONS, DEUX MESSAGES. Celui dont Mollie a ouvert l'encaissement TRAVAILLE
+  // déjà (voir mollieCanWork) : lui écrire « tu ne peux accepter aucune mission » est
+  // faux, et une contrevérité reçue tous les lundis apprend à ne plus ouvrir nos
+  // courriers. Ce qui lui manque, c'est une pièce pour que ses VIREMENTS s'ouvrent —
+  // pas un compte de paiement, il en a un.
+  const bloque = !peutTravailler;
+  const accroche = bloque
+    ? (relance >= 3
+      ? 'Ton profil est validé depuis un moment, et tu ne peux toujours <b>pas accepter de mission</b>. Il ne manque qu\'une chose.'
+      : (relance === 2
+        ? 'Petit rappel&nbsp;: sans compte de paiement, tu ne peux <b>pas encore accepter de mission</b>.'
+        : 'Ton profil est validé — il ne manque plus que tes <b>paiements</b>.'))
+    : (relance >= 3
+      ? 'Mollie attend cette pièce depuis un moment. Tant qu\'elle manque, <b>ton argent reste en attente</b> au lieu d\'arriver sur ton compte.'
+      : (relance === 2
+        ? 'Petit rappel&nbsp;: Mollie attend toujours une pièce pour ouvrir tes <b>virements</b>. Tes missions, elles, continuent.'
+        : 'Tu peux déjà accepter des missions. Mollie retient seulement tes <b>virements</b>, le temps de recevoir une pièce.'));
+  const titreH1 = bloque ? ' te reste une étape' : ' te reste un document';
+  const bloc1Titre = bloque ? '1 · Active tes paiements' : '1 · Envoie la pièce que Mollie demande';
+  const bloc1Texte = bloque
+    ? 'Ton argent t\'est versé <b>automatiquement</b> après chaque prestation&nbsp;: pas de facture à courir, pas de virement à réclamer. Pour ça il faut un compte de paiement à ton nom chez <b>Mollie</b>, notre prestataire agréé. C\'est <b>une seule fois</b>, et l\'application te guide question par question.'
+    : 'Ton compte de paiement existe déjà, et tu peux travailler. Il manque une pièce — <b>pièce d\'identité, IBAN…</b> — pour que <b>Mollie</b> ouvre tes virements. L\'application te dit exactement laquelle. <b>Tes gains déjà acquis te restent dus</b> et partiront dès l\'ouverture.';
+  const bloc1Bouton = bloque ? 'Activer mes paiements' : 'Envoyer ma pièce';
+  const bas = bloque
+    ? 'Mollie vérifie ton identité et ton IBAN&nbsp;: ça peut prendre jusqu\'à 48&nbsp;h. Mieux vaut ne pas s\'y prendre au dernier moment. Tu reçois ce message chaque semaine tant que tes paiements ne sont pas actifs — il s\'arrête tout seul dès que c\'est fait.'
+    : 'Ce contrôle se déclenche après une première transaction&nbsp;: c\'est une étape normale, pas un problème sur ton dossier. Dès que Mollie a validé la pièce, tes virements s\'ouvrent et ce qui t\'attend part tout seul. Tu reçois ce message chaque semaine tant que la pièce manque.';
   return '' +
   '<div style="margin:0;padding:0;background:#FBF7F4;font-family:-apple-system,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;color:#231E33">' +
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FBF7F4;padding:24px 12px">' +
@@ -4857,15 +4893,15 @@ function mollieReminderHtml(name, n) {
             '<div style="font-size:12px;color:#8a8494;margin-top:2px">Services à la demande · Saint-Barthélemy</div>' +
           '</td></tr>' +
           '<tr><td style="padding:16px 30px 0">' +
-            '<h1 style="font-size:21px;margin:6px 0 0;color:#231E33">' + (hi ? (hi + ', il') : 'Il') + ' te reste une étape</h1>' +
+            '<h1 style="font-size:21px;margin:6px 0 0;color:#231E33">' + (hi ? (hi + ', il') : 'Il') + titreH1 + '</h1>' +
             '<p style="font-size:14.5px;line-height:1.6;color:#4a4556;margin:12px 0 0">' + accroche + '</p>' +
             // 1 — les paiements. Le vrai verrou : sans compte Mollie, aucune mission acceptable.
             '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#EAF6F3;border:1px solid #cfece7;border-radius:14px;margin-top:16px">' +
               '<tr><td style="padding:16px 18px">' +
-                '<div style="font-size:15px;font-weight:800;color:#231E33">1 · Active tes paiements</div>' +
-                '<div style="font-size:13.5px;color:#4a4556;line-height:1.55;margin-top:7px">Ton argent t\'est versé <b>automatiquement</b> après chaque prestation&nbsp;: pas de facture à courir, pas de virement à réclamer. Pour ça il faut un compte de paiement à ton nom chez <b>Mollie</b>, notre prestataire agréé. C\'est <b>une seule fois</b>, et l\'application te guide question par question.</div>' +
+                '<div style="font-size:15px;font-weight:800;color:#231E33">' + bloc1Titre + '</div>' +
+                '<div style="font-size:13.5px;color:#4a4556;line-height:1.55;margin-top:7px">' + bloc1Texte + '</div>' +
                 '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px"><tr><td align="center">' +
-                  '<a href="' + app + '/?open=missions" style="display:inline-block;background:' + btn + ';color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 24px;border-radius:11px">Activer mes paiements</a>' +
+                  '<a href="' + app + '/?open=missions" style="display:inline-block;background:' + btn + ';color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 24px;border-radius:11px">' + bloc1Bouton + '</a>' +
                 '</td></tr></table>' +
                 '<div style="font-size:12px;color:#8a8494;line-height:1.5;margin-top:10px;text-align:center">Compte quelques minutes — c\'est plus simple depuis un <b>ordinateur</b>.</div>' +
               '</td></tr>' +
@@ -4880,7 +4916,7 @@ function mollieReminderHtml(name, n) {
                 '</td></tr></table>' +
               '</td></tr>' +
             '</table>' +
-            '<p style="font-size:13px;line-height:1.6;color:#8a8494;margin:16px 0 0">Mollie vérifie ton identité et ton IBAN&nbsp;: ça peut prendre jusqu\'à 48&nbsp;h. Mieux vaut ne pas s\'y prendre au dernier moment. Tu reçois ce message chaque semaine tant que tes paiements ne sont pas actifs — il s\'arrête tout seul dès que c\'est fait.</p>' +
+            '<p style="font-size:13px;line-height:1.6;color:#8a8494;margin:16px 0 0">' + bas + '</p>' +
             '<p style="font-size:13px;line-height:1.6;color:#8a8494;margin:12px 0 0">Un blocage, une question&nbsp;? Réponds simplement à cet e-mail.</p>' +
           '</td></tr>' +
           '<tr><td style="padding:22px 30px 26px">' +
@@ -5234,9 +5270,12 @@ exports.sendMollieRelance = onCall({secrets: [SMTP_PASS]}, async (request) => {
     const logo = require('fs').readFileSync(require('path').join(__dirname, 'mail-logo.png'));
     attachments.push({filename: 'ti-services.png', content: logo, cid: 'tilogo'});
   } catch (_) {}
+  const peutTravailler = a.mollieCanWork === true;
   const ok = await sendMail(db, email, {
-    subject: 'Il te reste une étape pour recevoir des missions',
-    html: mollieReminderHtml(String(a.name || '').trim(), n),
+    subject: peutTravailler
+      ? 'Mollie attend une pièce pour ouvrir tes virements'
+      : 'Il te reste une étape pour recevoir des missions',
+    html: mollieReminderHtml(String(a.name || '').trim(), n, peutTravailler),
     attachments,
   });
   if (!ok) throw new HttpsError('internal', 'L\'envoi a échoué — réessayez.');
