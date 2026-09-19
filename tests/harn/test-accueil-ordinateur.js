@@ -57,12 +57,15 @@ ok(ordi.mobileDabord,'le bandeau l’explique : c’est l’app installée qui p
 ok(ordi.defile,'l’écran défile désormais — avant, la page n’avait rien en dessous');
 ok(!ordi.deborde,'et rien ne déborde en largeur');
 
-console.log('\nC — le téléphone ne bouge pas d’un pixel');
-ok(!tel.plus,'le bloc ajouté n’existe pas sur téléphone : la vitrine y est déjà complète');
-// 226 = le côté PRESTATAIRE, celui que la vitrine affiche par défaut (`show-pro`).
-ok(tel.mots===226,'le compte de mots y est inchangé ('+tel.mots+')');
+console.log('\nC — sur téléphone, RIEN ne change sauf ce qui a été demandé');
+// La mise en page du téléphone est restée telle quelle à chaque étape de ce travail. Une
+// seule chose y a changé, et sur demande expresse : la liste des métiers, qui porte
+// désormais les icônes du catalogue au lieu de pastilles de couleur.
+ok(!tel.plus,'le bloc du grand écran n’existe pas sur téléphone : la vitrine y est déjà complète');
 ok(tel.etapes===3&&tel.ile===1&&tel.hauteurBrief>1000,
-  'et la vitrine garde ses étapes, son île et sa hauteur ('+tel.hauteurBrief+' px)');
+  'la vitrine garde ses étapes, son île et sa hauteur ('+tel.hauteurBrief+' px)');
+ok(tel.metiers===ordi.metiers,
+  'et sa liste de métiers est celle du catalogue, la même que sur grand écran ('+tel.metiers+')');
 
 console.log('\nC bis — c’est une VITRINE : le client, les boutons, le professionnel');
 {
@@ -100,7 +103,7 @@ console.log('\nC bis — c’est une VITRINE : le client, les boutons, le profes
   await ctx.close();
 }
 
-console.log('\nC ter — les métiers portent leur ICÔNE, pas un rond de couleur');
+console.log('\nC ter — les métiers viennent du CATALOGUE, avec leurs icônes, et se mettent à jour seuls');
 {
   const lire=async(w)=>{
     const ctx=await b.newContext({viewport:{width:w,height:950},locale:'fr-FR',isMobile:w<500,hasTouch:w<500});
@@ -115,16 +118,82 @@ console.log('\nC ter — les métiers portent leur ICÔNE, pas un rond de couleu
         icones:ch.filter(c=>c.querySelector('.jc-ico svg')).length,
         pastilles:ch.filter(c=>c.querySelector('i')).length,
         hauteurs:[...new Set(ch.map(c=>Math.round(c.getBoundingClientRect().height)))],
-        teintes:new Set(ch.map(c=>(c.querySelector('.jc-ico')||{style:{}}).style.color)).size};});
+        teintes:new Set(ch.map(c=>(c.querySelector('.jc-ico')||{style:{}}).style.color)).size,
+        catalogue:(window.__S.customServices||[]).length+21};});
     await ctx.close(); return r;
   };
   const g=await lire(1512), m=await lire(390);
-  ok(g.clone&&g.icones===g.n&&g.pastilles===0,
-    'sur grand écran, les '+g.n+' métiers portent l’icône de la charte et plus aucune pastille');
-  ok(g.teintes>=7,'chacune garde la teinte de son service ('+g.teintes+' teintes distinctes) : c’est ce qui rend la grille lisible d’un coup d’œil');
-  ok(g.hauteurs.length===1,'et toutes les puces ont la même hauteur ('+g.hauteurs.join(', ')+' px) — aucun libellé ne passe à la ligne');
-  ok(!m.clone&&m.pastilles===m.n&&m.icones===0,
-    'le téléphone garde ses pastilles, comme demandé — '+m.pastilles+' sur '+m.n);
+  ok(g.clone&&g.n===g.catalogue,
+    'la grille porte TOUT le catalogue ('+g.n+' métiers), plus les neuf écrits à la main');
+  ok(g.icones===g.n&&g.pastilles===0,
+    'chacun porte l’icône de la charte, et plus aucune pastille');
+  ok(g.teintes>=7,'chacune garde la teinte de son service ('+g.teintes+' distinctes) — c’est ce qui rend la grille lisible d’un coup d’œil');
+  ok(g.hauteurs.length===1,'toutes les puces ont la même hauteur ('+g.hauteurs.join(', ')+' px), quelle que soit la longueur du nom');
+  ok(!m.clone&&m.icones===m.n&&m.pastilles===0,
+    'le téléphone porte les mêmes icônes, à la même source — '+m.icones+' sur '+m.n);
+  ok(m.n===g.n,'et la même liste : le catalogue, pas neuf libellés écrits à la main ('+m.n+')');
+  ok(m.hauteurs.length===1,'ses puces ont elles aussi une seule hauteur ('+m.hauteurs.join(', ')+' px)');
+
+  // LA MISE À JOUR SE FAIT SEULE. `loadCatalog` écoute le document en continu, dès
+  // l'ouverture et AVANT toute connexion ; `applyCatalogDoc` appelle `render`. Il n'y a
+  // donc aucun bouton à presser : on éprouve ici que la grille se refait au rendu.
+  const ctx=await b.newContext({viewport:{width:1512,height:950},locale:'fr-FR'});
+  const p3=await ctx.newPage();
+  await p3.goto(F); await p3.waitForFunction(()=>window.__S&&window.__render&&window.__svc); await p3.waitForTimeout(700);
+  const avant=await p3.evaluate(()=>[...document.querySelectorAll('.welcome-plus .jchip')].length);
+  const apres=await p3.evaluate(()=>{const S=window.__S;
+    S.customServices=[{id:'vitrerie',nm:'Vitrerie',rate:40,custom:true,ico:'other'}];
+    window.__svc.renomme('menage','Ménage & repassage');
+    window.__render();
+    return [...document.querySelectorAll('.welcome-plus .jchip')].map(c=>c.innerText.trim());});
+  ok(apres.length===avant+1&&apres.some(x=>/Vitrerie/.test(x)),
+    'un métier ajouté depuis la console paraît sur la vitrine, sans qu’on touche à rien ('+avant+' → '+apres.length+')');
+  ok(apres.some(x=>/Ménage & repassage/.test(x)),
+    'et un métier renommé porte son nouveau nom');
+  await ctx.close();
+  // Et la vitrine du TÉLÉPHONE se repeint elle aussi, aux trois moments où il le faut.
+  const ctxT=await b.newContext({viewport:{width:390,height:844},locale:'fr-FR',isMobile:true,hasTouch:true});
+  const pt=await ctxT.newPage();
+  await pt.goto(F); await pt.waitForFunction(()=>window.__S&&window.__render&&window.__svc); await pt.waitForTimeout(700);
+  const telAv=await pt.evaluate(()=>[...document.querySelectorAll('.brief .jchip')].length);
+  const telAp=await pt.evaluate(()=>{const S=window.__S;
+    S.customServices=[{id:'vitrerie',nm:'Vitrerie',rate:40,custom:true,ico:'other'}];
+    window.__svc.renomme('menage','Ménage & repassage');
+    // le chemin réel : un instantané du catalogue redessine ET repeint la vitrine
+    if(typeof window.__render==='function')window.__render();
+    const f=document.querySelector('.brief [data-act="lang-fr"]'); if(f)f.click();
+    return [...document.querySelectorAll('.brief .jchip')].map(c=>c.innerText.trim());});
+  ok(telAp.length===telAv+1&&telAp.some(x=>/Vitrerie/.test(x))&&telAp.some(x=>/Ménage & repassage/.test(x)),
+    'sur téléphone aussi, l’ajout et le renommage arrivent sans qu’on touche à rien ('+telAv+' → '+telAp.length+')');
+  const enTel=await pt.evaluate(()=>{const x=document.querySelector('.brief [data-act="lang-en"]');if(x)x.click();
+    return new Promise(r=>setTimeout(()=>r([...document.querySelectorAll('.brief .jchip')].slice(0,3).map(c=>c.innerText.trim())),600));});
+  ok(enTel.every(x=>!/^(Jardinage|Coiffure|Déménagement)$/.test(x)),
+    'et la grille peinte se traduit — on peint AVANT de traduire, sinon elle resterait en français : '+enTel.join(' · '));
+  await ctxT.close();
+
+  const src2=fs.readFileSync(path.join(RACINE,'index.html'),'utf8');
+  ok(/if\(ecritDansCatalogue\(\)\)return; render\(\);/.test(src2),
+    'chaque instantané du catalogue redessine : c’est ce qui rend la mise à jour automatique');
+  ok(/loadCatalog\(\); \/\/ catalogue partagé/.test(src2),
+    'et l’écoute démarre à l’ouverture, avant toute connexion — donc sur la vitrine aussi');
+  ok(/render\(\); applyLandLang\(\); \}/.test(src2),
+    'le même instantané repeint la vitrine du téléphone, que `render` ne touche pas');
+}
+
+console.log('\nC quater — les deux boutons d’inscription ne sont qu’à UN endroit');
+{
+  const ctx=await b.newContext({viewport:{width:1512,height:950},locale:'fr-FR'});
+  const p4=await ctx.newPage();
+  await p4.goto(F); await p4.waitForFunction(()=>window.__S&&window.__render); await p4.waitForTimeout(700);
+  const r=await p4.evaluate(()=>{
+    const vu=e=>{const r2=e.getBoundingClientRect();return r2.width>0&&r2.height>0;};
+    const dans=s2=>[...document.querySelectorAll(s2)].filter(vu).map(e=>e.dataset.act);
+    return {heros:dans('.welcome .footcta>.btn.choice'), entre:dans('.wp-cta>.btn.choice'),
+      connecter:[...document.querySelectorAll('.welcome .footcta [data-act="show-login"]')].filter(vu).length};});
+  ok(r.heros.length===0,'plus de boutons corail en tête : on ne les offre pas avant d’avoir rien expliqué');
+  ok(r.entre.join(',')==='onb-start,go-artisan-signup','ils sont entre les deux parties, dans l’ordre');
+  ok(r.connecter===1,'et « Déjà un compte ? Se connecter » reste : ce n’est pas la même demande');
+  await ctx.close();
 }
 
 console.log('\nD — une seule source : le contenu est CLONÉ, pas recopié');

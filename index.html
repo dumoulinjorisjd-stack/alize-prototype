@@ -287,10 +287,14 @@
   /* LISTE DES MÉTIERS : en pastilles libres, les lignes finissaient en escalier avec de
      grands vides à droite. Une grille à colonnes égales aligne tout, et la puce colorée
      reprend la couleur du service telle qu'elle apparaît dans l'app. */
-  .jobs{display:grid;grid-template-columns:repeat(auto-fill,minmax(142px,1fr));gap:8px;margin-top:12px}
+  .jobs{display:grid;grid-template-columns:repeat(auto-fill,minmax(142px,1fr));grid-auto-rows:1fr;gap:8px;margin-top:12px}
   .jchip{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:650;color:var(--ink-soft);
     background:var(--card);border:1px solid var(--hair);border-radius:12px;padding:10px 11px;min-width:0}
   .jchip i{width:9px;height:9px;border-radius:50%;flex:none;background:var(--teal-deep)}
+  /* L'icône du métier remplace la pastille : même place, même rôle de repère, mais elle
+     DIT lequel. La teinte du service est portée en ligne par `grilleMetiers`. */
+  .jc-ico{flex:none;display:flex;align-items:center;justify-content:center;width:20px;height:20px}
+  .jc-ico svg{width:19px;height:19px;display:block}
   .jchip span{min-width:0;line-height:1.25}
   /* Petits écrans : on resserre le texte plutôt que de laisser un libellé passer sur
      deux lignes — une seule pastille plus haute étire toute sa rangée. */
@@ -1282,6 +1286,11 @@
   body.desktop .welcome .octo-hero{max-width:230px;margin-left:auto;margin-right:auto}
   body.desktop .welcome .welcome-word{font-size:34px}
   body.desktop .welcome .footcta{max-width:400px;width:100%;margin:14px auto 0;padding:0!important}
+  /* LES DEUX BOUTONS D'INSCRIPTION NE SONT QU'À UN ENDROIT : entre la partie client et la
+     partie professionnelle, là où l'on vient de lire ce que chacune propose. Les laisser
+     aussi en tête, c'était les offrir avant d'avoir rien expliqué — et deux fois. « Déjà
+     un compte ? Se connecter » reste : ce n'est pas la même demande. */
+  body.desktop .welcome .footcta>.btn.choice{display:none}
   body.desktop .welcome .btn.choice{font-size:17px;padding-top:16px;padding-bottom:16px}
   /* CE QUE LA VITRINE DIT, L'ORDINATEUR LE DIT AUSSI. Le contenu est CLONÉ depuis
      l'accueil public (une seule source), et il n'apparaît QUE sur grand écran : sur
@@ -1312,10 +1321,9 @@
   /* Les deux boutons de l'entre-deux : la même paire que le héros, posée au centre. */
   .wp-cta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;max-width:820px;margin:0 auto}
   .wp-cta .btn.choice{margin:0}
-  .welcome-plus .jc-ico{flex:none;display:flex;align-items:center;justify-content:center;width:20px;height:20px}
-  .welcome-plus .jc-ico svg{width:19px;height:19px;display:block}
+
   body.desktop .welcome-plus .jchip{gap:10px;padding:11px 13px;font-size:13px}
-  body.desktop .welcome-plus .jobs{grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}
+  body.desktop .welcome-plus .jobs{grid-template-columns:repeat(auto-fill,minmax(180px,1fr));grid-auto-rows:1fr}
   body.desktop .wp-cols>section>.eyebrow{margin-bottom:10px}
   /* UN SEUL AXE PAR COLONNE. Mesuré avant : dans la colonne de gauche, les blocs
      alternaient start · center · center · start · center · start · center · start — la
@@ -3204,9 +3212,45 @@
   // double — elle dit la même chose des deux côtés. Les identifiants partent aussi : deux
   // éléments qui portent le même `id` dans une page, c'est une animation qui vise le
   // mauvais, et un lecteur d'écran qui trébuche.
+  // La grille des métiers : le catalogue COMPLET, dans son ordre, avec le nom, l'icône et
+  // la teinte du moment. `allSvc` ajoute les services créés depuis la console, `nomCourant`
+  // rend le nom éventuellement réécrit, `svcIco` l'icône éventuellement changée. Les noms
+  // viennent d'un compte administrateur : ils passent par `esc`.
+  function grilleMetiers(){
+    try{
+      const l=(typeof allSvc==='function')?allSvc():[];
+      if(!l.length)return '';
+      return '<div class="jobs">'+l.map(function(s){
+        const nm=(typeof nomCourant==='function')?nomCourant(s.id):(s.nm||s.id);
+        let col='var(--teal-deep)'; try{ col=svcColor(s.id); }catch(_){}
+        return '<span class="jchip"><span class="jc-ico" style="color:'+esc(col)+'">'
+          +((typeof svcIco==='function')?svcIco(s.id):'')+'</span><span>'+esc(nm)+'</span></span>';
+      }).join('')+'</div>';
+    }catch(_){ return ''; }
+  }
+  // LA VITRINE DU TÉLÉPHONE REÇOIT LA MÊME GRILLE. Neuf puces y étaient écrites à la main,
+  // avec leurs libellés et des pastilles de couleur : un métier renommé depuis la console,
+  // un métier ajouté, une icône changée — rien n'arrivait jusqu'à elle. Elle se peint
+  // désormais du catalogue, comme le grand écran, et à la même source.
+  // ELLE SE REPEINT À TROIS MOMENTS, et jamais sur un bouton : à l'ouverture, à chaque
+  // instantané du catalogue (la console écrit, l'écran suit), et après un changement de
+  // langue — `applyLandLang` restaure le français d'origine, donc la grille avec lui.
+  // L'ORDRE COMPTE : on peint AVANT de traduire, sans quoi la traduction s'appliquerait à
+  // des puces qui seraient remplacées juste après, et la liste resterait en français.
+  function peindreMetiers(racine){
+    try{
+      const html=grilleMetiers(); if(!html)return;
+      const src=document.createElement('div'); src.innerHTML=html;
+      const neuve=src.firstElementChild; if(!neuve)return;
+      (racine||document).querySelectorAll('.jobs').forEach(function(j){
+        if(j.closest('.welcome-plus'))return;         // le grand écran a déjà la sienne
+        j.replaceWith(neuve.cloneNode(true));
+      });
+    }catch(_){}
+  }
   var _accueilLargeHtml=null;
   function accueilLargeHtml(){
-    if(_accueilLargeHtml!=null)return _accueilLargeHtml;
+    if(_accueilLargeHtml!=null)return _accueilLargeHtml.replace('<!--METIERS-->',grilleMetiers());
     _accueilLargeHtml='';
     try{
       const br=document.querySelector('.brief'); if(!br)return '';
@@ -3231,14 +3275,14 @@
       // la même que le client verra dans l'application — un métier, un dessin, partout.
       // La teinte du service reste : elle est ce qui rend la grille lisible d'un coup
       // d'œil. Les deux sont déjà écrits (`svcIco`, `svcColor`), on ne dessine rien.
-      if(pro)pro.querySelectorAll('.jchip[data-jobdot]').forEach(function(c){
-        const id=c.getAttribute('data-jobdot'), pt=c.querySelector('i'); if(!pt)return;
-        const svg=(typeof svcIco==='function')?svcIco(id):''; if(!svg)return;
-        const boite=document.createElement('span');
-        boite.className='jc-ico'; boite.innerHTML=svg;
-        try{ boite.style.color=svcColor(id); }catch(_){}
-        pt.replaceWith(boite);
-      });
+      // LA LISTE DES MÉTIERS N'EST PLUS CELLE DE LA VITRINE. Neuf puces étaient écrites à
+      // la main, avec leurs libellés : un métier renommé depuis la console, un métier
+      // ajouté, une icône changée — rien n'arrivait jusqu'ici. On pose un repère, et la
+      // grille se refait à CHAQUE rendu depuis le catalogue vivant. Aucun bouton à
+      // presser : `loadCatalog` écoute le document en continu (dès l'ouverture, avant
+      // toute connexion) et `applyCatalogDoc` appelle `render` — la vitrine se met donc à
+      // jour d'elle-même pendant qu'on la regarde.
+      if(pro){const j=pro.querySelector('.jobs'); if(j)j.replaceWith(document.createComment('METIERS'));}
       // LES DEUX COLONNES DÉMARRENT LEURS CARTES À LA MÊME LIGNE. À gauche un titre de
       // trois lignes, à droite une accroche PUIS un titre de deux : sans zone de titre
       // commune, les premières étapes se retrouvaient décalées. On enveloppe tout ce qui
@@ -3265,7 +3309,7 @@
           ${sec('Vous êtes professionnel',pro)}
         </div>`;
     }catch(_){ _accueilLargeHtml=''; }
-    return _accueilLargeHtml;
+    return _accueilLargeHtml.replace('<!--METIERS-->',grilleMetiers());
   }
   function legalFooter(role){
     const compte = role!=='public';
@@ -4176,7 +4220,7 @@
   function prixSaisi(v){const n=Math.round(parseFloat(String(v).replace(',','.'))||0);return Math.max(0,Math.min(99999,n));}
   function ecritDansCatalogue(){ try{ const a=document.activeElement;
     return !!(a&&a.matches&&a.matches('[data-optname],[data-actname],[data-actgrpname],[data-actpricev],[data-optpricev],[data-catname]')); }catch(_){return false;} }
-  function applyCatalogDoc(d){ if(!d)return; S.nomsMetiers=nomsValides(d.noms); appliquerNoms(); if(Array.isArray(d.services)){ S.customServices=d.services.map(function(s){return {id:s.id,nm:nomNet(s.nm),rate:s.rate,custom:true,ico:icoValide(s.ico)};}); } if(d.catalog&&typeof d.catalog==='object'){ S.adminCatalog=d.catalog; } S.catalogSeed=Number(d.catalogSeed)||0; if(d.options&&typeof d.options==='object'){ S.adminOptions=d.options; } if(ecritDansCatalogue())return; render(); }
+  function applyCatalogDoc(d){ if(!d)return; S.nomsMetiers=nomsValides(d.noms); appliquerNoms(); if(Array.isArray(d.services)){ S.customServices=d.services.map(function(s){return {id:s.id,nm:nomNet(s.nm),rate:s.rate,custom:true,ico:icoValide(s.ico)};}); } if(d.catalog&&typeof d.catalog==='object'){ S.adminCatalog=d.catalog; } S.catalogSeed=Number(d.catalogSeed)||0; if(d.options&&typeof d.options==='object'){ S.adminOptions=d.options; } if(ecritDansCatalogue())return; render(); applyLandLang(); }
   // Catalogue partagé écouté EN TEMPS RÉEL : toute modification admin (prix, prestations,
   // options, métiers) se propage à l'app de chacun sans rechargement. Une seule écoute.
   async function loadCatalog(){ try{ if(!FB||_catalogSub)return; _catalogSub=FB.f.onSnapshot(FB.f.doc(FB.db,'settings','catalog'),function(snap){ applyCatalogDoc(snap.exists()?(snap.data()||{}):{}); },function(e){ console.warn('catalog load',e); }); }catch(e){ console.warn('catalog sub',e); } }
@@ -5132,7 +5176,7 @@
   // de langue, on restaure ce français avant de ré-appliquer la traduction (sinon un
   // aller-retour EN→FR resterait figé en anglais, faute de dictionnaire inverse).
   var _briefFR=null;
-  function applyLandLang(){try{var br=document.querySelector('.brief');if(!br)return;if(_briefFR==null)_briefFR=br.innerHTML;if(br.innerHTML!==_briefFR)br.innerHTML=_briefFR;if(S.lang!=='fr')i18nApply(br);
+  function applyLandLang(){try{var br=document.querySelector('.brief');if(!br)return;if(_briefFR==null)_briefFR=br.innerHTML;if(br.innerHTML!==_briefFR)br.innerHTML=_briefFR;peindreMetiers(br);if(S.lang!=='fr')i18nApply(br);
     // Sélecteur de langue de l'accueil : le panneau est statique (restauré depuis _briefFR),
     // on repositionne donc l'état actif « on » à chaque changement de langue.
     br.querySelectorAll('.langsel-opt').forEach(function(o){o.classList.toggle('on',o.getAttribute('data-act')==='lang-'+S.lang);});
@@ -16681,12 +16725,7 @@
       : 'iPhone&nbsp;: <b>Partager</b> ⬆︎ (en haut) → <b>«&nbsp;Sur l’écran d’accueil&nbsp;»</b>.');}
   // Les puces des métiers de la vitrine reprennent la couleur du service telle qu'elle
   // apparaît dans l'app — un même métier, une même couleur, partout.
-  (function(){try{
-    document.querySelectorAll('.jchip[data-jobdot]').forEach(function(c){
-      const dot=c.querySelector('i'); if(!dot)return;
-      const col=svcColor(c.getAttribute('data-jobdot')); if(col)dot.style.background=col;
-    });
-  }catch(_){}})();
+  (function(){try{ peindreMetiers(); }catch(_){}})();
   // Le métier de l'accroche prestataire défile. Les libellés portent leur article pour
   // que la phrase reste correcte (« du ménage », « de la coiffure », « des massages »).
   // Mouvement réduit : on n'anime pas, on laisse le premier métier.
