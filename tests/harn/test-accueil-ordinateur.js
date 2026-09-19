@@ -79,10 +79,38 @@ console.log('\nC bis — c’est une VITRINE : le client, les boutons, le profes
     const al=e=>{const a=getComputedStyle(e).textAlign;return a==='start'?'left':a;};
     const intro=secs.every(s2=>al(s2.querySelector('.eyebrow'))==='center'
       && al(s2.querySelector('.wp-tete'))==='center');
-    const detail=secs.every(s2=>[...s2.children]
-      .filter(e=>!e.classList.contains('eyebrow')&&!e.classList.contains('wp-tete')
-        &&!(e.previousElementSibling&&e.previousElementSibling.classList.contains('wp-tete')))
-      .every(e=>al(e)==='left'));
+    // Ce qui ANNONCE ou CONCLUT une partie est centré (intertitre, accroche, punchline,
+    // et les deux paragraphes qui encadrent une liste) ; ce qui se LIT en bloc reste au
+    // fer à gauche — les cartes d'étapes, la figure de l'île.
+    const annonce=e=>e.classList.contains('eyebrow')||e.classList.contains('wp-tete')
+      ||e.classList.contains('pitch-sub');
+    const detail=secs.every(s2=>[...s2.children].filter(e=>!annonce(e)).every(e=>al(e)==='left'));
+    const conclut=[...document.querySelectorAll('.welcome-plus .pitch-sub')].every(e=>al(e)==='center');
+    // Les pastilles de confiance sont un flex : c'est leur boîte qu'on mesure, pas leur
+    // `text-align` — et c'est la seule mesure qui dise vraiment « c'est centré ».
+    const mi=e=>{const r=e.getBoundingClientRect();return (r.left+r.right)/2;};
+    const chips=[...document.querySelectorAll('.welcome-plus .pitch-trust')];
+    const chipsCentrees=chips.length===2&&chips.every(c=>{
+      const k=[...c.children]; if(!k.length)return false;
+      const g=k[0].getBoundingClientRect().left, d=k[k.length-1].getBoundingClientRect().right;
+      return Math.abs((g+d)/2-mi(c.parentElement))<=2;});
+    // La mesure d'un texte suivi : les trois encadrés ne courent plus sur toute la largeur.
+    const encadres=[...document.querySelectorAll('.welcome-plus .wp-mobile,.welcome-plus .open-note,.welcome-plus .land-founder')];
+    const mesure=encadres.length===3&&encadres.every(e=>e.getBoundingClientRect().width<=910);
+    // L'entre-deux se nomme : deux boutons corail ne disent pas d'eux-mêmes ce qu'ils font.
+    // Une punchline tient sur UNE ligne sur grand écran : le retour du balisage est celui
+    // du téléphone, où la même phrase ne passe pas. On compte les rectangles de la ligne,
+    // on ne lit pas la feuille de style.
+    const lignes=e=>{const rg=document.createRange();rg.selectNodeContents(e);
+      return new Set([...rg.getClientRects()].map(x=>Math.round(x.top))).size;};
+    const titres=[...document.querySelectorAll('.welcome-plus .wp-tete .pitch-h')];
+    const uneLigne=titres.length===2&&titres.every(e=>lignes(e)===1);
+    const espace=titres.every(e=>/,\s\S/.test(e.innerText.replace(/\s+/g,' ')));
+    const bloc=document.querySelector('.wp-cta-bloc');
+    const tete=bloc&&bloc.querySelector('.eyebrow');
+    const inscr=!!tete&&/inscription|sign up|inscri/i.test(tete.textContent)
+      &&Math.abs(mi(tete)-mi(bloc))<=2
+      &&tete.compareDocumentPosition(bloc.querySelector('.wp-cta'))&Node.DOCUMENT_POSITION_FOLLOWING;
     const ile=document.querySelector('.welcome-plus .cover-isle');
     const mil=e=>{const r=e.getBoundingClientRect();return (r.left+r.right)/2;};
     const pad=document.querySelector('.pad.welcome').getBoundingClientRect();
@@ -90,7 +118,9 @@ console.log('\nC bis — c’est une VITRINE : le client, les boutons, le profes
     const bas=document.querySelector('.welcome-bas').getBoundingClientRect();
     const rangees=secs.map(s2=>{const st=s2.querySelector('.pitch-steps');
       return st?new Set([...st.children].map(e=>Math.round(e.getBoundingClientRect().top))).size:null;});
-    return {introCentree:intro, detailAuFer:detail,
+    return {introCentree:intro, detailAuFer:detail, conclut, chipsCentrees, mesure, inscr,
+      uneLigne, espace, titres:titres.map(e=>e.innerText.replace(/\s+/g,' ')),
+      largeurEncadres:encadres.map(e=>Math.round(e.getBoundingClientRect().width)),
       punchline:parseFloat(getComputedStyle(secs[0].querySelector('.pitch-h')).fontSize),
       ecartIle:Math.round(Math.abs(mil(ile)-mil(secs[0]))),
       sections:secs.length, yClient:y(secs[0]), yCta:y(cta), yPro:y(secs[1]),
@@ -108,7 +138,13 @@ console.log('\nC bis — c’est une VITRINE : le client, les boutons, le profes
   // partie est centré, ce qui se LIT reste ferré à gauche. Avant, les blocs alternaient
   // sans raison DANS une même colonne ; ici la différence d'axe DIT quelque chose.
   ok(g.introCentree,'l’intertitre, l’accroche et la punchline sont centrés — ils annoncent la partie');
-  ok(g.detailAuFer,'les cartes, les listes et les paragraphes restent au fer à gauche — ils se lisent');
+  ok(g.detailAuFer,'les cartes d’étapes et la figure de l’île restent au fer à gauche — elles se lisent');
+  ok(g.conclut,'les deux paragraphes qui encadrent une liste sont centrés : l’un annonce la partie, l’autre la ferme');
+  ok(g.chipsCentrees,'les pastilles de confiance reprennent l’axe de la partie — au fer à gauche, elles étaient le seul bloc décalé');
+  ok(g.mesure,'et les trois encadrés de texte suivi tiennent une mesure lisible ('+g.largeurEncadres.join(' · ')+' px, contre 1 332)');
+  ok(g.inscr,'« Inscription » nomme les deux boutons corail, au-dessus d’eux et sur leur axe');
+  ok(g.uneLigne,'chaque punchline tient sur une seule ligne : '+g.titres.join(' · '));
+  ok(g.espace,'et les deux morceaux restent séparés par une espace — le retour du balisage n’en portait pas');
   ok(g.punchline>=30,'la punchline porte la taille d’un titre ('+g.punchline+' px, contre 26 avant)');
   ok(g.ecartIle<=2,'et le dessin de l’île est centré, plus collé au bord gauche (écart '+g.ecartIle+' px)');
   ok(g.part>=88,'la vitrine occupe '+g.part+' % de la fenêtre — elle en occupait 55');
