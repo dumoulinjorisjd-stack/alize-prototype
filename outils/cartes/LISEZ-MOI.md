@@ -9,6 +9,12 @@ non vingt et un : sur 49 mm de large, la liste complète donnerait des noms de d
 millimètres que personne ne lit. Les icônes, les noms et les teintes viennent du
 catalogue de l'application, comme sur la vitrine.
 
+**Un nom trop long pour sa colonne arrête la génération.** « Colis & courrier » demande
+20,9 mm là où la colonne en offre 18,3 : la carte dit donc « Colis », raccourci déclaré
+dans `LIBELLES_COURTS` et nulle part ailleurs. Tout autre métier garde le nom du
+catalogue, et le script refuse d'écrire un PDF où un nom déborde — on ne peut pas en
+ajouter un sans le voir.
+
 Une ligne — « … et plein d'autres » — dit la suite : six métiers ne sont pas le catalogue,
 et une carte qui n'en montre que six laisserait croire qu'il n'y a que ça.
 
@@ -25,7 +31,8 @@ script refuse d'écrire un PDF qui déborde.
 
 Sur le verso de la carte unique, le **QR-code prend la place de Zouti** : même bloc de
 tête, même axe — on ne met pas deux fois la mascotte sur la même carte, et le geste qu'on
-attend d'un prestataire est de scanner.
+attend d'un prestataire est de scanner. Cette face garde le **corail** des versos : c'est
+à la couleur qu'on voit, carte retournée, qu'on a changé d'interlocuteur.
 
 **Réserve à connaître avant de la faire imprimer** : cette carte ne porte alors aucune
 adresse lisible, ni au recto ni au verso — seulement le QR du côté prestataire. Un client

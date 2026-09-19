@@ -90,6 +90,15 @@ function declaration(src, debut, ouvre, ferme) {
   }
   throw new Error('Déclaration non refermée : ' + debut);
 }
+/* UN NOM DE CATALOGUE QUI NE RENTRE PAS. « Colis & courrier » demande 20,9 mm dans une
+   colonne qui en offre 18,3 — mesuré. Trois sorties possibles : rapetisser le texte que
+   l'éditeur vient de faire grossir, laisser le nom passer à deux lignes (la rangée grandit,
+   la carte déborde), ou le raccourcir ICI. On le raccourcit, en le disant : la carte n'est
+   pas l'application, elle annonce un métier, et « … et plein d'autres » dit déjà que la
+   liste continue. Tout autre nom garde celui du catalogue, et le script REFUSE d'écrire un
+   PDF où un nom déborde de sa colonne — on ne peut donc pas en ajouter un sans le voir. */
+const LIBELLES_COURTS = { colis: 'Colis' };
+
 function metiersDeLApp(src) {
   const I = declaration(src, '  const I = {', '{', '}');
   const SERVICES = declaration(src, '  const SERVICES=[', '[', ']');
@@ -100,7 +109,7 @@ function metiersDeLApp(src) {
     const s2 = o.SERVICES.find(x => x.id === id);
     if (!s2) throw new Error('Métier absent du catalogue : ' + id);
     if (!o.I[id]) throw new Error('Icône absente pour : ' + id);
-    return { nm: s2.nm, ico: o.I[id], col: o.COULEURS[id] || '#CE301C' };
+    return { nm: LIBELLES_COURTS[id] || s2.nm, ico: o.I[id], col: o.COULEURS[id] || '#CE301C' };
   };
 }
 
@@ -144,7 +153,7 @@ const CARTES = [
     // ILS ÉTAIENT HUIT, EMPILÉS — nom sous l'icône, quatre colonnes. C'est la disposition
     // qui coûtait cher : 5,9 mm par rangée contre 3,4 côte à côte. Rendre ces cinq
     // millimètres est ce qui a permis au dessin de grandir et au reste de respirer.
-    metiers: ['menage', 'jardin', 'piscine', 'baby', 'coiffure', 'massage'],
+    metiers: ['menage', 'jardin', 'colis', 'baby', 'coiffure', 'massage'],
     // SIX MÉTIERS NE SONT PAS LE CATALOGUE, et une carte qui n'en montre que six laisse
     // croire qu'il n'y a que ça. La suite se dit en trois mots plutôt que de s'entasser.
     metiersSuite: '… et plein d’autres',
@@ -165,7 +174,9 @@ const CARTES = [
 /* LA CARTE UNIQUE — une seule carte pour les deux publics. Le recto est celui du client,
    le verso celui du prestataire, et sur ce verso le QR-code prend la place de Zouti : on
    ne met pas deux fois la mascotte sur la même carte, et le geste attendu d'un
-   prestataire est de scanner. Son QR mène à `?pro`, l'inscription prestataire.
+   prestataire est de scanner. Son QR mène à `?pro`, l'inscription prestataire. Cette face
+   garde le CORAIL des versos : c'est à la couleur qu'on voit, carte retournée, qu'on a
+   changé d'interlocuteur.
    RÉSERVE À DIRE : cette carte ne porte alors AUCUN QR pour le client — il lui reste
    l'adresse, qui n'est nulle part sur le recto non plus. Les deux cartes séparées, elles,
    gardent chacune leur QR. */
@@ -238,11 +249,16 @@ function feuille(c, polices) {
   .tuile{margin:3mm 0 2.6mm;background:#fff;border-radius:2.6mm;padding:2mm;
     box-shadow:0 1mm 3mm rgba(60,20,14,.18);line-height:0}
   .tuile svg{display:block;width:27mm;height:27mm}
-  /* LE QR SUR UNE FACE CLAIRE prend la place du dessin : même bloc de tête, même axe. Sa
-     tuile n'a plus d'ombre portée à soutenir — le sable n'est pas le corail — mais elle
-     garde son cadre blanc, qui est la zone de silence que le lecteur exige autour du code. */
-  .tuile.clair{margin:0 0 1mm;box-shadow:none;border:.25mm solid ${c['hair']};padding:1.8mm}
-  .tuile.clair svg{width:22mm;height:22mm}
+  /* LE QR PREND LA PLACE DU DESSIN : même bloc de tête, même axe, même largeur à peu de
+     chose près (22 mm de code contre 18,5 de mascotte). */
+  .tuile.tete{margin:0 0 1mm}
+  .tuile.tete svg{width:22mm;height:22mm}
+  /* LE BLOC CLAIR POSÉ SUR LE CORAIL. Le « Ti » est en corail foncé sur le sable : sur un
+     aplat corail il disparaîtrait. Tout le nom passe donc au blanc, comme sur les versos
+     des cartes dédiées — c'est la même face, elle doit se lire pareil. */
+  .verso .mot b,.verso .mot span,.verso .punch{color:#fff}
+  .verso .lieu{color:#fff;opacity:.88}
+  .verso .services,.verso .suite{color:#fff;opacity:.9}
   .v-url{font-size:3.9mm;font-weight:800;letter-spacing:-.01em;color:#fff}
   /* LE PIED RESTE DANS LE FLUX. Posé en absolu au bas de la carte, il venait se coucher
      sur la ligne du dessus dès que celle-ci prenait trois lignes — et rien ne le disait
@@ -266,13 +282,13 @@ function pageHtml(titre, style, corps) {
    le QR-code : c'est la seule différence entre le recto d'une carte à deux faces et le
    verso de la carte unique, où le QR prend la place de Zouti. Le reste — nom, lieu,
    punchline, métiers — est le même bloc, écrit une fois. */
-function recto(c, carte, tete, style, metier, titre) {
+function recto(c, carte, tete, style, metier, titre, classe) {
   const bas = carte.metiers
     ? `<div class="metiers">${carte.metiers.map(id => { const m = metier(id);
         return `<div class="metier"><span style="color:${m.col};line-height:0">${m.ico}</span><span>${m.nm}</span></div>`;
       }).join('')}</div>${carte.metiersSuite ? `<div class="suite">${carte.metiersSuite}</div>` : ''}`
     : `<div class="services">${carte.services}</div>`;
-  return pageHtml(titre || `Ti-Services — carte ${carte.cle}, recto`, style, `<div class="carte recto">
+  return pageHtml(titre || `Ti-Services — carte ${carte.cle}, recto`, style, `<div class="carte ${classe || 'recto'}">
   ${tete}
   <div class="mot"><b>Ti</b><span>-Services</span></div>
   <div class="lieu">${PIN}Saint-Barthélemy</div>
@@ -416,8 +432,8 @@ async function main() {
   plan.push({ cle: DUO.cle, face: 'recto', titre: 'Carte unique — recto (client)',
     html: () => recto(c, CARTES[0], logo, style, metier, 'Ti-Services — carte unique, recto client') });
   plan.push({ cle: DUO.cle, face: 'verso', titre: 'Carte unique — verso (prestataire)', url: DUO.url,
-    html: () => recto(c, CARTES[1], `<div class="tuile clair">${qr(DUO.url, 400)}</div>`,
-      style, metier, 'Ti-Services — carte unique, verso prestataire') });
+    html: () => recto(c, CARTES[1], `<div class="tuile tete">${qr(DUO.url, 400)}</div>`,
+      style, metier, 'Ti-Services — carte unique, verso prestataire', 'verso') });
 
   const faces = plan.map(f => ({ cle: f.cle, face: f.face, titre: f.titre, url: f.url,
     fichier: `carte-${f.cle}-${f.face}.html` }));
@@ -452,6 +468,14 @@ async function main() {
        grille des métiers sortait à 66,7 mm du haut, soit 3,7 mm DANS la zone que le
        massicot peut mordre. On demande donc au navigateur où commence et où finit
        vraiment le contenu, et on refuse d'écrire un PDF qui déborde. */
+    f.trop = await p.evaluate(() => [...document.querySelectorAll('.metier')]
+      .filter(e => e.scrollWidth > e.clientWidth + 1)
+      .map(e => e.textContent.trim() + ' (' + Math.round(e.scrollWidth / 96 * 25.4 * 10) / 10 +
+        ' mm pour ' + Math.round(e.clientWidth / 96 * 25.4 * 10) / 10 + ')'));
+    if (f.trop.length) {
+      console.log('  ✗ ' + f.fichier + ' — nom trop long pour sa colonne : ' + f.trop.join(', '));
+      process.exitCode = 1;
+    }
     f.debord = await p.evaluate((marge) => {
       const carte = document.querySelector('.carte');
       const r = carte.getBoundingClientRect();
