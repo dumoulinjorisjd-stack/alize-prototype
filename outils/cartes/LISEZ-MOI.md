@@ -1,6 +1,7 @@
 # Cartes de visite Ti-Services
 
-Carré **65 × 65 mm**, recto présentation / verso QR-code. Deux jeux :
+Carré **65 × 65 mm**. Trois cartes : deux dédiées (recto présentation, verso QR-code) et
+une carte **unique** pour les deux publics.
 
 Le recto de la carte **client** porte six métiers dessinés — icône et nom côte à côte —
 parce qu'un nom de service se lit, mais qu'un dessin se comprend avant d'être lu. Six et
@@ -20,6 +21,17 @@ script refuse d'écrire un PDF qui déborde.
 |---|---|---|
 | `carte-client-recto` / `-verso` | à donner aux **clients** | `https://ti-services.fr/?client` |
 | `carte-pro-recto` / `-verso` | à donner aux **prestataires** qu'on recrute | `https://ti-services.fr/?pro` |
+| `carte-duo-recto` / `-verso` | **une seule carte** : côté client au recto, côté prestataire au verso | `https://ti-services.fr/?pro` (verso seulement) |
+
+Sur le verso de la carte unique, le **QR-code prend la place de Zouti** : même bloc de
+tête, même axe — on ne met pas deux fois la mascotte sur la même carte, et le geste qu'on
+attend d'un prestataire est de scanner.
+
+**Réserve à connaître avant de la faire imprimer** : cette carte ne porte alors aucune
+adresse lisible, ni au recto ni au verso — seulement le QR du côté prestataire. Un client
+à qui on la donne n'a rien à taper si son appareil photo ne lit pas le code. Y ajouter
+`ti-services.fr` coûte trois millimètres, qu'il faut prendre sur le QR (22 → 19 mm, ce qui
+reste largement lisible).
 
 `apercu.html` montre les quatre faces à l'échelle, avec le trait de coupe.
 

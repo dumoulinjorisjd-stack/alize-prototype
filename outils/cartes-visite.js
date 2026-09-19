@@ -162,6 +162,15 @@ const CARTES = [
   }
 ];
 
+/* LA CARTE UNIQUE — une seule carte pour les deux publics. Le recto est celui du client,
+   le verso celui du prestataire, et sur ce verso le QR-code prend la place de Zouti : on
+   ne met pas deux fois la mascotte sur la même carte, et le geste attendu d'un
+   prestataire est de scanner. Son QR mène à `?pro`, l'inscription prestataire.
+   RÉSERVE À DIRE : cette carte ne porte alors AUCUN QR pour le client — il lui reste
+   l'adresse, qui n'est nulle part sur le recto non plus. Les deux cartes séparées, elles,
+   gardent chacune leur QR. */
+const DUO = { cle: 'duo', clientUrl: CARTES[0].url, url: CARTES[1].url };
+
 /* ---------- Le gabarit ---------- */
 function feuille(c, polices) {
   return `
@@ -229,6 +238,11 @@ function feuille(c, polices) {
   .tuile{margin:3mm 0 2.6mm;background:#fff;border-radius:2.6mm;padding:2mm;
     box-shadow:0 1mm 3mm rgba(60,20,14,.18);line-height:0}
   .tuile svg{display:block;width:27mm;height:27mm}
+  /* LE QR SUR UNE FACE CLAIRE prend la place du dessin : même bloc de tête, même axe. Sa
+     tuile n'a plus d'ombre portée à soutenir — le sable n'est pas le corail — mais elle
+     garde son cadre blanc, qui est la zone de silence que le lecteur exige autour du code. */
+  .tuile.clair{margin:0 0 1mm;box-shadow:none;border:.25mm solid ${c['hair']};padding:1.8mm}
+  .tuile.clair svg{width:22mm;height:22mm}
   .v-url{font-size:3.9mm;font-weight:800;letter-spacing:-.01em;color:#fff}
   /* LE PIED RESTE DANS LE FLUX. Posé en absolu au bas de la carte, il venait se coucher
      sur la ligne du dessus dès que celle-ci prenait trois lignes — et rien ne le disait
@@ -248,14 +262,18 @@ function pageHtml(titre, style, corps) {
 <title>${titre}</title><style>${style}</style></head><body>${corps}</body></html>`;
 }
 
-function recto(c, carte, logo, style, metier) {
+/* LA TÊTE DE LA FACE EST UN ARGUMENT. Une face claire porte, en haut, soit le dessin soit
+   le QR-code : c'est la seule différence entre le recto d'une carte à deux faces et le
+   verso de la carte unique, où le QR prend la place de Zouti. Le reste — nom, lieu,
+   punchline, métiers — est le même bloc, écrit une fois. */
+function recto(c, carte, tete, style, metier, titre) {
   const bas = carte.metiers
     ? `<div class="metiers">${carte.metiers.map(id => { const m = metier(id);
         return `<div class="metier"><span style="color:${m.col};line-height:0">${m.ico}</span><span>${m.nm}</span></div>`;
       }).join('')}</div>${carte.metiersSuite ? `<div class="suite">${carte.metiersSuite}</div>` : ''}`
     : `<div class="services">${carte.services}</div>`;
-  return pageHtml(`Ti-Services — carte ${carte.cle}, recto`, style, `<div class="carte recto">
-  ${logo}
+  return pageHtml(titre || `Ti-Services — carte ${carte.cle}, recto`, style, `<div class="carte recto">
+  ${tete}
   <div class="mot"><b>Ti</b><span>-Services</span></div>
   <div class="lieu">${PIN}Saint-Barthélemy</div>
   <div class="punch">${carte.punch}</div>
@@ -382,27 +400,30 @@ async function main() {
   const style = feuille(c, b64);
   fs.mkdirSync(SORTIE, { recursive: true });
 
-  const faces = [];
+  const qr = (url, px) => { const mat = qrEncode(url);
+    if (!mat) throw new Error('QR non encodable : ' + url);
+    return qrSvgFrom(px, mat, 'QR-code Ti-Services'); };
+
+  // Le plan : chaque face dit son fichier, son titre, et l'adresse que son QR doit porter
+  // (rien s'il n'en a pas). C'est cette adresse que le décodeur indépendant vérifiera.
+  const plan = [];
+  for (const carte of CARTES) {
+    plan.push({ cle: carte.cle, face: 'recto', titre: 'Carte ' + carte.cle + ' — recto',
+      html: () => recto(c, carte, logo, style, metier) });
+    plan.push({ cle: carte.cle, face: 'verso', titre: 'Carte ' + carte.cle + ' — verso',
+      url: carte.url, html: () => verso(carte, qr(carte.url, 400), style) });
+  }
+  plan.push({ cle: DUO.cle, face: 'recto', titre: 'Carte unique — recto (client)',
+    html: () => recto(c, CARTES[0], logo, style, metier, 'Ti-Services — carte unique, recto client') });
+  plan.push({ cle: DUO.cle, face: 'verso', titre: 'Carte unique — verso (prestataire)', url: DUO.url,
+    html: () => recto(c, CARTES[1], `<div class="tuile clair">${qr(DUO.url, 400)}</div>`,
+      style, metier, 'Ti-Services — carte unique, verso prestataire') });
+
+  const faces = plan.map(f => ({ cle: f.cle, face: f.face, titre: f.titre, url: f.url,
+    fichier: `carte-${f.cle}-${f.face}.html` }));
   if (!verifierSeul) {
-    for (const carte of CARTES) {
-      const mat = qrEncode(carte.url);
-      if (!mat) throw new Error('QR non encodable : ' + carte.url);
-      const svg = qrSvgFrom(400, mat, 'QR-code Ti-Services');
-      const paires = [
-        ['recto', recto(c, carte, logo, style, metier), 'Carte ' + carte.cle + ' — recto'],
-        ['verso', verso(carte, svg, style), 'Carte ' + carte.cle + ' — verso']
-      ];
-      for (const [face, html, titre] of paires) {
-        const nom = `carte-${carte.cle}-${face}`;
-        fs.writeFileSync(path.join(SORTIE, nom + '.html'), html);
-        faces.push({ cle: carte.cle, face, fichier: nom + '.html', titre, url: carte.url });
-      }
-    }
+    plan.forEach((f, i) => fs.writeFileSync(path.join(SORTIE, faces[i].fichier), f.html()));
     fs.writeFileSync(path.join(SORTIE, 'apercu.html'), apercu(faces, c));
-  } else {
-    for (const carte of CARTES) for (const face of ['recto', 'verso'])
-      faces.push({ cle: carte.cle, face, fichier: `carte-${carte.cle}-${face}.html`,
-        titre: 'Carte ' + carte.cle + ' — ' + face, url: carte.url });
   }
 
   // Rendu PDF + PNG. Playwright n'est là que pour ça : le dessin est du HTML.
@@ -463,7 +484,7 @@ async function main() {
   // visite ne se corrige pas après tirage : on ne se fie pas à l'encodeur pour se relire.
   const { execFileSync } = require('child_process');
   let decodeur = true;
-  for (const f of faces.filter(x => x.face === 'verso')) {
+  for (const f of faces.filter(x => x.url)) {
     let lu = '';
     try { lu = execFileSync('zbarimg', ['-q', '--raw', path.join(SORTIE, f.png)], { encoding: 'utf8' }).trim(); }
     catch (e) { decodeur = false; lu = '(zbarimg absent ou muet)'; }
