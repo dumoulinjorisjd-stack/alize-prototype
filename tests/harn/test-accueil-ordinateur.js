@@ -138,6 +138,16 @@ console.log('\nC bis — c’est une VITRINE : le client, les boutons, le profes
     const pad=document.querySelector('.pad.welcome').getBoundingClientRect();
     const hero=document.querySelector('.welcome-hero').getBoundingClientRect();
     const bas=document.querySelector('.welcome-bas').getBoundingClientRect();
+    // LES QUATRE ARGUMENTS SONT SOUS LE HÉROS, SUR UNE RANGÉE — ils étaient en colonne à
+    // droite, et cette colonne décentrait la mascotte. On mesure ce qui compte : une seule
+    // ligne, et le milieu du héros sur l'axe de la page.
+    const desk=document.querySelector('.welcome-desk');
+    const cartes=[...desk.children].map(e=>e.getBoundingClientRect());
+    const uneRangee=new Set(cartes.map(r=>Math.round(r.top))).size===1;
+    const deskR=desk.getBoundingClientRect();
+    const sousLeHeros=Math.round(deskR.top)>=Math.round(hero.bottom)-1;
+    const zouti=document.querySelector('.welcome .octo-hero').getBoundingClientRect();
+    const axe=Math.round(Math.abs((zouti.left+zouti.right)/2-(pad.left+pad.right)/2));
     const rangees=secs.map(s2=>{const st=s2.querySelector('.pitch-steps');
       return st?new Set([...st.children].map(e=>Math.round(e.getBoundingClientRect().top))).size:null;});
     return {introCentree:intro, detailAuFer:detail, conclut, chipsCentrees, mesure, inscr,
@@ -151,7 +161,8 @@ console.log('\nC bis — c’est une VITRINE : le client, les boutons, le profes
       boutons:cta?[...cta.querySelectorAll('button')].map(x=>x.dataset.act):[],
       largeurSection:Math.round(secs[0].getBoundingClientRect().width),
       part:Math.round(pad.width/window.innerWidth*100),
-      rangees, vide:Math.round(bas.top-hero.bottom)};});
+      rangees, vide:Math.round(bas.top-deskR.bottom),
+      cartes:cartes.length, uneRangee, sousLeHeros, axe, zouti:Math.round(zouti.width)};});
   ok(g.sections===2&&g.yClient<g.yCta&&g.yCta<g.yPro,
     'le client d’abord, les boutons, puis le professionnel — jamais côte à côte ('+g.yClient+' → '+g.yCta+' → '+g.yPro+')');
   ok(g.boutons.join(',')==='onb-start,go-artisan-signup',
@@ -177,7 +188,11 @@ console.log('\nC bis — c’est une VITRINE : le client, les boutons, le profes
   ok(g.ecartIle<=2,'et le dessin de l’île est centré, plus collé au bord gauche (écart '+g.ecartIle+' px)');
   ok(g.part>=88,'la vitrine occupe '+g.part+' % de la fenêtre — elle en occupait 55');
   ok(g.largeurSection>=1200,'chaque partie prend toute la largeur ('+g.largeurSection+' px, contre 390 en deux colonnes)');
-  ok(g.vide<=40,'et le vide entre le héros et la suite tombe à '+g.vide+' px (136 avant)');
+  ok(g.cartes===4&&g.uneRangee&&g.sousLeHeros,
+    'les quatre arguments sont SOUS le héros, sur une seule rangée — ils étaient en colonne à droite');
+  ok(g.axe<=1,'la mascotte est sur l’axe de la page ('+g.axe+' px d’écart) : la colonne de droite la décentrait');
+  ok(g.zouti>=270,'et elle a la place de grandir — '+g.zouti+' px de large (230 avant)');
+  ok(g.vide<=40,'le vide entre les arguments et la suite reste à '+g.vide+' px');
   await ctx.close();
 }
 
