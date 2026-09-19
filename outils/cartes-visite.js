@@ -190,6 +190,12 @@ function icoCentree(svg, cadre) {
   return nu;
 }
 
+// La table d'icônes de l'application, telle quelle : les visuels sociaux en ont besoin
+// pour leurs arguments (bouclier, cadenas, cœur…) comme la carte pour ses métiers.
+function iconesDeLApp(src) {
+  return new Function('return ' + declaration(src, '  const I = {', '{', '}'))();
+}
+
 function metiersDeLApp(src) {
   const I = declaration(src, '  const I = {', '{', '}');
   const SERVICES = declaration(src, '  const SERVICES=[', '[', ']');
@@ -709,4 +715,12 @@ async function main() {
     ' ppp — densité écrite dans les deux, posés à ' + MM.page + ' mm exactement');
 }
 
-main().catch(e => { console.error(e); process.exit(1); });
+/* CE FICHIER EST AUSSI UNE BOÎTE À OUTILS. Les visuels pour les réseaux sociaux
+   (`outils/pubs-reseaux.js`) ont exactement les mêmes besoins : lire la charte dans
+   l'application, mélanger deux teintes, mesurer et recentrer les icônes du catalogue,
+   embarquer la police. Les réécrire ailleurs, c'est se condamner à ce que les deux
+   dérivent. */
+module.exports = { lireSource, couleurs, melange, qrDeLApp, metiersDeLApp, iconesDeLApp, zouti, police,
+  centrerIcones, icoCentree, poserDensite, poserDensiteJpeg, LIBELLES_COURTS, ICO_OPTIQUE };
+
+if (require.main === module) main().catch(e => { console.error(e); process.exit(1); });
