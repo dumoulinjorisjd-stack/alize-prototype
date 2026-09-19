@@ -8,6 +8,9 @@ non vingt et un : sur 49 mm de large, la liste complète donnerait des noms de d
 millimètres que personne ne lit. Les icônes, les noms et les teintes viennent du
 catalogue de l'application, comme sur la vitrine.
 
+Une ligne — « … et plein d'autres » — dit la suite : six métiers ne sont pas le catalogue,
+et une carte qui n'en montre que six laisserait croire qu'il n'y a que ça.
+
 Pour en montrer plus, la place se prend quelque part : la carte est pleine (8,0 mm de
 marge, le minimum). Ajouter deux métiers demande de rendre au dessin ou aux blancs les
 millimètres qu'ils prennent — c'est la liste `metiers` de `outils/cartes-visite.js`, et le

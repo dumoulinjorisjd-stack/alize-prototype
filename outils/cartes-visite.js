@@ -138,7 +138,10 @@ const CARTES = [
     // ILS ÉTAIENT HUIT, EMPILÉS — nom sous l'icône, quatre colonnes. C'est la disposition
     // qui coûtait cher : 5,9 mm par rangée contre 3,4 côte à côte. Rendre ces cinq
     // millimètres est ce qui a permis au dessin de grandir et au reste de respirer.
-    metiers: ['menage', 'jardin', 'piscine', 'baby', 'coiffure', 'plomberie'],
+    metiers: ['menage', 'jardin', 'piscine', 'baby', 'coiffure', 'massage'],
+    // SIX MÉTIERS NE SONT PAS LE CATALOGUE, et une carte qui n'en montre que six laisse
+    // croire qu'il n'y a que ça. La suite se dit en trois mots plutôt que de s'entasser.
+    metiersSuite: '… et plein d’autres',
     versoTitre: 'Réservez en deux gestes',
     versoPied: 'Gratuit · sans abonnement'
   },
@@ -189,16 +192,16 @@ function feuille(c, polices) {
      prend viennent des espacements — jamais de la marge de sécurité, que le script
      vérifie. */
   .zouti{width:18.5mm;height:auto;display:block}
-  .mot{font-weight:800;font-size:5.2mm;letter-spacing:-.02em;line-height:1;margin-top:2.2mm}
+  .mot{font-weight:800;font-size:5.2mm;letter-spacing:-.02em;line-height:1;margin-top:1.8mm}
   .mot b{color:${c['teal-deep']};font-weight:800}
   .mot span{color:${c['ink']}}
-  .lieu{display:flex;align-items:center;justify-content:center;gap:.9mm;margin-top:1.6mm;
+  .lieu{display:flex;align-items:center;justify-content:center;gap:.9mm;margin-top:1.3mm;
     font-size:2.1mm;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:${c['teal-deep']}}
   .lieu svg{width:2.2mm;height:2.2mm}
   /* LE FILET EST PARTI. Un trait de huit millimètres séparait deux blocs que rien ne
      confondait, et ses marges coûtaient 3,2 mm de hauteur — sur une carte pleine, c'est
      ce qu'il faut pour que le dessin grandisse et que le reste respire. */
-  .punch{margin-top:3.4mm;font-size:3.05mm;font-weight:800;line-height:1.28;letter-spacing:-.015em;
+  .punch{margin-top:2.9mm;font-size:2.8mm;font-weight:800;line-height:1.28;letter-spacing:-.015em;
     color:${c['ink']};text-wrap:balance}
   .services{margin-top:3.4mm;font-size:2.05mm;line-height:1.55;font-weight:500;color:${c['muted']};
     max-width:45mm;text-wrap:balance}
@@ -206,14 +209,15 @@ function feuille(c, polices) {
      qu'on ait lu son nom, et c'est ce qui fait comprendre « service à domicile » d'un
      regard. Les colonnes sont égales et le nom tient sur UNE ligne — un nom qui passerait
      à deux décalerait sa rangée. */
-  .metiers{margin-top:3.2mm;display:grid;grid-template-columns:repeat(3,1fr);gap:2mm 1mm;width:100%}
+  .metiers{margin-top:2.6mm;display:grid;grid-template-columns:repeat(3,1fr);gap:1.6mm 1mm;width:100%}
   /* CHAQUE ICÔNE SUR L'AXE DE SA COLONNE. Centré dans sa cellule, un couple icône + nom se
      déplace avec la longueur du nom : « Piscine » commençait deux millimètres à droite de
      « Plomberie », juste au-dessus. C'est la colonne d'icônes que l'œil suit. */
   .metier{display:flex;align-items:center;justify-content:start;gap:.9mm;min-width:0}
-  .metier svg{width:3.4mm;height:3.4mm;display:block;stroke-width:1.9;flex:none}
+  .metier svg{width:3.1mm;height:3.1mm;display:block;stroke-width:1.9;flex:none}
   .metier span{font-size:1.95mm;font-weight:600;line-height:1;color:${c['ink-soft']};
     white-space:nowrap}
+  .suite{margin-top:1.4mm;font-size:1.75mm;font-weight:600;line-height:1.15;color:${c['muted']}}
 
   .v-mot{font-weight:800;font-size:4.2mm;letter-spacing:-.02em;color:#fff;opacity:.96}
   .v-titre{margin-top:.7mm;font-size:2.2mm;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
@@ -244,7 +248,7 @@ function recto(c, carte, logo, style, metier) {
   const bas = carte.metiers
     ? `<div class="metiers">${carte.metiers.map(id => { const m = metier(id);
         return `<div class="metier"><span style="color:${m.col};line-height:0">${m.ico}</span><span>${m.nm}</span></div>`;
-      }).join('')}</div>`
+      }).join('')}</div>${carte.metiersSuite ? `<div class="suite">${carte.metiersSuite}</div>` : ''}`
     : `<div class="services">${carte.services}</div>`;
   return pageHtml(`Ti-Services — carte ${carte.cle}, recto`, style, `<div class="carte recto">
   ${logo}
