@@ -92,10 +92,18 @@ function tiLogoAttachment() {
   }
   return _tiLogoBuf ? {filename: 'ti-services.png', content: _tiLogoBuf, cid: 'tilogo'} : null;
 }
-function tiCharteHtml(inner) {
+// `cta` (facultatif) : {href, label} — le bouton du gabarit. Un message qui a une
+// destination précise (ses missions, ses alertes…) la donne ici AU LIEU de poser son
+// propre bouton dans le corps : deux boutons « Ouvrir Ti-Services » empilés, dont le
+// second ramenait à la racine de l'app, c'est un message qui hésite. Sans `cta`, le
+// bouton reste générique — c'est le bon défaut pour un message qui n'a rien de précis
+// à ouvrir.
+function tiCharteHtml(inner, cta) {
   // Le pied signe déjà « L'équipe Ti-Services » : on retire la signature du corps
   // brut pour ne pas la voir deux fois.
   const body = String(inner || '').replace(/<p>(?:À très vite,\s*<br\s*\/?>\s*)?L'équipe Ti-Services\s*\.?<\/p>\s*$/, '');
+  const ctaHref = (cta && cta.href) ? String(cta.href) : APP_URL.replace(/\/$/, '');
+  const ctaLabel = (cta && cta.label) ? String(cta.label) : 'Ouvrir Ti-Services';
   return '' +
   '<div style="margin:0;padding:0;background:#FBF7F4;font-family:-apple-system,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;color:#231E33">' +
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FBF7F4;padding:24px 12px">' +
@@ -109,7 +117,7 @@ function tiCharteHtml(inner) {
           '</td></tr>' +
           '<tr><td style="padding:14px 30px 6px"><div style="font-size:15px;line-height:1.6;color:#4a4556">' + body + '</div></td></tr>' +
           '<tr><td align="center" style="padding:14px 30px 26px">' +
-            '<a href="' + APP_URL.replace(/\/$/, '') + '" style="display:inline-block;background:#FF6A5B;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 26px;border-radius:11px">Ouvrir Ti-Services</a>' +
+            '<a href="' + escHtmlS(ctaHref) + '" style="display:inline-block;background:#FF6A5B;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 26px;border-radius:11px">' + escHtmlS(ctaLabel) + '</a>' +
           '</td></tr>' +
           '<tr><td style="padding:16px 30px;border-top:1px solid #efeae4;background:#FBF7F4">' +
             '<div style="font-size:12px;color:#8a8494;line-height:1.6">L\'équipe Ti-Services<br>' +
@@ -123,7 +131,10 @@ function tiCharteHtml(inner) {
 function tiCharteMessage(message) {
   if (!message || !message.html) return message;
   let m = message;
-  if (m.html.indexOf('cid:tilogo') < 0) m = Object.assign({}, m, {html: tiCharteHtml(m.html)});
+  if (m.html.indexOf('cid:tilogo') < 0) m = Object.assign({}, m, {html: tiCharteHtml(m.html, m.cta)});
+  // `cta` a servi au gabarit : il ne doit pas se retrouver dans le document mis en file
+  // `mail` ni passé au transport.
+  if (m.cta) { m = Object.assign({}, m); delete m.cta; }
   // Le logo doit accompagner tout gabarit qui le référence (y compris ceux qui
   // avaient oublié la pièce jointe : l'image apparaissait cassée).
   const deja = (Array.isArray(m.attachments) ? m.attachments : []).some((a) => a && a.cid === 'tilogo');
@@ -464,8 +475,9 @@ async function recordMollieFee(db, reqId, molliePaymentId, commission) {
 // ne la lira plus. L'administrateur, lui, est prévenu dans tous les cas : un versement
 // bloqué est NOTRE problème tant que le prestataire n'y peut rien.
 async function notifyArtisanMollieProblem(db, uid, reason) {
-  let onb = '';
-  try { onb = (await db.collection('artisans').doc(uid).get()).get('mollieOnboardingStatus') || ''; } catch (_) {}
+  let ad = {};
+  try { ad = (await db.collection('artisans').doc(uid).get()).data() || {}; } catch (_) {}
+  const onb = ad.mollieOnboardingStatus || '';
   // Les deux seuls cas où il a la main : Mollie réclame une pièce, ou aucun compte n'est
   // connecté. Un « route_failed » sans demande de Mollie ne le concerne pas.
   const manquePiece = (reason === 'needs-data') || (reason === 'route_failed' && onb === 'needs-data');
@@ -474,6 +486,21 @@ async function notifyArtisanMollieProblem(db, uid, reason) {
     console.log('Alerte Mollie NON envoyée à ' + uid + ' (' + reason + ', onboarding « ' + (onb || 'inconnu') + ' ») : rien à faire de son côté');
     return;
   }
+  // UN SEUL MESSAGE PAR ÉPISODE, ET C'EST ICI QUE ÇA SE DÉCIDE. La synchro du dossier
+  // gardait le drapeau de son côté ; le versement non routé, lui, appelait cette fonction
+  // sans rien vérifier. Un artisan bloqué chez Mollie qui faisait valider trois missions
+  // dans la journée recevait trois fois le même e-mail et trois fois le même push — soit
+  // exactement ce que la règle du dessus cherche à éviter. Le garde-fou appartient
+  // désormais à la fonction qui notifie : tous les chemins en bénéficient.
+  const motif = pasDeCompte ? 'no_org' : 'needs-data';
+  if (ad.mollieIssueNotified === motif) {
+    console.log('Alerte Mollie NON renvoyée à ' + uid + ' (' + reason + ') : déjà prévenu pour « ' + motif + ' »');
+    return;
+  }
+  // On pose le drapeau AVANT d'envoyer : deux versements qui échouent dans la même
+  // seconde ne doivent pas produire deux messages. Le drapeau est remis à zéro par la
+  // synchro dès que le dossier passe au vert, donc un blocage ultérieur réalertera.
+  try { await db.collection('artisans').doc(uid).set({mollieIssueNotified: motif}, {merge: true}); } catch (_) {}
   let email = '', tokens = [], name = '';
   try {
     const u = await db.collection('users').doc(uid).get();
@@ -502,8 +529,9 @@ async function notifyArtisanMollieProblem(db, uid, reason) {
         html: '<p>Bonjour ' + escHtmlS(name || '') + ',</p>'
           + '<p>' + escHtmlS(corps) + '</p>'
           + (manquePiece ? '<p>Mollie vous indique précisément ce qui manque (pièce d\'identité, IBAN…). Vos gains déjà acquis vous restent dus et partiront dès l\'ouverture.</p>' : '')
-          + '<p><a href="' + link + '" style="display:inline-block;background:#e8613c;color:#fff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:700">Ouvrir Ti-Services</a></p>'
           + '<p>Une question ? Répondez à cet e-mail.</p>',
+        // Le bouton du gabarit mène directement aux missions, là où l'action se fait.
+        cta: {href: link, label: 'Ouvrir Ti-Services'},
       });
     } catch (e) { console.warn('mollieProblem email', e); }
   }
@@ -694,7 +722,9 @@ async function syncArtisanMollie(db, uid) {
     try { await rerouteArtisanPayouts(db, uid, ad.mollieOrgId); } catch (e) { console.warn('reroute', e); }
   }
   if (ready.status === 'needs-data' && prevNotified !== 'needs-data') {
-    upd.mollieIssueNotified = 'needs-data';
+    // Le drapeau est posé par notifyArtisanMollieProblem, qui est maintenant seule à en
+    // décider : le tenir aussi ici ferait mentir le journal quand l'envoi n'a pas lieu.
+    // Le test ci-dessus ne reste que pour éviter une lecture Firestore inutile.
     try { await notifyArtisanMollieProblem(db, uid, 'needs-data'); } catch (_) {}
   } else if (ready.ok) {
     if (prevNotified) upd.mollieIssueNotified = '';
