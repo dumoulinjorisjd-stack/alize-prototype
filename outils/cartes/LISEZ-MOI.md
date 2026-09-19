@@ -99,14 +99,24 @@ Le corail du verso est un aplat saturé : sur un papier non couché il paraîtra
 et légèrement plus sombre qu'à l'écran. C'est normal, et c'est la raison de demander un
 **BAT** ou un échantillon avant un gros tirage.
 
-**Le dégradé a été éclairci** pour cette raison : il descendait jusqu'au corail profond
-(`#CE301C`), qui vire au rouge sombre en CMJN et donnait son poids à toute la face. Il
-s'arrête maintenant à trois dixièmes de cette teinte (`#F05948`). Le haut ne bouge pas :
-c'est là que se lit le nom, et son contraste avec le blanc était déjà le plus faible de la
-face — l'éclaircir aurait coûté de la lisibilité. Si c'est encore trop sombre au tirage,
-la proportion se règle sur une ligne (`melange(c['teal'], c['teal-deep'], .3)` dans
-`outils/cartes-visite.js`) ; en dessous de deux dixièmes, le texte blanc commence à
-manquer de tenue.
+**Le dégradé a été éclairci deux fois** pour cette raison. Il allait de `#FF6A5B` à
+`#CE301C` — ce corail profond vire au rouge sombre en CMJN et donnait son poids à toute
+la face. Il va maintenant de **`#FF8275`** (le corail de marque plus un voile de blanc) à
+**`#F66050`**. Les deux bouts se règlent sur une ligne chacun dans
+`outils/cartes-visite.js`, en PROPORTION de deux jetons de la charte — jamais en teinte
+choisie à la main.
+
+**Le recto est un blanc franc, sans dégradé.** Il portait le fond « lagon » de
+l'application : à l'écran c'est une atmosphère, imprimé c'est une teinte pâle irrégulière
+qui ne se retrouve pas d'un tirage à l'autre.
+
+**Ce que le fond clair coûte, mesuré.** Le nom garde ses deux teintes du recto sur les
+deux faces — c'est la signature de la marque. Sur le blanc du recto, le « Ti » corail tient
+à 5,2 contre 1 et le texte à 16 ; sur le haut du corail, le « -Services » encre tient à
+6,7, le « Ti » corail à 2,1 (il se lit comme un mot plus foncé, pas comme un contraste) et
+le **texte blanc tombe à 2,4** — c'est l'élément le plus juste de la carte, et il s'agit
+partout de texte large et gras. Si une ligne blanche du haut vous paraît faible au tirage,
+la passer en encre se fait sur une ligne.
 
 ## Régénérer
 
