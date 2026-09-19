@@ -76,15 +76,24 @@ console.log('\nC bis — c’est une VITRINE : le client, les boutons, le profes
     const y=e=>e?Math.round(e.getBoundingClientRect().top):null;
     const secs=[...document.querySelectorAll('.wp-cols>section')];
     const cta=document.querySelector('.wp-cta');
-    const axes=new Set();
-    secs.forEach(s2=>[...s2.children].forEach(e=>{
-      const a=getComputedStyle(e).textAlign; axes.add(a==='start'?'left':a);}));
+    const al=e=>{const a=getComputedStyle(e).textAlign;return a==='start'?'left':a;};
+    const intro=secs.every(s2=>al(s2.querySelector('.eyebrow'))==='center'
+      && al(s2.querySelector('.wp-tete'))==='center');
+    const detail=secs.every(s2=>[...s2.children]
+      .filter(e=>!e.classList.contains('eyebrow')&&!e.classList.contains('wp-tete')
+        &&!(e.previousElementSibling&&e.previousElementSibling.classList.contains('wp-tete')))
+      .every(e=>al(e)==='left'));
+    const ile=document.querySelector('.welcome-plus .cover-isle');
+    const mil=e=>{const r=e.getBoundingClientRect();return (r.left+r.right)/2;};
     const pad=document.querySelector('.pad.welcome').getBoundingClientRect();
     const hero=document.querySelector('.welcome-hero').getBoundingClientRect();
     const bas=document.querySelector('.welcome-bas').getBoundingClientRect();
     const rangees=secs.map(s2=>{const st=s2.querySelector('.pitch-steps');
       return st?new Set([...st.children].map(e=>Math.round(e.getBoundingClientRect().top))).size:null;});
-    return {axes:[...axes], sections:secs.length, yClient:y(secs[0]), yCta:y(cta), yPro:y(secs[1]),
+    return {introCentree:intro, detailAuFer:detail,
+      punchline:parseFloat(getComputedStyle(secs[0].querySelector('.pitch-h')).fontSize),
+      ecartIle:Math.round(Math.abs(mil(ile)-mil(secs[0]))),
+      sections:secs.length, yClient:y(secs[0]), yCta:y(cta), yPro:y(secs[1]),
       boutons:cta?[...cta.querySelectorAll('button')].map(x=>x.dataset.act):[],
       largeurSection:Math.round(secs[0].getBoundingClientRect().width),
       part:Math.round(pad.width/window.innerWidth*100),
@@ -95,8 +104,13 @@ console.log('\nC bis — c’est une VITRINE : le client, les boutons, le profes
     'et ce sont les deux boutons d’inscription, dans l’ordre — '+g.boutons.join(' · '));
   ok(g.rangees[0]===1&&g.rangees[1]===1,
     'chaque partie déploie ses trois étapes sur UNE rangée : c’est elle qui emploie la largeur, pas deux discours qui se concurrencent');
-  ok(g.axes.length===1&&g.axes[0]==='left',
-    'tous les blocs sont sur le MÊME axe ('+g.axes.join(', ')+') — avant, ils alternaient start et center');
+  // L'AXE N'EST PLUS UNIQUE, ET C'EST UNE RÈGLE, PAS UN ZIGZAG : ce qui ANNONCE une
+  // partie est centré, ce qui se LIT reste ferré à gauche. Avant, les blocs alternaient
+  // sans raison DANS une même colonne ; ici la différence d'axe DIT quelque chose.
+  ok(g.introCentree,'l’intertitre, l’accroche et la punchline sont centrés — ils annoncent la partie');
+  ok(g.detailAuFer,'les cartes, les listes et les paragraphes restent au fer à gauche — ils se lisent');
+  ok(g.punchline>=30,'la punchline porte la taille d’un titre ('+g.punchline+' px, contre 26 avant)');
+  ok(g.ecartIle<=2,'et le dessin de l’île est centré, plus collé au bord gauche (écart '+g.ecartIle+' px)');
   ok(g.part>=88,'la vitrine occupe '+g.part+' % de la fenêtre — elle en occupait 55');
   ok(g.largeurSection>=1200,'chaque partie prend toute la largeur ('+g.largeurSection+' px, contre 390 en deux colonnes)');
   ok(g.vide<=40,'et le vide entre le héros et la suite tombe à '+g.vide+' px (136 avant)');
