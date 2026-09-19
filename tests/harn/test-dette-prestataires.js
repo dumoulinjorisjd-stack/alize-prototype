@@ -41,7 +41,7 @@ ok(/<b>dette<\/b>, hors résultat/.test(src),
   'elle nomme sa nature et sa place, en trois mots — une dette n’est pas une charge');
 
 console.log('C — et l’export comptable la porte aussi');
-ok(/DÛ AUX PRESTATAIRES \(dette — hors résultat\)/.test(src), 'un bloc dédié dans le CSV');
+ok(/DÛ AUX PRESTATAIRES \(dette, hors résultat\)/.test(src), 'un bloc dédié dans le CSV');
 ok(/Total dû aux prestataires/.test(src), 'avec son total');
 const iRev = src.indexOf("'Revenu net réel Ti-Services',''");
 const iDet = src.indexOf('DÛ AUX PRESTATAIRES');

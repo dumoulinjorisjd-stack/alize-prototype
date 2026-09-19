@@ -120,7 +120,7 @@ function page(doc, L) {
     .map((d) => `<a href="${d.cle}.html">${esc(d[L.lg])}</a>`).join('\n      ');
   const langues = LANGUES.filter((x) => x.lg !== L.lg)
     .map((x) => `<a href="${SITE}/${x.dossier}/${doc.cle}.html" hreflang="${x.lg}">${x.lg.toUpperCase()}</a>`).join('');
-  const desc = resume(corps, titre + ' — Ti-Services, Saint-Barthélemy.');
+  const desc = resume(corps, titre + ', Ti-Services, Saint-Barthélemy.');
   const racine = L.dossier === 'legal' ? '../' : '../../';
   const dateAff = L.lg === 'fr' ? DATE_FR : DATE_FR;
   // La déclaration d'encodage doit tenir dans le PREMIER kibioctet de la réponse : au-delà
@@ -131,7 +131,7 @@ function page(doc, L) {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>${esc(titre)} — Ti-Services</title>
+<title>${esc(titre)}, Ti-Services</title>
 <meta name="description" content="${esc(desc)}">
 <meta name="robots" content="index,follow">
 <link rel="canonical" href="${url}">
@@ -141,7 +141,7 @@ ${alt}
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="Ti-Services">
 <meta property="og:locale" content="${L.lg === 'fr' ? 'fr_FR' : (L.lg === 'pt' ? 'pt_PT' : 'en_US')}">
-<meta property="og:title" content="${esc(titre)} — Ti-Services">
+<meta property="og:title" content="${esc(titre)}, Ti-Services">
 <meta property="og:description" content="${esc(desc)}">
 <meta property="og:url" content="${url}">
 <meta property="og:image" content="${SITE}/og-image.png">
@@ -165,7 +165,7 @@ ${corps}
   </nav>
   <a class="retour" href="${racine}">← ${esc(L.retour)}</a>
   <div class="langues">${langues}</div>
-  <footer>© 2026 C.C.S — Ti-Services™. Tous droits réservés.</footer>
+  <footer>© 2026 C.C.S, Ti-Services™. Tous droits réservés.</footer>
 </div>
 </body>
 </html>

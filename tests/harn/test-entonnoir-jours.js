@@ -75,7 +75,7 @@ ok(r.txt.includes('Installées · plus forte journée : '+Math.max(...INS)),
   'celle des installations aussi ('+Math.max(...INS)+') — sans quoi deux échelles tromperaient');
 ok(r.barres[0]===VIS.filter(v=>v>0).length,
   'une barre par jour NON VIDE ('+r.barres[0]+') : zéro ne dessine rien, et se distingue ainsi de « peu »');
-ok(/^2026-08-21 — 3 visiteurs, 0 installée$/.test(r.infobulle.trim()),
+ok(/^2026-08-21, 3 visiteurs, 0 installée$/.test(r.infobulle.trim()),
   'l’infobulle donne le jour et ses deux nombres, au singulier quand il le faut — « '+r.infobulle.trim()+' »');
 
 console.log('\nC — le délai se dit dans l’unité où on le pense');

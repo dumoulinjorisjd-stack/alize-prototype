@@ -88,7 +88,7 @@ const fiche=await p.evaluate(()=>{
   return {n:btn.length,
     coches:btn.filter(x=>x.getAttribute('aria-pressed')==='true').map(x=>x.dataset.adm),
     custom:btn.some(x=>x.dataset.adm==='artcat:a1:c_admin'),
-    demande:/demandé/.test(h), route:/lui seul — qui lui envoie les commandes/.test(h)};
+    demande:/demandé/.test(h), route:/lui seul, qui lui envoie les commandes/.test(h)};
 });
 ok(fiche.n>=20,'tous les métiers sont offerts au clic ('+fiche.n+')');
 ok(fiche.coches.length===1&&fiche.coches[0]==='artcat:a1:menage','ceux qu’il exerce déjà sont cochés');

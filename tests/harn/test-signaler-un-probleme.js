@@ -76,9 +76,9 @@ ok(/if \(before\.status === 'disputed' \|\| after\.status !== 'disputed'\) retur
 console.log('\nE — deux motifs, des mots différents, une liste fermée');
 ok(/const qual = after\.disputeKind === 'qualite';/.test(srv),
   'le serveur distingue les deux motifs par une comparaison stricte');
-ok(/qual \? 'Ti-Services · Problème signalé — ' : 'Ti-Services · Litige à arbitrer — '/.test(srv),
+ok(/qual \? 'Ti-Services · Problème signalé, ' : 'Ti-Services · Litige à arbitrer, '/.test(srv),
   'l’e-mail à l’administrateur ne parle plus de durée quand il s’agit de qualité');
-ok(/qual \? 'Problème signalé — ' : 'Durée contestée — '/.test(srv),
+ok(/qual \? 'Problème signalé, ' : 'Durée contestée, '/.test(srv),
   'ni la notification à l’artisan — on ne l’envoie pas vérifier des heures que personne ne discute');
 ok(/disputeKind:r\.disputeKind\|\|'duree'/.test(src),
   'une valeur inconnue retombe sur la durée, seul motif possible jusqu’ici');

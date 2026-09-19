@@ -30,7 +30,7 @@ const enveloppe = tiCharteHtml(brut);
 ok(enveloppe.indexOf('cid:tilogo') >= 0, 'le logo est dans l’en-tête');
 ok(enveloppe.indexOf('Ti</span><span style="color:#231E33">-Services') >= 0, 'le nom Ti-Services est composé');
 ok(enveloppe.indexOf('Services à la demande · Saint-Barthélemy') >= 0, 'le sous-titre de la marque est là');
-ok(enveloppe.indexOf('C.C.S — Construction Conseils et Services') >= 0, 'le pied C.C.S est là');
+ok(enveloppe.indexOf('C.C.S, Construction Conseils et Services') >= 0, 'le pied C.C.S est là');
 ok(enveloppe.indexOf('Votre attestation d\'assurance est validée') >= 0, 'le corps du message est conservé');
 ok((enveloppe.match(/L'équipe Ti-Services/g) || []).length === 1,
   'la signature n’apparaît qu’UNE fois (celle du corps brut est retirée, le pied signe)');

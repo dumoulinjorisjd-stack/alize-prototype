@@ -113,7 +113,7 @@ function tiCharteHtml(inner) {
           '</td></tr>' +
           '<tr><td style="padding:16px 30px;border-top:1px solid #efeae4;background:#FBF7F4">' +
             '<div style="font-size:12px;color:#8a8494;line-height:1.6">L\'équipe Ti-Services<br>' +
-            '<span style="color:#b0aab8">Service édité par C.C.S — Construction Conseils et Services, SAS · Saint-Barthélemy</span></div>' +
+            '<span style="color:#b0aab8">Service édité par C.C.S, Construction Conseils et Services, SAS · Saint-Barthélemy</span></div>' +
           '</td></tr>' +
         '</table>' +
       '</td></tr>' +
@@ -148,7 +148,7 @@ async function sendMail(db, to, message) {
         html: message.html,
         attachments: (Array.isArray(message.attachments) && message.attachments.length) ? message.attachments : undefined,
       });
-      console.log('[mail] envoyé à ' + to + ' (id=' + (info && info.messageId || '?') + ') — ' + message.subject);
+      console.log('[mail] envoyé à ' + to + ' (id=' + (info && info.messageId || '?') + '), ' + message.subject);
       return true;
     } catch (e) {
       console.error('[mail] échec SMTP → ' + to + ' : ' + (e && e.message));
@@ -156,7 +156,7 @@ async function sendMail(db, to, message) {
       return false;
     }
   }
-  console.warn('[mail] SMTP_PASS absent — message mis en file `mail` pour ' + to +
+  console.warn('[mail] SMTP_PASS absent, message mis en file `mail` pour ' + to +
     ' (rien ne partira sans l\'extension Trigger Email OU le secret SMTP_PASS).');
   await db.collection('mail').add(withBcc(to, message));
   return false;
@@ -293,7 +293,7 @@ async function mollieRouteNet(molliePaymentId, orgId, netAmount, label) {
       let motif = '';
       try { const j = JSON.parse(txt); motif = j.detail || j.title || ''; } catch (_) { motif = (txt || '').slice(0, 200); }
       console.warn('mollieRouteNet HTTP', res.status, txt);
-      _routeMotif = 'HTTP ' + res.status + (motif ? (' — ' + String(motif).slice(0, 220)) : '');
+      _routeMotif = 'HTTP ' + res.status + (motif ? (', ' + String(motif).slice(0, 220)) : '');
       return false;
     }
     _routeMotif = '';
@@ -484,7 +484,7 @@ async function notifyArtisanMollieProblem(db, uid, reason) {
   // Un titre qui dit l'action, un corps qui dit laquelle. Rien d'autre.
   const titre = pasDeCompte ? 'Ti-Services · Une action pour être payé' : 'Ti-Services · Un document pour être payé';
   const corps = pasDeCompte
-    ? 'Connectez votre compte de paiement pour recevoir vos gains — quelques minutes, une seule fois.'
+    ? 'Connectez votre compte de paiement pour recevoir vos gains, quelques minutes, une seule fois.'
     : 'Mollie a besoin d\'un justificatif pour ouvrir vos virements. Ouvrez l\'app pour le fournir.';
   if (tokens.length) {
     try {
@@ -521,7 +521,7 @@ async function notifyArtisanMollieActivated(db, uid) {
     try {
       await getMessaging().sendEachForMulticast({
         tokens,
-        data: {title: 'Ti-Services · Paiements activés 🎉', body: 'Votre compte de paiement est validé — vous pouvez recevoir des missions et être payé automatiquement.', url: './?open=missions'},
+        data: {title: 'Ti-Services · Paiements activés 🎉', body: 'Votre compte de paiement est validé, vous pouvez recevoir des missions et être payé automatiquement.', url: './?open=missions'},
         webpush: {fcmOptions: {link: '/?open=missions'}, headers: {Urgency: 'high'}},
       });
     } catch (e) { console.warn('mollieActivated push', e); }
@@ -532,7 +532,7 @@ async function notifyArtisanMollieActivated(db, uid) {
         subject: 'Ti-Services · Vos paiements sont activés 🎉',
         html: '<p>Bonjour ' + escHtmlS(name || '') + ',</p>' +
               '<p>Bonne nouvelle : votre compte de paiement <b>Mollie</b> vient d\'être validé.</p>' +
-              '<p>Vous pouvez désormais <b>accepter des missions</b> — et à chaque prestation validée, votre gain net (commission déduite) vous est <b>versé automatiquement</b>, sans aucun virement à faire.</p>' +
+              '<p>Vous pouvez désormais <b>accepter des missions</b>, et à chaque prestation validée, votre gain net (commission déduite) vous est <b>versé automatiquement</b>, sans aucun virement à faire.</p>' +
               '<p>À très vite,<br>L\'équipe Ti-Services</p>',
       });
     } catch (e) { console.warn('mollieActivated email', e); }
@@ -574,7 +574,7 @@ async function relancerComplements(db, clientUid) {
         complementIssue: ''});
     } catch (_) {}
     if (out.direct) n++;
-    console.log('Supplément relancé reqId=' + d.id + ' ' + montant + ' € — ' + out.reason);
+    console.log('Supplément relancé reqId=' + d.id + ' ' + montant + ' €, ' + out.reason);
   }
   return n;
 }
@@ -835,13 +835,13 @@ exports.notifyAdminNewArtisan = onDocumentCreated({document: 'artisans/{artisanI
   }
   try {
     await sendMail(db, ADMIN_EMAIL, {
-      subject: 'Ti-Services · Nouvelle candidature — ' + name + (a.acceptsGrille === false ? ' (hors grille)' : ''),
+      subject: 'Ti-Services · Nouvelle candidature, ' + name + (a.acceptsGrille === false ? ' (hors grille)' : ''),
       html: '<p><b>' + escHtmlS(name) + '</b> souhaite rejoindre Ti-Services.</p>' + grille
         + '<p>Ouvrez la console admin pour examiner le dossier et valider ou refuser.</p>',
     });
   } catch (e) { console.warn('newArtisan mail', e && e.message); }
   if (!tokens.length) {
-    console.log('Aucun jeton admin enregistré — e-mail seul.');
+    console.log('Aucun jeton admin enregistré, e-mail seul.');
     return;
   }
   const message = {
@@ -931,7 +931,7 @@ async function mailArtisansSansAppareil(db, artById, targetUids, tokenToUid, r, 
       if (!mail) return;
       try {
         await sendMail(db, mail, {
-          subject: (dirigee ? 'Une demande vous est réservée — ' : 'Nouvelle demande — ') + svcM,
+          subject: (dirigee ? 'Une demande vous est réservée, ' : 'Nouvelle demande, ') + svcM,
           html: '<p>Bonjour ' + escHtmlS((a.name || '').split(' ')[0] || '') + ',</p>'
             + (dirigee
               ? '<p>Un client vous demande <b>directement</b> sur Ti-Services.</p>'
@@ -1038,7 +1038,7 @@ exports.notifyArtisansNewRequest = onDocumentCreated({document: 'requests/{reqId
   const tokens = Object.keys(tokenToUid);
 
   await mailArtisansSansAppareil(db, artById, targetUids, tokenToUid, r, !!preferred);
-  if (!tokens.length) { console.log('Aucun jeton artisan enregistré — e-mail(s) envoyé(s) à la place.'); return; }
+  if (!tokens.length) { console.log('Aucun jeton artisan enregistré, e-mail(s) envoyé(s) à la place.'); return; }
 
   const svcName = (r.serviceName || 'Nouvelle prestation').toString().slice(0, 60);
   const zone = (r.zone || '').toString().slice(0, 40);
@@ -1048,8 +1048,8 @@ exports.notifyArtisansNewRequest = onDocumentCreated({document: 'requests/{reqId
     data: {
       title: preferred ? '🌟 Demande réservée pour vous' : 'Espace artisan · Nouvelle mission',
       body: preferred
-        ? (cliFirst + ' vous demande directement — ' + svcName + (zone ? ' · ' + zone : '') + '. Hors file d’attente, rien que pour vous.')
-        : (svcName + (zone ? ' · ' + zone : '') + ' — premier arrivé, premier servi.'),
+        ? (cliFirst + ' vous demande directement, ' + svcName + (zone ? ' · ' + zone : '') + '. Hors file d’attente, rien que pour vous.')
+        : (svcName + (zone ? ' · ' + zone : '') + ', premier arrivé, premier servi.'),
       url: './?open=missions',
     },
     webpush: { fcmOptions: { link: '/?open=missions' }, headers: { Urgency: 'high' } },
@@ -1105,7 +1105,7 @@ exports.notifyArtisanApproved = onDocumentUpdated({document: 'artisans/{artisanI
         tokens,
         data: {
           title: 'Espace artisan · Inscription validée 🎉',
-          body: 'Votre compte Ti-Services est activé — vous pouvez recevoir des missions.',
+          body: 'Votre compte Ti-Services est activé, vous pouvez recevoir des missions.',
           url: './?open=missions',
         },
         webpush: { fcmOptions: { link: '/?open=missions' }, headers: { Urgency: 'high' } },
@@ -1153,7 +1153,7 @@ exports.notifyArtisanApproved = onDocumentUpdated({document: 'artisans/{artisanI
           if (rtok.length) {
             await getMessaging().sendEachForMulticast({
               tokens: rtok,
-              data: {title: 'Parrainage validé 🎉', body: 'Votre filleul est validé — +' + REF_CREDIT_JOBS + ' missions vers votre statut.', url: './?open=missions'},
+              data: {title: 'Parrainage validé 🎉', body: 'Votre filleul est validé, +' + REF_CREDIT_JOBS + ' missions vers votre statut.', url: './?open=missions'},
               webpush: {fcmOptions: {link: '/?open=missions'}},
             });
           }
@@ -1188,10 +1188,10 @@ exports.notifyServiceAddition = onDocumentUpdated({document: 'artisans/{artisanI
     : (c + (dnp[c] ? ' (souhaite ' + dnp[c] + ' € net/h)' : '')))).join(', ');
   try {
     await sendMail(db, ADMIN_EMAIL, {
-      subject: 'Ti-Services · Métier à valider — ' + name,
+      subject: 'Ti-Services · Métier à valider, ' + name,
       html: '<p><b>' + name + '</b> demande à proposer un nouveau métier sur Ti-Services :</p>' +
             '<p style="font-size:16px"><b>' + labels + '</b></p>' +
-            '<p>Ouvrez la console admin, puis la fiche de l\'artisan, pour vérifier (assurance — et diplômes pour la garde d\'enfants) et <b>valider</b> ou <b>refuser</b> le métier. Tant qu\'il n\'est pas validé, il n\'est pas proposé aux clients.</p>',
+            '<p>Ouvrez la console admin, puis la fiche de l\'artisan, pour vérifier (assurance, et diplômes pour la garde d\'enfants) et <b>valider</b> ou <b>refuser</b> le métier. Tant qu\'il n\'est pas validé, il n\'est pas proposé aux clients.</p>',
     });
   } catch (e) { console.warn('service add notify', e); }
 });
@@ -1222,7 +1222,7 @@ exports.notifyArtisanDecisions = onDocumentUpdated({document: 'artisans/{artisan
     avis.push({
       titre: 'Espace artisan · Candidature non retenue',
       corps: 'Votre dossier n\'a pas été retenu en l\'état. Contactez-nous depuis l\'application pour en savoir plus ou compléter votre dossier.',
-      mail: 'Votre dossier n\'a pas été retenu en l\'état — cela ne veut pas dire jamais. ' +
+      mail: 'Votre dossier n\'a pas été retenu en l\'état, cela ne veut pas dire jamais. ' +
         'Écrivez-nous depuis l\'application : nous vous dirons ce qui manque et comment compléter votre dossier pour retenter votre chance.',
     });
   }
@@ -1239,7 +1239,7 @@ exports.notifyArtisanDecisions = onDocumentUpdated({document: 'artisans/{artisan
   if (valides.length) {
     avis.push({
       titre: 'Espace artisan · Métier validé 🎉',
-      corps: 'Votre nouveau métier (' + valides.join(', ') + ') est validé — les clients peuvent désormais vous solliciter.',
+      corps: 'Votre nouveau métier (' + valides.join(', ') + ') est validé, les clients peuvent désormais vous solliciter.',
       mail: 'Bonne nouvelle : votre nouveau métier (<b>' + escHtmlS(valides.join(', ')) + '</b>) vient d\'être validé par notre équipe. ' +
         'Il apparaît dès maintenant sur votre profil et les clients de toute l\'île peuvent vous solliciter. ' +
         'Pensez à garder vos disponibilités à jour dans votre agenda pour recevoir les demandes au bon moment.',
@@ -1250,7 +1250,7 @@ exports.notifyArtisanDecisions = onDocumentUpdated({document: 'artisans/{artisan
       titre: 'Espace artisan · Métier non retenu',
       corps: 'Votre demande de métier (' + refuses.join(', ') + ') n\'a pas été retenue. Contactez-nous depuis l\'application pour en savoir plus.',
       mail: 'Votre demande de métier (<b>' + escHtmlS(refuses.join(', ')) + '</b>) n\'a pas été retenue pour le moment. ' +
-        'Contactez-nous depuis l\'application : nous vous expliquerons ce qui manque et comment la représenter — votre profil actuel, lui, reste pleinement actif.',
+        'Contactez-nous depuis l\'application : nous vous expliquerons ce qui manque et comment la représenter, votre profil actuel, lui, reste pleinement actif.',
     });
   }
 
@@ -1261,14 +1261,14 @@ exports.notifyArtisanDecisions = onDocumentUpdated({document: 'artisans/{artisan
         titre: 'Espace artisan · Attestation validée',
         corps: 'Votre attestation d\'assurance est validée. Rien d\'autre à faire.',
         mail: 'Bonne nouvelle : votre attestation d\'assurance a été vérifiée et validée par notre équipe. ' +
-          'Votre profil est en règle et vous continuez de recevoir les demandes normalement — rien d\'autre à faire de votre côté. ' +
+          'Votre profil est en règle et vous continuez de recevoir les demandes normalement, rien d\'autre à faire de votre côté. ' +
           'Merci de contribuer au sérieux de la plateforme.',
       });
     } else if (after.insuranceStatus === 'refuse') {
       avis.push({
         titre: 'Espace artisan · Attestation refusée',
-        corps: 'Votre attestation d\'assurance n\'a pas pu être validée — merci d\'en déposer une nouvelle depuis votre espace.',
-        mail: 'Votre attestation d\'assurance n\'a pas pu être validée — document illisible, incomplet ou arrivé à échéance, le plus souvent. ' +
+        corps: 'Votre attestation d\'assurance n\'a pas pu être validée, merci d\'en déposer une nouvelle depuis votre espace.',
+        mail: 'Votre attestation d\'assurance n\'a pas pu être validée, document illisible, incomplet ou arrivé à échéance, le plus souvent. ' +
           'Déposez-en une nouvelle depuis votre espace : notre équipe la vérifiera rapidement. ' +
           'En cas de doute sur le document attendu, écrivez-nous depuis l\'application.',
       });
@@ -1323,10 +1323,10 @@ exports.notifyAdminDispute = onDocumentUpdated({document: 'requests/{reqId}', se
   const money = (x) => (Math.round((Number(x) || 0) * 100) / 100).toFixed(2).replace('.', ',') + ' €';
   try {
     await sendMail(db, ADMIN_EMAIL, {
-      subject: (qual ? 'Ti-Services · Problème signalé — ' : 'Ti-Services · Litige à arbitrer — ') + svc,
+      subject: (qual ? 'Ti-Services · Problème signalé, ' : 'Ti-Services · Litige à arbitrer, ') + svc,
       html: (qual ? '<p><b>Un client signale un problème sur une prestation</b> :</p>'
                   : '<p><b>Un désaccord de durée est à arbitrer</b> sur une prestation :</p>') +
-            '<p><b>' + escHtmlS(svc) + '</b> — ' + escHtmlS(cli) + ' → ' + escHtmlS(pro) + '</p>' +
+            '<p><b>' + escHtmlS(svc) + '</b>, ' + escHtmlS(cli) + ' → ' + escHtmlS(pro) + '</p>' +
             (qual ? '<p>Montant en attente : <b>' + money(rate * fin) + '</b> (' + fin + ' h)</p>'
                   : '<p>Accord initial : <b>' + dur + ' h</b> (' + money(rate * dur) + ')<br>' +
                     'Déclaré par le prestataire : <b>' + fin + ' h</b> (' + money(rate * fin) + ')</p>') +
@@ -1342,7 +1342,7 @@ exports.notifyAdminDispute = onDocumentUpdated({document: 'requests/{reqId}', se
   try {
     if (after.providerUid) {
       const tokens = await userPushTokens(db, after.providerUid);
-      await pushMulticast(tokens, (qual ? 'Problème signalé — ' : 'Durée contestée — ') + svc,
+      await pushMulticast(tokens, (qual ? 'Problème signalé, ' : 'Durée contestée, ') + svc,
         (qual
           ? cli + ' a signalé un problème sur cette prestation. Ti-Services examine : votre paiement est suspendu le temps de l\'examen.'
           : cli + ' conteste la durée déclarée (' + fin + ' h au lieu de ' + dur + ' h prévues). Ti-Services arbitre : votre paiement est suspendu le temps de l\'examen.'),
@@ -1351,11 +1351,11 @@ exports.notifyAdminDispute = onDocumentUpdated({document: 'requests/{reqId}', se
       const u = (await db.collection('users').doc(after.providerUid).get()).data() || {};
       if (u.email) {
         await sendMail(db, u.email, {
-          subject: (qual ? 'Ti-Services · Problème signalé — ' : 'Ti-Services · Durée contestée — ') + svc,
+          subject: (qual ? 'Ti-Services · Problème signalé, ' : 'Ti-Services · Durée contestée, ') + svc,
           html: (qual
               ? '<p>' + escHtmlS(cli) + ' a signalé un problème sur « ' + escHtmlS(svc) + ' ».</p>'
               : '<p>' + escHtmlS(cli) + ' conteste la durée déclarée sur « ' + escHtmlS(svc) + ' » (' + fin + ' h déclarées, ' + dur + ' h prévues).</p>')
-            + '<p>Ti-Services examine la situation et arbitre — votre paiement est suspendu le temps de l\'examen. Vous pouvez apporter des précisions depuis la messagerie de la mission.</p>',
+            + '<p>Ti-Services examine la situation et arbitre, votre paiement est suspendu le temps de l\'examen. Vous pouvez apporter des précisions depuis la messagerie de la mission.</p>',
         });
       }
     }
@@ -1561,7 +1561,7 @@ exports.notifySupportMessage = onDocumentUpdated('requests/{reqId}', async (even
       try { const ts = await db.collection('adminTokens').get(); tokens = ts.docs.map((d) => d.id).filter(Boolean); } catch (_) {}
       const body = String((fromUser[fromUser.length - 1] || {}).text || 'Nouveau message').slice(0, 140);
       const who = (after[userNameField] || fallbackName || 'Un utilisateur').toString().slice(0, 60);
-      await pushMulticast(tokens, 'Support — ' + who, body, '/',
+      await pushMulticast(tokens, 'Support, ' + who, body, '/',
         (tok) => db.collection('adminTokens').doc(tok).delete(), tag);
     }
   }
@@ -1599,7 +1599,7 @@ exports.notifyGeneralSupport = onDocumentUpdated('users/{uid}', async (event) =>
     try { const ts = await db.collection('adminTokens').get(); tokens = ts.docs.map((d) => d.id).filter(Boolean); } catch (_) {}
     const body = String((fromUser[fromUser.length - 1] || {}).text || 'Nouveau message').slice(0, 140);
     const who = (after.name || 'Un utilisateur').toString().slice(0, 60);
-    await pushMulticast(tokens, 'Support général — ' + who, body, '/',
+    await pushMulticast(tokens, 'Support général, ' + who, body, '/',
       (tok) => db.collection('adminTokens').doc(tok).delete(), tag);
   }
 });
@@ -1642,18 +1642,18 @@ exports.notifyClientStatus = onDocumentUpdated('requests/{reqId}', async (event)
     body = provider + ' a démarré ' + svcName + '.';
   } else if (aStatus === 'done_pro') {
     title = 'Vos réservations · Prestation terminée';
-    body = provider + ' a terminé — validez pour finaliser.';
+    body = provider + ' a terminé, validez pour finaliser.';
   } else if (bStatus === 'pending' && aStatus === 'declined') {
     // L'artisan PRÉCISÉMENT demandé (demande dirigée) a décliné : le client doit
     // décider de la suite (proposer à tous les artisans, ou annuler).
     const who = (after.declinedName || after.preferredProviderName || 'Votre artisan').toString().slice(0, 60);
     title = 'Vos réservations · Artisan indisponible';
-    body = who + ' n\'est pas disponible pour ' + svcName + ' — à vous de décider.';
+    body = who + ' n\'est pas disponible pour ' + svcName + ', à vous de décider.';
   } else if (aStatus === 'payment_failed') {
     // Paiement refusé à la commande : sans ce message, la demande n'était JAMAIS
     // diffusée aux artisans et le client ne l'apprenait nulle part.
     title = 'Vos réservations · Paiement non abouti';
-    body = 'Votre réservation de ' + svcName + ' n\'est pas confirmée — réessayez le paiement.';
+    body = 'Votre réservation de ' + svcName + ' n\'est pas confirmée, réessayez le paiement.';
   } else {
     return; // autres transitions : pas de notification client
   }
@@ -1729,7 +1729,7 @@ exports.notifyArtisanPaid = onDocumentUpdated({document: 'requests/{reqId}', sec
   const cli = (after.clientName || 'Le client').toString().split(' ')[0].slice(0, 30);
   const tip = Math.max(0, round2(Number(after.tip) || 0));
   const net = Number(after.netAmount);
-  const amt = (net > 0) ? (' — vous percevez ' + eurTxt(net)) : '';
+  const amt = (net > 0) ? (', vous percevez ' + eurTxt(net)) : '';
   const body = tip > 0
     ? ('💛 ' + cli + ' a validé et vous a laissé ' + eurTxt(tip) + ' de pourboire' + amt)
     : (cli + ' a validé votre prestation' + amt + '. Vous êtes payé 🎉');
@@ -1738,14 +1738,14 @@ exports.notifyArtisanPaid = onDocumentUpdated({document: 'requests/{reqId}', sec
   // a ce filet depuis toujours (mailArtisansSansAppareil) ; « vous êtes payé » — le
   // message le plus important pour lui — n'en avait aucun.
   if (!tokens.length) {
-    console.log('notifyArtisanPaid : aucun jeton pour ' + uid + ' — repli e-mail');
+    console.log('notifyArtisanPaid : aucun jeton pour ' + uid + ', repli e-mail');
     try {
       const u = (await db.collection('users').doc(uid).get()).data() || {};
       const a = (await db.collection('artisans').doc(uid).get()).data() || {};
       const em = u.email || a.email || '';
       if (em) {
         await sendMail(db, em, {
-          subject: 'Prestation validée — vous êtes payé',
+          subject: 'Prestation validée, vous êtes payé',
           html: '<p>' + escHtmlS(body) + '</p><p>Le détail est dans votre espace Missions sur <a href="' + APP_URL + '">ti-services.fr</a>.</p>',
         });
       }
@@ -1756,7 +1756,7 @@ exports.notifyArtisanPaid = onDocumentUpdated({document: 'requests/{reqId}', sec
   try {
     const res = await getMessaging().sendEachForMulticast({
       tokens,
-      data: { title: '🎉 Prestation validée — vous êtes payé', body: body, url: './?open=missions' },
+      data: { title: '🎉 Prestation validée, vous êtes payé', body: body, url: './?open=missions' },
       webpush: { fcmOptions: { link: '/?open=missions' }, headers: { Urgency: 'high' } },
     });
     console.log('notifyArtisanPaid push ' + res.successCount + '/' + tokens.length);
@@ -1816,7 +1816,7 @@ exports.notifyBoosted = onDocumentUpdated('requests/{reqId}', async (event) => {
   const zone = (after.zone || '').toString().slice(0, 40);
   const boost = Number(after.boost) || 0;
   const boostEur = Math.max(0, Math.round(Number(after.boostEur) || 0));
-  const bonusTxt = boostEur ? (' — bonus +' + boostEur + ' € ajouté') : (boost ? (' — bonus +' + boost + '% ajouté') : '');
+  const bonusTxt = boostEur ? (', bonus +' + boostEur + ' € ajouté') : (boost ? (', bonus +' + boost + '% ajouté') : '');
   try {
     await getMessaging().sendEachForMulticast({
       tokens,
@@ -2047,7 +2047,7 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
       rate: rate,
       base: base,
       boost: boost,
-      tip: tip,                   // pourboire — commissionné au même taux que la prestation
+      tip: tip,                   // pourboire, commissionné au même taux que la prestation
       tipCommission: tipCommission, // part de la commission assise sur le pourboire
       grossTotal: gross,          // réglé par le client
       commissionPct: pct,
@@ -2169,10 +2169,10 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
       try {
         await event.data.after.ref.update({complementAmount: complement, complementStatus: 'impossible', complementIssue: motif});
       } catch (_) {}
-      console.warn('Supplément NON prélevable reqId=' + reqId + ' ' + complement + ' € — ' + motif);
+      console.warn('Supplément NON prélevable reqId=' + reqId + ' ' + complement + ' €, ' + motif);
       try {
         await sendMail(db, ADMIN_EMAIL, {
-          subject: 'Supplément impossible à prélever — ' + (after.serviceName || after.service || 'prestation'),
+          subject: 'Supplément impossible à prélever, ' + (after.serviceName || after.service || 'prestation'),
           html: '<p>La facture porte un supplément (pourboire, heures en plus, coup de pouce) qui n\'a pas pu être prélevé : <b>aucun prélèvement n\'a même été tenté</b>.</p>'
             + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li>'
             + '<li><b>Supplément :</b> ' + eurTxt(complement) + '</li>'
@@ -2203,7 +2203,7 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
           } catch (_) {}
           try {
             await sendMail(db, ADMIN_EMAIL, {
-              subject: 'Supplément à encaisser — ' + (after.serviceName || after.service || 'prestation'),
+              subject: 'Supplément à encaisser, ' + (after.serviceName || after.service || 'prestation'),
               html: '<p>Le montant validé dépasse l\'empreinte posée à la commande, et le prélèvement direct n\'a pas pu se faire.</p>'
                 + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li>'
                 + '<li><b>Supplément :</b> ' + eurTxt(complement) + '</li>'
@@ -2213,7 +2213,7 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
             });
           } catch (_) {}
         }
-        console.log('Supplément reqId=' + reqId + ' ' + complement + ' € — ' + r2.reason);
+        console.log('Supplément reqId=' + reqId + ' ' + complement + ' €, ' + r2.reason);
       } catch (e) { console.warn('settleCommission complement', e); }
     }
 
@@ -2251,12 +2251,12 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secr
           try { await notifyArtisanMollieProblem(db, providerUid, orgId ? 'route_failed' : 'no_org'); } catch (_) {}
           try {
             await sendMail(db, ADMIN_EMAIL, {
-              subject: 'Versement Mollie à régulariser — ' + (after.serviceName || after.service || 'prestation'),
+              subject: 'Versement Mollie à régulariser, ' + (after.serviceName || after.service || 'prestation'),
               html: '<p>Le client a été débité, mais le versement du net à l\'artisan n\'a pas pu être routé automatiquement.</p>'
                 + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li>'
                 + '<li><b>Artisan :</b> ' + escHtmlS(after.providerName || providerUid) + '</li>'
                 + '<li><b>Net dû :</b> ' + eurTxt(netA) + '</li>'
-                + '<li><b>Cause :</b> ' + (orgId ? ('routage refusé par Mollie' + (routeMotif() ? (' — ' + escHtmlS(routeMotif())) : '')) : 'aucune organisation Mollie connectée') + '</li></ul>'
+                + '<li><b>Cause :</b> ' + (orgId ? ('routage refusé par Mollie' + (routeMotif() ? (', ' + escHtmlS(routeMotif())) : '')) : 'aucune organisation Mollie connectée') + '</li></ul>'
                 + '<p>À faire : vérifier l\'onboarding Mollie de l\'artisan, puis re-router le paiement (ou virement manuel). L\'argent est en sécurité sur le solde plateforme.</p>',
             });
           } catch (_) {}
@@ -2318,7 +2318,7 @@ exports.notifyReopenedRequest = onDocumentUpdated({document: 'requests/{reqId}',
       const svcName = (after.serviceName || 'Une mission').toString().slice(0, 60);
       const zone = (after.zone || '').toString().slice(0, 40);
       const title = wasPendingPayment ? 'Espace artisan · Nouvelle mission' : 'Espace artisan · Mission de nouveau disponible';
-      const body = svcName + (zone ? ' · ' + zone : '') + (wasPendingPayment ? ' — une nouvelle demande, à saisir.' : ' — un créneau se libère, à saisir.');
+      const body = svcName + (zone ? ' · ' + zone : '') + (wasPendingPayment ? ', une nouvelle demande, à saisir.' : ', un créneau se libère, à saisir.');
       await pushMulticast(tokens, title, body, '/?open=missions',
         (t) => db.collection('users').doc(tokenToUid[t]).update({ pushTokens: FieldValue.arrayRemove(t) }));
     }
@@ -2340,7 +2340,7 @@ exports.notifyReopenedRequest = onDocumentUpdated({document: 'requests/{reqId}',
       const u = await db.collection('users').doc(clientUid).get();
       const tokens = (u.data() || {}).pushTokens || [];
       await pushMulticast(tokens, 'Vos réservations · Recherche relancée',
-        'Votre artisan s\'est désisté — nous cherchons un nouvel intervenant.', '/?open=wallet&r=' + event.params.reqId,
+        'Votre artisan s\'est désisté, nous cherchons un nouvel intervenant.', '/?open=wallet&r=' + event.params.reqId,
         (t) => db.collection('users').doc(clientUid).update({ pushTokens: FieldValue.arrayRemove(t) }));
     }
   } catch (e) { console.warn('reopen notify client', e); }
@@ -2479,7 +2479,7 @@ exports.ledgerReconcile = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (requ
     // On relit APRÈS écriture : on annonce un état vérifié, jamais un état supposé.
     let encaissees = 0; let autres = 0;
     (await lireRegistre(db)).forEach((d) => { const e = d.data() || {}; if (e.exclu) return; if (e.mollieEncaisse === true) encaissees++; else autres++; });
-    console.log('ledgerReconcile : ' + releves + ' relevé(s), ' + echecs + ' sans réponse, ' + encaissees + ' encaissée(s), ' + autres + ' non encaissée(s) — par ' + who);
+    console.log('ledgerReconcile : ' + releves + ' relevé(s), ' + echecs + ' sans réponse, ' + encaissees + ' encaissée(s), ' + autres + ' non encaissée(s), par ' + who);
     return {releves: releves, echecs: echecs, encaissees: encaissees, autres: autres};
   } catch (e) {
     // Plutôt qu'une « erreur interne » opaque : on remonte la cause, telle quelle.
@@ -2557,7 +2557,7 @@ exports.reportContent = onCall({secrets: [SMTP_PASS]}, async (request) => {
 
   try {
     await sendMail(db, ADMIN_EMAIL, {
-      subject: 'Ti-Services · Signalement — ' + REPORT_MOTIFS[motif],
+      subject: 'Ti-Services · Signalement, ' + REPORT_MOTIFS[motif],
       html: '<p><b>' + escHtmlS(auteurNom || auteurEmail || 'Un utilisateur') + '</b> signale ' +
             (cibleNom ? '<b>' + escHtmlS(cibleNom) + '</b>' : 'un contenu') + '.</p>' +
             '<p><b>Motif :</b> ' + escHtmlS(REPORT_MOTIFS[motif]) + '</p>' +
@@ -2568,7 +2568,7 @@ exports.reportContent = onCall({secrets: [SMTP_PASS]}, async (request) => {
     });
   } catch (e) { console.warn('report mail', (e && e.message) || e); }
 
-  console.log('Signalement ' + ref.id + ' — ' + motif + ' — par ' + uid + (cibleUid ? ' contre ' + cibleUid : ''));
+  console.log('Signalement ' + ref.id + ', ' + motif + ', par ' + uid + (cibleUid ? ' contre ' + cibleUid : ''));
   return {ok: true, id: ref.id};
 });
 
@@ -2597,7 +2597,7 @@ exports.ledgerDelete = onCall(async (request) => {
       comptaExclue: true, factureSupprimee: true, factureSupprimeeAt: FieldValue.serverTimestamp(),
     }, {merge: true});
   } catch (_) {}
-  console.log('ledgerDelete ' + reqId + ' (facture ' + (avant.invNo || '—') + ') par ' + who + ' — ' + (motif || 'sans motif'));
+  console.log('ledgerDelete ' + reqId + ' (facture ' + (avant.invNo || '—') + ') par ' + who + ', ' + (motif || 'sans motif'));
   return {ok: true, invNo: String(avant.invNo || '')};
 });
 
@@ -2615,7 +2615,7 @@ exports.ledgerExclude = onCall(async (request) => {
   if (!(await ref.get()).exists) throw new HttpsError('not-found', 'Aucune écriture pour cette prestation.');
   await ref.set({
     exclu: exclu,
-    excluMotif: exclu ? (motif || 'prestation d\'essai — jamais réellement encaissée') : '',
+    excluMotif: exclu ? (motif || 'prestation d\'essai, jamais réellement encaissée') : '',
     excluPar: exclu ? who : '',
     excluAt: exclu ? FieldValue.serverTimestamp() : null,
   }, {merge: true});
@@ -2738,13 +2738,13 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
             ligne.routes = Array.isArray(arr) ? arr.length : 0;
             if (ligne.routes > 0) {
               ligne.verse = true;
-              ligne.motif = 'déjà versé — Mollie a bien la route, notre fiche était en retard';
+              ligne.motif = 'déjà versé, Mollie a bien la route, notre fiche était en retard';
               try { await d.ref.update({molliePayout: 'routed', molliePayoutIssue: '', molliePayoutMotif: ''}); } catch (_) {}
               try { await db.collection('ledger').doc(d.id).set({molliePayout: 'routed'}, {merge: true}); } catch (_) {}
             }
           } else {
             ligne.lecture = 'HTTP ' + (l.status || '?')
-              + ((l.data && (l.data.detail || l.data.title)) ? (' — ' + String(l.data.detail || l.data.title).slice(0, 160)) : '');
+              + ((l.data && (l.data.detail || l.data.title)) ? (', ' + String(l.data.detail || l.data.title).slice(0, 160)) : '');
           }
         } catch (_) {}
       }
@@ -2765,7 +2765,7 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
         } else {
           ligne.motif = !r.molliePaymentId ? 'aucun paiement Mollie sur cette prestation'
             : !orgId ? 'aucun compte Mollie connecté pour ce prestataire'
-              : 'net à verser inconnu — régularisation à la main';
+              : 'net à verser inconnu, régularisation à la main';
         }
       }
       bloques.push(ligne);
@@ -2813,13 +2813,13 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
               ligne.routes = Array.isArray(arr) ? arr.length : 0;
               if (ligne.routes > 0) {
                 ligne.verse = true;
-                ligne.motif = 'déjà versé — Mollie a bien la route, notre fiche était en retard';
+                ligne.motif = 'déjà versé, Mollie a bien la route, notre fiche était en retard';
                 try { await d.ref.update({complementPayout: 'routed', complementPayoutIssue: '', complementPayoutMotif: ''}); } catch (_) {}
                 try { await db.collection('ledger').doc(d.id).set({complementPayout: 'routed'}, {merge: true}); } catch (_) {}
               }
             } else {
               ligne.lecture = 'HTTP ' + (l.status || '?')
-                + ((l.data && (l.data.detail || l.data.title)) ? (' — ' + String(l.data.detail || l.data.title).slice(0, 160)) : '');
+                + ((l.data && (l.data.detail || l.data.title)) ? (', ' + String(l.data.detail || l.data.title).slice(0, 160)) : '');
             }
           } catch (_) {}
         }
@@ -2840,7 +2840,7 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
           } else {
             ligne.motif = !r.complementPaymentId ? 'aucun paiement Mollie sur ce supplément'
               : !orgId ? 'aucun compte Mollie connecté pour ce prestataire'
-                : 'net à verser nul — rien à router';
+                : 'net à verser nul, rien à router';
           }
         }
         bloques.push(ligne);
@@ -2866,7 +2866,7 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
   }
   const verses = bloques.filter((b) => b.verse).length;
   console.log('payoutRetry (' + (relance ? 'relance' : 'inventaire') + ') : ' + bloques.length
-    + ' versement(s) bloqué(s), ' + verses + ' réglé(s) — par ' + who);
+    + ' versement(s) bloqué(s), ' + verses + ' réglé(s), par ' + who);
   return {bloques: bloques, verses: verses};
 });
 
@@ -2927,7 +2927,7 @@ exports.refundOrder = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
     const p = await mollieApi('/payments/' + encodeURIComponent(r.molliePaymentId), 'GET');
     if (!p.ok || !p.data) throw new HttpsError('failed-precondition', 'Mollie ne retrouve pas ce paiement (HTTP ' + (p.status || '?') + ').');
     if (String(p.data.status || '') !== 'paid') {
-      throw new HttpsError('failed-precondition', 'Ce paiement n\'a pas été encaissé (état Mollie : ' + String(p.data.status || 'inconnu') + ') — il n\'y a rien à rembourser.');
+      throw new HttpsError('failed-precondition', 'Ce paiement n\'a pas été encaissé (état Mollie : ' + String(p.data.status || 'inconnu') + '), il n\'y a rien à rembourser.');
     }
     const a = p.data.amount || {};
     encaisse = round2(Number(a.value) || 0);
@@ -2935,7 +2935,7 @@ exports.refundOrder = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
     encaisse = round2(encaisse - dejaM);
   } catch (e) {
     if (e instanceof HttpsError) throw e;
-    throw new HttpsError('unavailable', 'Mollie injoignable — réessayez dans un instant.');
+    throw new HttpsError('unavailable', 'Mollie injoignable, réessayez dans un instant.');
   }
   if (!(encaisse > 0.009)) throw new HttpsError('failed-precondition', 'Ce paiement est déjà intégralement remboursé.');
 
@@ -2968,7 +2968,7 @@ exports.refundOrder = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
     const motifM = String(d.detail || d.title || '').slice(0, 220);
     console.warn('refundOrder HTTP', res.status, reqId, motifM);
     throw new HttpsError('failed-precondition', 'Mollie a refusé le remboursement (HTTP ' + (res.status || '?') + ')'
-      + (motifM ? (' — ' + motifM) : '') + '.');
+      + (motifM ? (', ' + motifM) : '') + '.');
   }
 
   const ligne = {
@@ -2984,7 +2984,7 @@ exports.refundOrder = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
       refundRepriseArtisan: ligne.repriseArtisan}, {merge: true});
   } catch (e) { console.warn('refundOrder écriture', e); }
 
-  console.log('refundOrder ' + reqId + ' — ' + demande + ' € rendus (' + motif
+  console.log('refundOrder ' + reqId + ', ' + demande + ' € rendus (' + motif
     + (ligne.repriseArtisan ? ', part artisan reprise' : ', absorbé par Ti-Services') + ') par ' + who);
   return {ok: true, montant: demande, total: total, repriseArtisan: ligne.repriseArtisan, restant: round2(encaisse - demande)};
 });
@@ -3024,7 +3024,7 @@ exports.payoutManual = onCall(async (request) => {
   const net = estComplement
     ? round2(Number(r.complementNet != null ? r.complementNet : r.complementAmount) || 0)
     : round2(Number(r.molliePayoutNet) || 0);
-  console.log('payoutManual ' + brut + ' — ' + net + ' € versés à la main par ' + who);
+  console.log('payoutManual ' + brut + ', ' + net + ' € versés à la main par ' + who);
   return {ok: true, net: net};
 });
 
@@ -3068,7 +3068,7 @@ exports.orderPaymentCheck = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (re
     const upd = {status: 'pending', molliePaymentStatus: etat, molliePaymentAuthorized: true};
     if (etat === 'paid') upd.molliePaymentCaptured = true;
     await ref.update(upd);
-    console.log('orderPaymentCheck : demande ' + reqId + ' ouverte au pool (' + etat + ') — webhook non parvenu à temps');
+    console.log('orderPaymentCheck : demande ' + reqId + ' ouverte au pool (' + etat + '), webhook non parvenu à temps');
     return {status: 'pending', ouverte: true, etat: etat};
   }
   if (['expired', 'canceled', 'failed'].indexOf(etat) >= 0) {
@@ -3474,7 +3474,7 @@ exports.mollieWebhook = onRequest({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (req
           if (!verse) {
             try {
               await sendMail(db, ADMIN_EMAIL, {
-                subject: 'Supplément encaissé mais non reversé — ' + escHtmlS(r.serviceName || r.service || 'prestation'),
+                subject: 'Supplément encaissé mais non reversé, ' + escHtmlS(r.serviceName || r.service || 'prestation'),
                 html: '<p>Le supplément a bien été prélevé au client, mais le versement à l\'artisan n\'a pas pu être routé.</p>'
                   + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li>'
                   + '<li><b>Encaissé :</b> ' + eurTxt(montant) + '</li>'
@@ -3484,13 +3484,13 @@ exports.mollieWebhook = onRequest({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (req
               });
             } catch (_) {}
           }
-          console.log('Supplément payé reqId=' + reqId + ' ' + montant + ' € (net ' + netC + ') — versement ' + (verse ? 'ok' : 'à régulariser'));
+          console.log('Supplément payé reqId=' + reqId + ' ' + montant + ' € (net ' + netC + '), versement ' + (verse ? 'ok' : 'à régulariser'));
         } else if (['failed', 'canceled', 'expired'].indexOf(pay.status) >= 0) {
           // Non encaissé : on le dit, et surtout on ne verse rien qu'on n'a pas.
           try { await ref.set({complementStatus: 'echec'}, {merge: true}); } catch (_) {}
           try {
             await sendMail(db, ADMIN_EMAIL, {
-              subject: 'Supplément NON encaissé — ' + escHtmlS(r.serviceName || r.service || 'prestation'),
+              subject: 'Supplément NON encaissé, ' + escHtmlS(r.serviceName || r.service || 'prestation'),
               html: '<p>Le prélèvement du supplément a échoué (' + escHtmlS(pay.status || '') + ').</p>'
                 + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li>'
                 + '<li><b>Montant :</b> ' + eurTxt(Number(r.complementAmount) || 0) + '</li></ul>'
@@ -3550,7 +3550,7 @@ exports.mollieWebhook = onRequest({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (req
         // proprement sur un document absent.
         try { await db.collection('requests').doc(reqId).update(upd); }
         catch (e) {
-          if (e && e.code === 5) console.log('mollieWebhook : demande ' + reqId + ' supprimée (annulée) — rien à mettre à jour');
+          if (e && e.code === 5) console.log('mollieWebhook : demande ' + reqId + ' supprimée (annulée), rien à mettre à jour');
           else console.warn('mollieWebhook update', e);
         }
       }
@@ -3762,13 +3762,13 @@ exports.missionReminders = onSchedule({schedule: 'every 15 minutes', secrets: [S
       const tokens = (u.notifOn === false) ? [] : (u.pushTokens || []);
       const first = (((r.clientName || '').trim().split(/\s+/)[0]) || 'votre client');
       const where = (r.locationMode === 'salon') ? 'dans votre salon' : ('à ' + (r.zone || 'Saint-Barthélemy'));
-      const corps = slot + ' — ' + first + ' ' + where + '.';
+      const corps = slot + ', ' + first + ' ' + where + '.';
       if (tokens.length) {
         await pushMulticast(tokens, 'Dans 1 h · ' + (r.serviceName || 'Mission'), corps, '/?open=promissions',
           (tok) => db.collection('users').doc(r.providerUid).update({ pushTokens: FieldValue.arrayRemove(tok) }), 'ti-rappel-' + doc.id);
       } else if (u.email) {
         await sendMail(db, u.email, {
-          subject: 'Dans 1 h · ' + (r.serviceName || 'Mission') + ' — ' + slot,
+          subject: 'Dans 1 h · ' + (r.serviceName || 'Mission') + ', ' + slot,
           html: '<p>Rappel : votre mission « ' + escHtmlS(r.serviceName || 'Mission') + ' » commence à ' + escHtmlS(slot) + ' (' + escHtmlS(corps) + ').</p>',
         });
       }
@@ -3777,7 +3777,7 @@ exports.missionReminders = onSchedule({schedule: 'every 15 minutes', secrets: [S
         const ctokens = await userPushTokens(db, r.clientUid);
         const qui = (r.providerName || 'Votre prestataire').toString().slice(0, 60);
         await pushMulticast(ctokens, 'Dans 1 h · ' + (r.serviceName || 'votre prestation'),
-          slot + ' — ' + qui + ' arrive comme prévu.', '/?open=wallet&r=' + doc.id,
+          slot + ', ' + qui + ' arrive comme prévu.', '/?open=wallet&r=' + doc.id,
           (tok) => db.collection('users').doc(r.clientUid).update({ pushTokens: FieldValue.arrayRemove(tok) }), 'ti-rappel-' + doc.id);
       }
       await doc.ref.update({ reminded1h: true });
@@ -3832,7 +3832,7 @@ exports.rebookNudges = onSchedule({schedule: 'every day 14:00'}, async () => {
     const svcNm = String(r.serviceName || 'Votre prestation').slice(0, 40);
     const weeks = Math.max(3, Math.round((nowMs - Date.parse(r.dateISO + 'T12:00:00-04:00')) / (7 * 86400 * 1000)));
     await pushMulticast(tokens, 'Envie de refaire ?',
-      svcNm + (first ? (' avec ' + first) : '') + ' — c\'était il y a ' + weeks + ' semaines. Re-commandez en 1 clic.',
+      svcNm + (first ? (' avec ' + first) : '') + ', c\'était il y a ' + weeks + ' semaines. Re-commandez en 1 clic.',
       '/?rebook=' + encodeURIComponent(r.service),
       (tok) => uref.update({ pushTokens: FieldValue.arrayRemove(tok) }).catch(() => {}));
     await uref.set({ rebookNudges: Object.assign({}, nudges, (() => { const o = {}; o[r.service] = nowMs; return o; })()) }, { merge: true });
@@ -4016,13 +4016,13 @@ exports.autoValidate = onSchedule({schedule: 'every 1 hours', secrets: [SMTP_PAS
           const nom = (r.serviceName || r.service || 'votre prestation').toString().slice(0, 60);
           if ((u.pushTokens || []).length) {
             await pushMulticast(u.pushTokens, 'Prestation validée automatiquement',
-              nom + ' — sans réponse de votre part sous ' + AUTO_VALID_H + ' h, la prestation a été validée et réglée.',
+              nom + ', sans réponse de votre part sous ' + AUTO_VALID_H + ' h, la prestation a été validée et réglée.',
               '/?paid=' + encodeURIComponent(d.id),
               (tok) => db.collection('users').doc(r.clientUid).update({pushTokens: FieldValue.arrayRemove(tok)}).catch(() => {}));
           }
           if (u.email) {
             await sendMail(db, u.email, {
-              subject: 'Ti-Services · ' + nom + ' — prestation validée automatiquement',
+              subject: 'Ti-Services · ' + nom + ', prestation validée automatiquement',
               html: '<p>Bonjour,</p><p>Votre prestataire a déclaré la prestation « ' + escHtmlS(nom) + ' » terminée il y a plus de ' + AUTO_VALID_H + '&nbsp;heures. Sans réponse de votre part, elle a été <b>validée automatiquement</b> et le montant convenu a été prélevé sur votre carte, comme prévu par nos conditions générales.</p>'
                 + '<p>Votre facture est disponible dans l\'application, rubrique « Historique &amp; factures ».</p>'
                 + '<p><b>Un problème sur cette prestation&nbsp;?</b> Répondez à cet e-mail ou écrivez-nous depuis l\'application&nbsp;: nous examinons chaque situation.</p>'
@@ -4047,8 +4047,8 @@ exports.autoValidate = onSchedule({schedule: 'every 1 hours', secrets: [SMTP_PAS
         const nom = (r.serviceName || r.service || 'votre prestation').toString().slice(0, 60);
         const u = (await db.collection('users').doc(r.clientUid).get()).data() || {};
         const corpsPush = accordRequis
-          ? (nom + ' — le montant a été ajusté : votre validation est nécessaire pour régler votre prestataire.')
-          : (nom + ' — sans réponse, elle sera validée et réglée automatiquement le ' + quand + '.');
+          ? (nom + ', le montant a été ajusté : votre validation est nécessaire pour régler votre prestataire.')
+          : (nom + ', sans réponse, elle sera validée et réglée automatiquement le ' + quand + '.');
         if (u.notifOn !== false && (u.pushTokens || []).length) {
           await pushMulticast(u.pushTokens, 'Validez votre prestation', corpsPush,
             '/?open=' + encodeURIComponent(d.id),
@@ -4056,10 +4056,10 @@ exports.autoValidate = onSchedule({schedule: 'every 1 hours', secrets: [SMTP_PAS
         }
         if (u.email) {
           await sendMail(db, u.email, {
-            subject: 'Ti-Services · ' + nom + (accordRequis ? ' — votre validation est attendue' : ' — à valider avant le ' + quand),
+            subject: 'Ti-Services · ' + nom + (accordRequis ? ', votre validation est attendue' : ', à valider avant le ' + quand),
             html: '<p>Bonjour,</p><p>Votre prestataire a déclaré la prestation « ' + escHtmlS(nom) + ' » terminée.</p>'
               + (accordRequis
-                ? '<p>La durée déclarée dépasse ce qui était prévu à la commande&nbsp;: <b>rien ne sera prélevé sans votre accord</b>. Ouvrez l\'application pour vérifier le détail, puis validez — votre prestataire n\'est payé qu\'à ce moment-là.</p>'
+                ? '<p>La durée déclarée dépasse ce qui était prévu à la commande&nbsp;: <b>rien ne sera prélevé sans votre accord</b>. Ouvrez l\'application pour vérifier le détail, puis validez, votre prestataire n\'est payé qu\'à ce moment-là.</p>'
                 : '<p>Sans réponse de votre part, elle sera <b>validée automatiquement le ' + escHtmlS(quand) + '</b> (heure de Saint-Barthélemy) et le montant convenu sera prélevé sur votre carte.</p>')
               + '<p><b>Tout s\'est bien passé&nbsp;?</b> Validez dès maintenant depuis l\'application&nbsp;: votre prestataire est payé immédiatement.</p>'
               + '<p><b>Un souci&nbsp;?</b> Signalez-le depuis l\'application&nbsp;: rien ne sera prélevé tant que la situation n\'est pas réglée.</p>'
@@ -4092,9 +4092,9 @@ exports.paymentReconciliation = onSchedule({schedule: '0 9 * * *', secrets: [SMT
     try { t = (ts && ts.toMillis) ? ts.toMillis() : (Number(ts) || 0); } catch (_) { t = 0; }
     return t ? Math.round((now - t) / H) : null;   // null = horodatage absent → ignoré
   };
-  const row = (id, r, extra) => '<li><b>' + escHtmlS(r.serviceName || r.service || 'prestation') + '</b> — ' +
+  const row = (id, r, extra) => '<li><b>' + escHtmlS(r.serviceName || r.service || 'prestation') + '</b>, ' +
     escHtmlS(r.clientName || '?') + ' / ' + escHtmlS(r.providerName || 'aucun pro') +
-    ' — ' + eurTxt(Number(r.total) || 0) + ' — <code>' + escHtmlS(id) + '</code>' + (extra ? ' — ' + extra : '') + '</li>';
+    ', ' + eurTxt(Number(r.total) || 0) + ', <code>' + escHtmlS(id) + '</code>' + (extra ? ', ' + extra : '') + '</li>';
   const sections = [];
   const scan = async (status) => { try { return (await db.collection('requests').where('status', '==', status).get()).docs; } catch (e) { console.warn('reco scan', status, e); return []; } };
 
@@ -4131,10 +4131,10 @@ exports.paymentReconciliation = onSchedule({schedule: '0 9 * * *', secrets: [SMT
     for (const d of await scan('done_pro')) {
       const r = d.data() || {}; const a = ageH(r.doneProAt || r.acceptedAt || r.createdAt);
       if (a !== null && a >= AUTO_VALID_H + 2) {
-        items.push(row(d.id, r, 'terminée depuis ' + a + ' h' + (r.doneProAt ? '' : ' — fin de prestation jamais horodatée')));
+        items.push(row(d.id, r, 'terminée depuis ' + a + ' h' + (r.doneProAt ? '' : ', fin de prestation jamais horodatée')));
       }
     }
-    if (items.length) sections.push('<h3>⚠️ Prestations non validées au-delà du délai automatique (' + items.length + ')</h3><ul>' + items.join('') + '</ul><p>Elles auraient dû être validées et réglées automatiquement au bout de ' + AUTO_VALID_H + '&nbsp;h. Ni capture ni versement tant qu\'elles restent ici — consulter les journaux de <code>autoValidate</code>.</p>');
+    if (items.length) sections.push('<h3>⚠️ Prestations non validées au-delà du délai automatique (' + items.length + ')</h3><ul>' + items.join('') + '</ul><p>Elles auraient dû être validées et réglées automatiquement au bout de ' + AUTO_VALID_H + '&nbsp;h. Ni capture ni versement tant qu\'elles restent ici, consulter les journaux de <code>autoValidate</code>.</p>');
   }
   // 4. Versements artisan non routés, à régulariser.
   {
@@ -4143,7 +4143,7 @@ exports.paymentReconciliation = onSchedule({schedule: '0 9 * * *', secrets: [SMT
       for (const d of (await db.collection('requests').where('molliePayout', '==', 'unrouted').get()).docs) {
         const r = d.data() || {};
         const pourquoi = r.molliePayoutIssue === 'no_org' ? 'aucun compte Mollie connecté'
-          : ('routage refusé par Mollie' + (r.molliePayoutMotif ? (' — ' + escHtmlS(String(r.molliePayoutMotif))) : ''));
+          : ('routage refusé par Mollie' + (r.molliePayoutMotif ? (', ' + escHtmlS(String(r.molliePayoutMotif))) : ''));
         items.push(row(d.id, r, pourquoi));
       }
     } catch (e) { console.warn('reco unrouted', e); }
@@ -4155,10 +4155,10 @@ exports.paymentReconciliation = onSchedule({schedule: '0 9 * * *', secrets: [SMT
         const r = d.data() || {};
         items.push(row(d.id, r, 'supplément encaissé non reversé ('
           + eurTxt(Number(r.complementNet != null ? r.complementNet : r.complementAmount) || 0) + ')'
-          + (r.complementPayoutMotif ? (' — ' + escHtmlS(String(r.complementPayoutMotif))) : '')));
+          + (r.complementPayoutMotif ? (', ' + escHtmlS(String(r.complementPayoutMotif))) : '')));
       }
     } catch (e) { console.warn('reco unrouted complements', e); }
-    if (items.length) sections.push('<h3>💸 Versements artisan à régulariser (' + items.length + ')</h3><ul>' + items.join('') + '</ul><p>Le client a payé, l\'artisan n\'a pas reçu son net (fonds en sécurité sur le solde plateforme). Vérifier son onboarding Mollie puis re-router (ou virement manuel) — Console → Factures → «&nbsp;Versements prestataires bloqués&nbsp;».</p>');
+    if (items.length) sections.push('<h3>💸 Versements artisan à régulariser (' + items.length + ')</h3><ul>' + items.join('') + '</ul><p>Le client a payé, l\'artisan n\'a pas reçu son net (fonds en sécurité sur le solde plateforme). Vérifier son onboarding Mollie puis re-router (ou virement manuel), Console → Factures → «&nbsp;Versements prestataires bloqués&nbsp;».</p>');
   }
   // 5. Suppléments facturés mais non encaissés — pourboire, heures en plus, coup de pouce.
   //    Une somme qui figure sur une facture sans avoir été prélevée ne doit jamais
@@ -4180,7 +4180,7 @@ exports.paymentReconciliation = onSchedule({schedule: '0 9 * * *', secrets: [SMT
       for (const st of ['impossible', 'echec', 'a_regler']) {
         for (const d of (await db.collection('requests').where('complementStatus', '==', st).get()).docs) {
           const r = d.data() || {};
-          items.push(row(d.id, r, eurTxt(Number(r.complementAmount) || 0) + ' — ' + mots[st] +
+          items.push(row(d.id, r, eurTxt(Number(r.complementAmount) || 0) + ', ' + mots[st] +
             (r.complementIssue ? (' (' + escHtmlS(r.complementIssue) + ')') : '')));
         }
       }
@@ -4204,11 +4204,11 @@ exports.paymentReconciliation = onSchedule({schedule: '0 9 * * *', secrets: [SMT
         if (!r.providerUid) continue;            // sans prestataire, rien à régler
         const a = ageH(r.paidAt || r.settledAt || r.acceptedAt || r.createdAt);
         try { await d.ref.update({resettleAt: FieldValue.serverTimestamp()}); relances++; } catch (_) {}
-        items.push(row(d.id, r, 'jamais inscrite au registre' + (a !== null ? (' depuis ' + a + ' h') : '') + ' — règlement relancé'));
+        items.push(row(d.id, r, 'jamais inscrite au registre' + (a !== null ? (' depuis ' + a + ' h') : '') + ', règlement relancé'));
       }
       if (relances) console.log('paymentReconciliation : ' + relances + ' règlement(s) relancé(s).');
     } catch (e) { console.warn('reco resettle', e); }
-    if (items.length) sections.push('<h3>🧾 Prestations payées jamais inscrites au registre (' + items.length + ')</h3><ul>' + items.join('') + '</ul><p>Le client a payé mais aucune facture n\'a été numérotée et aucune commission n\'a été prélevée. Le règlement vient d\'être relancé automatiquement — si la ligne revient demain, c\'est qu\'il échoue à chaque fois : consulter les journaux de <code>settleCommission</code>.</p>');
+    if (items.length) sections.push('<h3>🧾 Prestations payées jamais inscrites au registre (' + items.length + ')</h3><ul>' + items.join('') + '</ul><p>Le client a payé mais aucune facture n\'a été numérotée et aucune commission n\'a été prélevée. Le règlement vient d\'être relancé automatiquement, si la ligne revient demain, c\'est qu\'il échoue à chaque fois : consulter les journaux de <code>settleCommission</code>.</p>');
   }
 
   // BACKFILL DES FRAIS MOLLIE RÉELS : le règlement (settlementAmount) n'est souvent connu
@@ -4240,10 +4240,10 @@ exports.paymentReconciliation = onSchedule({schedule: '0 9 * * *', secrets: [SMT
       const e = d.data() || {};
       if (e.exclu) continue;
       if (e.mollieEncaisse === true) continue;
-      items.push('<li><b>' + escHtmlS(e.serviceName || e.service || 'prestation') + '</b> — ' +
-        escHtmlS(e.clientName || '?') + ' / ' + escHtmlS(e.providerName || '?') + ' — ' +
-        eurTxt(Number(e.grossTotal) || 0) + ' — facture ' + escHtmlS(e.invNo || '—') +
-        ' — état Mollie : <b>' + escHtmlS(e.mollieStatus || (e.molliePaymentId ? 'non relevé' : 'aucun paiement')) + '</b></li>');
+      items.push('<li><b>' + escHtmlS(e.serviceName || e.service || 'prestation') + '</b>, ' +
+        escHtmlS(e.clientName || '?') + ' / ' + escHtmlS(e.providerName || '?') + ', ' +
+        eurTxt(Number(e.grossTotal) || 0) + ', facture ' + escHtmlS(e.invNo || '—') +
+        ', état Mollie : <b>' + escHtmlS(e.mollieStatus || (e.molliePaymentId ? 'non relevé' : 'aucun paiement')) + '</b></li>');
     }
     if (items.length) sections.push('<h3>🏦 Facturé mais jamais encaissé chez Mollie (' + items.length + ')</h3><ul>' + items.join('') + '</ul><p>Ces prestations <b>ne comptent pas</b> dans le chiffre d\'affaires ni dans les commissions&nbsp;: les comptes se calquent sur ce que Mollie a réellement encaissé. Une empreinte « authorized » peut encore être capturée&nbsp;; « expired » ou « failed » veut dire que personne n\'a été débité.</p>');
   } catch (e) { console.warn('reco non encaissees', e); }
@@ -4251,7 +4251,7 @@ exports.paymentReconciliation = onSchedule({schedule: '0 9 * * *', secrets: [SMT
   if (!sections.length) { console.log('paymentReconciliation : aucune anomalie ✓'); return; }
   try {
     await sendMail(db, ADMIN_EMAIL, {
-      subject: 'Ti-Services · Réconciliation paiements — ' + sections.length + ' point(s) à vérifier',
+      subject: 'Ti-Services · Réconciliation paiements, ' + sections.length + ' point(s) à vérifier',
       html: '<p>Contrôle quotidien automatique du circuit de paiement :</p>' + sections.join('') +
             '<p style="color:#888">E-mail envoyé uniquement quand une anomalie est détectée. Aucune action automatique n\'a été faite.</p>',
     });
@@ -4414,7 +4414,7 @@ async function buildInvoicePdf(inv) {
   // Vente à un CLIENT PROFESSIONNEL (raison sociale ou SIRET renseigné) : mentions B2B
   // obligatoires (pénalités de retard + indemnité forfaitaire de recouvrement).
   if (inv.client.company || inv.client.siret) {
-    legal.splice(3, 0, "Client professionnel — en cas de retard de paiement : pénalités au taux de 3 fois l'intérêt légal et indemnité forfaitaire de recouvrement de 40 € (art. L441-10 et D441-5 du Code de commerce). Pas d'escompte pour paiement anticipé.");
+    legal.splice(3, 0, "Client professionnel, en cas de retard de paiement : pénalités au taux de 3 fois l'intérêt légal et indemnité forfaitaire de recouvrement de 40 € (art. L441-10 et D441-5 du Code de commerce). Pas d'escompte pour paiement anticipé.");
   }
   legal.forEach((p) => { y = wrapPdf(page, font, 7.5, mut, p, M, y, R - M, 10); y -= 3; });
   const bytes = await doc.save();
@@ -4827,9 +4827,9 @@ function welcomeHtml(first, role) {
   const crossTitle = isPro ? 'Besoin d\'un service pour vous ?' : 'Vous êtes aussi professionnel ?';
   const crossText = isPro ?
     ('Ti-Services marche dans les deux sens&nbsp;: avec <b>une autre adresse e-mail</b>, créez aussi votre ' +
-     '<b>compte client</b> pour réserver ménage, jardinage, coiffure, sport et plus — près de chez vous.') :
+     '<b>compte client</b> pour réserver ménage, jardinage, coiffure, sport et plus, près de chez vous.') :
     ('Proposez vos services sur Ti-Services et recevez des missions dans toute l\'île. Créez votre ' +
-     '<b>profil intervenant</b> — avec <b>une autre adresse e-mail</b> que celle de ce compte.');
+     '<b>profil intervenant</b>, avec <b>une autre adresse e-mail</b> que celle de ce compte.');
   const crossHref = app + (isPro ? '/?open=client-signup' : '/?open=pro-signup');
   const crossLabel = isPro ? 'Créer mon compte client' : 'Devenir intervenant';
   const crossBtn = isPro ? '#FF6A5B' : '#0FA896';   // l'accent de l'AUTRE monde
@@ -4866,7 +4866,7 @@ function welcomeHtml(first, role) {
           '</td></tr>' +
           '<tr><td style="padding:16px 30px;border-top:1px solid #efeae4;background:#FBF7F4">' +
             '<div style="font-size:12px;color:#8a8494;line-height:1.6">À très vite,<br>L\'équipe Ti-Services<br>' +
-            '<span style="color:#b0aab8">Service édité par C.C.S — Construction Conseils et Services, SAS · Saint-Barthélemy</span></div>' +
+            '<span style="color:#b0aab8">Service édité par C.C.S, Construction Conseils et Services, SAS · Saint-Barthélemy</span></div>' +
           '</td></tr>' +
         '</table>' +
       '</td></tr>' +
@@ -4911,7 +4911,7 @@ function inviteArtisanHtml(name, message) {
               ? String(message).split(/\n{2,}/).map(function (par) {
                   return '<p style="font-size:15px;line-height:1.6;color:#4a4556;margin:10px 0 0">' + escHtmlS(par).replace(/\n/g, '<br>') + '</p>';
                 }).join('')
-              : '<p style="font-size:15px;line-height:1.6;color:#4a4556;margin:10px 0 0">Votre travail à Saint-Barthélemy correspond exactement à ce que recherchent nos clients. <b>Ti-Services</b> est une nouvelle application <b>100 % Saint-Barth</b> qui met en relation les habitants avec des artisans et intervenants locaux de confiance — et vous recevez vos <b>demandes de mission</b> directement dans l\'application.</p>') +
+              : '<p style="font-size:15px;line-height:1.6;color:#4a4556;margin:10px 0 0">Votre travail à Saint-Barthélemy correspond exactement à ce que recherchent nos clients. <b>Ti-Services</b> est une nouvelle application <b>100 % Saint-Barth</b> qui met en relation les habitants avec des artisans et intervenants locaux de confiance, et vous recevez vos <b>demandes de mission</b> directement dans l\'application.</p>') +
           '</td></tr>' +
           '<tr><td style="padding:22px 30px 4px">' + feats + '</td></tr>' +
           '<tr><td align="center" style="padding:18px 30px 6px">' +
@@ -4920,7 +4920,7 @@ function inviteArtisanHtml(name, message) {
           '<tr><td align="center" style="padding:0 30px 26px"><div style="font-size:12px;color:#8a8494">C\'est gratuit et ça prend quelques minutes · <a href="' + app + '" style="color:' + c1 + ';text-decoration:none">ti-services.fr</a></div></td></tr>' +
           '<tr><td style="padding:16px 30px;border-top:1px solid #efeae4;background:#FBF7F4">' +
             '<div style="font-size:12px;color:#8a8494;line-height:1.6">Au plaisir de vous compter parmi nous,<br>L\'équipe Ti-Services<br>' +
-            '<span style="color:#b0aab8">Service édité par C.C.S — Construction Conseils et Services, SAS · Saint-Barthélemy</span></div>' +
+            '<span style="color:#b0aab8">Service édité par C.C.S, Construction Conseils et Services, SAS · Saint-Barthélemy</span></div>' +
           '</td></tr>' +
         '</table>' +
       '</td></tr>' +
@@ -4954,7 +4954,7 @@ function mollieReminderHtml(name, n) {
     ? 'Ton profil est validé depuis un moment, et tu ne peux toujours <b>pas accepter de mission</b>. Il ne manque qu\'une chose.'
     : (relance === 2
       ? 'Petit rappel&nbsp;: sans compte de paiement, tu ne peux <b>pas encore accepter de mission</b>.'
-      : 'Ton profil est validé — il ne manque plus que tes <b>paiements</b>.');
+      : 'Ton profil est validé, il ne manque plus que tes <b>paiements</b>.');
   return '' +
   '<div style="margin:0;padding:0;background:#FBF7F4;font-family:-apple-system,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;color:#231E33">' +
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FBF7F4;padding:24px 12px">' +
@@ -4977,7 +4977,7 @@ function mollieReminderHtml(name, n) {
                 '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px"><tr><td align="center">' +
                   '<a href="' + app + '/?open=missions" style="display:inline-block;background:' + btn + ';color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 24px;border-radius:11px">Activer mes paiements</a>' +
                 '</td></tr></table>' +
-                '<div style="font-size:12px;color:#8a8494;line-height:1.5;margin-top:10px;text-align:center">Compte quelques minutes — c\'est plus simple depuis un <b>ordinateur</b>.</div>' +
+                '<div style="font-size:12px;color:#8a8494;line-height:1.5;margin-top:10px;text-align:center">Compte quelques minutes, c\'est plus simple depuis un <b>ordinateur</b>.</div>' +
               '</td></tr>' +
             '</table>' +
             // 2 — les notifications. Sans elles, les missions partent avant d'être vues.
@@ -4990,12 +4990,12 @@ function mollieReminderHtml(name, n) {
                 '</td></tr></table>' +
               '</td></tr>' +
             '</table>' +
-            '<p style="font-size:13px;line-height:1.6;color:#8a8494;margin:16px 0 0">Mollie vérifie ton identité et ton IBAN&nbsp;: ça peut prendre jusqu\'à 48&nbsp;h. Mieux vaut ne pas s\'y prendre au dernier moment. Tu reçois ce message chaque semaine tant que tes paiements ne sont pas actifs — il s\'arrête tout seul dès que c\'est fait.</p>' +
+            '<p style="font-size:13px;line-height:1.6;color:#8a8494;margin:16px 0 0">Mollie vérifie ton identité et ton IBAN&nbsp;: ça peut prendre jusqu\'à 48&nbsp;h. Mieux vaut ne pas s\'y prendre au dernier moment. Tu reçois ce message chaque semaine tant que tes paiements ne sont pas actifs, il s\'arrête tout seul dès que c\'est fait.</p>' +
             '<p style="font-size:13px;line-height:1.6;color:#8a8494;margin:12px 0 0">Un blocage, une question&nbsp;? Réponds simplement à cet e-mail.</p>' +
           '</td></tr>' +
           '<tr><td style="padding:22px 30px 26px">' +
             '<div style="height:1px;background:#EEE5DF"></div>' +
-            '<div style="font-size:11px;color:#a79fa8;line-height:1.5;padding-top:10px">C.C.S (Ti-Services) — Carrefour des 4 Chemins, Marigot, 97133 Saint-Barthélemy</div>' +
+            '<div style="font-size:11px;color:#a79fa8;line-height:1.5;padding-top:10px">C.C.S (Ti-Services), Carrefour des 4 Chemins, Marigot, 97133 Saint-Barthélemy</div>' +
           '</td></tr>' +
         '</table>' +
       '</td></tr>' +
@@ -5014,14 +5014,14 @@ function approvedArtisanHtml(name) {
       '<tr><td style="padding:16px 18px">' +
         '<span style="display:inline-block;font-size:11px;font-weight:800;letter-spacing:.04em;color:#ffffff;background:' + c1 + ';border-radius:999px;padding:4px 11px">DERNIÈRE ÉTAPE</span>' +
         '<div style="font-size:16px;font-weight:800;color:#231E33;margin-top:11px">Activez vos paiements (Mollie)</div>' +
-        '<div style="font-size:13.5px;color:#4a4556;line-height:1.55;margin-top:7px">Pour être réglé <b>automatiquement</b> après chaque prestation, vous devez ouvrir votre compte de paiement sécurisé chez <b>Mollie</b> — notre prestataire agréé. C\'est <b>une seule fois</b> et l\'application vous guide question par question (des réponses toutes prêtes à copier-coller).</div>' +
+        '<div style="font-size:13.5px;color:#4a4556;line-height:1.55;margin-top:7px">Pour être réglé <b>automatiquement</b> après chaque prestation, vous devez ouvrir votre compte de paiement sécurisé chez <b>Mollie</b>, notre prestataire agréé. C\'est <b>une seule fois</b> et l\'application vous guide question par question (des réponses toutes prêtes à copier-coller).</div>' +
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px"><tr>' +
           '<td width="26" valign="top"><div style="font-size:15px;line-height:1.3">⏱️</div></td>' +
           '<td style="font-size:13px;color:#4a4556;line-height:1.5">La vérification de votre dossier par Mollie (identité, IBAN) peut prendre <b>jusqu\'à 48&nbsp;h</b>. Vous recevrez un e-mail dès qu\'elle est validée.</td>' +
         '</tr></table>' +
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:9px"><tr>' +
           '<td width="26" valign="top"><div style="font-size:15px;line-height:1.3">✅</div></td>' +
-          '<td style="font-size:13px;color:#4a4556;line-height:1.5"><b>À partir de là, vous pourrez recevoir des missions</b> et accepter les demandes près de chez vous — votre gain net (commission déduite) vous est versé tout seul, sans virement à faire.</td>' +
+          '<td style="font-size:13px;color:#4a4556;line-height:1.5"><b>À partir de là, vous pourrez recevoir des missions</b> et accepter les demandes près de chez vous, votre gain net (commission déduite) vous est versé tout seul, sans virement à faire.</td>' +
         '</tr></table>' +
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px"><tr><td align="center">' +
           '<a href="' + app + '/?open=missions" style="display:inline-block;background:' + btn + ';color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 24px;border-radius:11px">Activer mes paiements</a>' +
@@ -5048,7 +5048,7 @@ function approvedArtisanHtml(name) {
           '<tr><td style="padding:18px 30px 4px">' + mollieBlock + '</td></tr>' +
           '<tr><td style="padding:16px 30px;border-top:1px solid #efeae4;background:#FBF7F4">' +
             '<div style="font-size:12px;color:#8a8494;line-height:1.6">À très vite,<br>L\'équipe Ti-Services<br>' +
-            '<span style="color:#b0aab8">Service édité par C.C.S — Construction Conseils et Services, SAS · Saint-Barthélemy</span></div>' +
+            '<span style="color:#b0aab8">Service édité par C.C.S, Construction Conseils et Services, SAS · Saint-Barthélemy</span></div>' +
           '</td></tr>' +
         '</table>' +
       '</td></tr>' +
@@ -5070,7 +5070,7 @@ function resetPasswordEmail(link, lang) {
       intro: 'Pas d\'inquiétude. Cliquez sur le bouton ci-dessous pour choisir un nouveau mot de passe et retrouver votre compte Ti-Services.',
       btn: 'Réinitialiser mon mot de passe',
       alt: 'Le bouton ne fonctionne pas ? Copiez-collez ce lien dans votre navigateur :',
-      note: 'Ce lien est valable une heure et ne peut servir qu\'une seule fois. Si vous n\'êtes pas à l\'origine de cette demande, ignorez simplement cet e-mail — votre mot de passe reste inchangé.',
+      note: 'Ce lien est valable une heure et ne peut servir qu\'une seule fois. Si vous n\'êtes pas à l\'origine de cette demande, ignorez simplement cet e-mail, votre mot de passe reste inchangé.',
       signoff: 'À très vite,',
     },
     en: {
@@ -5079,7 +5079,7 @@ function resetPasswordEmail(link, lang) {
       intro: 'No worries. Click the button below to choose a new password and get back into your Ti-Services account.',
       btn: 'Reset my password',
       alt: 'Button not working? Copy and paste this link into your browser:',
-      note: 'This link is valid for one hour and can only be used once. If you didn\'t request this, just ignore this email — your password stays unchanged.',
+      note: 'This link is valid for one hour and can only be used once. If you didn\'t request this, just ignore this email, your password stays unchanged.',
       signoff: 'See you soon,',
     },
     pt: {
@@ -5088,7 +5088,7 @@ function resetPasswordEmail(link, lang) {
       intro: 'Sem problema. Clique no botão abaixo para escolher uma nova palavra-passe e voltar a aceder à sua conta Ti-Services.',
       btn: 'Redefinir a minha palavra-passe',
       alt: 'O botão não funciona? Copie e cole esta ligação no seu navegador:',
-      note: 'Esta ligação é válida durante uma hora e só pode ser usada uma vez. Se não fez este pedido, ignore este e-mail — a sua palavra-passe permanece inalterada.',
+      note: 'Esta ligação é válida durante uma hora e só pode ser usada uma vez. Se não fez este pedido, ignore este e-mail, a sua palavra-passe permanece inalterada.',
       signoff: 'Até breve,',
     },
   };
@@ -5117,7 +5117,7 @@ function resetPasswordEmail(link, lang) {
           '<tr><td style="padding:16px 30px 4px"><div style="font-size:13px;color:#6b6577;line-height:1.6;background:#FBF7F4;border:1px solid #efeae4;border-radius:12px;padding:12px 14px">' + t.note + '</div></td></tr>' +
           '<tr><td style="padding:16px 30px 24px;border-top:1px solid #efeae4;background:#FBF7F4;margin-top:8px">' +
             '<div style="font-size:12px;color:#8a8494;line-height:1.6">' + t.signoff + '<br>L\'équipe Ti-Services<br>' +
-            '<span style="color:#b0aab8">Service édité par C.C.S — Construction Conseils et Services, SAS · Saint-Barthélemy</span></div>' +
+            '<span style="color:#b0aab8">Service édité par C.C.S, Construction Conseils et Services, SAS · Saint-Barthélemy</span></div>' +
           '</td></tr>' +
         '</table>' +
       '</td></tr>' +
@@ -5153,7 +5153,7 @@ exports.sendResetEmail = onCall({secrets: [SMTP_PASS]}, async (request) => {
   } catch (e) {
     if (e && e.code === 'auth/user-not-found') return { sent: true };
     console.warn('sendResetEmail generateLink', e && e.code);
-    throw new HttpsError('internal', 'Envoi impossible — réessayez.');
+    throw new HttpsError('internal', 'Envoi impossible, réessayez.');
   }
   const attachments = [];
   try {
@@ -5187,11 +5187,11 @@ exports.sendArtisanInvite = onCall({secrets: [SMTP_PASS]}, async (request) => {
   } catch (_) {}
   const message = String((request.data && request.data.message) || '').trim().slice(0, 1200);
   const ok = await sendMail(getFirestore(), to, {
-    subject: 'Rejoignez Ti-Services — les clients de Saint-Barth vous cherchent',
+    subject: 'Rejoignez Ti-Services, les clients de Saint-Barth vous cherchent',
     html: inviteArtisanHtml(name, message),
     attachments,
   });
-  if (!ok) throw new HttpsError('internal', 'L\'envoi a échoué — réessayez.');
+  if (!ok) throw new HttpsError('internal', 'L\'envoi a échoué, réessayez.');
   return { sent: true };
 });
 
@@ -5258,7 +5258,7 @@ exports.adminRestoreAccount = onCall({timeoutSeconds: 120}, async (request) => {
       const msg = (data && data.error && data.error.message) || ('HTTP ' + res.status);
       // FAILED_PRECONDITION = readTime hors fenêtre (PITR non activé => 1 h seulement).
       throw new HttpsError('failed-precondition', 'Firestore refuse la lecture à cette date : ' + String(msg).slice(0, 300)
-        + ' — si la récupération 7 jours n\'est pas activée sur le projet, seule la dernière heure est lisible.');
+        + ', si la récupération 7 jours n\'est pas activée sur le projet, seule la dernière heure est lisible.');
     }
     return data;
   };
@@ -5349,7 +5349,7 @@ exports.sendMollieRelance = onCall({secrets: [SMTP_PASS]}, async (request) => {
     html: mollieReminderHtml(String(a.name || '').trim(), n),
     attachments,
   });
-  if (!ok) throw new HttpsError('internal', 'L\'envoi a échoué — réessayez.');
+  if (!ok) throw new HttpsError('internal', 'L\'envoi a échoué, réessayez.');
   try { await ref.set({mollieRelances: n, mollieRelanceAt: Date.now()}, {merge: true}); } catch (_) {}
   return {sent: true, email: email, relances: n};
 });
@@ -5387,7 +5387,7 @@ async function releaseMollieHold(db, reqId, r, contexte) {
       console.warn('Empreinte non libérable reqId=' + reqId + ' ' + id + ' (' + st + ')');
       try {
         await sendMail(db, ADMIN_EMAIL, {
-          subject: 'Empreinte à libérer à la main — ' + (contexte || 'demande annulée'),
+          subject: 'Empreinte à libérer à la main, ' + (contexte || 'demande annulée'),
           html: '<p>Une demande a été ' + escHtmlS(contexte || 'annulée') + ', mais Mollie refuse d\'annuler l\'autorisation : la somme reste réservée sur la carte du client jusqu\'à expiration.</p>'
             + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li>'
             + '<li><b>Paiement :</b> ' + escHtmlS(id) + ' (' + escHtmlS(st) + ')</li>'
@@ -5398,7 +5398,7 @@ async function releaseMollieHold(db, reqId, r, contexte) {
       return;
     }
     const del = await mollieApi('/payments/' + encodeURIComponent(id), 'DELETE');
-    console.log('Empreinte rendue reqId=' + reqId + ' ' + id + ' (' + st + ') — ' + (del.ok ? 'ok' : 'échec'));
+    console.log('Empreinte rendue reqId=' + reqId + ' ' + id + ' (' + st + '), ' + (del.ok ? 'ok' : 'échec'));
   } catch (e) { console.warn('releaseMollieHold', e); }
 }
 exports.releaseHoldOnDelete = onDocumentDeleted({document: 'requests/{reqId}', secrets: ['MOLLIE_ACCESS_TOKEN']}, async (event) => {
@@ -5469,7 +5469,7 @@ exports.settleCancellation = onDocumentUpdated({document: 'requests/{reqId}', se
     if (after.molliePaymentId && !after.mollieCaptured) {
       await notifieClient('Demande expirée', 'Votre demande de ' + svc + ' n\'a pas été honorée : rien n\'est prélevé, la somme réservée vous est rendue.', true);
     }
-    await notifieArtisan('Mission expirée', 'La mission « ' + svc + ' » n\'a pas été honorée dans les temps — elle est retirée de votre planning.');
+    await notifieArtisan('Mission expirée', 'La mission « ' + svc + ' » n\'a pas été honorée dans les temps, elle est retirée de votre planning.');
     return;
   }
 
@@ -5494,7 +5494,7 @@ exports.settleCancellation = onDocumentUpdated({document: 'requests/{reqId}', se
     console.warn('Indemnité inapplicable reqId=' + reqId + ' fee=' + fee + ' pay=' + (payId || 'aucun'));
     try {
       await sendMail(db, ADMIN_EMAIL, {
-        subject: 'Indemnité d\'annulation NON prélevable — ' + svc,
+        subject: 'Indemnité d\'annulation NON prélevable, ' + svc,
         html: '<p>Le prestataire a appliqué l\'indemnité, mais elle ne peut pas être prélevée automatiquement.</p>'
           + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li><li><b>Indemnité :</b> ' + eurTxt(fee) + '</li>'
           + '<li><b>Cause :</b> ' + (payId ? 'montant nul' : 'aucun paiement Mollie sur la demande') + '</li></ul>',
@@ -5509,7 +5509,7 @@ exports.settleCancellation = onDocumentUpdated({document: 'requests/{reqId}', se
       console.warn('Indemnité : empreinte non capturable reqId=' + reqId + ' (' + st + ')');
       try {
         await sendMail(db, ADMIN_EMAIL, {
-          subject: 'Indemnité d\'annulation à régulariser — ' + svc,
+          subject: 'Indemnité d\'annulation à régulariser, ' + svc,
           html: '<p>Le prestataire a appliqué l\'indemnité de 50 %, mais l\'empreinte n\'est plus capturable (statut Mollie : ' + escHtmlS(st || 'inconnu') + ').</p>'
             + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li><li><b>Indemnité :</b> ' + eurTxt(fee) + '</li>'
             + '<li><b>Paiement :</b> ' + escHtmlS(payId) + '</li></ul>'
@@ -5524,7 +5524,7 @@ exports.settleCancellation = onDocumentUpdated({document: 'requests/{reqId}', se
       console.warn('Indemnité : capture refusée reqId=' + reqId, cap.status);
       try {
         await sendMail(db, ADMIN_EMAIL, {
-          subject: 'Indemnité d\'annulation : capture refusée — ' + svc,
+          subject: 'Indemnité d\'annulation : capture refusée, ' + svc,
           html: '<p>Mollie a refusé la capture de l\'indemnité (' + eurTxt(fee) + ') sur la demande ' + escHtmlS(reqId) + ' (HTTP ' + escHtmlS(String(cap.status || '?')) + ').</p>',
         });
       } catch (_) {}
@@ -5574,7 +5574,7 @@ exports.settleCancellation = onDocumentUpdated({document: 'requests/{reqId}', se
     await notifieClient('Indemnité d\'annulation prélevée',
       'Annulation à moins de 8 h de « ' + svc + ' » : le prestataire a appliqué l\'indemnité de 50 %, soit ' + eurTxt(fee) + ', prélevée sur votre carte comme prévu par les conditions générales.', true);
     await notifieArtisan('Indemnité appliquée · ' + eurTxt(fee),
-      'L\'indemnité d\'annulation de « ' + svc + ' » a été prélevée au client — vous percevez ' + eurTxt(net) + (routed ? '.' : ' (versement en cours).'));
+      'L\'indemnité d\'annulation de « ' + svc + ' » a été prélevée au client, vous percevez ' + eurTxt(net) + (routed ? '.' : ' (versement en cours).'));
     console.log('Indemnité réglée reqId=' + reqId + ' ' + fee + ' € (net ' + net + ' €, ' + (routed ? 'routé' : 'à router') + ')');
   } catch (e) { console.warn('settleCancellation', reqId, e); }
 });
@@ -5588,7 +5588,7 @@ exports.welcomeClientEmail = onDocumentCreated({document: 'users/{uid}', secrets
   const isPro = (role === 'artisan' || role === 'concierge' || role === 'pro');
   const first = String(u.name || '').trim().split(' ')[0] || (isPro ? 'à bord' : 'à bord');
   const subject = isPro ?
-    'Bienvenue chez Ti-Services — votre profil intervenant' :
+    'Bienvenue chez Ti-Services, votre profil intervenant' :
     'Bienvenue sur Ti-Services';
   // Logo intégré à l'e-mail (cid:tilogo) : s'affiche toujours, sans dépendre d'une URL.
   const attachments = [];
@@ -5697,9 +5697,9 @@ exports.icalFeed = onRequest(async (req, res) => {
       const salon = r.locationMode === 'salon';
       events.push({
         id: doc.id, dateISO: dateISO, slot: slot, hours: hours, allDay: allDay,
-        summary: 'Ti-Services — ' + (r.serviceName || r.service || 'Mission') + ' · ' + first,
+        summary: 'Ti-Services, ' + (r.serviceName || r.service || 'Mission') + ' · ' + first,
         location: salon ? 'Votre salon / studio' : (r.zone || 'Saint-Barthélemy'),
-        description: 'Réservation Ti-Services' + (r.zone ? ' · ' + r.zone : '') + ' — détails dans l’application.'
+        description: 'Réservation Ti-Services' + (r.zone ? ' · ' + r.zone : '') + ', détails dans l’application.'
       });
     });
     events.sort((a, b) => (a.dateISO + a.slot).localeCompare(b.dateISO + b.slot));
@@ -5941,7 +5941,7 @@ exports.setExtCals = onCall(async (request) => {
       if (txt.indexOf('BEGIN:VCALENDAR') >= 0) urls.push(u);
     } catch (_) {}
   }
-  if (raw.length && !urls.length) throw new HttpsError('invalid-argument', "Ce lien ne renvoie pas un calendrier iCal — vérifiez l'adresse (elle finit souvent par .ics).");
+  if (raw.length && !urls.length) throw new HttpsError('invalid-argument', "Ce lien ne renvoie pas un calendrier iCal, vérifiez l'adresse (elle finit souvent par .ics).");
   await db.collection('artisans').doc(request.auth.uid).set({ extCals: urls }, { merge: true });
   return { ok: true, count: urls.length };
 });
@@ -6068,9 +6068,9 @@ exports.gcalSyncEvent = onDocumentUpdated({ document: 'requests/{reqId}', secret
       const w = gcalWindow(dateISO, slot, after.duration);
       body = { start: { dateTime: w.timeMin, timeZone: 'America/St_Barthelemy' }, end: { dateTime: w.timeMax, timeZone: 'America/St_Barthelemy' } };
     }
-    body.summary = 'Ti-Services — ' + (after.serviceName || after.service || 'Mission') + ' · ' + first;
+    body.summary = 'Ti-Services, ' + (after.serviceName || after.service || 'Mission') + ' · ' + first;
     body.location = salon ? 'Votre salon / studio' : (after.zone || 'Saint-Barthélemy');
-    body.description = 'Réservation Ti-Services — détails dans l’application.';
+    body.description = 'Réservation Ti-Services, détails dans l’application.';
     const r = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
       method: 'POST', headers: { 'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json' },
       body: JSON.stringify(body)

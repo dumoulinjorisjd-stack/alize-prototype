@@ -102,9 +102,16 @@ const SURCOUCHES=['chat','chat-bloque','chat-confirme','signalement','bloques'];
     return out;
   },{k});
 
-  const restentEN=[], restentPT=[];
+  const restentEN=[], restentPT=[], cadratins=[];
+  // PAS UN SEUL TIRET CADRATIN DANS CE QUI S'AFFICHE. « Ne mets jamais de ponctuation —,
+  // ça fait trop IA. » On relève le texte RENDU, écran par écran, plutôt que de chercher
+  // dans la source : une phrase corrigée dans le dictionnaire mais laissée dans le
+  // balisage passerait. Le tiret SEUL reste admis : dans un tableau, il ne ponctue rien,
+  // il dit « pas de valeur ».
+  const cad=(ou,t)=>{ if(t.indexOf('\u2014')>=0&&t.trim()!=='\u2014')cadratins.push(ou+' · '+t.slice(0,70)); };
   for(const [persona,nav] of ECRANS){
     for(const x of await releve({persona,nav})){
+      cad(persona+'/'+nav,x.t);
       if(!ATRADUIRE(x.t))continue;
       if(!x.en)restentEN.push(persona+'/'+nav+' · '+x.t.slice(0,70));
       if(!x.pt)restentPT.push(persona+'/'+nav+' · '+x.t.slice(0,70));
@@ -112,6 +119,7 @@ const SURCOUCHES=['chat','chat-bloque','chat-confirme','signalement','bloques'];
   }
   for(const k of SURCOUCHES){
     for(const x of await releveSurcouche(k)){
+      cad(k,x.t);
       if(!ATRADUIRE(x.t))continue;
       if(!x.en)restentEN.push(k+' · '+x.t.slice(0,70));
       if(!x.pt)restentPT.push(k+' · '+x.t.slice(0,70));
@@ -120,6 +128,7 @@ const SURCOUCHES=['chat','chat-bloque','chat-confirme','signalement','bloques'];
 
   console.log('\nCOUVERTURE — quinze écrans, trois langues');
   ok(restentEN.length===0,'aucun texte français ne subsiste en anglais'+(restentEN.length?'\n      '+restentEN.slice(0,12).join('\n      '):''));
+  ok(cadratins.length===0,'pas un seul tiret cadratin sur les quinze écrans'+(cadratins.length?' ('+cadratins.length+')\n      '+cadratins.slice(0,12).join('\n      '):''));
   ok(restentPT.length===0,'aucun texte français ne subsiste en portugais'+(restentPT.length?'\n      '+restentPT.slice(0,12).join('\n      '):''));
 
   console.log('\nPHRASES COUPÉES PAR UN <b> — les trois morceaux doivent tomber ensemble');

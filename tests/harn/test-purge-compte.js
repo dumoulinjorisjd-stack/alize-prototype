@@ -99,8 +99,8 @@ ok(/\.region\('europe-west1'\)/.test(fn), 'déployé dans la même région que l
   await p.evaluate(() => { document.querySelector('[data-purge^="total:"]').click(); });
   await p.waitForTimeout(300);
   const arme = await p.evaluate(() => document.body.innerText.replace(/\s+/g, ' '));
-  ok(/Confirmer — TOUT effacer/.test(arme), 'le premier appui arme, il ne supprime pas');
-  ok(!/Confirmer — retirer la fiche/.test(arme), 'et n’arme pas l’autre bouton');
+  ok(/Confirmer : TOUT effacer/.test(arme), 'le premier appui arme, il ne supprime pas');
+  ok(!/Confirmer : retirer la fiche/.test(arme), 'et n’arme pas l’autre bouton');
   ok((await p.evaluate(() => window.__S._purgeArm)) === 'purge:total:u-test', 'l’armement est bien ciblé');
 
   console.log('F — hors ligne, on le dit plutôt que de faire semblant');

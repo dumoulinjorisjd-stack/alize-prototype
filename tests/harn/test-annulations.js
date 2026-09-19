@@ -43,7 +43,7 @@ ok(/mollieOrgId', ''\) == resource\.data\.get\('mollieOrgId/.test(rules),
   'ni se lier une organisation Mollie à la main');
 
 console.log('D — litige et rappels');
-ok(/Durée contestée — /.test(fn), 'litige : l’artisan contesté est prévenu');
+ok(/Durée contestée, /.test(fn), 'litige : l’artisan contesté est prévenu');
 ok(/Contestation bien reçue/.test(fn), 'litige : le client a un accusé de réception');
 ok(/arrive comme prévu\.', '\/\?open=wallet&r=/.test(fn), 'rappel 1 h : le client est prévenu aussi');
 ok(/dateISO:\(function\(\)\{try\{const d=new Date\(\);if\(order\.when==='Demain'\)/.test(src),
