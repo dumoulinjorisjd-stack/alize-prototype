@@ -108,6 +108,46 @@ function declaration(src, debut, ouvre, ferme) {
    liste continue. Tout autre nom garde celui du catalogue, et le script REFUSE d'écrire un
    PDF où un nom déborde de sa colonne — on ne peut donc pas en ajouter un sans le voir. */
 const LIBELLES_COURTS = { colis: 'Colis' };
+// Rempli par la mesure, au lancement — jamais écrit à la main.
+let CADRES = {};
+
+/* CHAQUE ICÔNE EST CENTRÉE SUR SON DESSIN, PAS SUR SA BOÎTE. Les icônes partagent une
+   boîte de 24 × 24, mais leur tracé n'y occupe pas la même place : le lotus du massage
+   descend bas, la silhouette du baby-sitting est haute, la bouteille du ménage penche à
+   gauche. Alignées par leur boîte — ce que fait n'importe quelle mise en page — elles
+   paraissent donc décalées les unes des autres et par rapport à leur nom. On MESURE le
+   rectangle réellement dessiné (getBBox, dans le navigateur, sur le tracé lui-même) et on
+   déplace la fenêtre de la boîte pour que ce rectangle tombe au centre. Rien n'est
+   redessiné, aucune valeur n'est écrite à la main, et une icône redessinée dans
+   l'application est remesurée à la génération suivante. */
+async function centrerIcones(nav, metier, ids) {
+  const ctx = await nav.newContext();
+  const p = await ctx.newPage();
+  await p.setContent('<body style="margin:0">' +
+    ids.map(id => '<span data-id="' + id + '">' + metier(id).ico + '</span>').join('') + '</body>');
+  const cadres = await p.evaluate(() => {
+    const o = {};
+    document.querySelectorAll('[data-id]').forEach(sp => {
+      const svg = sp.querySelector('svg');
+      // getBBox ignore l'épaisseur du trait : on l'ajoute, sinon un tracé épais déborde du
+      // rectangle mesuré et le centrage penche du côté du trait le plus long.
+      const e = parseFloat(svg.getAttribute('stroke-width') || 0) || 0;
+      const b = svg.getBBox();
+      o[sp.dataset.id] = { x: b.x - e / 2, y: b.y - e / 2, w: b.width + e, h: b.height + e };
+    });
+    return o;
+  });
+  await ctx.close();
+  return cadres;
+}
+// La fenêtre de 24 × 24 se déplace pour que le centre du dessin tombe au centre de la boîte.
+function icoCentree(svg, cadre) {
+  if (!cadre) return svg;
+  const dx = +(cadre.x + cadre.w / 2 - 12).toFixed(3), dy = +(cadre.y + cadre.h / 2 - 12).toFixed(3);
+  const nu = svg.replace('viewBox="0 0 24 24"', 'viewBox="' + dx + ' ' + dy + ' 24 24"');
+  if (nu === svg) throw new Error('viewBox 24×24 introuvable — une icône a changé de gabarit');
+  return nu;
+}
 
 function metiersDeLApp(src) {
   const I = declaration(src, '  const I = {', '{', '}');
@@ -222,16 +262,17 @@ function feuille(c, polices) {
      à 7 mm au lieu de 21. On fixe donc chaque bloc, et c'est la composition qui doit tenir
      dans la hauteur, pas le logo qui doit rapetisser pour elle. */
   .carte>*{flex:none}
-  /* LE RECTO EST BLANC, SANS DÉGRADÉ. Il portait le fond « lagon » de l'application —
-     trois voiles de couleur sur le sable. À l'écran c'est une atmosphère ; imprimé, c'est
-     une teinte pâle irrégulière qui ne se retrouve pas d'un tirage à l'autre et qui salit
-     le blanc. Un aplat blanc franc ne pose aucune de ces questions. */
-  /* LA TEINTE DU RECTO EST UN MÉLANGE, PAS LE JETON « WASH ». le jeton --teal-wash (#FFEDE8) est
-     fait pour le fond d'une pastille à l'écran, où il suffit à détacher un bloc de son
-     voisin ; imprimé en aplat sur 65 mm, il ne se voit plus — l'œil n'a rien à quoi le
-     comparer. Deux dixièmes de corail sur du blanc (#FFDEDB) se perçoivent comme une
-     teinte sans cesser d'être légers, et le texte encre y tient à 12 contre 1. */
-  .recto{background:${melange(c['teal'], '#ffffff', .78)}}
+  /* LE RECTO RETROUVE SON DÉGRADÉ « LAGON », celui de l'application : un voile de corail
+     en haut à gauche, un d'or à droite, un de turquoise en bas. Ils sont légers — 13 %, 8 %
+     et 10 % d'opacité — et c'est ce qui les rend justes sur un papier : un aplat très clair
+     ne se voit pas, un dégradé se voit parce que l'œil compare deux endroits de la même
+     carte. Il avait été remplacé par un blanc franc puis par un corail plat ; ni l'un ni
+     l'autre ne tenait. */
+  .recto{background:
+      radial-gradient(70% 55% at 14% -6%, ${c['teal']}22, transparent 62%),
+      radial-gradient(64% 52% at 106% 6%, #A26A0C14, transparent 58%),
+      radial-gradient(76% 60% at 60% 112%, #5EC9C11A, transparent 60%),
+      ${c['sand']}}
   /* LE DÉGRADÉ NE DESCEND PLUS JUSQU'AU CORAIL PROFOND. Il allait de #FF6A5B à #CE301C :
      à l'impression, ce bas de dégradé vire au rouge sombre — une encre saturée perd
      toujours de la clarté en passant en CMJN, et c'est le point le plus foncé qui donne
@@ -485,7 +526,8 @@ async function main() {
   const src = lireSource();
   const c = couleurs(src);
   const { qrEncode, qrSvgFrom } = qrDeLApp(src);
-  const metier = metiersDeLApp(src);
+  const metierBrut = metiersDeLApp(src);
+  const metier = id => { const m = metierBrut(id); return { ...m, ico: icoCentree(m.ico, CADRES[id]) }; };
   const logo = zouti();
   const b64 = police();
   const style = feuille(c, b64);
@@ -512,16 +554,18 @@ async function main() {
 
   const faces = plan.map(f => ({ cle: f.cle, face: f.face, titre: f.titre, url: f.url,
     fichier: `carte-${f.cle}-${f.face}.html` }));
-  if (!verifierSeul) {
-    plan.forEach((f, i) => fs.writeFileSync(path.join(SORTIE, faces[i].fichier), f.html()));
-    fs.writeFileSync(path.join(SORTIE, 'apercu.html'), apercu(faces, c));
-  }
 
-  // Rendu PDF + PNG. Playwright n'est là que pour ça : le dessin est du HTML.
+  // Le navigateur sert d'abord à MESURER (les icônes), ensuite à rendre.
   const { chromium } = require(path.join(RACINE, 'node_modules', 'playwright-core'));
   const opts = { args: ['--no-sandbox', '--font-render-hinting=none'] };
   if (fs.existsSync('/opt/pw-browsers/chromium')) opts.executablePath = '/opt/pw-browsers/chromium';
   const nav = await chromium.launch(opts);
+  CADRES = await centrerIcones(nav, metierBrut, [...new Set(CARTES.flatMap(x => x.metiers || []))]);
+
+  if (!verifierSeul) {
+    plan.forEach((f, i) => fs.writeFileSync(path.join(SORTIE, faces[i].fichier), f.html()));
+    fs.writeFileSync(path.join(SORTIE, 'apercu.html'), apercu(faces, c));
+  }
   // 300 ppp : 1 mm = 300/25.4 px. Le PNG sort donc à la taille exacte d'un tirage.
   const ppmm = 300 / 25.4;
   const JPEG_PPP = 600;

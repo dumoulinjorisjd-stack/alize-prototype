@@ -9,6 +9,16 @@ non vingt et un : sur 49 mm de large, la liste complète donnerait des noms de d
 millimètres que personne ne lit. Les icônes, les noms et les teintes viennent du
 catalogue de l'application, comme sur la vitrine.
 
+**Chaque icône est centrée sur son DESSIN, pas sur sa boîte.** Les icônes partagent une
+boîte de 24 × 24, mais leur tracé n'y occupe pas la même place : le lotus du massage
+descend bas, la silhouette du baby-sitting est haute, la bouteille du ménage penche à
+gauche. Alignées par leur boîte — ce que fait n'importe quelle mise en page — elles
+paraissent décalées les unes des autres et par rapport à leur nom. Le script mesure le
+rectangle réellement dessiné (`getBBox`, dans le navigateur) et déplace la fenêtre de la
+boîte pour que ce rectangle tombe au centre : jusqu'à 3,2 unités de correction sur 24, soit
+un septième de l'icône. Rien n'est redessiné, aucune valeur n'est écrite à la main, et une
+icône redessinée dans l'application est remesurée à la génération suivante.
+
 **Un nom trop long pour sa colonne arrête la génération.** « Colis & courrier » demande
 20,9 mm là où la colonne en offre 18,3 : la carte dit donc « Colis », raccourci déclaré
 dans `LIBELLES_COURTS` et nulle part ailleurs. Tout autre métier garde le nom du
@@ -106,12 +116,11 @@ la face. Il va maintenant de **`#FF8275`** (le corail de marque plus un voile de
 `outils/cartes-visite.js`, en PROPORTION de deux jetons de la charte — jamais en teinte
 choisie à la main.
 
-**Le recto est un aplat de corail très clair** (`#FFDEDB`), sans dégradé. C'est un mélange
-— deux dixièmes de corail sur du blanc — et non le jeton `--teal-wash` (`#FFEDE8`) : celui-ci
-est fait pour le fond d'une pastille à l'écran, où il suffit à détacher un bloc de son
-voisin, mais imprimé en aplat sur 65 mm il ne se voit plus, l'œil n'ayant rien à quoi le
-comparer. Le texte encre y tient à 12,8 contre 1. Il portait le fond « lagon » de l'application : à l'écran c'est une atmosphère,
-imprimé c'est une teinte pâle irrégulière qui ne se retrouve pas d'un tirage à l'autre.
+**Le recto porte le dégradé « lagon » de l'application** : un voile de corail en haut à
+gauche, un d'or à droite, un de turquoise en bas, sur le sable. Ils sont légers — 13 %, 8 %
+et 10 % d'opacité — et c'est ce qui les rend justes sur un papier : un aplat très clair ne
+se voit pas, un dégradé se voit parce que l'œil compare deux endroits de la même carte. Un
+blanc franc et un corail plat ont été essayés ; ni l'un ni l'autre ne tenait.
 
 **Le QR-code est posé à même le corail, sans carré blanc.** La zone de silence autour des
 modules est obligatoire, mais elle n'a pas à être blanche : elle doit être claire et unie,
