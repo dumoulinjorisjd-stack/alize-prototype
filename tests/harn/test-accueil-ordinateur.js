@@ -100,6 +100,33 @@ console.log('\nC bis — c’est une VITRINE : le client, les boutons, le profes
   await ctx.close();
 }
 
+console.log('\nC ter — les métiers portent leur ICÔNE, pas un rond de couleur');
+{
+  const lire=async(w)=>{
+    const ctx=await b.newContext({viewport:{width:w,height:950},locale:'fr-FR',isMobile:w<500,hasTouch:w<500});
+    const p2=await ctx.newPage();
+    await p2.goto(F); await p2.waitForFunction(()=>window.__S&&window.__render); await p2.waitForTimeout(700);
+    const r=await p2.evaluate(()=>{
+      const vu=e=>{const r2=e.getBoundingClientRect();return r2.width>0&&r2.height>0;};
+      const ou=[...document.querySelectorAll('.jobs')].find(vu);
+      if(!ou)return {absent:true};
+      const ch=[...ou.querySelectorAll('.jchip')];
+      return {clone:!!ou.closest('.welcome-plus'), n:ch.length,
+        icones:ch.filter(c=>c.querySelector('.jc-ico svg')).length,
+        pastilles:ch.filter(c=>c.querySelector('i')).length,
+        hauteurs:[...new Set(ch.map(c=>Math.round(c.getBoundingClientRect().height)))],
+        teintes:new Set(ch.map(c=>(c.querySelector('.jc-ico')||{style:{}}).style.color)).size};});
+    await ctx.close(); return r;
+  };
+  const g=await lire(1512), m=await lire(390);
+  ok(g.clone&&g.icones===g.n&&g.pastilles===0,
+    'sur grand écran, les '+g.n+' métiers portent l’icône de la charte et plus aucune pastille');
+  ok(g.teintes>=7,'chacune garde la teinte de son service ('+g.teintes+' teintes distinctes) : c’est ce qui rend la grille lisible d’un coup d’œil');
+  ok(g.hauteurs.length===1,'et toutes les puces ont la même hauteur ('+g.hauteurs.join(', ')+' px) — aucun libellé ne passe à la ligne');
+  ok(!m.clone&&m.pastilles===m.n&&m.icones===0,
+    'le téléphone garde ses pastilles, comme demandé — '+m.pastilles+' sur '+m.n);
+}
+
 console.log('\nD — une seule source : le contenu est CLONÉ, pas recopié');
 const src=fs.readFileSync(path.join(RACINE,'index.html'),'utf8');
 ok(/src\.innerHTML=\(_briefFR!=null\?_briefFR:br\.innerHTML\)/.test(src),
