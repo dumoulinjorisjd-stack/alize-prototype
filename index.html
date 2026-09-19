@@ -8974,12 +8974,32 @@
       <button class="btn ghost sm" data-optadd="${svcId}" style="margin-top:10px;width:auto;padding:8px 12px">${I.plus} Ajouter une prestation</button>`;
   }
   // Compteurs de l'entonnoir d'installation (doc settings/installFunnel_*) — console admin.
+  // Les TOTAUX sont dans un document public depuis toujours ; le DÉTAIL (jour par jour,
+  // dernières installations, délai) vit dans des collections fermées et se demande à une
+  // fonction réservée à l'administrateur. Le détail ne doit pas faire attendre les
+  // totaux : deux chargements distincts, deux rendus.
   async function loadAdminFunnel(){
     try{
       if(FB&&FB.f&&FB.db){const snap=await FB.f.getDoc(FB.f.doc(FB.db,'settings','installFunnel_'+(IS_PROD?'prod':'beta')));S.adminFunnel=(snap&&snap.exists())?(snap.data()||{}):{};}
       else S.adminFunnel={};
     }catch(_){S.adminFunnel={};}
     S.adminFunnelLoaded=true;render();
+    try{
+      if(FB&&FB.fn&&FB.functions){
+        const r=await FB.fn.httpsCallable(FB.functions,'funnelDetail')({env:IS_PROD?'prod':'beta'});
+        S.adminFunnelDetail=(r&&r.data)||null;
+      }
+    }catch(_){ S.adminFunnelDetail=null; }
+    S.adminFunnelDetailLoaded=true;render();
+  }
+  // Un délai se dit dans l'unité où on le pense : des minutes tant qu'on attend, des
+  // heures quand on revient dans la journée, des jours au-delà. « 2 880 min » ne se lit
+  // pas. L'arrondi est celui de l'unité affichée, jamais plus fin qu'elle.
+  function funnelDelai(min){
+    if(min==null)return '';
+    if(min<90)return min+' min';
+    if(min<48*60){const h=Math.round(min/60);return h+' h';}
+    return Math.round(min/1440)+' j';
   }
   function adminHome(){
     const arts=S.adminArtisans,clis=S.adminClients;
@@ -9046,6 +9066,70 @@
     const sm=S.mission;const supBlocks=[];
     if(sm&&sm.support){['client','pro'].forEach(side=>{const th=sm.support[side];if(th&&th.length){const last=th[th.length-1];const who=side==='client'?esc(sm.clientName||(isDemo()?'Camille Magras':'Client')):esc((sm.provider&&sm.provider.nm)||'Artisan');const needReply=last.from!=='admin';supBlocks.push(`<button class="card" data-adm="support:${side}" style="padding:13px;margin-top:9px;width:100%;text-align:left;display:block;border-left:4px solid ${needReply?'var(--coral)':'var(--good)'}"><div class="row between"><b style="font-size:14px">${who}</b><span class="chip ${needReply?'coral':'good'}">${needReply?'À répondre':'Répondu'}</span></div><div class="mini" style="margin-top:3px">${sm.svcName} · ${sm.when} ${sm.slot}</div><div class="mini" style="margin-top:4px;color:var(--ink-soft)">« ${esc(last.text).slice(0,64)} »</div></button>`);}});}
     // ── Corps des cartes repliables (mêmes codes que les comptes client/prestataire) ──
+    // ——— LE RYTHME, ET NON PLUS SEULEMENT LE TOTAL ———
+    // « Il faut rendre cet entonnoir plus précis, avec les jours ou autre détail »
+    // (18/09/2026). 368 visiteurs et 58 installées DEPUIS TOUJOURS ne disent ni si le
+    // lancement décolle, ni si la semaine s'est effondrée : un cumul ne peut que monter.
+    // Quatre choses s'ajoutent, et chacune répond à une question qu'on se pose vraiment :
+    // combien cette semaine (et la précédente, sinon un nombre seul ne se juge pas),
+    // quelle allure sur trente jours, combien de temps entre la visite et l'installation,
+    // et qui vient d'installer. Ce qu'on ne SAIT pas se dit : les installations
+    // antérieures à cette mise en ligne ne portent pas de date, et la carte l'écrit
+    // plutôt que de les fondre dans une médiane qui ne les contient pas.
+    function funnelJours(insTotal){
+      if(!S.adminFunnelDetailLoaded)return `<div class="mini" style="margin-top:10px;color:var(--muted)">détail par jour&nbsp;: chargement…</div>`;
+      const D=S.adminFunnelDetail;
+      if(!D||!Array.isArray(D.jours)||!D.jours.length)
+        return `<div class="mini" style="margin-top:10px;color:var(--muted)">Détail par jour indisponible.</div>`;
+      const J=D.jours, som=(a,k)=>a.reduce((t,x)=>t+(Number(x[k])||0),0);
+      const s7=J.slice(-7), p7=J.slice(-14,-7);
+      const pl=(n,m)=>n+' '+m+(n>1?'s':'');
+      // DEUX FRISES, DEUX ÉCHELLES, ET CHACUNE DIT LA SIENNE. Un premier jet les mettait
+      // à la MÊME échelle, par souci d'honnêteté — et le résultat ne montrait rien : les
+      // installations valent 16 % des visites, donc un à deux pixels au ras de l'axe. Une
+      // frise qu'on ne peut pas lire ne trompe personne, mais elle n'apprend rien non
+      // plus. Deux échelles se lisent sans tromper À CONDITION de les écrire : chaque
+      // frise annonce son maximum, qui est ce qui permet de comparer un jour à un autre.
+      const frise=(cle,couleur,titre)=>{
+        const hi=Math.max(1,...J.map(d=>Number(d[cle])||0));
+        const H=cle==='visit'?38:26, L=7.6, BW=5.4;
+        const barres=J.map((d,i)=>{
+          const val=Number(d[cle])||0, h=val?Math.max(1,Math.round(val/hi*H)):0;
+          const t=esc(d.j)+' — '+pl(Number(d.visit)||0,'visiteur')+', '+pl(Number(d.installed)||0,'installée');
+          return `<g><title>${t}</title>`
+            +(h?`<rect x="${i*L}" y="${H-h}" width="${BW}" height="${h}" rx="1.2" fill="${couleur}"></rect>`:'')
+            +`<rect x="${i*L}" y="0" width="${L}" height="${H}" fill="transparent"></rect></g>`;
+        }).join('');
+        return `<div class="mini" style="margin-top:8px;color:var(--muted)">${titre} <span style="color:var(--ink-soft)">· plus forte journée&nbsp;: ${hi}</span></div>
+          <svg viewBox="0 0 ${J.length*L} ${H}" width="100%" height="${H}" preserveAspectRatio="none"
+               role="img" aria-label="${titre}, une barre par jour sur trente jours"
+               style="display:block;margin-top:2px">${barres}</svg>`;
+      };
+      const nonDatees=Math.max(0,(Number(insTotal)||0)-(Number(D.installeesDatees)||0));
+      const recentes=(D.recentes||[]).map(r=>{
+        const q={ios:'iPhone',android:'Android',desktop:'Ordinateur'}[r.pf]||'—';
+        let quand='';
+        try{ quand=new Date(r.at).toLocaleString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}); }catch(_){ quand=''; }
+        return `<div class="row between" style="gap:8px;padding:5px 0;border-top:1px solid var(--hair)">
+          <span class="mini">${esc(quand)}</span>
+          <span class="mini" style="color:var(--muted)">${q}${r.min!=null?' · '+funnelDelai(r.min)+' après sa visite':''}</span></div>`;
+      }).join('');
+      return `<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--hair)">
+        <div class="row between" style="gap:8px;align-items:baseline">
+          <b style="font-size:13px">7 derniers jours</b>
+          <span class="mini" style="color:var(--muted)">30 jours&nbsp;: ${som(J,'visit')} visiteurs · ${som(J,'installed')} installées</span>
+        </div>
+        <div class="mini" style="margin-top:3px">${som(s7,'visit')} visiteurs · <b style="color:var(--teal-deep)">${som(s7,'installed')} installées</b>${p7.length?` <span style="color:var(--muted)">(semaine précédente&nbsp;: ${som(p7,'visit')} · ${som(p7,'installed')})</span>`:''}</div>
+        ${frise('visit','var(--hair)','Visiteurs')}
+        ${frise('installed','var(--teal-deep)','Installées')}
+        <div class="row between mini" style="color:var(--muted);margin-top:2px">
+          <span>${esc(J[0].j.slice(8)+'/'+J[0].j.slice(5,7))}</span><span>aujourd’hui</span>
+        </div>
+        ${D.delaiMedianMin!=null?`<div class="mini" style="margin-top:9px">Délai visite → installation&nbsp;: <b>${funnelDelai(D.delaiMedianMin)}</b> <span style="color:var(--muted)">(médiane sur ${pl(D.delaiN,'appareil')})</span></div>`:''}
+        ${recentes?`<div style="margin-top:10px"><div class="mini" style="color:var(--muted)">Dernières installations</div>${recentes}</div>`:''}
+        ${nonDatees?`<div class="mini" style="margin-top:8px;color:var(--muted)">${pl(nonDatees,'installation')} d’avant cette mesure ne porte${nonDatees>1?'nt':''} pas de date&nbsp;: elle${nonDatees>1?'s':''} compte${nonDatees>1?'nt':''} dans le total, jamais dans les jours ni dans la médiane.</div>`:''}
+      </div>`;
+    }
     const funnelBody=(function(){
       if(!S.adminFunnelLoaded&&!S._funnelLoading){S._funnelLoading=true;setTimeout(loadAdminFunnel,0);}
       const f=S.adminFunnel||{};const n=function(k){return Number(f[k])||0;};
@@ -9061,6 +9145,7 @@
           <div style="flex:1"><div class="mini">Installées</div><b class="money" data-count="fn-i:${ins}" style="font-size:19px;font-family:var(--f-disp);color:var(--teal-deep)">${ins}</b>${v?`<div class="mini">${pct}&nbsp;% des visiteurs</div>`:''}</div>
         </div>
         <div class="mini" style="margin-top:8px;color:var(--muted)">Installées&nbsp;: iPhone ${n('u_installed_ios')} · Android ${n('u_installed_android')} · Ordinateur ${n('u_installed_desktop')}</div>
+        ${funnelJours(ins)}
         ${legacy?`<div class="mini" style="margin-top:6px;color:var(--muted)">Ancien comptage (avec doublons, archivé)&nbsp;: ${n('visit_total')} visites · ${n('installed_total')} installées</div>`:''}`;})();
     const svcAll=allSvc();
     const svcNoPro=svcAll.filter(function(s){return !(S.adminArtisans||[]).some(function(a){return a.status==='valide'&&Array.isArray(a.cats)&&a.cats.indexOf(s.id)>=0;});}).length;

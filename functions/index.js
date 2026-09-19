@@ -4522,6 +4522,23 @@ exports.emailClientInvoice = onDocumentUpdated({document: 'requests/{reqId}', se
  * fire-and-forget. Doc settings/installFunnel_{prod|beta}, lu par la console admin. */
 const FUNNEL_EVENTS = ['visit', 'guide', 'installed'];
 const FUNNEL_PLATFORMS = ['ios', 'android', 'desktop'];
+/* LE JOUR EST CELUI DE SAINT-BARTHÉLEMY, pas celui du serveur. L'île est à UTC−4 et
+ * ne change jamais d'heure : découper en UTC ferait basculer la journée à 20 h locales,
+ * et « hier » contiendrait une soirée entière d'aujourd'hui. Sur un tableau de bord qui
+ * sert à juger d'un lancement, c'est la différence entre une soirée creuse et une bonne
+ * journée. Repli arithmétique si le fuseau manque à l'exécution. */
+function jourStBarth(d) {
+  const t = d instanceof Date ? d : new Date();
+  try {
+    return new Intl.DateTimeFormat('en-CA', {timeZone: 'America/St_Barthelemy'}).format(t);
+  } catch (_) {
+    try {
+      return new Intl.DateTimeFormat('en-CA', {timeZone: 'America/Guadeloupe'}).format(t);
+    } catch (__) {
+      return new Date(t.getTime() - 4 * 3600 * 1000).toISOString().slice(0, 10);
+    }
+  }
+}
 exports.trackFunnel = onCall(async (request) => {
   const d = request.data || {};
   const ev = String(d.event || '');
@@ -4546,13 +4563,102 @@ exports.trackFunnel = onCall(async (request) => {
     if (dd[ev]) return; // déjà compté pour cet appareil
     const dpatch = {updatedAt: FieldValue.serverTimestamp()};
     dpatch[ev] = true; dpatch[ev + 'Pf'] = pf;
+    // LA DATE DE L'ÉTAPE, et pas seulement celle de la dernière écriture. `updatedAt`
+    // était écrasé à chaque franchissement : on ne pouvait pas dire QUAND cet appareil
+    // avait visité, ni combien de temps s'était écoulé avant qu'il installe. Posée une
+    // seule fois par étape (la transaction sort plus haut si l'étape est déjà comptée),
+    // donc elle ne bouge plus jamais. Les appareils d'avant ne l'ont pas : la console
+    // le DIT au lieu de présenter un total amputé.
+    dpatch[ev + 'At'] = FieldValue.serverTimestamp();
     tx.set(devRef, dpatch, {merge: true});
     const upd = {updatedAt: FieldValue.serverTimestamp()};
     upd['u_' + ev + '_total'] = FieldValue.increment(1);
     upd['u_' + ev + '_' + pf] = FieldValue.increment(1);
     tx.set(cntRef, upd, {merge: true});
+    // UN DOCUMENT PAR JOUR, plutôt qu'une carte de jours dans le document des totaux :
+    // celui-ci est lu par la console à chaque ouverture, et une carte qui grossit d'une
+    // ligne par jour finit par le plafond du mébioctet. Un document par jour ne grossit
+    // jamais, et se lit par tranche (les trente derniers).
+    const dayRef = db.doc('funnelDays_' + env + '/' + jourStBarth());
+    const dpat = {j: jourStBarth(), updatedAt: FieldValue.serverTimestamp()};
+    dpat[ev] = FieldValue.increment(1);
+    dpat[ev + '_' + pf] = FieldValue.increment(1);
+    tx.set(dayRef, dpat, {merge: true});
   });
   return {ok: true};
+});
+
+/* LE DÉTAIL DE L'ENTONNOIR — « il faut le rendre plus précis, avec les jours ou autre
+ * détail » (18/09/2026). Les totaux disent 368 visiteurs et 58 installées DEPUIS
+ * TOUJOURS : on ne peut ni voir un lancement décoller, ni voir une semaine s'effondrer.
+ *
+ * TOUT EST CALCULÉ ICI, et non dans la console : les journées et les appareils vivent
+ * dans des collections FERMÉES (aucune règle ne les ouvre, contrairement au document des
+ * totaux, que `settings/{doc}` rend public depuis toujours). Le détail d'un lancement —
+ * qui installe, quand, depuis quel appareil — n'a pas à être lisible par le premier
+ * venu, et le passer par une fonction réservée à l'administrateur est ce qui l'évite.
+ *
+ * LE DÉLAI est rendu en MÉDIANE et non en moyenne : une seule personne qui installe
+ * trois semaines après sa visite déplace une moyenne, jamais une médiane. Et il ne porte
+ * que sur les appareils qui ont les DEUX dates — les autres sont comptés à part et dits,
+ * plutôt que de laisser croire que la médiane porte sur tout le monde. */
+exports.funnelDetail = onCall(async (request) => {
+  const who = (request.auth && request.auth.token && request.auth.token.email) || '';
+  if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+    throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
+  }
+  const env = (request.data && request.data.env) === 'prod' ? 'prod' : 'beta';
+  const db = getFirestore();
+  const JOURS = 30;
+  // Les trente derniers jours, y compris ceux où il ne s'est RIEN passé : un trou dans
+  // une frise se lit comme une absence de mesure, un zéro se lit comme une journée sans
+  // installation. Ce n'est pas la même information.
+  const cles = [];
+  const auj = new Date();
+  for (let i = JOURS - 1; i >= 0; i--) cles.push(jourStBarth(new Date(auj.getTime() - i * 86400000)));
+  const snaps = await db.getAll(...cles.map((k) => db.doc('funnelDays_' + env + '/' + k)));
+  const jours = snaps.map((sn, i) => {
+    const d = sn.exists ? (sn.data() || {}) : {};
+    return {
+      j: cles[i],
+      visit: Number(d.visit) || 0,
+      guide: Number(d.guide) || 0,
+      installed: Number(d.installed) || 0,
+      ios: Number(d.installed_ios) || 0,
+      android: Number(d.installed_android) || 0,
+      desktop: Number(d.installed_desktop) || 0,
+    };
+  });
+  // Les dernières installations datées. `orderBy` écarte de lui-même les appareils qui
+  // n'ont pas le champ — c'est-à-dire tous ceux d'avant cette mise en ligne : on ne les
+  // fait pas passer pour récents, on les compte séparément.
+  let recentes = []; let avecDate = 0; let delais = [];
+  try {
+    const q = await db.collection('funnelDevices_' + env)
+      .orderBy('installedAt', 'desc').limit(40).get();
+    recentes = q.docs.map((d) => {
+      const v = d.data() || {};
+      const at = v.installedAt && v.installedAt.toMillis ? v.installedAt.toMillis() : 0;
+      const vu = v.visitAt && v.visitAt.toMillis ? v.visitAt.toMillis() : 0;
+      const min = (at && vu && at >= vu) ? Math.round((at - vu) / 60000) : null;
+      if (min !== null) delais.push(min);
+      return {at, pf: String(v.installedPf || ''), min};
+    }).filter((r) => r.at);
+  } catch (e) { console.warn('funnelDetail recentes', e); }
+  try {
+    const c = await db.collection('funnelDevices_' + env).orderBy('installedAt', 'desc').count().get();
+    avecDate = (c.data() || {}).count || 0;
+  } catch (_) { avecDate = recentes.length; }
+  delais = delais.sort((a, b) => a - b);
+  const med = delais.length ? delais[Math.floor((delais.length - 1) / 2)] : null;
+  return {
+    jours,
+    recentes: recentes.slice(0, 12),
+    delaiMedianMin: med,
+    delaiN: delais.length,
+    installeesDatees: avecDate,
+    jourDuJour: jourStBarth(),
+  };
 });
 
 /* Téléchargement à la demande de la facture PDF (bouton « Télécharger le PDF » de
