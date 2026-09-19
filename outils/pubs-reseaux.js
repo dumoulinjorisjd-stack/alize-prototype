@@ -135,12 +135,15 @@ const PUBS = [
     titre: 'Et si les clients venaient à <em>vous</em> ?',
     sous: 'Ti-Services vous envoie des clients de toute l’île. Vous ne prospectez plus.',
     points: [
-      ['lock', 'Paiement garanti — fini les impayés'],
+      ['lock', 'Paiement garanti, fini les impayés'],
       ['heart', 'Zéro abonnement, zéro frais fixes'],
       ['check', 'Vous choisissez vos missions']
     ],
     // « Places limitées » est retiré : la page d'accueil dit le contraire.
-    bandeau: ['star', '<b>Programme Ambassadeur</b> — commission réduite et mise en avant dans l’app.'],
+    // ON NE PARLE PAS DE COMMISSION, sur un visuel comme sur le site : ce qu'on vend est
+    // ce que le prestataire touche, pas le pourcentage qu'on prend. Et pas de tiret
+    // cadratin, ici non plus.
+    bandeau: ['star', '<b>Programme Ambassadeur</b>\u2009: une meilleure rémunération sur vos premiers mois et une mise en avant dans l’app.'],
     acte: 'Inscription en 2 min'
   }
 ];
@@ -245,6 +248,21 @@ async function main() {
       }
       return [...pris];
     });
+    /* DEUX MOTS QU'ON NE VEUT PAS VOIR. Le tiret cadratin, « ça fait trop IA » — il a
+       quitté le site le même jour. Et la COMMISSION : ce qu'on vend à un professionnel est
+       ce qu'il touche, jamais le pourcentage qu'on prend. Les deux se lisent dans le texte
+       RENDU : une phrase corrigée dans la liste mais laissée dans un titre passerait. */
+    const interdits = await p.evaluate(() => {
+      const t = document.querySelector('.pub').innerText;
+      const m = [];
+      if (t.includes('\u2014')) m.push('un tiret cadratin');
+      if (/commission/i.test(t)) m.push('le mot « commission »');
+      return m;
+    });
+    if (interdits.length) {
+      console.log('  \u2717 pub-' + pub.cle + ' porte ' + interdits.join(' et '));
+      process.exitCode = 1;
+    }
     if (dessus.length) {
       console.log('  \u2717 pub-' + pub.cle + ' : un aplat touche ' + dessus.join(', '));
       process.exitCode = 1;
@@ -256,6 +274,44 @@ async function main() {
     } else {
       console.log('  ✓ pub-' + pub.cle + ' — ' + debord + ' px sous le dernier bloc');
     }
+
+    /* LE PDF : LA MÊME PAGE, EN VECTORIEL. Un JPEG s'envoie sur un réseau ; un PDF
+       s'imprime, se projette, part chez un imprimeur. Le texte y reste du TEXTE — les trois
+       graisses d'Inter sont embarquées en statique, comme sur les cartes de visite, où une
+       police variable ressortait en Type 3, c'est-à-dire en dessins. La page fait
+       210 × 262,5 mm : la largeur d'une A4, et le 4:5 conservé au dixième de millimètre.
+       Le visuel est construit en 1 080 px et mis à l'échelle par une TRANSFORMATION : rien
+       n'est redessiné, donc rien ne bouge d'un pixel par rapport à l'image, et tout reste
+       net à n'importe quel agrandissement. */
+    const ECH = 793.7008 / L;           // 210 mm à 96 points par pouce
+    await p.addStyleTag({ content: `@page{size:210mm 262.5mm;margin:0}
+      html,body{width:${L * ECH}px;height:${H * ECH}px;overflow:hidden;background:#fff}
+      .pub{transform:scale(${ECH});transform-origin:top left}` });
+    const fpdf = path.join(SORTIE, 'pub-' + pub.cle + '.pdf');
+    await p.pdf({ path: fpdf, printBackground: true, preferCSSPageSize: true });
+    /* ET ON OUVRE LE FICHIER PRODUIT. Deux pannes silencieuses guettent : une page qui
+       n'est plus au format (le visuel sort alors rogné ou cerné de blanc), et des glyphes
+       DESSINÉS au lieu d'être écrits — c'est arrivé sur les cartes de visite, où Inter
+       embarquée en police VARIABLE ressortait en Type 3, floue à l'agrandissement et
+       impossible à sélectionner. Les deux se lisent dans les octets du PDF. */
+    {
+      const d = fs.readFileSync(fpdf);
+      const m = /\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)/.exec(d.toString('latin1'));
+      const r = m ? Number(m[2]) / Number(m[1]) : 0;
+      const fontes = (d.toString('latin1').match(/\/FontFile2/g) || []).length;
+      const type3 = d.includes('/Type3');
+      if (Math.abs(r - H / L) > .004 || !fontes || type3) {
+        console.log('  \u2717 pub-' + pub.cle + '.pdf : rapport ' + r.toFixed(4) + ' (attendu ' +
+          (H / L).toFixed(4) + '), ' + fontes + ' sous-ensemble(s) de police embarqué(s)' +
+          (type3 ? ', des glyphes DESSINÉS (Type 3)' : ''));
+        process.exitCode = 1;
+      } else {
+        console.log('  \u2713 pub-' + pub.cle + '.pdf — 210 \u00d7 262,5 mm, texte vectoriel (' +
+          fontes + ' sous-ensembles de police embarqués)');
+      }
+    }
+    await p.goto('file://' + f, { waitUntil: 'load' });
+    await p.evaluate(() => document.fonts.ready);
 
     const png = path.join(SORTIE, 'pub-' + pub.cle + '.png');
     await p.locator('.pub').screenshot({ path: png });
