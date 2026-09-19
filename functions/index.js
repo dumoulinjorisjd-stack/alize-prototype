@@ -4651,6 +4651,39 @@ exports.funnelDetail = onCall(async (request) => {
   } catch (_) { avecDate = recentes.length; }
   delais = delais.sort((a, b) => a - b);
   const med = delais.length ? delais[Math.floor((delais.length - 1) / 2)] : null;
+  /* LES TOTAUX SE RECOMPTENT, ILS NE SE LISENT PLUS DANS UN COMPTEUR. La carte affichait
+   * « Visiteurs 0 · Guide ouvert 0 · Installées 0 » au-dessus de « 24 visiteurs · 2
+   * installées » sur les sept derniers jours, et nommait deux installations du jour avec
+   * l'heure : deux moitiés de la même carte qui se contredisaient, et celle qui disait
+   * zéro était celle qu'on lit en premier. Les deux chiffres ne venaient pas du même
+   * endroit — le haut d'un document de compteurs lu DEPUIS LE NAVIGATEUR
+   * (`settings/installFunnel_*`), le bas des journées lues ici. Un compteur cumulé ne
+   * peut que dériver : une remise à zéro, une restitution de sauvegarde, une écriture
+   * perdue, et il ment sans que rien ne le dise.
+   *
+   * La VÉRITÉ est la collection des appareils : un document par appareil, un champ par
+   * étape franchie. On la compte — `count()` n'en rapatrie aucun document, il rend un
+   * nombre — et le total ne peut plus s'écarter de ce que la frise montre, puisque c'est
+   * la même source. Les trois filtres portent sur UN champ chacun : les index simples de
+   * Firestore suffisent, aucun index composite à créer. `installedPf` n'existe que si
+   * l'étape « installed » a été comptée (les deux s'écrivent dans la même transaction),
+   * donc il désigne bien les installations et rien d'autre. */
+  const compte = async (champ, val) => {
+    try {
+      const c = await db.collection('funnelDevices_' + env).where(champ, '==', val).count().get();
+      return (c.data() || {}).count || 0;
+    } catch (e) { console.warn('funnelDetail compte ' + champ, e); return null; }
+  };
+  const [tv, tg, ti, pIos, pAnd, pDesk] = await Promise.all([
+    compte('visit', true), compte('guide', true), compte('installed', true),
+    compte('installedPf', 'ios'), compte('installedPf', 'android'), compte('installedPf', 'desktop'),
+  ]);
+  // UN COMPTAGE MANQUÉ N'EST PAS UN ZÉRO : si une seule des requêtes n'a pas abouti, on
+  // ne rend pas de totaux du tout — la console le dit alors, au lieu d'afficher un parc
+  // vide qui se lirait comme « personne n'a installé ».
+  const totaux = [tv, tg, ti, pIos, pAnd, pDesk].some((x) => x === null) ? null : {
+    visit: tv, guide: tg, installed: ti, ios: pIos, android: pAnd, desktop: pDesk,
+  };
   return {
     jours,
     recentes: recentes.slice(0, 12),
@@ -4658,6 +4691,7 @@ exports.funnelDetail = onCall(async (request) => {
     delaiN: delais.length,
     installeesDatees: avecDate,
     jourDuJour: jourStBarth(),
+    totaux,
   };
 });
 

@@ -109,6 +109,69 @@ ok(/funnelDays_/.test(src)&&!/installFunnel_.*jours/.test(src),
 ok(/who\.toLowerCase\(\) !== ADMIN_EMAIL\.toLowerCase\(\)/.test(src.slice(src.indexOf('exports.funnelDetail'),src.indexOf('exports.funnelDetail')+600)),
   'et le détail est réservé à l’administrateur — le document des totaux, lui, est public depuis toujours');
 
+
+// LE CAS SIGNALÉ LE 19/09/2026 : la carte affichait « Visiteurs 0 · Guide ouvert 0 ·
+// Installées 0 » au-dessus de sa propre frise, qui disait 24 visiteurs et 2 installées,
+// et nommait les deux installations du jour avec l'heure. Ce rendu-là prend le compteur
+// et le recomptage SÉPARÉMENT, pour les faire diverger exprès.
+async function carteB(compteur,detail,detailCharge){
+  return p.evaluate(([J,C,D,L])=>{const S=window.__S; document.body.classList.add('standalone');
+    S.adminFunnel=C; S.adminFunnelLoaded=true;
+    S.adminFunnelDetail=D?Object.assign({jours:J},D):null;
+    S.adminFunnelDetailLoaded=!!L;
+    S.persona='admin';S.onboarded=true;S.authView=null;S.showPitch=false;S.legalView=null;
+    S.admin={view:'home',sel:null}; window.__render();
+    const c=[...document.querySelectorAll('.card')].filter(x=>/Entonnoir d'installation/.test(x.textContent||''));
+    const t=c[c.length-1]; if(t&&!t.classList.contains('open')){const h=t.querySelector('.fold-head,button');if(h)h.click();}
+    const carte=[...document.querySelectorAll('.card')].filter(x=>/Entonnoir d'installation/.test(x.textContent||'')).pop();
+    return true;
+  },[JOURS,compteur,detail,detailCharge])
+  // LES NOMBRES SONT ANIMÉS (ils montent de 0 à leur valeur en 620 ms) : lire le texte
+  // trop tôt, c'est mesurer le milieu de l'animation et non ce que la carte annonce.
+  .then(()=>p.waitForTimeout(800))
+  .then(()=>p.evaluate(()=>{const c=[...document.querySelectorAll('.card')]
+      .filter(x=>/Entonnoir d'installation/.test(x.textContent||'')).pop();
+    return {txt:c.innerText.replace(/\s+/g,' ')};}));
+}
+
+console.log('\nF — le haut de la carte ne contredit plus sa propre frise');
+{
+  // Le compteur cumulé à ZÉRO, les appareils recomptés à 24 et 2 : exactement la capture.
+  const zero={};
+  const vrai={recentes:[],delaiMedianMin:0,delaiN:2,installeesDatees:2,
+    totaux:{visit:24,guide:3,installed:2,ios:1,android:0,desktop:1}};
+  const g=await carteB(zero,vrai,true);
+  const haut=g.txt.slice(0,g.txt.indexOf('7 derniers jours'));
+  ok(/Visiteurs 24/.test(haut)&&/Installées 2\b/.test(haut),
+    'les totaux viennent des APPAREILS recomptés (24 · 2), pas du compteur resté à zéro');
+  ok(!/Visiteurs 0 /.test(haut),'plus de « Visiteurs 0 » au-dessus d’une frise qui montre 24 visiteurs');
+  ok(/iPhone 1 · Android 0 · Ordinateur 1/.test(g.txt),'et la ventilation par appareil suit la même source');
+
+  // Un compteur qui a dérivé : on montre le bon chiffre ET on nomme l’autre.
+  const d=await carteB({u_visit_total:9,u_guide_total:2,u_installed_total:1},vrai,true);
+  ok(/le compteur cumulé, lui, en annonce 1/i.test(d.txt),
+    'un compteur qui s’écarte est NOMMÉ : c’est ce désaccord, invisible, qui a produit la carte à zéro');
+
+  // Tant qu’on n’a rien lu, on n’écrit pas un zéro.
+  const att=await carteB(zero,null,false);
+  const hautA=att.txt.slice(0,att.txt.indexOf('7 derniers jours')>0?att.txt.indexOf('7 derniers jours'):att.txt.length);
+  ok(/Visiteurs …/.test(hautA)&&/Installées …/.test(hautA),
+    'pendant le chargement, « … » et non trois zéros — un parc vide, ça se lit');
+  // Le sous-titre de l'en-tête contient déjà le mot « installées » : c'est la PASTILLE
+  // chiffrée qu'on cherche, pas le mot.
+  ok(!/\d+ installées/.test((await p.evaluate(()=>{const c=[...document.querySelectorAll('.card')]
+      .filter(x=>/Entonnoir d'installation/.test(x.textContent||'')).pop();
+    const h=c.querySelector('.fold-head,button');return h?h.innerText:'';}))),
+    'et l’en-tête n’annonce aucun nombre tant qu’il n’est pas lu');
+
+  // Le recomptage a échoué côté serveur : on le dit, on ne fait pas passer le compteur
+  // pour la vérité.
+  const sans=await carteB({u_visit_total:9,u_guide_total:2,u_installed_total:1},
+    {recentes:[],delaiMedianMin:0,delaiN:1,installeesDatees:1,totaux:null},true);
+  ok(/Appareils non recomptés/.test(sans.txt)&&/Visiteurs 9/.test(sans.txt),
+    'si le recomptage n’aboutit pas, le compteur sert de repli — et la carte le DIT');
+}
+
 await b.close();
 console.log(f?('\n'+f+' ÉCHEC(S)\n'):'\nTout est vert.\n');
 process.exit(f?1:0);

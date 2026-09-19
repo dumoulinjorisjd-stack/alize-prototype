@@ -9394,6 +9394,25 @@
     }catch(_){ S.adminFunnelDetail=null; }
     S.adminFunnelDetailLoaded=true;render();
   }
+  /* LES TOTAUX VIENNENT DES APPAREILS, PAS D'UN COMPTEUR. La carte a affiché
+     « Visiteurs 0 · Guide ouvert 0 · Installées 0 » au-dessus de sa propre frise, qui
+     disait 24 visiteurs et 2 installées sur sept jours, et nommait les deux
+     installations du jour avec l'heure. Les deux moitiés ne lisaient pas la même
+     source : le haut, un document de compteurs cumulés (`settings/installFunnel_*`) ;
+     le bas, les journées recomptées par le serveur. Un cumul dérive — une remise à
+     zéro, une restitution, une écriture perdue — et il ment sans le dire. Le serveur
+     recompte donc les APPAREILS, une source unique avec la frise.
+     TANT QU'ON N'A RIEN LU, ON NE REND RIEN : un zéro se lirait comme un parc vide,
+     c'est-à-dire exactement la faute qu'on corrige. */
+  function funnelTotaux(){
+    const t=(S.adminFunnelDetail||{}).totaux;
+    if(t)return {v:Number(t.visit)||0,g:Number(t.guide)||0,ins:Number(t.installed)||0,
+      ios:Number(t.ios)||0,android:Number(t.android)||0,desktop:Number(t.desktop)||0,src:'appareils'};
+    if(!S.adminFunnelDetailLoaded)return null;
+    const f=S.adminFunnel||{},n=function(k){return Number(f[k])||0;};
+    return {v:n('u_visit_total'),g:n('u_guide_total'),ins:n('u_installed_total'),
+      ios:n('u_installed_ios'),android:n('u_installed_android'),desktop:n('u_installed_desktop'),src:'compteur'};
+  }
   // Un délai se dit dans l'unité où on le pense : des minutes tant qu'on attend, des
   // heures quand on revient dans la journée, des jours au-delà. « 2 880 min » ne se lit
   // pas. L'arrondi est celui de l'unité affichée, jamais plus fin qu'elle.
@@ -9535,18 +9554,27 @@
     const funnelBody=(function(){
       if(!S.adminFunnelLoaded&&!S._funnelLoading){S._funnelLoading=true;setTimeout(loadAdminFunnel,0);}
       const f=S.adminFunnel||{};const n=function(k){return Number(f[k])||0;};
-      // Compteurs « u_* » = APPAREILS UNIQUES (dédupliqués par le serveur). Les anciens
-      // champs (comptage avec doublons quotidiens) restent archivés dans le document.
-      const v=n('u_visit_total'),g=n('u_guide_total'),ins=n('u_installed_total');
-      const pct=v?Math.round(ins/v*100):0;
+      const T=funnelTotaux();
+      const v=T?T.v:0,g=T?T.g:0,ins=T?T.ins:0;
+      const pct=(T&&v)?Math.round(ins/v*100):0;
       const legacy=n('visit_total')||n('installed_total');
-      return `<div class="mini" style="color:var(--muted)">${S.adminFunnelLoaded?((IS_PROD?'prod':'beta')+' · installations distinctes — un iPhone désinstallé puis réinstallé recompte'):'chargement…'}</div>
+      // « … » tant qu'on n'a pas lu : trois zéros affichés pendant le chargement, c'est
+      // le parc vide qu'on vient de passer six mois à remplir.
+      const nb=x=>T?String(x):'…';
+      // LE DÉSACCORD SE DIT. Si le compteur cumulé s'écarte des appareils recomptés, il a
+      // dérivé : on montre le bon chiffre et on nomme l'autre, plutôt que de le corriger
+      // en silence — c'est ce désaccord, invisible, qui a produit la carte à zéro.
+      const ecart=(T&&T.src==='appareils'&&S.adminFunnelLoaded&&n('u_installed_total')!==T.ins)
+        ? n('u_installed_total') : null;
+      return `<div class="mini" style="color:var(--muted)">${S.adminFunnelLoaded?((IS_PROD?'prod':'beta')+' · installations distinctes, un iPhone désinstallé puis réinstallé recompte'):'chargement…'}</div>
         <div class="row" style="gap:9px;margin-top:10px">
-          <div style="flex:1"><div class="mini">Visiteurs</div><b class="money" data-count="fn-v:${v}" style="font-size:19px;font-family:var(--f-disp)">${v}</b></div>
-          <div style="flex:1"><div class="mini">Guide ouvert</div><b class="money" data-count="fn-g:${g}" style="font-size:19px;font-family:var(--f-disp)">${g}</b></div>
-          <div style="flex:1"><div class="mini">Installées</div><b class="money" data-count="fn-i:${ins}" style="font-size:19px;font-family:var(--f-disp);color:var(--teal-deep)">${ins}</b>${v?`<div class="mini">${pct}&nbsp;% des visiteurs</div>`:''}</div>
+          <div style="flex:1"><div class="mini">Visiteurs</div><b class="money" ${T?`data-count="fn-v:${v}"`:''} style="font-size:19px;font-family:var(--f-disp)">${nb(v)}</b></div>
+          <div style="flex:1"><div class="mini">Guide ouvert</div><b class="money" ${T?`data-count="fn-g:${g}"`:''} style="font-size:19px;font-family:var(--f-disp)">${nb(g)}</b></div>
+          <div style="flex:1"><div class="mini">Installées</div><b class="money" ${T?`data-count="fn-i:${ins}"`:''} style="font-size:19px;font-family:var(--f-disp);color:var(--teal-deep)">${nb(ins)}</b>${(T&&v)?`<div class="mini">${pct}&nbsp;% des visiteurs</div>`:''}</div>
         </div>
-        <div class="mini" style="margin-top:8px;color:var(--muted)">Installées&nbsp;: iPhone ${n('u_installed_ios')} · Android ${n('u_installed_android')} · Ordinateur ${n('u_installed_desktop')}</div>
+        <div class="mini" style="margin-top:8px;color:var(--muted)">Installées&nbsp;: iPhone ${nb(T?T.ios:0)} · Android ${nb(T?T.android:0)} · Ordinateur ${nb(T?T.desktop:0)}</div>
+        ${(T&&T.src==='compteur')?`<div class="mini" style="margin-top:6px;color:var(--coral-deep)">Appareils non recomptés&nbsp;: ces totaux viennent du compteur cumulé, qui peut avoir dérivé.</div>`:''}
+        ${ecart!==null?`<div class="mini" style="margin-top:6px;color:var(--muted)">Comptés appareil par appareil. Le compteur cumulé, lui, en annonce ${ecart}&nbsp;: il a dérivé.</div>`:''}
         ${funnelJours(ins)}
         ${legacy?`<div class="mini" style="margin-top:6px;color:var(--muted)">Ancien comptage (avec doublons, archivé)&nbsp;: ${n('visit_total')} visites · ${n('installed_total')} installées</div>`:''}`;})();
     const svcAll=allSvc();
@@ -9780,7 +9808,7 @@
       <div style="height:18px"></div><span class="eyebrow">${I.shield} Fonctionnement</span>
       ${foldCard('a-bookings',I.cal,'Réservations en cours','Recherche → acceptée → en cours → validée → réglée',bookings,chip(allB.length?'good':'grey',allB.length),(S.adminThreads||[]).some(function(t){return t&&t.reqId&&admThreadNew(t);}))}
       ${foldCard('a-prices',I.euro,'Prestations · artisans &amp; tarifs',svcAll.length+' métiers'+(svcNoPro?' · '+svcNoPro+' sans prestataire':''),pricesBody,svcNoPro?chip('coral',svcNoPro+' sans pro'):chip('good',svcAll.length))}
-      ${foldCard('a-funnel',I.install,"Entonnoir d'installation",'Visiteurs, guide ouvert, applications installées',funnelBody,S.adminFunnelLoaded?chip('grey',(Number((S.adminFunnel||{}).u_installed_total)||0)+' installées'):'')}
+      ${foldCard('a-funnel',I.install,"Entonnoir d'installation",'Visiteurs, guide ouvert, applications installées',funnelBody,(function(){const T=funnelTotaux();return T?chip('grey',T.ins+' installées'):'';})())}
       <button class="card" data-adm="manual" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block"><div class="row between" style="align-items:center"><b style="font-size:14px">Manuel d'exploitation</b><span class="mini" style="color:var(--teal-deep);font-weight:700">Ouvrir ›</span></div><p class="sub" style="margin-top:8px">Tout le fonctionnement de la plateforme (commandes, prestataire choisi, paiements, récurrences, annulations…) — pour vous, un employé ou un médiateur. Imprimable.</p></button>
       <div style="height:24px"></div>
     </div>`;
