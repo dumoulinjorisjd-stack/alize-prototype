@@ -61,7 +61,9 @@ ok(/function handleUpdateAvailable\(reg\)\{/.test(src),'un aiguillage existe ava
 const hu=src.slice(src.indexOf('function handleUpdateAvailable('));
 ok(/if\(isNativeShell\(\)\)\{ scheduleNativeUpdate\(reg\); return; \}/.test(hu.slice(0,200)),
   'dans l’app, la mise à jour ne passe plus par le bandeau visible');
-ok(/if\(document\.visibilityState==='hidden'\)\{ applyNativeUpdate\(reg\); return; \}/.test(src),
+// `applyNativeUpdate` s'appelle désormais `appliquerMaj` : la page d'accueil emprunte la
+// même porte pour prendre la version en attente sans rien demander.
+ok(/if\(document\.visibilityState==='hidden'\)\{ appliquerMaj\(reg\); return; \}/.test(src),
   'elle attend que l’écran ne soit plus regardé');
 ok(/document\.visibilityState==='hidden'&&_pendingNativeUpdate/.test(src),
   'et se déclenche au moment où l’app repasse en arrière-plan');

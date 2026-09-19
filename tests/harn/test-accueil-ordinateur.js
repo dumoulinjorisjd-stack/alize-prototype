@@ -34,7 +34,8 @@ async function releve(w,h){
     const v=document.getElementById('view');
     return {mots:txt.split(/\s+/).filter(Boolean).length,
       etapes:n('.pstep'), metiers:n('.jchip'), ile:n('.cover-isle'),
-      ambassadeur:n('.land-founder'), ouverture:/1er octobre 2026/.test(txt),
+      ambassadeur:n('.land-founder'), ouverture:/les services seront disponibles à partir du 1er octobre|services go live on 1 October|os serviços abrem a 1 de outubro/i.test(txt),
+      accroche:n('.pro-hook'),
       mobileDabord:/s.utilise sur téléphone|made for your phone|no telemóvel/.test(txt),
       plus:!!document.querySelector('.welcome-plus')&&vu(document.querySelector('.welcome-plus')),
       defile:v?v.scrollHeight>v.clientHeight+2:null,
@@ -50,7 +51,7 @@ ok(ordi.etapes===6,'les trois étapes de CHAQUE public sont là ('+ordi.etapes+'
 ok(ordi.metiers>=9,'les métiers sont nommés ('+ordi.metiers+')');
 ok(ordi.ile===1,'la carte de l’île paraît UNE fois — elle dit la même chose des deux côtés');
 ok(ordi.ambassadeur===1,'le programme Ambassadeur est là : c’est l’argument de recrutement du moment');
-ok(ordi.ouverture,'et la date d’ouverture du 1er octobre, qui n’apparaissait nulle part sur grand écran');
+ok(ordi.ouverture,'et l’invitation à s’inscrire, les services ouvrant le 1er octobre');
 
 console.log('\nB — et il dit que l’application se vit sur téléphone');
 ok(ordi.mobileDabord,'le bandeau l’explique : c’est l’app installée qui prévient');
@@ -64,6 +65,8 @@ console.log('\nC — sur téléphone, RIEN ne change sauf ce qui a été demand�
 ok(!tel.plus,'le bloc du grand écran n’existe pas sur téléphone : la vitrine y est déjà complète');
 ok(tel.etapes===3&&tel.ile===1&&tel.hauteurBrief>1000,
   'la vitrine garde ses étapes, son île et sa hauteur ('+tel.hauteurBrief+' px)');
+ok(tel.accroche===1&&ordi.accroche===0,
+  'l’accroche « Vous faites … ? » reste sur téléphone, où la grille n’est pas visible d’un regard');
 ok(tel.metiers===ordi.metiers,
   'et sa liste de métiers est celle du catalogue, la même que sur grand écran ('+tel.metiers+')');
 
@@ -89,8 +92,10 @@ console.log('\nC bis — c’est une VITRINE : le client, les boutons, le profes
     // Les pastilles de confiance sont un flex : c'est leur boîte qu'on mesure, pas leur
     // `text-align` — et c'est la seule mesure qui dise vraiment « c'est centré ».
     const mi=e=>{const r=e.getBoundingClientRect();return (r.left+r.right)/2;};
+    // UNE SEULE SÉRIE DE PASTILLES SUR GRAND ÉCRAN : celle du client redisait mot pour mot
+    // deux des quatre cartes du héros, deux centimètres plus haut.
     const chips=[...document.querySelectorAll('.welcome-plus .pitch-trust')];
-    const chipsCentrees=chips.length===2&&chips.every(c=>{
+    const chipsCentrees=chips.length===1&&chips.every(c=>{
       const k=[...c.children]; if(!k.length)return false;
       const g=k[0].getBoundingClientRect().left, d=k[k.length-1].getBoundingClientRect().right;
       return Math.abs((g+d)/2-mi(c.parentElement))<=2;});
@@ -106,6 +111,23 @@ console.log('\nC bis — c’est une VITRINE : le client, les boutons, le profes
     const titres=[...document.querySelectorAll('.welcome-plus .wp-tete .pitch-h')];
     const uneLigne=titres.length===2&&titres.every(e=>lignes(e)===1);
     const espace=titres.every(e=>/,\s\S/.test(e.innerText.replace(/\s+/g,' ')));
+    // LA GRILLE DES SERVICES OUVRE LA PAGE et le bandeau du téléphone est descendu chez le
+    // professionnel : c'est l'échange demandé, et il se mesure par la position, pas par le
+    // balisage.
+    const sv=document.querySelector('.wp-services'), bande=document.querySelector('.welcome-plus .wp-mobile');
+    const ySv=sv?Math.round(sv.getBoundingClientRect().top):null;
+    const yBande=bande?Math.round(bande.getBoundingClientRect().top):null;
+    const bandeChezLePro=!!(bande&&secs[1]&&secs[1].contains(bande));
+    const grilleEnTete=!!(sv&&sv.querySelector('.jchip')&&ySv<y(secs[0]));
+    const accroche=document.querySelectorAll('.welcome-plus .pro-hook').length;
+    // Une rangée incomplète de la grille se CENTRE : sans cela, la dernière puce pendait
+    // seule à gauche, en tête de page.
+    const puces=[...document.querySelectorAll('.wp-services .jchip')];
+    const rangs={}; puces.forEach(c=>{const r=c.getBoundingClientRect();
+      (rangs[Math.round(r.top)]=rangs[Math.round(r.top)]||[]).push(r);});
+    const grilleCentree=Object.values(rangs).every(rg=>{
+      const g2=Math.min(...rg.map(r=>r.left)), d=Math.max(...rg.map(r=>r.right));
+      return Math.abs((g2+d)/2-mi(sv))<=2;});
     const bloc=document.querySelector('.wp-cta-bloc');
     const tete=bloc&&bloc.querySelector('.eyebrow');
     const inscr=!!tete&&/inscription|sign up|inscri/i.test(tete.textContent)
@@ -119,6 +141,8 @@ console.log('\nC bis — c’est une VITRINE : le client, les boutons, le profes
     const rangees=secs.map(s2=>{const st=s2.querySelector('.pitch-steps');
       return st?new Set([...st.children].map(e=>Math.round(e.getBoundingClientRect().top))).size:null;});
     return {introCentree:intro, detailAuFer:detail, conclut, chipsCentrees, mesure, inscr,
+      grilleEnTete, bandeChezLePro, accroche, grilleCentree, ySv, yBande,
+      rangs:Object.keys(rangs).length,
       uneLigne, espace, titres:titres.map(e=>e.innerText.replace(/\s+/g,' ')),
       largeurEncadres:encadres.map(e=>Math.round(e.getBoundingClientRect().width)),
       punchline:parseFloat(getComputedStyle(secs[0].querySelector('.pitch-h')).fontSize),
@@ -140,9 +164,13 @@ console.log('\nC bis — c’est une VITRINE : le client, les boutons, le profes
   ok(g.introCentree,'l’intertitre, l’accroche et la punchline sont centrés — ils annoncent la partie');
   ok(g.detailAuFer,'les cartes d’étapes et la figure de l’île restent au fer à gauche — elles se lisent');
   ok(g.conclut,'les deux paragraphes qui encadrent une liste sont centrés : l’un annonce la partie, l’autre la ferme');
-  ok(g.chipsCentrees,'les pastilles de confiance reprennent l’axe de la partie — au fer à gauche, elles étaient le seul bloc décalé');
+  ok(g.chipsCentrees,'la seule série de pastilles restante — celle du professionnel — reprend l’axe de la partie ; celle du client redisait le héros et part');
   ok(g.mesure,'et les trois encadrés de texte suivi tiennent une mesure lisible ('+g.largeurEncadres.join(' · ')+' px, contre 1 332)');
   ok(g.inscr,'« Inscription » nomme les deux boutons corail, au-dessus d’eux et sur leur axe');
+  ok(g.grilleEnTete,'la grille des services ouvre la page — c’est la réponse à « qu’est-ce que ce site ? » ('+g.ySv+' px, avant la partie du client à '+g.yClient+')');
+  ok(g.bandeChezLePro,'et le bandeau « s’utilise sur téléphone » est descendu dans la partie du professionnel ('+g.yBande+' px)');
+  ok(g.grilleCentree,'chaque rangée de la grille est centrée, y compris la dernière quand elle est incomplète ('+g.rangs+' rangées)');
+  ok(g.accroche===0,'et l’accroche au métier qui tourne a disparu : la grille entière est au-dessus');
   ok(g.uneLigne,'chaque punchline tient sur une seule ligne : '+g.titres.join(' · '));
   ok(g.espace,'et les deux morceaux restent séparés par une espace — le retour du balisage n’en portait pas');
   ok(g.punchline>=30,'la punchline porte la taille d’un titre ('+g.punchline+' px, contre 26 avant)');
@@ -243,6 +271,47 @@ console.log('\nC quater — les deux boutons d’inscription ne sont qu’à UN 
   ok(r.heros.length===0,'plus de boutons corail en tête : on ne les offre pas avant d’avoir rien expliqué');
   ok(r.entre.join(',')==='onb-start,go-artisan-signup','ils sont entre les deux parties, dans l’ordre');
   ok(r.connecter===1,'et « Déjà un compte ? Se connecter » reste : ce n’est pas la même demande');
+  await ctx.close();
+}
+
+console.log('\nE bis — « Se connecter » est le seul geste du héros : il se vise');
+{
+  const ctx=await b.newContext({viewport:{width:1512,height:950},locale:'fr-FR'});
+  const p5=await ctx.newPage();
+  await p5.goto(F); await p5.waitForFunction(()=>window.__S&&window.__render); await p5.waitForTimeout(700);
+  const r=await p5.evaluate(()=>{const l=document.querySelector('.welcome .footcta .linklike');
+    if(!l)return null; const b2=l.getBoundingClientRect(); const cs=getComputedStyle(l);
+    return {h:Math.round(b2.height), w:Math.round(b2.width), px:parseFloat(cs.fontSize),
+      cadre:cs.borderTopWidth!=='0px'};});
+  ok(!!r&&r.h>=34,'la cible fait '+(r?r.h:0)+' px de haut — un lien de 17 px ne tient pas le rôle du seul geste du héros');
+  ok(!!r&&r.cadre,'et elle porte un cadre : on voit qu’il y a quelque chose à viser, sans prendre le corail des deux inscriptions');
+  await ctx.close();
+}
+
+console.log('\nF — la page d’accueil se met à jour TOUTE SEULE');
+// La pastille « nouvelle version » existe pour ne pas effacer une saisie en cours. Sur
+// l'écran d'accueil il n'y a pas un champ : demander revient à faire presser un bouton
+// pour rien, et qui découvre le site ne le presse pas — il repart avec la version d'avant.
+{
+  const ctx=await b.newContext({viewport:{width:1512,height:950},locale:'fr-FR'});
+  const p6=await ctx.newPage();
+  await p6.goto(F); await p6.waitForFunction(()=>window.__S&&window.__maj); await p6.waitForTimeout(700);
+  ok(await p6.evaluate(()=>window.__maj.sansRisque()),
+    'sur l’écran d’accueil, rien n’est en jeu : la version fraîche se prend sans demander');
+  ok(await p6.evaluate(()=>{const d=document.createElement('div');d.className='sheet-back';document.body.appendChild(d);
+      const v=window.__maj.sansRisque(); d.remove(); return !v;}),
+    'une fenêtre ouverte par-dessus suspend la mise à jour — on ne recharge pas sous les doigts');
+  ok(await p6.evaluate(()=>{const i=document.createElement('input');i.value='Marie';document.body.appendChild(i);
+      const v=window.__maj.sansRisque(); i.remove(); return !v;}),
+    'un champ déjà rempli aussi : c’est la saisie qu’on protège, pas l’écran');
+  ok(await p6.evaluate(()=>{const i=document.createElement('input');document.body.appendChild(i);i.focus();
+      const v=window.__maj.sansRisque(); i.remove(); return !v;}),
+    'et un champ en cours de frappe, même vide');
+  const ailleurs=await p6.evaluate(()=>{const x=[...document.querySelectorAll('[data-act="onb-start"]')]
+      .find(e=>e.getBoundingClientRect().width>0); if(!x)return null; x.click();
+    return new Promise(r=>setTimeout(()=>r({welcome:!!document.querySelector('.pad.welcome'),sr:window.__maj.sansRisque()}),600));});
+  ok(!!ailleurs&&!ailleurs.welcome&&!ailleurs.sr,
+    'dès qu’on entre dans l’inscription, la pastille reprend la main — c’est là qu’un rechargement coûte quelque chose');
   await ctx.close();
 }
 
