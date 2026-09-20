@@ -1027,7 +1027,7 @@ exports.notifyArtisansNewRequest = onDocumentCreated({document: 'requests/{reqId
     return;
   }
   /* PLAFOND PAR CLIENT : ce qui borne le volume quoi qu'il arrive. */
-  const qc = await _quotaJour(db, 'diff-' + (r.clientUid || 'inconnu'), ANTI.DIFFUSIONS_JOUR_CLIENT);
+  const qc = await _quotaJour(db, 'diff-' + (r.clientUid || 'inconnu'), ANTI.plafondDiffusion(r));
   if (!qc.ok) {
     console.warn('Diffusion plafonnée pour le client ' + r.clientUid + ' (' + qc.plafond + '/jour).');
     await _alerteAbus(db, 'diff-client-' + (r.clientUid || 'x'), 'plafond de diffusions atteint',
@@ -2369,7 +2369,7 @@ exports.notifyReopenedRequest = onDocumentUpdated({document: 'requests/{reqId}',
      alertes avec une seule commande. Le prestataire qui se désiste, lui, ne peut pas le
      déclencher en boucle — la demande repasse par un artisan à chaque fois. On compte
      donc sur le CLIENT, comme à la création, et sur le même compteur du jour. */
-  const qr = await _quotaJour(db, 'diff-' + (after.clientUid || 'inconnu'), ANTI.DIFFUSIONS_JOUR_CLIENT);
+  const qr = await _quotaJour(db, 'diff-' + (after.clientUid || 'inconnu'), ANTI.plafondDiffusion(after));
   if (!qr.ok) {
     console.warn('Réouverture plafonnée pour le client ' + after.clientUid + ' (' + qr.plafond + '/jour).');
     await _alerteAbus(db, 'diff-client-' + (after.clientUid || 'x'), 'plafond de diffusions atteint',

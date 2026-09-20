@@ -55,6 +55,15 @@ ok(!A.quotaDecide(12,12).ok&&!A.quotaDecide(12,12).franchit,
 ok(!A.quotaDecide(99,12).ok,'et rien ne repasse ensuite dans la journée');
 ok(A.DIFFUSIONS_JOUR_CLIENT>=10&&A.MAILS_JOUR_PRESTATAIRE>=20,
   'les plafonds sont HAUTS ('+A.DIFFUSIONS_JOUR_CLIENT+' et '+A.MAILS_JOUR_PRESTATAIRE+') : ils empêchent l’ordre de grandeur suivant, pas l’usage réel');
+// UNE CONCIERGERIE N'EST PAS UN CLIENT : toutes ses commandes portent SON identifiant,
+// puisqu'elle commande pour ses clients finaux. En saison, douze demandes dans la journée
+// n'ont rien d'anormal — au plafond du client, ses prestataires cesseraient d'être
+// prévenus en silence. Un plafond posé SOUS l'usage réel n'est pas une protection, c'est
+// une panne.
+ok(A.plafondDiffusion({})===A.DIFFUSIONS_JOUR_CLIENT,'une demande de client relève du plafond client');
+ok(A.plafondDiffusion({conciergeUid:'c1'})===A.DIFFUSIONS_JOUR_CONCIERGERIE
+  && A.DIFFUSIONS_JOUR_CONCIERGERIE>=4*A.DIFFUSIONS_JOUR_CLIENT,
+  'une conciergerie a le sien, bien plus haut ('+A.DIFFUSIONS_JOUR_CONCIERGERIE+' contre '+A.DIFFUSIONS_JOUR_CLIENT+')');
 
 console.log('\nC — le câblage : les deux portes de diffusion, pas une seule');
 // La création (demande née publiée) ET la réouverture (déclinée → publiée). La seconde est
@@ -65,11 +74,22 @@ ok(/ANTI\.diffusionAdmise\(r, \{ estProd: EST_PROD \}\)/.test(creation),
   'la création demande la garantie');
 ok(creation.indexOf('ANTI.diffusionAdmise')<creation.indexOf('artisans'),
   'et elle la demande AVANT de lire la liste des prestataires : on ne prépare pas un envoi qu’on va refuser');
-ok(/_quotaJour\(db, 'diff-' \+ \(r\.clientUid/.test(creation),'la création compte pour le client');
-ok(/_quotaJour\(db, 'diff-' \+ \(after\.clientUid/.test(reouverture),
+ok(/_quotaJour\(db, 'diff-' \+ \(r\.clientUid \|\| 'inconnu'\), ANTI\.plafondDiffusion\(r\)\)/.test(creation),
+  'la création compte pour le client, au plafond qui lui correspond');
+ok(/_quotaJour\(db, 'diff-' \+ \(after\.clientUid \|\| 'inconnu'\), ANTI\.plafondDiffusion\(after\)\)/.test(reouverture),
   'la réouverture compte pour le MÊME client, sur le même compteur : rouvrir cent fois ne contourne pas le plafond');
 ok(/_quotaJour\(db, 'mail-pro-' \+ uid, ANTI\.MAILS_JOUR_PRESTATAIRE\)/.test(src),
   'et chaque prestataire a son propre plafond d’e-mails, quelle que soit l’origine des demandes');
+
+// LA VOIE NORMALE D'UNE COMMANDE : elle naît « pending_payment » (invisible), et c'est
+// la BASCULE vers « pending », une fois la carte autorisée, qui prévient les prestataires.
+// La garantie n'a donc rien à faire là : ce chemin EST la preuve du paiement. S'il fallait
+// y exiger le drapeau, la seule notification qui compte vraiment dépendrait d'un champ
+// écrit par le webhook — et un webhook en retard ferait taire l'application.
+ok(!/diffusionAdmise/.test(reouverture),
+  'la bascule « paiement autorisé → publiée » n’est bornée que par le plafond : c’est la voie normale, elle ne se refuse jamais');
+ok(reouverture.indexOf('_quotaJour')>reouverture.indexOf("after.status === 'pending'"),
+  'et le compteur ne tourne qu’APRÈS le filtre : une mise à jour qui ne diffuse rien ne consomme pas le plafond du client');
 
 console.log('\nD — ce qui protège l’alerte elle-même, et le compteur');
 ok(/_quotaJour\(db, 'alerte-' \+ cle, 1\)/.test(src),

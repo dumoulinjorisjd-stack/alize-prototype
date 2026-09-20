@@ -34,6 +34,13 @@
    vingt-cinq e-mails de mission en un jour aussi. Ils ne servent qu'à empêcher l'ordre
    de grandeur suivant, celui qui abîme le domaine. */
 const DIFFUSIONS_JOUR_CLIENT = 12;
+/* UNE CONCIERGERIE N'EST PAS UN CLIENT. Elle commande POUR SES CLIENTS FINAUX, et toutes
+   ses demandes portent le même `clientUid` — le sien. En pleine saison, une société de
+   gestion de villas dépasse douze demandes dans la journée sans rien avoir d'anormal :
+   au plafond du client, ses prestataires cesseraient d'être prévenus, en silence. Un
+   plafond doit toujours se poser AU-DESSUS de l'usage réel de celui qu'il borne, sinon
+   ce n'est plus une protection, c'est une panne. */
+const DIFFUSIONS_JOUR_CONCIERGERIE = 60;
 const MAILS_JOUR_PRESTATAIRE = 25;
 
 /* Une demande NÉE déjà ouverte se diffuse-t-elle ? `estProd` est fourni par l'appelant
@@ -47,6 +54,11 @@ function diffusionAdmise(r, opts) {
   return { ok: false, motif: 'sans-garantie' };
 }
 
+/* À qui s'applique quel plafond : la demande le dit elle-même. */
+function plafondDiffusion(r) {
+  return ((r || {}).conciergeUid) ? DIFFUSIONS_JOUR_CONCIERGERIE : DIFFUSIONS_JOUR_CLIENT;
+}
+
 /* Le compteur du jour vaut `n` AVANT ce passage. Rendre le nombre atteint permet à
    l'appelant de dire « 12 sur 12 » plutôt que « refusé », et de n'alerter qu'UNE fois,
    au franchissement. */
@@ -57,4 +69,5 @@ function quotaDecide(n, plafond) {
   return { ok: true, n: v + 1, plafond: p, franchit: (v + 1) === p };
 }
 
-module.exports = { DIFFUSIONS_JOUR_CLIENT, MAILS_JOUR_PRESTATAIRE, diffusionAdmise, quotaDecide };
+module.exports = { DIFFUSIONS_JOUR_CLIENT, DIFFUSIONS_JOUR_CONCIERGERIE, MAILS_JOUR_PRESTATAIRE,
+  diffusionAdmise, plafondDiffusion, quotaDecide };
