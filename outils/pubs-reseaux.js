@@ -169,7 +169,7 @@ const PUBS = [
     // ON NE PARLE PAS DE COMMISSION, sur un visuel comme sur le site : ce qu'on vend est
     // ce que le prestataire touche, pas le pourcentage qu'on prend. Et pas de tiret
     // cadratin, ici non plus.
-    bandeau: ['star', '<b>Programme Ambassadeur</b>\u2009: une meilleure rémunération sur vos premiers mois et une mise en avant dans l’app.'],
+    bandeau: ['star', '<b>Programme Ambassadeur</b>\u2009: mise en avant dans l’app et badge visible par les clients.'],
     acte: 'Inscription en 2 min'
   }
 ];
@@ -283,6 +283,7 @@ async function main() {
       const m = [];
       if (t.includes('\u2014')) m.push('un tiret cadratin');
       if (/commission/i.test(t)) m.push('le mot « commission »');
+      if (/rémunération/i.test(t)) m.push('le mot « rémunération », qui dit la même chose par l\'autre bout');
       return m;
     });
     if (interdits.length) {
