@@ -3660,20 +3660,29 @@
     scr.appendChild(box);setTimeout(()=>{box.remove();},1700);
   }
 
+  /* `choixPro` : LA PERSONNE COMPTE AUTANT QUE LA PRESTATION. Sur ces métiers, le client
+     voit l'ANNUAIRE du métier dès sa première commande et peut viser quelqu'un ; partout
+     ailleurs il ne choisit que parmi les prestataires qu'il a DÉJÀ eus. La propriété vit
+     sur le métier, et c'est tout l'intérêt : elle était déduite de `canOnSite()`, qui
+     répond à une autre question (« la prestation peut-elle se faire chez le
+     prestataire ? »), et cette liste-là contenait `beaute` et `sport`, deux identifiants
+     de CATÉGORIE qui ne désignent aucune prestation. Manucure et maquillage n'avaient
+     donc aucun annuaire, alors que ce sont les métiers les plus personnels du catalogue,
+     et rien dans le code ne le disait. */
   const SERVICES=[
-    {id:'menage',nm:'Ménage',rate:35},{id:'baby',nm:'Baby-sitting',rate:28},
+    {id:'menage',nm:'Ménage',rate:35},{id:'baby',nm:'Baby-sitting',rate:28,choixPro:true},
     {id:'jardin',nm:'Jardinage',rate:40},{id:'demenagement',nm:'Déménagement',rate:45},
-    {id:'coiffure',nm:'Coiffure',rate:45},{id:'animaux',nm:'Garde d’animaux',rate:25},
-    {id:'massage',nm:'Massage',rate:60},
+    {id:'coiffure',nm:'Coiffure',rate:45,choixPro:true},{id:'animaux',nm:'Garde d’animaux',rate:25,choixPro:true},
+    {id:'massage',nm:'Massage',rate:60,choixPro:true},
     // Sous-catégorie « Beauté »
-    {id:'manucure',nm:'Manucure',rate:40},{id:'epilation',nm:'Épilation',rate:45},
+    {id:'manucure',nm:'Manucure',rate:40,choixPro:true},{id:'epilation',nm:'Épilation',rate:45,choixPro:true},
     // Épilation définitive (laser) : équipement fixe → toujours CHEZ LE PRESTATAIRE (salonOnly).
-    {id:'epilationdef',nm:'Épilation définitive',rate:30,salonOnly:true},
-    {id:'maquillage',nm:'Maquillage',rate:55},
+    {id:'epilationdef',nm:'Épilation définitive',rate:30,salonOnly:true,choixPro:true},
+    {id:'maquillage',nm:'Maquillage',rate:55,choixPro:true},
     // Sous-catégorie « Dépannage & entretien »
     {id:'piscine',nm:'Piscine',rate:45},{id:'plomberie',nm:'Plomberie',rate:55},{id:'electricite',nm:'Électricité',rate:55},{id:'deck',nm:'Deck & terrasse',rate:45},{id:'clim',nm:'Climatisation',rate:95},
     // Sous-catégorie « Sport »
-    {id:'coach',nm:'Coach sportif',rate:60},{id:'natation',nm:'Cours de natation',rate:45},{id:'pilates',nm:'Cours de Pilates',rate:55},{id:'yoga',nm:'Cours de yoga',rate:55},
+    {id:'coach',nm:'Coach sportif',rate:60,choixPro:true},{id:'natation',nm:'Cours de natation',rate:45,choixPro:true},{id:'pilates',nm:'Cours de Pilates',rate:55,choixPro:true},{id:'yoga',nm:'Cours de yoga',rate:55,choixPro:true},
     // Forfait (pas de tarif horaire) : un retrait = un prix fixe, plusieurs objets inclus.
     {id:'colis',nm:'Colis & courrier',rate:20,forfait:true}
   ];
@@ -3999,7 +4008,11 @@
   // studio, agence) : cours de sport, massage, coiffure, beauté. Le client choisit le lieu
   // à la commande ; le prestataire déclare à l'inscription s'il se déplace, reçoit chez lui, ou
   // les deux — ce qui filtre les demandes qui lui sont proposées.
-  function canOnSite(svcId){return ['sport','coach','natation','pilates','yoga','massage','coiffure','beaute','epilationdef'].indexOf(svcId)>=0;}
+  // Métier qui peut se faire CHEZ LE PRESTATAIRE (l'autre question, souvent confondue
+  // avec `choixPro` : ici c'est le LIEU). La liste portait `beaute` et `sport`, deux
+  // identifiants de CATÉGORIE qui ne désignent aucune prestation et ne déclenchaient donc
+  // rien — mais qui donnaient à lire, à tort, que toute la famille Beauté en était.
+  function canOnSite(svcId){return ['coach','natation','pilates','yoga','massage','coiffure','epilationdef'].indexOf(svcId)>=0;}
   // Métier UNIQUEMENT chez le prestataire (équipement fixe, ex. laser) : pas de choix du lieu.
   function salonOnly(svcId){const s=findSvc(svcId);return !!(s&&s.salonOnly);}
   // Lieu retenu pour une commande : 'salon' (chez le prestataire) ou 'domicile' (défaut).
@@ -4305,14 +4318,14 @@
     beaute:'#DB2777',depannage:'#0284C7',sport:'#16A34A'};
   function svcColor(id){return SVC_COLORS[id]||'var(--teal-deep)';}
   // Ajoute un service « Autre » au catalogue (visible/réservable côté client).
-  function addCustomService(name,rate){
+  function addCustomService(name,rate,choixPro){
     name=(name||'').trim(); if(!name)return;
     if((S.customServices||[]).some(function(s){return s.nm.toLowerCase()===name.toLowerCase();})){toast('Déjà au catalogue');return;}
     let base='c_'+name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'').slice(0,14);
     if(!base||base==='c_')base='c_service';
     let sid=base,n=2; while(findSvc(sid)){sid=base+n;n++;}
     rate=Math.max(5,Math.round(rate||40));
-    S.customServices=(S.customServices||[]).concat([{id:sid,nm:name,rate:rate,custom:true,ico:''}]);
+    S.customServices=(S.customServices||[]).concat([{id:sid,nm:name,rate:rate,custom:true,ico:'',choixPro:!!choixPro}]);
     if(!S.adminPrices)S.adminPrices=ADMIN_PRICES(); S.adminPrices[sid]=rate;
     saveCatalog(); render(); toast('« '+name+' » ajouté au catalogue ✓');
     return sid; // l'appelant en a besoin pour rattacher le prestataire au métier créé
@@ -4345,7 +4358,7 @@
   function prixSaisi(v){const n=Math.round(parseFloat(String(v).replace(',','.'))||0);return Math.max(0,Math.min(99999,n));}
   function ecritDansCatalogue(){ try{ const a=document.activeElement;
     return !!(a&&a.matches&&a.matches('[data-optname],[data-actname],[data-actgrpname],[data-actpricev],[data-optpricev],[data-catname]')); }catch(_){return false;} }
-  function applyCatalogDoc(d){ if(!d)return; S.nomsMetiers=nomsValides(d.noms); appliquerNoms(); if(Array.isArray(d.services)){ S.customServices=d.services.map(function(s){return {id:s.id,nm:nomNet(s.nm),rate:s.rate,custom:true,ico:icoValide(s.ico)};}); } if(d.catalog&&typeof d.catalog==='object'){ S.adminCatalog=d.catalog; } S.catalogSeed=Number(d.catalogSeed)||0; if(d.options&&typeof d.options==='object'){ S.adminOptions=d.options; } if(ecritDansCatalogue())return; render(); applyLandLang(); }
+  function applyCatalogDoc(d){ if(!d)return; S.nomsMetiers=nomsValides(d.noms); appliquerNoms(); if(Array.isArray(d.services)){ S.customServices=d.services.map(function(s){return {id:s.id,nm:nomNet(s.nm),rate:s.rate,custom:true,ico:icoValide(s.ico),choixPro:!!s.choixPro};}); } if(d.catalog&&typeof d.catalog==='object'){ S.adminCatalog=d.catalog; } S.catalogSeed=Number(d.catalogSeed)||0; if(d.options&&typeof d.options==='object'){ S.adminOptions=d.options; } if(ecritDansCatalogue())return; render(); applyLandLang(); }
   // Catalogue partagé écouté EN TEMPS RÉEL : toute modification admin (prix, prestations,
   // options, métiers) se propage à l'app de chacun sans rechargement. Une seule écoute.
   async function loadCatalog(){ try{ if(!FB||_catalogSub)return; _catalogSub=FB.f.onSnapshot(FB.f.doc(FB.db,'settings','catalog'),function(snap){ applyCatalogDoc(snap.exists()?(snap.data()||{}):{}); },function(e){ console.warn('catalog load',e); }); }catch(e){ console.warn('catalog sub',e); } }
@@ -9612,7 +9625,12 @@
           <div class="mini" style="color:var(--muted);margin-top:9px">Icône</div>
           <div class="row" style="flex-wrap:wrap;gap:7px;margin-top:6px">${SVC_ICOS.map(function(p){const on=icoValide(s.ico)===p[0]||(!icoValide(s.ico)&&p[0]==='other');
             return `<button class="btn ghost sm" data-adm="catico:${s.id}:${p[0]}" title="${esc(p[1])}" aria-label="${esc(p[1])}" aria-pressed="${on?'true':'false'}" style="flex:none;width:40px;height:40px;padding:0;display:inline-flex;align-items:center;justify-content:center;${on?'border-color:var(--teal-deep);background:var(--teal-wash);color:var(--teal-deep)':''}">${I[p[0]]}</button>`;}).join('')}</div>
-          <button class="btn ghost sm" data-adm="delcat:${s.id}" style="margin-top:11px;width:auto;padding:8px 12px;color:var(--coral-deep)">${I.trash} Retirer ce métier</button>`}`;
+          <button class="btn ghost sm" data-adm="delcat:${s.id}" style="margin-top:11px;width:auto;padding:8px 12px;color:var(--coral-deep)">${I.trash} Retirer ce métier</button>`}
+          <div class="row between" style="align-items:center;gap:10px;margin-top:12px">
+            <div style="flex:1;min-width:0"><span class="sub">Le client choisit son prestataire</span>
+              <div class="mini" style="color:var(--muted);line-height:1.45">Annuaire du métier dès la première commande (photo, badge). Pour les prestations où la PERSONNE compte&nbsp;: coiffure, massage, garde d'enfants. Sinon, le client ne peut viser que quelqu'un qu'il a déjà eu.${s.custom?'':' Réglé dans le code pour les métiers d\'origine.'}</div></div>
+            <button class="switch" data-adm="catchoix:${s.id}" ${s.custom?'':'disabled style="opacity:.45;"'} style="flex:none;background:${s.choixPro?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${s.choixPro?'25px':'3px'}"></span></button>
+          </div>`;
         const artLines=catArts.length?catArts.map(function(a){return `<div class="row between" style="align-items:center;margin-top:8px"><button class="linklike" data-adm="art:${a.id}" style="font-size:13px;text-align:left;color:var(--ink)">${esc(a.name)}</button><span class="chip ${acctChip(a.status)[0]}">${acctChip(a.status)[1]}</span></div>`;}).join(''):`<p class="mini" style="margin-top:6px;color:var(--muted)">Aucun prestataire sur ce métier : « Bientôt disponible » côté client.</p>`;
         return `${header}<div class="card" style="padding:13px;margin:6px 0 0;background:var(--sand)"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Artisans (${catArts.length})</div>${artLines}<hr class="dashed" style="margin:12px 0 2px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Tarif client</div>${priceEditor}${optionsEditorHtml(s.id)}${metierEditor}
         <hr class="dashed" style="margin:13px 0 2px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Essai sur cet appareil</div>
@@ -9632,6 +9650,10 @@
         <p class="sub" style="margin-top:5px">Créez une nouvelle catégorie de service, sans code. Elle apparaît côté client dès qu'un artisan validé la propose (« Bientôt disponible » en attendant).</p>
         <input id="admNewCatName" placeholder="Nom du métier (ex. Vitrier)" autocomplete="off" autocapitalize="words" style="width:100%;margin-top:9px;padding:11px 13px;border:1px solid var(--hair);border-radius:11px;background:var(--sand);color:var(--ink);font-size:14px;box-sizing:border-box">
         <div class="row" style="gap:8px;margin-top:8px;align-items:center"><span class="mini" style="color:var(--muted)">Tarif indicatif</span><input id="admNewCatRate" type="number" inputmode="numeric" value="40" min="5" style="width:88px;padding:9px 11px;border:1px solid var(--hair);border-radius:10px;background:var(--sand);color:var(--ink);font-size:14px;box-sizing:border-box"><span class="mini" style="color:var(--muted)">€/h</span></div>
+        <label class="row" style="gap:9px;align-items:flex-start;margin-top:10px;cursor:pointer">
+          <input type="checkbox" id="admNewCatChoix" style="margin-top:3px;flex:none;width:18px;height:18px;accent-color:var(--teal-deep)">
+          <span class="mini" style="line-height:1.45;color:var(--muted)">Le client peut <b>choisir son prestataire</b> dès la première commande (annuaire du métier). À cocher quand la PERSONNE compte&nbsp;: coiffure, massage, garde d'enfants. Sinon la demande part au premier disponible.</span>
+        </label>
         <button class="btn" data-act="admin-add-cat" style="margin-top:10px;background:var(--teal-deep);color:#fff">Ajouter au catalogue</button>
       </div>
       <p class="mini" style="margin-top:12px">Ces prix fixes sont ceux que voient les clients à la commande. La majoration « coup de pouce » s'applique <b>par-dessus</b> et revient au prestataire.</p>`;
@@ -12068,10 +12090,10 @@
   function artisanFullLabel(a){const nm=(a.nm||'').trim();const soc=(a.legal||'').trim();return (soc&&soc.toLowerCase()!==nm.toLowerCase())?(nm+' · '+soc):nm;}
   // Menu déroulant « prestataire habituel » (défaut : Peu importe). Remplace les puces
   // quand la liste peut s'allonger. `m` = brouillon de commande en cours.
-  // Services « personnels » (la personne compte autant que la prestation) : le client
-  // peut viser un prestataire PRÉCIS dès la première commande. Les autres métiers
-  // gardent le menu « prestataire habituel » (historique uniquement).
-  function pickProSvc(svc){return canOnSite(svc)||['baby','epilation','animaux'].indexOf(svc)>=0;}
+  // Le métier DÉCLARE si l'on peut y viser quelqu'un dès la première commande (cf.
+  // `choixPro` sur SERVICES) : on n'énumère plus d'identifiants ici, et un métier créé
+  // depuis la console pose la question au moment où on le crée.
+  function pickProSvc(svc){const s=findSvc(svc);return !!(s&&s.choixPro);}
   // Annuaire du métier (callable listProviders) — chargé une fois par service et par
   // session. Rend null tant que la liste arrive (le rendu affiche « chargement »).
   function proDirFor(svc){
@@ -15544,6 +15566,12 @@
       // et jamais un dessin : le catalogue est relu par tous en `innerHTML`.
       else if(act==='catico'){const sv=(S.customServices||[]).find(function(x){return x.id===id;});
         if(sv){sv.ico=icoValide(parts[2]);saveCatalog();}}
+      // Ne bascule QUE les métiers créés depuis la console : ceux d'origine portent la
+      // propriété dans le code, et un réglage qui ne se sauve pas se défait au rendu
+      // suivant sans rien dire.
+      else if(act==='catchoix'){const sv=(S.customServices||[]).find(function(x){return x.id===id;});
+        if(sv){sv.choixPro=!sv.choixPro;saveCatalog();render();
+          toast(sv.choixPro?'Les clients pourront choisir leur prestataire sur ce métier':'Choix du prestataire retiré : le premier disponible, ou quelqu\'un de déjà venu');}}
       // Rendre à un métier du code le nom qui y est écrit — la clé est RETIRÉE du compte,
       // et la correction suivante faite dans le code lui reviendra.
       else if(act==='catnomdef'){if(S.nomsMetiers&&S.nomsMetiers[id]!=null){delete S.nomsMetiers[id];appliquerNoms();saveCatalog();toast('Nom d’origine rétabli');}}
@@ -16182,7 +16210,8 @@
         const nm=((document.getElementById('admNewCatName')||{}).value||'').trim();
         const rt=parseInt(((document.getElementById('admNewCatRate')||{}).value||'40'),10);
         if(!nm){toast('Indiquez un nom de métier');break;}
-        addCustomService(nm,(rt&&rt>=5)?rt:40); // persiste au catalogue partagé + rend
+        const ch=!!((document.getElementById('admNewCatChoix')||{}).checked);
+        addCustomService(nm,(rt&&rt>=5)?rt:40,ch); // persiste au catalogue partagé + rend
         break;
       }
       case 'enable-notif':{
