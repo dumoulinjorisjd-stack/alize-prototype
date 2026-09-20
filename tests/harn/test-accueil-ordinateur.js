@@ -34,7 +34,7 @@ async function releve(w,h){
     const v=document.getElementById('view');
     return {mots:txt.split(/\s+/).filter(Boolean).length,
       etapes:n('.pstep'), metiers:n('.jchip'), ile:n('.cover-isle'),
-      ambassadeur:n('.land-founder'), ouverture:/les services seront disponibles à partir du 1er octobre|services go live on 1 October|os serviços abrem a 1 de outubro/i.test(txt),
+      ambassadeur:n('.land-founder'), ouverture:/services seront disponibles à partir du|services go live on|os serviços abrem a|ouverture aux clients/i.test(txt),
       accroche:n('.pro-hook'),
       mobileDabord:/s.utilise sur téléphone|made for your phone|no telemóvel/.test(txt),
       plus:!!document.querySelector('.welcome-plus')&&vu(document.querySelector('.welcome-plus')),
@@ -51,7 +51,7 @@ ok(ordi.etapes===6,'les trois étapes de CHAQUE public sont là ('+ordi.etapes+'
 ok(ordi.metiers>=9,'les métiers sont nommés ('+ordi.metiers+')');
 ok(ordi.ile===1,'la carte de l’île paraît UNE fois — elle dit la même chose des deux côtés');
 ok(ordi.ambassadeur===1,'le programme Ambassadeur est là : c’est l’argument de recrutement du moment');
-ok(ordi.ouverture,'et l’invitation à s’inscrire, les services ouvrant le 1er octobre');
+ok(!ordi.ouverture&&!tel.ouverture,'et plus aucune date d’ouverture annoncée : les services sont ouverts, sur grand écran comme sur téléphone');
 
 console.log('\nB — et il dit que l’application se vit sur téléphone');
 ok(ordi.mobileDabord,'le bandeau l’explique : c’est l’app installée qui prévient');
@@ -100,8 +100,8 @@ console.log('\nC bis — c’est une VITRINE : le client, les boutons, le profes
       const g=k[0].getBoundingClientRect().left, d=k[k.length-1].getBoundingClientRect().right;
       return Math.abs((g+d)/2-mi(c.parentElement))<=2;});
     // La mesure d'un texte suivi : les trois encadrés ne courent plus sur toute la largeur.
-    const encadres=[...document.querySelectorAll('.welcome-plus .wp-mobile,.welcome-plus .open-note,.welcome-plus .land-founder')];
-    const mesure=encadres.length===3&&encadres.every(e=>e.getBoundingClientRect().width<=910);
+    const encadres=[...document.querySelectorAll('.welcome-plus .wp-mobile,.welcome-plus .land-founder')];
+    const mesure=encadres.length===2&&encadres.every(e=>e.getBoundingClientRect().width<=910);
     // L'entre-deux se nomme : deux boutons corail ne disent pas d'eux-mêmes ce qu'ils font.
     // Une punchline tient sur UNE ligne sur grand écran : le retour du balisage est celui
     // du téléphone, où la même phrase ne passe pas. On compte les rectangles de la ligne,
@@ -176,7 +176,7 @@ console.log('\nC bis — c’est une VITRINE : le client, les boutons, le profes
   ok(g.detailAuFer,'les cartes d’étapes et la figure de l’île restent au fer à gauche — elles se lisent');
   ok(g.conclut,'les deux paragraphes qui encadrent une liste sont centrés : l’un annonce la partie, l’autre la ferme');
   ok(g.chipsCentrees,'la seule série de pastilles restante — celle du professionnel — reprend l’axe de la partie ; celle du client redisait le héros et part');
-  ok(g.mesure,'et les trois encadrés de texte suivi tiennent une mesure lisible ('+g.largeurEncadres.join(' · ')+' px, contre 1 332)');
+  ok(g.mesure,'et les encadrés de texte suivi tiennent une mesure lisible ('+g.largeurEncadres.join(' · ')+' px, contre 1 332)');
   ok(g.inscr,'« Inscription » nomme les deux boutons corail, au-dessus d’eux et sur leur axe');
   ok(g.grilleEnTete,'la grille des services ouvre la page — c’est la réponse à « qu’est-ce que ce site ? » ('+g.ySv+' px, avant la partie du client à '+g.yClient+')');
   ok(g.bandeChezLePro,'et le bandeau « s’utilise sur téléphone » est descendu dans la partie du professionnel ('+g.yBande+' px)');

@@ -58,7 +58,10 @@ const base=(S)=>{
   // Le rappel des notifications est un PRÉ-REQUIS : sans elles, il ne reçoit aucune
   // demande. Il reste donc devant les missions — et il s'effacera de lui-même.
   ok(off.iNotif>0&&off.iNotif<off.iMissions,'le rappel des notifications reste AVANT les missions : c’est un pré-requis, pas une information');
-  ok(off.iMissions>0&&off.iMissions<off.iOuverture,'seul le bandeau du 1er octobre, qui n’attend aucun geste, descend sous les missions');
+  // LE BANDEAU DU 1er OCTOBRE A DISPARU AVEC LA BARRIÈRE (20/09/2026) : les services
+  // sont ouverts, l'annoncer serait faux. La règle d'ordre qu'il illustrait tient
+  // toujours pour les trois autres blocs, et l'épreuve garde son absence.
+  ok(off.iOuverture<0,'plus de bandeau d’ouverture : la barrière du 1er octobre est levée');
 
   console.log('B — en ligne : il n’a plus rien d’urgent à dire, il redescend');
   const on=await rendre({online:true,mollie:'active',onb:'completed',canWork:true});
