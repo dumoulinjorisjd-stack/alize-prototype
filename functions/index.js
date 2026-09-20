@@ -915,6 +915,42 @@ exports.assignFounderSpot = onDocumentCreated('artisans/{artisanId}', async (eve
  * Appelé aux DEUX endroits qui diffusent une demande : la création (demandes sans verrou
  * de paiement) et le passage à « pending » (le cas normal, après autorisation de la carte).
  */
+const ANTI = require('./anti-abus');
+/* LE COMPTEUR DU JOUR. Un document par clé et par jour dans `quotas` — collection
+ * SERVEUR (aucune règle ne l'ouvre, l'Admin SDK passe outre). Transaction : deux demandes
+ * simultanées ne peuvent pas lire le même nombre et l'écrire deux fois.
+ * EN CAS DE PANNE DU COMPTEUR, ON LAISSE PASSER : un service qui se bloque tout seul
+ * parce qu'une écriture a échoué serait pire que le risque qu'il couvre. La trace, elle,
+ * part dans le journal. */
+async function _quotaJour(db, cle, plafond) {
+  const jour = jourStBarth();
+  const ref = db.doc('quotas/' + cle + '__' + jour);
+  try {
+    return await db.runTransaction(async (tx) => {
+      const sn = await tx.get(ref);
+      const n = sn.exists ? (Number((sn.data() || {}).n) || 0) : 0;
+      const d = ANTI.quotaDecide(n, plafond);
+      if (d.ok) tx.set(ref, { n: d.n, j: jour, maj: FieldValue.serverTimestamp() }, { merge: true });
+      return d;
+    });
+  } catch (e) {
+    console.warn('[quota] ' + cle + ' : ' + (e && e.message));
+    return { ok: true, n: 0, plafond: plafond, franchit: false, panne: true };
+  }
+}
+/* PRÉVENIR L'ADMINISTRATEUR, UNE FOIS PAR JOUR ET PAR SUJET. Une alerte qui part à chaque
+ * message refusé deviendrait elle-même l'inondation qu'on empêche. */
+async function _alerteAbus(db, cle, sujet, texte) {
+  try {
+    const une = await _quotaJour(db, 'alerte-' + cle, 1);
+    if (!une.ok) return;
+    await sendMail(db, ADMIN_EMAIL, { subject: 'Ti-Services · ' + sujet,
+      html: '<p>' + escHtmlS(texte) + '</p><p style="color:#666;font-size:13px">Alerte envoyée une seule fois par jour. '
+        + 'Le plafond protège la réputation du domaine : au-delà, les messages ne partent pas.</p>' });
+  } catch (e) { console.warn('alerteAbus', e && e.message); }
+}
+const EST_PROD = (process.env.GCLOUD_PROJECT || 't-service-prod').indexOf('prod') >= 0;
+
 async function mailArtisansSansAppareil(db, artById, targetUids, tokenToUid, r, dirigee) {
   try {
     const joignables = {};
@@ -925,10 +961,16 @@ async function mailArtisansSansAppareil(db, artById, targetUids, tokenToUid, r, 
     const zoneM = (r.zone || '').toString().slice(0, 40);
     const quandM = ((r.when || '') + (r.slot ? (' à ' + r.slot) : '')).trim().slice(0, 60);
     const lien = APP_URL.replace(/\/$/, '') + '/?open=missions';
+    let plafonnes = 0;
     await Promise.all(sansAppareil.map(async (uid) => {
       const a = artById[uid] || {};
       const mail = (a.email || '').trim();
       if (!mail) return;
+      // PLAFOND PAR PRESTATAIRE : il protège la personne qui reçoit, quelle que soit
+      // l'origine des demandes. C'est le dernier filet, après la garantie et le plafond
+      // par client.
+      const q = await _quotaJour(db, 'mail-pro-' + uid, ANTI.MAILS_JOUR_PRESTATAIRE);
+      if (!q.ok) { plafonnes++; return; }
       try {
         await sendMail(db, mail, {
           subject: (dirigee ? 'Une demande vous est réservée, ' : 'Nouvelle demande, ') + svcM,
@@ -949,8 +991,14 @@ async function mailArtisansSansAppareil(db, artById, targetUids, tokenToUid, r, 
         });
       } catch (e) { console.warn('mailArtisansSansAppareil', uid, e); }
     }));
-    console.log('E-mail « nouvelle demande » à ' + sansAppareil.length + ' artisan(s) sans appareil notifié.');
-    return sansAppareil.length;
+    console.log('E-mail « nouvelle demande » à ' + (sansAppareil.length - plafonnes) + ' artisan(s) sans appareil notifié'
+      + (plafonnes ? (', ' + plafonnes + ' au-delà du plafond du jour') : '') + '.');
+    if (plafonnes) {
+      await _alerteAbus(db, 'mail-pro-plafond', 'plafond d\'e-mails atteint',
+        plafonnes + ' prestataire(s) ont atteint le plafond de ' + ANTI.MAILS_JOUR_PRESTATAIRE
+        + ' e-mails de mission pour aujourd\'hui. Leurs alertes suivantes ne partiront pas avant demain.');
+    }
+    return sansAppareil.length - plafonnes;
   } catch (e) { console.warn('mailArtisansSansAppareil', e); return 0; }
 }
 
@@ -964,6 +1012,29 @@ exports.notifyArtisansNewRequest = onDocumentCreated({document: 'requests/{reqId
 
   const svc = r.service;
   const db = getFirestore();
+
+  /* UNE DEMANDE NÉE DÉJÀ OUVERTE DOIT ÊTRE GARANTIE. En production, une commande de
+     client naît « pending_payment » et ne s'ouvre qu'une fois la carte autorisée : ce
+     chemin-ci ne voit donc que la conciergerie… ou une demande écrite à la main par un
+     compte qui a sauté l'étape. Diffuser celle-là, c'est envoyer un e-mail à tous les
+     prestataires depuis notre domaine, sans qu'un centime ne soit engagé. */
+  const g = ANTI.diffusionAdmise(r, { estProd: EST_PROD });
+  if (!g.ok) {
+    console.warn('Diffusion refusée (' + g.motif + ') pour la demande ' + (event.params && event.params.reqId));
+    await _alerteAbus(db, 'diffusion-sans-garantie', 'demande publiée sans paiement',
+      'Une demande a été créée directement « publiée », sans conciergerie ni autorisation de carte. '
+      + 'Elle n\'a été diffusée à personne. Client : ' + String(r.clientUid || 'inconnu') + '.');
+    return;
+  }
+  /* PLAFOND PAR CLIENT : ce qui borne le volume quoi qu'il arrive. */
+  const qc = await _quotaJour(db, 'diff-' + (r.clientUid || 'inconnu'), ANTI.DIFFUSIONS_JOUR_CLIENT);
+  if (!qc.ok) {
+    console.warn('Diffusion plafonnée pour le client ' + r.clientUid + ' (' + qc.plafond + '/jour).');
+    await _alerteAbus(db, 'diff-client-' + (r.clientUid || 'x'), 'plafond de diffusions atteint',
+      'Le compte ' + String(r.clientUid || 'inconnu') + ' a atteint ' + qc.plafond
+      + ' diffusions de demande aujourd\'hui. Les suivantes ne préviennent plus personne.');
+    return;
+  }
 
   // Artisans validés (filtrage du service en mémoire : pas d'index composite requis).
   const artsSnap = await db.collection('artisans').where('status', '==', 'valide').get();
@@ -2292,6 +2363,20 @@ exports.notifyReopenedRequest = onDocumentUpdated({document: 'requests/{reqId}',
   const db = getFirestore();
   const svc = after.service;
   const exclude = wasDeclined ? (before.declinedBy || '') : (wasActive ? (before.providerUid || '') : '');
+
+  /* LE MÊME PLAFOND QU'À LA CRÉATION. Rouvrir une demande (déclinée → publiée) ne
+     redemande AUCUN paiement : c'est le chemin le moins cher pour faire partir cent
+     alertes avec une seule commande. Le prestataire qui se désiste, lui, ne peut pas le
+     déclencher en boucle — la demande repasse par un artisan à chaque fois. On compte
+     donc sur le CLIENT, comme à la création, et sur le même compteur du jour. */
+  const qr = await _quotaJour(db, 'diff-' + (after.clientUid || 'inconnu'), ANTI.DIFFUSIONS_JOUR_CLIENT);
+  if (!qr.ok) {
+    console.warn('Réouverture plafonnée pour le client ' + after.clientUid + ' (' + qr.plafond + '/jour).');
+    await _alerteAbus(db, 'diff-client-' + (after.clientUid || 'x'), 'plafond de diffusions atteint',
+      'Le compte ' + String(after.clientUid || 'inconnu') + ' a atteint ' + qr.plafond
+      + ' diffusions de demande aujourd\'hui (créations et réouvertures). Les suivantes ne préviennent plus personne.');
+    return;
+  }
 
   // 1) Re-notifier les artisans validés du service (hors celui qui s'est désisté).
   //    Demande re-DIRIGÉE (le client a choisi une autre baby-sitter après l'appel) :
@@ -4086,6 +4171,21 @@ exports.paymentReconciliation = onSchedule({schedule: '0 9 * * *', secrets: [SMT
     for (const d of vieux.docs) { try { await d.ref.delete(); } catch (_) {} }
     if (vieux.size) console.log('journal des départs : ' + vieux.size + ' ligne(s) échue(s) effacée(s)');
   } catch (e) { console.warn('purge journal départs', e && e.message); }
+  /* COMPTEURS DU JOUR : ils ne servent qu'au jour qu'ils portent. On garde une semaine
+     (de quoi lire ce qui s'est passé si une alerte tombe un vendredi soir), puis on
+     efface — sans quoi la collection grossit d'une ligne par client et par jour, pour
+     toujours. Le nom du document PORTE le jour : aucune lecture de champ n'est
+     nécessaire pour savoir ce qui est échu. */
+  try {
+    const limite = jourStBarth(new Date(now - 7 * 86400000));
+    const q = await db.collection('quotas').limit(500).get();
+    let n = 0;
+    for (const d of q.docs) {
+      const j = (d.id.split('__')[1] || '');
+      if (j && j < limite) { try { await d.ref.delete(); n++; } catch (_) {} }
+    }
+    if (n) console.log('compteurs anti-abus : ' + n + ' ligne(s) échue(s) effacée(s)');
+  } catch (e) { console.warn('purge quotas', e && e.message); }
   const H = 3600 * 1000;
   const ageH = (ts) => {
     let t = 0;

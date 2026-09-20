@@ -236,10 +236,21 @@ service cloud.firestore {
       // paiement) OU « pending_payment » (prod : la demande n'est PAS ouverte aux
       // prestataires tant que la carte n'est pas autorisée — bascule faite par le webhook
       // Mollie côté serveur, jamais par le client).
+      // À LA CRÉATION, PERSONNE NE S'ATTRIBUE LA PREUVE DU PAIEMENT. Le serveur seul
+      // écrit `molliePaymentAuthorized` (webhook Mollie ou relecture du paiement), et
+      // c'est sur ce champ que la diffusion des alertes s'appuie pour savoir qu'une
+      // demande est garantie. Laissé libre, il se déclarait soi-même : il suffisait
+      // d'écrire une demande déjà « publiée » avec le drapeau, et un e-mail partait à
+      // tous les prestataires depuis notre domaine sans qu'un centime soit engagé.
+      // Les champs financiers calculés (serverKeys) sont verrouillés de la même façon —
+      // ils l'étaient déjà à la mise à jour, pas à la création.
       allow create: if signedIn()
                     && request.resource.data.clientUid == uid()
                     && (request.resource.data.status == 'pending'
-                        || request.resource.data.status == 'pending_payment');
+                        || request.resource.data.status == 'pending_payment')
+                    && !request.resource.data.keys().hasAny(serverKeys())
+                    && !request.resource.data.keys().hasAny(
+                         ['molliePaymentAuthorized','molliePaymentStatus','molliePaymentCaptured']);
 
       // Mise à jour — chaque rôle ne peut toucher QUE ce qui le concerne, et JAMAIS
       // les champs financiers calculés par le serveur (intégrité de la commission).
