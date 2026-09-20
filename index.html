@@ -710,6 +710,12 @@
   .iv-img{max-width:100%;max-height:100%;object-fit:contain;border-radius:10px;background:#fff}
 
   .cats{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:14px}
+  /* L'intertitre traverse la grille (`1/-1`) : posé dans une seule colonne, il
+     décalerait toutes les tuiles suivantes d'une case. Discret — il sépare, il n'annonce
+     pas une nouveauté. */
+  .cats-sep{grid-column:1/-1;margin:6px 0 0;font-size:12px;font-weight:800;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:9px}
+  .cats-sep::after{content:"";flex:1;height:1px;background:var(--hair)}
   .cat{display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;padding:15px 14px;text-align:center;border-radius:var(--r-md);background:var(--card);border:1px solid var(--hair);box-shadow:0 1px 2px -1px var(--shadow),0 10px 22px -20px var(--shadow);transition:transform .16s,border-color .2s,box-shadow .22s;position:relative;overflow:hidden}
   .cat:hover{transform:translateY(-2px);box-shadow:0 3px 6px -2px var(--shadow),0 18px 32px -18px var(--shadow);border-color:color-mix(in srgb,var(--teal) 24%,var(--hair))}
   .cat:active{transform:scale(.97)}
@@ -9849,8 +9855,13 @@
             <div style="flex:1"><div class="mini">Clients</div><b class="money" style="font-size:19px;font-family:var(--f-disp)">${N.clientsAvec}/${N.clients}</b>${N.clientsSans?`<div class="mini">${N.clientsSans} sans</div>`:''}</div>
           </div>
           ${N.prosSans.length?`<div class="mini" style="margin-top:13px;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Prestataires à relancer (${N.prosSans.length})</div>
-            ${N.prosSans.map(function(x){return `<button class="reset row between" data-adm="art:${x.id}" style="width:100%;margin-top:7px;gap:8px;align-items:center;text-align:left"><b style="font-size:13.5px">${esc(x.name)}</b><span class="chip coral" style="flex:none">${I.bolt} Aucune notification</span></button>`;}).join('')}`
+            ${N.prosSans.map(function(x){return `<button class="card" data-adm="art:${x.id}" style="padding:12px;margin-top:8px;width:100%;text-align:left;display:block;border-left:4px solid var(--coral)">
+              <div class="row between" style="gap:8px;align-items:center"><b style="font-size:14px">${esc(x.name)}</b><span class="chip coral" style="flex:none">${I.bolt} Aucune</span></div>
+              <div class="mini" style="margin-top:3px;color:var(--muted)">${esc(x.phone||x.email||'coordonnées inconnues')}</div></button>`;}).join('')}
+            <p class="mini" style="margin-top:9px;color:var(--muted);line-height:1.5">Un appel suffit&nbsp;: l'application le lui demande à chaque ouverture, et le réglage est dans son téléphone, pas ici.</p>`
             :`<p class="mini" style="margin-top:11px;color:var(--good)">${I.check} Tous les prestataires actifs peuvent être prévenus.</p>`}
+          ${N.clientsSansListe.length?`<div class="mini" style="margin-top:14px;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Clients sans notification (${N.clientsSans})</div>
+            <p class="mini" style="margin-top:6px;color:var(--muted);line-height:1.55">${N.clientsSansListe.slice(0,14).map(function(x){return esc(x.name);}).join(' · ')}${N.clientsSans>14?' · +'+(N.clientsSans-14)+' autres':''}</p>`:''}
           <p class="mini" style="margin-top:13px;color:var(--muted);line-height:1.5">Compté sur les appareils enregistrés. Une permission retirée depuis les réglages du téléphone ne se voit qu'au premier envoi qui échoue : le jeton est alors effacé, et le compte baisse ici.</p>`;
         return foldCard('a-notifs',I.bolt,'Notifications','Qui peut être prévenu, client ou prestataire',corps,
           N.prosSans.length?chip('coral',N.prosSans.length+' pro'+(N.prosSans.length>1?'s':'')+' sans'):chip('good',N.prosAvec+'/'+N.pros+' pros'));
@@ -10935,9 +10946,15 @@
     const prosSans=pros.filter(function(x){return !a(x.uid);});
     const cls=(clients||[]).filter(function(x){return x&&!x.alsoPro;});
     const clsSans=cls.filter(function(x){return !a(x.uid);});
-    return {pros:pros.length, prosAvec:pros.length-prosSans.length,
-      prosSans:prosSans.map(function(x){return {id:x.id,uid:x.uid,name:x.name};}),
-      clients:cls.length, clientsAvec:cls.length-clsSans.length, clientsSans:clsSans.length};
+    // Pour RELANCER quelqu'un il faut savoir QUI et comment l'atteindre : le nom seul
+    // ne suffit pas, on rend aussi de quoi l'appeler. Les clients ne se relancent pas
+    // (rien à leur demander) mais ils se NOMMENT : « 7 sans » sans un seul nom ne dit
+    // pas à qui l'on pense.
+    const q=function(x){return {id:x.id,uid:x.uid,name:x.name||'Sans nom',
+      email:x.email||'',phone:x.phone||''};};
+    return {pros:pros.length, prosAvec:pros.length-prosSans.length, prosSans:prosSans.map(q),
+      clients:cls.length, clientsAvec:cls.length-clsSans.length,
+      clientsSans:clsSans.length, clientsSansListe:clsSans.map(q)};
   }
   function buildAdminDrafts(snap){
     const out=[];
@@ -11558,17 +11575,32 @@
     // grisé. Sans effet pour les vrais clients (tout reste grisé jusqu'au 1er octobre,
     // puis soumis à la disponibilité réelle par métier).
     const revDemo=(function(){try{return REVIEW_DEMO_EMAILS.indexOf(((S.account&&S.account.email)||'').toLowerCase().trim())>=0;}catch(_){return false;}})();
-    const svcTile=function(s){const soon=(revDemo||svcForce(s.id))?false:(!svcAvailable(s.id)||closed);const c=soon?'#9a94a6':svcColor(s.id);const px=(S.adminPrices&&S.adminPrices[s.id]!=null?S.adminPrices[s.id]:s.rate);const rt=soon?'<span style="color:var(--muted)">Bientôt disponible</span>':(isForfaitSvc(s.id)?`<b>${px}</b> <b>€</b> forfait`:(isCatalogForfait(s.id)?`dès <b>${minActPrice(s.id)}</b> <b>€</b>`:`dès <b>${px}</b> <b>€</b>/h`));return `<button class="cat${soon?' soon':''}" ${soon?'data-act="svc-soon"':`data-svc="${s.id}"`}>${soon?'<span class="soon-badge">Bientôt</span>':''}<div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${svcIco(s.id)}</div><div class="nm">${esc(s.nm)}</div><div class="rt">${rt}</div></button>`;};
+    /* « BIENTÔT DISPONIBLE » SE DÉCIDE UNE FOIS. La tuile le lisait pour se griser, et
+       personne ne s'en servait pour RANGER : un métier sans prestataire validé restait
+       au milieu de la grille, à la place que lui donne le catalogue, et le client tombait
+       dessus avant les prestations qu'il peut réellement commander. L'ordre et la couleur
+       lisent donc la même fonction — deux définitions se seraient séparées au premier
+       ajout de règle. */
+    const bientot=function(it){
+      if(revDemo)return false;
+      if(it.type==='cat')return (it.cat.subs||[]).some(svcForce)?false:(!catAvailable(it.cat)||closed);
+      return svcForce(it.svc.id)?false:(!svcAvailable(it.svc.id)||closed);
+    };
+    const svcTile=function(s){const soon=bientot({type:'svc',svc:s});const c=soon?'#9a94a6':svcColor(s.id);const px=(S.adminPrices&&S.adminPrices[s.id]!=null?S.adminPrices[s.id]:s.rate);const rt=soon?'<span style="color:var(--muted)">Bientôt disponible</span>':(isForfaitSvc(s.id)?`<b>${px}</b> <b>€</b> forfait`:(isCatalogForfait(s.id)?`dès <b>${minActPrice(s.id)}</b> <b>€</b>`:`dès <b>${px}</b> <b>€</b>/h`));return `<button class="cat${soon?' soon':''}" ${soon?'data-act="svc-soon"':`data-svc="${s.id}"`}>${soon?'<span class="soon-badge">Bientôt</span>':''}<div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${svcIco(s.id)}</div><div class="nm">${esc(s.nm)}</div><div class="rt">${rt}</div></button>`;};
     // Le chevron ne flotte plus au plafond de la tuile, loin de ce qu'il annonce : il se
     // pose au bout de « N prestations », dans la couleur du métier. La ligne du bas dit
     // alors d'elle-même la différence entre une tuile qui ouvre une liste et une tuile qui
     // annonce un prix ferme — plus besoin d'un glyphe orphelin dans un coin.
-    const catTile=function(cat){const forcee=!!(cat&&cat.subs&&cat.subs.some(svcForce));const soon=(revDemo||forcee)?false:(!catAvailable(cat)||closed);const c=soon?'#9a94a6':svcColor(cat.id);return `<button class="cat${soon?' soon':''}" ${soon?'data-act="svc-soon"':`data-catopen="${cat.id}"`}>${soon?'<span class="soon-badge">Bientôt</span>':''}<div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[cat.id]||I.other}</div><div class="nm">${esc(cat.nm)}</div><div class="rt">${soon?'<span style="color:var(--muted)">Bientôt disponible</span>':cat.subs.length+' prestations<span class="cat-go" style="color:'+c+'">&nbsp;›</span>'}</div></button>`;};
+    const catTile=function(cat){const soon=bientot({type:'cat',cat:cat});const c=soon?'#9a94a6':svcColor(cat.id);return `<button class="cat${soon?' soon':''}" ${soon?'data-act="svc-soon"':`data-catopen="${cat.id}"`}>${soon?'<span class="soon-badge">Bientôt</span>':''}<div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[cat.id]||I.other}</div><div class="nm">${esc(cat.nm)}</div><div class="rt">${soon?'<span style="color:var(--muted)">Bientôt disponible</span>':cat.subs.length+' prestations<span class="cat-go" style="color:'+c+'">&nbsp;›</span>'}</div></button>`;};
     // Vue « sous-catégorie » : on a ouvert une catégorie (ex. Beauté) → liste ses prestations.
     const catView=S.catView?CATEGORIES.find(function(c){return c.id===S.catView;}):null;
     if(catView){
       const c=svcColor(catView.id);
-      const sub=catView.subs.map(function(id){const s=findSvc(id);return s?svcTile(s):'';}).join('');
+      const dans=catView.subs.map(findSvc).filter(Boolean).map(function(s){return {type:'svc',svc:s};});
+      const dSub=dans.filter(function(it){return !bientot(it);}),tSub=dans.filter(bientot);
+      const sub=dSub.map(function(it){return svcTile(it.svc);}).join('')
+        +((dSub.length&&tSub.length)?`<div class="cats-sep">Bientôt disponible</div>`:'')
+        +tSub.map(function(it){return svcTile(it.svc);}).join('');
       return `<div class="pad">
         <button class="reset" data-act="cat-back" style="margin:10px 0 2px">← Accueil</button>
         <div class="row" style="gap:12px;align-items:center;margin-top:2px"><span style="width:44px;height:44px;border-radius:13px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[catView.id]||I.other}</span><div><div class="h-hello" style="font-size:23px">${esc(catView.nm)}</div><p class="sub" style="margin-top:1px">Choisissez la prestation</p></div></div>
@@ -11576,7 +11608,17 @@
         ${zoutiLine('Dites-moi ce qu’il vous faut, je trouve le bon pro.')}
         <div style="height:16px"></div></div>${clientNavbar()}`;
     }
-    const cats=homeItems().map(function(it){return it.type==='cat'?catTile(it.cat):svcTile(it.svc);}).join('');
+    /* On PARTITIONNE, on ne trie pas : l'ordre du catalogue a été posé à la main (les
+       métiers les plus demandés en tête) et un tri le détruirait. Chaque groupe garde
+       donc son ordre, et seuls les « bientôt » passent derrière. L'intertitre ne paraît
+       que si les deux groupes existent : sans lui, on ne comprend pas pourquoi un métier
+       connu se retrouve en bas, et seul il annoncerait une section vide. */
+    const items=homeItems(), dispo=items.filter(function(it){return !bientot(it);}),
+          plusTard=items.filter(bientot);
+    const dessine=function(it){return it.type==='cat'?catTile(it.cat):svcTile(it.svc);};
+    const cats=dispo.map(dessine).join('')
+      +((dispo.length&&plusTard.length)?`<div class="cats-sep">Bientôt disponible</div>`:'')
+      +plusTard.map(dessine).join('');
     // MODE INVITÉ : aucun nom / photo / secteur du compte (S.account peut rester chargé
     // d'une session précédente). L'accueil invité reste anonyme.
     const fullName=S.onboarded?(((S.account&&S.account.name)||(S.clientForm&&S.clientForm.name)||'').trim()):'';

@@ -26,7 +26,7 @@ let f=0; const ok=(c,l)=>{if(c)console.log('  ✓ '+l);else{f++;console.log('  �
 // n'a pas retenu.
 const ARTS=[
   {id:'a1',uid:'a1',name:'Laure G.',status:'valide',cats:['menage'],zone:'Gustavia'},
-  {id:'a2',uid:'a2',name:'Marc P.',status:'valide',cats:['jardin'],zone:'Lorient'},
+  {id:'a2',uid:'a2',name:'Marc P.',status:'valide',cats:['jardin'],zone:'Lorient',phone:'+590690112233'},
   {id:'a3',uid:'a3',name:'Sonia T.',status:'attente',cats:['coiffure'],zone:'Gustavia'},
   {id:'a4',uid:'a4',name:'Refusé R.',status:'refuse',cats:['menage'],zone:'Gustavia'}
 ];
@@ -64,9 +64,12 @@ const r=await poser(ARTS,CLIS,NOTIFS);
 ok(/2\/3/.test(r.txt),'deux prestataires joignables sur trois retenus : « '+(/(\d+\/\d+)/.exec(r.txt)||[])[1]+' »');
 ok(!/\/4/.test(r.txt),'le prestataire REFUSÉ ne compte nulle part : on ne relance pas quelqu’un qu’on n’a pas retenu');
 ok(/1\/2/.test(r.txt),'et un client sur deux');
-ok(r.relances.length===1&&/Marc P\./.test(r.relances[0]),
-  'seul le prestataire muet est NOMMÉ, avec un lien vers sa fiche ('+r.relances.join(' · ')+')');
-ok(!/Anne B\./.test(r.txt),'les clients sans notification sont comptés, pas listés : on n’y peut rien de plus');
+ok(r.relances.length===1&&/Marc P\./.test(r.relances[0])&&/0690/.test(r.relances[0]),
+  'le prestataire muet est NOMMÉ, avec de quoi l’appeler et un lien vers sa fiche ('+r.relances.join(' · ')+')');
+// « MAIS JE NE SAIS PAS QUI ÇA CONCERNE » (20/09/2026) : un compte sans un seul nom ne
+// dit pas à qui l'on pense. Les clients se NOMMENT donc aussi — ils ne se relancent pas
+// (rien à leur demander), mais on doit pouvoir mettre un visage sur le chiffre.
+ok(/Anne B\./.test(r.txt),'les clients sans notification sont NOMMÉS, pas seulement comptés');
 ok(/dernier envoi|envoi qui échoue/i.test(r.txt),
   'la carte dit ce que le chiffre vaut : une permission retirée ne se voit qu’au premier envoi qui échoue');
 
