@@ -97,6 +97,26 @@ const feuille = (c, polices) => `
   .bandeau div{font-size:28px;line-height:1.35;font-weight:650;color:${c['ink']}}
   .bandeau b{color:${c['teal-deep']}}
 
+  /* LE VISUEL DU PRO PORTE UN BLOC DE PLUS, sur une page qui ne s'allonge pas : la
+     hauteur est FIXE, un texte trop long ne pousse rien, il sort du cadre. On resserre
+     donc le RYTHME (les blancs entre les blocs) avant de toucher à la taille des
+     caractères, et la mesure en bas de script dit si ça tient. */
+  .serre .sur{margin-top:52px}
+  .serre h1{margin-top:14px;font-size:78px}
+  .serre .sous{margin-top:24px;font-size:29px;max-width:34ch}
+  .serre .chips{margin-top:34px;gap:13px}
+  .serre .chip{padding:13px 22px;font-size:26px}
+  .serre .chip svg{width:31px;height:31px}
+  .serre .suite{margin-top:12px;font-size:24px}
+  .serre .points{margin-top:40px;gap:22px}
+  .serre .point{font-size:30px}
+  .serre .pic{width:56px;height:56px;border-radius:17px}
+  .serre .pic svg{width:29px;height:29px}
+  /* Et l'aplat du bas recule d'autant : le bandeau Ambassadeur descend de 76 px dans
+     cette variante, et venait le frôler. */
+  .serre .rond.bas{width:380px;height:380px;left:-320px;bottom:-150px}
+  .serre .bandeau{margin-top:36px;padding:24px 28px}
+  .serre .bandeau div{font-size:26px}
   .pied{position:absolute;left:0;right:0;bottom:0;height:126px;background:${c['ink']};
     display:flex;align-items:center;justify-content:space-between;padding:0 72px;color:#fff}
   .pied .act{font-size:34px;font-weight:700}
@@ -134,11 +154,17 @@ const PUBS = [
     sur: 'Rejoignez nos prestataires',
     titre: 'Et si les clients venaient à <em>vous</em> ?',
     sous: 'Ti-Services vous envoie des clients de toute l’île. Vous ne prospectez plus.',
+    /* LES MÉTIERS SUR L'AFFICHE DU PRO AUSSI. Côté client ils disent « voilà ce qu'on
+       trouve ici » ; côté professionnel ils disent « votre métier en est », ce qu'aucune
+       phrase ne fait aussi vite. Même liste, mêmes icônes, même source. */
+    metiers: ['menage', 'jardin', 'colis', 'baby', 'coiffure', 'massage'],
+    suite: '… et plein d’autres',
     points: [
       ['lock', 'Paiement garanti, fini les impayés'],
       ['heart', 'Zéro abonnement, zéro frais fixes'],
       ['check', 'Vous choisissez vos missions']
     ],
+    serre: true,
     // « Places limitées » est retiré : la page d'accueil dit le contraire.
     // ON NE PARLE PAS DE COMMISSION, sur un visuel comme sur le site : ce qu'on vend est
     // ce que le prestataire touche, pas le pourcentage qu'on prend. Et pas de tiret
@@ -156,7 +182,7 @@ function corps(p, c, logo, metier, I) {
     `<div class="point"><span class="pic">${I[ic] || I.check}</span><span>${t}</span></div>`).join('')}</div>`;
   const bandeau = p.bandeau
     ? `<div class="bandeau"><span class="pic">${I[p.bandeau[0]] || I.heart}</span><div>${p.bandeau[1]}</div></div>` : '';
-  return `<div class="pub">
+  return `<div class="pub${p.serre ? ' serre' : ''}">
     <span class="rond haut"></span><span class="rond bas"></span>
     <div class="dedans">
       ${tete(logo)}
