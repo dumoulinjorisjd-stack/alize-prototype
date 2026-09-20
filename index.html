@@ -9834,6 +9834,27 @@
       ${foldCard('a-bookings',I.cal,'Réservations en cours','Recherche → acceptée → en cours → validée → réglée',bookings,chip(allB.length?'good':'grey',allB.length),(S.adminThreads||[]).some(function(t){return t&&t.reqId&&admThreadNew(t);}))}
       ${foldCard('a-prices',I.euro,'Prestations · artisans &amp; tarifs',svcAll.length+' métiers'+(svcNoPro?' · '+svcNoPro+' sans prestataire':''),pricesBody,svcNoPro?chip('coral',svcNoPro+' sans pro'):chip('good',svcAll.length))}
       ${foldCard('a-funnel',I.install,"Entonnoir d'installation",'Visiteurs, guide ouvert, applications installées',funnelBody,(function(){const T=funnelTotaux();return T?chip('grey',T.ins+' installées'):'';})())}
+      ${(function(){
+        // QUI EST JOIGNABLE. Même famille que l'entonnoir : l'un dit qui a l'application,
+        // l'autre si elle peut le prévenir. Un prestataire injoignable ne voit pas passer
+        // les demandes — c'est le seul chiffre d'ici qui appelle un geste, donc c'est le
+        // seul qu'on NOMME. La liste des clients sans notification ne servirait à rien :
+        // on en donne le nombre.
+        const N=S.adminNotifs?notifSynthese(S.adminClients,S.adminArtisans,S.adminNotifs):null;
+        if(!N)return foldCard('a-notifs',I.bolt,'Notifications','Qui peut être prévenu, client ou prestataire',
+          `<p class="mini" style="margin:0;color:var(--muted)">Lecture des comptes en cours…</p>`,'');
+        const corps=`<p class="mini" style="margin:0;color:var(--muted);line-height:1.55">Un prestataire sans notification <b>ne voit pas passer les demandes</b> : elles partent à tous, il ne les découvre qu'en ouvrant l'application. Un client sans notification n'est pas prévenu quand un prestataire répond.</p>
+          <div class="row" style="gap:9px;margin-top:12px">
+            <div style="flex:1"><div class="mini">Prestataires</div><b class="money" style="font-size:19px;font-family:var(--f-disp);color:${N.prosSans.length?'var(--coral-deep)':'var(--good)'}">${N.prosAvec}/${N.pros}</b></div>
+            <div style="flex:1"><div class="mini">Clients</div><b class="money" style="font-size:19px;font-family:var(--f-disp)">${N.clientsAvec}/${N.clients}</b>${N.clientsSans?`<div class="mini">${N.clientsSans} sans</div>`:''}</div>
+          </div>
+          ${N.prosSans.length?`<div class="mini" style="margin-top:13px;color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Prestataires à relancer (${N.prosSans.length})</div>
+            ${N.prosSans.map(function(x){return `<button class="reset row between" data-adm="art:${x.id}" style="width:100%;margin-top:7px;gap:8px;align-items:center;text-align:left"><b style="font-size:13.5px">${esc(x.name)}</b><span class="chip coral" style="flex:none">${I.bolt} Aucune notification</span></button>`;}).join('')}`
+            :`<p class="mini" style="margin-top:11px;color:var(--good)">${I.check} Tous les prestataires actifs peuvent être prévenus.</p>`}
+          <p class="mini" style="margin-top:13px;color:var(--muted);line-height:1.5">Compté sur les appareils enregistrés. Une permission retirée depuis les réglages du téléphone ne se voit qu'au premier envoi qui échoue : le jeton est alors effacé, et le compte baisse ici.</p>`;
+        return foldCard('a-notifs',I.bolt,'Notifications','Qui peut être prévenu, client ou prestataire',corps,
+          N.prosSans.length?chip('coral',N.prosSans.length+' pro'+(N.prosSans.length>1?'s':'')+' sans'):chip('good',N.prosAvec+'/'+N.pros+' pros'));
+      })()}
       <button class="card" data-adm="manual" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block"><div class="row between" style="align-items:center"><b style="font-size:14px">Manuel d'exploitation</b><span class="mini" style="color:var(--teal-deep);font-weight:700">Ouvrir ›</span></div><p class="sub" style="margin-top:8px">Tout le fonctionnement de la plateforme (commandes, prestataire choisi, paiements, récurrences, annulations…), pour vous, un employé ou un médiateur. Imprimable.</p></button>
       <div style="height:24px"></div>
     </div>`;
@@ -10228,6 +10249,10 @@
             return `<span class="chip coral">Jamais commencé</span><div class="mini" style="margin-top:4px">Sans activation, il ne peut pas accepter de missions.</div>`;})()}`)}
           ${a.insuranceUrl?`<div style="padding:11px 0;border-top:1px solid var(--hair)"><div class="row" style="gap:8px">${insStatus(a)!=='valide'?`<button class="btn good sm" data-adm="valid-ins:${a.id}">${I.check} Valider l'attestation</button>`:''}${insStatus(a)!=='refuse'?`<button class="btn ghost sm" data-adm="rej-ins:${a.id}">Refuser l'attestation</button>`:''}</div><p class="mini" style="margin-top:7px;color:var(--muted)">Ouvrez le document ci-dessus, puis validez ou refusez l'attestation. Rien n'est validé automatiquement.</p></div>`:''}
           ${a.bio?fRow('Présentation',`<span style="font-weight:500">${esc(a.bio)}</span>`):''}
+          ${fRow('Notifications',(function(){const n=notifsDe(a.uid);
+            if(!n)return `<span class="mini" style="color:var(--muted)">Lecture en cours…</span>`;
+            if(n.jetons>0)return `<span class="chip good">${I.check} Actives</span><div class="mini" style="margin-top:4px">${n.jetons} appareil${n.jetons>1?'s':''} enregistré${n.jetons>1?'s':''}${n.at?' · depuis le '+new Date(n.at).toLocaleDateString('fr-FR'):''}</div>`;
+            return `<span class="chip coral">${I.bolt} Aucune</span><div class="mini" style="margin-top:4px">Il ne sera pas prévenu des nouvelles demandes : elles n'apparaîtront qu'à l'ouverture de l'application.</div>`;})())}
           ${fRow('Note · missions',a.rating?a.rating.toFixed(1)+' '+I.star+' · '+a.jobs:'—')}
           ${fRow('Fiabilité · présence',(a.noShowCount||0)>0?`<span class="chip coral">${I.clock} ${a.noShowCount} absence${a.noShowCount>1?'s':''} signalée${a.noShowCount>1?'s':''}</span>${a.lastNoShowAt?`<div class="mini" style="margin-top:4px">Dernière&nbsp;: ${new Date(a.lastNoShowAt).toLocaleDateString('fr-FR')}</div>`:''}`:`<span class="chip good">${I.check} Aucun manquement</span>`)}
           ${fRow('Palier fidélité · commission',founderActiveFor(a)?`<span class="chip founder-chip">${I.star} Ambassadeur</span> ${FOUNDER_COMM_PCT} %`:`${a.founder?`<span class="chip" style="background:var(--hair);color:var(--muted)">${I.star} Ambassadeur, expiré</span> `:''}<span class="chip" style="background:${fidColor(fidFor(a.jobs).key)}22;color:${fidColor(fidFor(a.jobs).key)}">${I.star} ${fidFor(a.jobs).nm}</span> ${fidFor(a.jobs).pct} %`)}
@@ -10281,7 +10306,7 @@
         ${row('Moyen de paiement',`${esc(cc.card)}${cc.cardExp?`<div class="mini" style="margin-top:4px">Expire ${esc(cc.cardExp)}</div>`:''}`)}
         ${row('Réservations',cc.bookings+(cc.lastAt?`<div class="mini" style="margin-top:4px">Dernière&nbsp;: ${dt(cc.lastAt)}</div>`:''))}
         ${row('Abonnements',(cc.recurring&&cc.recurring.length)?cc.recurring.map(function(r){return esc(svcNm(r.svc||r.service||''))+(r.freq?' · '+esc(r.freq):'');}).join('<br>'):'')}
-        ${row('Notifications',cc.push?`<span class="chip good">${I.check} Actives (${cc.push} appareil${cc.push>1?'s':''})</span>`:`<span class="chip grey">Aucun appareil</span>`)}
+        ${row('Notifications',cc.push?`<span class="chip good">${I.check} Actives</span><div class="mini" style="margin-top:4px">${cc.push} appareil${cc.push>1?'s':''} enregistré${cc.push>1?'s':''}</div>`:`<span class="chip grey">${I.bolt} Aucune</span><div class="mini" style="margin-top:4px">Ce client ne sera pas prévenu quand un prestataire répond : il faut qu'il ouvre l'application pour le voir.</div>`)}
         ${row('Conditions',cc.acceptedTerms?`<span class="chip good">${I.check} Acceptées</span>${cc.termsVersion?`<div class="mini" style="margin-top:4px">Version ${esc(String(cc.termsVersion))}${cc.termsAt?' · '+dt(cc.termsAt):''}</div>`:''}`:`<span class="chip coral">Non acceptées</span>`)}
         ${cc.isPro?row('Facturation',`Réserve pour une entreprise`
           +((cc.company||cc.siret)
@@ -10876,6 +10901,44 @@
   // Comptes portant le rôle « artisan ». Ceux qui n'ont PAS de fiche dans `artisans`
   // n'ont jamais envoyé leur candidature : ils sont invisibles de la console alors
   // qu'ils ont souvent tout rempli. C'est ici qu'on les récupère.
+  /* QUI RECEVRA VRAIMENT UNE NOTIFICATION. « Il faut que je sache si les utilisateurs
+     ont coché les notifications » (20/09/2026). La réponse était dans la base depuis
+     toujours — `users/{uid}.pushTokens` — et n'était affichée nulle part, sauf une
+     mention discrète sur les candidatures jamais envoyées.
+
+     CE QU'UN JETON PROUVE, ET CE QU'IL NE PROUVE PAS. Il prouve qu'un appareil a
+     ACCEPTÉ les notifications et s'est enregistré. Il ne prouve pas que la permission
+     tient encore : quelqu'un peut la retirer dans les réglages de son téléphone sans
+     que personne ne le sache. Le serveur retire le jeton au premier envoi qui échoue
+     (`registration-token-not-registered`), donc la liste est juste AU DERNIER ENVOI —
+     la carte le dit, plutôt que d'annoncer un chiffre qu'on croirait instantané.
+
+     On se greffe sur l'écoute des `users` qui tourne déjà : pas un abonnement de plus. */
+  function buildAdminNotifs(snap){
+    const m={};
+    snap.forEach(function(docu){ const d=docu.data()||{};
+      m[docu.id]={jetons:(Array.isArray(d.pushTokens)?d.pushTokens.length:0),
+        role:d.role||'', at:(d.notifAt&&d.notifAt.toMillis)?d.notifAt.toMillis():0};
+    });
+    S.adminNotifs=m;
+  }
+  // Les notifications d'un compte, quel que soit son rôle. Rend `null` quand la fiche
+  // utilisateur n'a pas encore été lue : « aucune notification » et « on ne sait pas
+  // encore » ne se disent pas de la même façon.
+  function notifsDe(uid){ const m=S.adminNotifs; if(!m||!uid)return null; return m[uid]||{jetons:0,role:'',at:0}; }
+  /* Pur : reçoit les listes et la carte, rend les comptes et CEUX QUI MANQUENT. Un
+     prestataire sans notification ne voit pas passer les demandes — c'est le seul
+     chiffre de cette carte qui appelle un geste, donc c'est lui qu'on nomme. */
+  function notifSynthese(clients,artisans,notifs){
+    const a=function(uid){ const n=notifs&&notifs[uid]; return !!(n&&n.jetons>0); };
+    const pros=(artisans||[]).filter(function(x){return x&&x.status!=='refuse';});
+    const prosSans=pros.filter(function(x){return !a(x.uid);});
+    const cls=(clients||[]).filter(function(x){return x&&!x.alsoPro;});
+    const clsSans=cls.filter(function(x){return !a(x.uid);});
+    return {pros:pros.length, prosAvec:pros.length-prosSans.length,
+      prosSans:prosSans.map(function(x){return {id:x.id,uid:x.uid,name:x.name};}),
+      clients:cls.length, clientsAvec:cls.length-clsSans.length, clientsSans:clsSans.length};
+  }
   function buildAdminDrafts(snap){
     const out=[];
     snap.forEach(function(docu){
@@ -10920,6 +10983,7 @@
         // la liste des clients de la console à jour, sans deuxième abonnement.
         buildAdminClients(snap);
         buildAdminDrafts(snap);
+        buildAdminNotifs(snap);
         snap.forEach(function(docu){const d=docu.data()||{};const sup=Array.isArray(d.support)?d.support.slice().sort(function(a,b){return (a.at||0)-(b.at||0);}):[];if(!sup.length)return;list.push({uid:docu.id,name:d.name||'Utilisateur',role:d.role||'client',support:sup,supReadUser:d.supReadUser||0,supReadAdmin:d.supReadAdmin||0,ts:sup[sup.length-1].at||0});});
         list.sort(function(a,b){return b.ts-a.ts;});
         S.adminGeneral=list;
