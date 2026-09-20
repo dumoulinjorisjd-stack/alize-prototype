@@ -47,16 +47,23 @@ ok(!A.diffusionAdmise({status:'pending',molliePaymentAuthorized:'true'},{estProd
   'et seul le VRAI booléen compte — « true » en texte n’est pas une autorisation');
 
 console.log('\nB — le plafond : il borne, il ne juge pas');
-ok(A.quotaDecide(0,12).ok&&A.quotaDecide(0,12).n===1,'le premier passage compte 1');
-ok(A.quotaDecide(11,12).ok&&A.quotaDecide(11,12).franchit,
-  'le douzième passe ET signale qu’il atteint le plafond : c’est là qu’on alerte, une seule fois');
-ok(!A.quotaDecide(12,12).ok&&!A.quotaDecide(12,12).franchit,
-  'le treizième ne passe pas, et ne réalerte pas');
-ok(!A.quotaDecide(99,12).ok,'et rien ne repasse ensuite dans la journée');
-ok(A.DIFFUSIONS_JOUR_CLIENT>=10&&A.MAILS_JOUR_PRESTATAIRE>=20,
-  'les plafonds sont HAUTS ('+A.DIFFUSIONS_JOUR_CLIENT+' et '+A.MAILS_JOUR_PRESTATAIRE+') : ils empêchent l’ordre de grandeur suivant, pas l’usage réel');
+// Les mesures portent sur le plafond RÉEL : écrire 12 en dur ici ferait dire à l'épreuve
+// « le douzième » le jour où l'éditeur descend à six, et elle décrirait un réglage qui
+// n'existe plus.
+const P=A.DIFFUSIONS_JOUR_CLIENT;
+ok(A.quotaDecide(0,P).ok&&A.quotaDecide(0,P).n===1,'le premier passage compte 1');
+ok(A.quotaDecide(P-1,P).ok&&A.quotaDecide(P-1,P).franchit,
+  'le '+P+'e passe ET signale qu’il atteint le plafond : c’est là qu’on alerte, une seule fois');
+ok(!A.quotaDecide(P,P).ok&&!A.quotaDecide(P,P).franchit,
+  'le suivant ne passe pas, et ne réalerte pas');
+ok(!A.quotaDecide(99,P).ok,'et rien ne repasse ensuite dans la journée');
+// SIX est le chiffre de l'éditeur, qui connaît l'île. L'épreuve ne le fige pas — elle
+// refuse seulement qu'on tombe à un ou deux sans y penser : un plafond sous l'usage
+// ordinaire n'est plus une protection, c'est une panne.
+ok(A.DIFFUSIONS_JOUR_CLIENT>=4&&A.MAILS_JOUR_PRESTATAIRE>=20,
+  'le plafond laisse passer une journée ordinaire ('+A.DIFFUSIONS_JOUR_CLIENT+' demandes, '+A.MAILS_JOUR_PRESTATAIRE+' e-mails par prestataire)');
 // UNE CONCIERGERIE N'EST PAS UN CLIENT : toutes ses commandes portent SON identifiant,
-// puisqu'elle commande pour ses clients finaux. En saison, douze demandes dans la journée
+// puisqu'elle commande pour ses clients finaux. En saison, six demandes dans la matinée
 // n'ont rien d'anormal — au plafond du client, ses prestataires cesseraient d'être
 // prévenus en silence. Un plafond posé SOUS l'usage réel n'est pas une protection, c'est
 // une panne.

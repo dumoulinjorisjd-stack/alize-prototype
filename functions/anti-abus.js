@@ -29,17 +29,17 @@
    et on le dit — c'est l'appelant qui tranche, et il a la trace.
 */
 
-/* Plafonds JOURNALIERS. Ils sont hauts pour ne gêner personne de réel : un client qui
-   publie douze demandes dans la journée est déjà un cas rare, un prestataire qui reçoit
-   vingt-cinq e-mails de mission en un jour aussi. Ils ne servent qu'à empêcher l'ordre
-   de grandeur suivant, celui qui abîme le domaine. */
-const DIFFUSIONS_JOUR_CLIENT = 12;
+/* Plafonds JOURNALIERS. SIX pour un client : le chiffre est de l'éditeur (20/09/2026),
+   qui connaît l'île et sait ce qu'un particulier y commande en une journée. Il était à
+   douze au premier jet ; le descendre resserre la protection, et c'est une décision
+   commerciale, pas technique. Ce qu'on garde, c'est la RÈGLE : un plafond se pose
+   au-dessus de l'usage réel de celui qu'il borne. */
+const DIFFUSIONS_JOUR_CLIENT = 6;
 /* UNE CONCIERGERIE N'EST PAS UN CLIENT. Elle commande POUR SES CLIENTS FINAUX, et toutes
    ses demandes portent le même `clientUid` — le sien. En pleine saison, une société de
-   gestion de villas dépasse douze demandes dans la journée sans rien avoir d'anormal :
-   au plafond du client, ses prestataires cesseraient d'être prévenus, en silence. Un
-   plafond doit toujours se poser AU-DESSUS de l'usage réel de celui qu'il borne, sinon
-   ce n'est plus une protection, c'est une panne. */
+   gestion de villas dépasse six demandes dans la matinée sans rien avoir d'anormal : au
+   plafond du client, ses prestataires cesseraient d'être prévenus, en silence. Le sien
+   reste donc dix fois plus haut. */
 const DIFFUSIONS_JOUR_CONCIERGERIE = 60;
 const MAILS_JOUR_PRESTATAIRE = 25;
 
@@ -60,7 +60,7 @@ function plafondDiffusion(r) {
 }
 
 /* Le compteur du jour vaut `n` AVANT ce passage. Rendre le nombre atteint permet à
-   l'appelant de dire « 12 sur 12 » plutôt que « refusé », et de n'alerter qu'UNE fois,
+   l'appelant de dire « 6 sur 6 » plutôt que « refusé », et de n'alerter qu'UNE fois,
    au franchissement. */
 function quotaDecide(n, plafond) {
   const v = Number(n) || 0;
