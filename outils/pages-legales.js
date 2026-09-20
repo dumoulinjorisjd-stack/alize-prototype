@@ -172,31 +172,19 @@ ${corps}
 `;
 }
 
-function sitemap(jour) {
-  const u = [];
-  u.push({loc: SITE + '/', freq: 'weekly', pri: '1.0'});
-  DOCS.forEach((d) => LANGUES.forEach((L) =>
-    u.push({loc: SITE + '/' + L.dossier + '/' + d.cle + '.html', freq: 'yearly', pri: '0.3'})));
-  return '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
-    + u.map((x) => `  <url>\n    <loc>${x.loc}</loc>\n    <lastmod>${jour}</lastmod>\n    <changefreq>${x.freq}</changefreq>\n    <priority>${x.pri}</priority>\n  </url>`).join('\n')
-    + '\n</urlset>\n';
-}
-
-function rendu(jour) {
+/* LE SITEMAP A QUITTÉ CE FICHIER (20/09/2026). Il ne connaissait que les pages légales :
+   le jour où les pages de service sont apparues, les relancer ici les aurait effacées du
+   sitemap. Il se construit maintenant en parcourant le site — `node outils/sitemap.js`. */
+function rendu() {
   const out = {};
   LANGUES.forEach((L) => DOCS.forEach((d) => { out[L.dossier + '/' + d.cle + '.html'] = page(d, L); }));
-  out['sitemap.xml'] = sitemap(jour);
   return out;
 }
 
 module.exports = {rendu, DOCS, LANGUES, constante};
 
 if (require.main === module) {
-  // La date du sitemap est celle de la dernière retouche des textes, pas celle du jour :
-  // annoncer « modifié aujourd'hui » à chaque exécution est le mensonge qu'un `lastmod`
-  // sert précisément à éviter.
-  const jour = process.argv[2] || new Date().toISOString().slice(0, 10);
-  const fichiers = rendu(jour);
+  const fichiers = rendu();
   Object.keys(fichiers).forEach((f) => {
     const dest = path.join(RACINE, f);
     fs.mkdirSync(path.dirname(dest), {recursive: true});

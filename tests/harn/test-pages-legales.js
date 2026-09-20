@@ -19,13 +19,14 @@ const gen=require(path.join(RACINE,'outils/pages-legales.js'));
 const lire=(f2)=>{try{return fs.readFileSync(path.join(RACINE,f2),'utf8');}catch(_){return null;}};
 
 console.log('\nA — les pages existent, et elles sont À JOUR');
-// On prend la date du sitemap DÉJÀ écrit : c'est le seul champ qui dépend du jour, et
-// on éprouve le CONTENU, pas l'horloge.
-const smAct=lire('sitemap.xml')||'';
-const jour=(/<lastmod>([\d-]+)<\/lastmod>/.exec(smAct)||[])[1]||'2026-01-01';
-const attendu=gen.rendu(jour);
+// LE SITEMAP N'EST PLUS DE CE GÉNÉRATEUR (20/09/2026) : il ne connaissait que les pages
+// légales, et les relancer ici aurait effacé les pages de service. Il appartient au SITE
+// (`outils/sitemap.js`), et la section D le lit sur le disque comme n'importe quel
+// visiteur. Ce générateur-ci rend donc dix-huit fichiers, tous des pages, et il ne
+// dépend plus d'aucune date : deux exécutions rendent le même octet.
+const attendu=gen.rendu();
 const chemins=Object.keys(attendu);
-ok(chemins.length===19,'six documents × trois langues, plus le sitemap ('+chemins.length+' fichiers)');
+ok(chemins.length===18,'six documents × trois langues ('+chemins.length+' pages)');
 const manquants=chemins.filter(c=>lire(c)===null);
 ok(!manquants.length,'aucun ne manque sur le disque'+(manquants.length?' — '+manquants.join(', '):''));
 const divergents=chemins.filter(c=>lire(c)!==attendu[c]);
@@ -35,7 +36,7 @@ ok(!divergents.length,
 
 console.log('\nB — chaque page dit aux moteurs ce qu’il faut');
 const pbs=[];
-chemins.filter(c=>c!=='sitemap.xml').forEach(c=>{
+chemins.forEach(c=>{
   const h=lire(c)||''; const t=(/<title>([^<]*)<\/title>/.exec(h)||[])[1]||'';
   const oct=Buffer.from(h).indexOf('charset');
   if(oct<0||oct>1024)pbs.push(c+' : charset à l’octet '+oct);
