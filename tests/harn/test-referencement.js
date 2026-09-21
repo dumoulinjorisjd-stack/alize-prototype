@@ -22,7 +22,7 @@
    La garde s'inverse donc — elle ne vérifie plus qu'un prix affiché est JUSTE, elle
    vérifie qu'il n'y en a AUCUN, ce qui ne dépend d'aucune donnée et attrape aussi bien
    le chiffre remis à la main que l'`Offer` glissé dans les données structurées. */
-const fs = require('fs'), path = require('path');
+const fs = require('fs'), path = require('path'), zlib = require('zlib');
 const RACINE = '/home/user/alize-work';
 let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; console.log('  ✗ ÉCHEC : ' + l); } };
 
@@ -171,10 +171,29 @@ for (const rel of SERVICES.concat(EN, ['services/index.html', 'en/services/index
 }
 ok(!fautifs.length, 'aucune promesse de disponibilité ou de supériorité inventée'
   + (fautifs.length ? ' — ' + fautifs.slice(0, 3).join(', ') : ''));
-// ET ELLES SE LISENT SANS L'APPLICATION : une page de 1 Mo qui doit exécuter soixante
-// mille lignes avant d'afficher trois paragraphes n'est pas une page, c'est une attente.
-const lourdes = SERVICES.concat(EN).filter((rel) => fs.statSync(path.join(RACINE, rel)).size > 30000);
-ok(!lourdes.length, 'chaque page de service pèse moins de 30 Ko' + (lourdes.length ? ' — ' + lourdes[0] : ''));
+/* ET ELLES SE LISENT SANS L'APPLICATION : une page de 1 Mo qui doit exécuter soixante
+   mille lignes avant d'afficher trois paragraphes n'est pas une page, c'est une attente.
+
+   ON MESURE CE QUI PART SUR LE FIL. Le plafond portait sur les octets du DISQUE, or
+   personne ne télécharge ces octets-là : l'hébergeur sert la page compressée. Les icônes
+   de métier sont du SVG en ligne, donc très répétitif, et se compriment d'un facteur
+   quatre — un plafond au disque aurait refusé une page qui ne coûte rien de plus au
+   visiteur, et poussé à retirer ce qui fait justement l'allure. Le plafond du disque
+   reste, large : il attrape la page qui deviendrait une application. */
+const pesee = (rel) => {
+  const brut = fs.readFileSync(path.join(RACINE, rel));
+  return { rel: rel, disque: brut.length,
+    fil: zlib.brotliCompressSync(brut, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 11 } }).length };
+};
+const TOUTES = SERVICES.concat(EN, ['services/index.html', 'en/services/index.html']);
+const pesees = TOUTES.map(pesee);
+const surLeFil = pesees.filter((x) => x.fil > 12000);
+const surDisque = pesees.filter((x) => x.disque > 40000);
+const pire = pesees.reduce((a, b) => (b.fil > a.fil ? b : a));
+ok(!surLeFil.length && !surDisque.length,
+  'chaque page part en moins de 12 Ko sur le fil (la plus lourde : ' + pire.rel + ', '
+  + Math.round(pire.fil / 102.4) / 10 + ' Ko compressés, ' + Math.round(pire.disque / 102.4) / 10 + ' Ko au disque)'
+  + (surLeFil.length ? ' — ' + surLeFil[0].rel : '') + (surDisque.length ? ' — ' + surDisque[0].rel : ''));
 const avecJs = SERVICES.concat(EN).filter((rel) => /<script(?![^>]*application\/ld\+json)/i.test(lire(rel)));
 ok(!avecJs.length, 'et n’exécute AUCUN script : elle se lit telle quelle, par un moteur comme par un assistant'
   + (avecJs.length ? ' — ' + avecJs[0] : ''));
@@ -235,6 +254,90 @@ ok(!sansFaq.length, 'et chaque page de service porte ses questions fréquentes e
   const faux = vus.filter((v) => !v.ok);
   ok(!faux.length, 'la page rendue est bien la PAGE, pas la coquille de l’application'
     + (faux.length ? ' — ' + faux[0].rel + ' a rendu « ' + faux[0].h1.slice(0, 40) + ' »' : ' (« ' + vus[0].h1.slice(0, 30) + ' »)'));
+
+  /* I — L'ALLURE TIENT, ET ELLE EST CELLE DE L'APPLICATION.
+
+     Une page de référencement est la PREMIÈRE chose qu'un inconnu voit de Ti-Services.
+     Ce qui se mesure ici n'est pas « c'est joli » — personne ne peut l'éprouver — mais
+     les quatre choses qui cassent en silence et qu'on ne voit pas dans un diff. */
+  console.log('\nI — l’allure tient, et c’est celle de l’application');
+
+  /* 1. LA TEINTE EST CELLE DU MÉTIER, prise dans l'application. Si la lecture de
+        `SVC_COLORS` cassait, les pages resteraient uniformément corail : joli quand même,
+        et faux — on aurait cessé de montrer le même produit.
+        ON LA DEMANDE AU NAVIGATEUR. Un premier jet la cherchait dans le TEXTE du fichier
+        et tombait sur la valeur par défaut déclarée en tête de la feuille, celle que la
+        règle suivante remplace : il a rendu « une seule teinte pour vingt-et-un métiers »
+        sur des pages qui en portaient vingt-et-une. Ce qui compte est la valeur CALCULÉE. */
+  const SRCAPP = lire('index.html');
+  const litApp = (nom, o, c) => { const i = SRCAPP.indexOf(nom), j = i + nom.length; let d = 0, k = j;
+    for (; k < SRCAPP.length; k++) { const x = SRCAPP[k]; if (x === o) d++; else if (x === c) { d--; if (!d) break; } }
+    return new Function('return ' + SRCAPP.slice(j, k + 1))(); };
+  const COUL = litApp('const SVC_COLORS=', '{', '}');
+  const teintes = new Set(); const ecarts = [];
+  for (const rel of ['menage', 'plomberie', 'animaux', 'yoga', 'coiffure', 'piscine', 'jardin']) {
+    await pg.goto(base + '/services/' + rel + '.html', { waitUntil: 'load' }); await pg.waitForTimeout(120);
+    const vu = await pg.evaluate(() => ({
+      accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim().toLowerCase(),
+      medaille: getComputedStyle(document.querySelector('.medaille')).color,
+      icone: !!document.querySelector('.medaille svg path, .medaille svg circle, .medaille svg rect') }));
+    if (vu.accent !== String(COUL[rel]).toLowerCase()) ecarts.push(rel + ' : ' + vu.accent + ' au lieu de ' + COUL[rel]);
+    if (!vu.icone) ecarts.push(rel + ' : médaillon sans dessin');
+    teintes.add(vu.accent);
+  }
+  ok(!ecarts.length && teintes.size === 7,
+    'chaque page porte la couleur ET l’icône de SON métier, celles de l’application ('
+    + teintes.size + ' teintes distinctes sur 7 pages)' + (ecarts.length ? ' — ' + ecarts[0] : ''));
+
+  /* 2. LA MASCOTTE NE SOURIT QU'UNE FOIS. Son dessin porte DEUX bouches — la seconde ne
+        sert qu'au sourire large — et c'est une règle de l'APPLICATION qui la masque. Elle
+        est reprise ici : sans elle, Zouti s'affiche avec deux bouches superposées sur les
+        quarante-six pages, et rien dans un diff ne le dirait. */
+  await pg.goto(base + '/services/menage.html', { waitUntil: 'load' }); await pg.waitForTimeout(250);
+  const mascotte = await pg.evaluate(() => {
+    const z = document.querySelector('.zouti');
+    if (!z) return { la: false };
+    const grande = z.querySelector('.z-mouth-big');
+    return { la: true, corps: !!z.querySelector('.z-body'), etoile: !!z.querySelector('.z-star'),
+      grande: !!grande, cachee: grande ? getComputedStyle(grande).opacity === '0' : false,
+      largeur: Math.round(z.getBoundingClientRect().width) };
+  });
+  ok(mascotte.la && mascotte.corps && mascotte.etoile && mascotte.grande && mascotte.cachee && mascotte.largeur > 30,
+    'la mascotte de l’application est là (' + mascotte.largeur + ' px) et ne montre qu’une bouche');
+
+  // 3. RIEN NE DÉBORDE, À AUCUNE LARGEUR. Un débordement horizontal ne se voit pas sur
+  //    l'écran où l'on travaille ; il se voit sur le téléphone de quelqu'un d'autre.
+  const deborde = [];
+  for (const w of [390, 768, 1280, 1600]) {
+    await pg.setViewportSize({ width: w, height: 900 });
+    for (const rel of ['services/menage.html', 'services/index.html', 'en/services/baby.html']) {
+      await pg.goto(base + '/' + rel, { waitUntil: 'load' }); await pg.waitForTimeout(150);
+      const d = await pg.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      if (d > 1) deborde.push(rel + ' à ' + w + 'px : ' + d + 'px');
+    }
+  }
+  ok(!deborde.length, 'aucun débordement horizontal, de 390 à 1600 px' + (deborde.length ? ' — ' + deborde[0] : ''));
+
+  /* 4. LA FOIRE AUX QUESTIONS S'OUVRE SANS UNE LIGNE DE SCRIPT. C'est `<details>` qui le
+        permet ; le jour où l'on remplacerait la balise par un bloc stylé, la réponse
+        deviendrait invisible pour tout le monde, et l'épreuve « aucun script » resterait
+        verte en laissant une page morte.
+        ON MESURE LA HAUTEUR DE LA FENÊTRE DÉPLIANTE, pas celle du paragraphe : un premier
+        jet mesurait le `<p>` et le trouvait haut de 66 px alors que le bloc était FERMÉ —
+        un navigateur récent range le contenu d'un `<details>` replié derrière
+        `content-visibility`, qui saute le rendu SANS remettre la boîte à zéro. La hauteur
+        du bloc, elle, est ce que l'œil voit. */
+  await pg.setViewportSize({ width: 1280, height: 900 });
+  await pg.goto(base + '/services/menage.html', { waitUntil: 'load' }); await pg.waitForTimeout(200);
+  const mesure = () => pg.evaluate(() => {
+    const d = document.querySelector('details');
+    return { h: Math.round(d.getBoundingClientRect().height), ouvert: d.open }; });
+  const replie = await mesure();
+  await pg.click('details summary'); await pg.waitForTimeout(300);
+  const deplie = await mesure();
+  ok(!replie.ouvert && deplie.ouvert && deplie.h > replie.h + 30,
+    'une question s’ouvre au clic, sans script — ' + replie.h + ' px repliée, ' + deplie.h + ' px dépliée');
+
   await b.close(); serveur.close();
 
   console.log(f ? ('\n' + f + ' ÉCHEC(S)\n') : '\nTout est vert.\n');

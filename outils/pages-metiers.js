@@ -57,6 +57,29 @@ function litLitteral(nom, ouvre, ferme) {
   return new Function('return ' + SRC.slice(j, k + 1))();
 }
 const SERVICES = litLitteral('const SERVICES=', '[', ']');
+/* L'ICÔNE ET LA COULEUR DE CHAQUE MÉTIER, telles que le client les voit dans
+   l'application. Les recopier ici en ferait une seconde vérité : un métier repeint dans
+   la console laisserait la page publique sur l'ancienne teinte. */
+const I = litLitteral('const I =', '{', '}');
+const SVC_COLORS = litLitteral('const SVC_COLORS=', '{', '}');
+
+/* ZOUTI, la mascotte — le VISAGE de la marque, et ce qu'on voit en premier sur l'accueil.
+   `icon.svg` conviendrait, mais c'est l'icône d'application : un fond arrondi avec la
+   pieuvre au tiers de sa boîte, donc un logo qui paraît deux fois plus petit qu'il n'est.
+   On prend donc le DESSIN, à la source, dans `index.html` — un trait corrigé là-bas
+   n'aura pas à l'être ici, et une seconde copie aurait fini par diverger. Rien à
+   télécharger : c'est du SVG en ligne. */
+function zouti() {
+  const i = SRC.indexOf('function octoMini(');
+  const j = SRC.indexOf('<g transform="translate(60 63)', i);
+  const k = SRC.indexOf('</svg>', j);
+  if (i < 0 || j < 0 || k < 0) throw new Error('Mascotte introuvable dans index.html');
+  const corps = SRC.slice(j, k).trim();
+  // Une interpolation qui passerait ici s'imprimerait telle quelle sur la page.
+  if (corps.indexOf('${') >= 0) throw new Error('La mascotte porte une interpolation');
+  return corps;
+}
+const ZOUTI = zouti();
 
 const esc = (s) => String(s == null ? '' : s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -353,9 +376,10 @@ const L = {
       'Le premier qui accepte vient ; vous suivez la prestation et vous échangez dans l’application.',
       'Le paiement est sécurisé et n’est débité qu’une fois la prestation validée par vous.'],
     pourquoi: 'Pourquoi Ti-Services',
-    args: ['Prestataires vérifiés : SIRET et attestation d’assurance contrôlés avant l’activation du profil.',
-      'Prix fermes, annoncés avant la commande, sans abonnement ni frais d’inscription.',
-      'Paiement en ligne, débité seulement après la prestation validée.'],
+    gages: ['Prestataires vérifiés', 'Prix ferme avant la commande', 'Payé après validation'],
+    args: [['Prestataires vérifiés', 'SIRET et attestation d’assurance contrôlés avant l’activation du profil.', 'bouclier'],
+      ['Prix ferme', 'Annoncé dans l’application avant la commande, sans abonnement ni frais d’inscription.', 'etiquette'],
+      ['Payé après coup', 'Le paiement en ligne n’est débité qu’une fois la prestation validée par vous.', 'cadenas']],
     titreIndex: 'Services à domicile à Saint-Barthélemy', },
   en: { code: 'en', dossier: 'en/', locale: 'en_US', site: 'On-demand services · St Barths',
     tous: 'All services', inclus: 'What is included',
@@ -367,58 +391,194 @@ const L = {
       'The first to accept comes; you follow the job and chat in the app.',
       'Payment is secured and only charged once you have approved the job.'],
     pourquoi: 'Why Ti-Services',
-    args: ['Vetted providers: company registration and liability insurance checked before a profile goes live.',
-      'Firm prices, shown before you book, no subscription and no sign-up fee.',
-      'Online payment, charged only after you approve the job.'],
+    gages: ['Vetted providers', 'Firm price before you book', 'Charged after approval'],
+    args: [['Vetted providers', 'Company registration and liability insurance checked before a profile goes live.', 'bouclier'],
+      ['Firm price', 'Shown in the app before you book, no subscription and no sign-up fee.', 'etiquette'],
+      ['Charged afterwards', 'Online payment is only taken once you have approved the job.', 'cadenas']],
     titreIndex: 'Home services in St Barths', }
 };
 
-const STYLE = `:root{--corail:#E24B3C;--corail-fonce:#B5372B;--encre:#231E33;--gris:#6b6577;
---sable:#FBF7F2;--papier:#fff;--filet:#efe9e2}
+/* --- L'ALLURE. Ces pages sont la PREMIÈRE chose qu'un inconnu voit de Ti-Services : il
+   y arrive par une recherche, sans avoir jamais vu l'application. Une page sans visage
+   se lit comme un annuaire — et un annuaire ne donne envie de rien.
+
+   ON NE DESSINE PAS UNE SECONDE MARQUE. Tout ce qui suit est repris de l'application :
+   la pieuvre, le sable, le corail de l'action, les cartes blanches à coins très arrondis,
+   et surtout LES ICÔNES ET LES COULEURS DE MÉTIER (`I` et `SVC_COLORS`, lus dans
+   `index.html`) — le ménage est bleu et porte son vaporisateur ici comme sur l'écran
+   d'accueil. Quelqu'un qui arrive par « plombier Saint-Barth » puis ouvre l'application
+   doit reconnaître le même produit, sinon la page a menti sur ce qu'elle vend.
+
+   LA TEINTE DE LA PAGE EST CELLE DU MÉTIER (`--accent`) : médaillon, puces des titres,
+   numéros des étapes, chevrons de la foire aux questions. Vingt-et-une pages, vingt-et-une
+   couleurs, une seule feuille de style. L'ACTION, elle, reste CORAIL partout : c'est la
+   marque, et deux couleurs d'action sur un même écran ne se hiérarchisent plus.
+
+   CE QUE L'ALLURE N'A PAS LE DROIT DE COÛTER. Toujours AUCUN script (une page qui doit
+   s'exécuter pour s'afficher n'est pas une page), aucune police téléchargée (la pile
+   système est celle de l'application, `--f-disp`), aucune image hors la pieuvre déjà en
+   cache, et moins de 30 Ko par page — les icônes sont du SVG EN LIGNE, donc zéro requête
+   et zéro octet de plus que leur propre tracé. Les épreuves tiennent ces quatre points. --- */
+const STYLE = `:root{--corail:#E5484D;--corail-fonce:#BE343B;
+--encre:#231E33;--encre-doux:#4E4757;--gris:#766F7D;
+--sable:#FBF7F4;--papier:#FFFFFF;--filet:#EEE5DF;--accent:#E24B3C}
 *{box-sizing:border-box}
 body{margin:0;background:var(--sable);color:var(--encre);
-font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
--webkit-text-size-adjust:100%}
-.enveloppe{max-width:760px;margin:0 auto;padding:22px 18px 54px}
-header{display:flex;align-items:center;gap:11px;padding-bottom:16px;border-bottom:1px solid var(--filet)}
-header img{border-radius:10px}
-header b{font-size:17px;line-height:1.2;display:block}
-header span{display:block;font-weight:400;font-size:12.5px;color:var(--gris)}
-nav.fil{font-size:13px;color:var(--gris);margin:14px 0 0}
-nav.fil a{color:var(--gris)}
-h1{font-size:27px;line-height:1.22;margin:12px 0 10px;letter-spacing:-.02em}
-h2{font-size:19px;margin:30px 0 9px;letter-spacing:-.01em}
-h3{font-size:15px;margin:18px 0 4px}
-p{margin:0 0 12px}
-.chapeau{font-size:17px;color:#3c3550}
-ul{margin:0 0 12px;padding-left:20px}
-li{margin:0 0 5px}
-a{color:var(--corail)}
-.prix{background:var(--papier);border:1px solid var(--filet);border-radius:14px;padding:14px 16px;margin:0 0 14px}
-.prix .gros{font-size:24px;font-weight:800;letter-spacing:-.02em}
-.prix .note{font-size:13px;color:var(--gris);margin-top:4px}
-table{width:100%;border-collapse:collapse;font-size:14.5px;background:var(--papier);
-border:1px solid var(--filet);border-radius:14px;overflow:hidden}
-td{padding:9px 12px;border-bottom:1px solid var(--filet)}
-tr:last-child td{border-bottom:0}
-td.p{text-align:right;white-space:nowrap;font-weight:700}
-td.g{background:var(--sable);font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--gris)}
-.cta{display:inline-block;background:var(--corail);color:#fff;text-decoration:none;font-weight:700;
-padding:13px 20px;border-radius:13px;margin:6px 0 4px}
-.zones{font-size:14.5px;color:#3c3550}
-.grille{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 14px;padding:0;list-style:none}
-.grille a{display:inline-block;background:var(--papier);border:1px solid var(--filet);border-radius:999px;
-padding:7px 13px;font-size:14px;text-decoration:none;color:var(--encre)}
-details{background:var(--papier);border:1px solid var(--filet);border-radius:12px;padding:11px 14px;margin:0 0 8px}
-summary{font-weight:700;cursor:pointer}
-details p{margin:8px 0 0;color:#3c3550}
-footer{margin-top:34px;padding-top:16px;border-top:1px solid var(--filet);font-size:12.5px;color:var(--gris)}
-footer a{color:var(--gris)}
-.langues{margin-top:8px;font-size:12.5px}`;
+font:400 16.5px/1.65 "SF Pro Display",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,Roboto,sans-serif;
+-webkit-text-size-adjust:100%;-webkit-font-smoothing:antialiased;
+background-image:radial-gradient(880px 520px at 88% -8%,color-mix(in srgb,var(--accent) 15%,transparent),transparent 60%),
+radial-gradient(720px 460px at -10% 2%,color-mix(in srgb,var(--corail) 9%,transparent),transparent 62%);
+background-repeat:no-repeat;background-attachment:fixed}
+.enveloppe{max-width:840px;margin:0 auto;padding:0 20px 56px}
+a{color:inherit}
+:focus-visible{outline:2.5px solid var(--accent);outline-offset:3px;border-radius:6px}
+.tete{display:flex;align-items:center;gap:12px;padding:22px 0 18px}
+.mot{display:flex;align-items:center;gap:12px;flex:none;
+font-weight:800;font-size:21px;letter-spacing:-.028em;line-height:1.05;text-decoration:none}
+.zouti{flex:none;overflow:visible;filter:drop-shadow(0 8px 16px rgba(226,80,63,.22));
+animation:flotte 5.4s ease-in-out infinite}
+/* Le dessin porte DEUX bouches, la seconde ne servant qu'au sourire large : sans cette
+   règle, prise dans l'application avec lui, les deux se superposent. */
+.zouti .z-mouth-big{opacity:0}
+@keyframes flotte{0%,100%{transform:translateY(0)}50%{transform:translateY(-3.5px)}}
+.mot i{font-style:normal;color:var(--corail)}
+.lieu{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:750;letter-spacing:.11em;
+text-transform:uppercase;color:var(--corail);margin-top:4px}
+.lieu svg{width:11px;height:11px;flex:none}
+.tete .bascule{margin-left:auto;font-size:13px;font-weight:700;text-decoration:none;color:var(--encre-doux);
+background:var(--papier);border:1px solid var(--filet);border-radius:999px;padding:7px 14px}
+.fil{font-size:13px;color:var(--gris);padding:4px 0 14px}
+.fil a{color:var(--gris);text-decoration:none;border-bottom:1px solid var(--filet)}
+.fil a:hover{color:var(--encre)}
+.hero{position:relative;overflow:hidden;background:var(--papier);border:1px solid var(--filet);
+border-radius:26px;padding:30px 30px 27px;margin:0 0 34px;
+box-shadow:0 30px 64px -44px rgba(35,30,51,.55)}
+.hero::before{content:"";position:absolute;right:-90px;top:-150px;width:340px;height:340px;border-radius:50%;
+background:radial-gradient(circle,color-mix(in srgb,var(--accent) 20%,transparent),transparent 68%);pointer-events:none}
+.hero>*{position:relative}
+.medaille{width:60px;height:60px;border-radius:19px;display:flex;align-items:center;justify-content:center;
+background:color-mix(in srgb,var(--accent) 12%,var(--papier));color:var(--accent);
+border:1px solid color-mix(in srgb,var(--accent) 24%,transparent);margin:0 0 17px}
+.medaille svg{width:30px;height:30px}
+h1{font-size:clamp(28px,4.4vw,39px);line-height:1.08;letter-spacing:-.035em;font-weight:800;
+margin:0 0 13px;text-wrap:balance}
+.chapeau{font-size:17.5px;line-height:1.6;color:var(--encre-doux);margin:0 0 23px;max-width:62ch}
+.cta{display:inline-flex;align-items:center;gap:9px;text-decoration:none;
+background:linear-gradient(180deg,var(--corail),var(--corail-fonce));color:#fff;
+font-weight:750;font-size:16px;letter-spacing:-.012em;padding:15px 24px;border-radius:15px;white-space:nowrap;
+box-shadow:0 18px 32px -16px color-mix(in srgb,var(--corail) 78%,transparent)}
+.cta svg{width:17px;height:17px}
+.gages{display:flex;flex-wrap:wrap;gap:8px;margin:22px 0 0;padding:0;list-style:none}
+.gages li{display:inline-flex;align-items:center;gap:7px;font-size:13.5px;font-weight:600;
+color:var(--encre-doux);background:var(--sable);border:1px solid var(--filet);border-radius:999px;padding:7px 13px}
+.gages svg{width:14px;height:14px;color:var(--accent);flex:none}
+h2{font-size:21px;font-weight:800;letter-spacing:-.028em;margin:36px 0 15px;
+display:flex;align-items:center;gap:11px}
+h2::before{content:"";width:9px;height:9px;border-radius:3px;background:var(--accent);flex:none}
+.bloc{background:var(--papier);border:1px solid var(--filet);border-radius:20px;padding:4px 21px;
+box-shadow:0 18px 40px -34px rgba(35,30,51,.6)}
+.inclus{list-style:none;margin:0;padding:0}
+.inclus li{display:flex;gap:12px;align-items:flex-start;padding:14px 0;border-bottom:1px solid var(--filet);
+font-size:15.5px}
+.inclus li:last-child{border-bottom:0}
+.inclus svg{width:19px;height:19px;flex:none;margin-top:3px;color:var(--accent)}
+.pas{list-style:none;margin:0;padding:0;counter-reset:p}
+.pas li{position:relative;padding:1px 0 23px 50px;counter-increment:p;font-size:15.5px;color:var(--encre-doux)}
+.pas li::before{content:counter(p);position:absolute;left:0;top:-1px;width:32px;height:32px;border-radius:50%;
+background:color-mix(in srgb,var(--accent) 12%,var(--papier));color:var(--accent);
+border:1px solid color-mix(in srgb,var(--accent) 26%,transparent);
+font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center}
+.pas li:last-child{padding-bottom:0}
+.atouts{display:grid;grid-template-columns:repeat(auto-fit,minmax(212px,1fr));gap:12px;
+margin:0;padding:0;list-style:none}
+.atouts li{background:var(--papier);border:1px solid var(--filet);border-radius:17px;padding:17px 17px 18px;
+box-shadow:0 18px 40px -34px rgba(35,30,51,.6)}
+.atouts .ic{width:34px;height:34px;border-radius:11px;display:flex;align-items:center;justify-content:center;
+background:color-mix(in srgb,var(--accent) 12%,var(--papier));color:var(--accent);margin:0 0 12px}
+.atouts svg{width:18px;height:18px}
+.atouts b{display:block;font-size:15px;letter-spacing:-.018em;margin:0 0 5px}
+.atouts span{display:block;font-size:14px;line-height:1.55;color:var(--encre-doux)}
+details{background:var(--papier);border:1px solid var(--filet);border-radius:15px;margin:0 0 9px;
+overflow:hidden;box-shadow:0 18px 40px -36px rgba(35,30,51,.6)}
+summary{list-style:none;cursor:pointer;font-weight:700;font-size:15.5px;letter-spacing:-.014em;
+padding:15px 50px 15px 18px;position:relative}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"";position:absolute;right:20px;top:50%;width:9px;height:9px;
+border-right:2.2px solid var(--accent);border-bottom:2.2px solid var(--accent);
+transform:translateY(-70%) rotate(45deg);transition:transform .18s ease}
+details[open] summary{color:var(--accent)}
+details[open] summary::after{transform:translateY(-25%) rotate(-135deg)}
+details p{margin:0;padding:0 18px 17px;font-size:15px;color:var(--encre-doux)}
+.autres{display:grid;grid-template-columns:repeat(auto-fill,minmax(172px,1fr));gap:10px;
+margin:0;padding:0;list-style:none}
+.autres a{display:flex;align-items:center;gap:11px;height:100%;text-decoration:none;
+background:var(--papier);border:1px solid var(--filet);border-radius:14px;padding:12px 13px;
+font-weight:650;font-size:14.5px;line-height:1.25;letter-spacing:-.012em;
+box-shadow:0 14px 30px -28px rgba(35,30,51,.65)}
+.autres .ic{width:32px;height:32px;border-radius:10px;flex:none;display:flex;align-items:center;justify-content:center;
+background:color-mix(in srgb,var(--c) 13%,var(--papier));color:var(--c)}
+.autres svg{width:18px;height:18px}
+.liste{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:11px;
+margin:0;padding:0;list-style:none}
+.liste li{background:var(--papier);border:1px solid var(--filet);border-radius:17px;
+box-shadow:0 18px 40px -34px rgba(35,30,51,.6)}
+.liste a{display:flex;gap:13px;padding:15px 16px;text-decoration:none;align-items:flex-start}
+.liste .ic{width:38px;height:38px;border-radius:12px;flex:none;display:flex;align-items:center;justify-content:center;
+background:color-mix(in srgb,var(--c) 13%,var(--papier));color:var(--c)}
+.liste svg{width:20px;height:20px}
+.liste b{display:block;font-size:15.5px;letter-spacing:-.018em;margin:1px 0 3px}
+.liste span{display:block;font-size:13.5px;line-height:1.5;color:var(--encre-doux)}
+.final{margin:38px 0 0;text-align:center}
+footer{margin-top:40px;padding-top:20px;border-top:1px solid var(--filet);
+font-size:13px;color:var(--gris);display:flex;flex-wrap:wrap;align-items:center;gap:9px 16px}
+footer a{color:var(--gris);text-decoration:none}
+footer a:hover{color:var(--encre)}
+.pousse{margin-left:auto}
+@media (max-width:640px){
+.enveloppe{padding:0 16px 44px}
+.hero{padding:24px 21px 23px;border-radius:22px}
+.cta{width:100%;justify-content:center}
+.pousse{margin-left:0}
+}
+@media (prefers-color-scheme:dark){
+:root{--sable:#171019;--papier:#241A29;--filet:#392B39;
+--encre:#F5EEEA;--encre-doux:#D2C6C2;--gris:#9B8E96;--corail:#FF7E63;--corail-fonce:#F26A4B}
+.cta{color:#1B1220}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}`;
+
+/* Les quelques pictogrammes qui ne sont pas des métiers. Écrits une fois, employés
+   là où un mot seul serait plus lent à lire qu'un signe. */
+const P = {
+  fleche: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13"/><path d="m12 5 7 7-7 7"/></svg>',
+  coche: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+  bouclier: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>',
+  etiquette: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 12 22l-9-9V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.3"/></svg>',
+  cadenas: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2.2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>',
+  pin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-6.4 7-12a7 7 0 1 0-14 0c0 5.6 7 12 7 12z"/><circle cx="12" cy="10" r="2.4"/></svg>'
+};
+/* Les icônes de l'application sont écrites en 22 px ; la feuille les redimensionne, mais
+   un attribut de taille en dur gagnerait sur elle. On les laisse se régler. */
+const ico = (id) => (I[id] || I.other || '').replace(/ width="\d+" height="\d+"/, '');
+const teinte = (id) => SVC_COLORS[id] || '#E24B3C';
 
 const svcById = {};
 SERVICES.forEach((s) => { svcById[s.id] = s; });
 const IDS = SERVICES.map((s) => s.id).filter((id) => M[id]);
+
+function tete(l, racine, autre, lg) {
+  return `<header class="tete"><a class="mot" href="${racine}"><svg class="zouti" viewBox="18.4 19.9 83.1 90.2" width="46" height="50" aria-hidden="true">${ZOUTI}</svg>
+    <span><i>Ti-</i>Services<span class="lieu">${P.pin} Saint-Barthélemy</span></span></a>
+    <a class="bascule" href="${autre}" hreflang="${lg === 'fr' ? 'en' : 'fr'}">${lg === 'fr' ? 'English' : 'Français'}</a></header>`;
+}
+function pied(l, racine, autre, lg) {
+  const doc = lg === 'fr'
+    ? [['Mentions légales', 'mentions'], ['Conditions d’utilisation', 'cgu'], ['Confidentialité', 'confidentialite']]
+    : [['Legal notice', 'mentions'], ['Terms of use', 'cgu'], ['Privacy', 'confidentialite']];
+  return `<footer>© 2026 C.C.S, Ti-Services™.
+    ${doc.map((d) => `<a href="${racine}legal/${d[1]}.html">${esc(d[0])}</a>`).join('')}
+    <a class="pousse" href="${autre}" hreflang="${lg === 'fr' ? 'en' : 'fr'}">${lg === 'fr' ? 'English' : 'Français'}</a></footer>`;
+}
 
 function page(id, lg) {
   const l = L[lg], s = svcById[id], m = M[id][lg];
@@ -446,7 +606,7 @@ function page(id, lg) {
     ]
   };
   const voisins = IDS.filter((x) => x !== id).slice(0, 12)
-    .map((x) => `<li><a href="${x}.html">${esc(M[x][lg].h1.split(' à ')[0].split(' in ')[0])}</a></li>`).join('');
+    .map((x) => `<li><a href="${x}.html" style="--c:${teinte(x)}"><span class="ic">${ico(x)}</span>${esc(svcById[x].nm)}</a></li>`).join('');
   return `<!doctype html>
 <html lang="${l.code}">
 <head>
@@ -460,6 +620,7 @@ function page(id, lg) {
 <link rel="alternate" hreflang="en" href="${SITE}/en/services/${id}.html">
 <link rel="alternate" hreflang="x-default" href="${SITE}/services/${id}.html">
 <link rel="icon" type="image/png" href="${racine}icon-192.png">
+<meta name="theme-color" content="${teinte(id)}">
 <meta name="geo.region" content="BL">
 <meta name="geo.placename" content="Saint-Barthélemy">
 <meta property="og:type" content="website">
@@ -471,35 +632,39 @@ function page(id, lg) {
 <meta property="og:image" content="${SITE}/og-image.png">
 <meta name="twitter:card" content="summary_large_image">
 <script type="application/ld+json">${JSON.stringify(ld)}</script>
-<style>${STYLE}</style>
+<style>${STYLE}
+:root{--accent:${teinte(id)}}</style>
 </head>
 <body>
 <div class="enveloppe">
-  <header><img src="${racine}icon-192.png" width="38" height="38" alt=""><b>Ti-Services<span>${esc(l.site)}</span></b></header>
+  ${tete(l, racine, autre, lg)}
   <nav class="fil"><a href="${racine}">${esc(l.accueil)}</a> › <a href="./">${esc(l.tous)}</a> › ${esc(s.nm)}</nav>
-  <h1>${esc(m.h1)}</h1>
-  <p class="chapeau">${esc(m.intro)}</p>
-  <a class="cta" href="${racine}">${esc(l.cta)}</a>
+
+  <div class="hero">
+    <div class="medaille">${ico(id)}</div>
+    <h1>${esc(m.h1)}</h1>
+    <p class="chapeau">${esc(m.intro)}</p>
+    <a class="cta" href="${racine}">${esc(l.cta)}${P.fleche}</a>
+    <ul class="gages">${l.gages.map((g) => `<li>${P.coche}${esc(g)}</li>`).join('')}</ul>
+  </div>
 
   <h2>${esc(l.inclus)}</h2>
-  <ul>${m.inclus.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+  <div class="bloc"><ul class="inclus">${m.inclus.map((x) => `<li>${P.coche}<span>${esc(x)}</span></li>`).join('')}</ul></div>
 
   <h2>${esc(l.marche)}</h2>
-  <ol>${l.etapes.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>
+  <ol class="pas">${l.etapes.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>
 
   <h2>${esc(l.pourquoi)}</h2>
-  <ul>${l.args.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+  <ul class="atouts">${l.args.map((a) => `<li><span class="ic">${P[a[2]]}</span><b>${esc(a[0])}</b><span>${esc(a[1])}</span></li>`).join('')}</ul>
 
   <h2>${esc(l.faq)}</h2>
   ${m.faq.map((q) => `<details><summary>${esc(q[0])}</summary><p>${esc(q[1])}</p></details>`).join('\n  ')}
 
   <h2>${esc(l.autres)}</h2>
-  <ul class="grille">${voisins}</ul>
+  <ul class="autres">${voisins}</ul>
 
-  <a class="cta" href="${racine}">${esc(l.cta)}</a>
-  <footer>© 2026 C.C.S, Ti-Services™.
-    <div class="langues"><a href="${autre}" hreflang="${lg === 'fr' ? 'en' : 'fr'}">${lg === 'fr' ? 'English' : 'Français'}</a></div>
-  </footer>
+  <div class="final"><a class="cta" href="${racine}">${esc(l.cta)}${P.fleche}</a></div>
+  ${pied(l, racine, autre, lg)}
 </div>
 </body>
 </html>
@@ -512,11 +677,12 @@ function index(lg) {
   const autre = lg === 'fr' ? SITE + '/en/services/' : SITE + '/services/';
   const racine = lg === 'fr' ? '../' : '../../';
   const desc = lg === 'fr'
-    ? 'Ménage, baby-sitting, jardinage, coiffure, massage, piscine… Tous les services à domicile de Saint-Barthélemy, à prix fermes, par des prestataires vérifiés.'
-    : 'Cleaning, babysitting, gardening, hairdressing, massage, pool, plumbing, electricity… Every home service in St Barths, at firm prices, from vetted providers.';
+    ? 'Ménage, baby-sitting, jardinage, coiffure, massage, piscine… Tous les services à domicile de Saint-Barthélemy, par des prestataires vérifiés.'
+    : 'Cleaning, babysitting, gardening, hairdressing, massage, pool, plumbing, electricity… Every home service in St Barths, from vetted providers.';
   const lignes = IDS.map((id) => {
-    const s = svcById[id], m = M[id][lg];
-    return `<li><a href="${id}.html"><b>${esc(s.nm)}</b></a><br><span class="zones">${esc(m.intro.split('.')[0])}.</span></li>`;
+    const m = M[id][lg];
+    return `<li style="--c:${teinte(id)}"><a href="${id}.html"><span class="ic">${ico(id)}</span>
+      <span><b>${esc(svcById[id].nm)}</b><span>${esc(m.intro.split('.')[0])}.</span></span></a></li>`;
   }).join('\n      ');
   const ld = { '@context': 'https://schema.org', '@type': 'ItemList', name: l.titreIndex,
     itemListElement: IDS.map((id, i) => ({ '@type': 'ListItem', position: i + 1, name: svcById[id].nm,
@@ -534,6 +700,7 @@ function index(lg) {
 <link rel="alternate" hreflang="en" href="${SITE}/en/services/">
 <link rel="alternate" hreflang="x-default" href="${SITE}/services/">
 <link rel="icon" type="image/png" href="${racine}icon-192.png">
+<meta name="theme-color" content="#E5484D">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Ti-Services">
 <meta property="og:locale" content="${l.locale}">
@@ -547,21 +714,29 @@ function index(lg) {
 </head>
 <body>
 <div class="enveloppe">
-  <header><img src="${racine}icon-192.png" width="38" height="38" alt=""><b>Ti-Services<span>${esc(l.site)}</span></b></header>
+  ${tete(l, racine, autre, lg)}
   <nav class="fil"><a href="${racine}">${esc(l.accueil)}</a> › ${esc(l.tous)}</nav>
-  <h1>${esc(l.titreIndex)}</h1>
-  <p class="chapeau">${esc(desc)}</p>
-  <a class="cta" href="${racine}">${esc(l.cta)}</a>
+
+  <div class="hero">
+    <h1>${esc(l.titreIndex)}</h1>
+    <p class="chapeau">${esc(desc)}</p>
+    <a class="cta" href="${racine}">${esc(l.cta)}${P.fleche}</a>
+    <ul class="gages">${l.gages.map((g) => `<li>${P.coche}${esc(g)}</li>`).join('')}</ul>
+  </div>
+
   <h2>${esc(l.tous)}</h2>
-  <ul>
+  <ul class="liste">
       ${lignes}
   </ul>
+
   <h2>${esc(l.marche)}</h2>
-  <ol>${l.etapes.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>
-  <a class="cta" href="${racine}">${esc(l.cta)}</a>
-  <footer>© 2026 C.C.S, Ti-Services™.
-    <div class="langues"><a href="${autre}" hreflang="${lg === 'fr' ? 'en' : 'fr'}">${lg === 'fr' ? 'English' : 'Français'}</a></div>
-  </footer>
+  <ol class="pas">${l.etapes.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>
+
+  <h2>${esc(l.pourquoi)}</h2>
+  <ul class="atouts">${l.args.map((a) => `<li><span class="ic">${P[a[2]]}</span><b>${esc(a[0])}</b><span>${esc(a[1])}</span></li>`).join('')}</ul>
+
+  <div class="final"><a class="cta" href="${racine}">${esc(l.cta)}${P.fleche}</a></div>
+  ${pied(l, racine, autre, lg)}
 </div>
 </body>
 </html>
