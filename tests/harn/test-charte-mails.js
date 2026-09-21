@@ -20,10 +20,13 @@ console.log('B — l’enveloppe elle-même (exécutée pour de vrai)');
 // elles ne dépendent que de fs/path (logo) et de chaînes.
 const bloc = fn.slice(fn.indexOf('let _tiLogoBuf;'), fn.indexOf('async function sendMail'));
 const bac = {require: (m) => require(m), __dirname: path.join(RACINE, 'functions')};
+// L'enveloppe échappe ce qu'on lui confie : on lui donne le VRAI `escHtmlS`, pris dans
+// la même source, sinon l'épreuve mesurerait une imitation.
+const esc = /function escHtmlS\(s\) \{[^\n]*\}/.exec(fn)[0];
 const fab = new Function('require', '__dirname',
-  'const APP_URL = \'https://ti-services.fr\';\n' + bloc +
-  '\nreturn {tiCharteHtml, tiCharteMessage, tiLogoAttachment};');
-const {tiCharteHtml, tiCharteMessage, tiLogoAttachment} = fab(bac.require, bac.__dirname);
+  'const APP_URL = \'https://ti-services.fr\';\n' + esc + '\n' + bloc +
+  '\nreturn {tiCharteHtml, tiCharteMessage, tiLogoAttachment, corpsPorteUnBouton};');
+const {tiCharteHtml, tiCharteMessage, tiLogoAttachment, corpsPorteUnBouton} = fab(bac.require, bac.__dirname);
 
 const brut = '<p>Bonjour Aurore,</p><p>Votre attestation d\'assurance est validée. Rien d\'autre à faire.</p><p>L\'équipe Ti-Services</p>';
 const enveloppe = tiCharteHtml(brut);
@@ -36,6 +39,38 @@ ok((enveloppe.match(/L'équipe Ti-Services/g) || []).length === 1,
   'la signature n’apparaît qu’UNE fois (celle du corps brut est retirée, le pied signe)');
 ok(/href="https:\/\/ti-services\.fr"[^>]*>Ouvrir Ti-Services<\/a>/.test(enveloppe),
   'le bouton « Ouvrir Ti-Services » est là (chaque e-mail ramène vers l’app)');
+
+/* B1 — UN SEUL BOUTON, ET IL MÈNE OÙ LE CORPS LE DIT.
+
+   Vu en production le 21/09/2026 : « Un document pour être payé » arrivait avec DEUX
+   « Ouvrir Ti-Services », de deux oranges différents, menant à deux endroits différents.
+   La cause n'était pas cet e-mail : l'enveloppe posait son bouton SANS CONDITION, donc
+   tout corps qui dessine le sien en obtient deux. Le corps déclare maintenant sa
+   destination, l'enveloppe la dessine une fois. */
+const boutons = (html) => (html.match(/<a\b[^>]*style="[^"]*display:\s*inline-block/gi) || []).length;
+ok(boutons(enveloppe) === 1, 'un corps ordinaire reçoit UN bouton (' + boutons(enveloppe) + ')');
+
+const avecCta = tiCharteHtml('<p>Une demande vient d’être publiée.</p>',
+  {label: 'Ouvrir mes missions', url: 'https://ti-services.fr/?open=missions'});
+ok(boutons(avecCta) === 1 && /href="https:\/\/ti-services\.fr\/\?open=missions"[^>]*>Ouvrir mes missions<\/a>/.test(avecCta),
+  'un corps qui DÉCLARE sa destination reçoit un seul bouton, qui y mène');
+
+const dejaBouton = tiCharteHtml('<p>Bonjour,</p><p><a href="https://ti-services.fr/?open=missions" '
+  + 'style="display:inline-block;background:#e8613c;color:#fff;padding:12px 20px">Ouvrir Ti-Services</a></p>');
+ok(boutons(dejaBouton) === 1,
+  'et un corps qui dessine QUAND MÊME son bouton n’en reçoit pas un second — le défaut mesuré (' + boutons(dejaBouton) + ')');
+
+// UN LIEN DANS UNE PHRASE N'EST PAS UN BOUTON : « le détail est sur ti-services.fr » ne
+// se voit pas comme une action, et l'e-mail garderait le sien pour rien.
+const lienNu = tiCharteHtml('<p>Le détail est dans votre espace sur <a href="https://ti-services.fr">ti-services.fr</a>.</p>');
+ok(boutons(lienNu) === 1 && !corpsPorteUnBouton('<a href="x">ti-services.fr</a>'),
+  'un lien ordinaire au fil du texte ne prive pas l’e-mail de son bouton');
+
+// ET LES DEUX E-MAILS EN CAUSE ONT CESSÉ DE DESSINER LE LEUR.
+ok(/cta: \{label: 'Ouvrir Ti-Services', url: link\}/.test(fn) && !/background:#e8613c/.test(fn),
+  '« un document pour être payé » déclare sa destination au lieu de peindre un second bouton');
+ok(/cta: \{label: 'Ouvrir mes missions', url: lien\}/.test(fn) && !/>Ouvrir mes missions<\/a>/.test(fn),
+  'et « nouvelle demande » aussi — son lien nu devient LE bouton de l’e-mail');
 
 console.log('B2 — les verdicts artisan ont un corps e-mail étoffé, distinct du push');
 ok(/mail: 'Bonne nouvelle : votre nouveau métier \(<b>'/.test(fn),

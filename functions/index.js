@@ -92,10 +92,35 @@ function tiLogoAttachment() {
   }
   return _tiLogoBuf ? {filename: 'ti-services.png', content: _tiLogoBuf, cid: 'tilogo'} : null;
 }
-function tiCharteHtml(inner) {
+/* UN SEUL BOUTON, ET C'EST L'ENVELOPPE QUI LE DESSINE.
+   Relevé en production (21/09/2026, capture) : l'e-mail « Un document pour être payé »
+   arrivait avec DEUX « Ouvrir Ti-Services », l'un sous le texte, l'autre sous « Une
+   question ? Répondez à cet e-mail » — de deux oranges différents, et menant à deux
+   endroits différents (la page des missions pour l'un, la racine pour l'autre). Deux
+   invitations à cliquer ne valent pas mieux qu'une : elles font hésiter, et celle qui
+   mène au bon endroit n'est pas celle qu'on remarque.
+   LA CAUSE N'EST PAS CET E-MAIL-LÀ. L'enveloppe pose son bouton SANS CONDITION, donc
+   quiconque écrit un corps avec son propre bouton en obtient deux — c'est arrivé une
+   fois, cela se reproduirait. Le corps DÉCLARE donc sa destination (`message.cta`) et
+   l'enveloppe la dessine, une fois, dans la forme de la charte. Sans déclaration, le
+   bouton par défaut ramène à l'application, comme avant.
+   ET UN FILET : si un corps dessine quand même un bouton (une ancre en
+   `display:inline-block`), l'enveloppe n'en ajoute pas un second. Un lien ORDINAIRE dans
+   une phrase — « le détail est sur ti-services.fr » — n'est pas un bouton et ne compte
+   pas : il ne se voit pas comme une action. */
+function corpsPorteUnBouton(html) {
+  return /<a\b[^>]*style="[^"]*display:\s*inline-block/i.test(String(html || ''));
+}
+function tiCharteHtml(inner, cta) {
   // Le pied signe déjà « L'équipe Ti-Services » : on retire la signature du corps
   // brut pour ne pas la voir deux fois.
   const body = String(inner || '').replace(/<p>(?:À très vite,\s*<br\s*\/?>\s*)?L'équipe Ti-Services\s*\.?<\/p>\s*$/, '');
+  const url = (cta && cta.url) ? String(cta.url) : APP_URL.replace(/\/$/, '');
+  const label = (cta && cta.label) ? String(cta.label) : 'Ouvrir Ti-Services';
+  const bouton = corpsPorteUnBouton(body) ? '' :
+    '<tr><td align="center" style="padding:14px 30px 26px">' +
+      '<a href="' + escHtmlS(url) + '" style="display:inline-block;background:#FF6A5B;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 26px;border-radius:11px">' + escHtmlS(label) + '</a>' +
+    '</td></tr>';
   return '' +
   '<div style="margin:0;padding:0;background:#FBF7F4;font-family:-apple-system,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;color:#231E33">' +
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FBF7F4;padding:24px 12px">' +
@@ -108,9 +133,7 @@ function tiCharteHtml(inner) {
             '<div style="font-size:12px;color:#8a8494;margin-top:2px">Services à la demande · Saint-Barthélemy</div>' +
           '</td></tr>' +
           '<tr><td style="padding:14px 30px 6px"><div style="font-size:15px;line-height:1.6;color:#4a4556">' + body + '</div></td></tr>' +
-          '<tr><td align="center" style="padding:14px 30px 26px">' +
-            '<a href="' + APP_URL.replace(/\/$/, '') + '" style="display:inline-block;background:#FF6A5B;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 26px;border-radius:11px">Ouvrir Ti-Services</a>' +
-          '</td></tr>' +
+          bouton +
           '<tr><td style="padding:16px 30px;border-top:1px solid #efeae4;background:#FBF7F4">' +
             '<div style="font-size:12px;color:#8a8494;line-height:1.6">L\'équipe Ti-Services<br>' +
             '<span style="color:#b0aab8">Service édité par C.C.S, Construction Conseils et Services, SAS · Saint-Barthélemy</span></div>' +
@@ -123,7 +146,10 @@ function tiCharteHtml(inner) {
 function tiCharteMessage(message) {
   if (!message || !message.html) return message;
   let m = message;
-  if (m.html.indexOf('cid:tilogo') < 0) m = Object.assign({}, m, {html: tiCharteHtml(m.html)});
+  if (m.html.indexOf('cid:tilogo') < 0) m = Object.assign({}, m, {html: tiCharteHtml(m.html, m.cta)});
+  // `cta` a servi à l'enveloppe : il n'a rien à faire dans le document mis en file, que
+  // l'extension d'envoi lit champ par champ.
+  if (m.cta) { m = Object.assign({}, m); delete m.cta; }
   // Le logo doit accompagner tout gabarit qui le référence (y compris ceux qui
   // avaient oublié la pièce jointe : l'image apparaissait cassée).
   const deja = (Array.isArray(m.attachments) ? m.attachments : []).some((a) => a && a.cid === 'tilogo');
@@ -502,8 +528,10 @@ async function notifyArtisanMollieProblem(db, uid, reason) {
         html: '<p>Bonjour ' + escHtmlS(name || '') + ',</p>'
           + '<p>' + escHtmlS(corps) + '</p>'
           + (manquePiece ? '<p>Mollie vous indique précisément ce qui manque (pièce d\'identité, IBAN…). Vos gains déjà acquis vous restent dus et partiront dès l\'ouverture.</p>' : '')
-          + '<p><a href="' + link + '" style="display:inline-block;background:#e8613c;color:#fff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:700">Ouvrir Ti-Services</a></p>'
           + '<p>Une question ? Répondez à cet e-mail.</p>',
+        // Le bouton de l'enveloppe mène ICI, et non à la racine : le geste demandé est
+        // dans les missions.
+        cta: {label: 'Ouvrir Ti-Services', url: link},
       });
     } catch (e) { console.warn('mollieProblem email', e); }
   }
@@ -985,9 +1013,11 @@ async function mailArtisansSansAppareil(db, artById, targetUids, tokenToUid, r, 
             + (dirigee
               ? '<p>Elle vous est réservée : elle n\'est proposée à personne d\'autre tant que vous n\'avez pas répondu.</p>'
               : '<p>Premier arrivé, premier servi.</p>')
-            + '<p><a href="' + lien + '">Ouvrir mes missions</a></p>'
             + '<p style="color:#666;font-size:13px">Vous recevez cet e-mail parce qu\'aucun appareil n\'est encore relié à votre compte. '
             + 'Activez les notifications dans l\'application : vous serez prévenu en quelques secondes au lieu de quelques minutes.</p>',
+          // Un lien nu au fil du texte se remarque mal pour une demande qui part au
+          // premier qui répond : c'est le bouton de l'enveloppe, et il mène aux missions.
+          cta: {label: 'Ouvrir mes missions', url: lien},
         });
       } catch (e) { console.warn('mailArtisansSansAppareil', uid, e); }
     }));
