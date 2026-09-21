@@ -7,10 +7,23 @@
  * une page qui ne parle que de ménage, et un assistant qui cite ses sources n'a rien de
  * précis à citer. Une page par métier, c'est une réponse par question.
  *
- * UNE SEULE SOURCE. Les noms, les tarifs et les grilles à l'acte sont LUS dans
- * `index.html` (SERVICES, CATALOG, ZONES) : un prix corrigé dans la console ne peut pas
- * laisser une page publique mentir. Ce qui est ÉCRIT ici, c'est la prose — ce qu'aucune
- * donnée ne peut dire.
+ * UNE SEULE SOURCE. Les noms des métiers sont LUS dans `index.html` (SERVICES) : un
+ * métier renommé dans la console ne peut pas laisser une page publique mentir. Ce qui est
+ * ÉCRIT ici, c'est la prose — ce qu'aucune donnée ne peut dire.
+ *
+ * AUCUN PRIX, AUCUN QUARTIER (21/09/2026, décision de l'éditeur). Ces pages portaient la
+ * grille tarifaire et la liste des dix-huit quartiers. Les deux sont parties.
+ *   - LE PRIX ne se publie pas hors de l'application. Un tarif affiché sur une page
+ *     indexée est une promesse faite à quelqu'un qu'on ne connaît pas, qui reste dans le
+ *     cache d'un moteur et dans la mémoire d'un assistant longtemps après avoir changé ;
+ *     et la concurrence le lit aussi bien que le client. Le prix s'annonce là où il
+ *     ENGAGE : dans l'application, avant la commande. C'est d'ailleurs ce que dit la page.
+ *   - LES QUARTIERS n'apprenaient rien : Ti-Services couvre toute l'île, et énumérer
+ *     dix-huit noms pour dire « partout » est du remplissage, exactement ce qu'un moteur
+ *     a appris à reconnaître. L'aire desservie reste déclarée UNE fois, à la machine
+ *     (`areaServed`), où elle sert à quelque chose.
+ * La contrepartie est assumée : on renonce aux recherches qui nomment un quartier
+ * (« plombier Gustavia ») et à l'affichage d'un prix dans un résultat de recherche.
  *
  * CE QU'ON N'ÉCRIT PAS. Aucune promesse qui n'existe pas dans l'application : pas de
  * « disponible 24/7 », pas de « intervention en 30 minutes », pas d'avis inventés, pas de
@@ -44,17 +57,14 @@ function litLitteral(nom, ouvre, ferme) {
   return new Function('return ' + SRC.slice(j, k + 1))();
 }
 const SERVICES = litLitteral('const SERVICES=', '[', ']');
-const CATALOG = litLitteral('const CATALOG=', '{', '}');
-const ZONES = litLitteral('const ZONES=', '[', ']');
 
 const esc = (s) => String(s == null ? '' : s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-const eur = (n) => String(n).replace('.', ',') + ' €';
 
-/* --- LA PROSE. Une page qui ne dirait que le nom du métier et son prix serait une page
-   vide de plus : ce qui la fait classer, et ce qui la rend utile à lire, c'est ce
-   paragraphe-là. Écrit métier par métier, en français et en anglais. --- */
+/* --- LA PROSE. Une page qui ne dirait que le nom du métier serait une page vide de plus :
+   ce qui la fait classer, et ce qui la rend utile à lire, c'est ce paragraphe-là. Écrit
+   métier par métier, en français et en anglais. --- */
 const M = {
   menage: {
     fr: { h1: 'Ménage à domicile à Saint-Barthélemy',
@@ -100,13 +110,13 @@ const M = {
     fr: { h1: 'Déménagement et transport à Saint-Barthélemy',
       intro: 'Aide au déménagement, transport de meubles, débarras, entre deux quartiers de l’île ou à l’intérieur d’une même villa. Le volume et l’étage se précisent dans la demande : le prestataire accepte en connaissance de cause.',
       inclus: ['Manutention, portage et chargement', 'Véhicule selon le forfait retenu', 'Protection des meubles à convenir avec le prestataire'],
-      faq: [['Le camion est-il compris ?', 'Cela dépend du forfait choisi : la grille détaille ce qui inclut un véhicule et ce qui ne l’inclut pas.'],
+      faq: [['Le camion est-il compris ?', 'Cela dépend du forfait choisi : l’application détaille ce qui inclut un véhicule et ce qui ne l’inclut pas.'],
             ['Combien de personnes ?', 'Indiquez le volume et l’étage : c’est ce qui permet au prestataire de venir accompagné si nécessaire.'],
             ['Et pour un simple transport ?', 'Un transport de meuble unique se commande comme le reste, au forfait.']] },
     en: { h1: 'Moving and transport in St Barths',
       intro: 'Moving help, furniture transport and clearance, between two parts of the island or inside the same villa. Volume and floor go in the request, so the provider accepts knowing what the job is.',
       inclus: ['Handling, carrying and loading', 'Vehicle depending on the package', 'Furniture protection to agree with the provider'],
-      faq: [['Is a van included?', 'It depends on the package: the price list states which ones include a vehicle.'],
+      faq: [['Is a van included?', 'It depends on the package: the app states which ones include a vehicle.'],
             ['How many people come?', 'State the volume and the floor: that is what lets the provider bring help if needed.'],
             ['What about a single item?', 'A one-off furniture transport is booked like anything else, at a flat price.']] } },
   coiffure: {
@@ -152,14 +162,14 @@ const M = {
     fr: { h1: 'Manucure et beauté des ongles à Saint-Barthélemy',
       intro: 'Manucure, pédicure, semi-permanent, pose et dépose, à domicile. Les prestations se cochent une par une avant de commander : le montant affiché est celui que vous payez.',
       inclus: ['Matériel et vernis apportés par la prestataire', 'Prestations à l’acte, prix fermes', 'Choix de la prestataire dès la première fois'],
-      faq: [['Semi-permanent ou vernis classique ?', 'Les deux figurent dans la grille : cochez ce que vous voulez avant de commander.'],
-            ['La dépose est-elle comprise ?', 'Elle figure comme une prestation distincte dans la grille.'],
+      faq: [['Semi-permanent ou vernis classique ?', 'Les deux figurent dans l’application : cochez ce que vous voulez avant de commander.'],
+            ['La dépose est-elle comprise ?', 'Elle figure comme une prestation distincte dans l’application.'],
             ['À plusieurs ?', 'Ajoutez les prestations de chacun à la même commande.']] },
     en: { h1: 'Mobile manicure and nails in St Barths',
       intro: 'Manicure, pedicure, gel polish, application and removal, at home. You tick each service before booking: the amount shown is the amount you pay.',
       inclus: ['Kit and polish brought by the technician', 'Per-service pricing, firm', 'You pick your technician from the first booking'],
-      faq: [['Gel or regular polish?', 'Both are in the price list: tick what you want before booking.'],
-            ['Is removal included?', 'It appears as its own line in the price list.'],
+      faq: [['Gel or regular polish?', 'Both are listed in the app: tick what you want before booking.'],
+            ['Is removal included?', 'It appears as its own service in the app.'],
             ['For several people?', 'Add everyone’s services to the same booking.']] } },
   epilation: {
     fr: { h1: 'Épilation à domicile à Saint-Barthélemy',
@@ -191,13 +201,13 @@ const M = {
     fr: { h1: 'Maquillage professionnel à Saint-Barthélemy',
       intro: 'Maquillage mariage, soirée ou séance photo, à domicile. Essai possible, prestations à l’acte, et vous choisissez la maquilleuse dès la première réservation.',
       inclus: ['Produits et matériel apportés', 'Essai proposé en prestation distincte', 'Déplacement à la villa ou à l’hôtel'],
-      faq: [['Un essai avant le mariage ?', 'Oui, il figure comme une prestation à part dans la grille.'],
+      faq: [['Un essai avant le mariage ?', 'Oui, il figure comme une prestation à part dans l’application.'],
             ['Combien de temps avant l’événement ?', 'Réservez le créneau qui vous arrange : la maquilleuse accepte ou non selon son agenda.'],
             ['Plusieurs personnes ?', 'Ajoutez une prestation par personne à la même commande.']] },
     en: { h1: 'Professional make-up in St Barths',
       intro: 'Wedding, evening or photoshoot make-up, at your place. Trials available, per-service pricing, and you choose the artist from the first booking.',
       inclus: ['Products and kit brought along', 'Trial offered as a separate service', 'Travel to your villa or hotel'],
-      faq: [['A trial before the wedding?', 'Yes, it is a separate line in the price list.'],
+      faq: [['A trial before the wedding?', 'Yes, it is a separate service in the app.'],
             ['How far ahead should I book?', 'Book the slot that suits you: the artist accepts according to her diary.'],
             ['Several people?', 'Add one service per person to the same booking.']] } },
   piscine: {
@@ -205,65 +215,65 @@ const M = {
       intro: 'Entretien hebdomadaire ou ponctuel : nettoyage, contrôle du pH, filtration, produits. Sous ce climat, une piscine laissée deux semaines sans passage se rattrape plus cher qu’un entretien régulier.',
       inclus: ['Nettoyage du bassin, ligne d’eau et skimmers', 'Contrôle du pH et du chlore', 'Vérification de la filtration'],
       faq: [['À quelle fréquence ?', 'L’hebdomadaire est le rythme le plus courant sur l’île ; l’application gère les passages récurrents.'],
-            ['Les produits sont-ils compris ?', 'Cela dépend de la prestation cochée : la grille le précise.'],
+            ['Les produits sont-ils compris ?', 'Cela dépend de la prestation cochée : l’application le précise.'],
             ['Faut-il être présent ?', 'Non, si l’accès au bassin est possible.']] },
     en: { h1: 'Pool maintenance in St Barths',
       intro: 'Weekly or one-off pool care: cleaning, pH check, filtration, chemicals. In this climate, a pool left alone for two weeks costs more to recover than regular upkeep.',
       inclus: ['Pool, waterline and skimmer cleaning', 'pH and chlorine check', 'Filtration checked'],
       faq: [['How often?', 'Weekly is the usual rhythm here; the app handles recurring visits.'],
-            ['Are chemicals included?', 'It depends on the service you tick: the price list says so.'],
+            ['Are chemicals included?', 'It depends on the service you tick: the app says so.'],
             ['Do I need to be there?', 'No, as long as the pool is accessible.']] } },
   plomberie: {
     fr: { h1: 'Plombier à Saint-Barthélemy',
       intro: 'Fuite, chasse d’eau, mitigeur, chauffe-eau, évacuation : un plombier déclaré et assuré, au prix affiché. Vous décrivez la panne, la demande part aux professionnels disponibles, le premier qui accepte vient.',
       inclus: ['Diagnostic et intervention', 'Petites fournitures selon la prestation', 'Prix ferme annoncé avant la commande'],
       faq: [['Intervenez-vous en urgence, la nuit ou le dimanche ?', 'Les demandes partent aux professionnels disponibles sur le créneau que vous choisissez : il n’y a pas d’astreinte permanente.'],
-            ['Les pièces sont-elles comprises ?', 'La grille précise ce qui est inclus ; le reste se convient dans la conversation.'],
+            ['Les pièces sont-elles comprises ?', 'L’application précise ce qui est inclus ; le reste se convient dans la conversation.'],
             ['Et si le problème est plus gros que prévu ?', 'Le professionnel vous le dit avant d’aller plus loin : aucun supplément ne s’applique sans votre accord.']] },
     en: { h1: 'Plumber in St Barths',
       intro: 'Leak, toilet, mixer tap, water heater, drainage: a registered and insured plumber at a listed price. You describe the problem, the request goes to available professionals, the first to accept comes.',
       inclus: ['Diagnosis and repair', 'Small parts depending on the service', 'Firm price shown before you book'],
       faq: [['Do you handle emergencies at night or on Sundays?', 'Requests go to professionals available on the slot you choose: there is no permanent on-call service.'],
-            ['Are parts included?', 'The price list says what is included; anything else is agreed in the chat.'],
+            ['Are parts included?', 'The app says what is included; anything else is agreed in the chat.'],
             ['What if the job is bigger than expected?', 'The professional tells you before going further: nothing is added without your agreement.']] } },
   electricite: {
     fr: { h1: 'Électricien à Saint-Barthélemy',
       intro: 'Prises, luminaires, tableau, dépannage : un électricien déclaré et assuré. Le prix est annoncé avant la commande, et l’intervention est suivie dans l’application, du départ à la facture.',
       inclus: ['Diagnostic et intervention', 'Petit appareillage selon la prestation', 'Facture émise automatiquement'],
       faq: [['Travaillez-vous sur un tableau complet ?', 'Décrivez le besoin dans la demande : le professionnel accepte s’il est équipé pour.'],
-            ['Le matériel est-il fourni ?', 'La grille le précise prestation par prestation.'],
+            ['Le matériel est-il fourni ?', 'L’application le précise prestation par prestation.'],
             ['Est-ce assuré ?', 'Chaque professionnel dépose son attestation de responsabilité civile, vérifiée avant validation.']] },
     en: { h1: 'Electrician in St Barths',
       intro: 'Sockets, lights, panels, troubleshooting: a registered and insured electrician. The price is shown before you book, and the job is tracked in the app, from dispatch to invoice.',
       inclus: ['Diagnosis and repair', 'Small fittings depending on the service', 'Invoice issued automatically'],
       faq: [['Do you work on a full panel?', 'Describe the job in the request: the professional accepts if equipped for it.'],
-            ['Is hardware included?', 'The price list states it service by service.'],
+            ['Is hardware included?', 'The app states it service by service.'],
             ['Is the work insured?', 'Every professional files their liability certificate, checked before approval.']] } },
   deck: {
     fr: { h1: 'Deck et terrasse en bois à Saint-Barthélemy',
       intro: 'Ponçage, saturateur, nettoyage, reprise de lames : le bois exposé au sel et au soleil demande un passage régulier. La prestation se choisit à l’acte, au mètre carré ou au forfait.',
       inclus: ['Nettoyage et préparation du bois', 'Application de saturateur ou d’huile', 'Reprise des lames abîmées à convenir'],
       faq: [['À quelle fréquence ?', 'Sous ce climat, une à deux fois par an selon l’exposition.'],
-            ['Le produit est-il compris ?', 'La grille le précise ; sinon cela se convient avant l’acceptation.'],
+            ['Le produit est-il compris ?', 'L’application le précise ; sinon cela se convient avant l’acceptation.'],
             ['Faut-il vider la terrasse ?', 'Dites ce qu’il y a à déplacer dans la demande : le professionnel en tient compte.']] },
     en: { h1: 'Wooden deck and terrace care in St Barths',
       intro: 'Sanding, oiling, cleaning, board replacement: wood exposed to salt and sun needs regular care. The job is priced per service, per square metre or as a flat rate.',
       inclus: ['Cleaning and preparing the wood', 'Oil or saturator applied', 'Damaged boards replaced as agreed'],
       faq: [['How often?', 'In this climate, once or twice a year depending on exposure.'],
-            ['Is the product included?', 'The price list says so; otherwise it is agreed before acceptance.'],
+            ['Is the product included?', 'The app says so; otherwise it is agreed before acceptance.'],
             ['Should I clear the terrace?', 'Say what needs moving in the request: the professional plans for it.']] } },
   clim: {
     fr: { h1: 'Climatisation à Saint-Barthélemy',
       intro: 'Entretien, nettoyage des filtres, contrôle du gaz, dépannage. Sur l’île, une clim mal entretenue consomme plus, refroidit moins et finit par lâcher au pire moment.',
       inclus: ['Nettoyage des filtres et de l’unité', 'Contrôle du niveau de gaz', 'Diagnostic de panne'],
       faq: [['Combien d’unités ?', 'Indiquez-le dans la demande : le prix suit le nombre d’unités.'],
-            ['Faites-vous la recharge de gaz ?', 'Cela dépend du professionnel et du matériel : la grille et la conversation le précisent.'],
+            ['Faites-vous la recharge de gaz ?', 'Cela dépend du professionnel et du matériel : l’application et la conversation le précisent.'],
             ['À quelle fréquence entretenir ?', 'Un passage annuel est le minimum courant sous ce climat.']] },
     en: { h1: 'Air conditioning in St Barths',
       intro: 'Servicing, filter cleaning, gas check, troubleshooting. Here, a neglected unit uses more power, cools less and gives up at the worst moment.',
       inclus: ['Filter and unit cleaning', 'Gas level check', 'Fault diagnosis'],
       faq: [['How many units?', 'State it in the request: the price follows the number of units.'],
-            ['Do you refill gas?', 'It depends on the professional and the equipment: the price list and the chat say so.'],
+            ['Do you refill gas?', 'It depends on the professional and the equipment: the app and the chat say so.'],
             ['How often should it be serviced?', 'Once a year is the usual minimum in this climate.']] } },
   coach: {
     fr: { h1: 'Coach sportif à domicile à Saint-Barthélemy',
@@ -334,32 +344,28 @@ const M = {
 
 const L = {
   fr: { code: 'fr', dossier: '', locale: 'fr_FR', site: 'Services à la demande · Saint-Barthélemy',
-    tous: 'Tous les services', inclus: 'Ce qui est inclus', tarifs: 'Tarifs',
-    marche: 'Comment ça marche', zones: 'Quartiers desservis', faq: 'Questions fréquentes',
+    tous: 'Tous les services', inclus: 'Ce qui est inclus',
+    marche: 'Comment ça marche', faq: 'Questions fréquentes',
     autres: 'Les autres services', cta: 'Réserver dans l’application',
-    accueil: 'Accueil', ferme: 'Prix ferme, annoncé avant la commande, débité après la prestation.',
-    horaire: 'à partir de', forfait: 'forfait',
+    accueil: 'Accueil',
     etapes: ['Vous décrivez ce qu’il vous faut et choisissez le créneau.',
       'La demande part aux professionnels vérifiés du métier, ou à celui que vous avez choisi.',
       'Le premier qui accepte vient ; vous suivez la prestation et vous échangez dans l’application.',
       'Le paiement est sécurisé et n’est débité qu’une fois la prestation validée par vous.'],
-    zonesTxt: 'Ti-Services couvre toute l’île. Les demandes portent le quartier, pour que le professionnel sache où il va avant d’accepter :',
     pourquoi: 'Pourquoi Ti-Services',
     args: ['Prestataires vérifiés : SIRET et attestation d’assurance contrôlés avant l’activation du profil.',
       'Prix fermes, annoncés avant la commande, sans abonnement ni frais d’inscription.',
       'Paiement en ligne, débité seulement après la prestation validée.'],
     titreIndex: 'Services à domicile à Saint-Barthélemy', },
   en: { code: 'en', dossier: 'en/', locale: 'en_US', site: 'On-demand services · St Barths',
-    tous: 'All services', inclus: 'What is included', tarifs: 'Prices',
-    marche: 'How it works', zones: 'Areas covered', faq: 'Frequently asked questions',
+    tous: 'All services', inclus: 'What is included',
+    marche: 'How it works', faq: 'Frequently asked questions',
     autres: 'Other services', cta: 'Book in the app',
-    accueil: 'Home', ferme: 'Firm price, shown before you book, charged after the job is approved.',
-    horaire: 'from', forfait: 'flat rate',
+    accueil: 'Home',
     etapes: ['You describe what you need and pick a slot.',
       'The request goes to vetted professionals for that trade, or to the one you chose.',
       'The first to accept comes; you follow the job and chat in the app.',
       'Payment is secured and only charged once you have approved the job.'],
-    zonesTxt: 'Ti-Services covers the whole island. Requests carry the area, so the professional knows where they are going before accepting:',
     pourquoi: 'Why Ti-Services',
     args: ['Vetted providers: company registration and liability insurance checked before a profile goes live.',
       'Firm prices, shown before you book, no subscription and no sign-up fee.',
@@ -414,46 +420,23 @@ const svcById = {};
 SERVICES.forEach((s) => { svcById[s.id] = s; });
 const IDS = SERVICES.map((s) => s.id).filter((id) => M[id]);
 
-function grille(id) {
-  const actes = CATALOG[id];
-  if (!Array.isArray(actes) || !actes.length) return null;
-  const groupes = [];
-  actes.forEach((a) => {
-    const g = a.grp || '';
-    let e = groupes.find((x) => x.g === g);
-    if (!e) { e = { g: g, l: [] }; groupes.push(e); }
-    e.l.push(a);
-  });
-  return groupes;
-}
-
 function page(id, lg) {
   const l = L[lg], s = svcById[id], m = M[id][lg];
   const url = SITE + '/' + l.dossier + 'services/' + id + '.html';
   const autre = lg === 'fr' ? SITE + '/en/services/' + id + '.html' : SITE + '/services/' + id + '.html';
   const racine = lg === 'fr' ? '../' : '../../';
-  const g = grille(id);
   const desc = m.intro.replace(/\s+/g, ' ').slice(0, 155).replace(/[,\s]+$/, '') + '.';
-  const prixBloc = g
-    ? `<table>${g.map((x) => (x.g ? `<tr><td class="g" colspan="2">${esc(x.g)}</td></tr>` : '')
-        + x.l.map((a) => `<tr><td>${esc(a.nm)}</td><td class="p">${esc(eur(a.price))}</td></tr>`).join('')).join('')}</table>
-      <p class="zones">${esc(l.ferme)}</p>`
-    : `<div class="prix"><div class="gros">${esc(l.horaire)} ${esc(eur(s.rate))}${s.forfait ? ' ' + esc(l.forfait) : '/h'}</div>
-      <div class="note">${esc(l.ferme)}</div></div>`;
-  const offres = g
-    ? g.reduce((t, x) => t.concat(x.l), []).slice(0, 40).map((a) => ({ '@type': 'Offer', name: a.nm,
-        price: String(a.price), priceCurrency: 'EUR' }))
-    : [{ '@type': 'Offer', price: String(s.rate), priceCurrency: 'EUR',
-        priceSpecification: { '@type': 'UnitPriceSpecification', price: String(s.rate), priceCurrency: 'EUR',
-          unitCode: s.forfait ? 'E48' : 'HUR' } }];
+  /* PAS D'`Offer`. Un `Offer` sans `price` est vide de sens, et un `Offer` AVEC prix est
+     exactement ce qu'on a décidé de ne pas publier : Google l'afficherait dans le
+     résultat de recherche, où il vivrait bien après avoir changé. `Service` dit le métier
+     et l'aire desservie, ce qui est tout ce dont un moteur a besoin pour nous situer. */
   const ld = {
     '@context': 'https://schema.org',
     '@graph': [
       { '@type': 'Service', '@id': url + '#service', name: m.h1, description: m.intro,
         serviceType: s.nm, provider: { '@type': 'LocalBusiness', name: 'Ti-Services', '@id': SITE + '/#business' },
         areaServed: { '@type': 'AdministrativeArea', name: 'Saint-Barthélemy' },
-        availableChannel: { '@type': 'ServiceChannel', serviceUrl: SITE + '/', name: 'Ti-Services' },
-        offers: offres },
+        availableChannel: { '@type': 'ServiceChannel', serviceUrl: SITE + '/', name: 'Ti-Services' } },
       { '@type': 'FAQPage', '@id': url + '#faq', mainEntity: m.faq.map((q) => ({
         '@type': 'Question', name: q[0], acceptedAnswer: { '@type': 'Answer', text: q[1] } })) },
       { '@type': 'BreadcrumbList', itemListElement: [
@@ -501,17 +484,11 @@ function page(id, lg) {
   <h2>${esc(l.inclus)}</h2>
   <ul>${m.inclus.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
 
-  <h2>${esc(l.tarifs)}</h2>
-  ${prixBloc}
-
   <h2>${esc(l.marche)}</h2>
   <ol>${l.etapes.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>
 
   <h2>${esc(l.pourquoi)}</h2>
   <ul>${l.args.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
-
-  <h2>${esc(l.zones)}</h2>
-  <p class="zones">${esc(l.zonesTxt)} ${ZONES.map(esc).join(' · ')}.</p>
 
   <h2>${esc(l.faq)}</h2>
   ${m.faq.map((q) => `<details><summary>${esc(q[0])}</summary><p>${esc(q[1])}</p></details>`).join('\n  ')}
@@ -539,8 +516,7 @@ function index(lg) {
     : 'Cleaning, babysitting, gardening, hairdressing, massage, pool, plumbing, electricity… Every home service in St Barths, at firm prices, from vetted providers.';
   const lignes = IDS.map((id) => {
     const s = svcById[id], m = M[id][lg];
-    const prix = CATALOG[id] ? '' : ` — ${esc(l.horaire)} ${esc(eur(s.rate))}${s.forfait ? '' : '/h'}`;
-    return `<li><a href="${id}.html"><b>${esc(s.nm)}</b></a>${prix}<br><span class="zones">${esc(m.intro.split('.')[0])}.</span></li>`;
+    return `<li><a href="${id}.html"><b>${esc(s.nm)}</b></a><br><span class="zones">${esc(m.intro.split('.')[0])}.</span></li>`;
   }).join('\n      ');
   const ld = { '@context': 'https://schema.org', '@type': 'ItemList', name: l.titreIndex,
     itemListElement: IDS.map((id, i) => ({ '@type': 'ListItem', position: i + 1, name: svcById[id].nm,
@@ -582,8 +558,6 @@ function index(lg) {
   </ul>
   <h2>${esc(l.marche)}</h2>
   <ol>${l.etapes.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>
-  <h2>${esc(l.zones)}</h2>
-  <p class="zones">${esc(l.zonesTxt)} ${ZONES.map(esc).join(' · ')}.</p>
   <a class="cta" href="${racine}">${esc(l.cta)}</a>
   <footer>© 2026 C.C.S, Ti-Services™.
     <div class="langues"><a href="${autre}" hreflang="${lg === 'fr' ? 'en' : 'fr'}">${lg === 'fr' ? 'English' : 'Français'}</a></div>
@@ -596,19 +570,17 @@ function index(lg) {
 
 /* --- CE QUE LISENT LES ASSISTANTS. `llms.txt` est la convention qui se répand pour
    donner à un modèle une présentation courte et des adresses ; `llms-full.txt` porte le
-   détail. Ils sont GÉNÉRÉS de la même source que les pages : un tarif corrigé dans la
-   console ne peut pas laisser un assistant citer l'ancien. On n'y écrit que des faits
+   détail. Ils sont GÉNÉRÉS de la même source que les pages. On n'y écrit que des faits
    vérifiables dans l'application — une phrase inventée ici est répétée ailleurs, par
-   quelqu'un qui n'a aucun moyen de la vérifier. --- */
-function tarifTxt(id) {
-  const s = svcById[id], g = grille(id);
-  if (!g) return (s.forfait ? 'forfait ' : '') + eur(s.rate) + (s.forfait ? '' : '/h');
-  const prix = g.reduce((t, x) => t.concat(x.l), []).map((a) => a.price);
-  return 'à l\'acte, de ' + eur(Math.min.apply(null, prix)) + ' à ' + eur(Math.max.apply(null, prix));
-}
+   quelqu'un qui n'a aucun moyen de la vérifier.
+
+   LA MÊME RÈGLE QUE LES PAGES : AUCUN TARIF. Un prix cité par un assistant est un prix
+   publié, et il est répété par quelqu'un qui n'a pas les moyens de le vérifier, souvent
+   des mois après. Ce qu'on dit à la place est VRAI et suffit à répondre : le prix
+   s'affiche dans l'application avant la commande. --- */
 function llms() {
   const lignes = IDS.map((id) => '- [' + svcById[id].nm + '](' + SITE + '/services/' + id + '.html) : '
-    + M[id].fr.intro.split('.')[0] + '. Tarif : ' + tarifTxt(id) + '.');
+    + M[id].fr.intro.split('.')[0] + '.');
   return `# Ti-Services
 
 > Plateforme de services à domicile à Saint-Barthélemy (Antilles françaises, collectivité
@@ -618,8 +590,10 @@ function llms() {
 
 ## Ce qu'il faut savoir
 
-- Zone desservie : l'île de Saint-Barthélemy uniquement, tous quartiers (${ZONES.join(', ')}).
-- Prix FERMES, affichés avant la commande. Aucun abonnement, aucun frais d'inscription.
+- Zone desservie : l'île de Saint-Barthélemy, en entier.
+- Prix FERMES, affichés dans l'application avant la commande. Aucun abonnement, aucun
+  frais d'inscription. Les tarifs ne sont pas publiés hors de l'application : c'est là
+  qu'ils sont à jour, et c'est là qu'ils engagent.
 - Le paiement est en ligne et n'est débité qu'APRÈS validation de la prestation par le client.
 - Les prestataires déposent leur SIRET et leur attestation d'assurance ; les deux sont
   contrôlés avant que leur profil soit activé.
@@ -629,7 +603,7 @@ function llms() {
 - Langues de l'application : français, anglais, portugais.
 - L'application s'installe sur téléphone (PWA) ; elle fonctionne aussi dans un navigateur.
 
-## Services et tarifs
+## Services
 
 ${lignes.join('\n')}
 
@@ -645,29 +619,27 @@ ${lignes.join('\n')}
 
 Un professionnel déclaré (SIRET) peut proposer ses services : il crée son compte depuis
 l'accueil, dépose son SIRET et son attestation d'assurance, choisit ses métiers et ses
-disponibilités. Il n'y a ni abonnement ni frais fixes : Ti-Services se rémunère par une
-commission sur les prestations réalisées.
+disponibilités. Il n'y a ni abonnement ni frais fixes à l'inscription.
 `;
 }
 function llmsFull() {
   const blocs = IDS.map((id) => {
-    const s = svcById[id], m = M[id].fr, g = grille(id);
-    const prix = g
-      ? g.map((x) => (x.g ? '  ' + x.g + ' :\n' : '') + x.l.map((a) => '  - ' + a.nm + ' : ' + eur(a.price)).join('\n')).join('\n')
-      : '  - ' + (s.forfait ? 'Forfait ' : 'Tarif horaire ') + eur(s.rate) + (s.forfait ? '' : '/h');
+    const s = svcById[id], m = M[id].fr;
     return '## ' + s.nm + '\n\n' + m.h1 + '\n' + SITE + '/services/' + id + '.html\n\n'
       + m.intro + '\n\nInclus :\n' + m.inclus.map((x) => '- ' + x).join('\n')
-      + '\n\nTarifs :\n' + prix + '\n\nQuestions :\n'
+      + '\n\nQuestions :\n'
       + m.faq.map((q) => '- ' + q[0] + ' ' + q[1]).join('\n');
   });
   return 'Ti-Services — services à domicile à Saint-Barthélemy\n'
     + '='.repeat(52) + '\n\n'
     + 'Document destiné aux assistants et aux moteurs de recherche. Il est GÉNÉRÉ depuis\n'
-    + 'l\'application : les tarifs et les prestations qui suivent sont ceux qui s\'affichent\n'
-    + 'au client au moment de commander.\n\n'
+    + 'l\'application : les prestations qui suivent sont celles qu\'un client peut commander.\n'
+    + 'Les TARIFS n\'y figurent pas et ne figurent sur aucune page publique : ils sont\n'
+    + 'affichés dans l\'application, avant la commande, et c\'est là seulement qu\'ils\n'
+    + 'engagent. Ne pas en citer, ne pas en estimer.\n\n'
+    + 'Zone desservie : l\'île de Saint-Barthélemy, en entier.\n\n'
     + 'Comment une commande se passe :\n'
     + L.fr.etapes.map((x, i) => (i + 1) + '. ' + x).join('\n') + '\n\n'
-    + 'Quartiers desservis : ' + ZONES.join(', ') + '.\n\n'
     + blocs.join('\n\n') + '\n';
 }
 

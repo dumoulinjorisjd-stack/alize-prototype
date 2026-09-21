@@ -14,8 +14,14 @@
    générateur pour vérifier qu'il a l'intention de bien faire : elle ouvre ce qui part en
    ligne. Et elle garde les quatre propriétés qui décident d'un classement et d'une
    citation : chaque page dit ce qu'elle est (titre, description, canonique), aucune n'est
-   orpheline, le sitemap correspond à ce qui existe, et ce qui est écrit est VRAI —
-   les tarifs annoncés aux assistants sont ceux du catalogue de l'application. */
+   orpheline, le sitemap correspond à ce qui existe, et ce qui est écrit est VRAI.
+
+   ET CE QUI N'Y EST PAS : AUCUN TARIF (21/09/2026). Les pages portaient la grille de
+   prix, lue dans le catalogue de l'application. L'éditeur les a retirées : un prix ne
+   s'annonce que là où il engage, c'est-à-dire dans l'application, avant la commande.
+   La garde s'inverse donc — elle ne vérifie plus qu'un prix affiché est JUSTE, elle
+   vérifie qu'il n'y en a AUCUN, ce qui ne dépend d'aucune donnée et attrape aussi bien
+   le chiffre remis à la main que l'`Offer` glissé dans les données structurées. */
 const fs = require('fs'), path = require('path');
 const RACINE = '/home/user/alize-work';
 let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; console.log('  ✗ ÉCHEC : ' + l); } };
@@ -103,16 +109,55 @@ const lit = (nom, o, c) => { const i = src.indexOf(nom), j = i + nom.length; let
   for (; k < src.length; k++) { const x = src[k]; if (x === o) d++; else if (x === c) { d--; if (!d) break; } }
   return new Function('return ' + src.slice(j, k + 1))(); };
 const SVC = lit('const SERVICES=', '[', ']');
-const CAT = lit('const CATALOG=', '{', '}');
-// UN TARIF ANNONCÉ À UN ASSISTANT EST RÉPÉTÉ À QUELQU'UN QUI NE PEUT PAS LE VÉRIFIER :
-// on compare donc ce que le fichier annonce à ce que l'application facture.
-const faux = SVC.filter((s) => !CAT[s.id] && llms.includes('/services/' + s.id + '.html'))
-  .filter((s) => !llms.includes(String(s.rate).replace('.', ',') + ' €'));
-ok(!faux.length, 'les tarifs horaires de llms.txt sont ceux du catalogue' + (faux.length ? ' — ' + faux.map((s) => s.id).join(', ') : ''));
 ok(SVC.every((s) => !PAGES.includes('services/' + s.id + '.html') || full.includes(s.nm)),
   'llms-full.txt décrit chaque métier qui a une page');
-ok(/Saint-Barthélemy/.test(llms) && /commission/.test(llms),
-  'et il dit l’essentiel : où l’on travaille, et comment Ti-Services se rémunère');
+ok(/Saint-Barthélemy/.test(llms),
+  'et il dit où l’on travaille');
+// LA CONSIGNE VAUT AUSSI QUAND ELLE S'ADRESSE À UNE MACHINE : `llms-full.txt` DIT qu'il
+// n'y a pas de tarif et qu'il ne faut pas en estimer. Sans cette phrase, un assistant
+// comblerait le silence par une fourchette de son cru, présentée comme la nôtre.
+ok(/ne pas en citer, ne pas en estimer/i.test(full),
+  'et il dit à l’assistant de ne PAS inventer de tarif là où il n’en trouve pas');
+
+/* F0 — AUCUN PRIX, NULLE PART (21/09/2026, décision de l'éditeur).
+
+   Le prix ne s'annonce que là où il engage : dans l'application, avant la commande. Un
+   tarif posé sur une page indexée survit dans le cache d'un moteur et dans la mémoire
+   d'un assistant longtemps après avoir changé, et la concurrence le lit aussi bien que
+   le client. Cette garde est plus forte que celle qu'elle remplace (« le prix annoncé
+   est celui du catalogue ») : elle ne dépend d'aucune donnée, et elle attrape le prix
+   qu'on remettrait sans y penser, en toutes lettres comme en chiffres, dans le texte
+   visible comme dans les données structurées. */
+console.log('\nF0 — aucun tarif ne sort de l’application');
+const ARGENT = [/\d[\d  ., ]*(€|EUR\b)/i, /(€|EUR)\s?\d/i, /"price"/i, /priceCurrency/i,
+  /priceSpecification/i, /"[Oo]ffer"/, /à partir de\s+\d/i, /\bfrom\s+\d+\s*(€|EUR)/i];
+const avecPrix = [];
+for (const rel of SERVICES.concat(EN, ['services/index.html', 'en/services/index.html'])) {
+  const t = lire(rel);
+  ARGENT.forEach((re) => { const m = re.exec(t); if (m) avecPrix.push(rel + ' : ' + m[0].slice(0, 30)); });
+}
+[['llms.txt', llms], ['llms-full.txt', full]].forEach(([nom, t]) => {
+  ARGENT.forEach((re) => { const m = re.exec(t); if (m) avecPrix.push(nom + ' : ' + m[0].slice(0, 30)); });
+});
+ok(!avecPrix.length, 'aucun montant sur les 44 pages ni dans les fichiers lus par les assistants'
+  + (avecPrix.length ? ' — ' + avecPrix.slice(0, 3).join(' · ') : ''));
+// ET ON NE LAISSE PAS UNE SECTION VIDE DERRIÈRE : un intitulé « Tarifs » suivi de rien se
+// lirait comme une page cassée, et un intitulé « Quartiers desservis » sans quartiers
+// serait pire que l'énumération qu'on vient de retirer.
+const sections = [];
+for (const rel of SERVICES.concat(EN, ['services/index.html', 'en/services/index.html'])) {
+  const t = lire(rel);
+  [/>Tarifs</, />Prices</, />Quartiers desservis</, />Areas covered</].forEach((re) => {
+    if (re.test(t)) sections.push(rel + ' : ' + re);
+  });
+}
+ok(!sections.length, 'et aucun intitulé de section ne reste sans son contenu'
+  + (sections.length ? ' — ' + sections[0] : ''));
+// L'AIRE DESSERVIE, ELLE, RESTE DÉCLARÉE — une fois, à la machine, où elle sert à nous
+// situer. La retirer aussi nous rendrait invisibles sur « à Saint-Barthélemy ».
+const sansAire = SERVICES.filter((rel) => !/"areaServed"[\s\S]{0,120}Saint-Barth/.test(lire(rel)));
+ok(!sansAire.length, 'l’île reste déclarée comme aire desservie dans les données structurées'
+  + (sansAire.length ? ' — ' + sansAire[0] : ''));
 
 console.log('\nF — on ne promet rien que l’application ne tienne');
 // Une page de référencement qui promet ce que le service ne fait pas se paie au premier
