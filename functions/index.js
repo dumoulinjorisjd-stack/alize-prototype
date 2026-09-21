@@ -489,17 +489,56 @@ async function recordMollieFee(db, reqId, molliePaymentId, commission) {
 // lui apprendre à ignorer nos notifications. Le jour où l'une d'elles comptera vraiment, il
 // ne la lira plus. L'administrateur, lui, est prévenu dans tous les cas : un versement
 // bloqué est NOTRE problème tant que le prestataire n'y peut rien.
-async function notifyArtisanMollieProblem(db, uid, reason) {
-  let onb = '';
-  try { onb = (await db.collection('artisans').doc(uid).get()).get('mollieOnboardingStatus') || ''; } catch (_) {}
+// ON NE RÉCLAME PAS UNE PIÈCE SUR LA FOI D'UN SOUVENIR (21/09/2026).
+// « Assure-toi que ce qui est envoyé pour les documents réclamés par Mollie soit vrai,
+// sinon on croit qu'il reste quelque chose à faire alors que ce n'est pas vrai. »
+// Le message « Mollie a besoin d'un justificatif » se décidait sur `mollieOnboardingStatus`
+// — un champ ÉCRIT lors d'une lecture précédente. Sur le chemin d'un versement qui échoue,
+// ce souvenir peut dater : le prestataire a pu compléter son dossier entre-temps, et on
+// l'envoyait alors chercher une démarche qui n'existe plus. Une notification qui se trompe
+// une fois s'ignore toutes les fois d'après.
+// ON REDEMANDE DONC À MOLLIE AU MOMENT D'ÉCRIRE (`syncArtisanMollie` relit `/onboarding/me`
+// et remet la fiche à jour au passage). `dejaFrais` évite l'aller-retour — et la récursion —
+// quand l'appelant vient de le faire.
+// ET SI L'ON NE PEUT PAS VÉRIFIER, ON N'AFFIRME RIEN : jeton absent, secrets non déclarés,
+// Mollie injoignable — on se tait plutôt que de répéter un souvenir. L'administrateur, lui,
+// est prévenu dans tous les cas ; un versement bloqué reste NOTRE problème.
+// ENFIN ON NE RÉPÈTE PAS : le même motif ne repart pas deux fois de suite, ni avant sept
+// jours. Trois missions qui échouent le même matin envoyaient trois fois le même e-mail.
+const MOLLIE_RELANCE_MS = 7 * 86400 * 1000;
+async function notifyArtisanMollieProblem(db, uid, reason, dejaFrais) {
+  let ad = {};
+  try { ad = (await db.collection('artisans').doc(uid).get()).data() || {}; } catch (_) {}
+  let onb = ad.mollieOnboardingStatus || '';
+  let verifie = dejaFrais === true;
+  // Le motif qui parle du DOSSIER doit être vérifié ; « aucun compte connecté » se lit sur
+  // notre propre fiche et n'a rien à demander à Mollie.
+  if (!verifie && reason !== 'no_org') {
+    try {
+      const frais = await syncArtisanMollie(db, uid);
+      if (frais && frais.status) { onb = frais.status; verifie = true; }
+    } catch (e) { console.warn('notifyArtisanMollieProblem resync', uid, e); }
+  }
   // Les deux seuls cas où il a la main : Mollie réclame une pièce, ou aucun compte n'est
   // connecté. Un « route_failed » sans demande de Mollie ne le concerne pas.
   const manquePiece = (reason === 'needs-data') || (reason === 'route_failed' && onb === 'needs-data');
   const pasDeCompte = (reason === 'no_org');
+  if (manquePiece && !verifie) {
+    console.log('Alerte Mollie NON envoyée à ' + uid + ' (' + reason + ') : impossible de vérifier auprès de Mollie, on n’affirme rien');
+    return;
+  }
   if (!manquePiece && !pasDeCompte) {
     console.log('Alerte Mollie NON envoyée à ' + uid + ' (' + reason + ', onboarding « ' + (onb || 'inconnu') + ' ») : rien à faire de son côté');
     return;
   }
+  // Déjà dit, et rien n'a changé depuis.
+  const motif = manquePiece ? 'needs-data' : 'no_org';
+  const vu = Number(ad.mollieIssueNotifiedAt) || 0;
+  if (ad.mollieIssueNotified === motif && vu && (Date.now() - vu) < MOLLIE_RELANCE_MS) {
+    console.log('Alerte Mollie NON envoyée à ' + uid + ' (' + motif + ') : déjà dit il y a moins de sept jours');
+    return;
+  }
+  try { await db.collection('artisans').doc(uid).set({mollieIssueNotified: motif, mollieIssueNotifiedAt: Date.now()}, {merge: true}); } catch (_) {}
   let email = '', tokens = [], name = '';
   try {
     const u = await db.collection('users').doc(uid).get();
@@ -723,9 +762,11 @@ async function syncArtisanMollie(db, uid) {
   }
   if (ready.status === 'needs-data' && prevNotified !== 'needs-data') {
     upd.mollieIssueNotified = 'needs-data';
-    try { await notifyArtisanMollieProblem(db, uid, 'needs-data'); } catch (_) {}
+    upd.mollieIssueNotifiedAt = Date.now();
+    // Le statut sort de `/onboarding/me`, lu trois lignes plus haut : rien à revérifier.
+    try { await notifyArtisanMollieProblem(db, uid, 'needs-data', true); } catch (_) {}
   } else if (ready.ok) {
-    if (prevNotified) upd.mollieIssueNotified = '';
+    if (prevNotified) { upd.mollieIssueNotified = ''; upd.mollieIssueNotifiedAt = 0; }
     // Transition vers « actif » → on prévient l'artisan (une seule fois).
     if (prevStatus !== 'active' && ad.mollieActiveNotified !== true) {
       upd.mollieActiveNotified = true;
@@ -1997,7 +2038,11 @@ function montantsDemande(r) {
     gross: round2(base + maj + travel + tip),
   };
 }
-exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}', secrets: ['MOLLIE_ACCESS_TOKEN', SMTP_PASS]}, async (event) => {
+exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}',
+  // MOLLIE_CLIENT_ID / _SECRET : non pour encaisser, mais pour REVÉRIFIER le dossier du
+  // prestataire avant de lui dire qu'il manque une pièce (`notifyArtisanMollieProblem`).
+  // Sans eux, `mollieOAuthConfigured()` est faux ici et l'alerte se tairait toujours.
+  secrets: ['MOLLIE_ACCESS_TOKEN', 'MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET', SMTP_PASS]}, async (event) => {
   const after = (event.data && event.data.after && event.data.after.data()) || {};
   // RATTRAPABLE. On ne se limite plus à l'instant précis de la transition vers « paid » :
   // si ce règlement échoue (panne, bug, quota), la demande resterait réglée côté client
@@ -3223,12 +3268,12 @@ exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) 
     }
     return customerId;
   };
-  const ensureCustomer = async () => {
+  // RATTRAPAGE, SANS RIEN CRÉER : un client Mollie a pu être créé lors d'une tentative
+  // précédente sans que son identifiant nous revienne. On le retrouve par la marque qu'on
+  // y laisse (metadata.uid) plutôt que d'en créer un second — sinon la carte déjà
+  // enregistrée resterait accrochée à un client orphelin.
+  const trouverCustomer = async () => {
     if (customerId) return customerId;
-    // RATTRAPAGE : un client Mollie a pu être créé lors d'une tentative précédente sans
-    // que son identifiant nous revienne. On le retrouve par la marque qu'on y laisse
-    // (metadata.uid) plutôt que d'en créer un second — sinon la carte déjà enregistrée
-    // resterait accrochée à un client orphelin.
     try {
       const liste = await mollieApi('/customers?limit=250', 'GET');
       const arr = (liste.ok && liste.data && liste.data._embedded && liste.data._embedded.customers) || [];
@@ -3239,6 +3284,21 @@ exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) 
         return await memoriser(deja[0].id);
       }
     } catch (e) { console.warn('clientCard: recherche du client Mollie', e); }
+    return '';
+  };
+  /* LIRE N'EST PAS CRÉER (21/09/2026). Relevé par l'éditeur dans son tableau de bord
+     Mollie : une fiche client créée, aucune transaction, quelqu'un inscrit comme CLIENT
+     qui n'a jamais rien commandé. La cause tient à ce que cette fonction faisait DEUX
+     choses sous un seul nom — chercher, puis créer faute d'avoir trouvé — et que le
+     simple AFFICHAGE de l'écran de paiement l'appelait « pour voir si Mollie connaît déjà
+     ce client ». Tout visiteur de cet écran laissait donc son nom et son adresse chez
+     notre prestataire de paiement, pour toujours, sans avoir rien demandé. La recherche
+     est maintenant séparée de la création : on ne crée qu'au moment où l'on ENREGISTRE
+     une carte, qui est le geste par lequel quelqu'un le demande. */
+  const ensureCustomer = async () => {
+    if (customerId) return customerId;
+    const trouve = await trouverCustomer();
+    if (trouve) return trouve;
     const body = {name: String(udoc.name || 'Client Ti-Services').slice(0, 100), metadata: {uid: uid}};
     const em = String(udoc.email || (request.auth.token && request.auth.token.email) || '').slice(0, 100);
     if (em) body.email = em;
@@ -3304,7 +3364,8 @@ exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) 
   // client, mandat inscrit sur la fiche, et la liste des mandats avec leur état. Aucun
   // numéro de carte, aucune donnée d'un tiers.
   if (action === 'diag') {
-    if (!customerId) { try { await ensureCustomer(); } catch (_) {} }
+    // Un diagnostic RAPPORTE un état, il n'en fabrique pas : ici non plus on ne crée rien.
+    if (!customerId) { try { await trouverCustomer(); } catch (_) {} }
     const out = {customerId: customerId || '', mandatInscrit: String(udoc.mollieMandateId || ''),
       cardSetupAt: Number(udoc.mollieCardSetupAt) || 0, dernierRefus: String(udoc.cardSetupReason || ''),
       mandats: [], httpMandats: 0, erreur: ''};
@@ -3389,8 +3450,9 @@ exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) 
     return {checkoutUrl: link || null, paymentId: String(out.data.id || '')};
   }
   // Aperçu : si la fiche ne porte pas encore d'identifiant, on va voir si Mollie connaît
-  // déjà ce client — une carte enregistrée ne doit jamais rester invisible.
-  if (!customerId) { try { await ensureCustomer(); } catch (_) {} }
+  // déjà ce client — une carte enregistrée ne doit jamais rester invisible. On CHERCHE,
+  // on ne crée pas : personne n'a rien demandé, il ouvre un écran.
+  if (!customerId) { try { await trouverCustomer(); } catch (_) {} }
   return {card: await readCard(), setupMethods: setupMethods()};
 });
 
@@ -3970,7 +4032,11 @@ exports.rebookNudges = onSchedule({schedule: 'every day 14:00'}, async () => {
  * sont pas. `mollieRelances` alimente la console (« relancé 3 fois »).
  * Lundi 13 h UTC = 9 h à Saint-Barthélemy : jour ouvré, heure ouvrable.
  */
-exports.mollieActivationReminder = onSchedule({schedule: 'every monday 13:00', secrets: [SMTP_PASS]}, async () => {
+exports.mollieActivationReminder = onSchedule({schedule: 'every monday 13:00',
+  // Les secrets OAuth servent à REVÉRIFIER chaque dossier avant de relancer : sans eux,
+  // on relancerait sur un souvenir, et l'on dirait « il te reste une étape » à quelqu'un
+  // qui a terminé depuis.
+  secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET', 'MOLLIE_ACCESS_TOKEN', SMTP_PASS]}, async () => {
   const db = getFirestore();
   const nowMs = Date.now();
   const snap = await db.collection('artisans').where('status', '==', 'valide').get();
@@ -3981,12 +4047,33 @@ exports.mollieActivationReminder = onSchedule({schedule: 'every monday 13:00', s
   } catch (_) {}
   let sent = 0; let actifs = 0;
   for (const d of snap.docs) {
-    const a = d.data() || {};
+    let a = d.data() || {};
+    if (a.mollieStatus === 'active') { actifs++; continue; }
+    // On relit chez Mollie AVANT de juger : c'est une relance hebdomadaire sur un parc
+    // réduit, l'aller-retour ne coûte rien et il évite de réclamer une démarche déjà
+    // faite. Si la lecture échoue, on garde ce qu'on sait — mais on ne dira rien de plus
+    // que ce que l'on sait (voir `cas` plus bas).
+    let relu = false;
+    if (a.mollieOrgId) {
+      try {
+        const frais = await syncArtisanMollie(db, d.id);
+        if (frais) { relu = true; a = (await d.ref.get()).data() || a; }
+      } catch (e) { console.warn('mollieActivationReminder resync', d.id, e); }
+    }
     if (a.mollieStatus === 'active') { actifs++; continue; }
     // Celui qui peut déjà encaisser et à qui Mollie ne réclame aucune pièce n'a RIEN à
     // faire : il attend seulement la validation. Le relancer serait un reproche sans objet
     // — et il peut déjà accepter des missions.
     if (a.mollieCanWork === true && a.mollieOnboardingStatus !== 'needs-data') { actifs++; continue; }
+    // CELUI QUI PEUT DÉJÀ TRAVAILLER N'A PAS « UNE ÉTAPE » DEVANT LUI : il a un document
+    // à fournir, et ses virements attendent. Deux messages différents, parce que ce sont
+    // deux situations différentes — et l'on ne réclame une pièce que si on vient de le
+    // VÉRIFIER auprès de Mollie.
+    const cas = (a.mollieCanWork === true && a.mollieOnboardingStatus === 'needs-data') ? 'piece' : 'paiements';
+    if (cas === 'piece' && !relu) {
+      console.log('mollieActivationReminder : ' + d.id + ' non relancé, dossier non revérifié auprès de Mollie');
+      continue;
+    }
     // Garde-fou : jamais deux relances à moins de 6 jours, même si la tâche est rejouée à
     // la main ou si l'ordonnanceur double un déclenchement.
     const last = Number(a.mollieRelanceAt) || 0;
@@ -3997,8 +4084,11 @@ exports.mollieActivationReminder = onSchedule({schedule: 'every monday 13:00', s
       const u = (await db.collection('users').doc(d.id).get()).data() || {};
       const tokens = u.pushTokens || [];
       if (tokens.length) {
-        await pushMulticast(tokens, 'Tes paiements ne sont pas encore activés',
-          'Sans cette étape tu ne peux accepter aucune mission. Quelques minutes suffisent.',
+        await pushMulticast(tokens,
+          cas === 'piece' ? 'Un document pour ouvrir tes virements' : 'Tes paiements ne sont pas encore activés',
+          cas === 'piece'
+            ? 'Tu peux accepter des missions ; Mollie attend une pièce pour te verser. Ce qui est gagné est mis de côté.'
+            : 'Sans cette étape tu ne peux accepter aucune mission. Quelques minutes suffisent.',
           '/?open=missions',
           (tok) => db.collection('users').doc(d.id).update({pushTokens: FieldValue.arrayRemove(tok)}).catch(() => {}));
       }
@@ -4007,8 +4097,8 @@ exports.mollieActivationReminder = onSchedule({schedule: 'every monday 13:00', s
     if (a.email) {
       try {
         await sendMail(db, a.email, {
-          subject: 'Il te reste une étape pour recevoir des missions',
-          html: mollieReminderHtml(String(a.name || '').trim(), n),
+          subject: cas === 'piece' ? 'Un document pour ouvrir tes virements' : 'Il te reste une étape pour recevoir des missions',
+          html: mollieReminderHtml(String(a.name || '').trim(), n, cas),
           attachments,
         });
       } catch (e) { console.warn('mollieActivationReminder mail', d.id, e); }
@@ -5075,16 +5165,38 @@ function inviteArtisanHtml(name, message) {
  * démarche. Au fil des relances le message se resserre — on ne répète pas mot pour mot
  * une chose déjà lue trois fois. Sert aussi à la relance manuelle (sendMollieRelance).
  */
-function mollieReminderHtml(name, n) {
+/* DEUX SITUATIONS, ET UNE SEULE ÉTAIT DÉCRITE (21/09/2026).
+   Mollie ouvre l'encaissement AVANT d'avoir fini de vérifier le dossier — le code le dit
+   ailleurs et s'en sert pour laisser travailler le prestataire (`mollieCanWork`). Il
+   existe donc des gens qui PEUVENT accepter des missions et à qui Mollie réclame encore
+   une pièce. Ils recevaient chaque lundi « sans compte de paiement, tu ne peux pas
+   accepter de mission » et « il faut un compte de paiement à ton nom chez Mollie » :
+   deux affirmations fausses pour eux, qui en ont un et qui travaillent. Se tromper une
+   fois suffit pour que le message suivant ne soit plus lu.
+   `cas` vaut « piece » pour eux, « paiements » pour ceux qui n'ont pas encore de compte
+   — le seul cas où la phrase d'origine est vraie. */
+function mollieReminderHtml(name, n, cas) {
   const app = APP_URL.replace(/\/$/, '');
   const c1 = '#0FA896'; const c2 = '#14C2A8'; const btn = '#0FA896';
   const hi = name ? escHtmlS(String(name).split(/\s+/)[0]) : '';
   const relance = Number(n) || 1;
-  const accroche = relance >= 3
-    ? 'Ton profil est validé depuis un moment, et tu ne peux toujours <b>pas accepter de mission</b>. Il ne manque qu\'une chose.'
-    : (relance === 2
-      ? 'Petit rappel&nbsp;: sans compte de paiement, tu ne peux <b>pas encore accepter de mission</b>.'
-      : 'Ton profil est validé, il ne manque plus que tes <b>paiements</b>.');
+  const piece = cas === 'piece';
+  const titre = piece ? ' te reste un document' : ' te reste une étape';
+  const accroche = piece
+    ? 'Tu peux <b>accepter des missions</b>&nbsp;: c\'est tes <b>virements</b> qui attendent. Mollie a besoin d\'une pièce pour les ouvrir. Ce que tu gagnes d\'ici là ne se perd pas&nbsp;: c\'est mis de côté et versé dès que ton dossier est complet.'
+    : (relance >= 3
+      ? 'Ton profil est validé depuis un moment, et tu ne peux toujours <b>pas accepter de mission</b>. Il ne manque qu\'une chose.'
+      : (relance === 2
+        ? 'Petit rappel&nbsp;: sans compte de paiement, tu ne peux <b>pas encore accepter de mission</b>.'
+        : 'Ton profil est validé, il ne manque plus que tes <b>paiements</b>.'));
+  const bloc1Titre = piece ? '1 · Donne à Mollie ce qui manque' : '1 · Active tes paiements';
+  const bloc1Texte = piece
+    ? 'Mollie vérifie l\'identité et l\'IBAN de chaque prestataire avant d\'ouvrir ses virements, et il te dit <b>précisément</b> ce qui lui manque (pièce d\'identité, justificatif, IBAN…). L\'application t\'emmène directement sur ton dossier. C\'est <b>une seule fois</b>.'
+    : 'Ton argent t\'est versé <b>automatiquement</b> après chaque prestation&nbsp;: pas de facture à courir, pas de virement à réclamer. Pour ça il faut un compte de paiement à ton nom chez <b>Mollie</b>, notre prestataire agréé. C\'est <b>une seule fois</b>, et l\'application te guide question par question.';
+  const bloc1Bouton = piece ? 'Compléter mon dossier' : 'Activer mes paiements';
+  const finPhrase = piece
+    ? 'Mollie vérifie ton dossier&nbsp;: compte jusqu\'à 48&nbsp;h après l\'envoi. Tu reçois ce message chaque semaine tant qu\'il attend quelque chose, il s\'arrête tout seul dès que c\'est réglé.'
+    : 'Mollie vérifie ton identité et ton IBAN&nbsp;: ça peut prendre jusqu\'à 48&nbsp;h. Mieux vaut ne pas s\'y prendre au dernier moment. Tu reçois ce message chaque semaine tant que tes paiements ne sont pas actifs, il s\'arrête tout seul dès que c\'est fait.';
   return '' +
   '<div style="margin:0;padding:0;background:#FBF7F4;font-family:-apple-system,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;color:#231E33">' +
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FBF7F4;padding:24px 12px">' +
@@ -5097,15 +5209,15 @@ function mollieReminderHtml(name, n) {
             '<div style="font-size:12px;color:#8a8494;margin-top:2px">Services à la demande · Saint-Barthélemy</div>' +
           '</td></tr>' +
           '<tr><td style="padding:16px 30px 0">' +
-            '<h1 style="font-size:21px;margin:6px 0 0;color:#231E33">' + (hi ? (hi + ', il') : 'Il') + ' te reste une étape</h1>' +
+            '<h1 style="font-size:21px;margin:6px 0 0;color:#231E33">' + (hi ? (hi + ', il') : 'Il') + titre + '</h1>' +
             '<p style="font-size:14.5px;line-height:1.6;color:#4a4556;margin:12px 0 0">' + accroche + '</p>' +
             // 1 — les paiements. Le vrai verrou : sans compte Mollie, aucune mission acceptable.
             '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#EAF6F3;border:1px solid #cfece7;border-radius:14px;margin-top:16px">' +
               '<tr><td style="padding:16px 18px">' +
-                '<div style="font-size:15px;font-weight:800;color:#231E33">1 · Active tes paiements</div>' +
-                '<div style="font-size:13.5px;color:#4a4556;line-height:1.55;margin-top:7px">Ton argent t\'est versé <b>automatiquement</b> après chaque prestation&nbsp;: pas de facture à courir, pas de virement à réclamer. Pour ça il faut un compte de paiement à ton nom chez <b>Mollie</b>, notre prestataire agréé. C\'est <b>une seule fois</b>, et l\'application te guide question par question.</div>' +
+                '<div style="font-size:15px;font-weight:800;color:#231E33">' + bloc1Titre + '</div>' +
+                '<div style="font-size:13.5px;color:#4a4556;line-height:1.55;margin-top:7px">' + bloc1Texte + '</div>' +
                 '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px"><tr><td align="center">' +
-                  '<a href="' + app + '/?open=missions" style="display:inline-block;background:' + btn + ';color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 24px;border-radius:11px">Activer mes paiements</a>' +
+                  '<a href="' + app + '/?open=missions" style="display:inline-block;background:' + btn + ';color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 24px;border-radius:11px">' + bloc1Bouton + '</a>' +
                 '</td></tr></table>' +
                 '<div style="font-size:12px;color:#8a8494;line-height:1.5;margin-top:10px;text-align:center">Compte quelques minutes, c\'est plus simple depuis un <b>ordinateur</b>.</div>' +
               '</td></tr>' +
@@ -5120,7 +5232,7 @@ function mollieReminderHtml(name, n) {
                 '</td></tr></table>' +
               '</td></tr>' +
             '</table>' +
-            '<p style="font-size:13px;line-height:1.6;color:#8a8494;margin:16px 0 0">Mollie vérifie ton identité et ton IBAN&nbsp;: ça peut prendre jusqu\'à 48&nbsp;h. Mieux vaut ne pas s\'y prendre au dernier moment. Tu reçois ce message chaque semaine tant que tes paiements ne sont pas actifs, il s\'arrête tout seul dès que c\'est fait.</p>' +
+            '<p style="font-size:13px;line-height:1.6;color:#8a8494;margin:16px 0 0">' + finPhrase + '</p>' +
             '<p style="font-size:13px;line-height:1.6;color:#8a8494;margin:12px 0 0">Un blocage, une question&nbsp;? Réponds simplement à cet e-mail.</p>' +
           '</td></tr>' +
           '<tr><td style="padding:22px 30px 26px">' +
@@ -5154,7 +5266,7 @@ function approvedArtisanHtml(name) {
           '<td style="font-size:13px;color:#4a4556;line-height:1.5"><b>À partir de là, vous pourrez recevoir des missions</b> et accepter les demandes près de chez vous, votre gain net (commission déduite) vous est versé tout seul, sans virement à faire.</td>' +
         '</tr></table>' +
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px"><tr><td align="center">' +
-          '<a href="' + app + '/?open=missions" style="display:inline-block;background:' + btn + ';color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 24px;border-radius:11px">Activer mes paiements</a>' +
+          '<a href="' + app + '/?open=missions" style="display:inline-block;background:' + btn + ';color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 24px;border-radius:11px">' + bloc1Bouton + '</a>' +
         '</td></tr></table>' +
         '<div style="font-size:12px;color:#8a8494;line-height:1.5;margin-top:10px;text-align:center">Astuce&nbsp;: cette étape est plus simple depuis un <b>ordinateur</b>.</div>' +
       '</td></tr>' +
@@ -5474,9 +5586,10 @@ exports.sendMollieRelance = onCall({secrets: [SMTP_PASS]}, async (request) => {
     const logo = require('fs').readFileSync(require('path').join(__dirname, 'mail-logo.png'));
     attachments.push({filename: 'ti-services.png', content: logo, cid: 'tilogo'});
   } catch (_) {}
+  const cas = (a.mollieCanWork === true && a.mollieOnboardingStatus === 'needs-data') ? 'piece' : 'paiements';
   const ok = await sendMail(db, email, {
-    subject: 'Il te reste une étape pour recevoir des missions',
-    html: mollieReminderHtml(String(a.name || '').trim(), n),
+    subject: cas === 'piece' ? 'Un document pour ouvrir tes virements' : 'Il te reste une étape pour recevoir des missions',
+    html: mollieReminderHtml(String(a.name || '').trim(), n, cas),
     attachments,
   });
   if (!ok) throw new HttpsError('internal', 'L\'envoi a échoué, réessayez.');

@@ -9450,8 +9450,11 @@
       if(FB&&FB.fn&&FB.functions){
         const r=await FB.fn.httpsCallable(FB.functions,'funnelDetail')({env:IS_PROD?'prod':'beta'});
         S.adminFunnelDetail=(r&&r.data)||null;
+        S.adminFunnelErreur='';
       }
-    }catch(_){ S.adminFunnelDetail=null; }
+    }catch(e){ S.adminFunnelDetail=null;
+      S.adminFunnelErreur=String((e&&(e.message||e.code))||'appel refusé');
+      console.error('entonnoir : détail non chargé',e); }
     S.adminFunnelDetailLoaded=true;render();
   }
   /* LES TOTAUX VIENNENT DES APPAREILS, PAS D'UN COMPTEUR. La carte a affiché
@@ -9561,7 +9564,7 @@
       if(!S.adminFunnelDetailLoaded)return `<div class="mini" style="margin-top:10px;color:var(--muted)">détail par jour&nbsp;: chargement…</div>`;
       const D=S.adminFunnelDetail;
       if(!D||!Array.isArray(D.jours)||!D.jours.length)
-        return `<div class="mini" style="margin-top:10px;color:var(--muted)">Détail par jour indisponible.</div>`;
+        return `<div class="mini" style="margin-top:10px;color:var(--coral-deep)">Détail par jour indisponible${S.adminFunnelErreur?'&nbsp;: '+esc(S.adminFunnelErreur):''}.</div>`;
       const J=D.jours, som=(a,k)=>a.reduce((t,x)=>t+(Number(x[k])||0),0);
       const s7=J.slice(-7), p7=J.slice(-14,-7);
       const pl=(n,m)=>n+' '+m+(n>1?'s':'');
@@ -10356,7 +10359,7 @@
         ${row('Réservations',cc.bookings+(cc.lastAt?`<div class="mini" style="margin-top:4px">Dernière&nbsp;: ${dt(cc.lastAt)}</div>`:''))}
         ${row('Abonnements',(cc.recurring&&cc.recurring.length)?cc.recurring.map(function(r){return esc(svcNm(r.svc||r.service||''))+(r.freq?' · '+esc(r.freq):'');}).join('<br>'):'')}
         ${row('Notifications',cc.push?`<span class="chip good">${I.check} Actives</span><div class="mini" style="margin-top:4px">${cc.push} appareil${cc.push>1?'s':''} enregistré${cc.push>1?'s':''}</div>`:`<span class="chip grey">${I.bolt} Aucune</span><div class="mini" style="margin-top:4px">Ce client ne sera pas prévenu quand un prestataire répond : il faut qu'il ouvre l'application pour le voir.</div>`)}
-        ${row('Conditions',cc.acceptedTerms?`<span class="chip good">${I.check} Acceptées</span>${cc.termsVersion?`<div class="mini" style="margin-top:4px">Version ${esc(String(cc.termsVersion))}${cc.termsAt?' · '+dt(cc.termsAt):''}</div>`:''}`:`<span class="chip coral">Non acceptées</span>`)}
+        ${row('Conditions',cc.acceptedTerms?`<span class="chip good">${I.check} Acceptées</span>${cc.termsVersion?`<div class="mini" style="margin-top:4px">Version ${esc(String(cc.termsVersion))}${cc.termsAt?' · '+dt(cc.termsAt):''}</div>`:''}`:`<span class="chip">Non enregistrées</span><div class="mini" style="margin-top:4px">${cc.profilRepare?'Fiche reconstruite après une inscription incomplète : l’acceptation n’a pas pu être retrouvée.':'Aucune trace d’acceptation sur cette fiche. Personne ne peut s’inscrire sans cocher la case : la trace a été perdue, ou le compte est antérieur à son enregistrement.'}</div>`)}
         ${cc.isPro?row('Facturation',`Réserve pour une entreprise`
           +((cc.company||cc.siret)
             ? (cc.company?`<div style="margin-top:4px;font-size:13px">${esc(cc.company)}</div>`:'')
@@ -10937,6 +10940,7 @@
         recurring:Array.isArray(d.recurring)?d.recurring:[],
         acceptedTerms:!!d.acceptedTerms,termsVersion:d.termsVersion||'',
         termsAt:(d.termsAt&&d.termsAt.toMillis)?d.termsAt.toMillis():0,
+        profilRepare:!!d.profilRepare,
         createdAt:(d.createdAt&&d.createdAt.toMillis)?d.createdAt.toMillis():0,
         push:(Array.isArray(d.pushTokens)?d.pushTokens.length:0),
         isPro:!!d.isPro,company:d.company||'',siret:d.siret||'',
@@ -17920,7 +17924,11 @@
       // Auto-réparation : si le cloud n'a pas de photo mais qu'on en a une en cache local,
       // on la restaure ET on la ré-enregistre au cloud pour qu'elle ne disparaisse plus.
       if(!photo){const lp=loadPhotoLocal(user.uid);if(lp){photo=lp;try{FB.f.setDoc(ref,{photo:lp},{merge:true});}catch(_){}}}else{savePhotoLocal(user.uid,photo);}
-      if(!data&&!ad&&!cd){ try{ await FB.f.setDoc(ref,{name:name,email:user.email||'',zone:zone,role:'client',createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){} }
+      // AUTO-RÉPARATION : un compte authentifié sans aucune fiche. On lui en refait une
+      // pour qu'il puisse travailler — mais on N'INVENTE PAS son acceptation des
+      // conditions : on ne l'a pas vue. On MARQUE la reconstruction, pour que la console
+      // sache distinguer « pas accepté » de « la trace a été perdue ».
+      if(!data&&!ad&&!cd){ try{ await FB.f.setDoc(ref,{name:name,email:user.email||'',zone:zone,role:'client',profilRepare:true,profilRepareAt:FB.f.serverTimestamp(),createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){} }
       S.account={name:name,email:user.email||'',zone:zone,uid:user.uid,photo:photo,phone:(data&&data.phone)||'',isPro:!!(data&&data.isPro),company:(data&&data.company)||'',siret:(data&&data.siret)||''};
       // Ti-Services soupçonne un professionnel inscrit du mauvais côté : on lui posera
       // la question à l'ouverture. Une fois qu'il a répondu (oui ou non), plus jamais.
@@ -18088,7 +18096,18 @@
     if(signupInFlight)return; signupInFlight=true;
     try{
       const cred=await FB.a.createUserWithEmailAndPassword(FB.auth,c.email.trim(),c.password);
-      try{ await FB.f.setDoc(FB.f.doc(FB.db,'users',cred.user.uid),{name:c.name.trim(),email:c.email.trim(),zone:c.zone,photo:c.photo||'',role:'client',acceptedTerms:true,termsVersion:TERMS_VERSION,termsAt:FB.f.serverTimestamp(),createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
+      // CETTE ÉCRITURE PORTE L'ACCEPTATION DES CONDITIONS, et c'est la seule trace qu'on
+      // en garde : la version acceptée et la date. Elle partait dans un `catch` muet —
+      // le compte existait alors sans elle, la réparation à l'ouverture suivante
+      // reconstruisait une fiche SANS acceptation, et la console affichait « Non
+      // acceptées » devant quelqu'un qui avait bel et bien coché la case. On réessaie,
+      // et un échec se voit au lieu de disparaître.
+      const fiche={name:c.name.trim(),email:c.email.trim(),zone:c.zone,photo:c.photo||'',role:'client',acceptedTerms:true,termsVersion:TERMS_VERSION,termsAt:FB.f.serverTimestamp(),createdAt:FB.f.serverTimestamp()};
+      let ecrit=false;
+      for(let essai=0;essai<2&&!ecrit;essai++){
+        try{ await FB.f.setDoc(FB.f.doc(FB.db,'users',cred.user.uid),fiche,{merge:true}); ecrit=true; }
+        catch(e){ console.error('inscription client : fiche NON enregistrée (essai '+(essai+1)+')',e); if(!essai)await new Promise(function(r){setTimeout(r,900);}); }
+      }
       burstConfetti(); toast('Compte créé, bienvenue, '+c.name.trim().split(' ')[0]+' !');
       promptInstallAfterSignup('client');
     }catch(e){ toast(fbErr(e)); }finally{ signupInFlight=false; }
