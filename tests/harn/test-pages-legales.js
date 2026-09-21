@@ -117,8 +117,17 @@ ok(/data-legal/.test(src)&&/_lgA/.test(src),
   const vu=await p2.evaluate(()=>({t:document.title,h1:(document.querySelector('h1')||{}).innerText||''}));
   ok(/Conditions Générales d’Utilisation/.test(vu.t),
     'et la page rendue est bien le document, pas l’accueil de l’app — « '+vu.t+' »');
-  ok(/legal/.test(fs.readFileSync(path.join(RACINE,'sw.js'),'utf8').match(/req\.mode === 'navigate'[^\n]*/)[0]),
+  // L'exception ne NOMME plus `/legal/` : elle porte sur la FORME de l'adresse, si bien
+  // que les pages de métier ajoutées ensuite en profitent sans qu'on ait rien à inscrire.
+  // Ce qu'on garde ici est qu'elle est écrite sur la règle de navigation ELLE-MÊME, et
+  // que la coquille reste la coquille : `/index.html` n'est pas une page.
+  const swSrc=fs.readFileSync(path.join(RACINE,'sw.js'),'utf8');
+  ok(/estUnePage/.test(swSrc.match(/req\.mode === 'navigate'[^\n]*/)[0]),
     'l’exception est écrite sur la règle de navigation elle-même');
+  const estUnePage=new Function('p','return ('+/function estUnePage\(p\) \{[\s\S]*?\n\}/.exec(swSrc)[0]+')(p)');
+  ok(estUnePage('/legal/cgu.html')&&estUnePage('/services/menage.html')&&estUnePage('/en/services/menage.html')
+    &&estUnePage('/services/index.html')&&!estUnePage('/index.html')&&!estUnePage('/')&&!estUnePage('/?legal=cgu'),
+    'et elle reconnaît une PAGE sans tenir de liste — la coquille de l’application reste la coquille');
 
   /* G — ET ON PEUT Y ARRIVER SANS JAVASCRIPT. Les pages sont lisibles telles quelles,
      mais encore faut-il les ATTEINDRE : l'écran de démarrage est retiré PAR LE SCRIPT,

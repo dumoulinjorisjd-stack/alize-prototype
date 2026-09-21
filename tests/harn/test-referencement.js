@@ -150,5 +150,48 @@ ok(!ldCasse.length, 'chaque bloc JSON-LD se lit sans erreur' + (ldCasse.length ?
 ok(!sansFaq.length, 'et chaque page de service porte ses questions fréquentes en FAQPage'
   + (sansFaq.length ? ' — ' + sansFaq[0] : ''));
 
-console.log(f ? ('\n' + f + ' ÉCHEC(S)\n') : '\nTout est vert.\n');
-process.exit(f ? 1 : 0);
+/* H — ET UN VISITEUR DÉJÀ VENU VOIT BIEN LA PAGE.
+
+   Le piège ne se voit NI dans les fichiers NI chez Google : le service worker rendait la
+   coquille de l'application pour toute navigation, sauf `/legal/`. Un moteur n'exécute
+   aucun service worker et aurait indexé la bonne page ; c'est le visiteur qui revient,
+   celui qui a déjà ouvert l'application une fois, qui aurait cliqué « Ménage » dans le
+   pied de page et serait tombé sur l'accueil de l'app. Autrement dit : on se serait fait
+   trouver, et on aurait perdu la personne à l'arrivée. */
+(async () => {
+  const http = require('http');
+  const serveur = http.createServer((rq, rs) => {
+    const f2 = decodeURIComponent((rq.url || '/').split('?')[0]).replace(/^\/+/, '') || 'index.html';
+    const dest = path.join(RACINE, f2);
+    if (!dest.startsWith(RACINE) || !fs.existsSync(dest) || fs.statSync(dest).isDirectory()) { rs.statusCode = 404; return rs.end('non'); }
+    const t = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.png': 'image/png',
+      '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json', '.xml': 'application/xml',
+      '.txt': 'text/plain; charset=utf-8' }[path.extname(dest)] || 'text/plain';
+    rs.setHeader('Content-Type', t); rs.end(fs.readFileSync(dest));
+  });
+  await new Promise((r) => serveur.listen(0, '127.0.0.1', r));
+  const base = 'http://127.0.0.1:' + serveur.address().port;
+  console.log('\nH — la page survit au service worker, chez celui qui revient');
+  const { chromium } = require('playwright-core');
+  const o = { headless: true }; if (fs.existsSync('/opt/pw-browsers/chromium')) o.executablePath = '/opt/pw-browsers/chromium';
+  const b = await chromium.launch(o);
+  const ctx = await b.newContext({ viewport: { width: 1280, height: 800 }, locale: 'fr-FR', serviceWorkers: 'allow' });
+  const pg = await ctx.newPage();
+  await pg.goto(base + '/index.html', { waitUntil: 'load' }); await pg.waitForTimeout(2500);
+  const actif = await pg.evaluate(() => !!(navigator.serviceWorker && navigator.serviceWorker.controller));
+  ok(actif, 'le service worker prend bien la main (sans quoi l’épreuve ne mesurerait rien)');
+  const vus = [];
+  for (const rel of ['services/menage.html', 'en/services/menage.html', 'services/index.html']) {
+    await pg.goto(base + '/' + rel, { waitUntil: 'load' }); await pg.waitForTimeout(500);
+    const h1 = await pg.evaluate(() => (document.querySelector('h1') || {}).innerText || '');
+    const attendu = (/<h1[^>]*>([^<]+)/.exec(lire(rel)) || [])[1] || '';
+    vus.push({ rel, h1, ok: !!h1 && h1.trim().slice(0, 20) === attendu.trim().slice(0, 20) });
+  }
+  const faux = vus.filter((v) => !v.ok);
+  ok(!faux.length, 'la page rendue est bien la PAGE, pas la coquille de l’application'
+    + (faux.length ? ' — ' + faux[0].rel + ' a rendu « ' + faux[0].h1.slice(0, 40) + ' »' : ' (« ' + vus[0].h1.slice(0, 30) + ' »)'));
+  await b.close(); serveur.close();
+
+  console.log(f ? ('\n' + f + ' ÉCHEC(S)\n') : '\nTout est vert.\n');
+  process.exit(f ? 1 : 0);
+})();

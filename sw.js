@@ -63,6 +63,15 @@ self.addEventListener('notificationclick', (e) => {
   );
 });
 
+/* Une adresse servie qui est une PAGE à part entière (texte légal, page de métier,
+   sommaire), et non la coquille de l'application. Seule `/index.html` à la racine est
+   l'application : `/services/index.html` est bien un sommaire lisible. */
+function estUnePage(p) {
+  const chemin = (p || '').replace(/\/+$/, '');
+  if (!/\.html$/i.test(chemin)) return false;
+  return chemin.replace(/^\/+/, '') !== 'index.html';
+}
+
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
@@ -77,13 +86,18 @@ self.addEventListener('fetch', (e) => {
   // consentement : la nouvelle version s'installe en attente et n'est appliquée
   // qu'au clic sur « mettre à jour ». Avant, chaque lancement retéléchargeait
   // l'application entière — plusieurs secondes en 4G.
-  // PAGES LÉGALES : ce sont de VRAIES pages, pas l'application. La règle ci-dessous rend
-  // la coquille pour TOUTE navigation — elle aurait donc servi l'app à quelqu'un qui ouvre
-  // /legal/cgu.html dans un nouvel onglet, ou qui le suit sans JavaScript. Les moteurs,
-  // eux, n'exécutent aucun service worker et n'auraient rien vu du problème : il ne se
-  // serait manifesté que chez les visiteurs déjà venus une fois. Elles passent donc par
-  // la règle ordinaire, en bas : cache d'abord, réseau ensuite.
-  if (req.mode === 'navigate' && !/\/legal\//.test(new URL(req.url).pathname)) {
+  // UNE PAGE N'EST PAS L'APPLICATION. La règle ci-dessous rend la coquille pour TOUTE
+  // navigation — elle aurait donc servi l'app à quelqu'un qui ouvre /legal/cgu.html ou
+  // /services/menage.html dans un nouvel onglet, ou qui le suit sans JavaScript. Les
+  // moteurs, eux, n'exécutent aucun service worker et n'auraient rien vu du problème :
+  // il ne se serait manifesté que chez les visiteurs déjà venus une fois, c'est-à-dire
+  // chez ceux qui reviennent.
+  // ON NE TIENT PAS DE LISTE DE DOSSIERS : `/legal/` y était nommé, et les quarante-quatre
+  // pages de métier ajoutées ensuite seraient passées à travers sans que rien ne le dise.
+  // C'est la FORME de l'adresse qui tranche — un fichier `.html` publié est une page, et
+  // la seule exception est la coquille elle-même, à la racine. Une page écrite demain
+  // suivra la règle sans qu'on y pense.
+  if (req.mode === 'navigate' && !estUnePage(new URL(req.url).pathname)) {
     e.respondWith(
       caches.match('./index.html').then((hit) => {
         const net = fetch(req).then((res) => {
