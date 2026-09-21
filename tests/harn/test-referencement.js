@@ -141,17 +141,21 @@ for (const rel of SERVICES.concat(EN, ['services/index.html', 'en/services/index
 });
 ok(!avecPrix.length, 'aucun montant sur les 44 pages ni dans les fichiers lus par les assistants'
   + (avecPrix.length ? ' — ' + avecPrix.slice(0, 3).join(' · ') : ''));
-// ET ON NE LAISSE PAS UNE SECTION VIDE DERRIÈRE : un intitulé « Tarifs » suivi de rien se
-// lirait comme une page cassée, et un intitulé « Quartiers desservis » sans quartiers
-// serait pire que l'énumération qu'on vient de retirer.
+/* CE QU'ON A RETIRÉ NE REVIENT PAS TOUT SEUL. Trois sections sont parties, chacune sur
+   décision de l'éditeur : les TARIFS et les QUARTIERS (21/09/2026), puis CE QUI EST
+   INCLUS, « pas pertinent dans notre cas ». Le générateur est un endroit où l'on ajoute
+   volontiers un bloc en croyant enrichir la page ; sans cette garde, la plus argumentée
+   des trois reviendrait la première. Elle attrape aussi l'intitulé resté sans son
+   contenu — un « Tarifs » suivi de rien se lirait comme une page cassée. */
 const sections = [];
 for (const rel of SERVICES.concat(EN, ['services/index.html', 'en/services/index.html'])) {
   const t = lire(rel);
-  [/>Tarifs</, />Prices</, />Quartiers desservis</, />Areas covered</].forEach((re) => {
+  [/>Tarifs</, />Prices</, />Quartiers desservis</, />Areas covered</,
+    />Ce qui est inclus</, />What is included</].forEach((re) => {
     if (re.test(t)) sections.push(rel + ' : ' + re);
   });
 }
-ok(!sections.length, 'et aucun intitulé de section ne reste sans son contenu'
+ok(!sections.length, 'et aucune des trois sections retirées n’est revenue'
   + (sections.length ? ' — ' + sections[0] : ''));
 // L'AIRE DESSERVIE, ELLE, RESTE DÉCLARÉE — une fois, à la machine, où elle sert à nous
 // situer. La retirer aussi nous rendrait invisibles sur « à Saint-Barthélemy ».
