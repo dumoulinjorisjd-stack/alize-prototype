@@ -53,8 +53,14 @@ ok(!/toast\('Point GPS enregistré'\)/.test(src),
   'plus aucun « enregistré » qui ne corresponde à rien');
 
 console.log('\nD — les boutons Google restent masqués dans l’app');
-ok(/body\.native-shell \[data-act="google-client"\]/.test(src),
-  'Google interdit sa propre connexion en WebView — le bouton reste masqué');
+// La règle nommait les trois boutons un par un. Depuis que chacun porte SA MENTION des
+// conditions (22/09/2026), c'est le BLOC entier qui doit disparaître — sans quoi la
+// phrase resterait seule, à parler d'un bouton absent. Elle ne nomme plus qu'une classe,
+// et le prochain bouton Google sera couvert sans qu'on y pense.
+ok(/body\.native-shell [^{]*\.g-bloc[^{]*\{display:none!important\}/.test(src),
+  'Google interdit sa propre connexion en WebView — le bloc entier reste masqué');
+ok(!/body\.native-shell \[data-act="google-/.test(src),
+  'et la règle ne les énumère plus : la mention ne peut pas rester orpheline');
 
 console.log('\nF — la mise à jour ne s’annonce plus dans l’app installée');
 ok(/function handleUpdateAvailable\(reg\)\{/.test(src),'un aiguillage existe avant le bandeau');

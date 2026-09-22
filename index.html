@@ -419,9 +419,9 @@
      défiler (tests/harn/test-guide-installation.js). */
   .ig-anim{width:auto;max-width:210px;max-height:186px;margin:0 auto 10px}
   /* Coquille native (App Store/Play Store) : ni bouton « Installer », ni Google (WebView). */
-  body.native-shell [data-act="get-app"],body.native-shell [data-act="google-client"],body.native-shell [data-act="google-pro"],body.native-shell [data-act="google-soon"],body.native-shell #installSteps{display:none!important}
+  body.native-shell [data-act="get-app"],body.native-shell .g-bloc,body.native-shell #installSteps{display:none!important}
   /* …et le séparateur « ou » qui précède le bouton Google du login devient orphelin. */
-  body.native-shell .or-sep:has(+ [data-act="google-soon"]){display:none}
+  body.native-shell .or-sep:has(+ .g-bloc){display:none}
   .ig-cap{text-align:center;font-size:12.5px;font-weight:650;color:#007AFF;margin:0 0 14px}
   /* Pied légal de la vitrine : discret, mais atteignable. Il passe à la ligne tout seul
      sur un téléphone, et chaque lien garde une cible confortable au doigt sans que la
@@ -10359,7 +10359,7 @@
         ${row('Réservations',cc.bookings+(cc.lastAt?`<div class="mini" style="margin-top:4px">Dernière&nbsp;: ${dt(cc.lastAt)}</div>`:''))}
         ${row('Abonnements',(cc.recurring&&cc.recurring.length)?cc.recurring.map(function(r){return esc(svcNm(r.svc||r.service||''))+(r.freq?' · '+esc(r.freq):'');}).join('<br>'):'')}
         ${row('Notifications',cc.push?`<span class="chip good">${I.check} Actives</span><div class="mini" style="margin-top:4px">${cc.push} appareil${cc.push>1?'s':''} enregistré${cc.push>1?'s':''}</div>`:`<span class="chip grey">${I.bolt} Aucune</span><div class="mini" style="margin-top:4px">Ce client ne sera pas prévenu quand un prestataire répond : il faut qu'il ouvre l'application pour le voir.</div>`)}
-        ${row('Conditions',cc.acceptedTerms?`<span class="chip good">${I.check} Acceptées</span>${cc.termsVersion?`<div class="mini" style="margin-top:4px">Version ${esc(String(cc.termsVersion))}${cc.termsAt?' · '+dt(cc.termsAt):''}</div>`:''}`:`<span class="chip">Non enregistrées</span><div class="mini" style="margin-top:4px">${cc.profilRepare?'Fiche reconstruite après une inscription incomplète : l’acceptation n’a pas pu être retrouvée.':'Aucune trace d’acceptation sur cette fiche. Personne ne peut s’inscrire sans cocher la case : la trace a été perdue, ou le compte est antérieur à son enregistrement.'}</div>`)}
+        ${row('Conditions',cc.acceptedTerms?`<span class="chip good">${I.check} Acceptées</span>${cc.termsVersion?`<div class="mini" style="margin-top:4px">Version ${esc(String(cc.termsVersion))}${cc.termsAt?' · '+dt(cc.termsAt):''}${cc.termsVia==='google'?' · en continuant avec Google':''}</div>`:''}`:`<span class="chip">Non enregistrées</span><div class="mini" style="margin-top:4px">${cc.profilRepareVia==='google'?'Compte créé par « Continuer avec Google », avant que la mention y figure : les conditions ne lui ont jamais été présentées.':(cc.profilRepare?'Fiche reconstruite après une inscription incomplète : l’acceptation n’a pas pu être retrouvée.':'Aucune trace d’acceptation sur cette fiche. Le formulaire ne laisse pas s’inscrire sans cocher la case : la trace a été perdue, ou le compte est antérieur à son enregistrement.')}</div>`)}
         ${cc.isPro?row('Facturation',`Réserve pour une entreprise`
           +((cc.company||cc.siret)
             ? (cc.company?`<div style="margin-top:4px;font-size:13px">${esc(cc.company)}</div>`:'')
@@ -10940,7 +10940,7 @@
         recurring:Array.isArray(d.recurring)?d.recurring:[],
         acceptedTerms:!!d.acceptedTerms,termsVersion:d.termsVersion||'',
         termsAt:(d.termsAt&&d.termsAt.toMillis)?d.termsAt.toMillis():0,
-        profilRepare:!!d.profilRepare,
+        profilRepare:!!d.profilRepare,profilRepareVia:d.profilRepareVia||'',termsVia:d.termsVia||'',
         createdAt:(d.createdAt&&d.createdAt.toMillis)?d.createdAt.toMillis():0,
         push:(Array.isArray(d.pushTokens)?d.pushTokens.length:0),
         isPro:!!d.isPro,company:d.company||'',siret:d.siret||'',
@@ -11517,7 +11517,17 @@
   }
   // Bouton « Continuer avec Google » réutilisable (inscription client, inscription
   // prestataire, connexion). En démo sans Firebase, il est grisé + badge « bientôt ».
-  function googleBtnHtml(act,label){return `<button class="btn ghost" data-act="${act}" style="${FB?'':'opacity:.65'}"><svg width="17" height="17" viewBox="0 0 24 24"><path fill="#4285F4" d="M23 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.2a5.3 5.3 0 0 1-2.3 3.5v2.9h3.7C21.7 18.9 23 15.9 23 12.3z"/><path fill="#34A853" d="M12 24c3.1 0 5.7-1 7.6-2.8l-3.7-2.9c-1 .7-2.3 1.1-3.9 1.1-3 0-5.5-2-6.4-4.8H1.8v3C3.7 21.3 7.5 24 12 24z"/><path fill="#FBBC05" d="M5.6 14.3a7.2 7.2 0 0 1 0-4.6v-3H1.8a12 12 0 0 0 0 10.6z"/><path fill="#EA4335" d="M12 4.8c1.7 0 3.2.6 4.4 1.7l3.3-3.3C17.7 1.2 15.1 0 12 0 7.5 0 3.7 2.7 1.8 6.7l3.8 3c.9-2.8 3.4-4.9 6.4-4.9z"/></svg>&nbsp;${label} ${FB?"":'<span class="chip grey" style="margin-left:4px">bientôt</span>'}</button>`;}
+  /* LE BOUTON GOOGLE CRÉE UN COMPTE, IL DOIT DONC PRÉSENTER LES CONDITIONS.
+     Relevé le 22/09/2026 sur la fiche d'une cliente inscrite le jour même : « Conditions,
+     non enregistrées ». Ce n'était pas une trace perdue — l'acceptation n'avait JAMAIS été
+     demandée. Le bouton est posé AU-DESSUS du formulaire, et c'est le formulaire qui porte
+     la case à cocher : quiconque passe par Google crée son compte sans avoir rien vu.
+     La mention vit DANS la fabrique du bouton, la seule façon qu'elle accompagne les trois
+     endroits où il paraît (inscription client, inscription prestataire, connexion) — et
+     ceux qu'on ajoutera. Continuer vaut acceptation parce que la phrase est là AVANT le
+     geste, et `fbGoogle` l'enregistre ensuite avec sa version et sa date. */
+  function googleBtnHtml(act,label){return `<div class="g-bloc"><button class="btn ghost" data-act="${act}" style="${FB?'':'opacity:.65'}"><svg width="17" height="17" viewBox="0 0 24 24"><path fill="#4285F4" d="M23 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.2a5.3 5.3 0 0 1-2.3 3.5v2.9h3.7C21.7 18.9 23 15.9 23 12.3z"/><path fill="#34A853" d="M12 24c3.1 0 5.7-1 7.6-2.8l-3.7-2.9c-1 .7-2.3 1.1-3.9 1.1-3 0-5.5-2-6.4-4.8H1.8v3C3.7 21.3 7.5 24 12 24z"/><path fill="#FBBC05" d="M5.6 14.3a7.2 7.2 0 0 1 0-4.6v-3H1.8a12 12 0 0 0 0 10.6z"/><path fill="#EA4335" d="M12 4.8c1.7 0 3.2.6 4.4 1.7l3.3-3.3C17.7 1.2 15.1 0 12 0 7.5 0 3.7 2.7 1.8 6.7l3.8 3c.9-2.8 3.4-4.9 6.4-4.9z"/></svg>&nbsp;${label} ${FB?"":'<span class="chip grey" style="margin-left:4px">bientôt</span>'}</button>
+    <p class="mini" style="text-align:center;margin-top:8px;color:var(--muted);line-height:1.5">En continuant avec Google, vous acceptez nos <a href="legal/cgu.html" data-legal="cgu">conditions d'utilisation</a>, nos <a href="legal/cgv.html" data-legal="cgv">conditions de vente</a> et notre <a href="legal/confidentialite.html" data-legal="confidentialite">politique de confidentialité</a>.</p></div>`;}
   function onbWelcome(){
     // `welcome-hero` est en display:contents sur mobile (aucun changement de rendu) ;
     // sur ordinateur il devient la colonne gauche d'une grille, et `welcome-desk`
@@ -11604,7 +11614,7 @@
         </div>
       </form>
       <div class="or-sep"><span>ou</span></div>
-      <button class="btn ghost" data-act="google-soon" style="${FB?'':'opacity:.65'}"><svg width="17" height="17" viewBox="0 0 24 24"><path fill="#4285F4" d="M23 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.2a5.3 5.3 0 0 1-2.3 3.5v2.9h3.7C21.7 18.9 23 15.9 23 12.3z"/><path fill="#34A853" d="M12 24c3.1 0 5.7-1 7.6-2.8l-3.7-2.9c-1 .7-2.3 1.1-3.9 1.1-3 0-5.5-2-6.4-4.8H1.8v3C3.7 21.3 7.5 24 12 24z"/><path fill="#FBBC05" d="M5.6 14.3a7.2 7.2 0 0 1 0-4.6v-3H1.8a12 12 0 0 0 0 10.6z"/><path fill="#EA4335" d="M12 4.8c1.7 0 3.2.6 4.4 1.7l3.3-3.3C17.7 1.2 15.1 0 12 0 7.5 0 3.7 2.7 1.8 6.7l3.8 3c.9-2.8 3.4-4.9 6.4-4.9z"/></svg>&nbsp;Continuer avec Google ${FB?"":'<span class="chip grey" style="margin-left:4px">bientôt</span>'}</button>
+      ${googleBtnHtml('google-soon','Continuer avec Google')}
       <p class="mini" style="text-align:center;margin-top:14px">Pas encore de compte&nbsp;? <button class="linklike" data-act="login-to-signup">Créer un compte</button></p>
       </div>`;
   }
@@ -17928,7 +17938,18 @@
       // pour qu'il puisse travailler — mais on N'INVENTE PAS son acceptation des
       // conditions : on ne l'a pas vue. On MARQUE la reconstruction, pour que la console
       // sache distinguer « pas accepté » de « la trace a été perdue ».
-      if(!data&&!ad&&!cd){ try{ await FB.f.setDoc(ref,{name:name,email:user.email||'',zone:zone,role:'client',profilRepare:true,profilRepareAt:FB.f.serverTimestamp(),createdAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){} }
+      if(!data&&!ad&&!cd){
+        // ON NOTE PAR QUOI LE COMPTE EST ARRIVÉ : « créé par Google » et « trace perdue »
+        // ne sont pas la même chose, et la console ne doit pas les confondre.
+        const parGoogle=(user.providerData||[]).some(function(pv){return pv&&pv.providerId==='google.com';});
+        const fiche={name:name,email:user.email||'',zone:zone,role:'client',
+          profilRepare:true,profilRepareVia:parGoogle?'google':'',profilRepareAt:FB.f.serverTimestamp(),
+          createdAt:FB.f.serverTimestamp()};
+        // La mention est affichée SOUS le bouton Google depuis cette version : continuer
+        // vaut acceptation, et elle se date ici. `termsVia` dit par quel geste.
+        if(parGoogle){ fiche.acceptedTerms=true; fiche.termsVersion=TERMS_VERSION; fiche.termsVia='google'; fiche.termsAt=FB.f.serverTimestamp(); }
+        try{ await FB.f.setDoc(ref,fiche,{merge:true}); }catch(_){}
+      }
       S.account={name:name,email:user.email||'',zone:zone,uid:user.uid,photo:photo,phone:(data&&data.phone)||'',isPro:!!(data&&data.isPro),company:(data&&data.company)||'',siret:(data&&data.siret)||''};
       // Ti-Services soupçonne un professionnel inscrit du mauvais côté : on lui posera
       // la question à l'ouverture. Une fois qu'il a répondu (oui ou non), plus jamais.
