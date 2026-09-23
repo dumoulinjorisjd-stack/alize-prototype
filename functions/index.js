@@ -4852,7 +4852,19 @@ exports.funnelDetail = onCall(async (request) => {
   // Les dernières installations datées. `orderBy` écarte de lui-même les appareils qui
   // n'ont pas le champ — c'est-à-dire tous ceux d'avant cette mise en ligne : on ne les
   // fait pas passer pour récents, on les compte séparément.
-  let recentes = []; let avecDate = 0; let delais = [];
+  /* « 0 MIN » N'EST PAS UN DÉLAI (23/09/2026). La carte annonçait « Délai visite →
+     installation : 0 min (médiane sur 7 appareils) », et sept installations sur neuf
+     disaient « 0 min après sa visite ». C'était flatteur et faux. Au premier lancement,
+     l'application poste `visit` PUIS `installed` dans le même souffle si elle se découvre
+     déjà installée — et c'est le cas ORDINAIRE sur iPhone, où l'application installée a
+     son propre stockage : la première fois qu'on la voit, elle est déjà là. Les deux
+     horodatages sont alors séparés de quelques millisecondes.
+     Ce que cela dit n'est pas « les gens installent tout de suite », c'est « on ne l'a
+     jamais vue avant ». On ne peut mesurer un délai QUE sur un appareil vu d'abord dans
+     un navigateur — l'ordinateur à 23 min du relevé. Les autres sont comptés à part et
+     nommés, plutôt que de tirer la médiane à zéro. */
+  const MEME_VISITE_MS = 60000;
+  let recentes = []; let avecDate = 0; let delais = []; let memeVisite = 0;
   try {
     const q = await db.collection('funnelDevices_' + env)
       .orderBy('installedAt', 'desc').limit(40).get();
@@ -4860,9 +4872,12 @@ exports.funnelDetail = onCall(async (request) => {
       const v = d.data() || {};
       const at = v.installedAt && v.installedAt.toMillis ? v.installedAt.toMillis() : 0;
       const vu = v.visitAt && v.visitAt.toMillis ? v.visitAt.toMillis() : 0;
-      const min = (at && vu && at >= vu) ? Math.round((at - vu) / 60000) : null;
-      if (min !== null) delais.push(min);
-      return {at, pf: String(v.installedPf || ''), min};
+      const ecart = (at && vu && at >= vu) ? (at - vu) : null;
+      const dEnMemeTemps = ecart !== null && ecart < MEME_VISITE_MS;
+      const min = ecart === null ? null : Math.round(ecart / 60000);
+      if (ecart !== null && !dEnMemeTemps) delais.push(min);
+      if (dEnMemeTemps) memeVisite++;
+      return {at, pf: String(v.installedPf || ''), min, dejaInstallee: dEnMemeTemps};
     }).filter((r) => r.at);
   } catch (e) { console.warn('funnelDetail recentes', e); }
   try {
@@ -4909,6 +4924,9 @@ exports.funnelDetail = onCall(async (request) => {
     recentes: recentes.slice(0, 12),
     delaiMedianMin: med,
     delaiN: delais.length,
+    // Combien d'appareils ne peuvent pas porter de délai, parce qu'on les a découverts
+    // déjà installés. Le dire vaut mieux que de les fondre dans une médiane à zéro.
+    dejaInstallees: memeVisite,
     installeesDatees: avecDate,
     jourDuJour: jourStBarth(),
     totaux,
