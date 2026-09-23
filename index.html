@@ -4535,7 +4535,20 @@
   }
   // Grille de prix officielle (settings/prices) — écrite par l'admin, lue par tous ET par
   // le serveur (settleCommission) pour VÉRIFIER le tarif d'une demande (anti-manipulation).
-  function savePrices(){ try{ if(FB&&FB.auth&&FB.auth.currentUser){ FB.f.setDoc(FB.f.doc(FB.db,'settings','prices'),{prices:S.adminPrices||{},updatedAt:FB.f.serverTimestamp()},{merge:true}); } }catch(_){} }
+  /* ON N'ÉCRIT JAMAIS LA GRILLE AVANT DE L'AVOIR LUE (23/09/2026).
+     Question de l'éditeur, et c'était la bonne : « ou alors la mise à jour remet des
+     anciens tarifs en écrasant ceux de la console ? » Le risque était réel. `savePrices`
+     écrit `S.adminPrices` EN ENTIER ; et tant que `settings/prices` n'est pas revenu,
+     `S.adminPrices` ne contient que les valeurs écrites dans le CODE (`ADMIN_PRICES`).
+     Toucher une seule flèche « + » pendant ces quelques centaines de millisecondes
+     aurait donc réécrit TOUTE la grille avec les valeurs d'usine — le ménage serait
+     repassé de 28 à 35 sans que personne n'ait rien demandé, et sans trace.
+     La sauvegarde attend donc la lecture. C'est un refus, pas un report : on ne met pas
+     en file une écriture fondée sur des chiffres qu'on sait faux. */
+  function savePrices(){
+    if(!S.adminPricesLus){ toast('Grille pas encore chargée, réessayez dans un instant'); return; }
+    try{ if(FB&&FB.auth&&FB.auth.currentUser){ FB.f.setDoc(FB.f.doc(FB.db,'settings','prices'),{prices:S.adminPrices||{},updatedAt:FB.f.serverTimestamp()},{merge:true}); } }catch(_){}
+  }
   /* TANT QUE LA GRILLE N'EST PAS LUE, ON N'AFFICHE PAS DE TARIF (23/09/2026).
      « Ça a redisparu » : la fiche d'une prestataire annonçait Jardinage 40 €/h avec
      « Grille à son inscription : 45 €/h », puis, une fois la page revenue, Jardinage
@@ -15989,7 +16002,9 @@
     if(b.dataset.tip!=null){const m=S.mission;if(m){const v=b.dataset.tip;if(v==='custom'){m._tipCustom=true;}else{m._tipCustom=false;m.tip=Math.max(0,+v||0);}render();}return;}
     // Ajout de métier (artisan) : coche/décoche un service dans le formulaire d'ajout.
     if(b.dataset.pac){const f=S.proAddForm;if(f){const id=b.dataset.pac,i=f.cats.indexOf(id);if(i>=0)f.cats.splice(i,1);else f.cats.push(id);render();}return;}
-    if(b.dataset.price){const [id,dir]=b.dataset.price.split(':');if(!S.adminPrices)S.adminPrices=ADMIN_PRICES();const cur=(S.adminPrices[id]!=null)?S.adminPrices[id]:(/_j$/.test(id)?DAY_RECO:svcBase(id));S.adminPrices[id]=Math.max(5,cur+(dir==='up'?1:-1));savePrices();render();return;}
+    if(b.dataset.price){const [id,dir]=b.dataset.price.split(':');
+      if(!S.adminPricesLus){toast('Grille pas encore chargée, réessayez dans un instant');return;}
+      if(!S.adminPrices)S.adminPrices=ADMIN_PRICES();const cur=(S.adminPrices[id]!=null)?S.adminPrices[id]:(/_j$/.test(id)?DAY_RECO:svcBase(id));S.adminPrices[id]=Math.max(5,cur+(dir==='up'?1:-1));savePrices();render();return;}
     // PURGE D'UN COMPTE. Deux appuis : le premier arme (et se désarme seul au bout de
     // 5 s), le second lance. C'est le serveur qui fait le travail — lui seul peut
     // supprimer un compte d'authentification et toucher au registre.
