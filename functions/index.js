@@ -111,7 +111,29 @@ function tiLogoAttachment() {
 function corpsPorteUnBouton(html) {
   return /<a\b[^>]*style="[^"]*display:\s*inline-block/i.test(String(html || ''));
 }
-function tiCharteHtml(inner, cta) {
+/* DEUX MONDES, DEUX COULEURS — ET L'ENVELOPPE NE CONNAISSAIT QUE L'UN (23/09/2026).
+   « Nous avions déterminé un code couleur pour les mails destinés au prestataire et un
+   code couleur pour les clients ; j'ai l'impression que ce n'est pas respecté. » Exact,
+   et la cause tient à l'endroit où la décision est prise : le gabarit de BIENVENUE sait à
+   qui il écrit (`isPro`) et vire au teal pour un prestataire ; l'enveloppe COMMUNE, elle,
+   était corail en dur. Or c'est elle qui habille tout le reste — attestation validée,
+   métier validé, document réclamé par Mollie, nouvelle demande de mission : des messages
+   qui ne partent QU'À des prestataires, et qui arrivaient tous dans la couleur du client.
+   La couleur se décide donc AU MÊME ENDROIT que l'habillage, une fois pour toutes. */
+const MAIL_COULEURS = {
+  client: { c1: '#FF6A5B', c2: '#FF9F54' },
+  pro: { c1: '#0FA896', c2: '#14C2A8' },
+};
+/* LA COULEUR SE LIT ICI, ELLE NE SE RECOPIE PAS. Six gabarits portent leur propre
+   enveloppe (bienvenue, invitation, relance Mollie, profil validé, mot de passe) et
+   chacun réécrivait ses hexadécimaux à la main : l'invitation avait fini avec un
+   bandeau sarcelle et un logotype corail, dans le même e-mail. */
+function mailPalette(pro) {
+  const C = pro ? MAIL_COULEURS.pro : MAIL_COULEURS.client;
+  return { c1: C.c1, c2: C.c2, btn: C.c1, dot: C.c1 };
+}
+function tiCharteHtml(inner, cta, pro) {
+  const C = mailPalette(pro);
   // Le pied signe déjà « L'équipe Ti-Services » : on retire la signature du corps
   // brut pour ne pas la voir deux fois.
   const body = String(inner || '').replace(/<p>(?:À très vite,\s*<br\s*\/?>\s*)?L'équipe Ti-Services\s*\.?<\/p>\s*$/, '');
@@ -119,17 +141,17 @@ function tiCharteHtml(inner, cta) {
   const label = (cta && cta.label) ? String(cta.label) : 'Ouvrir Ti-Services';
   const bouton = corpsPorteUnBouton(body) ? '' :
     '<tr><td align="center" style="padding:14px 30px 26px">' +
-      '<a href="' + escHtmlS(url) + '" style="display:inline-block;background:#FF6A5B;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 26px;border-radius:11px">' + escHtmlS(label) + '</a>' +
+      '<a href="' + escHtmlS(url) + '" style="display:inline-block;background:' + C.c1 + ';color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 26px;border-radius:11px">' + escHtmlS(label) + '</a>' +
     '</td></tr>';
   return '' +
   '<div style="margin:0;padding:0;background:#FBF7F4;font-family:-apple-system,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;color:#231E33">' +
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FBF7F4;padding:24px 12px">' +
       '<tr><td align="center">' +
         '<table role="presentation" width="520" cellpadding="0" cellspacing="0" style="max-width:520px;width:100%;background:#ffffff;border-radius:18px;overflow:hidden">' +
-          '<tr><td style="height:6px;background:linear-gradient(90deg,#FF6A5B,#FF9F54)"></td></tr>' +
+          '<tr><td style="height:6px;background:linear-gradient(90deg,' + C.c1 + ',' + C.c2 + ')"></td></tr>' +
           '<tr><td align="center" style="padding:26px 30px 4px">' +
             '<img src="cid:tilogo" width="60" height="60" alt="Ti-Services" style="display:block;border-radius:16px;margin:0 auto 10px">' +
-            '<div style="font-size:24px;font-weight:800;letter-spacing:-.02em"><span style="color:#FF6A5B">Ti</span><span style="color:#231E33">-Services</span></div>' +
+            '<div style="font-size:24px;font-weight:800;letter-spacing:-.02em"><span style="color:' + C.c1 + '">Ti</span><span style="color:#231E33">-Services</span></div>' +
             '<div style="font-size:12px;color:#8a8494;margin-top:2px">Services à la demande · Saint-Barthélemy</div>' +
           '</td></tr>' +
           '<tr><td style="padding:14px 30px 6px"><div style="font-size:15px;line-height:1.6;color:#4a4556">' + body + '</div></td></tr>' +
@@ -143,13 +165,13 @@ function tiCharteHtml(inner, cta) {
     '</table>' +
   '</div>';
 }
-function tiCharteMessage(message) {
+function tiCharteMessage(message, pro) {
   if (!message || !message.html) return message;
   let m = message;
-  if (m.html.indexOf('cid:tilogo') < 0) m = Object.assign({}, m, {html: tiCharteHtml(m.html, m.cta)});
+  if (m.html.indexOf('cid:tilogo') < 0) m = Object.assign({}, m, {html: tiCharteHtml(m.html, m.cta, pro)});
   // `cta` a servi à l'enveloppe : il n'a rien à faire dans le document mis en file, que
   // l'extension d'envoi lit champ par champ.
-  if (m.cta) { m = Object.assign({}, m); delete m.cta; }
+  if (m.cta || typeof m.pro === 'boolean') { m = Object.assign({}, m); delete m.cta; delete m.pro; }
   // Le logo doit accompagner tout gabarit qui le référence (y compris ceux qui
   // avaient oublié la pièce jointe : l'image apparaissait cassée).
   const deja = (Array.isArray(m.attachments) ? m.attachments : []).some((a) => a && a.cid === 'tilogo');
@@ -159,8 +181,31 @@ function tiCharteMessage(message) {
   }
   return m;
 }
+/* QUI EST LE DESTINATAIRE ? On le DEMANDE, on ne le fait pas déclarer par les vingt
+   appels — le vingt-et-unième oublierait, et l'on retrouverait un e-mail de prestataire
+   en corail sans que personne ne s'en aperçoive. Une lecture par envoi, sur un champ
+   indexé, pour quelques centaines d'e-mails par mois : le prix est nul devant une charte
+   qui tient toute seule. Le résultat est retenu le temps de vie de l'instance.
+   UN APPELANT QUI SAIT PEUT LE DIRE (`message.pro`) — l'invitation part chez quelqu'un
+   qui n'a pas encore de fiche, aucune lecture ne le trouverait. Et en cas de doute ou de
+   panne, on retombe sur le corail, c'est-à-dire sur ce qui se faisait avant. */
+const _proParMail = new Map();
+async function _destinataireEstPro(db, to) {
+  const mail = String(to || '').trim().toLowerCase();
+  if (!mail) return false;
+  if (_proParMail.has(mail)) return _proParMail.get(mail);
+  let pro = false;
+  try {
+    const q = await db.collection('artisans').where('email', '==', mail).limit(1).get();
+    pro = !q.empty;
+  } catch (e) { console.warn('destinataireEstPro', e); }
+  _proParMail.set(mail, pro);
+  return pro;
+}
 async function sendMail(db, to, message) {
-  message = tiCharteMessage(message);
+  const pro = (message && typeof message.pro === 'boolean')
+    ? message.pro : await _destinataireEstPro(db, to);
+  message = tiCharteMessage(message, pro);
   const tx = mailTransport();
   if (tx) {
     try {
@@ -5042,10 +5087,7 @@ function welcomeHtml(first, role) {
   const app = APP_URL.replace(/\/$/, '');
   const isPro = (role === 'artisan' || role === 'concierge' || role === 'pro');
   // Accents : corail pour les clients, sarcelle (teal) pour les intervenants.
-  const c1 = isPro ? '#0FA896' : '#FF6A5B';
-  const c2 = isPro ? '#14C2A8' : '#FF9F54';
-  const btn = isPro ? '#0FA896' : '#FF6A5B';
-  const dot = isPro ? '#0FA896' : '#FF6A5B';
+  const { c1, c2, btn, dot } = mailPalette(isPro);
   const name = escHtmlS(first);
 
   const intro = isPro ?
@@ -5082,7 +5124,7 @@ function welcomeHtml(first, role) {
      '<b>profil intervenant</b>, avec <b>une autre adresse e-mail</b> que celle de ce compte.');
   const crossHref = app + (isPro ? '/?open=client-signup' : '/?open=pro-signup');
   const crossLabel = isPro ? 'Créer mon compte client' : 'Devenir intervenant';
-  const crossBtn = isPro ? '#FF6A5B' : '#0FA896';   // l'accent de l'AUTRE monde
+  const crossBtn = mailPalette(!isPro).c1;   // l'accent de l'AUTRE monde
   const crossBlock =
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FBF7F4;border:1px solid #efeae4;border-radius:14px;margin-top:6px">' +
       '<tr><td style="padding:16px 18px">' +
@@ -5102,7 +5144,7 @@ function welcomeHtml(first, role) {
           '<tr><td style="height:6px;background:linear-gradient(90deg,' + c1 + ',' + c2 + ')"></td></tr>' +
           '<tr><td align="center" style="padding:26px 30px 4px">' +
             '<img src="cid:tilogo" width="60" height="60" alt="Ti-Services" style="display:block;border-radius:16px;margin:0 auto 10px">' +
-            '<div style="font-size:24px;font-weight:800;letter-spacing:-.02em"><span style="color:' + (isPro ? '#0FA896' : '#FF6A5B') + '">Ti</span><span style="color:#231E33">-Services</span></div>' +
+            '<div style="font-size:24px;font-weight:800;letter-spacing:-.02em"><span style="color:' + c1 + '">Ti</span><span style="color:#231E33">-Services</span></div>' +
             '<div style="font-size:12px;color:#8a8494;margin-top:2px">Services à la demande · Saint-Barthélemy</div>' +
           '</td></tr>' +
           '<tr><td style="padding:14px 30px 0">' +
@@ -5131,8 +5173,10 @@ function welcomeHtml(first, role) {
  * ========================================================================== */
 function inviteArtisanHtml(name, message) {
   const app = APP_URL.replace(/\/$/, '');
-  // Couleurs de marque Ti-Services (corail), comme l'e-mail de bienvenue client.
-  const c1 = '#FF6A5B', c2 = '#FF9F54', btn = '#FF6A5B', dot = '#FF6A5B';
+  // Le teal du monde des PRESTATAIRES : ce message invite à le devenir, il n'a rien du
+  // monde client. Il était corail « comme l'e-mail de bienvenue client », ce qui était
+  // justement l'incohérence relevée.
+  const { c1, c2, btn, dot } = mailPalette(true);
   // Salutation sans prénom par défaut (envoi rapide sans risque) ; prénom seulement si fourni.
   const hi = name ? ('Bonjour ' + escHtmlS(name) + ',') : 'Bonjour,';
   const feats =
@@ -5148,7 +5192,7 @@ function inviteArtisanHtml(name, message) {
           '<tr><td style="height:6px;background:linear-gradient(90deg,' + c1 + ',' + c2 + ')"></td></tr>' +
           '<tr><td align="center" style="padding:26px 30px 4px">' +
             '<img src="cid:tilogo" width="60" height="60" alt="Ti-Services" style="display:block;border-radius:16px;margin:0 auto 10px">' +
-            '<div style="font-size:24px;font-weight:800;letter-spacing:-.02em"><span style="color:#FF6A5B">Ti</span><span style="color:#231E33">-Services</span></div>' +
+            '<div style="font-size:24px;font-weight:800;letter-spacing:-.02em"><span style="color:' + c1 + '">Ti</span><span style="color:#231E33">-Services</span></div>' +
             '<div style="font-size:12px;color:#8a8494;margin-top:2px">Services à la demande · Saint-Barthélemy</div>' +
           '</td></tr>' +
           '<tr><td style="padding:14px 30px 0">' +
@@ -5207,7 +5251,7 @@ function inviteArtisanHtml(name, message) {
    — le seul cas où la phrase d'origine est vraie. */
 function mollieReminderHtml(name, n, cas) {
   const app = APP_URL.replace(/\/$/, '');
-  const c1 = '#0FA896'; const c2 = '#14C2A8'; const btn = '#0FA896';
+  const { c1, c2, btn } = mailPalette(true);
   const hi = name ? escHtmlS(String(name).split(/\s+/)[0]) : '';
   const relance = Number(n) || 1;
   const piece = cas === 'piece';
@@ -5278,7 +5322,7 @@ function mollieReminderHtml(name, n, cas) {
 function approvedArtisanHtml(name) {
   const app = APP_URL.replace(/\/$/, '');
   // Accent sarcelle (teal) : même code couleur que l'e-mail de bienvenue intervenant.
-  const c1 = '#0FA896', c2 = '#14C2A8', btn = '#0FA896', dot = '#0FA896';
+  const { c1, c2, btn, dot } = mailPalette(true);
   const hi = name ? escHtmlS(name) : 'Bonjour';
   // Bloc « dernière étape » Mollie : mis en avant sur fond sarcelle très doux.
   const mollieBlock =
@@ -5296,7 +5340,7 @@ function approvedArtisanHtml(name) {
           '<td style="font-size:13px;color:#4a4556;line-height:1.5"><b>À partir de là, vous pourrez recevoir des missions</b> et accepter les demandes près de chez vous, votre gain net (commission déduite) vous est versé tout seul, sans virement à faire.</td>' +
         '</tr></table>' +
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px"><tr><td align="center">' +
-          '<a href="' + app + '/?open=missions" style="display:inline-block;background:' + btn + ';color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 24px;border-radius:11px">' + bloc1Bouton + '</a>' +
+          '<a href="' + app + '/?open=missions" style="display:inline-block;background:' + btn + ';color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 24px;border-radius:11px">Activer mes paiements</a>' +
         '</td></tr></table>' +
         '<div style="font-size:12px;color:#8a8494;line-height:1.5;margin-top:10px;text-align:center">Astuce&nbsp;: cette étape est plus simple depuis un <b>ordinateur</b>.</div>' +
       '</td></tr>' +
@@ -5334,7 +5378,7 @@ function approvedArtisanHtml(name) {
  * Trilingue (fr/en/pt). Le lien de réinitialisation est généré côté serveur
  * par l'Admin SDK ; on ne révèle jamais si l'adresse est inscrite.
  * ========================================================================== */
-function resetPasswordEmail(link, lang) {
+function resetPasswordEmail(link, lang, pro) {
   const L = {
     fr: {
       subject: 'Réinitialisation de votre mot de passe Ti-Services',
@@ -5365,7 +5409,7 @@ function resetPasswordEmail(link, lang) {
     },
   };
   const t = L[lang] || L.fr;
-  const c1 = '#FF6A5B', c2 = '#FF9F54', btn = '#FF6A5B';
+  const { c1, c2, btn } = mailPalette(pro);
   const safe = escHtmlS(link);
   const html = '' +
   '<div style="margin:0;padding:0;background:#FBF7F4;font-family:-apple-system,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;color:#231E33">' +
@@ -5375,7 +5419,7 @@ function resetPasswordEmail(link, lang) {
           '<tr><td style="height:6px;background:linear-gradient(90deg,' + c1 + ',' + c2 + ')"></td></tr>' +
           '<tr><td align="center" style="padding:26px 30px 4px">' +
             '<img src="cid:tilogo" width="60" height="60" alt="Ti-Services" style="display:block;border-radius:16px;margin:0 auto 10px">' +
-            '<div style="font-size:24px;font-weight:800;letter-spacing:-.02em"><span style="color:#FF6A5B">Ti</span><span style="color:#231E33">-Services</span></div>' +
+            '<div style="font-size:24px;font-weight:800;letter-spacing:-.02em"><span style="color:' + c1 + '">Ti</span><span style="color:#231E33">-Services</span></div>' +
             '<div style="font-size:12px;color:#8a8494;margin-top:2px">Services à la demande · Saint-Barthélemy</div>' +
           '</td></tr>' +
           '<tr><td style="padding:14px 30px 0">' +
@@ -5432,9 +5476,12 @@ exports.sendResetEmail = onCall({secrets: [SMTP_PASS]}, async (request) => {
     const logo = require('fs').readFileSync(require('path').join(__dirname, 'mail-logo.png'));
     attachments.push({ filename: 'ti-services.png', content: logo, cid: 'tilogo' });
   } catch (_) {}
-  const { subject, html } = resetPasswordEmail(link, lang);
+  // Un mot de passe se réinitialise des deux côtés : c'est le destinataire qui dit
+  // la couleur, comme pour tous les autres envois.
+  const pro = await _destinataireEstPro(db, email);
+  const { subject, html } = resetPasswordEmail(link, lang, pro);
   try {
-    await sendMail(db, email, { subject, html, attachments });
+    await sendMail(db, email, { subject, html, attachments, pro });
     console.log('E-mail de réinitialisation → ' + email);
   } catch (e) { console.warn('sendResetEmail send', e); }
   return { sent: true };
@@ -5462,6 +5509,9 @@ exports.sendArtisanInvite = onCall({secrets: [SMTP_PASS]}, async (request) => {
     subject: 'Rejoignez Ti-Services, les clients de Saint-Barth vous cherchent',
     html: inviteArtisanHtml(name, message),
     attachments,
+    // Aucune fiche `artisans` ne porte encore cette adresse : la lecture ne le
+    // trouverait pas. On le DIT, c'est le seul cas où l'appelant en sait plus.
+    pro: true,
   });
   if (!ok) throw new HttpsError('internal', 'L\'envoi a échoué, réessayez.');
   return { sent: true };
@@ -6370,7 +6420,7 @@ exports.gcalSyncEvent = onDocumentUpdated({ document: 'requests/{reqId}', secret
 });
 
 // Export interne pour les tests unitaires (inerte en production : TI_TEST non défini).
-if (process.env.TI_TEST) { module.exports.__test = { buildInvoicePdf, buildProcurationPdf, invoiceLines, eurTxt, frDate, welcomeHtml, inviteArtisanHtml, approvedArtisanHtml, resetPasswordEmail, buildIcs, icsEscape, gcalWindow, parseIcsBusy }; }
+if (process.env.TI_TEST) { module.exports.__test = { mailPalette, buildInvoicePdf, buildProcurationPdf, invoiceLines, eurTxt, frDate, welcomeHtml, inviteArtisanHtml, approvedArtisanHtml, resetPasswordEmail, buildIcs, icsEscape, gcalWindow, parseIcsBusy }; }
 
 /* ============================================================================
  * PURGE D'UN COMPTE — depuis la console admin, et rien ne survit en silence.

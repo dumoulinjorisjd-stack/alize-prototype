@@ -12,7 +12,7 @@ const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; console.log
 const fn = fs.readFileSync(path.join(RACINE, 'functions', 'index.js'), 'utf8');
 
 console.log('A — le branchement est bien central (sendMail), pas au cas par cas');
-ok(/async function sendMail\(db, to, message\) \{\n  message = tiCharteMessage\(message\);/.test(fn),
+ok(/async function sendMail\(db, to, message\) \{\n[\s\S]{0,240}?\n  message = tiCharteMessage\(message, pro\);/.test(fn),
   'sendMail passe TOUT message par tiCharteMessage avant envoi ou mise en file');
 
 console.log('B — l’enveloppe elle-même (exécutée pour de vrai)');
@@ -97,5 +97,93 @@ ok(tiLogoAttachment() !== null, 'le fichier mail-logo.png est bien présent à c
 const sig2 = tiCharteHtml('<p>Corps.</p><p>À très vite,<br>L\'équipe Ti-Services</p>');
 ok((sig2.match(/L'équipe Ti-Services/g) || []).length === 1, 'la variante « À très vite, » est aussi dédoublonnée');
 
-process.exitCode = f ? 1 : 0;
-console.log(f ? ('\n' + f + ' ÉCHEC(S)') : '\nTOUT EST VERT');
+
+/* ============================================================================
+   D — LE CODE COULEUR : CORAIL AU CLIENT, SARCELLE AU PRESTATAIRE.
+
+   Relevé sur trois captures le 23/09/2026 : la bienvenue CLIENT arrivait en corail,
+   la bienvenue PRESTATAIRE en sarcelle — les deux justes — mais « Attestation
+   validée », envoyée à une PRESTATAIRE, arrivait en corail. La cause n'était dans
+   aucun de ces e-mails : l'enveloppe COMMUNE (`tiCharteHtml`), qui habille tout ce
+   qui n'a pas de gabarit à soi, portait le corail EN DUR. Et l'invitation, elle,
+   mélangeait les deux : bandeau sarcelle, logotype corail, dans le même message.
+
+   On MESURE donc le rendu, pas la source : le bandeau dégradé, le logotype, et le
+   nombre d'hexadécimaux de l'AUTRE monde. La seule exception est voulue et se
+   compte — la bienvenue porte un encart vers l'autre monde, dans l'accent de
+   l'autre monde. ========================================================== */
+console.log('D — corail au client, sarcelle au prestataire');
+
+const decoupe = (a, b) => fn.slice(fn.indexOf(a), fn.indexOf(b));
+const srcPalette = decoupe('const MAIL_COULEURS = {', 'function tiCharteHtml(');
+const srcGabarits = decoupe('function welcomeFeatureRow(', 'exports.sendResetEmail');
+const fabG = new Function('require', '__dirname',
+  'const APP_URL = \'https://ti-services.fr\';\n' + esc + '\n' + srcPalette + '\n' + srcGabarits +
+  '\nreturn {MAIL_COULEURS, mailPalette, welcomeHtml, inviteArtisanHtml, mollieReminderHtml,' +
+  ' approvedArtisanHtml, resetPasswordEmail};');
+const G = fabG(bac.require, bac.__dirname);
+const CLIENT = G.MAIL_COULEURS.client, PRO = G.MAIL_COULEURS.pro;
+
+const compte = (html, h) => (html.split(h).length - 1);
+// Trois repères, mesurés sur le RENDU : le bandeau de 6 px, le logotype « Ti », et
+// ce qui reste de l'autre palette.
+function charte(nom, html, pro, croisesAttendus) {
+  const A = pro ? PRO : CLIENT; const B = pro ? CLIENT : PRO;
+  ok(html.indexOf('linear-gradient(90deg,' + A.c1 + ',' + A.c2 + ')') >= 0,
+    nom + ' : le bandeau est ' + (pro ? 'sarcelle' : 'corail'));
+  ok(html.indexOf('<span style="color:' + A.c1 + '">Ti</span>') >= 0,
+    nom + ' : le logotype « Ti » est dans la MÊME couleur que le bandeau');
+  const croises = compte(html, B.c1) + compte(html, B.c2);
+  ok(croises === croisesAttendus,
+    nom + ' : ' + croises + ' trace(s) de l\'autre palette, ' + croisesAttendus + ' attendue(s)');
+}
+
+// La bienvenue : les deux mondes, et son encart croisé (UN accent de l'autre monde).
+charte('bienvenue client', G.welcomeHtml('Aurore', 'client'), false, 1);
+charte('bienvenue prestataire', G.welcomeHtml('Émilie', 'artisan'), true, 1);
+// Les quatre gabarits qui ne parlent QU'À un prestataire.
+charte('invitation', G.inviteArtisanHtml('Émilie', ''), true, 0);
+charte('relance Mollie (pièce)', G.mollieReminderHtml('Émilie', 1, 'piece'), true, 0);
+charte('relance Mollie (paiements)', G.mollieReminderHtml('Émilie', 3, 'paiements'), true, 0);
+charte('profil validé', G.approvedArtisanHtml('Émilie'), true, 0);
+// Le mot de passe part des DEUX côtés : c'est le destinataire qui décide.
+charte('mot de passe (client)', G.resetPasswordEmail('https://x/y', 'fr', false).html, false, 0);
+charte('mot de passe (prestataire)', G.resetPasswordEmail('https://x/y', 'fr', true).html, true, 0);
+// Et l'enveloppe commune, celle qui habille tout le reste.
+charte('enveloppe commune (client)', tiCharteHtml('<p>Bonjour.</p>', null, false), false, 0);
+charte('enveloppe commune (prestataire)', tiCharteHtml('<p>Bonjour.</p>', null, true), true, 0);
+
+/* LA COULEUR SE LIT À UN SEUL ENDROIT. Six gabarits recopiaient leurs hexadécimaux :
+   c'est ainsi qu'un bandeau et un logotype ont fini de deux couleurs différentes. */
+const hexs = (fn.match(/#FF6A5B|#FF9F54|#0FA896|#14C2A8/g) || []).length;
+ok(hexs === 4, 'les quatre couleurs de marque ne sont écrites qu\'une fois, dans MAIL_COULEURS (' + hexs + ')');
+
+/* QUI EST LE DESTINATAIRE ? On le DEMANDE à la base, on ne le fait pas déclarer par
+   les vingt appels — le vingt-et-unième oublierait. Éprouvé sur une fausse base. */
+const srcPro = decoupe('const _proParMail = new Map();', 'async function sendMail');
+const { _destinataireEstPro, _proParMail } = new Function(
+  srcPro + '\nreturn {_destinataireEstPro, _proParMail};')();
+const baseAvec = (vide) => ({collection: () => ({where: () => ({limit: () => ({
+  get: async () => ({empty: vide}) })})})});
+const basePanne = {collection: () => { throw new Error('réseau'); }};
+(async () => {
+  ok((await _destinataireEstPro(baseAvec(false), 'Emilie@Dugard.fr')) === true,
+    'une adresse qui porte une fiche prestataire est reconnue (casse et espaces ignorés)');
+  ok((await _destinataireEstPro(baseAvec(true), 'client@exemple.fr')) === false,
+    'une adresse sans fiche prestataire est un client');
+  _proParMail.clear();
+  ok((await _destinataireEstPro(basePanne, 'panne@exemple.fr')) === false,
+    'et en cas de panne on retombe sur le corail, c\'est-à-dire sur ce qui se faisait avant');
+  // Un appelant qui SAIT peut le dire : l'invitation part chez quelqu'un qui n'a pas
+  // encore de fiche, aucune lecture ne le trouverait.
+  ok(/html: inviteArtisanHtml\(name, message\),[\s\S]{0,260}?pro: true,/.test(fn),
+    'l\'invitation déclare `pro: true` — la lecture ne trouverait pas une fiche qui n\'existe pas');
+  ok(/const pro = \(message && typeof message\.pro === 'boolean'\)\n\s*\? message\.pro : await _destinataireEstPro\(db, to\);/.test(fn),
+    'sendMail préfère ce que l\'appelant déclare, et demande à la base sinon');
+  ok(/delete m\.cta; delete m\.pro;/.test(fn),
+    '`pro` a servi à l\'habillage : il ne part pas dans le document mis en file');
+
+  process.exitCode = f ? 1 : 0;
+  console.log(f ? ('\n' + f + ' ÉCHEC(S)') : '\nTOUT EST VERT');
+})();
+
