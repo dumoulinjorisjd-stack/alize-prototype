@@ -112,27 +112,62 @@ const src = fs.readFileSync(path.join(RACINE, 'index.html'), 'utf8');
      installée, et fait rendre `null` à `window.open` — les deux conditions exactes du
      défaut, qu'aucun navigateur de bureau ne reproduit tout seul. */
   console.log('\nE — dans l’application installée, un lien qui sort finit par sortir');
-  await p.evaluate(() => {
-    window.__ouvertures = [];
-    window.matchMedia = (q) => ({ matches: /display-mode:\s*standalone/.test(q), media: q,
-      addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} });
-    window.open = (u) => { window.__ouvertures.push(String(u)); return null; };
-    const a = document.createElement('a');
-    a.setAttribute('target', '_blank'); a.setAttribute('href', '#preuve-onglet');
-    a.id = 'lien-sortant'; a.textContent = 'sortir'; document.body.appendChild(a);
-  });
-  await p.click('#lien-sortant'); await p.waitForTimeout(250);
-  const sortie = await p.evaluate(() => ({ tente: (window.__ouvertures || []).slice(), ancre: location.hash }));
-  ok(sortie.tente.length === 1, 'l’onglet est tenté d’abord (' + sortie.tente.length + ' fois)');
-  ok(sortie.ancre === '#preuve-onglet',
-    'et comme il ne vient pas, on NAVIGUE — le lien ne meurt pas en silence (' + (sortie.ancre || 'aucune') + ')');
+  /* DEUX PEAUX, ET LA SECONDE EST CELLE DE L'ÉDITEUR. Un premier jet ne reconnaissait
+     l'application installée qu'à `display-mode: standalone` — qui répond FAUX dans une
+     WebView Capacitor. La garde ne se serait donc jamais déclenchée dans l'application
+     du Play Store, c'est-à-dire là où le défaut a été signalé. On éprouve les deux.
+     Et l'on MESURE le comportement : une épreuve qui se contenterait de vérifier qu'une
+     fonction existe passerait au vert sans rien prouver. */
+  const peaux = [
+    ['application posée sur l’écran d’accueil', () => {
+      delete window.Capacitor;
+      window.matchMedia = (q) => ({ matches: /display-mode:\s*standalone/.test(q), media: q,
+        addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} });
+    }],
+    ['coquille native du Play Store', () => {
+      window.Capacitor = { isNativePlatform: () => true, getPlatform: () => 'android', Plugins: {} };
+      // Pas de `standalone` ici : c'est tout le piège.
+      window.matchMedia = (q) => ({ matches: false, media: q,
+        addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} });
+    }],
+  ];
+  for (let i = 0; i < peaux.length; i++) {
+    const [nom, poserPeau] = peaux[i];
+    await p.evaluate(poserPeau);
+    const ancre = '#sortie-' + i;
+    await p.evaluate((a) => {
+      window.__ouvertures = [];
+      window.open = (u) => { window.__ouvertures.push(String(u)); return null; };
+      const el = document.createElement('a');
+      el.setAttribute('target', '_blank'); el.setAttribute('href', a);
+      el.id = 'lien-sortant'; el.textContent = 'sortir'; document.body.appendChild(el);
+    }, ancre);
+    await p.click('#lien-sortant'); await p.waitForTimeout(250);
+    const sortie = await p.evaluate(() => ({ tente: (window.__ouvertures || []).length, ancre: location.hash }));
+    ok(sortie.tente === 1, nom + ' : l’onglet est tenté d’abord (' + sortie.tente + ')');
+    ok(sortie.ancre === ancre,
+      nom + ' : et comme il ne vient pas, on NAVIGUE — le lien ne meurt pas en silence');
+    await p.evaluate(() => { const e = document.getElementById('lien-sortant'); if (e) e.remove(); });
+  }
+  await p.evaluate(() => { delete window.Capacitor; });
 
   // ET LA VISIONNEUSE N'A PLUS D'ANCRE MORTE DANS SA BARRE.
   ok(!/iv-bar[\s\S]{0,300}<a /.test(src.replace(/\n/g, '')),
     'la barre de la visionneuse n’a plus d’ancre « nouvel onglet » ni « télécharger », qui ne faisaient rien');
   // UN PDF SUR IPHONE NE S'AFFICHE PAS DANS UN CADRE : on ne pose pas le cadre, on le dit.
-  ok(/pdfSansCadre=docEstPdf\(src\)&&detectPlatform\(\)\.ios/.test(src),
-    'et sur iPhone le cadre du PDF n’est pas posé du tout — une page blanche se lit comme une panne');
+  // NI IOS, NI CHROME ANDROID, NI LA WEBVIEW N'ONT DE LECTEUR DE PDF EN CADRE : seul un
+  // navigateur de BUREAU en a un. Un premier jet ne visait qu'iPhone ; l'éditeur est sur
+  // Android, et le cadre y restait blanc de la même façon.
+  ok(/pdfSansCadre=docEstPdf\(src\)&&\(!detectPlatform\(\)\.desktop\|\|isNativeShell\(\)\)/.test(src),
+    'le cadre du PDF n’est posé que sur un navigateur de bureau, le seul qui sache l’afficher');
+  /* ET DANS LA COQUILLE, ON NE « NAVIGUE » PAS VERS LE DOCUMENT : la configuration
+     Capacitor autorise `*.googleapis.com`, donc l'adresse d'un fichier Storage s'ouvrirait
+     DANS la WebView, qui ne sait rien afficher — l'utilisateur se retrouverait hors de
+     l'application devant une page blanche. On écrit le fichier et on ouvre la feuille de
+     partage, le chemin que l'application a déjà tracé pour ses factures. */
+  ok(/isNativeShell\(\)\)\{[\s\S]{0,200}P\.Filesystem&&P\.Share/.test(src)
+     && /Share\.share\(\{title:nomFichier/.test(src),
+    'et le document passe par Filesystem + Share dans la coquille, jamais par une navigation');
   // LE BOUTON QUI ACTIVE LES PAIEMENTS PASSE PAR LA MÊME PORTE.
   ok(/function openMollieAccount\(\)\{[\s\S]{0,400}ouvrirDehors\(url\);/.test(src),
     '« ouvrir mon compte Mollie » aussi : c’est par ce bouton qu’on active ses paiements');

@@ -4258,6 +4258,9 @@
   function artPriceRows(a){
     const cats=(a&&a.cats?a.cats:[]).filter(function(c){return c!=='autre';});
     if(!cats.length)return '<span class="mini" style="color:var(--muted);font-weight:500">Tarif fixé par Ti-Services après examen.</span>';
+    // La grille n'est pas encore lue : on ne montre pas la valeur de repli comme si
+    // c'était le tarif de Ti-Services, et on n'invente pas d'écart avec elle.
+    if(!S.adminPricesLus)return '<span class="mini" style="color:var(--muted);font-weight:500">Grille en cours de lecture…</span>';
     return cats.map(function(c){
       const plat=(S.adminPrices&&S.adminPrices[c]!=null)?S.adminPrices[c]:svcBase(c);
       const forf=isCatalogForfait(c);
@@ -4275,6 +4278,7 @@
     const cats=(a&&a.cats?a.cats:[]).filter(function(c){return c!=='autre';});
     if(!cats.length)return 'tarif à définir';
     if(cats.length>1)return 'grille Ti-Services';
+    if(!S.adminPricesLus)return 'grille Ti-Services';
     const c=cats[0],plat=(S.adminPrices&&S.adminPrices[c]!=null)?S.adminPrices[c]:svcBase(c);
     return isCatalogForfait(c)?('dès '+minActPrice(c)+' €'):(c==='colis'?(plat+' € / retrait'):(plat+' €/h'));
   }
@@ -4352,8 +4356,54 @@
      la vue de l'application, qui sait l'afficher, et le geste de retour ramène. Une
      seule fonction, parce que le même piège attend tous les boutons qui sortent. */
   function estInstallee(){
+    // LA COQUILLE NATIVE N'EST PAS « STANDALONE » AU SENS DU NAVIGATEUR. Dans une WebView
+    // Capacitor, `display-mode: standalone` répond FAUX : une garde qui ne lirait que
+    // cela ne se déclencherait jamais dans l'application du Play Store — c'est-à-dire
+    // exactement là où le défaut a été signalé.
+    try{ if(isNativeShell())return true; }catch(_){}
     try{ return (window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true; }
     catch(_){ return false; }
+  }
+  /* OUVRIR UN DOCUMENT QUAND ON EST DANS LA COQUILLE. Le repli « naviguer » ne vaut rien
+     ici : `capacitor.config.json` autorise la navigation vers `*.googleapis.com`, donc
+     l'adresse d'un fichier Storage s'ouvrirait DANS la WebView… qui ne sait afficher ni
+     PDF ni rien d'autre, et l'utilisateur se retrouverait hors de l'application devant
+     une page blanche. On emprunte le chemin que l'application a déjà tracé pour ses
+     factures : écrire le fichier sur l'appareil, puis ouvrir la feuille de partage
+     native, d'où il se lit ou s'enregistre. Une erreur remonte au lieu d'être avalée. */
+  async function ouvrirDocument(u,nom){
+    const url=lienSur(u); if(!url){toast('Adresse indisponible');return;}
+    if(isNativeShell()){
+      const P=(window.Capacitor&&window.Capacitor.Plugins)||{};
+      const ext=docEstPdf(url)?'.pdf':(docEstImage(url)?'.jpg':'');
+      const nomFichier=String(nom||'document').replace(/[^\w .-]+/g,' ').trim().slice(0,60)+ext;
+      // 1. LE FICHIER SUR L'APPAREIL, puis la feuille de partage : le chemin que
+      //    l'application a déjà tracé pour ses factures, et le seul qui donne un vrai
+      //    lecteur de PDF sur Android.
+      if(P.Filesystem&&P.Share){
+        try{
+          const r=await withBusy(fetch(url));
+          if(!r.ok)throw new Error('HTTP '+r.status);
+          const buf=new Uint8Array(await r.arrayBuffer());
+          let bin=''; for(let i=0;i<buf.length;i++)bin+=String.fromCharCode(buf[i]);
+          const w=await P.Filesystem.writeFile({path:nomFichier,data:btoa(bin),directory:'CACHE'});
+          await P.Share.share({title:nomFichier,url:w.uri});
+          return;
+        }catch(e){ console.warn('ouvrirDocument fichier',e); }
+      }
+      // 2. LE FICHIER N'A PAS PU ÊTRE RAPATRIÉ (réseau, origine refusée) : on partage
+      //    l'ADRESSE, et l'utilisateur choisit son navigateur. Moins direct, mais ça
+      //    aboutit — et c'est mieux qu'un bouton qui ne fait rien.
+      if(P.Share){
+        try{ await P.Share.share({title:nomFichier,text:nomFichier,url:url}); return; }
+        catch(e){ console.warn('ouvrirDocument partage',e); }
+      }
+      // 3. Aucun plugin : on le DIT plutôt que de naviguer vers une page que la coquille
+      //    ne sait pas afficher.
+      toast('Impossible d’ouvrir ce document depuis l’application');
+      return;
+    }
+    ouvrirDehors(url);
   }
   function ouvrirDehors(u){
     const url=lienSur(u); if(!url){toast('Adresse indisponible');return false;}
@@ -4486,7 +4536,16 @@
   // Grille de prix officielle (settings/prices) — écrite par l'admin, lue par tous ET par
   // le serveur (settleCommission) pour VÉRIFIER le tarif d'une demande (anti-manipulation).
   function savePrices(){ try{ if(FB&&FB.auth&&FB.auth.currentUser){ FB.f.setDoc(FB.f.doc(FB.db,'settings','prices'),{prices:S.adminPrices||{},updatedAt:FB.f.serverTimestamp()},{merge:true}); } }catch(_){} }
-  async function loadPrices(){ try{ if(!FB)return; const snap=await FB.f.getDoc(FB.f.doc(FB.db,'settings','prices')); if(snap.exists()){ const d=snap.data()||{}; if(d.prices&&typeof d.prices==='object'){ S.adminPrices=Object.assign(ADMIN_PRICES(),d.prices); render(); } } }catch(e){ console.warn('prices load',e); } }
+  /* TANT QUE LA GRILLE N'EST PAS LUE, ON N'AFFICHE PAS DE TARIF (23/09/2026).
+     « Ça a redisparu » : la fiche d'une prestataire annonçait Jardinage 40 €/h avec
+     « Grille à son inscription : 45 €/h », puis, une fois la page revenue, Jardinage
+     45 €/h sans aucune note. Les deux ne peuvent pas être vrais. La cause : avant que
+     `settings/prices` soit lu, le prix retombe sur la valeur écrite dans le code
+     (`svcBase`) — 40 pour le jardinage — qui n'est PAS la grille de Ti-Services. La
+     fiche affichait donc un tarif faux, et inventait un écart avec le tarif enregistré
+     à l'inscription, écart qui n'existait pas. Un chiffre qu'on ne connaît pas encore
+     ne s'affiche pas : on attend. */
+  async function loadPrices(){ try{ if(!FB){S.adminPricesLus=true;return;} const snap=await FB.f.getDoc(FB.f.doc(FB.db,'settings','prices')); if(snap.exists()){ const d=snap.data()||{}; if(d.prices&&typeof d.prices==='object'){ S.adminPrices=Object.assign(ADMIN_PRICES(),d.prices); } } S.adminPricesLus=true; render(); }catch(e){ console.warn('prices load',e); S.adminPricesLus=true; try{render();}catch(_){} } }
   // Config partagée (settings/config) : le taux d'apport conciergerie OFFICIEL. Écrit
   // par l'admin, lu par tous ET par le serveur (settleCommission) — c'est LUI qui fait
   // foi pour la rétribution, jamais la valeur envoyée par la conciergerie.
@@ -14655,9 +14714,13 @@
     // PDF qu'en navigation de premier rang. Le cadre y reste BLANC, et une page blanche
     // se lit comme une panne de l'application. On ne le pose donc pas là où il ne peut
     // pas fonctionner : on dit pourquoi, et on offre le bouton qui ouvre vraiment.
-    const pdfSansCadre=docEstPdf(src)&&detectPlatform().ios;
+    // SEUL UN NAVIGATEUR DE BUREAU AFFICHE UN PDF DANS UN CADRE. Ni iOS, ni Chrome sur
+    // Android, ni la WebView de la coquille native n'ont de lecteur intégré pour un
+    // `iframe` : le cadre y reste BLANC, et une page blanche se lit comme une panne de
+    // l'application. Un premier jet ne visait qu'iPhone — l'éditeur est sur Android.
+    const pdfSansCadre=docEstPdf(src)&&(!detectPlatform().desktop||isNativeShell());
     const corps=!src?`<div class="iv-vide">Ce document n’a pas d’adresse exploitable.</div>`
-      :(pdfSansCadre?`<div class="iv-vide">Ce PDF ne peut pas s’afficher dans l’application sur iPhone.<br><button class="btn primary" data-act="doc-dehors" style="margin-top:14px;width:auto;padding:12px 20px">Ouvrir le document</button></div>`
+      :(pdfSansCadre?`<div class="iv-vide">Ce PDF ne s’affiche pas dans l’application.<br><button class="btn primary" data-act="doc-dehors" style="margin-top:14px;width:auto;padding:12px 20px">Ouvrir le document</button></div>`
       :(docEstPdf(src)?`<iframe class="iv-pdf" src="${src}" title="${nom}"></iframe>`
       :(docEstImage(src)?`<img src="${src}" alt="${nom}" class="iv-img">`
       :`<div class="iv-vide">Format non affichable ici.<br><button class="btn primary" data-act="doc-dehors" style="margin-top:14px;width:auto;padding:12px 20px">Ouvrir le document</button></div>`)));
@@ -16069,7 +16132,7 @@
     // `lienSur` ICI AUSSI : l'attribut a pu être posé par un autre écran, et la garde
     // ne vaut que si elle est à la porte, pas seulement chez celui qui a construit le
     // bouton.
-    if(b.dataset.act==='doc-dehors'){ ouvrirDehors((S.imgView||{}).src||''); return; }
+    if(b.dataset.act==='doc-dehors'){ const dv=S.imgView||{}; ouvrirDocument(dv.src||'',dv.name||'document'); return; }
     if(b.dataset.act==='doc-open'){
       const u=lienSur(b.dataset.src||'');
       if(!u){toast('Document indisponible');return;}
