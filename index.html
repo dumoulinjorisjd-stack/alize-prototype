@@ -422,6 +422,8 @@
   body.native-shell [data-act="get-app"],body.native-shell .g-bloc,body.native-shell #installSteps{display:none!important}
   /* …et le séparateur « ou » qui précède le bouton Google du login devient orphelin. */
   body.native-shell .or-sep:has(+ .g-bloc){display:none}
+  .iv-pdf{width:100%;height:100%;border:0;background:#fff}
+  .iv-vide{color:#fff;text-align:center;padding:28px 22px;font-size:14.5px;line-height:1.6;max-width:420px}
   .ig-cap{text-align:center;font-size:12.5px;font-weight:650;color:#007AFF;margin:0 0 14px}
   /* Pied légal de la vitrine : discret, mais atteignable. Il passe à la ligne tout seul
      sur un téléphone, et chaque lien garde une cible confortable au doigt sans que la
@@ -4334,6 +4336,17 @@
   // Statut de VALIDATION de l'attestation d'assurance (décidé par l'admin, pas
   // automatique au dépôt). 'none' = aucun document, 'attente' = déposé à vérifier,
   // 'valide' = approuvé par l'admin, 'refuse' = refusé.
+  /* UNE ADRESSE QUI VIENT D'UN COMPTE NE DEVIENT PAS UN LIEN TELLE QUELLE. `esc()`
+     échappe les guillemets d'un attribut ; il ne dit rien du SCHÉMA. « javascript:… »
+     traverse donc intact, et le lien de l'attestation est cliqué par l'ADMINISTRATEUR,
+     avec ses droits. Liste FERMÉE : https, et rien d'autre. Un dépôt Firebase Storage
+     rend toujours une adresse https, donc rien de légitime n'est perdu. */
+  function lienSur(u){ const v=String(u==null?'':u).trim(); return /^https:\/\//i.test(v)?v:''; }
+  // Le document est-il un PDF ? L'adresse de Storage porte le nom du fichier avant ses
+  // paramètres (…%2Fattestation.pdf?alt=media). On ne devine pas au-delà : ce qui n'est
+  // ni PDF ni image se propose au téléchargement plutôt que de s'afficher en blanc.
+  function docEstPdf(u){ return /\.pdf(\?|$|%3F)/i.test(String(u||'')); }
+  function docEstImage(u){ return /\.(jpe?g|png|webp|gif|heic|heif)(\?|$|%3F)/i.test(String(u||'')); }
   function insStatus(a){ if(!a)return 'none'; if(a.insuranceStatus)return a.insuranceStatus; if(a.status==='valide'&&a.insured)return 'valide'; if(a.insuranceUrl||a.insured)return 'attente'; return 'none'; }
   function insLabel(st){ return st==='valide'?['good','Validée']:st==='refuse'?['coral','Refusée']:st==='attente'?['grey','À vérifier']:['coral','Manquante']; }
   // — ICÔNE D'UN MÉTIER CRÉÉ DEPUIS LA CONSOLE —
@@ -8893,7 +8906,7 @@
       <p class="mini" style="text-align:center;margin-top:14px;color:var(--muted);line-height:1.55">${ios?'Sur iPhone&nbsp;: touchez le bouton Partager de Safari, puis « Sur l\'écran d\'accueil ».':'Votre navigateur vous proposera d\'ajouter Ti-Services à votre écran d\'accueil.'}</p>
       <div style="height:24px"></div></div>`;
   }
-  function render(){try{if(document.documentElement.lang!==S.lang)document.documentElement.lang=S.lang;}catch(_){}if(S.legalView){paintView(legalView(),'legal:'+S.legalView);paintPersona();return;}if(S.showPitch){paintView(pitchView(),'pitch');paintPersona();return;}
+  function render(){try{if(document.documentElement.lang!==S.lang)document.documentElement.lang=S.lang;}catch(_){}if(S.imgView){paintView(imgViewer(),'docview');paintPersona();return;}if(S.legalView){paintView(legalView(),'legal:'+S.legalView);paintPersona();return;}if(S.showPitch){paintView(pitchView(),'pitch');paintPersona();return;}
     // Barrière : toute tentative d'inscription ou de connexion hors application renvoie
     // à l'installation. Placée au routeur, elle couvre tous les chemins d'accès —
     // boutons, liens profonds, page mise en cache par un ancien service worker.
@@ -10295,7 +10308,7 @@
           ${fRow('SIRET',a.siret?`<button class="sirettap" data-adm="copysiret:${a.id}" title="Copier le numéro">${I.copy} <span class="money">${esc(fmtSiret(a.siret))}</span></button>
             <a class="siretlink" href="https://annuaire-entreprises.data.gouv.fr/etablissement/${esc(a.siret)}" target="_blank" rel="noopener">Vérifier à l'annuaire ›</a>`:'<span class="money">—</span>')}
           ${artLegalRows(a)}
-          ${fRow('Assurance RC',`${(function(){const st=insStatus(a),l=insLabel(st);return `<span class="chip ${l[0]}">${l[1]}</span>`;})()}${a.insurer?`<div class="mini" style="margin-top:4px;color:var(--ink);font-weight:600">${esc(a.insurer)}</div>`:''}${a.insuranceUrl?`<div style="margin-top:4px"><a href="${esc(a.insuranceUrl)}" target="_blank" rel="noopener" style="color:var(--teal-deep)">${I.other} Voir l'attestation</a></div>`:`<div class="mini" style="margin-top:4px">Attestation non jointe</div>`}`)}
+          ${fRow('Assurance RC',`${(function(){const st=insStatus(a),l=insLabel(st);return `<span class="chip ${l[0]}">${l[1]}</span>`;})()}${a.insurer?`<div class="mini" style="margin-top:4px;color:var(--ink);font-weight:600">${esc(a.insurer)}</div>`:''}${lienSur(a.insuranceUrl)?`<div style="margin-top:4px"><button class="linklike" data-act="doc-open" data-src="${esc(lienSur(a.insuranceUrl))}" data-nom="Attestation d'assurance" style="color:var(--teal-deep);font-weight:650">${I.other} Voir l'attestation</button></div>`:(a.insuranceUrl?`<div class="mini" style="margin-top:4px;color:var(--coral-deep)">Adresse de l'attestation non exploitable&nbsp;: le document doit être redéposé.</div>`:`<div class="mini" style="margin-top:4px">Attestation non jointe</div>`)}`)}
           ${fRow('Paiements (Mollie)',`${(function(){const st=a.mollieStatus||'none';
             if(st==='active')return `<span class="chip good">${I.check} Actif</span>`;
             if(st==='pending'&&a.mollieOnb==='needs-data')return `<span class="chip coral">${I.clip} Dossier à compléter</span><div class="mini" style="margin-top:4px">Un appel de 2 min peut débloquer, il ne lui manque qu'une pièce ou l'IBAN.</div>${molDepuisTxt(a)}`;
@@ -11317,7 +11330,6 @@
     }catch(_){}
   }
   function renderClient(){
-    if(S.imgView)return imgViewer();
     // Purge des demandes non honorées, périmées depuis plus de 12 h (souplesse comprise).
     if(purgeStaleMissions()&&S.mission==null&&S.clientNav==='wallet'){/* la liste a changé : le rendu ci-dessous reflète l'état purgé */}
     const m=S.mission;
@@ -13144,7 +13156,6 @@
 
   /* ---------- ARTISAN ---------- */
   function renderPro(){
-    if(S.imgView)return imgViewer();
     if(S.share)return shareCard();
     if(S.delAcct)return deleteAccountView();
     if(S.report)return signalementView();
@@ -13203,7 +13214,7 @@
         ${(function(){const st=S.proInsuranceStatus||(S.proInsured?'attente':'none');const l=insLabel(st);return `<div class="row between"><b style="font-size:14px">Attestation d'assurance RC</b><span class="chip ${l[0]}">${l[1]}</span></div>
         ${st==='attente'?`<div class="banner teal" style="margin-top:10px">${I.clock}<span>Votre attestation est <b>en attente de vérification</b> par Ti-Services.</span></div>`:st==='valide'?`<div class="banner good" style="margin-top:10px">${I.check}<span>Attestation <b>validée</b> par Ti-Services.</span></div>`:st==='refuse'?`<div class="banner coral" style="margin-top:10px">${I.shield}<span>Attestation <b>refusée</b>, merci de déposer une attestation valide.</span></div>`:''}`;})()}
         ${S.proInsurer?`<div class="mini" style="margin-top:8px">Assureur&nbsp;: ${esc(S.proInsurer)}</div>`:''}
-        ${url?`<a class="btn ghost sm" href="${esc(url)}" target="_blank" rel="noopener" style="margin-top:11px;display:inline-flex;width:auto;padding:9px 14px">${I.other}&nbsp;Voir mon attestation</a>`:`<p class="mini" style="margin-top:8px;color:var(--muted)">Aucun document en ligne pour l'instant.</p>`}
+        ${lienSur(url)?`<button class="btn ghost sm" data-act="doc-open" data-src="${esc(lienSur(url))}" data-nom="Mon attestation d'assurance" style="margin-top:11px;display:inline-flex;width:auto;padding:9px 14px">${I.other}&nbsp;Voir mon attestation</button>`:`<p class="mini" style="margin-top:8px;color:var(--muted)">Aucun document en ligne pour l'instant.</p>`}
         <label class="btn ghost sm" style="margin-top:10px;cursor:pointer;display:inline-flex;width:auto;padding:9px 14px">${I.clip}&nbsp;${url?'Mettre à jour mon attestation':'Joindre mon attestation'}<input type="file" accept="image/*,application/pdf" data-proinsurance hidden></label>
         <p class="mini" style="margin-top:8px">${I.shield} Gardez votre attestation à jour.</p>
       </div>
@@ -14614,8 +14625,25 @@
   // Visionneuse plein écran d'un document (image) : consultation directe, sans passer par
   // un téléchargement. Un bouton permet tout de même d'enregistrer le fichier.
   function imgViewer(){
-    const v=S.imgView||{};const src=v.src||'';
-    return `<div class="imgviewer"><div class="iv-bar"><button class="iv-btn" data-act="imgview-close">✕ Fermer</button><a class="iv-btn dl" href="${src}" download="${esc(v.name||'document')}.jpg">${I.card}&nbsp;Télécharger</a></div><div class="iv-stage" data-act="imgview-close"><img src="${src}" alt="Document" class="iv-img"></div></div>`;
+    const v=S.imgView||{};const src=lienSur(v.src)||(/^(blob|data):/i.test(String(v.src||''))?String(v.src):'');
+    const nom=esc(v.name||'document');
+    /* CE QU'ON SAIT AFFICHER, ET CE QU'ON NE SAIT PAS. Un PDF passe par un cadre ; une
+       image par une balise `img`. Le reste — un fichier déposé sous une extension qu'on
+       ne reconnaît pas — ne s'affiche PAS en blanc : on le dit, et on l'offre au
+       téléchargement. Un cadre vide se lit comme une panne de l'application, alors que
+       c'est le format du document qui est en cause. */
+    const corps=!src?`<div class="iv-vide">Ce document n’a pas d’adresse exploitable.</div>`
+      :(docEstPdf(src)?`<iframe class="iv-pdf" src="${src}" title="${nom}"></iframe>`
+      :(docEstImage(src)?`<img src="${src}" alt="${nom}" class="iv-img">`
+      :`<div class="iv-vide">Format non affichable ici. Ouvrez-le ou téléchargez-le avec les boutons ci-dessus.</div>`));
+    // L'ONGLET RESTE OFFERT, MAIS N'EST PLUS LE SEUL CHEMIN : dans l'application
+    // installée sur iPhone, un lien `target="_blank"` n'ouvre rien du tout — c'est
+    // précisément ce qui faisait que « Voir l'attestation » ne faisait rien.
+    return `<div class="imgviewer"><div class="iv-bar">
+        <button class="iv-btn" data-act="imgview-close">✕ Fermer</button>
+        ${src?`<a class="iv-btn" href="${src}" target="_blank" rel="noopener">Ouvrir dans un onglet</a>
+        <a class="iv-btn dl" href="${src}" download="${nom}">${I.card}&nbsp;Télécharger</a>`:''}
+      </div><div class="iv-stage"${docEstPdf(src)?'':' data-act="imgview-close"'}>${corps}</div></div>`;
   }
   // Document « procuration » (mandat de retrait), consultable/imprimable, signé électroniquement.
   function colisProcuration(m){
@@ -15989,6 +16017,15 @@
     if(b.dataset.act==='colis-proc-close'){S.colisProc=false;render();return;}
     if(b.dataset.act==='dl-procuration'){downloadProcurationPdf(S.mission);return;}
     if(b.dataset.act==='imgview-close'){S.imgView=null;render();return;}
+    // OUVRIR UN DOCUMENT DANS L'APPLICATION. Une adresse venue d'un compte repasse par
+    // `lienSur` ICI AUSSI : l'attribut a pu être posé par un autre écran, et la garde
+    // ne vaut que si elle est à la porte, pas seulement chez celui qui a construit le
+    // bouton.
+    if(b.dataset.act==='doc-open'){
+      const u=lienSur(b.dataset.src||'');
+      if(!u){toast('Document indisponible');return;}
+      S.imgView={src:u,name:b.dataset.nom||'document'};render();return;
+    }
     if(b.dataset.act==='colis-tournee'){S.colisTournee=true;render();return;}
     if(b.dataset.act==='colis-tournee-close'){S.colisTournee=false;render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('colis-open:')===0){const id=b.dataset.act.split(':')[1];const mm=(S.proMissions||[]).find(function(x){return x._id===id;});if(mm){S.mission=mm;S.colisTournee=false;render();}return;}
