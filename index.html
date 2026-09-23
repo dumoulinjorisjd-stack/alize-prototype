@@ -9560,7 +9560,7 @@
     // et qui vient d'installer. Ce qu'on ne SAIT pas se dit : les installations
     // antérieures à cette mise en ligne ne portent pas de date, et la carte l'écrit
     // plutôt que de les fondre dans une médiane qui ne les contient pas.
-    function funnelJours(insTotal){
+    function funnelJours(insTotal,visTotal){
       if(!S.adminFunnelDetailLoaded)return `<div class="mini" style="margin-top:10px;color:var(--muted)">détail par jour&nbsp;: chargement…</div>`;
       const D=S.adminFunnelDetail;
       if(!D||!Array.isArray(D.jours)||!D.jours.length)
@@ -9590,6 +9590,8 @@
                style="display:block;margin-top:2px">${barres}</svg>`;
       };
       const nonDatees=Math.max(0,(Number(insTotal)||0)-(Number(D.installeesDatees)||0));
+      // `null` = le comptage n'a pas abouti : on ne dit rien plutôt qu'un écart inventé.
+      const visNonDatees=(D.visitesDatees==null)?0:Math.max(0,(Number(visTotal)||0)-(Number(D.visitesDatees)||0));
       const recentes=(D.recentes||[]).map(r=>{
         const q={ios:'iPhone',android:'Android',desktop:'Ordinateur'}[r.pf]||'—';
         let quand='';
@@ -9613,6 +9615,7 @@
         ${Number(D.dejaInstallees)?`<div class="mini" style="margin-top:${(D.delaiMedianMin!=null&&D.delaiN)?'4':'9'}px;color:var(--muted)">${pl(Number(D.dejaInstallees),'appareil')} découvert${Number(D.dejaInstallees)>1?'s':''} déjà installé${Number(D.dejaInstallees)>1?'s':''}&nbsp;: aucun délai mesurable. C’est le cas ordinaire sur iPhone, où l’application installée a son propre stockage.</div>`:''}
         ${recentes?`<div style="margin-top:10px"><div class="mini" style="color:var(--muted)">Dernières installations</div>${recentes}</div>`:''}
         ${nonDatees?`<div class="mini" style="margin-top:8px;color:var(--muted)">${pl(nonDatees,'installation')} d’avant cette mesure ne porte${nonDatees>1?'nt':''} pas de date&nbsp;: elle${nonDatees>1?'s':''} compte${nonDatees>1?'nt':''} dans le total, jamais dans les jours ni dans le délai.</div>`:''}
+        ${visNonDatees?`<div class="mini" style="margin-top:6px;color:var(--muted)">Et ${pl(visNonDatees,'visiteur')} vu${visNonDatees>1?'s':''} avant que la mesure par jour existe&nbsp;: la partie vide de la frise n’est pas une absence de trafic, c’est une absence de mesure.</div>`:''}
       </div>`;
     }
     const funnelBody=(function(){
@@ -9631,7 +9634,7 @@
       const ecart=(T&&T.src==='appareils'&&S.adminFunnelLoaded&&n('u_installed_total')!==T.ins)
         ? n('u_installed_total') : null;
       return `<div class="mini" style="color:var(--muted)">${S.adminFunnelLoaded?((IS_PROD?'prod':'beta')+' · installations distinctes, un iPhone désinstallé puis réinstallé recompte'):'chargement…'}</div>
-        <div class="row" style="gap:9px;margin-top:10px">
+        <div class="row" style="gap:9px;margin-top:10px;align-items:flex-start">
           <div style="flex:1"><div class="mini">Visiteurs</div><b class="money" ${T?`data-count="fn-v:${v}"`:''} style="font-size:19px;font-family:var(--f-disp)">${nb(v)}</b></div>
           <div style="flex:1"><div class="mini">Guide ouvert</div><b class="money" ${T?`data-count="fn-g:${g}"`:''} style="font-size:19px;font-family:var(--f-disp)">${nb(g)}</b></div>
           <div style="flex:1"><div class="mini">Installées</div><b class="money" ${T?`data-count="fn-i:${ins}"`:''} style="font-size:19px;font-family:var(--f-disp);color:var(--teal-deep)">${nb(ins)}</b>${(T&&v)?`<div class="mini">${pct}&nbsp;% des visiteurs</div>`:''}</div>
@@ -9639,7 +9642,7 @@
         <div class="mini" style="margin-top:8px;color:var(--muted)">Installées&nbsp;: iPhone ${nb(T?T.ios:0)} · Android ${nb(T?T.android:0)} · Ordinateur ${nb(T?T.desktop:0)}</div>
         ${(T&&T.src==='compteur')?`<div class="mini" style="margin-top:6px;color:var(--coral-deep)">Appareils non recomptés&nbsp;: ces totaux viennent du compteur cumulé, qui peut avoir dérivé.</div>`:''}
         ${ecart!==null?`<div class="mini" style="margin-top:6px;color:var(--muted)">Comptés appareil par appareil. Le compteur cumulé, lui, en annonce ${ecart}&nbsp;: il a dérivé.</div>`:''}
-        ${funnelJours(ins)}
+        ${funnelJours(ins,v)}
         ${legacy?`<div class="mini" style="margin-top:6px;color:var(--muted)">Ancien comptage (avec doublons, archivé)&nbsp;: ${n('visit_total')} visites · ${n('installed_total')} installées</div>`:''}`;})();
     const svcAll=allSvc();
     const svcNoPro=svcAll.filter(function(s){return !(S.adminArtisans||[]).some(function(a){return a.status==='valide'&&Array.isArray(a.cats)&&a.cats.indexOf(s.id)>=0;});}).length;

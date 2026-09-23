@@ -4884,6 +4884,17 @@ exports.funnelDetail = onCall(async (request) => {
     const c = await db.collection('funnelDevices_' + env).orderBy('installedAt', 'desc').count().get();
     avecDate = (c.data() || {}).count || 0;
   } catch (_) { avecDate = recentes.length; }
+  /* ET COMBIEN DE VISITES SONT DATÉES. La frise des trente jours montre 88 visiteurs
+     quand le total en annonce 456 : la différence n'est pas une chute de trafic, c'est
+     que la mesure par jour est plus jeune que le parc. Une frise vide à gauche se lit
+     comme « personne n'est venu » — c'est la même faute que le compteur à zéro, et elle
+     se corrige de la même façon : en DISANT ce qui n'est pas mesuré. `null` si le
+     comptage échoue : on préfère se taire que d'annoncer un écart inventé. */
+  let visitesDatees = null;
+  try {
+    const c = await db.collection('funnelDevices_' + env).orderBy('visitAt', 'desc').count().get();
+    visitesDatees = (c.data() || {}).count || 0;
+  } catch (e) { console.warn('funnelDetail visitesDatees', e); }
   delais = delais.sort((a, b) => a - b);
   const med = delais.length ? delais[Math.floor((delais.length - 1) / 2)] : null;
   /* LES TOTAUX SE RECOMPTENT, ILS NE SE LISENT PLUS DANS UN COMPTEUR. La carte affichait
@@ -4928,6 +4939,7 @@ exports.funnelDetail = onCall(async (request) => {
     // déjà installés. Le dire vaut mieux que de les fondre dans une médiane à zéro.
     dejaInstallees: memeVisite,
     installeesDatees: avecDate,
+    visitesDatees: visitesDatees,
     jourDuJour: jourStBarth(),
     totaux,
   };
