@@ -4024,7 +4024,11 @@
   }
   function grpCount(n){return n+' prestation'+(n>1?'s':'');}
   // Un métier est « à l'acte » (forfait catalogue) s'il possède une grille d'actes.
-  function isCatalogForfait(id){return !!baseCatalog(id);}
+  /* UN CATALOGUE VIDE N'EST PAS UNE GRILLE À L'ACTE. `[]` est VRAI en JavaScript : un
+     métier dont on venait de retirer la dernière prestation restait « à l'acte » avec
+     zéro prestation, et le client y lisait « dès 0 € » devant un choix vide. C'est aussi
+     ce qui permet de revenir au tarif horaire en retirant les prestations. */
+  function isCatalogForfait(id){const c=baseCatalog(id);return !!(c&&c.length);}
   function catalogFor(id){return baseCatalog(id)||[];}
   function actInfo(svcId,actId){return catalogFor(svcId).find(function(a){return a.id===actId;})||null;}
   function minActPrice(id){const c=catalogFor(id);return c.length?Math.min.apply(null,c.map(function(a){return Number(a.price)||0;})):0;}
@@ -9791,7 +9795,20 @@
         // Console : les prestations sont rangées par FAMILLE (intertitre + champ « famille »
         // sur chaque ligne), sinon une grille de 50 actes est impossible à tenir à jour.
         else if(isCatalogForfait(s.id)){priceEditor=`<div class="mini" style="color:var(--muted);margin-bottom:2px">Grille à l'acte</div>${catalogGroups(s.id).map(function(G){return (catalogGroups(s.id).length<2?'':`<div class="mini" style="margin-top:14px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:var(--teal-deep)">${esc(G.g)} · ${grpCount(G.acts.length)}</div>`)+G.acts.map(function(a){return `<div style="margin-top:9px;padding:10px;border-radius:12px;background:var(--card)"><input class="txt" data-actname="${s.id}:${a.id}" value="${esc(a.nm)}" placeholder="Nom de la prestation" style="width:100%;padding:11px 12px;font-size:14px"><input class="txt" data-actgrpname="${s.id}:${a.id}" value="${esc(a.grp||'')}" placeholder="Famille (ex. Femme · coloration)" style="width:100%;padding:9px 12px;font-size:12px;margin-top:6px"><span class="row" style="gap:6px;align-items:center;justify-content:flex-end;margin-top:8px"><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actprice="${s.id}:${a.id}:down">−</button><span class="row" style="flex:none;gap:3px;align-items:baseline"><input class="txt money" data-actpricev="${s.id}:${a.id}" value="${a.price}" inputmode="numeric" aria-label="Prix client en euros" style="width:64px;padding:7px 8px;text-align:right;font-size:14px"><b class="mini">€</b></span><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actprice="${s.id}:${a.id}:up">+</button><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actdel="${s.id}:${a.id}" aria-label="Retirer">${I.trash}</button></span></div>`;}).join('');}).join('')}<button class="btn ghost sm" data-actadd="${s.id}" style="margin-top:10px;width:auto;padding:8px 12px">${I.plus} Ajouter une prestation</button>`;}
-        else{priceEditor=priceCtl(s.id,px,'/h','Tarif horaire');}
+        else{
+          priceEditor=priceCtl(s.id,px,'/h','Tarif horaire');
+          /* « Quand j'ajoute un métier je suis obligé de laisser un tarif horaire, mais
+             dans ce cas je n'en veux pas » (23/09/2026). La couture, la retouche, la
+             coiffure se vendent à la PRESTATION, pas à l'heure — et la machine existait
+             déjà : c'est ce que fait la grille à l'acte des métiers du catalogue, du prix
+             affiché au total ferme de la commande. Il n'y manquait que la porte, pour un
+             métier créé depuis la console.
+             ON LA RÉSERVE AUX MÉTIERS DE LA CONSOLE : la nature d'un métier livré avec
+             l'application (le ménage est horaire) n'est pas une préférence, et la
+             basculer d'un bouton toucherait les prestataires qui l'exercent déjà. */
+          if(s.custom)priceEditor+=`<div class="mini" style="color:var(--muted);margin-top:10px;line-height:1.5">Ce métier se facture à l’heure. S’il se vend à la prestation (couture, retouche…), passez à l’acte&nbsp;: le tarif horaire disparaît et le client compose son total.</div>
+            <button class="btn ghost sm" data-adm="acteon:${s.id}" style="margin-top:8px;width:auto;padding:9px 14px">Passer à l’acte</button>`;
+        }
         // — MÉTIER CRÉÉ DEPUIS LA CONSOLE —
         // Son NOM ne se corrigeait nulle part : une coquille se réparait en supprimant puis
         // recréant, ce qui forge un NOUVEL identifiant et détache les artisans qui portaient
@@ -15862,6 +15879,23 @@
         c.proSuggestAnswer=''; render(); return;
       }
       else if(act==='priceopen'){ S.admPriceOpen=S.admPriceOpen||{}; S.admPriceOpen[id]=!S.admPriceOpen[id]; render(); return; }
+      /* PASSER UN MÉTIER DE LA CONSOLE À L'ACTE. On crée sa première prestation : la
+         carte bascule alors d'elle-même sur la grille (c'est `isCatalogForfait` qui en
+         décide, et il ne regarde que cela), et le tarif horaire disparaît de partout —
+         console, écran de commande, fiche du prestataire. Rien de neuf dans le modèle :
+         c'est le même catalogue que la coiffure.
+         LE RETOUR SE FAIT EN RETIRANT LES PRESTATIONS, il n'a donc pas besoin d'un
+         bouton : la dernière retirée, le métier redevient horaire tout seul. C'est ce que
+         la correction d'`isCatalogForfait` rend vrai — un catalogue vide n'est plus une
+         grille. */
+      else if(act==='acteon'){
+        const sv=findSvc(id); if(!sv||!sv.custom)return;
+        const arr=ensureCatalogCopy(id);
+        if(!arr.length){ S._actSeq=(S._actSeq||0)+1; arr.push({id:'usr'+S._actSeq+'_0',nm:'',price:50}); }
+        saveCatalog(); render();
+        toast('Métier à l’acte : nommez vos prestations et leur prix');
+        return;
+      }
       // Validation d'un métier ajouté par le prestataire : on le déplace de pendingCats vers cats
       // (seul l'admin peut écrire cats). Le métier devient alors visible/matchable côté client.
       else if(act==='valcat'){const a=S.adminArtisans.find(x=>x.id===id);const sv=parts[2];if(a&&sv){if(!Array.isArray(a.cats))a.cats=[];if(a.cats.indexOf(sv)<0)a.cats.push(sv);a.pendingCats=(a.pendingCats||[]).filter(function(x){return x!==sv;});if(sv==='autre'&&a.pendingOther){a.other=a.pendingOther;if(a.pendingOtherPrice>0){a.otherPrice=a.pendingOtherPrice;a.otherUnit=a.pendingOtherUnit||'h';}}adminWriteAddCat(a,sv);saveAvailability();toast('Métier validé, désormais proposé aux clients');}}
