@@ -4342,6 +4342,25 @@
      avec ses droits. Liste FERMÉE : https, et rien d'autre. Un dépôt Firebase Storage
      rend toujours une adresse https, donc rien de légitime n'est perdu. */
   function lienSur(u){ const v=String(u==null?'':u).trim(); return /^https:\/\//i.test(v)?v:''; }
+  /* L'APPLICATION INSTALLÉE N'A PAS D'ONGLETS (23/09/2026). Relevé deux fois de suite :
+     « quand je clique sur Voir l'attestation il ne se passe rien », puis « quand je
+     clique sur Télécharger ou Ouvrir dans un onglet rien ne se passe ». Dans une
+     application posée sur l'écran d'accueil d'un iPhone, un lien `target="_blank"`
+     n'ouvre RIEN, l'attribut `download` est IGNORÉ, et `window.open` rend `null` SANS
+     lever — donc un `try/catch` ne rattrape rien et l'on croit que le bouton est mort.
+     On essaie l'onglet, et s'il ne vient pas on NAVIGUE : le document s'ouvre alors dans
+     la vue de l'application, qui sait l'afficher, et le geste de retour ramène. Une
+     seule fonction, parce que le même piège attend tous les boutons qui sortent. */
+  function estInstallee(){
+    try{ return (window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true; }
+    catch(_){ return false; }
+  }
+  function ouvrirDehors(u){
+    const url=lienSur(u); if(!url){toast('Adresse indisponible');return false;}
+    let w=null; try{ w=window.open(url,'_blank','noopener'); }catch(_){ w=null; }
+    if(!w){ try{ location.href=url; }catch(_){ toast('Impossible d’ouvrir ce document ici'); return false; } }
+    return true;
+  }
   // Le document est-il un PDF ? L'adresse de Storage porte le nom du fichier avant ses
   // paramètres (…%2Fattestation.pdf?alt=media). On ne devine pas au-delà : ce qui n'est
   // ni PDF ni image se propose au téléchargement plutôt que de s'afficher en blanc.
@@ -12951,7 +12970,7 @@
     const d=S.proMollieDashboard;
     const lien=(d&&/^https:\/\//.test(d))?d:'';
     const url=fini?'https://my.mollie.com/dashboard':(lien||'https://my.mollie.com/');
-    try{window.open(url,'_blank','noopener');}catch(_){location.href=url;}
+    ouvrirDehors(url);
   }
   // L'artisan retire un de SES métiers depuis son compte. Persisté sur sa fiche (les règles
   // autorisent le RETRAIT — jamais l'ajout, réservé à l'admin). Effet immédiat : les demandes
@@ -14632,18 +14651,27 @@
        ne reconnaît pas — ne s'affiche PAS en blanc : on le dit, et on l'offre au
        téléchargement. Un cadre vide se lit comme une panne de l'application, alors que
        c'est le format du document qui est en cause. */
+    // UN PDF NE S'AFFICHE PAS DANS UN CADRE SUR IPHONE : le moteur d'Apple ne rend le
+    // PDF qu'en navigation de premier rang. Le cadre y reste BLANC, et une page blanche
+    // se lit comme une panne de l'application. On ne le pose donc pas là où il ne peut
+    // pas fonctionner : on dit pourquoi, et on offre le bouton qui ouvre vraiment.
+    const pdfSansCadre=docEstPdf(src)&&detectPlatform().ios;
     const corps=!src?`<div class="iv-vide">Ce document n’a pas d’adresse exploitable.</div>`
+      :(pdfSansCadre?`<div class="iv-vide">Ce PDF ne peut pas s’afficher dans l’application sur iPhone.<br><button class="btn primary" data-act="doc-dehors" style="margin-top:14px;width:auto;padding:12px 20px">Ouvrir le document</button></div>`
       :(docEstPdf(src)?`<iframe class="iv-pdf" src="${src}" title="${nom}"></iframe>`
       :(docEstImage(src)?`<img src="${src}" alt="${nom}" class="iv-img">`
-      :`<div class="iv-vide">Format non affichable ici. Ouvrez-le ou téléchargez-le avec les boutons ci-dessus.</div>`));
+      :`<div class="iv-vide">Format non affichable ici.<br><button class="btn primary" data-act="doc-dehors" style="margin-top:14px;width:auto;padding:12px 20px">Ouvrir le document</button></div>`)));
     // L'ONGLET RESTE OFFERT, MAIS N'EST PLUS LE SEUL CHEMIN : dans l'application
     // installée sur iPhone, un lien `target="_blank"` n'ouvre rien du tout — c'est
     // précisément ce qui faisait que « Voir l'attestation » ne faisait rien.
+    /* DES BOUTONS, PAS DES ANCRES. « Ouvrir dans un onglet » était un `<a target=_blank>`
+       et « Télécharger » un `<a download>` : dans l'application installée, le premier
+       n'ouvre rien et le second est ignoré — deux boutons morts au-dessus d'un cadre
+       blanc. Ils passent par `ouvrirDehors`, qui navigue quand l'onglet ne vient pas. */
     return `<div class="imgviewer"><div class="iv-bar">
         <button class="iv-btn" data-act="imgview-close">✕ Fermer</button>
-        ${src?`<a class="iv-btn" href="${src}" target="_blank" rel="noopener">Ouvrir dans un onglet</a>
-        <a class="iv-btn dl" href="${src}" download="${nom}">${I.card}&nbsp;Télécharger</a>`:''}
-      </div><div class="iv-stage"${docEstPdf(src)?'':' data-act="imgview-close"'}>${corps}</div></div>`;
+        ${src?`<button class="iv-btn" data-act="doc-dehors">Ouvrir le document</button>`:''}
+      </div><div class="iv-stage"${(docEstPdf(src)&&!pdfSansCadre)?'':' data-act="imgview-close"'}>${corps}</div></div>`;
   }
   // Document « procuration » (mandat de retrait), consultable/imprimable, signé électroniquement.
   function colisProcuration(m){
@@ -15355,6 +15383,26 @@
         return;
       }
     }
+    /* ET TOUS LES AUTRES LIENS QUI SORTENT. Le piège n'était pas propre à l'attestation :
+       WhatsApp d'un prestataire, son Instagram, l'annuaire des entreprises depuis sa
+       fiche, l'itinéraire d'une mission, la page de paiement de secours — une douzaine
+       d'ancres `target="_blank"`, toutes mortes dans l'application installée. On les
+       reprend ICI, en un seul endroit, plutôt que de les corriger une par une et d'en
+       oublier la treizième.
+       SEULEMENT DANS L'APPLICATION INSTALLÉE : dans un navigateur, l'onglet s'ouvre très
+       bien et l'on ne touche à rien. Et l'on ne juge PAS le schéma — ces adresses sont
+       construites par l'application elle-même, pas par un compte ; restreindre à https
+       casserait un `mailto:` écrit demain. */
+    const _ext=e.target.closest&&e.target.closest('a[target="_blank"][href]');
+    if(_ext&&estInstallee()){
+      const h=_ext.getAttribute('href')||'';
+      if(h&&h!=='#'){
+        e.preventDefault();
+        let w=null; try{ w=window.open(h,'_blank','noopener'); }catch(_){ w=null; }
+        if(!w){ try{ location.href=h; }catch(_){ toast('Impossible d’ouvrir ce lien ici'); } }
+        return;
+      }
+    }
     const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actqty],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-loc],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday],[data-tip],[data-pac],[data-sitemode],[data-invclient],[data-fold],[data-actgrp],[data-purge],[data-optpick],[data-optqty],[data-optadd],[data-optdel],[data-optprice],[data-optunit],[data-rf]');
     if(!b)return;
     // Un clic ISSU d'un <input type=file> (notamment déclenché par programme, ex. la
@@ -16021,6 +16069,7 @@
     // `lienSur` ICI AUSSI : l'attribut a pu être posé par un autre écran, et la garde
     // ne vaut que si elle est à la porte, pas seulement chez celui qui a construit le
     // bouton.
+    if(b.dataset.act==='doc-dehors'){ ouvrirDehors((S.imgView||{}).src||''); return; }
     if(b.dataset.act==='doc-open'){
       const u=lienSur(b.dataset.src||'');
       if(!u){toast('Document indisponible');return;}

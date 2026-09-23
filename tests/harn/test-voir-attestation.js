@@ -62,10 +62,15 @@ const src = fs.readFileSync(path.join(RACINE, 'index.html'), 'utf8');
   await p.click('[data-act="doc-open"]'); await p.waitForTimeout(350);
   let v = await p.evaluate(() => ({ ouvert: !!document.querySelector('.imgviewer'),
     pdf: !!document.querySelector('.iv-pdf'), img: !!document.querySelector('.iv-img'),
-    onglet: !!document.querySelector('.iv-bar a[target="_blank"]'),
-    dl: !!document.querySelector('.iv-bar a[download]') }));
+    sortie: !!document.querySelector('.iv-bar [data-act="doc-dehors"]'),
+    ancres: document.querySelectorAll('.iv-bar a').length }));
   ok(v.ouvert && v.pdf && !v.img, 'un PDF s’affiche dans un cadre, et non dans une balise image qui resterait blanche');
-  ok(v.onglet && v.dl, 'la visionneuse garde l’onglet et le téléchargement, pour les cas où ils marchent');
+  /* LA BARRE N'A PLUS D'ANCRE. « Ouvrir dans un onglet » et « Télécharger » étaient des
+     `<a target=_blank>` et `<a download>` : dans l'application installée, le premier
+     n'ouvre rien et le second est ignoré — deux boutons morts au-dessus du document.
+     Un seul geste les remplace, et il passe par la porte qui sait naviguer à défaut. */
+  ok(v.sortie && v.ancres === 0,
+    'la barre offre UN geste qui sort, et plus aucune ancre morte (' + v.ancres + ')');
 
   console.log('\nB — une image reste une image');
   await p.evaluate(() => { window.__S.imgView = null; window.__render(); });
@@ -96,6 +101,41 @@ const src = fs.readFileSync(path.join(RACINE, 'index.html'), 'utf8');
     'un bouton portant une adresse non https n’ouvre rien, même posé à la main');
   ok(/function lienSur\(u\)\{[^}]*https/.test(src.replace(/\s+/g, ' ')) || /lienSur/.test(src),
     'la garde existe et porte un nom, elle ne se recopie pas à chaque emploi');
+
+  /* E — L'APPLICATION INSTALLÉE N'A PAS D'ONGLETS.
+     « Quand je clique sur Télécharger ou Ouvrir dans un onglet, rien ne se passe » —
+     signalé juste après, sur la visionneuse elle-même. Dans une application posée sur
+     l'écran d'accueil d'un iPhone, `target="_blank"` n'ouvre rien, `download` est ignoré,
+     et `window.open` rend `null` SANS lever : le `try/catch` ne rattrape rien. On essaie
+     l'onglet, et s'il ne vient pas on NAVIGUE.
+     L'épreuve se met dans cette peau : elle fait croire à l'application qu'elle est
+     installée, et fait rendre `null` à `window.open` — les deux conditions exactes du
+     défaut, qu'aucun navigateur de bureau ne reproduit tout seul. */
+  console.log('\nE — dans l’application installée, un lien qui sort finit par sortir');
+  await p.evaluate(() => {
+    window.__ouvertures = [];
+    window.matchMedia = (q) => ({ matches: /display-mode:\s*standalone/.test(q), media: q,
+      addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} });
+    window.open = (u) => { window.__ouvertures.push(String(u)); return null; };
+    const a = document.createElement('a');
+    a.setAttribute('target', '_blank'); a.setAttribute('href', '#preuve-onglet');
+    a.id = 'lien-sortant'; a.textContent = 'sortir'; document.body.appendChild(a);
+  });
+  await p.click('#lien-sortant'); await p.waitForTimeout(250);
+  const sortie = await p.evaluate(() => ({ tente: (window.__ouvertures || []).slice(), ancre: location.hash }));
+  ok(sortie.tente.length === 1, 'l’onglet est tenté d’abord (' + sortie.tente.length + ' fois)');
+  ok(sortie.ancre === '#preuve-onglet',
+    'et comme il ne vient pas, on NAVIGUE — le lien ne meurt pas en silence (' + (sortie.ancre || 'aucune') + ')');
+
+  // ET LA VISIONNEUSE N'A PLUS D'ANCRE MORTE DANS SA BARRE.
+  ok(!/iv-bar[\s\S]{0,300}<a /.test(src.replace(/\n/g, '')),
+    'la barre de la visionneuse n’a plus d’ancre « nouvel onglet » ni « télécharger », qui ne faisaient rien');
+  // UN PDF SUR IPHONE NE S'AFFICHE PAS DANS UN CADRE : on ne pose pas le cadre, on le dit.
+  ok(/pdfSansCadre=docEstPdf\(src\)&&detectPlatform\(\)\.ios/.test(src),
+    'et sur iPhone le cadre du PDF n’est pas posé du tout — une page blanche se lit comme une panne');
+  // LE BOUTON QUI ACTIVE LES PAIEMENTS PASSE PAR LA MÊME PORTE.
+  ok(/function openMollieAccount\(\)\{[\s\S]{0,400}ouvrirDehors\(url\);/.test(src),
+    '« ouvrir mon compte Mollie » aussi : c’est par ce bouton qu’on active ses paiements');
 
   await b.close();
   console.log(f ? ('\n' + f + ' ÉCHEC(S)\n') : '\nTout est vert.\n');
