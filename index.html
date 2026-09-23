@@ -4398,8 +4398,33 @@
         try{ await P.Share.share({title:nomFichier,text:nomFichier,url:url}); return; }
         catch(e){ console.warn('ouvrirDocument partage',e); }
       }
-      // 3. Aucun plugin : on le DIT plutôt que de naviguer vers une page que la coquille
-      //    ne sait pas afficher.
+      /* 3. LES PLUGINS NE SONT PAS DANS L'APPLICATION PUBLIÉE. Ils figurent dans les
+            dépendances de la coquille, mais l'APK du Play Store est celui qui a été
+            construit : `Capacitor.Plugins.Filesystem` et `.Share` y sont absents, et le
+            message d'échec est tout ce que l'éditeur a vu.
+            ON PASSE ALORS LA MAIN À ANDROID LUI-MÊME. Une adresse `intent://` n'est pas
+            dans `allowNavigation` : la WebView ne la traite pas, elle la remet au
+            système, qui ouvre le navigateur ou le lecteur de PDF de l'appareil. Aucun
+            rebuild de l'application n'est nécessaire — c'est ce qui permet de réparer
+            depuis le site, aujourd'hui. */
+      if(detectPlatform().android){
+        try{
+          const intent='intent://'+url.replace(/^https:\/\//i,'')
+            +'#Intent;scheme=https;action=android.intent.action.VIEW;end';
+          location.href=intent; return;
+        }catch(e){ console.warn('ouvrirDocument intent',e); }
+      }
+      /* 4. ET SI MÊME CELA ÉCHOUE, ON DONNE L'ADRESSE. Copier le lien est le seul geste
+            qui marche partout : il se colle dans le navigateur de l'appareil. Un message
+            qui dit « impossible » sans offrir de sortie laisse l'administrateur devant
+            un document qu'il doit pourtant valider. */
+      try{
+        if(navigator.clipboard&&navigator.clipboard.writeText){
+          await navigator.clipboard.writeText(url);
+          toast('Lien copié, collez-le dans votre navigateur');
+          return;
+        }
+      }catch(e){ console.warn('ouvrirDocument copie',e); }
       toast('Impossible d’ouvrir ce document depuis l’application');
       return;
     }

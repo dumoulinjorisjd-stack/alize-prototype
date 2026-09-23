@@ -167,7 +167,17 @@ const src = fs.readFileSync(path.join(RACINE, 'index.html'), 'utf8');
      partage, le chemin que l'application a déjà tracé pour ses factures. */
   ok(/isNativeShell\(\)\)\{[\s\S]{0,200}P\.Filesystem&&P\.Share/.test(src)
      && /Share\.share\(\{title:nomFichier/.test(src),
-    'et le document passe par Filesystem + Share dans la coquille, jamais par une navigation');
+    'dans la coquille, le document passe d’abord par Filesystem + Share');
+  /* ET QUAND LES PLUGINS NE SONT PAS DANS L'APK PUBLIÉ — ce qui est le cas —, on passe la
+     main à ANDROID : une adresse `intent://` n'est pas dans `allowNavigation`, la WebView
+     la remet au système, qui ouvre le lecteur de l'appareil. Aucun rebuild nécessaire.
+     Et si même cela échoue, on COPIE le lien : un message « impossible » sans sortie
+     laisse l'administrateur devant un document qu'il doit pourtant valider. */
+  ok(/detectPlatform\(\)\.android[\s\S]{0,260}intent:\/\/'\+url\.replace/.test(src)
+     && /action=android\.intent\.action\.VIEW/.test(src),
+    'puis par une adresse `intent://`, que la WebView remet au système Android');
+  ok(/navigator\.clipboard[\s\S]{0,160}Lien copié/.test(src),
+    'et en dernier recours le lien est COPIÉ — jamais un « impossible » sans issue');
   // LE BOUTON QUI ACTIVE LES PAIEMENTS PASSE PAR LA MÊME PORTE.
   ok(/function openMollieAccount\(\)\{[\s\S]{0,400}ouvrirDehors\(url\);/.test(src),
     '« ouvrir mon compte Mollie » aussi : c’est par ce bouton qu’on active ses paiements');
