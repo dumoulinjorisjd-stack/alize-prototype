@@ -326,7 +326,16 @@ service cloud.firestore {
                 || (resource.data.status == 'pending'
                     && request.resource.data.boostEur >= resource.data.get('boostEur', 0)))
             && (request.resource.data.get('providerUid', null) == resource.data.get('providerUid', null)
-                || request.resource.data.get('providerUid', null) == null))
+                || request.resource.data.get('providerUid', null) == null)
+            // LA NOTE EST L'AVIS DU CLIENT SUR UNE PRESTATION FAITE ET RÉGLÉE. C'est ce
+            // qui la rend vérifiable : elle ne peut être écrite ni avant la prestation,
+            // ni sur la demande de quelqu'un d'autre (isClient() le tient déjà), et elle
+            // reste dans 1..5 — une note hors bornes fausserait toute moyenne future.
+            && (!changed().hasAny(['rating','ratedAt'])
+                || (resource.data.status == 'paid'
+                    && request.resource.data.rating is int
+                    && request.resource.data.rating >= 1
+                    && request.resource.data.rating <= 5)))
 
         // PRESTATAIRE assigné : il fait avancer la mission et DÉCLARE la durée réelle
         // (finalHours) — le seul levier d'ajustement légitime. Jamais le tarif ni les
@@ -337,6 +346,8 @@ service cloud.firestore {
             // Symétrique du verrou client : le fil client↔Ti-Services (supportClient)
             // n'est pas au prestataire.
             && !changed().hasAny(['supportClient'])
+            // Et il ne se note pas lui-même.
+            && !changed().hasAny(['rating','ratedAt'])
             && (request.resource.data.get('providerUid', null) == resource.data.get('providerUid', null)
                 || request.resource.data.get('providerUid', null) == null));
 
