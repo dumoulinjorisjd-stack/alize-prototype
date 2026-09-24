@@ -172,6 +172,27 @@ console.log('\nF — le haut de la carte ne contredit plus sa propre frise');
     'si le recomptage n’aboutit pas, le compteur sert de repli — et la carte le DIT');
 }
 
+/* UN NOUVEL APPAREIL QUI INSTALLE, C'EST UNE INSTALLATION — RIEN D'AUTRE À DIRE.
+   La ligne portait « · déjà installée à sa découverte », qui décrit une limite de NOTRE
+   mesure et non ce qu'a fait la personne. « On dit juste Android ou iPhone. » Le piège,
+   en retirant l'étiquette, est de laisser revenir le délai : ces appareils portent un
+   `min` de 0, et « 0 min après sa visite » est exactement la phrase corrigée le 23/09. */
+console.log('\nH — une installation se nomme par sa plateforme, et rien de plus');
+const nu=await carte({delaiMedianMin:23,delaiN:1,installeesDatees:9,dejaInstallees:8,
+  recentes:[{at:Date.parse('2026-09-23T21:25:00Z'),pf:'ios',min:0,dejaInstallee:true},
+            {at:Date.parse('2026-09-23T14:34:00Z'),pf:'android',min:23,dejaInstallee:false},
+            {at:Date.parse('2026-09-22T17:52:00Z'),pf:'android',min:0,dejaInstallee:true}]});
+ok(!/déjà installée à sa découverte/.test(nu.txt),
+  'la ligne ne raconte plus la limite de la mesure');
+ok(!/0 min après sa visite/.test(nu.txt),
+  'et le délai ne revient pas par la porte de derrière : jamais « 0 min après sa visite »');
+ok(/23 min après sa visite/.test(nu.txt),
+  'un appareil vu d’abord dans un navigateur garde son délai, lui (23 min)');
+// Ce qui reste dit, c'est COMBIEN d'appareils ne peuvent pas porter de délai : sans
+// cette phrase, « médiane sur 1 appareil » se lirait comme une mesure cassée.
+ok(/8 appareils découverts déjà installés/.test(nu.txt)&&/médiane sur 1 appareil/.test(nu.txt),
+  'et la médiane dit toujours sur combien elle porte, et combien d’appareils n’en portent pas');
+
 await b.close();
 console.log(f?('\n'+f+' ÉCHEC(S)\n'):'\nTout est vert.\n');
 process.exit(f?1:0);

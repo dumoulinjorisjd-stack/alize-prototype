@@ -9723,13 +9723,24 @@
       const nonDatees=Math.max(0,(Number(insTotal)||0)-(Number(D.installeesDatees)||0));
       // `null` = le comptage n'a pas abouti : on ne dit rien plutôt qu'un écart inventé.
       const visNonDatees=(D.visitesDatees==null)?0:Math.max(0,(Number(visTotal)||0)-(Number(D.visitesDatees)||0));
+      /* UN NOUVEL APPAREIL QUI INSTALLE, C'EST UNE INSTALLATION — RIEN D'AUTRE À DIRE.
+         La ligne portait « · déjà installée à sa découverte », qui décrit une limite de
+         NOTRE mesure et non ce qu'a fait la personne : l'identité d'un appareil vit dans
+         le stockage local, et l'application installée n'a pas le même que le navigateur
+         qui a servi à l'installer — on ne peut donc pas rapprocher les deux. Le nom de la
+         plateforme suffit. LE DÉLAI, LUI, NE REVIENT PAS PAR LA PORTE DE DERRIÈRE : ces
+         appareils ont un `min` de 0 (les deux signaux partent dans le même souffle), et
+         l'afficher redonnerait le « 0 min après sa visite » corrigé le 23/09 — flatteur
+         et faux. Ce qui reste dit, c'est COMBIEN d'appareils ne peuvent pas porter de
+         délai, sous la médiane : sans cette phrase, « médiane sur 1 appareil » se lirait
+         comme une mesure cassée. */
       const recentes=(D.recentes||[]).map(r=>{
         const q={ios:'iPhone',android:'Android',desktop:'Ordinateur'}[r.pf]||'—';
         let quand='';
         try{ quand=new Date(r.at).toLocaleString('fr-FR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}); }catch(_){ quand=''; }
         return `<div class="row between" style="gap:8px;padding:5px 0;border-top:1px solid var(--hair)">
           <span class="mini">${esc(quand)}</span>
-          <span class="mini" style="color:var(--muted)">${q}${r.dejaInstallee?' · déjà installée à sa découverte':(r.min!=null?' · '+funnelDelai(r.min)+' après sa visite':'')}</span></div>`;
+          <span class="mini" style="color:var(--muted)">${q}${(!r.dejaInstallee&&r.min!=null)?' · '+funnelDelai(r.min)+' après sa visite':''}</span></div>`;
       }).join('');
       return `<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--hair)">
         <div class="row between" style="gap:8px;align-items:baseline">
