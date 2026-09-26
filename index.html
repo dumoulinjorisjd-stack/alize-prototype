@@ -16254,8 +16254,24 @@
       case 'onb-back0':S.authView=null;S.onbStep=0;S._resumeOrder=false;render();break;
       case 'onb-back1':S.onbStep=1;render();break;
       case 'finish-onboard':{const c=S.clientForm;const ok=(c.name||'').trim().length>1&&/.+@.+\..+/.test(c.email||'')&&(c.password||'').length>=6&&c.password===c.password2;if(!ok){toast('Nom, e-mail et mots de passe identiques (6 car.) requis');break;}if(!c.terms){toast('Veuillez accepter les CGU et les CGV pour continuer');break;}
-        // Nouveau compte = part de zéro (aucune donnée de démo pré-remplie).
-        S.addresses=[];S.addrDefault=null;S.history=[];S.recurring=[];S.card=null;S.mission=null;S.draft=null;oublierBrouillon();
+        /* Nouveau compte = part de zéro (aucune donnée de démo pré-remplie) — SAUF la
+           commande qu'on est en train de passer. Un invité qui configure une prestation
+           puis touche « Commander » est envoyé s'inscrire, commande CONSERVÉE
+           (`_resumeOrder`), et doit tomber sur le paiement au retour. Cette ligne
+           l'effaçait au passage : `resumeOrderIfPending` ne trouvait plus rien à
+           reprendre, et le travail de configuration était perdu au moment précis où la
+           personne venait de donner son nom et son mot de passe pour l'envoyer. */
+        S.addresses=[];S.addrDefault=null;S.history=[];S.recurring=[];S.card=null;S.mission=null;
+        if(!S._resumeOrder){S.draft=null;oublierBrouillon();}
+        /* ON ARRIVE SUR L'ACCUEIL, PAS SUR SON PROFIL. L'écran d'arrivée était celui
+           qu'on avait sous les yeux en ouvrant le formulaire — « Profil » pour qui
+           passait par l'onglet Profil, donc une page de réglages vides pour première
+           impression. Ce qu'on vient chercher, c'est le catalogue. Posé ICI, avant
+           l'appel à Firebase : `onAuthStateChanged` peut redessiner l'écran avant que
+           `fbSignup` ait repris la main, et l'ordre des deux ne se décide pas. Une
+           commande en attente reste prioritaire : `resumeOrderIfPending` ouvre le
+           paiement, qui passe avant l'onglet dans le rendu. */
+        S.clientNav='home';
         if(FB){fbSignup(c);}else{S.account={name:c.name.trim(),email:c.email.trim(),zone:c.zone,photo:c.photo||''};saveAccount(S.account);S.onboarded=true;S.authView=null;resumeOrderIfPending();render();burstConfetti();toast('Compte créé, bienvenue, '+c.name.trim().split(' ')[0]+' !');}break;}
       case 'show-login':S.authView='login';S.loginForm={email:(S.account?S.account.email:(S.clientForm.email||'')),password:''};render();break;
       case 'login-back':S.authView=null;render();break;
@@ -18205,9 +18221,11 @@
       S.addresses=(data&&Array.isArray(data.addresses)&&(data.addresses.length||!(S.addresses||[]).length))?data.addresses:(S.addresses||[]);S.addrDefault=(data&&data.addrDefault)||S.addrDefault||null;
       S.history=(data&&Array.isArray(data.history)&&data.history.length)?data.history:(S.history||[]);S.recurring=(data&&Array.isArray(data.recurring)&&data.recurring.length)?data.recurring:(S.recurring||[]);S.card=(data&&data.card)||S.card||null;
       S.onboarded=true;S.authView=null;S.cardForm=false;
-      // Inscription CLIENT via Google (nouveau compte) : on ouvre le profil pour compléter
-      // les informations (quartier, photo…), sauf si une commande était en attente.
-      if(signupIntent==='client'){try{localStorage.removeItem('tiSignupIntent');}catch(_){}if(!data&&!S._resumeOrder)S.clientNav='profile';}
+      // Inscription CLIENT via Google (nouveau compte) : même arrivée que par e-mail,
+      // l'ACCUEIL. On ouvrait le profil pour faire compléter quartier et photo — mais
+      // c'est demander des réglages à quelqu'un qui vient voir ce qu'on propose, et le
+      // quartier se demande de toute façon au moment de la commande.
+      if(signupIntent==='client'){try{localStorage.removeItem('tiSignupIntent');}catch(_){}if(!data&&!S._resumeOrder)S.clientNav='home';}
       resumeOrderIfPending();render();
       if(typeof Notification!=='undefined'&&Notification.permission==='granted')registerPush('client');
       S.genSupport=(data&&Array.isArray(data.support))?data.support.slice():[];subscribeUserSupport(user.uid);
