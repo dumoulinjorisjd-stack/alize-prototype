@@ -2046,6 +2046,9 @@
     jardin:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22V11"/><path d="M12 11C12 7 9 5 5 5c0 4 3 6 7 6z"/><path d="M12 13c0-3 3-5 7-5 0 3-3 5-7 5z"/></svg>',
     repassage:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15v-2a5 5 0 0 1 5-5h9l4 4v3z"/><path d="M3 15h18"/><circle cx="16" cy="12" r="1"/></svg>',
     bricolage:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 7l3-3 3 3-3 3z"/><path d="M14.5 9.5 5 19l-2 2"/><path d="m9 4 3 3"/></svg>',
+    // Rouleau de peintre : le manchon, le bras coudé, la poignée. Même famille de trait
+    // que le marteau (bricolage) et le fer (repassage), ses voisins de métier.
+    peinture:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3.6" width="12.4" height="5.2" rx="1.4"/><path d="M15.4 6.2h3.4a1.6 1.6 0 0 1 1.6 1.6v2.4a1.6 1.6 0 0 1-1.6 1.6h-5.9a1.6 1.6 0 0 0-1.6 1.6v1.4"/><rect x="9.6" y="16.2" width="3.6" height="4.8" rx="1.3"/></svg>',
     cuisine:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3v6"/><path d="M11 3v6a2 2 0 0 1-4 0"/><path d="M9 9v12"/><path d="M17 3c-1.5 0-3 2-3 5s1.5 4 3 4v9"/></svg>',
     demenagement:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l9-4 9 4-9 4-9-4z"/><path d="M3 8v8l9 4 9-4V8"/><path d="M12 12v8"/></svg>',
     colis:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 9.4 7.5 4.2"/><path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></svg>',
@@ -3747,15 +3750,37 @@
   ];
   // Ordre des tuiles d'accueil : ids de services ET ids de catégories mêlés.
   const HOME_ORDER=['menage','baby','jardin','beaute','depannage','sport','demenagement','animaux','massage','colis'];
-  function svcCategory(id){return CATEGORIES.find(function(c){return c.subs.indexOf(id)>=0;})||null;}
-  function catMinPrice(cat){return Math.min.apply(null,cat.subs.map(function(id){return (S.adminPrices&&S.adminPrices[id]!=null)?S.adminPrices[id]:svcBase(id);}));}
+  /* RANGER UN MÉTIER CRÉÉ DEPUIS LA CONSOLE DANS UNE CATÉGORIE.
+     « Quand je crée un nouveau service, je n'ai pas le moyen de le ranger dans la
+     catégorie Dépannage & entretien par exemple. » En effet : l'appartenance était
+     écrite EN DUR dans `CATEGORIES[].subs`, une liste du code — un métier ajouté sans
+     code atterrissait donc toujours en tuile de premier niveau, à côté de Ménage et de
+     Jardinage, quelle que soit sa parenté. « Peinture » ne pouvait pas rejoindre la
+     plomberie et l'électricité.
+     Le métier DÉCLARE sa catégorie (`cat`), et `catSubs` est la PORTE UNIQUE qui réunit
+     les deux sources : les membres du code, puis ceux de la console. Les énumérer
+     séparément aux onze endroits qui lisaient `.subs` aurait garanti qu'on en oublie un
+     — c'est ainsi qu'un métier serait absent de la tuile tout en manquant à l'accueil.
+     La valeur enregistrée est une CLÉ d'une liste FERMÉE, jamais un libellé : le
+     catalogue est un document partagé, relu par tout le monde. Une clé inconnue
+     (document abîmé, version plus récente) ne range nulle part — le métier reste sur
+     l'accueil, ce qu'il faisait avant. */
+  function catValide(k){k=String(k||'');return CATEGORIES.some(function(c){return c.id===k;})?k:'';}
+  function catSubs(cat){if(!cat)return [];
+    const sup=(S.customServices||[]).filter(function(s){return catValide(s.cat)===cat.id;}).map(function(s){return s.id;});
+    return (cat.subs||[]).concat(sup);}
+  function svcCategory(id){const dur=CATEGORIES.find(function(c){return (c.subs||[]).indexOf(id)>=0;});
+    if(dur)return dur;
+    const s=findSvc(id),k=(s&&s.custom)?catValide(s.cat):'';
+    return k?(CATEGORIES.find(function(c){return c.id===k;})||null):null;}
+  function catMinPrice(cat){return Math.min.apply(null,catSubs(cat).map(function(id){return (S.adminPrices&&S.adminPrices[id]!=null)?S.adminPrices[id]:svcBase(id);}));}
   // Tuiles de l'accueil dans l'ordre, en insérant chaque catégorie à la place de son
   // premier membre et en rangeant les services restants (customs admin) à la fin.
   function homeItems(){
     const cover={},out=[];
     HOME_ORDER.forEach(function(id){
       const cat=CATEGORIES.find(function(c){return c.id===id;});
-      if(cat){out.push({type:'cat',cat:cat});cat.subs.forEach(function(s){cover[s]=1;});}
+      if(cat){out.push({type:'cat',cat:cat});catSubs(cat).forEach(function(s){cover[s]=1;});}
       else{const s=findSvc(id);if(s){out.push({type:'svc',svc:s});cover[id]=1;}}
     });
     allSvc().forEach(function(s){if(!cover[s.id]&&!svcCategory(s.id)){out.push({type:'svc',svc:s});cover[s.id]=1;}});
@@ -4459,7 +4484,7 @@
   // inventée : elle retombe sur `I.other`, exactement comme avant.
   const SVC_ICOS=[['other','Par défaut'],['administratif','Démarches'],['doc','Papiers'],['folder','Dossiers'],
     ['scales','Juridique'],['euro','Comptabilité'],['shop','Commerce'],['car','Transport'],
-    ['hardhat','Chantier'],['bricolage','Bricolage'],['repassage','Repassage'],['cuisine','Cuisine'],
+    ['hardhat','Chantier'],['bricolage','Bricolage'],['peinture','Peinture'],['repassage','Repassage'],['cuisine','Cuisine'],
     ['info','Informatique'],['camera','Photo'],['concierge','Conciergerie'],['key','Clés & gardiennage'],
     ['gear','Technique'],['globe','Traduction'],['users','Événementiel'],['heart','Aide à la personne'],
     ['party','Fête'],['wave','Accueil']];
@@ -4473,14 +4498,21 @@
     beaute:'#DB2777',depannage:'#0284C7',sport:'#16A34A'};
   function svcColor(id){return SVC_COLORS[id]||'var(--teal-deep)';}
   // Ajoute un service « Autre » au catalogue (visible/réservable côté client).
-  function addCustomService(name,rate,choixPro){
+  // Les quatre choix de rangement, écrits une fois : « Aucune » (le métier garde sa
+  // tuile d'accueil) puis les catégories, sous leur nom COURANT — elles se renomment
+  // depuis cette même console, et deux libellés différents pour la même chose ne
+  // s'expliqueraient pas.
+  function catOptions(sel){sel=catValide(sel);
+    return '<option value="">Aucune \u00b7 tuile d\u2019accueil</option>'+CATEGORIES.map(function(c){
+      return '<option value="'+c.id+'"'+(sel===c.id?' selected':'')+'>'+esc(c.nm)+'</option>';}).join('');}
+  function addCustomService(name,rate,choixPro,cat){
     name=(name||'').trim(); if(!name)return;
     if((S.customServices||[]).some(function(s){return s.nm.toLowerCase()===name.toLowerCase();})){toast('Déjà au catalogue');return;}
     let base='c_'+name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'').slice(0,14);
     if(!base||base==='c_')base='c_service';
     let sid=base,n=2; while(findSvc(sid)){sid=base+n;n++;}
     rate=Math.max(5,Math.round(rate||40));
-    S.customServices=(S.customServices||[]).concat([{id:sid,nm:name,rate:rate,custom:true,ico:'',choixPro:!!choixPro}]);
+    S.customServices=(S.customServices||[]).concat([{id:sid,nm:name,rate:rate,custom:true,ico:'',choixPro:!!choixPro,cat:catValide(cat)}]);
     if(!S.adminPrices)S.adminPrices=ADMIN_PRICES(); S.adminPrices[sid]=rate;
     saveCatalog(); render(); toast('« '+name+' » ajouté au catalogue ✓');
     return sid; // l'appelant en a besoin pour rattacher le prestataire au métier créé
@@ -4513,7 +4545,7 @@
   function prixSaisi(v){const n=Math.round(parseFloat(String(v).replace(',','.'))||0);return Math.max(0,Math.min(99999,n));}
   function ecritDansCatalogue(){ try{ const a=document.activeElement;
     return !!(a&&a.matches&&a.matches('[data-optname],[data-actname],[data-actgrpname],[data-actpricev],[data-optpricev],[data-catname]')); }catch(_){return false;} }
-  function applyCatalogDoc(d){ if(!d)return; S.nomsMetiers=nomsValides(d.noms); appliquerNoms(); if(Array.isArray(d.services)){ S.customServices=d.services.map(function(s){return {id:s.id,nm:nomNet(s.nm),rate:s.rate,custom:true,ico:icoValide(s.ico),choixPro:!!s.choixPro};}); } if(d.catalog&&typeof d.catalog==='object'){ S.adminCatalog=d.catalog; } S.catalogSeed=Number(d.catalogSeed)||0; if(d.options&&typeof d.options==='object'){ S.adminOptions=d.options; } if(ecritDansCatalogue())return; render(); applyLandLang(); }
+  function applyCatalogDoc(d){ if(!d)return; S.nomsMetiers=nomsValides(d.noms); appliquerNoms(); if(Array.isArray(d.services)){ S.customServices=d.services.map(function(s){return {id:s.id,nm:nomNet(s.nm),rate:s.rate,custom:true,ico:icoValide(s.ico),choixPro:!!s.choixPro,cat:catValide(s.cat)};}); } if(d.catalog&&typeof d.catalog==='object'){ S.adminCatalog=d.catalog; } S.catalogSeed=Number(d.catalogSeed)||0; if(d.options&&typeof d.options==='object'){ S.adminOptions=d.options; } if(ecritDansCatalogue())return; render(); applyLandLang(); }
   // Catalogue partagé écouté EN TEMPS RÉEL : toute modification admin (prix, prestations,
   // options, métiers) se propage à l'app de chacun sans rechargement. Une seule écoute.
   async function loadCatalog(){ try{ if(!FB||_catalogSub)return; _catalogSub=FB.f.onSnapshot(FB.f.doc(FB.db,'settings','catalog'),function(snap){ applyCatalogDoc(snap.exists()?(snap.data()||{}):{}); },function(e){ console.warn('catalog load',e); }); }catch(e){ console.warn('catalog sub',e); } }
@@ -4545,7 +4577,7 @@
   function testSvcList(){ try{ return (localStorage.getItem('tiOuvrir')||'').split(',').filter(Boolean); }catch(_){ return []; } }
   function svcForce(id){ return !!id && testSvcList().indexOf(id)>=0; }
   function svcAvailable(id){ if(!gatingOn())return true; if(svcForce(id))return true; return !!(S.availableServices&&S.availableServices.indexOf(id)>=0); }
-  function catAvailable(cat){ if(!gatingOn())return true; return !!(cat&&cat.subs&&cat.subs.some(function(id){return svcAvailable(id);})); }
+  function catAvailable(cat){ if(!gatingOn())return true; return catSubs(cat).some(function(id){return svcAvailable(id);}); }
   // Copie éditable de la grille d'un métier dans S.adminCatalog (à partir de la grille
   // par défaut si l'admin n'y a jamais touché) — pour modifier prix / actes sans perdre
   // le catalogue de référence.
@@ -9831,6 +9863,8 @@
           <div class="mini" style="color:var(--muted);margin-top:9px">Icône</div>
           <div class="row" style="flex-wrap:wrap;gap:7px;margin-top:6px">${SVC_ICOS.map(function(p){const on=icoValide(s.ico)===p[0]||(!icoValide(s.ico)&&p[0]==='other');
             return `<button class="btn ghost sm" data-adm="catico:${s.id}:${p[0]}" title="${esc(p[1])}" aria-label="${esc(p[1])}" aria-pressed="${on?'true':'false'}" style="flex:none;width:40px;height:40px;padding:0;display:inline-flex;align-items:center;justify-content:center;${on?'border-color:var(--teal-deep);background:var(--teal-wash);color:var(--teal-deep)':''}">${I[p[0]]}</button>`;}).join('')}</div>
+          <div class="mini" style="color:var(--muted);margin-top:11px">Catégorie d’accueil</div>
+          <select class="txt" data-catin="${s.id}" style="width:100%;margin-top:5px;padding:11px 12px;font-size:14px">${catOptions(s.cat)}</select>
           <button class="btn ghost sm" data-adm="delcat:${s.id}" style="margin-top:11px;width:auto;padding:8px 12px;color:var(--coral-deep)">${I.trash} Retirer ce métier</button>`}
           <div class="row between" style="align-items:center;gap:10px;margin-top:12px">
             <div style="flex:1;min-width:0"><span class="sub">Le client choisit son prestataire</span>
@@ -9849,7 +9883,7 @@
       <div class="card" style="padding:14px;margin-top:12px">
         <b style="font-size:14px">${I.folder} Catégories d'accueil</b>
         <p class="sub" style="margin-top:5px">Les trois regroupements de la page d'accueil. Les renommer ne change que le libellé : les métiers qu'ils réunissent ne bougent pas.</p>
-        ${CATEGORIES.map(function(c){return `<div style="margin-top:11px"><div class="mini" style="color:var(--muted)">${c.subs.map(function(x){return esc(svcNm(x));}).join(' · ')}</div>${nomChamp(c.id,c.nm)}</div>`;}).join('')}
+        ${CATEGORIES.map(function(c){return `<div style="margin-top:11px"><div class="mini" style="color:var(--muted)">${catSubs(c).map(function(x){return esc(svcNm(x));}).join(' · ')}</div>${nomChamp(c.id,c.nm)}</div>`;}).join('')}
       </div>
       <div class="card" style="padding:14px;margin-top:12px;border:1px dashed var(--hair)">
         <b style="font-size:14px">${I.plus} Ajouter un métier</b>
@@ -9860,6 +9894,9 @@
           <input type="checkbox" id="admNewCatChoix" style="margin-top:3px;flex:none;width:18px;height:18px;accent-color:var(--teal-deep)">
           <span class="mini" style="line-height:1.45;color:var(--muted)">Le client peut <b>choisir son prestataire</b> dès la première commande (annuaire du métier). À cocher quand la PERSONNE compte&nbsp;: coiffure, massage, garde d'enfants. Sinon la demande part au premier disponible.</span>
         </label>
+        <div class="mini" style="color:var(--muted);margin-top:11px">Ranger dans</div>
+        <select id="admNewCatIn" class="txt" style="width:100%;margin-top:5px;padding:11px 12px;font-size:14px">${catOptions('')}</select>
+        <div class="mini" style="color:var(--muted);line-height:1.45;margin-top:5px">Une catégorie réunit plusieurs métiers sous UNE tuile d’accueil&nbsp;: rangé là, le métier n’a plus sa propre tuile, on le trouve en ouvrant la catégorie. Modifiable ensuite.</div>
         <button class="btn" data-act="admin-add-cat" style="margin-top:10px;background:var(--teal-deep);color:#fff">Ajouter au catalogue</button>
       </div>
       <p class="mini" style="margin-top:12px">Ces prix fixes sont ceux que voient les clients à la commande. La majoration « coup de pouce » s'applique <b>par-dessus</b> et revient au prestataire.</p>`;
@@ -11793,7 +11830,7 @@
        ajout de règle. */
     const bientot=function(it){
       if(revDemo)return false;
-      if(it.type==='cat')return (it.cat.subs||[]).some(svcForce)?false:(!catAvailable(it.cat)||closed);
+      if(it.type==='cat')return catSubs(it.cat).some(svcForce)?false:(!catAvailable(it.cat)||closed);
       return svcForce(it.svc.id)?false:(!svcAvailable(it.svc.id)||closed);
     };
     const svcTile=function(s){const soon=bientot({type:'svc',svc:s});const c=soon?'#9a94a6':svcColor(s.id);const px=(S.adminPrices&&S.adminPrices[s.id]!=null?S.adminPrices[s.id]:s.rate);const rt=soon?'<span style="color:var(--muted)">Bientôt disponible</span>':(isForfaitSvc(s.id)?`<b>${px}</b> <b>€</b> forfait`:(isCatalogForfait(s.id)?`dès <b>${minActPrice(s.id)}</b> <b>€</b>`:`dès <b>${px}</b> <b>€</b>/h`));return `<button class="cat${soon?' soon':''}" ${soon?'data-act="svc-soon"':`data-svc="${s.id}"`}>${soon?'<span class="soon-badge">Bientôt</span>':''}<div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${svcIco(s.id)}</div><div class="nm">${esc(s.nm)}</div><div class="rt">${rt}</div></button>`;};
@@ -11801,12 +11838,12 @@
     // pose au bout de « N prestations », dans la couleur du métier. La ligne du bas dit
     // alors d'elle-même la différence entre une tuile qui ouvre une liste et une tuile qui
     // annonce un prix ferme — plus besoin d'un glyphe orphelin dans un coin.
-    const catTile=function(cat){const soon=bientot({type:'cat',cat:cat});const c=soon?'#9a94a6':svcColor(cat.id);return `<button class="cat${soon?' soon':''}" ${soon?'data-act="svc-soon"':`data-catopen="${cat.id}"`}>${soon?'<span class="soon-badge">Bientôt</span>':''}<div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[cat.id]||I.other}</div><div class="nm">${esc(cat.nm)}</div><div class="rt">${soon?'<span style="color:var(--muted)">Bientôt disponible</span>':cat.subs.length+' prestations<span class="cat-go" style="color:'+c+'">&nbsp;›</span>'}</div></button>`;};
+    const catTile=function(cat){const soon=bientot({type:'cat',cat:cat});const c=soon?'#9a94a6':svcColor(cat.id);return `<button class="cat${soon?' soon':''}" ${soon?'data-act="svc-soon"':`data-catopen="${cat.id}"`}>${soon?'<span class="soon-badge">Bientôt</span>':''}<div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[cat.id]||I.other}</div><div class="nm">${esc(cat.nm)}</div><div class="rt">${soon?'<span style="color:var(--muted)">Bientôt disponible</span>':catSubs(cat).length+' prestations<span class="cat-go" style="color:'+c+'">&nbsp;›</span>'}</div></button>`;};
     // Vue « sous-catégorie » : on a ouvert une catégorie (ex. Beauté) → liste ses prestations.
     const catView=S.catView?CATEGORIES.find(function(c){return c.id===S.catView;}):null;
     if(catView){
       const c=svcColor(catView.id);
-      const dans=catView.subs.map(findSvc).filter(Boolean).map(function(s){return {type:'svc',svc:s};});
+      const dans=catSubs(catView).map(findSvc).filter(Boolean).map(function(s){return {type:'svc',svc:s};});
       const dSub=dans.filter(function(it){return !bientot(it);}),tSub=dans.filter(bientot);
       const sub=dSub.map(function(it){return svcTile(it.svc);}).join('')
         +((dSub.length&&tSub.length)?`<div class="cats-sep">Bientôt disponible</div>`:'')
@@ -13858,13 +13895,13 @@
   }
   function proServicesSection(f){
     const psvc=function(id){const s=findSvc(id);if(!s)return '';const on=f.cats.includes(s.id);const c=svcColor(s.id);const px=(S.adminPrices&&S.adminPrices[s.id]!=null?S.adminPrices[s.id]:s.rate);const rt=isForfaitSvc(s.id)?`${proNetHint(px)} € net`:(isCatalogForfait(s.id)?`dès ${proNetHint(minActPrice(s.id))} € net`:`${proNetHint(px)} € net/h`);return `<button class="cat ${on?'sel':''}" data-pcat="${s.id}"><div class="pick">${I.check}</div><div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${svcIco(s.id)}</div><div class="nm">${esc(s.nm)}</div><div class="rt">${rt}</div><span class="mini" data-psvcinfo="${s.id}" style="display:inline-block;margin-top:5px;color:var(--teal-deep);font-weight:800;text-decoration:underline;text-underline-offset:2px">D\u00e9tails \u203a</span></button>`;};
-    const pcatCount=function(cat){return cat.subs.filter(function(id){return f.cats.includes(id);}).length;};
-    const pcatTile=function(cat){const open=f.openCat===cat.id;const n=pcatCount(cat);const c=svcColor(cat.id);return `<button class="cat" data-pcatopen="${cat.id}" style="${open?'border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-wash)':''}"><span class="cat-more" style="${open?'transform:rotate(90deg)':''}">${I.chevron}</span><div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[cat.id]||I.other}</div><div class="nm">${esc(cat.nm)}</div><div class="rt">${n?`<b style="color:var(--teal-deep)">${n} sélectionnée${n>1?'s':''}</b>`:cat.subs.length+' prestations'}</div></button>`;};
+    const pcatCount=function(cat){return catSubs(cat).filter(function(id){return f.cats.includes(id);}).length;};
+    const pcatTile=function(cat){const open=f.openCat===cat.id;const n=pcatCount(cat);const c=svcColor(cat.id);return `<button class="cat" data-pcatopen="${cat.id}" style="${open?'border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-wash)':''}"><span class="cat-more" style="${open?'transform:rotate(90deg)':''}">${I.chevron}</span><div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[cat.id]||I.other}</div><div class="nm">${esc(cat.nm)}</div><div class="rt">${n?`<b style="color:var(--teal-deep)">${n} sélectionnée${n>1?'s':''}</b>`:catSubs(cat).length+' prestations'}</div></button>`;};
     const cats=homeItems().map(function(it){
       if(it.type==='svc')return psvc(it.svc.id);
       const cat=it.cat,tile=pcatTile(cat);
       if(f.openCat!==cat.id)return tile;
-      const subs=cat.subs.map(function(id){return psvc(id);}).join('');
+      const subs=catSubs(cat).map(function(id){return psvc(id);}).join('');
       return tile+`<div style="grid-column:1/-1;background:var(--sand-2);border-radius:14px;padding:11px;margin:0 0 2px"><div class="mini" style="color:var(--muted);margin:0 2px 8px">${esc(cat.nm)}, cochez les prestations que vous réalisez</div><div class="cats" style="margin-top:0">${subs}</div></div>`;
     }).join('')
       +`<button class="cat ${f.cats.includes('autre')?'sel':''}" data-pcat="autre"><div class="pick">${I.check}</div><div class="ic">${I.other}</div><div class="nm">Autre</div><div class="rt">à préciser</div></button>`;
@@ -13886,13 +13923,13 @@
     // celles qu'il réalise (multi-sélection). Les services sans catégorie et « Autre »
     // restent des tuiles directes.
     const psvc=function(id){const s=findSvc(id);if(!s)return '';const on=f.cats.includes(s.id);const c=svcColor(s.id);const px=(S.adminPrices&&S.adminPrices[s.id]!=null?S.adminPrices[s.id]:s.rate);const rt=isForfaitSvc(s.id)?`${proNetHint(px)} € net`:(isCatalogForfait(s.id)?`dès ${proNetHint(minActPrice(s.id))} € net`:`${proNetHint(px)} € net/h`);return `<button class="cat ${on?'sel':''}" data-pcat="${s.id}"><div class="pick">${I.check}</div><div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${svcIco(s.id)}</div><div class="nm">${esc(s.nm)}</div><div class="rt">${rt}</div></button>`;};
-    const pcatCount=function(cat){return cat.subs.filter(function(id){return f.cats.includes(id);}).length;};
-    const pcatTile=function(cat){const open=f.openCat===cat.id;const n=pcatCount(cat);const c=svcColor(cat.id);return `<button class="cat" data-pcatopen="${cat.id}" style="${open?'border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-wash)':''}"><span class="cat-more" style="${open?'transform:rotate(90deg)':''}">${I.chevron}</span><div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[cat.id]||I.other}</div><div class="nm">${esc(cat.nm)}</div><div class="rt">${n?`<b style="color:var(--teal-deep)">${n} sélectionnée${n>1?'s':''}</b>`:cat.subs.length+' prestations'}</div></button>`;};
+    const pcatCount=function(cat){return catSubs(cat).filter(function(id){return f.cats.includes(id);}).length;};
+    const pcatTile=function(cat){const open=f.openCat===cat.id;const n=pcatCount(cat);const c=svcColor(cat.id);return `<button class="cat" data-pcatopen="${cat.id}" style="${open?'border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-wash)':''}"><span class="cat-more" style="${open?'transform:rotate(90deg)':''}">${I.chevron}</span><div class="ic" style="background:color-mix(in srgb, ${c} 15%, transparent);color:${c}">${I[cat.id]||I.other}</div><div class="nm">${esc(cat.nm)}</div><div class="rt">${n?`<b style="color:var(--teal-deep)">${n} sélectionnée${n>1?'s':''}</b>`:catSubs(cat).length+' prestations'}</div></button>`;};
     const cats=homeItems().map(function(it){
       if(it.type==='svc')return psvc(it.svc.id);
       const cat=it.cat,tile=pcatTile(cat);
       if(f.openCat!==cat.id)return tile;
-      const subs=cat.subs.map(function(id){return psvc(id);}).join('');
+      const subs=catSubs(cat).map(function(id){return psvc(id);}).join('');
       return tile+`<div style="grid-column:1/-1;background:var(--sand-2);border-radius:14px;padding:11px;margin:0 0 2px"><div class="mini" style="color:var(--muted);margin:0 2px 8px">${esc(cat.nm)}, cochez les prestations que vous réalisez</div><div class="cats" style="margin-top:0">${subs}</div></div>`;
     }).join('')
       +`<button class="cat ${f.cats.includes('autre')?'sel':''}" data-pcat="autre"><div class="pick">${I.check}</div><div class="ic">${I.other}</div><div class="nm">Autre</div><div class="rt">à préciser</div></button>`;
@@ -16627,7 +16664,8 @@
         const rt=parseInt(((document.getElementById('admNewCatRate')||{}).value||'40'),10);
         if(!nm){toast('Indiquez un nom de métier');break;}
         const ch=!!((document.getElementById('admNewCatChoix')||{}).checked);
-        addCustomService(nm,(rt&&rt>=5)?rt:40,ch); // persiste au catalogue partagé + rend
+        const dans=((document.getElementById('admNewCatIn')||{}).value||'');
+        addCustomService(nm,(rt&&rt>=5)?rt:40,ch,dans); // persiste au catalogue partagé + rend
         break;
       }
       case 'enable-notif':{
@@ -17132,6 +17170,14 @@
       const r=renommerMetier(id,cnb.value);
       if(!r.ok){renommerMetier(id,av);toast(r.raison);}
       saveCatalog();render();return;}
+    // Rangement d'un métier de la console dans une catégorie d'accueil. La valeur vient
+    // d'une liste FERMÉE rendue par `catOptions` ; `catValide` la rejuge quand même, la
+    // boîte à outils du navigateur permettant d'écrire ce qu'on veut dans un `<option>`.
+    const cin=e.target.closest('[data-catin]');
+    if(cin){const id=cin.dataset.catin,sv=(S.customServices||[]).find(function(x){return x.id===id;});
+      if(sv){sv.cat=catValide(cin.value);saveCatalog();render();
+        toast(sv.cat?('« '+sv.nm+' » rangé dans « '+((CATEGORIES.find(function(c){return c.id===sv.cat;})||{}).nm||'')+' »'):('« '+sv.nm+' » retrouve sa tuile d’accueil'));}
+      return;}
     // Renfort (bêta) : secteur, date et choix nominatif du confrère.
     const rfc=e.target.closest('[data-rfi]');
     if(rfc&&S.renfortForm){const k=rfc.dataset.rfi;
