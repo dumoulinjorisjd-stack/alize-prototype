@@ -36,14 +36,16 @@ const JOUR = 864e5, T = 1790000000000;
     phone: '', zone: 'Gustavia', status: 'valide', push: push, addresses: adr, card: card,
     bookings: 0, history: [], recurring: [], createdAt: T - j * JOUR, jalons: jal || {} });
   const clients = [
-    // a : inscrit, n'a RIEN fait ensuite.
+    // a : inscrit, n'a RIEN fait ensuite — pas même ouvert le catalogue.
     C('a', 'Alice Ba', 0, [], 'Aucune carte enregistrée', 30, {}),
+    // a2 : a parcouru le catalogue et touché un métier pas encore ouvert, puis reculé.
+    C('a2', 'Anna Ga', 1, [], 'Aucune carte enregistrée', 10, { catalogue: T - 9 * JOUR, indispo: T - 9 * JOUR }),
     // b : a configuré une prestation, jamais vu le paiement.
-    C('b', 'Bruno Ca', 2, [{ id: 1 }], 'Visa ••4242', 20, { config: T - 19 * JOUR, revenu: T - 19 * JOUR }),
+    C('b', 'Bruno Ca', 2, [{ id: 1 }], 'Visa ••4242', 20, { catalogue: T - 19 * JOUR, config: T - 19 * JOUR, revenu: T - 19 * JOUR }),
     // c : a vu l'écran de paiement et n'a pas confirmé.
-    C('c', 'Chloé Da', 1, [], 'Aucune carte enregistrée', 2, { config: T - JOUR, paiement: T - JOUR }),
+    C('c', 'Chloé Da', 1, [], 'Aucune carte enregistrée', 2, { catalogue: T - JOUR, config: T - JOUR, paiement: T - JOUR }),
     // d : a confirmé, la demande est morte au paiement.
-    C('d', 'David Ea', 1, [{ id: 1 }], 'Visa ••1111', 40, { config: T - 39 * JOUR, paiement: T - 39 * JOUR }),
+    C('d', 'David Ea', 1, [{ id: 1 }], 'Visa ••1111', 40, { catalogue: T - 39 * JOUR, config: T - 39 * JOUR, paiement: T - 39 * JOUR }),
     // e : a commandé AVANT que les jalons existent — il n'en porte aucun.
     C('e', 'Eva Fa', 1, [{ id: 1 }], 'Visa ••2222', 50, {}),
   ];
@@ -53,36 +55,42 @@ const JOUR = 864e5, T = 1790000000000;
   };
   const P = await parc(clients, demandes, T);
   const mur = (k) => (P.murs.find((m) => m.cle === k) || {}).n;
-  ok(P.total === 5, 'les cinq comptes sont comptés (' + P.total + ')');
-  ok(mur('config') === 1, 'un seul n’a JAMAIS rien configuré (' + mur('config') + ')');
+  ok(P.total === 6, 'les six comptes sont comptés (' + P.total + ')');
+  ok(mur('catalogue') === 1, 'un seul n’a JAMAIS touché au catalogue (' + mur('catalogue') + ')');
+  ok(mur('config') === 1, 'un a regardé le catalogue sans rien configurer — ce n’est pas le même (' + mur('config') + ')');
   ok(mur('paiement') === 1, 'un a configuré sans jamais voir le paiement (' + mur('paiement') + ')');
   ok(mur('confirme') === 1, 'un a vu le paiement et n’a pas confirmé (' + mur('confirme') + ')');
   ok(mur('commande') === 1, 'un a confirmé, et sa demande est morte au paiement (' + mur('commande') + ')');
   ok(P.abouti === 1, 'et un seul a commandé (' + P.abouti + ')');
-  ok(mur('config') + mur('paiement') + mur('confirme') + mur('commande') + P.abouti === P.total,
-    'les quatre murs et les aboutis font le total : personne n’est compté deux fois ni oublié');
+  ok(mur('catalogue') + mur('config') + mur('paiement') + mur('confirme') + mur('commande') + P.abouti === P.total,
+    'les cinq murs et les aboutis font le total : personne n’est compté deux fois ni oublié');
 
   /* ON NE RÉTROGRADE PERSONNE FAUTE DE JALON. Les comptes d'avant cette mise en ligne
      n'en portent aucun : sans cette règle, « Eva », qui a bel et bien commandé, serait
      rangée au mur « n'a jamais configuré ». C'est la preuve la plus FORTE qui classe. */
-  ok(P.abouti === 1 && mur('config') === 1,
+  ok(P.abouti === 1 && mur('catalogue') === 1,
     'un compte qui a commandé SANS aucun jalon reste « a commandé » : sa demande prouve tout le reste');
   // Seule « Eva » est antérieure aux jalons : « David » porte les siens, il n'est donc
   // pas dans ce cas, et le compteur ne doit PAS le ramasser au passage.
   ok(P.sansJalon === 1, 'et l’écran dit combien de comptes sont dans ce cas — un seul (' + P.sansJalon + ')');
 
   console.log('\nB — les faits se comptent sur les BLOQUÉS, là où ils expliquent quelque chose');
-  ok(P.bloques === 4, 'quatre comptes sont bloqués quelque part (' + P.bloques + ')');
+  ok(P.bloques === 5, 'cinq comptes sont bloqués quelque part (' + P.bloques + ')');
+  /* LE RENSEIGNEMENT LE PLUS UTILE DE TOUS : il ne situe personne sur le chemin, mais il
+     dit ce qu'on vous demande et que vous ne vendez pas. C'est un FAIT, pas une marche. */
+  ok(P.faits.indispo === 1, 'un a touché un métier pas encore ouvert (' + P.faits.indispo + ')');
+  ok(/PARCOURS_MURS=\[\['catalogue'/.test(html) && !/\['indispo','A demandé[^\]]*\][\s\S]{0,120}?PARCOURS_MURS/.test(html),
+    'et « a demandé un métier pas encore ouvert » reste un fait, jamais un mur');
   ok(P.faits.revenus === 1, 'un seul est revenu un autre jour — les autres ne sont jamais repassés (' + P.faits.revenus + ')');
   ok(P.faits.sansPush === 1, 'un ne peut recevoir aucune notification (' + P.faits.sansPush + ')');
-  ok(P.faits.sansAdresse === 2, 'deux n’ont aucune adresse enregistrée (' + P.faits.sansAdresse + ')');
-  ok(P.faits.vieux === 3, 'trois sont inscrits depuis plus de 7 jours — un compte d’hier n’est pas un compte perdu (' + P.faits.vieux + ')');
+  ok(P.faits.sansAdresse === 3, 'trois n’ont aucune adresse enregistrée (' + P.faits.sansAdresse + ')');
+  ok(P.faits.vieux === 4, 'quatre sont inscrits depuis plus de 7 jours — un compte d’hier n’est pas un compte perdu (' + P.faits.vieux + ')');
   ok(/Ce ne sont pas des .tapes/.test(html),
     'et l’écran le DIT : on peut commander sans avoir rien enregistré de tout cela');
   /* « REVENU » N'EST PAS UNE MARCHE. On peut tout faire le jour de son inscription :
      en faire une étape inventerait un ordre que rien n'impose. */
-  ok(!/\['revenu','Est revenu un autre jour'\][\s\S]{0,200}?PARCOURS_MURS/.test(html)
-     && /PARCOURS_MURS=\[\['config'/.test(html),
+  ok(/PARCOURS_MURS=\[\['catalogue'/.test(html)
+     && !/PARCOURS_MURS=\[[\s\S]{0,260}?'revenu'/.test(html),
     'et « revenu un autre jour » reste un fait, jamais un mur');
 
   console.log('\nC — le relevé est pris AVANT le filtre de la messagerie');
@@ -115,10 +123,13 @@ const JOUR = 864e5, T = 1790000000000;
   ok(!!vue.dem && /Mortes au paiement Demande écrite, paiement jamais abouti 2/.test(vue.dem)
      && /Paiement refusé La carte a été refusée ou la fenêtre fermée 1/.test(vue.dem),
     'et distingue le renoncement du refus de carte — ce ne sont pas les mêmes gestes');
-  ok(!!vue.par && /N’a jamais configuré de prestation 1/.test(vue.par)
+  ok(!!vue.par && /N’a jamais touché au catalogue 1/.test(vue.par)
+     && /A regardé, n’a rien configuré 1/.test(vue.par)
      && /A configuré, jamais vu le paiement 1/.test(vue.par)
      && /A vu le paiement, n’a pas confirmé 1/.test(vue.par),
-    'la carte du parcours nomme les quatre murs avec leur nombre');
+    'la carte du parcours nomme les cinq murs avec leur nombre');
+  ok(!!vue.par && /a touché un métier pas encore ouvert/.test(vue.par),
+    'et met en avant ceux qui ont demandé un métier qu’on ne vend pas');
   ok(!!vue.par && /ne peut recevoir aucune notification/.test(vue.par),
     'et dit, sur les bloqués, ce qui peut l’expliquer');
 

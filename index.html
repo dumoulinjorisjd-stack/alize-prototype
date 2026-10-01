@@ -9750,7 +9750,8 @@
      configuré ». La preuve la plus FORTE l'emporte donc — une demande prouve à elle seule
      la configuration et le passage au paiement. L'écran dit combien de comptes sont dans
      ce cas, plutôt que de les compter dans un mur qu'ils n'ont jamais heurté. */
-  const PARCOURS_MURS=[['config','N’a jamais configuré de prestation'],
+  const PARCOURS_MURS=[['catalogue','N’a jamais touché au catalogue'],
+    ['config','A regardé, n’a rien configuré'],
     ['paiement','A configuré, jamais vu le paiement'],
     ['confirme','A vu le paiement, n’a pas confirmé'],
     ['commande','S’est arrêté au paiement']];
@@ -9767,7 +9768,17 @@
      Pas de nom de métier, pas de montant : ce qu'on cherche est l'ÉTAPE, pas le contenu.
      On n'écrit qu'au FRANCHISSEMENT — un jalon déjà posé ne déclenche aucune écriture,
      sinon chaque ouverture d'écran réécrirait la fiche. */
-  const CLIENT_JALONS=[['revenu','Est revenu un autre jour'],
+  /* « N'A JAMAIS CONFIGURÉ » MÉLANGEAIT DEUX CHOSES : celui qui n'a jamais touché au
+     catalogue, et celui qui l'a parcouru puis a reculé. Ce ne sont pas les mêmes gens et
+     ce n'est pas le même remède — l'un n'est jamais entré dans la boutique, l'autre y est
+     entré et n'a rien trouvé. `catalogue` les sépare, et il est strictement AVANT
+     `config` : ouvrir une prestation passe forcément par le catalogue, donc les deux
+     jalons se posent ensemble dans cette porte-là.
+     `indispo` n'est PAS une marche, c'est un fait — vouloir un métier qu'on n'ouvre pas
+     encore ne situe personne sur le chemin, mais c'est peut-être le renseignement le plus
+     utile de tous : il dit ce qu'on vous demande et que vous ne vendez pas. */
+  const CLIENT_JALONS=[['revenu','Est revenu un autre jour'],['catalogue','A touché au catalogue'],
+    ['indispo','A demandé un métier pas encore ouvert'],
     ['config','A configuré une prestation'],['paiement','A vu l’écran de paiement']];
   function jalonClient(cle){
     try{
@@ -9782,7 +9793,7 @@
   }
   function parcoursClients(clients,parClient,maintenant){
     const cl=Array.isArray(clients)?clients:[];
-    const murs={config:[],paiement:[],confirme:[],commande:[]};const abouti=[];let sansJalon=0;
+    const murs={catalogue:[],config:[],paiement:[],confirme:[],commande:[]};const abouti=[];let sansJalon=0;
     cl.forEach(function(c){
       const d=(parClient&&parClient[c.uid])||[];
       const j=c.jalons||{};
@@ -9794,11 +9805,12 @@
       }
       if(j.paiement){murs.confirme.push(c);return;}
       if(j.config){murs.paiement.push(c);return;}
-      murs.config.push(c);
+      if(j.catalogue){murs.config.push(c);return;}
+      murs.catalogue.push(c);
     });
     // Les faits se comptent sur les BLOQUÉS : « 11 des 14 n'ont aucune notification »
     // dit où regarder, « 11 clients sur 60 » ne dit rien.
-    const bloques=murs.config.concat(murs.paiement,murs.confirme,murs.commande);
+    const bloques=murs.catalogue.concat(murs.config,murs.paiement,murs.confirme,murs.commande);
     const faits={
       sansPush:bloques.filter(function(c){return !c.push;}).length,
       sansAdresse:bloques.filter(function(c){return !((c.addresses||[]).length);}).length,
@@ -9808,6 +9820,7 @@
       // Revenir est un FAIT, pas une marche : il dit si le compte est dormant ou s'il
       // revient sans jamais aller plus loin — deux problèmes qui n'ont pas le même remède.
       revenus:bloques.filter(function(c){return !!((c.jalons||{}).revenu);}).length,
+      indispo:bloques.filter(function(c){return !!((c.jalons||{}).indispo);}).length,
     };
     return {total:cl.length,bloques:bloques.length,abouti:abouti.length,sansJalon:sansJalon,
       murs:PARCOURS_MURS.map(function(m){return {cle:m[0],nm:m[1],n:murs[m[0]].length,qui:murs[m[0]]};}),
@@ -10086,7 +10099,7 @@
         ${P.sansJalon?`<p class="mini" style="margin-top:9px;color:var(--muted);line-height:1.5">${plN(P.sansJalon,'compte')} ${P.sansJalon>1?'ont commandé':'a commandé'} avant que ces jalons existent&nbsp;: leur demande prouve la configuration et le passage au paiement, c’est elle qui les classe.</p>`:''}
         ${P.bloques?`<div style="margin-top:13px;padding:10px 12px;background:var(--sand);border-radius:11px">
           <div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Sur les ${P.bloques} bloqué${P.bloques>1?'s':''}</div>
-          <div class="mini" style="margin-top:5px;line-height:1.6"><b>${f.revenus}</b> ${f.revenus>1?'sont revenus':'est revenu'} un autre jour ${f.revenus>1?'(les autres ne sont jamais repassés)':'(les autres ne sont jamais repassés)'}<br>
+          <div class="mini" style="margin-top:5px;line-height:1.6">${f.indispo?`<b>${f.indispo}</b> ${f.indispo>1?'ont touché':'a touché'} un métier <b>pas encore ouvert</b> ${f.indispo>1?'(ils voulaient':'(il voulait'} quelque chose qu’on ne vend pas)<br>`:''}<b>${f.revenus}</b> ${f.revenus>1?'sont revenus':'est revenu'} un autre jour ${f.revenus>1?'(les autres ne sont jamais repassés)':'(les autres ne sont jamais repassés)'}<br>
           ${f.sansPush} ne ${f.sansPush>1?'peuvent':'peut'} recevoir <b>aucune notification</b><br>
           ${f.sansAdresse} n’${f.sansAdresse>1?'ont':'a'} <b>aucune adresse</b> enregistrée<br>
           ${f.sansCarte} n’${f.sansCarte>1?'ont':'a'} <b>aucune carte</b> enregistrée<br>
@@ -16360,8 +16373,8 @@
     if(b.dataset.concDur){S.concOrder.duration=Math.max(1,Math.min(10,S.concOrder.duration+(b.dataset.concDur==='up'?1:-1)));render();return;}
     if(b.dataset.cf2zone){if(S.concForm)S.concForm.azone=b.dataset.cf2zone;render();return;}
     if(b.dataset.pf2zone){if(S.profileForm)S.profileForm.zone=b.dataset.pf2zone;render();return;}
-    if(b.dataset.catopen){S.catView=b.dataset.catopen;render();return;}
-    if(b.dataset.svc){if(!svcAvailable(b.dataset.svc)){toast('Bientôt disponible');return;}const svc=findSvc(b.dataset.svc);if(!svc)return;jalonClient('config');S.catView=null;S.cfgMore=false;S.draft=newMission(svc);renderConfig();return;}
+    if(b.dataset.catopen){jalonClient('catalogue');S.catView=b.dataset.catopen;render();return;}
+    if(b.dataset.svc){if(!svcAvailable(b.dataset.svc)){toast('Bientôt disponible');return;}const svc=findSvc(b.dataset.svc);if(!svc)return;jalonClient('catalogue');jalonClient('config');S.catView=null;S.cfgMore=false;S.draft=newMission(svc);renderConfig();return;}
     // Menu d'actes (métiers à l'acte) : cocher / décocher une prestation.
     if(b.dataset.actpick){const m=S.draft;if(!m)return;m.acts=m.acts||[];const id=b.dataset.actpick;const i=m.acts.findIndex(function(a){return a.id===id;});if(i>=0){m.acts.splice(i,1);}else{const a=actInfo(m.svc,id);if(a)m.acts.push({id:a.id,nm:a.nm,price:a.price,qty:1});}renderConfig();return;}
     if(b.dataset.actqty){const m=S.draft;if(!m)return;const parts=b.dataset.actqty.split(':');const id=parts[0],dir=parts[1];const a=(m.acts||[]).find(function(x){return x.id===id;});if(a){if(dir==='up')a.qty=(a.qty||1)+1;else{a.qty=(a.qty||1)-1;if(a.qty<1)m.acts=m.acts.filter(function(x){return x.id!==id;});}}renderConfig();return;}
@@ -16961,7 +16974,7 @@
       case 'cat-back':S.catView=null;render();break;
       case 'services-soon':servicesSoon();break;
       case 'testsvc-off':try{localStorage.removeItem('tiOuvrir');}catch(_){}toast('Mode essai arrêté');render();break;
-      case 'svc-soon':if(!servicesOpen()){servicesSoon();break;}toast('Bientôt disponible, nous validons un pro pour ce service.');break;
+      case 'svc-soon':jalonClient('catalogue');jalonClient('indispo');if(!servicesOpen()){servicesSoon();break;}toast('Bientôt disponible, nous validons un pro pour ce service.');break;
       case 'share-link':{const _k=shareKind();const link=shareLink(_k);const data={title:CONFIG.appName,text:_k==='pro'?'Ti-Services, recevez des demandes de clients à Saint-Barth, sans prospecter':'Ti-Services, un pro de confiance à la demande à Saint-Barth',url:link};if(navigator.share){navigator.share(data).catch(()=>{});}else if(navigator.clipboard){navigator.clipboard.writeText(link).then(()=>toast('Lien copié, collez-le où vous voulez')).catch(()=>toast('Lien : '+link));}else{toast('Lien : '+link);}break;}
       case 'copy-link':{const link=shareLink(shareKind());if(navigator.clipboard){navigator.clipboard.writeText(link).then(()=>toast('Lien copié')).catch(()=>toast('Lien : '+link));}else{toast('Lien : '+link);}break;}
       case 'pay-back':S.payStep=false;S.payEdit=false;if(S.draft)renderConfig();else render();break;
