@@ -75,6 +75,50 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   const e = await carte('active', 'completed', true);
   ok(e === null, 'paiements actifs : plus de carte du tout');
 
+  /* ── LA MÊME CARTE, DANS L'ONGLET COMPTE ──────────────────────────────────────
+     C'est le même fait dit à deux endroits. Deux formulations finiraient par se
+     contredire, et l'une des deux par mentir : on mesure donc que les états
+     correspondants disent LA MÊME CHOSE, et que le défaut corrigé sur l'écran
+     missions ne survit pas ici. */
+  console.log('\nF — l’onglet Compte dit la même chose, aux mêmes états');
+  const compte = (mollie, onb, canWork) => p.evaluate(([mollie, onb, canWork]) => {
+    const S = window.__S;
+    document.body.classList.add('standalone');
+    S.lang = 'fr'; S.demoMode = false; S.persona = 'pro'; S.proNav = 'account';
+    S.onboarded = true; S.guest = false; S.proStatus = 'approved'; S.proName = 'Laure G.';
+    S.mission = null; S.detail = null; S.proCats = ['menage']; S.proMissions = [];
+    S.proMollie = mollie; S.proMollieOnb = onb;
+    S.proMollieCanWork = canWork; S.proMollieOrgId = canWork ? 'org_x' : '';
+    S._fold = S._fold || {}; S._fold['p-pay'] = true;   // le volet « Recevoir mes paiements »
+    window.__render();
+    const c = [...document.querySelectorAll('.card')].find((x) => /Recevoir mes paiements/.test(x.textContent || ''));
+    return c ? c.innerText.replace(/\s+/g, ' ').trim() : null;
+  }, [mollie, onb, canWork]);
+
+  const fa = await compte('pending', 'in-review', true);
+  ok(!!fa && /Rien à faire\. Vos gains partent dès que Mollie a fini de vérifier\./.test(fa),
+    'il peut accepter, Mollie vérifie : mot pour mot la phrase de l’écran missions');
+  const fb = await compte('pending', 'needs-data', true);
+  ok(!!fb && /Un document à fournir\./.test(fb), 'une pièce manque : l’étape est nommée');
+  ok(!!fb && !/impossible d’accepter|impossible d'accepter/.test(fb),
+    'et on ne lui dit PLUS qu’il ne peut pas accepter de mission : il en accepte déjà');
+  ok(!!fb && /vous continuez d’accepter des missions|vous continuez d'accepter des missions/.test(fb),
+    'on le lui dit même franchement, puisque le titre de la carte ne le dit pas ici');
+  const fc = await compte('pending', 'needs-data', false);
+  ok(!!fc && /Sans lui, impossible d’accepter|Sans lui, impossible d'accepter/.test(fc),
+    'bloqué, la conséquence est dite — là elle est exacte');
+  const fd = await compte('pending', 'in-review', false);
+  ok(!!fd && /En examen chez Mollie\. Vous serez prévenu\./.test(fd), 'en examen : une ligne');
+  const fe = await compte('none', '', false);
+  ok(!!fe && /Activez vos paiements, ~5 min, une seule fois\./.test(fe), 'jamais commencé : une ligne');
+  const ff = await compte('active', 'completed', true);
+  ok(!!ff && /Réglé automatiquement, net, après chaque prestation\./.test(ff),
+    'actif : la carte reste, elle rappelle ce qui se passe tout seul');
+
+  // Le commentaire de code posé à côté de ce bloc vit DANS la fonction, pas dans le
+  // gabarit : un `/* … */` écrit entre deux balises s'imprimerait à l'écran.
+  ok(!!fa && fa.indexOf('MÊMES ÉTATS') < 0, 'et aucun commentaire de code ne s’imprime dans la carte');
+
   ok(errs.length === 0, 'aucune erreur JS (' + errs.join(' | ') + ')');
   await b.close();
   console.log(f ? ('\n' + f + ' ÉCHEC(S)\n') : '\nTout est vert.\n');

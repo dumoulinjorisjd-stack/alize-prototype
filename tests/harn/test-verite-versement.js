@@ -37,12 +37,18 @@ console.log('B — ce qu’on demande au prestataire suit ce que MOLLIE demande'
 // manque vraiment des pièces), et les autres (Mollie vérifie — rien à faire).
 ok(/needsData=\(st==='pending'&&S\.proMollieOnb==='needs-data'\)/.test(src),
   'l’état « il manque des pièces » vient de Mollie, pas d’une supposition');
-const iNeeds = src.indexOf("needsData?`<p class=\"mini\"><b>Il manque des éléments");
-const iTrav = src.indexOf("(st==='pending'&&molliePeutTravailler())?`<p class=\"mini\"><b>Rien à faire.</b>");
+// Les repères sont les DEUX BRANCHES de la carte, pas leur texte (réécrit le 01/10) :
+// ce qu'on mesure ici est leur ORDRE, et il n'a pas bougé.
+const iNeeds = src.indexOf("needsData?`<p class=\"mini\"><b>Un document à fournir.</b>");
+const iTrav = src.indexOf("(st==='pending'&&peut)?`<p class=\"mini\"><b>Rien à faire.</b>");
 ok(iNeeds > 0 && iTrav > iNeeds,
   'et il est traité AVANT : la branche suivante ne concerne que les dossiers auxquels Mollie ne demande rien');
-ok(/<b>Rien à faire\.<\/b> Vous pouvez accepter des missions/.test(src),
-  'à qui Mollie ne demande rien, on le dit en trois mots — et on s’arrête là');
+ok(/<b>Rien à faire\.<\/b> Vos gains partent dès que Mollie a fini de vérifier\./.test(src),
+  'à qui Mollie ne demande rien, on le dit en une phrase — et on s’arrête là');
+// ET QUAND MOLLIE RÉCLAME UNE PIÈCE À QUELQU'UN QUI TRAVAILLE DÉJÀ, on ne lui annonce
+// pas qu'il est bloqué : ce qui attend, ce sont ses virements.
+ok(/\$\{peut\?'Vos gains sont mis de côté en attendant/.test(src),
+  'et la branche « pièce manquante » distingue celui qui peut déjà accepter des missions');
 ok(!/déclenche à votre première transaction/.test(src),
   'sans lui expliquer la plomberie bancaire : il n’a rien à en faire');
 ok(/S\.proMollieOnb==='needs-data'\?' Il manque une pièce à votre dossier/.test(src),
