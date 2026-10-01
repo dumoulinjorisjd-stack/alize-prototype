@@ -190,6 +190,31 @@ const JOUR = 864e5, T = 1790000000000;
   ok(!!vueT.dem && /1 demande de comptes de test est écartée/.test(vueT.dem),
     'et la carte des demandes écarte les leurs, par la même porte');
 
+  /* ── UN PRESTATAIRE DE TEST N'OUVRE PAS UN MÉTIER AUX VRAIS CLIENTS ───────────
+     C'est l'effet le plus lourd du drapeau : `settings/availability` est lu par TOUT LE
+     MONDE. Un compte d'essai validé sur le ménage suffisait à l'afficher comme
+     commandable, et un vrai client pouvait donc commander une prestation que personne
+     ne peut prendre — il attend, personne n'accepte, il ne revient pas. */
+  console.log('\nG — côté prestataires : ce qui ouvre un métier aux clients');
+  const ouverts = (arts) => p.evaluate((arts) => {
+    const S = window.__S; S.adminArtisans = arts; S.adminArtsLoaded = true;
+    return window.__dispo();
+  }, arts);
+  const A = (id, email, cats, test) => ({ id: id, uid: id, name: id, email: email,
+    status: 'valide', cats: cats, test: !!test });
+  const o1 = await ouverts([A('a1', 'vrai@exemple.fr', ['menage']), A('a2', 'essai@exemple.fr', ['jardin'], true)]);
+  ok(o1.indexOf('menage') >= 0, 'le métier d’un prestataire réel reste ouvert');
+  ok(o1.indexOf('jardin') < 0, 'celui d’un compte de test ne l’ouvre PAS : personne de réel ne pourrait l’honorer');
+  const o2 = await ouverts([A('a3', 'demo.prestataire@ti-services.fr', ['massage'])]);
+  ok(o2.indexOf('massage') < 0, 'et le compte de démonstration des magasins non plus, sans qu’on ait rien à cocher');
+  const o3 = await ouverts([A('a4', 'vrai@exemple.fr', ['menage']), A('a5', 'autre@exemple.fr', ['menage'], true)]);
+  ok(o3.indexOf('menage') >= 0,
+    'un métier que DEUX comptes portent, dont un de test, reste ouvert : c’est le réel qui le tient');
+  // La conséquence est ANNONCÉE avant le clic, et elle nomme les métiers concernés.
+  ok(/repasserait<\/b>|repasseraient<\/b>|en «\u00a0bient\u00f4t disponible\u00a0» : il en est le seul titulaire valid\u00e9/.test(html)
+     || /seul titulaire valid\u00e9/.test(html),
+    'et la fiche DIT, avant le clic, quels métiers repasseraient en « bientôt disponible »');
+
   ok(errs.length === 0, 'aucune erreur JS (' + errs.join(' | ') + ')');
   await b.close();
   console.log(f ? ('\n' + f + ' ÉCHEC(S)\n') : '\nTout est vert.\n');

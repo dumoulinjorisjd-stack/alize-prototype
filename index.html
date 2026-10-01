@@ -4556,7 +4556,14 @@
   // Les clients ne peuvent pas lire la collection artisans (règles) : c'est l'admin qui
   // recalcule la liste des services actifs et l'écrit dans settings/availability (lisible
   // par tous). Recalcul à chaque validation/refus d'artisan.
-  function activeServicesFromArtisans(){ const set={}; (S.adminArtisans||[]).forEach(function(a){ if(a&&a.status==='valide'&&Array.isArray(a.cats)){ a.cats.forEach(function(c){ if(c)set[c]=1; }); } }); return Object.keys(set); }
+  /* UN PRESTATAIRE DE TEST N'OUVRE PAS UN MÉTIER AUX VRAIS CLIENTS. Cette liste est lue
+     par TOUT LE MONDE : un compte d'essai validé sur le ménage suffisait à afficher le
+     ménage comme commandable, et un vrai client pouvait donc commander une prestation
+     que personne ne peut prendre. Il attend, personne n'accepte, il ne revient pas.
+     CONSÉQUENCE ASSUMÉE ET DITE : marquer un prestataire « de test » peut REFERMER un
+     métier côté client s'il en était le seul titulaire. C'est le but — mieux vaut
+     « bientôt disponible » qu'une demande que personne ne viendra honorer. */
+  function activeServicesFromArtisans(){ const set={}; (S.adminArtisans||[]).forEach(function(a){ if(a&&a.status==='valide'&&!compteDeTest(a)&&Array.isArray(a.cats)){ a.cats.forEach(function(c){ if(c)set[c]=1; }); } }); return Object.keys(set); }
   function saveAvailability(){ try{ if(FB&&FB.auth&&FB.auth.currentUser){ FB.f.setDoc(FB.f.doc(FB.db,'settings','availability'),{services:activeServicesFromArtisans(),updatedAt:FB.f.serverTimestamp()}); } }catch(_){} }
   // Abonnement EN DIRECT à la liste des services ouverts (settings/availability, tenue
   // par le serveur d'après les prestataires validés). Ainsi, si le dernier artisan d'un
@@ -9918,7 +9925,9 @@
     const pendA=arts.filter(a=>a.status==='attente'),pendC=clis.filter(c=>c.status==='attente'&&!c.alsoPro);
     const pendConc=(S.adminConcierges||[]).filter(c=>c.status==='attente');
     const live=(S.mission&&['pending','accepted','working','done_pro'].includes(S.mission.status))?1:0;
-    const validA=arts.filter(a=>a.status==='valide').length;
+    const artsReels=arts.filter(a=>!compteDeTest(a));
+    const artsTest=arts.length-artsReels.length;
+    const validA=artsReels.filter(a=>a.status==='valide').length;
     // `act` : les compteurs sont des BOUTONS — toucher « Artisans » ou « Clients »
     // ouvre la liste correspondante (avant, il ne se passait rien).
     const stat=(lbl,val,sub,act)=>act
@@ -9949,7 +9958,7 @@
     const liveRow=live?[{client:((S.mission&&S.mission.clientName)||(isDemo()?'Camille Magras':'Client')),artisan:(S.mission.provider?S.mission.provider.nm:'en recherche…'),svc:S.mission.svc,status:S.mission.status,amount:totals(S.mission).total,when:S.mission.when+' '+S.mission.slot}]:[];
     const allB=liveRow.concat(S.adminBookings);
     const bookings=allB.length?allB.map(bk=>{const st=bkStatus(bk.status);const sv=SERVICES.find(s=>s.id===bk.svc);const liv=(bk.status==='pending'||bk.status==='working'||bk.status==='done_pro')?' live':'';return `<div class="card" style="padding:13px;margin-top:9px"><div class="row between"><b style="font-size:14px">${sv?sv.nm:bk.svc}</b><span class="chip ${st[0]}${liv}">${st[1]}</span></div><div class="mini" style="margin-top:3px">${esc(bk.client)} → ${esc(bk.artisan)} · ${bk.when}</div><div class="mini" style="margin-top:2px">${eur(bk.amount)}</div></div>`;}).join(''):`<p class="mini" style="margin-top:8px;color:var(--muted)">Aucune réservation en cours.</p>`;
-    const activeArts=arts.filter(a=>a.status!=='refuse'),refA=arts.filter(a=>a.status==='refuse');
+    const activeArts=artsReels.filter(a=>a.status!=='refuse'),refA=arts.filter(a=>a.status==='refuse');
     // Une ligne de liste = une personne : sa photo (avec le sceau doré d'ambassadeur,
     // exactement comme dans son propre compte prestataire), son nom, son statut. Les
     // alertes ne descendent sur leur propre ligne que lorsqu'il y en a — sans quoi
@@ -10134,7 +10143,9 @@
           <div class="mini" style="margin-top:7px;color:var(--muted);line-height:1.5">Ce ne sont pas des étapes&nbsp;: on peut commander sans avoir rien enregistré de tout cela. Ce sont des faits, comptés là où ils expliquent quelque chose.</div>
         </div>`:''}`;})();
     const svcAll=allSvc();
-    const svcNoPro=svcAll.filter(function(s){return !(S.adminArtisans||[]).some(function(a){return a.status==='valide'&&Array.isArray(a.cats)&&a.cats.indexOf(s.id)>=0;});}).length;
+    // « Sans prestataire » veut dire « sans prestataire RÉEL » : un compte d'essai ne
+    // tient pas un métier, et le dire autrement cacherait le seul chiffre qui compte.
+    const svcNoPro=svcAll.filter(function(s){return !(S.adminArtisans||[]).some(function(a){return a.status==='valide'&&!compteDeTest(a)&&Array.isArray(a.cats)&&a.cats.indexOf(s.id)>=0;});}).length;
     const pricesBody=`<button class="btn ghost sm" data-act="tarifs-pdf" style="width:auto;padding:9px 13px;margin:0 0 11px">${I.doc} Récapitulatif des tarifs (PDF)</button>
       <p class="mini" style="margin:0;color:var(--muted)">Chaque métier est <b>replié</b> : le nombre d'artisans validés est indiqué. Dépliez pour voir qui le pratique, le renommer et régler le tarif client. Un nom réécrit s'affiche <b>tel quel</b> en anglais et en portugais, les traductions ne suivent que les noms d'origine.</p>
       ${svcAll.map(s=>{
@@ -10825,6 +10836,10 @@
             if(!n)return `<span class="mini" style="color:var(--muted)">Lecture en cours…</span>`;
             if(n.jetons>0)return `<span class="chip good">${I.check} Actives</span><div class="mini" style="margin-top:4px">${n.jetons} appareil${n.jetons>1?'s':''} enregistré${n.jetons>1?'s':''}${n.at?' · depuis le '+new Date(n.at).toLocaleDateString('fr-FR'):''}</div>`;
             return `<span class="chip coral">${I.bolt} Aucune</span><div class="mini" style="margin-top:4px">Il ne sera pas prévenu des nouvelles demandes : elles n'apparaîtront qu'à l'ouverture de l'application.</div>`;})())}
+          ${fRow('Compte de test',(function(){
+            const auto=compteDeTest(a)&&a.test!==true;
+            const seul=(a.cats||[]).filter(function(c){return !(S.adminArtisans||[]).some(function(x){return x.id!==a.id&&x.status==='valide'&&!compteDeTest(x)&&(x.cats||[]).indexOf(c)>=0;});});
+            return `<div class="row between" style="align-items:center;gap:10px"><span class="mini" style="color:var(--muted);line-height:1.45;flex:1;min-width:0">${auto?'Reconnu automatiquement (compte de démonstration des magasins).':'Écarte ce compte des compteurs — et il cesse d’ouvrir ses métiers aux clients.'}${(!auto&&a.status==='valide'&&seul.length)?`<br><b style="color:var(--coral-deep)">${seul.length===1?'« '+esc(svcNm(seul[0]))+' » repasserait':plN(seul.length,'métier')+' repasseraient'} en « bientôt disponible » : il en est le seul titulaire validé.</b>`:''}</span><button class="switch" data-adm="arttest:${a.id}" ${auto?'disabled style="opacity:.5;flex:none;background:var(--good)"':`style="flex:none;background:${a.test?'var(--good)':'var(--hair)'}"`}><span class="knob" style="left:${compteDeTest(a)?'25px':'3px'}"></span></button></div>`;})())}
           ${fRow('Note · missions',a.rating?a.rating.toFixed(1)+' '+I.star+' · '+a.jobs:'—')}
           ${fRow('Fiabilité · présence',(a.noShowCount||0)>0?`<span class="chip coral">${I.clock} ${a.noShowCount} absence${a.noShowCount>1?'s':''} signalée${a.noShowCount>1?'s':''}</span>${a.lastNoShowAt?`<div class="mini" style="margin-top:4px">Dernière&nbsp;: ${new Date(a.lastNoShowAt).toLocaleDateString('fr-FR')}</div>`:''}`:`<span class="chip good">${I.check} Aucun manquement</span>`)}
           ${fRow('Palier fidélité · commission',founderActiveFor(a)?`<span class="chip founder-chip">${I.star} Ambassadeur</span> ${FOUNDER_COMM_PCT} %`:`${a.founder?`<span class="chip" style="background:var(--hair);color:var(--muted)">${I.star} Ambassadeur, expiré</span> `:''}<span class="chip" style="background:${fidColor(fidFor(a.jobs).key)}22;color:${fidColor(fidFor(a.jobs).key)}">${I.star} ${fidFor(a.jobs).nm}</span> ${fidFor(a.jobs).pct} %`)}
@@ -16348,6 +16363,19 @@
          mesure doit être la même depuis n'importe quel appareil, et survivre à tout. Le
          drapeau ne change RIEN pour l'utilisateur de ce compte, il ne change que ce que
          les deux cartes comptent. */
+      /* MARQUER UN PRESTATAIRE DE TEST. Même geste que pour un client, mais il porte
+         une conséquence de plus : la liste des services ouverts se recalcule, donc un
+         métier dont il était le seul titulaire validé repasse en « bientôt disponible »
+         côté client. La fiche l'annonce AVANT le clic, et nomme les métiers concernés. */
+      else if(act==='arttest'){
+        if(!isAdminAccount()){toast('Réservé à l’administrateur');return;}
+        const a=(S.adminArtisans||[]).find(function(x){return x.id===id;});
+        if(!a)return;
+        a.test=!a.test;
+        try{ if(FB&&FB.db)FB.f.setDoc(FB.f.doc(FB.db,'artisans',a.uid||a.id),{test:!!a.test},{merge:true}).catch(function(){}); }catch(_){}
+        try{ saveAvailability(); }catch(_){}
+        render(); toast(a.test?'Compte de test : écarté des compteurs et des services ouverts':'Compte compté de nouveau'); return;
+      }
       else if(act==='clitest'){
         if(!isAdminAccount()){toast('Réservé à l’administrateur');return;}
         const c=(S.adminClients||[]).find(function(x){return x.id===id;});
@@ -19034,7 +19062,7 @@
       adminArtUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'artisans'),function(snap){
         const list=[],pending=new Set();
         snap.forEach(function(d){ const a=d.data()||{}; const cats=Array.isArray(a.cats)?a.cats:[]; const rr=a.rates||{}; const st=a.status||'attente';
-          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Prestataire',status:st,type:(a.statusType==='particulier')?'particulier':'entreprise',statusType:a.statusType||'entreprise',legalName:a.legalName||'',legalForm:a.legalForm||'',capital:a.capital||'',rcsCity:a.rcsCity||'',birth:a.birth||'',referralCode:a.referralCode||'',referredByCode:a.referredByCode||'',acceptedTerms:!!a.acceptedTerms,acceptedCharte:!!a.acceptedCharte,acceptedMandat:!!a.acceptedMandat,acceptsGrille:!!a.acceptsGrille,desiredNetRates:a.desiredNetRates||null,termsVersion:a.termsVersion||'',termsAt:(a.termsAt&&a.termsAt.toMillis)?a.termsAt.toMillis():0,createdAt:(a.createdAt&&a.createdAt.toMillis)?a.createdAt.toMillis():0,cats:cats,other:a.other||'',otherPrice:Number(a.otherPrice)||0,otherUnit:(a.otherUnit==='forfait'?'forfait':'h'),pendingCats:Array.isArray(a.pendingCats)?a.pendingCats:[],pendingOther:a.pendingOther||'',pendingOtherPrice:Number(a.pendingOtherPrice)||0,pendingOtherUnit:(a.pendingOtherUnit==='forfait'?'forfait':'h'),pendingDesiredNet:(a.pendingDesiredNet&&typeof a.pendingDesiredNet==='object')?a.pendingDesiredNet:null,rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,founderSince:(a.founderSince&&a.founderSince.toMillis)?a.founderSince.toMillis():(typeof a.founderSince==='number'?a.founderSince:null),founderGross:Number(a.founderGross)||0,rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,online:!!a.online,siteMode:a.siteMode||'',salonAddress:a.salonAddress||'',salonZone:a.salonZone||'',push:(Array.isArray(a.pushTokens)?a.pushTokens.length:0),mollieStatus:a.mollieStatus||'none',mollieOnb:a.mollieOnboardingStatus||'',mollieCanPay:a.mollieCanPay!==false,mollieCanSettle:a.mollieCanSettle!==false,mollieCanWork:a.mollieCanWork===true,mollieRelances:Number(a.mollieRelances)||0,mollieRelanceAt:Number(a.mollieRelanceAt)||0,mollieSince:Number(a.mollieSince)||0,mollieSinceEstime:!!a.mollieSinceEstime,lastNoShowAt:(a.lastNoShowAt&&a.lastNoShowAt.toDate)?a.lastNoShowAt.toDate().getTime():0});
+          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Prestataire',status:st,type:(a.statusType==='particulier')?'particulier':'entreprise',statusType:a.statusType||'entreprise',legalName:a.legalName||'',legalForm:a.legalForm||'',capital:a.capital||'',rcsCity:a.rcsCity||'',birth:a.birth||'',referralCode:a.referralCode||'',referredByCode:a.referredByCode||'',acceptedTerms:!!a.acceptedTerms,acceptedCharte:!!a.acceptedCharte,acceptedMandat:!!a.acceptedMandat,acceptsGrille:!!a.acceptsGrille,desiredNetRates:a.desiredNetRates||null,termsVersion:a.termsVersion||'',termsAt:(a.termsAt&&a.termsAt.toMillis)?a.termsAt.toMillis():0,createdAt:(a.createdAt&&a.createdAt.toMillis)?a.createdAt.toMillis():0,cats:cats,other:a.other||'',otherPrice:Number(a.otherPrice)||0,otherUnit:(a.otherUnit==='forfait'?'forfait':'h'),pendingCats:Array.isArray(a.pendingCats)?a.pendingCats:[],pendingOther:a.pendingOther||'',pendingOtherPrice:Number(a.pendingOtherPrice)||0,pendingOtherUnit:(a.pendingOtherUnit==='forfait'?'forfait':'h'),pendingDesiredNet:(a.pendingDesiredNet&&typeof a.pendingDesiredNet==='object')?a.pendingDesiredNet:null,rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,founderSince:(a.founderSince&&a.founderSince.toMillis)?a.founderSince.toMillis():(typeof a.founderSince==='number'?a.founderSince:null),founderGross:Number(a.founderGross)||0,test:!!a.test,rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,online:!!a.online,siteMode:a.siteMode||'',salonAddress:a.salonAddress||'',salonZone:a.salonZone||'',push:(Array.isArray(a.pushTokens)?a.pushTokens.length:0),mollieStatus:a.mollieStatus||'none',mollieOnb:a.mollieOnboardingStatus||'',mollieCanPay:a.mollieCanPay!==false,mollieCanSettle:a.mollieCanSettle!==false,mollieCanWork:a.mollieCanWork===true,mollieRelances:Number(a.mollieRelances)||0,mollieRelanceAt:Number(a.mollieRelanceAt)||0,mollieSince:Number(a.mollieSince)||0,mollieSinceEstime:!!a.mollieSinceEstime,lastNoShowAt:(a.lastNoShowAt&&a.lastNoShowAt.toDate)?a.lastNoShowAt.toDate().getTime():0});
           if(st==='attente')pending.add(d.id); });
         S.adminArtisans=list;S.adminArtsLoaded=true;
         // Recalcule la liste des services actifs (au moins un prestataire validé) et la publie
