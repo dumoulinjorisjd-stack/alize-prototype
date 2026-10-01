@@ -14260,15 +14260,30 @@
         // Quand Mollie autorise déjà l'encaissement, l'artisan PEUT accepter : le dire, au
         // lieu de l'inquiéter avec une étape qui ne le concerne plus.
         const trav=molliePeutTravailler();
-        const ttl=nd?'Finissez votre dossier de paiement (2 min)':trav?'Vous pouvez accepter des missions':pend?'Paiements en cours de validation':'Dernière étape pour être payé';
-        const txt=nd?'Il manque des éléments à votre dossier Mollie, sans lui, impossible d\'accepter des missions.'
-          :trav?'Vos gains sont mis de côté et vous seront versés automatiquement dès la fin de la vérification Mollie.'
-          :pend?'Dossier complet, en examen chez Mollie. Vous serez prévenu dès l\'activation.'
-          :'Activez vos paiements (~5 min, une seule fois) pour pouvoir accepter des missions.';
+        /* S'IL RESTE UNE ÉTAPE, ON LA MARQUE ; SINON ON DIT QU'IL N'Y A RIEN À FAIRE.
+           La carte expliquait le mécanisme en quatre lignes sans jamais répondre à la
+           seule question qu'on se pose devant elle : ai-je quelque chose à faire ?
+           ET ELLE DISAIT FAUX À CEUX QUI TRAVAILLENT DÉJÀ. « Document manquant » passe
+           avant « peut accepter », or les deux vont ensemble en production : Mollie
+           ouvre l'encaissement puis réclame une pièce. Ces gens-là lisaient « sans lui,
+           impossible d'accepter des missions » alors qu'ils acceptaient déjà — ce qui
+           attend, ce sont leurs VIREMENTS. C'est la nuance posée le 21/09 sur la relance
+           hebdomadaire, jamais reportée ici. Se tromper une fois suffit pour que le
+           message suivant ne soit plus lu. */
+        const ttl=nd?'Un document à fournir'
+          :trav?'Vous pouvez accepter des missions'
+          :pend?'Paiements en cours de validation'
+          :'Dernière étape pour être payé';
+        const txt=nd?(trav?'Vos gains sont mis de côté en attendant.':'Sans lui, impossible d\'accepter des missions.')
+          :trav?'Rien à faire. Vos gains partent dès que Mollie a fini de vérifier.'
+          :pend?'En examen chez Mollie. Vous serez prévenu.'
+          :'Activez vos paiements, ~5 min, une seule fois.';
+        // Le bouton nomme le geste : compléter un dossier n'est pas l'activer.
+        const cta=nd?'Compléter ›':pend?'Suivre ›':'Activer ›';
         return `<button class="card" data-act="pro-mollie" style="padding:14px;margin-top:12px;width:100%;text-align:left;display:block${pend?'':';border:1.5px solid color-mix(in srgb,var(--coral) 45%,transparent)'}">
           <div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="${pend?'':'background:var(--coral-wash);color:var(--coral-deep)'}">${pend?I.clock:I.card}</span>
           <div style="flex:1;min-width:0"><b style="font-size:14px">${ttl}</b><p class="mini" style="margin-top:3px">${txt}</p></div>
-          <span class="mini" style="color:var(--teal-deep);font-weight:700;white-space:nowrap;flex:none">${pend?'Suivre ›':'Activer ›'}</span></div></button>`;})();
+          <span class="mini" style="color:var(--teal-deep);font-weight:700;white-space:nowrap;flex:none">${cta}</span></div></button>`;})();
     const _bandeauOuverture=(function(){
         // Avant l'ouverture aux clients : expliquer POURQUOI le fil est calme, et
         // transformer l'attente en préparation. Se retire tout seul le 1er octobre.

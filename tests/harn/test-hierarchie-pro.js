@@ -48,7 +48,9 @@ const base=(S)=>{
     return {txt:t.replace(/\s+/g,' '),
       iEnLigne:Math.max(pos('Hors ligne'),pos('Vous êtes en ligne')),
       iMissions:pos('MISSIONS EN COURS'),iNotif:pos('Ne manquez aucune mission'),
-      iOuverture:pos('Ouverture aux clients'),iPaiement:Math.max(pos('Finissez votre dossier'),pos('Dernière étape pour être payé')),
+      iOuverture:pos('Ouverture aux clients'),// Le repère est le TITRE de la carte Mollie, quel que soit l'état qui la rend : ce qu'on
+      // mesure ici est sa PLACE, pas son texte (réécrit le 01/10, même hiérarchie).
+      iPaiement:Math.max(pos('Un document à fournir'),pos('Dernière étape pour être payé')),
       large:document.documentElement.scrollWidth<=document.documentElement.clientWidth+1};
   },etat);
 
