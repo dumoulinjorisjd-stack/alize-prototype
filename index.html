@@ -9777,6 +9777,22 @@
      `indispo` n'est PAS une marche, c'est un fait — vouloir un métier qu'on n'ouvre pas
      encore ne situe personne sur le chemin, mais c'est peut-être le renseignement le plus
      utile de tous : il dit ce qu'on vous demande et que vous ne vendez pas. */
+  /* LES COMPTES QUI NE SONT PAS DES CLIENTS. « Dedans il y a peut-être nos anciens
+     tests qui faussent les informations. » Oui — et un chiffre qui écarte des gens en
+     silence est pire qu'un chiffre trop gros. On ne DEVINE donc rien : ni « test » dans
+     l'adresse, ni un nom qui y ressemble (le jour où un vrai client s'appelle Testard,
+     il disparaît des mesures sans que personne ne le sache). Trois sources, toutes
+     explicites : les adresses d'administration et les comptes de démonstration des
+     magasins, déjà déclarés dans le code, et une case que l'éditeur coche sur la fiche.
+     Et l'écran DIT toujours combien de comptes sont écartés. */
+  function compteDeTest(c){
+    if(!c)return false;
+    if(c.test===true)return true;
+    const e=String(c.email||'').toLowerCase().trim();
+    if(!e)return false;
+    if(REVIEW_DEMO_EMAILS.indexOf(e)>=0)return true;
+    return (CONFIG.adminEmails||[]).some(function(x){return String(x).toLowerCase()===e;});
+  }
   const CLIENT_JALONS=[['revenu','Est revenu un autre jour'],['catalogue','A touché au catalogue'],
     ['indispo','A demandé un métier pas encore ouvert'],
     ['config','A configuré une prestation'],['paiement','A vu l’écran de paiement']];
@@ -9792,7 +9808,9 @@
     }catch(_){}
   }
   function parcoursClients(clients,parClient,maintenant){
-    const cl=Array.isArray(clients)?clients:[];
+    const tous=Array.isArray(clients)?clients:[];
+    const cl=tous.filter(function(c){return !compteDeTest(c);});
+    const exclus=tous.length-cl.length;
     const murs={catalogue:[],config:[],paiement:[],confirme:[],commande:[]};const abouti=[];let sansJalon=0;
     cl.forEach(function(c){
       const d=(parClient&&parClient[c.uid])||[];
@@ -9822,7 +9840,7 @@
       revenus:bloques.filter(function(c){return !!((c.jalons||{}).revenu);}).length,
       indispo:bloques.filter(function(c){return !!((c.jalons||{}).indispo);}).length,
     };
-    return {total:cl.length,bloques:bloques.length,abouti:abouti.length,sansJalon:sansJalon,
+    return {total:cl.length,exclus:exclus,bloques:bloques.length,abouti:abouti.length,sansJalon:sansJalon,
       murs:PARCOURS_MURS.map(function(m){return {cle:m[0],nm:m[1],n:murs[m[0]].length,qui:murs[m[0]]};}),
       faits:faits};
   }
@@ -10074,25 +10092,34 @@
       done_pro:['good','À valider par le client',''],paid:['good','Réglées',''],rated:['good','Notées',''],
       disputed:['coral','En litige','']};
     const plN=function(n,m){return n+' '+m+(n>1?'s':'');};
+    /* LA PORTE UNIQUE DES DEMANDES RÉELLES. Les demandes d'un compte de test gonflent
+       autant les statuts que le parcours : les écarter d'un côté seulement ferait deux
+       cartes qui se contredisent. `uidsTest` ne vaut que si les fiches sont lues —
+       sinon on n'écarte rien et on le dit, plutôt que d'écarter au hasard. */
+    const uidsTest=(function(){const m={};if(S.adminClisLoaded)(S.adminClients||[]).forEach(function(c){if(compteDeTest(c))m[c.uid]=1;});return m;})();
+    const reqsVrais=(S.adminReqs||[]).filter(function(r){return !uidsTest[r.uid];});
+    const reqsExclues=(S.adminReqs||[]).length-reqsVrais.length;
+    const parClientVrais=(function(){const o={};reqsVrais.forEach(function(r){if(r.uid)(o[r.uid]=o[r.uid]||[]).push(r);});return o;})();
     const demandesBody=(function(){
       if(!S.adminReqsLus)return `<p class="mini" style="color:var(--muted)">Lecture des demandes…</p>`;
-      const st=S.adminReqStats||{};const cles=Object.keys(st);
+      const st={};reqsVrais.forEach(function(r){st[r.status]=(st[r.status]||0)+1;});
+      const cles=Object.keys(st);
       if(!cles.length)return `<p class="mini" style="color:var(--muted)">Aucune demande en base, à aucun statut. Personne n’a encore atteint l’écran de paiement.</p>`;
       const ordre=Object.keys(REQ_LIB).filter(function(k){return st[k];})
         .concat(cles.filter(function(k){return !REQ_LIB[k];}));
       const n=cles.reduce(function(t,k){return t+st[k];},0);
       const mortes=(st.pending_payment||0)+(st.payment_failed||0);
-      return `<p class="mini" style="margin:0 0 4px;color:var(--muted)">${plN(n,'demande')} en base, tous statuts confondus. Une demande est écrite <b>avant</b> l’ouverture du paiement&nbsp;: celles qui n’ont jamais abouti sont ici, et nulle part ailleurs.</p>
+      return `<p class="mini" style="margin:0 0 4px;color:var(--muted)">${plN(n,'demande')} en base, tous statuts confondus.${reqsExclues?` ${plN(reqsExclues,'demande')} de comptes de test ${reqsExclues>1?'sont écartées':'est écartée'}.`:''} Une demande est écrite <b>avant</b> l’ouverture du paiement&nbsp;: celles qui n’ont jamais abouti sont ici, et nulle part ailleurs.</p>
         ${mortes?`<p class="mini" style="margin:8px 0 0;padding:9px 11px;background:var(--coral-wash);border-radius:10px;color:var(--coral-deep);line-height:1.5"><b>${plN(mortes,'demande')}</b> ${mortes>1?'se sont arrêtées':'s’est arrêtée'} à l’écran de paiement. C’est là qu’il faut regarder&nbsp;: la prestation était configurée, le client a renoncé ou la carte a échoué.</p>`:''}
         ${ordre.map(function(k){const L=REQ_LIB[k]||['grey',k,''];
           return `<div class="row between" style="align-items:flex-start;margin-top:10px;gap:10px"><div style="flex:1;min-width:0"><span class="sub">${esc(L[1])}</span>${L[2]?`<div class="mini" style="color:var(--muted);line-height:1.4">${esc(L[2])}</div>`:''}</div><span class="chip ${L[0]}" style="flex:none">${st[k]}</span></div>`;}).join('')}`;})();
     /* ── 2. OÙ S'ARRÊTENT LES CLIENTS ─────────────────────────────────────────── */
     const parcoursBody=(function(){
       if(!S.adminReqsLus||!S.adminClisLoaded)return `<p class="mini" style="color:var(--muted)">Lecture des comptes et des demandes…</p>`;
-      const P=parcoursClients(S.adminClients||[],S.adminReqParClient||{},Date.now());
-      if(!P.total)return `<p class="mini" style="color:var(--muted)">Aucun compte client pour l’instant.</p>`;
+      const P=parcoursClients(S.adminClients||[],parClientVrais,Date.now());
+      if(!P.total)return `<p class="mini" style="color:var(--muted)">Aucun compte client pour l’instant${P.exclus?`, en dehors de ${plN(P.exclus,'compte')} de test`:''}.</p>`;
       const f=P.faits;
-      return `<p class="mini" style="margin:0;color:var(--muted)">Chaque compte compte <b>une seule fois</b>, à la première étape qu’il n’a pas franchie. ${plN(P.total,'compte')} client${P.total>1?'s':''}.</p>
+      return `<p class="mini" style="margin:0;color:var(--muted)">Chaque compte compte <b>une seule fois</b>, à la première étape qu’il n’a pas franchie. ${plN(P.total,'compte')} client${P.total>1?'s':''}${P.exclus?`, <b>${plN(P.exclus,'compte')} de test écarté${P.exclus>1?'s':''}</b>`:''}.</p>
         ${P.murs.map(function(m){ if(!m.n)return '';
           return `<div class="row between" style="align-items:flex-start;margin-top:11px;gap:10px"><div style="flex:1;min-width:0"><span class="sub">${esc(m.nm)}</span></div><span class="chip coral" style="flex:none">${m.n}</span></div>`;}).join('')}
         ${P.abouti?`<div class="row between" style="align-items:center;margin-top:11px;gap:10px"><span class="sub">A commandé</span><span class="chip good" style="flex:none">${P.abouti}</span></div>`:''}
@@ -10366,12 +10393,12 @@
       ${foldCard('a-bookings',I.cal,'Réservations en cours','Recherche → acceptée → en cours → validée → réglée',bookings,chip(allB.length?'good':'grey',allB.length),(S.adminThreads||[]).some(function(t){return t&&t.reqId&&admThreadNew(t);}))}
       ${foldCard('a-prices',I.euro,'Prestations · artisans &amp; tarifs',svcAll.length+' métiers'+(svcNoPro?' · '+svcNoPro+' sans prestataire':''),pricesBody,svcNoPro?chip('coral',svcNoPro+' sans pro'):chip('good',svcAll.length))}
       ${foldCard('a-demandes',I.wallet,'Demandes, par statut','Y compris celles qui n’ont jamais abouti',demandesBody,(function(){
-        const st=S.adminReqStats||{};const m=(st.pending_payment||0)+(st.payment_failed||0);
+        const m=reqsVrais.filter(function(r){return REQ_AVANT_COMMANDE.indexOf(r.status)>=0;}).length;
         if(!S.adminReqsLus)return chip('grey','…');
         return m?chip('coral',m+' morte'+(m>1?'s':'')+' au paiement'):chip('good','aucune perdue');})())}
       ${foldCard('a-parcours',I.search,'Où s’arrêtent les clients','La première étape non franchie, compte par compte',parcoursBody,(function(){
         if(!S.adminReqsLus||!S.adminClisLoaded)return chip('grey','…');
-        const P=parcoursClients(S.adminClients||[],S.adminReqParClient||{},Date.now());
+        const P=parcoursClients(S.adminClients||[],parClientVrais,Date.now());
         return P.bloques?chip('coral',P.bloques+' bloqué'+(P.bloques>1?'s':'')):chip('good',P.abouti+' ont commandé');})())}
       ${foldCard('a-funnel',I.install,"Entonnoir d'installation",'Visiteurs, guide ouvert, applications installées',funnelBody,(function(){const T=funnelTotaux();return T?chip('grey',T.ins+' installées'):'';})())}
       ${(function(){
@@ -10848,6 +10875,7 @@
         return `<div class="banner teal" style="margin-top:14px">${I.info||I.shield}<span>Ce compte est <b>devenu prestataire</b>, c'est la même personne, le même identifiant. Son historique de client est conservé ci-dessous.${a?` <button class="linklike" data-adm="art:${esc(a.id)}" style="font-weight:800">Ouvrir sa fiche prestataire</button>`:` Sa candidature prestataire n'est pas encore envoyée.`}</span></div>`;})():''}
       <div class="card fiche" style="padding:16px;margin-top:16px">
         ${row('Statut',`<span class="chip ${acctChip(cc.status)[0]}">${acctChip(cc.status)[1]}</span>`)}
+        ${row('Compte de test',`<div class="row between" style="align-items:center;gap:10px"><span class="mini" style="color:var(--muted);line-height:1.45;flex:1;min-width:0">${compteDeTest(cc)&&cc.test!==true?'Reconnu automatiquement (adresse d’administration ou compte de démonstration des magasins).':'Écarte ce compte des mesures « Où s’arrêtent les clients » et « Demandes, par statut ».'}</span><button class="switch" data-adm="clitest:${cc.id}" ${(compteDeTest(cc)&&cc.test!==true)?'disabled style="opacity:.5;flex:none;background:var(--good)"':`style="flex:none;background:${cc.test?'var(--good)':'var(--hair)'}"`}><span class="knob" style="left:${compteDeTest(cc)?'25px':'3px'}"></span></button></div>`)}
         ${row('Moyen de paiement',`${esc(cc.card)}${cc.cardExp?`<div class="mini" style="margin-top:4px">Expire ${esc(cc.cardExp)}</div>`:''}`)}
         ${row('Réservations',cc.bookings+(cc.lastAt?`<div class="mini" style="margin-top:4px">Dernière&nbsp;: ${dt(cc.lastAt)}</div>`:''))}
         ${row('Abonnements',(cc.recurring&&cc.recurring.length)?cc.recurring.map(function(r){return esc(svcNm(r.svc||r.service||''))+(r.freq?' · '+esc(r.freq):'');}).join('<br>'):'')}
@@ -11247,15 +11275,15 @@
            laisse ni message ni litige : elle n'apparaissait donc NULLE PART, et
            « aucune commande en cours » ne permettait pas de distinguer « personne n'a
            essayé » de « personne n'a abouti ». */
-        const stats={}, parClient={};
+        /* ON GARDE LA LISTE, ON DÉRIVE AU RENDU. Les comptes de test ne sont connus
+           qu'une fois les fiches clients lues, et l'écoute des demandes ne les attend
+           pas : compter ici figerait des totaux qu'on ne pourrait plus filtrer. */
+        const reqs=[];
         snap.forEach(function(docu){
           const r0=docu.data()||{};
-          const st0=String(r0.status||'inconnu');
-          stats[st0]=(stats[st0]||0)+1;
-          const cu=String(r0.clientUid||'');
-          if(cu){(parClient[cu]=parClient[cu]||[]).push({status:st0,at:(reqCreatedMs(r0)||0)});}
+          reqs.push({status:String(r0.status||'inconnu'),uid:String(r0.clientUid||''),at:(reqCreatedMs(r0)||0)});
         });
-        S.adminReqStats=stats; S.adminReqParClient=parClient; S.adminReqsLus=true;
+        S.adminReqs=reqs; S.adminReqsLus=true;
         snap.forEach(function(docu){
           const r=docu.data()||{};
           const chat=srt(r.messages),supC=srt(r.supportClient),supP=srt(r.supportPro);
@@ -11451,7 +11479,7 @@
         termsAt:(d.termsAt&&d.termsAt.toMillis)?d.termsAt.toMillis():0,
         profilRepare:!!d.profilRepare,profilRepareVia:d.profilRepareVia||'',termsVia:d.termsVia||'',
         createdAt:(d.createdAt&&d.createdAt.toMillis)?d.createdAt.toMillis():0,
-        jalons:(d.jalons&&typeof d.jalons==='object')?d.jalons:{},
+        jalons:(d.jalons&&typeof d.jalons==='object')?d.jalons:{},test:!!d.test,
         push:(Array.isArray(d.pushTokens)?d.pushTokens.length:0),
         isPro:!!d.isPro,company:d.company||'',siret:d.siret||'',
         proSuggest:!!d.proSuggest,proSuggestAnswer:d.proSuggestAnswer||'',
@@ -13513,7 +13541,7 @@
     S.jalons={};
     S.addresses=[];S.addrDefault=null;S.history=[];S.recurring=[];S.card=null;S.mission=null;S.missions=[];S.proMissions=[];S.proReqView=null;S.proSkipped=[];S.proSkipAt={};
     S.proHistory=[];S.agenda=[];S.proEarnings=0;S.proJobsToday=0;S.proJobsTotal=0;
-    S.adminArtisans=[];S.adminClients=[];S.adminBookings=[];S.adminCommission=0;S.adminConcierges=[];S.adminDrafts=[];S.adminArtsLoaded=false;S.adminClisLoaded=false;S.adminReqsLus=false;S.adminReqStats=null;S.adminReqParClient=null;
+    S.adminArtisans=[];S.adminClients=[];S.adminBookings=[];S.adminCommission=0;S.adminConcierges=[];S.adminDrafts=[];S.adminArtsLoaded=false;S.adminClisLoaded=false;S.adminReqsLus=false;S.adminReqs=null;
     S.concClients=[];S.concOrders=[];S.concEarn=0;
     // Renfort (bêta) : rien ne doit survivre à un changement de compte.
     S.renforts=[];S.renfortsLoaded=false;S.renfortForm=null;S.renfortView=false;S._rfLoading=false;S._rfCancel=null;
@@ -16316,6 +16344,18 @@
           }
         }}
       // Rattachement d'un métier à la main, depuis la fiche du prestataire.
+      /* MARQUER UN COMPTE DE TEST. On écrit sur la fiche, pas dans une liste locale : la
+         mesure doit être la même depuis n'importe quel appareil, et survivre à tout. Le
+         drapeau ne change RIEN pour l'utilisateur de ce compte, il ne change que ce que
+         les deux cartes comptent. */
+      else if(act==='clitest'){
+        if(!isAdminAccount()){toast('Réservé à l’administrateur');return;}
+        const c=(S.adminClients||[]).find(function(x){return x.id===id;});
+        if(!c)return;
+        c.test=!c.test;
+        try{ if(FB&&FB.db)FB.f.setDoc(FB.f.doc(FB.db,'users',c.uid||c.id),{test:!!c.test},{merge:true}).catch(function(){}); }catch(_){}
+        render(); toast(c.test?'Compte de test : écarté des mesures':'Compte compté de nouveau dans les mesures'); return;
+      }
       else if(act==='artcat'){const a=(S.adminArtisans||[]).find(function(x){return x.id===id;}),sv=parts[2];
         if(a&&sv){const on=(a.cats||[]).indexOf(sv)<0;adminSetCat(a,sv,on);
           toast(on?('Rattaché à « '+svcNm(sv)+' »'):('Retiré de « '+svcNm(sv)+' »'));}}

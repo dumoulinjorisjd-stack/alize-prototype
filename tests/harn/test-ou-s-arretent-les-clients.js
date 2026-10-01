@@ -94,7 +94,7 @@ const JOUR = 864e5, T = 1790000000000;
     'et « revenu un autre jour » reste un fait, jamais un mur');
 
   console.log('\nC — le relevé est pris AVANT le filtre de la messagerie');
-  const i1 = html.indexOf('S.adminReqStats=stats;');
+  const i1 = html.indexOf('S.adminReqs=reqs;');
   const i2 = html.indexOf("if(!chat.length&&!supC.length&&!supP.length&&r.status!=='disputed')return;");
   ok(i1 > 0 && i2 > i1,
     'sans quoi on ne compterait que les demandes QUI ONT UN MESSAGE — c’est-à-dire pas celles qu’on cherche');
@@ -109,8 +109,14 @@ const JOUR = 864e5, T = 1790000000000;
     S.account = { name: 'Admin', email: 'a@e.fr', role: 'admin' };
     S.admin = { view: 'home', sel: null }; S.adminArtisans = []; S.adminArtsLoaded = true;
     S.adminClients = clients; S.adminClisLoaded = true;
-    S.adminReqParClient = demandes; S.adminReqsLus = true;
-    S.adminReqStats = { pending_payment: 2, payment_failed: 1, paid: 1, pending: 3 };
+    // La liste est devenue la source UNIQUE : les deux cartes en dérivent, donc on ne
+    // peut plus leur donner des totaux qui ne correspondraient à aucune demande.
+    S.adminReqs = [
+      { status: 'pending_payment', uid: 'd', at: 1 }, { status: 'pending_payment', uid: 'x1', at: 1 },
+      { status: 'payment_failed', uid: 'x2', at: 1 }, { status: 'paid', uid: 'e', at: 1 },
+      { status: 'pending', uid: 'x3', at: 1 }, { status: 'pending', uid: 'x4', at: 1 },
+      { status: 'pending', uid: 'x5', at: 1 }];
+    S.adminReqsLus = true;
     S._fold = { 'a-demandes': true, 'a-parcours': true };
     window.__render();
     const lire = (id) => { const c = [...document.querySelectorAll('.card')].find((x) => (x.querySelector('[data-fold="' + id + '"]'))); return c ? c.innerText.replace(/\s+/g, ' ') : null; };
@@ -143,6 +149,46 @@ const JOUR = 864e5, T = 1790000000000;
   });
   ok(!!vide && /Lecture des comptes et des demandes/.test(vide) && !/0 bloqué/.test(vide),
     'tant que rien n’est lu, la carte patiente — « 0 bloqué » se lirait comme un fait');
+
+  /* ── LES COMPTES DE TEST NE SONT PAS DES CLIENTS ──────────────────────────────
+     « Dedans il y a peut-être nos anciens tests qui faussent les informations. » Oui.
+     Mais un chiffre qui écarte des gens EN SILENCE est pire qu'un chiffre trop gros :
+     on ne devine donc rien — ni « test » dans l'adresse, ni un nom qui y ressemble — et
+     l'écran dit toujours combien de comptes sont écartés. */
+  console.log('\nF — les comptes de test, écartés sans jamais être devinés');
+  const avecTests = clients.concat([
+    { uid: 'z1', id: 'z1', name: 'Console', email: 'contact@ti-services.fr', zone: 'Gustavia',
+      status: 'valide', push: 0, addresses: [], card: '', bookings: 0, createdAt: T - 60 * JOUR, jalons: {} },
+    { uid: 'z2', id: 'z2', name: 'Démo magasin', email: 'demo.client@ti-services.fr', zone: 'Gustavia',
+      status: 'valide', push: 0, addresses: [], card: '', bookings: 0, createdAt: T - 60 * JOUR, jalons: {} },
+    { uid: 'z3', id: 'z3', name: 'Mon essai', email: 'moi@exemple.fr', zone: 'Gustavia', test: true,
+      status: 'valide', push: 0, addresses: [], card: '', bookings: 0, createdAt: T - 60 * JOUR, jalons: {} },
+    // CELUI-CI DOIT RESTER : son nom ressemble à un test, mais rien ne le déclare.
+    { uid: 'z4', id: 'z4', name: 'Testard', email: 'test.famille@exemple.fr', zone: 'Gustavia',
+      status: 'valide', push: 0, addresses: [], card: '', bookings: 0, createdAt: T - 60 * JOUR, jalons: {} },
+  ]);
+  const PT = await parc(avecTests, demandes, T);
+  ok(PT.exclus === 3, 'trois comptes sont écartés : l’adresse d’administration, la démo des magasins, et celui coché à la main (' + PT.exclus + ')');
+  ok(PT.total === 7, 'et sept comptes restent comptés (' + PT.total + ')');
+  ok(PT.total === avecTests.length - 3,
+    'un compte qui s’APPELLE « Testard » et dont l’adresse commence par « test. » reste compté : rien ne le déclare, on ne devine pas');
+
+  const vueT = await p.evaluate(([cl, rq]) => {
+    const S = window.__S;
+    S.adminClients = cl; S.adminClisLoaded = true;
+    S.adminReqs = [{ status: 'paid', uid: 'e', at: 1 }, { status: 'pending_payment', uid: 'd', at: 1 },
+      { status: 'pending_payment', uid: 'z1', at: 1 }];
+    S.adminReqsLus = true; S._fold = { 'a-parcours': true, 'a-demandes': true };
+    window.__render();
+    const lire = (id) => { const c = [...document.querySelectorAll('.card')].find((x) => x.querySelector('[data-fold="' + id + '"]')); return c ? c.innerText.replace(/\s+/g, ' ') : null; };
+    return { par: lire('a-parcours'), dem: lire('a-demandes') };
+  }, [avecTests, demandes]);
+  ok(!!vueT.par && /3 comptes de test écartés/.test(vueT.par),
+    'la carte le DIT : elle n’écarte jamais quelqu’un en silence');
+  // Les demandes d'un compte de test gonflent autant les statuts que le parcours :
+  // les écarter d'un seul côté ferait deux cartes qui se contredisent.
+  ok(!!vueT.dem && /1 demande de comptes de test est écartée/.test(vueT.dem),
+    'et la carte des demandes écarte les leurs, par la même porte');
 
   ok(errs.length === 0, 'aucune erreur JS (' + errs.join(' | ') + ')');
   await b.close();
