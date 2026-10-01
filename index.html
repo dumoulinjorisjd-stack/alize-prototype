@@ -9740,31 +9740,76 @@
      FAITS, rapportés à côté et comptés SUR CEUX QUI SONT BLOQUÉS, parce que c'est là
      qu'ils expliquent quelque chose. En faire des marches aurait inventé un ordre que le
      code n'impose pas. ═══════════════════════════════════════════════════════════════ */
-  const PARCOURS_MURS=[['paiement','N’a jamais atteint le paiement'],['commande','S’est arrêté au paiement']];
+  /* QUATRE MARCHES, ET ELLES SONT STRICTEMENT EMBOÎTÉES : on ne voit pas l'écran de
+     paiement sans avoir configuré, on n'écrit pas de demande sans avoir vu cet écran.
+     « Revenu un autre jour » n'en est PAS une — on peut tout faire le jour de son
+     inscription — et en faire une marche inventerait un ordre que rien n'impose : il
+     rejoint les faits.
+     ET ON NE RÉTROGRADE PERSONNE FAUTE DE JALON. Les comptes d'avant cette mise en ligne
+     n'en portent aucun : un client qui a déjà commandé serait rangé au mur « n'a jamais
+     configuré ». La preuve la plus FORTE l'emporte donc — une demande prouve à elle seule
+     la configuration et le passage au paiement. L'écran dit combien de comptes sont dans
+     ce cas, plutôt que de les compter dans un mur qu'ils n'ont jamais heurté. */
+  const PARCOURS_MURS=[['config','N’a jamais configuré de prestation'],
+    ['paiement','A configuré, jamais vu le paiement'],
+    ['confirme','A vu le paiement, n’a pas confirmé'],
+    ['commande','S’est arrêté au paiement']];
   // Une demande à ces statuts n'a PAS dépassé l'écran de paiement : elle est écrite
   // avant l'ouverture de Mollie, et y reste si le client renonce ou si la carte échoue.
   const REQ_AVANT_COMMANDE=['pending_payment','payment_failed'];
+  /* ── CE QU'IL FAIT APRÈS S'ÊTRE INSCRIT ──────────────────────────────────────
+     « Il faut aussi voir s'ils font quelque chose après cet inscrit. » Rien ne le
+     gardait : la fiche d'un client ne porte que des EFFETS (une adresse, une carte, un
+     jeton de notification), jamais un geste. Entre « compte créé » et « demande écrite »
+     — c'est-à-dire tout le parcours — on ne savait rien.
+     Trois jalons, une LISTE FERMÉE, écrits UNE SEULE FOIS à vie sur `users/{uid}.jalons`
+     (une poignée d'horodatages, aucune règle à toucher : le client écrit déjà sa fiche).
+     Pas de nom de métier, pas de montant : ce qu'on cherche est l'ÉTAPE, pas le contenu.
+     On n'écrit qu'au FRANCHISSEMENT — un jalon déjà posé ne déclenche aucune écriture,
+     sinon chaque ouverture d'écran réécrirait la fiche. */
+  const CLIENT_JALONS=[['revenu','Est revenu un autre jour'],
+    ['config','A configuré une prestation'],['paiement','A vu l’écran de paiement']];
+  function jalonClient(cle){
+    try{
+      if(!CLIENT_JALONS.some(function(j){return j[0]===cle;}))return;
+      if(!(FB&&FB.auth&&FB.auth.currentUser)||isDemo()||S.persona!=='client')return;
+      S.jalons=S.jalons||{};
+      if(S.jalons[cle])return;
+      S.jalons[cle]=Date.now();
+      FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),
+        {jalons:Object.assign({},S.jalons)},{merge:true}).catch(function(){});
+    }catch(_){}
+  }
   function parcoursClients(clients,parClient,maintenant){
     const cl=Array.isArray(clients)?clients:[];
-    const murs={paiement:[],commande:[]};const abouti=[];
+    const murs={config:[],paiement:[],confirme:[],commande:[]};const abouti=[];let sansJalon=0;
     cl.forEach(function(c){
       const d=(parClient&&parClient[c.uid])||[];
-      if(!d.length){murs.paiement.push(c);return;}
-      const passe=d.some(function(x){return REQ_AVANT_COMMANDE.indexOf(x.status)<0;});
-      if(!passe){murs.commande.push(c);return;}
-      abouti.push(c);
+      const j=c.jalons||{};
+      if(d.length){
+        const passe=d.some(function(x){return REQ_AVANT_COMMANDE.indexOf(x.status)<0;});
+        if(passe){abouti.push(c);}else{murs.commande.push(c);}
+        if(!j.config||!j.paiement)sansJalon++;   // compte d'avant les jalons
+        return;
+      }
+      if(j.paiement){murs.confirme.push(c);return;}
+      if(j.config){murs.paiement.push(c);return;}
+      murs.config.push(c);
     });
     // Les faits se comptent sur les BLOQUÉS : « 11 des 14 n'ont aucune notification »
     // dit où regarder, « 11 clients sur 60 » ne dit rien.
-    const bloques=murs.paiement.concat(murs.commande);
+    const bloques=murs.config.concat(murs.paiement,murs.confirme,murs.commande);
     const faits={
       sansPush:bloques.filter(function(c){return !c.push;}).length,
       sansAdresse:bloques.filter(function(c){return !((c.addresses||[]).length);}).length,
       sansCarte:bloques.filter(function(c){return !c.card||/Aucune/.test(String(c.card));}).length,
       // Un compte inscrit hier n'est pas un compte perdu : on ne mélange pas les deux.
       vieux:bloques.filter(function(c){return c.createdAt&&(maintenant-c.createdAt)>7*864e5;}).length,
+      // Revenir est un FAIT, pas une marche : il dit si le compte est dormant ou s'il
+      // revient sans jamais aller plus loin — deux problèmes qui n'ont pas le même remède.
+      revenus:bloques.filter(function(c){return !!((c.jalons||{}).revenu);}).length,
     };
-    return {total:cl.length,bloques:bloques.length,abouti:abouti.length,
+    return {total:cl.length,bloques:bloques.length,abouti:abouti.length,sansJalon:sansJalon,
       murs:PARCOURS_MURS.map(function(m){return {cle:m[0],nm:m[1],n:murs[m[0]].length,qui:murs[m[0]]};}),
       faits:faits};
   }
@@ -10038,12 +10083,14 @@
         ${P.murs.map(function(m){ if(!m.n)return '';
           return `<div class="row between" style="align-items:flex-start;margin-top:11px;gap:10px"><div style="flex:1;min-width:0"><span class="sub">${esc(m.nm)}</span></div><span class="chip coral" style="flex:none">${m.n}</span></div>`;}).join('')}
         ${P.abouti?`<div class="row between" style="align-items:center;margin-top:11px;gap:10px"><span class="sub">A commandé</span><span class="chip good" style="flex:none">${P.abouti}</span></div>`:''}
+        ${P.sansJalon?`<p class="mini" style="margin-top:9px;color:var(--muted);line-height:1.5">${plN(P.sansJalon,'compte')} ${P.sansJalon>1?'ont commandé':'a commandé'} avant que ces jalons existent&nbsp;: leur demande prouve la configuration et le passage au paiement, c’est elle qui les classe.</p>`:''}
         ${P.bloques?`<div style="margin-top:13px;padding:10px 12px;background:var(--sand);border-radius:11px">
           <div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Sur les ${P.bloques} bloqué${P.bloques>1?'s':''}</div>
-          <div class="mini" style="margin-top:5px;line-height:1.6">${f.sansPush} ne ${f.sansPush>1?'peuvent':'peut'} recevoir <b>aucune notification</b><br>
+          <div class="mini" style="margin-top:5px;line-height:1.6"><b>${f.revenus}</b> ${f.revenus>1?'sont revenus':'est revenu'} un autre jour ${f.revenus>1?'(les autres ne sont jamais repassés)':'(les autres ne sont jamais repassés)'}<br>
+          ${f.sansPush} ne ${f.sansPush>1?'peuvent':'peut'} recevoir <b>aucune notification</b><br>
           ${f.sansAdresse} n’${f.sansAdresse>1?'ont':'a'} <b>aucune adresse</b> enregistrée<br>
           ${f.sansCarte} n’${f.sansCarte>1?'ont':'a'} <b>aucune carte</b> enregistrée<br>
-          ${f.vieux} ${f.vieux>1?'sont inscrits':'est inscrit'} depuis <b>plus de 7 jours</b> ${f.vieux>1?'':'et'} ${f.vieux>1?'(les autres viennent d’arriver)':'(les autres viennent d’arriver)'}</div>
+          ${f.vieux} ${f.vieux>1?'sont inscrits':'est inscrit'} depuis <b>plus de 7 jours</b> (les autres viennent d’arriver)</div>
           <div class="mini" style="margin-top:7px;color:var(--muted);line-height:1.5">Ce ne sont pas des étapes&nbsp;: on peut commander sans avoir rien enregistré de tout cela. Ce sont des faits, comptés là où ils expliquent quelque chose.</div>
         </div>`:''}`;})();
     const svcAll=allSvc();
@@ -11391,6 +11438,7 @@
         termsAt:(d.termsAt&&d.termsAt.toMillis)?d.termsAt.toMillis():0,
         profilRepare:!!d.profilRepare,profilRepareVia:d.profilRepareVia||'',termsVia:d.termsVia||'',
         createdAt:(d.createdAt&&d.createdAt.toMillis)?d.createdAt.toMillis():0,
+        jalons:(d.jalons&&typeof d.jalons==='object')?d.jalons:{},
         push:(Array.isArray(d.pushTokens)?d.pushTokens.length:0),
         isPro:!!d.isPro,company:d.company||'',siret:d.siret||'',
         proSuggest:!!d.proSuggest,proSuggestAnswer:d.proSuggestAnswer||'',
@@ -11951,7 +11999,7 @@
       S.clientForm=S.clientForm||{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''};
       render();return;
     }
-    S.payStep=true;S.payEdit=false;render();
+    jalonClient('paiement');S.payStep=true;S.payEdit=false;render();
   }
   // Après création/connexion du compte, si une commande attendait (gate invité),
   // on reprend directement à l'étape paiement — rien n'est reperdu.
@@ -13447,6 +13495,9 @@
   }
   // La vraie BÊTA part de zéro : aucun client / artisan / historique de démo.
   function blankAll(){
+    // Les jalons appartiennent au COMPTE : les garder d'un compte à l'autre ferait croire
+    // qu'un nouvel inscrit a déjà configuré une prestation, et l'empêcherait d'être posé.
+    S.jalons={};
     S.addresses=[];S.addrDefault=null;S.history=[];S.recurring=[];S.card=null;S.mission=null;S.missions=[];S.proMissions=[];S.proReqView=null;S.proSkipped=[];S.proSkipAt={};
     S.proHistory=[];S.agenda=[];S.proEarnings=0;S.proJobsToday=0;S.proJobsTotal=0;
     S.adminArtisans=[];S.adminClients=[];S.adminBookings=[];S.adminCommission=0;S.adminConcierges=[];S.adminDrafts=[];S.adminArtsLoaded=false;S.adminClisLoaded=false;S.adminReqsLus=false;S.adminReqStats=null;S.adminReqParClient=null;
@@ -16310,7 +16361,7 @@
     if(b.dataset.cf2zone){if(S.concForm)S.concForm.azone=b.dataset.cf2zone;render();return;}
     if(b.dataset.pf2zone){if(S.profileForm)S.profileForm.zone=b.dataset.pf2zone;render();return;}
     if(b.dataset.catopen){S.catView=b.dataset.catopen;render();return;}
-    if(b.dataset.svc){if(!svcAvailable(b.dataset.svc)){toast('Bientôt disponible');return;}const svc=findSvc(b.dataset.svc);if(!svc)return;S.catView=null;S.cfgMore=false;S.draft=newMission(svc);renderConfig();return;}
+    if(b.dataset.svc){if(!svcAvailable(b.dataset.svc)){toast('Bientôt disponible');return;}const svc=findSvc(b.dataset.svc);if(!svc)return;jalonClient('config');S.catView=null;S.cfgMore=false;S.draft=newMission(svc);renderConfig();return;}
     // Menu d'actes (métiers à l'acte) : cocher / décocher une prestation.
     if(b.dataset.actpick){const m=S.draft;if(!m)return;m.acts=m.acts||[];const id=b.dataset.actpick;const i=m.acts.findIndex(function(a){return a.id===id;});if(i>=0){m.acts.splice(i,1);}else{const a=actInfo(m.svc,id);if(a)m.acts.push({id:a.id,nm:a.nm,price:a.price,qty:1});}renderConfig();return;}
     if(b.dataset.actqty){const m=S.draft;if(!m)return;const parts=b.dataset.actqty.split(':');const id=parts[0],dir=parts[1];const a=(m.acts||[]).find(function(x){return x.id===id;});if(a){if(dir==='up')a.qty=(a.qty||1)+1;else{a.qty=(a.qty||1)-1;if(a.qty<1)m.acts=m.acts.filter(function(x){return x.id!==id;});}}renderConfig();return;}
@@ -18539,6 +18590,17 @@
         try{ await FB.f.setDoc(ref,fiche,{merge:true}); }catch(_){}
       }
       S.account={name:name,email:user.email||'',zone:zone,uid:user.uid,photo:photo,phone:(data&&data.phone)||'',isPro:!!(data&&data.isPro),company:(data&&data.company)||'',siret:(data&&data.siret)||''};
+      // Les jalons déjà posés, relus AVANT d'en poser un : sans cela, chaque ouverture
+      // réécrirait la fiche et la date du premier franchissement serait perdue.
+      S.jalons=(data&&data.jalons&&typeof data.jalons==='object')?Object.assign({},data.jalons):{};
+      /* « REVENU » SE MESURE SUR LE JOUR, PAS SUR LA DURÉE. Quelqu'un qui s'inscrit à
+         23 h 50 et rouvre à 00 h 10 est revenu ; quelqu'un qui reste deux heures d'affilée
+         le jour de son inscription ne l'est pas. C'est le retour qu'on veut compter. */
+      try{
+        const cr=(data&&data.createdAt&&data.createdAt.toMillis)?data.createdAt.toMillis():0;
+        const j=function(t){return new Date(t).toISOString().slice(0,10);};
+        if(cr&&j(cr)!==j(Date.now()))jalonClient('revenu');
+      }catch(_){}
       // Ti-Services soupçonne un professionnel inscrit du mauvais côté : on lui posera
       // la question à l'ouverture. Une fois qu'il a répondu (oui ou non), plus jamais.
       S.proSuggest=proSuggestPending(data);
