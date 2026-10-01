@@ -9582,6 +9582,140 @@
   // Éditeur de PRESTATIONS / OPTIONS d'un métier (admin) — pour TOUS les métiers, horaires
   // comme à l'acte. Chaque prestation : nom, unité (à l'unité / à l'heure) et prix. Persisté
   // dans settings/catalog (options), synchronisé en temps réel dans toute l'application.
+  /* ══ RÉCAPITULATIF DES TARIFS, À IMPRIMER ══════════════════════════════════════
+     « Une présentation simple en PDF de nos tarifs en cours, pour visualiser d'un coup
+     d'œil les tarifs que nous appliquons et les corriger si nécessaire » — et « il faut
+     qu'il soit actualisé avec ce qui a été modifié manuellement ».
+
+     D'OÙ VIENNENT LES CHIFFRES. Un PDF fabriqué à côté de l'application serait figé le
+     jour où il est écrit, et surtout il ignorerait la console : la grille VIVANTE est
+     `S.adminPrices` (document `settings/prices`), le catalogue à l'acte `S.adminCatalog`
+     et les options `S.adminOptions`. La feuille lit donc exactement les mêmes fonctions
+     que la commande du client — `baseCatalog`, `svcOptions`, `minActPrice` : si la
+     feuille et la commande annonçaient deux prix, la feuille ne servirait à rien.
+
+     ON NE CONFOND PAS LES MANIÈRES DE FACTURER. Un métier à l'acte n'a pas de tarif
+     horaire applicable (le client coche des prestations, `forfaitSub` fait le total) :
+     imprimer un « €/h » à côté de Coiffure donnerait un chiffre que personne ne paie.
+     Chaque métier dit donc COMMENT il se facture, et le prix montré est celui qui sort
+     réellement.
+
+     ET CE QUI A ÉTÉ CHANGÉ À LA MAIN EST MARQUÉ. C'est la moitié de la demande
+     (« les corriger si nécessaire ») : une valeur égale au code se lit comme un réglage
+     d'usine jamais revu, une valeur modifiée comme une décision. On compare au défaut du
+     code, et un métier créé depuis la console n'a pas de défaut — il est marqué comme
+     tel plutôt que de passer pour modifié. ══════════════════════════════════════════ */
+  function tarifMarque(id){
+    const s=findSvc(id); if(s&&s.custom)return 'console';
+    const def=(typeof ADMIN_PRICES==='function')?ADMIN_PRICES()[id]:null;
+    if(def==null)return '';
+    const cur=(S.adminPrices&&S.adminPrices[id]!=null)?S.adminPrices[id]:def;
+    return (Number(cur)!==Number(def))?'modifie':'';
+  }
+  // Le prix APPLIQUÉ d'un métier, et la façon dont il se facture. Rien n'est recalculé
+  // ici : on passe par les portes que la commande emprunte déjà.
+  function tarifDuMetier(id){
+    const px=(S.adminPrices&&S.adminPrices[id]!=null)?S.adminPrices[id]:svcBase(id);
+    if(id==='colis')return {mode:'Forfait retrait',val:eur(px)};
+    if(isCatalogForfait(id))return {mode:'À l’acte',val:'dès '+eur(minActPrice(id)),acte:true};
+    if(id==='animaux'){
+      const pj=(S.adminPrices&&S.adminPrices['animaux_j']!=null)?S.adminPrices['animaux_j']:DAY_RECO;
+      return {mode:'À l’heure ou à la journée',val:eur(px)+'/h · '+eur(pj)+'/jour'};
+    }
+    return {mode:'À l’heure',val:eur(px)+'/h'};
+  }
+  function tarifsRecapHtml(){
+    const jour=new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
+    const heure=new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+    const mq=function(k){return k==='modifie'?'<span class="mq mq-m">modifié</span>'
+      :k==='console'?'<span class="mq mq-c">créé en console</span>':'';};
+    const bloc=function(s){
+      const t=tarifDuMetier(s.id);
+      const opts=svcOptions(s.id);
+      let actes='';
+      if(t.acte){
+        actes=catalogGroups(s.id).map(function(g){
+          const titre=(catalogGroups(s.id).length>1)?'<div class="fam">'+esc(g.g)+'</div>':'';
+          return titre+'<table class="t">'+g.acts.map(function(a){
+            return '<tr><td>'+esc(a.nm)+'</td><td class="p">'+eur(Number(a.price)||0)+'</td></tr>';}).join('')+'</table>';
+        }).join('');
+      }
+      const optHtml=opts.length?'<div class="fam">Prestations / options</div><table class="t">'+opts.map(function(o){
+        return '<tr><td>'+esc(o.nm)+'</td><td class="p">'+eur(Number(o.price)||0)+(optUnit(o)==='h'?'/h':'')+'</td></tr>';}).join('')+'</table>':'';
+      return '<div class="svc"><div class="svc-h"><div class="svc-n">'+esc(s.nm)+' '+mq(tarifMarque(s.id))+'</div>'
+        +'<div class="svc-p">'+esc(t.val)+'</div></div><div class="svc-m">'+esc(t.mode)+'</div>'
+        +actes+optHtml+'</div>';
+    };
+    // On suit l'ordre de l'accueil : la feuille se lit comme le client voit le catalogue.
+    const vus={},corps=[];
+    HOME_ORDER.forEach(function(id){
+      const cat=CATEGORIES.find(function(c){return c.id===id;});
+      if(cat){
+        const membres=catSubs(cat).map(findSvc).filter(Boolean);
+        membres.forEach(function(m){vus[m.id]=1;});
+        if(membres.length)corps.push('<div class="cat"><h2>'+esc(cat.nm)+'</h2>'+membres.map(bloc).join('')+'</div>');
+      } else { const sv=findSvc(id); if(sv){vus[id]=1;corps.push('<div class="cat">'+bloc(sv)+'</div>');} }
+    });
+    const restants=allSvc().filter(function(sv){return !vus[sv.id]&&!svcCategory(sv.id);});
+    if(restants.length)corps.push('<div class="cat"><h2>Autres métiers</h2>'+restants.map(bloc).join('')+'</div>');
+    const nMod=allSvc().filter(function(sv){return tarifMarque(sv.id)==='modifie';}).length;
+    return '<!doctype html><html lang="fr"><head><meta charset="utf-8">'
+      +'<title>Tarifs Ti-Services · '+esc(jour)+'</title><style>'
+      +'*{box-sizing:border-box}body{margin:0;padding:26px 30px;background:#fff;color:#231E33;'
+      +'font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:12.5px;line-height:1.45}'
+      +'h1{font-size:21px;margin:0 0 2px}.sub{color:#8a8494;font-size:12px;margin:0 0 3px}'
+      +'.note{color:#6b6577;font-size:11.5px;margin:10px 0 20px;padding:9px 12px;background:#FBF7F4;border-radius:9px;border-left:3px solid #FF6A5B}'
+      +'h2{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#8a8494;margin:22px 0 8px;'
+      +'border-bottom:1px solid #e8e2da;padding-bottom:4px;break-after:avoid;break-inside:avoid}'
+      // UNE CATÉGORIE NE TIENT PAS SUR UNE PAGE, UN MÉTIER SI. `break-inside:avoid` posé
+      // sur la catégorie poussait Beauté et ses cinq catalogues sur une page à elle, qui
+      // débordait quand même : mesuré, une page presque blanche sur deux. On ne garde
+      // insensible à la coupure que le bloc d'un métier, et l'intertitre reste collé à
+      // ce qui le suit.
+      // ET UN MÉTIER À SOIXANTE LIGNES COULE SUR DEUX PAGES. Coiffure dépasse à lui seul
+      // la hauteur d'une page : lui interdire la coupure le poussait en page suivante,
+      // où il débordait de toute façon — une page de garde pour rien. Ce qui ne se coupe
+      // jamais, c'est son TITRE (orphelin, on ne saurait plus de quel métier on lit les
+      // prix) et une LIGNE de prix.
+      +'.svc{break-inside:auto;margin:0 0 13px;padding:10px 12px;border:1px solid #ece6de;border-radius:10px}'
+      +'.svc-h{display:flex;justify-content:space-between;align-items:baseline;gap:12px;break-inside:avoid;break-after:avoid}'
+      +'table.t tr{break-inside:avoid}'
+      +'.svc-n{font-weight:700;font-size:14px}.svc-p{font-weight:700;font-size:14px;white-space:nowrap}'
+      +'.svc-m{color:#8a8494;font-size:11px;margin-top:1px}'
+      +'.fam{font-size:11px;font-weight:700;color:#6b6577;margin:9px 0 3px;break-after:avoid}'
+      +'table.t{width:100%;border-collapse:collapse;margin:0}'
+      +'table.t td{padding:2.5px 0;border-bottom:1px dotted #ece6de;font-size:12px}'
+      +'table.t td.p{text-align:right;white-space:nowrap;font-weight:600;width:92px}'
+      +'.mq{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;'
+      +'padding:2px 6px;border-radius:999px;vertical-align:middle;margin-left:5px}'
+      +'.mq-m{background:#FFE9E5;color:#C2410C}.mq-c{background:#E7F2FF;color:#1D4ED8}'
+      +'.pied{margin-top:24px;padding-top:9px;border-top:1px solid #e8e2da;color:#8a8494;font-size:11px}'
+      +'@page{margin:12mm}@media print{body{padding:0}}'
+      +'</style></head><body>'
+      +'<h1>Tarifs Ti-Services</h1>'
+      +'<p class="sub">Services à la demande · Saint-Barthélemy</p>'
+      +'<p class="sub">Grille en vigueur au '+esc(jour)+', '+esc(heure)+'</p>'
+      +'<p class="note">Ce que voit le client à la commande, lu dans la console à l’instant où cette feuille est éditée. '
+      +'<b>'+nMod+' tarif'+(nMod>1?'s':'')+'</b> '+(nMod>1?'diffèrent':'diffère')+' de la valeur d’origine et '
+      +(nMod>1?'sont marqués':'est marqué')+' « modifié ». Les corrections se font dans la console, '
+      +'carte « Prestations · artisans &amp; tarifs ».</p>'
+      +corps.join('')
+      +'<div class="pied">Ti-Services · édité le '+esc(jour)+' à '+esc(heure)+' · document interne</div>'
+      +'</body></html>';
+  }
+  /* L'IMPRESSION PASSE PAR UNE FENÊTRE, comme la facture et la procuration : c'est le
+     seul chemin qui donne « Enregistrer au format PDF » sur ordinateur comme sur
+     téléphone. La feuille porte sa PROPRE feuille de style, elle ne recopie pas celle de
+     l'application : un récapitulatif qui dépendrait du thème sombre ou d'une classe
+     renommée s'imprimerait un jour en blanc sur blanc. */
+  function imprimerTarifs(){
+    try{
+      const w=window.open('','_blank');
+      if(!w||!w.document){toast('Autorisez l’ouverture de la fenêtre pour enregistrer le PDF.');return;}
+      w.document.open();w.document.write(tarifsRecapHtml());w.document.close();w.focus();
+      setTimeout(function(){try{w.print();}catch(_){}},600);
+    }catch(_){ toast('Édition PDF indisponible ici.'); }
+  }
   function optionsEditorHtml(svcId){
     const opts=svcOptions(svcId);
     return `<hr class="dashed" style="margin:13px 0 2px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Prestations / options</div>
@@ -9820,7 +9954,8 @@
         ${legacy?`<div class="mini" style="margin-top:6px;color:var(--muted)">Ancien comptage (avec doublons, archivé)&nbsp;: ${n('visit_total')} visites · ${n('installed_total')} installées</div>`:''}`;})();
     const svcAll=allSvc();
     const svcNoPro=svcAll.filter(function(s){return !(S.adminArtisans||[]).some(function(a){return a.status==='valide'&&Array.isArray(a.cats)&&a.cats.indexOf(s.id)>=0;});}).length;
-    const pricesBody=`<p class="mini" style="margin:0;color:var(--muted)">Chaque métier est <b>replié</b> : le nombre d'artisans validés est indiqué. Dépliez pour voir qui le pratique, le renommer et régler le tarif client. Un nom réécrit s'affiche <b>tel quel</b> en anglais et en portugais, les traductions ne suivent que les noms d'origine.</p>
+    const pricesBody=`<button class="btn ghost sm" data-act="tarifs-pdf" style="width:auto;padding:9px 13px;margin:0 0 11px">${I.doc} Récapitulatif des tarifs (PDF)</button>
+      <p class="mini" style="margin:0;color:var(--muted)">Chaque métier est <b>replié</b> : le nombre d'artisans validés est indiqué. Dépliez pour voir qui le pratique, le renommer et régler le tarif client. Un nom réécrit s'affiche <b>tel quel</b> en anglais et en portugais, les traductions ne suivent que les noms d'origine.</p>
       ${svcAll.map(s=>{
         const px=(S.adminPrices&&S.adminPrices[s.id]!=null)?S.adminPrices[s.id]:s.rate;
         const open=!!((S.admPriceOpen||{})[s.id]);
@@ -16679,6 +16814,15 @@
           }).catch(function(e){ toast('Échec : '+fbErrTxt(e)); });
         }catch(e){ toast('Échec : '+fbErrTxt(e)); }
         break;
+      }
+      case 'tarifs-pdf':{
+        if(!isAdminAccount()){toast('Réservé à l’administrateur');break;}
+        // ON N'IMPRIME PAS UNE GRILLE QU'ON N'A PAS LUE. Tant que `settings/prices` n'est
+        // pas revenu, `S.adminPrices` porte les valeurs d'usine : la feuille annoncerait
+        // des tarifs que personne n'applique, et la même garde tient déjà la console
+        // (`adminPricesLus`) pour l'écriture.
+        if(!S.adminPricesLus){toast('Grille en cours de lecture, réessayez dans un instant');break;}
+        imprimerTarifs();break;
       }
       case 'admin-add-cat':{
         if(!isAdminAccount()){toast('Réservé à l’administrateur');break;}
