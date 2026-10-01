@@ -9716,6 +9716,58 @@
       setTimeout(function(){try{w.print();}catch(_){}},600);
     }catch(_){ toast('Édition PDF indisponible ici.'); }
   }
+  /* ══ OÙ S'ARRÊTENT LES CLIENTS ════════════════════════════════════════════════
+     « On commence à avoir pas mal de clients, de prestataires, mais aucune commande en
+     cours. J'aimerais savoir ce qui fait que les clients ne vont pas plus loin que
+     l'inscription, comment déterminer cela ? »
+
+     LA RÉPONSE ÉTAIT DÉJÀ EN BASE, ET PERSONNE NE POUVAIT LA VOIR. Le parcours de
+     paiement écrit la demande en `pending_payment` AVANT d'ouvrir Mollie : un client qui
+     configure sa prestation puis renonce laisse donc une trace. Mais l'unique écoute de
+     `requests` sert à bâtir la messagerie et jette tout ce qui n'a ni message ni
+     litige — exactement cette population. « Aucune commande en cours » ne permettait pas
+     de distinguer « personne n'a essayé » de « personne n'a abouti », alors que c'est
+     toute la question.
+
+     ON DÉSIGNE LE MUR, PAS UN POURCENTAGE. « Quatre clients n'ont jamais atteint le
+     paiement » se corrige ; « taux de conversion 0 % » ne se corrige pas. Chaque compte
+     ne compte QU'UNE fois, à la première étape qu'il n'a pas franchie.
+
+     TROIS ÉTAPES, PARCE QUE TROIS SEULEMENT SE PROUVENT. Inscrit (la fiche existe),
+     a atteint le paiement (une demande existe), a commandé (une demande a dépassé le
+     paiement). Le reste — notification active, adresse enregistrée, carte — n'est PAS
+     une étape : on peut commander sans avoir rien enregistré de tout cela. Ce sont des
+     FAITS, rapportés à côté et comptés SUR CEUX QUI SONT BLOQUÉS, parce que c'est là
+     qu'ils expliquent quelque chose. En faire des marches aurait inventé un ordre que le
+     code n'impose pas. ═══════════════════════════════════════════════════════════════ */
+  const PARCOURS_MURS=[['paiement','N’a jamais atteint le paiement'],['commande','S’est arrêté au paiement']];
+  // Une demande à ces statuts n'a PAS dépassé l'écran de paiement : elle est écrite
+  // avant l'ouverture de Mollie, et y reste si le client renonce ou si la carte échoue.
+  const REQ_AVANT_COMMANDE=['pending_payment','payment_failed'];
+  function parcoursClients(clients,parClient,maintenant){
+    const cl=Array.isArray(clients)?clients:[];
+    const murs={paiement:[],commande:[]};const abouti=[];
+    cl.forEach(function(c){
+      const d=(parClient&&parClient[c.uid])||[];
+      if(!d.length){murs.paiement.push(c);return;}
+      const passe=d.some(function(x){return REQ_AVANT_COMMANDE.indexOf(x.status)<0;});
+      if(!passe){murs.commande.push(c);return;}
+      abouti.push(c);
+    });
+    // Les faits se comptent sur les BLOQUÉS : « 11 des 14 n'ont aucune notification »
+    // dit où regarder, « 11 clients sur 60 » ne dit rien.
+    const bloques=murs.paiement.concat(murs.commande);
+    const faits={
+      sansPush:bloques.filter(function(c){return !c.push;}).length,
+      sansAdresse:bloques.filter(function(c){return !((c.addresses||[]).length);}).length,
+      sansCarte:bloques.filter(function(c){return !c.card||/Aucune/.test(String(c.card));}).length,
+      // Un compte inscrit hier n'est pas un compte perdu : on ne mélange pas les deux.
+      vieux:bloques.filter(function(c){return c.createdAt&&(maintenant-c.createdAt)>7*864e5;}).length,
+    };
+    return {total:cl.length,bloques:bloques.length,abouti:abouti.length,
+      murs:PARCOURS_MURS.map(function(m){return {cle:m[0],nm:m[1],n:murs[m[0]].length,qui:murs[m[0]]};}),
+      faits:faits};
+  }
   function optionsEditorHtml(svcId){
     const opts=svcOptions(svcId);
     return `<hr class="dashed" style="margin:13px 0 2px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Prestations / options</div>
@@ -9952,6 +10004,48 @@
         ${ecart!==null?`<div class="mini" style="margin-top:6px;color:var(--muted)">Comptés appareil par appareil. Le compteur cumulé, lui, en annonce ${ecart}&nbsp;: il a dérivé.</div>`:''}
         ${funnelJours(ins,v)}
         ${legacy?`<div class="mini" style="margin-top:6px;color:var(--muted)">Ancien comptage (avec doublons, archivé)&nbsp;: ${n('visit_total')} visites · ${n('installed_total')} installées</div>`:''}`;})();
+    /* ── 1. LES DEMANDES, PAR STATUT ──────────────────────────────────────────────
+       Ce que la messagerie jetait. Les statuts sont rangés du plus parlant au moins
+       parlant : ce qui est MORT AU PAIEMENT en premier, puisque c'est la question. */
+    const REQ_LIB={pending_payment:['coral','Mortes au paiement','Demande écrite, paiement jamais abouti'],
+      payment_failed:['coral','Paiement refusé','La carte a été refusée ou la fenêtre fermée'],
+      pending:['warn','En recherche','Publiée, aucun prestataire n’a encore accepté'],
+      declined:['grey','Déclinées','Proposée à un prestataire qui a refusé'],
+      expired:['grey','Expirées','Le créneau est passé sans acceptation'],
+      cancelled:['grey','Annulées',''],accepted:['good','Acceptées',''],working:['good','En cours',''],
+      done_pro:['good','À valider par le client',''],paid:['good','Réglées',''],rated:['good','Notées',''],
+      disputed:['coral','En litige','']};
+    const plN=function(n,m){return n+' '+m+(n>1?'s':'');};
+    const demandesBody=(function(){
+      if(!S.adminReqsLus)return `<p class="mini" style="color:var(--muted)">Lecture des demandes…</p>`;
+      const st=S.adminReqStats||{};const cles=Object.keys(st);
+      if(!cles.length)return `<p class="mini" style="color:var(--muted)">Aucune demande en base, à aucun statut. Personne n’a encore atteint l’écran de paiement.</p>`;
+      const ordre=Object.keys(REQ_LIB).filter(function(k){return st[k];})
+        .concat(cles.filter(function(k){return !REQ_LIB[k];}));
+      const n=cles.reduce(function(t,k){return t+st[k];},0);
+      const mortes=(st.pending_payment||0)+(st.payment_failed||0);
+      return `<p class="mini" style="margin:0 0 4px;color:var(--muted)">${plN(n,'demande')} en base, tous statuts confondus. Une demande est écrite <b>avant</b> l’ouverture du paiement&nbsp;: celles qui n’ont jamais abouti sont ici, et nulle part ailleurs.</p>
+        ${mortes?`<p class="mini" style="margin:8px 0 0;padding:9px 11px;background:var(--coral-wash);border-radius:10px;color:var(--coral-deep);line-height:1.5"><b>${plN(mortes,'demande')}</b> ${mortes>1?'se sont arrêtées':'s’est arrêtée'} à l’écran de paiement. C’est là qu’il faut regarder&nbsp;: la prestation était configurée, le client a renoncé ou la carte a échoué.</p>`:''}
+        ${ordre.map(function(k){const L=REQ_LIB[k]||['grey',k,''];
+          return `<div class="row between" style="align-items:flex-start;margin-top:10px;gap:10px"><div style="flex:1;min-width:0"><span class="sub">${esc(L[1])}</span>${L[2]?`<div class="mini" style="color:var(--muted);line-height:1.4">${esc(L[2])}</div>`:''}</div><span class="chip ${L[0]}" style="flex:none">${st[k]}</span></div>`;}).join('')}`;})();
+    /* ── 2. OÙ S'ARRÊTENT LES CLIENTS ─────────────────────────────────────────── */
+    const parcoursBody=(function(){
+      if(!S.adminReqsLus||!S.adminClisLoaded)return `<p class="mini" style="color:var(--muted)">Lecture des comptes et des demandes…</p>`;
+      const P=parcoursClients(S.adminClients||[],S.adminReqParClient||{},Date.now());
+      if(!P.total)return `<p class="mini" style="color:var(--muted)">Aucun compte client pour l’instant.</p>`;
+      const f=P.faits;
+      return `<p class="mini" style="margin:0;color:var(--muted)">Chaque compte compte <b>une seule fois</b>, à la première étape qu’il n’a pas franchie. ${plN(P.total,'compte')} client${P.total>1?'s':''}.</p>
+        ${P.murs.map(function(m){ if(!m.n)return '';
+          return `<div class="row between" style="align-items:flex-start;margin-top:11px;gap:10px"><div style="flex:1;min-width:0"><span class="sub">${esc(m.nm)}</span></div><span class="chip coral" style="flex:none">${m.n}</span></div>`;}).join('')}
+        ${P.abouti?`<div class="row between" style="align-items:center;margin-top:11px;gap:10px"><span class="sub">A commandé</span><span class="chip good" style="flex:none">${P.abouti}</span></div>`:''}
+        ${P.bloques?`<div style="margin-top:13px;padding:10px 12px;background:var(--sand);border-radius:11px">
+          <div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Sur les ${P.bloques} bloqué${P.bloques>1?'s':''}</div>
+          <div class="mini" style="margin-top:5px;line-height:1.6">${f.sansPush} ne ${f.sansPush>1?'peuvent':'peut'} recevoir <b>aucune notification</b><br>
+          ${f.sansAdresse} n’${f.sansAdresse>1?'ont':'a'} <b>aucune adresse</b> enregistrée<br>
+          ${f.sansCarte} n’${f.sansCarte>1?'ont':'a'} <b>aucune carte</b> enregistrée<br>
+          ${f.vieux} ${f.vieux>1?'sont inscrits':'est inscrit'} depuis <b>plus de 7 jours</b> ${f.vieux>1?'':'et'} ${f.vieux>1?'(les autres viennent d’arriver)':'(les autres viennent d’arriver)'}</div>
+          <div class="mini" style="margin-top:7px;color:var(--muted);line-height:1.5">Ce ne sont pas des étapes&nbsp;: on peut commander sans avoir rien enregistré de tout cela. Ce sont des faits, comptés là où ils expliquent quelque chose.</div>
+        </div>`:''}`;})();
     const svcAll=allSvc();
     const svcNoPro=svcAll.filter(function(s){return !(S.adminArtisans||[]).some(function(a){return a.status==='valide'&&Array.isArray(a.cats)&&a.cats.indexOf(s.id)>=0;});}).length;
     const pricesBody=`<button class="btn ghost sm" data-act="tarifs-pdf" style="width:auto;padding:9px 13px;margin:0 0 11px">${I.doc} Récapitulatif des tarifs (PDF)</button>
@@ -10211,6 +10305,14 @@
       <div style="height:18px"></div><span class="eyebrow">${I.shield} Fonctionnement</span>
       ${foldCard('a-bookings',I.cal,'Réservations en cours','Recherche → acceptée → en cours → validée → réglée',bookings,chip(allB.length?'good':'grey',allB.length),(S.adminThreads||[]).some(function(t){return t&&t.reqId&&admThreadNew(t);}))}
       ${foldCard('a-prices',I.euro,'Prestations · artisans &amp; tarifs',svcAll.length+' métiers'+(svcNoPro?' · '+svcNoPro+' sans prestataire':''),pricesBody,svcNoPro?chip('coral',svcNoPro+' sans pro'):chip('good',svcAll.length))}
+      ${foldCard('a-demandes',I.wallet,'Demandes, par statut','Y compris celles qui n’ont jamais abouti',demandesBody,(function(){
+        const st=S.adminReqStats||{};const m=(st.pending_payment||0)+(st.payment_failed||0);
+        if(!S.adminReqsLus)return chip('grey','…');
+        return m?chip('coral',m+' morte'+(m>1?'s':'')+' au paiement'):chip('good','aucune perdue');})())}
+      ${foldCard('a-parcours',I.search,'Où s’arrêtent les clients','La première étape non franchie, compte par compte',parcoursBody,(function(){
+        if(!S.adminReqsLus||!S.adminClisLoaded)return chip('grey','…');
+        const P=parcoursClients(S.adminClients||[],S.adminReqParClient||{},Date.now());
+        return P.bloques?chip('coral',P.bloques+' bloqué'+(P.bloques>1?'s':'')):chip('good',P.abouti+' ont commandé');})())}
       ${foldCard('a-funnel',I.install,"Entonnoir d'installation",'Visiteurs, guide ouvert, applications installées',funnelBody,(function(){const T=funnelTotaux();return T?chip('grey',T.ins+' installées'):'';})())}
       ${(function(){
         // QUI EST JOIGNABLE. Même famille que l'entonnoir : l'un dit qui a l'application,
@@ -11078,6 +11180,22 @@
       adminThreadsUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'requests'),function(snap){
         const srt=function(a){return (a||[]).slice().sort(function(x,y){return (x.at||0)-(y.at||0);});};
         const list=[];
+        /* LE RELEVÉ SE GREFFE SUR L'ÉCOUTE QUI TOURNAIT DÉJÀ — pas un second abonnement
+           sur la même collection. Et il est pris AVANT le filtre de la messagerie :
+           celle-ci jette toute demande sans message et sans litige, c'est-à-dire
+           exactement la population qu'on cherche. Une commande morte au paiement ne
+           laisse ni message ni litige : elle n'apparaissait donc NULLE PART, et
+           « aucune commande en cours » ne permettait pas de distinguer « personne n'a
+           essayé » de « personne n'a abouti ». */
+        const stats={}, parClient={};
+        snap.forEach(function(docu){
+          const r0=docu.data()||{};
+          const st0=String(r0.status||'inconnu');
+          stats[st0]=(stats[st0]||0)+1;
+          const cu=String(r0.clientUid||'');
+          if(cu){(parClient[cu]=parClient[cu]||[]).push({status:st0,at:(reqCreatedMs(r0)||0)});}
+        });
+        S.adminReqStats=stats; S.adminReqParClient=parClient; S.adminReqsLus=true;
         snap.forEach(function(docu){
           const r=docu.data()||{};
           const chat=srt(r.messages),supC=srt(r.supportClient),supP=srt(r.supportPro);
@@ -11280,7 +11398,7 @@
         proSuggestAnsweredAt:(d.proSuggestAnsweredAt&&d.proSuggestAnsweredAt.toMillis)?d.proSuggestAnsweredAt.toMillis():0});
     });
     out.sort(function(a,b){return (b.createdAt||0)-(a.createdAt||0);});
-    S.adminClients=out;
+    S.adminClients=out; S.adminClisLoaded=true;
   }
   // Comptes portant le rôle « artisan ». Ceux qui n'ont PAS de fiche dans `artisans`
   // n'ont jamais envoyé leur candidature : ils sont invisibles de la console alors
@@ -13331,7 +13449,7 @@
   function blankAll(){
     S.addresses=[];S.addrDefault=null;S.history=[];S.recurring=[];S.card=null;S.mission=null;S.missions=[];S.proMissions=[];S.proReqView=null;S.proSkipped=[];S.proSkipAt={};
     S.proHistory=[];S.agenda=[];S.proEarnings=0;S.proJobsToday=0;S.proJobsTotal=0;
-    S.adminArtisans=[];S.adminClients=[];S.adminBookings=[];S.adminCommission=0;S.adminConcierges=[];S.adminDrafts=[];S.adminArtsLoaded=false;
+    S.adminArtisans=[];S.adminClients=[];S.adminBookings=[];S.adminCommission=0;S.adminConcierges=[];S.adminDrafts=[];S.adminArtsLoaded=false;S.adminClisLoaded=false;S.adminReqsLus=false;S.adminReqStats=null;S.adminReqParClient=null;
     S.concClients=[];S.concOrders=[];S.concEarn=0;
     // Renfort (bêta) : rien ne doit survivre à un changement de compte.
     S.renforts=[];S.renfortsLoaded=false;S.renfortForm=null;S.renfortView=false;S._rfLoading=false;S._rfCancel=null;
