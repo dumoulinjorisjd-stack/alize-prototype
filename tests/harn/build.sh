@@ -14,6 +14,7 @@ sed 's/function render(){/function render(){window.__S=S;window.__render=render;
      s/^  function parcoursClients(clients,parClient,maintenant){/  window.__parcours=function(c,p,m){return parcoursClients(c,p,m);};\n  function parcoursClients(clients,parClient,maintenant){/
      s/^  function jalonClient(cle){/  window.__jalon=function(c){return jalonClient(c);};\n  function jalonClient(cle){/
      s/^  function activeServicesFromArtisans(){/  window.__dispo=function(){return activeServicesFromArtisans();};\n  function activeServicesFromArtisans(){/
+     s/^  function parcoursPro(drafts){/  window.__pro={parcours:function(d){return parcoursPro(d);},jalons:function(f){return jalonsProDe(f);},etapes:function(){return PRO_ETAPES;}};\n  function parcoursPro(drafts){/
      s/^  function catalogGroups(id){/  window.__cat={list:function(i){return catalogFor(i);},groups:function(i){return catalogGroups(i);}};\n  function catalogGroups(id){/
      s/^  function admSeenGet(){/  window.__adm={artNew:function(a){return admArtNew(a);},cliNew:function(c){return admCliNew(c);},thNew:function(t){return admThreadNew(t);},seen:function(k,v){return admSeenSet(k,v);},artSig:function(a){return admArtSig(a);},cliSig:function(c){return admCliSig(c);},count:function(){return adminNewCount();}};\n  function admSeenGet(){/
      s/^  function tryVisibleBackLink(){/  window.__back=function(){return goBack();};\n  function tryVisibleBackLink(){/

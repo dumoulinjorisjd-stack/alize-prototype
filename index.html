@@ -9757,6 +9757,31 @@
      configuré ». La preuve la plus FORTE l'emporte donc — une demande prouve à elle seule
      la configuration et le passage au paiement. L'écran dit combien de comptes sont dans
      ce cas, plutôt que de les compter dans un mur qu'ils n'ont jamais heurté. */
+  /* CE QUE LES CANDIDATURES EN COURS ONT REMPLI. Les quatre étapes ne sont pas une
+     marche d'escalier — l'écran les présente en quatre cartes qu'on remplit dans
+     l'ordre qu'on veut — donc on ne désigne pas un mur : on compte, étape par étape,
+     combien l'ont franchie. Celle qui manque le plus souvent est celle qui bloque.
+     ET ON DIT CE QU'ON NE SAIT PAS : une candidature commencée avant cette mesure ne
+     porte aucun jalon, puisque le dossier vivait dans le téléphone. La compter comme
+     « rien de rempli » inventerait un chiffre ; elle est mise à part. */
+  function parcoursPro(drafts){
+    const tous=Array.isArray(drafts)?drafts:[];
+    const cl=tous.filter(function(d){return !compteDeTest(d);});
+    const connus=cl.filter(function(d){return !!d.jalonsPro;});
+    const inconnus=cl.length-connus.length;
+    const etapes=PRO_ETAPES.map(function(e){
+      return {cle:e[0],nm:e[1],faites:connus.filter(function(d){return !!(d.jalonsPro||{})[e[0]];}).length};});
+    // Combien d'étapes chacun a bouclées : « trois sur quatre » n'appelle pas le même
+    // geste que « zéro sur quatre ».
+    const parNombre=[0,0,0,0,0];
+    connus.forEach(function(d){
+      const n=PRO_ETAPES.filter(function(e){return !!(d.jalonsPro||{})[e[0]];}).length;
+      parNombre[n]++;});
+    return {total:cl.length,exclus:tous.length-cl.length,connus:connus.length,inconnus:inconnus,
+      etapes:etapes,parNombre:parNombre,
+      presque:connus.filter(function(d){return PRO_ETAPES.filter(function(e){return !!(d.jalonsPro||{})[e[0]];}).length===3;}),
+      sansPush:cl.filter(function(d){return !d.push;}).length};
+  }
   const PARCOURS_MURS=[['catalogue','N’a jamais touché au catalogue'],
     ['config','A regardé, n’a rien configuré'],
     ['paiement','A configuré, jamais vu le paiement'],
@@ -10331,7 +10356,7 @@
         // pas qui a déjà la sienne : on se tait plutôt que d'accuser tout le monde.
         if(!S.adminArtsLoaded)return '';
         const connus={};(arts||[]).forEach(function(a){if(a.uid)connus[a.uid]=1;});
-        const att=(S.adminDrafts||[]).filter(function(d){return !connus[d.uid];});
+        const att=(S.adminDrafts||[]).filter(function(d){return !connus[d.uid]&&!compteDeTest(d);});
         if(!att.length)return '';
         const jours=function(ms){if(!ms)return '';const n=Math.floor((Date.now()-ms)/86400000);return n<=0?"aujourd'hui":(n===1?'hier':('il y a '+n+' jours'));};
         const lignes=att.map(function(d){return `<div class="card listrow" style="align-items:flex-start;border-left:3px solid var(--coral)">
@@ -10339,6 +10364,14 @@
           <div class="lr-main">
             <div class="row between" style="gap:8px;align-items:center"><b class="lr-name">${esc(d.name)}</b><span class="chip coral" style="flex:none">Jamais envoyée</span></div>
             <div class="mini lr-sub">Compte créé ${jours(d.createdAt)}${d.createdAt?' · '+new Date(d.createdAt).toLocaleDateString('fr-FR'):''}${d.push?' · notifications actives':''}</div>
+            ${(function(){
+              if(!d.jalonsPro)return `<div class="mini" style="margin-top:5px;color:var(--muted)">Dossier commencé avant cette mesure&nbsp;: son avancement est resté sur son téléphone.</div>`;
+              const faits=PRO_ETAPES.filter(function(e){return !!d.jalonsPro[e[0]];});
+              const manque=PRO_ETAPES.filter(function(e){return !d.jalonsPro[e[0]];});
+              return `<div class="row" style="gap:5px;margin-top:6px;flex-wrap:wrap">${PRO_ETAPES.map(function(e){
+                const ok=!!d.jalonsPro[e[0]];
+                return `<span class="chip ${ok?'good':'coral'}" style="flex:none;font-size:10.5px;padding:3px 8px">${ok?I.check:''} ${esc(e[1])}</span>`;}).join('')}</div>
+                <div class="mini" style="margin-top:4px;color:${manque.length===1?'var(--coral-deep)':'var(--muted)'};font-weight:${manque.length===1?'700':'400'}">${faits.length} étape${faits.length>1?'s':''} sur 4${manque.length===1?` — il ne manque que « ${esc(manque[0][1])} »`:''}</div>`;})()}
             <div class="row" style="gap:10px;margin-top:7px;flex-wrap:wrap">
               ${d.email?`<a href="mailto:${esc(d.email)}?subject=${encodeURIComponent('Votre inscription Ti-Services')}" style="color:var(--teal-deep);font-weight:700;font-size:13px;word-break:break-all">${I.mail||''} ${esc(d.email)}</a>`:`<span class="mini">E-mail inconnu</span>`}
               ${d.phone?`<a href="tel:${telClean(d.phone)}" style="color:var(--teal-deep);font-weight:700;font-size:13px">${esc(d.phone)}</a>`:''}
@@ -10347,7 +10380,18 @@
           </div></div>`;}).join('');
         // Repliable comme ses voisines : la liste peut être longue et repousser tout le
         // reste de la console. Le compteur reste visible sur l'en-tête, replié ou non.
+        const PP=parcoursPro(att);
+        const resume=PP.connus?`<div style="margin-top:11px;padding:11px 13px;background:var(--sand);border-radius:12px">
+          <div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Sur ${PP.connus} dossier${PP.connus>1?'s':''} suivi${PP.connus>1?'s':''}</div>
+          ${PP.etapes.slice().sort(function(a,b){return a.faites-b.faites;}).map(function(e){
+            const manquants=PP.connus-e.faites;
+            return `<div class="row between" style="align-items:center;margin-top:7px;gap:10px"><span class="sub">${esc(e.nm)}</span><span class="chip ${manquants?'coral':'good'}" style="flex:none">${manquants?(manquants+(manquants>1?' ne l’ont pas faite':' ne l’a pas faite')):'tous l’ont faite'}</span></div>`;}).join('')}
+          ${PP.presque.length?`<div class="mini" style="margin-top:9px;color:var(--coral-deep);line-height:1.5"><b>${PP.presque.length} ${PP.presque.length>1?'sont':'est'} à UNE étape de pouvoir envoyer</b> — ${PP.presque.map(function(d){return esc((d.name||'').split(' ')[0]);}).join(', ')}. C'est là qu'un appel rapporte le plus.</div>`:''}
+          ${PP.sansPush?`<div class="mini" style="margin-top:6px;color:var(--muted)">${PP.sansPush} ne ${PP.sansPush>1?'peuvent':'peut'} recevoir aucune notification&nbsp;: un rappel dans l'application ne les atteindrait pas.</div>`:''}
+        </div>`:'';
+        const nonSuivis=PP.inconnus?`<p class="mini" style="margin-top:9px;color:var(--muted);line-height:1.5">${PP.inconnus} dossier${PP.inconnus>1?'s ont été commencés':' a été commencé'} avant cette mesure&nbsp;: leur avancement est resté sur leur téléphone et ne remontera qu'à leur prochaine modification.</p>`:'';
         const corps=`<p class="mini" style="color:var(--muted);line-height:1.55">Ces personnes ont créé leur compte prestataire mais n'ont jamais envoyé leur candidature, elles n'ont donc aucune fiche à valider. Le plus souvent leur dossier est déjà rempli&nbsp;: un appel suffit. Leurs pièces (SIRET, attestation) restent sur leur téléphone tant qu'elles n'ont pas envoyé, elles n'apparaissent pas ici.</p>
+          ${resume}${nonSuivis}
           ${lignes}`;
         return foldCard('a-drafts',I.clock,'Candidatures jamais envoyées','Comptes créés, dossier jamais envoyé, un appel suffit',corps,chip('coral',att.length));})()}
       ${molBlock?foldCard('a-mollie',I.card,'Prêts à encaisser','Qui pourra vraiment accepter une mission le 1er octobre',molBlock,molBloques.length?chip('coral',molBloques.length+' à relancer'):chip('good',molPrets.length+' prêts')):''}
@@ -11561,6 +11605,9 @@
         // sinon la ligne s'afficherait sans date — l'ancienneté est ce qui décide qui
         // rappeler en premier.
         createdAt:(d.createdAt&&d.createdAt.toMillis)?d.createdAt.toMillis():(Number(d.createdAt)||0),
+        jalonsPro:(d.jalonsPro&&typeof d.jalonsPro==='object')?d.jalonsPro:null,
+        jalonsProAt:Number(d.jalonsProAt)||0,
+        test:!!d.test,email:d.email||'',
         push:(Array.isArray(d.pushTokens)?d.pushTokens.length:0)});
     });
     out.sort(function(a,b){return (b.createdAt||0)-(a.createdAt||0);});
@@ -14364,7 +14411,40 @@
      groupées, à son rythme, puis clique « Envoyer ma candidature ». Tant qu'il n'a pas
      envoyé, aucune fiche `artisans` n'existe → il n'apparaît pas dans la file admin. */
   function proDraftKey(){return 'tiProDraft:'+((FB&&FB.auth&&FB.auth.currentUser&&FB.auth.currentUser.uid)||'anon');}
-  function saveProDraft(){try{const f=S.proForm||{};const j={};['name','phone','siret','address','statusType','legalForm','capital','rcsCity','birth','bio','refCode','insurer','insuranceName','insuranceUrl','diplomaOther','otherService','otherPrice','otherUnit','photo','email'].forEach(function(k){if(f[k]!=null)j[k]=f[k];});j.insuranceDoc=!!f.insuranceDoc;j.mandat=!!f.mandat;j.cgu=!!f.cgu;j.charte=!!f.charte;j.acceptsGrille=!!f.acceptsGrille;j.desiredNet=f.desiredNet||{};j.cats=Array.isArray(f.cats)?f.cats:[];j.rates=f.rates||{};j.diplomas=Array.isArray(f.diplomas)?f.diplomas:[];j.googleAuth=!!f.googleAuth;j.authed=!!f.authed;localStorage.setItem(proDraftKey(),JSON.stringify(j));}catch(_){}}
+  function saveProDraft(){noterJalonsPro();try{const f=S.proForm||{};const j={};['name','phone','siret','address','statusType','legalForm','capital','rcsCity','birth','bio','refCode','insurer','insuranceName','insuranceUrl','diplomaOther','otherService','otherPrice','otherUnit','photo','email'].forEach(function(k){if(f[k]!=null)j[k]=f[k];});j.insuranceDoc=!!f.insuranceDoc;j.mandat=!!f.mandat;j.cgu=!!f.cgu;j.charte=!!f.charte;j.acceptsGrille=!!f.acceptsGrille;j.desiredNet=f.desiredNet||{};j.cats=Array.isArray(f.cats)?f.cats:[];j.rates=f.rates||{};j.diplomas=Array.isArray(f.diplomas)?f.diplomas:[];j.googleAuth=!!f.googleAuth;j.authed=!!f.authed;localStorage.setItem(proDraftKey(),JSON.stringify(j));}catch(_){}}
+  /* ══ OÙ S'ARRÊTE UNE CANDIDATURE ══════════════════════════════════════════════
+     « On a où s'arrêtent les clients dans la console, mais pas où s'arrêtent les
+     prestataires quand ils ne finalisent pas leur inscription. »
+
+     ET C'ÉTAIT IMPOSSIBLE À SAVOIR : le dossier d'un prestataire vit dans le
+     `localStorage` de SON téléphone jusqu'à l'envoi. La console voyait qu'un compte
+     existait sans fiche — rien de plus. Impossible de distinguer celui qui n'a rien
+     rempli de celui qui a tout fait sauf téléverser son attestation.
+
+     ON ÉCRIT L'ÉTAT COURANT DES QUATRE ÉTAPES, pas un historique : « il manque
+     l'assurance » appelle un geste, « il a eu son assurance un jour » n'en appelle
+     aucun. Et ces quatre étapes ne sont PAS une marche d'escalier — l'écran les
+     présente en quatre cartes qu'on remplit dans l'ordre qu'on veut. On ne désigne donc
+     pas un mur comme pour les clients : on compte, étape par étape, combien l'ont
+     franchie. Celle qui bloque est celle qui manque le plus souvent.
+
+     ON N'ÉCRIT QUE SI ÇA CHANGE : `saveProDraft` est appelé à chaque enregistrement,
+     et réécrire la fiche à l'identique n'apprendrait rien à personne. */
+  const PRO_ETAPES=[['id','Identité & entreprise'],['ins','Assurance'],
+    ['svc','Métiers & tarifs'],['acc','Engagements']];
+  function jalonsProDe(f){f=f||{};return {id:!!draftIdDone(f),ins:!!draftInsDone(f),
+    svc:!!draftSvcDone(f),acc:!!draftAccDone(f)};}
+  function noterJalonsPro(){
+    try{
+      if(!(FB&&FB.auth&&FB.auth.currentUser)||isDemo())return;
+      const j=jalonsProDe(S.proForm);
+      const cle=PRO_ETAPES.map(function(e){return j[e[0]]?'1':'0';}).join('');
+      if(S._jalonsProEcrits===cle)return;
+      S._jalonsProEcrits=cle;
+      FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),
+        {jalonsPro:j,jalonsProAt:Date.now()},{merge:true}).catch(function(){});
+    }catch(_){}
+  }
   function loadProDraft(){try{const r=localStorage.getItem(proDraftKey());if(r){const j=JSON.parse(r);S.proForm=Object.assign(S.proForm||{},j);}}catch(_){}}
   async function uploadDraftInsurance(file){
     try{
