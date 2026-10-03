@@ -14411,7 +14411,70 @@
      groupées, à son rythme, puis clique « Envoyer ma candidature ». Tant qu'il n'a pas
      envoyé, aucune fiche `artisans` n'existe → il n'apparaît pas dans la file admin. */
   function proDraftKey(){return 'tiProDraft:'+((FB&&FB.auth&&FB.auth.currentUser&&FB.auth.currentUser.uid)||'anon');}
-  function saveProDraft(){noterJalonsPro();try{const f=S.proForm||{};const j={};['name','phone','siret','address','statusType','legalForm','capital','rcsCity','birth','bio','refCode','insurer','insuranceName','insuranceUrl','diplomaOther','otherService','otherPrice','otherUnit','photo','email'].forEach(function(k){if(f[k]!=null)j[k]=f[k];});j.insuranceDoc=!!f.insuranceDoc;j.mandat=!!f.mandat;j.cgu=!!f.cgu;j.charte=!!f.charte;j.acceptsGrille=!!f.acceptsGrille;j.desiredNet=f.desiredNet||{};j.cats=Array.isArray(f.cats)?f.cats:[];j.rates=f.rates||{};j.diplomas=Array.isArray(f.diplomas)?f.diplomas:[];j.googleAuth=!!f.googleAuth;j.authed=!!f.authed;localStorage.setItem(proDraftKey(),JSON.stringify(j));}catch(_){}}
+  function saveProDraft(){noterJalonsPro();try{const f=S.proForm||{};const j={};['name','phone','siret','address','statusType','legalForm','capital','rcsCity','birth','bio','refCode','insurer','insuranceName','insuranceUrl','diplomaOther','otherService','otherPrice','otherUnit','photo','email'].forEach(function(k){if(f[k]!=null)j[k]=f[k];});j.insuranceDoc=!!f.insuranceDoc;j.mandat=!!f.mandat;j.cgu=!!f.cgu;j.charte=!!f.charte;j.acceptsGrille=!!f.acceptsGrille;j.desiredNet=f.desiredNet||{};j.cats=Array.isArray(f.cats)?f.cats:[];j.rates=f.rates||{};j.diplomas=Array.isArray(f.diplomas)?f.diplomas:[];j.googleAuth=!!f.googleAuth;j.authed=!!f.authed;localStorage.setItem(proDraftKey(),JSON.stringify(j));sauverBrouillonCloud(j);}catch(_){}}
+  /* ══ LE DOSSIER SUIT LE COMPTE, PAS LE TÉLÉPHONE ═══════════════════════════════
+     « Ce qu'il a fait ne s'enregistre que dans son téléphone ; s'il veut continuer
+     depuis un autre appareil, il ne retrouve pas ses informations ? »
+
+     Non, et le commentaire d'`enterProDraft` l'écrivait noir sur blanc : « superpose
+     les valeurs déjà saisies (MÊME APPAREIL) ». Tout était perdu — nom, téléphone,
+     SIRET, adresse, date de naissance, forme juridique, capital, bio, assureur,
+     métiers, tarifs, diplômes, et les trois cases d'engagement. Y compris l'attestation :
+     le FICHIER restait bien dans le stockage, mais l'adresse qui y mène vivait dans le
+     brouillon local, donc il fallait la téléverser une seconde fois.
+
+     Or c'est le parcours ORDINAIRE : on s'inscrit sur son téléphone entre deux
+     chantiers, on reprend le soir sur l'ordinateur — ce que l'application recommande
+     elle-même pour l'étape suivante. Celui qui recommençait tout de zéro ne
+     recommençait pas, il abandonnait.
+
+     LE LOCAL RESTE LA RÉFÉRENCE ET REND LA MAIN TOUT DE SUITE ; le compte est une
+     COPIE différée, et au retour elle ne REMPLIT QUE LES CASES VIDES. Jamais elle
+     n'écrase ce qui est saisi ici : c'est la seule règle qui ne peut pas perdre une
+     frappe, quel que soit l'ordre dans lequel les deux appareils ont écrit.
+     La photo est la seule chose qui peut peser : au-delà de ~90 Ko elle reste locale,
+     elle se rechoisit en deux touchers et ne vaut pas de gonfler la fiche. */
+  const PRO_DRAFT_PHOTO_MAX=120000;
+  let _proDraftCloudT=null;
+  function sauverBrouillonCloud(j){
+    try{
+      if(!(FB&&FB.auth&&FB.auth.currentUser)||isDemo())return;
+      const c=Object.assign({},j);
+      if(typeof c.photo==='string'&&c.photo.length>PRO_DRAFT_PHOTO_MAX)delete c.photo;
+      c.at=Date.now();
+      // On regroupe la frappe : une écriture par pause, pas une par lettre.
+      if(_proDraftCloudT)clearTimeout(_proDraftCloudT);
+      _proDraftCloudT=setTimeout(function(){_proDraftCloudT=null;
+        try{ FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{proDraft:c},{merge:true}).catch(function(){}); }catch(_){}
+      },900);
+    }catch(_){}
+  }
+  // Envoyée, la candidature n'est plus un brouillon : la copie quitte le compte — elle
+  // porte le SIRET, la date de naissance et la photo, tout cela vit désormais dans la
+  // fiche artisan. Et l'on ANNULE l'écriture en attente, sinon elle reviendrait 900 ms
+  // plus tard reposer ce qu'on vient de retirer.
+  function oublierBrouillonCloud(){
+    try{
+      if(_proDraftCloudT){clearTimeout(_proDraftCloudT);_proDraftCloudT=null;}
+      if(!(FB&&FB.auth&&FB.auth.currentUser)||isDemo())return;
+      FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{proDraft:null},{merge:true}).catch(function(){});
+    }catch(_){}
+  }
+  // Ce qui manque ICI et qui existe LÀ-BAS. Une case vide est une case à remplir ;
+  // une case déjà saisie ne se touche pas.
+  function fusionnerBrouillonCloud(cloud){
+    if(!cloud||typeof cloud!=='object')return 0;
+    const f=S.proForm||{};let repris=0;
+    const vide=function(v){return v==null||v===''||(Array.isArray(v)&&!v.length)
+      ||(typeof v==='object'&&!Array.isArray(v)&&!Object.keys(v).length)||v===false;};
+    Object.keys(cloud).forEach(function(k){
+      if(k==='at')return;
+      if(!vide(f[k]))return;
+      if(vide(cloud[k]))return;
+      f[k]=cloud[k];repris++;
+    });
+    return repris;
+  }
   /* ══ OÙ S'ARRÊTE UNE CANDIDATURE ══════════════════════════════════════════════
      « On a où s'arrêtent les clients dans la console, mais pas où s'arrêtent les
      prestataires quand ils ne finalisent pas leur inscription. »
@@ -16967,6 +17030,10 @@
           // doit continuer à le voir dans ses clients — sinon un client réel, avec son
           // historique de commandes, disparaît des écrans le jour où il devient prestataire.
           try{ FB.f.setDoc(FB.f.doc(FB.db,'users',u.uid),{role:'artisan',wasClient:true,proSuggest:false,proSuggestAnswer:'yes',proSuggestAnsweredAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
+          // Pas de copie de dossier à reprendre ici, et ce n'est pas un oubli : le rôle
+          // bascule À L'INSTANT, il n'existe donc aucun brouillon à retrouver. Sur un
+          // SECOND appareil, ce compte est déjà « artisan » et passe par `loadUserProfile`,
+          // qui a la fiche en main et la transmet.
           enterProDraft(u,(S.account&&S.account.name)||'');
           return;
         }
@@ -18575,9 +18642,10 @@
   }
   // Entrée dans l'espace pro en état « brouillon » (inscription progressive Google) : compte
   // créé, candidature à compléter/envoyer. Récupère la progression locale si présente.
-  function enterProDraft(user,nm){
+  function enterProDraft(user,nm,cloud){
     S.proForm=Object.assign({name:'',phone:'',email:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,cgu:false,charte:false,acceptsGrille:false,rates:{},otherService:'',photo:'',refCode:storedParrain()},S.proForm||{});
-    loadProDraft(); // superpose les valeurs déjà saisies (même appareil)
+    loadProDraft();                      // ce qui a été saisi SUR CET APPAREIL
+    const _repris=fusionnerBrouillonCloud(cloud);   // puis ce qui manque, venu du compte
     S.proForm.authed=true; // compte déjà créé (Google ou e-mail) → l'envoi réutilisera la session
     if(!(S.proForm.name||'').trim())S.proForm.name=(user.displayName||nm||'').trim();
     S.proForm.email=user.email||S.proForm.email||'';
@@ -18587,6 +18655,9 @@
     S.persona='pro';S.proStatus='draft';S.proStep=null;S.onboarded=true;S.authView=null;
     try{localStorage.removeItem('tiParrain');localStorage.removeItem('tiParrainAt');}catch(_){}
     render();
+    // On le DIT : retrouver son dossier sans un mot laisserait croire qu'on a retapé
+    // pour rien, et il n'y a aucune raison de taire une bonne nouvelle.
+    if(_repris)setTimeout(function(){try{toast('Nous avons retrouvé votre dossier ✓');}catch(_){}},500);
   }
   async function loadUserProfile(user){
     try{
@@ -18651,14 +18722,14 @@
         // ne perde pas le client qu'il a été — ses réservations, sa carte, ses adresses.
         const etaitClient=!!(data&&(data.role||'client')==='client');
         try{ FB.f.setDoc(ref,Object.assign({name:(draftNm||name||'').trim(),email:user.email||'',role:'artisan',createdAt:FB.f.serverTimestamp()},etaitClient?{wasClient:true}:{}),{merge:true}); }catch(_){}
-        enterProDraft(user,draftNm||name);
+        enterProDraft(user,draftNm||name,data&&data.proDraft);
         return;
       }
       // Compte prestataire : on route vers l'espace pro (statut lu dans la fiche artisans).
       if((data&&data.role)==='artisan' || ad){
         // Artisan « brouillon » (role=artisan mais AUCUNE fiche artisans encore) : candidature
         // pas envoyée → on rouvre son profil à compléter, pas l'espace missions.
-        if(!ad){ enterProDraft(user,name); return; }
+        if(!ad){ enterProDraft(user,name,data&&data.proDraft); return; }
         S.account={name:name,email:user.email||'',uid:user.uid,role:'artisan'};
         S.persona='pro'; S.proName=name; S.proPhone=(ad&&ad.phone)||(data&&data.phone)||'';
         // Identité affichée sur les factures : nom légal + adresse RÉELS du prestataire
@@ -19023,7 +19094,7 @@
       S.account={name:(f.name||'').trim()||((email||'').split('@')[0]),email:email,uid:uid,role:'artisan'};
       S.persona='pro'; S.proName=(f.name||'').trim(); S.proStatus='pending'; S.proStep=null; S.onboarded=true; S.authView=null; S.proNav='home';
       S.referralCode=genReferralCode((f.name||'').trim(),uid);
-      try{localStorage.removeItem('tiSignupIntent');localStorage.removeItem('tiParrain');localStorage.removeItem('tiParrainAt');localStorage.removeItem(proDraftKey());}catch(_){} // intention, parrainage & brouillon consommés
+      try{localStorage.removeItem('tiSignupIntent');localStorage.removeItem('tiParrain');localStorage.removeItem('tiParrainAt');localStorage.removeItem(proDraftKey());}catch(_){} oublierBrouillonCloud(); // intention, parrainage & brouillon consommés
       ensureBetaMollie(); // BÊTA : paiements marqués actifs pour pouvoir accepter (démo). No-op en prod.
       S.proInsuranceStatus='attente'; S.proInsuranceUrl=insuranceUrl; S.proCats=f.cats.slice();
       subscribeProStatus(uid);
