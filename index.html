@@ -4124,6 +4124,9 @@
     pilates:{nm:'Clara Vidal',ini:'CV',rating:4.9,jobs:61},
     yoga:{nm:'Maya Sereno',ini:'MS',rating:5.0,jobs:74}
   };
+  // Démonstration : le scénario montre des prestataires assurés. Posé ici en une
+  // ligne plutôt que recopié sur vingt fiches, et jamais déduit côté client.
+  Object.keys(PROVIDERS).forEach(function(k){PROVIDERS[k].insured=true;});
   const FREQS=[{id:'ponctuelle',lbl:'Ponctuelle',short:'ponctuelle'},{id:'hebdo',lbl:'Chaque semaine',short:'chaque semaine'},{id:'bihebdo',lbl:'Toutes les 2 sem.',short:'toutes les 2 semaines'},{id:'mensuelle',lbl:'Chaque mois',short:'chaque mois'}];
   const freqInfo=(id)=>FREQS.find(f=>f.id===id)||FREQS[0];
   function occLabels(freq){if(freq==='hebdo')return ['Aujourd’hui','Semaine prochaine','Dans 2 semaines','Dans 3 semaines'];if(freq==='bihebdo')return ['Aujourd’hui','Dans 2 semaines','Dans 4 semaines'];if(freq==='mensuelle')return ['Aujourd’hui','Le mois prochain'];return ['Aujourd’hui'];}
@@ -4470,8 +4473,22 @@
   // ni PDF ni image se propose au téléchargement plutôt que de s'afficher en blanc.
   function docEstPdf(u){ return /\.pdf(\?|$|%3F)/i.test(String(u||'')); }
   function docEstImage(u){ return /\.(jpe?g|png|webp|gif|heic|heif)(\?|$|%3F)/i.test(String(u||'')); }
-  function insStatus(a){ if(!a)return 'none'; if(a.insuranceStatus)return a.insuranceStatus; if(a.status==='valide'&&a.insured)return 'valide'; if(a.insuranceUrl||a.insured)return 'attente'; return 'none'; }
-  function insLabel(st){ return st==='valide'?['good','Validée']:st==='refuse'?['coral','Refusée']:st==='attente'?['grey','À vérifier']:['coral','Manquante']; }
+  // « AUCUNE » N'EST PAS « MANQUANTE ». Depuis que le prestataire peut DÉCLARER qu'il
+  // n'a pas de RC, les deux se confondaient sous un même mot — or elles n'appellent pas
+  // le même geste : « manquante » veut dire qu'on attend un document et qu'on le
+  // réclame, « déclarée absente » veut dire qu'il n'y en a pas et qu'il y a une
+  // décision à prendre. La déclaration seule suffit à l'établir : un dossier qui porte
+  // `insuranceNone` sans statut écrit (relu d'une version plus ancienne) se lit quand même.
+  function insStatus(a){ if(!a)return 'none'; if(a.insuranceStatus)return a.insuranceStatus; if(a.insuranceNone)return 'aucune'; if(a.status==='valide'&&a.insured)return 'valide'; if(a.insuranceUrl||a.insured)return 'attente'; return 'none'; }
+  /* CE QUI EMPÊCHE DE VALIDER, EN UN SEUL ENDROIT. La question était posée de TROIS
+     façons différentes — `insStatus(a)==='valide'` pour griser le bouton, `!a.insured`
+     pour la phrase rouge, `a.insured` dans le gestionnaire — et il a suffi d'un état de
+     plus pour qu'elles ne disent plus la même chose. Un prestataire qui DÉCLARE ne pas
+     avoir de RC n'a rien à faire vérifier : son dossier est complet, le fait est connu,
+     et c'est à l'éditeur de trancher. Sans cela la case du prestataire débloquait son
+     formulaire pour l'arrêter contre une porte que personne ne pouvait ouvrir. */
+  function insPeutValider(a){ const st=insStatus(a); return st==='valide'||st==='aucune'; }
+  function insLabel(st){ return st==='valide'?['good','Validée']:st==='refuse'?['coral','Refusée']:st==='attente'?['grey','À vérifier']:st==='aucune'?['coral','Déclarée absente']:['coral','Manquante']; }
   // — ICÔNE D'UN MÉTIER CRÉÉ DEPUIS LA CONSOLE —
   // Un métier ajouté sans code recevait le rond-plus générique À VIE : `svcIco` renvoyait
   // `I.other` dès que le service était `custom`, AVANT même de regarder la table. Vingt
@@ -9439,7 +9456,7 @@
         <li>Avantage : <b>commission ${FOUNDER_COMM_PCT} %</b> pendant <b>${FOUNDER_DAYS} jours</b> OU jusqu'à <b>${FOUNDER_GROSS_CAP.toLocaleString('fr-FR')} €</b> de prestations (au premier atteint). Le compte à rebours ne démarre <b>jamais avant l'ouverture aux clients</b> (1er octobre 2026).</li>
         <li>À l'expiration : le badge devient « Ambassadeur, expiré » (visible en console) et le prestataire bascule sur son palier de fidélité normal.</li></ul>
         <p class="manq">Qui voit quel badge ?</p>
-        <ul><li><b>Côté client</b> : « ${'✓'} Vérifié · Assuré » (tout prestataire validé), « Fondateur » dans l'annuaire au moment du choix, « Ambassadeur » sur la carte du prestataire après acceptation. <b>Jamais</b> de compteur de missions, de palier ni de taux de commission.</li>
+        <ul><li><b>Côté client</b> : « ${'✓'} Vérifié · Assuré » (prestataire validé ET assuré ; « ${'✓'} Vérifié » seul s'il a déclaré ne pas avoir de RC), « Fondateur » dans l'annuaire au moment du choix, « Ambassadeur » sur la carte du prestataire après acceptation. <b>Jamais</b> de compteur de missions, de palier ni de taux de commission.</li>
         <li><b>Côté prestataire</b> : son palier (Bronze → Platine), sa progression, son badge Ambassadeur avec l'échéance, et « +5 missions » par filleul validé.</li>
         <li><b>Console (vous)</b> : sur chaque fiche artisan, palier et taux courant, badge Ambassadeur actif/expiré, statut Mollie, absences signalées.</li></ul>`)}
       ${sec('8 · Récurrences & abonnements',`
@@ -9965,9 +9982,10 @@
       ${(a.cats&&a.cats.includes('autre')&&a.other)?`<div class="banner teal" style="margin-top:7px">${I.other}<span>Service « Autre » proposé&nbsp;: <b>${esc(a.other)}</b>${a.otherPrice>0?`, il veut percevoir <b>${a.otherPrice} €</b> ${a.otherUnit==='forfait'?'par prestation':'de l\'heure'}`:', <b>aucun prix indiqué</b>'}.</span></div>`:''}
       <div class="row" style="gap:6px;margin-top:7px;flex-wrap:wrap"><span class="chip ${a.siret?'good':'coral'}">SIRET ${a.siret?'fourni':'manquant'}</span>${(function(){const l=insLabel(insStatus(a));return `<span class="chip ${l[0]}">Assurance ${l[1].toLowerCase()}</span>`;})()}</div>
       <p class="mini" style="margin-top:9px;color:var(--muted)">Échangez avant de décider&nbsp;:</p>${contactRow(a)}
-      <div class="row" style="gap:8px;margin-top:10px"><button class="btn good sm" data-adm="valid-art:${a.id}" ${(insStatus(a)==='valide'&&a.siret)?'':'disabled'}>Valider</button><button class="btn ghost sm" data-adm="rej-art:${a.id}">Refuser</button><button class="btn ghost sm" data-adm="art:${a.id}">Fiche</button></div>
-      ${(insStatus(a)!=='valide')?`<p class="mini" style="margin-top:6px;color:var(--muted)">Ouvrez la fiche pour vérifier et valider l'attestation avant d'accepter le prestataire.</p>`:''}
-      ${!a.insured?`<p class="mini" style="margin-top:6px;color:var(--coral-deep)">Attestation d'assurance manquante, validation impossible.</p>`:''}</div>`));
+      <div class="row" style="gap:8px;margin-top:10px"><button class="btn ${insStatus(a)==='aucune'?'ghost':'good'} sm" data-adm="valid-art:${a.id}" ${(insPeutValider(a)&&a.siret)?'':'disabled'}>${insStatus(a)==='aucune'?'Valider sans assurance':'Valider'}</button><button class="btn ghost sm" data-adm="rej-art:${a.id}">Refuser</button><button class="btn ghost sm" data-adm="art:${a.id}">Fiche</button></div>
+      ${(insStatus(a)==='attente'||insStatus(a)==='refuse')?`<p class="mini" style="margin-top:6px;color:var(--muted)">Ouvrez la fiche pour vérifier et valider l'attestation avant d'accepter le prestataire.</p>`:''}
+      ${insStatus(a)==='none'?`<p class="mini" style="margin-top:6px;color:var(--coral-deep)">Attestation d'assurance manquante, validation impossible.</p>`:''}
+      ${insStatus(a)==='aucune'?`<p class="mini" style="margin-top:6px;color:var(--coral-deep)">Il a <b>déclaré ne pas avoir d'assurance responsabilité civile</b>. Le valider le rend visible aux clients, sans le repère « Assuré ».</p>`:''}</div>`));
     pendC.forEach(cc=>q.push(`<div class="card" style="padding:14px;margin-top:10px;border-left:4px solid var(--warn)">
       <div class="row between"><b style="font-size:14px">${esc(cc.name)}</b><span class="chip grey">Client</span></div>
       <div class="mini" style="margin-top:3px">${esc(migZone(cc.zone))} · ${esc(cc.card)}</div>
@@ -10866,7 +10884,7 @@
           ${fRow('SIRET',a.siret?`<button class="sirettap" data-adm="copysiret:${a.id}" title="Copier le numéro">${I.copy} <span class="money">${esc(fmtSiret(a.siret))}</span></button>
             <a class="siretlink" href="https://annuaire-entreprises.data.gouv.fr/etablissement/${esc(a.siret)}" target="_blank" rel="noopener">Vérifier à l'annuaire ›</a>`:'<span class="money">—</span>')}
           ${artLegalRows(a)}
-          ${fRow('Assurance RC',`${(function(){const st=insStatus(a),l=insLabel(st);return `<span class="chip ${l[0]}">${l[1]}</span>`;})()}${a.insurer?`<div class="mini" style="margin-top:4px;color:var(--ink);font-weight:600">${esc(a.insurer)}</div>`:''}${lienSur(a.insuranceUrl)?`<div style="margin-top:4px"><button class="linklike" data-act="doc-open" data-src="${esc(lienSur(a.insuranceUrl))}" data-nom="Attestation d'assurance" style="color:var(--teal-deep);font-weight:650">${I.other} Voir l'attestation</button></div>`:(a.insuranceUrl?`<div class="mini" style="margin-top:4px;color:var(--coral-deep)">Adresse de l'attestation non exploitable&nbsp;: le document doit être redéposé.</div>`:`<div class="mini" style="margin-top:4px">Attestation non jointe</div>`)}`)}
+          ${fRow('Assurance RC',`${(function(){const st=insStatus(a),l=insLabel(st);return `<span class="chip ${l[0]}">${l[1]}</span>`;})()}${a.insurer?`<div class="mini" style="margin-top:4px;color:var(--ink);font-weight:600">${esc(a.insurer)}</div>`:''}${lienSur(a.insuranceUrl)?`<div style="margin-top:4px"><button class="linklike" data-act="doc-open" data-src="${esc(lienSur(a.insuranceUrl))}" data-nom="Attestation d'assurance" style="color:var(--teal-deep);font-weight:650">${I.other} Voir l'attestation</button></div>`:(a.insuranceUrl?`<div class="mini" style="margin-top:4px;color:var(--coral-deep)">Adresse de l'attestation non exploitable&nbsp;: le document doit être redéposé.</div>`:(insStatus(a)==='aucune'?`<div class="mini" style="margin-top:4px;color:var(--coral-deep)">Déclare ne pas avoir d'assurance responsabilité civile.</div>`:`<div class="mini" style="margin-top:4px">Attestation non jointe</div>`))}`)}
           ${fRow('Paiements (Mollie)',`${(function(){const st=a.mollieStatus||'none';
             if(st==='active')return `<span class="chip good">${I.check} Actif</span>`;
             if(st==='pending'&&a.mollieOnb==='needs-data')return `<span class="chip coral">${I.clip} Dossier à compléter</span><div class="mini" style="margin-top:4px">Un appel de 2 min peut débloquer, il ne lui manque qu'une pièce ou l'IBAN.</div>${molDepuisTxt(a)}`;
@@ -10906,7 +10924,7 @@
           ${contactRow(ct)}
           <button class="btn ghost sm" data-adm="art-msg:${a.id}" style="margin-top:10px;width:100%">${I.chat} Message interne (messagerie Ti-Services)</button>
         </div>`;})()}
-        ${a.status==='attente'?`<div class="row" style="gap:8px;margin-top:14px"><button class="btn good" data-adm="valid-art:${a.id}" ${(insStatus(a)==='valide'&&a.siret)?'':'disabled'}>Valider le prestataire</button><button class="btn ghost" data-adm="rej-art:${a.id}">Refuser</button></div>${(insStatus(a)!=='valide'||!a.siret)?`<p class="mini" style="margin-top:8px;color:var(--coral-deep)">${!a.siret?'SIRET manquant. ':''}${insStatus(a)==='none'?'Attestation d’assurance manquante. ':insStatus(a)==='attente'?'Attestation à vérifier et valider ci-dessus. ':insStatus(a)==='refuse'?'Attestation refusée. ':''}Validation du prestataire impossible tant que le dossier n'est pas complet.</p>`:''}`:''}
+        ${a.status==='attente'?`<div class="row" style="gap:8px;margin-top:14px"><button class="btn ${insStatus(a)==='aucune'?'ghost':'good'}" data-adm="valid-art:${a.id}" ${(insPeutValider(a)&&a.siret)?'':'disabled'}>${insStatus(a)==='aucune'?'Valider sans assurance':'Valider le prestataire'}</button><button class="btn ghost" data-adm="rej-art:${a.id}">Refuser</button></div>${(!insPeutValider(a)||!a.siret)?`<p class="mini" style="margin-top:8px;color:var(--coral-deep)">${!a.siret?'SIRET manquant. ':''}${insStatus(a)==='none'?'Attestation d’assurance manquante. ':insStatus(a)==='attente'?'Attestation à vérifier et valider ci-dessus. ':insStatus(a)==='refuse'?'Attestation refusée. ':''}Validation du prestataire impossible tant que le dossier n'est pas complet.</p>`:(insStatus(a)==='aucune'?`<p class="mini" style="margin-top:8px;color:var(--coral-deep)">Il a <b>déclaré ne pas avoir d'assurance responsabilité civile</b>. Le valider le rend visible aux clients, sans le repère « Assuré ».</p>`:'')}`:''}
         ${a.status==='refuse'?`<div class="row" style="gap:8px;margin-top:14px"><button class="btn ghost" data-adm="reexam-art:${a.id}">Réexaminer la candidature</button></div>`:''}
         <div style="height:20px"></div>
         ${purgeBtns(a.uid||a.id,a.name)}
@@ -12698,7 +12716,7 @@
       <div class="h-hello" style="margin-top:8px;text-align:center">${head.t}</div><p class="sub" style="text-align:center">${head.d}</p>
       ${(m.slotFlex&&m.status==='pending')?`<p class="mini" style="text-align:center;margin-top:4px">${I.clock} Créneau souhaité&nbsp;: ${m.when} · ${flexTxtClient(m)}, un prestataire vous proposera une heure précise.</p>`:''}
       ${(m.slotFlex&&m.proposedSlot&&m.status!=='pending')?`<div class="banner teal" style="margin-top:10px">${I.clock}<span>${p?esc(p.nm.split(' ')[0]):'Le prestataire'} a confirmé son passage à <b>${m.slot}</b> (votre souhait&nbsp;: ${flexTxtClient(m)}).</span></div>`:''}
-      ${m.status==='pending'?(m.preferredUid?`<div class="card" style="padding:16px;margin-top:12px"><div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="background:var(--teal-wash);color:var(--teal-deep)">${I.clock}</span><div><b style="font-size:14px">Demande réservée à ${esc((m.preferredName||'votre prestataire').split(' ')[0])}</b><p class="mini" style="margin-top:4px">Votre demande est adressée <b>uniquement à ${esc(m.preferredName||'votre prestataire')}</b>, pas aux autres artisans, puisque vous l'avez choisi. L'attente est normale&nbsp;: elle dure tant qu'il n'a pas encore répondu. Dès qu'il accepte ou décline, vous êtes prévenu.</p></div></div></div>`:`<div class="card" style="padding:16px;margin-top:12px;text-align:center">${searchRadar(true)}<p class="sub" style="margin:0">Vous saurez qui intervient dès l'acceptation.</p></div>`):((m.svc==='baby'&&p)?babyConfirmBlock(m):(p?`<div class="card provider-pop" style="padding:14px;margin-top:12px"><div class="row" style="gap:12px">${avatarFounder(m.providerPhoto,p.ini,'',p.founder)}<div style="flex:1"><b style="font-size:15px">${esc(p.nm)}</b><div class="mini">${I.pin} ${m.zone}${m.providerAgeBand?' · '+esc(m.providerAgeBand):''}</div></div><div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">${p.founder?`<span class="chip founder-chip">${I.star} Ambassadeur</span>`:''}<span class="chip good">${I.check} Vérifié · Assuré</span></div></div>${boutonsContact({tel:(bothAccepted(m)&&m.providerPhone)?m.providerPhone:'',nom:p.nm,nMsg:(m.chat&&m.chat.length)||0,dot:unreadDot(m)})}</div>`:''))}
+      ${m.status==='pending'?(m.preferredUid?`<div class="card" style="padding:16px;margin-top:12px"><div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="background:var(--teal-wash);color:var(--teal-deep)">${I.clock}</span><div><b style="font-size:14px">Demande réservée à ${esc((m.preferredName||'votre prestataire').split(' ')[0])}</b><p class="mini" style="margin-top:4px">Votre demande est adressée <b>uniquement à ${esc(m.preferredName||'votre prestataire')}</b>, pas aux autres artisans, puisque vous l'avez choisi. L'attente est normale&nbsp;: elle dure tant qu'il n'a pas encore répondu. Dès qu'il accepte ou décline, vous êtes prévenu.</p></div></div></div>`:`<div class="card" style="padding:16px;margin-top:12px;text-align:center">${searchRadar(true)}<p class="sub" style="margin:0">Vous saurez qui intervient dès l'acceptation.</p></div>`):((m.svc==='baby'&&p)?babyConfirmBlock(m):(p?`<div class="card provider-pop" style="padding:14px;margin-top:12px"><div class="row" style="gap:12px">${avatarFounder(m.providerPhoto,p.ini,'',p.founder)}<div style="flex:1"><b style="font-size:15px">${esc(p.nm)}</b><div class="mini">${I.pin} ${m.zone}${m.providerAgeBand?' · '+esc(m.providerAgeBand):''}</div></div><div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">${p.founder?`<span class="chip founder-chip">${I.star} Ambassadeur</span>`:''}<span class="chip good">${I.check} ${p.insured?'Vérifié · Assuré':'Vérifié'}</span></div></div>${boutonsContact({tel:(bothAccepted(m)&&m.providerPhone)?m.providerPhone:'',nom:p.nm,nMsg:(m.chat&&m.chat.length)||0,dot:unreadDot(m)})}</div>`:''))}
       ${waitEscalation(m)}
       ${(m.status==='pending'&&!m.preferredUid)?liveBoostBlock(m):''}
       ${(p&&locModeOf(m)==='salon')?`<div class="card" style="padding:16px;margin-top:12px;border-left:4px solid var(--teal-deep)"><div class="row" style="gap:10px;align-items:flex-start"><span class="benic" style="background:var(--teal-wash);color:var(--teal-deep)">${I.pin}</span><div style="flex:1"><b style="font-size:14px">Vous vous rendez chez le prestataire</b>${m.providerSalonAddress?`<p class="sub" style="margin-top:4px;color:var(--ink)">${esc(m.providerSalonAddress)}${m.providerSalonZone?' · '+esc(m.providerSalonZone):''}</p>`:`<p class="mini" style="margin-top:4px;color:var(--muted)">Le prestataire va vous communiquer son adresse.</p>`}</div></div>${m.providerSalonGeo?miniMap(m.providerSalonGeo,'view','salon'):''}${m.providerSalonGeo?`<a class="btn ghost sm" href="${navUrl(m.providerSalonGeo.lat,m.providerSalonGeo.lng)}" target="_blank" rel="noopener" style="margin-top:10px;text-decoration:none;justify-content:center;gap:8px">${I.pin} Ouvrir l'itinéraire (${navAppName()})</a>`:''}</div>`:''}
@@ -12856,8 +12874,8 @@
     // Démo / simulation locale (Firebase indisponible) : annuaire factice pour montrer
     // le parcours. En production le client est connecté → branche réelle ci-dessous.
     if(isDemo()||!(FB&&FB.auth&&FB.auth.currentUser))return [
-      {uid:'demo-a',name:'Maya Beauté',founder:true,cal:true,photo:null},
-      {uid:'demo-b',name:'Chloé R.',founder:false,cal:false,photo:null}
+      {uid:'demo-a',name:'Maya Beauté',founder:true,cal:true,photo:null,assure:true},
+      {uid:'demo-b',name:'Chloé R.',founder:false,cal:false,photo:null,assure:true}
     ];
     const e=S._proDir&&S._proDir[svc];
     if(e&&e.list)return e.list;
@@ -12885,7 +12903,7 @@
     const seen={},list=[];
     past.forEach(function(a){seen[a.uid]=1;list.push({uid:a.uid,name:a.nm,cal:false,photo:null,past:true});});
     (dir||[]).forEach(function(p){
-      if(seen[p.uid]){const e=list.find(function(x){return x.uid===p.uid;});e.cal=p.cal;e.photo=p.photo;e.founder=p.founder;return;}
+      if(seen[p.uid]){const e=list.find(function(x){return x.uid===p.uid;});e.cal=p.cal;e.photo=p.photo;e.founder=p.founder;e.assure=p.assure;return;}
       list.push(p);
     });
     // Une personne bloquée ne réapparaît pas dans la liste de choix : ce serait le
@@ -12894,9 +12912,14 @@
     if(dir!==null&&!list.length)return '';
     const card=function(p){
       // Chaque segment dans son propre <span> : nœuds texte distincts pour le traducteur.
-      // Jamais de compteur de missions côté client — mention neutre « Vérifié · Assuré »
-      // (vraie pour tout prestataire validé) + repères utiles au choix.
-      const sub=[p.past?'<span>Déjà venu chez vous</span>':'','<span>'+I.check+' Vérifié · Assuré</span>',p.cal?('<span>'+I.check+' disponibilités vérifiables</span>'):'']
+      // Jamais de compteur de missions côté client.
+      // « ASSURÉ » EST UN FAIT, PLUS UN RACCOURCI. La mention était donnée à TOUT
+      // prestataire validé, avec pour justification qu'elle était « vraie pour tout
+      // prestataire validé » — ce qui a cessé d'être vrai le jour où l'on a permis de
+      // déclarer qu'on n'a pas de RC. Le serveur renvoie donc le fait (`assure`), et ce
+      // qu'on ne sait pas ne s'affiche pas : un prestataire déjà venu mais absent de
+      // l'annuaire du jour garde « Vérifié » seul plutôt qu'une affirmation inventée.
+      const sub=[p.past?'<span>Déjà venu chez vous</span>':'','<span>'+I.check+(p.assure?' Vérifié · Assuré':' Vérifié')+'</span>',p.cal?('<span>'+I.check+' disponibilités vérifiables</span>'):'']
         .filter(Boolean).join(' · ');
       return `<button class="addr-opt${m.preferredUid===p.uid?' on':''}" data-prefart="${esc(p.uid)}" data-prefnm="${esc(p.name)}"><div class="row" style="gap:10px;align-items:center">${avatarPhoto(p.photo,inits(p.name),'sm')}<div style="min-width:0"><b>${esc(p.name)}</b>${p.founder?` <span class="chip" style="background:var(--teal-wash);color:var(--teal-deep)">${I.star} Fondateur</span>`:''}<div class="mini" style="margin-top:2px">${sub}</div></div></div></button>`;};
     const note=m.preferredUid?`<p class="mini" style="margin-top:6px">${I.clock} Adressée <b>uniquement à ${esc((m.preferredName||'').split(' ')[0])}</b>. S'il décline ou ne répond pas, vous pourrez la proposer à tous les prestataires d'un geste, vous n'êtes jamais bloqué.</p>`:'';
@@ -13283,8 +13306,9 @@
         const r=snap.data()||{};const m=findMissionByReq(id);if(!m)return;
         let touched=false;
         // Infos artisan (vues côté client)
-        if(r.providerName){if(!m.provider||!m.providerUid||m.provider.nm==='Votre prestataire'){m.provider={nm:r.providerName,ini:inits(r.providerName),rating:0,jobs:(r.providerJobs||0),founder:!!r.providerFounder};}m.providerUid=r.providerUid||m.providerUid;}
+        if(r.providerName){if(!m.provider||!m.providerUid||m.provider.nm==='Votre prestataire'){m.provider={nm:r.providerName,ini:inits(r.providerName),rating:0,jobs:(r.providerJobs||0),founder:!!r.providerFounder,insured:!!r.providerInsured};}m.providerUid=r.providerUid||m.providerUid;}
         if(r.providerUid&&!m.providerUid)m.providerUid=r.providerUid;
+        if(r.providerInsured!=null&&m.provider)m.provider.insured=!!r.providerInsured;
         if(r.providerUid)recurSetProvider(m); // passages suivants dirigés vers ce prestataire
         // Profil transmis à l'acceptation (photo pour tous ; téléphone/bio/diplômes
         // pour la garde d'enfants — appel + confirmation avant engagement).
@@ -13305,7 +13329,7 @@
         // sinon l'écran de validation (qui lit provider.nm) planterait et la
         // réservation semblerait « disparaître ».
         if(!m.provider&&['accepted','working','done_pro','disputed'].indexOf(r.status||m.status)>=0){
-          m.provider={nm:r.providerName||'Votre prestataire',ini:inits(r.providerName||'Votre prestataire'),rating:0,jobs:(r.providerJobs||0),founder:!!r.providerFounder};
+          m.provider={nm:r.providerName||'Votre prestataire',ini:inits(r.providerName||'Votre prestataire'),rating:0,jobs:(r.providerJobs||0),founder:!!r.providerFounder,insured:!!r.providerInsured};
         }
         if(r.acceptedSlot&&m.slot!==r.acceptedSlot){m.slot=r.acceptedSlot;if(r.slotFlex)m.proposedSlot=r.acceptedSlot;touched=true;}
         if(r.finalHours!=null&&m.finalHours!==r.finalHours){m.finalHours=r.finalHours;touched=true;}
@@ -13797,7 +13821,7 @@
       <span class="eyebrow">${I.shield} Mes documents</span><div class="h-hello">Assurance & décharge</div>
       <div class="card" style="padding:16px;margin-top:14px">
         ${(function(){const st=S.proInsuranceStatus||(S.proInsured?'attente':'none');const l=insLabel(st);return `<div class="row between"><b style="font-size:14px">Attestation d'assurance RC</b><span class="chip ${l[0]}">${l[1]}</span></div>
-        ${st==='attente'?`<div class="banner teal" style="margin-top:10px">${I.clock}<span>Votre attestation est <b>en attente de vérification</b> par Ti-Services.</span></div>`:st==='valide'?`<div class="banner good" style="margin-top:10px">${I.check}<span>Attestation <b>validée</b> par Ti-Services.</span></div>`:st==='refuse'?`<div class="banner coral" style="margin-top:10px">${I.shield}<span>Attestation <b>refusée</b>, merci de déposer une attestation valide.</span></div>`:''}`;})()}
+        ${st==='attente'?`<div class="banner teal" style="margin-top:10px">${I.clock}<span>Votre attestation est <b>en attente de vérification</b> par Ti-Services.</span></div>`:st==='valide'?`<div class="banner good" style="margin-top:10px">${I.check}<span>Attestation <b>validée</b> par Ti-Services.</span></div>`:st==='refuse'?`<div class="banner coral" style="margin-top:10px">${I.shield}<span>Attestation <b>refusée</b>, merci de déposer une attestation valide.</span></div>`:st==='aucune'?`<div class="banner teal" style="margin-top:10px">${I.shield}<span>Vous avez déclaré <b>ne pas avoir d'assurance responsabilité civile</b>. Vous pouvez en joindre une ici dès que vous en avez une.</span></div>`:''}`;})()}
         ${S.proInsurer?`<div class="mini" style="margin-top:8px">Assureur&nbsp;: ${esc(S.proInsurer)}</div>`:''}
         ${lienSur(url)?`<button class="btn ghost sm" data-act="doc-open" data-src="${esc(lienSur(url))}" data-nom="Mon attestation d'assurance" style="margin-top:11px;display:inline-flex;width:auto;padding:9px 14px">${I.other}&nbsp;Voir mon attestation</button>`:`<p class="mini" style="margin-top:8px;color:var(--muted)">Aucun document en ligne pour l'instant.</p>`}
         <label class="btn ghost sm" style="margin-top:10px;cursor:pointer;display:inline-flex;width:auto;padding:9px 14px">${I.clip}&nbsp;${url?'Mettre à jour mon attestation':'Joindre mon attestation'}<input type="file" accept="image/*,application/pdf" data-proinsurance hidden></label>
@@ -14058,7 +14082,7 @@
     // que googleAuth condamnait toute candidature créée par e-mail : les quatre
     // étapes passaient au vert et le bouton d'envoi restait gris à jamais.
     const credOk=(f.googleAuth||f.authed)?true:(/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=6&&f.password===f.password2);
-    return (f.name||'').trim().length>1&&(f.phone||'').trim().length>=6&&credOk&&/^\d{14}$/.test(siret)&&(f.address||'').trim().length>1&&!!f.insuranceDoc&&!!(f.cats&&f.cats.length)&&autrePrixOk(f)&&(!f.cats.includes('baby')||!!(f.diplomas&&f.diplomas.length))&&!!f.mandat&&!!f.cgu&&!!f.charte&&(!needsGrille(f)||!!f.acceptsGrille||desiredNetOk(f))&&isAdult(f.birth);}
+    return (f.name||'').trim().length>1&&(f.phone||'').trim().length>=6&&credOk&&/^\d{14}$/.test(siret)&&(f.address||'').trim().length>1&&(!!f.insuranceDoc||!!f.insuranceNone)&&!!(f.cats&&f.cats.length)&&autrePrixOk(f)&&(!f.cats.includes('baby')||!!(f.diplomas&&f.diplomas.length))&&!!f.mandat&&!!f.cgu&&!!f.charte&&(!needsGrille(f)||!!f.acceptsGrille||desiredNetOk(f))&&isAdult(f.birth);}
   // Liste ce qu'il reste à fournir pour valider la candidature — affiché sous le bouton
   // (désactivé) pour que le prestataire sache exactement quel champ ou document manque.
   function proMissing(f){f=f||{};const m=[];const siret=(f.siret||'').replace(/\s/g,'');
@@ -14075,7 +14099,7 @@
     }
     if(!/^\d{14}$/.test(siret))m.push('SIRET (14 chiffres)');
     if(!(f.address||'').trim())m.push('adresse professionnelle');
-    if(!f.insuranceDoc)m.push('attestation d’assurance');
+    if(!f.insuranceDoc&&!f.insuranceNone)m.push('attestation d’assurance (ou cochez « je n’en ai pas »)');
     if(!f.mandat)m.push('accepter le mandat de facturation');
     if(!f.cgu)m.push('accepter les CGU / CGV');
     if(!f.charte)m.push('accepter la charte du prestataire');
@@ -14378,7 +14402,7 @@
         <div class="field"><label>Présentation / expérience</label><textarea rows="3" data-pf="bio" placeholder="Votre expérience, vos spécialités, votre zone…">${esc(f.bio)}</textarea></div>
         <div class="field"><label>Code de parrainage <span style="font-weight:500;color:var(--muted)">(facultatif)</span></label><input class="txt" data-pf="refCode" value="${esc(f.refCode||'')}" autocomplete="off" placeholder="Ex. KEVIN-8A3F" style="text-transform:uppercase"><p class="mini" style="margin-top:5px">Parrainé par un artisan&nbsp;? Son code lui offre <b>+5 missions</b> à votre validation.</p></div>
         <div class="field"><label>Date de naissance${RQ}</label><input class="txt" type="date" data-pf="birth" value="${esc(f.birth||'')}" max="${maxBirth()}"><p class="mini" style="margin-top:5px">Majeurs uniquement. Seule une <b>tranche d'âge</b> est montrée aux clients.</p>${(f.birth&&!isAdult(f.birth))?`<p class="mini" style="margin-top:5px;color:var(--coral-deep)">L'inscription est réservée aux personnes majeures (18&nbsp;ans et plus).</p>`:''}</div>
-        <div class="field"><label>Attestation d'assurance responsabilité civile${RQ}</label><label class="btn ghost sm" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:auto;padding:9px 14px">${f.insuranceDoc?'✓ '+esc(f.insuranceName||'Attestation jointe'):I.clip+' Joindre mon attestation (PDF/photo)'}<input type="file" accept="image/*,application/pdf" data-insurancefile hidden></label>${f.insuranceDoc?`<button class="linklike" data-act="rm-insurance" style="margin-left:12px;color:var(--coral-deep);font-weight:700">Retirer</button>`:''}<p class="mini" style="margin-top:6px">Attestation RC en cours de validité (PDF/photo), vérifiée par Ti-Services.</p></div>
+        ${champAssurance(f)}
         <div class="field"><label>Facturation${RQ}</label><button data-act="toggle-mandat" style="background:none;border:none;padding:0;width:100%;text-align:left;display:flex;gap:11px;align-items:flex-start"><span style="flex:none;width:22px;height:22px;border-radius:7px;border:2px solid ${f.mandat?'var(--good)':'var(--hair)'};background:${f.mandat?'var(--good)':'transparent'};color:#fff;display:flex;align-items:center;justify-content:center;margin-top:1px">${f.mandat?I.check:''}</span><span class="mini" style="line-height:1.45">J'autorise Ti-Services à <b>établir mes factures en mon nom et pour mon compte</b> (mandat de facturation, art. 289 du CGI), une facture par prestation, automatiquement. Je reste responsable de mes obligations fiscales.</span></button></div>
       </div>
       <div class="field" style="margin-top:18px"><label>Quels services souhaitez-vous réaliser&nbsp;? (un ou plusieurs)${RQ}</label></div>
@@ -14411,7 +14435,7 @@
      groupées, à son rythme, puis clique « Envoyer ma candidature ». Tant qu'il n'a pas
      envoyé, aucune fiche `artisans` n'existe → il n'apparaît pas dans la file admin. */
   function proDraftKey(){return 'tiProDraft:'+((FB&&FB.auth&&FB.auth.currentUser&&FB.auth.currentUser.uid)||'anon');}
-  function saveProDraft(){noterJalonsPro();try{const f=S.proForm||{};const j={};['name','phone','siret','address','statusType','legalForm','capital','rcsCity','birth','bio','refCode','insurer','insuranceName','insuranceUrl','diplomaOther','otherService','otherPrice','otherUnit','photo','email'].forEach(function(k){if(f[k]!=null)j[k]=f[k];});j.insuranceDoc=!!f.insuranceDoc;j.mandat=!!f.mandat;j.cgu=!!f.cgu;j.charte=!!f.charte;j.acceptsGrille=!!f.acceptsGrille;j.desiredNet=f.desiredNet||{};j.cats=Array.isArray(f.cats)?f.cats:[];j.rates=f.rates||{};j.diplomas=Array.isArray(f.diplomas)?f.diplomas:[];j.googleAuth=!!f.googleAuth;j.authed=!!f.authed;localStorage.setItem(proDraftKey(),JSON.stringify(j));sauverBrouillonCloud(j);}catch(_){}}
+  function saveProDraft(){noterJalonsPro();try{const f=S.proForm||{};const j={};['name','phone','siret','address','statusType','legalForm','capital','rcsCity','birth','bio','refCode','insurer','insuranceName','insuranceUrl','diplomaOther','otherService','otherPrice','otherUnit','photo','email'].forEach(function(k){if(f[k]!=null)j[k]=f[k];});j.insuranceDoc=!!f.insuranceDoc;j.insuranceNone=!!f.insuranceNone;j.mandat=!!f.mandat;j.cgu=!!f.cgu;j.charte=!!f.charte;j.acceptsGrille=!!f.acceptsGrille;j.desiredNet=f.desiredNet||{};j.cats=Array.isArray(f.cats)?f.cats:[];j.rates=f.rates||{};j.diplomas=Array.isArray(f.diplomas)?f.diplomas:[];j.googleAuth=!!f.googleAuth;j.authed=!!f.authed;localStorage.setItem(proDraftKey(),JSON.stringify(j));sauverBrouillonCloud(j);}catch(_){}}
   /* ══ LE DOSSIER SUIT LE COMPTE, PAS LE TÉLÉPHONE ═══════════════════════════════
      « Ce qu'il a fait ne s'enregistre que dans son téléphone ; s'il veut continuer
      depuis un autre appareil, il ne retrouve pas ses informations ? »
@@ -14522,8 +14546,41 @@
       saveProDraft();render();toast('Attestation enregistrée ✓');
     }catch(e){ console.warn('draft insurance',e); toast('Échec de l’envoi, réessayez'); }
   }
+  /* ══ « JE NE DISPOSE PAS D'ASSURANCE RESPONSABILITÉ CIVILE » ══════════════════════
+     « Pour toutes les inscriptions des pro, même en cours, on met la possibilité de
+     cocher une case “je ne dispose pas d'assurance responsabilité civile”. Cela débloque
+     cette case obligatoire pour finaliser l'inscription. »
+
+     LA CASE EST UNE DÉCLARATION, PAS UNE DISPENSE. Elle n'écrit nulle part que la
+     personne est assurée : `insured` reste FAUX, le dossier part en `insuranceStatus`
+     « aucune », et c'est ce que la console lit. Débloquer le formulaire sans que le fait
+     voyage jusqu'à l'écran de décision, ce serait fabriquer un dossier muet.
+
+     UN SEUL ENDROIT POUR LE CHAMP. Le bloc était écrit DEUX fois, mot pour mot :
+     l'inscription en une page et l'étape « Assurance » du dossier progressif. Or c'est
+     précisément le dossier progressif qui porte les inscriptions EN COURS — une case
+     ajoutée à l'un et oubliée à l'autre, c'est la moitié de la demande non tenue.
+
+     ET LES DEUX RÉPONSES NE SE CONTREDISENT JAMAIS À L'ÉCRAN : tant qu'une attestation
+     est jointe la case ne s'offre pas (la question ne se pose plus), et joindre une
+     attestation retire la déclaration en le DISANT. L'astérisque d'obligation s'efface
+     aussi : il désigne ce qui bloque, et plus rien ne bloque. */
+  function champAssurance(f){
+    f=f||{};
+    const jointe=!!f.insuranceDoc, sans=!!f.insuranceNone&&!jointe;
+    const bouton=jointe?('✓ '+esc(f.insuranceName||'Attestation jointe'))
+      :(sans?(I.clip+' J\'ai une attestation à joindre'):(I.clip+' Joindre mon attestation (PDF/photo)'));
+    return `<div class="field"><label>Attestation d'assurance responsabilité civile${sans?'':RQ}</label>
+      <label class="btn ghost sm" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:auto;padding:9px 14px">${bouton}<input type="file" accept="image/*,application/pdf" data-insurancefile hidden></label>${jointe?`<button class="linklike" data-act="rm-insurance" style="margin-left:12px;color:var(--coral-deep);font-weight:700">Retirer</button>`:''}
+      <p class="mini" style="margin-top:6px">Attestation RC en cours de validité (PDF/photo), vérifiée par Ti-Services.</p>
+      ${jointe?'':`<div style="margin-top:13px;padding-top:12px;border-top:1px solid var(--hair)">
+        <button data-act="toggle-noins" style="background:none;border:none;padding:0;width:100%;text-align:left;display:flex;gap:11px;align-items:flex-start"><span style="flex:none;width:22px;height:22px;border-radius:7px;border:2px solid ${sans?'var(--teal-deep)':'var(--hair)'};background:${sans?'var(--teal-deep)':'transparent'};color:#fff;display:flex;align-items:center;justify-content:center;margin-top:1px">${sans?I.check:''}</span><span class="mini" style="line-height:1.45">Je ne dispose pas d'assurance responsabilité civile.</span></button>
+        ${sans?`<p class="mini" style="margin-top:9px;color:var(--muted)">Votre candidature peut être envoyée. Ti-Services en est informé et étudie votre dossier.</p>`:''}
+      </div>`}
+    </div>`;
+  }
   function draftIdDone(f){f=f||{};return (f.name||'').trim().length>1&&(f.phone||'').trim().length>=6&&/^\d{14}$/.test((f.siret||'').replace(/\s/g,''))&&(f.address||'').trim().length>1&&isAdult(f.birth);}
-  function draftInsDone(f){f=f||{};return !!f.insuranceDoc;}
+  function draftInsDone(f){f=f||{};return !!f.insuranceDoc||!!f.insuranceNone;}
   function draftSvcDone(f){f=f||{};return !!(f.cats&&f.cats.length)&&(!needsGrille(f)||!!f.acceptsGrille||desiredNetOk(f))&&autrePrixOk(f)&&(!f.cats.includes('baby')||!!(f.diplomas&&f.diplomas.length));}
   function draftAccDone(f){f=f||{};return !!f.mandat&&!!f.cgu&&!!f.charte;}
   // Prochaine étape INCOMPLÈTE (pour enchaîner « Enregistrer et continuer ») ; null si tout est fait.
@@ -14590,7 +14647,7 @@
     } else if(step==='ins'){
       title='Assurance';okStep=draftInsDone(f);
       body=`<div class="card" style="padding:16px;margin-top:14px">
-        <div class="field"><label>Attestation d'assurance responsabilité civile${RQ}</label><label class="btn ghost sm" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;width:auto;padding:9px 14px">${f.insuranceDoc?'✓ '+esc(f.insuranceName||'Attestation jointe'):I.clip+' Joindre mon attestation (PDF/photo)'}<input type="file" accept="image/*,application/pdf" data-insurancefile hidden></label>${f.insuranceDoc?`<button class="linklike" data-act="rm-insurance" style="margin-left:12px;color:var(--coral-deep);font-weight:700">Retirer</button>`:''}<p class="mini" style="margin-top:6px">Attestation RC en cours de validité (PDF/photo), vérifiée par Ti-Services.</p></div>
+        ${champAssurance(f)}
       </div>`;
     } else if(step==='svc'){
       title='Métiers & tarifs';okStep=draftSvcDone(f);
@@ -14617,7 +14674,11 @@
     const cats=(f.cats&&f.cats.length)?f.cats:(S.proCats||[]);
     const photo=f.photo||S.proPhoto||'';
     const svc=cats.map(svcNm).join(' · ');
-    const insOk=S.proInsuranceStatus==='valide',insMissing=(S.proInsuranceStatus==='none'||!S.proInsuranceUrl);
+    // Celui qui a DÉCLARÉ ne pas avoir de RC n'a pas un document « manquant » : lui
+    // réclamer une pièce qu'il vient de dire ne pas avoir, et lui annoncer que sa
+    // candidature « ne peut pas être validée », serait lui reprocher sa réponse.
+    const insSans=S.proInsuranceStatus==='aucune';
+    const insOk=S.proInsuranceStatus==='valide',insMissing=!insSans&&(S.proInsuranceStatus==='none'||!S.proInsuranceUrl);
     return `<div class="pad"><div style="height:12px"></div>
       <div class="paycap" style="height:auto;padding:12px 0 4px"><div class="checkmark" style="background:var(--teal)">${I.check}</div>
         <div><div class="h-hello" style="text-align:center">Candidature envoyée</div><p class="sub" style="text-align:center">Merci${nm?' '+esc(nm):''} ! Nous étudions votre profil.</p></div></div>
@@ -14630,9 +14691,10 @@
       <div class="card" style="padding:16px;margin-top:12px">
         <b style="font-size:14px">Votre attestation d'assurance</b>
         <div class="stack" style="gap:8px;margin-top:12px">
-          <button class="btn ${insMissing?'primary':'ghost'} sm" data-act="pro-docs">${I.shield} ${insOk?'Attestation validée ✓':insMissing?'Joindre mon attestation, requis':'Attestation transmise'}</button>
+          <button class="btn ${insMissing?'primary':'ghost'} sm" data-act="pro-docs">${I.shield} ${insOk?'Attestation validée ✓':insMissing?'Joindre mon attestation, requis':insSans?'Joindre une attestation':'Attestation transmise'}</button>
         </div>
-        ${(!insOk&&!insMissing)?`<div class="banner teal" style="margin-top:10px">${I.clock}<span><b>En attente de vérification par Ti-Services</b>, votre attestation est bien reçue, rien d'autre à faire de votre côté.</span></div>`:''}
+        ${(!insOk&&!insMissing&&!insSans)?`<div class="banner teal" style="margin-top:10px">${I.clock}<span><b>En attente de vérification par Ti-Services</b>, votre attestation est bien reçue, rien d'autre à faire de votre côté.</span></div>`:''}
+        ${insSans?`<p class="mini" style="margin-top:8px;color:var(--muted)">Vous avez déclaré ne pas avoir d'assurance responsabilité civile. Vous pouvez en joindre une à tout moment.</p>`:''}
         ${insMissing?`<p class="mini" style="margin-top:8px;color:var(--coral-deep)">Sans attestation d'assurance RC, votre candidature ne peut pas être validée.</p>`:''}
       </div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0">
@@ -16417,8 +16479,8 @@
       // encore de conversation). L'admin peut ainsi l'écrire directement depuis sa fiche.
       else if(act==='art-msg'){const a=(S.adminArtisans||[]).find(x=>x.id===id||x.uid===id);const uid2=(a&&a.uid)||id;const ex=(S.adminGeneral||[]).find(x=>x.uid===uid2);S.genUser=ex||{uid:uid2,name:(a&&a.name)||'Prestataire',role:'artisan',support:[],supReadUser:0,supReadAdmin:0};S.generalSupport=true;S.support=false;S.supportSide=null;S.adminSupervise=false;S.admin.view='msg';S.mission=null;markGenSupportReadAdmin();render();return;}
       else if(act==='cli'){S.admin.view='cli';S.admin.sel=id;try{const c=(S.adminClients||[]).find(function(x){return x.id===id;});admSeenSet('cli:'+id,c?admCliSig(c):'');}catch(_){}}
-      else if(act==='valid-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a&&a.insured&&a.siret){a.status='valide';adminWriteStatus(a,'valide');saveAvailability();toast('Artisan validé');}else{toast('Dossier incomplet (SIRET / assurance)');}}
-      else if(act==='rej-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.status='refuse';if(!a.reason)a.reason=(!a.siret?'SIRET manquant. ':'')+(!a.insured?'Assurance manquante. ':'')||'Ne correspond pas aux critères Ti-Services';adminWriteStatus(a,'refuse');saveAvailability();}S.admin.view='home';toast('Candidature refusée, conservée dans l’historique');}
+      else if(act==='valid-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a&&insPeutValider(a)&&a.siret){a.status='valide';adminWriteStatus(a,'valide');saveAvailability();toast(insStatus(a)==='aucune'?'Artisan validé, sans assurance RC':'Artisan validé');}else{toast('Dossier incomplet (SIRET / assurance)');}}
+      else if(act==='rej-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.status='refuse';if(!a.reason)a.reason=(!a.siret?'SIRET manquant. ':'')+(insStatus(a)==='aucune'?'Sans assurance responsabilité civile. ':(!a.insured?'Assurance manquante. ':''))||'Ne correspond pas aux critères Ti-Services';adminWriteStatus(a,'refuse');saveAvailability();}S.admin.view='home';toast('Candidature refusée, conservée dans l’historique');}
       else if(act==='reexam-art'){const a=S.adminArtisans.find(x=>x.id===id);if(a){a.status='attente';adminWriteStatus(a,'attente');toast('Candidature remise en attente');}}
       else if(act==='copysiret'){
         const a=(S.adminArtisans||[]).find(x=>x.id===id); const v=(a&&a.siret)||'';
@@ -17104,7 +17166,10 @@
       case 'open-chat':S.chat=true;markChatRead();render();view.scrollTop=view.scrollHeight;break;
       case 'close-chat':S.chat=false;S.pastChat=null;render();break;
       case 'chat-send':sendChat();view.scrollTop=view.scrollHeight;break;
-      case 'rm-insurance':if(S.proForm){S.proForm.insuranceFile=null;S.proForm.insuranceDoc=false;S.proForm.insuranceName='';}render();toast('Attestation retirée');break;
+      case 'rm-insurance':if(S.proForm){S.proForm.insuranceFile=null;S.proForm.insuranceDoc=false;S.proForm.insuranceName='';if(S.proStatus==='draft')saveProDraft();}render();toast('Attestation retirée');break;
+      // La case ne s'offre pas quand une attestation est jointe : rien à débloquer, et
+      // deux réponses contraires ne peuvent pas tenir en même temps.
+      case 'toggle-noins':if(S.proForm&&!S.proForm.insuranceDoc){S.proForm.insuranceNone=!S.proForm.insuranceNone;if(S.proStatus==='draft')saveProDraft();}render();break;
       case 'siret-lookup':lookupSiret();break;
       case 'addr-new':S.addrForm={id:null,label:'',address:'',zone:'Gustavia',geo:null,access:''};render();break;
       case 'addr-cancel':S.addrForm=null;render();break;
@@ -17348,9 +17413,9 @@
       // Inscription progressive : une seule case pour les 3 acceptations (mandat, CGU/CGV, charte).
       case 'toggle-allterms':{const v=!(S.proForm.mandat&&S.proForm.cgu&&S.proForm.charte);S.proForm.mandat=v;S.proForm.cgu=v;S.proForm.charte=v;if(S.proStatus==='draft')saveProDraft();render();break;}
       case 'rcs-bt':if(S.proForm){S.proForm.rcsCity='Basse-Terre';if(S.proStatus==='draft')saveProDraft();}render();break;
-      case 'pro-submit':{const f=S.proForm;if((f.name||'').trim().length<2){toast('Indiquez votre nom / raison sociale');break;}if(!f.birth){toast('Indiquez votre date de naissance');break;}if(!isAdult(f.birth)){toast('Inscription réservée aux personnes majeures (18 ans et plus).');break;}if((f.phone||'').trim().length<6){toast('Indiquez un numéro de téléphone');break;}if(!f.cats.length){toast('Sélectionnez au moins un service');break;}if(f.cats.includes('autre')&&!(f.otherService||'').trim()){toast('Précisez le service « Autre » que vous proposez');break;}if(f.cats.includes('autre')&&!(Number(String(f.otherPrice||'').replace(',','.'))>0)){toast('Indiquez ce que vous voulez percevoir pour « '+(f.otherService||'').trim()+' »');break;}if(f.cats.includes('baby')&&!(f.diplomas&&f.diplomas.length)){toast('Garde d’enfants : indiquez vos diplômes (ou « Expérience seule »)');break;}if(!f.googleAuth&&!/.+@.+\..+/.test(f.email||'')){toast('Un e-mail valide est requis');break;}if(!f.googleAuth&&((f.password||'').length<6||f.password!==f.password2)){toast('Mot de passe : 6 caractères min., identiques');break;}if(!/^\d{14}$/.test((f.siret||'').replace(/\s/g,''))){toast('Un SIRET valide (14 chiffres) est requis');break;}if(!(f.address||'').trim()){toast('Indiquez votre adresse professionnelle (obligatoire sur les factures)');break;}if(!f.insuranceDoc){toast('Joignez votre attestation d’assurance');break;}if(!f.mandat){toast('Acceptez le mandat de facturation pour continuer');break;}if(!f.cgu){toast('Acceptez les CGU et les CGV pour continuer');break;}if(!f.charte){toast('Acceptez la charte de responsabilité du prestataire');break;}
+      case 'pro-submit':{const f=S.proForm;if((f.name||'').trim().length<2){toast('Indiquez votre nom / raison sociale');break;}if(!f.birth){toast('Indiquez votre date de naissance');break;}if(!isAdult(f.birth)){toast('Inscription réservée aux personnes majeures (18 ans et plus).');break;}if((f.phone||'').trim().length<6){toast('Indiquez un numéro de téléphone');break;}if(!f.cats.length){toast('Sélectionnez au moins un service');break;}if(f.cats.includes('autre')&&!(f.otherService||'').trim()){toast('Précisez le service « Autre » que vous proposez');break;}if(f.cats.includes('autre')&&!(Number(String(f.otherPrice||'').replace(',','.'))>0)){toast('Indiquez ce que vous voulez percevoir pour « '+(f.otherService||'').trim()+' »');break;}if(f.cats.includes('baby')&&!(f.diplomas&&f.diplomas.length)){toast('Garde d’enfants : indiquez vos diplômes (ou « Expérience seule »)');break;}if(!f.googleAuth&&!/.+@.+\..+/.test(f.email||'')){toast('Un e-mail valide est requis');break;}if(!f.googleAuth&&((f.password||'').length<6||f.password!==f.password2)){toast('Mot de passe : 6 caractères min., identiques');break;}if(!/^\d{14}$/.test((f.siret||'').replace(/\s/g,''))){toast('Un SIRET valide (14 chiffres) est requis');break;}if(!(f.address||'').trim()){toast('Indiquez votre adresse professionnelle (obligatoire sur les factures)');break;}if(!f.insuranceDoc&&!f.insuranceNone){toast('Joignez votre attestation, ou cochez « je ne dispose pas d’assurance »');break;}if(!f.mandat){toast('Acceptez le mandat de facturation pour continuer');break;}if(!f.cgu){toast('Acceptez les CGU et les CGV pour continuer');break;}if(!f.charte){toast('Acceptez la charte de responsabilité du prestataire');break;}
         if(FB){signupAsArtisan=true;fbProSignup(f);break;} // vrai compte prestataire Firebase
-        const rates={};f.cats.forEach(c=>{rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});const minRate=Math.min.apply(null,f.cats.map(c=>rates[c]));S.adminArtisans=S.adminArtisans.filter(x=>x.id!=='self');S.adminArtisans.unshift({id:'self',name:f.name||'Nouveau prestataire',status:'attente',type:'entreprise',cats:f.cats.slice(),other:(f.otherService||'').trim(),otherPrice:Number(String(f.otherPrice||'').replace(',','.'))||0,otherUnit:(f.otherUnit==='forfait'?'forfait':'h'),rates,rate:minRate,desiredNetRates:(f.acceptsGrille?null:(f.desiredNet||null)),siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,rating:0,jobs:0,zone:'—',phone:f.phone||'',email:f.email||'',photo:f.photo||''});S.proStatus='pending';render();break;}
+        const rates={};f.cats.forEach(c=>{rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});const minRate=Math.min.apply(null,f.cats.map(c=>rates[c]));S.adminArtisans=S.adminArtisans.filter(x=>x.id!=='self');S.adminArtisans.unshift({id:'self',name:f.name||'Nouveau prestataire',status:'attente',type:'entreprise',cats:f.cats.slice(),other:(f.otherService||'').trim(),otherPrice:Number(String(f.otherPrice||'').replace(',','.'))||0,otherUnit:(f.otherUnit==='forfait'?'forfait':'h'),rates,rate:minRate,desiredNetRates:(f.acceptsGrille?null:(f.desiredNet||null)),siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,insuranceNone:!!f.insuranceNone,rating:0,jobs:0,zone:'—',phone:f.phone||'',email:f.email||'',photo:f.photo||''});S.proStatus='pending';render();break;}
       case 'pro-approve':{S.proStatus='approved';const f=S.proForm;S.proBirth=f.birth||S.proBirth;if(f.photo)S.proPhoto=f.photo;if(f.name)S.proName=f.name;if(f.cats.length)S.proCats=f.cats.slice();const rates={};f.cats.forEach(c=>{rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});S.proRates=rates;if(f.cats.length)S.proRate=Math.min.apply(null,f.cats.map(c=>rates[c]));S.proStatusType='entreprise';S.proSiret=(f.siret||'').replace(/\s/g,'');S.proBio=f.bio||'';S.proInsured=!!f.insuranceDoc;if(f.insurer)S.proInsurer=f.insurer;if(f.phone)S.proPhone=f.phone;
         // Nouveau prestataire = part de zéro : aucun historique ni agenda pré-rempli.
         S.proHistory=[];S.agenda=[];S.recurring=[];S.proEarnings=0;S.proJobsToday=0;S.proJobsTotal=0;S.mission=null;
@@ -17778,12 +17843,15 @@
       return;}
     const ins=e.target.closest('[data-insurancefile]');
     if(ins&&ins.files&&ins.files[0]){const file=ins.files[0];ins.value='';
+      // Il avait déclaré ne pas en avoir : le document tranche, la déclaration s'en va.
+      const reprise=!!S.proForm.insuranceNone; S.proForm.insuranceNone=false;
       S.proForm.insuranceFile=file;S.proForm.insuranceDoc=true;S.proForm.insuranceName=(file.name||'attestation').slice(0,60);
       // Inscription progressive (Google, statut « draft ») : le compte existe DÉJÀ, donc on
       // envoie l'attestation vers Storage IMMÉDIATEMENT → elle survit à une fermeture de l'app
       // (le prestataire complète en plusieurs fois). Sinon (formulaire e-mail), envoi à la
       // création du compte comme avant.
-      if(S.proStatus==='draft'&&FB&&FB.auth&&FB.auth.currentUser){render();toast('Envoi de l’attestation…');uploadDraftInsurance(file);return;}
+      if(S.proStatus==='draft'&&FB&&FB.auth&&FB.auth.currentUser){render();toast(reprise?'Déclaration « sans assurance » retirée, envoi de l’attestation…':'Envoi de l’attestation…');uploadDraftInsurance(file);return;}
+      if(reprise)toast('Déclaration « sans assurance » retirée');
       render();toast('Attestation jointe ✓');return;}
     const dipf=e.target.closest('[data-diplomafile]');
     if(dipf&&dipf.files&&dipf.files.length){S.proForm.diplomaDocs=S.proForm.diplomaDocs||[];Array.from(dipf.files).forEach(function(file){S.proForm.diplomaDocs.push({name:(file.name||'diplôme').slice(0,60),file:file});});dipf.value='';render();toast('Justificatif joint ✓');return;}
@@ -19029,7 +19097,7 @@
       await withBusy(stM.uploadBytes(sref,file,{contentType:file.type||'application/octet-stream'}));
       const url=await withBusy(stM.getDownloadURL(sref));
       S.proInsuranceUrl=url; S.proInsured=true; S.proInsuranceStatus='attente';
-      try{ await FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{insuranceUrl:url,insured:true,insuranceStatus:'attente'},{merge:true}); }catch(_){}
+      try{ await FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{insuranceUrl:url,insured:true,insuranceNone:false,insuranceStatus:'attente'},{merge:true}); }catch(_){}
       render(); toast('Attestation envoyée ✓, en attente de vérification');
     }catch(e){ console.warn('insurance update',e); toast('Échec de l’envoi, réessayez'); }
   }
@@ -19086,7 +19154,7 @@
         await stM.uploadBytes(sref,f.insuranceFile,{contentType:f.insuranceFile.type||'application/octet-stream'});
         insuranceUrl=await stM.getDownloadURL(sref);
       }catch(e){ console.warn('insurance upload failed',e); } }
-      try{ await FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{name:(f.name||'').trim(),legalName:(f.name||'').trim(),email:email,address:(f.address||'').trim(),statusType:f.statusType||'entreprise',legalForm:(f.legalForm||'').trim(),capital:(f.capital||'').toString().replace(/[^\d]/g,''),rcsCity:(f.rcsCity||'').trim(),birth:(f.birth||''),cats:f.cats.slice(),other:(f.otherService||'').trim(),otherPrice:Number(String(f.otherPrice||'').replace(',','.'))||0,otherUnit:(f.otherUnit==='forfait'?'forfait':'h'),rates:rates,diplomas:(f.diplomas||[]).slice(),diplomaOther:(f.diplomaOther||'').trim(),siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,insurer:f.insurer||'',insuranceUrl:insuranceUrl,insuranceStatus:'attente',phone:f.phone||'',photo:f.photo||'',bio:(f.bio||'').trim(),acceptedTerms:!!f.cgu,acceptedCharte:!!f.charte,acceptedMandat:!!f.mandat,acceptsGrille:!!f.acceptsGrille,desiredNetRates:(f.acceptsGrille?null:(function(){const o={};(f.cats||[]).forEach(function(c){if(c==='autre')return;const v=Number(String((f.desiredNet||{})[c]||'').replace(',','.'));if(v>0)o[c]=v;});return Object.keys(o).length?o:null;})()),termsVersion:TERMS_VERSION,termsAt:FB.f.serverTimestamp(),
+      try{ await FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{name:(f.name||'').trim(),legalName:(f.name||'').trim(),email:email,address:(f.address||'').trim(),statusType:f.statusType||'entreprise',legalForm:(f.legalForm||'').trim(),capital:(f.capital||'').toString().replace(/[^\d]/g,''),rcsCity:(f.rcsCity||'').trim(),birth:(f.birth||''),cats:f.cats.slice(),other:(f.otherService||'').trim(),otherPrice:Number(String(f.otherPrice||'').replace(',','.'))||0,otherUnit:(f.otherUnit==='forfait'?'forfait':'h'),rates:rates,diplomas:(f.diplomas||[]).slice(),diplomaOther:(f.diplomaOther||'').trim(),siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,insuranceNone:!!f.insuranceNone,insurer:f.insurer||'',insuranceUrl:insuranceUrl,insuranceStatus:(f.insuranceNone?'aucune':'attente'),phone:f.phone||'',photo:f.photo||'',bio:(f.bio||'').trim(),acceptedTerms:!!f.cgu,acceptedCharte:!!f.charte,acceptedMandat:!!f.mandat,acceptsGrille:!!f.acceptsGrille,desiredNetRates:(f.acceptsGrille?null:(function(){const o={};(f.cats||[]).forEach(function(c){if(c==='autre')return;const v=Number(String((f.desiredNet||{})[c]||'').replace(',','.'));if(v>0)o[c]=v;});return Object.keys(o).length?o:null;})()),termsVersion:TERMS_VERSION,termsAt:FB.f.serverTimestamp(),
         // Parrainage : code PROPRE de l'artisan (pour être parrain) + code du parrain éventuel
         // (référencé à la validation par le serveur, qui crédite alors le parrain).
         referralCode:genReferralCode((f.name||'').trim(),uid),referredByCode:(f.refCode||'').trim().toUpperCase(),
@@ -19212,7 +19280,7 @@
       adminArtUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'artisans'),function(snap){
         const list=[],pending=new Set();
         snap.forEach(function(d){ const a=d.data()||{}; const cats=Array.isArray(a.cats)?a.cats:[]; const rr=a.rates||{}; const st=a.status||'attente';
-          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Prestataire',status:st,type:(a.statusType==='particulier')?'particulier':'entreprise',statusType:a.statusType||'entreprise',legalName:a.legalName||'',legalForm:a.legalForm||'',capital:a.capital||'',rcsCity:a.rcsCity||'',birth:a.birth||'',referralCode:a.referralCode||'',referredByCode:a.referredByCode||'',acceptedTerms:!!a.acceptedTerms,acceptedCharte:!!a.acceptedCharte,acceptedMandat:!!a.acceptedMandat,acceptsGrille:!!a.acceptsGrille,desiredNetRates:a.desiredNetRates||null,termsVersion:a.termsVersion||'',termsAt:(a.termsAt&&a.termsAt.toMillis)?a.termsAt.toMillis():0,createdAt:(a.createdAt&&a.createdAt.toMillis)?a.createdAt.toMillis():0,cats:cats,other:a.other||'',otherPrice:Number(a.otherPrice)||0,otherUnit:(a.otherUnit==='forfait'?'forfait':'h'),pendingCats:Array.isArray(a.pendingCats)?a.pendingCats:[],pendingOther:a.pendingOther||'',pendingOtherPrice:Number(a.pendingOtherPrice)||0,pendingOtherUnit:(a.pendingOtherUnit==='forfait'?'forfait':'h'),pendingDesiredNet:(a.pendingDesiredNet&&typeof a.pendingDesiredNet==='object')?a.pendingDesiredNet:null,rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,founderSince:(a.founderSince&&a.founderSince.toMillis)?a.founderSince.toMillis():(typeof a.founderSince==='number'?a.founderSince:null),founderGross:Number(a.founderGross)||0,test:!!a.test,rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,online:!!a.online,siteMode:a.siteMode||'',salonAddress:a.salonAddress||'',salonZone:a.salonZone||'',push:(Array.isArray(a.pushTokens)?a.pushTokens.length:0),mollieStatus:a.mollieStatus||'none',mollieOnb:a.mollieOnboardingStatus||'',mollieCanPay:a.mollieCanPay!==false,mollieCanSettle:a.mollieCanSettle!==false,mollieCanWork:a.mollieCanWork===true,mollieRelances:Number(a.mollieRelances)||0,mollieRelanceAt:Number(a.mollieRelanceAt)||0,mollieSince:Number(a.mollieSince)||0,mollieSinceEstime:!!a.mollieSinceEstime,lastNoShowAt:(a.lastNoShowAt&&a.lastNoShowAt.toDate)?a.lastNoShowAt.toDate().getTime():0});
+          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Prestataire',status:st,type:(a.statusType==='particulier')?'particulier':'entreprise',statusType:a.statusType||'entreprise',legalName:a.legalName||'',legalForm:a.legalForm||'',capital:a.capital||'',rcsCity:a.rcsCity||'',birth:a.birth||'',referralCode:a.referralCode||'',referredByCode:a.referredByCode||'',acceptedTerms:!!a.acceptedTerms,acceptedCharte:!!a.acceptedCharte,acceptedMandat:!!a.acceptedMandat,acceptsGrille:!!a.acceptsGrille,desiredNetRates:a.desiredNetRates||null,termsVersion:a.termsVersion||'',termsAt:(a.termsAt&&a.termsAt.toMillis)?a.termsAt.toMillis():0,createdAt:(a.createdAt&&a.createdAt.toMillis)?a.createdAt.toMillis():0,cats:cats,other:a.other||'',otherPrice:Number(a.otherPrice)||0,otherUnit:(a.otherUnit==='forfait'?'forfait':'h'),pendingCats:Array.isArray(a.pendingCats)?a.pendingCats:[],pendingOther:a.pendingOther||'',pendingOtherPrice:Number(a.pendingOtherPrice)||0,pendingOtherUnit:(a.pendingOtherUnit==='forfait'?'forfait':'h'),pendingDesiredNet:(a.pendingDesiredNet&&typeof a.pendingDesiredNet==='object')?a.pendingDesiredNet:null,rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insuranceNone:!!a.insuranceNone,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,founderSince:(a.founderSince&&a.founderSince.toMillis)?a.founderSince.toMillis():(typeof a.founderSince==='number'?a.founderSince:null),founderGross:Number(a.founderGross)||0,test:!!a.test,rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,online:!!a.online,siteMode:a.siteMode||'',salonAddress:a.salonAddress||'',salonZone:a.salonZone||'',push:(Array.isArray(a.pushTokens)?a.pushTokens.length:0),mollieStatus:a.mollieStatus||'none',mollieOnb:a.mollieOnboardingStatus||'',mollieCanPay:a.mollieCanPay!==false,mollieCanSettle:a.mollieCanSettle!==false,mollieCanWork:a.mollieCanWork===true,mollieRelances:Number(a.mollieRelances)||0,mollieRelanceAt:Number(a.mollieRelanceAt)||0,mollieSince:Number(a.mollieSince)||0,mollieSinceEstime:!!a.mollieSinceEstime,lastNoShowAt:(a.lastNoShowAt&&a.lastNoShowAt.toDate)?a.lastNoShowAt.toDate().getTime():0});
           if(st==='attente')pending.add(d.id); });
         S.adminArtisans=list;S.adminArtsLoaded=true;
         // Recalcule la liste des services actifs (au moins un prestataire validé) et la publie
@@ -19532,7 +19600,7 @@
     try{
       const uid=FB.auth.currentUser.uid;
       const acceptedSlot=req.slotFlex?clampSlot(req,S.proReqSlot||req.slot):(req.slot||'');
-      const acc={status:'accepted',providerUid:uid,providerName:S.proName||'',providerJobs:(S.proJobsTotal||0),providerBabyJobs:((S.proHistory||[]).filter(function(h){return h&&h.svc==='baby'&&!h.cancelFee;}).length),providerFounder:!!S.proFounder,providerPhoto:S.proPhoto||null,
+      const acc={status:'accepted',providerUid:uid,providerName:S.proName||'',providerJobs:(S.proJobsTotal||0),providerBabyJobs:((S.proHistory||[]).filter(function(h){return h&&h.svc==='baby'&&!h.cancelFee;}).length),providerFounder:!!S.proFounder,providerInsured:(!!S.proInsured&&S.proInsuranceStatus!=='refuse'),providerPhoto:S.proPhoto||null,
         // Identité légale du prestataire — mentions obligatoires de la facture émise en son nom
         // (mandat de facturation, art. 242 nonies A CGI) : raison sociale, SIRET, adresse, statut.
         providerLegal:S.proLegal||S.proName||'',providerSiret:S.proSiret||'',providerAddress:S.proAddress||'',providerStatusType:S.proStatusType||'entreprise',providerLegalForm:S.proLegalForm||'',providerCapital:S.proCapital||'',providerRcsCity:S.proRcsCity||'',providerAgeBand:ageBand(S.proBirth)||'',

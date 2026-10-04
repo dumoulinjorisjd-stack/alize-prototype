@@ -24,10 +24,11 @@ sed 's/function render(){/function render(){window.__S=S;window.__render=render;
      s/^  function majSansRisque(){/  window.__maj={sansRisque:function(){return majSansRisque();}};\n  function majSansRisque(){/
      s/^  function lireBrouillon(){/  window.__brouillon={lire:function(){return lireBrouillon();},oublier:function(){return oublierBrouillon();},cle:function(){return brouillonCle();}};\n  function lireBrouillon(){/
      s/^  function adminSetCat(a,sv,on){/  window.__art={cat:function(a,s,o){return adminSetCat(a,s,o);},ouverts:function(){return activeServicesFromArtisans();},fiche:function(a){return artCatsEditor(a);}};\n  function adminSetCat(a,sv,on){/
+     s/^  function insPeutValider(a){/  window.__assur={champ:function(f){return champAssurance(f);},etat:function(a){return insStatus(a);},etiquette:function(st){return insLabel(st);},peutValider:function(a){return insPeutValider(a);},etape:function(f){return draftInsDone(f);},complet:function(f){return proSignupOk(f);},manque:function(f){return proMissing(f);},etapes:function(f){return draftSteps(f);}};\n  function insPeutValider(a){/
      s/^  function sauverBrouillonCloud(j){/  window.__dossier={cloud:function(j){return sauverBrouillonCloud(j);},fusion:function(c){return fusionnerBrouillonCloud(c);},enregistre:function(){return saveProDraft();},charge:function(){return loadProDraft();},cle:function(){return proDraftKey();},oublie:function(){return oublierBrouillonCloud();},max:function(){return PRO_DRAFT_PHOTO_MAX;}};\n  function sauverBrouillonCloud(j){/
      s/^  function i18nApply(root){/  window.__tr=function(v,lang){var av=S.lang;S.lang=lang;try{return trOne(v);}finally{S.lang=av;}};window.__dict=function(lang){return lang===String.fromCharCode(112,116)?PT_DICT:EN_DICT;};\n  function i18nApply(root){/' \
   "$SRC" > "$OUT"
-for f in __S __render __err __newMission __peutTravailler __tr __adm __cat __rev __demo __back __svc __art __brouillon __inst __maj __dossier; do
+for f in __S __render __err __newMission __peutTravailler __tr __adm __cat __rev __demo __back __svc __art __brouillon __inst __maj __dossier __assur; do
   grep -q "window.$f" "$OUT" || { echo "MANQUE $f"; exit 1; }
 done
 echo "harnais complet"

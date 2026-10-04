@@ -6289,6 +6289,12 @@ exports.listProviders = onCall(async (request) => {
       photo: (typeof a.photo === 'string' && a.photo.indexOf('data:image') === 0 && a.photo.length < 90000) ? a.photo : null,
       jobs: Number(a.jobsTotal) || 0,
       founder: !!a.founder,
+      // ASSURÉ, LE FAIT ET NON LA PROMESSE. Le client lisait « Vérifié · Assuré » sur
+      // CHAQUE prestataire validé, un raccourci qui tenait tant que l'assurance était
+      // obligatoire pour être validé. Depuis qu'un prestataire peut DÉCLARER ne pas avoir
+      // de RC, la phrase deviendrait fausse, nommément, sur l'écran où le client choisit.
+      // On renvoie donc le fait ; ce qu'on ne sait pas ne s'affirme pas.
+      assure: !!a.insured && a.insuranceStatus !== 'refuse',
       siteMode: a.siteMode || 'both',
       salonZone: String(a.salonZone || '').slice(0, 40),
       cal: ((a.extCals || []).length > 0)
@@ -6302,7 +6308,7 @@ exports.listProviders = onCall(async (request) => {
   out.sort((x, y) => (Number(y.founder) - Number(x.founder)) || (y.jobs - x.jobs));
   // Le nombre de missions sert au TRI côté serveur mais ne sort JAMAIS vers le client
   // (le client ne doit pas voir les volumes d'activité des prestataires).
-  return { providers: out.slice(0, 20).map((p) => ({ uid: p.uid, name: p.name, photo: p.photo, founder: p.founder, siteMode: p.siteMode, salonZone: p.salonZone, cal: p.cal })) };
+  return { providers: out.slice(0, 20).map((p) => ({ uid: p.uid, name: p.name, photo: p.photo, founder: p.founder, assure: p.assure, siteMode: p.siteMode, salonZone: p.salonZone, cal: p.cal })) };
 });
 
 /* ── Créneaux réellement libres d'un prestataire pour UNE journée : le client qui vise
