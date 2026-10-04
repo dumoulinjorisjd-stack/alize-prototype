@@ -246,8 +246,13 @@ const PRESQUE = {
   // La coquille de l'app reste à hauteur nulle dans le harnais (l'animation d'entrée ne
   // tourne pas hors navigation réelle), donc `page.click` la juge invisible : on déclenche
   // un VRAI clic sur l'élément, qui remonte au même gestionnaire délégué que le doigt.
-  const clic = () => p.evaluate(() => { document.querySelector('#view [data-act="toggle-noins"]').click(); });
-  await clic();
+  // Un clic qui ne trouve pas sa cible RAPPORTE au lieu de faire tomber l'épreuve :
+  // une exception ici masquerait tout ce qui suit.
+  const clic = () => p.evaluate(() => {
+    const el = document.querySelector('#view [data-act="toggle-noins"]');
+    if (!el) return false; el.click(); return true;
+  });
+  ok(await clic(), 'le clic trouve sa cible');
   await p.waitForTimeout(350);
   const apresClic = await p.evaluate(() => ({
     pose: window.__S.proForm.insuranceNone === true,
@@ -270,7 +275,7 @@ const PRESQUE = {
   // Puis on la retire : l'étape redevient bloquante, rien n'est resté coincé.
   await p.evaluate(() => { window.__S.proStep = 'ins'; window.__render(); });
   await p.waitForTimeout(300);
-  await clic();
+  ok(await clic(), 'et la case se retrouve pour être décochée');
   await p.waitForTimeout(300);
   const retire = await p.evaluate(() => ({ pose: !!window.__S.proForm.insuranceNone,
     garde: JSON.parse(localStorage.getItem(window.__dossier.cle()) || '{}').insuranceNone }));
