@@ -4853,6 +4853,67 @@ exports.trackFunnel = onCall(async (request) => {
   return {ok: true};
 });
 
+/* « JE N'ARRIVE PAS À INSTALLER L'APPLICATION » — on rappelle.
+ *
+ * L'entonnoir mesure QUE les gens s'arrêtent à l'installation ; il ne dit pas POURQUOI,
+ * et personne ne va écrire pour le raconter. Le guide d'installation offre donc une
+ * porte de sortie : la personne laisse son NUMÉRO, nous recevons un e-mail, on la joint.
+ * C'est le seul moyen de savoir ce qui bloque sur un appareil qu'on n'a pas en main.
+ *
+ * APPELABLE SANS COMPTE, parce que le guide s'affiche AVANT l'inscription — c'est même
+ * là que le blocage est le plus coûteux. Donc trois bornes, pas une :
+ *   — l'identifiant d'appareil anonyme (`did`), le même que l'entonnoir, au même format ;
+ *   — UNE alerte par appareil et par jour, réservée par un `create()` qui échoue si elle
+ *     existe déjà : on ne gronde pas celui qui touche deux fois, on ne renvoie rien ;
+ *   — un numéro qui RESSEMBLE à un numéro, et des champs bornés.
+ *
+ * ET L'ALERTE EST ÉCRITE AVANT D'ÊTRE ENVOYÉE : si le courriel échoue (SMTP en panne,
+ * boîte pleine), le numéro est tout de même dans la base, et l'appel reste possible.
+ * L'inverse perdrait la seule chose qui compte ici. */
+exports.signalerInstallation = onCall({secrets: [SMTP_PASS]}, async (request) => {
+  const d = request.data || {};
+  const did = String(d.did || '').slice(0, 64);
+  if (!/^[a-f0-9-]{16,64}$/i.test(did)) throw new HttpsError('invalid-argument', 'Identifiant invalide.');
+  const phoneBrut = String(d.phone || '').trim().slice(0, 30);
+  const chiffres = phoneBrut.replace(/[^0-9]/g, '');
+  if (chiffres.length < 6) throw new HttpsError('invalid-argument', 'Numéro de téléphone requis.');
+  const nom = String(d.name || '').trim().slice(0, 80);
+  const quoi = String(d.platform || '').trim().slice(0, 60);
+  const role = d.role === 'pro' ? 'pro' : (d.role === 'concierge' ? 'concierge' : 'client');
+  const uid = (request.auth && request.auth.uid) || '';
+  const email = (request.auth && request.auth.token && request.auth.token.email) || '';
+  const db = getFirestore();
+
+  const jour = jourStBarth();
+  try {
+    await db.collection('installAlerts').doc(did + '_' + jour).create({
+      did: did, jour: jour, phone: phoneBrut, name: nom, platform: quoi, role: role,
+      uid: uid, email: email, statut: 'nouveau', createdAt: FieldValue.serverTimestamp(),
+    });
+  } catch (_) {
+    // Déjà signalé aujourd'hui depuis cet appareil : rien de neuf à nous apprendre,
+    // et surtout rien de fautif à annoncer à la personne.
+    return {ok: true, deja: true};
+  }
+
+  try {
+    await sendMail(db, ADMIN_EMAIL, {
+      subject: 'Ti-Services · Installation bloquée, rappeler le ' + phoneBrut,
+      html: '<p><b>' + escHtmlS(nom || email || 'Quelqu\'un') + '</b> n\'arrive pas à installer l\'application' +
+            ' et demande qu\'on le rappelle.</p>' +
+            '<p><b>Téléphone :</b> ' + escHtmlS(phoneBrut) + '</p>' +
+            (quoi ? '<p><b>Appareil :</b> ' + escHtmlS(quoi) + '</p>' : '') +
+            '<p><b>Côté :</b> ' + escHtmlS(role === 'pro' ? 'prestataire' : role === 'concierge' ? 'conciergerie' : 'client') +
+            (uid ? ', compte déjà créé' : ', pas encore inscrit') + '</p>' +
+            (email ? '<p><b>E-mail du compte :</b> ' + escHtmlS(email) + '</p>' : '') +
+            '<p>Appelez-le : c\'est la seule façon de savoir ce qui bloque sur son appareil.</p>',
+    });
+  } catch (e) { console.warn('install alert mail', (e && e.message) || e); }
+
+  console.log('Installation bloquée, ' + role + ', ' + quoi + (uid ? ', uid ' + uid : ''));
+  return {ok: true};
+});
+
 /* LE DÉTAIL DE L'ENTONNOIR — « il faut le rendre plus précis, avec les jours ou autre
  * détail » (18/09/2026). Les totaux disent 368 visiteurs et 58 installées DEPUIS
  * TOUJOURS : on ne peut ni voir un lancement décoller, ni voir une semaine s'effondrer.

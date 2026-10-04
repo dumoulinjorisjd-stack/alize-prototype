@@ -398,6 +398,18 @@
   .ig-fallback[open]>summary::after{content:' ⌄'}
   .ig-note{font-size:12px;color:var(--ink-soft);background:var(--teal-wash);border-radius:12px;padding:11px 13px;margin:16px 0 0;line-height:1.45}
   .ig-note b{color:var(--teal-deep)}
+  /* « Je n'arrive pas à installer » : une sortie DISCRÈTE (elle ne doit pas concurrencer
+     les étapes, qui marchent pour presque tout le monde) mais TOUJOURS là, en bas du guide. */
+  .ig-aide{margin-top:16px;padding-top:14px;border-top:1px solid var(--hair);text-align:center}
+  .ig-aide-lien{background:none;border:none;font-size:12.5px;color:var(--muted);text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:4px 2px}
+  .ig-aide-txt{font-size:13px;color:var(--ink-soft);line-height:1.45;margin:0 0 10px}
+  .ig-aide-row{display:flex;gap:8px;align-items:stretch}
+  .ig-aide-row input{flex:1;min-width:0;border:1.5px solid var(--c-input-border,#e4dacb);border-radius:12px;padding:11px 12px;font-size:15px;font-family:inherit;color:var(--ink);background:#fff}
+  .ig-aide-cta{flex:none;border:none;border-radius:12px;padding:11px 15px;background:var(--teal-deep);color:#fff;font-weight:700;font-size:13.5px;cursor:pointer}
+  .ig-aide-cta[disabled]{opacity:.55}
+  .ig-aide-msg{font-size:12.5px;line-height:1.45;margin:9px 0 0;text-align:left}
+  .ig-aide-msg.ko{color:var(--coral-deep)}
+  .ig-aide-ok{font-size:13.5px;color:var(--ink);line-height:1.5;margin:0;text-align:left}
   /* Guide visuel : badge appareil/navigateur, cartes illustrées, alerte in-app */
   .ig-badge-browser{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:650;color:var(--ink-soft);background:var(--sand);border:1px solid var(--hair);border-radius:999px;padding:5px 12px 5px 8px;margin:0 0 14px}
   .ig-intro{font-size:13.5px;color:var(--ink-soft);line-height:1.5;margin:0 0 14px}
@@ -18287,6 +18299,76 @@
       const cta=el.querySelector('#inAppHintCta'); if(cta)cta.addEventListener('click',function(){ try{el.remove();}catch(_){} try{showInstallGuide();}catch(_){} });
     }catch(_){}
   }
+  /* ══ « JE N'ARRIVE PAS À INSTALLER L'APPLICATION » ════════════════════════════════
+     L'entonnoir mesure QUE les gens s'arrêtent à l'installation ; il ne dit pas POURQUOI,
+     et personne n'écrira pour le raconter. On ouvre donc une porte de sortie : le numéro,
+     un e-mail chez nous, et on rappelle. C'est le seul moyen de savoir ce qui bloque sur
+     un appareil qu'on n'a pas en main.
+
+     ELLE VIT DANS LA FEUILLE, ET DANS ELLE SEULE. `showInstallGuide` est la porte unique
+     du guide — la page d'accueil, le bandeau des navigateurs intégrés et la relance après
+     inscription l'empruntent tous les trois. Le bloc posé ici est donc partout, et il n'y
+     a pas de second endroit à penser le jour où une quatrième surface l'ouvrira.
+
+     DISCRÈTE MAIS TOUJOURS LÀ : un lien, pas un bouton. Les étapes marchent pour presque
+     tout le monde, et une porte de sortie qui crie plus fort que le chemin normal ferait
+     renoncer des gens qui allaient y arriver. Elle ne se déplie qu'au clic.
+
+     ON NE PROMET RIEN QU'ON N'AIT FAIT : tant que le serveur n'a pas répondu, on ne dit
+     pas « c'est noté » ; si l'envoi échoue, on le DIT et le numéro reste à l'écran, prêt
+     à repartir. Un « merci » affiché sur un envoi perdu, c'est quelqu'un qui attend un
+     appel qui ne viendra jamais. */
+  function telConnu(){
+    try{
+      const f=S.proForm||{};
+      return String(f.phone||S.proPhone||(S.account&&S.account.phone)||'').trim();
+    }catch(_){ return ''; }
+  }
+  function aideHtml(){
+    const tel=telConnu();
+    return `<div class="ig-aide">
+      <button type="button" class="ig-aide-lien" id="igAide">Je n'arrive pas à installer l'application</button>
+      <div class="ig-aide-form" id="igAideForm" hidden style="margin-top:12px;text-align:left">
+        <p class="ig-aide-txt"><b>Vous n'y arrivez pas&nbsp;?</b> Laissez votre numéro, on vous rappelle pour le faire ensemble.</p>
+        <div class="ig-aide-row">
+          <input id="igAideTel" type="tel" inputmode="tel" autocomplete="tel" placeholder="0690 00 00 00" value="${esc(tel)}" aria-label="Votre numéro de téléphone">
+          <button type="button" class="ig-aide-cta" id="igAideGo">Nous prévenir</button>
+        </div>
+        <p class="ig-aide-msg" id="igAideMsg"></p>
+      </div>
+    </div>`;
+  }
+  function brancherAideInstallation(wrap){
+    const lien=wrap.querySelector('#igAide'), form=wrap.querySelector('#igAideForm');
+    if(!lien||!form)return;
+    lien.addEventListener('click',function(){
+      form.hidden=false; lien.hidden=true;
+      try{ const t=wrap.querySelector('#igAideTel'); if(t&&!t.value)t.focus(); }catch(_){}
+    });
+    const go=wrap.querySelector('#igAideGo');
+    if(!go)return;
+    go.addEventListener('click',function(){
+      const tel=wrap.querySelector('#igAideTel'), msg=wrap.querySelector('#igAideMsg');
+      const v=String((tel&&tel.value)||'').trim();
+      const dire=function(t,ko){ if(!msg)return; msg.textContent=t; msg.className='ig-aide-msg'+(ko?' ko':''); };
+      if(v.replace(/[^0-9]/g,'').length<6){ dire('Indiquez un numéro où vous joindre.',true); try{tel.focus();}catch(_){} return; }
+      if(!(FB&&FB.fn&&FB.functions)){ dire('Pas de connexion pour l’instant. Réessayez une fois en ligne, ou écrivez à contact@ti-services.fr.',true); return; }
+      go.disabled=true; dire('Envoi…');
+      const pf=detectPlatform();
+      const quoi=(pf.ipad?'iPad':pf.ios?'iPhone':pf.android?'Android':'ordinateur')
+        +(pf.browser&&pf.browser!=='other'?' · '+(IG_BROWSER_NAME[pf.browser]||pf.browser):'')
+        +(pf.ios&&pf.iosVer?' · iOS '+pf.iosVer:'')+(pf.inApp?' · navigateur intégré':'');
+      FB.fn.httpsCallable(FB.functions,'signalerInstallation')({
+        did:funnelDid(), phone:v, name:String((S.account&&S.account.name)||(S.proForm&&S.proForm.name)||'').trim(),
+        platform:quoi, role:(S.persona==='pro'?'pro':(S.persona==='concierge'?'concierge':'client'))
+      }).then(function(){
+        form.innerHTML='<p class="ig-aide-ok">'+I.check+' C’est noté. Nous vous rappelons au <b>'+esc(v)+'</b> pour installer l’application ensemble.</p>';
+      }).catch(function(){
+        go.disabled=false;
+        dire('L’envoi n’a pas abouti. Réessayez, ou écrivez à contact@ti-services.fr.',true);
+      });
+    });
+  }
   function showInstallGuide(opts){
     opts=opts||{};
     try{ trackFunnel('guide'); }catch(_){}
@@ -18409,13 +18491,15 @@
       <div class="ig-head"><img src="./zouti-logo.svg" alt="" width="46" height="50"><div><b>${opts.headTitle||'Installer Ti-Services'}</b><span>${opts.sub||'Pour créer votre compte et commander en un geste.'}</span></div></div>
       ${opts.banner?`<div class="ig-warn">${I.bell}<div>${opts.banner}</div></div>`:''}
       ${deviceLine}
-      ${body}</div>`;
+      ${body}
+      ${aideHtml()}</div>`;
     document.body.appendChild(wrap);
     i18nApply(wrap);
     haptic('light');
     const close=()=>{ wrap.classList.remove('show'); setTimeout(()=>{try{wrap.remove();}catch(_){}} ,260); };
     wrap.addEventListener('click',ev=>{ if(ev.target===wrap) close(); });
     wrap.querySelector('.ig-x').addEventListener('click',close);
+    brancherAideInstallation(wrap);
     const ii=wrap.querySelector('#igInstall');
     if(ii&&deferredPrompt){ ii.addEventListener('click',async()=>{ try{ deferredPrompt.prompt(); const r=await deferredPrompt.userChoice; deferredPrompt=null; if(r&&r.outcome==='accepted'){ close(); } }catch(_){} }); }
     requestAnimationFrame(()=>wrap.classList.add('show'));

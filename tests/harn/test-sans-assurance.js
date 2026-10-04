@@ -188,6 +188,94 @@ const PRESQUE = {
   }, PRESQUE);
   ok(H.length === 4 && H.every((x) => x.done), 'les quatre cartes du dossier sont faites (' + JSON.stringify(H) + ')');
 
+  console.log('\nH — une inscription COMMENCÉE AVANT ce changement ne casse pas');
+  // Le brouillon tel qu'il a été écrit hier : il ne porte AUCUNE des clés nouvelles.
+  const AVANT = { name: 'Marc Ancien', phone: '0690998877', siret: '98765432101234',
+    address: 'Lorient', birth: '1985-03-03', cats: ['jardin'], rates: { jardin: 40 },
+    acceptsGrille: true, mandat: true, cgu: true, charte: true, insuranceDoc: false,
+    googleAuth: true, authed: true };
+  const H2 = await p.evaluate((d) => {
+    localStorage.setItem(window.__dossier.cle(), JSON.stringify(d));
+    window.__S.proForm = {};
+    window.__dossier.charge();
+    const f = window.__S.proForm;
+    const avant = { etape: window.__assur.etape(f), complet: window.__assur.complet(f),
+      manque: window.__assur.manque(f), champs: Object.keys(f).length,
+      perdus: Object.keys(d).filter((k) => JSON.stringify(f[k]) !== JSON.stringify(d[k])),
+      none: f.insuranceNone };
+    f.insuranceNone = true;
+    return { avant: avant, apres: { etape: window.__assur.etape(f), complet: window.__assur.complet(f) } };
+  }, AVANT);
+  ok(H2.avant.perdus.length === 0, 'le brouillon se relit entier (perdus : ' + (H2.avant.perdus.join(', ') || 'aucun') + ')');
+  ok(H2.avant.none === undefined, 'il ne porte pas la clé nouvelle, et on ne la lui invente pas');
+  ok(H2.avant.etape === false && H2.avant.complet === false,
+    'son dossier reste exactement où il en était : l’attestation manque toujours');
+  ok(/assurance/.test(H2.avant.manque.join(' ')), 'et c’est toujours ce qu’on lui demande');
+  ok(H2.apres.etape === true && H2.apres.complet === true,
+    'il coche la case, et il peut envoyer : rien d’autre n’a bougé');
+  // Et l'enregistrement n'ajoute QUE la clé nouvelle au brouillon d'hier.
+  const H3 = await p.evaluate((d) => {
+    window.__S.proForm = Object.assign({}, d);
+    window.__dossier.enregistre();
+    const j = JSON.parse(localStorage.getItem(window.__dossier.cle()) || '{}');
+    return { none: j.insuranceNone, changes: Object.keys(d).filter((k) => JSON.stringify(j[k]) !== JSON.stringify(d[k])) };
+  }, AVANT);
+  ok(H3.none === false && H3.changes.length === 0,
+    'l’enregistrement ajoute la clé à faux et ne touche à rien (' + JSON.stringify(H3.changes) + ')');
+
+  console.log('\nI — le bouton, cliqué pour de vrai, dans l’écran réel');
+  // La barrière d'installation remplace tout écran d'inscription tant que l'app n'est pas
+  // installée : sans ce drapeau, on mesurerait la barrière et non l'étape « Assurance ».
+  await p.evaluate((d) => {
+    try { localStorage.setItem('ti_installee', '1'); } catch (_) {}
+    const S = window.__S;
+    S.persona = 'pro'; S.onboarded = true; S.authView = null; S.guest = false;
+    S.account = { name: 'Léa Brin', email: 'lea@e.fr', uid: 'u1', role: 'artisan' };
+    S.proStatus = 'draft'; S.proStep = 'ins';
+    S.proForm = Object.assign({}, d);
+    window.__render();
+  }, PRESQUE);
+  await p.waitForTimeout(400);
+  // ON LIT L'ÉCRAN, PAS LE PROGRAMME : le script de l'app vit dans <body>, donc
+  // `document.body.textContent` contient tout son source — trois assertions écrites
+  // ainsi passaient sans rien mesurer, les phrases cherchées étant dans le code.
+  const ecran = () => p.evaluate(() => (document.getElementById('view').textContent || '').replace(/\s+/g, ' '));
+  const vu = await p.evaluate(() => ({ bouton: !!document.querySelector('#view [data-act="toggle-noins"]'),
+    titre: (document.getElementById('view').textContent || '').indexOf('Attestation d\'assurance responsabilité civile') >= 0 }));
+  ok(vu.titre && vu.bouton, 'l’étape « Assurance » du dossier en cours porte bien la case');
+  // La coquille de l'app reste à hauteur nulle dans le harnais (l'animation d'entrée ne
+  // tourne pas hors navigation réelle), donc `page.click` la juge invisible : on déclenche
+  // un VRAI clic sur l'élément, qui remonte au même gestionnaire délégué que le doigt.
+  const clic = () => p.evaluate(() => { document.querySelector('#view [data-act="toggle-noins"]').click(); });
+  await clic();
+  await p.waitForTimeout(350);
+  const apresClic = await p.evaluate(() => ({
+    pose: window.__S.proForm.insuranceNone === true,
+    garde: JSON.parse(localStorage.getItem(window.__dossier.cle()) || '{}').insuranceNone,
+    phrase: (document.getElementById('view').textContent || '').indexOf('candidature peut être envoyée') >= 0,
+  }));
+  ok(apresClic.pose, 'le clic pose la déclaration');
+  ok(apresClic.garde === true, 'et l’enregistre aussitôt dans le brouillon : fermer l’app ne la perd pas');
+  ok(apresClic.phrase, 'l’écran dit ce que cela permet');
+  // On repasse au récapitulatif : les quatre cartes, pour de vrai.
+  await p.evaluate(() => { window.__S.proStep = null; window.__render(); });
+  await p.waitForTimeout(350);
+  const hub = await p.evaluate(() => {
+    const t = (document.getElementById('view').textContent || '').replace(/\s+/g, ' ');
+    const b = document.querySelector('#view [data-act="draft-submit"]');
+    return { quatre: /4\/4 étapes/.test(t), bouton: !!b && !b.disabled, reste: /Il reste à fournir/.test(t) };
+  });
+  ok(hub.quatre, 'le dossier affiche 4/4 étapes');
+  ok(hub.bouton && !hub.reste, 'et « Envoyer ma candidature » est actif, sans liste de manques (' + JSON.stringify(hub) + ')');
+  // Puis on la retire : l'étape redevient bloquante, rien n'est resté coincé.
+  await p.evaluate(() => { window.__S.proStep = 'ins'; window.__render(); });
+  await p.waitForTimeout(300);
+  await clic();
+  await p.waitForTimeout(300);
+  const retire = await p.evaluate(() => ({ pose: !!window.__S.proForm.insuranceNone,
+    garde: JSON.parse(localStorage.getItem(window.__dossier.cle()) || '{}').insuranceNone }));
+  ok(retire.pose === false && retire.garde === false, 'décocher la retire, dans l’écran comme dans le brouillon');
+
   ok(errs.length === 0, 'aucune erreur JS (' + errs.join(' | ') + ')');
   await b.close();
   console.log(f ? '\n' + f + ' ÉCHEC(S)' : '\nTout est vert');
