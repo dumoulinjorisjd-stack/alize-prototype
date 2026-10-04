@@ -84,7 +84,19 @@ service cloud.firestore {
       // assignFounderSpot, via l'Admin SDK) : l'artisan ne peut ni se l'octroyer à la
       // création, ni le modifier ensuite — sinon n'importe qui s'inscrivant après
       // l'ouverture aux clients se déclarerait ambassadeur pour toucher la commission réduite.
+      // LE VERDICT SUR L'ASSURANCE APPARTIENT À L'ÉDITEUR. Le prestataire DÉCLARE —
+      // « j'ai une attestation » (attente de vérification) ou « je n'en ai pas »
+      // (aucune) — mais il ne prononce jamais « valide » ni « refuse » : ce sont les
+      // deux mots que la console écrit après avoir OUVERT le document. Sans ce verrou,
+      // il suffisait de poser `insuranceStatus: 'valide'` soi-même pour que la fiche
+      // s'affiche « Validée » dans la console et que le bouton de validation s'allume —
+      // et, depuis que le client lit un FAIT et non un raccourci, pour que « Assuré »
+      // paraisse à côté de son nom sur l'écran où le client choisit.
+      function insDeclaree() {
+        return request.resource.data.get('insuranceStatus', 'attente') in ['attente', 'aucune'];
+      }
       allow create: if uid() == artisanId
+                    && insDeclaree()
                     && request.resource.data.status == 'attente'
                     && request.resource.data.get('founder', false) == false
                     && request.resource.data.get('refBonusJobs', 0) == 0
@@ -131,7 +143,12 @@ service cloud.firestore {
                         // un blocage qui dure.
                         && request.resource.data.get('mollieSince', 0) == resource.data.get('mollieSince', 0)
                         && request.resource.data.get('mollieSinceEstime', false) == resource.data.get('mollieSinceEstime', false)
-                        && request.resource.data.get('cats', []).hasOnly(resource.data.get('cats', [])));
+                        && request.resource.data.get('cats', []).hasOnly(resource.data.get('cats', []))
+                        // Le statut de l'assurance ne se décerne pas soi-même : il reste
+                        // tel quel, ou redevient une simple déclaration (une nouvelle
+                        // attestation déposée repart « attente »).
+                        && (request.resource.data.get('insuranceStatus', '') == resource.data.get('insuranceStatus', '')
+                            || insDeclaree()));
       // Droit à l'effacement (RGPD) : l'artisan peut supprimer son propre dossier.
       allow delete: if isAdmin() || uid() == artisanId;
     }

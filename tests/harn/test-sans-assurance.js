@@ -170,6 +170,16 @@ const PRESQUE = {
   ok(/\{insuranceUrl:url,insured:true,insuranceNone:false,insuranceStatus:'attente'\}/.test(html),
     'et joindre une attestation plus tard l’efface dans le compte');
   ok(/insuranceNone:!!a\.insuranceNone/.test(html), 'la console relit le champ');
+  // Le repère « Assuré » du client repose désormais sur `insured` / `insuranceStatus`,
+  // deux champs que le prestataire écrit lui-même : il fallait donc que le VERDICT, lui,
+  // ne puisse pas s'écrire soi-même, sans quoi le « fait » n'en serait pas un.
+  const regles = fs.readFileSync(path.join(RACINE, 'firestore.rules'), 'utf8');
+  ok(/function insDeclaree\(\) \{[\s\S]{0,160}in \['attente', 'aucune'\]/.test(regles),
+    'le prestataire ne peut DÉCLARER que « attente » ou « aucune »');
+  ok(/allow create: if uid\(\) == artisanId\s*&& insDeclaree\(\)/.test(regles),
+    'la règle vaut à la création du dossier');
+  ok(/insuranceStatus', ''\) == resource\.data\.get\('insuranceStatus', ''\)\s*\|\| insDeclaree\(\)/.test(regles),
+    'et à chaque mise à jour : « valide » et « refuse » restent les mots de la console');
 
   console.log('\nG — l’étape du dossier progressif passe au vert');
   const H = await p.evaluate((d) => {
