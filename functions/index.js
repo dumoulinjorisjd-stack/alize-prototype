@@ -1274,6 +1274,9 @@ exports.notifyArtisanApproved = onDocumentUpdated({document: 'artisans/{artisanI
   const uid = event.params.artisanId;
   const db = getFirestore();
   const name = (after.name || '').toString().slice(0, 60) || 'Bonjour';
+  // ACCEPTÉ SANS ASSURANCE ? La fiche le dit, et c'est ce qui décide du bloc « sous
+  // réserve » de l'e-mail. Même lecture que la console : la déclaration OU l'état.
+  const sansAssurance = after.insuranceNone === true || after.insuranceStatus === 'aucune';
 
   // Adresse e-mail et jetons push depuis la fiche users.
   let email = '';
@@ -1312,10 +1315,26 @@ exports.notifyArtisanApproved = onDocumentUpdated({document: 'artisans/{artisanI
       } catch (_) {}
       await sendMail(db, email, {
         subject: 'Votre inscription Ti-Services est validée 🎉',
-        html: approvedArtisanHtml(name === 'Bonjour' ? '' : name),
+        html: approvedArtisanHtml(name === 'Bonjour' ? '' : name, sansAssurance),
         attachments,
       });
     } catch (e) { console.warn('approve email queue', e); }
+  }
+
+  // 2 bis) LA PREUVE QU'ON L'A DEMANDÉ. « Du coup on pourra dire qu'on lui avait demandé
+  //        de s'assurer » : encore faut-il pouvoir dire QUAND. La date de l'envoi et
+  //        l'échéance des trois mois sont écrites sur la fiche — sans elles, il resterait
+  //        un e-mail dans une boîte, que personne ne retrouve deux ans plus tard.
+  //        Cette écriture re-déclenche la fonction : la garde du haut la fait sortir
+  //        aussitôt (before.status vaut alors déjà « valide »).
+  if (sansAssurance && !after.insuranceNoticeAt) {
+    try {
+      const maintenant = Date.now();
+      await db.collection('artisans').doc(uid).set({
+        insuranceNoticeAt: maintenant,
+        insuranceDueAt: maintenant + 90 * 24 * 3600 * 1000,
+      }, {merge: true});
+    } catch (e) { console.warn('insurance notice', (e && e.message) || e); }
   }
 
   // 3) PARRAINAGE : si ce nouvel artisan a été parrainé (referredByCode) et n'a pas encore
@@ -5380,7 +5399,20 @@ function mollieReminderHtml(name, n, cas) {
   '</div>';
 }
 
-function approvedArtisanHtml(name) {
+/* ACCEPTÉ SANS ASSURANCE : LE DIRE DANS L'E-MAIL QUI L'ACCEPTE.
+ * « Un lien qui ouvre un texte explicatif supplémentaire : on lui demande de s'assurer
+ * dans les plus brefs délais, et on accepte son adhésion sous réserve qu'il s'assure
+ * dans les 3 mois. Du coup on pourra dire qu'on lui avait demandé de s'assurer. »
+ *
+ * LE BLOC EST DANS L'E-MAIL, LE DÉTAIL EST DERRIÈRE LE LIEN. L'éditeur l'a dit lui-même :
+ * « c'est écrit dans tout un long texte qu'il va pas lire ». L'e-mail porte donc les deux
+ * phrases qui comptent — souscrivez sans tarder, votre adhésion tient si l'attestation
+ * arrive dans les trois mois — et le document complet s'ouvre d'un lien, à son adresse
+ * publique, lisible sur n'importe quel téléphone sans l'application.
+ *
+ * ET IL NE PARAÎT QUE LÀ OÙ IL EST VRAI : un intervenant qui a joint son attestation
+ * reçoit exactement l'e-mail d'avant, au pixel près. */
+function approvedArtisanHtml(name, sansAssurance) {
   const app = APP_URL.replace(/\/$/, '');
   // Accent sarcelle (teal) : même code couleur que l'e-mail de bienvenue intervenant.
   const { c1, c2, btn, dot } = mailPalette(true);
@@ -5406,6 +5438,20 @@ function approvedArtisanHtml(name) {
         '<div style="font-size:12px;color:#8a8494;line-height:1.5;margin-top:10px;text-align:center">Astuce&nbsp;: cette étape est plus simple depuis un <b>ordinateur</b>.</div>' +
       '</td></tr>' +
     '</table>';
+  // Réserve d'assurance : bord ambre, ton sobre — ce n'est ni une alerte ni une
+  // félicitation, c'est une CONDITION. Le délai est DANS la phrase, pas en note de bas.
+  const assuranceBlock = !sansAssurance ? '' :
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FFF8EC;border:1px solid #F0DFC0;border-radius:14px;margin-top:14px">' +
+      '<tr><td style="padding:16px 18px">' +
+        '<span style="display:inline-block;font-size:11px;font-weight:800;letter-spacing:.04em;color:#8A5B0B;background:#F6E3BE;border-radius:999px;padding:4px 11px">SOUS RÉSERVE</span>' +
+        '<div style="font-size:16px;font-weight:800;color:#231E33;margin-top:11px">Votre assurance responsabilité civile</div>' +
+        '<div style="font-size:13.5px;color:#4a4556;line-height:1.55;margin-top:7px">Vous nous avez indiqué <b>ne pas disposer</b> d\'une assurance de responsabilité civile professionnelle. Nous vous demandons d\'en souscrire une <b>dans les plus brefs délais</b>.</div>' +
+        '<div style="font-size:13.5px;color:#4a4556;line-height:1.55;margin-top:9px">Votre adhésion est acceptée <b>sous réserve</b> que vous nous transmettiez votre attestation <b>dans les trois mois</b> suivant votre inscription. Déposez-la dans l\'application, rubrique <b>&laquo;&nbsp;Mes documents&nbsp;&raquo;</b>, dès que vous l\'avez.</div>' +
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:13px"><tr><td align="center">' +
+          '<a href="' + app + '/?legal=assurance" style="display:inline-block;background:#ffffff;border:1px solid #E2CFA8;color:#8A5B0B;text-decoration:none;font-weight:700;font-size:13.5px;padding:10px 20px;border-radius:11px">Lire les conditions de cette réserve</a>' +
+        '</td></tr></table>' +
+      '</td></tr>' +
+    '</table>';
   return '' +
   '<div style="margin:0;padding:0;background:#FBF7F4;font-family:-apple-system,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;color:#231E33">' +
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FBF7F4;padding:24px 12px">' +
@@ -5422,7 +5468,7 @@ function approvedArtisanHtml(name) {
             '<p style="font-size:15px;line-height:1.6;color:#4a4556;margin:12px 0 0">Bonjour ' + hi + ',</p>' +
             '<p style="font-size:15px;line-height:1.6;color:#4a4556;margin:10px 0 0">Bonne nouvelle&nbsp;: votre profil <b>intervenant</b> sur Ti-Services vient d\'être <b>validé</b> par notre équipe. Bienvenue à bord&nbsp;! Il reste une dernière étape avant de recevoir vos premières missions.</p>' +
           '</td></tr>' +
-          '<tr><td style="padding:18px 30px 4px">' + mollieBlock + '</td></tr>' +
+          '<tr><td style="padding:18px 30px 4px">' + mollieBlock + assuranceBlock + '</td></tr>' +
           '<tr><td style="padding:16px 30px;border-top:1px solid #efeae4;background:#FBF7F4">' +
             '<div style="font-size:12px;color:#8a8494;line-height:1.6">À très vite,<br>L\'équipe Ti-Services<br>' +
             '<span style="color:#b0aab8">Service édité par C.C.S, Construction Conseils et Services, SAS · Saint-Barthélemy</span></div>' +
