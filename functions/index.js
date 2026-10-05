@@ -1288,8 +1288,18 @@ exports.notifyArtisanApproved = onDocumentUpdated({document: 'artisans/{artisanI
     tokens = ud.pushTokens || [];
   } catch (_) {}
 
+  /* ON NE SOUHAITE PAS LA BIENVENUE DEUX FOIS. Depuis que la console peut rétrograder
+   * puis revalider un prestataire, cette fonction se déclenche à CHAQUE retour en
+   * « valide » — et renverrait « Votre inscription est validée 🎉 » avec son bloc
+   * « DERNIÈRE ÉTAPE : activez vos paiements » à quelqu'un qui travaille depuis trois
+   * mois. Une suspension d'une semaine n'est pas une inscription.
+   * Un REMERCIEMENT ne se répète pas ; un PRESTATAIRE réintégré, lui, est prévenu par
+   * celui qui l'a réintégré. On n'envoie donc rien d'automatique la seconde fois, et la
+   * console le DIT sur la carte du statut avant le clic. */
+  const dejaAccueilli = !!after.approvedNotifiedAt;
+
   // 1) Notification push (immédiate, sans configuration).
-  if (tokens.length) {
+  if (tokens.length && !dejaAccueilli) {
     try {
       await getMessaging().sendEachForMulticast({
         tokens,
@@ -1305,7 +1315,7 @@ exports.notifyArtisanApproved = onDocumentUpdated({document: 'artisans/{artisanI
 
   // 2) E-mail (mis en file dans la collection `mail` ; nécessite l'extension
   //    « Trigger Email from Firestore » pour l'envoi réel).
-  if (email) {
+  if (email && !dejaAccueilli) {
     try {
       // Logo intégré (cid:tilogo), comme l'e-mail de bienvenue — s'affiche sans URL externe.
       const attachments = [];
@@ -1319,6 +1329,14 @@ exports.notifyArtisanApproved = onDocumentUpdated({document: 'artisans/{artisanI
         attachments,
       });
     } catch (e) { console.warn('approve email queue', e); }
+  }
+
+  // 2 ter) La date de la bienvenue, pour ne pas la refaire. Écrite APRÈS l'envoi, et
+  //        une seule fois : la console la lit pour annoncer qu'une revalidation
+  //        n'enverra plus rien.
+  if (!dejaAccueilli) {
+    try { await db.collection('artisans').doc(uid).set({approvedNotifiedAt: Date.now()}, {merge: true}); }
+    catch (e) { console.warn('approve notified', (e && e.message) || e); }
   }
 
   // 2 bis) LA PREUVE QU'ON L'A DEMANDÉ. « Du coup on pourra dire qu'on lui avait demandé
