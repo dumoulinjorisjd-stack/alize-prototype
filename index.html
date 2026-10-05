@@ -3574,7 +3574,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='810';
+  const VERSION_APP='811';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -4613,8 +4613,24 @@
       out.push(row('Lieu d\'exercice',md+((a.siteMode!=='domicile'&&a.salonAddress)?'<br><span class="mini" style="color:var(--muted);font-weight:500">'+esc(a.salonAddress)+(a.salonZone?' · '+esc(migZone(a.salonZone)):'')+'</span>':'')));
     }
     out.push(row('Inscrit le',a.createdAt?new Date(a.createdAt).toLocaleDateString('fr-FR'):''));
+    /* « Pourquoi la disponibilité me dit qu'il ne verra pas les demandes alors que les
+       notifications sont activées et que c'est marqué en ligne ? » Parce que les deux
+       lignes lisaient DEUX DOCUMENTS DIFFÉRENTS pour le même fait. Le jeton de
+       notification n'est écrit QUE dans `users/{uid}` — c'est là que le serveur le lit
+       pour envoyer — et jamais dans la fiche `artisans`. Le champ `push` de la fiche
+       valait donc ZÉRO pour tout le monde, toujours : « aucun appareil notifié, il ne
+       verra pas les demandes » s'affichait sur CHAQUE prestataire, y compris ceux qui
+       reçoivent parfaitement leurs demandes. Une alarme permanente cesse d'être lue.
+       Une seule porte désormais, celle que le SERVEUR emploie ; et tant que les fiches
+       utilisateurs ne sont pas lues, on dit qu'on ne sait pas encore plutôt que
+       d'affirmer le pire. */
     out.push(row('Disponibilité',(a.online?'<span class="chip good">'+I.check+' En ligne</span>':'<span class="chip grey">Hors ligne</span>')
-      +'<br><span class="mini" style="color:var(--muted);font-weight:500">'+(a.push?('Notifications actives ('+a.push+' appareil'+(a.push>1?'s':'')+')'):'Aucun appareil notifié, il ne verra pas les demandes')+'</span>'));
+      +'<br><span class="mini" style="color:var(--muted);font-weight:500">'+(function(){
+        const n=notifsDe(a.uid);
+        if(!n)return 'Notifications : lecture en cours…';
+        if(n.jetons>0)return 'Notifications actives ('+n.jetons+' appareil'+(n.jetons>1?'s':'')+')';
+        return 'Aucun appareil notifié, il ne verra pas les demandes';
+      })()+'</span>'));
     if(a.earnings||a.jobs){
       out.push(row('Activité',(a.jobs||0)+' mission'+((a.jobs||0)>1?'s':'')
         // « encaissés » était FAUX : ce cumul vient de l'application du prestataire, pas
@@ -20472,7 +20488,11 @@
       adminArtUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'artisans'),function(snap){
         const list=[],pending=new Set();
         snap.forEach(function(d){ const a=d.data()||{}; const cats=Array.isArray(a.cats)?a.cats:[]; const rr=a.rates||{}; const st=a.status||'attente';
-          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Prestataire',status:st,type:(a.statusType==='particulier')?'particulier':'entreprise',statusType:a.statusType||'entreprise',legalName:a.legalName||'',legalForm:a.legalForm||'',capital:a.capital||'',rcsCity:a.rcsCity||'',birth:a.birth||'',referralCode:a.referralCode||'',referredByCode:a.referredByCode||'',acceptedTerms:!!a.acceptedTerms,acceptedCharte:!!a.acceptedCharte,acceptedMandat:!!a.acceptedMandat,acceptsGrille:!!a.acceptsGrille,desiredNetRates:a.desiredNetRates||null,termsVersion:a.termsVersion||'',termsAt:(a.termsAt&&a.termsAt.toMillis)?a.termsAt.toMillis():0,createdAt:(a.createdAt&&a.createdAt.toMillis)?a.createdAt.toMillis():0,cats:cats,other:a.other||'',otherPrice:Number(a.otherPrice)||0,otherPriceNote:a.otherPriceNote||'',otherUnit:(a.otherUnit==='forfait'?'forfait':'h'),pendingCats:Array.isArray(a.pendingCats)?a.pendingCats:[],pendingOther:a.pendingOther||'',pendingOtherPrice:Number(a.pendingOtherPrice)||0,pendingOtherUnit:(a.pendingOtherUnit==='forfait'?'forfait':'h'),pendingDesiredNet:(a.pendingDesiredNet&&typeof a.pendingDesiredNet==='object')?a.pendingDesiredNet:null,rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insuranceNone:!!a.insuranceNone,insuranceNoticeAt:Number(a.insuranceNoticeAt)||0,approvedNotifiedAt:Number(a.approvedNotifiedAt)||0,tierForce:a.tierForce||'',refBonusJobs:Number(a.refBonusJobs)||0,insuranceDueAt:Number(a.insuranceDueAt)||0,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,founderSince:(a.founderSince&&a.founderSince.toMillis)?a.founderSince.toMillis():(typeof a.founderSince==='number'?a.founderSince:null),founderGross:Number(a.founderGross)||0,test:!!a.test,rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,online:!!a.online,siteMode:a.siteMode||'',salonAddress:a.salonAddress||'',salonZone:a.salonZone||'',push:(Array.isArray(a.pushTokens)?a.pushTokens.length:0),mollieStatus:a.mollieStatus||'none',mollieOnb:a.mollieOnboardingStatus||'',mollieCanPay:a.mollieCanPay!==false,mollieCanSettle:a.mollieCanSettle!==false,mollieCanWork:a.mollieCanWork===true,mollieRelances:Number(a.mollieRelances)||0,mollieRelanceAt:Number(a.mollieRelanceAt)||0,mollieSince:Number(a.mollieSince)||0,mollieSinceEstime:!!a.mollieSinceEstime,lastNoShowAt:(a.lastNoShowAt&&a.lastNoShowAt.toDate)?a.lastNoShowAt.toDate().getTime():0});
+          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Prestataire',status:st,type:(a.statusType==='particulier')?'particulier':'entreprise',statusType:a.statusType||'entreprise',legalName:a.legalName||'',legalForm:a.legalForm||'',capital:a.capital||'',rcsCity:a.rcsCity||'',birth:a.birth||'',referralCode:a.referralCode||'',referredByCode:a.referredByCode||'',acceptedTerms:!!a.acceptedTerms,acceptedCharte:!!a.acceptedCharte,acceptedMandat:!!a.acceptedMandat,acceptsGrille:!!a.acceptsGrille,desiredNetRates:a.desiredNetRates||null,termsVersion:a.termsVersion||'',termsAt:(a.termsAt&&a.termsAt.toMillis)?a.termsAt.toMillis():0,createdAt:(a.createdAt&&a.createdAt.toMillis)?a.createdAt.toMillis():0,cats:cats,other:a.other||'',otherPrice:Number(a.otherPrice)||0,otherPriceNote:a.otherPriceNote||'',otherUnit:(a.otherUnit==='forfait'?'forfait':'h'),pendingCats:Array.isArray(a.pendingCats)?a.pendingCats:[],pendingOther:a.pendingOther||'',pendingOtherPrice:Number(a.pendingOtherPrice)||0,pendingOtherUnit:(a.pendingOtherUnit==='forfait'?'forfait':'h'),pendingDesiredNet:(a.pendingDesiredNet&&typeof a.pendingDesiredNet==='object')?a.pendingDesiredNet:null,rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insuranceNone:!!a.insuranceNone,insuranceNoticeAt:Number(a.insuranceNoticeAt)||0,approvedNotifiedAt:Number(a.approvedNotifiedAt)||0,tierForce:a.tierForce||'',refBonusJobs:Number(a.refBonusJobs)||0,insuranceDueAt:Number(a.insuranceDueAt)||0,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,founderSince:(a.founderSince&&a.founderSince.toMillis)?a.founderSince.toMillis():(typeof a.founderSince==='number'?a.founderSince:null),founderGross:Number(a.founderGross)||0,test:!!a.test,rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,online:!!a.online,siteMode:a.siteMode||'',salonAddress:a.salonAddress||'',salonZone:a.salonZone||'',mollieStatus:a.mollieStatus||'none',mollieOnb:a.mollieOnboardingStatus||'',mollieCanPay:a.mollieCanPay!==false,mollieCanSettle:a.mollieCanSettle!==false,mollieCanWork:a.mollieCanWork===true,mollieRelances:Number(a.mollieRelances)||0,mollieRelanceAt:Number(a.mollieRelanceAt)||0,mollieSince:Number(a.mollieSince)||0,mollieSinceEstime:!!a.mollieSinceEstime,lastNoShowAt:(a.lastNoShowAt&&a.lastNoShowAt.toDate)?a.lastNoShowAt.toDate().getTime():0});
+      // `push` A ÉTÉ RETIRÉ D'ICI. Il comptait `artisans/{uid}.pushTokens`, que rien
+      // n'écrit jamais : un champ qui ne peut pas être juste est pire qu'un champ absent.
+      // Les notifications d'un prestataire se lisent par `notifsDe(uid)`, la même source
+      // que le serveur.
           if(st==='attente')pending.add(d.id); });
         S.adminArtisans=list;S.adminArtsLoaded=true;
         // Recalcule la liste des services actifs (au moins un prestataire validé) et la publie
