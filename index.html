@@ -14220,7 +14220,11 @@
     // mot de passe : c'est justement l'absence de retour PENDANT la saisie qui a laissé
     // quelqu'un bloqué devant une phrase que la case ne pouvait pas lire.
     const pa=document.getElementById('autrePrixAvis');
-    if(pa){const av=prixAutreAvis(f.otherPrice,f.otherUnit);
+    if(pa){
+      // Ce qui vient d'être écarté prime : sinon la case, revenue à sa dernière valeur
+      // bonne, afficherait un vert rassurant juste après avoir refusé un collage.
+      const pi=document.querySelector('[data-pf="otherPrice"]');
+      const av=prixAutreAvis((pi&&pi.dataset.refus)||f.otherPrice,f.otherUnit);
       pa.textContent=av.txt;pa.style.display=av.txt?'':'none';
       pa.style.color=(av.cls==='ko')?'var(--coral-deep)':'var(--good)';}
     const ok=proSignupOk(f);const btn=document.querySelector('[data-act="pro-submit"]');if(btn)btn.disabled=!ok;const el=document.getElementById('proMissing');if(el){el.style.display=ok?'none':'';el.textContent=ok?'':('Pour valider, il reste à fournir : '+proMissing(f).join(' · ')+'.');}}
@@ -14401,8 +14405,14 @@
     const nombres=(t.match(/\d+(?:[.,]\d+)?/g)||[])
       .map(function(x){return Number(x.replace(',','.'));})
       .filter(function(n){return n>0;});
-    const net=t.replace(/\s|\u00a0/g,'').replace(/€|eur(?:os?)?/gi,'').replace(',','.');
+    // L'ESPACE DES MILLIERS NE SE TOLÈRE PAS, et c'est une correction de ma part :
+    // « 1450 950 » et « 1 450 » sont la même chaîne pour qui enlève les espaces. En les
+    // enlevant, la première — deux prix côte à côte — devenait 1 450 950 €, un montant
+    // VALIDE et faux, que le formulaire acceptait sans broncher. Entre tolérer une
+    // coquette et fabriquer un prix, on refuse les deux et on le DIT.
+    const net=t.replace(/€|eur(?:os?)?/gi,'').trim().replace(',','.');
     if(/^\d+(?:\.\d+)?$/.test(net)&&Number(net)>0)return {ok:true,cause:'',valeur:Number(net),nombres:nombres};
+    if(/^[\d\s\u00a0\u202f]+$/.test(t))return {ok:false,cause:'espaces',valeur:0,nombres:nombres};
     return {ok:false,cause:nombres.length>1?'plusieurs':'texte',valeur:0,nombres:nombres};
   }
   // La phrase que l'écran affiche sous la case. Elle NOMME la faute — « il reste à
@@ -14411,6 +14421,7 @@
     const r=prixAutreLu(brut);
     if(r.cause==='vide')return {cls:'',txt:''};
     if(r.ok)return {cls:'ok',txt:'Vous toucherez '+r.valeur.toLocaleString('fr-FR')+' €'+(unite==='forfait'?' par prestation.':' de l’heure.')};
+    if(r.cause==='espaces')return {cls:'ko',txt:'Un nombre sans espace : écrivez 1450. Si vous aviez deux prix en tête, mettez le principal ici et le reste dans « Vos autres formules ».'};
     if(r.cause==='plusieurs')return {cls:'ko',txt:'Un seul nombre dans cette case (vous en avez écrit '+r.nombres.length+'). Mettez ici le prix de référence, et vos autres formules dans la case juste en dessous.'};
     return {cls:'ko',txt:'Un nombre seul, sans texte : 1450. Votre description va dans « Vos autres formules », juste en dessous.'};
   }
@@ -14424,7 +14435,7 @@
       <p class="mini" style="margin-top:7px;color:var(--muted);line-height:1.55">Ce service n'est pas encore au catalogue Ti-Services&nbsp;: aucun prix n'est fixé pour lui. Annoncez ce que vous voulez percevoir : Ti-Services ajoute sa part par-dessus, et vous touchez exactement le montant indiqué ici.</p>
       <div class="field" style="margin-top:13px;margin-bottom:0">
         <label>Ce que vous voulez percevoir${RQ}</label>
-        <div class="row" style="gap:9px;align-items:center"><input class="txt" ${attrPrix} value="${esc(prix==null?'':String(prix))}" inputmode="decimal" placeholder="Ex. 50" style="flex:1"><span class="sub" style="flex:none;font-weight:800">€</span></div>
+        <div class="row" style="gap:9px;align-items:center"><input class="txt" ${attrPrix} data-num value="${esc(prix==null?'':String(prix))}" inputmode="decimal" placeholder="Ex. 50" style="flex:1"><span class="sub" style="flex:none;font-weight:800">€</span></div>
         <p class="mini" id="autrePrixAvis" style="margin-top:6px;line-height:1.45;${av.txt?'':'display:none;'}color:${av.cls==='ko'?'var(--coral-deep)':'var(--good)'}">${esc(av.txt)}</p>
         <div class="row" style="gap:8px;margin-top:9px">
           <button class="btn ${forf?'ghost':'primary'} sm" data-act="${actUnite}:h">de l'heure</button>
@@ -17875,7 +17886,35 @@
     const pao=e.target.closest('[data-paother]');if(pao&&S.proAddForm){S.proAddForm.other=pao.value;const sb=document.querySelector('[data-act="pro-add-submit"]');if(sb)sb.disabled=!paAddOk(S.proAddForm);}
     const pap=e.target.closest('[data-paprice]');if(pap&&S.proAddForm){S.proAddForm.price=pap.value;const sb=document.querySelector('[data-act="pro-add-submit"]');if(sb)sb.disabled=!paAddOk(S.proAddForm);}
     const wi=e.target.closest('[data-wish]');if(wi){S.wishText=wi.value;S.wishSent=false;const wb=document.querySelector('[data-act="wish-send"]');if(wb)wb.disabled=!wi.value.trim();}
-    const pf=e.target.closest('[data-pf]');if(pf){S.proForm[pf.dataset.pf]=pf.value;refreshProSubmit();}
+    const pf=e.target.closest('[data-pf]');
+    if(pf){
+      /* UNE CASE DE PRIX N'ACCEPTE QUE DES CHIFFRES. Demandé par l'éditeur devant une
+         inscription bloquée : « c'est un défaut de notre part, on devrait uniquement
+         pouvoir mettre des chiffres ». On filtre donc À LA SAISIE — une lettre ne
+         s'inscrit pas, ce qui s'explique tout seul — plutôt que de laisser passer puis
+         refuser ailleurs.
+         MAIS ON NE FABRIQUE JAMAIS UN NOMBRE À PARTIR D'UNE PHRASE. Retirer les lettres
+         de « 1450€ la journee… demie journee 950€ » donnerait 1450950, un prix VALIDE et
+         faux, que le formulaire accepterait sans broncher et qui partirait en prix
+         public. Ce qui n'est pas un nombre est donc refusé ENTIER : la case garde sa
+         dernière valeur bonne, et l'avis en dessous dit pourquoi.
+         ET L'ESPACE RESTE ADMIS DANS LA CASE, à rebours du premier jet : en la refusant
+         caractère par caractère, « 1450 950 » tapé au doigt donnait « 1450950 » — le
+         filtre reconstruisait lui-même le prix faux qu'il devait empêcher (l'épreuve l'a
+         dit). L'espace s'affiche donc tel quel, et c'est la LECTURE qui tranche : rien
+         n'est jamais fabriqué, et la personne voit exactement ce qu'elle a tapé.
+         L'ÉLÉMENT DÉCLARE SA NATURE (`data-num`) : on n'énumère pas des noms de champs,
+         et la case ajoutée demain n'a qu'à poser la marque. */
+      if(pf.dataset.num!=null&&!/^[\d\s\u00a0.,]*$/.test(pf.value)){
+        pf.dataset.refus=pf.value;
+        pf.value=String(S.proForm[pf.dataset.pf]||'');
+        try{pf.setSelectionRange(pf.value.length,pf.value.length);}catch(_){}
+      }else{
+        if(pf.dataset.num!=null)delete pf.dataset.refus;
+        S.proForm[pf.dataset.pf]=pf.value;
+      }
+      refreshProSubmit();
+    }
     const ar=e.target.closest('[data-arst]');if(ar){S._arst=S._arst||{};S._arst[ar.dataset.arst]=ar.value;}
     const dn=e.target.closest('[data-dnet]');if(dn&&S.proForm){S.proForm.desiredNet=S.proForm.desiredNet||{};S.proForm.desiredNet[dn.dataset.dnet]=dn.value;refreshProSubmit();}
     const pad=e.target.closest('[data-padnet]');if(pad&&S.proAddForm){S.proAddForm.desiredNet=S.proAddForm.desiredNet||{};S.proAddForm.desiredNet[pad.dataset.padnet]=pad.value;}

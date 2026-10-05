@@ -39,7 +39,8 @@ const SERVICE = 'Location de catamaran avec skipper sur st Barthelemy et les Car
     vraie: window.__prix.lu(v),
     nu: window.__prix.lu('1450'),
     euro: window.__prix.lu('1450 €'),
-    espaces: window.__prix.lu(' 1 450€ '),
+    milliers: window.__prix.lu('1 450'),
+    deuxEspace: window.__prix.lu('1450 950'),
     virgule: window.__prix.lu('37,50'),
     vide: window.__prix.lu(''),
     zero: window.__prix.lu('0'),
@@ -52,7 +53,12 @@ const SERVICE = 'Location de catamaran avec skipper sur st Barthelemy et les Car
     'on sait DIRE pourquoi : elle porte deux nombres (' + JSON.stringify(L.vraie.nombres) + ')');
   ok(L.nu.ok && L.nu.valeur === 1450, 'un nombre nu passe');
   ok(L.euro.ok && L.euro.valeur === 1450, 'avec l’euro aussi : le symbole est déjà imprimé en face');
-  ok(L.espaces.ok && L.espaces.valeur === 1450, 'les espaces d’un millier ne font pas une faute');
+  // « 1 450 » et « 1450 950 » sont la MÊME chaîne pour qui enlève les espaces : tolérer
+  // la coquette revenait à lire deux prix côte à côte comme 1 450 950 €, un montant
+  // valide et faux. On refuse les deux, et on dit lequel des deux cas c'est.
+  ok(!L.milliers.ok && L.milliers.cause === 'espaces', 'l’espace des milliers est refusé, et nommé');
+  ok(!L.deuxEspace.ok && L.deuxEspace.valeur === 0,
+    'et surtout « 1450 950 » ne devient JAMAIS 1 450 950 € (' + L.deuxEspace.valeur + ')');
   ok(L.virgule.ok && L.virgule.valeur === 37.5, 'la virgule décimale non plus (' + L.virgule.valeur + ')');
   ok(L.vide.cause === 'vide' && !L.vide.ok, 'une case vide est vide, pas fautive');
   ok(!L.zero.ok, 'zéro n’est pas un prix');
@@ -65,6 +71,7 @@ const SERVICE = 'Location de catamaran avec skipper sur st Barthelemy et les Car
     bonne: window.__prix.avis('1450', 'forfait'),
     heure: window.__prix.avis('45', 'h'),
     mot: window.__prix.avis('à discuter', 'forfait'),
+    esp: window.__prix.avis('1 450', 'forfait'),
     vide: window.__prix.avis('', 'forfait'),
   }), VRAIE);
   ok(A.vraie.cls === 'ko' && /seul nombre/i.test(A.vraie.txt),
@@ -76,6 +83,7 @@ const SERVICE = 'Location de catamaran avec skipper sur st Barthelemy et les Car
   ok(A.bonne.cls === 'ok' && /1 450 €/.test(esp(A.bonne.txt)) && /par prestation/.test(A.bonne.txt),
     'et un prix juste est CONFIRMÉ, unité comprise (« ' + A.bonne.txt + ' »)');
   ok(A.heure.cls === 'ok' && /de l’heure/.test(A.heure.txt), 'à l’heure aussi (« ' + A.heure.txt + ' »)');
+  ok(A.esp.cls === 'ko' && /sans espace/.test(A.esp.txt), 'l’espace a sa phrase à lui (« ' + A.esp.txt + ' »)');
   ok(A.vide.txt === '', 'et une case vide ne reçoit aucun reproche');
 
   console.log('\nC — le refus ne répète plus la question');
@@ -173,6 +181,65 @@ const SERVICE = 'Location de catamaran avec skipper sur st Barthelemy et les Car
     return { gardee: window.__S.proForm.otherPriceNote };
   });
   ok(!!H4 && /950/.test(H4.gardee), 'la phrase tapée dans « Vos autres formules » est retenue');
+
+  console.log('\nI — la case n’accepte que des chiffres, et ne fabrique aucun prix');
+  // « C'est un défaut de notre part, on devrait uniquement pouvoir mettre des chiffres. »
+  // On tape caractère par caractère, comme un doigt sur un clavier.
+  const frapper = (txt) => p.evaluate((t) => {
+    const el = document.querySelector('#view [data-pf="otherPrice"]');
+    if (!el) return null;
+    el.value = ''; el.dispatchEvent(new Event('input', { bubbles: true }));
+    for (const c of t) { el.value = el.value + c; el.dispatchEvent(new Event('input', { bubbles: true })); }
+    const a = document.getElementById('autrePrixAvis');
+    return { champ: el.value, garde: window.__S.proForm.otherPrice,
+      avis: a ? a.textContent : '', rouge: a ? /coral/.test(a.style.color) : false };
+  }, txt);
+  const I1 = await frapper('1450');
+  ok(!!I1 && I1.champ === '1450' && I1.garde === '1450', 'un nombre s’inscrit normalement');
+  const I2 = await frapper('1450€ la journee');
+  ok(!!I2 && !/[a-zA-Z€]/.test(I2.champ),
+    'aucune lettre ni symbole ne s’inscrit (« ' + (I2 ? I2.champ : '—') + ' »)');
+  const I2b = await p.evaluate(() => window.__prix.lu(window.__S.proForm.otherPrice));
+  ok(I2b.ok && I2b.valeur === 1450, 'et ce qu’il reste se lit 1450, sans ambiguïté (' + I2b.valeur + ')');
+  // LE PIÈGE DU FILTRE, trouvé par cette épreuve : refuser l'espace caractère par
+  // caractère faisait que « 1450 950 » tapé au doigt s'inscrivait « 1450950 » — le filtre
+  // reconstruisait le prix faux qu'il devait empêcher. L'espace reste donc admis À
+  // L'ÉCRAN, et c'est la lecture qui refuse.
+  const I3 = await frapper('1450 950');
+  ok(!!I3 && I3.champ === '1450 950',
+    'ce qui est tapé s’affiche tel quel, rien n’est recollé (« ' + (I3 ? I3.champ : '—') + ' »)');
+  ok(!!I3 && I3.rouge && /sans espace/.test(I3.avis),
+    'et c’est refusé, avec sa raison (« ' + (I3 ? I3.avis.slice(0, 70) : '—') + '… »)');
+  const I3b = await p.evaluate(() => window.__prix.lu(window.__S.proForm.otherPrice).valeur);
+  ok(I3b === 0, 'aucun prix n’en sort : surtout pas 1 450 950 € (' + I3b + ')');
+  const I4 = await frapper('37,50');
+  ok(!!I4 && I4.champ === '37,50', 'la virgule décimale passe (' + (I4 ? I4.champ : '—') + ')');
+  // Le collage : l'autre façon d'arriver, et la plus dangereuse.
+  const I5 = await p.evaluate((v) => {
+    const el = document.querySelector('#view [data-pf="otherPrice"]');
+    el.value = '1450'; el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.value = v; el.dispatchEvent(new Event('input', { bubbles: true }));   // collage
+    const a = document.getElementById('autrePrixAvis');
+    return { champ: el.value, garde: window.__S.proForm.otherPrice,
+      avis: a ? a.textContent : '', rouge: a ? /coral/.test(a.style.color) : false };
+  }, VRAIE);
+  ok(I5.champ === '1450' && I5.garde === '1450',
+    'une phrase collée est refusée ENTIÈRE, la case garde sa dernière valeur bonne');
+  ok(/seul nombre/i.test(I5.avis) && I5.rouge,
+    'et l’avis dit ce qui vient d’être écarté, au lieu d’un vert rassurant (« ' + I5.avis.slice(0, 60) + '… »)');
+
+  console.log('\nJ — « Autre » seul suffit : aucun métier du catalogue n’est imposé');
+  const J = await p.evaluate((d) => {
+    const f = { name: 'Skipper SAS', phone: '0690112233', siret: '12345678901234',
+      address: 'Gustavia', birth: '1980-01-01', cats: ['autre'], otherService: d.sv,
+      otherPrice: '1450', otherUnit: 'forfait', mandat: true, cgu: true, charte: true,
+      insuranceNone: true, authed: true, googleAuth: true };
+    return { etape: window.__assur.etapes(f).find((x) => x.id === 'svc').done,
+      complet: window.__assur.complet(f), manque: window.__assur.manque(f) };
+  }, { sv: SERVICE });
+  ok(J.etape === true, 'l’étape « Métiers & tarifs » est franchie avec « Autre » pour seul métier');
+  ok(J.complet === true && J.manque.length === 0,
+    'et le dossier entier est complet, sans rien cocher d’autre (' + JSON.stringify(J.manque) + ')');
 
   ok(errs.length === 0, 'aucune erreur JS (' + errs.join(' | ') + ')');
   await b.close();
