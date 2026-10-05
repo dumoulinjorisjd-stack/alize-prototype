@@ -14227,6 +14227,12 @@
       const av=prixAutreAvis((pi&&pi.dataset.refus)||f.otherPrice,f.otherUnit);
       pa.textContent=av.txt;pa.style.display=av.txt?'':'none';
       pa.style.color=(av.cls==='ko')?'var(--coral-deep)':'var(--good)';}
+    // Le manque de l'ÉTAPE suit la frappe : affiché une seule fois au rendu, il resterait
+    // à dire « il reste à fournir un montant » sur une case qu'on vient de remplir.
+    const sm=document.getElementById('stepMissing');
+    if(sm&&S.proStep){const mq=manqueEtape(S.proStep,f);
+      sm.style.display=mq.length?'':'none';
+      sm.innerHTML=mq.length?('Il reste à fournir&nbsp;: '+mq.join(' · ')+'.'):'';}
     const ok=proSignupOk(f);const btn=document.querySelector('[data-act="pro-submit"]');if(btn)btn.disabled=!ok;const el=document.getElementById('proMissing');if(el){el.style.display=ok?'none':'';el.textContent=ok?'':('Pour valider, il reste à fournir : '+proMissing(f).join(' · ')+'.');}}
   const RQ='<span class="req">*</span>';
   function conciergeSignup(){
@@ -14757,7 +14763,41 @@
   function draftSvcDone(f){f=f||{};return !!(f.cats&&f.cats.length)&&(!needsGrille(f)||!!f.acceptsGrille||desiredNetOk(f))&&autrePrixOk(f)&&(!f.cats.includes('baby')||!!(f.diplomas&&f.diplomas.length));}
   function draftAccDone(f){f=f||{};return !!f.mandat&&!!f.cgu&&!!f.charte;}
   // Prochaine étape INCOMPLÈTE (pour enchaîner « Enregistrer et continuer ») ; null si tout est fait.
-  function nextDraftStep(cur){const order=['id','ins','svc','acc'];const f=S.proForm||{};const done={id:draftIdDone(f),ins:draftInsDone(f),svc:draftSvcDone(f),acc:draftAccDone(f)};const i=order.indexOf(cur);for(let k=i+1;k<order.length;k++)if(!done[order[k]])return order[k];for(let k=0;k<order.length;k++)if(!done[order[k]])return order[k];return null;}
+  /* « JE REVIENS À LA MÊME PAGE SANS POUVOIR FINALISER LE DOSSIER. »
+     Mot pour mot, d'un loueur de catamaran bloqué le 05/10/2026. Le mécanisme tient à la
+     SECONDE boucle : après avoir cherché une étape à faire DEVANT, elle repartait du
+     début — et retombait sur l'étape COURANTE quand c'est elle qui n'est pas finie.
+     « Enregistrer et continuer → » renvoyait donc exactement là où l'on était, sans un
+     mot. Une étape ne peut pas être la suite d'elle-même : on la saute, et l'on rend
+     `null`, c'est-à-dire le récapitulatif — qui, lui, NOMME ce qui manque. */
+  function nextDraftStep(cur){const order=['id','ins','svc','acc'];const f=S.proForm||{};const done={id:draftIdDone(f),ins:draftInsDone(f),svc:draftSvcDone(f),acc:draftAccDone(f)};const i=order.indexOf(cur);for(let k=i+1;k<order.length;k++)if(!done[order[k]])return order[k];for(let k=0;k<order.length;k++)if(order[k]!==cur&&!done[order[k]])return order[k];return null;}
+  /* ET L'ÉTAPE DIT CE QUI LUI MANQUE, AVANT LE CLIC. Le récapitulatif nommait les
+     manques depuis toujours ; l'écran de l'étape, lui, ne disait RIEN — et c'est sur
+     celui-là qu'on est quand on bute. La liste et le verdict de l'étape sortent des
+     mêmes conditions ; une épreuve vérifie qu'ils ne peuvent pas se contredire. */
+  function manqueEtape(step,f){
+    f=f||{};const m=[];
+    if(step==='id'){
+      if((f.name||'').trim().length<2)m.push('votre nom ou raison sociale');
+      if((f.phone||'').trim().length<6)m.push('votre téléphone');
+      if(!/^\d{14}$/.test((f.siret||'').replace(/\s/g,'')))m.push('un SIRET à 14 chiffres');
+      if((f.address||'').trim().length<2)m.push('votre adresse professionnelle');
+      if(!isAdult(f.birth))m.push('votre date de naissance');
+    }else if(step==='ins'){
+      if(!f.insuranceDoc&&!f.insuranceNone)m.push('votre attestation d’assurance, ou la case « je n’en ai pas »');
+    }else if(step==='svc'){
+      if(!(f.cats&&f.cats.length))m.push('au moins un métier');
+      if(f.cats&&f.cats.includes('autre')&&!(f.otherService||'').trim())m.push('le nom de votre service « Autre »');
+      if(f.cats&&f.cats.includes('autre')&&(f.otherService||'').trim()&&!prixAutreLu(f.otherPrice).ok)m.push('un montant chiffré pour « '+(f.otherService||'').trim()+' »');
+      if(needsGrille(f)&&!f.acceptsGrille&&!desiredNetOk(f))m.push('accepter la grille tarifaire, ou indiquer votre prix net souhaité pour chaque métier du catalogue');
+      if(f.cats&&f.cats.includes('baby')&&!(f.diplomas&&f.diplomas.length))m.push('vos diplômes pour la garde d’enfants');
+    }else if(step==='acc'){
+      if(!f.mandat)m.push('accepter le mandat de facturation');
+      if(!f.cgu)m.push('accepter les CGU et CGV');
+      if(!f.charte)m.push('accepter la charte de responsabilité');
+    }
+    return m;
+  }
   function draftSteps(f){return [
     {id:'id',ic:I.user,nm:'Identité & entreprise',sub:'Nom, téléphone, SIRET, adresse',done:draftIdDone(f)},
     {id:'ins',ic:I.shield,nm:'Assurance',sub:'Attestation responsabilité civile',done:draftInsDone(f)},
@@ -14839,6 +14879,7 @@
       ${body}
       <div class="footcta" style="position:static;background:none;padding:16px 0 0">
         <button class="btn primary" data-act="draft-save">${nextDraftStep(step)?'Enregistrer et continuer →':(okStep?I.check+' Enregistrer, c’est complet':'Enregistrer')}</button>
+        <p class="mini" id="stepMissing" style="text-align:center;margin-top:10px;color:var(--coral-deep);font-weight:600;line-height:1.5;${okStep?'display:none':''}">${okStep?'':'Il reste à fournir&nbsp;: '+manqueEtape(step,f).join(' · ')+'.'}</p>
       </div></div>`;
   }
   function proPending(){
