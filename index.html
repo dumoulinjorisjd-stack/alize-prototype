@@ -9966,6 +9966,34 @@
       presque:connus.filter(function(d){return PRO_ETAPES.filter(function(e){return !!(d.jalonsPro||{})[e[0]];}).length===3;}),
       sansPush:cl.filter(function(d){return !d.push;}).length};
   }
+  /* Un mur dit ce qu'il sait de SES occupants, et le nombre se déplie en NOMS : une
+     relance se fait compte par compte, pas sur un chiffre. L'ordre est celui de
+     l'inscription, le plus ancien d'abord — c'est celui qu'on risque de perdre. */
+  function murSousLigne(f){
+    if(!f||!f.n)return '';
+    const bouts=[];
+    if(f.jamais)bouts.push('<b>'+f.jamais+'</b> '+(f.jamais>1?'ne sont jamais repassés':'n’est jamais repassé')+' après l’inscription');
+    if(f.revenus)bouts.push('<b>'+f.revenus+'</b> '+(f.revenus>1?'sont revenus':'est revenu')+' un autre jour');
+    if(f.vieux)bouts.push('<b>'+f.vieux+'</b> '+(f.vieux>1?'inscrits':'inscrit')+' depuis plus de 7 jours');
+    if(f.indispo)bouts.push('<b>'+f.indispo+'</b> '+(f.indispo>1?'ont demandé':'a demandé')+' un métier pas encore ouvert');
+    return bouts.join(' · ');
+  }
+  function murQuiHtml(qui,maintenant){
+    const l=(qui||[]).slice().sort(function(a,b){return (a.createdAt||0)-(b.createdAt||0);});
+    return l.map(function(c){
+      const j=c.createdAt?Math.floor((maintenant-c.createdAt)/864e5):null;
+      const marques=[];
+      if(!c.push)marques.push('injoignable');
+      if(!((c.addresses||[]).length))marques.push('sans adresse');
+      if(!c.card||/Aucune/.test(String(c.card)))marques.push('sans carte');
+      if((c.jalons||{}).revenu)marques.push('revenu');
+      return '<div style="margin-top:8px;padding:8px 10px;background:var(--card);border-radius:10px">'
+        +'<div class="row between" style="gap:8px;align-items:baseline"><b style="font-size:13px">'+esc(c.name||'Client')+'</b>'
+        +'<span class="mini" style="flex:none;color:var(--muted)">'+(j==null?'date inconnue':(j===0?'inscrit aujourd’hui':'inscrit il y a '+plN(j,'jour')))+'</span></div>'
+        +(c.email?'<a href="mailto:'+esc(c.email)+'" class="mini" style="color:var(--teal-deep);font-weight:700;word-break:break-all">'+esc(c.email)+'</a>':'<span class="mini">E-mail inconnu</span>')
+        +(marques.length?'<div class="mini" style="color:var(--muted);margin-top:2px">'+esc(marques.join(' · '))+'</div>':'')
+        +'</div>';}).join('');
+  }
   const PARCOURS_MURS=[['catalogue','N’a jamais touché au catalogue'],
     ['config','A regardé, n’a rien configuré'],
     ['paiement','A configuré, jamais vu le paiement'],
@@ -10023,11 +10051,32 @@
         {jalons:Object.assign({},S.jalons)},{merge:true}).catch(function(){});
     }catch(_){}
   }
+  /* ── LE PREMIER MUR ÉTAIT UN SAC ───────────────────────────────────────────────
+     « Ce n'est pas assez précis. » Onze comptes sur seize tombaient dans « n'a jamais
+     touché au catalogue », et ce chiffre mélangeait TROIS populations qui n'appellent
+     pas le même geste.
+     1) CELUI QUI S'EST INSCRIT AVANT QUE LA MESURE EXISTE. Les jalons sont en ligne
+        depuis le 01/10/2026 ; un compte créé avant ne porte AUCUN jalon, quoi qu'il ait
+        fait. Le ranger au premier mur, c'est AFFIRMER qu'il n'a jamais ouvert le
+        catalogue alors qu'on n'en sait rien — et ce mur était justement le plus garni.
+        La preuve d'activité existe pourtant : un compte d'avant qui porte ne serait-ce
+        qu'UN jalon est revenu DEPUIS, donc il se mesure comme les autres. Celui qui n'en
+        porte aucun n'est pas rétrogradé : il est MIS À PART et compté comme tel.
+     2) CELUI QUI NE S'EST JAMAIS REPASSÉ. Il n'est pas bloqué par l'écran, il est parti.
+        Le remède est une relance, pas une correction du catalogue.
+     3) CELUI QUI EST REVENU ET N'A TOUJOURS RIEN OUVERT. Lui, c'est l'écran qui le
+        retient — et c'est le seul des trois qui dit quelque chose sur le produit.
+     Chaque mur porte donc SES propres faits, comptés sur ses seuls occupants, au lieu
+     d'un bloc global où « 14 sans notification » ne disait pas de QUI il parlait. ── */
+  // Le jour où les jalons sont partis en ligne. Avant cette date, l'absence de jalon ne
+  // prouve rien du tout : elle dit seulement que le compte n'est pas repassé depuis.
+  const CLIENT_JALONS_DEPUIS=Date.UTC(2026,9,1,19,0,0);
   function parcoursClients(clients,parClient,maintenant){
     const tous=Array.isArray(clients)?clients:[];
     const cl=tous.filter(function(c){return !compteDeTest(c);});
     const exclus=tous.length-cl.length;
-    const murs={catalogue:[],config:[],paiement:[],confirme:[],commande:[]};const abouti=[];let sansJalon=0;
+    const murs={catalogue:[],config:[],paiement:[],confirme:[],commande:[]};
+    const abouti=[];const avant=[];let sansJalon=0;
     cl.forEach(function(c){
       const d=(parClient&&parClient[c.uid])||[];
       const j=c.jalons||{};
@@ -10040,25 +10089,28 @@
       if(j.paiement){murs.confirme.push(c);return;}
       if(j.config){murs.paiement.push(c);return;}
       if(j.catalogue){murs.config.push(c);return;}
+      // Aucun jalon, aucune demande : si le compte est né AVANT la mesure, son silence
+      // n'est pas une preuve. On ne l'accuse pas d'être resté à la porte.
+      if(!Object.keys(j).length&&c.createdAt&&c.createdAt<CLIENT_JALONS_DEPUIS){avant.push(c);return;}
       murs.catalogue.push(c);
     });
-    // Les faits se comptent sur les BLOQUÉS : « 11 des 14 n'ont aucune notification »
-    // dit où regarder, « 11 clients sur 60 » ne dit rien.
     const bloques=murs.catalogue.concat(murs.config,murs.paiement,murs.confirme,murs.commande);
-    const faits={
-      sansPush:bloques.filter(function(c){return !c.push;}).length,
-      sansAdresse:bloques.filter(function(c){return !((c.addresses||[]).length);}).length,
-      sansCarte:bloques.filter(function(c){return !c.card||/Aucune/.test(String(c.card));}).length,
-      // Un compte inscrit hier n'est pas un compte perdu : on ne mélange pas les deux.
-      vieux:bloques.filter(function(c){return c.createdAt&&(maintenant-c.createdAt)>7*864e5;}).length,
-      // Revenir est un FAIT, pas une marche : il dit si le compte est dormant ou s'il
-      // revient sans jamais aller plus loin — deux problèmes qui n'ont pas le même remède.
-      revenus:bloques.filter(function(c){return !!((c.jalons||{}).revenu);}).length,
-      indispo:bloques.filter(function(c){return !!((c.jalons||{}).indispo);}).length,
-    };
+    // Les mêmes faits, mesurés sur n'importe quel groupe : le global et chaque mur
+    // passent par la même porte, sinon les deux finiraient par se contredire.
+    function faitsDe(g){
+      return {n:g.length,
+        sansPush:g.filter(function(c){return !c.push;}).length,
+        sansAdresse:g.filter(function(c){return !((c.addresses||[]).length);}).length,
+        sansCarte:g.filter(function(c){return !c.card||/Aucune/.test(String(c.card));}).length,
+        vieux:g.filter(function(c){return c.createdAt&&(maintenant-c.createdAt)>7*864e5;}).length,
+        revenus:g.filter(function(c){return !!((c.jalons||{}).revenu);}).length,
+        jamais:g.filter(function(c){return !((c.jalons||{}).revenu);}).length,
+        indispo:g.filter(function(c){return !!((c.jalons||{}).indispo);}).length};
+    }
     return {total:cl.length,exclus:exclus,bloques:bloques.length,abouti:abouti.length,sansJalon:sansJalon,
-      murs:PARCOURS_MURS.map(function(m){return {cle:m[0],nm:m[1],n:murs[m[0]].length,qui:murs[m[0]]};}),
-      faits:faits};
+      avant:avant.length,quiAvant:avant,
+      murs:PARCOURS_MURS.map(function(m){return {cle:m[0],nm:m[1],n:murs[m[0]].length,qui:murs[m[0]],faits:faitsDe(murs[m[0]])};}),
+      faits:faitsDe(bloques)};
   }
   function optionsEditorHtml(svcId){
     const opts=svcOptions(svcId);
@@ -10339,16 +10391,23 @@
       const f=P.faits;
       return `<p class="mini" style="margin:0;color:var(--muted)">Chaque compte compte <b>une seule fois</b>, à la première étape qu’il n’a pas franchie. ${plN(P.total,'compte')} client${P.total>1?'s':''}${P.exclus?`, <b>${plN(P.exclus,'compte')} de test écarté${P.exclus>1?'s':''}</b>`:''}.</p>
         ${P.murs.map(function(m){ if(!m.n)return '';
-          return `<div class="row between" style="align-items:flex-start;margin-top:11px;gap:10px"><div style="flex:1;min-width:0"><span class="sub">${esc(m.nm)}</span></div><span class="chip coral" style="flex:none">${m.n}</span></div>`;}).join('')}
+          const ouvert=!!((S.admMurOpen||{})[m.cle]);const sous=murSousLigne(m.faits);
+          return `<button data-adm="mur:${m.cle}" style="display:block;width:100%;text-align:left;background:none;border:0;padding:0;margin-top:11px;cursor:pointer"><div class="row between" style="align-items:flex-start;gap:10px"><div style="flex:1;min-width:0"><span class="sub">${esc(m.nm)}</span>${sous?`<div class="mini" style="color:var(--muted);line-height:1.5;margin-top:2px">${sous}</div>`:''}</div><span class="row" style="gap:6px;align-items:center;flex:none"><span class="chip coral" style="flex:none">${m.n}</span><span style="display:inline-block;transform:rotate(${ouvert?'90deg':'0deg'});transition:transform .15s;color:var(--muted)">${I.chevron}</span></span></div></button>
+            ${ouvert?murQuiHtml(m.qui,Date.now()):''}`;}).join('')}
         ${P.abouti?`<div class="row between" style="align-items:center;margin-top:11px;gap:10px"><span class="sub">A commandé</span><span class="chip good" style="flex:none">${P.abouti}</span></div>`:''}
         ${P.sansJalon?`<p class="mini" style="margin-top:9px;color:var(--muted);line-height:1.5">${plN(P.sansJalon,'compte')} ${P.sansJalon>1?'ont commandé':'a commandé'} avant que ces jalons existent&nbsp;: leur demande prouve la configuration et le passage au paiement, c’est elle qui les classe.</p>`:''}
+        ${P.avant?`<div style="margin-top:13px;padding:10px 12px;background:var(--sand);border-radius:11px">
+          <div class="row between" style="align-items:flex-start;gap:10px"><div style="flex:1;min-width:0"><span class="sub">On ne sait pas où ${P.avant>1?'ils se sont arrêtés':'il s’est arrêté'}</span>
+          <div class="mini" style="color:var(--muted);line-height:1.5;margin-top:2px">${plN(P.avant,'compte')} ${P.avant>1?'inscrits':'inscrit'} <b>avant le 1<sup>er</sup> octobre</b>, quand rien n’était encore mesuré, et qui n’${P.avant>1?'ont':'a'} pas rouvert l’application depuis. ${P.avant>1?'Les compter':'Le compter'} au premier mur reviendrait à affirmer ${P.avant>1?'qu’ils n’ont':'qu’il n’a'} jamais touché au catalogue&nbsp;: on n’en sait rien.</div></div>
+          <button data-adm="mur:avant" style="background:none;border:0;padding:0;cursor:pointer;flex:none;color:var(--muted);transform:rotate(${(S.admMurOpen||{}).avant?'90deg':'0deg'});transition:transform .15s" aria-label="Voir qui">${I.chevron}</button></div>
+          ${(S.admMurOpen||{}).avant?murQuiHtml(P.quiAvant,Date.now()):''}
+        </div>`:''}
         ${P.bloques?`<div style="margin-top:13px;padding:10px 12px;background:var(--sand);border-radius:11px">
           <div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Sur les ${P.bloques} bloqué${P.bloques>1?'s':''}</div>
-          <div class="mini" style="margin-top:5px;line-height:1.6">${f.indispo?`<b>${f.indispo}</b> ${f.indispo>1?'ont touché':'a touché'} un métier <b>pas encore ouvert</b> ${f.indispo>1?'(ils voulaient':'(il voulait'} quelque chose qu’on ne vend pas)<br>`:''}<b>${f.revenus}</b> ${f.revenus>1?'sont revenus':'est revenu'} un autre jour ${f.revenus>1?'(les autres ne sont jamais repassés)':'(les autres ne sont jamais repassés)'}<br>
-          ${f.sansPush} ne ${f.sansPush>1?'peuvent':'peut'} recevoir <b>aucune notification</b><br>
+          <div class="mini" style="margin-top:5px;line-height:1.6">${f.indispo?`<b>${f.indispo}</b> ${f.indispo>1?'ont touché':'a touché'} un métier <b>pas encore ouvert</b> ${f.indispo>1?'(ils voulaient':'(il voulait'} quelque chose qu’on ne vend pas)<br>`:''}${f.sansPush} ne ${f.sansPush>1?'peuvent':'peut'} recevoir <b>aucune notification</b><br>
           ${f.sansAdresse} n’${f.sansAdresse>1?'ont':'a'} <b>aucune adresse</b> enregistrée<br>
           ${f.sansCarte} n’${f.sansCarte>1?'ont':'a'} <b>aucune carte</b> enregistrée<br>
-          ${f.vieux} ${f.vieux>1?'sont inscrits':'est inscrit'} depuis <b>plus de 7 jours</b> (les autres viennent d’arriver)</div>
+          ${f.vieux?`${f.vieux} ${f.vieux>1?'sont inscrits':'est inscrit'} depuis <b>plus de 7 jours</b>${f.vieux<f.n?' (les autres viennent d’arriver)':''}`:'tous <b>viennent d’arriver</b> (moins de 7 jours)'}</div>
           <div class="mini" style="margin-top:7px;color:var(--muted);line-height:1.5">Ce ne sont pas des étapes&nbsp;: on peut commander sans avoir rien enregistré de tout cela. Ce sont des faits, comptés là où ils expliquent quelque chose.</div>
         </div>`:''}`;})();
     const svcAll=allSvc();
@@ -16831,6 +16890,8 @@
         c.proSuggestAnswer=''; render(); return;
       }
       else if(act==='priceopen'){ S.admPriceOpen=S.admPriceOpen||{}; S.admPriceOpen[id]=!S.admPriceOpen[id]; render(); return; }
+      // Déplier un mur du parcours client : on passe d'un nombre à des noms.
+      else if(act==='mur'){ S.admMurOpen=S.admMurOpen||{}; S.admMurOpen[id]=!S.admMurOpen[id]; render(); return; }
       /* PASSER UN MÉTIER DE LA CONSOLE À L'ACTE. On crée sa première prestation : la
          carte bascule alors d'elle-même sur la grille (c'est `isCatalogForfait` qui en
          décide, et il ne regarde que cela), et le tarif horaire disparaît de partout —

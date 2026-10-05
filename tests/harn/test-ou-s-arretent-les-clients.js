@@ -18,7 +18,12 @@ const RACINE = '/home/user/alize-work';
 const o = { headless: true }; if (fs.existsSync('/opt/pw-browsers/chromium')) o.executablePath = '/opt/pw-browsers/chromium';
 let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; console.log('  ✗ ÉCHEC : ' + l); } };
 const html = fs.readFileSync(path.join(RACINE, 'index.html'), 'utf8');
-const JOUR = 864e5, T = 1790000000000;
+// L'horloge de l'épreuve est posée APRÈS la mise en ligne des jalons (01/10/2026) :
+// depuis la v804, un compte inscrit AVANT, et qui n'a jamais rouvert l'application, n'est
+// plus rangé au premier mur — son silence ne prouve rien. Les comptes fabriqués ici
+// doivent donc naître après cette date pour continuer de dire ce qu'ils disent ;
+// `test-mur-plus-precis.js` éprouve la règle elle-même.
+const JOUR = 864e5, T = 1796065200000;
 
 (async () => {
   const b = await chromium.launch(o);
