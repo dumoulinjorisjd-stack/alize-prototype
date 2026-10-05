@@ -158,6 +158,70 @@ charte('enveloppe commune (prestataire)', tiCharteHtml('<p>Bonjour.</p>', null, 
 const hexs = (fn.match(/#FF6A5B|#FF9F54|#0FA896|#14C2A8/g) || []).length;
 ok(hexs === 4, 'les quatre couleurs de marque ne sont écrites qu\'une fois, dans MAIL_COULEURS (' + hexs + ')');
 
+/* E — LA FORME AUSSI SE LIT À UN SEUL ENDROIT, ET ON LA MESURE SUR LES HUIT RENDUS.
+
+   « Il faut que les e-mails soient à la charte graphique des e-mails habituels. »
+   Mesuré avant de corriger : les six gabarits autonomes rendaient TROIS boutons
+   différents pour la même action (14 px/12-26/r11 dans l'enveloppe, 15 px/13-30/r12 dans
+   la bienvenue, l'invitation et le mot de passe, 14 px/11-24 dans la relance et le profil
+   validé), et la relance Mollie n'avait ni le corps à 15 px, ni le pied crème au filet,
+   ni la mention d'éditeur. La couleur avait déjà sa source unique ; la FORME ne l'avait
+   pas, et elle a dérivé pour la même raison.
+
+   L'ÉPREUVE EXÉCUTE LES GABARITS, elle ne lit pas la source : un septième gabarit écrit
+   demain, qui recopierait l'enveloppe à la main, rougirait ici. On mesure le RENDU face
+   aux repères relevés sur l'enveloppe commune — qui EST la charte, puisque c'est elle
+   qui habille les e-mails ordinaires. */
+const srcGab = decoupe('function welcomeFeatureRow(', 'exports.sendResetEmail');
+const gabarits = new Function('require', '__dirname',
+  'const APP_URL = \'https://ti-services.fr\';\n' + esc + '\n' + bloc + '\n' +
+  srcGab.slice(0, srcGab.lastIndexOf('\n}') + 2) +
+  '\nreturn {welcomeHtml, inviteArtisanHtml, mollieReminderHtml, approvedArtisanHtml, resetPasswordEmail};'
+)(bac.require, bac.__dirname);
+
+const REPERES = [
+  ['le fond crème de la page', /background:#FBF7F4/],
+  ['la carte de 520 px arrondie à 18', /max-width:520px[\s\S]{0,60}border-radius:18px/],
+  ['le bandeau dégradé de 6 px', /height:6px;background:linear-gradient\(90deg,/],
+  ['le logo 60×60 arrondi à 16', /cid:tilogo" width="60" height="60"[\s\S]{0,80}border-radius:16px/],
+  ['le logotype composé, 24 px/800', /font-size:24px;font-weight:800[\s\S]{0,80}>Ti<\/span><span style="color:#231E33">-Services/],
+  ['le sous-titre de marque', /Services à la demande · Saint-Barthélemy/],
+  ['le corps à 15 px, interligne 1.6', /font-size:15px;line-height:1\.6;color:#4a4556/],
+  ['le bouton d\'action arrondi à 11', /font-size:14px;padding:12px 26px;border-radius:11px/],
+  ['le pied au filet sur fond crème', /border-top:1px solid #efeae4;background:#FBF7F4/],
+  ['la mention de l\'éditeur', /C\.C\.S, Construction Conseils et Services/],
+];
+const RENDUS = [
+  ['l’enveloppe commune', tiCharteHtml('<p>Bonjour.</p>', null, false)],
+  ['la bienvenue client', gabarits.welcomeHtml('Joris', 'client')],
+  ['la bienvenue prestataire', gabarits.welcomeHtml('Joris', 'artisan')],
+  ['l’invitation prestataire', gabarits.inviteArtisanHtml('Joris', 'Un mot')],
+  ['la relance Mollie', gabarits.mollieReminderHtml('Joris', 1, 'a')],
+  ['le profil validé', gabarits.approvedArtisanHtml('Joris', false)],
+  ['le mot de passe (client)', gabarits.resetPasswordEmail('https://ti-services.fr/r', 'fr', false).html],
+  ['le mot de passe (prestataire)', gabarits.resetPasswordEmail('https://ti-services.fr/r', 'fr', true).html],
+];
+RENDUS.forEach(([nom, html]) => {
+  const absents = REPERES.filter(([, re]) => !re.test(String(html || ''))).map(([n]) => n);
+  ok(absents.length === 0, nom + ' porte les dix repères de la charte' +
+    (absents.length ? ' — il manque : ' + absents.join(', ') : ''));
+});
+
+/* ASSERTION ARRIÈRE : sans elle, des repères qui ne reconnaîtraient plus rien laisseraient
+   tout passer en vert. Un e-mail en texte nu doit n'en porter aucun. */
+const texteNu = '<p>Bonjour,</p><p>Votre attestation est validée.</p>';
+ok(REPERES.filter(([, re]) => re.test(texteNu)).length === 0,
+  'et les repères mesurent vraiment quelque chose : un e-mail en texte nu n’en porte aucun');
+
+/* LES DEUX PORTES EXISTENT, ET PLUS PERSONNE NE DESSINE À CÔTÉ. Un bouton d'action ou un
+   pied écrit en dur ailleurs est exactement la dérive qui revient. */
+ok(/function mailBouton\(href, label, pro\)/.test(fn) && /function mailPied\(salut, ajout\)/.test(fn),
+  'le bouton et le pied ont chacun leur porte unique');
+const piedsEnDur = (fn.match(/border-top:1px solid #efeae4;background:#FBF7F4/g) || []).length;
+ok(piedsEnDur === 1, 'le pied n’est dessiné qu’à un seul endroit (' + piedsEnDur + ')');
+const boutonsEnDur = (fn.match(/display:inline-block;background:' \+ (btn|crossBtn)/g) || []).length;
+ok(boutonsEnDur === 0, 'aucun gabarit ne redessine le bouton d’action (' + boutonsEnDur + ')');
+
 /* QUI EST LE DESTINATAIRE ? On le DEMANDE à la base, on ne le fait pas déclarer par
    les vingt appels — le vingt-et-unième oublierait. Éprouvé sur une fausse base. */
 const srcPro = decoupe('const _proParMail = new Map();', 'async function sendMail');

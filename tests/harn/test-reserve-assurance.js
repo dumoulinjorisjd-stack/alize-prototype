@@ -35,7 +35,10 @@ const prendre = (nom) => {
 const COUL = /const MAIL_COULEURS = \{[\s\S]*?\n\};/.exec(fn);
 const fab = new Function(
   'const APP_URL = \'https://ti-services.fr\';\n' + COUL[0] + '\n' +
-  prendre('escHtmlS') + '\n' + prendre('mailPalette') + '\n' + prendre('approvedArtisanHtml') +
+  prendre('escHtmlS') + '\n' + prendre('mailPalette') + '\n' +
+  // Le bouton et le pied ont leur porte unique depuis le 05/10/2026 : on les prend
+  // à la source comme le reste, plutôt que d'en recopier une imitation ici.
+  prendre('mailBouton') + '\n' + prendre('mailPied') + '\n' + prendre('approvedArtisanHtml') +
   '\nreturn approvedArtisanHtml;');
 const approvedArtisanHtml = fab();
 

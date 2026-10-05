@@ -132,6 +132,36 @@ function mailPalette(pro) {
   const C = pro ? MAIL_COULEURS.pro : MAIL_COULEURS.client;
   return { c1: C.c1, c2: C.c2, btn: C.c1, dot: C.c1 };
 }
+/* LE BOUTON ET LE PIED SE LISENT ICI AUSSI — MÊME LEÇON QUE LA COULEUR (05/10/2026).
+   « Il faut que les e-mails soient à la charte graphique des e-mails habituels. » Mesuré
+   avant d'écrire : les six gabarits autonomes rendaient TROIS boutons différents pour la
+   même action — 14 px / 12-26 / rayon 11 dans l'enveloppe commune, 15 px / 13-30 /
+   rayon 12 dans la bienvenue, l'invitation et le mot de passe, 14 px / 11-24 dans la
+   relance et le profil validé — et la relance Mollie n'avait ni le corps à 15 px, ni le
+   pied crème au filet, ni la mention « Service édité par C.C.S ». La couleur avait déjà
+   été ramenée à une source unique ; la FORME ne l'était pas, et elle a dérivé de la même
+   façon, pour la même raison. On ne corrige donc pas six recopies, on retire ce qu'elles
+   recopiaient : la charte, ce sont les e-mails ORDINAIRES, donc l'enveloppe commune — les
+   écarts s'alignent sur elle, jamais l'inverse. */
+function mailBouton(href, label, pro) {
+  return '<a href="' + escHtmlS(href) + '" style="display:inline-block;background:' + mailPalette(pro).btn +
+    ';color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 26px;border-radius:11px">' +
+    escHtmlS(label) + '</a>';
+}
+/* Le pied signe « L'équipe Ti-Services » et nomme l'éditeur. Deux ouvertures, et ni
+   l'une ni l'autre n'est une dérive : `salut` est la formule de politesse qui précède la
+   signature (« À très vite, »), une ATTENTION que quatre gabarits portaient déjà et
+   qu'on ne retire pas en uniformisant ; `ajout` porte ce qu'UN gabarit doit dire en plus
+   — l'adresse postale de la relance, qui est une mention commerciale et ne se perd pas
+   en chemin. On unifie l'ALLURE, on n'efface pas ce que quelqu'un a mis là. */
+function mailPied(salut, ajout) {
+  return '<tr><td style="padding:16px 30px;border-top:1px solid #efeae4;background:#FBF7F4">' +
+    '<div style="font-size:12px;color:#8a8494;line-height:1.6">' + (salut ? salut + '<br>' : '') +
+    'L\'équipe Ti-Services<br>' +
+    '<span style="color:#b0aab8">Service édité par C.C.S, Construction Conseils et Services, SAS · Saint-Barthélemy</span>' +
+    (ajout ? '<br><span style="color:#b0aab8">' + ajout + '</span>' : '') +
+    '</div></td></tr>';
+}
 function tiCharteHtml(inner, cta, pro) {
   const C = mailPalette(pro);
   // Le pied signe déjà « L'équipe Ti-Services » : on retire la signature du corps
@@ -140,9 +170,7 @@ function tiCharteHtml(inner, cta, pro) {
   const url = (cta && cta.url) ? String(cta.url) : APP_URL.replace(/\/$/, '');
   const label = (cta && cta.label) ? String(cta.label) : 'Ouvrir Ti-Services';
   const bouton = corpsPorteUnBouton(body) ? '' :
-    '<tr><td align="center" style="padding:14px 30px 26px">' +
-      '<a href="' + escHtmlS(url) + '" style="display:inline-block;background:' + C.c1 + ';color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 26px;border-radius:11px">' + escHtmlS(label) + '</a>' +
-    '</td></tr>';
+    '<tr><td align="center" style="padding:14px 30px 26px">' + mailBouton(url, label, pro) + '</td></tr>';
   return '' +
   '<div style="margin:0;padding:0;background:#FBF7F4;font-family:-apple-system,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;color:#231E33">' +
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FBF7F4;padding:24px 12px">' +
@@ -156,10 +184,7 @@ function tiCharteHtml(inner, cta, pro) {
           '</td></tr>' +
           '<tr><td style="padding:14px 30px 6px"><div style="font-size:15px;line-height:1.6;color:#4a4556">' + body + '</div></td></tr>' +
           bouton +
-          '<tr><td style="padding:16px 30px;border-top:1px solid #efeae4;background:#FBF7F4">' +
-            '<div style="font-size:12px;color:#8a8494;line-height:1.6">L\'équipe Ti-Services<br>' +
-            '<span style="color:#b0aab8">Service édité par C.C.S, Construction Conseils et Services, SAS · Saint-Barthélemy</span></div>' +
-          '</td></tr>' +
+          mailPied() +
         '</table>' +
       '</td></tr>' +
     '</table>' +
@@ -5544,7 +5569,7 @@ function welcomeHtml(first, role) {
         '<div style="font-size:14px;font-weight:700;color:#231E33">' + crossTitle + '</div>' +
         '<div style="font-size:13px;color:#6b6577;line-height:1.55;margin:6px 0 12px">' + crossText + '</div>' +
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">' +
-          '<a href="' + crossHref + '" style="display:inline-block;background:' + crossBtn + ';color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 22px;border-radius:11px">' + crossLabel + '</a>' +
+          mailBouton(crossHref, crossLabel, !isPro) +
         '</td></tr></table>' +
       '</td></tr>' +
     '</table>';
@@ -5567,12 +5592,9 @@ function welcomeHtml(first, role) {
           '<tr><td style="padding:22px 30px 4px">' + feats + '</td></tr>' +
           '<tr><td style="padding:6px 30px 0">' + crossBlock + '</td></tr>' +
           '<tr><td align="center" style="padding:20px 30px 28px">' +
-            '<a href="' + app + '" style="display:inline-block;background:' + btn + ';color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:13px 30px;border-radius:12px">' + ctaLabel + '</a>' +
+            mailBouton(app, ctaLabel, isPro) +
           '</td></tr>' +
-          '<tr><td style="padding:16px 30px;border-top:1px solid #efeae4;background:#FBF7F4">' +
-            '<div style="font-size:12px;color:#8a8494;line-height:1.6">À très vite,<br>L\'équipe Ti-Services<br>' +
-            '<span style="color:#b0aab8">Service édité par C.C.S, Construction Conseils et Services, SAS · Saint-Barthélemy</span></div>' +
-          '</td></tr>' +
+          mailPied('À très vite,') +
         '</table>' +
       '</td></tr>' +
     '</table>' +
@@ -5622,13 +5644,10 @@ function inviteArtisanHtml(name, message) {
           '</td></tr>' +
           '<tr><td style="padding:22px 30px 4px">' + feats + '</td></tr>' +
           '<tr><td align="center" style="padding:18px 30px 6px">' +
-            '<a href="' + app + '" style="display:inline-block;background:' + btn + ';color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:13px 30px;border-radius:12px">Créer mon profil</a>' +
+            mailBouton(app, 'Créer mon profil', true) +
           '</td></tr>' +
           '<tr><td align="center" style="padding:0 30px 26px"><div style="font-size:12px;color:#8a8494">C\'est gratuit et ça prend quelques minutes · <a href="' + app + '" style="color:' + c1 + ';text-decoration:none">ti-services.fr</a></div></td></tr>' +
-          '<tr><td style="padding:16px 30px;border-top:1px solid #efeae4;background:#FBF7F4">' +
-            '<div style="font-size:12px;color:#8a8494;line-height:1.6">Au plaisir de vous compter parmi nous,<br>L\'équipe Ti-Services<br>' +
-            '<span style="color:#b0aab8">Service édité par C.C.S, Construction Conseils et Services, SAS · Saint-Barthélemy</span></div>' +
-          '</td></tr>' +
+          mailPied('Au plaisir de vous compter parmi nous,') +
         '</table>' +
       '</td></tr>' +
     '</table>' +
@@ -5697,14 +5716,14 @@ function mollieReminderHtml(name, n, cas) {
           '</td></tr>' +
           '<tr><td style="padding:16px 30px 0">' +
             '<h1 style="font-size:21px;margin:6px 0 0;color:#231E33">' + (hi ? (hi + ', il') : 'Il') + titre + '</h1>' +
-            '<p style="font-size:14.5px;line-height:1.6;color:#4a4556;margin:12px 0 0">' + accroche + '</p>' +
+            '<p style="font-size:15px;line-height:1.6;color:#4a4556;margin:12px 0 0">' + accroche + '</p>' +
             // 1 — les paiements. Le vrai verrou : sans compte Mollie, aucune mission acceptable.
             '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#EAF6F3;border:1px solid #cfece7;border-radius:14px;margin-top:16px">' +
               '<tr><td style="padding:16px 18px">' +
                 '<div style="font-size:15px;font-weight:800;color:#231E33">' + bloc1Titre + '</div>' +
                 '<div style="font-size:13.5px;color:#4a4556;line-height:1.55;margin-top:7px">' + bloc1Texte + '</div>' +
                 '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px"><tr><td align="center">' +
-                  '<a href="' + app + '/?open=missions" style="display:inline-block;background:' + btn + ';color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 24px;border-radius:11px">' + bloc1Bouton + '</a>' +
+                  mailBouton(app + '/?open=missions', bloc1Bouton, true) +
                 '</td></tr></table>' +
                 '<div style="font-size:12px;color:#8a8494;line-height:1.5;margin-top:10px;text-align:center">Compte quelques minutes, c\'est plus simple depuis un <b>ordinateur</b>.</div>' +
               '</td></tr>' +
@@ -5722,10 +5741,7 @@ function mollieReminderHtml(name, n, cas) {
             '<p style="font-size:13px;line-height:1.6;color:#8a8494;margin:16px 0 0">' + finPhrase + '</p>' +
             '<p style="font-size:13px;line-height:1.6;color:#8a8494;margin:12px 0 0">Un blocage, une question&nbsp;? Réponds simplement à cet e-mail.</p>' +
           '</td></tr>' +
-          '<tr><td style="padding:22px 30px 26px">' +
-            '<div style="height:1px;background:#EEE5DF"></div>' +
-            '<div style="font-size:11px;color:#a79fa8;line-height:1.5;padding-top:10px">C.C.S (Ti-Services), Carrefour des 4 Chemins, Marigot, 97133 Saint-Barthélemy</div>' +
-          '</td></tr>' +
+          mailPied(null, 'Carrefour des 4 Chemins, Marigot, 97133 Saint-Barthélemy') +
         '</table>' +
       '</td></tr>' +
     '</table>' +
@@ -5766,7 +5782,7 @@ function approvedArtisanHtml(name, sansAssurance) {
           '<td style="font-size:13px;color:#4a4556;line-height:1.5"><b>À partir de là, vous pourrez recevoir des missions</b> et accepter les demandes près de chez vous, votre gain net (commission déduite) vous est versé tout seul, sans virement à faire.</td>' +
         '</tr></table>' +
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px"><tr><td align="center">' +
-          '<a href="' + app + '/?open=missions" style="display:inline-block;background:' + btn + ';color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 24px;border-radius:11px">Activer mes paiements</a>' +
+          mailBouton(app + '/?open=missions', 'Activer mes paiements', true) +
         '</td></tr></table>' +
         '<div style="font-size:12px;color:#8a8494;line-height:1.5;margin-top:10px;text-align:center">Astuce&nbsp;: cette étape est plus simple depuis un <b>ordinateur</b>.</div>' +
       '</td></tr>' +
@@ -5802,10 +5818,7 @@ function approvedArtisanHtml(name, sansAssurance) {
             '<p style="font-size:15px;line-height:1.6;color:#4a4556;margin:10px 0 0">Bonne nouvelle&nbsp;: votre profil <b>intervenant</b> sur Ti-Services vient d\'être <b>validé</b> par notre équipe. Bienvenue à bord&nbsp;! Il reste une dernière étape avant de recevoir vos premières missions.</p>' +
           '</td></tr>' +
           '<tr><td style="padding:18px 30px 4px">' + mollieBlock + assuranceBlock + '</td></tr>' +
-          '<tr><td style="padding:16px 30px;border-top:1px solid #efeae4;background:#FBF7F4">' +
-            '<div style="font-size:12px;color:#8a8494;line-height:1.6">À très vite,<br>L\'équipe Ti-Services<br>' +
-            '<span style="color:#b0aab8">Service édité par C.C.S, Construction Conseils et Services, SAS · Saint-Barthélemy</span></div>' +
-          '</td></tr>' +
+          mailPied('À très vite,') +
         '</table>' +
       '</td></tr>' +
     '</table>' +
@@ -5867,14 +5880,11 @@ function resetPasswordEmail(link, lang, pro) {
             '<p style="font-size:15px;line-height:1.6;color:#4a4556;margin:12px 0 0">' + t.intro + '</p>' +
           '</td></tr>' +
           '<tr><td align="center" style="padding:22px 30px 6px">' +
-            '<a href="' + safe + '" style="display:inline-block;background:' + btn + ';color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:13px 30px;border-radius:12px">' + t.btn + '</a>' +
+            mailBouton(safe, t.btn, pro) +
           '</td></tr>' +
           '<tr><td style="padding:6px 30px 0"><div style="font-size:12px;color:#8a8494;line-height:1.5">' + t.alt + '<br><a href="' + safe + '" style="color:' + c1 + ';word-break:break-all">' + safe + '</a></div></td></tr>' +
           '<tr><td style="padding:16px 30px 4px"><div style="font-size:13px;color:#6b6577;line-height:1.6;background:#FBF7F4;border:1px solid #efeae4;border-radius:12px;padding:12px 14px">' + t.note + '</div></td></tr>' +
-          '<tr><td style="padding:16px 30px 24px;border-top:1px solid #efeae4;background:#FBF7F4;margin-top:8px">' +
-            '<div style="font-size:12px;color:#8a8494;line-height:1.6">' + t.signoff + '<br>L\'équipe Ti-Services<br>' +
-            '<span style="color:#b0aab8">Service édité par C.C.S, Construction Conseils et Services, SAS · Saint-Barthélemy</span></div>' +
-          '</td></tr>' +
+          mailPied(t.signoff) +
         '</table>' +
       '</td></tr>' +
     '</table>' +
