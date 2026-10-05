@@ -4806,7 +4806,17 @@
   // Le statut de fidélité (donc la commission) tient compte des missions gagnées par
   // parrainage (statusJobs = missions réalisées + crédit parrainage) — cohérent avec le
   // calcul serveur (settleCommission ajoute refBonusJobs au total).
-  function myCommPct(){ return founderActive()?FOUNDER_COMM_PCT:fidFor(statusJobs()).pct; }
+  /* LE PALIER QUI FAIT FOI, EN UN SEUL ENDROIT. « Je voulais aussi changer leur statut
+     de fidélité, par exemple le passer manuellement de bronze à platine. » Le palier se
+     DÉDUISAIT du nombre de missions, sans aucun recours : récompenser quelqu'un, ou
+     corriger une injustice, demandait de lui inventer des missions.
+     UN PALIER FORCÉ PRIME, et il prime PARTOUT : le taux de commission et les deux écrans
+     qui l'affichent lisent la même fonction. Sans elle, le prestataire se verrait
+     « Bronze » en payant le taux Platine, ou l'inverse — et c'est la commission qui
+     tranche à la fin du mois. */
+  function palierDeCle(k){const t=fidTiers().filter(function(x){return x.key===k;});return t.length?t[0]:null;}
+  function monPalier(){return palierDeCle(S.proTierForce)||fidFor(statusJobs());}
+  function myCommPct(){ return founderActive()?FOUNDER_COMM_PCT:monPalier().pct; }
   /* Interventions déjà réalisées par le prestataire connecté (récap + factures). */
   const PRO_HISTORY=()=>[
     {id:'h1',dateISO:'2026-07-05',svc:'menage',client:'Villa Bartolomé',clientFull:'SCI Bartolomé',clientZone:'Gustavia',duration:2,rate:35,amount:70,commPct:10,commission:7,net:63,invNo:'2026-0042',paidVia:'carte'},
@@ -11023,6 +11033,7 @@
           <button class="btn ghost sm" data-adm="art-msg:${a.id}" style="margin-top:10px;width:100%">${I.chat} Message interne (messagerie Ti-Services)</button>
         </div>`;})()}
         ${carteStatutArtisan(a)}
+        ${carteFideliteArtisan(a)}
 
         <div style="height:20px"></div>
         ${purgeBtns(a.uid||a.id,a.name)}
@@ -15772,7 +15783,7 @@
   // Carte COMPACTE et CLIQUABLE (ouvre le détail). On n'y montre que l'essentiel :
   // le badge Ambassadeur (permanent, à vie) + le palier général + le nombre de missions.
   function fidCard(){
-    const jobs=statusJobs(),tier=fidFor(jobs),col=fidColor(tier.key),isAmb=!!S.proFounder;
+    const jobs=statusJobs(),tier=monPalier(),col=fidColor(tier.key),isAmb=!!S.proFounder;
     return `<button class="card" data-act="open-fidelity" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block">
       <div class="row between" style="gap:12px;align-items:center">
         <div class="row" style="gap:11px;align-items:center"><span class="benic">${I.star}</span>
@@ -15784,7 +15795,10 @@
   // temporaire (3 mois / 2 000 €, départ au 1er oct), et l'évolution du statut GÉNÉRAL
   // qui s'appliquera une fois l'avantage Ambassadeur terminé.
   function proFidelity(){
-    const jobs=statusJobs(),rm=refMissions(),tier=fidFor(jobs),next=fidNext(jobs),col=fidColor(tier.key);
+    const jobs=statusJobs(),rm=refMissions(),tier=monPalier(),col=fidColor(tier.key);
+    // Palier attribué à la main : la progression « plus que N missions avant Or » n'a
+    // plus de sens, et la taire sans rien dire laisserait un palier inexpliqué.
+    const forcePal=!!palierDeCle(S.proTierForce),next=forcePal?null:fidNext(jobs);
     const isAmb=!!S.proFounder,advActive=founderActive(),notLaunched=Date.now()<launchMs(),left=founderDaysLeft();
     let amb='';
     if(isAmb){
@@ -15809,7 +15823,7 @@
     }else{prog=`<p class="mini" style="margin-top:10px">${I.party} Statut maximum atteint, vous conservez la plus grande part possible de chaque mission.</p>`;}
     const genCard=`<div class="card" style="padding:16px;margin-top:14px"><div class="row between" style="align-items:center"><b style="font-size:14px">${isAmb?'Votre statut général':'Statut fidélité'}</b><span class="chip" style="background:${col}22;color:${col}">${I.star} ${tier.nm}</span></div>
       <p class="sub" style="margin-top:8px">${isAmb?`C'est le statut qui s'appliquera <b>après</b> votre avantage Ambassadeur. Il monte à chaque mission réalisée.`:`Plus vous enchaînez les missions via Ti-Services, plus vous gardez une <b>grande part</b> de chaque prestation.`}</p>
-      <div class="row between" style="margin-top:8px"><span class="mini">${jobs} mission${jobs>1?'s':''} au total${rm?` · dont ${rm} par parrainage`:''}</span>${next?`<span class="mini">Prochain&nbsp;: ${next.nm}</span>`:''}</div>${prog}</div>`;
+      <div class="row between" style="margin-top:8px"><span class="mini">${jobs} mission${jobs>1?'s':''} au total${rm?` · dont ${rm} par parrainage`:''}</span>${next?`<span class="mini">Prochain&nbsp;: ${next.nm}</span>`:''}</div>${prog}${forcePal?`<p class="mini" style="margin-top:9px;color:var(--muted);line-height:1.5">Ce palier vous a été <b>attribué par Ti-Services</b>, il ne dépend pas de votre nombre de missions.</p>`:''}</div>`;
     return `<div class="pad"><button class="reset" data-act="close-fidelity" style="margin:8px 0 2px">← Retour</button>
       <span class="eyebrow">${I.star} Statut fidélité</span>
       <div class="h-hello">Votre statut</div>
@@ -16699,6 +16713,8 @@
       // Le répartiteur ne découpe `data-adm` qu'en DEUX (acte, identifiant) : l'état
       // demandé est le troisième morceau, et il faut aller le chercher dans `parts`.
       else if(act==='statut-art'){changerStatutArtisan(S.adminArtisans.find(x=>x.id===id),parts[2]);}
+      else if(act==='palier-art'){changerFideliteArtisan(S.adminArtisans.find(x=>x.id===id),parts[2]);}
+      else if(act==='amb-art'){changerAmbassadeurArtisan(S.adminArtisans.find(x=>x.id===id),parts[2]==='1');}
       else if(act==='copysiret'){
         const a=(S.adminArtisans||[]).find(x=>x.id===id); const v=(a&&a.siret)||'';
         if(!v)return;
@@ -19124,7 +19140,7 @@
         S.proLegal=(ad&&(ad.legalName||ad.name))||name; S.proAddress=(ad&&ad.address)||''; S.proStatusType=(ad&&ad.statusType)||'entreprise'; S.proLegalForm=(ad&&ad.legalForm)||''; S.proCapital=(ad&&ad.capital)||''; S.proRcsCity=(ad&&ad.rcsCity)||'';
         if(ad&&Array.isArray(ad.cats)&&ad.cats.length){S.proCats=ad.cats.slice();const rr=ad.rates||{};S.proRate=Math.min.apply(null,ad.cats.map(c=>(rr[c]!=null?rr[c]:svcBase(c))));}
         if(ad){S.proPendingCats=Array.isArray(ad.pendingCats)?ad.pendingCats.slice():[];S.proPendingOther=ad.pendingOther||'';S.proSkipped=Array.isArray(ad.skippedRequests)?ad.skippedRequests.slice():[];S.proSkipAt=(ad.skippedAt&&typeof ad.skippedAt==='object')?ad.skippedAt:{};}
-        if(ad){ S.proFounder=!!ad.founder; S.proFounderSince=(ad.founderSince&&ad.founderSince.toMillis)?ad.founderSince.toMillis():(typeof ad.founderSince==='number'?ad.founderSince:null); S.proFounderGross=Number(ad.founderGross)||0; S.proRating=ad.rating||0; S.proIban=ad.iban||''; S.proIbanHolder=ad.ibanHolder||''; S.proBic=ad.bic||''; S.proInsured=!!ad.insured; S.proInsurer=ad.insurer||''; S.proInsuranceUrl=ad.insuranceUrl||''; S.proInsuranceStatus=ad.insuranceStatus||(ad.status==='valide'&&ad.insured?'valide':(ad.insuranceUrl||ad.insured?'attente':'none')); S.proSiret=ad.siret||''; S.proBirth=ad.birth||''; S.proBio=ad.bio||''; S.proDiplomas=Array.isArray(ad.diplomas)?ad.diplomas:[]; S.proDiplomaOther=ad.diplomaOther||''; S.proPhoto=ad.photo||S.proPhoto||loadPhotoLocal(user.uid)||null; if(S.proPhoto)savePhotoLocal(user.uid,S.proPhoto); if(!ad.photo&&S.proPhoto){try{FB.f.setDoc(FB.f.doc(FB.db,'artisans',user.uid),{photo:S.proPhoto},{merge:true});}catch(_){}} S.proAcceptedCharte=!!ad.acceptedCharte; S.proAcceptedTerms=!!ad.acceptedTerms; S.proTermsVersion=ad.termsVersion||''; S.proTermsAt=(ad.termsAt&&ad.termsAt.toDate)?ad.termsAt.toDate():null; S.proMollie=ad.mollieStatus||'none'; S.proMollieOnb=ad.mollieOnboardingStatus||''; S.proMollieCanWork=ad.mollieCanWork===true; S.proMollieCanSettle=ad.mollieCanSettle!==false; S.proMollieOrgId=ad.mollieOrgId||''; S.proMollieDashboard=ad.mollieDashboardUrl||''; ensureBetaMollie(); if(S.proMollieOrgId&&!S._mollieAutoChecked){S._mollieAutoChecked=true;setTimeout(function(){try{refreshMollieStatus();}catch(_){}},1500);}
+        if(ad){ S.proFounder=!!ad.founder; S.proFounderSince=(ad.founderSince&&ad.founderSince.toMillis)?ad.founderSince.toMillis():(typeof ad.founderSince==='number'?ad.founderSince:null); S.proFounderGross=Number(ad.founderGross)||0; S.proRating=ad.rating||0; S.proTierForce=ad.tierForce||''; S.proIban=ad.iban||''; S.proIbanHolder=ad.ibanHolder||''; S.proBic=ad.bic||''; S.proInsured=!!ad.insured; S.proInsurer=ad.insurer||''; S.proInsuranceUrl=ad.insuranceUrl||''; S.proInsuranceStatus=ad.insuranceStatus||(ad.status==='valide'&&ad.insured?'valide':(ad.insuranceUrl||ad.insured?'attente':'none')); S.proSiret=ad.siret||''; S.proBirth=ad.birth||''; S.proBio=ad.bio||''; S.proDiplomas=Array.isArray(ad.diplomas)?ad.diplomas:[]; S.proDiplomaOther=ad.diplomaOther||''; S.proPhoto=ad.photo||S.proPhoto||loadPhotoLocal(user.uid)||null; if(S.proPhoto)savePhotoLocal(user.uid,S.proPhoto); if(!ad.photo&&S.proPhoto){try{FB.f.setDoc(FB.f.doc(FB.db,'artisans',user.uid),{photo:S.proPhoto},{merge:true});}catch(_){}} S.proAcceptedCharte=!!ad.acceptedCharte; S.proAcceptedTerms=!!ad.acceptedTerms; S.proTermsVersion=ad.termsVersion||''; S.proTermsAt=(ad.termsAt&&ad.termsAt.toDate)?ad.termsAt.toDate():null; S.proMollie=ad.mollieStatus||'none'; S.proMollieOnb=ad.mollieOnboardingStatus||''; S.proMollieCanWork=ad.mollieCanWork===true; S.proMollieCanSettle=ad.mollieCanSettle!==false; S.proMollieOrgId=ad.mollieOrgId||''; S.proMollieDashboard=ad.mollieDashboardUrl||''; ensureBetaMollie(); if(S.proMollieOrgId&&!S._mollieAutoChecked){S._mollieAutoChecked=true;setTimeout(function(){try{refreshMollieStatus();}catch(_){}},1500);}
           // Revenus / missions réalisées, rechargés depuis la fiche (persistés à chaque paiement).
           S.proEarnings=ad.earnings||0; S.proJobsTotal=ad.jobsTotal||0; S.proHistory=Array.isArray(ad.history)?ad.history:[];
           // Parrainage : filleuls validés (crédités par le serveur) + code propre de l'artisan.
@@ -19570,6 +19586,70 @@
   const ART_STATUTS=[['attente','En attente','Invisible pour les clients&nbsp;: il ne reçoit aucune demande.'],
     ['valide','Validé','Visible par les clients&nbsp;: il reçoit les demandes de ses métiers.'],
     ['refuse','Refusé','Invisible pour les clients, conservé dans l’historique.']];
+  /* ══ LE PALIER DE FIDÉLITÉ ET LE BADGE AMBASSADEUR, À LA MAIN ════════════════════
+     « Je voulais aussi changer leur statut de fidélité, par exemple le passer
+     manuellement de bronze à fondateur ou à platine. »
+
+     DEUX CHOSES DIFFÉRENTES SUR LA MÊME CARTE, et il faut qu'elles le restent :
+     le PALIER (Bronze → Platine) est permanent et se déduit des missions ; le badge
+     AMBASSADEUR est une distinction dont l'avantage est TEMPORAIRE (90 jours OU 2 000 €
+     de prestations, au premier atteint). Les confondre ferait croire qu'on accorde une
+     commission à 5 % pour toujours.
+
+     ON FORCE UNE CLÉ, PAS UN POURCENTAGE. Le barème des paliers se règle ailleurs dans la
+     console ; si le taux de Platine y change, le prestataire forcé Platine suit. Écrire
+     « 8 % » ici le figerait à côté de son propre barème.
+
+     ET ÇA CHANGE DE L'ARGENT. Le serveur lit le palier forcé à l'endroit où la commission
+     se calcule pour de vrai — sans quoi le geste serait décoratif, et l'application
+     afficherait un taux que la facture ne pratiquerait pas. La carte annonce donc le
+     taux obtenu, et dit quand on descend quelqu'un sous ce que ses missions lui donnent. */
+  function carteFideliteArtisan(a){
+    const jobs=(a.jobs||0)+((a.refBonusJobs||0));
+    const auto=fidFor(jobs), force=palierDeCle(a.tierForce), eff=force||auto;
+    const amb=!!a.founder, ambActif=founderActiveFor(a);
+    const descend=!!force&&force.min<auto.min;
+    return `<div class="card" style="padding:16px;margin-top:12px">
+      <b style="font-size:14px">Fidélité &amp; ambassadeur</b>
+      <p class="mini" style="margin-top:7px;color:var(--muted);line-height:1.5">Ses missions lui donnent <b style="color:${fidColor(auto.key)}">${auto.nm}</b> (${jobs} mission${jobs>1?'s':''}, parrainage compris).</p>
+      <div class="segs" style="margin-top:11px;flex-wrap:wrap">
+        <button class="seg ${force?'':'on'}" data-adm="palier-art:${a.id}:auto">${force?'':'✓ '}Automatique</button>
+        ${fidTiers().map(function(t){return `<button class="seg ${(force&&force.key===t.key)?'on':''}" data-adm="palier-art:${a.id}:${t.key}">${(force&&force.key===t.key)?'✓ ':''}${t.nm}</button>`;}).join('')}
+      </div>
+      <p class="mini" style="margin-top:10px;color:var(--ink);line-height:1.5">${force
+        ? `Palier forcé&nbsp;: <b style="color:${fidColor(eff.key)}">${eff.nm}</b>, commission <b>${eff.pct}&nbsp;%</b>. Son compte de missions ne change pas, et il voit sur son écran que le palier lui a été attribué.`
+        : `Palier automatique&nbsp;: <b style="color:${fidColor(eff.key)}">${eff.nm}</b>, commission <b>${eff.pct}&nbsp;%</b>.`}</p>
+      ${descend?`<p class="mini" style="margin-top:7px;color:var(--coral-deep);line-height:1.5">Vous le placez <b>en dessous</b> de ce que ses missions lui donnent (${auto.nm}, ${auto.pct}&nbsp;%)&nbsp;: sa commission augmente.</p>`:''}
+      <div style="height:1px;background:var(--hair);margin:14px 0"></div>
+      <div class="row between" style="align-items:center;gap:12px">
+        <div style="flex:1;min-width:0"><b style="font-size:14px">Ambassadeur</b>
+          <div class="mini" style="margin-top:3px;color:var(--muted);line-height:1.45">${amb
+            ? (ambActif?`Badge actif, commission à <b>${FOUNDER_COMM_PCT}&nbsp;%</b> jusqu'à ${FOUNDER_DAYS} jours ou ${FOUNDER_GROSS_CAP.toLocaleString('fr-FR')}&nbsp;€ de prestations.`
+                       :`Badge conservé, <b>avantage expiré</b>&nbsp;: il paie son palier.`)
+            : `Distinction des débuts. L'avantage dure ${FOUNDER_DAYS} jours ou ${FOUNDER_GROSS_CAP.toLocaleString('fr-FR')}&nbsp;€ de prestations, à partir du jour où vous l'accordez.`}</div></div>
+        <button class="btn ${amb?'ghost':'good'} sm" data-adm="amb-art:${a.id}:${amb?'0':'1'}" style="flex:none;width:auto;padding:9px 15px">${amb?'Retirer':'Accorder'}</button>
+      </div>
+    </div>`;
+  }
+  /* L'ÉCRITURE, EN UN SEUL ENDROIT. Un palier « automatique » EFFACE le champ au lieu de
+     le vider : une chaîne vide se relit comme une clé inconnue, ce qui marche par
+     accident aujourd'hui et cessera de marcher le jour où quelqu'un ajoutera un palier
+     sans clé. Et ACCORDER le badge pose sa date de départ — sans elle, l'avantage se
+     compterait depuis l'ouverture aux clients, c'est-à-dire déjà expiré. */
+  function changerFideliteArtisan(a,cle){
+    if(!a)return;
+    if(cle==='auto'){ a.tierForce=''; adminWriteField(a,{tierForce:''}); toast('Palier remis sur ses missions'); return; }
+    const t=palierDeCle(cle); if(!t)return;
+    a.tierForce=cle; adminWriteField(a,{tierForce:cle});
+    toast('Palier forcé : '+t.nm+', commission '+t.pct+' %');
+  }
+  function changerAmbassadeurArtisan(a,on){
+    if(!a)return;
+    if(on){ a.founder=true; const d=Date.now(); if(!a.founderSince)a.founderSince=d;
+      adminWriteField(a,a.founderSince===d?{founder:true,founderSince:d}:{founder:true});
+      toast('Badge Ambassadeur accordé'); }
+    else { a.founder=false; adminWriteField(a,{founder:false}); toast('Badge Ambassadeur retiré'); }
+  }
   function carteStatutArtisan(a){
     const cur=a.status||'attente';
     const bloque=!(insPeutValider(a)&&a.siret);
@@ -19653,7 +19733,7 @@
       adminArtUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'artisans'),function(snap){
         const list=[],pending=new Set();
         snap.forEach(function(d){ const a=d.data()||{}; const cats=Array.isArray(a.cats)?a.cats:[]; const rr=a.rates||{}; const st=a.status||'attente';
-          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Prestataire',status:st,type:(a.statusType==='particulier')?'particulier':'entreprise',statusType:a.statusType||'entreprise',legalName:a.legalName||'',legalForm:a.legalForm||'',capital:a.capital||'',rcsCity:a.rcsCity||'',birth:a.birth||'',referralCode:a.referralCode||'',referredByCode:a.referredByCode||'',acceptedTerms:!!a.acceptedTerms,acceptedCharte:!!a.acceptedCharte,acceptedMandat:!!a.acceptedMandat,acceptsGrille:!!a.acceptsGrille,desiredNetRates:a.desiredNetRates||null,termsVersion:a.termsVersion||'',termsAt:(a.termsAt&&a.termsAt.toMillis)?a.termsAt.toMillis():0,createdAt:(a.createdAt&&a.createdAt.toMillis)?a.createdAt.toMillis():0,cats:cats,other:a.other||'',otherPrice:Number(a.otherPrice)||0,otherPriceNote:a.otherPriceNote||'',otherUnit:(a.otherUnit==='forfait'?'forfait':'h'),pendingCats:Array.isArray(a.pendingCats)?a.pendingCats:[],pendingOther:a.pendingOther||'',pendingOtherPrice:Number(a.pendingOtherPrice)||0,pendingOtherUnit:(a.pendingOtherUnit==='forfait'?'forfait':'h'),pendingDesiredNet:(a.pendingDesiredNet&&typeof a.pendingDesiredNet==='object')?a.pendingDesiredNet:null,rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insuranceNone:!!a.insuranceNone,insuranceNoticeAt:Number(a.insuranceNoticeAt)||0,approvedNotifiedAt:Number(a.approvedNotifiedAt)||0,insuranceDueAt:Number(a.insuranceDueAt)||0,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,founderSince:(a.founderSince&&a.founderSince.toMillis)?a.founderSince.toMillis():(typeof a.founderSince==='number'?a.founderSince:null),founderGross:Number(a.founderGross)||0,test:!!a.test,rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,online:!!a.online,siteMode:a.siteMode||'',salonAddress:a.salonAddress||'',salonZone:a.salonZone||'',push:(Array.isArray(a.pushTokens)?a.pushTokens.length:0),mollieStatus:a.mollieStatus||'none',mollieOnb:a.mollieOnboardingStatus||'',mollieCanPay:a.mollieCanPay!==false,mollieCanSettle:a.mollieCanSettle!==false,mollieCanWork:a.mollieCanWork===true,mollieRelances:Number(a.mollieRelances)||0,mollieRelanceAt:Number(a.mollieRelanceAt)||0,mollieSince:Number(a.mollieSince)||0,mollieSinceEstime:!!a.mollieSinceEstime,lastNoShowAt:(a.lastNoShowAt&&a.lastNoShowAt.toDate)?a.lastNoShowAt.toDate().getTime():0});
+          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Prestataire',status:st,type:(a.statusType==='particulier')?'particulier':'entreprise',statusType:a.statusType||'entreprise',legalName:a.legalName||'',legalForm:a.legalForm||'',capital:a.capital||'',rcsCity:a.rcsCity||'',birth:a.birth||'',referralCode:a.referralCode||'',referredByCode:a.referredByCode||'',acceptedTerms:!!a.acceptedTerms,acceptedCharte:!!a.acceptedCharte,acceptedMandat:!!a.acceptedMandat,acceptsGrille:!!a.acceptsGrille,desiredNetRates:a.desiredNetRates||null,termsVersion:a.termsVersion||'',termsAt:(a.termsAt&&a.termsAt.toMillis)?a.termsAt.toMillis():0,createdAt:(a.createdAt&&a.createdAt.toMillis)?a.createdAt.toMillis():0,cats:cats,other:a.other||'',otherPrice:Number(a.otherPrice)||0,otherPriceNote:a.otherPriceNote||'',otherUnit:(a.otherUnit==='forfait'?'forfait':'h'),pendingCats:Array.isArray(a.pendingCats)?a.pendingCats:[],pendingOther:a.pendingOther||'',pendingOtherPrice:Number(a.pendingOtherPrice)||0,pendingOtherUnit:(a.pendingOtherUnit==='forfait'?'forfait':'h'),pendingDesiredNet:(a.pendingDesiredNet&&typeof a.pendingDesiredNet==='object')?a.pendingDesiredNet:null,rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insuranceNone:!!a.insuranceNone,insuranceNoticeAt:Number(a.insuranceNoticeAt)||0,approvedNotifiedAt:Number(a.approvedNotifiedAt)||0,tierForce:a.tierForce||'',refBonusJobs:Number(a.refBonusJobs)||0,insuranceDueAt:Number(a.insuranceDueAt)||0,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,founderSince:(a.founderSince&&a.founderSince.toMillis)?a.founderSince.toMillis():(typeof a.founderSince==='number'?a.founderSince:null),founderGross:Number(a.founderGross)||0,test:!!a.test,rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,online:!!a.online,siteMode:a.siteMode||'',salonAddress:a.salonAddress||'',salonZone:a.salonZone||'',push:(Array.isArray(a.pushTokens)?a.pushTokens.length:0),mollieStatus:a.mollieStatus||'none',mollieOnb:a.mollieOnboardingStatus||'',mollieCanPay:a.mollieCanPay!==false,mollieCanSettle:a.mollieCanSettle!==false,mollieCanWork:a.mollieCanWork===true,mollieRelances:Number(a.mollieRelances)||0,mollieRelanceAt:Number(a.mollieRelanceAt)||0,mollieSince:Number(a.mollieSince)||0,mollieSinceEstime:!!a.mollieSinceEstime,lastNoShowAt:(a.lastNoShowAt&&a.lastNoShowAt.toDate)?a.lastNoShowAt.toDate().getTime():0});
           if(st==='attente')pending.add(d.id); });
         S.adminArtisans=list;S.adminArtsLoaded=true;
         // Recalcule la liste des services actifs (au moins un prestataire validé) et la publie
@@ -19859,6 +19939,7 @@
         if(!snap.exists())return;
         const ad=snap.data()||{};
         if(ad.insuranceStatus)S.proInsuranceStatus=ad.insuranceStatus;
+      S.proTierForce=ad.tierForce||'';S.proFounder=!!ad.founder;
         const newStatus=(ad.status==='valide')?'approved':(ad.status==='refuse'?'refused':'pending');
         const was=S.proStatus;
         if(newStatus!==was){

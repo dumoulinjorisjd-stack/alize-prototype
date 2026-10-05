@@ -1900,6 +1900,26 @@ exports.notifyClientStatus = onDocumentUpdated('requests/{reqId}', async (event)
  * fois (idempotent via `commissionSettled`) sur la demande :
  *   commissionPct, commissionBase, commissionAmount, grossTotal, netAmount.
  */
+/* PALIER FORCÉ À LA MAIN DEPUIS LA CONSOLE.
+ * Le palier se déduisait du nombre de missions, sans aucun recours. L'éditeur doit
+ * pouvoir récompenser quelqu'un, ou corriger une injustice, sans lui inventer des
+ * missions. Un palier forcé prime donc sur le compte — et il prime ICI, à l'endroit où
+ * la commission se calcule pour de vrai : sans cela le geste serait décoratif et
+ * l'application afficherait un taux que la facture ne pratiquerait pas.
+ * LA CLÉ PASSE PAR LE BARÈME, jamais par un pourcentage écrit à la main : si l'éditeur
+ * change le taux de Platine dans la console, le prestataire forcé Platine suit. Une clé
+ * inconnue (barème remanié, champ abîmé) ne force RIEN et l'on retombe sur le compte des
+ * missions, qui est toujours vrai. */
+const TIERS_DEFAUT = [{key: 'bronze', pct: 15}, {key: 'argent', pct: 12}, {key: 'or', pct: 10}, {key: 'platine', pct: 8}];
+function tierPctForce(cle, tiers) {
+  const k = String(cle || '').trim();
+  if (!k) return null;
+  const table = (Array.isArray(tiers) && tiers.length) ? tiers : TIERS_DEFAUT;
+  for (const t of table) {
+    if (String(t.key) === k) { const p = Number(t.pct); return isNaN(p) ? null : p; }
+  }
+  return null;
+}
 function commissionTierPct(jobsTotal, tiers) {
   const n = Number(jobsTotal) || 0;
   // Barème PERSONNALISÉ par l'admin (settings/config.fidTiers) prioritaire : on retient le
@@ -2152,7 +2172,7 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}',
   const gross = M.gross;
 
   const db = getFirestore();
-  let jobsTotal = 0; let isFounder = false; let founderSinceMs = null; let founderGross = 0; let refBonusJobs = 0;
+  let jobsTotal = 0; let isFounder = false; let founderSinceMs = null; let founderGross = 0; let refBonusJobs = 0; let tierForce = '';
   try {
     const a = (await db.collection('artisans').doc(providerUid).get()).data() || {};
     jobsTotal = a.jobsTotal || 0;
@@ -2162,11 +2182,13 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}',
     // Crédit de parrainage : chaque filleul validé fait monter le statut de fidélité
     // (comme des missions réalisées) — écrit UNIQUEMENT par le serveur (jamais par l'artisan).
     refBonusJobs = Number(a.refBonusJobs) || 0;
+    tierForce = a.tierForce || '';
   } catch (_) {}
   // Barème de commission PERSONNALISÉ par l'admin (settings/config) — pour que la commission
   // réellement prélevée reflète le barème réglé dans la console (et non des valeurs figées).
   let cfgTiers = null;
   try { const cfg = (await db.collection('settings').doc('config').get()).data() || {}; if (Array.isArray(cfg.fidTiers)) cfgTiers = cfg.fidTiers; } catch (_) {}
+  const pctForce = tierPctForce(tierForce, cfgTiers);
 
   // Artisan Fondateur : commission réduite aux seuls frais bancaires (jamais Bronze),
   // MAIS uniquement pendant la fenêtre d'avantage — 3 mois OU 2 000 € de prestations
@@ -2178,7 +2200,8 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}',
   const withinTime = (Date.now() - founderStartMs) < FOUNDER_DAYS * 86400000;
   const withinGross = founderGross < FOUNDER_GROSS_CAP;
   const founderActive = isFounder && withinTime && withinGross;
-  const basePct = founderActive ? FOUNDER_COMM_PCT : commissionTierPct(jobsTotal + refBonusJobs, cfgTiers);
+  const basePct = founderActive ? FOUNDER_COMM_PCT
+    : (pctForce != null ? pctForce : commissionTierPct(jobsTotal + refBonusJobs, cfgTiers));
   // Plancher « petits montants » : au moins SMALL_COMM_PCT % sous SMALL_COMM_MIN € de base.
   const pct = (base < SMALL_COMM_MIN) ? Math.max(basePct, SMALL_COMM_PCT) : basePct;
   const commission = round2(M.assiette * pct / 100);   // prestation + coup de pouce
@@ -5980,18 +6003,21 @@ exports.settleCancellation = onDocumentUpdated({document: 'requests/{reqId}', se
     }
     // Commission sur l'indemnité : même règle que l'app de l'artisan (taux de fidélité,
     // avantage fondateur, plancher petits montants sur l'assiette de l'indemnité).
-    let jobsTotal = 0; let isFounder = false; let founderSinceMs = null; let founderGross = 0; let refBonusJobs = 0;
+    let jobsTotal = 0; let isFounder = false; let founderSinceMs = null; let founderGross = 0; let refBonusJobs = 0; let tierForce = '';
     try {
       const a = (await db.collection('artisans').doc(after.providerUid).get()).data() || {};
       jobsTotal = a.jobsTotal || 0; isFounder = !!a.founder; founderGross = Number(a.founderGross) || 0;
       founderSinceMs = (a.founderSince && a.founderSince.toMillis) ? a.founderSince.toMillis() : (typeof a.founderSince === 'number' ? a.founderSince : null);
       refBonusJobs = Number(a.refBonusJobs) || 0;
+      tierForce = a.tierForce || '';
     } catch (_) {}
     let cfgTiers = null;
     try { const cfg = (await db.collection('settings').doc('config').get()).data() || {}; if (Array.isArray(cfg.fidTiers)) cfgTiers = cfg.fidTiers; } catch (_) {}
     const founderStartMs = Math.max(founderSinceMs || 0, FOUNDER_LAUNCH_MS);
     const founderActive = isFounder && (Date.now() - founderStartMs) < FOUNDER_DAYS * 86400000 && founderGross < FOUNDER_GROSS_CAP;
-    const basePct = founderActive ? FOUNDER_COMM_PCT : commissionTierPct(jobsTotal + refBonusJobs, cfgTiers);
+    const pctForce2 = tierPctForce(tierForce, cfgTiers);
+    const basePct = founderActive ? FOUNDER_COMM_PCT
+      : (pctForce2 != null ? pctForce2 : commissionTierPct(jobsTotal + refBonusJobs, cfgTiers));
     const pct = (fee < SMALL_COMM_MIN) ? Math.max(basePct, SMALL_COMM_PCT) : basePct;
     const commission = round2(fee * pct / 100);
     const net = round2(fee - commission);
