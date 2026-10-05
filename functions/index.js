@@ -3147,6 +3147,22 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
  * la console réclamerait indéfiniment un versement déjà payé, et rien ne prouverait
  * qu'il l'a été. Réservé à l'administrateur.
  */
+/* LA PART D'ARRHES D'UN MÉTIER, LUE PAR LE SERVEUR. Même table que la console
+ * (`settings/catalog`.`arrhes`), mêmes bornes, même défaut : 50 %. Un catalogue
+ * illisible ou une valeur hors bornes retombe sur le défaut plutôt que d'appliquer un
+ * nombre abîmé à une vraie carte bancaire. */
+const ARRHES_PCT_DEFAUT = 50;
+async function arrhesPctServeur(db, svcId) {
+  try {
+    const snap = await db.collection('settings').doc('catalog').get();
+    const d = (snap && snap.exists) ? (snap.data() || {}) : {};
+    const a = ((d.arrhes && typeof d.arrhes === 'object') ? d.arrhes : {})[String(svcId || '')] || {};
+    const n = Math.round(Number(a.pct));
+    if (isFinite(n) && n >= 0 && n <= 100) return n;
+  } catch (e) { console.warn('arrhesPctServeur', e); }
+  return ARRHES_PCT_DEFAUT;
+}
+
 /**
  * refundOrder : RENDRE L'ARGENT. L'application savait encaisser, capturer, verser — jamais
  * rendre. Aucune fonction de remboursement n'existait, ni serveur ni console : le seul
@@ -5959,7 +5975,29 @@ exports.settleCancellation = onDocumentUpdated({document: 'requests/{reqId}', se
   // partielle de l'empreinte), on retient la commission, on VERSE le net à l'artisan et
   // on inscrit le tout au registre. L'app de l'artisan affichait déjà tout cela — mais
   // aucun argent ne bougeait.
-  const fee = round2(Number(after.cancelFee) || 0);
+  /* LE MONTANT EST DÉCIDÉ ICI, PAS DANS LE NAVIGATEUR DU CLIENT. `cancelFee` est écrit
+     par l'application de celui qui annule, c'est-à-dire par la partie qui a tout intérêt
+     à ce qu'il soit nul. Tant que la part était de 50 % sur une heure de ménage, l'enjeu
+     était de trente euros ; réglée par métier, elle peut valoir sept cent quarante-cinq
+     euros sur une journée de catamaran. On recalcule donc à partir de deux valeurs que
+     le SERVEUR a écrites lui-même : le montant réellement autorisé chez Mollie, et la
+     part lue dans le catalogue. La valeur du client n'est qu'un affichage, et si elle
+     diffère on réécrit la vraie — sans quoi le prestataire lirait un chiffre et en
+     toucherait un autre. */
+  const pctArrhes = await arrhesPctServeur(db, after.service);
+  const assiette = round2(Number(after.molliePaymentAmount) || 0);
+  let fee = round2(assiette * pctArrhes / 100);
+  // Jamais plus que l'empreinte posée : on ne capture pas ce qui n'a pas été autorisé.
+  if (assiette > 0 && fee > assiette) fee = assiette;
+  const feeAnnonce = round2(Number(after.cancelFee) || 0);
+  // ON NE RÉÉCRIT PAS LA DEMANDE ICI. Ce déclencheur écoute les mises à jour de la
+  // demande : une écriture à cet endroit le relancerait AVANT que `cancelFeeSettled`
+  // soit posé, et la capture partirait deux fois. La vraie valeur part donc avec
+  // l'écriture FINALE, celle qui ferme le dossier.
+  if (Math.abs(fee - feeAnnonce) > 0.009) {
+    console.warn('Indemnité recalculée reqId=' + reqId + ' annoncée=' + feeAnnonce
+      + ' retenue=' + fee + ' (' + pctArrhes + ' % de ' + assiette + ')');
+  }
   const payId = after.molliePaymentId || '';
   if (!(fee > 0) || !payId || !mollieApiConfigured()) {
     console.warn('Indemnité inapplicable reqId=' + reqId + ' fee=' + fee + ' pay=' + (payId || 'aucun'));
@@ -6038,7 +6076,8 @@ exports.settleCancellation = onDocumentUpdated({document: 'requests/{reqId}', se
     try { orgId = ((await db.collection('artisans').doc(after.providerUid).get()).data() || {}).mollieOrgId || ''; } catch (_) {}
     const routed = (orgId && net > 0) ? await mollieRouteNet(payId, orgId, net, 'Ti-Services · indemnité annulation · ' + svc) : false;
     await event.data.after.ref.update({
-      cancelFeeSettled: true, cancelFeeCommissionPct: pct, cancelFeeCommission: commission, cancelFeeNet: net,
+      cancelFeeSettled: true, cancelFee: fee, cancelFeePct: pctArrhes,
+      cancelFeeCommissionPct: pct, cancelFeeCommission: commission, cancelFeeNet: net,
       mollieCaptured: true, mollieCaptureAmount: fee,
       molliePayout: routed ? 'routed' : 'unrouted',
       molliePayoutIssue: routed ? '' : (orgId ? 'route_failed' : 'no_org'),
