@@ -170,7 +170,28 @@ ok(!/I\[s\.id\]\|\|svcIco\(s\.id\)/.test(src),
 const portes=(src.match(/svcIco\(/g)||[]).length;
 ok(portes>=12,'les écrans passent tous par svcIco ('+portes+' appels) — accueil, console, choix des métiers');
 
+console.log('\nK — chaque icône PROPOSÉE existe vraiment dans la table');
+// Une clé offerte au choix mais absente de la table retombe sur « Par défaut », en
+// silence : le choix paraît fait, et le dessin est le générique. Ajouté le 05/10/2026
+// avec l'icône « Bateau & nautisme », demandée pour une location de catamaran.
+{
+  const manquantes = await p.evaluate(() => {
+    const I = window.__svc.table();
+    return window.__svc.choix().filter(function (c) { return !I[c[0]]; }).map(function (c) { return c[0]; });
+  });
+  ok(manquantes.length === 0, 'aucune icône proposée ne manque à la table (' + (manquantes.join(', ') || 'aucune') + ')');
+  const bateau = await p.evaluate(() => {
+    const I = window.__svc.table();
+    return { existe: !!I.bateau, propose: window.__svc.choix().some(function (c) { return c[0] === 'bateau'; }),
+      trait: /stroke-width="1.9"/.test(I.bateau || ''), generique: I.bateau === I.other };
+  });
+  ok(bateau.existe && bateau.propose, 'le bateau est dessiné ET proposé au choix');
+  ok(bateau.trait, 'au même trait que les autres');
+  ok(!bateau.generique, 'et ce n’est pas le dessin générique');
+}
+
 await b.close();
+
 console.log(f?('\n'+f+' ÉCHEC(S)'):'\nTOUT PASSE');
 process.exit(f?1:0);
 })();
