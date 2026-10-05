@@ -3940,13 +3940,68 @@
     if(r.attendu)return 'Ce numéro ne peut pas sonner : '+r.chiffres+' chiffre'+(r.chiffres>1?'s':'')+' au lieu de '+r.attendu+'.';
     return 'Ce numéro ne peut pas sonner : '+r.chiffres+' chiffre'+(r.chiffres>1?'s':'')+'.';
   }
+  /* ══ RATTRAPER UN NUMÉRO, SANS JAMAIS EN INVENTER UN ════════════════════════════
+     « On ne peut rien faire pour rattraper les erreurs de numéro de téléphone,
+     notamment le 0 manquant ? »
+
+     SI, POUR UNE PARTIE — ET IL FAUT SAVOIR LAQUELLE. On ne RETIRE que ce qu'on peut
+     PROUVER être en trop : un indicatif retapé dans la case du numéro (« 590690210902 »,
+     « 00590690210902 »), un zéro national devant l'indicatif. Chaque retrait donne un
+     candidat ; on ne garde que ceux qui peuvent exister. S'il en reste EXACTEMENT UN, la
+     lecture est unique et on la propose — annoncée avant d'être écrite. S'il en reste
+     plusieurs, on ne choisit pas : deux numéros valides, c'est deux personnes.
+
+     ON N'AJOUTE JAMAIS UN CHIFFRE. Le numéro de la capture, « 90210902 », en a huit ; le
+     neuvième manque. Le compléter donnerait « 590210902 » (un fixe) OU « 690210902 » (un
+     mobile) — les deux existent, les deux sonnent chez quelqu'un. Un numéro deviné est
+     pire qu'un numéro absent : on croit pouvoir appeler, et on dérange un inconnu.
+
+     DANS CE CAS-LÀ, LE SEUL QUI SACHE EST LA PERSONNE. La console le dit, donne son
+     adresse, et le numéro se corrige À LA MAIN quand on l'a obtenu — c'est le vrai
+     rattrapage, et il demande un geste humain. ════════════════════════════════════ */
+  function telCandidats(pfx,num){
+    const d=String(num==null?'':num).replace(/\D/g,'');
+    const cc=String(pfx||'').replace(/\D/g,'');
+    const out=[d];
+    if(cc){
+      if(d.indexOf('00'+cc)===0)out.push(d.slice(2+cc.length));
+      if(d.indexOf('0'+cc)===0)out.push(d.slice(1+cc.length));
+      if(d.indexOf(cc)===0)out.push(d.slice(cc.length));
+    }
+    return out;
+  }
+  function telRattrapage(stocke){
+    const s=splitPhone(stocke||'');
+    const d=String(s.num||'').replace(/\D/g,'');
+    if(!d)return {etat:'vide'};
+    if(telLu(s.pfx,s.num).ok)return {etat:'ok'};
+    const vus={},bons=[];
+    telCandidats(s.pfx,s.num).forEach(function(c){
+      if(!c||vus[c])return;vus[c]=1;
+      if(telLu(s.pfx,c).ok)bons.push(c);
+    });
+    if(bons.length===1)return {etat:'propose',valeur:s.pfx+' '+bons[0],chiffres:bons[0]};
+    if(bons.length>1)return {etat:'ambigu',choix:bons};
+    return {etat:'perdu',manque:telLu(s.pfx,s.num)};
+  }
+  // La phrase qui accompagne le verdict. Elle dit ce qu'on va faire, ou pourquoi on ne
+  // fera rien — jamais « numéro invalide », qui n'apprend rien et n'indique aucun geste.
+  function telRattrapageTxt(r){
+    if(!r)return '';
+    if(r.etat==='propose')return 'Lecture unique : ce numéro contient son propre indicatif. Enregistrer écrira ' + r.valeur + '.';
+    if(r.etat==='ambigu')return 'Deux lectures possibles (' + r.choix.join(', ') + ') : on ne choisit pas à sa place.';
+    if(r.etat==='perdu')return r.manque&&r.manque.cause==='court'
+      ? 'Il manque un chiffre, et on ne peut pas le deviner : plusieurs numéros existants commenceraient ainsi. Demandez-le-lui, puis corrigez ci-dessous.'
+      : 'Ce numéro ne correspond à rien de connu. Demandez-le-lui, puis corrigez ci-dessous.';
+    return '';
+  }
   function splitPhone(p){p=(p||'').trim();const m=p.match(/^(\+\d{1,3})[\s.-]*(.*)$/);if(m&&PHONE_PFX.indexOf(m[1])>=0)return {pfx:m[1],num:m[2]};if(m)return {pfx:m[1],num:m[2]};return {pfx:'+590',num:p};}
   // Champ téléphone composé : <select indicatif> + <input numéro local>. La valeur
   // COMPLÈTE (indicatif + numéro) est réécrite dans l'état via setPhoneVal(key).
   function phoneCombo(key,value){
     const s=splitPhone(value);
     const av=telAvis(s.pfx,s.num);
-    return `<div class="row" style="gap:8px"><select class="txt" data-phonepfx="${key}" style="flex:0 0 96px;min-width:0">${PHONE_PFX.map(p=>`<option value="${p}"${s.pfx===p?' selected':''}>${p}</option>`).join('')}</select><input class="txt" data-phonenum="${key}" data-v="phone" value="${esc(s.num)}" inputmode="tel" autocomplete="tel-national" placeholder="690 00 00 00" style="flex:1;min-width:0"></div><p class="mini" data-telavis="${key}" style="margin-top:6px;line-height:1.45;${av.txt?'':'display:none;'}color:var(--coral-deep)">${esc(av.txt)}</p>`;
+    return `<div class="row" style="gap:8px"><select class="txt" data-phonepfx="${key}" style="flex:0 0 112px;min-width:0">${PHONE_PFX.map(p=>`<option value="${p}"${s.pfx===p?' selected':''}>${p}</option>`).join('')}</select><input class="txt" data-phonenum="${key}" data-v="phone" value="${esc(s.num)}" inputmode="tel" autocomplete="tel-national" placeholder="690 00 00 00" style="flex:1;min-width:0"></div><p class="mini" data-telavis="${key}" style="margin-top:6px;line-height:1.45;${av.txt?'':'display:none;'}color:var(--coral-deep)">${esc(av.txt)}</p>`;
   }
   function setPhoneVal(key,val){
     switch(key){
@@ -10384,6 +10439,18 @@
         ${ordre.map(function(k){const L=REQ_LIB[k]||['grey',k,''];
           return `<div class="row between" style="align-items:flex-start;margin-top:10px;gap:10px"><div style="flex:1;min-width:0"><span class="sub">${esc(L[1])}</span>${L[2]?`<div class="mini" style="color:var(--muted);line-height:1.4">${esc(L[2])}</div>`:''}</div><span class="chip ${L[0]}" style="flex:none">${st[k]}</span></div>`;}).join('')}`;})();
     /* ── 2. OÙ S'ARRÊTENT LES CLIENTS ─────────────────────────────────────────── */
+    const telListe=telCibles();
+    const telBody=(function(){
+      if(!telListe.length)return `<p class="mini" style="color:var(--muted)">Tous les numéros enregistrés peuvent être appelés.</p>`;
+      const perdus=telListe.filter(function(c){return c.r.etat!=='propose';}).length;
+      return `<p class="mini" style="margin:0;color:var(--muted);line-height:1.5">Un numéro qui ne peut pas sonner n’est visible nulle part ailleurs&nbsp;: il faut ouvrir la fiche pour le voir. ${telListe.length>1?'Ces comptes sont':'Ce compte est'} dans ce cas.${perdus?` <b>${perdus}</b> ${perdus>1?'demandent':'demande'} un chiffre qu’on ne peut pas deviner&nbsp;: la seule source est la personne.`:''}</p>
+        ${telListe.map(function(c){
+          return `<div style="margin-top:12px;padding:11px 12px;background:var(--card);border-radius:12px">
+            <div class="row between" style="gap:8px;align-items:baseline"><b style="font-size:14px">${esc(c.nom)}</b><span class="chip grey" style="flex:none">${esc(c.etiquette)}</span></div>
+            <div class="mini" style="margin-top:2px"><span class="money">${esc(c.phone)}</span></div>
+            ${c.email?`<a href="mailto:${esc(c.email)}" class="mini" style="color:var(--teal-deep);font-weight:700;word-break:break-all">${esc(c.email)}</a>`:'<span class="mini">E-mail inconnu</span>'}
+            ${telCorrectionHtml(c)}
+          </div>`;}).join('')}`;})();
     const parcoursBody=(function(){
       if(!S.adminReqsLus||!S.adminClisLoaded)return `<p class="mini" style="color:var(--muted)">Lecture des comptes et des demandes…</p>`;
       const P=parcoursClients(S.adminClients||[],parClientVrais,Date.now());
@@ -10637,6 +10704,7 @@
           ${resume}${nonSuivis}
           ${lignes}`;
         return foldCard('a-drafts',I.clock,'Candidatures jamais envoyées','Comptes créés, dossier jamais envoyé, un appel suffit',corps,chip('coral',att.length));})()}
+      ${telListe.length?foldCard('a-tel',I.phone,'Numéros injoignables','Un numéro qui ne peut pas sonner, et ce qu’on peut en faire',telBody,chip('coral',telListe.length)):''}
       ${molBlock?foldCard('a-mollie',I.card,'Prêts à encaisser','Qui pourra vraiment accepter une mission le 1er octobre',molBlock,molBloques.length?chip('coral',molBloques.length+' à relancer'):chip('good',molPrets.length+' prêts')):''}
       ${(function(){
         // Plus de places à compter : est ambassadeur qui s'est inscrit avant l'ouverture.
@@ -11173,7 +11241,7 @@
         ${(function(){adminLoadArtisanContact(a.uid);const ct=artContact(a);return `<div class="card" style="padding:16px;margin-top:12px"><span class="eyebrow" style="color:var(--muted)">${a.status==='attente'?'Contacter avant décision':'Contacter le prestataire'}</span>
           <div class="fiche" style="margin-top:11px">
             ${fRow('E-mail',ct.email?`<a href="mailto:${esc(ct.email)}" style="color:var(--teal-deep)">${esc(ct.email)}</a>`:`<span class="mini">Non renseigné</span>`)}
-            ${fRow('Téléphone',ct.phone?`<a href="tel:${telClean(ct.phone)}" style="color:var(--teal-deep)">${esc(ct.phone)}</a>${telStockeLu(ct.phone).ok?'':`<div class="mini" style="color:var(--coral-deep);font-weight:700;margin-top:3px">${esc(telImpossibleTxt(ct.phone))}</div>`}`:`<span class="mini">Non renseigné</span>`)}
+            ${fRow('Téléphone',ct.phone?`<a href="tel:${telClean(ct.phone)}" style="color:var(--teal-deep)">${esc(ct.phone)}</a>${telStockeLu(ct.phone).ok?'':telCorrectionHtml({kind:'artisan',uid:a.uid||a.id,nom:a.name,email:ct.email,phone:ct.phone,r:telRattrapage(ct.phone)})}`:`<span class="mini">Non renseigné</span>`)}
           </div>
           ${contactRow(ct)}
           <button class="btn ghost sm" data-adm="art-msg:${a.id}" style="margin-top:10px;width:100%">${I.chat} Message interne (messagerie Ti-Services)</button>
@@ -16527,7 +16595,7 @@
         return;
       }
     }
-    const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actqty],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-loc],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday],[data-tip],[data-pac],[data-sitemode],[data-invclient],[data-fold],[data-actgrp],[data-purge],[data-optpick],[data-optqty],[data-optadd],[data-optdel],[data-optprice],[data-optunit],[data-rf]');
+    const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actqty],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-loc],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday],[data-tip],[data-pac],[data-sitemode],[data-invclient],[data-fold],[data-actgrp],[data-purge],[data-optpick],[data-optqty],[data-optadd],[data-optdel],[data-optprice],[data-optunit],[data-rf],[data-telfix]');
     if(!b)return;
     // Un clic ISSU d'un <input type=file> (notamment déclenché par programme, ex. la
     // feuille « appareil photo / galerie ») remonte jusqu'ici : on ne le traite pas
@@ -16586,6 +16654,26 @@
     // (l'installation garde SON bouton dédié — plus de doublon « comment installer » sur iPhone ;
     // la relance d'installation revient de toute façon juste après la création du compte).
     if(b.dataset.act==='land-client-signup'){document.body.classList.add('standalone');S.onboarded=false;S.persona='client';S.showPitch=false;S.authView='signup';S.onbStep=1;S.clientForm=S.clientForm||{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''};render();try{window.scrollTo(0,0);}catch(_){}return;}
+    /* CORRIGER UN NUMÉRO : une seule porte, deux boutons. « auto » écrit la lecture
+       unique annoncée sur le bouton lui-même ; « main » écrit ce qui est tapé dans le
+       champ, et le REFUSE s'il ne peut pas sonner — accepter ici reviendrait à rouvrir
+       par la console la porte qu'on vient de fermer à l'inscription. */
+    if(b.dataset.telfix){
+      const q=String(b.dataset.telfix).split(':'),mode=q[0],kind=q[1],uid=q[2];
+      let val='';
+      if(mode==='auto'){
+        const c=telCibles().filter(function(x){return x.uid===uid;})[0];
+        val=(c&&c.r&&c.r.etat==='propose')?c.r.valeur:'';
+      }else{
+        const pf=document.querySelector('[data-phonepfx="fix:'+uid+'"]'),nm=document.querySelector('[data-phonenum="fix:'+uid+'"]');
+        if(pf&&nm){const n=(nm.value||'').replace(/[^\d+]/g,'').replace(/^0/,'');val=n?(pf.value+' '+n):'';}
+      }
+      if(!val){toast('Aucun numéro à enregistrer');return;}
+      if(!telStockeLu(val).ok){toast(telImpossibleTxt(val)||'Ce numéro ne peut pas sonner');return;}
+      if(corrigerTelephone(kind,uid,val)){toast('Numéro corrigé : '+val);render();}
+      else toast('Correction impossible');
+      return;
+    }
     if(b.dataset.persona){go(b.dataset.persona);return;}
     if(b.dataset.adm){const parts=b.dataset.adm.split(':'),act=parts[0],id=parts[1];
       if(act==='supervise'||act==='sup'){try{admSeenSet('req:'+id,'1');}catch(_){}}
@@ -19885,6 +19973,64 @@
      du premier prestataire d'un métier neuf — celui qu'on vient de valider. Trouvé par
      l'épreuve de la demande « Autre », sur la fiche d'un loueur de catamaran. */
   function plN(n,m){return n+' '+m+(n>1?'s':'');}
+  /* LA CORRECTION S'ÉCRIT LÀ OÙ LE NUMÉRO SE LIT, c'est-à-dire aux DEUX endroits pour un
+     prestataire : `artisans/{uid}.phone` et `users/{uid}.phone`. `artContact` retombe de
+     l'un sur l'autre — n'en corriger qu'un laisserait l'ancien numéro réapparaître le jour
+     où le premier est vide, et c'est exactement le genre de défaut qu'on ne voit pas.
+     Les missions déjà passées gardent le numéro qu'elles portaient : ce sont des
+     instantanés, on ne réécrit pas l'histoire. */
+  const TEL_COLLECTIONS={artisan:['artisans','users'],client:['users'],draft:['users'],concierge:['concierges']};
+  function corrigerTelephone(kind,uid,valeur){
+    const cols=TEL_COLLECTIONS[kind];
+    if(!cols||!uid||!valeur)return false;
+    if(!telStockeLu(valeur).ok)return false;
+    if(FB&&FB.f&&FB.db&&!(typeof isDemo==='function'&&isDemo())){
+      cols.forEach(function(c){ try{ FB.f.updateDoc(FB.f.doc(FB.db,c,uid),{phone:valeur}); }catch(_){} });
+    }
+    // L'écran suit sans attendre le retour du serveur : les listes de la console sont
+    // tenues en mémoire, et une correction qui ne se voit pas se refait deux fois.
+    [S.adminArtisans,S.adminClients,S.adminDrafts,S.adminConcierges].forEach(function(l){
+      (l||[]).forEach(function(x){ if(x&&(x.uid===uid||x.id===uid))x.phone=valeur; });
+    });
+    if(S._artContacts&&S._artContacts[uid])S._artContacts[uid].phone=valeur;
+    return true;
+  }
+  /* QUI EST CONCERNÉ, DANS TOUT LE PARC. Un numéro injoignable ne se voit que si l'on
+     ouvre la fiche : il fallait une liste. Les quatre populations y passent par la même
+     porte — un compte de test n'y figure pas, et un compte sans numéro du tout n'est pas
+     un numéro faux (il n'a rien promis). */
+  function telCibles(){
+    const out=[];
+    const pousser=function(kind,etiquette,l){
+      (l||[]).forEach(function(x){
+        if(!x||compteDeTest(x))return;
+        const r=telRattrapage(x.phone||'');
+        if(r.etat==='ok'||r.etat==='vide')return;
+        out.push({kind:kind,etiquette:etiquette,uid:x.uid||x.id,nom:x.name||'Sans nom',
+          email:x.email||'',phone:x.phone||'',r:r});
+      });
+    };
+    pousser('artisan','Prestataire',S.adminArtisans);
+    pousser('draft','Candidature',S.adminDrafts);
+    pousser('client','Client',S.adminClients);
+    pousser('concierge','Conciergerie',S.adminConcierges);
+    return out;
+  }
+  // Le bloc de correction, écrit UNE fois : la carte de la console et la fiche du
+  // prestataire montrent exactement le même, et il n'y a qu'un endroit où il se répare.
+  function telCorrectionHtml(c){
+    const sujet=encodeURIComponent('Votre numéro de téléphone sur Ti-Services');
+    const corps=encodeURIComponent('Bonjour,\n\nLe numéro enregistré sur votre compte Ti-Services ('+(c.phone||'')+') ne permet pas de vous joindre. Pouvez-vous nous renvoyer votre numéro complet en réponse à ce message ?\n\nMerci,\nTi-Services');
+    // Le CHAMP porte déjà le reproche chiffré, en rouge, sous lui : le répéter au-dessus
+    // ferait deux phrases rouges qui disent la même chose, et l'œil cesserait de les lire.
+    return `<div class="mini" style="color:var(--muted);line-height:1.5;margin-top:4px">${esc(telRattrapageTxt(c.r))}</div>
+      ${c.r.etat==='propose'?`<button class="btn good sm" data-telfix="auto:${c.kind}:${c.uid}" style="width:auto;padding:8px 13px;margin-top:8px">${I.check} Enregistrer ${esc(c.r.valeur)}</button>`:''}
+      <div style="margin-top:9px">${phoneCombo('fix:'+c.uid,c.phone||'')}</div>
+      <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">
+        <button class="btn ghost sm" data-telfix="main:${c.kind}:${c.uid}" style="width:auto;padding:8px 13px">${I.check} Enregistrer ce numéro</button>
+        ${c.email?`<a class="btn ghost sm" href="mailto:${esc(c.email)}?subject=${sujet}&body=${corps}" style="width:auto;padding:8px 13px;text-decoration:none">${I.mail||''} Le lui demander</a>`:''}
+      </div>`;
+  }
   function adminWriteStatus(a,status){ if(FB&&a&&a.real&&a.uid){ try{ FB.f.updateDoc(FB.f.doc(FB.db,'artisans',a.uid),{status:status}); }catch(_){} } }
   // Validation admin d'un métier ajouté : cats += sv, pendingCats -= sv (admin seul).
   function adminWriteAddCat(a,sv){ if(FB&&a&&a.real&&a.uid){ try{ const patch={cats:FB.f.arrayUnion(sv),pendingCats:FB.f.arrayRemove(sv)}; if(sv==='autre'&&a.pendingOther){patch.other=a.pendingOther;if(a.pendingOtherPrice>0){patch.otherPrice=a.pendingOtherPrice;patch.otherUnit=a.pendingOtherUnit||'h';}} FB.f.updateDoc(FB.f.doc(FB.db,'artisans',a.uid),patch); }catch(_){} } }
