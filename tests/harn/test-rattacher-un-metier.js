@@ -67,8 +67,15 @@ ok(ap.ouverts.indexOf(ap.sid)>=0,
   'le métier entre alors dans les services OUVERTS : le client peut commander');
 
 console.log('\nB — le bouton de la fiche fait les deux d’un coup');
-ok(/const ex=\(S\.customServices\|\|\[\]\)\.find\(function\(x\)\{return x\.nm\.toLowerCase\(\)===a\.other\.toLowerCase\(\);\}\);/.test(src),
+// Le rapprochement se fait désormais sur le NOM CHOISI par l'éditeur, et non plus sur la
+// phrase du prestataire : depuis le 05/10/2026 le métier se nomme dans un champ, parce
+// qu'un métier appelé « Location de catamaran avec skipper sur st Barthelemy et les
+// Caraïbes, à la demie journée… » n'a rien à faire dans une grille. La propriété mesurée
+// ne change pas : un métier du même nom est RÉEMPLOYÉ, jamais créé en double.
+ok(/const ex=\(S\.customServices\|\|\[\]\)\.find\(function\(x\)\{return x\.nm\.toLowerCase\(\)===nom\.toLowerCase\(\);\}\);/.test(src),
   'un métier du même nom déjà présent est réemployé, au lieu d’être créé en double');
+ok(/const nom=\(\(champ&&champ\.value\)\|\|''\)\.trim\(\)\|\|autreNomPropose\(a\.other\);/.test(src),
+  'et ce nom vient du champ de la fiche, avec la proposition courte en repli');
 ok(/adminSetCat\(a,sid,true\);/.test(src),'« Ajouter au catalogue » rattache désormais le prestataire');
 ok(/adminSetCat\(a,'autre',false\);/.test(src),'et le sort de « Autre »');
 ok(/if\(a\.otherPrice>0\)\{a\.rates=a\.rates\|\|\{\};a\.rates\[sid\]=a\.otherPrice;/.test(src),

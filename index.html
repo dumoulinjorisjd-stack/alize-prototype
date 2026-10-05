@@ -10222,7 +10222,6 @@
       cancelled:['grey','Annulées',''],accepted:['good','Acceptées',''],working:['good','En cours',''],
       done_pro:['good','À valider par le client',''],paid:['good','Réglées',''],rated:['good','Notées',''],
       disputed:['coral','En litige','']};
-    const plN=function(n,m){return n+' '+m+(n>1?'s':'');};
     /* LA PORTE UNIQUE DES DEMANDES RÉELLES. Les demandes d'un compte de test gonflent
        autant les statuts que le parcours : les écarter d'un côté seulement ferait deux
        cartes qui se contredisent. `uidsTest` ne vaut que si les fiches sont lues —
@@ -10975,7 +10974,7 @@
           // ici évite de traiter deux fois la même personne comme deux comptes distincts.
           const cc=(S.adminClients||[]).find(function(x){return x.uid===a.uid&&x.alsoPro;});
           return cc?`<div class="banner teal" style="margin-top:14px">${I.info||I.shield}<span>Cette personne était <b>cliente</b> avant de devenir prestataire, même identifiant, ${cc.bookings} réservation${cc.bookings>1?'s':''} à son actif. <button class="linklike" data-adm="cli:${esc(cc.id)}" style="font-weight:800">Ouvrir sa fiche client</button></span></div>`:'';})()}
-        ${(a.cats&&a.cats.includes('autre')&&a.other)?`<div class="banner teal" style="margin-top:14px">${I.other}<span>Service « Autre » proposé&nbsp;: <b>${esc(a.other)}</b>${a.otherPrice>0?`, il veut percevoir <b>${a.otherPrice} €</b> ${a.otherUnit==='forfait'?'par prestation':'de l\'heure'}`:', <b>aucun prix indiqué</b>'}. Le client paiera ce montant plus la part Ti-Services, à évaluer avant validation.${a.otherPriceNote?`<div class="mini" style="margin-top:7px;color:var(--ink);line-height:1.5"><b>Ses autres formules&nbsp;:</b> ${esc(a.otherPriceNote)}</div>`:''}</span></div>${(S.customServices||[]).some(function(x){return x.nm.toLowerCase()===a.other.toLowerCase();})?`<p class="mini" style="margin-top:8px;color:var(--good)">${I.check} « ${esc(a.other)} » figure déjà au catalogue.</p>`:`<button class="btn ghost sm" data-adm="addcat:${a.id}" style="margin-top:9px;width:auto;padding:9px 14px">${I.plus} Ajouter « ${esc(a.other)} » au catalogue</button>`}`:''}
+        ${(a.cats&&a.cats.includes('autre')&&a.other)?`<div class="banner teal" style="margin-top:14px">${I.other}<span>Service « Autre » proposé&nbsp;: <b>${esc(a.other)}</b>${a.otherPrice>0?`, il veut percevoir <b>${a.otherPrice} €</b> ${a.otherUnit==='forfait'?'par prestation':'de l\'heure'}`:', <b>aucun prix indiqué</b>'}. Le client paiera ce montant plus la part Ti-Services, à évaluer avant validation.${a.otherPriceNote?`<div class="mini" style="margin-top:7px;color:var(--ink);line-height:1.5"><b>Ses autres formules&nbsp;:</b> ${esc(a.otherPriceNote)}</div>`:''}</span></div>${autreDemandeActes(a)}`:''}
         <div class="card fiche" style="padding:16px;margin-top:12px">
           ${fRow('Statut',`<span class="chip ${acctChip(a.status)[0]}">${acctChip(a.status)[1]}</span>`)}
           ${fRow('Services',esc(artSvcLabel(a)))}
@@ -16782,8 +16781,13 @@
       // « Bientôt disponible » : aucune commande n'aurait jamais pu lui parvenir.
       else if(act==='addcat'){const a=S.adminArtisans.find(x=>x.id===id);
         if(a&&a.other){
-          const ex=(S.customServices||[]).find(function(x){return x.nm.toLowerCase()===a.other.toLowerCase();});
-          const sid=ex?ex.id:addCustomService(a.other,(a.rates&&a.rates.autre)||40);
+          // LE NOM VIENT DU CHAMP, pas de la phrase du prestataire : c'est lui qui
+          // paraîtra dans la grille des métiers, côté client. Vide, on retombe sur la
+          // proposition courte — jamais sur l'offre commerciale entière.
+          const champ=document.getElementById('autreNom');
+          const nom=((champ&&champ.value)||'').trim()||autreNomPropose(a.other);
+          const ex=(S.customServices||[]).find(function(x){return x.nm.toLowerCase()===nom.toLowerCase();});
+          const sid=ex?ex.id:addCustomService(nom,(a.rates&&a.rates.autre)||40);
           if(sid){
             // Le prix qu'il demandait pour ce service le suit : sans lui, il repartirait au
             // tarif de base du métier, que personne n'a discuté avec lui.
@@ -16792,9 +16796,20 @@
             // Et il quitte « Autre » : sinon la fiche reproposerait « Ajouter au catalogue »
             // et un second métier jumeau serait créé au clic suivant.
             adminSetCat(a,'autre',false);
-            toast('« '+a.other+' » ajouté et rattaché, il recevra les commandes');
+            // La demande est traitée : sa phrase et son prix quittent la fiche, sinon le
+            // bandeau réclamerait éternellement un geste déjà fait.
+            adminWriteField(a,{other:'',otherPrice:0,otherPriceNote:''});
+            a.other='';a.otherPrice=0;a.otherPriceNote='';S._autreNom=null;
+            toast('« '+nom+' » créé et rattaché, il recevra les commandes');
           }
         }}
+      // Clore une demande « Autre » traitée autrement : refusée, déjà au catalogue sous
+      // un autre nom, réglée au téléphone. C'est la porte qui manquait.
+      else if(act==='autre-clos'){const a=S.adminArtisans.find(x=>x.id===id);
+        if(a){ adminSetCat(a,'autre',false);
+          adminWriteField(a,{other:'',otherPrice:0,otherPriceNote:''});
+          a.other='';a.otherPrice=0;a.otherPriceNote='';S._autreNom=null;
+          toast('Demande retirée de sa fiche'); } }
       // Rattachement d'un métier à la main, depuis la fiche du prestataire.
       /* MARQUER UN COMPTE DE TEST. On écrit sur la fiche, pas dans une liste locale : la
          mesure doit être la même depuis n'importe quel appareil, et survivre à tout. Le
@@ -17946,6 +17961,8 @@
     const pao=e.target.closest('[data-paother]');if(pao&&S.proAddForm){S.proAddForm.other=pao.value;const sb=document.querySelector('[data-act="pro-add-submit"]');if(sb)sb.disabled=!paAddOk(S.proAddForm);}
     const pap=e.target.closest('[data-paprice]');if(pap&&S.proAddForm){S.proAddForm.price=pap.value;const sb=document.querySelector('[data-act="pro-add-submit"]');if(sb)sb.disabled=!paAddOk(S.proAddForm);}
     const wi=e.target.closest('[data-wish]');if(wi){S.wishText=wi.value;S.wishSent=false;const wb=document.querySelector('[data-act="wish-send"]');if(wb)wb.disabled=!wi.value.trim();}
+    const _an=e.target.closest('[data-autrenom]');
+    if(_an){S._autreNom=_an.value;return;}
     const pf=e.target.closest('[data-pf]');
     if(pf){
       /* UNE CASE DE PRIX N'ACCEPTE QUE DES CHIFFRES. Demandé par l'éditeur devant une
@@ -19604,6 +19621,52 @@
      se calcule pour de vrai — sans quoi le geste serait décoratif, et l'application
      afficherait un taux que la facture ne pratiquerait pas. La carte annonce donc le
      taux obtenu, et dit quand on descend quelqu'un sous ce que ses missions lui donnent. */
+  /* ══ UNE DEMANDE « AUTRE » DOIT POUVOIR SE CLORE ═════════════════════════════════
+     « J'ai validé et créé son métier, sa prestation, mais je ne peux pas enlever tous
+     ces messages. » Relevé sur la fiche d'un loueur de catamaran, le 05/10/2026.
+
+     LE BANDEAU ET LE BOUTON VIVENT SUR `cats.includes('autre') && other`, et UNE SEULE
+     chose les retirait : le bouton « Ajouter au catalogue ». Or ce bouton créait un
+     métier portant la PHRASE ENTIÈRE du prestataire — « Location de catamaran avec
+     skipper sur st Barthelemy et les Caraïbes, à la demie journée, journée, weekend et
+     semaine. » — ce que personne ne veut voir dans une grille de métiers. L'éditeur a
+     donc fait ce qu'il fallait AILLEURS, en nommant proprement « Location Catamaran », et
+     la fiche a continué de réclamer un geste déjà fait, sans aucune porte de sortie.
+
+     DEUX MANQUES, PAS UN. Le nom du métier doit se CHOISIR — un champ, pré-rempli d'une
+     proposition courte, modifiable avant d'écrire quoi que ce soit. Et la demande doit
+     pouvoir se CLORE à la main, pour tous les cas où elle a été traitée autrement :
+     refusée, déjà au catalogue sous un autre nom, réglée au téléphone.
+
+     ON NE DEVINE PAS QU'ELLE EST TRAITÉE. Il a maintenant un métier sur mesure attaché et
+     une demande « Autre » en cours ; en conclure que l'un règle l'autre serait un pari, et
+     effacer une demande sur un pari est pire que la laisser. C'est un clic, et il est à
+     l'éditeur. */
+  function autreNomPropose(txt){
+    const t=String(txt||'').trim();
+    // Jusqu'à la première ponctuation forte, et au plus six mots : de quoi nommer un
+    // métier, pas de quoi recopier une offre commerciale.
+    // Et il ne finit pas sur un mot de liaison : « Location de catamaran avec skipper
+    // sur » n'est pas un nom de métier, c'est une phrase coupée.
+    const LIENS=['de','du','des','d','à','au','aux','en','sur','sous','avec','pour','et','ou','le','la','les','un','une','l','par','dans','chez'];
+    const mots=t.split(/[,.;:(]/)[0].trim().split(/\s+/).slice(0,6);
+    while(mots.length>1&&LIENS.indexOf(mots[mots.length-1].toLowerCase().replace(/['’]$/,''))>=0)mots.pop();
+    return (mots.join(' ')||t).slice(0,60);
+  }
+  function autreDemandeActes(a){
+    if(!(a.cats&&a.cats.includes('autre')&&a.other))return '';
+    const deja=(S.customServices||[]).some(function(x){return x.nm.toLowerCase()===a.other.toLowerCase();});
+    return `<div class="card" style="padding:14px;margin-top:10px">
+      <div class="field" style="margin-bottom:0">
+        <label>Nom du métier à créer</label>
+        <input class="txt" id="autreNom" data-autrenom value="${esc(S._autreNom!=null?S._autreNom:autreNomPropose(a.other))}" placeholder="Ex. Location de catamaran">
+        <p class="mini" style="margin-top:6px;color:var(--muted);line-height:1.5">C'est ce nom qui paraîtra dans la grille des métiers, côté client. Sa phrase complète reste sur sa fiche.</p>
+      </div>
+      <button class="btn primary sm" data-adm="addcat:${a.id}" style="margin-top:11px;width:auto;padding:10px 16px">${I.plus} Créer le métier et le lui rattacher</button>
+      ${deja?`<p class="mini" style="margin-top:8px;color:var(--good)">${I.check} Ce libellé figure déjà au catalogue.</p>`:''}
+      <p class="mini" style="margin-top:11px;line-height:1.5"><button class="linklike" data-adm="autre-clos:${a.id}" style="color:var(--coral-deep);font-weight:700">Retirer cette demande</button> — si vous l'avez traitée autrement, ou refusée. Son métier « Autre » et le prix demandé quittent sa fiche.</p>
+    </div>`;
+  }
   function carteFideliteArtisan(a){
     const jobs=(a.jobs||0)+((a.refBonusJobs||0));
     const auto=fidFor(jobs), force=palierDeCle(a.tierForce), eff=force||auto;
@@ -19666,6 +19729,13 @@
       ${a.approvedNotifiedAt?`<p class="mini" style="margin-top:7px;color:var(--muted);line-height:1.5">L’e-mail de bienvenue lui a déjà été envoyé&nbsp;: le revalider ne le renverra pas.</p>`:''}
     </div>`;
   }
+  /* « 2 métiers » : un pluriel, rien de plus — mais il était déclaré DANS `adminHome`,
+     et `adminFiche` s'en servait. Toute fiche d'un prestataire VALIDÉ, non reconnu comme
+     compte de test, et SEUL à proposer l'un de ses métiers levait donc une
+     `ReferenceError` qui emportait l'écran entier de la console. C'est exactement le cas
+     du premier prestataire d'un métier neuf — celui qu'on vient de valider. Trouvé par
+     l'épreuve de la demande « Autre », sur la fiche d'un loueur de catamaran. */
+  function plN(n,m){return n+' '+m+(n>1?'s':'');}
   function adminWriteStatus(a,status){ if(FB&&a&&a.real&&a.uid){ try{ FB.f.updateDoc(FB.f.doc(FB.db,'artisans',a.uid),{status:status}); }catch(_){} } }
   // Validation admin d'un métier ajouté : cats += sv, pendingCats -= sv (admin seul).
   function adminWriteAddCat(a,sv){ if(FB&&a&&a.real&&a.uid){ try{ const patch={cats:FB.f.arrayUnion(sv),pendingCats:FB.f.arrayRemove(sv)}; if(sv==='autre'&&a.pendingOther){patch.other=a.pendingOther;if(a.pendingOtherPrice>0){patch.otherPrice=a.pendingOtherPrice;patch.otherUnit=a.pendingOtherUnit||'h';}} FB.f.updateDoc(FB.f.doc(FB.db,'artisans',a.uid),patch); }catch(_){} } }
