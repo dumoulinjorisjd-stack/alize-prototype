@@ -92,8 +92,12 @@ const sw = fs.readFileSync(path.join(RACINE, 'sw.js'), 'utf8');
 
   console.log('E — le serveur décide du montant, pas le navigateur du client');
   ok(/arrhesPctServeur/.test(srv), 'le serveur lit lui-même la part du métier dans le catalogue');
-  ok(/const assiette = round2\(Number\(after\.molliePaymentAmount\)/.test(srv),
+  ok(/const assiette = round2\(Number\(after\.molliePaymentAmount\) \|\| assietteMollie/.test(srv),
     'et l’assiette est le montant RÉELLEMENT autorisé chez Mollie, écrit par le serveur');
+  ok(/p\.data\.amount && p\.data\.amount\.value != null/.test(srv),
+    'si ce champ manque (demande ancienne), on le DEMANDE à Mollie plutôt que de retomber sur une valeur écrite par le client');
+  ok(/Indemnité nulle reqId=/.test(srv),
+    'et une assiette introuvable ne capture rien : on le dit, on ne devine pas');
   ok(!/const fee = round2\(Number\(after\.cancelFee\)/.test(srv),
     '`cancelFee`, écrit par celui qui annule, n’est plus la source du prélèvement');
   ok(/cancelFeeSettled: true, cancelFee: fee, cancelFeePct: pctArrhes/.test(srv),

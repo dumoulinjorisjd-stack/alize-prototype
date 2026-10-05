@@ -3574,7 +3574,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='806';
+  const VERSION_APP='809';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -4798,7 +4798,7 @@
     Object.keys(S.adminCatalog).forEach(function(id){
       const fusion=baseCatalog(id);
       if(fusion&&fusion.length!==(S.adminCatalog[id]||[]).length){
-        S.adminCatalog[id]=fusion.map(function(a){return {id:a.id,nm:a.nm,price:a.price,grp:a.grp||''};});
+        S.adminCatalog[id]=fusion.map(function(a){const o={id:a.id,nm:a.nm,price:a.price,grp:a.grp||''};if(heuresDeLActe(a).length)o.h=heuresDeLActe(a).join(', ');return o;});
       }
     });
   }
@@ -4815,7 +4815,7 @@
     if(!(FB&&FB.auth&&FB.auth.currentUser)){toast('⚠︎ Non enregistré : vous n’êtes plus connecté');return;}
     try{
       materialiserSeeds(); S.catalogSeed=CATALOG_SEED;
-      const pr=FB.f.setDoc(FB.f.doc(FB.db,'settings','catalog'),{services:S.customServices||[],catalog:S.adminCatalog||{},options:S.adminOptions||{},arrhes:S.adminArrhes||{},noms:nomsEnListe(),catalogSeed:CATALOG_SEED},{merge:true});
+      const pr=FB.f.setDoc(FB.f.doc(FB.db,'settings','catalog'),{services:S.customServices||[],catalog:S.adminCatalog||{},options:S.adminOptions||{},arrhes:S.adminArrhes||{},metier:S.adminMetier||{},noms:nomsEnListe(),catalogSeed:CATALOG_SEED},{merge:true});
       if(pr&&pr.catch)pr.catch(function(e){toast('⚠︎ Non enregistré : '+fbErrTxt(e));});
     }catch(e){ toast('⚠︎ Non enregistré : '+fbErrTxt(e)); }
   }
@@ -4832,8 +4832,8 @@
   // saisie (recadré à 1 € à la sortie du champ, cf. prixFinal).
   function prixSaisi(v){const n=Math.round(parseFloat(String(v).replace(',','.'))||0);return Math.max(0,Math.min(99999,n));}
   function ecritDansCatalogue(){ try{ const a=document.activeElement;
-    return !!(a&&a.matches&&a.matches('[data-optname],[data-actname],[data-actgrpname],[data-actpricev],[data-optpricev],[data-catname]')); }catch(_){return false;} }
-  function applyCatalogDoc(d){ if(!d)return; S.nomsMetiers=nomsValides(d.noms); appliquerNoms(); if(Array.isArray(d.services)){ S.customServices=d.services.map(function(s){return {id:s.id,nm:nomNet(s.nm),rate:s.rate,custom:true,ico:icoValide(s.ico),choixPro:!!s.choixPro,cat:catValide(s.cat),lieu:lieuValide(s.lieu)||'domicile'};}); } if(d.catalog&&typeof d.catalog==='object'){ S.adminCatalog=d.catalog; } S.catalogSeed=Number(d.catalogSeed)||0; if(d.options&&typeof d.options==='object'){ S.adminOptions=d.options; } if(d.arrhes&&typeof d.arrhes==='object'){ S.adminArrhes=d.arrhes; } if(ecritDansCatalogue())return; render(); applyLandLang(); }
+    return !!(a&&a.matches&&a.matches('[data-optname],[data-actname],[data-actgrpname],[data-acthours],[data-actpricev],[data-optpricev],[data-catname]')); }catch(_){return false;} }
+  function applyCatalogDoc(d){ if(!d)return; S.nomsMetiers=nomsValides(d.noms); appliquerNoms(); if(Array.isArray(d.services)){ S.customServices=d.services.map(function(s){return {id:s.id,nm:nomNet(s.nm),rate:s.rate,custom:true,ico:icoValide(s.ico),choixPro:!!s.choixPro,cat:catValide(s.cat),lieu:lieuValide(s.lieu)||'domicile'};}); } if(d.catalog&&typeof d.catalog==='object'){ S.adminCatalog=d.catalog; } S.catalogSeed=Number(d.catalogSeed)||0; if(d.options&&typeof d.options==='object'){ S.adminOptions=d.options; } if(d.arrhes&&typeof d.arrhes==='object'){ S.adminArrhes=d.arrhes; } if(d.metier&&typeof d.metier==='object'){ S.adminMetier=d.metier; } if(ecritDansCatalogue())return; render(); applyLandLang(); }
   // Catalogue partagé écouté EN TEMPS RÉEL : toute modification admin (prix, prestations,
   // options, métiers) se propage à l'app de chacun sans rechargement. Une seule écoute.
   async function loadCatalog(){ try{ if(!FB||_catalogSub)return; _catalogSub=FB.f.onSnapshot(FB.f.doc(FB.db,'settings','catalog'),function(snap){ applyCatalogDoc(snap.exists()?(snap.data()||{}):{}); },function(e){ console.warn('catalog load',e); }); }catch(e){ console.warn('catalog sub',e); } }
@@ -5323,6 +5323,81 @@
 
      ET LE MONTANT NE SE DEVINE PAS : hors des bornes connues, on retombe sur le défaut
      plutôt que d'appliquer une valeur abîmée à une somme qui part d'une vraie carte. */
+  /* ══ CE QUE L'ÉCRAN DE COMMANDE PERMET, PAR MÉTIER ══════════════════════════════
+     « Pas très logique » — capture à l'appui : « Demie journée » ET « Journée complète »
+     cochées en même temps sur la même sortie en mer. La grille à l'acte a été écrite pour
+     un salon de coiffure, où « coupe + couleur » se cumulent légitimement ; sur un bateau
+     ce sont des FORMULES, on en prend une. Rien ne permettait de le dire.
+     « Et le calendrier ne me permet de réserver que jusqu'au 3 novembre » : `dayOptions`
+     s'arrête à trente jours, écrit en dur. Juste pour un ménage, absurde pour un charter
+     qu'on réserve des mois à l'avance.
+     DEUX RÉGLAGES, à côté des arrhes, et deux défauts qui ne changent rien : on cumule,
+     et l'on réserve à trente jours — exactement ce que le code faisait. Au-delà de trente
+     jours, la liste déroulante cède la place au CALENDRIER du téléphone : trois cent
+     soixante-cinq lignes dans un menu ne se parcourent pas. */
+  /* ══ L'HEURE DÉPEND DE LA PRESTATION CHOISIE ════════════════════════════════════
+     « La date de l'heure souhaitée pour cette catégorie doit être en fonction du produit
+     choisi. On ne peut pas réserver une journée entière pour aujourd'hui alors qu'il est
+     déjà 14 h 00. »
+
+     L'écran proposait TOUTES les demi-heures de 00:00 à 23:30, quelle que soit la
+     formule. Une journée complète en mer part le matin ; la proposer à 14 h, ou à 23 h 30,
+     c'est laisser le client commander quelque chose qui ne peut pas avoir lieu, et c'est
+     le prestataire qui devra le lui dire.
+
+     CHAQUE PRESTATION PORTE SES HEURES DE DÉPART, une liste FERMÉE saisie dans la console
+     (« 09:00, 13:30 »). Une prestation qui n'en déclare aucune ne change rien : la grille
+     des demi-heures reste celle d'aujourd'hui, et aucun métier du parc ne bouge.
+
+     ET UN JOUR SANS HEURE DISPONIBLE N'EST PLUS OFFERT. À 14 h, si la journée complète ne
+     part qu'à 09:00, aujourd'hui n'a plus rien à proposer : le jour disparaît de la liste
+     au lieu d'afficher une heure qu'on ne peut pas tenir. On le DIT, sinon « Aujourd'hui »
+     manquerait sans explication.
+
+     PLUSIEURS PRESTATIONS COCHÉES : on garde les heures communes à toutes celles qui en
+     déclarent. Deux formules aux départs incompatibles n'ont aucune heure commune, et
+     c'est un fait qu'il vaut mieux dire que masquer. */
+  const HEURES_MAX=12;
+  function heuresNet(v){
+    const vus={},out=[];
+    String(v==null?'':v).split(/[^0-9:]+/).forEach(function(t){
+      const m=/^(\d{1,2}):(\d{2})$/.exec(t.trim());
+      if(!m)return;
+      const h=+m[1],mi=+m[2];
+      if(h>23||mi>59)return;
+      const k=String(h).padStart(2,'0')+':'+String(mi).padStart(2,'0');
+      if(vus[k])return;vus[k]=1;out.push(k);
+    });
+    return out.sort().slice(0,HEURES_MAX);
+  }
+  function heuresDeLActe(a){return heuresNet((a&&a.h)||'');}
+  /* PUR : on lui donne les actes cochés, il rend les heures communes. Les prestations qui
+     ne déclarent rien n'imposent rien ; si aucune ne déclare, la liste est vide et
+     l'écran retombe sur la grille des demi-heures. */
+  function heuresCommunes(actes){
+    let inter=null;
+    (actes||[]).forEach(function(a){
+      const h=heuresDeLActe(a);
+      if(!h.length)return;
+      inter=(inter==null)?h:inter.filter(function(x){return h.indexOf(x)>=0;});
+    });
+    return {declare:inter!=null,heures:inter||[]};
+  }
+  function heuresDuDraft(m){
+    if(!m||!Array.isArray(m.acts)||!m.acts.length)return {declare:false,heures:[]};
+    return heuresCommunes(m.acts.map(function(x){return actInfo(m.svc,x.id)||x;}));
+  }
+  const RESA_JOURS=[[30,'30 jours'],[90,'3 mois'],[180,'6 mois'],[365,'1 an']];
+  const METIER_DEFAUT={exclusif:false,jours:30};
+  function resaJoursNet(v){const n=Math.round(Number(v));return RESA_JOURS.some(function(d){return d[0]===n;})?n:null;}
+  // PUR : la table lui est donnée.
+  function metierDe(table,svcId){
+    const r=(table&&table[svcId])||{};
+    const j=resaJoursNet(r.jours);
+    return {exclusif:r.exclusif===true,jours:j==null?METIER_DEFAUT.jours:j,
+      regle:(r.exclusif===true||j!=null)};
+  }
+  function metierDuSvc(svcId){return metierDe(S.adminMetier,svcId);}
   const ARRHES_DEFAUT={pct:50,h:8};
   // Délais offerts : une liste FERMÉE, parce qu'un champ libre laisserait écrire « 0 »
   // (annulation jamais gratuite) ou « 10000 » (jamais payante) sans que rien ne le dise.
@@ -10608,7 +10683,7 @@
         else if(s.id==='colis'){priceEditor=priceCtl('colis',px,' forfait','Forfait retrait');}
         // Console : les prestations sont rangées par FAMILLE (intertitre + champ « famille »
         // sur chaque ligne), sinon une grille de 50 actes est impossible à tenir à jour.
-        else if(isCatalogForfait(s.id)){priceEditor=`<div class="mini" style="color:var(--muted);margin-bottom:2px">Grille à l'acte</div>${catalogGroups(s.id).map(function(G){return (catalogGroups(s.id).length<2?'':`<div class="mini" style="margin-top:14px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:var(--teal-deep)">${esc(G.g)} · ${grpCount(G.acts.length)}</div>`)+G.acts.map(function(a){return `<div style="margin-top:9px;padding:10px;border-radius:12px;background:var(--card)"><input class="txt" data-actname="${s.id}:${a.id}" value="${esc(a.nm)}" placeholder="Nom de la prestation" style="width:100%;padding:11px 12px;font-size:14px"><input class="txt" data-actgrpname="${s.id}:${a.id}" value="${esc(a.grp||'')}" placeholder="Famille (ex. Femme · coloration)" style="width:100%;padding:9px 12px;font-size:12px;margin-top:6px"><span class="row" style="gap:6px;align-items:center;justify-content:flex-end;margin-top:8px"><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actprice="${s.id}:${a.id}:down">−</button><span class="row" style="flex:none;gap:3px;align-items:baseline"><input class="txt money" data-actpricev="${s.id}:${a.id}" value="${a.price}" inputmode="numeric" aria-label="Prix client en euros" style="width:64px;padding:7px 8px;text-align:right;font-size:14px"><b class="mini">€</b></span><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actprice="${s.id}:${a.id}:up">+</button><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actdel="${s.id}:${a.id}" aria-label="Retirer">${I.trash}</button></span></div>`;}).join('');}).join('')}<button class="btn ghost sm" data-actadd="${s.id}" style="margin-top:10px;width:auto;padding:8px 12px">${I.plus} Ajouter une prestation</button>`;}
+        else if(isCatalogForfait(s.id)){priceEditor=`<div class="mini" style="color:var(--muted);margin-bottom:2px">Grille à l'acte</div>${catalogGroups(s.id).map(function(G){return (catalogGroups(s.id).length<2?'':`<div class="mini" style="margin-top:14px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:var(--teal-deep)">${esc(G.g)} · ${grpCount(G.acts.length)}</div>`)+G.acts.map(function(a){return `<div style="margin-top:9px;padding:10px;border-radius:12px;background:var(--card)"><input class="txt" data-actname="${s.id}:${a.id}" value="${esc(a.nm)}" placeholder="Nom de la prestation" style="width:100%;padding:11px 12px;font-size:14px"><input class="txt" data-actgrpname="${s.id}:${a.id}" value="${esc(a.grp||'')}" placeholder="Famille (ex. Femme · coloration)" style="width:100%;padding:9px 12px;font-size:12px;margin-top:6px"><input class="txt" data-acthours="${s.id}:${a.id}" value="${esc(heuresDeLActe(a).join(', '))}" placeholder="Heures de départ (ex. 09:00, 13:30)" style="width:100%;padding:9px 12px;font-size:12px;margin-top:6px"><span class="row" style="gap:6px;align-items:center;justify-content:flex-end;margin-top:8px"><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actprice="${s.id}:${a.id}:down">−</button><span class="row" style="flex:none;gap:3px;align-items:baseline"><input class="txt money" data-actpricev="${s.id}:${a.id}" value="${a.price}" inputmode="numeric" aria-label="Prix client en euros" style="width:64px;padding:7px 8px;text-align:right;font-size:14px"><b class="mini">€</b></span><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actprice="${s.id}:${a.id}:up">+</button><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actdel="${s.id}:${a.id}" aria-label="Retirer">${I.trash}</button></span></div>`;}).join('');}).join('')}<button class="btn ghost sm" data-actadd="${s.id}" style="margin-top:10px;width:auto;padding:8px 12px">${I.plus} Ajouter une prestation</button>`;}
         else{
           priceEditor=priceCtl(s.id,px,'/h','Tarif horaire');
           /* « Quand j'ajoute un métier je suis obligé de laisser un tarif horaire, mais
@@ -10650,6 +10725,19 @@
               ? `<b>ni adresse ni point GPS</b>, et «&nbsp;${esc(M.heure)}&nbsp;».`
               : `une <b>adresse</b> et un <b>point GPS obligatoire</b>, et «&nbsp;${esc(M.heure)}&nbsp;».`}</p>`;})()}
           <button class="btn ghost sm" data-adm="delcat:${s.id}" style="margin-top:11px;width:auto;padding:8px 12px;color:var(--coral-deep)">${I.trash} Retirer ce métier</button>`}
+          <hr class="dashed" style="margin:13px 0 2px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">L’écran de commande</div>
+          ${(function(){const M=metierDuSvc(s.id);
+            return `${isCatalogForfait(s.id)?`<div class="row between" style="align-items:center;gap:10px;margin-top:9px">
+              <div style="flex:1;min-width:0"><span class="sub">Une seule prestation à la fois</span>
+                <div class="mini" style="color:var(--muted);line-height:1.45">Pour des FORMULES qui s’excluent (demie journée ou journée). Laissé ouvert, le client peut en cocher plusieurs et elles s’additionnent.</div></div>
+              <button class="switch" data-adm="metexcl:${s.id}" style="flex:none;background:${M.exclusif?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${M.exclusif?'25px':'3px'}"></span></button>
+            </div>`:''}
+            <div class="mini" style="color:var(--muted);margin-top:11px">Jusqu’à quand on peut réserver</div>
+            <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:5px">${RESA_JOURS.map(function(D){const on=M.jours===D[0];
+              return `<button class="btn ghost sm" data-adm="metjours:${s.id}:${D[0]}" style="flex:none;width:auto;padding:7px 11px;${on?'border-color:var(--teal-deep);background:var(--teal-wash);color:var(--teal-deep);font-weight:800':''}">${esc(D[1])}</button>`;}).join('')}</div>
+            <p class="mini" style="color:var(--muted);margin-top:6px;line-height:1.5">${M.jours<=30
+              ? 'Le client choisit son jour dans une liste déroulante.'
+              : 'Au-delà de trente jours, le client ouvre le <b>calendrier de son téléphone</b>&nbsp;: une liste de '+M.jours+' lignes ne se parcourt pas.'}</p>`;})()}
           <hr class="dashed" style="margin:13px 0 2px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Arrhes &amp; annulation</div>
           ${(function(){const A=arrhesDuSvc(s.id);
             // Le pourcentage ne dit rien tout seul : on montre ce qu'il fait sur les prix
@@ -10776,7 +10864,7 @@
     })();
     return `<div class="pad">
       <div class="row between isle-wm" style="margin-top:10px"><div><span class="eyebrow">Console admin · Ti-Services</span><div class="h-hello">Tableau de bord</div></div><div class="avatar" style="background:linear-gradient(135deg,var(--ink),#000)">TS</div></div>
-      <div class="row" style="gap:9px;margin-top:12px">${stat('En cours',allB.length,'réservations','adm-encours')}${stat('Artisans',validA,pendA.length+' en attente','adm-list:a-arts')}${stat('Clients',clis.length,pendC.length+' en attente','adm-list:a-clis')}</div>
+      <div class="row" style="gap:9px;margin-top:12px">${stat('En cours',allB.length,'réservations','adm-list:a-bookings')}${stat('Artisans',validA,pendA.length+' en attente','adm-list:a-arts')}${stat('Clients',clis.length,pendC.length+' en attente','adm-list:a-clis')}</div>
       <div class="card listrow" style="margin-top:10px"><span class="benic" style="flex:none">${I.card}</span><div class="lr-main"><span class="sub">Commission ce mois</span></div><b class="money" style="font-size:18px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(adminMonthCommission())}</b></div>
       ${/* L'alerte de candidature parle de la file « À traiter » : elle se lit juste au-dessus
            d'elle, pas au milieu des compteurs. Une fois les notifications acceptées, elle
@@ -17222,6 +17310,20 @@
       /* Les arrhes et le délai d'annulation d'un métier. La table vit à part des métiers
          eux-mêmes, donc elle vaut aussi pour ceux livrés avec l'application ; une valeur
          égale au défaut RETIRE la clé, on n'enregistre que ce qui diffère. */
+      /* Les deux réglages de l'écran de commande. Même discipline que les arrhes : une
+         valeur égale au défaut RETIRE la clé, on n'enregistre que ce qui diffère. */
+      else if(act==='metexcl'||act==='metjours'){
+        S.adminMetier=S.adminMetier||{};
+        const cur=metierDuSvc(id);
+        let ex=cur.exclusif,j=cur.jours;
+        if(act==='metexcl')ex=!ex;
+        else{const v=resaJoursNet(parts[2]);if(v==null)return;j=v;}
+        const e={};
+        if(ex)e.exclusif=true;
+        if(j!==METIER_DEFAUT.jours)e.jours=j;
+        if(Object.keys(e).length)S.adminMetier[id]=e; else delete S.adminMetier[id];
+        saveCatalog();render();return;
+      }
       else if(act==='arrhes'||act==='annul'){
         S.adminArrhes=S.adminArrhes||{};
         const cur=arrhesDuSvc(id);
@@ -17289,7 +17391,12 @@
     if(b.dataset.catopen){jalonClient('catalogue');S.catView=b.dataset.catopen;render();return;}
     if(b.dataset.svc){if(!svcAvailable(b.dataset.svc)){toast('Bientôt disponible');return;}const svc=findSvc(b.dataset.svc);if(!svc)return;jalonClient('catalogue');jalonClient('config');S.catView=null;S.cfgMore=false;S.draft=newMission(svc);renderConfig();return;}
     // Menu d'actes (métiers à l'acte) : cocher / décocher une prestation.
-    if(b.dataset.actpick){const m=S.draft;if(!m)return;m.acts=m.acts||[];const id=b.dataset.actpick;const i=m.acts.findIndex(function(a){return a.id===id;});if(i>=0){m.acts.splice(i,1);}else{const a=actInfo(m.svc,id);if(a)m.acts.push({id:a.id,nm:a.nm,price:a.price,qty:1});}renderConfig();return;}
+    if(b.dataset.actpick){const m=S.draft;if(!m)return;m.acts=m.acts||[];const id=b.dataset.actpick;const i=m.acts.findIndex(function(a){return a.id===id;});
+      // Choix EXCLUSIF : une formule remplace l'autre au lieu de s'y ajouter. Décocher
+      // reste possible — on ne force pas une sélection, le total dirait un prix que
+      // personne n'a demandé.
+      const seul=metierDuSvc(m.svc).exclusif;
+      if(i>=0){m.acts.splice(i,1);}else{const a=actInfo(m.svc,id);if(a){if(seul)m.acts=[];m.acts.push({id:a.id,nm:a.nm,price:a.price,qty:1});}}renderConfig();return;}
     if(b.dataset.actqty){const m=S.draft;if(!m)return;const parts=b.dataset.actqty.split(':');const id=parts[0],dir=parts[1];const a=(m.acts||[]).find(function(x){return x.id===id;});if(a){if(dir==='up')a.qty=(a.qty||1)+1;else{a.qty=(a.qty||1)-1;if(a.qty<1)m.acts=m.acts.filter(function(x){return x.id!==id;});}}renderConfig();return;}
     if(b.dataset.av){const[d,bl]=b.dataset.av.split(':');S.avail[d][bl]=S.avail[d][bl]?0:1;render();return;}
     if(b.dataset.atab){S.agendaTab=b.dataset.atab;render();return;}
@@ -17312,7 +17419,6 @@
     // Compteurs du tableau de bord admin : « Artisans » / « Clients » déplient la liste
     // correspondante et y amènent l'écran ; « En cours » ouvre le suivi (messagerie).
     if(b.dataset.act&&b.dataset.act.indexOf('adm-list:')===0){const id=b.dataset.act.split(':')[1];S._fold=S._fold||{};S._fold[id]=true;render();setTimeout(function(){try{const el=document.querySelector('[data-fold="'+id+'"]');if(el)el.scrollIntoView({behavior:'smooth',block:'start'});}catch(_){}},60);return;}
-    if(b.dataset.act==='adm-encours'){S.admin.view='msg';S.admin.sel=null;render();return;}
     if(b.dataset.act==='admin-restore-run'){const f=S._arst||{};
       if(!f.email||!f.at){toast('E-mail et date/heure requis');return;}
       if(!(FB&&FB.fn&&FB.functions)){toast('Indisponible hors connexion');return;}
@@ -18080,11 +18186,66 @@
   const _MO=['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];
   function dayIso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
   // Options de jour : d'aujourd'hui à +30 jours — aucune date passée n'est proposée.
-  function dayOptions(){const out=[];const base=new Date();base.setHours(0,0,0,0);for(let i=0;i<30;i++){const d=new Date(base);d.setDate(base.getDate()+i);const iso=dayIso(d);const lbl=i===0?'Aujourd’hui':(i===1?'Demain':(_WD[d.getDay()]+' '+d.getDate()+' '+_MO[d.getMonth()]));out.push({iso:iso,lbl:lbl});}return out;}
-  function dayLabelFor(iso){const o=dayOptions().find(function(x){return x.iso===iso;});return o?o.lbl:iso;}
+  function dayOptions(n){const out=[];const base=new Date();base.setHours(0,0,0,0);const N=Math.max(1,Math.min(400,Number(n)||30));for(let i=0;i<N;i++){const d=new Date(base);d.setDate(base.getDate()+i);const iso=dayIso(d);const lbl=i===0?'Aujourd’hui':(i===1?'Demain':(_WD[d.getDay()]+' '+d.getDate()+' '+_MO[d.getMonth()]));out.push({iso:iso,lbl:lbl});}return out;}
+  function dayLabelFor(iso,n){const o=dayOptions(n).find(function(x){return x.iso===iso;});return o?o.lbl:fmtJourLong(iso);}
+  // Au-delà de la liste, une date se dit en toutes lettres plutôt qu'en 2026-11-28.
+  function fmtJourLong(iso){
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(iso||''))return iso||'';
+    const p=iso.split('-'),d=new Date(+p[0],(+p[1])-1,+p[2]);
+    return _WD[d.getDay()]+' '+d.getDate()+' '+_MO[d.getMonth()]+(d.getFullYear()!==new Date().getFullYear()?(' '+d.getFullYear()):'');
+  }
+  // La porte unique du champ « Quand ? » : liste déroulante jusqu'à trente jours, et
+  // calendrier du téléphone au-delà — un menu de trois cent soixante-cinq lignes ne se
+  // parcourt pas. Les deux écrans de commande passent par ici.
+  function champQuand(m){
+    const J=metierDuSvc(m&&m.svc).jours;
+    const base=new Date();base.setHours(0,0,0,0);
+    const auj=dayIso(base);
+    // Aujourd'hui ne vaut que s'il reste une heure tenable pour la prestation choisie.
+    const plusAujourdhui=!heuresTenables(m,auj).length;
+    const note=plusAujourdhui?`<p class="mini" style="margin:5px 0 0;color:var(--muted)">${esc(heuresDuDraft(m).declare?'Plus de départ possible aujourd’hui pour cette prestation.':'Plus de créneau disponible aujourd’hui.')}</p>`:'';
+    if(J<=30){
+      const jours=dayOptions(J).filter(function(o){return !(plusAujourdhui&&o.iso===auj);});
+      return `<select class="txt" data-cfday>${jours.map(function(o){return `<option value="${o.iso}"${m.dateISO===o.iso?' selected':''}>${esc(o.lbl)}</option>`;}).join('')}</select>${note}`;
+    }
+    const deb=new Date(base);if(plusAujourdhui)deb.setDate(deb.getDate()+1);
+    const fin=new Date(base);fin.setDate(base.getDate()+J-1);
+    const val=/^\d{4}-\d{2}-\d{2}$/.test(m.dateISO||'')?m.dateISO:dayIso(deb);
+    return `<input class="txt" type="date" data-cfday value="${esc(val)}" min="${dayIso(deb)}" max="${dayIso(fin)}">
+      <p class="mini" style="margin:5px 0 0;color:var(--muted)">${esc(fmtJourLong(val))}</p>${note}`;
+  }
   // Options d'heure : 24 h/24 par pas de 30 min (00:00 → 23:30) ; les heures déjà
   // passées (pour aujourd'hui) sont marquées « past » pour être désactivées.
-  function hourOptions(m){const minM=minSlotToday(m);const out=[];for(let t=0;t<=23*60+30;t+=30){out.push({s:minToSlot(t),past:(minM>=0&&t<minM)});}return out;}
+  function hourOptions(m){const minM=minSlotToday(m);const out=[];
+    const D=heuresDuDraft(m);
+    if(D.declare){D.heures.forEach(function(s){out.push({s:s,past:(minM>=0&&slotToMin(s)<minM)});});return out;}
+    for(let t=0;t<=23*60+30;t+=30){out.push({s:minToSlot(t),past:(minM>=0&&t<minM)});}return out;}
+  // Les heures encore tenables pour CE jour-là. Vide un jour donné = ce jour n'a plus
+  // rien à proposer, et il ne doit pas être offert.
+  /* ON NE LAISSE PAS UNE HEURE PÉRIMÉE DANS LA COMMANDE. Changer de formule, ou de jour,
+     peut rendre le créneau déjà choisi impossible : on prend alors le premier qui tient,
+     et l'on avance d'un jour tant qu'aucun ne tient. On ne remonte jamais plus loin que
+     l'horizon du métier — sans cette borne, une prestation mal réglée ferait tourner la
+     boucle sans fin. */
+  function recalerCreneau(m){
+    if(!m)return;
+    const J=metierDuSvc(m.svc).jours;
+    const base=new Date();base.setHours(0,0,0,0);
+    let iso=(m.dateMode==='pick'&&/^\d{4}-\d{2}-\d{2}$/.test(m.dateISO||''))?m.dateISO:dayIso(base);
+    for(let i=0;i<J;i++){
+      const libres=heuresTenables(m,iso);
+      if(libres.length){
+        if(!libres.some(function(o){return o.s===m.slot;})){m.slot=libres[0].s;m.slotMode=null;}
+        if(m.dateISO!==iso||m.dateMode!=='pick'){m.dateISO=iso;m.dateMode='pick';m.when=dayLabelFor(iso,J);}
+        return;
+      }
+      const d=new Date(base);d.setDate(base.getDate()+i+1);iso=dayIso(d);
+    }
+  }
+  function heuresTenables(m,iso){
+    const faux=Object.assign({},m,{dateMode:'pick',dateISO:iso});
+    return hourOptions(faux).filter(function(o){return !o.past;});
+  }
   // ——— Commande « Colis & courrier » : fenêtre de dates + dossier de retrait par un tiers ———
   function renderColisConfig(m){
     const t=totals(m);
@@ -18181,7 +18342,7 @@
     const slotNote=(slotInfo===null)?`<p class="mini" style="margin-top:6px;color:var(--muted)">${I.clock} Vérification des disponibilités de ${esc((m.preferredName||'').split(' ')[0])}…</p>`
       :(slotInfo&&slotInfo.cal&&slotInfo.free)?(allBusy?`<p class="mini" style="margin-top:6px;color:var(--coral-deep)">${I.warn} Journée complète chez ${esc((m.preferredName||'').split(' ')[0])}, essayez un autre jour.</p>`
         :`<p class="mini" style="margin-top:6px;color:var(--teal-deep)">${I.check} Disponibilités réelles de ${esc((m.preferredName||'').split(' ')[0])} prises en compte, les heures occupées sont grisées.</p>`):'';
-    const daySelect=`<select class="txt" data-cfday>${dayOptions().map(o=>`<option value="${o.iso}"${m.dateISO===o.iso?' selected':''}>${esc(o.lbl)}</option>`).join('')}</select>`;
+    const daySelect=champQuand(m);
     const hourSelect=`<select class="txt" data-cfhour${dayFlex?' disabled':''}>${hOpts.map(o=>`<option value="${o.s}"${(o.past||busyOf(o.s))?' disabled':''}${m.slot===o.s?' selected':''}>${o.s}${busyOf(o.s)?', occupé':''}</option>`).join('')}</select>`;
     const zoneSelect=`<select class="txt" data-cfgzone>${ZONES.map(z=>`<option value="${esc(z)}"${migZone(m.zone)===z?' selected':''}>${esc(z)}</option>`).join('')}</select>`;
     // Menu des actes de la grille : coche + quantité, total ferme en direct.
@@ -18251,6 +18412,7 @@
   }
   function optionsEstLines(m){return (m&&m.options&&m.options.length)?m.options.map(function(o){const h=optUnit(o)==='h';const q=o.qty||1;return `<div class="line"><span>${esc(o.nm)}${h?(' · '+q+' h'):((q>1)?(' ×'+q):'')}</span><b>${eur((Number(o.price)||0)*q)}</b></div>`;}).join(''):'';}
   function renderConfig(){
+    recalerCreneau(S.draft);
     const m=S.draft,t=totals(m);
     if(m&&m.svc==='colis'){renderColisConfig(m);return;}
     if(m&&isCatalogForfait(m.svc)){renderForfaitConfig(m);return;}
@@ -18278,7 +18440,7 @@
     const slotNote=(slotInfo===null)?`<p class="mini" style="margin-top:6px;color:var(--muted)">${I.clock} Vérification des disponibilités de ${esc((m.preferredName||'').split(' ')[0])}…</p>`
       :(slotInfo&&slotInfo.cal&&slotInfo.free)?(allBusy?`<p class="mini" style="margin-top:6px;color:var(--coral-deep)">${I.warn} Journée complète chez ${esc((m.preferredName||'').split(' ')[0])}, essayez un autre jour.</p>`
         :`<p class="mini" style="margin-top:6px;color:var(--teal-deep)">${I.check} Disponibilités réelles de ${esc((m.preferredName||'').split(' ')[0])} prises en compte, les heures occupées sont grisées.</p>`):'';
-    const daySelect=`<select class="txt" data-cfday>${dayOptions().map(o=>`<option value="${o.iso}"${m.dateISO===o.iso?' selected':''}>${esc(o.lbl)}</option>`).join('')}</select>`;
+    const daySelect=champQuand(m);
     const hourSelect=`<select class="txt" data-cfhour${dayFlex?' disabled':''}>${hOpts.map(o=>`<option value="${o.s}"${(o.past||busyOf(o.s))?' disabled':''}${m.slot===o.s?' selected':''}>${o.s}${busyOf(o.s)?', occupé':''}</option>`).join('')}</select>`;
     paintView(`<div class="pad"><div class="cfghead"><button class="reset" data-cfg="back">← Retour</button><span class="eyebrow" style="flex:1;justify-content:center">${m.svcName}</span><button class="iconbtn" data-act="go-home" aria-label="Accueil" title="Accueil"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg></button></div><div class="h-hello">Détails de la mission</div>
       ${m.svc==='animaux'?`<div class="field"><label>Mode de garde</label><div class="segs"><button class="seg ${isDayU(m)?'on':''}" data-cfg="unit-j">${I.cal} À la journée</button><button class="seg ${!isDayU(m)?'on':''}" data-cfg="unit-h">${I.clock} À l'heure</button></div><p class="mini" style="margin-top:6px">${I.cal} Plusieurs jours&nbsp;? Choisissez « à la journée ».</p></div>`:''}
@@ -18421,6 +18583,11 @@
       saveCatalogSoon();}
     // Renommage d'un acte de la grille (console admin) — pas de re-render (garde le focus).
     const an=e.target.closest('[data-actname]');if(an){const p=an.dataset.actname.split(':');const arr=ensureCatalogCopy(p[0]);const a=arr.find(function(x){return x.id===p[1];});if(a){a.nm=an.value;saveCatalogSoon();}}
+    /* Les heures de départ d'une prestation. On enregistre la liste NETTOYÉE : « 9h, 13:30 »
+       devient « 13:30 » plutôt que de garder un texte qu'aucun écran ne saurait lire. Le
+       champ, lui, n'est pas réécrit sous les doigts — on ne corrige pas une frappe en
+       cours ; il reprend sa forme propre au rendu suivant. Vide RETIRE la clé. */
+    const ah=e.target.closest('[data-acthours]');if(ah){const p=ah.dataset.acthours.split(':');const arr=ensureCatalogCopy(p[0]);const a=arr.find(function(x){return x.id===p[1];});if(a){const h=heuresNet(ah.value);if(h.length)a.h=h.join(', ');else delete a.h;saveCatalogSoon();}}
     const ag=e.target.closest('[data-actgrpname]');if(ag){const p=ag.dataset.actgrpname.split(':');const arr=ensureCatalogCopy(p[0]);const a=arr.find(function(x){return x.id===p[1];});if(a){a.grp=ag.value;saveCatalogSoon();}}
     // Prix saisis au clavier, à l'euro près. On accepte le champ vide le temps de la
     // frappe (sinon impossible d'effacer « 150 » pour taper « 90 ») ; la valeur est
@@ -18451,7 +18618,7 @@
   });
   view.addEventListener('focusout',function(e){
     const t=e.target;
-    if(t&&t.matches&&t.matches('[data-optname],[data-actname],[data-actgrpname],[data-actpricev],[data-optpricev]')){
+    if(t&&t.matches&&t.matches('[data-optname],[data-actname],[data-actgrpname],[data-acthours],[data-actpricev],[data-optpricev]')){
       // Sortie d'un champ de prix : un champ laissé vide ou à 0 vaut 1 € (une prestation
       // gratuite fausserait la commission et le net annoncé au prestataire).
       if(t.matches('[data-actpricev]')){const p=t.dataset.actpricev.split(':');const a=ensureCatalogCopy(p[0]).find(function(x){return x.id===p[1];});if(a&&(Number(a.price)||0)<1){a.price=1;render();}}
@@ -18491,7 +18658,7 @@
     if(ppfx){readPhoneCombo(ppfx.dataset.phonepfx);if(ppfx.dataset.phonepfx==='wa')saveProSettings();if(S.proForm)refreshProSubmit();const cb1=document.querySelector('[data-act="conc-submit"]');if(cb1&&S.concSignup)cb1.disabled=!concSignupOk(S.concSignup);return;}
     // Menus déroulants jour / heure de la commande.
     const dcy=e.target.closest('[data-cfday]');
-    if(dcy&&S.draft){S.draft.dateISO=dcy.value;S.draft.dateMode='pick';S.draft.when=dayLabelFor(dcy.value);renderConfig();return;}
+    if(dcy&&S.draft){if(!dcy.value)return;S.draft.dateISO=dcy.value;S.draft.dateMode='pick';S.draft.when=dayLabelFor(dcy.value,metierDuSvc(S.draft.svc).jours);renderConfig();return;}
     const dch=e.target.closest('[data-cfhour]');
     if(dch&&S.draft){S.draft.slot=dch.value;S.draft.slotMode=null;renderConfig();return;}
     const dcz=e.target.closest('[data-cfgzone]');

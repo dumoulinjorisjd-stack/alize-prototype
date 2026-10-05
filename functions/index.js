@@ -5985,28 +5985,16 @@ exports.settleCancellation = onDocumentUpdated({document: 'requests/{reqId}', se
      diffère on réécrit la vraie — sans quoi le prestataire lirait un chiffre et en
      toucherait un autre. */
   const pctArrhes = await arrhesPctServeur(db, after.service);
-  const assiette = round2(Number(after.molliePaymentAmount) || 0);
-  let fee = round2(assiette * pctArrhes / 100);
-  // Jamais plus que l'empreinte posée : on ne capture pas ce qui n'a pas été autorisé.
-  if (assiette > 0 && fee > assiette) fee = assiette;
-  const feeAnnonce = round2(Number(after.cancelFee) || 0);
-  // ON NE RÉÉCRIT PAS LA DEMANDE ICI. Ce déclencheur écoute les mises à jour de la
-  // demande : une écriture à cet endroit le relancerait AVANT que `cancelFeeSettled`
-  // soit posé, et la capture partirait deux fois. La vraie valeur part donc avec
-  // l'écriture FINALE, celle qui ferme le dossier.
-  if (Math.abs(fee - feeAnnonce) > 0.009) {
-    console.warn('Indemnité recalculée reqId=' + reqId + ' annoncée=' + feeAnnonce
-      + ' retenue=' + fee + ' (' + pctArrhes + ' % de ' + assiette + ')');
-  }
   const payId = after.molliePaymentId || '';
-  if (!(fee > 0) || !payId || !mollieApiConfigured()) {
-    console.warn('Indemnité inapplicable reqId=' + reqId + ' fee=' + fee + ' pay=' + (payId || 'aucun'));
+  let fee = 0;
+  if (!payId || !mollieApiConfigured()) {
+    console.warn('Indemnité inapplicable reqId=' + reqId + ' pay=' + (payId || 'aucun'));
     try {
       await sendMail(db, ADMIN_EMAIL, {
         subject: 'Indemnité d\'annulation NON prélevable, ' + svc,
         html: '<p>Le prestataire a appliqué l\'indemnité, mais elle ne peut pas être prélevée automatiquement.</p>'
-          + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li><li><b>Indemnité :</b> ' + eurTxt(fee) + '</li>'
-          + '<li><b>Cause :</b> ' + (payId ? 'montant nul' : 'aucun paiement Mollie sur la demande') + '</li></ul>',
+          + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li>'
+          + '<li><b>Cause :</b> aucun paiement Mollie sur la demande</li></ul>',
       });
     } catch (_) {}
     return;
@@ -6014,12 +6002,45 @@ exports.settleCancellation = onDocumentUpdated({document: 'requests/{reqId}', se
   try {
     const p = await mollieApi('/payments/' + encodeURIComponent(payId), 'GET');
     const st = (p.ok && p.data) ? (p.data.status || '') : '';
+    /* L'ASSIETTE EST CE QUE MOLLIE TIENT, PAS CE QUE LE CLIENT ANNONCE. On préfère le
+       montant que le serveur a écrit à l'autorisation ; s'il manque (demande d'avant ce
+       champ), on le DEMANDE À MOLLIE plutôt que de retomber sur une valeur écrite par le
+       navigateur de celui qui annule. Sans l'un ni l'autre, on ne capture rien et on le
+       dit : une assiette inconnue ne se devine pas. */
+    const assietteMollie = (p.ok && p.data && p.data.amount && p.data.amount.value != null)
+      ? round2(Number(p.data.amount.value)) : 0;
+    const assiette = round2(Number(after.molliePaymentAmount) || assietteMollie || 0);
+    fee = round2(assiette * pctArrhes / 100);
+    // Jamais plus que l'empreinte posée : on ne capture pas ce qui n'a pas été autorisé.
+    if (assiette > 0 && fee > assiette) fee = assiette;
+    const feeAnnonce = round2(Number(after.cancelFee) || 0);
+    // ON NE RÉÉCRIT PAS LA DEMANDE ICI. Ce déclencheur écoute les mises à jour de la
+    // demande : une écriture à cet endroit le relancerait AVANT que `cancelFeeSettled`
+    // soit posé, et la capture partirait deux fois. La vraie valeur part donc avec
+    // l'écriture FINALE, celle qui ferme le dossier.
+    if (Math.abs(fee - feeAnnonce) > 0.009) {
+      console.warn('Indemnité recalculée reqId=' + reqId + ' annoncée=' + feeAnnonce
+        + ' retenue=' + fee + ' (' + pctArrhes + ' % de ' + assiette + ')');
+    }
+    if (!(fee > 0)) {
+      console.warn('Indemnité nulle reqId=' + reqId + ' assiette=' + assiette + ' pct=' + pctArrhes);
+      try {
+        await sendMail(db, ADMIN_EMAIL, {
+          subject: 'Indemnité d\'annulation NON prélevable, ' + svc,
+          html: '<p>Le prestataire a appliqué l\'indemnité, mais le montant à prélever est nul.</p>'
+            + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li>'
+            + '<li><b>Part du métier :</b> ' + escHtmlS(String(pctArrhes)) + ' %</li>'
+            + '<li><b>Assiette connue :</b> ' + eurTxt(assiette) + '</li></ul>',
+        });
+      } catch (_) {}
+      return;
+    }
     if (st !== 'authorized') {
       console.warn('Indemnité : empreinte non capturable reqId=' + reqId + ' (' + st + ')');
       try {
         await sendMail(db, ADMIN_EMAIL, {
           subject: 'Indemnité d\'annulation à régulariser, ' + svc,
-          html: '<p>Le prestataire a appliqué l\'indemnité de 50 %, mais l\'empreinte n\'est plus capturable (statut Mollie : ' + escHtmlS(st || 'inconnu') + ').</p>'
+          html: '<p>Le prestataire a appliqué l\'indemnité (' + escHtmlS(String(pctArrhes)) + ' %), mais l\'empreinte n\'est plus capturable (statut Mollie : ' + escHtmlS(st || 'inconnu') + ').</p>'
             + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li><li><b>Indemnité :</b> ' + eurTxt(fee) + '</li>'
             + '<li><b>Paiement :</b> ' + escHtmlS(payId) + '</li></ul>'
             + '<p>À faire : prélever ou facturer à la main, puis régler l\'artisan.</p>',
