@@ -41,7 +41,11 @@ const ACTES = { c_catamaran: [
     desordre: window.__heures.net('13:30 ; 09:00'),
     double: window.__heures.net('09:00, 09:00'),
     zero: window.__heures.net('9:00'),
-    faux: window.__heures.net('25:00, 10:70, midi, 9h'),
+    faux: window.__heures.net('25:00, 10:70, midi'),
+    francais: window.__heures.net('9h, 9h30, 09h00, 9'),
+    avisOk: window.__heures.avis('9h, 13h30'),
+    avisKo: window.__heures.avis('vers midi'),
+    avisVide: window.__heures.avis(''),
     vide: window.__heures.net(''),
     trop: window.__heures.net('01:00,02:00,03:00,04:00,05:00,06:00,07:00,08:00,09:00,10:00,11:00,12:00,13:00,14:00').length,
   }));
@@ -49,7 +53,12 @@ const ACTES = { c_catamaran: [
   ok(A.desordre.join() === '09:00,13:30', 'l’ordre de saisie ne compte pas, la liste est triée');
   ok(A.double.join() === '09:00', 'et la même heure deux fois n’en fait qu’une');
   ok(A.zero.join() === '09:00', '« 9:00 » est complété en « 09:00 », pas refusé');
-  ok(A.faux.length === 0, 'une heure impossible n’est pas devinée : « 25:00 », « 10:70 », « midi », « 9h » ne donnent rien');
+  ok(A.faux.length === 0, 'une heure impossible n’est pas devinée : « 25:00 », « 10:70 », « midi » ne donnent rien');
+  // Le défaut relevé en production : « 9h », « 9h00 », « 9 » étaient JETÉS EN SILENCE.
+  ok(A.francais.join() === '09:00,09:30', 'une heure écrite comme on l’écrit en français est comprise : ' + A.francais.join(', '));
+  ok(/Départs retenus/.test(A.avisOk.txt) && /09:00/.test(A.avisOk.txt), 'et la console DIT ce qu’elle a compris : ' + A.avisOk.txt);
+  ok(A.avisKo.cls === 'ko' && /Aucune heure comprise/.test(A.avisKo.txt), 'une saisie illisible ne part plus en silence : ' + A.avisKo.txt);
+  ok(A.avisVide.txt === '', 'et ne rien déclarer ne reproche rien : c’est le cas ordinaire');
   ok(A.vide.length === 0, 'et vide ne déclare rien');
   ok(A.trop === 12, 'la liste est bornée (' + A.trop + ')');
 
@@ -123,7 +132,43 @@ const ACTES = { c_catamaran: [
     'la refonte du catalogue (ajout d’une prestation au métier) ne les efface pas : la liste fermée les porte');
   ok(/\[data-acthours\],\[data-actpricev\]/.test(html), 'et le champ ne se redessine pas sous les doigts pendant la frappe');
 
-  ok(errs.length === 0, 'aucune erreur de page' + (errs.length ? ' : ' + errs[0] : ''));
+  console.log('F — la durée : l’agenda du prestataire, et le retour annoncé au client');
+  const G = await p.evaluate(() => ({
+    nulle: window.__heures.duree({ nm: 'sans durée' }),
+    huit: window.__heures.duree({ d: 8 }),
+    abimee: [window.__heures.duree({ d: 0 }), window.__heures.duree({ d: -3 }), window.__heures.duree({ d: 99 }), window.__heures.duree({ d: 'longue' })],
+    fin: window.__heures.fin('09:00', 8),
+    minuit: window.__heures.fin('20:00', 8),
+    sans: window.__heures.fin('09:00', 0),
+  }));
+  ok(G.nulle === 0 && G.huit === 8, 'une prestation déclare sa durée, ou ne la déclare pas');
+  ok(G.abimee.join() === '0,0,0,0', 'une durée abîmée ne devient pas une plage d’agenda : ' + G.abimee.join(', '));
+  ok(G.fin === '17:00', 'le client sait quand il rentre : 09:00 + 8 h = ' + G.fin);
+  ok(/lendemain/.test(G.minuit), 'et un retour après minuit le DIT, au lieu d’afficher une heure plus petite que le départ : ' + G.minuit);
+  ok(G.sans === '', 'sans durée déclarée, on n’annonce aucun retour : on ne l’invente pas');
+  ok(/function dureeMission\(m\)\{return dureeDuDraft\(m\)\|\|billHours\(m\);\}/.test(html),
+    'l’AGENDA lit la durée réelle, pas `billHours` qui sert à FACTURER : deux questions, deux fonctions, l’argent ne bouge pas');
+  ok(/hours:dureeMission\(m\)/.test(html),
+    'la vérification des disponibilités du prestataire bloque donc la vraie plage (une journée en mer ne bloquait qu’une heure)');
+  ok(/if\(dureeDeLActe\(a\)\)o\.d=dureeDeLActe\(a\)/.test(html), 'et la refonte du catalogue ne perd pas la durée non plus');
+
+  console.log('G — un départ fixe n’a aucune souplesse');
+  const H = await p.evaluate(([sv, actes]) => {
+    const S = window.__S;
+    S.customServices = [sv]; S.adminCatalog = actes; S.adminMetier = { c_catamaran: { exclusif: true } };
+    const avec = (id) => {
+      S.draft = window.__newMission(window.__svc.trouve('c_catamaran'));
+      window.__render();
+      const el = document.querySelector('[data-actpick="' + id + '"]'); if (el) el.click();
+      return { souplesse: !!document.querySelector('[data-slotflex]'), txt: document.getElementById('view').innerText };
+    };
+    return { fixe: avec('a2'), libre: avec('a3') };
+  }, [BATEAU, ACTES]);
+  ok(H.fixe.souplesse === false, '« ± 1 h » sur une sortie qui part à 9 h ne veut rien dire : la question disparaît');
+  ok(!/Souplesse sur le créneau/.test(H.fixe.txt), 'et son intitulé avec elle');
+  ok(H.libre.souplesse === true, 'une prestation sans départ fixe garde sa souplesse : rien ne change pour les métiers d’aujourd’hui');
+
+    ok(errs.length === 0, 'aucune erreur de page' + (errs.length ? ' : ' + errs[0] : ''));
   await b.close();
   console.log(f ? '\n' + f + ' ÉCHEC(S)' : '\nTout est vert');
   process.exit(f ? 1 : 0);

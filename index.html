@@ -3574,7 +3574,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='809';
+  const VERSION_APP='810';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -4798,7 +4798,7 @@
     Object.keys(S.adminCatalog).forEach(function(id){
       const fusion=baseCatalog(id);
       if(fusion&&fusion.length!==(S.adminCatalog[id]||[]).length){
-        S.adminCatalog[id]=fusion.map(function(a){const o={id:a.id,nm:a.nm,price:a.price,grp:a.grp||''};if(heuresDeLActe(a).length)o.h=heuresDeLActe(a).join(', ');return o;});
+        S.adminCatalog[id]=fusion.map(function(a){const o={id:a.id,nm:a.nm,price:a.price,grp:a.grp||''};if(heuresDeLActe(a).length)o.h=heuresDeLActe(a).join(', ');if(dureeDeLActe(a))o.d=dureeDeLActe(a);return o;});
       }
     });
   }
@@ -5358,19 +5358,62 @@
      déclarent. Deux formules aux départs incompatibles n'ont aucune heure commune, et
      c'est un fait qu'il vaut mieux dire que masquer. */
   const HEURES_MAX=12;
+  /* ON LIT L'HEURE COMME ELLE S'ÉCRIT. Premier jet : seul « 09:00 » passait. « 9h »,
+     « 9h00 », « 09h00 », « 9 » — c'est-à-dire la façon dont on écrit une heure en
+     français — étaient JETÉS, et le champ ne disait rien : on tapait son horaire, on
+     quittait l'écran, et rien n'avait été enregistré. Le défaut n'était pas le format,
+     c'était le silence. On reconnaît donc les formes usuelles, ET l'on DIT ce qu'on a
+     compris (`heuresAvis`), comme le champ du prix libre le fait déjà. */
   function heuresNet(v){
     const vus={},out=[];
-    String(v==null?'':v).split(/[^0-9:]+/).forEach(function(t){
-      const m=/^(\d{1,2}):(\d{2})$/.exec(t.trim());
+    String(v==null?'':v).split(/[^0-9:.hH]+/).forEach(function(t){
+      t=t.trim();if(!t)return;
+      const m=/^(\d{1,2})\s*(?:[:.hH]\s*(\d{1,2})?)?$/.exec(t);
       if(!m)return;
-      const h=+m[1],mi=+m[2];
+      const h=+m[1],mi=m[2]==null||m[2]===''?0:+m[2];
       if(h>23||mi>59)return;
       const k=String(h).padStart(2,'0')+':'+String(mi).padStart(2,'0');
       if(vus[k])return;vus[k]=1;out.push(k);
     });
     return out.sort().slice(0,HEURES_MAX);
   }
+  // Ce que la console a compris, dit sous le champ. Vide ne reproche rien (ne rien
+  // déclarer est le cas ordinaire) ; une saisie qu'on ne sait pas lire, si.
+  function heuresAvis(brut){
+    const t=String(brut==null?'':brut).trim();
+    if(!t)return {cls:'',txt:''};
+    const h=heuresNet(t);
+    if(!h.length)return {cls:'ko',txt:'Aucune heure comprise. Écrivez 09:00, ou 9h, ou 9h30 — séparez par une virgule s’il y a plusieurs départs.'};
+    return {cls:'ok',txt:(h.length>1?'Départs retenus : ':'Départ retenu : ')+h.join(' · ')};
+  }
   function heuresDeLActe(a){return heuresNet((a&&a.h)||'');}
+  /* LA DURÉE DE LA PRESTATION, pour le PRESTATAIRE avant tout. Une journée complète en
+     mer occupe sa journée ; sans durée déclarée, l'agenda ne bloquait qu'UNE heure
+     (`billHours` rend 1 pour tout forfait) et deux sorties pouvaient se chevaucher dans
+     son planning sans qu'aucun conflit ne soit signalé. Elle sert aussi à dire au client
+     quand il rentre. Non déclarée, RIEN ne change : on retombe sur le calcul d'avant. */
+  const DUREE_MAX=24;
+  function dureeDeLActe(a){const n=Math.round(Number(a&&a.d));return (isFinite(n)&&n>0&&n<=DUREE_MAX)?n:0;}
+  // La plus longue des prestations cochées : deux formules ne s'enchaînent pas, on
+  // réserve la plus grosse plage, jamais la somme — ce serait faux dans les deux sens.
+  function dureeDesActes(actes){return (actes||[]).reduce(function(t,a){return Math.max(t,dureeDeLActe(a));},0);}
+  function dureeDuDraft(m){
+    if(!m||!Array.isArray(m.acts)||!m.acts.length)return 0;
+    return dureeDesActes(m.acts.map(function(x){return actInfo(m.svc,x.id)||x;}));
+  }
+  // L'heure de fin annoncée, quand la durée est connue. Au-delà de minuit on le dit
+  // plutôt que d'afficher une heure plus petite que celle du départ.
+  /* LA PLAGE QUE LA MISSION OCCUPE VRAIMENT. `billHours` sert à FACTURER (il rend 1 pour
+     un forfait, et c'est juste : le prix est le forfait). L'AGENDA, lui, a besoin de la
+     durée réelle — sans quoi une journée en mer ne bloquait qu'une heure chez le
+     prestataire, et deux sorties pouvaient se chevaucher sans qu'aucun conflit ne soit
+     signalé. Deux questions différentes, deux fonctions : on ne touche pas à l'argent. */
+  function dureeMission(m){return dureeDuDraft(m)||billHours(m);}
+  function finDeCreneau(slot,duree){
+    if(!duree||!/^\d{1,2}:\d{2}$/.test(slot||''))return '';
+    const t=slotToMin(slot)+duree*60;
+    return minToSlot(t%1440)+(t>=1440?' (le lendemain)':'');
+  }
   /* PUR : on lui donne les actes cochés, il rend les heures communes. Les prestations qui
      ne déclarent rien n'imposent rien ; si aucune ne déclare, la liste est vide et
      l'écran retombe sur la grille des demi-heures. */
@@ -10683,7 +10726,7 @@
         else if(s.id==='colis'){priceEditor=priceCtl('colis',px,' forfait','Forfait retrait');}
         // Console : les prestations sont rangées par FAMILLE (intertitre + champ « famille »
         // sur chaque ligne), sinon une grille de 50 actes est impossible à tenir à jour.
-        else if(isCatalogForfait(s.id)){priceEditor=`<div class="mini" style="color:var(--muted);margin-bottom:2px">Grille à l'acte</div>${catalogGroups(s.id).map(function(G){return (catalogGroups(s.id).length<2?'':`<div class="mini" style="margin-top:14px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:var(--teal-deep)">${esc(G.g)} · ${grpCount(G.acts.length)}</div>`)+G.acts.map(function(a){return `<div style="margin-top:9px;padding:10px;border-radius:12px;background:var(--card)"><input class="txt" data-actname="${s.id}:${a.id}" value="${esc(a.nm)}" placeholder="Nom de la prestation" style="width:100%;padding:11px 12px;font-size:14px"><input class="txt" data-actgrpname="${s.id}:${a.id}" value="${esc(a.grp||'')}" placeholder="Famille (ex. Femme · coloration)" style="width:100%;padding:9px 12px;font-size:12px;margin-top:6px"><input class="txt" data-acthours="${s.id}:${a.id}" value="${esc(heuresDeLActe(a).join(', '))}" placeholder="Heures de départ (ex. 09:00, 13:30)" style="width:100%;padding:9px 12px;font-size:12px;margin-top:6px"><span class="row" style="gap:6px;align-items:center;justify-content:flex-end;margin-top:8px"><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actprice="${s.id}:${a.id}:down">−</button><span class="row" style="flex:none;gap:3px;align-items:baseline"><input class="txt money" data-actpricev="${s.id}:${a.id}" value="${a.price}" inputmode="numeric" aria-label="Prix client en euros" style="width:64px;padding:7px 8px;text-align:right;font-size:14px"><b class="mini">€</b></span><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actprice="${s.id}:${a.id}:up">+</button><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actdel="${s.id}:${a.id}" aria-label="Retirer">${I.trash}</button></span></div>`;}).join('');}).join('')}<button class="btn ghost sm" data-actadd="${s.id}" style="margin-top:10px;width:auto;padding:8px 12px">${I.plus} Ajouter une prestation</button>`;}
+        else if(isCatalogForfait(s.id)){priceEditor=`<div class="mini" style="color:var(--muted);margin-bottom:2px">Grille à l'acte</div>${catalogGroups(s.id).map(function(G){return (catalogGroups(s.id).length<2?'':`<div class="mini" style="margin-top:14px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:var(--teal-deep)">${esc(G.g)} · ${grpCount(G.acts.length)}</div>`)+G.acts.map(function(a){return `<div style="margin-top:9px;padding:10px;border-radius:12px;background:var(--card)"><input class="txt" data-actname="${s.id}:${a.id}" value="${esc(a.nm)}" placeholder="Nom de la prestation" style="width:100%;padding:11px 12px;font-size:14px"><input class="txt" data-actgrpname="${s.id}:${a.id}" value="${esc(a.grp||'')}" placeholder="Famille (ex. Femme · coloration)" style="width:100%;padding:9px 12px;font-size:12px;margin-top:6px"><input class="txt" data-acthours="${s.id}:${a.id}" value="${esc(heuresDeLActe(a).join(', '))}" placeholder="Heures de départ (ex. 9h, 13h30)" style="width:100%;padding:9px 12px;font-size:12px;margin-top:6px">${(function(){const av=heuresAvis(heuresDeLActe(a).join(', '));return av.txt?`<div class="mini" data-acthavis="${s.id}:${a.id}" style="margin-top:3px;color:${av.cls==='ko'?'var(--coral-deep)':'var(--muted)'}">${esc(av.txt)}</div>`:`<div class="mini" data-acthavis="${s.id}:${a.id}" style="margin-top:3px;color:var(--muted);display:none"></div>`;})()}<div class="row between" style="align-items:center;margin-top:7px"><span class="mini" style="color:var(--muted)">Durée (agenda du prestataire)</span><span class="row" style="gap:6px;align-items:center"><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actduree="${s.id}:${a.id}:down">−</button><b class="mini money" style="min-width:60px;text-align:center">${dureeDeLActe(a)?dureeDeLActe(a)+' h':'non dite'}</b><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actduree="${s.id}:${a.id}:up">+</button></span></div><span class="row" style="gap:6px;align-items:center;justify-content:flex-end;margin-top:8px"><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actprice="${s.id}:${a.id}:down">−</button><span class="row" style="flex:none;gap:3px;align-items:baseline"><input class="txt money" data-actpricev="${s.id}:${a.id}" value="${a.price}" inputmode="numeric" aria-label="Prix client en euros" style="width:64px;padding:7px 8px;text-align:right;font-size:14px"><b class="mini">€</b></span><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actprice="${s.id}:${a.id}:up">+</button><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actdel="${s.id}:${a.id}" aria-label="Retirer">${I.trash}</button></span></div>`;}).join('');}).join('')}<button class="btn ghost sm" data-actadd="${s.id}" style="margin-top:10px;width:auto;padding:8px 12px">${I.plus} Ajouter une prestation</button>`;}
         else{
           priceEditor=priceCtl(s.id,px,'/h','Tarif horaire');
           /* « Quand j'ajoute un métier je suis obligé de laisser un tarif horaire, mais
@@ -13488,7 +13531,7 @@
     if(c&&c.pending===key)return null;
     if(FB&&FB.auth&&FB.auth.currentUser){
       S._provSlots={pending:key};
-      FB.fn.httpsCallable(FB.functions,'providerSlots')({providerUid:m.preferredUid,dateISO:m.dateISO,slots:hOpts.filter(function(o){return !o.past;}).map(function(o){return o.s;}),hours:billHours(m)}).then(function(r){
+      FB.fn.httpsCallable(FB.functions,'providerSlots')({providerUid:m.preferredUid,dateISO:m.dateISO,slots:hOpts.filter(function(o){return !o.past;}).map(function(o){return o.s;}),hours:dureeMission(m)}).then(function(r){
         const dd=(r&&r.data)||{};S._provSlots={key:key,cal:!!dd.cal,free:dd.free||null};
         if(S.draft&&S.draft.preferredUid===m.preferredUid)renderConfig();
       }).catch(function(){S._provSlots={key:key,cal:false,free:null};});
@@ -16819,7 +16862,7 @@
         return;
       }
     }
-    const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actqty],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-loc],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday],[data-tip],[data-pac],[data-sitemode],[data-invclient],[data-fold],[data-actgrp],[data-purge],[data-optpick],[data-optqty],[data-optadd],[data-optdel],[data-optprice],[data-optunit],[data-rf],[data-telfix]');
+    const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actqty],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-loc],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday],[data-tip],[data-pac],[data-sitemode],[data-invclient],[data-fold],[data-actgrp],[data-purge],[data-optpick],[data-optqty],[data-optadd],[data-optdel],[data-optprice],[data-optunit],[data-rf],[data-telfix],[data-actduree]');
     if(!b)return;
     // Un clic ISSU d'un <input type=file> (notamment déclenché par programme, ex. la
     // feuille « appareil photo / galerie ») remonte jusqu'ici : on ne le traite pas
@@ -17506,6 +17549,10 @@
     // l'aurait alors laissée ouverte. Le contexte « cli » vit dans l'écran de commande.
     if(b.dataset.actgrp){const k=b.dataset.actgrp;S.grpOpen=S.grpOpen||{};S.grpOpen[k]=(b.getAttribute('aria-expanded')!=='true');if(/^cli\|/.test(k)&&S.draft)renderConfig();else render();return;}
     // Grille catalogue (admin) : prix d'un acte, retrait, ajout.
+    /* La durée d'une prestation, pour l'agenda du prestataire. Zéro veut dire « non
+       dite » et RETIRE la clé : un métier qui n'en déclare pas se comporte comme avant. */
+    if(b.dataset.actduree){const p=b.dataset.actduree.split(':');const arr=ensureCatalogCopy(p[0]);const a=arr.find(function(x){return x.id===p[1];});
+      if(a){const d=Math.max(0,Math.min(DUREE_MAX,dureeDeLActe(a)+(p[2]==='up'?1:-1)));if(d)a.d=d;else delete a.d;saveCatalog();render();}return;}
     if(b.dataset.actprice){const p=b.dataset.actprice.split(':');const svc=p[0],aid=p[1],dir=p[2];const arr=ensureCatalogCopy(svc);const a=arr.find(function(x){return x.id===aid;});if(a){a.price=Math.max(1,(Number(a.price)||0)+(dir==='up'?1:-1));saveCatalog();render();}return;}
     if(b.dataset.actdel){const p=b.dataset.actdel.split(':');const svc=p[0],aid=p[1];const arr=ensureCatalogCopy(svc);S.adminCatalog[svc]=arr.filter(function(x){return x.id!==aid;});saveCatalog();render();return;}
     if(b.dataset.actadd){const svc=b.dataset.actadd;const arr=ensureCatalogCopy(svc);S._actSeq=(S._actSeq||0)+1;arr.push({id:'usr'+S._actSeq+'_'+arr.length,nm:'',price:50});saveCatalog();render();return;}
@@ -17961,7 +18008,7 @@
         const slot=(m.proposedSlot||m.slot||'09:00');const dt=(m.dateISO||todayISO());
         const p=function(n){return (n<10?'0':'')+n;};
         const st=new Date(Date.parse(dt+'T'+(slot.length<5?'0':'')+slot+':00-04:00'));
-        const en=new Date(st.getTime()+(m.unit==='j'?8:Math.max(1,Number(m.duration)||1))*3600*1000);
+        const en=new Date(st.getTime()+(dureeDuDraft(m)||(m.unit==='j'?8:Math.max(1,Number(m.duration)||1)))*3600*1000);
         const f=function(d){return d.getUTCFullYear()+p(d.getUTCMonth()+1)+p(d.getUTCDate())+'T'+p(d.getUTCHours())+p(d.getUTCMinutes())+'00Z';};
         const ics=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Ti-Services//FR','BEGIN:VEVENT','UID:'+(m.reqId||('m'+Date.now()))+'@ti-services.fr','DTSTAMP:'+f(new Date()),'DTSTART:'+f(st),'DTEND:'+f(en),'SUMMARY:Ti-Services, '+(m.svcName||'Mission'),'LOCATION:'+((locModeOf(m)==='salon')?'Votre salon / studio':(m.zone||'Saint-Barthélemy')),'END:VEVENT','END:VCALENDAR'].join('\r\n');
         const b=new Blob([ics],{type:'text/calendar'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='mission-ti-services.ics';document.body.appendChild(a);a.click();setTimeout(function(){try{a.remove();URL.revokeObjectURL(a.href);}catch(_){}},400);
@@ -18343,7 +18390,7 @@
       :(slotInfo&&slotInfo.cal&&slotInfo.free)?(allBusy?`<p class="mini" style="margin-top:6px;color:var(--coral-deep)">${I.warn} Journée complète chez ${esc((m.preferredName||'').split(' ')[0])}, essayez un autre jour.</p>`
         :`<p class="mini" style="margin-top:6px;color:var(--teal-deep)">${I.check} Disponibilités réelles de ${esc((m.preferredName||'').split(' ')[0])} prises en compte, les heures occupées sont grisées.</p>`):'';
     const daySelect=champQuand(m);
-    const hourSelect=`<select class="txt" data-cfhour${dayFlex?' disabled':''}>${hOpts.map(o=>`<option value="${o.s}"${(o.past||busyOf(o.s))?' disabled':''}${m.slot===o.s?' selected':''}>${o.s}${busyOf(o.s)?', occupé':''}</option>`).join('')}</select>`;
+    const hourSelect=`<select class="txt" data-cfhour${dayFlex?' disabled':''}>${hOpts.map(o=>`<option value="${o.s}"${(o.past||busyOf(o.s))?' disabled':''}${m.slot===o.s?' selected':''}>${o.s}${busyOf(o.s)?', occupé':''}</option>`).join('')}</select>${(function(){const fin=finDeCreneau(m.slot,dureeDuDraft(m));return fin?`<p class="mini" style="margin-top:6px;color:var(--muted)">${I.clock} Retour prévu vers <b>${esc(fin)}</b>.</p>`:'';})()}`;
     const zoneSelect=`<select class="txt" data-cfgzone>${ZONES.map(z=>`<option value="${esc(z)}"${migZone(m.zone)===z?' selected':''}>${esc(z)}</option>`).join('')}</select>`;
     // Menu des actes de la grille : coche + quantité, total ferme en direct.
     const pickOf=id=>m.acts.find(a=>a.id===id);
@@ -18375,7 +18422,7 @@
 
       <div class="field"><label>Quand&nbsp;?</label>${daySelect}</div>
       <div class="field"><label>${motsDuLieu(m.svc).heure}</label>${dayFlex?`<p class="mini" style="margin:2px 0 0;color:var(--muted)">${I.clock} ${m.slotFlex==='week'?'Vous laissez toute la semaine, le pro vous proposera un jour et une heure.':'Vous laissez toute la journée, le pro choisit son heure de passage.'}</p>`:`${hourSelect}${slotNote}`}</div>
-      <div class="field"><label>Souplesse sur le créneau</label><div class="segs"><button class="seg ${(!m.slotFlex)?'on':''}" data-slotflex="0">Précise</button><button class="seg ${m.slotFlex===60?'on':''}" data-slotflex="60">± 1 h</button><button class="seg ${m.slotFlex===120?'on':''}" data-slotflex="120">± 2 h</button><button class="seg ${m.slotFlex==='day'?'on':''}" data-slotflex="day">Journée</button><button class="seg ${m.slotFlex==='week'?'on':''}" data-slotflex="week">Semaine</button></div>${m.slotFlex?`<p class="mini" style="margin-top:6px">${I.clock} Le pro confirmera un <b>créneau précis ${flexTxtClient(m)}</b> en acceptant.</p>`:''}</div>
+      ${heuresDuDraft(m).declare?'':`<div class="field"><label>Souplesse sur le créneau</label><div class="segs"><button class="seg ${(!m.slotFlex)?'on':''}" data-slotflex="0">Précise</button><button class="seg ${m.slotFlex===60?'on':''}" data-slotflex="60">± 1 h</button><button class="seg ${m.slotFlex===120?'on':''}" data-slotflex="120">± 2 h</button><button class="seg ${m.slotFlex==='day'?'on':''}" data-slotflex="day">Journée</button><button class="seg ${m.slotFlex==='week'?'on':''}" data-slotflex="week">Semaine</button></div>${m.slotFlex?`<p class="mini" style="margin-top:6px">${I.clock} Le pro confirmera un <b>créneau précis ${flexTxtClient(m)}</b> en acceptant.</p>`:''}</div>`}
 
       ${prefArtisanSelect(m)}
 
@@ -18441,12 +18488,12 @@
       :(slotInfo&&slotInfo.cal&&slotInfo.free)?(allBusy?`<p class="mini" style="margin-top:6px;color:var(--coral-deep)">${I.warn} Journée complète chez ${esc((m.preferredName||'').split(' ')[0])}, essayez un autre jour.</p>`
         :`<p class="mini" style="margin-top:6px;color:var(--teal-deep)">${I.check} Disponibilités réelles de ${esc((m.preferredName||'').split(' ')[0])} prises en compte, les heures occupées sont grisées.</p>`):'';
     const daySelect=champQuand(m);
-    const hourSelect=`<select class="txt" data-cfhour${dayFlex?' disabled':''}>${hOpts.map(o=>`<option value="${o.s}"${(o.past||busyOf(o.s))?' disabled':''}${m.slot===o.s?' selected':''}>${o.s}${busyOf(o.s)?', occupé':''}</option>`).join('')}</select>`;
+    const hourSelect=`<select class="txt" data-cfhour${dayFlex?' disabled':''}>${hOpts.map(o=>`<option value="${o.s}"${(o.past||busyOf(o.s))?' disabled':''}${m.slot===o.s?' selected':''}>${o.s}${busyOf(o.s)?', occupé':''}</option>`).join('')}</select>${(function(){const fin=finDeCreneau(m.slot,dureeDuDraft(m));return fin?`<p class="mini" style="margin-top:6px;color:var(--muted)">${I.clock} Retour prévu vers <b>${esc(fin)}</b>.</p>`:'';})()}`;
     paintView(`<div class="pad"><div class="cfghead"><button class="reset" data-cfg="back">← Retour</button><span class="eyebrow" style="flex:1;justify-content:center">${m.svcName}</span><button class="iconbtn" data-act="go-home" aria-label="Accueil" title="Accueil"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg></button></div><div class="h-hello">Détails de la mission</div>
       ${m.svc==='animaux'?`<div class="field"><label>Mode de garde</label><div class="segs"><button class="seg ${isDayU(m)?'on':''}" data-cfg="unit-j">${I.cal} À la journée</button><button class="seg ${!isDayU(m)?'on':''}" data-cfg="unit-h">${I.clock} À l'heure</button></div><p class="mini" style="margin-top:6px">${I.cal} Plusieurs jours&nbsp;? Choisissez « à la journée ».</p></div>`:''}
       <div class="field"><label>${isDayU(m)?'Date de début':'Quand&nbsp;?'}</label>${daySelect}</div>
       <div class="field"><label>${isDayU(m)?'Heure de dépôt':motsDuLieu(m.svc).heure}</label>${dayFlex?`<p class="mini" style="margin:2px 0 0;color:var(--muted)">${I.clock} ${m.slotFlex==='week'?'Le prestataire vous proposera un créneau.':'Le prestataire choisit l’heure.'}</p>`:`${hourSelect}${slotNote}`}</div>
-      ${!isDayU(m)?`<div class="field"><label>Souplesse sur le créneau</label><div class="segs"><button class="seg ${(!m.slotFlex)?'on':''}" data-slotflex="0">Précise</button><button class="seg ${m.slotFlex===60?'on':''}" data-slotflex="60">± 1 h</button><button class="seg ${m.slotFlex===120?'on':''}" data-slotflex="120">± 2 h</button><button class="seg ${m.slotFlex==='day'?'on':''}" data-slotflex="day">Journée</button><button class="seg ${m.slotFlex==='week'?'on':''}" data-slotflex="week">Semaine</button></div>${m.slotFlex?`<p class="mini" style="margin-top:6px">${I.clock} Créneau précis confirmé à l’acceptation.</p>`:''}</div>`:''}
+      ${!isDayU(m)?`${heuresDuDraft(m).declare?'':`<div class="field"><label>Souplesse sur le créneau</label><div class="segs"><button class="seg ${(!m.slotFlex)?'on':''}" data-slotflex="0">Précise</button><button class="seg ${m.slotFlex===60?'on':''}" data-slotflex="60">± 1 h</button><button class="seg ${m.slotFlex===120?'on':''}" data-slotflex="120">± 2 h</button><button class="seg ${m.slotFlex==='day'?'on':''}" data-slotflex="day">Journée</button><button class="seg ${m.slotFlex==='week'?'on':''}" data-slotflex="week">Semaine</button></div>${m.slotFlex?`<p class="mini" style="margin-top:6px">${I.clock} Créneau précis confirmé à l’acceptation.</p>`:''}</div>`}`:''}
       ${prefArtisanSelect(m)}
       ${(m.svc==='baby'&&!m.preferredUid)?`<p class="mini" style="margin-top:6px">${I.shield} Profil complet + <b>appel</b> avant de confirmer.</p>`:''}
       <div class="field"><label>Tarif ${isDayU(m)?'journalier':'horaire'}, prix fixe Ti-Services</label><div class="pricebox"><b class="money" style="font-size:22px;font-family:var(--f-disp)">${fixedRate(m)} ${rateUnit(m)}</b><span class="chip good">${I.check} Prix fixe</span></div></div>
@@ -18587,7 +18634,11 @@
        devient « 13:30 » plutôt que de garder un texte qu'aucun écran ne saurait lire. Le
        champ, lui, n'est pas réécrit sous les doigts — on ne corrige pas une frappe en
        cours ; il reprend sa forme propre au rendu suivant. Vide RETIRE la clé. */
-    const ah=e.target.closest('[data-acthours]');if(ah){const p=ah.dataset.acthours.split(':');const arr=ensureCatalogCopy(p[0]);const a=arr.find(function(x){return x.id===p[1];});if(a){const h=heuresNet(ah.value);if(h.length)a.h=h.join(', ');else delete a.h;saveCatalogSoon();}}
+    const ah=e.target.closest('[data-acthours]');if(ah){const p=ah.dataset.acthours.split(':');const arr=ensureCatalogCopy(p[0]);const a=arr.find(function(x){return x.id===p[1];});if(a){const h=heuresNet(ah.value);if(h.length)a.h=h.join(', ');else delete a.h;saveCatalogSoon();}
+      // Ce qui a été COMPRIS se dit tout de suite. Un champ qui jette en silence ce qu'on
+      // vient d'y écrire est le défaut qu'on corrige, le format n'en était que le symptôme.
+      try{const av=heuresAvis(ah.value),el=document.querySelector('[data-acthavis="'+ah.dataset.acthours+'"]');
+        if(el){el.textContent=av.txt;el.style.display=av.txt?'':'none';el.style.color=(av.cls==='ko')?'var(--coral-deep)':'var(--muted)';}}catch(_){}}
     const ag=e.target.closest('[data-actgrpname]');if(ag){const p=ag.dataset.actgrpname.split(':');const arr=ensureCatalogCopy(p[0]);const a=arr.find(function(x){return x.id===p[1];});if(a){a.grp=ag.value;saveCatalogSoon();}}
     // Prix saisis au clavier, à l'euro près. On accepte le champ vide le temps de la
     // frappe (sinon impossible d'effacer « 150 » pour taper « 90 ») ; la valeur est
