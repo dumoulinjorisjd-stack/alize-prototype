@@ -2835,9 +2835,18 @@ function nlRetenu(u, audience) {
   return true;
 }
 exports.envoyerNewsletter = onCall({secrets: [SMTP_PASS]}, async (request) => {
+  // LA PORTE DE L'ADMINISTRATEUR EST SON ADRESSE, ici comme aux quinze autres appels
+  // réservés (purger un compte, rembourser, payer un prestataire) et comme dans
+  // firestore.rules. Cette fonction exigeait EN PLUS email_verified : elle était donc la
+  // seule porte plus stricte que celles qui touchent à l'argent, et c'est elle qui s'est
+  // fermée au premier clic. Surtout, le drapeau ne pouvait pas tomber juste : l'application
+  // n'appelle sendEmailVerification NULLE PART, donc aucune adresse n'est jamais confirmée
+  // et la condition ne devenait jamais vraie. Un contrôle qu'aucun chemin ne peut
+  // satisfaire n'est pas un contrôle, c'est un verrou. Durcir vraiment se décide pour les
+  // seize portes ET les règles d'un coup, et demande d'abord un chemin de confirmation,
+  // sinon on s'enferme dehors de sa propre console.
   const who = (request.auth && request.auth.token && request.auth.token.email) || '';
-  const verifie = !!(request.auth && request.auth.token && request.auth.token.email_verified);
-  if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase() || !verifie) {
+  if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
     throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
   }
   const db = getFirestore();

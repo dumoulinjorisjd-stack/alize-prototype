@@ -89,8 +89,27 @@ const bloc = (n) => { const i = srv.indexOf(n); return i < 0 ? '' : srv.slice(i,
   console.log('D — le serveur : qui reçoit, et qui ne reçoit jamais');
   ok(/exports\.envoyerNewsletter = onCall/.test(srv), 'l’envoi est une fonction serveur, pas une boucle dans le navigateur');
   const S = bloc('exports.envoyerNewsletter');
-  ok(/who\.toLowerCase\(\) !== ADMIN_EMAIL\.toLowerCase\(\) \|\| !verifie/.test(S),
-    'réservée à l’administrateur, ET à une adresse VÉRIFIÉE : cette fonction peut écrire à tout le parc');
+  // CETTE ÉPREUVE ÉNONÇAIT L'ANCIENNE RÈGLE, ET L'ANCIENNE RÈGLE FERMAIT LE BOUTON.
+  // Elle exigeait « ET une adresse VÉRIFIÉE » — or l'application n'appelle
+  // sendEmailVerification nulle part : aucune adresse n'est jamais confirmée, la
+  // condition ne devenait jamais vraie, et l'administrateur se voyait répondre « vous
+  // n'avez pas les droits » sur sa propre console. Un contrôle qu'aucun chemin ne peut
+  // satisfaire n'est pas un contrôle. La porte est l'ADRESSE, comme aux quinze autres
+  // appels réservés et comme dans firestore.rules.
+  // On lit la LIGNE DE GARDE et non le voisinage : un premier jet cherchait le mot
+  // « email_verified » n'importe où dans la fonction, et le trouvait dans le commentaire
+  // qui raconte justement pourquoi il n'y est plus. Une épreuve qui confond le code et la
+  // prose qui l'explique rougit sur la bonne version.
+  ok(/if \(!who \|\| who\.toLowerCase\(\) !== ADMIN_EMAIL\.toLowerCase\(\)\) \{/.test(S),
+    'réservée à l’administrateur, à son adresse, et à RIEN DE PLUS : cette fonction peut ' +
+    'écrire à tout le parc, mais une condition que rien ne peut remplir se lirait comme ' +
+    'une sécurité en ne faisant que bloquer');
+  ok(!/token\.email_verified/.test(S),
+    'pas PLUS stricte que les portes qui remboursent ou qui purgent un compte');
+  // Le jour où une confirmation d'adresse existera, les SEIZE portes et les règles se
+  // durcissent ensemble — sans quoi on s'enferme dehors de sa propre console.
+  ok(!/sendEmailVerification/.test(html),
+    'aucun chemin de confirmation d’adresse à ce jour : c’est ce qui rend l’exigence intenable');
   const N = bloc('function nlRetenu');
   ok(/if \(u\.test === true\) return false;/.test(N), 'un compte de test n’est pas une personne');
   ok(/if \(u\.mailOn === false\) return false;/.test(N), 'un refus ne s’use pas : qui s’est désinscrit ne reçoit plus rien');
