@@ -2780,6 +2780,161 @@ exports.recordNoShow = onDocumentUpdated('requests/{reqId}', async (event) => {
  *   action 'list' (défaut) → {pending:[…]} — inventaire, sans rien modifier
  *   action 'run'           → relance, retourne le nombre de demandes touchées
  */
+/* ══ LA LETTRE D'INFORMATION ════════════════════════════════════════════════════════
+ * « Peut-on faire une newsletter à envoyer à tous les inscrits pour leur dire tous les
+ * services qui sont ouverts, sans trop rentrer dans les détails, pour les inciter à
+ * revenir voir sur l'application ? »
+ *
+ * CE N'EST PAS UNE NOTIFICATION DE PLUS, C'EST UN ENVOI COMMERCIAL, et il obéit à
+ * d'autres règles que les messages de service. Trois choses en découlent, et aucune
+ * n'est négociable.
+ *
+ * 1) CHAQUE MESSAGE PORTE SON LIEN DE DÉSINSCRIPTION, et ce lien MARCHE sans se
+ *    connecter : on ne demande pas à quelqu'un d'ouvrir un compte pour cesser de
+ *    recevoir du courrier. Un jeton tiré au hasard, propre à chaque compte.
+ * 2) ON NE RÉÉCRIT PAS À QUI A DIT NON (`mailOn === false`), jamais, quel que soit
+ *    l'envoi suivant.
+ * 3) ON N'ENVOIE PAS DEUX FOIS LE MÊME COURRIER À LA MÊME PERSONNE. Chaque envoi est
+ *    inscrit (`newsletters/{id}/envois/{uid}`) AVANT de partir : un deuxième clic, un
+ *    réessai après coupure, deux onglets ouverts — rien ne double.
+ *
+ * ET LE CORPS EST RENDU PAR LE SERVEUR. La console fournit un titre, une phrase et la
+ * liste des services ouverts ; c'est le serveur qui fabrique le message, échappe tout
+ * et y attache le lien de désinscription. Sans cela, il suffirait d'oublier le lien une
+ * fois pour envoyer un courrier illégal à tout le parc. */
+const NL_MAX_SERVICES = 24;
+const NL_LOT = 20;                 // envois par lot : on ménage le serveur de courrier
+function _nlTexte(v, max) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, max || 200); }
+function _nlLienDesinscription(uid, token) {
+  return APP_URL.replace(/\/$/, '') + '/desinscription?u=' + encodeURIComponent(uid)
+    + '&t=' + encodeURIComponent(token);
+}
+function nlCorpsHtml(intro, services, lien, prenom) {
+  const li = (services || []).slice(0, NL_MAX_SERVICES)
+    .map((x) => '<li style="margin:4px 0">' + escHtmlS(_nlTexte(x, 60)) + '</li>').join('');
+  return '<p>' + (prenom ? 'Bonjour ' + escHtmlS(_nlTexte(prenom, 40)) + ',' : 'Bonjour,') + '</p>'
+    + (intro ? '<p>' + escHtmlS(_nlTexte(intro, 600)) + '</p>' : '')
+    + (li ? '<p><b>Ce qui est ouvert en ce moment&nbsp;:</b></p><ul style="padding-left:18px;margin:6px 0">' + li + '</ul>' : '')
+    + '<p>Tout se commande depuis l\'application, en quelques touches, à prix fixe.</p>'
+    + '<p style="font-size:12px;color:#777;margin-top:22px">Vous recevez ce message parce que vous avez un compte Ti-Services. '
+    + '<a href="' + lien + '" style="color:#777">Ne plus recevoir nos lettres d\'information</a>.</p>';
+}
+/* Qui reçoit, et pourquoi pas les autres. Un compte de TEST n'est pas une personne ; une
+ * adresse vide ne mène nulle part ; `mailOn === false` est un refus, et un refus ne
+ * s'use pas. Le rôle décide du public : un prestataire sait déjà quels métiers sont
+ * ouverts, c'est lui qui les tient — on ne le lui apprend pas. */
+function nlRetenu(u, audience) {
+  if (!u) return false;
+  if (u.test === true) return false;
+  if (u.mailOn === false) return false;
+  const mail = String(u.email || '').trim();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail)) return false;
+  const role = String(u.role || 'client');
+  if (audience === 'clients') return role === 'client';
+  if (audience === 'pros') return role !== 'client';
+  return true;
+}
+exports.envoyerNewsletter = onCall({secrets: [SMTP_PASS]}, async (request) => {
+  const who = (request.auth && request.auth.token && request.auth.token.email) || '';
+  const verifie = !!(request.auth && request.auth.token && request.auth.token.email_verified);
+  if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase() || !verifie) {
+    throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
+  }
+  const db = getFirestore();
+  const d = request.data || {};
+  const sujet = _nlTexte(d.sujet, 120);
+  const intro = _nlTexte(d.intro, 600);
+  const services = (Array.isArray(d.services) ? d.services : []).map((x) => _nlTexte(x, 60)).filter(Boolean);
+  const audience = (['clients', 'pros', 'tous'].indexOf(String(d.audience)) >= 0) ? String(d.audience) : 'clients';
+  const mode = (['apercu', 'essai', 'envoi'].indexOf(String(d.mode)) >= 0) ? String(d.mode) : 'apercu';
+  if (!sujet) throw new HttpsError('invalid-argument', 'Indiquez un objet.');
+  const campagne = _nlTexte(d.campagne, 60) || ('nl-' + new Date().toISOString().slice(0, 10));
+
+  // ESSAI : à l'administrateur seul, le message EXACT que les autres recevraient.
+  if (mode === 'essai') {
+    const lien = _nlLienDesinscription('essai', 'essai');
+    await sendMail(db, who, {subject: sujet, html: nlCorpsHtml(intro, services, lien, ''), pro: false});
+    return {mode: 'essai', envoyes: 1, destinataires: 1, a: who};
+  }
+
+  // On parcourt les comptes par paquets : tout charger en mémoire casse au-delà de
+  // quelques milliers de fiches, et personne ne saurait pourquoi.
+  let dernier = null, vus = 0, retenus = 0, envoyes = 0, deja = 0, echecs = 0;
+  for (;;) {
+    let q = db.collection('users').orderBy('__name__').limit(NL_LOT);
+    if (dernier) q = q.startAfter(dernier);
+    const snap = await q.get();
+    if (snap.empty) break;
+    dernier = snap.docs[snap.docs.length - 1];
+    for (const doc of snap.docs) {
+      vus++;
+      const u = doc.data() || {};
+      if (!nlRetenu(u, audience)) continue;
+      retenus++;
+      if (mode === 'apercu') continue;
+      // RÉSERVER AVANT D'ENVOYER : un deuxième clic ne doit pas écrire deux fois.
+      const trace = db.collection('newsletters').doc(campagne).collection('envois').doc(doc.id);
+      try {
+        await trace.create({at: FieldValue.serverTimestamp(), email: String(u.email || '').slice(0, 120)});
+      } catch (_) { deja++; continue; }
+      let token = String(u.mailToken || '');
+      if (!token) {
+        token = crypto.randomBytes(16).toString('hex');
+        try { await doc.ref.set({mailToken: token}, {merge: true}); } catch (_) {}
+      }
+      const ok = await sendMail(db, String(u.email).trim(), {
+        subject: sujet, pro: audience === 'pros',
+        html: nlCorpsHtml(intro, services, _nlLienDesinscription(doc.id, token),
+          String(u.name || '').split(' ')[0]),
+      });
+      if (ok) envoyes++; else echecs++;
+    }
+    if (snap.size < NL_LOT) break;
+  }
+  console.log('Newsletter ' + campagne + ' (' + mode + ', ' + audience + ') : '
+    + vus + ' comptes vus, ' + retenus + ' retenus, ' + envoyes + ' envoyés, '
+    + deja + ' déjà reçus, ' + echecs + ' échecs');
+  return {mode: mode, campagne: campagne, vus: vus, destinataires: retenus,
+    envoyes: envoyes, deja: deja, echecs: echecs};
+});
+
+/* LA DÉSINSCRIPTION MARCHE SANS COMPTE OUVERT. Un lien, un jeton, et c'est fait : exiger
+ * une connexion pour cesser de recevoir du courrier reviendrait à ne pas offrir de
+ * désinscription du tout. On répond une PAGE lisible, pas un code d'erreur — la personne
+ * doit voir que c'est pris en compte. */
+exports.desinscription = onRequest(async (req, res) => {
+  const page = (titre, texte) => {
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.status(200).send('<!doctype html><html lang="fr"><head><meta charset="utf-8">'
+      + '<meta name="viewport" content="width=device-width,initial-scale=1"><title>' + escHtmlS(titre) + '</title>'
+      + '<style>body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#FFF7F2;color:#241A22;'
+      + 'display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;padding:24px}'
+      + 'div{max-width:420px;background:#fff;border-radius:18px;padding:26px;box-shadow:0 8px 30px rgba(0,0,0,.07)}'
+      + 'h1{font-size:19px;margin:0 0 10px}p{font-size:14px;line-height:1.6;margin:8px 0;color:#555}</style></head>'
+      + '<body><div><h1>' + escHtmlS(titre) + '</h1><p>' + texte + '</p></div></body></html>');
+  };
+  try {
+    const uid = String((req.query && req.query.u) || '').slice(0, 128);
+    const token = String((req.query && req.query.t) || '').slice(0, 128);
+    if (!uid || !token) return page('Lien incomplet', 'Ce lien de désinscription est incomplet. Écrivez-nous à ' + escHtmlS(ADMIN_EMAIL) + ' et nous le ferons à la main.');
+    const db = getFirestore();
+    const ref = db.collection('users').doc(uid);
+    const snap = await ref.get();
+    const u = snap.exists ? (snap.data() || {}) : null;
+    if (!u || String(u.mailToken || '') !== token) {
+      return page('Lien non reconnu', 'Ce lien ne correspond à aucun compte. Écrivez-nous à ' + escHtmlS(ADMIN_EMAIL) + ' et nous vous retirons de la liste à la main.');
+    }
+    await ref.set({mailOn: false, mailOffAt: Date.now()}, {merge: true});
+    console.log('Désinscription courrier uid=' + uid);
+    return page('C\'est fait', 'Vous ne recevrez plus nos lettres d\'information.<br><br>'
+      + 'Les messages liés à vos réservations (acceptation, paiement, annulation) continuent de vous parvenir&nbsp;: '
+      + 'ils ne sont pas de la publicité, ils vous concernent directement.');
+  } catch (e) {
+    console.warn('desinscription', e);
+    return page('Oups', 'Quelque chose n\'a pas fonctionné. Écrivez-nous à ' + escHtmlS(ADMIN_EMAIL) + ' et nous vous retirons de la liste à la main.');
+  }
+});
+
 exports.resettlePending = onCall(async (request) => {
   const who = (request.auth && request.auth.token && request.auth.token.email) || '';
   if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {

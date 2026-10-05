@@ -3577,7 +3577,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='812';
+  const VERSION_APP='813';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -4851,7 +4851,7 @@
   // saisie (recadré à 1 € à la sortie du champ, cf. prixFinal).
   function prixSaisi(v){const n=Math.round(parseFloat(String(v).replace(',','.'))||0);return Math.max(0,Math.min(99999,n));}
   function ecritDansCatalogue(){ try{ const a=document.activeElement;
-    return !!(a&&a.matches&&a.matches('[data-optname],[data-actname],[data-actgrpname],[data-acthours],[data-actpricev],[data-optpricev],[data-catname]')); }catch(_){return false;} }
+    return !!(a&&a.matches&&a.matches('[data-optname],[data-actname],[data-actgrpname],[data-acthours],[data-actpricev],[data-optpricev],[data-catname],[data-nl]')); }catch(_){return false;} }
   function applyCatalogDoc(d){ if(!d)return; S.nomsMetiers=nomsValides(d.noms); appliquerNoms(); if(Array.isArray(d.services)){ S.customServices=d.services.map(function(s){return {id:s.id,nm:nomNet(s.nm),rate:s.rate,custom:true,ico:icoValide(s.ico),choixPro:!!s.choixPro,cat:catValide(s.cat),lieu:lieuValide(s.lieu)||'domicile'};}); } if(d.catalog&&typeof d.catalog==='object'){ S.adminCatalog=d.catalog; } S.catalogSeed=Number(d.catalogSeed)||0; if(d.options&&typeof d.options==='object'){ S.adminOptions=d.options; } if(d.arrhes&&typeof d.arrhes==='object'){ S.adminArrhes=d.arrhes; } if(d.metier&&typeof d.metier==='object'){ S.adminMetier=d.metier; } if(ecritDansCatalogue())return; render(); applyLandLang(); }
   // Catalogue partagé écouté EN TEMPS RÉEL : toute modification admin (prix, prestations,
   // options, métiers) se propage à l'app de chacun sans rechargement. Une seule écoute.
@@ -10373,6 +10373,27 @@
         +'<div class="mini" style="color:var(--muted);margin-top:2px;line-height:1.5">'+esc(murQuiPhrases(c).join(' '))+'</div>'
         +'</div>';}).join('');
   }
+  /* ══ LA LETTRE D'INFORMATION ═══════════════════════════════════════════════════════
+     « Peut-on faire une newsletter à envoyer à tous les inscrits pour leur dire tous les
+     services qui sont ouverts, sans trop rentrer dans les détails, pour les inciter à
+     revenir voir sur l'application ? »
+
+     LA LISTE DES SERVICES NE SE TAPE PAS, ELLE SE MESURE. Un métier n'est « ouvert » que
+     s'il a au moins un prestataire validé qui n'est pas un compte de test — c'est déjà la
+     règle qui décide ce qu'un client peut commander. Écrire la liste à la main, c'est
+     promettre tôt ou tard un service que personne ne viendra honorer : la personne revient
+     sur l'application comme on le lui a demandé, commande, et attend.
+
+     « SANS TROP RENTRER DANS LES DÉTAILS » : des noms de métiers, rien d'autre. Pas de
+     prix (ils changent), pas de description (elle vieillit), pas de nom de prestataire
+     (il peut partir). La lettre dit ce qui existe et invite à venir voir ; l'application
+     dit le reste, et elle est à jour par construction. */
+  function newsletterServices(){
+    const ouverts=activeServicesFromArtisans();
+    return allSvc().filter(function(sv){return ouverts.indexOf(sv.id)>=0;})
+      .map(function(sv){return nomCourant(sv.id)||sv.nm;})
+      .filter(function(n,i,t){return n&&t.indexOf(n)===i;});
+  }
   const PARCOURS_MURS=[['catalogue','N’a jamais touché au catalogue'],
     ['config','A regardé, n’a rien configuré'],
     ['paiement','A configuré, jamais vu le paiement'],
@@ -11065,6 +11086,27 @@
           ${resume}${nonSuivis}
           ${lignes}`;
         return foldCard('a-drafts',I.clock,'Candidatures jamais envoyées','Comptes créés, dossier jamais envoyé, un appel suffit',corps,chip('coral',att.length));})()}
+      ${(function(){
+        const svcs=newsletterServices();
+        const f=S.admNl||(S.admNl={sujet:'Ti-Services · ce qui est ouvert en ce moment',intro:'',audience:'clients'});
+        const corps=`<p class="mini" style="margin:0;color:var(--muted);line-height:1.5">La liste des services ne se tape pas, elle se <b>mesure</b>&nbsp;: un métier n’y figure que s’il a au moins un prestataire validé. Écrire la liste à la main reviendrait à promettre un service que personne ne viendrait honorer.</p>
+          <div class="field" style="margin-top:12px"><label style="font-size:12px">Objet du message</label><input class="txt" data-nl="sujet" value="${esc(f.sujet||'')}" maxlength="120"></div>
+          <div class="field"><label style="font-size:12px">Votre phrase d’introduction</label><textarea rows="3" data-nl="intro" maxlength="600" placeholder="Ex. L’été arrive, nos prestataires sont disponibles pour votre maison comme pour vos invités.">${esc(f.intro||'')}</textarea></div>
+          <div class="mini" style="color:var(--muted)">Ce qui sera annoncé (${svcs.length})</div>
+          <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:5px">${svcs.length?svcs.map(function(n){return `<span class="chip grey">${esc(n)}</span>`;}).join(''):`<span class="mini" style="color:var(--coral-deep)">Aucun métier n’a de prestataire validé&nbsp;: il n’y a rien à annoncer, et l’envoi est fermé.</span>`}</div>
+          <div class="mini" style="color:var(--muted);margin-top:12px">À qui</div>
+          <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:5px">${[['clients','Les clients'],['pros','Les prestataires'],['tous','Tout le monde']].map(function(A){const on=(f.audience||'clients')===A[0];
+            return `<button class="btn ghost sm" data-adm="nlaud:${A[0]}" style="flex:none;width:auto;padding:7px 11px;${on?'border-color:var(--teal-deep);background:var(--teal-wash);color:var(--teal-deep);font-weight:800':''}">${esc(A[1])}</button>`;}).join('')}</div>
+          <p class="mini" style="color:var(--muted);margin-top:6px;line-height:1.5">${(f.audience||'clients')==='clients'?'Un prestataire sait déjà quels métiers sont ouverts&nbsp;: c’est lui qui les tient.':''}</p>
+          <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:12px">
+            <button class="btn ghost sm" data-adm="nlessai" style="width:auto;padding:9px 13px"${svcs.length?'':' disabled'}>${I.mail||''} M’envoyer un essai</button>
+            <button class="btn ghost sm" data-adm="nlcompte" style="width:auto;padding:9px 13px">${I.search} Compter les destinataires</button>
+          </div>
+          ${S._nlCompte!=null?`<p class="mini" style="margin-top:8px;color:var(--muted)">${plN(S._nlCompte,'destinataire')} ${S._nlCompte>1?'recevront':'recevra'} ce message. Les comptes de test, les adresses vides et <b>ceux qui se sont désinscrits</b> n’y sont pas.</p>
+            ${S._nlCompte>0?`<button class="btn sm" data-adm="nlenvoi" style="width:auto;padding:9px 14px;margin-top:8px;background:var(--coral-deep);color:#fff">${I.mail||''} Envoyer à ${plN(S._nlCompte,'inscrit')}</button>`:''}`:''}
+          <p class="mini" style="color:var(--muted);margin-top:12px;line-height:1.5">Chaque message porte son <b>lien de désinscription</b>, qui marche sans se connecter. Personne ne reçoit deux fois le même envoi&nbsp;: chaque destinataire est inscrit avant le départ du courrier.</p>`;
+        return foldCard('a-nl',I.mail||I.bolt,'Lettre d’information','Dire ce qui est ouvert, et inviter à revenir',corps,chip('grey',svcs.length+' métier'+(svcs.length>1?'s':'')));
+      })()}
       ${telListe.length?foldCard('a-tel',I.phone,'Numéros injoignables','Un numéro qui ne peut pas sonner, et ce qu’on peut en faire',telBody,chip('coral',telListe.length)):''}
       ${molBlock?foldCard('a-mollie',I.card,'Prêts à encaisser','Qui pourra vraiment accepter une mission le 1er octobre',molBlock,molBloques.length?chip('coral',molBloques.length+' à relancer'):chip('good',molPrets.length+' prêts')):''}
       ${(function(){
@@ -17456,6 +17498,37 @@
          égale au défaut RETIRE la clé, on n'enregistre que ce qui diffère. */
       /* Les deux réglages de l'écran de commande. Même discipline que les arrhes : une
          valeur égale au défaut RETIRE la clé, on n'enregistre que ce qui diffère. */
+      /* LA LETTRE D'INFORMATION. Trois gestes, et le dernier est le seul qui envoie —
+         il annonce le nombre AVANT, et demande confirmation : un courrier parti ne se
+         rattrape pas. Le serveur recompte de son côté ; le nombre affiché est le sien,
+         pas une estimation du navigateur. */
+      else if(act==='nlaud'){S.admNl=S.admNl||{};S.admNl.audience=id;S._nlCompte=null;render();return;}
+      else if(act==='nlessai'||act==='nlcompte'||act==='nlenvoi'){(function(){
+        const f=S.admNl||{};
+        if(!isAdminAccount()){toast('Réservé à l’administrateur (compte réel)');return;}
+        if(!(FB&&FB.functions&&FB.fn&&FB.fn.httpsCallable)){toast('Indisponible hors ligne, réessayez connecté');return;}
+        const svcs=newsletterServices();
+        if(act!=='nlcompte'&&!svcs.length){toast('Aucun métier ouvert : il n’y a rien à annoncer');return;}
+        if(!(f.sujet||'').trim()){toast('Indiquez un objet');return;}
+        const mode=act==='nlessai'?'essai':(act==='nlcompte'?'apercu':'envoi');
+        if(mode==='envoi'){
+          if(S._nlArm!=='go'){S._nlArm='go';render();setTimeout(function(){if(S._nlArm==='go'){S._nlArm=null;try{render();}catch(_){}}},6000);
+            toast('Touchez encore pour envoyer pour de bon');return;}
+          S._nlArm=null;
+        }
+        toast(mode==='apercu'?'Comptage…':'Envoi en cours…');
+        FB.fn.httpsCallable(FB.functions,'envoyerNewsletter')({sujet:f.sujet,intro:f.intro||'',
+          services:svcs,audience:f.audience||'clients',mode:mode})
+          .then(function(r){const d=(r&&r.data)||{};
+            if(mode==='apercu'){S._nlCompte=Number(d.destinataires)||0;render();toast(plN(S._nlCompte,'destinataire'));return;}
+            if(mode==='essai'){toast('Essai envoyé à '+(d.a||'vous'));return;}
+            S._nlCompte=null;render();
+            toast(plN(Number(d.envoyes)||0,'message')+' parti'+((Number(d.envoyes)||0)>1?'s':'')
+              +((Number(d.deja)||0)?' · '+d.deja+' avaient déjà reçu':'')
+              +((Number(d.echecs)||0)?' · '+d.echecs+' en échec':''));
+          })
+          .catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
+      })();return;}
       else if(act==='metexcl'||act==='metjours'){
         S.adminMetier=S.adminMetier||{};
         const cur=metierDuSvc(id);
@@ -18732,6 +18805,7 @@
       else if(NOMS_CODE[id]){S.nomsMetiers=S.nomsMetiers||{};S.nomsMetiers[id]=cnm.value;appliquerNoms();}
       saveCatalogSoon();}
     // Renommage d'un acte de la grille (console admin) — pas de re-render (garde le focus).
+    const nl=e.target.closest('[data-nl]');if(nl){S.admNl=S.admNl||{};S.admNl[nl.dataset.nl]=nl.value;S._nlCompte=null;}
     const an=e.target.closest('[data-actname]');if(an){const p=an.dataset.actname.split(':');const arr=ensureCatalogCopy(p[0]);const a=arr.find(function(x){return x.id===p[1];});if(a){a.nm=an.value;saveCatalogSoon();}}
     /* Les heures de départ d'une prestation. On enregistre la liste NETTOYÉE : « 9h, 13:30 »
        devient « 13:30 » plutôt que de garder un texte qu'aucun écran ne saurait lire. Le
