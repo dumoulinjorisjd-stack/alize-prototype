@@ -1091,6 +1091,9 @@
   .geomap.tall{height:280px}
   .routeinfo{position:absolute;right:8px;bottom:8px;background:var(--ink);color:#fff;font-size:12px;font-weight:700;padding:5px 10px;border-radius:9px;box-shadow:0 6px 16px -8px var(--shadow);z-index:600;pointer-events:none}
   .me-dot span{display:block;width:14px;height:14px;border-radius:50%;background:#2E7DF2;border:2.5px solid #fff;box-shadow:0 0 0 3px rgba(46,125,242,.3)}
+  /* Repère CREUX du mode « pose » : il montre où la carte s'est ouverte, il n'affirme
+     pas qu'un point est enregistré. Plein, il mentirait sur l'état de la commande. */
+  .pin-creux span{display:block;width:20px;height:20px;border-radius:50%;background:transparent;border:2.5px dashed var(--coral-deep);box-shadow:0 0 0 3px rgba(255,255,255,.65)}
   /* Glisser-pour-supprimer une demande en recherche */
   .swipe-row{position:relative;margin-top:9px;border-radius:var(--r-md);overflow:hidden}
   .swipe-del{position:absolute;inset:0;width:100%;display:flex;align-items:center;justify-content:flex-end;gap:2px;padding:0 22px;background:var(--coral-deep);color:#fff;font-weight:750;font-size:14px;border-radius:var(--r-md)}
@@ -3574,7 +3577,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='811';
+  const VERSION_APP='812';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -5836,6 +5839,51 @@
     const m=(mode==='edit')?'edit':(mode==='route'?'route':'view');const tg=target||'';
     return `<div class="geomap ${m==='route'?'tall':''}"><div class="geomap-canvas" data-leafmap="${g.lat},${g.lng}" data-mapmode="${m}"${tg?` data-maptarget="${tg}"`:''}>${mapFallbackSvg()}</div><div class="geocoords">${g.lat}, ${g.lng}</div>${m==='edit'?`<div class="maphint">Glissez le point pour l'ajuster</div>`:''}${m==='route'?`<div class="routeinfo">Calcul de l'itinéraire…</div>`:''}</div>`;
   }
+  /* ══ POSER LE POINT SANS ÊTRE SUR PLACE ════════════════════════════════════════════
+     Jusqu'ici, « Enregistrer le point GPS » ne savait faire qu'UNE chose : prendre la
+     position de l'appareil. Il fallait donc se TROUVER à l'endroit. Or celui qui commande
+     est rarement sur place : un client depuis son hôtel pour la villa qu'il loue, une
+     conciergerie pour la maison de son client, quelqu'un qui prépare la venue de demain.
+     Le point GPS étant OBLIGATOIRE à Saint-Barth — « le seul repère fiable pour qu'on
+     vous trouve » —, la commande était bloquée pour tous ceux-là.
+
+     LA CARTE SAVAIT DÉJÀ LE FAIRE. `miniMap(g,'edit')` donne un repère qu'on glisse et
+     une carte qu'on touche ; il lui manquait seulement de pouvoir s'ouvrir SANS point de
+     départ. C'est tout ce qui manquait.
+
+     ET LA RÈGLE QU'ON NE DÉFAIT PAS. Une ancienne version enregistrait LE CENTRE DE
+     L'ÎLE dès que la position échouait, en annonçant « Point GPS enregistré » : le client
+     croyait avoir pointé sa maison, le prestataire était envoyé à deux kilomètres. Ouvrir
+     une carte centrée quelque part ne pose donc AUCUN point : tant que personne n'a
+     touché la carte ni déplacé le repère, il n'y a pas de point, le repère est creux et
+     l'écran le dit. Le geste délibéré est la seule chose qui écrit. */
+  const SBH_CENTRE={lat:17.8962,lng:-62.8498};
+  // Le centre d'ouverture : le point existant, sinon la dernière position connue de
+  // l'appareil SI elle est sur l'île (commander depuis Paris ne doit pas centrer Paris),
+  // sinon Saint-Barthélemy.
+  function centreCarte(g){
+    if(g&&isFinite(+g.lat)&&isFinite(+g.lng))return {lat:+g.lat,lng:+g.lng};
+    const c=geoCacheGet();
+    if(c&&haversineKm(c.lat,c.lng,SBH_CENTRE.lat,SBH_CENTRE.lng)<60)return {lat:c.lat,lng:c.lng};
+    return SBH_CENTRE;
+  }
+  /* LE BLOC DU POINT GPS, ÉCRIT UNE FOIS pour les trois endroits qui le demandent : la
+     commande, le carnet d'adresses du client, la fiche villa d'une conciergerie. Trois
+     personnes différentes, le même geste — et une seule règle à tenir. */
+  function blocPointGps(o){
+    const g=o.geo,pose=(S._posePt===o.target),aide=o.aide||'';
+    const boutons=`<div class="row" style="gap:8px;flex-wrap:wrap">`
+      +`<button class="btn ${g?'ghost':'primary'} sm" data-act="${esc(o.acte)}" style="width:auto;padding:9px 13px">${I.pin} ${g?'Ma position':'Je suis sur place'}</button>`
+      +`<button class="btn ghost sm" data-act="posegps:${esc(o.target)}" style="width:auto;padding:9px 13px">${I.pin} ${pose?'Fermer la carte':'Placer sur la carte'}</button>`
+      +`</div>`;
+    if(g)return boutons+miniMap(g,'edit',o.target);
+    if(pose){
+      const c=centreCarte(null);
+      return boutons+`<div class="geomap"><div class="geomap-canvas" data-leafmap="${c.lat},${c.lng}" data-mapmode="pose" data-maptarget="${esc(o.target)}">${mapFallbackSvg()}</div><div class="maphint">Touchez la carte à l’endroit exact, ou glissez le repère.</div></div>`
+        +`<p class="mini" style="margin-top:6px;color:var(--coral-deep)">Aucun point tant que vous n’avez pas touché la carte&nbsp;: on n’enregistre pas un centre d’île à votre place.</p>`;
+    }
+    return boutons+(aide?`<p class="mini" style="margin-top:6px;color:var(--coral-deep)">${aide}</p>`:'');
+  }
   function haversineKm(a1,o1,a2,o2){const R=6371,dLa=(a2-a1)*Math.PI/180,dLo=(o2-o1)*Math.PI/180,s=Math.sin(dLa/2)**2+Math.cos(a1*Math.PI/180)*Math.cos(a2*Math.PI/180)*Math.sin(dLo/2)**2;return 2*R*Math.asin(Math.min(1,Math.sqrt(s)));}
   // Guidage : on ouvre automatiquement l'app native du téléphone — Plans sur
   // iOS (iPhone/iPad), Google Maps sur Android et le reste.
@@ -5886,11 +5934,18 @@
         try{
           const map=L.map(el,{zoomControl:true,attributionControl:false,scrollWheelZoom:true,dragging:true,tap:true}).setView([lat,lng],16);
           L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
-          const mode=el.getAttribute('data-mapmode');const editable=mode==='edit';
-          const marker=L.marker([lat,lng],{draggable:editable}).addTo(map);
+          const mode=el.getAttribute('data-mapmode');const pose=mode==='pose';const editable=(mode==='edit')||pose;
+          /* EN POSE, LE REPÈRE EST CREUX : il montre où la carte s'est ouverte, il
+             n'affirme pas qu'un point est enregistré. Le premier geste — toucher la
+             carte ou glisser le repère — l'écrit, et l'écran repasse en mode normal. */
+          const marker=pose
+            ? L.marker([lat,lng],{draggable:true,opacity:.55,icon:L.divIcon({className:'pin-creux',html:'<span></span>',iconSize:[22,22],iconAnchor:[11,11]})}).addTo(map)
+            : L.marker([lat,lng],{draggable:editable}).addTo(map);
           if(editable){
             const tg=el.getAttribute('data-maptarget');
-            const commit=function(p){const gg={lat:+p.lat.toFixed(5),lng:+p.lng.toFixed(5)};applyMapGeo(tg,gg,el);marker.setLatLng([gg.lat,gg.lng]);};
+            const commit=function(p){const gg={lat:+p.lat.toFixed(5),lng:+p.lng.toFixed(5)};applyMapGeo(tg,gg,el);
+              try{marker.setLatLng([gg.lat,gg.lng]);}catch(_){}
+              if(pose){S._posePt='';toast('Point posé sur la carte');render();}};
             marker.on('dragend',function(){commit(marker.getLatLng());});
             map.on('click',function(e){commit(e.latlng);});
           }
@@ -10278,20 +10333,44 @@
     if(f.indispo)bouts.push('<b>'+f.indispo+'</b> '+(f.indispo>1?'ont demandé':'a demandé')+' un métier pas encore ouvert');
     return bouts.join(' · ');
   }
+  /* ══ DES PHRASES, PAS DES ÉTIQUETTES ═══════════════════════════════════════════════
+     « Je ne comprends pas bien ta logique : sans carte, injoignable, revenu… »
+
+     Trois fautes dans la même ligne grise. « REVENU » se lit comme un revenu D'ARGENT,
+     pas comme « il est revenu » — et placé au milieu de trois manques, il passait pour un
+     quatrième. « INJOIGNABLE » était carrément FAUX : son adresse e-mail est juste
+     au-dessus, cliquable ; ce qui manque, ce sont les NOTIFICATIONS, et la nuance décide
+     du geste (on lui écrit au lieu de compter sur une alerte). Enfin on mêlait sous le
+     même séparateur une bonne nouvelle et trois mauvaises, sans hiérarchie : rien ne
+     disait par où commencer.
+
+     On écrit donc des PHRASES, dans l'ordre où l'on décide : d'abord s'il est revenu
+     (est-ce quelqu'un qu'on peut encore accrocher), puis ce qui lui manque pour
+     commander. Jamais un mot qui ne se comprenne pas tout seul. */
+  function murQuiPhrases(c){
+    const j=c&&c.jalons||{};
+    const push=!!(c&&c.push);
+    const revenu=!!j.revenu;
+    const sansAdr=!((c&&c.addresses||[]).length);
+    const sansCarte=!(c&&c.card)||/Aucune/.test(String(c&&c.card||''));
+    const out=[];
+    out.push(revenu
+      ? (push?'Revenu une autre fois.':'Revenu une autre fois, mais ne reçoit pas les notifications.')
+      : (push?'Jamais revenu depuis son inscription.':'Jamais revenu, et ne reçoit pas les notifications.'));
+    if(sansAdr&&sansCarte)out.push('Ni adresse ni carte enregistrée.');
+    else if(sansAdr)out.push('Pas d’adresse enregistrée.');
+    else if(sansCarte)out.push('Pas de carte enregistrée.');
+    return out;
+  }
   function murQuiHtml(qui,maintenant){
     const l=(qui||[]).slice().sort(function(a,b){return (a.createdAt||0)-(b.createdAt||0);});
     return l.map(function(c){
       const j=c.createdAt?Math.floor((maintenant-c.createdAt)/864e5):null;
-      const marques=[];
-      if(!c.push)marques.push('injoignable');
-      if(!((c.addresses||[]).length))marques.push('sans adresse');
-      if(!c.card||/Aucune/.test(String(c.card)))marques.push('sans carte');
-      if((c.jalons||{}).revenu)marques.push('revenu');
       return '<div style="margin-top:8px;padding:8px 10px;background:var(--card);border-radius:10px">'
         +'<div class="row between" style="gap:8px;align-items:baseline"><b style="font-size:13px">'+esc(c.name||'Client')+'</b>'
         +'<span class="mini" style="flex:none;color:var(--muted)">'+(j==null?'date inconnue':(j===0?'inscrit aujourd’hui':'inscrit il y a '+plN(j,'jour')))+'</span></div>'
         +(c.email?'<a href="mailto:'+esc(c.email)+'" class="mini" style="color:var(--teal-deep);font-weight:700;word-break:break-all">'+esc(c.email)+'</a>':'<span class="mini">E-mail inconnu</span>')
-        +(marques.length?'<div class="mini" style="color:var(--muted);margin-top:2px">'+esc(marques.join(' · '))+'</div>':'')
+        +'<div class="mini" style="color:var(--muted);margin-top:2px;line-height:1.5">'+esc(murQuiPhrases(c).join(' '))+'</div>'
         +'</div>';}).join('');
   }
   const PARCOURS_MURS=[['catalogue','N’a jamais touché au catalogue'],
@@ -12393,7 +12472,7 @@
         <div class="field"><label>Adresse (nom)</label><input class="txt" data-cf2="alabel" value="${esc(f.alabel)}" placeholder="Nom du lieu"></div>
         <div class="field"><label>Adresse / description</label><input class="txt" data-cf2="aaddr" value="${esc(f.aaddr)}" placeholder="Nom du lieu, quartier"></div>
         <div class="field"><label>Secteur</label><select class="txt" data-cf2="azone">${ZONES.map(z=>`<option value="${esc(z)}"${migZone(f.azone)===z?' selected':''}>${esc(z)}</option>`).join('')}</select></div>
-        <div class="field"><label>Point GPS de la villa</label><button class="btn ghost sm" data-act="conc-client-geo">${I.pin} ${f.ageo?'Actualiser la position':'Enregistrer la position'}</button>${f.ageo?miniMap(f.ageo,'edit','ageo'):`<p class="mini" style="margin-top:6px">À Saint-Barth, le GPS est le repère le plus fiable.</p>`}</div>
+        <div class="field"><label>Point GPS de la villa</label>${blocPointGps({geo:f.ageo,target:'ageo',acte:'conc-client-geo',aide:'À Saint-Barth, le GPS est le repère le plus fiable. Vous pouvez le poser sur la carte sans être à la villa.'})}</div>
         <div class="field" style="margin:0"><label>${I.key} Infos d'accès (transmises au prestataire)</label><textarea rows="2" data-cf2="notes" placeholder="Ex. Code portail 2468 · chien gentil · produits sous l'évier">${esc(f.notes||'')}</textarea></div>
       </div>
       <div class="card" style="padding:16px;margin-top:12px"><div class="row between"><b style="font-size:14px">${I.card} Paiement du client</b>${f.authorized?`<span class="chip good">${I.check} Autorisée</span>`:`<span class="chip coral">Non autorisée</span>`}</div>
@@ -13184,7 +13263,7 @@
         <div class="field"><label>Nom du lieu</label><input class="txt" data-af="label" value="${esc(f.label)}" placeholder="Nom du lieu"></div>
         <div class="field"><label>Adresse / description</label><input class="txt" data-af="address" value="${esc(f.address)}" placeholder="Nom du lieu, quartier"></div>
         <div class="field" style="margin-bottom:0"><label>Secteur</label></div>${isleZone(f.zone,'af')}
-        <div class="field"><label>Point GPS permanent</label><button class="btn ghost sm" data-act="addr-geo">${I.pin} ${f.geo?'Actualiser ma position':'Enregistrer ma position actuelle'}</button>${f.geo?miniMap(f.geo,'edit','addr'):`<p class="mini" style="margin-top:6px">Placez-vous à l'adresse et enregistrez le point GPS.</p>`}</div>
+        <div class="field"><label>Point GPS permanent</label>${blocPointGps({geo:f.geo,target:'addr',acte:'addr-geo',aide:'Placez-vous à l\'adresse, ou posez le point sur la carte sans y être.'})}</div>
         <div class="field" style="margin:0"><label>${I.key} Infos d'accès (transmises au prestataire)</label><textarea rows="2" data-af="access" placeholder="Ex. Code portail 4521 · chat à la maison · clé sous le pot">${esc(f.access||'')}</textarea><p class="mini" style="margin-top:6px">Saisi une seule fois pour ce logement, repris automatiquement à chaque réservation.</p></div>
       </div>
       <div class="stack" style="margin-top:16px"><button class="btn primary" data-act="addr-save">${I.check} Enregistrer</button>
@@ -16957,6 +17036,12 @@
       else toast('Correction impossible');
       return;
     }
+    /* « Placer sur la carte » n'enregistre AUCUN point : il ouvre la carte. Le point
+       s'écrit au premier geste dessus, et c'est toute la différence avec l'ancienne
+       version qui posait le centre de l'île en annonçant « enregistré ». */
+    if(b.dataset.act&&b.dataset.act.indexOf('posegps:')===0){
+      const t=b.dataset.act.split(':')[1];
+      S._posePt=(S._posePt===t)?'':t;render();return;}
     if(b.dataset.persona){go(b.dataset.persona);return;}
     if(b.dataset.adm){const parts=b.dataset.adm.split(':'),act=parts[0],id=parts[1];
       if(act==='supervise'||act==='sup'){try{admSeenSet('req:'+id,'1');}catch(_){}}
@@ -17984,6 +18069,9 @@
       case 'addr-new':S.addrForm={id:null,label:'',address:'',zone:'Gustavia',geo:null,access:''};render();break;
       case 'addr-cancel':S.addrForm=null;render();break;
       case 'addr-geo':geolocate(g=>{if(S.addrForm){S.addrForm.geo=g;render();}});break;
+      // « Je suis sur place » depuis l'écran de commande : même geste qu'avant, sous un
+      // nom qui dit ce qu'il fait — l'autre bouton, lui, n'a pas besoin qu'on y soit.
+      case 'cfg-geoloc':geolocate(g=>{if(S.draft){S.draft.geo=g;S._posePt='';renderConfig();}});break;
       case 'addr-default':if(S.addrForm&&S.addrForm.id){S.addrDefault=S.addrForm.id;saveClientCloud();toast('Adresse par défaut mise à jour');render();}break;
       case 'addr-delete':if(S.addrForm&&S.addrForm.id){S.addresses=S.addresses.filter(x=>x.id!==S.addrForm.id);if(S.addrDefault===S.addrForm.id)S.addrDefault=(S.addresses[0]&&S.addresses[0].id)||null;S.addrForm=null;saveClientCloud({addresses:true});render();toast('Adresse supprimée');}break;
       case 'addr-save':{const f=S.addrForm;if(!f)break;if(!(f.label||'').trim()){toast('Donnez un nom au lieu');break;}if(f.id){const a=S.addresses.find(x=>x.id===f.id);if(a){a.label=f.label;a.address=f.address;a.zone=f.zone;a.geo=f.geo;a.access=f.access||'';}}else{const id='ad'+Date.now();S.addresses.push({id,label:f.label,address:f.address,zone:f.zone,geo:f.geo,access:f.access||''});if(S.addresses.length===1)S.addrDefault=id;}S.addrForm=null;saveClientCloud();render();toast('Adresse enregistrée');break;}
@@ -18374,8 +18462,7 @@
       <div class="field" style="margin-top:12px"><label style="font-size:12px">Nom du lieu <span style="font-weight:500;color:var(--muted)">(facultatif)</span></label><input class="txt" data-addrlabel value="${esc(m.addrLabel||'')}" placeholder="Nom du lieu"></div>
       <div class="field"><label style="font-size:12px">${titre}</label><input class="txt" data-addrmanual value="${esc(m.address||'')}" placeholder="${esc(ph)}"></div>
       <div class="field"><label style="font-size:12px">Secteur</label>${zoneSelect}</div>
-      <div class="field"><label style="font-size:12px">Point GPS ${RQ}</label><button class="btn ${m.geo?'ghost':'primary'} sm" data-cfg="geoloc">${I.pin} ${m.geo?'Actualiser le point GPS':'Enregistrer le point GPS'}</button>
-      ${m.geo?miniMap(m.geo,'edit','draft'):`<p class="mini" style="margin-top:6px;color:var(--coral-deep)">Obligatoire, à Saint-Barth, le point GPS est le seul repère fiable pour qu'on vous trouve.</p>`}</div>
+      <div class="field"><label style="font-size:12px">Point GPS ${RQ}</label>${blocPointGps({geo:m.geo,target:'draft',acte:'cfg-geoloc',aide:'Obligatoire, à Saint-Barth, le point GPS est le seul repère fiable pour qu\'on vous trouve. Vous n\'avez pas besoin d\'y être&nbsp;: placez-le sur la carte.'})}</div>
       <div class="field"><label style="font-size:12px">${I.key} Infos d'accès (transmises au prestataire)</label><textarea rows="2" data-addraccess placeholder="Ex. Code portail 4521 · chat à la maison · clé sous le pot">${esc(m.access||'')}</textarea></div>
       <button class="btn primary sm" data-cfg="addr-save-draft" style="margin-top:4px"${(m.address||'').trim()?'':' disabled'}>${I.pin} Enregistrer cette adresse dans mon profil</button>
       </div>`;
@@ -18529,7 +18616,7 @@
           <button class="addr-opt${m.addressId==='__manual'?' on':''}" data-addr="__manual"><b>＋ Autre adresse (ponctuelle)</b><div class="mini" style="margin-top:2px">Un lieu occasionnel, non enregistré</div></button>
         </div>`:''}
         ${m.addressId==='__manual'?blocAdresseManuelle(m,zoneSelect)
-        :`${m.geo?`<div class="banner teal" style="margin-top:10px">${I.pin}<span><b>Point GPS déjà enregistré</b> depuis votre fiche.</span></div>`:`<div class="field" style="margin-top:10px"><label style="font-size:12px">Point GPS ${RQ}</label><button class="btn primary sm" data-cfg="geoloc">${I.pin} Enregistrer le point GPS</button><p class="mini" style="margin-top:6px;color:var(--coral-deep)">Obligatoire, cette adresse n'a pas encore de point GPS. Placez-vous sur le lieu et enregistrez-le.</p></div>`}`}
+        :`${m.geo?`<div class="banner teal" style="margin-top:10px">${I.pin}<span><b>Point GPS déjà enregistré</b> depuis votre fiche.</span></div>`:`<div class="field" style="margin-top:10px"><label style="font-size:12px">Point GPS ${RQ}</label>${blocPointGps({geo:null,target:'draft',acte:'cfg-geoloc',aide:'Obligatoire, cette adresse n\'a pas encore de point GPS. Placez-vous sur le lieu, ou posez-le sur la carte.'})}</div>`}`}
       </div>`}
       <div class="est"><div class="line"><span>${m.svcName} · ${t.rate} ${rateUnit(m)} × ${durTxt(m)}${(needsPeople(m.svc)&&t.people>1)?' × '+t.people+' pers.':''}</span><b>${eur(((forfaitSub(m)!=null?forfaitSub(m):t.rate*billHours(m))*t.people))}</b></div>${optionsEstLines(m)}<div class="total"><span>Total</span><b>${eur(t.total)}</b></div><small>${I.shield} <b>Prix ferme</b> : ce montant est le maximum débité ${S.card?`(sur ${S.card.brand} ••••&nbsp;${S.card.last4}, via Mollie, encaissement agréé)`:`(moyen de paiement demandé juste après, via Mollie, encaissement agréé)`}. Aucun supplément sans votre accord.</small>${arrhesAvisHtml(m,t.total)}</div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm">${m.preferredUid?`${I.user} Envoyer à ${esc((m.preferredName||'').split(' ')[0])}`:`${I.search} Trouver un prestataire`} · ${eur(t.total)}</button></div></div>`,'config');

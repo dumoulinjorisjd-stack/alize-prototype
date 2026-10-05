@@ -87,7 +87,13 @@ const JOUR = 864e5;
   ok(C.posA >= 0 && C.posB >= 0 && C.posA < C.posB, 'le plus ancien inscrit vient en tête : c’est celui qu’on risque de perdre');
   ok(/mailto:a@x\.fr/.test(C.h) && /mailto:b@x\.fr/.test(C.h), 'chaque nom porte son adresse, cliquable : une relance se fait compte par compte');
   ok(/inscrit il y a 9 jours/.test(C.h) && /inscrit il y a 5 jours/.test(C.h), 'et depuis combien de temps il attend');
-  ok(/injoignable/.test(C.h) && /sans carte/.test(C.h) && /revenu/.test(C.h), 'les marques utiles sont là : ' + (C.h.match(/injoignable[^<]*/) || [''])[0]);
+  // « Je ne comprends pas bien ta logique : sans carte, injoignable, revenu… » — les
+  // étiquettes sont devenues des PHRASES, dans l'ordre où l'on décide.
+  ok(/Jamais revenu, et ne reçoit pas les notifications\./.test(C.h),
+    'ce qu’on lit se comprend tout seul : ' + (C.h.match(/Jamais revenu[^<]*/) || [''])[0]);
+  ok(/Ni adresse ni carte enregistrée\./.test(C.h), 'et ce qui lui manque pour commander se dit en français');
+  ok(!/injoignable/.test(C.h), '« injoignable » a disparu : son adresse e-mail est juste au-dessus, cliquable');
+  ok(!/>revenu</.test(C.h) && !/· revenu/.test(C.h), 'et « revenu » seul aussi : on le lisait comme un revenu d’argent');
 
   console.log('D — ce qui ne devait pas changer n’a pas changé');
   const D = await p.evaluate((d) => {
@@ -137,6 +143,31 @@ const JOUR = 864e5;
   ok(E.bouton && !/Jeanne Ledée/.test(E.avant), 'le mur est replié au départ : on voit un nombre');
   ok(/Jeanne Ledée/.test(E.apres) && /Paul Magras/.test(E.apres), 'un clic le déplie en noms');
   ok(!/Marie Questel/.test(E.apres), 'et le compte d’avant la mesure n’est pas dans ce mur');
+
+    console.log('F — les quatre cas, écrits en français');
+  const P = await p.evaluate(() => {
+    const c = (o) => window.__murs.phrases(Object.assign({ jalons: {}, push: 0, addresses: [], card: 'Aucune carte' }, o));
+    return {
+      perdu: c({}),
+      revenuSansPush: c({ jalons: { revenu: 1 } }),
+      revenuAvecPush: c({ jalons: { revenu: 1 }, push: 1, addresses: [{}], card: 'Visa ••42' }),
+      jamaisAvecPush: c({ push: 1, addresses: [{}], card: 'Visa ••42' }),
+      sansAdresse: c({ push: 1, card: 'Visa ••42' }),
+      sansCarte: c({ push: 1, addresses: [{}] }),
+    };
+  });
+  ok(P.perdu.join(' ') === 'Jamais revenu, et ne reçoit pas les notifications. Ni adresse ni carte enregistrée.',
+    'le cas le plus froid : « ' + P.perdu.join(' ') + ' »');
+  ok(P.revenuAvecPush.join(' ') === 'Revenu une autre fois.',
+    'et le plus chaud ne dit QUE ce qu’il y a à dire : « ' + P.revenuAvecPush.join(' ') + ' »');
+  ok(/mais ne reçoit pas les notifications/.test(P.revenuSansPush[0]),
+    'revenu mais sans notification : les deux faits tiennent dans une phrase, pas dans deux étiquettes');
+  ok(P.jamaisAvecPush.length === 1 && /Jamais revenu depuis son inscription\./.test(P.jamaisAvecPush[0]),
+    'rien ne manque, rien ne s’ajoute : on n’écrit pas « adresse enregistrée » pour meubler');
+  ok(P.sansAdresse.join(' ').indexOf('Pas d’adresse enregistrée.') >= 0
+    && P.sansAdresse.join(' ').indexOf('carte') < 0, 'un seul manque se dit au singulier');
+  ok(P.sansCarte.join(' ').indexOf('Pas de carte enregistrée.') >= 0, 'et l’autre aussi');
+  ok(P.perdu.every(function (x) { return /\.$/.test(x); }), 'ce sont des phrases : elles finissent par un point');
 
     ok(errs.length === 0, 'aucune erreur de page' + (errs.length ? ' : ' + errs[0] : ''));
   await b.close();

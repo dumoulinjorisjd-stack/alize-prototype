@@ -79,7 +79,7 @@ const ACTES = { c_catamaran: [{ id: 'a1', nm: 'Demie journée avec sunset', pric
     S.draft.acts = [{ id: 'a2', nm: 'Journée complète avec sunset', price: 1490, qty: 1 }];
     window.__render();
     const t = document.getElementById('view').innerText;
-    return { t: t, geo: !!document.querySelector('[data-cfg="geoloc"]'), adr: !!document.querySelector('[data-addrmanual]'),
+    return { t: t, geo: !!document.querySelector('[data-act="cfg-geoloc"],[data-act^="posegps:"]'), adr: !!document.querySelector('[data-addrmanual]'),
       bandeaux: (t.match(/Vous partez avec le prestataire/g) || []).length };
   }, [BATEAU, ACTES]);
   ok(/Heure de départ souhaitée/.test(C.t) && !/Heure souhaitée/.test(C.t), 'l’écran dit « Heure de départ souhaitée »');
@@ -99,7 +99,7 @@ const ACTES = { c_catamaran: [{ id: 'a1', nm: 'Demie journée avec sunset', pric
     S.draft.acts = [{ id: 'a2', nm: 'Journée complète', price: 1490, qty: 1 }];
     window.__render();
     const t = document.getElementById('view').innerText;
-    return { t: t, geo: !!document.querySelector('[data-cfg="geoloc"]') };
+    return { t: t, geo: !!document.querySelector('[data-act="cfg-geoloc"],[data-act^="posegps:"]') };
   }, [BATEAU, ACTES]);
   ok(/Heure souhaitée/.test(D.t), 'l’heure redevient « Heure souhaitée »');
   ok(/Adresse de la prestation/.test(D.t) && D.geo, 'l’adresse et le point GPS obligatoire sont revenus');
