@@ -2140,6 +2140,101 @@ function montantsDemande(r) {
     gross: round2(base + maj + travel + tip),
   };
 }
+/* ══ LES ARRHES RÉELLEMENT DÉTENUES ════════════════════════════════════════════════
+ * « Fais les vraies arrhes détenues. »
+ *
+ * CE QUI MANQUAIT. La part réglée dans la console existait, mais ce n'était qu'un DROIT :
+ * rien n'était encaissé tant que le client n'annulait pas tard ET que le prestataire ne
+ * cliquait pas « appliquer ». Entre les deux, Ti-Services ne détenait rien — seulement
+ * une empreinte, qui EXPIRE. Sur une sortie réservée trois semaines à l'avance, elle
+ * était morte le jour venu.
+ *
+ * CE QU'ON FAIT. À l'ACCEPTATION — pas à la commande : tant que personne n'a pris la
+ * mission, on ne prend l'argent de personne — la part est PRÉLEVÉE pour de bon, sur le
+ * mandat déjà en place (la carte du client est mémorisée depuis son premier paiement).
+ * C'est le chemin de `mollieChargeComplement`, qui sait déjà encaisser hors session et,
+ * à défaut de mandat, rendre un lien de paiement.
+ *
+ * ON NE PRÉLÈVE JAMAIS DEUX FOIS. La réservation s'écrit AVANT l'appel à Mollie, dans une
+ * transaction : si deux exécutions du déclencheur se croisent, la seconde voit la place
+ * prise et s'arrête. Même discipline que le routage des paiements.
+ *
+ * ET ÇA NE DOUBLE PAS LA FACTURE. L'empreinte posée à la commande couvre le TOTAL ; au
+ * règlement on n'en capture plus que le SOLDE, arrhes déduites. Le client paie son prix,
+ * une fois, en deux fois. */
+const ARRHES_MIN = 1;   // en dessous d'un euro, un prélèvement coûte plus qu'il ne garde
+async function _reserverArrhes(db, reqId) {
+  const ref = db.collection('arrhesPrises').doc(String(reqId));
+  try {
+    await db.runTransaction(async (tx) => {
+      const d = await tx.get(ref);
+      if (d.exists) throw new Error('deja');
+      tx.set(ref, {reqId: String(reqId), at: FieldValue.serverTimestamp()});
+    });
+    return true;
+  } catch (e) {
+    if (String(e && e.message) !== 'deja') console.warn('_reserverArrhes', reqId, e);
+    return false;
+  }
+}
+exports.prelevementArrhes = onDocumentUpdated(
+  {document: 'requests/{reqId}', secrets: ['MOLLIE_ACCESS_TOKEN', SMTP_PASS]}, async (event) => {
+    const before = event.data.before.data() || {};
+    const after = event.data.after.data() || {};
+    const reqId = event.params.reqId;
+    if (!(before.status !== 'accepted' && after.status === 'accepted')) return;
+    if (after.arrhesPaymentId || after.arrhesStatut) return;      // déjà fait
+    const pct = await arrhesPctServeur(db, after.service);
+    if (!(pct > 0)) return;
+    const assiette = round2(Number(after.molliePaymentAmount) || 0);
+    const montant = round2(assiette * pct / 100);
+    const svc = (after.serviceName || after.service || 'Prestation').toString().slice(0, 60);
+    if (!(montant >= ARRHES_MIN)) {
+      console.log('Arrhes négligeables reqId=' + reqId + ' montant=' + montant);
+      return;
+    }
+    if (!(await _reserverArrhes(db, reqId))) { console.warn('Arrhes déjà réservées reqId=' + reqId); return; }
+    const r = await mollieChargeComplement(db, reqId, after.clientUid,
+      montant, 'Ti-Services · arrhes · ' + svc);
+    if (!r.ok) {
+      /* ON NE BLOQUE PAS LA MISSION. Un prélèvement refusé ne doit pas annuler une
+         réservation acceptée : on le DIT à l'administrateur, et le dossier reste tel
+         quel — l'indemnité d'annulation sur l'empreinte reste la voie de secours. */
+      console.warn('Arrhes NON prélevées reqId=' + reqId + ' (' + r.reason + ')');
+      try { await event.data.after.ref.update({arrhesStatut: 'echec', arrhesMotif: String(r.reason || '').slice(0, 60)}); } catch (_) {}
+      try {
+        await sendMail(db, ADMIN_EMAIL, {
+          subject: 'Arrhes NON prélevées, ' + svc,
+          html: '<p>La mission a été acceptée, mais les arrhes n\'ont pas pu être prélevées.</p>'
+            + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li><li><b>Montant :</b> ' + eurTxt(montant)
+            + ' (' + escHtmlS(String(pct)) + ' % de ' + eurTxt(assiette) + ')</li>'
+            + '<li><b>Cause :</b> ' + escHtmlS(String(r.reason || 'inconnue')) + '</li></ul>'
+            + '<p>La réservation reste valable&nbsp;; l\'indemnité d\'annulation sur l\'empreinte reste possible.</p>',
+        });
+      } catch (_) {}
+      return;
+    }
+    try {
+      await event.data.after.ref.update({
+        arrhesPaymentId: String(r.paymentId || ''), arrhesAmount: montant, arrhesPct: pct,
+        arrhesStatut: r.direct ? 'preleve' : 'lien', arrhesLien: String(r.checkoutUrl || ''),
+        arrhesAt: Date.now(),
+      });
+    } catch (e) { console.warn('Arrhes écriture', reqId, e); }
+    console.log('Arrhes reqId=' + reqId + ' ' + montant + ' € (' + pct + ' %) ' + r.reason);
+    /* LE CLIENT EST PRÉVENU DE CE QUI A ÉTÉ PRÉLEVÉ. Un débit qu'on ne comprend pas sur
+       son relevé devient une contestation, et une contestation coûte plus que le débit. */
+    try {
+      const tokens = await userPushTokens(db, after.clientUid);
+      if (tokens.length) {
+        await pushMulticast(tokens, 'Vos réservations · Arrhes prélevées',
+          eurTxt(montant) + ' prélevés pour ' + svc + ', à valoir sur le montant total.',
+          '/?open=wallet&r=' + reqId,
+          (tok) => db.collection('users').doc(after.clientUid).update({pushTokens: FieldValue.arrayRemove(tok)}));
+      }
+    } catch (e) { console.warn('Arrhes notification', e); }
+  });
+
 exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}',
   // MOLLIE_CLIENT_ID / _SECRET : non pour encaisser, mais pour REVÉRIFIER le dossier du
   // prestataire avant de lui dire qu'il manque une pièce (`notifyArtisanMollieProblem`).
@@ -2375,25 +2470,42 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}',
     // Montant RÉELLEMENT encaissé sur l'empreinte (jamais plus qu'elle) : c'est lui, et
     // pas le total de la facture, qui borne ce qu'on peut verser à l'artisan.
     let capte = gross;
+    /* LES ARRHES SONT DÉJÀ ENCAISSÉES : on ne capture plus que le SOLDE. Sans cette
+       déduction, le client paierait deux fois la même part — une fois à l'acceptation,
+       une fois à la validation. Elles restent dans l'assiette de la commission : le
+       prestataire est dû sur le TOTAL de la prestation, pas sur ce qui reste à prendre. */
+    const arrhesPayees = (String(after.arrhesStatut || '') === 'preleve') ? round2(Number(after.arrhesAmount) || 0) : 0;
     if (mollieApiConfigured() && after.molliePaymentId && !after.mollieCaptured) {
       captureOk = false;
       try {
         const held = round2(Number(after.molliePaymentAmount) || gross);
-        const toCapture = round2(Math.min(gross, held));
-        capte = toCapture;
-        const p = await mollieApi('/payments/' + encodeURIComponent(after.molliePaymentId), 'GET');
-        const st = (p.ok && p.data) ? p.data.status : '';
-        if (st === 'authorized') {
-          const cap = await mollieApi('/payments/' + encodeURIComponent(after.molliePaymentId) + '/captures', 'POST',
-            {amount: {currency: 'EUR', value: toCapture.toFixed(2)}});
-          captureOk = cap.ok;
-        } else if (st === 'paid') {
-          captureOk = true;   // déjà capturé
+        const solde = round2(Math.max(0, gross - arrhesPayees));
+        const toCapture = round2(Math.min(solde, held));
+        capte = round2(toCapture + arrhesPayees);
+        if (arrhesPayees > 0) {
+          console.log('Règlement reqId=' + reqId + ' total=' + gross + ' arrhes déjà prises='
+            + arrhesPayees + ' solde capturé=' + toCapture);
         }
-        await event.data.after.ref.update({mollieCaptured: captureOk, mollieCaptureAmount: toCapture});
+        if (!(toCapture > 0)) {
+          /* Les arrhes couvraient déjà tout : il n'y a RIEN à capturer, et c'est normal.
+             Appeler Mollie avec « 0,00 € » ferait échouer un règlement qui va bien. */
+          captureOk = true;
+          await event.data.after.ref.update({mollieCaptured: true, mollieCaptureAmount: 0});
+        } else {
+          const p = await mollieApi('/payments/' + encodeURIComponent(after.molliePaymentId), 'GET');
+          const st = (p.ok && p.data) ? p.data.status : '';
+          if (st === 'authorized') {
+            const cap = await mollieApi('/payments/' + encodeURIComponent(after.molliePaymentId) + '/captures', 'POST',
+              {amount: {currency: 'EUR', value: toCapture.toFixed(2)}});
+            captureOk = cap.ok;
+          } else if (st === 'paid') {
+            captureOk = true;   // déjà capturé
+          }
+          await event.data.after.ref.update({mollieCaptured: captureOk, mollieCaptureAmount: toCapture});
+        }
       } catch (e) { console.warn('settleCommission capture', e); }
     } else if (after.mollieCaptureAmount != null) {
-      capte = round2(Number(after.mollieCaptureAmount) || gross);
+      capte = round2((Number(after.mollieCaptureAmount) || 0) + arrhesPayees) || gross;
     }
 
     // 3 bis) SUPPLÉMENT NON COUVERT PAR L'EMPREINTE. Heures déclarées en plus, coup de
@@ -5860,6 +5972,45 @@ exports.sendMollieRelance = onCall({secrets: [SMTP_PASS]}, async (request) => {
  *  - une annulation tardive, qui ne supprime PAS la demande (le prestataire décide de
  *    l'indemnité) — l'empreinte doit rester en place pour pouvoir la prélever.
  */
+/* RENDRE LES ARRHES. Libérer l'empreinte ne suffit plus : depuis qu'elles sont
+ * réellement prélevées à l'acceptation, une annulation SANS FRAIS doit RENDRE l'argent,
+ * pas seulement cesser de le réserver. Trois cas le demandent : l'annulation avant le
+ * délai, le prestataire qui renonce à l'indemnité, et la demande qui expire.
+ * On ne rembourse qu'une fois (`arrhesStatut` passe à « rendu »), et un échec ne reste
+ * pas silencieux : l'argent du client est en jeu. */
+async function rendreArrhes(db, reqId, r, motif) {
+  const payId = (r && r.arrhesPaymentId) || '';
+  const montant = round2(Number(r && r.arrhesAmount) || 0);
+  if (!payId || !(montant > 0) || String(r.arrhesStatut || '') !== 'preleve') return false;
+  if (!mollieApiConfigured()) return false;
+  let ok = false;
+  try {
+    const res = await mollieApi('/payments/' + encodeURIComponent(payId) + '/refunds', 'POST',
+      {amount: {currency: 'EUR', value: montant.toFixed(2)},
+        description: ('Ti-Services · arrhes rendues · ' + (motif || '')).slice(0, 100)});
+    ok = !!res.ok;
+    if (!ok) console.warn('rendreArrhes refus Mollie reqId=' + reqId, res.status);
+  } catch (e) { console.warn('rendreArrhes', reqId, e); }
+  try {
+    await db.collection('requests').doc(String(reqId))
+      .update({arrhesStatut: ok ? 'rendu' : 'rendu-echec', arrhesRenduAt: Date.now()});
+  } catch (_) {}
+  if (!ok) {
+    try {
+      await sendMail(db, ADMIN_EMAIL, {
+        subject: 'Arrhes NON rendues, à régulariser',
+        html: '<p>Une annulation sans frais devait rendre les arrhes, et Mollie a refusé.</p>'
+          + '<ul><li><b>Demande :</b> ' + escHtmlS(String(reqId)) + '</li>'
+          + '<li><b>Montant :</b> ' + eurTxt(montant) + '</li>'
+          + '<li><b>Paiement :</b> ' + escHtmlS(payId) + '</li></ul>'
+          + '<p>À faire : rembourser à la main depuis Mollie.</p>',
+      });
+    } catch (_) {}
+  } else {
+    console.log('Arrhes rendues reqId=' + reqId + ' ' + montant + ' € (' + (motif || '') + ')');
+  }
+  return ok;
+}
 async function releaseMollieHold(db, reqId, r, contexte) {
   const id = r.molliePaymentId || '';
   if (!id || !mollieApiConfigured()) return;
@@ -5943,6 +6094,7 @@ exports.settleCancellation = onDocumentUpdated({document: 'requests/{reqId}', se
         (after.clientName || 'Le client') + ' a annulé « ' + svc + ' ». C\'est à vous de décider : appliquer l\'indemnité de 50 % ou y renoncer, depuis votre espace Missions.');
     } else {
       await releaseMollieHold(db, reqId, after, 'annulée');
+      await rendreArrhes(db, reqId, after, 'annulation sans frais');
       await notifieArtisan('Mission annulée', (after.clientName || 'Le client') + ' a annulé « ' + svc + ' ». Le créneau est de nouveau libre.');
     }
     return;
@@ -5953,6 +6105,7 @@ exports.settleCancellation = onDocumentUpdated({document: 'requests/{reqId}', se
   //    la somme restait réservée sur la carte du client jusqu'à expiration bancaire.
   if (before.status !== 'expired' && after.status === 'expired') {
     await releaseMollieHold(db, reqId, after, 'expirée');
+    await rendreArrhes(db, reqId, after, 'demande expirée');
     if (after.molliePaymentId && !after.mollieCaptured) {
       await notifieClient('Demande expirée', 'Votre demande de ' + svc + ' n\'a pas été honorée : rien n\'est prélevé, la somme réservée vous est rendue.', true);
     }
@@ -5966,6 +6119,7 @@ exports.settleCancellation = onDocumentUpdated({document: 'requests/{reqId}', se
   if (after.feeDecision === 'waived') {
     // Le prestataire renonce : la somme réservée est rendue au client.
     await releaseMollieHold(db, reqId, after, 'annulée (indemnité levée)');
+    await rendreArrhes(db, reqId, after, 'indemnité levée');
     await notifieClient('Annulation sans frais', 'Le prestataire a renoncé à l\'indemnité pour « ' + svc + ' » : rien n\'est prélevé, la somme réservée vous est rendue.', true);
     return;
   }
@@ -5985,7 +6139,13 @@ exports.settleCancellation = onDocumentUpdated({document: 'requests/{reqId}', se
      diffère on réécrit la vraie — sans quoi le prestataire lirait un chiffre et en
      toucherait un autre. */
   const pctArrhes = await arrhesPctServeur(db, after.service);
-  const payId = after.molliePaymentId || '';
+  /* LES ARRHES DÉJÀ PRISES SONT L'INDEMNITÉ. Quand elles ont été prélevées à
+     l'acceptation, l'argent est DÉJÀ chez nous : il n'y a rien à capturer sur
+     l'empreinte, et c'est précisément ce que « les arrhes détenues » veut dire. On
+     commissionne et l'on verse le net depuis CE paiement-là. Reprendre en plus le même
+     pourcentage sur l'empreinte ferait payer deux fois la même annulation. */
+  const arrhesPrises = (String(after.arrhesStatut || '') === 'preleve') ? round2(Number(after.arrhesAmount) || 0) : 0;
+  const payId = arrhesPrises > 0 ? String(after.arrhesPaymentId || '') : (after.molliePaymentId || '');
   let fee = 0;
   if (!payId || !mollieApiConfigured()) {
     console.warn('Indemnité inapplicable reqId=' + reqId + ' pay=' + (payId || 'aucun'));
@@ -6000,6 +6160,11 @@ exports.settleCancellation = onDocumentUpdated({document: 'requests/{reqId}', se
     return;
   }
   try {
+    if (arrhesPrises > 0) {
+      // Déjà encaissé à l'acceptation : on ne capture rien, on passe au partage.
+      fee = arrhesPrises;
+      console.log('Indemnité = arrhes déjà prises reqId=' + reqId + ' ' + fee + ' €');
+    } else {
     const p = await mollieApi('/payments/' + encodeURIComponent(payId), 'GET');
     const st = (p.ok && p.data) ? (p.data.status || '') : '';
     /* L'ASSIETTE EST CE QUE MOLLIE TIENT, PAS CE QUE LE CLIENT ANNONCE. On préfère le
@@ -6059,6 +6224,7 @@ exports.settleCancellation = onDocumentUpdated({document: 'requests/{reqId}', se
         });
       } catch (_) {}
       return;
+    }
     }
     // Commission sur l'indemnité : même règle que l'app de l'artisan (taux de fidélité,
     // avantage fondateur, plancher petits montants sur l'assiette de l'indemnité).
