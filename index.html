@@ -2434,7 +2434,20 @@
     case 'siret14': return /^\d{14}$/.test(val.replace(/\s/g,''));
     case 'name': case 'text': default: return val.trim().length>1;
   }}
-  function applyFieldValidity(root){try{(root||document).querySelectorAll('input.txt[data-v]').forEach(function(i){i.classList.toggle('vok',fieldValidV(i.getAttribute('data-v'),i.value));});}catch(_){}}
+  /* LA PASTILLE VERTE DOIT DIRE LA MÊME CHOSE QUE LA GARDE. Un champ téléphone composé
+     porte son indicatif à côté : on le lit, sinon le crochet s'allumerait sous un numéro
+     que l'inscription refuse ensuite — deux avis contraires sur le même écran. */
+  function champOk(el){
+    try{
+      if(el.getAttribute('data-v')==='phone'&&el.hasAttribute('data-phonenum')){
+        const k=el.getAttribute('data-phonenum');
+        const pf=document.querySelector('[data-phonepfx="'+k+'"]');
+        return telLu(pf?pf.value:'+590',el.value).ok;
+      }
+    }catch(_){}
+    return fieldValidV(el.getAttribute('data-v'),el.value);
+  }
+  function applyFieldValidity(root){try{(root||document).querySelectorAll('input.txt[data-v]').forEach(function(i){i.classList.toggle('vok',champOk(i));});}catch(_){}}
   // ————— Retour haptique —————
   // Petite vibration native au toucher (API Vibration : Android/Chrome ; Safari iOS ne
   // l'expose pas, appel simplement ignoré). Respecte « animations réduites ». 'light' =
@@ -3872,12 +3885,68 @@
   // le bon numéro. +590 (Saint-Barth/Guadeloupe), +33 (métropole) et +1 (USA/Canada)
   // en tête — le public de l'île — puis quelques indicatifs courants.
   const PHONE_PFX=['+590','+33','+1','+44','+49','+34','+351','+39','+41','+32','+31'];
+  /* ══ UN NUMÉRO QUI NE PEUT PAS EXISTER ═══════════════════════════════════════════
+     « Son numéro de téléphone n'est pas bon. » Sur la fiche d'un prestataire VALIDÉ :
+     +590 90210902, huit chiffres. Un numéro de Guadeloupe / Saint-Barthélemy en compte
+     NEUF. Il était injoignable, et rien ne l'avait jamais dit : la seule vérification du
+     formulaire était « au moins six caractères » — ce que « 123456 » satisfait. Le
+     prestataire a été inscrit, validé, mis devant les clients, avec un numéro qui ne
+     sonne nulle part.
+
+     ON NE JUGE QUE CE QU'ON CONNAÎT. Pour +590 le plan est public et stable : neuf
+     chiffres, 690 ou 691 pour un mobile, 590 pour un fixe. Pour les autres indicatifs on
+     ne prétend rien — une garde qui crie au loup finit désarmée (même règle que la
+     longueur des IBAN) : on mesure une plage large, et l'on se tait.
+
+     ET ON NE CORRIGE PAS. Compléter « 90210902 » en « 690210902 » serait inventer un
+     chiffre, donc fabriquer un numéro qui sonnera chez quelqu'un d'autre. */
+  const TEL_PLANS={'+590':{n:9,debuts:['590','690','691'],
+    ex:'0690 21 09 02 pour un mobile, 0590 27 55 55 pour un fixe'}};
+  /* LE VERDICT JUGE CE QUI SERA ENREGISTRÉ, PAS CE QUI EST TAPÉ. On écrit son numéro
+     « 0690 21 09 02 » : dix chiffres à l'écran, neuf une fois le zéro de tête retiré.
+     L'avis lisait la case brute et annonçait « il manque -1 chiffre » — un reproche faux
+     sous un numéro juste. La mise au net est donc DANS le verdict : une seule porte pour
+     la saisie, la console et les gardes du dossier. */
+  function telLu(pfx,num){
+    const d=String(num==null?'':num).replace(/\D/g,'').replace(/^0/,'');
+    if(!d)return {ok:false,cause:'vide',chiffres:0,attendu:0};
+    const plan=TEL_PLANS[String(pfx||'')];
+    if(!plan)return {ok:(d.length>=6&&d.length<=14),cause:(d.length<6?'court':(d.length>14?'long':'')),chiffres:d.length,attendu:0};
+    if(d.length!==plan.n)return {ok:false,cause:(d.length<plan.n?'court':'long'),chiffres:d.length,attendu:plan.n};
+    if(!plan.debuts.some(function(x){return d.indexOf(x)===0;}))return {ok:false,cause:'debut',chiffres:d.length,attendu:plan.n};
+    return {ok:true,cause:'',chiffres:d.length,attendu:plan.n};
+  }
+  // Un numéro DÉJÀ ENREGISTRÉ (indicatif compris) : la console et les gardes du
+  // formulaire lisent le même verdict que la saisie.
+  function telStockeLu(p){const s=splitPhone(p||'');return telLu(s.pfx,s.num);}
+  function telAvis(pfx,num){
+    const r=telLu(pfx,num);const plan=TEL_PLANS[String(pfx||'')];
+    if(r.cause==='vide')return {cls:'',txt:''};
+    if(r.ok)return {cls:'ok',txt:''};
+    if(r.cause==='debut')return {cls:'ko',txt:'Ce numéro ne correspond à aucun numéro de Saint-Barthélemy. Attendu : '+plan.ex+'.'};
+    if(plan&&r.cause==='court')return {cls:'ko',txt:'Il manque '+(plan.n-r.chiffres)+' chiffre'+((plan.n-r.chiffres)>1?'s':'')+' : un numéro d’ici en compte '+plan.n+' après l’indicatif ('+plan.ex+').'};
+    if(plan)return {cls:'ko',txt:(r.chiffres-plan.n)+' chiffre'+((r.chiffres-plan.n)>1?'s':'')+' de trop : un numéro d’ici en compte '+plan.n+' après l’indicatif ('+plan.ex+').'};
+    return {cls:'ko',txt:r.cause==='court'?'Numéro trop court.':'Numéro trop long.'};
+  }
+  /* DANS LA CONSOLE, UN NUMÉRO QUI NE PEUT PAS SONNER SE DIT. Un prestataire validé
+     portait « +590 90210902 » — huit chiffres — et rien ne le signalait : ni la fiche,
+     ni la carte d'attente. On ne le corrige pas, on ne le devine pas : on le NOMME, à
+     l'endroit où quelqu'un peut le rappeler pour le lui demander. */
+  function telImpossibleTxt(p){
+    const s=splitPhone(p||'');const r=telLu(s.pfx,s.num);
+    if(r.ok)return '';
+    if(r.cause==='vide')return '';
+    if(r.cause==='debut')return 'Ce numéro ne peut pas sonner : aucun numéro d’ici ne commence ainsi.';
+    if(r.attendu)return 'Ce numéro ne peut pas sonner : '+r.chiffres+' chiffre'+(r.chiffres>1?'s':'')+' au lieu de '+r.attendu+'.';
+    return 'Ce numéro ne peut pas sonner : '+r.chiffres+' chiffre'+(r.chiffres>1?'s':'')+'.';
+  }
   function splitPhone(p){p=(p||'').trim();const m=p.match(/^(\+\d{1,3})[\s.-]*(.*)$/);if(m&&PHONE_PFX.indexOf(m[1])>=0)return {pfx:m[1],num:m[2]};if(m)return {pfx:m[1],num:m[2]};return {pfx:'+590',num:p};}
   // Champ téléphone composé : <select indicatif> + <input numéro local>. La valeur
   // COMPLÈTE (indicatif + numéro) est réécrite dans l'état via setPhoneVal(key).
   function phoneCombo(key,value){
     const s=splitPhone(value);
-    return `<div class="row" style="gap:8px"><select class="txt" data-phonepfx="${key}" style="flex:0 0 96px;min-width:0">${PHONE_PFX.map(p=>`<option value="${p}"${s.pfx===p?' selected':''}>${p}</option>`).join('')}</select><input class="txt" data-phonenum="${key}" data-v="phone" value="${esc(s.num)}" inputmode="tel" autocomplete="tel-national" placeholder="690 00 00 00" style="flex:1;min-width:0"></div>`;
+    const av=telAvis(s.pfx,s.num);
+    return `<div class="row" style="gap:8px"><select class="txt" data-phonepfx="${key}" style="flex:0 0 96px;min-width:0">${PHONE_PFX.map(p=>`<option value="${p}"${s.pfx===p?' selected':''}>${p}</option>`).join('')}</select><input class="txt" data-phonenum="${key}" data-v="phone" value="${esc(s.num)}" inputmode="tel" autocomplete="tel-national" placeholder="690 00 00 00" style="flex:1;min-width:0"></div><p class="mini" data-telavis="${key}" style="margin-top:6px;line-height:1.45;${av.txt?'':'display:none;'}color:var(--coral-deep)">${esc(av.txt)}</p>`;
   }
   function setPhoneVal(key,val){
     switch(key){
@@ -3889,12 +3958,30 @@
       case 'proedit': S.proContactForm=S.proContactForm||{}; S.proContactForm.phone=val; break;
     }
   }
+  /* L'avis se met à jour sur TOUS les champs téléphone affichés, sans les nommer :
+     l'élément porte sa clé, on la lit. Inscription, profil, conciergerie, WhatsApp du
+     prestataire — un champ ajouté demain n'a rien à déclarer de plus. */
+  function majTelAvis(){
+    try{
+      document.querySelectorAll('[data-telavis]').forEach(function(el){
+        const k=el.getAttribute('data-telavis');
+        const pf=document.querySelector('[data-phonepfx="'+k+'"]'),nm=document.querySelector('[data-phonenum="'+k+'"]');
+        if(!pf||!nm)return;
+        const av=telAvis(pf.value,nm.value);
+        el.textContent=av.txt;el.style.display=av.txt?'':'none';
+      });
+    }catch(_){}
+  }
   function readPhoneCombo(key){
     const pf=document.querySelector('[data-phonepfx="'+key+'"]'),nm=document.querySelector('[data-phonenum="'+key+'"]');
     if(!pf||!nm)return;
     const num=(nm.value||'').trim();
-    const numNat=num.replace(/^0+/,''); // retirer le 0 national quand un indicatif est choisi
+    // UN SEUL zéro, et les séparateurs s'en vont. `^0+` retirait TOUS les zéros de tête :
+    // « 00590… », que beaucoup écrivent pour l'international, perdait les deux. Et les
+    // espaces de lecture restaient dans la valeur enregistrée (« +590 6 90 21 09 02 »).
+    const numNat=num.replace(/[^\d+]/g,'').replace(/^0/,'');
     setPhoneVal(key,num?(pf.value+' '+numNat):'');
+    majTelAvis();
   }
   // Prix fixes par prestation, définis dans la console admin (ce que voit le client).
   const ADMIN_PRICES=()=>SERVICES.reduce((o,s)=>{o[s.id]=s.rate;return o;},{});
@@ -10471,7 +10558,7 @@
                 <div class="mini" style="margin-top:4px;color:${manque.length===1?'var(--coral-deep)':'var(--muted)'};font-weight:${manque.length===1?'700':'400'}">${faits.length} étape${faits.length>1?'s':''} sur 4${manque.length===1?` — il ne manque que « ${esc(manque[0][1])} »`:''}</div>`;})()}
             <div class="row" style="gap:10px;margin-top:7px;flex-wrap:wrap">
               ${d.email?`<a href="mailto:${esc(d.email)}?subject=${encodeURIComponent('Votre inscription Ti-Services')}" style="color:var(--teal-deep);font-weight:700;font-size:13px;word-break:break-all">${I.mail||''} ${esc(d.email)}</a>`:`<span class="mini">E-mail inconnu</span>`}
-              ${d.phone?`<a href="tel:${telClean(d.phone)}" style="color:var(--teal-deep);font-weight:700;font-size:13px">${esc(d.phone)}</a>`:''}
+              ${d.phone?`<a href="tel:${telClean(d.phone)}" style="color:var(--teal-deep);font-weight:700;font-size:13px">${esc(d.phone)}</a>${telStockeLu(d.phone).ok?'':`<span class="mini" style="color:var(--coral-deep);font-weight:700">${esc(telImpossibleTxt(d.phone))}</span>`}`:''}
             </div>
             <button class="uidtap" data-adm="copyuid:${d.uid}" title="Copier l'identifiant du compte">${I.copy} <span class="money">${esc(d.uid)}</span></button>
           </div></div>`;}).join('');
@@ -11027,7 +11114,7 @@
         ${(function(){adminLoadArtisanContact(a.uid);const ct=artContact(a);return `<div class="card" style="padding:16px;margin-top:12px"><span class="eyebrow" style="color:var(--muted)">${a.status==='attente'?'Contacter avant décision':'Contacter le prestataire'}</span>
           <div class="fiche" style="margin-top:11px">
             ${fRow('E-mail',ct.email?`<a href="mailto:${esc(ct.email)}" style="color:var(--teal-deep)">${esc(ct.email)}</a>`:`<span class="mini">Non renseigné</span>`)}
-            ${fRow('Téléphone',ct.phone?`<a href="tel:${telClean(ct.phone)}" style="color:var(--teal-deep)">${esc(ct.phone)}</a>`:`<span class="mini">Non renseigné</span>`)}
+            ${fRow('Téléphone',ct.phone?`<a href="tel:${telClean(ct.phone)}" style="color:var(--teal-deep)">${esc(ct.phone)}</a>${telStockeLu(ct.phone).ok?'':`<div class="mini" style="color:var(--coral-deep);font-weight:700;margin-top:3px">${esc(telImpossibleTxt(ct.phone))}</div>`}`:`<span class="mini">Non renseigné</span>`)}
           </div>
           ${contactRow(ct)}
           <button class="btn ghost sm" data-adm="art-msg:${a.id}" style="margin-top:10px;width:100%">${I.chat} Message interne (messagerie Ti-Services)</button>
@@ -14191,13 +14278,13 @@
     // que googleAuth condamnait toute candidature créée par e-mail : les quatre
     // étapes passaient au vert et le bouton d'envoi restait gris à jamais.
     const credOk=(f.googleAuth||f.authed)?true:(/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=6&&f.password===f.password2);
-    return (f.name||'').trim().length>1&&(f.phone||'').trim().length>=6&&credOk&&/^\d{14}$/.test(siret)&&(f.address||'').trim().length>1&&(!!f.insuranceDoc||!!f.insuranceNone)&&!!(f.cats&&f.cats.length)&&autrePrixOk(f)&&(!f.cats.includes('baby')||!!(f.diplomas&&f.diplomas.length))&&!!f.mandat&&!!f.cgu&&!!f.charte&&(!needsGrille(f)||!!f.acceptsGrille||desiredNetOk(f))&&isAdult(f.birth);}
+    return (f.name||'').trim().length>1&&telStockeLu(f.phone).ok&&credOk&&/^\d{14}$/.test(siret)&&(f.address||'').trim().length>1&&(!!f.insuranceDoc||!!f.insuranceNone)&&!!(f.cats&&f.cats.length)&&autrePrixOk(f)&&(!f.cats.includes('baby')||!!(f.diplomas&&f.diplomas.length))&&!!f.mandat&&!!f.cgu&&!!f.charte&&(!needsGrille(f)||!!f.acceptsGrille||desiredNetOk(f))&&isAdult(f.birth);}
   // Liste ce qu'il reste à fournir pour valider la candidature — affiché sous le bouton
   // (désactivé) pour que le prestataire sache exactement quel champ ou document manque.
   function proMissing(f){f=f||{};const m=[];const siret=(f.siret||'').replace(/\s/g,'');
     if((f.name||'').trim().length<2)m.push('nom / raison sociale');
     if(!f.birth||!isAdult(f.birth))m.push('date de naissance (majeur·e)');
-    if((f.phone||'').trim().length<6)m.push('téléphone');
+    if(!telStockeLu(f.phone).ok)m.push((f.phone||'').trim()?'un téléphone valide (le numéro saisi ne peut pas exister)':'téléphone');
     if(!(f.cats&&f.cats.length))m.push('au moins un métier');
     if(f.cats&&f.cats.includes('autre')&&!(f.otherService||'').trim())m.push('préciser le service « Autre »');
     if(f.cats&&f.cats.includes('autre')&&(f.otherService||'').trim()&&!prixAutreLu(f.otherPrice).ok)m.push('un montant CHIFFRÉ pour « '+(f.otherService||'').trim()+' » (un nombre seul, le détail va dans « Vos autres formules »)');
@@ -14769,7 +14856,7 @@
       </div>`}
     </div>`;
   }
-  function draftIdDone(f){f=f||{};return (f.name||'').trim().length>1&&(f.phone||'').trim().length>=6&&/^\d{14}$/.test((f.siret||'').replace(/\s/g,''))&&(f.address||'').trim().length>1&&isAdult(f.birth);}
+  function draftIdDone(f){f=f||{};return (f.name||'').trim().length>1&&telStockeLu(f.phone).ok&&/^\d{14}$/.test((f.siret||'').replace(/\s/g,''))&&(f.address||'').trim().length>1&&isAdult(f.birth);}
   function draftInsDone(f){f=f||{};return !!f.insuranceDoc||!!f.insuranceNone;}
   function draftSvcDone(f){f=f||{};return !!(f.cats&&f.cats.length)&&(!needsGrille(f)||!!f.acceptsGrille||desiredNetOk(f))&&autrePrixOk(f)&&(!f.cats.includes('baby')||!!(f.diplomas&&f.diplomas.length));}
   function draftAccDone(f){f=f||{};return !!f.mandat&&!!f.cgu&&!!f.charte;}
@@ -14790,7 +14877,7 @@
     f=f||{};const m=[];
     if(step==='id'){
       if((f.name||'').trim().length<2)m.push('votre nom ou raison sociale');
-      if((f.phone||'').trim().length<6)m.push('votre téléphone');
+      if(!telStockeLu(f.phone).ok)m.push((f.phone||'').trim()?'un téléphone qui puisse exister':'votre téléphone');
       if(!/^\d{14}$/.test((f.siret||'').replace(/\s/g,'')))m.push('un SIRET à 14 chiffres');
       if((f.address||'').trim().length<2)m.push('votre adresse professionnelle');
       if(!isAdult(f.birth))m.push('votre date de naissance');
@@ -17951,7 +18038,7 @@
   document.addEventListener('submit',function(e){ const fm=e.target&&e.target.closest&&e.target.closest('[data-loginform]'); if(!fm)return; e.preventDefault(); attemptLogin(); });
   view.addEventListener('input',(e)=>{
     // Validation verte en direct sur les champs obligatoires (data-v).
-    if(e.target&&e.target.matches&&e.target.matches('input.txt[data-v]')){e.target.classList.toggle('vok',fieldValidV(e.target.getAttribute('data-v'),e.target.value));}
+    if(e.target&&e.target.matches&&e.target.matches('input.txt[data-v]')){e.target.classList.toggle('vok',champOk(e.target));}
     // Téléphone composé (indicatif + numéro) : recompose la valeur complète dans l'état.
     const pnum=e.target.closest('[data-phonenum]');if(pnum){readPhoneCombo(pnum.dataset.phonenum);if(S.proForm)refreshProSubmit();const cb0=document.querySelector('[data-act="conc-submit"]');if(cb0&&S.concSignup)cb0.disabled=!concSignupOk(S.concSignup);}
     const t=e.target.closest('[data-cfg="notes"]');if(t&&S.draft)S.draft.notes=t.value;
