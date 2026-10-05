@@ -108,7 +108,9 @@ const html = fs.readFileSync(path.join(RACINE, 'index.html'), 'utf8');
     return { tuile: tuiles.some((t) => /^Peinture/.test(t)) };
   });
   ok(abime.tuile, 'une clé inconnue ne range nulle part : le métier reste sur l’accueil, comme avant');
-  ok(/cat:catValide\(s\.cat\)\}/.test(html), 'et `applyCatalogDoc` rejuge la clé au retour du serveur, comme il le fait pour l’icône');
+  // L'assertion ne s'accroche plus à l'accolade fermante : la liste fermée des champs
+  // relus s'est allongée (le LIEU du métier, v805), ce qui est le fonctionnement voulu.
+  ok(/cat:catValide\(s\.cat\)/.test(html), 'et `applyCatalogDoc` rejuge la clé au retour du serveur, comme il le fait pour l’icône');
 
   ok(errs.length === 0, 'aucune erreur JS (' + errs.join(' | ') + ')');
   await b.close();

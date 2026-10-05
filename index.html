@@ -4301,7 +4301,43 @@
   // rien — mais qui donnaient à lire, à tort, que toute la famille Beauté en était.
   function canOnSite(svcId){return ['coach','natation','pilates','yoga','massage','coiffure','epilationdef'].indexOf(svcId)>=0;}
   // Métier UNIQUEMENT chez le prestataire (équipement fixe, ex. laser) : pas de choix du lieu.
-  function salonOnly(svcId){const s=findSvc(svcId);return !!(s&&s.salonOnly);}
+  /* ══ OÙ LA PRESTATION A LIEU, ET LE MOT QUI VA AVEC ═════════════════════════════
+     « Pour une sortie bateau il y a trop d'information inutile ou qui ne font pas du
+     tout sens. L'heure souhaitée est l'heure de départ souhaité. »
+
+     Tout l'écran de commande suppose que LE PRESTATAIRE SE DÉPLACE : on demande une
+     adresse, un point GPS OBLIGATOIRE (« le seul repère fiable pour qu'on vous trouve »),
+     le code du portail, le chat à la maison, la clé sous le pot. Devant une location de
+     catamaran, chacune de ces questions est à côté : on ne fait pas venir le bateau
+     devant la villa, et le GPS de la villa bloque une commande qu'il ne renseigne pas.
+
+     LA MACHINE EXISTAIT DÉJÀ — `salonOnly`, écrit pour l'épilation définitive, dont
+     l'équipement est fixe : il efface tout le bloc d'adresse et lève l'obligation de
+     GPS. Il lui manquait DEUX choses. Une PORTE : aucun écran ne permettait de le poser
+     sur un métier créé depuis la console. Et un MOT : « vous vous rendez chez le
+     prestataire » est juste pour un salon de coiffure, faux pour une sortie en mer.
+
+     TROIS LIEUX, LISTE FERMÉE, et le vocabulaire suit le lieu. « Sur place » et
+     « départ » effacent la même chose ; ils ne la racontent pas pareil. Le défaut reste
+     « le prestataire se déplace » : aucun métier du parc ne change.
+     ON NE DEVINE PAS le lieu d'après le nom du métier — « catamaran » dans un libellé
+     ne dit rien de sûr, et se tromper enlèverait l'adresse d'une vraie intervention. */
+  const LIEUX=[['domicile','Le prestataire se déplace','Il vient à l’adresse indiquée par le client.'],
+    ['surplace','Le client se rend chez le prestataire','Salon, studio, cabinet : pas d’adresse à saisir.'],
+    ['depart','Le client part avec le prestataire','Sortie en mer, excursion : pas d’adresse à saisir.']];
+  function lieuValide(v){return LIEUX.some(function(l){return l[0]===v;})?v:'';}
+  function lieuDuSvc(svcId){
+    const s=findSvc(svcId);if(!s)return 'domicile';
+    return lieuValide(s.lieu)||(s.salonOnly?'surplace':'domicile');
+  }
+  const LIEU_MOTS={
+    domicile:{heure:'Heure souhaitée'},
+    surplace:{heure:'Heure du rendez-vous',titre:'Lieu du rendez-vous',
+      texte:'Vous vous rendez <b>chez le prestataire</b>. Son adresse exacte s’affiche ici <b>dès qu’il accepte</b> votre demande.'},
+    depart:{heure:'Heure de départ souhaitée',titre:'Point de départ',
+      texte:'Vous partez <b>avec le prestataire</b>. Le point de départ s’affiche ici <b>dès qu’il accepte</b> votre demande.'}};
+  function motsDuLieu(svcId){return LIEU_MOTS[lieuDuSvc(svcId)]||LIEU_MOTS.domicile;}
+  function salonOnly(svcId){return lieuDuSvc(svcId)!=='domicile';}
   // Lieu retenu pour une commande : 'salon' (chez le prestataire) ou 'domicile' (défaut).
   function locModeOf(m){if(salonOnly(m&&m.svc))return 'salon';return (canOnSite(m&&m.svc)&&m&&m.locationMode==='salon')?'salon':'domicile';}
   // Compatibilité entre le mode d'un prestataire ('domicile' | 'salon' | 'both') et le lieu
@@ -4741,7 +4777,7 @@
     if(!base||base==='c_')base='c_service';
     let sid=base,n=2; while(findSvc(sid)){sid=base+n;n++;}
     rate=Math.max(5,Math.round(rate||40));
-    S.customServices=(S.customServices||[]).concat([{id:sid,nm:name,rate:rate,custom:true,ico:'',choixPro:!!choixPro,cat:catValide(cat)}]);
+    S.customServices=(S.customServices||[]).concat([{id:sid,nm:name,rate:rate,custom:true,ico:'',choixPro:!!choixPro,cat:catValide(cat),lieu:'domicile'}]);
     if(!S.adminPrices)S.adminPrices=ADMIN_PRICES(); S.adminPrices[sid]=rate;
     saveCatalog(); render(); toast('« '+name+' » ajouté au catalogue ✓');
     return sid; // l'appelant en a besoin pour rattacher le prestataire au métier créé
@@ -4774,7 +4810,7 @@
   function prixSaisi(v){const n=Math.round(parseFloat(String(v).replace(',','.'))||0);return Math.max(0,Math.min(99999,n));}
   function ecritDansCatalogue(){ try{ const a=document.activeElement;
     return !!(a&&a.matches&&a.matches('[data-optname],[data-actname],[data-actgrpname],[data-actpricev],[data-optpricev],[data-catname]')); }catch(_){return false;} }
-  function applyCatalogDoc(d){ if(!d)return; S.nomsMetiers=nomsValides(d.noms); appliquerNoms(); if(Array.isArray(d.services)){ S.customServices=d.services.map(function(s){return {id:s.id,nm:nomNet(s.nm),rate:s.rate,custom:true,ico:icoValide(s.ico),choixPro:!!s.choixPro,cat:catValide(s.cat)};}); } if(d.catalog&&typeof d.catalog==='object'){ S.adminCatalog=d.catalog; } S.catalogSeed=Number(d.catalogSeed)||0; if(d.options&&typeof d.options==='object'){ S.adminOptions=d.options; } if(ecritDansCatalogue())return; render(); applyLandLang(); }
+  function applyCatalogDoc(d){ if(!d)return; S.nomsMetiers=nomsValides(d.noms); appliquerNoms(); if(Array.isArray(d.services)){ S.customServices=d.services.map(function(s){return {id:s.id,nm:nomNet(s.nm),rate:s.rate,custom:true,ico:icoValide(s.ico),choixPro:!!s.choixPro,cat:catValide(s.cat),lieu:lieuValide(s.lieu)||'domicile'};}); } if(d.catalog&&typeof d.catalog==='object'){ S.adminCatalog=d.catalog; } S.catalogSeed=Number(d.catalogSeed)||0; if(d.options&&typeof d.options==='object'){ S.adminOptions=d.options; } if(ecritDansCatalogue())return; render(); applyLandLang(); }
   // Catalogue partagé écouté EN TEMPS RÉEL : toute modification admin (prix, prestations,
   // options, métiers) se propage à l'app de chacun sans rechargement. Une seule écoute.
   async function loadCatalog(){ try{ if(!FB||_catalogSub)return; _catalogSub=FB.f.onSnapshot(FB.f.doc(FB.db,'settings','catalog'),function(snap){ applyCatalogDoc(snap.exists()?(snap.data()||{}):{}); },function(e){ console.warn('catalog load',e); }); }catch(e){ console.warn('catalog sub',e); } }
@@ -6616,7 +6652,7 @@
     "🏠 À domicile":"🏠 At home",
     "🏪 Chez le prestataire":"🏪 At the provider’s",
     "Le prestataire se déplace chez vous.":"The provider comes to you.",
-    "Lieu du rendez-vous":"Meeting place",
+    "Lieu du rendez-vous":"Meeting place","Point de départ":"Departure point","Heure du rendez-vous":"Appointment time","Heure de départ souhaitée":"Preferred departure time","Vous partez":"You set off","avec le prestataire":"with the provider",". Le point de départ s’affiche ici":". The departure point is shown here","Le prestataire va vous communiquer le point de départ.":"The provider will give you the departure point.",
     "Vous vous rendez chez le prestataire":"You go to the provider",
     "Lieu d'intervention":"Where you work",
     "🏠 Je me déplace":"🏠 I travel",
@@ -8050,7 +8086,7 @@
     "🏠 À domicile":"🏠 Ao domicílio",
     "🏪 Chez le prestataire":"🏪 No prestador",
     "Le prestataire se déplace chez vous.":"O prestador desloca-se até si.",
-    "Lieu du rendez-vous":"Local do encontro",
+    "Lieu du rendez-vous":"Local do encontro","Point de départ":"Ponto de partida","Heure du rendez-vous":"Hora do encontro","Heure de départ souhaitée":"Hora de partida pretendida","Vous partez":"Você parte","avec le prestataire":"com o prestador",". Le point de départ s’affiche ici":". O ponto de partida aparece aqui","Le prestataire va vous communiquer le point de départ.":"O prestador vai indicar-lhe o ponto de partida.",
     "Vous vous rendez chez le prestataire":"Vai ter com o prestador",
     "Lieu d'intervention":"Local de trabalho",
     "🏠 Je me déplace":"🏠 Desloco-me",
@@ -10527,6 +10563,10 @@
             return `<button class="btn ghost sm" data-adm="catico:${s.id}:${p[0]}" title="${esc(p[1])}" aria-label="${esc(p[1])}" aria-pressed="${on?'true':'false'}" style="flex:none;width:40px;height:40px;padding:0;display:inline-flex;align-items:center;justify-content:center;${on?'border-color:var(--teal-deep);background:var(--teal-wash);color:var(--teal-deep)':''}">${I[p[0]]}</button>`;}).join('')}</div>
           <div class="mini" style="color:var(--muted);margin-top:11px">Catégorie d’accueil</div>
           <select class="txt" data-catin="${s.id}" style="width:100%;margin-top:5px;padding:11px 12px;font-size:14px">${catOptions(s.cat)}</select>
+          <div class="mini" style="color:var(--muted);margin-top:11px">Où la prestation a lieu</div>
+          <div class="stack" style="gap:7px;margin-top:5px">${LIEUX.map(function(L){const on=lieuDuSvc(s.id)===L[0];
+            return `<button class="addr-opt${on?' on':''}" data-adm="catlieu:${s.id}:${L[0]}" style="text-align:left"><b style="font-size:13px">${esc(L[1])}</b><div class="mini" style="margin-top:2px">${esc(L[2])}</div></button>`;}).join('')}</div>
+          <p class="mini" style="color:var(--muted);margin-top:6px;line-height:1.5">Hors « le prestataire se déplace », le client ne saisit <b>ni adresse ni point GPS</b>&nbsp;: c’est lui qui vient. Le lieu exact lui est communiqué à l’acceptation.</p>
           <button class="btn ghost sm" data-adm="delcat:${s.id}" style="margin-top:11px;width:auto;padding:8px 12px;color:var(--coral-deep)">${I.trash} Retirer ce métier</button>`}
           <div class="row between" style="align-items:center;gap:10px;margin-top:12px">
             <div style="flex:1;min-width:0"><span class="sub">Le client choisit son prestataire</span>
@@ -13042,7 +13082,7 @@
       ${m.status==='pending'?(m.preferredUid?`<div class="card" style="padding:16px;margin-top:12px"><div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="background:var(--teal-wash);color:var(--teal-deep)">${I.clock}</span><div><b style="font-size:14px">Demande réservée à ${esc((m.preferredName||'votre prestataire').split(' ')[0])}</b><p class="mini" style="margin-top:4px">Votre demande est adressée <b>uniquement à ${esc(m.preferredName||'votre prestataire')}</b>, pas aux autres artisans, puisque vous l'avez choisi. L'attente est normale&nbsp;: elle dure tant qu'il n'a pas encore répondu. Dès qu'il accepte ou décline, vous êtes prévenu.</p></div></div></div>`:`<div class="card" style="padding:16px;margin-top:12px;text-align:center">${searchRadar(true)}<p class="sub" style="margin:0">Vous saurez qui intervient dès l'acceptation.</p></div>`):((m.svc==='baby'&&p)?babyConfirmBlock(m):(p?`<div class="card provider-pop" style="padding:14px;margin-top:12px"><div class="row" style="gap:12px">${avatarFounder(m.providerPhoto,p.ini,'',p.founder)}<div style="flex:1"><b style="font-size:15px">${esc(p.nm)}</b><div class="mini">${I.pin} ${m.zone}${m.providerAgeBand?' · '+esc(m.providerAgeBand):''}</div></div><div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">${p.founder?`<span class="chip founder-chip">${I.star} Ambassadeur</span>`:''}<span class="chip good">${I.check} ${p.insured?'Vérifié · Assuré':'Vérifié'}</span></div></div>${boutonsContact({tel:(bothAccepted(m)&&m.providerPhone)?m.providerPhone:'',nom:p.nm,nMsg:(m.chat&&m.chat.length)||0,dot:unreadDot(m)})}</div>`:''))}
       ${waitEscalation(m)}
       ${(m.status==='pending'&&!m.preferredUid)?liveBoostBlock(m):''}
-      ${(p&&locModeOf(m)==='salon')?`<div class="card" style="padding:16px;margin-top:12px;border-left:4px solid var(--teal-deep)"><div class="row" style="gap:10px;align-items:flex-start"><span class="benic" style="background:var(--teal-wash);color:var(--teal-deep)">${I.pin}</span><div style="flex:1"><b style="font-size:14px">Vous vous rendez chez le prestataire</b>${m.providerSalonAddress?`<p class="sub" style="margin-top:4px;color:var(--ink)">${esc(m.providerSalonAddress)}${m.providerSalonZone?' · '+esc(m.providerSalonZone):''}</p>`:`<p class="mini" style="margin-top:4px;color:var(--muted)">Le prestataire va vous communiquer son adresse.</p>`}</div></div>${m.providerSalonGeo?miniMap(m.providerSalonGeo,'view','salon'):''}${m.providerSalonGeo?`<a class="btn ghost sm" href="${navUrl(m.providerSalonGeo.lat,m.providerSalonGeo.lng)}" target="_blank" rel="noopener" style="margin-top:10px;text-decoration:none;justify-content:center;gap:8px">${I.pin} Ouvrir l'itinéraire (${navAppName()})</a>`:''}</div>`:''}
+      ${(p&&locModeOf(m)==='salon')?`<div class="card" style="padding:16px;margin-top:12px;border-left:4px solid var(--teal-deep)"><div class="row" style="gap:10px;align-items:flex-start"><span class="benic" style="background:var(--teal-wash);color:var(--teal-deep)">${I.pin}</span><div style="flex:1"><b style="font-size:14px">${lieuDuSvc(m.svc)==='depart'?'Point de départ':'Vous vous rendez chez le prestataire'}</b>${m.providerSalonAddress?`<p class="sub" style="margin-top:4px;color:var(--ink)">${esc(m.providerSalonAddress)}${m.providerSalonZone?' · '+esc(m.providerSalonZone):''}</p>`:`<p class="mini" style="margin-top:4px;color:var(--muted)">${lieuDuSvc(m.svc)==='depart'?'Le prestataire va vous communiquer le point de départ.':'Le prestataire va vous communiquer son adresse.'}</p>`}</div></div>${m.providerSalonGeo?miniMap(m.providerSalonGeo,'view','salon'):''}${m.providerSalonGeo?`<a class="btn ghost sm" href="${navUrl(m.providerSalonGeo.lat,m.providerSalonGeo.lng)}" target="_blank" rel="noopener" style="margin-top:10px;text-decoration:none;justify-content:center;gap:8px">${I.pin} Ouvrir l'itinéraire (${navAppName()})</a>`:''}</div>`:''}
       ${(m.svc==='colis'&&p)?colisDossier(m,false):''}
       <div class="card" style="padding:16px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Suivi</div><div class="timeline" style="margin-top:12px">${tls}</div></div>
       ${/* On joint son prestataire depuis SA carte, en haut : c'est là qu'on le regarde.
@@ -17081,6 +17121,10 @@
       // et jamais un dessin : le catalogue est relu par tous en `innerHTML`.
       else if(act==='catico'){const sv=(S.customServices||[]).find(function(x){return x.id===id;});
         if(sv){sv.ico=icoValide(parts[2]);saveCatalog();}}
+      // Le lieu d'un métier créé depuis la console. Il décide de TOUT le bloc d'adresse
+      // côté client : on redessine, sinon le choix ne se verrait qu'au prochain rendu.
+      else if(act==='catlieu'){const sv=(S.customServices||[]).find(function(x){return x.id===id;});
+        if(sv){const l=lieuValide(parts[2]);if(l&&sv.lieu!==l){sv.lieu=l;saveCatalog();render();}}}
       // Ne bascule QUE les métiers créés depuis la console : ceux d'origine portent la
       // propriété dans le code, et un réglage qui ne se sauve pas se défait au rendu
       // suivant sans rien dire.
@@ -18053,11 +18097,11 @@
         ${minActPrice(m.svc)<TRAVEL_MIN?`<p class="mini" style="margin-top:8px">${I.pin} Déplacement <b>offert dès ${TRAVEL_MIN} €</b> de prestation, sinon forfait de ${TRAVEL_FEE} €.</p>`:''}</div>
       ${optionsPickerHtml(m)}
 
-      ${salonOnly(m.svc)?`<div class="field"><label>Lieu de la prestation</label><div class="banner teal" style="margin-top:2px">${I.shop}<span><b>Chez le prestataire</b>, son adresse vous est communiquée dès qu’il accepte.</span></div></div>`:canOnSite(m.svc)?`<div class="field"><label>Lieu de la prestation</label><div class="segs"><button class="seg ${locModeOf(m)!=='salon'?'on':''}" data-loc="domicile">${I.home} À domicile</button><button class="seg ${locModeOf(m)==='salon'?'on':''}" data-loc="salon">${I.shop} Chez le prestataire</button></div><p class="mini" style="margin-top:6px">${locModeOf(m)==='salon'?I.pin+' Son adresse dès qu’il accepte.':I.home+' Le pro se déplace chez vous.'}</p></div>`:''}
+      ${(canOnSite(m.svc)&&!salonOnly(m.svc))?`<div class="field"><label>Lieu de la prestation</label><div class="segs"><button class="seg ${locModeOf(m)!=='salon'?'on':''}" data-loc="domicile">${I.home} À domicile</button><button class="seg ${locModeOf(m)==='salon'?'on':''}" data-loc="salon">${I.shop} Chez le prestataire</button></div><p class="mini" style="margin-top:6px">${locModeOf(m)==='salon'?I.pin+' Son adresse dès qu’il accepte.':I.home+' Le pro se déplace chez vous.'}</p></div>`:''}
       ${needsPeople(m.svc)?`<div class="field"><label>Pour combien de personnes&nbsp;?</label><div class="stepper"><button data-cfg="people-minus">−</button><span class="val">${I.users} ${peopleLbl(peopleOf(m))}</span><button data-cfg="people-plus">+</button></div><p class="mini" style="margin-top:6px">Le prix ci-dessous est multiplié par le nombre de personnes, chacune sa prestation.</p></div>`:''}
 
       <div class="field"><label>Quand&nbsp;?</label>${daySelect}</div>
-      <div class="field"><label>Heure souhaitée</label>${dayFlex?`<p class="mini" style="margin:2px 0 0;color:var(--muted)">${I.clock} ${m.slotFlex==='week'?'Vous laissez toute la semaine, le pro vous proposera un jour et une heure.':'Vous laissez toute la journée, le pro choisit son heure de passage.'}</p>`:`${hourSelect}${slotNote}`}</div>
+      <div class="field"><label>${motsDuLieu(m.svc).heure}</label>${dayFlex?`<p class="mini" style="margin:2px 0 0;color:var(--muted)">${I.clock} ${m.slotFlex==='week'?'Vous laissez toute la semaine, le pro vous proposera un jour et une heure.':'Vous laissez toute la journée, le pro choisit son heure de passage.'}</p>`:`${hourSelect}${slotNote}`}</div>
       <div class="field"><label>Souplesse sur le créneau</label><div class="segs"><button class="seg ${(!m.slotFlex)?'on':''}" data-slotflex="0">Précise</button><button class="seg ${m.slotFlex===60?'on':''}" data-slotflex="60">± 1 h</button><button class="seg ${m.slotFlex===120?'on':''}" data-slotflex="120">± 2 h</button><button class="seg ${m.slotFlex==='day'?'on':''}" data-slotflex="day">Journée</button><button class="seg ${m.slotFlex==='week'?'on':''}" data-slotflex="week">Semaine</button></div>${m.slotFlex?`<p class="mini" style="margin-top:6px">${I.clock} Le pro confirmera un <b>créneau précis ${flexTxtClient(m)}</b> en acceptant.</p>`:''}</div>
 
       ${prefArtisanSelect(m)}
@@ -18067,7 +18111,7 @@
       <div class="field"><label>Photos (facultatif)</label>
         <div class="thumbs">${(m.photos||[]).map((u,i)=>`<div class="thumb"><img src="${u}" alt="Photo"><button data-act="rmphoto:${i}" aria-label="Retirer la photo">×</button></div>`).join('')}<label class="thumb add"><span>${I.camera}</span><span>Photo</span><input type="file" accept="image/*" capture="environment" data-photoinput hidden></label><label class="thumb add"><span>${I.image}</span><span>Galerie</span><input type="file" accept="image/*" multiple data-photoinput hidden></label></div></div>
 
-      ${locModeOf(m)==='salon'?`<div class="field"><label>Lieu du rendez-vous</label><div class="banner teal" style="margin-top:2px">${I.pin}<span>Vous vous rendez <b>chez le prestataire</b>. Son adresse exacte s’affiche ici <b>dès qu’il accepte</b> votre demande.</span></div></div>`:`<div class="field"><label>Adresse de la prestation</label>
+      ${locModeOf(m)==='salon'?`<div class="field"><label>${motsDuLieu(m.svc).titre||'Lieu du rendez-vous'}</label><div class="banner teal" style="margin-top:2px">${I.pin}<span>${motsDuLieu(m.svc).texte||''}</span></div></div>`:`<div class="field"><label>Adresse de la prestation</label>
         ${S.addresses.length?`<div class="stack" style="gap:8px;margin-top:2px">
           ${S.addresses.map(a=>`<button class="addr-opt${m.addressId===a.id?' on':''}" data-addr="${a.id}"><div class="row between"><b>${esc(a.label)}</b>${a.geo?`<span class="chip good">${I.pin} GPS</span>`:`<span class="chip coral">Sans repère</span>`}</div><div class="mini" style="margin-top:2px">${esc(a.address)} · ${a.zone}</div></button>`).join('')}
           <button class="addr-opt${m.addressId==='__manual'?' on':''}" data-addr="__manual"><b>＋ Autre adresse (ponctuelle)</b></button>
@@ -18127,12 +18171,12 @@
     paintView(`<div class="pad"><div class="cfghead"><button class="reset" data-cfg="back">← Retour</button><span class="eyebrow" style="flex:1;justify-content:center">${m.svcName}</span><button class="iconbtn" data-act="go-home" aria-label="Accueil" title="Accueil"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg></button></div><div class="h-hello">Détails de la mission</div>
       ${m.svc==='animaux'?`<div class="field"><label>Mode de garde</label><div class="segs"><button class="seg ${isDayU(m)?'on':''}" data-cfg="unit-j">${I.cal} À la journée</button><button class="seg ${!isDayU(m)?'on':''}" data-cfg="unit-h">${I.clock} À l'heure</button></div><p class="mini" style="margin-top:6px">${I.cal} Plusieurs jours&nbsp;? Choisissez « à la journée ».</p></div>`:''}
       <div class="field"><label>${isDayU(m)?'Date de début':'Quand&nbsp;?'}</label>${daySelect}</div>
-      <div class="field"><label>${isDayU(m)?'Heure de dépôt':'Heure souhaitée'}</label>${dayFlex?`<p class="mini" style="margin:2px 0 0;color:var(--muted)">${I.clock} ${m.slotFlex==='week'?'Le prestataire vous proposera un créneau.':'Le prestataire choisit l’heure.'}</p>`:`${hourSelect}${slotNote}`}</div>
+      <div class="field"><label>${isDayU(m)?'Heure de dépôt':motsDuLieu(m.svc).heure}</label>${dayFlex?`<p class="mini" style="margin:2px 0 0;color:var(--muted)">${I.clock} ${m.slotFlex==='week'?'Le prestataire vous proposera un créneau.':'Le prestataire choisit l’heure.'}</p>`:`${hourSelect}${slotNote}`}</div>
       ${!isDayU(m)?`<div class="field"><label>Souplesse sur le créneau</label><div class="segs"><button class="seg ${(!m.slotFlex)?'on':''}" data-slotflex="0">Précise</button><button class="seg ${m.slotFlex===60?'on':''}" data-slotflex="60">± 1 h</button><button class="seg ${m.slotFlex===120?'on':''}" data-slotflex="120">± 2 h</button><button class="seg ${m.slotFlex==='day'?'on':''}" data-slotflex="day">Journée</button><button class="seg ${m.slotFlex==='week'?'on':''}" data-slotflex="week">Semaine</button></div>${m.slotFlex?`<p class="mini" style="margin-top:6px">${I.clock} Créneau précis confirmé à l’acceptation.</p>`:''}</div>`:''}
       ${prefArtisanSelect(m)}
       ${(m.svc==='baby'&&!m.preferredUid)?`<p class="mini" style="margin-top:6px">${I.shield} Profil complet + <b>appel</b> avant de confirmer.</p>`:''}
       <div class="field"><label>Tarif ${isDayU(m)?'journalier':'horaire'}, prix fixe Ti-Services</label><div class="pricebox"><b class="money" style="font-size:22px;font-family:var(--f-disp)">${fixedRate(m)} ${rateUnit(m)}</b><span class="chip good">${I.check} Prix fixe</span></div></div>
-      ${salonOnly(m.svc)?`<div class="field"><label>Lieu de la prestation</label><div class="banner teal" style="margin-top:2px">${I.shop}<span><b>Chez le prestataire</b>, son adresse vous est communiquée dès qu’il accepte.</span></div></div>`:canOnSite(m.svc)?`<div class="field"><label>Lieu de la prestation</label><div class="segs"><button class="seg ${locModeOf(m)!=='salon'?'on':''}" data-loc="domicile">${I.home} À domicile</button><button class="seg ${locModeOf(m)==='salon'?'on':''}" data-loc="salon">${I.shop} Chez le prestataire</button></div><p class="mini" style="margin-top:6px">${locModeOf(m)==='salon'?I.pin+' Son adresse dès qu’il accepte.':I.home+' Le pro se déplace chez vous.'}</p></div>`:''}
+      ${(canOnSite(m.svc)&&!salonOnly(m.svc))?`<div class="field"><label>Lieu de la prestation</label><div class="segs"><button class="seg ${locModeOf(m)!=='salon'?'on':''}" data-loc="domicile">${I.home} À domicile</button><button class="seg ${locModeOf(m)==='salon'?'on':''}" data-loc="salon">${I.shop} Chez le prestataire</button></div><p class="mini" style="margin-top:6px">${locModeOf(m)==='salon'?I.pin+' Son adresse dès qu’il accepte.':I.home+' Le pro se déplace chez vous.'}</p></div>`:''}
       ${needsPeople(m.svc)?`<div class="field"><label>Nombre de participants</label><div class="stepper"><button data-cfg="people-minus">−</button><span class="val">${I.users} ${peopleLbl(peopleOf(m))}</span><button data-cfg="people-plus">+</button></div><p class="mini" style="margin-top:6px">${I.users} Prix × nombre de personnes.</p></div>`:''}
       <div class="field"><label>${isDayU(m)?'Nombre de jours':'Durée estimée'}</label><div class="stepper"><button data-cfg="minus">−</button><span class="val">${durTxt(m)}</span><button data-cfg="plus">+</button></div>${isDayU(m)?`<p class="mini" style="margin-top:6px">${I.cal} Du ${endDateTxt(m)} · ${durTxt(m)} de garde</p>`:''}</div>
       ${(function(){const showMore=S.cfgMore||!!(m.notes&&m.notes.trim())||!!(m.photos&&m.photos.length)||optSubOf(m)>0;
@@ -18142,7 +18186,7 @@
       <div class="field"><label>Photos <span style="font-weight:500;color:var(--muted)">(facultatif)</span></label>
         <div class="thumbs">${(m.photos||[]).map((u,i)=>`<div class="thumb"><img src="${u}" alt="Photo de la prestation"><button data-act="rmphoto:${i}" aria-label="Retirer la photo">×</button></div>`).join('')}<label class="thumb add"><span>${I.camera}</span><span>Photo</span><input type="file" accept="image/*" capture="environment" data-photoinput hidden></label><label class="thumb add"><span>${I.image}</span><span>Galerie</span><input type="file" accept="image/*" multiple data-photoinput hidden></label></div>
         </div>`;})()}
-      ${locModeOf(m)==='salon'?`<div class="field"><label>Lieu du rendez-vous</label><div class="banner teal" style="margin-top:2px">${I.pin}<span>Vous vous rendez <b>chez le prestataire</b>. Son adresse exacte s’affiche ici <b>dès qu’il accepte</b> votre demande.</span></div></div>`:`<div class="field"><label>Adresse de la prestation</label>
+      ${locModeOf(m)==='salon'?`<div class="field"><label>${motsDuLieu(m.svc).titre||'Lieu du rendez-vous'}</label><div class="banner teal" style="margin-top:2px">${I.pin}<span>${motsDuLieu(m.svc).texte||''}</span></div></div>`:`<div class="field"><label>Adresse de la prestation</label>
         ${S.addresses.length?`<div class="stack" style="gap:8px;margin-top:2px">
           ${S.addresses.map(a=>`<button class="addr-opt${m.addressId===a.id?' on':''}" data-addr="${a.id}"><div class="row between"><b>${esc(a.label)}</b>${a.geo?`<span class="chip good">${I.pin} GPS</span>`:`<span class="chip coral">Sans repère</span>`}</div><div class="mini" style="margin-top:2px">${esc(a.address)} · ${a.zone}</div></button>`).join('')}
           <button class="addr-opt${m.addressId==='__manual'?' on':''}" data-addr="__manual"><b>＋ Autre adresse (ponctuelle)</b><div class="mini" style="margin-top:2px">Un lieu occasionnel, non enregistré</div></button>
