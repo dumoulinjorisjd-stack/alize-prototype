@@ -3577,7 +3577,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='818';
+  const VERSION_APP='819';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -4354,7 +4354,31 @@
   function motsDuLieu(svcId){return LIEU_MOTS[lieuDuSvc(svcId)]||LIEU_MOTS.domicile;}
   function salonOnly(svcId){return lieuDuSvc(svcId)!=='domicile';}
   // Lieu retenu pour une commande : 'salon' (chez le prestataire) ou 'domicile' (défaut).
-  function locModeOf(m){if(salonOnly(m&&m.svc))return 'salon';return (canOnSite(m&&m.svc)&&m&&m.locationMode==='salon')?'salon':'domicile';}
+  /* « QUAND JE CHOISIS UN PRESTATAIRE QUI EXERCE UNIQUEMENT DANS SON LOCAL, ÇA ME DEMANDE
+     ENCORE DE RENTRER MON ADRESSE. » Vrai, et ce n'était pas qu'un champ en trop. Le lieu
+     ne dépendait que du bouton « Lieu de la prestation » ; la personne CHOISIE n'entrait
+     nulle part dans le calcul. Le client remplissait donc son adresse, son secteur et son
+     point GPS pour un rendez-vous qui a lieu ailleurs — et la demande partait en
+     « à domicile » chez quelqu'un qui ne se déplace jamais. Mesuré côté serveur : la
+     diffusion filtre sur le lieu AVANT de restreindre au prestataire demandé, donc la
+     demande n'atteignait PERSONNE, sans un mot. Le client attend une réponse qui ne peut
+     pas venir.
+     LA PERSONNE CHOISIE DÉCIDE DE CE QUI EST POSSIBLE. On ne lui demande plus de choisir
+     un lieu qu'elle n'a pas : il n'y a plus rien à choisir, et on le dit. */
+  function siteDuChoisi(m){
+    const uid=m&&m.preferredUid; if(!uid)return '';
+    const dir=proDirFor(m&&m.svc); if(!dir)return '';
+    const p=dir.find(function(x){return x.uid===uid;}); if(!p)return '';
+    const sm=String(p.siteMode||'');
+    return (sm==='salon'||sm==='domicile')?sm:'';
+  }
+  function locModeOf(m){
+    if(salonOnly(m&&m.svc))return 'salon';
+    if(!canOnSite(m&&m.svc))return 'domicile';
+    const impose=siteDuChoisi(m);
+    if(impose)return impose;
+    return (m&&m.locationMode==='salon')?'salon':'domicile';
+  }
   // Compatibilité entre le mode d'un prestataire ('domicile' | 'salon' | 'both') et le lieu
   // demandé : un prestataire « domicile seul » ne voit pas les demandes « salon », et inverse.
   function siteMatches(siteMode,locMode){var s=siteMode||'both';if(s==='both')return true;return s===(locMode||'domicile');}
@@ -13729,7 +13753,14 @@
     const dir=proDirFor(m.svc);
     const seen={},list=[];
     past.forEach(function(a){seen[a.uid]=1;list.push({uid:a.uid,name:a.nm,cal:false,photo:null,past:true});});
-    (dir||[]).forEach(function(p){
+    /* UN PRESTATAIRE QUI N'EXERCE QUE DANS SON LOCAL ET N'A PAS D'ADRESSE NE PEUT SERVIR
+       PERSONNE. Le proposer est un cul-de-sac : le client le choisit, l'écran lui promet
+       « son adresse dès qu'il accepte », et il n'y en a pas. On ne le retire pas de
+       l'application — sa fiche porte la pastille qui le lui dit, et la console permet de
+       la saisir — on le retire de la LISTE où on le choisirait pour rien. */
+    (dir||[]).filter(function(p){
+      return !(String(p.siteMode||'')==='salon'&&!p.salonPret);
+    }).forEach(function(p){
       if(seen[p.uid]){const e=list.find(function(x){return x.uid===p.uid;});e.cal=p.cal;e.photo=p.photo;e.founder=p.founder;e.assure=p.assure;return;}
       list.push(p);
     });
@@ -18759,7 +18790,7 @@
         ${minActPrice(m.svc)<TRAVEL_MIN?`<p class="mini" style="margin-top:8px">${I.pin} Déplacement <b>offert dès ${TRAVEL_MIN} €</b> de prestation, sinon forfait de ${TRAVEL_FEE} €.</p>`:''}</div>
       ${optionsPickerHtml(m)}
 
-      ${(canOnSite(m.svc)&&!salonOnly(m.svc)&&salonPossible(m.svc))?`<div class="field"><label>Lieu de la prestation</label><div class="segs"><button class="seg ${locModeOf(m)!=='salon'?'on':''}" data-loc="domicile">${I.home} À domicile</button><button class="seg ${locModeOf(m)==='salon'?'on':''}" data-loc="salon">${I.shop} Chez le prestataire</button></div><p class="mini" style="margin-top:6px">${locModeOf(m)==='salon'?I.pin+' Son adresse dès qu’il accepte.':I.home+' Le pro se déplace chez vous.'}</p></div>`:''}
+      ${(canOnSite(m.svc)&&!salonOnly(m.svc)&&salonPossible(m.svc)&&!siteDuChoisi(m))?`<div class="field"><label>Lieu de la prestation</label><div class="segs"><button class="seg ${locModeOf(m)!=='salon'?'on':''}" data-loc="domicile">${I.home} À domicile</button><button class="seg ${locModeOf(m)==='salon'?'on':''}" data-loc="salon">${I.shop} Chez le prestataire</button></div><p class="mini" style="margin-top:6px">${locModeOf(m)==='salon'?I.pin+' Son adresse dès qu’il accepte.':I.home+' Le pro se déplace chez vous.'}</p></div>`:''}
       ${needsPeople(m.svc)?`<div class="field"><label>Pour combien de personnes&nbsp;?</label><div class="stepper"><button data-cfg="people-minus">−</button><span class="val">${I.users} ${peopleLbl(peopleOf(m))}</span><button data-cfg="people-plus">+</button></div><p class="mini" style="margin-top:6px">Le prix ci-dessous est multiplié par le nombre de personnes, chacune sa prestation.</p></div>`:''}
       ${demandeEnfants(m.svc)?`<div class="field"><label>Combien d'enfants&nbsp;?</label><div class="stepper"><button data-cfg="kids-minus">−</button><span class="val">${I.users} ${enfantsLbl(enfantsDe(m))}</span><button data-cfg="kids-plus">+</button></div><p class="mini" style="margin-top:6px">${I.check} Le tarif horaire ne change pas&nbsp;: c'est pour que le prestataire sache ce qui l'attend.</p></div>`:''}
 
@@ -18863,7 +18894,7 @@
       ${prefArtisanSelect(m)}
       ${(m.svc==='baby'&&!m.preferredUid)?`<p class="mini" style="margin-top:6px">${I.shield} Profil complet + <b>appel</b> avant de confirmer.</p>`:''}
       <div class="field"><label>Tarif ${isDayU(m)?'journalier':'horaire'}, prix fixe Ti-Services</label><div class="pricebox"><b class="money" style="font-size:22px;font-family:var(--f-disp)">${fixedRate(m)} ${rateUnit(m)}</b><span class="chip good">${I.check} Prix fixe</span></div></div>
-      ${(canOnSite(m.svc)&&!salonOnly(m.svc)&&salonPossible(m.svc))?`<div class="field"><label>Lieu de la prestation</label><div class="segs"><button class="seg ${locModeOf(m)!=='salon'?'on':''}" data-loc="domicile">${I.home} À domicile</button><button class="seg ${locModeOf(m)==='salon'?'on':''}" data-loc="salon">${I.shop} Chez le prestataire</button></div><p class="mini" style="margin-top:6px">${locModeOf(m)==='salon'?I.pin+' Son adresse dès qu’il accepte.':I.home+' Le pro se déplace chez vous.'}</p></div>`:''}
+      ${(canOnSite(m.svc)&&!salonOnly(m.svc)&&salonPossible(m.svc)&&!siteDuChoisi(m))?`<div class="field"><label>Lieu de la prestation</label><div class="segs"><button class="seg ${locModeOf(m)!=='salon'?'on':''}" data-loc="domicile">${I.home} À domicile</button><button class="seg ${locModeOf(m)==='salon'?'on':''}" data-loc="salon">${I.shop} Chez le prestataire</button></div><p class="mini" style="margin-top:6px">${locModeOf(m)==='salon'?I.pin+' Son adresse dès qu’il accepte.':I.home+' Le pro se déplace chez vous.'}</p></div>`:''}
       ${needsPeople(m.svc)?`<div class="field"><label>Nombre de participants</label><div class="stepper"><button data-cfg="people-minus">−</button><span class="val">${I.users} ${peopleLbl(peopleOf(m))}</span><button data-cfg="people-plus">+</button></div><p class="mini" style="margin-top:6px">${I.users} Prix × nombre de personnes.</p></div>`:''}
       ${demandeEnfants(m.svc)?`<div class="field"><label>Combien d'enfants&nbsp;?</label><div class="stepper"><button data-cfg="kids-minus">−</button><span class="val">${I.users} ${enfantsLbl(enfantsDe(m))}</span><button data-cfg="kids-plus">+</button></div><p class="mini" style="margin-top:6px">${I.check} Le tarif horaire ne change pas&nbsp;: c'est pour que le prestataire sache ce qui l'attend.</p></div>`:''}
       <div class="field"><label>${isDayU(m)?'Nombre de jours':'Durée estimée'}</label><div class="stepper"><button data-cfg="minus">−</button><span class="val">${durTxt(m)}</span><button data-cfg="plus">+</button></div>${isDayU(m)?`<p class="mini" style="margin-top:6px">${I.cal} Du ${endDateTxt(m)} · ${durTxt(m)} de garde</p>`:''}</div>

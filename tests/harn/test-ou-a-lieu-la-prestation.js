@@ -243,6 +243,60 @@ const srv = fs.readFileSync(path.join(RACINE, 'functions/index.js'), 'utf8');
   ok(/siteMode:\(f\.siteMode\|\|''\),salonAddress:\(f\.salonAddress\|\|''\)\.trim\(\)/.test(src),
     'les deux partent avec la fiche à la création : la question ne sert à rien si la réponse se perd');
 
+  /* K — « QUAND JE CHOISIS UN PRESTATAIRE QUI EXERCE UNIQUEMENT DANS SON LOCAL, ÇA ME
+     DEMANDE ENCORE DE RENTRER MON ADRESSE. » Vérifié : vrai, et pas qu'un champ en trop.
+     Le lieu ne dépendait que du bouton « Lieu de la prestation » ; la personne CHOISIE
+     n'entrait nulle part dans le calcul. La demande partait donc en « à domicile » chez
+     quelqu'un qui ne se déplace jamais — et côté serveur la diffusion filtre sur le LIEU
+     avant de restreindre au prestataire demandé, donc elle n'atteignait PERSONNE, sans un
+     mot. Le client attendait une réponse qui ne pouvait pas venir. */
+  console.log('K — la personne choisie décide du lieu');
+  const DIR = [{ uid: 'local', name: 'Maya', siteMode: 'salon', salonPret: true, assure: true },
+    { uid: 'mobile', name: 'Jo', siteMode: 'domicile', salonPret: false, assure: true },
+    { uid: 'deux', name: 'Ana', siteMode: 'both', salonPret: true, assure: true },
+    { uid: 'sansAdr', name: 'Zoé', siteMode: 'salon', salonPret: false, assure: true }];
+  const avecChoix = (uid) => p.evaluate(({ DIR, uid }) => {
+    const S = window.__S;
+    // Les sections précédentes ont promené l'état : on REPOSE la session, sinon
+    // `proDirFor` bascule sur l'annuaire de DÉMONSTRATION et ignore le nôtre.
+    window.__setFB({ auth: { currentUser: { uid: 'u-test' } }, db: {},
+      f: { doc: () => ({}), setDoc: () => Promise.resolve() },
+      fn: { httpsCallable: () => () => new Promise(() => {}) }, functions: {} });
+    S.lang = 'fr'; S.onboarded = true; S.persona = 'client'; S.clientNav = 'home';
+    S.guest = false; S.demoMode = false; S.proStatus = ''; S.admin = null;
+    S.account = { name: 'C', email: 'c@e.fr', zone: 'Gustavia' };
+    S.mission = null; S.payStep = false; S.addresses = []; S._proDir = { massage: { list: DIR } };
+    S.draft = window.__newMission(window.__svc.trouve('massage'));
+    if (uid) S.draft.preferredUid = uid;
+    S._cfgVu = null; window.__cfg.render();
+    const v = document.getElementById('view'); const t = v.textContent || '';
+    return { adresse: /Adresse de la prestation/.test(t), gps: /Point GPS/.test(t),
+      rdv: /Lieu du rendez-vous/.test(t), choix: v.querySelectorAll('[data-loc]').length,
+      liste: t };
+  }, { DIR, uid });
+
+  const local = await avecChoix('local');
+  ok(!local.adresse && !local.gps,
+    'un prestataire qui n’exerce QUE dans son local : plus d’adresse ni de point GPS à saisir');
+  ok(local.rdv, 'l’écran parle du « Lieu du rendez-vous »');
+  ok(local.choix === 0, 'et le choix du lieu disparaît : il n’y a plus rien à choisir');
+
+  const mobile = await avecChoix('mobile');
+  ok(mobile.adresse && mobile.gps && mobile.choix === 0,
+    'un prestataire qui ne fait QUE se déplacer : l’adresse est demandée, sans choix à faire');
+
+  const deux = await avecChoix('deux');
+  ok(deux.choix === 2, 'et celui qui fait les deux laisse le choix au client');
+
+  const aucun = await avecChoix(null);
+  ok(aucun.choix === 2 && aucun.adresse,
+    'sans prestataire choisi, rien ne change : le client décide comme avant');
+
+  /* UN PRESTATAIRE « LOCAL SEUL » SANS ADRESSE EST UN CUL-DE-SAC : le client le choisit,
+     l'écran lui promet « son adresse dès qu'il accepte », et il n'y en a pas. */
+  ok(aucun.liste.indexOf('Zoé') < 0 && aucun.liste.indexOf('Maya') >= 0,
+    'il ne figure pas dans la liste où on le choisirait pour rien, les autres si');
+
   ok(errs.length === 0, 'aucune erreur de page' + (errs.length ? ' : ' + errs[0] : ''));
   await b.close();
   console.log(f ? '\n' + f + ' ÉCHEC(S)' : '\nTout est vert');
