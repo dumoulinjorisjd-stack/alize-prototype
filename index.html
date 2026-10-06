@@ -3577,7 +3577,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='820';
+  const VERSION_APP='821';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -17642,8 +17642,13 @@
       else if(act==='artsite'){const a=(S.adminArtisans||[]).find(function(x){return x.id===id;}),md=parts[2];
         if(a&&['domicile','salon','both'].indexOf(md)>=0){
           a.siteMode=md;
-          if(FB&&a.real&&a.uid){try{FB.f.updateDoc(FB.f.doc(FB.db,'artisans',a.uid),{siteMode:md});}catch(_){}}
-          render();toast('Lieu d’exercice enregistré');}}
+          if(FB&&a.real&&a.uid){
+            try{FB.f.updateDoc(FB.f.doc(FB.db,'artisans',a.uid),{siteMode:md})
+              .then(function(){toast('Lieu d’exercice enregistré');})
+              .catch(function(err){toast('⚠︎ Non enregistré : '+fbErrTxt(err));});}
+            catch(err){toast('⚠︎ Non enregistré : '+fbErrTxt(err));}
+          } else toast('Lieu d’exercice enregistré');
+          render();}}
       else if(act==='artcat'){const a=(S.adminArtisans||[]).find(function(x){return x.id===id;}),sv=parts[2];
         if(a&&sv){const on=(a.cats||[]).indexOf(sv)<0;adminSetCat(a,sv,on);
           toast(on?('Rattaché à « '+svcNm(sv)+' »'):('Retiré de « '+svcNm(sv)+' »'));}}
@@ -19071,8 +19076,18 @@
     if(sal){const a=(S.adminArtisans||[]).find(function(x){return x.id===sal.dataset.artsalon;});
       if(a){const v=String(sal.value||'').trim().slice(0,160);
         if(v!==String(a.salonAddress||'')){a.salonAddress=v;
-          if(FB&&a.real&&a.uid){try{FB.f.updateDoc(FB.f.doc(FB.db,'artisans',a.uid),{salonAddress:v});}catch(_){}}
-          toast(v?'Adresse du local enregistrée':'Adresse du local effacée');render();}}
+          /* ON N'ANNONCE PAS UN ENREGISTREMENT QU'ON N'A PAS OBTENU. Le message partait
+             avant l'écriture, et l'échec était avalé par un `catch` vide : la console
+             disait « enregistrée » quoi qu'il arrive. C'est exactement ce qui rend une
+             adresse saisie indiscernable d'une adresse perdue. */
+          const dit=v?'Adresse du local enregistrée':'Adresse du local effacée';
+          if(FB&&a.real&&a.uid){
+            try{FB.f.updateDoc(FB.f.doc(FB.db,'artisans',a.uid),{salonAddress:v})
+              .then(function(){toast(dit);})
+              .catch(function(err){toast('⚠︎ Non enregistré : '+fbErrTxt(err));});}
+            catch(err){toast('⚠︎ Non enregistré : '+fbErrTxt(err));}
+          } else toast(dit);
+          render();}}
       return;}
     if(t&&t.matches&&t.matches('[data-optname],[data-actname],[data-actgrpname],[data-acthours],[data-actpricev],[data-optpricev]')){
       // Sortie d'un champ de prix : un champ laissé vide ou à 0 vaut 1 € (une prestation

@@ -230,6 +230,30 @@ const srv = fs.readFileSync(path.join(RACINE, 'functions/index.js'), 'utf8');
   ok(plombier === 0,
     'la question ne se pose pas pour un plombier : il n’exerce aucun métier des deux façons');
 
+  /* « MAIS POURTANT J'AI RENTRÉ SON ADRESSE DANS LA CONSOLE. » Elle avait raison de le
+     dire, et la console avait tort de la rassurer : le message « enregistrée » partait
+     AVANT l'écriture, et l'échec était avalé par un `catch` vide. Une adresse refusée se
+     lisait donc exactement comme une adresse saisie. On annonce ce qu'on a obtenu. */
+  const ecrit = (echoue) => p.evaluate(({ echoue }) => {
+    window.__setFB({ auth: { currentUser: { uid: 'adm' } }, db: {},
+      f: { doc: () => ({}), setDoc: () => Promise.resolve(),
+        updateDoc: () => (echoue ? Promise.reject({ code: 'permission-denied' }) : Promise.resolve()) },
+      fn: { httpsCallable: () => () => new Promise(() => {}) }, functions: {} });
+    const S = window.__S;
+    S.persona = 'admin'; S.admin = { view: 'art', sel: 'r1' };
+    S.adminArtisans = [{ id: 'r1', uid: 'r1', real: true, name: 'Maya', status: 'valide',
+      cats: ['massage'], siteMode: '', salonAddress: '' }];
+    window.__render();
+    const t = document.getElementById('toast'); t.textContent = '';
+    document.querySelector('[data-adm="artsite:r1:salon"]').click();
+    return new Promise((r) => setTimeout(() => r(t.textContent || ''), 60));
+  }, { echoue });
+  ok((await ecrit(false)).indexOf('enregistré') >= 0,
+    'l’écriture qui aboutit est annoncée');
+  const rate = await ecrit(true);
+  ok(rate.indexOf('Non enregistré') >= 0,
+    'et celle qui échoue le DIT (' + rate + ') : la console ne rassure plus à tort');
+
   /* L'ÉTAPE « MÉTIERS & TARIFS » NE SE REND PAS DANS LE HARNAIS — elle dépend d'un état
      de dossier que le bac ne reconstitue pas, et je n'ai pas voulu la forcer : une épreuve
      qui tord l'application pour l'atteindre ne mesure plus l'application. On vérifie donc
