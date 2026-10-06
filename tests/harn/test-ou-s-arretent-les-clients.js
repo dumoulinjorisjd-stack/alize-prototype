@@ -45,12 +45,16 @@ const JOUR = 864e5, T = 1796065200000;
     C('a', 'Alice Ba', 0, [], 'Aucune carte enregistrée', 30, {}),
     // a2 : a parcouru le catalogue et touché un métier pas encore ouvert, puis reculé.
     C('a2', 'Anna Ga', 1, [], 'Aucune carte enregistrée', 10, { catalogue: T - 9 * JOUR, indispo: T - 9 * JOUR }),
-    // b : a configuré une prestation, jamais vu le paiement.
+    // b : a OUVERT une prestation et n'a rien rempli. `config` ne veut pas dire
+    // « configuré » — il est posé au moment où l'on touche la tuile du métier.
     C('b', 'Bruno Ca', 2, [{ id: 1 }], 'Visa ••4242', 20, { catalogue: T - 19 * JOUR, config: T - 19 * JOUR, revenu: T - 19 * JOUR }),
+    // b2 : a VRAIMENT rempli la configuration, et n'a jamais vu le paiement. C'est le mur
+    // que `config` seul ne pouvait pas distinguer, et qui ramassait tout le monde.
+    C('b2', 'Bea Ha', 1, [{ id: 1 }], 'Visa ••4343', 15, { catalogue: T - 14 * JOUR, config: T - 14 * JOUR, prepare: T - 14 * JOUR }),
     // c : a vu l'écran de paiement et n'a pas confirmé.
-    C('c', 'Chloé Da', 1, [], 'Aucune carte enregistrée', 2, { catalogue: T - JOUR, config: T - JOUR, paiement: T - JOUR }),
+    C('c', 'Chloé Da', 1, [], 'Aucune carte enregistrée', 2, { catalogue: T - JOUR, config: T - JOUR, prepare: T - JOUR, paiement: T - JOUR }),
     // d : a confirmé, la demande est morte au paiement.
-    C('d', 'David Ea', 1, [{ id: 1 }], 'Visa ••1111', 40, { catalogue: T - 39 * JOUR, config: T - 39 * JOUR, paiement: T - 39 * JOUR }),
+    C('d', 'David Ea', 1, [{ id: 1 }], 'Visa ••1111', 40, { catalogue: T - 39 * JOUR, config: T - 39 * JOUR, prepare: T - 39 * JOUR, paiement: T - 39 * JOUR }),
     // e : a commandé AVANT que les jalons existent — il n'en porte aucun.
     C('e', 'Eva Fa', 1, [{ id: 1 }], 'Visa ••2222', 50, {}),
   ];
@@ -60,15 +64,16 @@ const JOUR = 864e5, T = 1796065200000;
   };
   const P = await parc(clients, demandes, T);
   const mur = (k) => (P.murs.find((m) => m.cle === k) || {}).n;
-  ok(P.total === 6, 'les six comptes sont comptés (' + P.total + ')');
+  ok(P.total === 7, 'les sept comptes sont comptés (' + P.total + ')');
   ok(mur('catalogue') === 1, 'un seul n’a JAMAIS touché au catalogue (' + mur('catalogue') + ')');
   ok(mur('config') === 1, 'un a regardé le catalogue sans rien configurer — ce n’est pas le même (' + mur('config') + ')');
-  ok(mur('paiement') === 1, 'un a configuré sans jamais voir le paiement (' + mur('paiement') + ')');
+  ok(mur('prepare') === 1, 'un a ouvert une prestation sans rien remplir (' + mur('prepare') + ')');
+  ok(mur('paiement') === 1, 'un a VRAIMENT rempli, sans jamais voir le paiement (' + mur('paiement') + ')');
   ok(mur('confirme') === 1, 'un a vu le paiement et n’a pas confirmé (' + mur('confirme') + ')');
   ok(mur('commande') === 1, 'un a confirmé, et sa demande est morte au paiement (' + mur('commande') + ')');
   ok(P.abouti === 1, 'et un seul a commandé (' + P.abouti + ')');
-  ok(mur('catalogue') + mur('config') + mur('paiement') + mur('confirme') + mur('commande') + P.abouti === P.total,
-    'les cinq murs et les aboutis font le total : personne n’est compté deux fois ni oublié');
+  ok(mur('catalogue') + mur('config') + mur('prepare') + mur('paiement') + mur('confirme') + mur('commande') + P.abouti === P.total,
+    'les six murs et les aboutis font le total : personne n’est compté deux fois ni oublié');
 
   /* ON NE RÉTROGRADE PERSONNE FAUTE DE JALON. Les comptes d'avant cette mise en ligne
      n'en portent aucun : sans cette règle, « Eva », qui a bel et bien commandé, serait
@@ -80,7 +85,7 @@ const JOUR = 864e5, T = 1796065200000;
   ok(P.sansJalon === 1, 'et l’écran dit combien de comptes sont dans ce cas — un seul (' + P.sansJalon + ')');
 
   console.log('\nB — les faits se comptent sur les BLOQUÉS, là où ils expliquent quelque chose');
-  ok(P.bloques === 5, 'cinq comptes sont bloqués quelque part (' + P.bloques + ')');
+  ok(P.bloques === 6, 'six comptes sont bloqués quelque part (' + P.bloques + ')');
   /* LE RENSEIGNEMENT LE PLUS UTILE DE TOUS : il ne situe personne sur le chemin, mais il
      dit ce qu'on vous demande et que vous ne vendez pas. C'est un FAIT, pas une marche. */
   ok(P.faits.indispo === 1, 'un a touché un métier pas encore ouvert (' + P.faits.indispo + ')');
@@ -89,7 +94,7 @@ const JOUR = 864e5, T = 1796065200000;
   ok(P.faits.revenus === 1, 'un seul est revenu un autre jour — les autres ne sont jamais repassés (' + P.faits.revenus + ')');
   ok(P.faits.sansPush === 1, 'un ne peut recevoir aucune notification (' + P.faits.sansPush + ')');
   ok(P.faits.sansAdresse === 3, 'trois n’ont aucune adresse enregistrée (' + P.faits.sansAdresse + ')');
-  ok(P.faits.vieux === 4, 'quatre sont inscrits depuis plus de 7 jours — un compte d’hier n’est pas un compte perdu (' + P.faits.vieux + ')');
+  ok(P.faits.vieux === 5, 'cinq sont inscrits depuis plus de 7 jours — un compte d’hier n’est pas un compte perdu (' + P.faits.vieux + ')');
   ok(/Ce ne sont pas des .tapes/.test(html),
     'et l’écran le DIT : on peut commander sans avoir rien enregistré de tout cela');
   /* « REVENU » N'EST PAS UNE MARCHE. On peut tout faire le jour de son inscription :
@@ -135,10 +140,11 @@ const JOUR = 864e5, T = 1796065200000;
      && /Paiement refusé La carte a été refusée ou la fenêtre fermée 1/.test(vue.dem),
     'et distingue le renoncement du refus de carte — ce ne sont pas les mêmes gestes');
   ok(!!vue.par && /N’a jamais touché au catalogue 1/.test(vue.par)
-     && /A regardé, n’a rien configuré 1/.test(vue.par)
-     && /A configuré, jamais vu le paiement 1/.test(vue.par)
+     && /A regardé le catalogue, n’a ouvert aucune prestation 1/.test(vue.par)
+     && /A ouvert une prestation, n’a rien rempli 1/.test(vue.par)
+     && /A rempli la configuration, jamais vu le paiement 1/.test(vue.par)
      && /A vu le paiement, n’a pas confirmé 1/.test(vue.par),
-    'la carte du parcours nomme les cinq murs avec leur nombre');
+    'la carte du parcours nomme les six murs avec leur nombre');
   ok(!!vue.par && /a touché un métier pas encore ouvert/.test(vue.par),
     'et met en avant ceux qui ont demandé un métier qu’on ne vend pas');
   ok(!!vue.par && /ne peut recevoir aucune notification/.test(vue.par),
@@ -174,7 +180,7 @@ const JOUR = 864e5, T = 1796065200000;
   ]);
   const PT = await parc(avecTests, demandes, T);
   ok(PT.exclus === 3, 'trois comptes sont écartés : l’adresse d’administration, la démo des magasins, et celui coché à la main (' + PT.exclus + ')');
-  ok(PT.total === 7, 'et sept comptes restent comptés (' + PT.total + ')');
+  ok(PT.total === 8, 'et huit comptes restent comptés (' + PT.total + ')');
   ok(PT.total === avecTests.length - 3,
     'un compte qui s’APPELLE « Testard » et dont l’adresse commence par « test. » reste compté : rien ne le déclare, on ne devine pas');
 

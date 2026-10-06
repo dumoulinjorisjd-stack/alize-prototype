@@ -11,6 +11,7 @@ sed 's/function render(){/function render(){window.__S=S;window.__render=render;
      s/^  function adminLedgerGroups(){/  window.__ledgerTotal=function(){var l=adminCommissionLedger();return {lignes:l.length,commission:l.reduce(function(t,e){return t+(e.commissionAmount||0);},0)};};\n  function adminLedgerGroups(){/
      s/^  function srvMontants(src){/  window.__rev={srv:function(x){return srvMontants(x);},recale:function(h,r){return recaleHist(h,r);},record:function(m){return recordProPaid(m);}};\n  function srvMontants(src){/
      s/^  function tarifsRecapHtml(){/  window.__tarifs={feuille:function(){return tarifsRecapHtml();},metier:function(i){return tarifDuMetier(i);},marque:function(i){return tarifMarque(i);},defauts:function(){return ADMIN_PRICES();}};\n  function tarifsRecapHtml(){/
+     s/^  function _cfgSignature(d){/  window.__cfg={render:function(){return renderConfig();},vu:function(){return S._cfgVu;}};\n  function _cfgSignature(d){/
      s/^  function parcoursClients(clients,parClient,maintenant){/  window.__parcours=function(c,p,m){return parcoursClients(c,p,m);};\n  function parcoursClients(clients,parClient,maintenant){/
      s/^  function jalonClient(cle){/  window.__jalon=function(c){return jalonClient(c);};\n  function jalonClient(cle){/
      s/^  function activeServicesFromArtisans(){/  window.__dispo=function(){return activeServicesFromArtisans();};\n  function activeServicesFromArtisans(){/
@@ -36,10 +37,10 @@ sed 's/function render(){/function render(){window.__S=S;window.__render=render;
      s/^  function arrhesPctNet(v){/  window.__arrhes={de:function(t,i){return arrhesDe(t,i);},montant:function(t,p){return arrhesMontant(t,p);},du:function(i){return arrhesDuSvc(i);},delais:function(){return ANNUL_DELAIS;},txt:function(h){return annulDelaiTxt(h);},politique:function(m){return cancelPolicy(m);},avis:function(m,t){return arrhesAvisHtml(m,t);},version:function(){return VERSION_APP;}};\n  function arrhesPctNet(v){/
      s/^  function lieuValide(v){/  window.__lieu={valide:function(v){return lieuValide(v);},du:function(i){return lieuDuSvc(i);},mots:function(i){return motsDuLieu(i);},choix:function(){return LIEUX;},salon:function(i){return salonOnly(i);}};\n  function lieuValide(v){/
      s/^  function telLu(pfx,num){/  window.__tel={lu:function(p,n){return telLu(p,n);},stocke:function(p){return telStockeLu(p);},avis:function(p,n){return telAvis(p,n);},console:function(p){return telImpossibleTxt(p);},coupe:function(p){return splitPhone(p);},rattrape:function(p){return telRattrapage(p);},txt:function(r){return telRattrapageTxt(r);},cibles:function(){return telCibles();},corrige:function(k,u,v){return corrigerTelephone(k,u,v);}};\n  function telLu(pfx,num){/
-     s/^  function murSousLigne(f){/  window.__murs={sous:function(f){return murSousLigne(f);},qui:function(q,m){return murQuiHtml(q,m);},phrases:function(c){return murQuiPhrases(c);},depuis:function(){return CLIENT_JALONS_DEPUIS;}};\n  function murSousLigne(f){/
+     s/^  function murSousLigne(f){/  window.__murs={sous:function(f){return murSousLigne(f);},qui:function(q,m){return murQuiHtml(q,m);},phrases:function(c){return murQuiPhrases(c);},depuis:function(){return CLIENT_JALONS_DEPUIS;},prepareDepuis:function(){return PREPARE_DEPUIS;}};\n  function murSousLigne(f){/
      s/^  function i18nApply(root){/  window.__tr=function(v,lang){var av=S.lang;S.lang=lang;try{return trOne(v);}finally{S.lang=av;}};window.__dict=function(lang){return lang===String.fromCharCode(112,116)?PT_DICT:EN_DICT;};\n  function i18nApply(root){/' \
   "$SRC" > "$OUT"
-for f in __S __render __err __newMission __peutTravailler __tr __adm __cat __rev __demo __back __svc __art __brouillon __inst __maj __dossier __assur __prix __statut __tel __murs __parcours __lieu __arrhes __metier __heures __gps __nl; do
+for f in __S __render __err __newMission __peutTravailler __tr __adm __cat __rev __demo __back __svc __art __brouillon __inst __maj __dossier __assur __prix __statut __tel __murs __parcours __lieu __arrhes __metier __heures __gps __nl __cfg; do
   grep -q "window.$f" "$OUT" || { echo "MANQUE $f"; exit 1; }
 done
 echo "harnais complet"

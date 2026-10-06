@@ -32,6 +32,7 @@ const JOUR = 864e5;
   await p.waitForTimeout(600);
 
   const DEPUIS = await p.evaluate(() => window.__murs.depuis());
+  const PREPARE = await p.evaluate(() => window.__murs.prepareDepuis());
   ok(DEPUIS > Date.UTC(2026, 8, 30) && DEPUIS < Date.UTC(2026, 9, 3), 'la date des jalons est celle de leur mise en ligne : ' + new Date(DEPUIS).toISOString().slice(0, 10));
 
   console.log('A — un compte d’AVANT la mesure n’est plus accusé d’être resté à la porte');
@@ -147,7 +148,7 @@ const JOUR = 864e5;
     console.log('F — les quatre cas, écrits en français');
   // `DEPUIS` vit côté Node, l'évaluation côté navigateur : on le PASSE, sinon la fonction
   // le cherche dans la page et ne le trouve pas.
-  const P = await p.evaluate((DEPUIS) => {
+  const P = await p.evaluate(({ DEPUIS, PREPARE }) => {
     const c = (o) => window.__murs.phrases(Object.assign({ jalons: {}, push: 0, addresses: [], card: 'Aucune carte' }, o));
     return {
       perdu: c({}),
@@ -158,13 +159,15 @@ const JOUR = 864e5;
       sansCarte: c({ push: 1, addresses: [{}] }),
       // OÙ IL S'EST ARRÊTÉ : les quatre profondeurs, plus le cas d'avant la mesure.
       catalogue: c({ jalons: { catalogue: 1 } }),
-      config: c({ jalons: { catalogue: 1, config: 1 } }),
-      paiement: c({ jalons: { catalogue: 1, config: 1, paiement: 1 } }),
+      config: c({ jalons: { catalogue: 1, config: 1 }, createdAt: PREPARE + 864e5 }),
+      configAvant: c({ jalons: { catalogue: 1, config: 1 }, createdAt: PREPARE - 864e5 }),
+      prepare: c({ jalons: { catalogue: 1, config: 1, prepare: 1 } }),
+      paiement: c({ jalons: { catalogue: 1, config: 1, prepare: 1, paiement: 1 } }),
       indispo: c({ jalons: { catalogue: 1, indispo: 1 } }),
       avant: c({ createdAt: DEPUIS - 864e5 }),
       apres: c({ createdAt: DEPUIS + 864e5 }),
     };
-  }, DEPUIS);
+  }, { DEPUIS, PREPARE });
   ok(P.perdu.join(' ') === 'N’a pas ouvert le catalogue. Jamais revenu, et ne reçoit pas les notifications. Ni adresse ni carte enregistrée.',
     'le cas le plus froid : « ' + P.perdu.join(' ') + ' »');
   ok(P.revenuAvecPush.join(' ') === 'N’a pas ouvert le catalogue. Revenu une autre fois.',
@@ -184,10 +187,22 @@ const JOUR = 864e5;
      quand on lit la quatrième fiche. La ligne porte maintenant le plus LOIN atteint, en
      PREMIER — c'est la question qu'on vient y poser. */
   console.log('G — chaque ligne dit où cette personne s’est arrêtée');
-  ok(P.catalogue[0] === 'A parcouru les services, sans rien configurer.',
-    'a navigué sans rien configurer : « ' + P.catalogue[0] + ' »');
-  ok(P.config[0] === 'A configuré une prestation, sans aller jusqu’au paiement.',
-    'a essayé de commander : « ' + P.config[0] + ' »');
+  ok(P.catalogue[0] === 'A parcouru le catalogue, sans ouvrir de prestation.',
+    'a navigué sans ouvrir de prestation : « ' + P.catalogue[0] + ' »');
+  /* `config` NE VEUT PAS DIRE « CONFIGURÉ ». Il est posé dans la MÊME instruction que
+     `catalogue`, au moment où l'on touche la tuile d'un métier : le brouillon est vide et
+     l'écran vient de s'afficher. Cinq fiches de production portaient la même phrase « a
+     configuré une prestation » — c'est ce qui a fait voir le défaut. */
+  ok(P.config[0] === 'A ouvert une prestation, sans rien remplir.',
+    'a ouvert une prestation sans la remplir : « ' + P.config[0] + ' »');
+  ok(P.prepare[0] === 'A rempli la configuration, sans voir le paiement.',
+    'et celui qui a VRAIMENT configuré se distingue : « ' + P.prepare[0] + ' »');
+  /* ET AVANT QUE `prepare` EXISTE, ON NE SAIT PAS : affirmer « sans rien remplir » sur un
+     compte plus ancien que la mesure serait l'invention qu'on a déjà refusée un cran plus
+     haut, pour la même raison. */
+  ok(/on ne sait pas s’il l’a remplie/.test(P.configAvant[0]),
+    'avant la mesure du remplissage, on ne sait pas, et on le DIT : « '
+      + P.configAvant[0].replace(/&nbsp;/g, ' ') + ' »');
   ok(P.paiement[0] === 'Est allé jusqu’à l’écran de paiement.',
     'est allé jusqu’au paiement : « ' + P.paiement[0] + ' »');
   ok(P.apres[0] === 'N’a pas ouvert le catalogue.',
