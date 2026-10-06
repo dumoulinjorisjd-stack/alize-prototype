@@ -215,12 +215,26 @@ ok(REPERES.filter(([, re]) => re.test(texteNu)).length === 0,
 
 /* LES DEUX PORTES EXISTENT, ET PLUS PERSONNE NE DESSINE À CÔTÉ. Un bouton d'action ou un
    pied écrit en dur ailleurs est exactement la dérive qui revient. */
-ok(/function mailBouton\(href, label, pro\)/.test(fn) && /function mailPied\(salut, ajout\)/.test(fn),
+ok(/function mailBouton\(href, label, pro, second\)/.test(fn) && /function mailPied\(salut, ajout\)/.test(fn),
   'le bouton et le pied ont chacun leur porte unique');
 const piedsEnDur = (fn.match(/border-top:1px solid #efeae4;background:#FBF7F4/g) || []).length;
 ok(piedsEnDur === 1, 'le pied n’est dessiné qu’à un seul endroit (' + piedsEnDur + ')');
 const boutonsEnDur = (fn.match(/display:inline-block;background:' \+ (btn|crossBtn)/g) || []).length;
 ok(boutonsEnDur === 0, 'aucun gabarit ne redessine le bouton d’action (' + boutonsEnDur + ')');
+
+/* LE SECOND RANG AUSSI (06/10/2026). Deux boutons de contour gardaient un habit à eux —
+   un corail d'alerte dans un e-mail sarcelle, un ambre assorti au bandeau « SOUS
+   RÉSERVE » — chacun avec sa taille et son rembourrage. La couleur semblait y porter un
+   sens : elle n'en portait pas. Le sens est dans le BLOC qui entoure le bouton — le
+   cadre, le bandeau, le texte — et ce bloc n'a pas bougé d'un pixel. */
+const contoursEnDur = (fn.match(/display:inline-block;background:#ffffff;border/g) || []).length;
+ok(contoursEnDur === 0, 'aucun gabarit ne redessine un bouton de second rang (' + contoursEnDur + ')');
+ok(/background:#ffffff;border:1\.5px solid #0FA896;color:#0FA896[^"]*font-size:14px;padding:12px 26px;border-radius:11px/
+  .test(gabarits.mollieReminderHtml('Joris', 1, 'a')),
+  'le second rang prend l’accent de son monde et la géométrie du premier');
+ok(/SOUS RÉSERVE/.test(gabarits.approvedArtisanHtml('Joris', true)) &&
+   /legal=assurance/.test(gabarits.approvedArtisanHtml('Joris', true)),
+  'et le sens reste où il était : le bandeau « SOUS RÉSERVE » et son lien n’ont pas bougé');
 
 /* QUI EST LE DESTINATAIRE ? On le DEMANDE à la base, on ne le fait pas déclarer par
    les vingt appels — le vingt-et-unième oublierait. Éprouvé sur une fausse base. */

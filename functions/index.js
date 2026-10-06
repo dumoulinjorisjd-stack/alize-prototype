@@ -143,9 +143,21 @@ function mailPalette(pro) {
    façon, pour la même raison. On ne corrige donc pas six recopies, on retire ce qu'elles
    recopiaient : la charte, ce sont les e-mails ORDINAIRES, donc l'enveloppe commune — les
    écarts s'alignent sur elle, jamais l'inverse. */
-function mailBouton(href, label, pro) {
-  return '<a href="' + escHtmlS(href) + '" style="display:inline-block;background:' + mailPalette(pro).btn +
-    ';color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 26px;border-radius:11px">' +
+/* DEUX RANGS, UNE SEULE FORME. `second` est le bouton de SECOND RANG — contour, fond
+   blanc : il accompagne une action principale sans lui disputer le regard. Il gardait
+   deux habits à lui, un corail d'alerte dans un e-mail sarcelle et un ambre assorti au
+   bandeau « SOUS RÉSERVE », chacun avec sa taille et son rembourrage. La couleur y
+   semblait porter un sens ; elle n'en portait pas — le sens est DANS le bloc qui entoure
+   le bouton (le cadre, le bandeau, le texte), et il reste exactement où il est. Un
+   bouton de la marque ne dit pas « tout va bien », il dit « c'est ici qu'on clique ».
+   Les mêmes mesures que le premier rang : ce qui change est le rang, pas la géométrie. */
+function mailBouton(href, label, pro, second) {
+  const C = mailPalette(pro);
+  const peau = second
+    ? 'background:#ffffff;border:1.5px solid ' + C.c1 + ';color:' + C.c1
+    : 'background:' + C.btn + ';color:#ffffff';
+  return '<a href="' + escHtmlS(href) + '" style="display:inline-block;' + peau +
+    ';text-decoration:none;font-weight:700;font-size:14px;padding:12px 26px;border-radius:11px">' +
     escHtmlS(label) + '</a>';
 }
 /* Le pied signe « L'équipe Ti-Services » et nomme l'éditeur. Deux ouvertures, et ni
@@ -5734,7 +5746,7 @@ function mollieReminderHtml(name, n, cas) {
                 '<div style="font-size:15px;font-weight:800;color:#231E33">2 · Laisse tes notifications allumées</div>' +
                 '<div style="font-size:13.5px;color:#4a4556;line-height:1.55;margin-top:7px">Une demande part à tous les prestataires du métier en même temps, et <b>le premier qui répond la prend</b>. Sans notification tu l\'apprends trop tard. Vérifie qu\'elles sont bien actives&nbsp;: <b>Compte</b> → <b>Alertes nouvelles demandes</b>.</div>' +
                 '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:13px"><tr><td align="center">' +
-                  '<a href="' + app + '/?open=alerts" style="display:inline-block;background:#ffffff;border:1.5px solid #F26A4B;color:#D6421F;text-decoration:none;font-weight:700;font-size:13.5px;padding:9px 20px;border-radius:11px">Vérifier mes notifications</a>' +
+                  mailBouton(app + '/?open=alerts', 'Vérifier mes notifications', true, true) +
                 '</td></tr></table>' +
               '</td></tr>' +
             '</table>' +
@@ -5797,7 +5809,7 @@ function approvedArtisanHtml(name, sansAssurance) {
         '<div style="font-size:13.5px;color:#4a4556;line-height:1.55;margin-top:7px">Vous nous avez indiqué <b>ne pas disposer</b> d\'une assurance de responsabilité civile professionnelle. Nous vous demandons d\'en souscrire une <b>dans les plus brefs délais</b>.</div>' +
         '<div style="font-size:13.5px;color:#4a4556;line-height:1.55;margin-top:9px">Votre adhésion est acceptée <b>sous réserve</b> que vous nous transmettiez votre attestation <b>dans les trois mois</b> suivant votre inscription. Déposez-la dans l\'application, rubrique <b>&laquo;&nbsp;Mes documents&nbsp;&raquo;</b>, dès que vous l\'avez.</div>' +
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:13px"><tr><td align="center">' +
-          '<a href="' + app + '/?legal=assurance" style="display:inline-block;background:#ffffff;border:1px solid #E2CFA8;color:#8A5B0B;text-decoration:none;font-weight:700;font-size:13.5px;padding:10px 20px;border-radius:11px">Lire les conditions de cette réserve</a>' +
+          mailBouton(app + '/?legal=assurance', 'Lire les conditions de cette réserve', true, true) +
         '</td></tr></table>' +
       '</td></tr>' +
     '</table>';
