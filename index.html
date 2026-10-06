@@ -3577,7 +3577,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='814';
+  const VERSION_APP='815';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -10347,13 +10347,35 @@
      On écrit donc des PHRASES, dans l'ordre où l'on décide : d'abord s'il est revenu
      (est-ce quelqu'un qu'on peut encore accrocher), puis ce qui lui manque pour
      commander. Jamais un mot qui ne se comprenne pas tout seul. */
+  /* OÙ CETTE PERSONNE S'EST ARRÊTÉE, DIT SUR SA LIGNE. « Avec ça je ne sais toujours pas
+     s'ils ont essayé de commander ou s'ils ont au moins navigué dans les services. »
+     Les jalons qui répondent EXISTENT (`catalogue`, `config`, `paiement`) : ils servaient
+     à ranger la personne sous un mur, et le mur est un titre qui a défilé hors de l'écran
+     quand on lit la quatrième fiche. Chaque ligne portait donc trois faits de CONTEXTE
+     (revenu, notifications, adresse, carte) et jamais le seul qu'on vient y chercher.
+     On rend le plus LOIN atteint, et rien de plus : ni le nom d'un métier, ni un montant.
+     ET L'ABSENCE DE JALON NE PROUVE RIEN AVANT LA MESURE : un compte né avant le
+     01/10/2026 n'en porte aucun quoi qu'il ait fait, donc on dit qu'on ne sait pas, au
+     lieu d'affirmer qu'il n'est jamais entré dans la boutique. */
+  function murOuEnEst(c){
+    const j=(c&&c.jalons)||{};
+    if(j.paiement)return 'Est allé jusqu’à l’écran de paiement.';
+    if(j.config)return 'A configuré une prestation, sans aller jusqu’au paiement.';
+    if(j.catalogue)return 'A parcouru les services, sans rien configurer.';
+    if(!Object.keys(j).length&&c&&c.createdAt&&c.createdAt<CLIENT_JALONS_DEPUIS)
+      return 'Inscrit avant la mesure&nbsp;: on ne sait pas où il s’est arrêté.';
+    return 'N’a pas ouvert le catalogue.';
+  }
   function murQuiPhrases(c){
     const j=c&&c.jalons||{};
     const push=!!(c&&c.push);
     const revenu=!!j.revenu;
     const sansAdr=!((c&&c.addresses||[]).length);
     const sansCarte=!(c&&c.card)||/Aucune/.test(String(c&&c.card||''));
-    const out=[];
+    const out=[murOuEnEst(c)];
+    // `indispo` n'est pas une marche, c'est le renseignement le plus utile de tous : il
+    // dit ce qu'on vous demande et que vous ne vendez pas encore.
+    if(j.indispo)out.push('A demandé un métier qu’on n’ouvre pas encore.');
     out.push(revenu
       ? (push?'Revenu une autre fois.':'Revenu une autre fois, mais ne reçoit pas les notifications.')
       : (push?'Jamais revenu depuis son inscription.':'Jamais revenu, et ne reçoit pas les notifications.'));

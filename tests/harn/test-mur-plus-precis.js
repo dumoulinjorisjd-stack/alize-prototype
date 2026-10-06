@@ -145,7 +145,9 @@ const JOUR = 864e5;
   ok(!/Marie Questel/.test(E.apres), 'et le compte d’avant la mesure n’est pas dans ce mur');
 
     console.log('F — les quatre cas, écrits en français');
-  const P = await p.evaluate(() => {
+  // `DEPUIS` vit côté Node, l'évaluation côté navigateur : on le PASSE, sinon la fonction
+  // le cherche dans la page et ne le trouve pas.
+  const P = await p.evaluate((DEPUIS) => {
     const c = (o) => window.__murs.phrases(Object.assign({ jalons: {}, push: 0, addresses: [], card: 'Aucune carte' }, o));
     return {
       perdu: c({}),
@@ -154,20 +156,49 @@ const JOUR = 864e5;
       jamaisAvecPush: c({ push: 1, addresses: [{}], card: 'Visa ••42' }),
       sansAdresse: c({ push: 1, card: 'Visa ••42' }),
       sansCarte: c({ push: 1, addresses: [{}] }),
+      // OÙ IL S'EST ARRÊTÉ : les quatre profondeurs, plus le cas d'avant la mesure.
+      catalogue: c({ jalons: { catalogue: 1 } }),
+      config: c({ jalons: { catalogue: 1, config: 1 } }),
+      paiement: c({ jalons: { catalogue: 1, config: 1, paiement: 1 } }),
+      indispo: c({ jalons: { catalogue: 1, indispo: 1 } }),
+      avant: c({ createdAt: DEPUIS - 864e5 }),
+      apres: c({ createdAt: DEPUIS + 864e5 }),
     };
-  });
-  ok(P.perdu.join(' ') === 'Jamais revenu, et ne reçoit pas les notifications. Ni adresse ni carte enregistrée.',
+  }, DEPUIS);
+  ok(P.perdu.join(' ') === 'N’a pas ouvert le catalogue. Jamais revenu, et ne reçoit pas les notifications. Ni adresse ni carte enregistrée.',
     'le cas le plus froid : « ' + P.perdu.join(' ') + ' »');
-  ok(P.revenuAvecPush.join(' ') === 'Revenu une autre fois.',
+  ok(P.revenuAvecPush.join(' ') === 'N’a pas ouvert le catalogue. Revenu une autre fois.',
     'et le plus chaud ne dit QUE ce qu’il y a à dire : « ' + P.revenuAvecPush.join(' ') + ' »');
-  ok(/mais ne reçoit pas les notifications/.test(P.revenuSansPush[0]),
+  ok(/mais ne reçoit pas les notifications/.test(P.revenuSansPush[1]),
     'revenu mais sans notification : les deux faits tiennent dans une phrase, pas dans deux étiquettes');
-  ok(P.jamaisAvecPush.length === 1 && /Jamais revenu depuis son inscription\./.test(P.jamaisAvecPush[0]),
+  ok(P.jamaisAvecPush.length === 2 && /Jamais revenu depuis son inscription\./.test(P.jamaisAvecPush[1]),
     'rien ne manque, rien ne s’ajoute : on n’écrit pas « adresse enregistrée » pour meubler');
   ok(P.sansAdresse.join(' ').indexOf('Pas d’adresse enregistrée.') >= 0
     && P.sansAdresse.join(' ').indexOf('carte') < 0, 'un seul manque se dit au singulier');
   ok(P.sansCarte.join(' ').indexOf('Pas de carte enregistrée.') >= 0, 'et l’autre aussi');
   ok(P.perdu.every(function (x) { return /\.$/.test(x); }), 'ce sont des phrases : elles finissent par un point');
+
+  /* G — « Je ne sais toujours pas s'ils ont essayé de commander ou s'ils ont au moins
+     navigué dans les services. » Les jalons répondaient déjà ; ils ne servaient qu'à
+     ranger la personne sous un mur, et ce mur est un titre qui a défilé hors de l'écran
+     quand on lit la quatrième fiche. La ligne porte maintenant le plus LOIN atteint, en
+     PREMIER — c'est la question qu'on vient y poser. */
+  console.log('G — chaque ligne dit où cette personne s’est arrêtée');
+  ok(P.catalogue[0] === 'A parcouru les services, sans rien configurer.',
+    'a navigué sans rien configurer : « ' + P.catalogue[0] + ' »');
+  ok(P.config[0] === 'A configuré une prestation, sans aller jusqu’au paiement.',
+    'a essayé de commander : « ' + P.config[0] + ' »');
+  ok(P.paiement[0] === 'Est allé jusqu’à l’écran de paiement.',
+    'est allé jusqu’au paiement : « ' + P.paiement[0] + ' »');
+  ok(P.apres[0] === 'N’a pas ouvert le catalogue.',
+    'et sans aucun jalon APRÈS la mesure, le silence se lit : « ' + P.apres[0] + ' »');
+  /* ET L'ABSENCE DE JALON NE PROUVE RIEN AVANT LA MESURE : affirmer « n'a pas ouvert le
+     catalogue » sur un compte né avant le 01/10/2026 serait une invention — c'est la
+     distinction que la carte « On ne sait pas où ils se sont arrêtés » tient déjà. */
+  ok(/on ne sait pas où il s’est arrêté/.test(P.avant[0]),
+    'avant la mesure, on ne sait pas, et on le DIT : « ' + P.avant[0].replace(/&nbsp;/g, ' ') + ' »');
+  ok(P.indispo.join(' ').indexOf('A demandé un métier qu’on n’ouvre pas encore.') >= 0,
+    'et ce qu’on vous demande sans le vendre encore se dit aussi');
 
     ok(errs.length === 0, 'aucune erreur de page' + (errs.length ? ' : ' + errs[0] : ''));
   await b.close();
