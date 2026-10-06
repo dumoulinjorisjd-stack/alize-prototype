@@ -110,6 +110,55 @@ const bloc = (n) => { const i = srv.indexOf(n); return i < 0 ? '' : srv.slice(i,
   // durcissent ensemble — sans quoi on s'enferme dehors de sa propre console.
   ok(!/sendEmailVerification/.test(html),
     'aucun chemin de confirmation d’adresse à ce jour : c’est ce qui rend l’exigence intenable');
+  /* UN ESSAI QUI MENT SUR L'ENVOI NE SERT À RIEN. sendMail rend un booléen — vrai quand
+     le serveur d'envoi a pris le message, faux quand il n'a fait que le mettre en file —
+     et la branche de l'essai le JETAIT : l'écran annonçait « Essai envoyé » dans les deux
+     cas. Signalé en production : « j'ai fait m'envoyer un essai mais je n'ai rien reçu »,
+     sans rien à l'écran pour distinguer les deux. */
+  ok(/const remis = await sendMail\(db, who,/.test(S) && /remis: !!remis/.test(S),
+    'l’essai REND ce que l’envoi a fait, au lieu de le jeter');
+  ok(/envoyes: remis \? 1 : 0/.test(S),
+    'et il ne compte un message parti que s’il est vraiment parti');
+  ok(/d\.remis\?\('Essai remis à '/.test(html) && /n’a pas répondu/.test(html),
+    'l’écran dit LAQUELLE des deux issues, au lieu d’annoncer la bonne dans tous les cas');
+  /* ET OÙ IL ARRIVE SE LIT AVANT LE CLIC : l'essai part au compte connecté, qui est la
+     boîte générique de l'entreprise — et aussi l'adresse d'expédition. Rien ne le disait,
+     on cherchait dans la mauvaise boîte. */
+  ok(/L’essai part à <b>\$\{esc\(a\)\}<\/b>, l’adresse de ce compte/.test(html),
+    'la carte nomme l’adresse de l’essai avant qu’on clique');
+  /* ET ELLE NOMME L'ONGLET PROMOTIONS. Mesuré en production : l'essai était bien arrivé,
+     rangé là par Gmail — c'est la place NORMALE d'une lettre d'information. Sans le dire,
+     on fait conclure à une panne devant un comportement ordinaire. */
+  ok(/onglet <b>Promotions<\/b>/.test(html) && /c’est normal/.test(html),
+    'et elle dit où Gmail la range, pour qu’on n’y voie pas une panne');
+
+  /* CE QUE DIT LA FIN DU COURRIER, mot pour mot. Quatre retouches de l'éditeur : « clics »
+     et non « touches », « prix fixe » retiré, une relance qui s'adresse à la personne au
+     lieu de vanter l'outil, et le rappel des notifications. Une épreuve sur les MOTS parce
+     que c'est précisément ce qui a été décidé ; les reformuler au prochain passage les
+     perdrait en silence.
+
+     ON MESURE LE RENDU, PAS LA SOURCE. Un premier jet cherchait « en quelques touches » et
+     « prix fixe » dans le texte de la fonction, et les trouvait dans le COMMENTAIRE qui
+     explique justement pourquoi ils n'y sont plus : l'épreuve rougissait sur la bonne
+     version. On exécute donc nlCorpsHtml, comme on exécute les gabarits d'e-mail. */
+  const nlFab = new Function(
+    'const NL_MAX_SERVICES = 24;\n' +
+    /function escHtmlS\(s\) \{[^\n]*\}/.exec(srv)[0] + '\n' +
+    /function _nlTexte\(v, max\) \{[^\n]*\}/.exec(srv)[0] + '\n' +
+    srv.slice(srv.indexOf('function nlCorpsHtml'), srv.indexOf('\n}', srv.indexOf('function nlCorpsHtml')) + 2) +
+    '\nreturn nlCorpsHtml;');
+  const CORPS = nlFab()('Une introduction.', ['Ménage', 'Taxi'], 'https://ti-services.fr/d', 'Joris');
+  ok(/en quelques clics/.test(CORPS) && !/en quelques touches/.test(CORPS),
+    'on clique, on ne touche pas : c’est un courrier, pas un téléphone');
+  ok(!/prix fixe/.test(CORPS), '« prix fixe » ne figure plus dans le courrier');
+  ok(/heureux de vous compter parmi nous/.test(CORPS) && /Un souci, une question/.test(CORPS),
+    'la fin s’adresse à la personne au lieu de décrire l’application');
+  ok(/activer les notifications/.test(CORPS),
+    'et elle rappelle d’activer les notifications : sans elles on ne sait pas qu’on vous a répondu');
+  ok(CORPS.indexOf('Une introduction.') >= 0 && CORPS.indexOf('Ménage') >= 0,
+    'et ce qui est mesuré est bien le courrier rendu, pas un extrait de source');
+
   const N = bloc('function nlRetenu');
   ok(/if \(u\.test === true\) return false;/.test(N), 'un compte de test n’est pas une personne');
   ok(/if \(u\.mailOn === false\) return false;/.test(N), 'un refus ne s’use pas : qui s’est désinscrit ne reçoit plus rien');

@@ -3577,7 +3577,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='813';
+  const VERSION_APP='814';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -11102,6 +11102,18 @@
             <button class="btn ghost sm" data-adm="nlessai" style="width:auto;padding:9px 13px"${svcs.length?'':' disabled'}>${I.mail||''} M’envoyer un essai</button>
             <button class="btn ghost sm" data-adm="nlcompte" style="width:auto;padding:9px 13px">${I.search} Compter les destinataires</button>
           </div>
+          ${(function(){
+            // OÙ L'ESSAI ARRIVE, DIT AVANT LE CLIC. « J'ai fait "m'envoyer un essai" mais
+            // je n'ai rien reçu » — puis, en cherchant : « il apparaissait dans
+            // Promotions ». Deux inconnues d'un coup, et aucune n'était écrite : l'essai
+            // part au compte CONNECTÉ (la boîte générique de l'entreprise, qui est aussi
+            // l'adresse d'expédition), et Gmail range une lettre d'information dans
+            // l'onglet Promotions — c'est sa place NORMALE, pas une panne. On nomme donc
+            // les deux : on ne fait chercher ni dans la mauvaise boîte, ni une panne
+            // devant un comportement ordinaire.
+            const a=((S.account||{}).email||'').trim();
+            return a?`<p class="mini" style="color:var(--muted);margin-top:7px;line-height:1.5">L’essai part à <b>${esc(a)}</b>, l’adresse de ce compte — qui est aussi celle qui expédie. Sur Gmail, regardez l’onglet <b>Promotions</b>&nbsp;: c’est là qu’une lettre d’information se range, et c’est normal.</p>`:'';
+          })()}
           ${S._nlCompte!=null?`<p class="mini" style="margin-top:8px;color:var(--muted)">${plN(S._nlCompte,'destinataire')} ${S._nlCompte>1?'recevront':'recevra'} ce message. Les comptes de test, les adresses vides et <b>ceux qui se sont désinscrits</b> n’y sont pas.</p>
             ${S._nlCompte>0?`<button class="btn sm" data-adm="nlenvoi" style="width:auto;padding:9px 14px;margin-top:8px;background:var(--coral-deep);color:#fff">${I.mail||''} Envoyer à ${plN(S._nlCompte,'inscrit')}</button>`:''}`:''}
           <p class="mini" style="color:var(--muted);margin-top:12px;line-height:1.5">Chaque message porte son <b>lien de désinscription</b>, qui marche sans se connecter. Personne ne reçoit deux fois le même envoi&nbsp;: chaque destinataire est inscrit avant le départ du courrier.</p>`;
@@ -17521,7 +17533,12 @@
           services:svcs,audience:f.audience||'clients',mode:mode})
           .then(function(r){const d=(r&&r.data)||{};
             if(mode==='apercu'){S._nlCompte=Number(d.destinataires)||0;render();toast(plN(S._nlCompte,'destinataire'));return;}
-            if(mode==='essai'){toast('Essai envoyé à '+(d.a||'vous'));return;}
+            // ON NE DIT PAS « ENVOYÉ » QUAND ON NE LE SAIT PAS. Le serveur rend désormais
+            // `remis` : vrai quand le serveur d'envoi a pris le message, faux quand il n'a
+            // fait que le mettre en file. Les deux issues se disent — un essai sert à
+            // savoir si l'envoi marche, celui qui ment sur ce point ne sert à rien.
+            if(mode==='essai'){toast(d.remis?('Essai remis à '+(d.a||'vous'))
+              :'⚠︎ Le serveur d’envoi n’a pas répondu : l’essai est resté en file');return;}
             S._nlCompte=null;render();
             toast(plN(Number(d.envoyes)||0,'message')+' parti'+((Number(d.envoyes)||0)>1?'s':'')
               +((Number(d.deja)||0)?' · '+d.deja+' avaient déjà reçu':'')

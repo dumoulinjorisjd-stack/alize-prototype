@@ -2852,7 +2852,19 @@ function nlCorpsHtml(intro, services, lien, prenom) {
   return '<p>' + (prenom ? 'Bonjour ' + escHtmlS(_nlTexte(prenom, 40)) + ',' : 'Bonjour,') + '</p>'
     + (intro ? '<p>' + escHtmlS(_nlTexte(intro, 600)) + '</p>' : '')
     + (li ? '<p><b>Ce qui est ouvert en ce moment&nbsp;:</b></p><ul style="padding-left:18px;margin:6px 0">' + li + '</ul>' : '')
-    + '<p>Tout se commande depuis l\'application, en quelques touches, à prix fixe.</p>'
+    // LA FIN DU COURRIER EST CE QUI DÉCIDE DU CLIC, et elle ne faisait que décrire
+    // l'application (« tout se commande en quelques touches, à prix fixe »). Quatre
+    // retouches de l'éditeur : « clics » et non « touches » (on écrit à quelqu'un devant
+    // son courrier, pas devant un téléphone), « prix fixe » retiré, une relance qui
+    // s'adresse à la personne au lieu de vanter l'outil, et le rappel des notifications
+    // — sans elles on ne sait pas qu'on vous a répondu, et la lettre qui ramène quelqu'un
+    // ne sert à rien s'il repart sans savoir qu'on lui parle.
+    + '<p>Vous vous êtes inscrit et nous sommes heureux de vous compter parmi nous&nbsp;!'
+    + ' Mais vous ne profitez pas encore de l\'application&nbsp;? Un souci, une question&nbsp;?</p>'
+    + '<p>Demandez vos premiers services dès maintenant, en quelques clics,'
+    + ' ou n\'hésitez pas à nous contacter.</p>'
+    + '<p><b>Pensez à activer les notifications</b> dans l\'application&nbsp;: c\'est ce qui vous'
+    + ' prévient dès qu\'il se passe quelque chose, sans avoir à y penser.</p>'
     + '<p style="font-size:12px;color:#777;margin-top:22px">Vous recevez ce message parce que vous avez un compte Ti-Services. '
     + '<a href="' + lien + '" style="color:#777">Ne plus recevoir nos lettres d\'information</a>.</p>';
 }
@@ -2897,10 +2909,17 @@ exports.envoyerNewsletter = onCall({secrets: [SMTP_PASS]}, async (request) => {
   const campagne = _nlTexte(d.campagne, 60) || ('nl-' + new Date().toISOString().slice(0, 10));
 
   // ESSAI : à l'administrateur seul, le message EXACT que les autres recevraient.
+  // « J'ai fait "m'envoyer un essai" mais je n'ai rien reçu. » sendMail REND un booléen —
+  // vrai quand le serveur d'envoi a pris le message, faux quand il a seulement été mis en
+  // file (SMTP muet, secret absent, panne) — et cette branche le JETAIT : l'écran
+  // annonçait « Essai envoyé » dans les deux cas. Un essai sert justement à savoir si
+  // l'envoi marche ; celui qui ment sur ce point ne sert à rien. On rend donc le fait, et
+  // l'ADRESSE avec, parce que c'est la deuxième question qu'on se pose en ne trouvant
+  // rien : l'essai part au compte connecté, qui est la boîte générique de l'entreprise.
   if (mode === 'essai') {
     const lien = _nlLienDesinscription('essai', 'essai');
-    await sendMail(db, who, {subject: sujet, html: nlCorpsHtml(intro, services, lien, ''), pro: false});
-    return {mode: 'essai', envoyes: 1, destinataires: 1, a: who};
+    const remis = await sendMail(db, who, {subject: sujet, html: nlCorpsHtml(intro, services, lien, ''), pro: false});
+    return {mode: 'essai', envoyes: remis ? 1 : 0, destinataires: 1, a: who, remis: !!remis};
   }
 
   // On parcourt les comptes par paquets : tout charger en mémoire casse au-delà de
