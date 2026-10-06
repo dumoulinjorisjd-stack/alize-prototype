@@ -186,6 +186,63 @@ const srv = fs.readFileSync(path.join(RACINE, 'functions/index.js'), 'utf8');
   ok(/if \(COLIS_ID_ETATS\.indexOf\(String\(r\.status \|\| ''\)\) < 0\) continue;/.test(srv),
     'une demande encore en cours n’est jamais touchée');
 
+  /* J — « LE PROBLÈME EST POUR LE PRESTATAIRE DÉJÀ INSCRIT, COMMENT VA-T-ON CHOISIR ? »
+     Personne ne l'a jamais déclaré, et l'absence était lue comme « les deux » PARTOUT,
+     y compris sur l'écran du prestataire lui-même : il voyait une réponse qu'il n'avait
+     pas donnée, et rien ne distinguait « n'a pas répondu » de « a répondu les deux ».
+     Deux portes, décidées avec l'éditeur : la console règle le parc existant (il est
+     petit, c'est plus rapide que d'attendre que chacun ouvre ses paramètres), et le
+     formulaire d'inscription pose la question aux suivants pour ne pas refaire le trou.
+     RIEN N'EST PRÉ-COCHÉ des deux côtés : une réponse par défaut est exactement ce qui a
+     produit un parc entier de « les deux » que personne n'a choisis. */
+  console.log('J — qui exerce où, et qui le déclare');
+  const console_ = await p.evaluate(() => {
+    const S = window.__S;
+    S.persona = 'admin'; S.admin = { view: 'art', sel: 'a1' };
+    S.adminArtisans = [
+      { id: 'a1', uid: 'a1', real: false, name: 'Maya', status: 'valide', cats: ['massage'], siteMode: '', salonAddress: '' },
+      { id: 'a2', uid: 'a2', real: false, name: 'Jo', status: 'valide', cats: ['plomberie'], siteMode: '', salonAddress: '' },
+    ];
+    window.__render();
+    const v = document.getElementById('view'); const t = v.textContent || '';
+    const boutons = Array.from(v.querySelectorAll('[data-adm^="artsite:"]')).map((x) => x.textContent.trim());
+    return { t: t, boutons: boutons, nonDeclare: t.indexOf('Non déclaré') >= 0 };
+  });
+  ok(console_.boutons.length === 3,
+    'la console propose les trois réponses (' + console_.boutons.join(' / ') + ')');
+  ok(console_.nonDeclare,
+    'et DIT que ce n’est pas déclaré, au lieu d’afficher « les deux » comme une réponse');
+  const plombier = await p.evaluate(() => {
+    const S = window.__S; S.admin = { view: 'art', sel: 'a2' }; window.__render();
+    return document.querySelectorAll('[data-adm^="artsite:"]').length;
+  });
+  ok(plombier === 0,
+    'la question ne se pose pas pour un plombier : il n’exerce aucun métier des deux façons');
+
+  /* L'ÉTAPE « MÉTIERS & TARIFS » NE SE REND PAS DANS LE HARNAIS — elle dépend d'un état
+     de dossier que le bac ne reconstitue pas, et je n'ai pas voulu la forcer : une épreuve
+     qui tord l'application pour l'atteindre ne mesure plus l'application. On vérifie donc
+     la fonction VIVANTE par sa source, et on le DIT ici plutôt que de laisser croire à une
+     mesure d'écran. `proServicesSection` est bien celle qui sert : `proSignup()` existe
+     dans le fichier mais n'est appelé NULLE PART — du code mort, sur lequel une épreuve
+     passerait au vert en ne regardant rien. */
+  const section = src.slice(src.indexOf('function proServicesSection(f){'),
+    src.indexOf('function proSignup(){'));
+  ok(section.indexOf('${lieuCard(f)}') >= 0,
+    'l’étape « Métiers & tarifs » du dossier porte la question du lieu');
+  const carte = src.slice(src.indexOf('function lieuCard(f){'), src.indexOf('function grilleCard(f){'));
+  ok(/if\(!\(\(f\.cats\|\|\[\]\)\.some\(canOnSite\)\)\)return '';/.test(carte),
+    'elle ne paraît que si un des sept métiers des deux façons est coché');
+  ok(carte.indexOf("const sm=f.siteMode||'';") >= 0 && carte.indexOf("sm===x[0]?'on':''") >= 0,
+    'et RIEN n’est pré-coché : la réponse par défaut est ce qui a produit le trou qu’on comble');
+  ok(/\(sm==='salon'\|\|sm==='both'\)\?`<div class="field"[\s\S]{0,120}Adresse de votre local/.test(carte),
+    '« le client vient chez moi » réclame aussitôt l’adresse du local');
+  ok(/if\(b\.dataset\.psite!=null\)\{if\(S\.proForm\)\{S\.proForm\.siteMode=b\.dataset\.psite/.test(src)
+     && /\[data-pdip\],\[data-psite\],/.test(src),
+    'le bouton est branché ET atteignable par le gestionnaire de clics');
+  ok(/siteMode:\(f\.siteMode\|\|''\),salonAddress:\(f\.salonAddress\|\|''\)\.trim\(\)/.test(src),
+    'les deux partent avec la fiche à la création : la question ne sert à rien si la réponse se perd');
+
   ok(errs.length === 0, 'aucune erreur de page' + (errs.length ? ' : ' + errs[0] : ''));
   await b.close();
   console.log(f ? '\n' + f + ' ÉCHEC(S)' : '\nTout est vert');

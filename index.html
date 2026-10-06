@@ -3577,7 +3577,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='817';
+  const VERSION_APP='818';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -4616,9 +4616,29 @@
     }
     // Où il travaille, et depuis quand : de quoi le rappeler et le situer sans chercher.
     out.push(row('Adresse',a.address?esc(a.address):''));
-    if(a.siteMode){
-      const md={domicile:'Chez le client',salon:'Dans son local',both:'Chez le client et dans son local'}[a.siteMode]||esc(a.siteMode);
-      out.push(row('Lieu d\'exercice',md+((a.siteMode!=='domicile'&&a.salonAddress)?'<br><span class="mini" style="color:var(--muted);font-weight:500">'+esc(a.salonAddress)+(a.salonZone?' · '+esc(migZone(a.salonZone)):'')+'</span>':'')));
+    /* « LE PROBLÈME EST POUR LE PRESTATAIRE DÉJÀ INSCRIT, COMMENT VA-T-ON CHOISIR S'IL
+       EXERCE CHEZ LUI OU À DOMICILE ? » Personne ne l'a jamais déclaré : le champ est
+       ABSENT sur tout le parc, et il était lu comme « les deux » partout — y compris sur
+       l'écran du prestataire lui-même, qui voyait donc une réponse qu'il n'avait pas
+       donnée. On ne peut pas distinguer « n'a pas répondu » de « a répondu les deux ».
+       Le réglage se fait d'ici (décision de l'éditeur) : le parc est petit, et c'est plus
+       rapide que d'attendre que chacun ouvre ses paramètres. Ce qui n'est pas déclaré est
+       DIT comme tel, jamais pré-coché — répondre à la place de quelqu'un enverrait un
+       client à une adresse qui n'existe pas. */
+    if((a.cats||[]).some(canOnSite)){
+      const SM=[['domicile','Chez le client'],['salon','Dans son local'],['both','Les deux']];
+      const choix=SM.map(function(x){const on=a.siteMode===x[0];
+        return '<button class="btn ghost sm" data-adm="artsite:'+esc(a.id)+':'+x[0]+'" style="flex:none;width:auto;padding:7px 11px;'
+          +(on?'border-color:var(--teal-deep);background:var(--teal-wash);color:var(--teal-deep);font-weight:800':'')+'">'+x[1]+'</button>';}).join('');
+      const salon=(a.siteMode==='salon'||a.siteMode==='both')
+        ? '<div style="margin-top:8px"><input class="txt" data-artsalon="'+esc(a.id)+'" value="'+esc(a.salonAddress||'')
+          +'" placeholder="Adresse de son local" style="width:100%;padding:9px 11px;font-size:13px">'
+          +(String(a.salonAddress||'').trim()?'':'<p class="mini" style="margin-top:4px;color:var(--coral-deep)">Sans cette adresse, le client ne peut pas choisir « chez le prestataire ».</p>')
+          +'</div>'
+        : '';
+      out.push(row('Lieu d\'exercice',
+        (a.siteMode?'':'<span class="chip coral" style="margin-bottom:6px;display:inline-block">Non déclaré</span><br>')
+        +'<div class="row" style="flex-wrap:wrap;gap:6px">'+choix+'</div>'+salon));
     }
     out.push(row('Inscrit le',a.createdAt?new Date(a.createdAt).toLocaleDateString('fr-FR'):''));
     /* « Pourquoi la disponibilité me dit qu'il ne verra pas les demandes alors que les
@@ -4856,7 +4876,7 @@
   // saisie (recadré à 1 € à la sortie du champ, cf. prixFinal).
   function prixSaisi(v){const n=Math.round(parseFloat(String(v).replace(',','.'))||0);return Math.max(0,Math.min(99999,n));}
   function ecritDansCatalogue(){ try{ const a=document.activeElement;
-    return !!(a&&a.matches&&a.matches('[data-optname],[data-actname],[data-actgrpname],[data-acthours],[data-actpricev],[data-optpricev],[data-catname],[data-nl]')); }catch(_){return false;} }
+    return !!(a&&a.matches&&a.matches('[data-optname],[data-actname],[data-actgrpname],[data-acthours],[data-actpricev],[data-optpricev],[data-catname],[data-nl],[data-artsalon]')); }catch(_){return false;} }
   function applyCatalogDoc(d){ if(!d)return; S.nomsMetiers=nomsValides(d.noms); appliquerNoms(); if(Array.isArray(d.services)){ S.customServices=d.services.map(function(s){return {id:s.id,nm:nomNet(s.nm),rate:s.rate,custom:true,ico:icoValide(s.ico),choixPro:!!s.choixPro,cat:catValide(s.cat),lieu:lieuValide(s.lieu)||'domicile'};}); } if(d.catalog&&typeof d.catalog==='object'){ S.adminCatalog=d.catalog; } S.catalogSeed=Number(d.catalogSeed)||0; if(d.options&&typeof d.options==='object'){ S.adminOptions=d.options; } if(d.arrhes&&typeof d.arrhes==='object'){ S.adminArrhes=d.arrhes; } if(d.metier&&typeof d.metier==='object'){ S.adminMetier=d.metier; } if(ecritDansCatalogue())return; render(); applyLandLang(); }
   // Catalogue partagé écouté EN TEMPS RÉEL : toute modification admin (prix, prestations,
   // options, métiers) se propage à l'app de chacun sans rechargement. Une seule écoute.
@@ -15166,6 +15186,25 @@
       <p class="mini" style="margin-top:12px;color:var(--muted);line-height:1.5">Ti-Services examine votre proposition et vous confirme le prix public.</p>
     </div>`;
   }
+  /* ON LE DEMANDE À L'INSCRIPTION, pour ne pas refaire le trou qu'on vient de combler.
+     Sept métiers se pratiquent des deux façons (coach, natation, Pilates, yoga, massage,
+     coiffure, épilation définitive) : la question n'apparaît que si l'un d'eux est coché,
+     et RIEN n'est pré-coché — une réponse par défaut est exactement ce qui a produit un
+     parc entier de « les deux » que personne n'avait choisis. L'adresse du local n'est
+     demandée que si elle s'applique : sans elle, le client ne peut pas venir. */
+  function lieuCard(f){
+    if(!((f.cats||[]).some(canOnSite)))return '';
+    const SM=[['domicile','Je me déplace chez le client'],['salon','Le client vient chez moi'],['both','Les deux']];
+    const sm=f.siteMode||'';
+    return `<div class="card" style="padding:16px;margin-top:14px"><div class="eyebrow" style="color:var(--muted)">${I.pin} Où exercez-vous&nbsp;?${RQ}</div>
+      <p class="mini" style="margin-top:4px;color:var(--muted)">C'est ce qui décide de ce que le client voit au moment de commander.</p>
+      <div class="segs" style="margin-top:10px;flex-wrap:wrap">${SM.map(function(x){
+        return `<button class="seg ${sm===x[0]?'on':''}" data-psite="${x[0]}">${esc(x[1])}</button>`;}).join('')}</div>
+      ${(sm==='salon'||sm==='both')?`<div class="field" style="margin-top:12px;margin-bottom:0"><label>Adresse de votre local${RQ}</label>
+        <input class="txt" data-pf="salonAddress" value="${esc(f.salonAddress||'')}" placeholder="Ex. 12 rue du Roi Oscar II, Gustavia">
+        <p class="mini" style="margin-top:5px;color:var(--muted)">Communiquée au client une fois la mission acceptée.</p></div>`:''}
+    </div>`;
+  }
   function grilleCard(f){
     if(!(f.cats||[]).length)return `<p class="mini" style="margin-top:10px;color:var(--muted)">Sélectionnez au moins un service.</p>`;
     // Les métiers du catalogue portent la grille Ti-Services ; « Autre » a son propre bloc.
@@ -15227,6 +15266,7 @@
     return `<div class="cats">${cats}</div>
       ${f.cats.includes('autre')?`<div class="field" style="margin-top:12px"><label>Précisez votre service « Autre »</label><input class="txt" data-pf="otherService" value="${esc(f.otherService||'')}" placeholder="Ex. Vitrier, peintre, cours de plongée…"><p class="mini" style="margin-top:6px">Examiné par Ti-Services avant d'être proposé.</p></div>`:''}
       ${grilleCard(f)}
+      ${lieuCard(f)}
       ${f.cats.includes('baby')?`<div class="card" style="padding:16px;margin-top:14px"><div class="eyebrow" style="color:var(--muted)">${I.baby} Garde d'enfants, diplômes${RQ}</div>
         <p class="mini" style="margin-top:4px"><b>PSC1 (premiers secours)</b> recommandé. Déclarations contrôlées à la validation.</p>
         <div class="segs" style="margin-top:10px;flex-wrap:wrap">${BABY_DIPLOMAS.map(d=>`<button class="seg ${(f.diplomas||[]).includes(d)?'on':''}" data-pdip="${esc(d)}">${esc(d)}</button>`).join('')}</div>
@@ -15298,6 +15338,7 @@
       <div class="cats">${cats}</div>
       ${f.cats.includes('autre')?`<div class="field" style="margin-top:12px"><label>Précisez votre service « Autre »</label><input class="txt" data-pf="otherService" value="${esc(f.otherService||'')}" placeholder="Ex. Vitrier, peintre, cours de plongée…"><p class="mini" style="margin-top:6px">Examiné par Ti-Services avant d'être proposé.</p></div>`:''}
       ${grilleCard(f)}
+      ${lieuCard(f)}
       ${f.cats.includes('baby')?`<div class="card" style="padding:16px;margin-top:14px"><div class="eyebrow" style="color:var(--muted)">${I.baby} Garde d'enfants, diplômes &amp; qualifications${RQ}</div>
         <p class="mini" style="margin-top:4px"><b>PSC1 (premiers secours)</b> recommandé. Vos déclarations sont <b>contrôlées</b> à la validation.</p>
         <div class="segs" style="margin-top:10px;flex-wrap:wrap">${BABY_DIPLOMAS.map(d=>`<button class="seg ${(f.diplomas||[]).includes(d)?'on':''}" data-pdip="${esc(d)}">${esc(d)}</button>`).join('')}</div>
@@ -17082,7 +17123,7 @@
         return;
       }
     }
-    const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actqty],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-loc],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday],[data-tip],[data-pac],[data-sitemode],[data-invclient],[data-fold],[data-actgrp],[data-purge],[data-optpick],[data-optqty],[data-optadd],[data-optdel],[data-optprice],[data-optunit],[data-rf],[data-telfix],[data-actduree]');
+    const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actqty],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-psite],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-loc],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday],[data-tip],[data-pac],[data-sitemode],[data-invclient],[data-fold],[data-actgrp],[data-purge],[data-optpick],[data-optqty],[data-optadd],[data-optdel],[data-optprice],[data-optunit],[data-rf],[data-telfix],[data-actduree]');
     if(!b)return;
     // Un clic ISSU d'un <input type=file> (notamment déclenché par programme, ex. la
     // feuille « appareil photo / galerie ») remonte jusqu'ici : on ne le traite pas
@@ -17566,6 +17607,13 @@
         try{ if(FB&&FB.db)FB.f.setDoc(FB.f.doc(FB.db,'users',c.uid||c.id),{test:!!c.test},{merge:true}).catch(function(){}); }catch(_){}
         render(); toast(c.test?'Compte de test : écarté des mesures':'Compte compté de nouveau dans les mesures'); return;
       }
+      // Le lieu d'exercice, réglé depuis la console. On écrit ce qu'on CHOISIT : tant que
+      // rien n'est écrit, le champ reste absent et se lit « non déclaré » partout.
+      else if(act==='artsite'){const a=(S.adminArtisans||[]).find(function(x){return x.id===id;}),md=parts[2];
+        if(a&&['domicile','salon','both'].indexOf(md)>=0){
+          a.siteMode=md;
+          if(FB&&a.real&&a.uid){try{FB.f.updateDoc(FB.f.doc(FB.db,'artisans',a.uid),{siteMode:md});}catch(_){}}
+          render();toast('Lieu d’exercice enregistré');}}
       else if(act==='artcat'){const a=(S.adminArtisans||[]).find(function(x){return x.id===id;}),sv=parts[2];
         if(a&&sv){const on=(a.cats||[]).indexOf(sv)<0;adminSetCat(a,sv,on);
           toast(on?('Rattaché à « '+svcNm(sv)+' »'):('Retiré de « '+svcNm(sv)+' »'));}}
@@ -17712,6 +17760,7 @@
     if(b.dataset.pcat){const c=b.dataset.pcat,i=S.proForm.cats.indexOf(c);S.proForm.rates=S.proForm.rates||{};if(i<0){S.proForm.cats.push(c);if(S.proForm.rates[c]==null)S.proForm.rates[c]=(S.adminPrices&&S.adminPrices[c]!=null)?S.adminPrices[c]:svcBase(c);}else{S.proForm.cats.splice(i,1);}render();return;}
     if(b.dataset.pstatustype){if(S.proForm)S.proForm.statusType=b.dataset.pstatustype;render();return;}
     if(b.dataset.srate){const parts=b.dataset.srate.split(':'),id=parts[0],dir=parts[1];S.proForm.rates=S.proForm.rates||{};const plat=(S.adminPrices&&S.adminPrices[id]!=null)?S.adminPrices[id]:svcBase(id);const cur=(S.proForm.rates[id]!=null)?S.proForm.rates[id]:plat;S.proForm.rates[id]=Math.max(5,Math.min(200,cur+(dir==='up'?1:-1)));render();return;}
+    if(b.dataset.psite!=null){if(S.proForm){S.proForm.siteMode=b.dataset.psite;render();}return;}
     if(b.dataset.pdip){const d=b.dataset.pdip;S.proForm.diplomas=S.proForm.diplomas||[];const i=S.proForm.diplomas.indexOf(d);if(i<0)S.proForm.diplomas.push(d);else S.proForm.diplomas.splice(i,1);render();return;}
     if(b.dataset.pstatus){S.proForm.status=b.dataset.pstatus;render();return;}
     if(b.dataset.zone){if(S.draft)S.draft.zone=b.dataset.zone;renderConfig();return;}
@@ -18988,6 +19037,13 @@
   });
   view.addEventListener('focusout',function(e){
     const t=e.target;
+    const sal=t&&t.matches&&t.matches('[data-artsalon]')?t:null;
+    if(sal){const a=(S.adminArtisans||[]).find(function(x){return x.id===sal.dataset.artsalon;});
+      if(a){const v=String(sal.value||'').trim().slice(0,160);
+        if(v!==String(a.salonAddress||'')){a.salonAddress=v;
+          if(FB&&a.real&&a.uid){try{FB.f.updateDoc(FB.f.doc(FB.db,'artisans',a.uid),{salonAddress:v});}catch(_){}}
+          toast(v?'Adresse du local enregistrée':'Adresse du local effacée');render();}}
+      return;}
     if(t&&t.matches&&t.matches('[data-optname],[data-actname],[data-actgrpname],[data-acthours],[data-actpricev],[data-optpricev]')){
       // Sortie d'un champ de prix : un champ laissé vide ou à 0 vaut 1 € (une prestation
       // gratuite fausserait la commission et le net annoncé au prestataire).
@@ -20436,7 +20492,7 @@
         await stM.uploadBytes(sref,f.insuranceFile,{contentType:f.insuranceFile.type||'application/octet-stream'});
         insuranceUrl=await stM.getDownloadURL(sref);
       }catch(e){ console.warn('insurance upload failed',e); } }
-      try{ await FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{name:(f.name||'').trim(),legalName:(f.name||'').trim(),email:email,address:(f.address||'').trim(),statusType:f.statusType||'entreprise',legalForm:(f.legalForm||'').trim(),capital:(f.capital||'').toString().replace(/[^\d]/g,''),rcsCity:(f.rcsCity||'').trim(),birth:(f.birth||''),cats:f.cats.slice(),other:(f.otherService||'').trim(),otherPrice:prixAutreLu(f.otherPrice).valeur,otherPriceNote:(f.otherPriceNote||'').trim().slice(0,400),otherUnit:(f.otherUnit==='forfait'?'forfait':'h'),rates:rates,diplomas:(f.diplomas||[]).slice(),diplomaOther:(f.diplomaOther||'').trim(),siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,insuranceNone:!!f.insuranceNone,insurer:f.insurer||'',insuranceUrl:insuranceUrl,insuranceStatus:(f.insuranceNone?'aucune':'attente'),phone:f.phone||'',photo:f.photo||'',bio:(f.bio||'').trim(),acceptedTerms:!!f.cgu,acceptedCharte:!!f.charte,acceptedMandat:!!f.mandat,acceptsGrille:!!f.acceptsGrille,desiredNetRates:(f.acceptsGrille?null:(function(){const o={};(f.cats||[]).forEach(function(c){if(c==='autre')return;const v=Number(String((f.desiredNet||{})[c]||'').replace(',','.'));if(v>0)o[c]=v;});return Object.keys(o).length?o:null;})()),termsVersion:TERMS_VERSION,termsAt:FB.f.serverTimestamp(),
+      try{ await FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{name:(f.name||'').trim(),legalName:(f.name||'').trim(),email:email,address:(f.address||'').trim(),statusType:f.statusType||'entreprise',legalForm:(f.legalForm||'').trim(),capital:(f.capital||'').toString().replace(/[^\d]/g,''),rcsCity:(f.rcsCity||'').trim(),birth:(f.birth||''),cats:f.cats.slice(),siteMode:(f.siteMode||''),salonAddress:(f.salonAddress||'').trim(),other:(f.otherService||'').trim(),otherPrice:prixAutreLu(f.otherPrice).valeur,otherPriceNote:(f.otherPriceNote||'').trim().slice(0,400),otherUnit:(f.otherUnit==='forfait'?'forfait':'h'),rates:rates,diplomas:(f.diplomas||[]).slice(),diplomaOther:(f.diplomaOther||'').trim(),siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,insuranceNone:!!f.insuranceNone,insurer:f.insurer||'',insuranceUrl:insuranceUrl,insuranceStatus:(f.insuranceNone?'aucune':'attente'),phone:f.phone||'',photo:f.photo||'',bio:(f.bio||'').trim(),acceptedTerms:!!f.cgu,acceptedCharte:!!f.charte,acceptedMandat:!!f.mandat,acceptsGrille:!!f.acceptsGrille,desiredNetRates:(f.acceptsGrille?null:(function(){const o={};(f.cats||[]).forEach(function(c){if(c==='autre')return;const v=Number(String((f.desiredNet||{})[c]||'').replace(',','.'));if(v>0)o[c]=v;});return Object.keys(o).length?o:null;})()),termsVersion:TERMS_VERSION,termsAt:FB.f.serverTimestamp(),
         // Parrainage : code PROPRE de l'artisan (pour être parrain) + code du parrain éventuel
         // (référencé à la validation par le serveur, qui crédite alors le parrain).
         referralCode:genReferralCode((f.name||'').trim(),uid),referredByCode:(f.refCode||'').trim().toUpperCase(),
