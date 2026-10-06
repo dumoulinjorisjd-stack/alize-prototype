@@ -143,15 +143,19 @@ const PRESQUE = {
   ok(!/validation impossible/i.test(C.t), 'et ne parle plus d’une validation impossible');
   ok(/Déclarée absente/i.test(C.t), 'la pastille porte le mot juste');
 
+  /* E — LE FAIT VOYAGE LÀ OÙ IL SERT. « Vérifié · Assuré » a quitté l'écran du CHOIX :
+     la mention était la même sur tout le monde, donc elle ne distinguait personne. Le
+     fait n'est pas devenu faux pour autant — il part avec la mission ACCEPTÉE, quand il
+     y a quelqu'un en face. Et il ne circule plus avec l'annuaire : une donnée que
+     personne n'affiche n'a rien à faire dans une réponse. */
   console.log('\nE — le client ne lit « Assuré » que si c’est vrai');
-  ok(/assure: !!a\.insured && a\.insuranceStatus !== 'refuse'/.test(fns),
-    'le serveur renvoie le FAIT dans l’annuaire des prestataires');
-  ok(/providers: out\.slice\(0, 20\)\.map\(\(p\) => \(\{[^}]*assure: p\.assure/.test(fns),
-    'et il sort bien de la réponse (il aurait pu être calculé puis jeté)');
-  ok(/p\.assure\?' Vérifié · Assuré':' Vérifié'/.test(html),
-    'l’annuaire du choix ne l’affirme que lorsqu’il le sait');
+  ok(fns.indexOf('assure: p.assure') < 0 && fns.indexOf('assure: !!a.insured') < 0,
+    'l’annuaire des prestataires ne la fait plus circuler : plus aucun écran ne l’affiche');
+  ok(!/Vérifié · Assuré/.test(html.slice(html.indexOf('function prefArtisanSelect(m){'),
+    html.indexOf('function prefArtisanSelect(m){') + 4000)),
+    'et la carte du choix ne la porte plus sous le nom');
   ok(/p\.insured\?'Vérifié · Assuré':'Vérifié'/.test(html),
-    'la carte de la mission acceptée aussi');
+    'la carte de la mission acceptée, elle, la porte toujours');
   ok(/providerInsured:\(!!S\.proInsured&&S\.proInsuranceStatus!=='refuse'\)/.test(html),
     'le fait voyage avec l’acceptation de la mission');
   ok(/insured:!!r\.providerInsured/.test(html) && /m\.provider\.insured=!!r\.providerInsured/.test(html),

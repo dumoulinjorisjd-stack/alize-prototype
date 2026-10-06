@@ -6910,21 +6910,25 @@ exports.listProviders = onCall(async (request) => {
       photo: (typeof a.photo === 'string' && a.photo.indexOf('data:image') === 0 && a.photo.length < 90000) ? a.photo : null,
       jobs: Number(a.jobsTotal) || 0,
       founder: !!a.founder,
-      // ASSURÉ, LE FAIT ET NON LA PROMESSE. Le client lisait « Vérifié · Assuré » sur
-      // CHAQUE prestataire validé, un raccourci qui tenait tant que l'assurance était
-      // obligatoire pour être validé. Depuis qu'un prestataire peut DÉCLARER ne pas avoir
-      // de RC, la phrase deviendrait fausse, nommément, sur l'écran où le client choisit.
-      // On renvoie donc le fait ; ce qu'on ne sait pas ne s'affirme pas.
-      assure: !!a.insured && a.insuranceStatus !== 'refuse',
+      /* « VÉRIFIÉ · ASSURÉ » A QUITTÉ L'ÉCRAN DU CHOIX, ET LE FAIT NE CIRCULE PLUS AVEC
+         L'ANNUAIRE. La mention était la même sur tout le monde : elle ne distinguait
+         personne et occupait la seule ligne où le client cherche ce qui DIFFÈRE d'une
+         personne à l'autre. L'assurance reste un fait, et elle voyage là où elle sert —
+         avec la mission ACCEPTÉE (`providerInsured`), quand il y a quelqu'un en face. */
       siteMode: a.siteMode || 'both',
       salonZone: String(a.salonZone || '').slice(0, 40),
-      // PEUT-IL VRAIMENT RECEVOIR ? `siteMode` dit ce qu'il a coché, pas s'il a une
-      // adresse où aller — et il vaut « à domicile ET dans mon salon » par DÉFAUT, pour
-      // tout le monde. Le client pouvait donc commander « chez le prestataire » chez
-      // quelqu'un qui n'a jamais saisi d'adresse, et lire « son adresse dès qu'il
-      // accepte » en attendant une adresse qui n'existe pas. On renvoie le FAIT, et un
-      // booléen : l'adresse elle-même n'a pas à circuler avant qu'une mission existe.
-      salonPret: !!String(a.salonAddress || '').trim(),
+      /* `salonPret` A VÉCU ICI UNE VERSION, ET LA LEÇON EST CONSIGNÉE PLUTÔT QUE LE
+         CHAMP. Il disait si l'adresse du local était saisie, pour que l'écran de commande
+         ne promette pas « son adresse dès qu'il accepte » quand il n'y en a pas. Deux
+         fautes, l'une dans l'autre. La petite : il était posé sur l'objet de travail et
+         ABSENT de la projection finale, trois lignes plus bas — il n'est donc jamais
+         arrivé chez personne, et le client l'a lu `undefined`, c'est-à-dire faux, sur
+         TOUT LE PARC. La grande : s'en servir pour retirer quelqu'un de la liste. Une
+         masseuse qui exerce bel et bien dans son local a disparu de l'écran de commande
+         parce qu'une case de sa fiche était vide. Ce qu'on affiche se règle désormais sur
+         la pratique DÉCLARÉE ; l'adresse manquante se chasse par la pastille de sa fiche
+         et par la console, jamais en effaçant la personne. Et une valeur qui n'est pas
+         dans la projection ne voyage pas : la liste blanche est la seule porte. */
       cal: ((a.extCals || []).length > 0)
     });
   });
@@ -6936,7 +6940,7 @@ exports.listProviders = onCall(async (request) => {
   out.sort((x, y) => (Number(y.founder) - Number(x.founder)) || (y.jobs - x.jobs));
   // Le nombre de missions sert au TRI côté serveur mais ne sort JAMAIS vers le client
   // (le client ne doit pas voir les volumes d'activité des prestataires).
-  return { providers: out.slice(0, 20).map((p) => ({ uid: p.uid, name: p.name, photo: p.photo, founder: p.founder, assure: p.assure, siteMode: p.siteMode, salonZone: p.salonZone, cal: p.cal })) };
+  return { providers: out.slice(0, 20).map((p) => ({ uid: p.uid, name: p.name, photo: p.photo, founder: p.founder, siteMode: p.siteMode, salonZone: p.salonZone, cal: p.cal })) };
 });
 
 /* ── Créneaux réellement libres d'un prestataire pour UNE journée : le client qui vise

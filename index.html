@@ -3577,7 +3577,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='819';
+  const VERSION_APP='820';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -13708,8 +13708,8 @@
     // Démo / simulation locale (Firebase indisponible) : annuaire factice pour montrer
     // le parcours. En production le client est connecté → branche réelle ci-dessous.
     if(isDemo()||!(FB&&FB.auth&&FB.auth.currentUser))return [
-      {uid:'demo-a',name:'Maya Beauté',founder:true,cal:true,photo:null,assure:true,siteMode:'both',salonPret:true},
-      {uid:'demo-b',name:'Chloé R.',founder:false,cal:false,photo:null,assure:true,siteMode:'domicile',salonPret:false}
+      {uid:'demo-a',name:'Maya Beauté',founder:true,cal:true,photo:null,siteMode:'both'},
+      {uid:'demo-b',name:'Chloé R.',founder:false,cal:false,photo:null,siteMode:'domicile'}
     ];
     const e=S._proDir&&S._proDir[svc];
     if(e&&e.list)return e.list;
@@ -13724,19 +13724,21 @@
     return (e&&e.loading)?null:[];
   }
   /* « IL FAUT QUE LE CLIENT SACHE SI C'EST DU DOMICILE OU S'IL DOIT SE DÉPLACER. »
-     Il ne pouvait pas le savoir. Le prestataire ne déclare rien À L'INSCRIPTION : le
-     réglage « Lieu d'intervention » vit dans ses paramètres, n'apparaît que s'il exerce
-     un métier qui se pratique des deux façons, et vaut « à domicile ET dans mon salon »
-     par DÉFAUT. Le client, lui, CHOISISSAIT, et l'écran lui promettait « son adresse dès
-     qu'il accepte » — une adresse que personne n'avait peut-être saisie.
-     On ne propose donc « chez le prestataire » que si quelqu'un peut vraiment recevoir.
+     Il ne pouvait pas le savoir : l'écran ne lisait jamais ce que fait la personne. On ne
+     propose donc « chez le prestataire » que si quelqu'un du métier DÉCLARE recevoir.
      `null` veut dire « l'annuaire n'est pas encore arrivé » : ce qu'on ne sait pas ne
-     s'affirme pas, l'option reste offerte, et la liste redessine l'écran en arrivant. */
+     s'affirme pas, l'option reste offerte, et la liste redessine l'écran en arrivant.
+
+     LA CONDITION EST LA PRATIQUE DÉCLARÉE, PAS L'ADRESSE TAPÉE. Elle a exigé l'adresse
+     le temps d'une version, et une masseuse qui exerce bel et bien dans son local a
+     disparu de l'écran de commande parce qu'une case de sa fiche était vide. Une case
+     vide est un trou à combler — la pastille rouge de sa fiche et la console sont là
+     pour ça — jamais une raison de faire disparaître quelqu'un qui travaille. */
   function salonsDuMetier(svcId){
     const dir=proDirFor(svcId);
     if(dir==null)return null;
     return dir.filter(function(p){
-      return (p.siteMode==='salon'||p.siteMode==='both')&&p.salonPret;
+      return p.siteMode==='salon'||p.siteMode==='both';
     }).length;
   }
   function salonPossible(svcId){return salonsDuMetier(svcId)!==0;}
@@ -13753,15 +13755,13 @@
     const dir=proDirFor(m.svc);
     const seen={},list=[];
     past.forEach(function(a){seen[a.uid]=1;list.push({uid:a.uid,name:a.nm,cal:false,photo:null,past:true});});
-    /* UN PRESTATAIRE QUI N'EXERCE QUE DANS SON LOCAL ET N'A PAS D'ADRESSE NE PEUT SERVIR
-       PERSONNE. Le proposer est un cul-de-sac : le client le choisit, l'écran lui promet
-       « son adresse dès qu'il accepte », et il n'y en a pas. On ne le retire pas de
-       l'application — sa fiche porte la pastille qui le lui dit, et la console permet de
-       la saisir — on le retire de la LISTE où on le choisirait pour rien. */
-    (dir||[]).filter(function(p){
-      return !(String(p.siteMode||'')==='salon'&&!p.salonPret);
-    }).forEach(function(p){
-      if(seen[p.uid]){const e=list.find(function(x){return x.uid===p.uid;});e.cal=p.cal;e.photo=p.photo;e.founder=p.founder;e.assure=p.assure;return;}
+    /* ON NE RETIRE PERSONNE DE CETTE LISTE. Une version l'a fait — le prestataire qui
+       n'exerce que dans son local et dont l'adresse de local n'est pas saisie — au motif
+       qu'on le choisirait pour rien. C'était une faute : la masseuse a disparu de l'écran
+       de commande, et ce qui manquait n'était pas sa pratique mais une case de sa fiche.
+       Un champ vide ne rend personne inexistant. */
+    (dir||[]).forEach(function(p){
+      if(seen[p.uid]){const e=list.find(function(x){return x.uid===p.uid;});e.cal=p.cal;e.photo=p.photo;e.founder=p.founder;return;}
       list.push(p);
     });
     // Une personne bloquée ne réapparaît pas dans la liste de choix : ce serait le
@@ -13771,15 +13771,14 @@
     const card=function(p){
       // Chaque segment dans son propre <span> : nœuds texte distincts pour le traducteur.
       // Jamais de compteur de missions côté client.
-      // « ASSURÉ » EST UN FAIT, PLUS UN RACCOURCI. La mention était donnée à TOUT
-      // prestataire validé, avec pour justification qu'elle était « vraie pour tout
-      // prestataire validé » — ce qui a cessé d'être vrai le jour où l'on a permis de
-      // déclarer qu'on n'a pas de RC. Le serveur renvoie donc le fait (`assure`), et ce
-      // qu'on ne sait pas ne s'affiche pas : un prestataire déjà venu mais absent de
-      // l'annuaire du jour garde « Vérifié » seul plutôt qu'une affirmation inventée.
-      const sub=[p.past?'<span>Déjà venu chez vous</span>':'','<span>'+I.check+(p.assure?' Vérifié · Assuré':' Vérifié')+'</span>',p.cal?('<span>'+I.check+' disponibilités vérifiables</span>'):'']
+      // « VÉRIFIÉ · ASSURÉ » NE S'ÉCRIT PLUS SOUS LE NOM : la mention était la même sur
+      // tout le monde, donc elle ne distinguait personne, et elle occupait la seule ligne
+      // où le client cherche ce qui DIFFÈRE d'une personne à l'autre. Ne restent que les
+      // faits propres à celle-ci. Rien n'est affirmé de moins : être validé reste la
+      // condition pour figurer ici.
+      const sub=[p.past?'<span>Déjà venu chez vous</span>':'',p.cal?('<span>'+I.check+' disponibilités vérifiables</span>'):'']
         .filter(Boolean).join(' · ');
-      return `<button class="addr-opt${m.preferredUid===p.uid?' on':''}" data-prefart="${esc(p.uid)}" data-prefnm="${esc(p.name)}"><div class="row" style="gap:10px;align-items:center">${avatarPhoto(p.photo,inits(p.name),'sm')}<div style="min-width:0"><b>${esc(p.name)}</b>${p.founder?` <span class="chip" style="background:var(--teal-wash);color:var(--teal-deep)">${I.star} Fondateur</span>`:''}<div class="mini" style="margin-top:2px">${sub}</div></div></div></button>`;};
+      return `<button class="addr-opt${m.preferredUid===p.uid?' on':''}" data-prefart="${esc(p.uid)}" data-prefnm="${esc(p.name)}"><div class="row" style="gap:10px;align-items:center">${avatarPhoto(p.photo,inits(p.name),'sm')}<div style="min-width:0"><b>${esc(p.name)}</b>${p.founder?` <span class="chip" style="background:var(--teal-wash);color:var(--teal-deep)">${I.star} Fondateur</span>`:''}${sub?`<div class="mini" style="margin-top:2px">${sub}</div>`:''}</div></div></button>`;};
     const note=m.preferredUid?`<p class="mini" style="margin-top:6px">${I.clock} Adressée <b>uniquement à ${esc((m.preferredName||'').split(' ')[0])}</b>. S'il décline ou ne répond pas, vous pourrez la proposer à tous les prestataires d'un geste, vous n'êtes jamais bloqué.</p>`:'';
     return `<div class="field"><label>Votre prestataire</label><div class="stack" style="gap:8px;margin-top:2px">
       <button class="addr-opt${!m.preferredUid?' on':''}" data-prefart="" data-prefnm=""><b>${I.bolt} Le premier disponible</b><div class="mini" style="margin-top:2px">Proposé à tous les prestataires du métier, le plus rapide.</div></button>

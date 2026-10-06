@@ -62,9 +62,14 @@ for(const svc of ['coiffure','massage','manucure','maquillage','baby','animaux',
     svc+' : l’annuaire du métier s’affiche ('+r.cartes+' choix, sans aucun passé)');
 }
 {
+  // « ICI SOUS LEUR NOM, ENLÈVE VÉRIFIÉ, ASSURÉ. » La mention était la même sur tout le
+  // monde : elle ne distinguait personne et occupait la seule ligne où le client cherche
+  // ce qui DIFFÈRE d'une personne à l'autre. Un volume d'activité n'y a jamais figuré et
+  // n'y figurera pas.
   const r=await commande('manucure',false);
-  ok(/Vérifié · Assuré/.test(r.txt),
-    'et chaque carte dit ce qui aide à choisir, jamais un volume d’activité');
+  ok(!/Vérifié|Assuré/.test(r.txt),
+    'la carte ne porte plus la mention que tout le monde portait');
+  ok(!/mission/i.test(r.txt), 'et jamais un volume d’activité');
 }
 
 console.log('\nB — les autres : on ne choisit que parmi les prestataires DÉJÀ eus');

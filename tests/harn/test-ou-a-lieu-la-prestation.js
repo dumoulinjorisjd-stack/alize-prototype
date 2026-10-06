@@ -11,11 +11,16 @@
    accepte ». Une adresse que personne n'avait peut-être saisie : `salonAddress` n'est
    exigé nulle part, et le serveur ne disait même pas s'il existait.
 
-   TROIS CHANGEMENTS. Le serveur rend le FAIT (`salonPret`, un booléen — l'adresse
-   elle-même n'a pas à circuler avant qu'une mission existe). L'écran de commande ne
-   propose « chez le prestataire » que si quelqu'un peut vraiment recevoir. Et une
-   pastille rouge le dit, des deux côtés : au prestataire qui a coché « le client vient
-   chez moi » sans adresse, au client qui n'a enregistré aucune adresse. */
+   L'ÉCRAN DE COMMANDE SE RÈGLE DONC SUR LA PRATIQUE DÉCLARÉE : « chez le prestataire »
+   ne se propose que si quelqu'un du métier reçoit. Et une pastille rouge dit l'adresse
+   manquante des deux côtés : au prestataire qui a coché « le client vient chez moi » sans
+   adresse, au client qui n'a enregistré aucune adresse.
+
+   LA CONDITION A EXIGÉ L'ADRESSE LE TEMPS D'UNE VERSION, ET C'ÉTAIT UNE FAUTE. Une
+   masseuse qui exerce bel et bien dans son local a disparu de l'écran de commande parce
+   qu'une case de sa fiche était vide. Les sections B et K portent la règle corrigée :
+   une case vide est un trou à combler, jamais une raison d'effacer quelqu'un qui
+   travaille. */
 const fs = require('fs'), path = require('path');
 const { chromium } = require('playwright-core');
 const RACINE = '/home/user/alize-work';
@@ -57,16 +62,17 @@ const srv = fs.readFileSync(path.join(RACINE, 'functions/index.js'), 'utf8');
     };
   }, { svc, annuaire });
 
-  const AVEC = [{ uid: 'a', name: 'Maya', siteMode: 'both', salonPret: true, assure: true }];
-  const SANS = [{ uid: 'b', name: 'Léa', siteMode: 'both', salonPret: false, assure: true },
-    { uid: 'c', name: 'Jo', siteMode: 'domicile', salonPret: false, assure: true }];
+  const AVEC = [{ uid: 'a', name: 'Maya', siteMode: 'both' }];
+  // Personne ne reçoit : les deux se déplacent, et c'est ce qu'ils ont DÉCLARÉ.
+  const SANS = [{ uid: 'b', name: 'Léa', siteMode: 'domicile' },
+    { uid: 'c', name: 'Jo', siteMode: 'domicile' }];
 
   console.log('\nA — quelqu’un peut recevoir : le client a le choix');
   const avec = await commande('massage', AVEC);
   ok(avec.lieux.length === 2, 'les deux lieux sont proposés (' + avec.lieux.join(' / ') + ')');
   ok(/Chez le prestataire/.test(avec.lieux.join(' ')), 'dont « Chez le prestataire »');
 
-  console.log('B — personne ne peut recevoir : on ne le propose plus');
+  console.log('B — personne du métier ne reçoit : on ne le propose plus');
   const sans = await commande('massage', SANS);
   ok(sans.lieux.length === 0,
     'le choix du lieu disparaît : il n’y a rien à choisir (' + sans.lieux.length + ' bouton)');
@@ -89,11 +95,16 @@ const srv = fs.readFileSync(path.join(RACINE, 'functions/index.js'), 'utf8');
   ok(inconnu.lieux.length === 2,
     'annuaire pas encore arrivé : le choix reste offert, il se corrigera en arrivant');
 
-  console.log('E — le serveur rend le fait, pas l’adresse');
-  ok(/salonPret: !!String\(a\.salonAddress \|\| ''\)\.trim\(\)/.test(srv),
-    'listProviders dit SI le prestataire a une adresse de salon');
+  /* E — CE QUI SORT DE `listProviders` EST UNE LISTE BLANCHE, ET ELLE EST LA SEULE PORTE.
+     `salonPret` a été posé sur l'objet de travail et oublié dans la projection finale :
+     il n'est jamais arrivé chez personne, et le client l'a lu `undefined` sur tout le
+     parc. L'épreuve mesure donc ce que la projection emporte, pas ce que la boucle
+     fabrique. */
+  const proj = srv.slice(srv.indexOf('return { providers: out.slice(0, 20)'));
+  ok(proj.indexOf('salonPret') < 0 && srv.indexOf('salonPret:') < 0,
+    'le champ qui exigeait une adresse de salon ne circule plus : il décidait d’effacer quelqu’un');
   ok(!/salonAddress: /.test(srv.slice(srv.indexOf('exports.listProviders'), srv.indexOf('exports.listProviders') + 3000)),
-    'et ne fait pas circuler l’adresse elle-même avant qu’une mission existe');
+    'et l’adresse elle-même ne circule pas avant qu’une mission existe');
 
   console.log('F — les deux pastilles rouges');
   ok(/\(\(sm==='salon'\|\|sm==='both'\)&&!String\(S\.proSalonAddress\|\|''\)\.trim\(\)\)/.test(src.replace(/\s+/g, '')) ||
@@ -251,10 +262,10 @@ const srv = fs.readFileSync(path.join(RACINE, 'functions/index.js'), 'utf8');
      avant de restreindre au prestataire demandé, donc elle n'atteignait PERSONNE, sans un
      mot. Le client attendait une réponse qui ne pouvait pas venir. */
   console.log('K — la personne choisie décide du lieu');
-  const DIR = [{ uid: 'local', name: 'Maya', siteMode: 'salon', salonPret: true, assure: true },
-    { uid: 'mobile', name: 'Jo', siteMode: 'domicile', salonPret: false, assure: true },
-    { uid: 'deux', name: 'Ana', siteMode: 'both', salonPret: true, assure: true },
-    { uid: 'sansAdr', name: 'Zoé', siteMode: 'salon', salonPret: false, assure: true }];
+  const DIR = [{ uid: 'local', name: 'Maya', siteMode: 'salon' },
+    { uid: 'mobile', name: 'Jo', siteMode: 'domicile' },
+    { uid: 'deux', name: 'Ana', siteMode: 'both' },
+    { uid: 'sansAdr', name: 'Zoé', siteMode: 'salon' }];
   const avecChoix = (uid) => p.evaluate(({ DIR, uid }) => {
     const S = window.__S;
     // Les sections précédentes ont promené l'état : on REPOSE la session, sinon
@@ -292,10 +303,18 @@ const srv = fs.readFileSync(path.join(RACINE, 'functions/index.js'), 'utf8');
   ok(aucun.choix === 2 && aucun.adresse,
     'sans prestataire choisi, rien ne change : le client décide comme avant');
 
-  /* UN PRESTATAIRE « LOCAL SEUL » SANS ADRESSE EST UN CUL-DE-SAC : le client le choisit,
-     l'écran lui promet « son adresse dès qu'il accepte », et il n'y en a pas. */
-  ok(aucun.liste.indexOf('Zoé') < 0 && aucun.liste.indexOf('Maya') >= 0,
-    'il ne figure pas dans la liste où on le choisirait pour rien, les autres si');
+  /* « LA MASSEUSE QUI EXERCE DANS SON LOCAL N'APPARAÎT PLUS QUAND JE VEUX PASSER UNE
+     COMMANDE. » Une version retirait de la liste le prestataire « local seul » dont
+     l'adresse n'était pas saisie, au motif qu'on le choisirait pour rien. C'était une
+     faute, et elle a effacé une personne réelle : la liste nomme tout le monde. */
+  ok(aucun.liste.indexOf('Zoé') >= 0 && aucun.liste.indexOf('Maya') >= 0,
+    'celle dont l’adresse de local n’est pas saisie reste dans la liste : une case vide n’efface personne');
+
+  /* ET LA LIGNE SOUS LE NOM NE DIT PLUS « VÉRIFIÉ · ASSURÉ » : la même mention sur tout
+     le monde ne distingue personne, et elle occupait la seule ligne où le client cherche
+     ce qui DIFFÈRE d'une personne à l'autre. */
+  ok(aucun.liste.indexOf('Vérifié') < 0 && aucun.liste.indexOf('Assuré') < 0,
+    'et « Vérifié · Assuré » ne s’écrit plus sous son nom');
 
   ok(errs.length === 0, 'aucune erreur de page' + (errs.length ? ' : ' + errs[0] : ''));
   await b.close();
