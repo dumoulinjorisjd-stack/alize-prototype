@@ -103,8 +103,14 @@ const srv = fs.readFileSync(path.join(RACINE, 'functions/index.js'), 'utf8');
   const proj = srv.slice(srv.indexOf('return { providers: out.slice(0, 20)'));
   ok(proj.indexOf('salonPret') < 0 && srv.indexOf('salonPret:') < 0,
     'le champ qui exigeait une adresse de salon ne circule plus : il décidait d’effacer quelqu’un');
-  ok(!/salonAddress: /.test(srv.slice(srv.indexOf('exports.listProviders'), srv.indexOf('exports.listProviders') + 3000)),
-    'et l’adresse elle-même ne circule pas avant qu’une mission existe');
+  /* L'ADRESSE DU LOCAL, ELLE, VOYAGE DÉSORMAIS. « Ça ne marque pas l'adresse où elle
+     exerce, et donc où l'on doit se déplacer. » On ne décide pas de traverser l'île sans
+     savoir où ; mais elle ne part que pour qui a déclaré RECEVOIR — celui qui se déplace
+     n'a pas de local à montrer, et son adresse personnelle n'a rien à faire là. */
+  ok(/salonAddress: sm === 'domicile' \? '' : String\(a\.salonAddress \|\| ''\)/.test(srv),
+    'l’adresse du local ne part que pour qui reçoit, jamais pour qui se déplace');
+  ok(proj.indexOf('salonAddress: p.salonAddress') >= 0,
+    'et elle est bien dans la projection : une valeur calculée au-dessus ne voyage pas');
 
   console.log('F — les deux pastilles rouges');
   ok(/\(\(sm==='salon'\|\|sm==='both'\)&&!String\(S\.proSalonAddress\|\|''\)\.trim\(\)\)/.test(src.replace(/\s+/g, '')) ||
@@ -286,7 +292,8 @@ const srv = fs.readFileSync(path.join(RACINE, 'functions/index.js'), 'utf8');
      avant de restreindre au prestataire demandé, donc elle n'atteignait PERSONNE, sans un
      mot. Le client attendait une réponse qui ne pouvait pas venir. */
   console.log('K — la personne choisie décide du lieu');
-  const DIR = [{ uid: 'local', name: 'Maya', siteMode: 'salon' },
+  const DIR = [{ uid: 'local', name: 'Maya', siteMode: 'salon',
+      salonAddress: '12 rue de la Paix', salonZone: 'Gustavia' },
     { uid: 'mobile', name: 'Jo', siteMode: 'domicile' },
     { uid: 'deux', name: 'Ana', siteMode: 'both' },
     { uid: 'sansAdr', name: 'Zoé', siteMode: 'salon' }];
@@ -314,6 +321,18 @@ const srv = fs.readFileSync(path.join(RACINE, 'functions/index.js'), 'utf8');
   ok(!local.adresse && !local.gps,
     'un prestataire qui n’exerce QUE dans son local : plus d’adresse ni de point GPS à saisir');
   ok(local.rdv, 'l’écran parle du « Lieu du rendez-vous »');
+  /* « ÇA NE MARQUE PAS L'ADRESSE OÙ ELLE EXERCE, ET DONC OÙ L'ON DOIT SE DÉPLACER. ON
+     N'APPELLE PAS ÇA UN SALON MAIS ON ADAPTE AU MÉTIER. » Le mot vient du MÉTIER et
+     l'adresse de la personne CHOISIE ; sans adresse saisie, la phrase d'attente reprend
+     sa place — on n'invente pas un lieu. */
+  ok(local.liste.indexOf('Salon de massage') >= 0,
+    'le lieu porte le mot du métier, pas « chez le prestataire »');
+  ok(local.liste.indexOf('12 rue de la Paix') >= 0 && local.liste.indexOf('Gustavia') >= 0,
+    'et l’adresse où l’on doit se rendre est écrite');
+  const sansAdresse = await avecChoix('sansAdr');
+  ok(sansAdresse.liste.indexOf('s’affiche dès qu’il accepte') >= 0
+     && sansAdresse.liste.indexOf('12 rue de la Paix') < 0,
+    'celle dont l’adresse n’est pas saisie : on ne l’invente pas, on dit quand elle viendra');
   ok(local.choix === 0, 'et le choix du lieu disparaît : il n’y a plus rien à choisir');
 
   const mobile = await avecChoix('mobile');
@@ -339,6 +358,24 @@ const srv = fs.readFileSync(path.join(RACINE, 'functions/index.js'), 'utf8');
      ce qui DIFFÈRE d'une personne à l'autre. */
   ok(aucun.liste.indexOf('Vérifié') < 0 && aucun.liste.indexOf('Assuré') < 0,
     'et « Vérifié · Assuré » ne s’écrit plus sous son nom');
+
+  /* « ET ÇA MARQUE TOUJOURS DÉPLACEMENT OFFERT. » Le forfait de déplacement vaut déjà
+     zéro quand c'est le client qui vient — mais la ligne s'affichait dès que le forfait
+     était nul, donc elle offrait un déplacement que personne ne fait. Rien n'est offert :
+     il n'y a pas de déplacement. */
+  const offert = (uid) => p.evaluate(({ DIR, uid }) => {
+    const S = window.__S;
+    S._proDir = { massage: { list: DIR } };
+    S.draft = window.__newMission(window.__svc.trouve('massage'));
+    if (uid) S.draft.preferredUid = uid;
+    S.draft.acts = [{ id: 'a1', nm: 'Massage 60 min', price: 110, qty: 1 }];
+    S._cfgVu = null; window.__cfg.render();
+    return (document.getElementById('view').textContent || '').indexOf('Déplacement offert') >= 0;
+  }, { DIR, uid });
+  ok(await offert('mobile'),
+    'le prestataire qui se déplace offre bien son déplacement');
+  ok(!(await offert('local')),
+    'et rien n’est « offert » quand c’est le client qui vient : il n’y a pas de déplacement');
 
   ok(errs.length === 0, 'aucune erreur de page' + (errs.length ? ' : ' + errs[0] : ''));
   await b.close();

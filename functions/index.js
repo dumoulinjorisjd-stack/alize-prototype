@@ -6903,6 +6903,7 @@ exports.listProviders = onCall(async (request) => {
   snap.docs.forEach((doc) => {
     const a = doc.data() || {};
     if ((a.cats || []).indexOf(svc) < 0) return;
+    const sm = a.siteMode || 'both';
     out.push({
       uid: doc.id,
       name: String(a.name || 'Prestataire').slice(0, 60),
@@ -6917,6 +6918,15 @@ exports.listProviders = onCall(async (request) => {
          avec la mission ACCEPTÉE (`providerInsured`), quand il y a quelqu'un en face. */
       siteMode: a.siteMode || 'both',
       salonZone: String(a.salonZone || '').slice(0, 40),
+      /* L'ADRESSE DU LOCAL VOYAGE, ET C'EST LE CLIENT QUI EN A BESOIN. « Ça ne marque
+         pas l'adresse où elle exerce, et donc où l'on doit se déplacer. » L'écran
+         promettait l'adresse « dès qu'il accepte » : juste quand la demande part à tous,
+         faux dès qu'on a choisi quelqu'un — on ne décide pas de traverser l'île sans
+         savoir où. Elle ne part que pour qui a déclaré RECEVOIR : celui qui se déplace
+         n'a pas de local à montrer, et son adresse personnelle n'a rien à faire ici. */
+      salonAddress: sm === 'domicile' ? '' : String(a.salonAddress || '').slice(0, 160),
+      salonGeo: (sm !== 'domicile' && a.salonGeo && isFinite(Number(a.salonGeo.lat)) && isFinite(Number(a.salonGeo.lng)))
+        ? { lat: Number(a.salonGeo.lat), lng: Number(a.salonGeo.lng) } : null,
       /* `salonPret` A VÉCU ICI UNE VERSION, ET LA LEÇON EST CONSIGNÉE PLUTÔT QUE LE
          CHAMP. Il disait si l'adresse du local était saisie, pour que l'écran de commande
          ne promette pas « son adresse dès qu'il accepte » quand il n'y en a pas. Deux
@@ -6940,7 +6950,7 @@ exports.listProviders = onCall(async (request) => {
   out.sort((x, y) => (Number(y.founder) - Number(x.founder)) || (y.jobs - x.jobs));
   // Le nombre de missions sert au TRI côté serveur mais ne sort JAMAIS vers le client
   // (le client ne doit pas voir les volumes d'activité des prestataires).
-  return { providers: out.slice(0, 20).map((p) => ({ uid: p.uid, name: p.name, photo: p.photo, founder: p.founder, siteMode: p.siteMode, salonZone: p.salonZone, cal: p.cal })) };
+  return { providers: out.slice(0, 20).map((p) => ({ uid: p.uid, name: p.name, photo: p.photo, founder: p.founder, siteMode: p.siteMode, salonZone: p.salonZone, salonAddress: p.salonAddress, salonGeo: p.salonGeo, cal: p.cal })) };
 });
 
 /* ── Créneaux réellement libres d'un prestataire pour UNE journée : le client qui vise

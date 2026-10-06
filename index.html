@@ -3577,7 +3577,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='821';
+  const VERSION_APP='822';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -3814,17 +3814,17 @@
   const SERVICES=[
     {id:'menage',nm:'Ménage',rate:35},{id:'baby',nm:'Baby-sitting',rate:28,choixPro:true},
     {id:'jardin',nm:'Jardinage',rate:40},{id:'demenagement',nm:'Déménagement',rate:45},
-    {id:'coiffure',nm:'Coiffure',rate:45,choixPro:true},{id:'animaux',nm:'Garde d’animaux',rate:25,choixPro:true},
-    {id:'massage',nm:'Massage',rate:60,choixPro:true},
+    {id:'coiffure',nm:'Coiffure',rate:45,choixPro:true,lieuNm:'Salon de coiffure'},{id:'animaux',nm:'Garde d’animaux',rate:25,choixPro:true},
+    {id:'massage',nm:'Massage',rate:60,choixPro:true,lieuNm:'Salon de massage'},
     // Sous-catégorie « Beauté »
     {id:'manucure',nm:'Manucure',rate:40,choixPro:true},{id:'epilation',nm:'Épilation',rate:45,choixPro:true},
     // Épilation définitive (laser) : équipement fixe → toujours CHEZ LE PRESTATAIRE (salonOnly).
-    {id:'epilationdef',nm:'Épilation définitive',rate:30,salonOnly:true,choixPro:true},
+    {id:'epilationdef',nm:'Épilation définitive',rate:30,salonOnly:true,choixPro:true,lieuNm:'Institut'},
     {id:'maquillage',nm:'Maquillage',rate:55,choixPro:true},
     // Sous-catégorie « Dépannage & entretien »
     {id:'piscine',nm:'Piscine',rate:45},{id:'plomberie',nm:'Plomberie',rate:55},{id:'electricite',nm:'Électricité',rate:55},{id:'deck',nm:'Deck & terrasse',rate:45},{id:'clim',nm:'Climatisation',rate:95},
     // Sous-catégorie « Sport »
-    {id:'coach',nm:'Coach sportif',rate:60,choixPro:true},{id:'natation',nm:'Cours de natation',rate:45,choixPro:true},{id:'pilates',nm:'Cours de Pilates',rate:55,choixPro:true},{id:'yoga',nm:'Cours de yoga',rate:55,choixPro:true},
+    {id:'coach',nm:'Coach sportif',rate:60,choixPro:true},{id:'natation',nm:'Cours de natation',rate:45,choixPro:true},{id:'pilates',nm:'Cours de Pilates',rate:55,choixPro:true,lieuNm:'Studio de Pilates'},{id:'yoga',nm:'Cours de yoga',rate:55,choixPro:true,lieuNm:'Studio de yoga'},
     // Forfait (pas de tarif horaire) : un retrait = un prix fixe, plusieurs objets inclus.
     {id:'colis',nm:'Colis & courrier',rate:20,forfait:true}
   ];
@@ -4352,6 +4352,42 @@
     depart:{heure:'Heure de départ souhaitée',titre:'Point de départ',
       texte:'Vous partez <b>avec le prestataire</b>. Le point de départ s’affiche ici <b>dès qu’il accepte</b> votre demande.'}};
   function motsDuLieu(svcId){return LIEU_MOTS[lieuDuSvc(svcId)]||LIEU_MOTS.domicile;}
+  /* ══ OÙ L'ON DOIT SE RENDRE, ET SOUS QUEL NOM ═══════════════════════════════════
+     « Ça ne marque pas l'adresse où elle exerce, et donc où l'on doit se déplacer. On
+     n'appelle pas ça un salon mais on adapte au métier, par exemple un salon de
+     massage. »
+
+     DEUX MANQUES. Le mot d'abord : « chez le prestataire » ne dit rien du lieu où l'on
+     va. Le MÉTIER porte donc son mot (`lieuNm`) — on ne tient pas une liste à côté, et
+     un métier créé depuis la console n'a qu'à le déclarer ; sans mot, « Chez le
+     prestataire », qui n'est jamais faux.
+
+     L'adresse ensuite. L'écran promettait « son adresse exacte dès qu'il accepte » :
+     juste quand la demande part à TOUS, faux dès qu'on a choisi quelqu'un — on sait
+     alors précisément où c'est, et personne ne décide de traverser l'île sans savoir
+     où. L'adresse du local voyage donc avec l'annuaire, pour les seuls prestataires qui
+     ont déclaré recevoir. Ce qui n'est pas saisi ne s'invente pas : la phrase d'attente
+     reprend sa place, et c'est le même écran qui le dit. */
+  function nomDuLocal(svcId){const s=findSvc(svcId);return (s&&s.lieuNm)||'Chez le prestataire';}
+  function proDuChoix(m){
+    const uid=m&&m.preferredUid;if(!uid)return null;
+    const dir=proDirFor(m&&m.svc);if(!dir)return null;
+    return dir.find(function(x){return x.uid===uid;})||null;
+  }
+  function blocRdvHtml(m){
+    const M=motsDuLieu(m.svc);
+    let corps;
+    if(lieuDuSvc(m.svc)==='depart'){corps=M.texte||'';}
+    else{
+      const p=proDuChoix(m),adr=p?String(p.salonAddress||'').trim():'',zone=p?String(p.salonZone||'').trim():'';
+      const geo=(p&&p.salonGeo&&isFinite(p.salonGeo.lat)&&isFinite(p.salonGeo.lng))?p.salonGeo:null;
+      corps='<b>'+esc(nomDuLocal(m.svc))+'</b>'
+        +(adr?('<div style="margin-top:3px">'+esc(adr)+(zone?' · '+esc(zone):'')+'</div>'
+            +(geo?'<a href="'+esc(navUrl(geo.lat,geo.lng))+'" target="_blank" rel="noopener" style="display:inline-block;margin-top:6px;font-weight:700;text-decoration:underline">Ouvrir l’itinéraire</a>':''))
+          :'<div style="margin-top:3px;opacity:.85">Son adresse exacte s’affiche dès qu’il accepte votre demande.</div>');
+    }
+    return `<div class="field"><label>${M.titre||'Lieu du rendez-vous'}</label><div class="banner teal" style="margin-top:2px;align-items:flex-start">${I.pin}<span>${corps}</span></div></div>`;
+  }
   function salonOnly(svcId){return lieuDuSvc(svcId)!=='domicile';}
   // Lieu retenu pour une commande : 'salon' (chez le prestataire) ou 'domicile' (défaut).
   /* « QUAND JE CHOISIS UN PRESTATAIRE QUI EXERCE UNIQUEMENT DANS SON LOCAL, ÇA ME DEMANDE
@@ -7052,7 +7088,7 @@
     "Passage décalé à la période suivante":"Visit moved to the next period","Abonnement arrêté":"Subscription stopped",
     "Pour corriger une information légale (nom, SIRET, adresse), contactez Ti-Services.":"To correct a legal detail (name, SIRET, address), contact Ti-Services.",
     // Paiement / commande
-    "Cochez au moins une prestation pour continuer.":"Select at least one service to continue.","Aucune prestation sélectionnée":"No service selected","Déplacement offert":"Free travel","Coup de pouce":"Tip","Prix ferme":"Firm price","Choisissez la prestation":"Choose the service","Cochez une prestation pour continuer.":"Select a service to continue.",
+    "Cochez au moins une prestation pour continuer.":"Select at least one service to continue.","Salon de coiffure":"Hair salon","Salon de massage":"Massage salon","Institut":"Beauty salon","Studio de Pilates":"Pilates studio","Studio de yoga":"Yoga studio","Son adresse exacte s’affiche dès qu’il accepte votre demande.":"Their exact address is shown as soon as they accept your request.","Ouvrir l’itinéraire":"Open directions","Aucune prestation sélectionnée":"No service selected","Déplacement offert":"Free travel","Coup de pouce":"Tip","Prix ferme":"Firm price","Choisissez la prestation":"Choose the service","Cochez une prestation pour continuer.":"Select a service to continue.",
     // Pitch
     "Comment ça marche":"How it works","Les services disponibles":"Available services","Un pro chez vous,":"A pro at your home,","en quelques minutes.":"in minutes.","Un pro chez vous, en quelques minutes.":"A pro at your home, in minutes.",
     // Sauvegarde + pied de page
@@ -8768,6 +8804,7 @@
     "Passage décalé à la période suivante":"Passagem adiada para o período seguinte","Abonnement arrêté":"Subscrição terminada",
     "Pour corriger une information légale (nom, SIRET, adresse), contactez Ti-Services.":"Para corrigir um dado legal (nome, SIRET, morada), contacte a Ti-Services.",
     "Cochez au moins une prestation pour continuer.":"Selecione pelo menos um serviço para continuar.",
+    "Salon de coiffure":"Salão de cabeleireiro","Salon de massage":"Salão de massagem","Institut":"Instituto de beleza","Studio de Pilates":"Estúdio de Pilates","Studio de yoga":"Estúdio de yoga","Son adresse exacte s’affiche dès qu’il accepte votre demande.":"A sua morada exata aparece assim que aceitar o seu pedido.","Ouvrir l’itinéraire":"Abrir o itinerário",
     "Aucune prestation sélectionnée":"Nenhum serviço selecionado",
     "Déplacement offert":"Deslocação grátis",
     "Coup de pouce":"Impulso",
@@ -13778,7 +13815,12 @@
       // condition pour figurer ici.
       const sub=[p.past?'<span>Déjà venu chez vous</span>':'',p.cal?('<span>'+I.check+' disponibilités vérifiables</span>'):'']
         .filter(Boolean).join(' · ');
-      return `<button class="addr-opt${m.preferredUid===p.uid?' on':''}" data-prefart="${esc(p.uid)}" data-prefnm="${esc(p.name)}"><div class="row" style="gap:10px;align-items:center">${avatarPhoto(p.photo,inits(p.name),'sm')}<div style="min-width:0"><b>${esc(p.name)}</b>${p.founder?` <span class="chip" style="background:var(--teal-wash);color:var(--teal-deep)">${I.star} Fondateur</span>`:''}${sub?`<div class="mini" style="margin-top:2px">${sub}</div>`:''}</div></div></button>`;};
+      /* LE SCEAU DORÉ À LA PLACE DU MOT. « Ne mets pas Fondateur ici, mais remets juste
+         leur pastille jaune comme dans la console admin. » L'étiquette prenait le tiers
+         de la rangée et poussait les noms longs à la ligne ; le sceau se lit d'un coup
+         d'œil et ne coûte rien. C'est `avatarFounder`, la porte que la console emprunte
+         déjà : un seul dessin pour les deux écrans. */
+      return `<button class="addr-opt${m.preferredUid===p.uid?' on':''}" data-prefart="${esc(p.uid)}" data-prefnm="${esc(p.name)}"><div class="row" style="gap:10px;align-items:center">${avatarFounder(p.photo,inits(p.name),'sm',p.founder)}<div style="min-width:0"><b>${esc(p.name)}</b>${sub?`<div class="mini" style="margin-top:2px">${sub}</div>`:''}</div></div></button>`;};
     const note=m.preferredUid?`<p class="mini" style="margin-top:6px">${I.clock} Adressée <b>uniquement à ${esc((m.preferredName||'').split(' ')[0])}</b>. S'il décline ou ne répond pas, vous pourrez la proposer à tous les prestataires d'un geste, vous n'êtes jamais bloqué.</p>`:'';
     return `<div class="field"><label>Votre prestataire</label><div class="stack" style="gap:8px;margin-top:2px">
       <button class="addr-opt${!m.preferredUid?' on':''}" data-prefart="" data-prefnm=""><b>${I.bolt} Le premier disponible</b><div class="mini" style="margin-top:2px">Proposé à tous les prestataires du métier, le plus rapide.</div></button>
@@ -18809,7 +18851,7 @@
       <div class="field"><label>Photos (facultatif)</label>
         <div class="thumbs">${(m.photos||[]).map((u,i)=>`<div class="thumb"><img src="${u}" alt="Photo"><button data-act="rmphoto:${i}" aria-label="Retirer la photo">×</button></div>`).join('')}<label class="thumb add"><span>${I.camera}</span><span>Photo</span><input type="file" accept="image/*" capture="environment" data-photoinput hidden></label><label class="thumb add"><span>${I.image}</span><span>Galerie</span><input type="file" accept="image/*" multiple data-photoinput hidden></label></div></div>
 
-      ${locModeOf(m)==='salon'?`<div class="field"><label>${motsDuLieu(m.svc).titre||'Lieu du rendez-vous'}</label><div class="banner teal" style="margin-top:2px">${I.pin}<span>${motsDuLieu(m.svc).texte||''}</span></div></div>`:`<div class="field"><label>Adresse de la prestation</label>
+      ${locModeOf(m)==='salon'?blocRdvHtml(m):`<div class="field"><label>Adresse de la prestation</label>
         ${S.addresses.length?`<div class="stack" style="gap:8px;margin-top:2px">
           ${S.addresses.map(a=>`<button class="addr-opt${m.addressId===a.id?' on':''}" data-addr="${a.id}"><div class="row between"><b>${esc(a.label)}</b>${a.geo?`<span class="chip good">${I.pin} GPS</span>`:`<span class="chip coral">Sans repère</span>`}</div><div class="mini" style="margin-top:2px">${esc(a.address)} · ${a.zone}</div></button>`).join('')}
           <button class="addr-opt${m.addressId==='__manual'?' on':''}" data-addr="__manual"><b>＋ Autre adresse (ponctuelle)</b></button>
@@ -18817,7 +18859,7 @@
         ${m.addressId==='__manual'?blocAdresseManuelle(m,zoneSelect):''}
       </div>`}
 
-      <div class="est">${nSel?m.acts.map(a=>`<div class="line"><span>${esc(a.nm)}</span><b>${eur(a.price*(a.qty||1))}</b></div>`).join(''):`<div class="line"><span style="color:var(--muted)">Aucune prestation sélectionnée</span><b>—</b></div>`}${optionsEstLines(m)}${(nSel&&needsPeople(m.svc)&&t.people>1)?`<div class="line"><span>${I.users} Pour ${peopleLbl(t.people)} (× ${t.people})</span><b>${eur(t.sub)}</b></div>`:''}${t.travel?`<div class="line"><span>${I.pin} Forfait déplacement</span><b>+${eur(t.travel)}</b></div>`:''}${(nSel&&!t.travel)?`<div class="line"><span style="color:var(--good)">${I.check} Déplacement offert</span><b style="color:var(--good)">0 €</b></div>`:''}<div class="total"><span>Total</span><b>${nSel?eur(t.total):'—'}</b></div></div>
+      <div class="est">${nSel?m.acts.map(a=>`<div class="line"><span>${esc(a.nm)}</span><b>${eur(a.price*(a.qty||1))}</b></div>`).join(''):`<div class="line"><span style="color:var(--muted)">Aucune prestation sélectionnée</span><b>—</b></div>`}${optionsEstLines(m)}${(nSel&&needsPeople(m.svc)&&t.people>1)?`<div class="line"><span>${I.users} Pour ${peopleLbl(t.people)} (× ${t.people})</span><b>${eur(t.sub)}</b></div>`:''}${t.travel?`<div class="line"><span>${I.pin} Forfait déplacement</span><b>+${eur(t.travel)}</b></div>`:''}${(nSel&&!t.travel&&locModeOf(m)!=='salon')?`<div class="line"><span style="color:var(--good)">${I.check} Déplacement offert</span><b style="color:var(--good)">0 €</b></div>`:''}<div class="total"><span>Total</span><b>${nSel?eur(t.total):'—'}</b></div></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm"${nSel?'':' disabled'}>${m.preferredUid?`${I.user} Envoyer à ${esc((m.preferredName||'').split(' ')[0])}`:`${I.search} Trouver un pro`}${nSel?' · '+eur(t.total):''}</button>${nSel?'':`<p class="mini" style="text-align:center;margin-top:8px;color:var(--muted)">Cochez au moins une prestation pour continuer.</p>`}</div>
     </div>`,'config');
   }
@@ -18909,7 +18951,7 @@
       <div class="field"><label>Photos <span style="font-weight:500;color:var(--muted)">(facultatif)</span></label>
         <div class="thumbs">${(m.photos||[]).map((u,i)=>`<div class="thumb"><img src="${u}" alt="Photo de la prestation"><button data-act="rmphoto:${i}" aria-label="Retirer la photo">×</button></div>`).join('')}<label class="thumb add"><span>${I.camera}</span><span>Photo</span><input type="file" accept="image/*" capture="environment" data-photoinput hidden></label><label class="thumb add"><span>${I.image}</span><span>Galerie</span><input type="file" accept="image/*" multiple data-photoinput hidden></label></div>
         </div>`;})()}
-      ${locModeOf(m)==='salon'?`<div class="field"><label>${motsDuLieu(m.svc).titre||'Lieu du rendez-vous'}</label><div class="banner teal" style="margin-top:2px">${I.pin}<span>${motsDuLieu(m.svc).texte||''}</span></div></div>`:`<div class="field"><label>Adresse de la prestation</label>
+      ${locModeOf(m)==='salon'?blocRdvHtml(m):`<div class="field"><label>Adresse de la prestation</label>
         ${S.addresses.length?`<div class="stack" style="gap:8px;margin-top:2px">
           ${S.addresses.map(a=>`<button class="addr-opt${m.addressId===a.id?' on':''}" data-addr="${a.id}"><div class="row between"><b>${esc(a.label)}</b>${a.geo?`<span class="chip good">${I.pin} GPS</span>`:`<span class="chip coral">Sans repère</span>`}</div><div class="mini" style="margin-top:2px">${esc(a.address)} · ${a.zone}</div></button>`).join('')}
           <button class="addr-opt${m.addressId==='__manual'?' on':''}" data-addr="__manual"><b>＋ Autre adresse (ponctuelle)</b><div class="mini" style="margin-top:2px">Un lieu occasionnel, non enregistré</div></button>
