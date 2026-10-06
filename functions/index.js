@@ -4423,6 +4423,45 @@ exports.missionReminders = onSchedule({schedule: 'every 15 minutes', secrets: [S
    et par mois (users.rebookNudges), 50 envois max par passage. ── */
 const REBOOK_SVCS = ['menage', 'jardin', 'piscine', 'baby', 'coach', 'massage',
   'coiffure', 'beaute', 'manucure', 'epilation', 'epilationdef', 'animaux'];
+/* « TRANSMISE AU SEUL PRESTATAIRE RETENU, PUIS SUPPRIMÉE APRÈS LE RETRAIT. »
+ * L'écran du retrait de colis le promet au client. Rien ne le tenait : la pièce
+ * d'identité du destinataire (recto et verso) part dans `requests/{id}/private/details`
+ * et n'en sortait qu'à la PURGE DU COMPTE ENTIER — c'est-à-dire, en pratique, jamais.
+ * Une promesse sur une donnée d'identité qui ne se vérifie pas est pire que pas de
+ * promesse : le client la lit, et nous renseigne sur cette foi.
+ *
+ * ON EFFACE CE QU'ON A PROMIS D'EFFACER, ET RIEN D'AUTRE. Seuls les deux champs d'image
+ * partent ; l'adresse, le nom du destinataire et le reste de la fiche restent, ils
+ * servent à la facture et au litige. On attend que la mission soit TERMINÉE (ou annulée,
+ * ou refusée : la pièce n'a alors jamais servi) et un délai de grâce, parce qu'un retrait
+ * contesté se règle dans les jours qui suivent et que la pièce en est la preuve.
+ * Une demande encore en cours n'est jamais touchée. */
+const COLIS_ID_ETATS = ['done', 'rated', 'cancelled', 'declined', 'refuse'];
+const COLIS_ID_GRACE_J = 7;
+exports.purgerPiecesIdentite = onSchedule({schedule: 'every day 03:30'}, async () => {
+  const db = getFirestore();
+  const limite = Date.now() - COLIS_ID_GRACE_J * 86400 * 1000;
+  let vus = 0, effaces = 0;
+  const snap = await db.collection('requests').where('service', '==', 'colis').get();
+  for (const d of snap.docs) {
+    const r = d.data() || {};
+    if (COLIS_ID_ETATS.indexOf(String(r.status || '')) < 0) continue;
+    const fin = Number(r.doneAt) || Number(r.cancelledAt) || Number(r.updatedAt) ||
+      ((r.createdAt && r.createdAt.toMillis) ? r.createdAt.toMillis() : 0);
+    if (!fin || fin > limite) continue;
+    vus++;
+    try {
+      const ref = d.ref.collection('private').doc('details');
+      const det = await ref.get();
+      if (!det.exists) continue;
+      const c = (det.data() || {}).colis;
+      if (!c || (!c.idFront && !c.idBack)) continue;
+      await ref.update({'colis.idFront': FieldValue.delete(), 'colis.idBack': FieldValue.delete()});
+      effaces++;
+    } catch (e) { console.warn('purgerPiecesIdentite', d.id, e && e.message); }
+  }
+  console.log('[pieces] ' + effaces + ' pièce(s) d\'identité effacée(s) sur ' + vus + ' demande(s) éligible(s)');
+});
 exports.rebookNudges = onSchedule({schedule: 'every day 14:00'}, async () => {
   const db = getFirestore();
   const nowMs = Date.now();
@@ -6879,6 +6918,13 @@ exports.listProviders = onCall(async (request) => {
       assure: !!a.insured && a.insuranceStatus !== 'refuse',
       siteMode: a.siteMode || 'both',
       salonZone: String(a.salonZone || '').slice(0, 40),
+      // PEUT-IL VRAIMENT RECEVOIR ? `siteMode` dit ce qu'il a coché, pas s'il a une
+      // adresse où aller — et il vaut « à domicile ET dans mon salon » par DÉFAUT, pour
+      // tout le monde. Le client pouvait donc commander « chez le prestataire » chez
+      // quelqu'un qui n'a jamais saisi d'adresse, et lire « son adresse dès qu'il
+      // accepte » en attendant une adresse qui n'existe pas. On renvoie le FAIT, et un
+      // booléen : l'adresse elle-même n'a pas à circuler avant qu'une mission existe.
+      salonPret: !!String(a.salonAddress || '').trim(),
       cal: ((a.extCals || []).length > 0)
     });
   });
