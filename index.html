@@ -3577,7 +3577,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='823';
+  const VERSION_APP='824';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -3812,17 +3812,17 @@
      donc aucun annuaire, alors que ce sont les métiers les plus personnels du catalogue,
      et rien dans le code ne le disait. */
   const SERVICES=[
-    {id:'menage',nm:'Ménage',rate:35},{id:'baby',nm:'Baby-sitting',rate:28,choixPro:true},
-    {id:'jardin',nm:'Jardinage',rate:40},{id:'demenagement',nm:'Déménagement',rate:45},
-    {id:'coiffure',nm:'Coiffure',rate:45,choixPro:true,lieuNm:'Salon de coiffure'},{id:'animaux',nm:'Garde d’animaux',rate:25,choixPro:true},
+    {id:'menage',nm:'Ménage',rate:35,photo:'etat'},{id:'baby',nm:'Baby-sitting',rate:28,choixPro:true},
+    {id:'jardin',nm:'Jardinage',rate:40,photo:'etat'},{id:'demenagement',nm:'Déménagement',rate:45,photo:'etat'},
+    {id:'coiffure',nm:'Coiffure',rate:45,choixPro:true,lieuNm:'Salon de coiffure',photo:'envie'},{id:'animaux',nm:'Garde d’animaux',rate:25,choixPro:true,photo:'etat'},
     {id:'massage',nm:'Massage',rate:60,choixPro:true,lieuNm:'Salon de massage'},
     // Sous-catégorie « Beauté »
-    {id:'manucure',nm:'Manucure',rate:40,choixPro:true},{id:'epilation',nm:'Épilation',rate:45,choixPro:true},
+    {id:'manucure',nm:'Manucure',rate:40,choixPro:true,photo:'envie'},{id:'epilation',nm:'Épilation',rate:45,choixPro:true},
     // Épilation définitive (laser) : équipement fixe → toujours CHEZ LE PRESTATAIRE (salonOnly).
     {id:'epilationdef',nm:'Épilation définitive',rate:30,salonOnly:true,choixPro:true,lieuNm:'Institut'},
-    {id:'maquillage',nm:'Maquillage',rate:55,choixPro:true},
+    {id:'maquillage',nm:'Maquillage',rate:55,choixPro:true,photo:'envie'},
     // Sous-catégorie « Dépannage & entretien »
-    {id:'piscine',nm:'Piscine',rate:45},{id:'plomberie',nm:'Plomberie',rate:55},{id:'electricite',nm:'Électricité',rate:55},{id:'deck',nm:'Deck & terrasse',rate:45},{id:'clim',nm:'Climatisation',rate:95},
+    {id:'piscine',nm:'Piscine',rate:45,photo:'etat'},{id:'plomberie',nm:'Plomberie',rate:55,photo:'etat'},{id:'electricite',nm:'Électricité',rate:55,photo:'etat'},{id:'deck',nm:'Deck & terrasse',rate:45,photo:'etat'},{id:'clim',nm:'Climatisation',rate:95,photo:'etat'},
     // Sous-catégorie « Sport »
     {id:'coach',nm:'Coach sportif',rate:60,choixPro:true},{id:'natation',nm:'Cours de natation',rate:45,choixPro:true},{id:'pilates',nm:'Cours de Pilates',rate:55,choixPro:true,lieuNm:'Studio de Pilates'},{id:'yoga',nm:'Cours de yoga',rate:55,choixPro:true,lieuNm:'Studio de yoga'},
     // Forfait (pas de tarif horaire) : un retrait = un prix fixe, plusieurs objets inclus.
@@ -3831,6 +3831,42 @@
   // Bureaux de poste de Saint-Barth (sert au regroupement des retraits en une tournée).
   const POSTES=['Gustavia','Lorient'];
   function isForfaitSvc(id){const s=findSvc(id);return !!(s&&s.forfait);}
+  /* ══ LA PHOTO NE SE DEMANDE QUE LÀ OÙ ELLE SERT ════════════════════════════════
+     « Il y a certains métiers où au moment de la commande on demande une photo et
+     d'autres non : demande-la pour les prestations où cela est pertinent. »
+
+     Elle était en fait demandée PARTOUT, et ce qui variait n'était pas le métier mais
+     l'ÉCRAN : à l'acte le bloc est posé en clair, à l'heure il dort sous « ＋ Options,
+     photo, précision ». Donc elle sautait aux yeux sur un massage — où l'on n'a rien à
+     photographier — et se cachait sur une plomberie, où la photo de la fuite est la
+     chose la plus utile de la commande.
+
+     LE MÉTIER DÉCLARE (`photo`), on n'énumère pas d'identifiants ici, et la console pose
+     la question pour les métiers qu'elle crée. Deux valeurs seulement, parce qu'une
+     photo ne dit pas la même chose selon le métier : `etat`, ce qu'il y a À FAIRE (la
+     fuite, le jardin, le volume à déménager) ; `envie`, le résultat SOUHAITÉ (coiffure,
+     manucure, maquillage). Rien de déclaré, rien de demandé — et pour un métier créé
+     depuis la console AVANT cette mesure, on garde la photo : elle y était hier, et la
+     retirer en silence d'un métier qu'on n'a pas pu interroger serait une perte. */
+  const PHOTO_ROLES=['etat','envie'];
+  function photoDemandee(svcId){
+    const s=findSvc(svcId);if(!s)return '';
+    const v=String(s.photo||'');
+    if(PHOTO_ROLES.indexOf(v)>=0)return v;
+    return (s.custom&&s.photo==null)?'etat':'';
+  }
+  function photoAideTxt(svcId){
+    return photoDemandee(svcId)==='envie'
+      ?'Montrez le résultat que vous aimeriez.'
+      :'Une photo aide le prestataire à préparer sa venue et à répondre plus vite.';
+  }
+  function blocPhotosHtml(m,sobre){
+    if(!photoDemandee(m.svc))return '';
+    const lbl=sobre?`Photos <span style="font-weight:500;color:var(--muted)">(facultatif)</span>`:'Photos (facultatif)';
+    return `<div class="field"><label>${lbl}</label>
+        <p class="mini" style="margin:0 0 6px;color:var(--muted)">${photoAideTxt(m.svc)}</p>
+        <div class="thumbs">${(m.photos||[]).map((u,i)=>`<div class="thumb"><img src="${u}" alt="Photo"><button data-act="rmphoto:${i}" aria-label="Retirer la photo">×</button></div>`).join('')}<label class="thumb add"><span>${I.camera}</span><span>Photo</span><input type="file" accept="image/*" capture="environment" data-photoinput hidden></label><label class="thumb add"><span>${I.image}</span><span>Galerie</span><input type="file" accept="image/*" multiple data-photoinput hidden></label></div></div>`;
+  }
   // — Catégories d'accueil : regroupent des prestations proches pour alléger la page
   //   d'accueil. Une catégorie ouvre une sous-liste ; les services hors catégorie
   //   s'affichent directement (tuile → réservation). —
@@ -4888,7 +4924,7 @@
     if(!base||base==='c_')base='c_service';
     let sid=base,n=2; while(findSvc(sid)){sid=base+n;n++;}
     rate=Math.max(5,Math.round(rate||40));
-    S.customServices=(S.customServices||[]).concat([{id:sid,nm:name,rate:rate,custom:true,ico:'',choixPro:!!choixPro,cat:catValide(cat),lieu:'domicile'}]);
+    S.customServices=(S.customServices||[]).concat([{id:sid,nm:name,rate:rate,custom:true,ico:'',choixPro:!!choixPro,cat:catValide(cat),lieu:'domicile',photo:'etat'}]);
     if(!S.adminPrices)S.adminPrices=ADMIN_PRICES(); S.adminPrices[sid]=rate;
     saveCatalog(); render(); toast('« '+name+' » ajouté au catalogue ✓');
     return sid; // l'appelant en a besoin pour rattacher le prestataire au métier créé
@@ -4937,7 +4973,7 @@
   function prixSaisi(v){const n=Math.round(parseFloat(String(v).replace(',','.'))||0);return Math.max(0,Math.min(99999,n));}
   function ecritDansCatalogue(){ try{ const a=document.activeElement;
     return !!(a&&a.matches&&a.matches('[data-optname],[data-actname],[data-actgrpname],[data-acthours],[data-actpricev],[data-optpricev],[data-catname],[data-nl],[data-artsalon]')); }catch(_){return false;} }
-  function applyCatalogDoc(d){ if(!d)return; S.nomsMetiers=nomsValides(d.noms); appliquerNoms(); if(Array.isArray(d.services)){ S.customServices=d.services.map(function(s){return {id:s.id,nm:nomNet(s.nm),rate:s.rate,custom:true,ico:icoValide(s.ico),choixPro:!!s.choixPro,cat:catValide(s.cat),lieu:lieuValide(s.lieu)||'domicile'};}); } if(d.catalog&&typeof d.catalog==='object'){ S.adminCatalog=d.catalog; } S.catalogSeed=Number(d.catalogSeed)||0; if(d.options&&typeof d.options==='object'){ S.adminOptions=d.options; } if(d.arrhes&&typeof d.arrhes==='object'){ S.adminArrhes=d.arrhes; } if(d.metier&&typeof d.metier==='object'){ S.adminMetier=d.metier; } if(ecritDansCatalogue())return; render(); applyLandLang(); }
+  function applyCatalogDoc(d){ if(!d)return; S.nomsMetiers=nomsValides(d.noms); appliquerNoms(); if(Array.isArray(d.services)){ S.customServices=d.services.map(function(s){return {id:s.id,nm:nomNet(s.nm),rate:s.rate,custom:true,ico:icoValide(s.ico),choixPro:!!s.choixPro,cat:catValide(s.cat),lieu:lieuValide(s.lieu)||'domicile',photo:(s.photo==null?null:(PHOTO_ROLES.indexOf(String(s.photo))>=0?String(s.photo):''))};}); } if(d.catalog&&typeof d.catalog==='object'){ S.adminCatalog=d.catalog; } S.catalogSeed=Number(d.catalogSeed)||0; if(d.options&&typeof d.options==='object'){ S.adminOptions=d.options; } if(d.arrhes&&typeof d.arrhes==='object'){ S.adminArrhes=d.arrhes; } if(d.metier&&typeof d.metier==='object'){ S.adminMetier=d.metier; } if(ecritDansCatalogue())return; render(); applyLandLang(); }
   // Catalogue partagé écouté EN TEMPS RÉEL : toute modification admin (prix, prestations,
   // options, métiers) se propage à l'app de chacun sans rechargement. Une seule écoute.
   async function loadCatalog(){ try{ if(!FB||_catalogSub)return; _catalogSub=FB.f.onSnapshot(FB.f.doc(FB.db,'settings','catalog'),function(snap){ applyCatalogDoc(snap.exists()?(snap.data()||{}):{}); },function(e){ console.warn('catalog load',e); }); }catch(e){ console.warn('catalog sub',e); } }
@@ -7054,7 +7090,7 @@
     // Espace prestataire
     "Votre statut":"Your status","Ambassadeur":"Ambassador","Assuré":"Insured","Changer ma photo":"Change my photo","Ajouter une photo":"Add a photo","Vous êtes en ligne":"You're online","Hors ligne":"Offline","Vous recevez les nouvelles demandes":"You receive new requests","Activez pour recevoir des missions. Une demande qui vous est adressée personnellement vous parvient quand même.":"Turn on to receive jobs. A request addressed to you personally still reaches you.","Missions disponibles":"Available jobs","À réaliser":"To do","En cours":"In progress","Validation client":"Client approval","En médiation":"In mediation","Annulation à trancher":"Cancellation to decide","Vous percevez":"You get","Mes documents":"My documents","Assurance OK":"Insurance OK","Notifications de l'app":"App notifications","WhatsApp en secours":"WhatsApp backup","Quitter la démo":"Exit demo","Missions réalisées":"Jobs completed","Prochain virement":"Next payout","Statut fidélité":"Loyalty status","Parrainage":"Referrals",
     // Tunnel de commande
-    "Détails de la mission":"Job details","Quand ?":"When?","Heure souhaitée":"Preferred time","Souplesse sur le créneau":"Time flexibility","Précise":"Exact","Journée":"Day","Semaine":"Week","Durée estimée":"Estimated duration","Nombre de jours":"Number of days","Tarif horaire : prix fixe Ti-Services":"Hourly rate: Ti-Services fixed price","Tarif journalier : prix fixe Ti-Services":"Daily rate: Ti-Services fixed price","Coup de pouce ? (facultatif)":"Tip? (optional)","Standard, aucun":"Standard, none","Décrivez votre besoin":"Describe your need","Photos (facultatif)":"Photos (optional)","Adresse de la prestation":"Service address","Précisions (facultatif)":"Details (optional)","Choisissez vos prestations":"Choose your services","Total":"Total","Un prestataire en particulier ?":"A specific pro?","Peu importe":"Any",
+    "Détails de la mission":"Job details","Quand ?":"When?","Heure souhaitée":"Preferred time","Souplesse sur le créneau":"Time flexibility","Précise":"Exact","Journée":"Day","Semaine":"Week","Durée estimée":"Estimated duration","Nombre de jours":"Number of days","Tarif horaire : prix fixe Ti-Services":"Hourly rate: Ti-Services fixed price","Tarif journalier : prix fixe Ti-Services":"Daily rate: Ti-Services fixed price","Coup de pouce ? (facultatif)":"Tip? (optional)","Standard, aucun":"Standard, none","Décrivez votre besoin":"Describe your need","Photos (facultatif)":"Photos (optional)","Montrez le résultat que vous aimeriez.":"Show the result you would like.","Une photo aide le prestataire à préparer sa venue et à répondre plus vite.":"A photo helps the provider prepare and answer faster.","＋ Options, précision":"＋ Options, details","＋ Options, photo, précision":"＋ Options, photo, details","Adresse de la prestation":"Service address","Précisions (facultatif)":"Details (optional)","Choisissez vos prestations":"Choose your services","Total":"Total","Un prestataire en particulier ?":"A specific pro?","Peu importe":"Any",
     // Connexion / inscription
     "Créer mon compte":"Create my account","Créer mon compte, c'est gratuit":"Create my account, it's free","Créer un compte":"Create an account","Vos informations":"Your details","Mot de passe":"Password","Confirmer le mot de passe":"Confirm password","Votre quartier":"Your area","Mot de passe oublié ?":"Forgot password?","Content de vous revoir":"Good to see you again","Connectez-vous pour retrouver vos réservations.":"Log in to find your bookings.","Pas encore de compte ?":"No account yet?","Déjà un compte ?":"Already have an account?","Les mots de passe ne correspondent pas.":"Passwords don't match.","✓ Les mots de passe correspondent":"✓ Passwords match","ou":"or","Continuer avec Google":"Continue with Google","6 caractères minimum":"6 characters minimum","Votre mot de passe":"Your password","Retapez votre mot de passe":"Re-type your password","Afficher le mot de passe":"Show password","Afficher":"Show","bientôt":"soon","politique de confidentialité":"privacy policy",
     // Suivi de mission
@@ -8728,6 +8764,7 @@
     "Standard, aucun":"Padrão, nenhum",
     "Décrivez votre besoin":"Descreva a sua necessidade",
     "Photos (facultatif)":"Fotos (opcional)",
+    "Montrez le résultat que vous aimeriez.":"Mostre o resultado que gostaria.","Une photo aide le prestataire à préparer sa venue et à répondre plus vite.":"Uma foto ajuda o prestador a preparar-se e a responder mais depressa.","＋ Options, précision":"＋ Opções, detalhes","＋ Options, photo, précision":"＋ Opções, foto, detalhes",
     "Adresse de la prestation":"Morada do serviço",
     "Précisions (facultatif)":"Detalhes (opcional)",
     "Choisissez vos prestations":"Escolha os seus serviços",
@@ -11050,6 +11087,11 @@
             <div style="flex:1;min-width:0"><span class="sub">Le client choisit son prestataire</span>
               <div class="mini" style="color:var(--muted);line-height:1.45">Annuaire du métier dès la première commande (photo, badge). Pour les prestations où la PERSONNE compte&nbsp;: coiffure, massage, garde d'enfants. Sinon, le client ne peut viser que quelqu'un qu'il a déjà eu.${s.custom?'':' Réglé dans le code pour les métiers d\'origine.'}</div></div>
             <button class="switch" data-adm="catchoix:${s.id}" ${s.custom?'':'disabled style="opacity:.45;"'} style="flex:none;background:${s.choixPro?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${s.choixPro?'25px':'3px'}"></span></button>
+          </div>
+          <div class="row between" style="align-items:center;gap:10px;margin-top:12px">
+            <div style="flex:1;min-width:0"><span class="sub">Demander une photo à la commande</span>
+              <div class="mini" style="color:var(--muted);line-height:1.45">Pour les prestations où l'on a quelque chose à MONTRER&nbsp;: une fuite, un jardin, un volume à déménager. Inutile sur un massage ou un cours, où le client n'a rien à photographier.${s.custom?'':' Réglé dans le code pour les métiers d\'origine.'}</div></div>
+            <button class="switch" data-adm="catphoto:${s.id}" ${s.custom?'':'disabled style="opacity:.45;"'} style="flex:none;background:${photoDemandee(s.id)?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${photoDemandee(s.id)?'25px':'3px'}"></span></button>
           </div>`;
         const artLines=catArts.length?catArts.map(function(a){return `<div class="row between" style="align-items:center;margin-top:8px"><button class="linklike" data-adm="art:${a.id}" style="font-size:13px;text-align:left;color:var(--ink)">${esc(a.name)}</button><span class="chip ${acctChip(a.status)[0]}">${acctChip(a.status)[1]}</span></div>`;}).join(''):`<p class="mini" style="margin-top:6px;color:var(--muted)">Aucun prestataire sur ce métier : « Bientôt disponible » côté client.</p>`;
         return `${header}<div class="card" style="padding:13px;margin:6px 0 0;background:var(--sand)"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Artisans (${catArts.length})</div>${artLines}<hr class="dashed" style="margin:12px 0 2px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Tarif client</div>${priceEditor}${optionsEditorHtml(s.id)}${metierEditor}
@@ -17789,6 +17831,13 @@
       else if(act==='catchoix'){const sv=(S.customServices||[]).find(function(x){return x.id===id;});
         if(sv){sv.choixPro=!sv.choixPro;saveCatalog();render();
           toast(sv.choixPro?'Les clients pourront choisir leur prestataire sur ce métier':'Choix du prestataire retiré : le premier disponible, ou quelqu\'un de déjà venu');}}
+      else if(act==='catphoto'){const sv=(S.customServices||[]).find(function(x){return x.id===id;});
+        /* L'ABSENCE N'EST PAS UNE RÉPONSE, SAUF POUR LES MÉTIERS D'AVANT. `photoDemandee`
+           rend « etat » pour un métier créé sans la clé : on ne retire pas en silence une
+           photo qui était là hier. Dès qu'on touche l'interrupteur, la clé est ÉCRITE —
+           des deux côtés — et l'absence cesse de décider à la place de quelqu'un. */
+        if(sv){sv.photo=photoDemandee(sv.id)?'':'etat';saveCatalog();render();
+          toast(sv.photo?'Une photo sera proposée à la commande':'Plus de photo demandée sur ce métier');}}
       // Rendre à un métier du code le nom qui y est écrit — la clé est RETIRÉE du compte,
       // et la correction suivante faite dans le code lui reviendra.
       else if(act==='catnomdef'){if(S.nomsMetiers&&S.nomsMetiers[id]!=null){delete S.nomsMetiers[id];appliquerNoms();saveCatalog();toast('Nom d’origine rétabli');}}
@@ -18862,8 +18911,7 @@
 
 
       <div class="field"><label>Précisions (facultatif)</label><textarea rows="3" data-cfg="notes" placeholder="${PLACEHOLDERS[m.svc]||'Précisez votre demande…'}">${esc(m.notes)}</textarea></div>
-      <div class="field"><label>Photos (facultatif)</label>
-        <div class="thumbs">${(m.photos||[]).map((u,i)=>`<div class="thumb"><img src="${u}" alt="Photo"><button data-act="rmphoto:${i}" aria-label="Retirer la photo">×</button></div>`).join('')}<label class="thumb add"><span>${I.camera}</span><span>Photo</span><input type="file" accept="image/*" capture="environment" data-photoinput hidden></label><label class="thumb add"><span>${I.image}</span><span>Galerie</span><input type="file" accept="image/*" multiple data-photoinput hidden></label></div></div>
+      ${blocPhotosHtml(m,false)}
 
       ${locModeOf(m)==='salon'?blocRdvHtml(m):`<div class="field"><label>Adresse de la prestation</label>
         ${S.addresses.length?`<div class="stack" style="gap:8px;margin-top:2px">
@@ -18959,11 +19007,10 @@
       ${demandeEnfants(m.svc)?`<div class="field"><label>Combien d'enfants&nbsp;?</label><div class="stepper"><button data-cfg="kids-minus">−</button><span class="val">${I.users} ${enfantsLbl(enfantsDe(m))}</span><button data-cfg="kids-plus">+</button></div><p class="mini" style="margin-top:6px">${I.check} Le tarif horaire ne change pas&nbsp;: c'est pour que le prestataire sache ce qui l'attend.</p></div>`:''}
       <div class="field"><label>${isDayU(m)?'Nombre de jours':'Durée estimée'}</label><div class="stepper"><button data-cfg="minus">−</button><span class="val">${durTxt(m)}</span><button data-cfg="plus">+</button></div>${isDayU(m)?`<p class="mini" style="margin-top:6px">${I.cal} Du ${endDateTxt(m)} · ${durTxt(m)} de garde</p>`:''}</div>
       ${(function(){const showMore=S.cfgMore||!!(m.notes&&m.notes.trim())||!!(m.photos&&m.photos.length)||optSubOf(m)>0;
-        if(!showMore)return `<button class="btn ghost sm" data-cfg="more" style="margin-top:4px;width:auto;padding:10px 16px">＋ Options, photo, précision <span class="mini" style="color:var(--muted);font-weight:500">· facultatif</span></button>`;
+        if(!showMore)return `<button class="btn ghost sm" data-cfg="more" style="margin-top:4px;width:auto;padding:10px 16px"><span>${photoDemandee(m.svc)?'＋ Options, photo, précision':'＋ Options, précision'}</span> <span class="mini" style="color:var(--muted);font-weight:500">· facultatif</span></button>`;
         return `${optionsPickerHtml(m)}
       <div class="field"><label>Décrivez votre besoin <span style="font-weight:500;color:var(--muted)">(facultatif)</span></label><textarea rows="3" data-cfg="notes" placeholder="${PLACEHOLDERS[m.svc]||'Précisez la prestation…'}">${esc(m.notes)}</textarea></div>
-      <div class="field"><label>Photos <span style="font-weight:500;color:var(--muted)">(facultatif)</span></label>
-        <div class="thumbs">${(m.photos||[]).map((u,i)=>`<div class="thumb"><img src="${u}" alt="Photo de la prestation"><button data-act="rmphoto:${i}" aria-label="Retirer la photo">×</button></div>`).join('')}<label class="thumb add"><span>${I.camera}</span><span>Photo</span><input type="file" accept="image/*" capture="environment" data-photoinput hidden></label><label class="thumb add"><span>${I.image}</span><span>Galerie</span><input type="file" accept="image/*" multiple data-photoinput hidden></label></div>
+      ${blocPhotosHtml(m,true)}
         </div>`;})()}
       ${locModeOf(m)==='salon'?blocRdvHtml(m):`<div class="field"><label>Adresse de la prestation</label>
         ${S.addresses.length?`<div class="stack" style="gap:8px;margin-top:2px">
