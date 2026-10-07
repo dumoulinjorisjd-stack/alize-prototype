@@ -949,12 +949,21 @@
   .langsel-opt{background:transparent;border:none;color:var(--muted);font-family:inherit;font-weight:700;font-size:12px;letter-spacing:.4px;padding:2px 5px;cursor:pointer;border-radius:6px}
   .langsel-opt:hover{color:var(--teal-deep)}
   .langsel-opt.on{color:var(--teal-deep);background:var(--teal-wash)}
-  .seg{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:10px 13px;border-radius:12px;background:var(--card);border:1.5px solid var(--hair);font-size:13px;font-weight:600;color:var(--ink-soft);transition:all .15s}
+  /* UNE SEULE HAUTEUR POUR TOUTES LES PETITES COMMANDES. Mesuré sur l'écran de commande :
+     « ← Retour » faisait 29 px, les chips de souplesse 37, les boutons de lieu 38 — ces
+     deux derniers portent pourtant la MÊME classe, et le seul px d'écart venait de
+     l'icône. Trois hauteurs sur le même écran pour des commandes de même rang. On les
+     pose à 40, ce qui harmonise sans allonger les écrans. */
+  .seg{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:40px;padding:9px 13px;border-radius:12px;background:var(--card);border:1.5px solid var(--hair);font-size:13px;font-weight:600;color:var(--ink-soft);transition:all .15s}
   .seg svg{width:16px;height:16px;flex:none}
   .seg.on{background:var(--ink);color:var(--sand);border-color:var(--ink)}
   .seg.off{opacity:.38;text-decoration:line-through;cursor:not-allowed}
   .stepper{display:flex;align-items:center;gap:0;background:var(--card);border:1.5px solid var(--hair);border-radius:13px;width:fit-content;overflow:hidden}
   .stepper button{width:46px;height:46px;font-size:22px;font-weight:600;color:var(--teal-deep)}
+  /* À LA BORNE, LE PAS SE GRISE. Il était noir et cliquable à 1 personne, et ne faisait
+     rien : l'application sait pourtant désactiver proprement (le bouton de commande le
+     fait, à 50 % d'opacité). C'était une incohérence, pas une impossibilité. */
+  .stepper button:disabled{opacity:.3;cursor:default}
   .stepper .val{min-width:74px;display:inline-flex;align-items:center;justify-content:center;gap:6px;font-weight:700;font-family:var(--f-num);font-size:15px}
   .stepper .val svg{width:15px;height:15px;flex:none}
   textarea,input.txt,select.txt{width:100%;padding:13px;border-radius:12px;border:1.5px solid var(--hair);background:var(--card);color:var(--ink);font-family:inherit;font-size:16px;resize:none}
@@ -1278,7 +1287,7 @@
   .svc-dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex:none}
 
   .mini{font-size:12px;color:var(--muted);line-height:1.4}
-  .reset{margin-top:4px;display:inline-flex;align-items:center;gap:5px;vertical-align:middle;font-size:13px;font-weight:650;color:var(--ink);background:var(--card);border:1px solid var(--hair);border-radius:999px;padding:7px 14px;line-height:1;text-decoration:none;box-shadow:0 8px 20px -12px var(--shadow);transition:transform .12s ease,border-color .2s ease,box-shadow .2s ease}
+  .reset{min-height:40px;margin-top:4px;display:inline-flex;align-items:center;gap:5px;vertical-align:middle;font-size:13px;font-weight:650;color:var(--ink);background:var(--card);border:1px solid var(--hair);border-radius:999px;padding:7px 14px;line-height:1;text-decoration:none;box-shadow:0 8px 20px -12px var(--shadow);transition:transform .12s ease,border-color .2s ease,box-shadow .2s ease}
   .reset:hover{border-color:color-mix(in srgb,var(--teal) 26%,var(--hair))}
   .reset:active{transform:scale(.96)}
   #reset{background:none;border:none;box-shadow:none;color:var(--muted);padding:0;border-radius:0;font-size:12px;font-weight:500}
@@ -3577,7 +3586,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='825';
+  const VERSION_APP='826';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -4318,6 +4327,31 @@
   // Sous-total forfait d'une mission à l'acte (somme des actes cochés × quantité), ou null
   // si la mission n'est pas de type « catalogue » (on retombe alors sur le tarif horaire).
   function forfaitSub(m){if(!m||!m.acts||!m.acts.length)return null;return m.acts.reduce(function(t,a){return t+(Number(a.price)||0)*(a.qty||1);},0);}
+  /* ══ UNE PRESTATION QUI DIT DÉJÀ POUR COMBIEN DE PERSONNES ELLE EST NE SE MULTIPLIE PAS
+     Mesuré sur un massage : cocher « Duo (2 pers., 1 h) » à 210 € puis répondre
+     « 2 personnes » à la question posée juste en dessous donnait 420 €. La prestation
+     annonce déjà qu'elle est pour deux, et le multiplicateur la doublait. Le client qui
+     répond logiquement aux DEUX questions payait le double, et rien ne l'avertissait.
+     Même configuration sur le coach sportif, le Pilates et le yoga (« Séance duo »,
+     « Cours duo »).
+     LA RÈGLE EST PAR PRESTATION, PAS PAR MÉTIER, parce que le panier en accepte
+     PLUSIEURS : « 1 h relaxant » + « Duo » cochés ensemble, la première doit suivre le
+     nombre de personnes et la seconde non. Retirer la question pour tout le métier aurait
+     fait payer une seule personne pour deux massages individuels.
+     ON LIT LE LIBELLÉ, et c'est assumé : les prestations sont créées dans la console, le
+     libellé est la seule chose que la grille porte. Un mot entier (« duo », « collectif »,
+     « groupe ») ou un nombre suivi de « pers » — jamais une sous-chaîne, sinon « groupe
+     électrogène » tomberait dedans. Ce qu'on ne reconnaît pas se multiplie, comme avant :
+     le doute ne retire jamais d'argent au prestataire. */
+  const ACTE_PLUSIEURS=/(^|[^0-9a-zà-ÿ])(duo|collectif|groupe)([^0-9a-zà-ÿ]|$)|[0-9]\s*pers/i;
+  function actePourPlusieurs(a){return ACTE_PLUSIEURS.test(String((a&&a.nm)||''));}
+  function forfaitParts(m){
+    if(!m||!m.acts||!m.acts.length)return null;
+    let mult=0,fixe=0;
+    m.acts.forEach(function(a){const prix=(Number(a.price)||0)*(a.qty||1);
+      if(actePourPlusieurs(a))fixe+=prix;else mult+=prix;});
+    return {mult:mult,fixe:fixe};
+  }
   // PRESTATIONS / OPTIONS additionnelles d'un métier (éditables par l'admin, pour TOUS les
   // métiers — horaires comme à l'acte). Chaque option a une unité : 'u' (à l'unité, prix
   // fixe) ou 'h' (à l'heure : prix × nombre d'heures, et le temps s'ajoute à la prestation).
@@ -5667,7 +5701,8 @@
   function totals(m){const rate=fixedRate(m);const h=billHours(m);const fs=forfaitSub(m);const per=peopleOf(m);
     // Base (forfait à l'acte OU horaire × durée) × nb de personnes, PUIS on ajoute les
     // prestations/options sélectionnées (couche additive — 0 si aucune option cochée).
-    const sub=((fs!=null)?fs:rate*h)*per+optSubOf(m);const boost=m.boost||0;
+    const fp=forfaitParts(m);
+    const sub=((fp!=null)?(fp.mult*per+fp.fixe):rate*h*per)+optSubOf(m);const boost=m.boost||0;
     // Coup de pouce (relance pendant la recherche) : désormais un MONTANT en euros saisi par
     // le client (m.boostEur), ajustable uniquement à la hausse. On conserve la compat avec un
     // éventuel ancien boost en % (m.boost) — les deux s'additionnent dans la majoration.
@@ -18925,8 +18960,8 @@
       ${optionsPickerHtml(m)}
 
       ${(canOnSite(m.svc)&&!salonOnly(m.svc)&&salonPossible(m.svc)&&!siteDuChoisi(m))?`<div class="field"><label>Lieu de la prestation</label><div class="segs"><button class="seg ${locModeOf(m)!=='salon'?'on':''}" data-loc="domicile">${I.home} À domicile</button><button class="seg ${locModeOf(m)==='salon'?'on':''}" data-loc="salon">${I.shop} Chez le prestataire</button></div><p class="mini" style="margin-top:6px">${locModeOf(m)==='salon'?I.pin+' Son adresse dès qu’il accepte.':I.home+' Le pro se déplace chez vous.'}</p></div>`:''}
-      ${needsPeople(m.svc)?`<div class="field"><label>Pour combien de personnes&nbsp;?</label><div class="stepper"><button data-cfg="people-minus">−</button><span class="val">${I.users} ${peopleLbl(peopleOf(m))}</span><button data-cfg="people-plus">+</button></div><p class="mini" style="margin-top:6px">Le prix ci-dessous est multiplié par le nombre de personnes, chacune sa prestation.</p></div>`:''}
-      ${demandeEnfants(m.svc)?`<div class="field"><label>Combien d'enfants&nbsp;?</label><div class="stepper"><button data-cfg="kids-minus">−</button><span class="val">${I.users} ${enfantsLbl(enfantsDe(m))}</span><button data-cfg="kids-plus">+</button></div><p class="mini" style="margin-top:6px">${I.check} Le tarif horaire ne change pas&nbsp;: c'est pour que le prestataire sache ce qui l'attend.</p></div>`:''}
+      ${needsPeople(m.svc)?`<div class="field"><label>Pour combien de personnes&nbsp;?</label><div class="stepper"><button data-cfg="people-minus"${peopleOf(m)<=1?" disabled":""}>−</button><span class="val">${I.users} ${peopleLbl(peopleOf(m))}</span><button data-cfg="people-plus"${peopleOf(m)>=20?" disabled":""}>+</button></div><p class="mini" style="margin-top:6px">Le prix ci-dessous est multiplié par le nombre de personnes, chacune sa prestation.${(m.acts||[]).some(actePourPlusieurs)?' <b>Une prestation qui annonce déjà un nombre, comme un duo, n’est pas multipliée.</b>':''}</p></div>`:''}
+      ${demandeEnfants(m.svc)?`<div class="field"><label>Combien d'enfants&nbsp;?</label><div class="stepper"><button data-cfg="kids-minus"${enfantsDe(m)<=1?" disabled":""}>−</button><span class="val">${I.users} ${enfantsLbl(enfantsDe(m))}</span><button data-cfg="kids-plus"${enfantsDe(m)>=10?" disabled":""}>+</button></div><p class="mini" style="margin-top:6px">${I.check} Le tarif horaire ne change pas&nbsp;: c'est pour que le prestataire sache ce qui l'attend.</p></div>`:''}
 
       <div class="field"><label>Quand&nbsp;?</label>${daySelect}</div>
       <div class="field"><label>${motsDuLieu(m.svc).heure}</label>${dayFlex?`<p class="mini" style="margin:2px 0 0;color:var(--muted)">${I.clock} ${m.slotFlex==='week'?'Vous laissez toute la semaine, le pro vous proposera un jour et une heure.':'Vous laissez toute la journée, le pro choisit son heure de passage.'}</p>`:`${hourSelect}${slotNote}`}</div>
@@ -19028,9 +19063,9 @@
       ${(m.svc==='baby'&&!m.preferredUid)?`<p class="mini" style="margin-top:6px">${I.shield} Profil complet + <b>appel</b> avant de confirmer.</p>`:''}
       <div class="field"><label>Tarif ${isDayU(m)?'journalier':'horaire'}, prix fixe Ti-Services</label><div class="pricebox"><b class="money" style="font-size:22px;font-family:var(--f-disp)">${fixedRate(m)} ${rateUnit(m)}</b><span class="chip good">${I.check} Prix fixe</span></div></div>
       ${(canOnSite(m.svc)&&!salonOnly(m.svc)&&salonPossible(m.svc)&&!siteDuChoisi(m))?`<div class="field"><label>Lieu de la prestation</label><div class="segs"><button class="seg ${locModeOf(m)!=='salon'?'on':''}" data-loc="domicile">${I.home} À domicile</button><button class="seg ${locModeOf(m)==='salon'?'on':''}" data-loc="salon">${I.shop} Chez le prestataire</button></div><p class="mini" style="margin-top:6px">${locModeOf(m)==='salon'?I.pin+' Son adresse dès qu’il accepte.':I.home+' Le pro se déplace chez vous.'}</p></div>`:''}
-      ${needsPeople(m.svc)?`<div class="field"><label>Nombre de participants</label><div class="stepper"><button data-cfg="people-minus">−</button><span class="val">${I.users} ${peopleLbl(peopleOf(m))}</span><button data-cfg="people-plus">+</button></div><p class="mini" style="margin-top:6px">${I.users} Prix × nombre de personnes.</p></div>`:''}
-      ${demandeEnfants(m.svc)?`<div class="field"><label>Combien d'enfants&nbsp;?</label><div class="stepper"><button data-cfg="kids-minus">−</button><span class="val">${I.users} ${enfantsLbl(enfantsDe(m))}</span><button data-cfg="kids-plus">+</button></div><p class="mini" style="margin-top:6px">${I.check} Le tarif horaire ne change pas&nbsp;: c'est pour que le prestataire sache ce qui l'attend.</p></div>`:''}
-      <div class="field"><label>${isDayU(m)?'Nombre de jours':'Durée estimée'}</label><div class="stepper"><button data-cfg="minus">−</button><span class="val">${durTxt(m)}</span><button data-cfg="plus">+</button></div>${isDayU(m)?`<p class="mini" style="margin-top:6px">${I.cal} Du ${endDateTxt(m)} · ${durTxt(m)} de garde</p>`:''}</div>
+      ${needsPeople(m.svc)?`<div class="field"><label>Nombre de participants</label><div class="stepper"><button data-cfg="people-minus"${peopleOf(m)<=1?" disabled":""}>−</button><span class="val">${I.users} ${peopleLbl(peopleOf(m))}</span><button data-cfg="people-plus"${peopleOf(m)>=20?" disabled":""}>+</button></div><p class="mini" style="margin-top:6px">${I.users} Prix × nombre de personnes.${(m.acts||[]).some(actePourPlusieurs)?' <b>Une prestation qui annonce déjà un nombre, comme un duo, n’est pas multipliée.</b>':''}</p></div>`:''}
+      ${demandeEnfants(m.svc)?`<div class="field"><label>Combien d'enfants&nbsp;?</label><div class="stepper"><button data-cfg="kids-minus"${enfantsDe(m)<=1?" disabled":""}>−</button><span class="val">${I.users} ${enfantsLbl(enfantsDe(m))}</span><button data-cfg="kids-plus"${enfantsDe(m)>=10?" disabled":""}>+</button></div><p class="mini" style="margin-top:6px">${I.check} Le tarif horaire ne change pas&nbsp;: c'est pour que le prestataire sache ce qui l'attend.</p></div>`:''}
+      <div class="field"><label>${isDayU(m)?'Nombre de jours':'Durée estimée'}</label><div class="stepper"><button data-cfg="minus"${(m.duration||1)<=1?" disabled":""}>−</button><span class="val">${durTxt(m)}</span><button data-cfg="plus"${(m.duration||1)>=(isDayU(m)?30:10)?" disabled":""}>+</button></div>${isDayU(m)?`<p class="mini" style="margin-top:6px">${I.cal} Du ${endDateTxt(m)} · ${durTxt(m)} de garde</p>`:''}</div>
       ${(function(){const showMore=S.cfgMore||!!(m.notes&&m.notes.trim())||!!(m.photos&&m.photos.length)||optSubOf(m)>0;
         if(!showMore)return `<button class="btn ghost sm" data-cfg="more" style="margin-top:4px;width:auto;padding:10px 16px"><span>${photoDemandee(m.svc)?'＋ Options, photo, précision':'＋ Options, précision'}</span> <span class="mini" style="color:var(--muted);font-weight:500">· facultatif</span></button>`;
         return `${optionsPickerHtml(m)}

@@ -99,12 +99,20 @@ const ACTES = { c_catamaran: [{ id: 'a1', nm: 'Demie journée avec sunset', pric
       return { tag: el ? el.tagName : 'aucun', n: el && el.tagName === 'SELECT' ? el.options.length : 0,
         min: el ? el.getAttribute('min') : '', max: el ? el.getAttribute('max') : '' };
     };
-    return { court: rend(0), long: rend(180) };
+    const c = rend(0), l = rend(180);
+    /* AUJOURD'HUI SORT DE LA LISTE QUAND IL N'Y RESTE PLUS UN SEUL CRÉNEAU, et c'est
+       juste : à 23 h on ne réserve plus pour le soir même. L'épreuve affirmait « trente
+       jours » sans regarder l'heure, donc elle rougissait tous les soirs — un garde-fou
+       qui crie au loup finit désarmé. On lui fait DIRE si aujourd'hui est encore
+       réservable, et l'on attend le compte qui correspond. */
+    return { court: c, long: l, dujour: l.min === new Date().toISOString().slice(0, 10) };
   }, [BATEAU, ACTES]);
-  ok(E.court.tag === 'SELECT' && E.court.n === 30, 'à trente jours, la liste déroulante d’aujourd’hui, inchangée (' + E.court.n + ' jours)');
+  const auj = E.dujour ? 1 : 0;   /* aujourd'hui compte-t-il encore ? */
+  ok(E.court.tag === 'SELECT' && E.court.n === 29 + auj,
+    'à trente jours, la liste déroulante fait ' + E.court.n + ' jours' + (auj ? '' : ' (aujourd’hui n’a plus de créneau)'));
   ok(E.long.tag === 'INPUT', 'au-delà, le champ devient un vrai calendrier (' + E.long.tag + ')');
   const jours = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 864e5) + 1;
-  ok(E.long.min && E.long.max && jours(E.long.min, E.long.max) === 180,
+  ok(E.long.min && E.long.max && jours(E.long.min, E.long.max) === 179 + auj,
     'borné à ce que le métier autorise, ni avant aujourd’hui ni après : ' + E.long.min + ' → ' + E.long.max);
 
   console.log('F — la console pose les deux réglages');
