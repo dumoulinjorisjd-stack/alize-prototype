@@ -3577,7 +3577,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='824';
+  const VERSION_APP='825';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -5243,10 +5243,35 @@
     if(m.svc==='baby')return !!m.clientConfirmed;
     return true;
   }
-  function contactRow(p){return `<div class="contacts">`+
-    `<a class="btn ghost sm" href="https://wa.me/${waNumber(p.phone)}" target="_blank" rel="noopener">${I.whatsapp} WhatsApp</a>`+
-    `<a class="btn ghost sm" href="tel:${telClean(p.phone)}">${I.phone} Appeler</a>`+
-    `<a class="btn ghost sm" href="mailto:${esc(p.email||'')}">${I.mail} E-mail</a></div>`;}
+  /* « LE BOUTON WHATSAPP ET APPELER DEVRAIT ÊTRE CLIQUABLE UNIQUEMENT S'IL Y A BIEN UN
+     NUMÉRO DE TÉLÉPHONE À CONTACTER. » Les trois boutons étaient posés sans condition :
+     sur une fiche sans téléphone, « Appeler » ouvrait un `tel:` vide et WhatsApp un
+     `wa.me/` tout court, qui mène à la page d'accueil de WhatsApp. Un bouton qui ne fait
+     rien use la confiance qu'on a dans tous les autres de l'écran.
+     ON NE REND QUE CE QUI PEUT ABOUTIR, ET CE QUI MANQUE SE DIT : sans la phrase, une
+     fiche sans numéro se lirait comme un écran cassé plutôt que comme une fiche
+     incomplète, et on chercherait le défaut du mauvais côté.
+     LE SEUIL EST « ASSEZ DE CHIFFRES POUR COMPOSER », PAS « NUMÉRO VALIDE D'ICI » : la
+     validité se juge sur les plans de Saint-Barthélemy, et un numéro de métropole ou de
+     l'étranger en sortirait « impossible ». Retirer le bouton d'appel sur un numéro qui
+     sonne serait un défaut pire que celui qu'on corrige. On garde donc les boutons et
+     l'on AVERTIT quand le numéro ne peut pas sonner, comme le fait déjà la carte des
+     dossiers jamais envoyés. */
+  function contactRow(p){
+    const brut=String((p&&p.phone)||'').trim();
+    const tel=digits(brut).length>=6;
+    const mail=/.+@.+\..+/.test(String((p&&p.email)||'').trim());
+    const dits=[];
+    if(!tel)dits.push(brut?'Numéro inutilisable sur cette fiche.':'Pas de numéro de téléphone sur cette fiche.');
+    else{const t=telImpossibleTxt(brut);if(t)dits.push(t);}
+    if(!mail)dits.push('Pas d’adresse e-mail sur cette fiche.');
+    return `<div class="contacts">`+
+      (tel?`<a class="btn ghost sm" href="https://wa.me/${waNumber(brut)}" target="_blank" rel="noopener">${I.whatsapp} WhatsApp</a>`:'')+
+      (tel?`<a class="btn ghost sm" href="tel:${telClean(brut)}">${I.phone} Appeler</a>`:'')+
+      (mail?`<a class="btn ghost sm" href="mailto:${esc((p&&p.email)||'')}">${I.mail} E-mail</a>`:'')+
+      `</div>`+
+      (dits.length?`<p class="mini" style="margin-top:7px;color:var(--muted)">${esc(dits.join(' '))}</p>`:'');
+  }
   // L'e-mail (et le téléphone) de l'artisan vivent aussi sur sa fiche users/{uid}. Les
   // anciennes fiches artisans ne les portaient pas → l'admin ne les voyait pas. On les
   // récupère à l'ouverture de la fiche et on les met en cache (par uid) pour l'affichage.
