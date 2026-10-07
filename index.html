@@ -3577,7 +3577,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='822';
+  const VERSION_APP='823';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -15523,15 +15523,29 @@
     ['svc','Métiers & tarifs'],['acc','Engagements']];
   function jalonsProDe(f){f=f||{};return {id:!!draftIdDone(f),ins:!!draftInsDone(f),
     svc:!!draftSvcDone(f),acc:!!draftAccDone(f)};}
+  /* ET LE NUMÉRO MONTE AVEC LES JALONS. « Pour ceux qui ne finalisent pas, je ne peux
+     pas voir leur numéro pour les contacter. » Il était pourtant TAPÉ : la première
+     étape du dossier le demande — mais le dossier vit dans le `localStorage` de son
+     téléphone jusqu'à l'ENVOI, et un dossier jamais envoyé n'a jamais fait monter le
+     numéro. L'inscription par e-mail l'écrit (le compte y naît à l'envoi) ; celle par
+     Google, qui est le chemin de ceux qui s'arrêtent, ne le pouvait pas.
+     Il part donc par la porte qui existe déjà, au même moment que les jalons, et aux
+     mêmes conditions : seulement s'il a CHANGÉ, et seulement quand il est complet — un
+     numéro en cours de frappe n'est pas un numéro, et remplir la console de moitiés de
+     numéros ferait cesser de s'y fier. Rien de plus ne monte : le reste du dossier
+     attend l'envoi, comme avant. */
   function noterJalonsPro(){
     try{
       if(!(FB&&FB.auth&&FB.auth.currentUser)||isDemo())return;
       const j=jalonsProDe(S.proForm);
-      const cle=PRO_ETAPES.map(function(e){return j[e[0]]?'1':'0';}).join('');
+      const tel=telStockeLu((S.proForm||{}).phone).ok?String((S.proForm||{}).phone||'').trim():'';
+      const cle=PRO_ETAPES.map(function(e){return j[e[0]]?'1':'0';}).join('')+'|'+tel;
       if(S._jalonsProEcrits===cle)return;
       S._jalonsProEcrits=cle;
+      const maj={jalonsPro:j,jalonsProAt:Date.now()};
+      if(tel)maj.phone=tel;
       FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),
-        {jalonsPro:j,jalonsProAt:Date.now()},{merge:true}).catch(function(){});
+        maj,{merge:true}).catch(function(){});
     }catch(_){}
   }
   function loadProDraft(){try{const r=localStorage.getItem(proDraftKey());if(r){const j=JSON.parse(r);S.proForm=Object.assign(S.proForm||{},j);}}catch(_){}}

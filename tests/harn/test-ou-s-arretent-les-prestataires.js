@@ -108,6 +108,30 @@ const html = fs.readFileSync(path.join(RACINE, 'index.html'), 'utf8');
   ok(/if\(S\._jalonsProEcrits===cle\)return;/.test(html),
     'et réécrire la fiche à l’identique n’apprendrait rien à personne : on ne le fait pas');
 
+  /* E — « POUR CEUX QUI NE FINALISENT PAS, JE NE PEUX PAS VOIR LEUR NUMÉRO POUR LES
+     CONTACTER. » Il était pourtant TAPÉ : la première étape du dossier le demande. Mais
+     le dossier vit dans le `localStorage` de son téléphone jusqu'à l'ENVOI, et un
+     dossier jamais envoyé ne faisait jamais monter le numéro — l'inscription par e-mail
+     l'écrit (le compte y naît à l'envoi), celle par Google, qui est le chemin de ceux
+     qui s'arrêtent, ne le pouvait pas. Il part par la porte qui existe déjà. */
+  console.log('\nE — le numéro monte avec les jalons');
+  ok(/const tel=telStockeLu\(\(S\.proForm\|\|\{\}\)\.phone\)\.ok\?/.test(html),
+    'seulement quand il est complet : un numéro en cours de frappe n’est pas un numéro');
+  ok(/if\(tel\)maj\.phone=tel;/.test(html),
+    'il part avec les jalons, par la même porte');
+  ok(/\.join\(''\)\+'\|'\+tel;/.test(html),
+    'et un numéro corrigé repart : la clé anti-réécriture le compte');
+  const vuTel = await p.evaluate(() => {
+    const S = window.__S;
+    S.persona = 'admin'; S.admin = { view: 'cockpit' };
+    S.adminArtsLoaded = true; S.adminArtisans = [];
+    S.adminDrafts = [{ uid: 'd9', name: 'Vanessa', email: 'v@e.fr', phone: '+590690112233',
+      createdAt: 1790000000000, jalonsPro: { id: false, ins: true, svc: false, acc: false } }];
+    window.__render();
+    return (document.getElementById('view').textContent || '').indexOf('+590690112233') >= 0;
+  });
+  ok(vuTel, 'et la console l’affiche, cliquable, sur le dossier jamais envoyé');
+
   ok(errs.length === 0, 'aucune erreur JS (' + errs.join(' | ') + ')');
   await b.close();
   console.log(f ? ('\n' + f + ' ÉCHEC(S)\n') : '\nTout est vert.\n');
