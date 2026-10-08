@@ -91,7 +91,7 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   console.log('\nA — les cinq étapes, et qui valide chacune');
   const a = await suivi('pending');
   ok(a.barre && a.et.length === 5, 'la barre montre cinq étapes');
-  ok(a.et.map((e) => e.t).join(' ') === 'Envoyée Acceptée Démarrée Terminée Validée',
+  ok(a.et.map((e) => e.t).join(' ') === 'Envoyée Acceptée Démarrée Terminée À valider',
     'dans l’ordre : ' + a.et.map((e) => e.t).join(' · '));
   ok(a.et.map((e) => e.qui).join(',') === 'vous,le pro,le pro,le pro,vous',
     'et chacune dit QUI valide : ' + a.et.map((e) => e.qui).join(' · '));
@@ -102,7 +102,7 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   const faites = (r) => r.et.filter((e) => e.etat === 'faite').length;
   const encours = (r) => (r.et.find((e) => e.etat === 'encours') || {}).t || '—';
   for (const [st, n, suite] of [['pending', 1, 'Acceptée'], ['accepted', 2, 'Démarrée'],
-    ['working', 3, 'Terminée'], ['done_pro', 4, 'Validée'], ['paid', 5, '—']]) {
+    ['working', 3, 'Terminée'], ['done_pro', 4, 'À valider'], ['paid', 5, '—']]) {
     const r = await suivi(st);
     ok(faites(r) === n && encours(r) === suite,
       st + ' : ' + n + ' étape(s) cochée(s), en cours « ' + encours(r) + ' »');
