@@ -959,6 +959,52 @@
   .seg.on{background:var(--ink);color:var(--sand);border-color:var(--ink)}
   .seg.off{opacity:.38;text-decoration:line-through;cursor:not-allowed}
   .stepper{display:flex;align-items:center;gap:0;background:var(--card);border:1.5px solid var(--hair);border-radius:13px;width:fit-content;overflow:hidden}
+  /* LA BARRE DES ÉTAPES. Cinq colonnes de largeur égale sur 390 px : les libellés sont
+     courts pour cela. Le fil qui les relie se place entre deux pastilles, jamais après
+     la dernière. Vert = fait, corail = en cours, filet = à venir — et l'étiquette dit
+     QUI valide, c'est tout l'intérêt. */
+  .etapes .et-rang{position:relative;display:flex;align-items:flex-start;justify-content:space-between;gap:0}
+  .etapes .et{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;gap:3px;flex:1;min-width:0;text-align:center}
+  /* le rail court d'un centre de pastille à l'autre : 10 % à 90 % de la rangée */
+  .etapes .et-rail{position:absolute;left:10%;right:10%;top:12px;height:3px;border-radius:3px;background:var(--hair);overflow:hidden}
+  .etapes .et-jauge{display:block;height:100%;border-radius:3px;background:var(--good);transition:width .5s cubic-bezier(.2,.8,.2,1)}
+  .etapes .et-zouti{width:25px;height:27px;display:block;animation:z-float 2.6s ease-in-out infinite}
+  .etapes .et-rond{width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;
+    border:2px solid var(--hair);background:var(--card);color:var(--muted);font-size:13px;line-height:1;transition:all .3s}
+  .etapes .et-rond svg{width:13px;height:13px}
+  /* LES CINQ LIBELLÉS NE SE TOUCHENT PAS, ET C'EST MESURÉ. À 11,5 px il restait 0,6 px
+     entre « Démarrée » et sa voisine sur un écran de 390 px, et la gouttière devenait
+     NÉGATIVE à 360 : les mots se chevauchaient. 10,5 px rend 8 px à 390, 2 px à 360 ;
+     en dessous de 375 px, aucune taille lisible ne tient cinq mots côte à côte, alors
+     la rangée entière se resserre (la série « Envoyée · Acceptée · Démarrée · Terminée
+     · Validée » se lit comme un tout, on n'en abrège aucun). */
+  .etapes .et-t{font-size:10.5px;font-weight:700;color:var(--muted);letter-spacing:-.01em}
+  .etapes .et-qui{font-size:9.5px;font-weight:600;color:var(--muted);opacity:.75}
+  @media(max-width:374px){.etapes .et-t{font-size:9px}.etapes .et-qui{font-size:8.5px}}
+  .etapes .faite .et-rond{background:var(--good);border-color:var(--good);color:#fff}
+  .etapes .faite .et-rond svg{animation:pop .34s cubic-bezier(.2,1.5,.4,1)}
+  .etapes .faite .et-t{color:var(--ink)}
+  .etapes .encours .et-rond{border-color:var(--coral);background:var(--coral);color:#fff;box-shadow:0 0 0 4px var(--coral-wash)}
+  /* LA PASTILLE QUI PORTE ZOUTI garde son cerclage mais rend le fond au papier : il est
+     corail, sur du corail il ne serait qu'une tache. Elle grandit de quatre pixels pour
+     qu'il tienne — et c'est la seule qui bouge, le rail passe toujours par son centre. */
+  .etapes .zouti .et-rond{width:34px;height:34px;margin:-4px 0;background:var(--card);overflow:visible}
+  /* La pastille de Zouti fait 34 px : à 2,3× son onde ressortait de la carte sur un
+     écran de 320 px (−0,3 px, mesuré). Plus la pastille est grosse, plus l'onde doit
+     être courte — c'est la MÊME contrainte, pas un réglage de goût. */
+  .etapes .encours.zouti .et-rond::after{width:34px;height:34px;animation-name:etpingz}
+  @keyframes etpingz{0%{opacity:.65;transform:scale(1)}100%{opacity:0;transform:scale(2)}}
+  /* l'étape en cours respire : une onde douce, la même que la recherche */
+  /* ONDE PROPRE À LA BARRE. `ping` monte à 4,2× : juste pour une pastille de 8 px,
+     mais 26 × 4,2 = 109 px, et la dernière étape étant à 46 px du bord, l'onde SORTAIT
+     de la carte et s'y coupait net. 2,3× tient dans la carte aux deux extrémités. */
+  .etapes .encours .et-rond::after{content:"";position:absolute;width:26px;height:26px;border-radius:50%;
+    border:2px solid var(--coral);animation:etping 1.9s cubic-bezier(0,0,.2,1) infinite;pointer-events:none}
+  @keyframes etping{0%{opacity:.65;transform:scale(1)}100%{opacity:0;transform:scale(2.3)}}
+  .etapes .encours .et-t{color:var(--coral-deep)}
+  .etapes .encours .et-qui{color:var(--coral-deep);opacity:1}
+  .etapes .et-att{margin:12px 0 0;text-align:center;color:var(--muted)}
+  .etapes .et-att.moi{color:var(--coral-deep);font-weight:700}
   .stepper button{width:46px;height:46px;font-size:22px;font-weight:600;color:var(--teal-deep)}
   /* À LA BORNE, LE PAS SE GRISE. Il était noir et cliquable à 1 personne, et ne faisait
      rien : l'application sait pourtant désactiver proprement (le bouton de commande le
@@ -3586,7 +3632,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='826';
+  const VERSION_APP='827';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -7184,7 +7230,7 @@
     "Passage décalé à la période suivante":"Visit moved to the next period","Abonnement arrêté":"Subscription stopped",
     "Pour corriger une information légale (nom, SIRET, adresse), contactez Ti-Services.":"To correct a legal detail (name, SIRET, address), contact Ti-Services.",
     // Paiement / commande
-    "Cochez au moins une prestation pour continuer.":"Select at least one service to continue.","Salon de coiffure":"Hair salon","Salon de massage":"Massage salon","Institut":"Beauty salon","Studio de Pilates":"Pilates studio","Studio de yoga":"Yoga studio","Son adresse exacte s’affiche dès qu’il accepte votre demande.":"Their exact address is shown as soon as they accept your request.","Ouvrir l’itinéraire":"Open directions","Aucune prestation sélectionnée":"No service selected","Déplacement offert":"Free travel","Coup de pouce":"Tip","Prix ferme":"Firm price","Choisissez la prestation":"Choose the service","Cochez une prestation pour continuer.":"Select a service to continue.",
+    "Cochez au moins une prestation pour continuer.":"Select at least one service to continue.","Envoyée":"Sent","Acceptée":"Accepted","Démarrée":"Started","Terminée":"Finished","Validée":"Confirmed","le pro":"the pro","Un prestataire doit accepter votre demande.":"A provider has to accept your request.","Le prestataire démarrera la prestation à l’heure convenue.":"The provider will start the job at the agreed time.","Le prestataire indiquera la fin de la prestation.":"The provider will mark the job as finished.","À vous de valider la prestation : c’est ce qui déclenche le paiement.":"Over to you: confirm the job, that is what triggers payment.","Tout est validé.":"Everything is confirmed.","Salon de coiffure":"Hair salon","Salon de massage":"Massage salon","Institut":"Beauty salon","Studio de Pilates":"Pilates studio","Studio de yoga":"Yoga studio","Son adresse exacte s’affiche dès qu’il accepte votre demande.":"Their exact address is shown as soon as they accept your request.","Ouvrir l’itinéraire":"Open directions","Aucune prestation sélectionnée":"No service selected","Déplacement offert":"Free travel","Coup de pouce":"Tip","Prix ferme":"Firm price","Choisissez la prestation":"Choose the service","Cochez une prestation pour continuer.":"Select a service to continue.",
     // Pitch
     "Comment ça marche":"How it works","Les services disponibles":"Available services","Un pro chez vous,":"A pro at your home,","en quelques minutes.":"in minutes.","Un pro chez vous, en quelques minutes.":"A pro at your home, in minutes.",
     // Sauvegarde + pied de page
@@ -8901,6 +8947,7 @@
     "Passage décalé à la période suivante":"Passagem adiada para o período seguinte","Abonnement arrêté":"Subscrição terminada",
     "Pour corriger une information légale (nom, SIRET, adresse), contactez Ti-Services.":"Para corrigir um dado legal (nome, SIRET, morada), contacte a Ti-Services.",
     "Cochez au moins une prestation pour continuer.":"Selecione pelo menos um serviço para continuar.",
+    "Envoyée":"Enviado","Acceptée":"Aceite","Démarrée":"Iniciado","Terminée":"Terminado","Validée":"Confirmado","le pro":"o profissional","Un prestataire doit accepter votre demande.":"Um prestador tem de aceitar o seu pedido.","Le prestataire démarrera la prestation à l’heure convenue.":"O prestador iniciará o serviço à hora combinada.","Le prestataire indiquera la fin de la prestation.":"O prestador indicará o fim do serviço.","À vous de valider la prestation : c’est ce qui déclenche le paiement.":"Agora é consigo: confirme o serviço, é o que aciona o pagamento.","Tout est validé.":"Está tudo confirmado.",
     "Salon de coiffure":"Salão de cabeleireiro","Salon de massage":"Salão de massagem","Institut":"Instituto de beleza","Studio de Pilates":"Estúdio de Pilates","Studio de yoga":"Estúdio de yoga","Son adresse exacte s’affiche dès qu’il accepte votre demande.":"A sua morada exata aparece assim que aceitar o seu pedido.","Ouvrir l’itinéraire":"Abrir o itinerário",
     "Aucune prestation sélectionnée":"Nenhum serviço selecionado",
     "Déplacement offert":"Deslocação grátis",
@@ -13574,6 +13621,7 @@
     const m=S.mission;
     return `<div class="pad"><div style="height:8px"></div><div style="text-align:center"><span class="eyebrow" style="justify-content:center">${m.svcName} · ${quandTxt(m)}</span><div class="h-hello">Recherche d'un prestataire…</div>
       <p class="sub" style="margin-top:2px">Le premier prestataire disponible sur votre créneau prend la mission.</p></div>
+      ${barreEtapes(m,false)}
       ${searchRadar(false)}
       <div class="card" style="padding:14px;text-align:center"><p class="sub" style="margin:0"><b id="notif">…</b> artisans notifiés</p></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0">${isDemo()?`<button class="demobtn" data-act="demo-go-pro">${I.hardhat} Voir côté prestataire pour accepter (démo)</button>`:''}${S.cancelAsk?cancelConfirmCard(m):`<button class="btn ghost" data-act="cancel-mission" style="margin-top:12px">Annuler la recherche</button>`}</div>
@@ -13655,6 +13703,119 @@
       ${canWiden?`<button class="btn ghost sm" data-act="widen-slot" style="margin-top:10px;width:auto;padding:9px 14px">${I.clock} Élargir à la journée, le pro propose l'heure</button>`:''}
       <p class="mini" style="margin-top:8px;color:var(--muted)">${I.bolt} Ou ajoutez un coup de pouce ci-dessous, les prestataires sont re-sollicités aussitôt.</p></div>`;
   }
+  /* ══ OÙ EN EST LA COMMANDE, ET QUI DOIT AGIR ════════════════════════════════════
+     « Une petite barre qui montre les prochaines étapes ; quand elles sont validées,
+     un badge vert. On visualise d'un coup d'œil les étapes que l'on aura à valider et
+     celles que le prestataire devra valider. »
+
+     IL Y AVAIT DÉJÀ UNE FRISE, ET SON DÉFAUT N'EST PAS CELUI QU'ON CROIT. Son `activeIdx`
+     ne connaissait que `pending`, `accepted` et `working` — j'ai d'abord cru à un trou.
+     Vérifié : `done_pro`, `paid` et `rated` ne passent pas par cet écran du tout, ils ont
+     le leur (`clientConfirm`, `clientReceipt`). La frise couvrait donc exactement les
+     états qu'elle avait à couvrir.
+     LE VRAI MANQUE EST QU'ELLE S'ARRÊTAIT À LA PORTE DE SON ÉCRAN. Le client traverse
+     TROIS écrans après avoir commandé, et à chaque passage il perdait de vue où il en
+     était. La barre les suit tous les trois. Et elle dit ce que la frise ne disait pas :
+     QUI doit valider — trois gestes du prestataire (accepter, démarrer, terminer) entre
+     deux gestes du client (commander, valider). C'est cette alternance qui la rend utile :
+     elle ne dit pas seulement où l'on en est, elle dit de qui on attend quelque chose.
+
+     ON ÉCRIT DONC LES CINQ ÉTATS, EN LISTE FERMÉE, et chacun dit QUI valide : trois
+     gestes du prestataire (accepter, démarrer, terminer) entre deux gestes du client
+     (commander, valider). C'est cette alternance qui rend la barre utile — elle ne dit
+     pas seulement où l'on en est, elle dit de qui on attend quelque chose.
+
+     ELLE REMPLACE LA FRISE DU BAS plutôt que de s'y ajouter : la même information deux
+     fois sur un écran de téléphone, c'est une information qu'on finit par ne plus lire.
+     Ce qu'elle portait en plus (la date, le nom du prestataire, la durée) est déjà sur
+     l'écran, en haut et sur la carte du prestataire. */
+  /* CHAQUE ÉTAPE A SON ICÔNE, et ce n'est pas de la décoration : cinq ronds vides
+     identiques se lisent à la lettre, cinq pictogrammes se lisent d'un coup d'œil — une
+     enveloppe, deux silhouettes, un éclair, une étoile, une carte. Celle qui est FAITE
+     cède la place à la coche : on ne décore pas ce qui est déjà acquis. */
+  const ETAPES_MISSION=[
+    {cle:'envoyee', t:'Envoyée',  qui:'vous', ico:'mail'},
+    {cle:'acceptee',t:'Acceptée', qui:'pro',  ico:'users'},
+    {cle:'demarree',t:'Démarrée', qui:'pro',  ico:'bolt'},
+    {cle:'terminee',t:'Terminée', qui:'pro',  ico:'star'},
+    {cle:'validee', t:'Validée',  qui:'vous', ico:'card'}];
+  /* ZOUTI AVANCE AVEC LA COMMANDE. Il se pose au-dessus de l'étape en cours, et il
+     saute d'un cran à chaque validation : c'est le seul élément de l'écran qui dit
+     « ça bouge » sans qu'on ait à lire. Au bout, il se met sur la dernière et reste là.
+     Le tracé est celui de l'application (`#zoutiLive`), réduit à ce qui se voit à
+     vingt-six pixels : les bras, la tête, les yeux, l'étoile. */
+  function zoutiMini(){
+    return `<svg class="zouti et-zouti" viewBox="18.4 19.9 83.1 90.2" aria-hidden="true">
+      <g transform="translate(60 63) scale(0.8) translate(-60 -55)">
+        <path d="M60 7 l3.4 7 7.7 1.1 -5.6 5.4 1.3 7.6 -6.8 -3.6 -6.8 3.6 1.3 -7.6 -5.6 -5.4 7.7 -1.1z" fill="#FFC24B" stroke="#2A2340" stroke-width="1.6" stroke-linejoin="round"/>
+        <g stroke="#FF6A5B" stroke-width="12" stroke-linecap="round" fill="none">
+          <path d="M40 72 C 30 90, 26 97, 19 97"/><path d="M50 79 C 46 96, 44 101, 39 103"/>
+          <path d="M60 81 L60 103"/><path d="M70 79 C 74 96, 76 101, 81 103"/>
+          <path d="M80 72 C 90 90, 94 97, 101 97"/></g>
+        <path d="M60 28 C 39 28, 29 45, 29 61 C 29 76, 43 83, 60 83 C 77 83, 91 76, 91 61 C 91 45, 81 28, 60 28 Z" fill="#FF6A5B" stroke="#2A2340" stroke-width="3"/>
+        <circle cx="50" cy="57" r="7.5" fill="#fff" stroke="#2A2340" stroke-width="2"/>
+        <circle cx="70" cy="57" r="7.5" fill="#fff" stroke="#2A2340" stroke-width="2"/>
+        <circle cx="51.4" cy="58.2" r="3.5" fill="#2A2340"/><circle cx="71.4" cy="58.2" r="3.5" fill="#2A2340"/>
+        <path d="M54 68 Q60 74 66 68" stroke="#2A2340" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+      </g></svg>`;
+  }
+  /* Combien d'étapes sont FAITES, par statut. Une liste fermée : un statut qu'on ne
+     connaît pas (annulée, litige, expirée) rend -1 et la barre ne s'affiche pas — une
+     barre qui promet des étapes qui ne viendront jamais est pire que pas de barre. */
+  const ETAPES_FAITES={pending:1,searching:1,accepted:2,working:3,done_pro:4,paid:5,rated:5};
+  function etapesMission(m){
+    const n=ETAPES_FAITES[String((m&&m.status)||'')];
+    if(n==null)return null;
+    return ETAPES_MISSION.map(function(e,i){
+      return {t:e.t,qui:e.qui,etat:(i<n)?'faite':((i===n)?'encours':'avenir')};});
+  }
+  /* La phrase sous la barre : de QUI on attend quelque chose, maintenant. */
+  function etapeAttendue(m){
+    const st=String((m&&m.status)||'');
+    if(st==='pending'||st==='searching')return {qui:'pro',txt:'Un prestataire doit accepter votre demande.'};
+    if(st==='accepted')return {qui:'pro',txt:'Le prestataire démarrera la prestation à l’heure convenue.'};
+    if(st==='working')return {qui:'pro',txt:'Le prestataire indiquera la fin de la prestation.'};
+    if(st==='done_pro')return {qui:'vous',txt:'À vous de valider la prestation : c’est ce qui déclenche le paiement.'};
+    if(st==='paid'||st==='rated')return {qui:'',txt:'Tout est validé.'};
+    return null;
+  }
+  /* `zouti` : l'écran DÉCLARE s'il veut le petit Zouti. L'écran de recherche porte déjà
+     le grand, au centre de son radar ; deux Zoutis à soixante pixels l'un de l'autre se
+     lisent comme une coquille. L'appelant est le seul à savoir ce qu'il y a d'autre sur
+     sa page — la barre, elle, ne voit pas l'écran où elle se pose. */
+  function barreEtapes(m,zouti){
+    const et=etapesMission(m);if(!et)return '';
+    const att=etapeAttendue(m), n=ETAPES_MISSION.length;
+    const faites=et.filter(function(e){return e.etat==='faite';}).length;
+    /* LA JAUGE COURT DERRIÈRE LES PASTILLES, d'un centre à l'autre : elle part donc à
+       10 % et s'arrête à 90 % de la rangée, et se remplit d'un cran par étape faite.
+       Quatre tirets séparés ne se lisaient pas comme une progression. */
+    const pct=Math.round(Math.max(0,faites-1)/(n-1)*100);
+    /* ZOUTI EST DANS LA PASTILLE DE L'ÉTAPE EN COURS, pas au-dessus d'elle : il EST le
+       repère, il ne le survole pas. Il prend donc la place de l'icône du métier, et la
+       pastille passe au fond papier — Zouti est corail, sur du corail il disparaîtrait.
+       Quand tout est fait il n'y a plus d'étape en cours : c'est la dernière qui le porte. */
+    const ou=et.findIndex(function(e){return e.etat==='encours';});
+    const col=(ou<0?n-1:ou);
+    const pastilles=et.map(function(e,i){
+      const ic=ETAPES_MISSION[i].ico;
+      /* IL NE MARQUE QUE L'ÉTAPE EN COURS. Tout réglé, il n'y a plus d'étape en cours :
+         les cinq pastilles sont vertes et pleines, et une sixième à fond papier au bout
+         se lirait comme une étape qui RESTE à faire — l'inverse de ce que dit la phrase. */
+      const lui=(zouti!==false&&e.etat==='encours');
+      return `<div class="et ${e.etat}${lui?' zouti':''}">
+        <span class="et-rond">${lui?zoutiMini():(e.etat==='faite'?I.check:(I[ic]||''))}</span>
+        <span class="et-t">${e.t}</span>
+        <span class="et-qui">${e.qui==='vous'?'vous':'le pro'}</span>
+      </div>`;}).join('');
+    return `<div class="card etapes" style="padding:16px 12px 14px;margin-top:12px">
+      <div class="et-rang">
+        <span class="et-rail"><span class="et-jauge" style="width:${pct}%"></span></span>
+        ${pastilles}
+      </div>
+      ${att?`<p class="mini et-att${att.qui==='vous'?' moi':''}">${esc(att.txt)}</p>`:''}
+    </div>`;
+  }
   function clientTracking(){
     const m=S.mission,t=totals(m),p=m.provider;
     // L'escalade dépend du temps écoulé : on re-rend l'écran chaque minute tant que
@@ -13678,15 +13839,13 @@
         </div>
         </div>${clientNavbar()}`;
     }
-    const steps=[{t:'Demande envoyée',d:m.when+' · '+m.slot},{t:'Mission acceptée',d:p?esc(p.nm):''},{t:m.status==='working'?'Prestation en cours':'Prestation à venir',d:m.duration+' h · '+m.slot},{t:'Terminée',d:'à confirmer par vous'}];
-    const activeIdx={pending:1,accepted:2,working:2}[m.status];
-    const tls=steps.map((s,idx)=>{let cls;if(idx<activeIdx)cls='done';else if(idx===activeIdx)cls='active';else cls='future';const bead=cls==='done'?I.check:(cls==='active'?'':(idx+1));return `<div class="tl ${cls}"><div class="marker"><div class="bead">${bead}</div><div class="stem"></div></div><div class="lbl"><div class="t">${s.t}</div><div class="d">${s.d}</div></div></div>`;}).join('');
     let head={pending:{t:'En attente d’acceptation',d:'Les prestataires disponibles regardent votre demande'},accepted:{t:'Mission acceptée',d:(p?esc(p.nm):'')+' interviendra à '+m.slot},working:{t:'Prestation en cours',d:'Travail en cours à votre domicile'}}[m.status];
     // Demande dirigée en attente : c'est un seul prestataire précis qui répond, pas le pool.
     if(m.status==='pending'&&m.preferredUid){const who=(m.preferredName||'Votre prestataire').split(' ')[0];head={t:'En attente de '+esc(who),d:esc(m.preferredName||'Votre prestataire')+' a reçu votre demande, vous serez prévenu dès sa réponse.'};}
     return `<div class="pad"><div style="height:8px"></div>
       <div class="row between"><span class="chip ${m.status==='pending'?'coral':'good'}">${m.status==='pending'?'En attente':'Confirmée'}</span><span class="mini">${m.svcName} · ${durTxt(m)}${(needsPeople(m.svc)&&peopleOf(m)>1)?' · '+I.users+' '+peopleLbl(peopleOf(m)):''}${(m.frequency&&m.frequency!=='ponctuelle')?' · '+I.repeat+' '+freqInfo(m.frequency).short:''}</span></div>
       <div class="h-hello" style="margin-top:8px;text-align:center">${head.t}</div><p class="sub" style="text-align:center">${head.d}</p>
+      ${barreEtapes(m)}
       ${(m.slotFlex&&m.status==='pending')?`<p class="mini" style="text-align:center;margin-top:4px">${I.clock} Créneau souhaité&nbsp;: ${m.when} · ${flexTxtClient(m)}, un prestataire vous proposera une heure précise.</p>`:''}
       ${(m.slotFlex&&m.proposedSlot&&m.status!=='pending')?`<div class="banner teal" style="margin-top:10px">${I.clock}<span>${p?esc(p.nm.split(' ')[0]):'Le prestataire'} a confirmé son passage à <b>${m.slot}</b> (votre souhait&nbsp;: ${flexTxtClient(m)}).</span></div>`:''}
       ${m.status==='pending'?(m.preferredUid?`<div class="card" style="padding:16px;margin-top:12px"><div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="background:var(--teal-wash);color:var(--teal-deep)">${I.clock}</span><div><b style="font-size:14px">Demande réservée à ${esc((m.preferredName||'votre prestataire').split(' ')[0])}</b><p class="mini" style="margin-top:4px">Votre demande est adressée <b>uniquement à ${esc(m.preferredName||'votre prestataire')}</b>, pas aux autres artisans, puisque vous l'avez choisi. L'attente est normale&nbsp;: elle dure tant qu'il n'a pas encore répondu. Dès qu'il accepte ou décline, vous êtes prévenu.</p></div></div></div>`:`<div class="card" style="padding:16px;margin-top:12px;text-align:center">${searchRadar(true)}<p class="sub" style="margin:0">Vous saurez qui intervient dès l'acceptation.</p></div>`):((m.svc==='baby'&&p)?babyConfirmBlock(m):(p?`<div class="card provider-pop" style="padding:14px;margin-top:12px"><div class="row" style="gap:12px">${avatarFounder(m.providerPhoto,p.ini,'',p.founder)}<div style="flex:1"><b style="font-size:15px">${esc(p.nm)}</b><div class="mini">${I.pin} ${m.zone}${m.providerAgeBand?' · '+esc(m.providerAgeBand):''}</div></div><div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">${p.founder?`<span class="chip founder-chip">${I.star} Ambassadeur</span>`:''}<span class="chip good">${I.check} ${p.insured?'Vérifié · Assuré':'Vérifié'}</span></div></div>${boutonsContact({tel:(bothAccepted(m)&&m.providerPhone)?m.providerPhone:'',nom:p.nm,nMsg:(m.chat&&m.chat.length)||0,dot:unreadDot(m)})}</div>`:''))}
@@ -13694,7 +13853,6 @@
       ${(m.status==='pending'&&!m.preferredUid)?liveBoostBlock(m):''}
       ${(p&&locModeOf(m)==='salon')?`<div class="card" style="padding:16px;margin-top:12px;border-left:4px solid var(--teal-deep)"><div class="row" style="gap:10px;align-items:flex-start"><span class="benic" style="background:var(--teal-wash);color:var(--teal-deep)">${I.pin}</span><div style="flex:1"><b style="font-size:14px">${lieuDuSvc(m.svc)==='depart'?'Point de départ':'Vous vous rendez chez le prestataire'}</b>${m.providerSalonAddress?`<p class="sub" style="margin-top:4px;color:var(--ink)">${esc(m.providerSalonAddress)}${m.providerSalonZone?' · '+esc(m.providerSalonZone):''}</p>`:`<p class="mini" style="margin-top:4px;color:var(--muted)">${lieuDuSvc(m.svc)==='depart'?'Le prestataire va vous communiquer le point de départ.':'Le prestataire va vous communiquer son adresse.'}</p>`}</div></div>${m.providerSalonGeo?miniMap(m.providerSalonGeo,'view','salon'):''}${m.providerSalonGeo?`<a class="btn ghost sm" href="${navUrl(m.providerSalonGeo.lat,m.providerSalonGeo.lng)}" target="_blank" rel="noopener" style="margin-top:10px;text-decoration:none;justify-content:center;gap:8px">${I.pin} Ouvrir l'itinéraire (${navAppName()})</a>`:''}</div>`:''}
       ${(m.svc==='colis'&&p)?colisDossier(m,false):''}
-      <div class="card" style="padding:16px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Suivi</div><div class="timeline" style="margin-top:12px">${tls}</div></div>
       ${/* On joint son prestataire depuis SA carte, en haut : c'est là qu'on le regarde.
            Il ne reste ici que le recours ultime, à sa juste taille. */''}
       ${lienSupport(((m.support&&m.support.client)||[]).length)}
@@ -13749,6 +13907,7 @@
     const m=S.mission,t=totals(m),p=m.provider||{nm:'Votre prestataire',ini:'AR',jobs:0};
     const adj=(m.finalHours!=null&&m.finalHours!==m.duration);const agreed=m.rate*m.duration;const d=(m.finalHours||m.duration)-m.duration;
     return `<div class="pad"><div style="height:10px"></div><span class="eyebrow">Prestation terminée</span><div class="h-hello">${esc(p.nm)} a terminé</div>
+      ${barreEtapes(m)}
       <p class="sub">${adj?'Le prestataire a <b>ajusté la durée</b>. Vérifiez, puis validez l’ajustement, ou signalez votre désaccord.':'Vérifiez que tout est bon, puis confirmez.'}</p>
       <div class="card" style="padding:16px;margin-top:16px"><div class="row" style="gap:12px"><div class="avatar">${p.ini}</div><div style="flex:1"><b style="font-size:15px">${m.svcName}</b><div class="mini">${durTxt(m,billHours(m))} · ${m.when} · ${m.slot}</div></div></div><hr class="dashed">
       ${adj?`<div class="receipt-line"><span>Estimation convenue</span><span class="mini">${durTxt(m)} · ${eur(agreed)}</span></div><div class="receipt-line"><span>${isDayU(m)?'Jours déclarés':'Durée déclarée'} par le prestataire</span><b>${durTxt(m,m.finalHours)}</b></div><div class="receipt-line"><span>Montant ajusté (${d>0?'+':''}${d} ${isDayU(m)?'j':'h'})</span><b class="money" style="color:${d>0?'var(--coral-deep)':'var(--good)'}">${eur(t.total)}</b></div>`:(t.tip?`<div class="receipt-line"><span>Prestation</span><b>${eur(t.total-t.tip)}</b></div><div class="receipt-line"><span>${I.heart} Pourboire (au prestataire)</span><b>${eur(t.tip)}</b></div><div class="receipt-line"><span><b>Total</b></span><b>${eur(t.total)}</b></div>`:`<div class="receipt-line"><span>Montant (débit auto)</span><b>${eur(t.total)}</b></div>`)}
@@ -14720,6 +14879,7 @@
   function clientReceipt(rated){
     const m=S.mission,t=totals(m),p=m.provider;
     if(!rated){return `<div class="pad"><div class="paycap"><div class="checkmark">${I.bigcheck}</div><div><div class="h-hello" style="text-align:center">C'est réglé, automatiquement</div><p class="sub" style="text-align:center">${eur(t.total)} débité sur ${cardTxt()}</p></div></div>
+      ${barreEtapes(m)}
       <div class="card rcpt" style="padding:22px 16px 16px"><div class="eyebrow" style="color:var(--muted)">Reçu</div><div class="receipt-line" style="margin-top:8px"><span>${m.svcName} · ${durTxt(m)}</span><b>${eur(t.sub)}</b></div><div class="receipt-line"><span>Prestataire</span><b>${esc(p.nm)}</b></div><hr class="dashed"><div class="receipt-line total"><span>Total réglé</span><b>${eur(t.total)}</b></div></div>
       ${factureCard()}
       <p class="sub" style="text-align:center;margin:18px 0 10px">Comment s'est passée la prestation&nbsp;?</p><div class="rate-stars" id="rateStars">${[1,2,3,4,5].map(n=>`<button data-star="${n}">★</button>`).join('')}</div>
