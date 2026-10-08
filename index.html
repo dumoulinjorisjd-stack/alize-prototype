@@ -943,6 +943,28 @@
   .reqnote{font-size:12px;color:var(--muted);margin-top:4px}
   .reqnote .req{margin-left:0}
   .segs{display:flex;gap:8px;flex-wrap:wrap}
+  /* L'ÉCRAN DE COMMANDE EST RANGÉ PAR QUESTION. Mesuré avant : SIX paires libellé + champ
+     empilées sur le fond sable, et AUCUNE carte sur onze cents pixels — rien ne disait où
+     une question finissait, où la suivante commençait, et l'œil n'avait pas un point
+     d'ancrage. La carte est l'idiome de TOUTE l'application ; cet écran, le seul par
+     lequel passe chaque commande, était le seul à n'en porter aucune. On ne crée donc pas
+     une surface de plus : on emploie `.card`, qui connaît déjà les deux thèmes. */
+  .cfg-bloc{padding:15px 14px 17px;margin-top:12px}
+  .cfg-bloc>h3{margin:0 0 2px;font-size:13px;font-weight:800;color:var(--ink);display:flex;align-items:center;gap:7px}
+  .cfg-bloc>h3 svg{width:15px;height:15px;color:var(--teal-deep);flex:none}
+  .cfg-bloc>.field:first-of-type{margin-top:11px}
+  /* LES CINQ SOUPLESSES SONT DEUX FAMILLES, et la grille le dit. « Précise / ± 1 h /
+     ± 2 h » sont des degrés de précision AUTOUR de l'heure choisie ; « Journée / Semaine »
+     la retirent — c'est pour cela que le sélecteur d'heure disparaît sur ces deux-là. En
+     ligne souple, les cinq cassaient en 4 + 1 et « Semaine » se retrouvait orpheline
+     (mesuré à 390 px) : trois puis deux, c'est la même place et c'est le vrai découpage. */
+  .segs.souplesse{display:grid;grid-template-columns:repeat(6,1fr)}
+  .segs.souplesse .seg{width:100%;grid-column:span 2}
+  /* Quand les cinq sont là, la seconde famille prend la rangée entière : deux boutons à
+     mi-largeur, pas deux boutons et un vide qui aurait l'air d'un oubli. Trois segments
+     seuls (garde d'enfants, prestation chez le prestataire) remplissent la rangée. */
+  .segs.souplesse .seg:nth-child(4):nth-last-child(2),
+  .segs.souplesse .seg:nth-child(5):last-child{grid-column:span 3}
   /* Sélecteur de langue discret (inspiré d'Archipel) : petit, muté, avec un globe. */
   .langsel{display:inline-flex;align-items:center;gap:1px;color:var(--muted)}
   .langsel-globe{margin-right:3px;opacity:.55;font-size:12px;line-height:1}
@@ -3632,7 +3654,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='828';
+  const VERSION_APP='829';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -5440,7 +5462,26 @@
     admin:{view:'home',sel:null,fact:null},adminLedger:[],adminOrph:{loaded:false,list:[]},adminArtisans:ADMIN_ARTS(),adminClients:ADMIN_CLIS(),adminBookings:ADMIN_BOOK(),adminCommission:1240,adminPrices:ADMIN_PRICES(),
     avail:{lun:{n:0,m:1,a:1,s:0},mar:{n:0,m:1,a:1,s:0},mer:{n:0,m:1,a:1,s:1},jeu:{n:0,m:1,a:1,s:0},ven:{n:0,m:1,a:1,s:1},sam:{n:0,m:1,a:0,s:0},dim:{n:0,m:0,a:0,s:0}}
   };
-  function newMission(svc){const a=S.addresses.find(x=>x.id===S.addrDefault)||S.addresses[0]||null;const day=svc.id==='animaux';const colis=svc.id==='colis';const cat=isCatalogForfait(svc.id);const forf=colis||cat;const px=(S.adminPrices&&S.adminPrices[svc.id]!=null)?S.adminPrices[svc.id]:svcBase(svc.id);const m={svc:svc.id,svcName:svc.nm,unit:forf?'forfait':(day?'j':'h'),rate:day?DAY_RECO:px,boost:0,finalHours:null,disputeMsg:null,frequency:'ponctuelle',people:1,locationMode:'domicile',duration:forf?1:(day?2:3),zone:a?a.zone:'Gustavia',address:a?a.address:'',addressId:a?a.id:'__manual',geo:a?a.geo:null,access:a?(a.access||''):'',notes:'',photos:[],when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',slotMode:null,slotFlex:0,proposedSlot:null,status:'draft',provider:null,rating:0,competitors:0,chat:[],support:{client:[],pro:[]}};
+  /* LE CRÉNEAU SOUPLE EST LE DÉFAUT LÀ OÙ IL A UN SENS — et nulle part ailleurs.
+     « Précise » était pré-cochée partout : le client était donc poussé, par défaut, vers
+     la demande LA PLUS DIFFICILE à satisfaire, alors que pour une tournée de ménage
+     l'heure exacte lui est le plus souvent indifférente. Il devine un créneau, personne
+     ne répond, et il n'apprend jamais pourquoi.
+
+     LE CRITÈRE N'EST PAS « EST-CE PERMIS » mais « LE CLIENT EST-IL LE SUJET ». Une coupe,
+     un massage, un cours : la personne EST la prestation, elle organise sa journée autour
+     et l'heure lui appartient. Un ménage, un jardin, une piscine : c'est une TOURNÉE, et
+     l'heure appartient à celui qui la fait. Un dépannage reste précis — on appelle un
+     plombier parce que quelque chose coule MAINTENANT. Un déménagement aussi, le client
+     y est. Trois métiers, donc, et la liste s'allonge si l'usage le dit.
+
+     RIEN N'EST CACHÉ : l'écran remplace alors le sélecteur d'heure par la phrase « vous
+     laissez toute la journée, le pro choisit son heure de passage », et « Précise » est à
+     UN toucher — elle ramène l'heure. `recalerCreneau` reste le garde-fou : un métier qui
+     n'admet pas la souplesse large (garde d'enfants, prestation chez le prestataire,
+     séjour compté en jours) repasse à 0 tout seul, on n'énumère pas les exceptions. */
+  const SOUPLE_DEFAUT=['menage','jardin','piscine'];
+  function newMission(svc){const a=S.addresses.find(x=>x.id===S.addrDefault)||S.addresses[0]||null;const day=svc.id==='animaux';const colis=svc.id==='colis';const cat=isCatalogForfait(svc.id);const forf=colis||cat;const px=(S.adminPrices&&S.adminPrices[svc.id]!=null)?S.adminPrices[svc.id]:svcBase(svc.id);const m={svc:svc.id,svcName:svc.nm,unit:forf?'forfait':(day?'j':'h'),rate:day?DAY_RECO:px,boost:0,finalHours:null,disputeMsg:null,frequency:'ponctuelle',people:1,locationMode:'domicile',duration:forf?1:(day?2:3),zone:a?a.zone:'Gustavia',address:a?a.address:'',addressId:a?a.id:'__manual',geo:a?a.geo:null,access:a?(a.access||''):'',notes:'',photos:[],when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',slotMode:null,slotFlex:(SOUPLE_DEFAUT.indexOf(svc.id)>=0?'day':0),proposedSlot:null,status:'draft',provider:null,rating:0,competitors:0,chat:[],support:{client:[],pro:[]}};
     // Métier « à l'acte » (coiffure, manucure, plomberie…) : le client compose sa commande
     // à partir de la grille catalogue ; total = somme des actes cochés (m.acts).
     if(cat){m.acts=[];}
@@ -7200,7 +7241,7 @@
     // Connexion / inscription
     "Créer mon compte":"Create my account","Créer mon compte, c'est gratuit":"Create my account, it's free","Créer un compte":"Create an account","Vos informations":"Your details","Mot de passe":"Password","Confirmer le mot de passe":"Confirm password","Votre quartier":"Your area","Mot de passe oublié ?":"Forgot password?","Content de vous revoir":"Good to see you again","Connectez-vous pour retrouver vos réservations.":"Log in to find your bookings.","Pas encore de compte ?":"No account yet?","Déjà un compte ?":"Already have an account?","Les mots de passe ne correspondent pas.":"Passwords don't match.","✓ Les mots de passe correspondent":"✓ Passwords match","ou":"or","Continuer avec Google":"Continue with Google","6 caractères minimum":"6 characters minimum","Votre mot de passe":"Your password","Retapez votre mot de passe":"Re-type your password","Afficher le mot de passe":"Show password","Afficher":"Show","bientôt":"soon","politique de confidentialité":"privacy policy",
     // Suivi de mission
-    "Demande envoyée":"Request sent","Mission acceptée":"Job accepted","Prestation à venir":"Service upcoming","à confirmer par vous":"to confirm by you","En attente d’acceptation":"Awaiting acceptance","Les prestataires disponibles regardent votre demande":"Available pros are reviewing your request","Travail en cours à votre domicile":"Work in progress at your home","Montant estimé":"Estimated amount","Montant":"Amount","Si le prestataire déclare plus d’heures, rien de plus n’est prélevé sans votre accord.":"If the provider reports more hours, nothing extra is charged without your approval.","bloqué":"held","à la validation":"on approval","Annuler la demande":"Cancel request","Annuler la prestation":"Cancel service","Aucun débit maintenant.":"No charge now.","Vous avez été payé":"You've been paid","Prestation terminée":"Service completed","Confirmer la prestation":"Confirm service","Signaler un problème":"Report a problem","Contacter Ti-Services (support)":"Contact Ti-Services (support)","Recherche en cours…":"Searching…",
+    "Demande envoyée":"Request sent","Mission acceptée":"Job accepted","Prestation à venir":"Service upcoming","à confirmer par vous":"to confirm by you","En attente d’acceptation":"Awaiting acceptance","Les prestataires disponibles regardent votre demande":"Available pros are reviewing your request","Travail en cours à votre domicile":"Work in progress at your home","Vous laissez toute la journée, le pro choisit son heure de passage.":"You leave the whole day open, the pro picks their time.","Vous laissez toute la semaine, le pro vous proposera un jour et une heure.":"You leave the whole week open, the pro will suggest a day and a time.","Montant estimé":"Estimated amount","Montant":"Amount","Si le prestataire déclare plus d’heures, rien de plus n’est prélevé sans votre accord.":"If the provider reports more hours, nothing extra is charged without your approval.","bloqué":"held","à la validation":"on approval","Annuler la demande":"Cancel request","Annuler la prestation":"Cancel service","Aucun débit maintenant.":"No charge now.","Vous avez été payé":"You've been paid","Prestation terminée":"Service completed","Confirmer la prestation":"Confirm service","Signaler un problème":"Report a problem","Contacter Ti-Services (support)":"Contact Ti-Services (support)","Recherche en cours…":"Searching…",
     "Date de naissance":"Date of birth",
     "Réservé aux personnes majeures. Une tranche d'âge (ex. 25-34 ans) est indiquée aux clients, jamais votre date exacte.":"Adults only. An age range (e.g. 25-34 yrs) is shown to clients, never your exact date.",
     "L'inscription est réservée aux personnes majeures (18 ans et plus).":"Sign-up is for adults only (18 and over).",
@@ -8905,7 +8946,7 @@
     "à confirmer par vous":"a confirmar por si",
     "En attente d’acceptation":"À espera de aceitação",
     "Les prestataires disponibles regardent votre demande":"Os profissionais disponíveis estão a ver o seu pedido",
-    "Travail en cours à votre domicile":"Trabalho em curso em sua casa",
+    "Travail en cours à votre domicile":"Trabalho em curso em sua casa","Vous laissez toute la journée, le pro choisit son heure de passage.":"Deixa o dia todo em aberto, o profissional escolhe a hora.","Vous laissez toute la semaine, le pro vous proposera un jour et une heure.":"Deixa a semana toda em aberto, o profissional proporá um dia e uma hora.",
     "Montant estimé":"Valor estimado","Montant":"Valor","Si le prestataire déclare plus d’heures, rien de plus n’est prélevé sans votre accord.":"Se o prestador declarar mais horas, nada é cobrado a mais sem o seu acordo.",
     "bloqué":"retido",
     "à la validation":"na validação",
@@ -19077,6 +19118,26 @@
   // Écran de commande d'un métier « à l'acte » (coiffure, manucure, plomberie…) :
   // le client compose sa prestation à partir de la grille catalogue → total ferme,
   // puis choisit date/heure et adresse (mêmes composants que la commande horaire).
+  /* LA PHRASE DU CRÉNEAU LARGE EST ÉCRITE UNE FOIS. Les deux écrans de commande la
+     disaient chacun à sa façon — « Vous laissez toute la journée, le pro choisit son
+     heure de passage » ici, « Le prestataire choisit l'heure » là. La seconde ne dit pas
+     que c'est LE CLIENT qui a laissé la journée ouverte : elle se lit comme une
+     contrainte qu'on lui impose. Depuis que la journée est le DÉFAUT sur les tournées,
+     c'est la phrase la plus lue de l'écran — elle doit expliquer, pas constater. */
+  /* UNE CARTE DE REGROUPEMENT, ET ELLE REFUSE DE SE DESSINER VIDE. La moitié des champs
+     de l'écran de commande sont conditionnels — mode de garde, participants, enfants,
+     lieu, prestataire choisi : une carte titrée « Qui ? » au-dessus de rien serait pire
+     que l'absence de carte. On passe le contenu, et s'il ne reste que des espaces, rien
+     ne sort. L'ORDRE DES CHAMPS NE BOUGE PAS : on groupe ce qui se suit déjà. */
+  function blocCfg(titre,ico,contenu){
+    if(!String(contenu||'').replace(/<!--[\s\S]*?-->/g,'').replace(/\s/g,''))return '';
+    return `<div class="card cfg-bloc"><h3>${ico||''}${esc(titre)}</h3>${contenu}</div>`;
+  }
+  function phraseCreneauLarge(m){
+    return (m&&m.slotFlex==='week')
+      ? 'Vous laissez toute la semaine, le pro vous proposera un jour et une heure.'
+      : 'Vous laissez toute la journée, le pro choisit son heure de passage.';
+  }
   function renderForfaitConfig(m){
     m.acts=m.acts||[];
     const t=totals(m);
@@ -19123,31 +19184,42 @@
       <div class="h-hello">Votre prestation</div>
       <p class="sub" style="margin-top:4px">Composez votre commande, prix fixes Ti-Services, total ferme.</p>
 
-      <div class="field" style="margin-top:14px"><label>Choisissez vos prestations</label>${actRows}
+      ${blocCfg('Choisissez vos prestations',I.bolt,`
+      ${/* le titre de la carte EST le libellé : on ne le redit pas sous lui. */''}
+      <div class="field" style="margin-top:14px">${actRows}
         ${minActPrice(m.svc)<TRAVEL_MIN?`<p class="mini" style="margin-top:8px">${I.pin} Déplacement <b>offert dès ${TRAVEL_MIN} €</b> de prestation, sinon forfait de ${TRAVEL_FEE} €.</p>`:''}</div>
       ${optionsPickerHtml(m)}
-
-      ${(canOnSite(m.svc)&&!salonOnly(m.svc)&&salonPossible(m.svc)&&!siteDuChoisi(m))?`<div class="field"><label>Lieu de la prestation</label><div class="segs"><button class="seg ${locModeOf(m)!=='salon'?'on':''}" data-loc="domicile">${I.home} À domicile</button><button class="seg ${locModeOf(m)==='salon'?'on':''}" data-loc="salon">${I.shop} Chez le prestataire</button></div><p class="mini" style="margin-top:6px">${locModeOf(m)==='salon'?I.pin+' Son adresse dès qu’il accepte.':I.home+' Le pro se déplace chez vous.'}</p></div>`:''}
+      `)}
+      ${blocCfg('Lieu et participants',I.users,`
+      ${(canOnSite(m.svc)&&!salonOnly(m.svc)&&salonPossible(m.svc)&&!siteDuChoisi(m))?`<div class="field"><div class="segs"><button class="seg ${locModeOf(m)!=='salon'?'on':''}" data-loc="domicile">${I.home} À domicile</button><button class="seg ${locModeOf(m)==='salon'?'on':''}" data-loc="salon">${I.shop} Chez le prestataire</button></div><p class="mini" style="margin-top:6px">${locModeOf(m)==='salon'?I.pin+' Son adresse dès qu’il accepte.':I.home+' Le pro se déplace chez vous.'}</p></div>`:''}
       ${needsPeople(m.svc)?`<div class="field"><label>Pour combien de personnes&nbsp;?</label><div class="stepper"><button data-cfg="people-minus"${peopleOf(m)<=1?" disabled":""}>−</button><span class="val">${I.users} ${peopleLbl(peopleOf(m))}</span><button data-cfg="people-plus"${peopleOf(m)>=20?" disabled":""}>+</button></div><p class="mini" style="margin-top:6px">Le prix ci-dessous est multiplié par le nombre de personnes, chacune sa prestation.${(m.acts||[]).some(actePourPlusieurs)?' <b>Une prestation qui annonce déjà un nombre, comme un duo, n’est pas multipliée.</b>':''}</p></div>`:''}
       ${demandeEnfants(m.svc)?`<div class="field"><label>Combien d'enfants&nbsp;?</label><div class="stepper"><button data-cfg="kids-minus"${enfantsDe(m)<=1?" disabled":""}>−</button><span class="val">${I.users} ${enfantsLbl(enfantsDe(m))}</span><button data-cfg="kids-plus"${enfantsDe(m)>=10?" disabled":""}>+</button></div><p class="mini" style="margin-top:6px">${I.check} Le tarif horaire ne change pas&nbsp;: c'est pour que le prestataire sache ce qui l'attend.</p></div>`:''}
-
-      <div class="field"><label>Quand&nbsp;?</label>${daySelect}</div>
-      <div class="field"><label>${motsDuLieu(m.svc).heure}</label>${dayFlex?`<p class="mini" style="margin:2px 0 0;color:var(--muted)">${I.clock} ${m.slotFlex==='week'?'Vous laissez toute la semaine, le pro vous proposera un jour et une heure.':'Vous laissez toute la journée, le pro choisit son heure de passage.'}</p>`:`${hourSelect}${slotNote}`}</div>
-      ${heuresDuDraft(m).declare?'':`<div class="field"><label>Souplesse sur le créneau</label><div class="segs"><button class="seg ${(!m.slotFlex)?'on':''}" data-slotflex="0">Précise</button><button class="seg ${m.slotFlex===60?'on':''}" data-slotflex="60">± 1 h</button><button class="seg ${m.slotFlex===120?'on':''}" data-slotflex="120">± 2 h</button>${souplesseLarge(m)?`<button class="seg ${m.slotFlex==='day'?'on':''}" data-slotflex="day">Journée</button><button class="seg ${m.slotFlex==='week'?'on':''}" data-slotflex="week">Semaine</button>`:''}</div>${m.slotFlex?`<p class="mini" style="margin-top:6px">${I.clock} Le pro confirmera un <b>créneau précis ${flexTxtClient(m)}</b> en acceptant.</p>`:''}</div>`}
-
+      `)}
+      ${blocCfg('Quand ?',I.cal,`
+      ${/* la carte s'appelle « Quand ? » : le champ nomme le JOUR. */''}
+      <div class="field"><label>Jour</label>${daySelect}</div>
+      <div class="field"><label>${motsDuLieu(m.svc).heure}</label>${dayFlex?`<p class="mini" style="margin:2px 0 0;color:var(--muted)">${I.clock} ${phraseCreneauLarge(m)}</p>`:`${hourSelect}${slotNote}`}</div>
+      ${heuresDuDraft(m).declare?'':`<div class="field"><label>Souplesse sur le créneau</label><div class="segs souplesse"><button class="seg ${(!m.slotFlex)?'on':''}" data-slotflex="0">Précise</button><button class="seg ${m.slotFlex===60?'on':''}" data-slotflex="60">± 1 h</button><button class="seg ${m.slotFlex===120?'on':''}" data-slotflex="120">± 2 h</button>${souplesseLarge(m)?`<button class="seg ${m.slotFlex==='day'?'on':''}" data-slotflex="day">Journée</button><button class="seg ${m.slotFlex==='week'?'on':''}" data-slotflex="week">Semaine</button>`:''}</div>${(m.slotFlex&&!dayFlex)?`<p class="mini" style="margin-top:6px">${I.clock} Le pro confirmera un <b>créneau précis ${flexTxtClient(m)}</b> en acceptant.</p>`:''}</div>`}
+      `)}
+      ${blocCfg('Précisions',I.edit,`
       ${prefArtisanSelect(m)}
 
 
       <div class="field"><label>Précisions (facultatif)</label><textarea rows="3" data-cfg="notes" placeholder="${PLACEHOLDERS[m.svc]||'Précisez votre demande…'}">${esc(m.notes)}</textarea></div>
       ${blocPhotosHtml(m,false)}
-
-      ${locModeOf(m)==='salon'?blocRdvHtml(m):`<div class="field"><label>Adresse de la prestation</label>
+      `)}
+      ${blocCfg(locModeOf(m)==='salon'?'Où vous rendre':'Adresse exacte',I.pin,`
+      ${/* LE TITRE SUIT LE CONTENU. Quand la prestation a lieu CHEZ LE PRESTATAIRE, ce
+           bloc ne porte pas une adresse à saisir mais le rendez-vous où se rendre : le
+           titrer « Adresse exacte » demanderait une adresse que personne n'attend. */''}
+      ${locModeOf(m)==='salon'?blocRdvHtml(m):`<div class="field">
         ${S.addresses.length?`<div class="stack" style="gap:8px;margin-top:2px">
           ${S.addresses.map(a=>`<button class="addr-opt${m.addressId===a.id?' on':''}" data-addr="${a.id}"><div class="row between"><b>${esc(a.label)}</b>${a.geo?`<span class="chip good">${I.pin} GPS</span>`:`<span class="chip coral">Sans repère</span>`}</div><div class="mini" style="margin-top:2px">${esc(a.address)} · ${a.zone}</div></button>`).join('')}
           <button class="addr-opt${m.addressId==='__manual'?' on':''}" data-addr="__manual"><b>＋ Autre adresse (ponctuelle)</b></button>
         </div>`:''}
         ${m.addressId==='__manual'?blocAdresseManuelle(m,zoneSelect):''}
       </div>`}
+      `)}
 
       <div class="est">${nSel?m.acts.map(a=>`<div class="line"><span>${esc(a.nm)}</span><b>${eur(a.price*(a.qty||1))}</b></div>`).join(''):`<div class="line"><span style="color:var(--muted)">Aucune prestation sélectionnée</span><b>—</b></div>`}${optionsEstLines(m)}${(nSel&&needsPeople(m.svc)&&t.people>1)?`<div class="line"><span>${I.users} Pour ${peopleLbl(t.people)} (× ${t.people})</span><b>${eur(t.sub)}</b></div>`:''}${t.travel?`<div class="line"><span>${I.pin} Forfait déplacement</span><b>+${eur(t.travel)}</b></div>`:''}${(nSel&&!t.travel&&locModeOf(m)!=='salon')?`<div class="line"><span style="color:var(--good)">${I.check} Déplacement offert</span><b style="color:var(--good)">0 €</b></div>`:''}<div class="total"><span>Total</span><b>${nSel?eur(t.total):'—'}</b></div></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm"${nSel?'':' disabled'}>${m.preferredUid?`${I.user} Envoyer à ${esc((m.preferredName||'').split(' ')[0])}`:`${I.search} Trouver un pro`}${nSel?' · '+eur(t.total):''}</button>${nSel?'':`<p class="mini" style="text-align:center;margin-top:8px;color:var(--muted)">Cochez au moins une prestation pour continuer.</p>`}</div>
@@ -19223,13 +19295,19 @@
     const daySelect=champQuand(m);
     const hourSelect=`<select class="txt" data-cfhour${dayFlex?' disabled':''}>${hOpts.map(o=>`<option value="${o.s}"${(o.past||busyOf(o.s))?' disabled':''}${m.slot===o.s?' selected':''}>${o.s}${busyOf(o.s)?', occupé':''}</option>`).join('')}</select>${(function(){const fin=finDeCreneau(m.slot,dureeDuDraft(m));return fin?`<p class="mini" style="margin-top:6px;color:var(--muted)">${I.clock} Retour prévu vers <b>${esc(fin)}</b>.</p>`:'';})()}`;
     paintView(`<div class="pad"><div class="cfghead"><button class="reset" data-cfg="back">← Retour</button><span class="eyebrow" style="flex:1;justify-content:center">${m.svcName}</span><button class="iconbtn" data-act="go-home" aria-label="Accueil" title="Accueil"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg></button></div><div class="h-hello">Détails de la mission</div>
+      ${blocCfg('Quand ?',I.cal,`
       ${m.svc==='animaux'?`<div class="field"><label>Mode de garde</label><div class="segs"><button class="seg ${isDayU(m)?'on':''}" data-cfg="unit-j">${I.cal} À la journée</button><button class="seg ${!isDayU(m)?'on':''}" data-cfg="unit-h">${I.clock} À l'heure</button></div><p class="mini" style="margin-top:6px">${I.cal} Plusieurs jours&nbsp;? Choisissez « à la journée ».</p></div>`:''}
-      <div class="field"><label>${isDayU(m)?'Date de début':'Quand&nbsp;?'}</label>${daySelect}</div>
-      <div class="field"><label>${isDayU(m)?'Heure de dépôt':motsDuLieu(m.svc).heure}</label>${dayFlex?`<p class="mini" style="margin:2px 0 0;color:var(--muted)">${I.clock} ${m.slotFlex==='week'?'Le prestataire vous proposera un créneau.':'Le prestataire choisit l’heure.'}</p>`:`${hourSelect}${slotNote}`}</div>
-      ${heuresDuDraft(m).declare?'':`<div class="field"><label>Souplesse sur le créneau</label><div class="segs"><button class="seg ${(!m.slotFlex)?'on':''}" data-slotflex="0">Précise</button><button class="seg ${m.slotFlex===60?'on':''}" data-slotflex="60">± 1 h</button><button class="seg ${m.slotFlex===120?'on':''}" data-slotflex="120">± 2 h</button>${souplesseLarge(m)?`<button class="seg ${m.slotFlex==='day'?'on':''}" data-slotflex="day">Journée</button><button class="seg ${m.slotFlex==='week'?'on':''}" data-slotflex="week">Semaine</button>`:''}</div>${m.slotFlex?`<p class="mini" style="margin-top:6px">${I.clock} Créneau précis confirmé à l’acceptation.</p>`:''}</div>`}
+      ${/* La carte s'appelle déjà « Quand ? » : le champ nomme le JOUR, pas la question. */''}
+      <div class="field"><label>${isDayU(m)?'Date de début':'Jour'}</label>${daySelect}</div>
+      <div class="field"><label>${isDayU(m)?'Heure de dépôt':motsDuLieu(m.svc).heure}</label>${dayFlex?`<p class="mini" style="margin:2px 0 0;color:var(--muted)">${I.clock} ${phraseCreneauLarge(m)}</p>`:`${hourSelect}${slotNote}`}</div>
+      ${heuresDuDraft(m).declare?'':`<div class="field"><label>Souplesse sur le créneau</label><div class="segs souplesse"><button class="seg ${(!m.slotFlex)?'on':''}" data-slotflex="0">Précise</button><button class="seg ${m.slotFlex===60?'on':''}" data-slotflex="60">± 1 h</button><button class="seg ${m.slotFlex===120?'on':''}" data-slotflex="120">± 2 h</button>${souplesseLarge(m)?`<button class="seg ${m.slotFlex==='day'?'on':''}" data-slotflex="day">Journée</button><button class="seg ${m.slotFlex==='week'?'on':''}" data-slotflex="week">Semaine</button>`:''}</div>${(m.slotFlex&&!dayFlex)?`<p class="mini" style="margin-top:6px">${I.clock} Le pro confirmera un <b>créneau précis ${flexTxtClient(m)}</b> en acceptant.</p>`:''}</div>`}
+      `)}
+      ${blocCfg('Avec qui ?',I.users,`
       ${prefArtisanSelect(m)}
       ${(m.svc==='baby'&&!m.preferredUid)?`<p class="mini" style="margin-top:6px">${I.shield} Profil complet + <b>appel</b> avant de confirmer.</p>`:''}
-      <div class="field"><label>Tarif ${isDayU(m)?'journalier':'horaire'}, prix fixe Ti-Services</label><div class="pricebox"><b class="money" style="font-size:22px;font-family:var(--f-disp)">${fixedRate(m)} ${rateUnit(m)}</b><span class="chip good">${I.check} Prix fixe</span></div></div>
+      `)}
+      ${blocCfg('Votre prestation',I.bolt,`
+      <div class="field"><label>Tarif ${isDayU(m)?'journalier':'horaire'}</label><div class="pricebox"><b class="money" style="font-size:22px;font-family:var(--f-disp)">${fixedRate(m)} ${rateUnit(m)}</b><span class="chip good">${I.check} Prix fixe</span></div></div>
       ${(canOnSite(m.svc)&&!salonOnly(m.svc)&&salonPossible(m.svc)&&!siteDuChoisi(m))?`<div class="field"><label>Lieu de la prestation</label><div class="segs"><button class="seg ${locModeOf(m)!=='salon'?'on':''}" data-loc="domicile">${I.home} À domicile</button><button class="seg ${locModeOf(m)==='salon'?'on':''}" data-loc="salon">${I.shop} Chez le prestataire</button></div><p class="mini" style="margin-top:6px">${locModeOf(m)==='salon'?I.pin+' Son adresse dès qu’il accepte.':I.home+' Le pro se déplace chez vous.'}</p></div>`:''}
       ${needsPeople(m.svc)?`<div class="field"><label>Nombre de participants</label><div class="stepper"><button data-cfg="people-minus"${peopleOf(m)<=1?" disabled":""}>−</button><span class="val">${I.users} ${peopleLbl(peopleOf(m))}</span><button data-cfg="people-plus"${peopleOf(m)>=20?" disabled":""}>+</button></div><p class="mini" style="margin-top:6px">${I.users} Prix × nombre de personnes.${(m.acts||[]).some(actePourPlusieurs)?' <b>Une prestation qui annonce déjà un nombre, comme un duo, n’est pas multipliée.</b>':''}</p></div>`:''}
       ${demandeEnfants(m.svc)?`<div class="field"><label>Combien d'enfants&nbsp;?</label><div class="stepper"><button data-cfg="kids-minus"${enfantsDe(m)<=1?" disabled":""}>−</button><span class="val">${I.users} ${enfantsLbl(enfantsDe(m))}</span><button data-cfg="kids-plus"${enfantsDe(m)>=10?" disabled":""}>+</button></div><p class="mini" style="margin-top:6px">${I.check} Le tarif horaire ne change pas&nbsp;: c'est pour que le prestataire sache ce qui l'attend.</p></div>`:''}
@@ -19240,7 +19318,12 @@
       <div class="field"><label>Décrivez votre besoin <span style="font-weight:500;color:var(--muted)">(facultatif)</span></label><textarea rows="3" data-cfg="notes" placeholder="${PLACEHOLDERS[m.svc]||'Précisez la prestation…'}">${esc(m.notes)}</textarea></div>
       ${blocPhotosHtml(m,true)}
         </div>`;})()}
-      ${locModeOf(m)==='salon'?blocRdvHtml(m):`<div class="field"><label>Adresse de la prestation</label>
+      `)}
+      ${blocCfg(locModeOf(m)==='salon'?'Où vous rendre':'Adresse exacte',I.pin,`
+      ${/* LE TITRE SUIT LE CONTENU. Quand la prestation a lieu CHEZ LE PRESTATAIRE, ce
+           bloc ne porte pas une adresse à saisir mais le rendez-vous où se rendre : le
+           titrer « Adresse exacte » demanderait une adresse que personne n'attend. */''}
+      ${locModeOf(m)==='salon'?blocRdvHtml(m):`<div class="field">
         ${S.addresses.length?`<div class="stack" style="gap:8px;margin-top:2px">
           ${S.addresses.map(a=>`<button class="addr-opt${m.addressId===a.id?' on':''}" data-addr="${a.id}"><div class="row between"><b>${esc(a.label)}</b>${a.geo?`<span class="chip good">${I.pin} GPS</span>`:`<span class="chip coral">Sans repère</span>`}</div><div class="mini" style="margin-top:2px">${esc(a.address)} · ${a.zone}</div></button>`).join('')}
           <button class="addr-opt${m.addressId==='__manual'?' on':''}" data-addr="__manual"><b>＋ Autre adresse (ponctuelle)</b><div class="mini" style="margin-top:2px">Un lieu occasionnel, non enregistré</div></button>
@@ -19248,6 +19331,7 @@
         ${m.addressId==='__manual'?blocAdresseManuelle(m,zoneSelect)
         :`${m.geo?`<div class="banner teal" style="margin-top:10px">${I.pin}<span><b>Point GPS déjà enregistré</b> depuis votre fiche.</span></div>`:`<div class="field" style="margin-top:10px"><label style="font-size:12px">Point GPS ${RQ}</label>${blocPointGps({geo:null,target:'draft',acte:'cfg-geoloc',aide:'Obligatoire, cette adresse n\'a pas encore de point GPS. Placez-vous sur le lieu, ou posez-le sur la carte.'})}</div>`}`}
       </div>`}
+      `)}
       <div class="est"><div class="line"><span>${m.svcName} · ${t.rate} ${rateUnit(m)} × ${durTxt(m)}${(needsPeople(m.svc)&&t.people>1)?' × '+t.people+' pers.':''}</span><b>${eur(((forfaitSub(m)!=null?forfaitSub(m):t.rate*billHours(m))*t.people))}</b></div>${optionsEstLines(m)}<div class="total"><span>Total</span><b>${eur(t.total)}</b></div></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm">${m.preferredUid?`${I.user} Envoyer à ${esc((m.preferredName||'').split(' ')[0])}`:`${I.search} Trouver un prestataire`} · ${eur(t.total)}</button></div></div>`,'config');
     if(S._focusAddr){S._focusAddr=false;setTimeout(function(){const el=document.getElementById('manualAddr');if(el){try{el.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){el.scrollIntoView();}const inp=el.querySelector('[data-addrmanual]');if(inp)try{inp.focus({preventScroll:true});}catch(_){}}},70);}

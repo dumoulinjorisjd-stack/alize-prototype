@@ -312,7 +312,7 @@ const srv = fs.readFileSync(path.join(RACINE, 'functions/index.js'), 'utf8');
     if (uid) S.draft.preferredUid = uid;
     S._cfgVu = null; window.__cfg.render();
     const v = document.getElementById('view'); const t = v.textContent || '';
-    return { adresse: /Adresse de la prestation/.test(t), gps: /Point GPS/.test(t),
+    return { adresse: /Adresse exacte/.test(t), gps: /Point GPS/.test(t),
       rdv: /Lieu du rendez-vous/.test(t), choix: v.querySelectorAll('[data-loc]').length,
       liste: t };
   }, { DIR, uid });

@@ -83,7 +83,7 @@ const ACTES = { c_catamaran: [{ id: 'a1', nm: 'Demie journée avec sunset', pric
       bandeaux: (t.match(/Vous partez avec le prestataire/g) || []).length };
   }, [BATEAU, ACTES]);
   ok(/Heure de départ souhaitée/.test(C.t) && !/Heure souhaitée/.test(C.t), 'l’écran dit « Heure de départ souhaitée »');
-  ok(!/Adresse de la prestation/.test(C.t), 'le bloc « Adresse de la prestation » a disparu');
+  ok(!/Adresse exacte/.test(C.t), 'le bloc « Adresse exacte » a disparu');
   ok(!C.geo, 'le point GPS obligatoire a disparu : il ne renseignait rien et bloquait la commande');
   ok(!C.adr, 'les champs d’adresse aussi');
   ok(!/clé sous le pot|code portail|Code portail/i.test(C.t), 'les infos d’accès (code portail, clé sous le pot) ont disparu');
@@ -102,7 +102,7 @@ const ACTES = { c_catamaran: [{ id: 'a1', nm: 'Demie journée avec sunset', pric
     return { t: t, geo: !!document.querySelector('[data-act="cfg-geoloc"],[data-act^="posegps:"]') };
   }, [BATEAU, ACTES]);
   ok(/Heure souhaitée/.test(D.t), 'l’heure redevient « Heure souhaitée »');
-  ok(/Adresse de la prestation/.test(D.t) && D.geo, 'l’adresse et le point GPS obligatoire sont revenus');
+  ok(/Adresse exacte/.test(D.t) && D.geo, 'l’adresse et le point GPS obligatoire sont revenus');
 
   console.log('E — la console pose le lieu, et le catalogue le garde');
   ok(/data-adm="catlieu:/.test(html), 'le choix existe dans la console, sur la fiche du métier');
