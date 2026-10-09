@@ -3662,7 +3662,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='848';
+  const VERSION_APP='849';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -16825,7 +16825,22 @@
   // version s'arrêtait à la permission : « Notifications activées » s'affichait, mais
   // aucun jeton n'était écrit sur la fiche — l'artisan ne recevait rien avant un
   // redémarrage complet de l'app.
-  function requestPush(){try{if('Notification'in window&&typeof Notification.requestPermission==='function'){const r=Notification.requestPermission();const fin=perm=>{S.proNotifPush=(perm==='granted');toast(perm==='granted'?'Notifications activées':'Autorisez les notifications dans les réglages du téléphone');if(perm==='granted')try{registerPush(S.persona==='pro'?'artisan':'client',true);}catch(_){}render();};if(r&&r.then){r.then(fin);}else{fin(r);}}else{toast('Notifications non disponibles sur cet appareil');}}catch(e){}}
+  /* LA PERMISSION DU NAVIGATEUR N'EST QUE LA MOITIÉ DU CHEMIN : il reste à enregistrer
+     l'appareil. On attend donc le résultat avant de dire quoi que ce soit — annoncer
+     « activées » puis échouer en silence est ce qui a laissé une prestataire attendre
+     des notifications qui ne pouvaient pas arriver. */
+  function requestPush(){try{
+    if(!('Notification'in window)||typeof Notification.requestPermission!=='function'){toast('Notifications non disponibles sur cet appareil');return;}
+    const fin=function(perm){
+      S.proNotifPush=(perm==='granted');
+      if(perm!=='granted'){toast(pushPhrase('refus-navigateur'));render();return;}
+      render();
+      Promise.resolve().then(function(){return registerPush(S.persona==='pro'?'artisan':'client',true);})
+        .then(function(etat){toast(pushPhrase(etat));render();})
+        .catch(function(){toast(pushPhrase('ecriture'));render();});
+    };
+    const r=Notification.requestPermission(); if(r&&r.then){r.then(fin);}else{fin(r);}
+  }catch(e){}}
   // Deep link : une notif / un lien WhatsApp « Ouvrir Ti-Services » ouvre l'app sur l'espace Missions.
   function handleDeepLink(){try{const q=new URLSearchParams(location.search);
     try{const rp=q.get('realpay');if(rp==='1')localStorage.setItem('tiPayReal','1');else if(rp==='0')localStorage.removeItem('tiPayReal');}catch(_){}
@@ -19457,10 +19472,24 @@
       }
       case 'enable-notif':{
         // Coquille native : la permission système passe par le plugin push (APNs/FCM).
-        if(isNativeShell()){ S.proNotifPush=true; if(FB){ if(isAdminAccount())initAdminPush(); else registerPush(S.persona==='pro'?'artisan':'client',true); } toast('Notifications activées'); render(); break; }
+        if(isNativeShell()){ S.proNotifPush=true; render();
+          if(FB){ if(isAdminAccount()){initAdminPush();toast('Notifications activées');}
+            else Promise.resolve().then(function(){return registerPush(S.persona==='pro'?'artisan':'client',true);})
+              .then(function(etat){toast(pushPhrase(etat));render();})
+              .catch(function(){toast(pushPhrase('ecriture'));render();}); }
+          else toast('Notifications activées');
+          break; }
         if(typeof Notification==='undefined'){toast('Notifications non disponibles sur cet appareil');break;}
         if(typeof Notification.requestPermission!=='function'){toast('Notifications non disponibles sur cet appareil');break;}
-        const after=function(perm){ if(perm==='granted'){ toast('Notifications activées'); S.proNotifPush=true; if(FB){ if(isAdminAccount())initAdminPush(); else registerPush(S.persona==='pro'?'artisan':'client',true); } } else { toast('Autorisez les notifications dans les réglages de votre navigateur'); } render(); };
+        const after=function(perm){
+          if(perm!=='granted'){ toast('Autorisez les notifications dans les réglages de votre navigateur'); render(); return; }
+          S.proNotifPush=true; render();
+          if(!FB){ toast('Notifications activées'); return; }
+          if(isAdminAccount()){ initAdminPush(); toast('Notifications activées'); return; }
+          Promise.resolve().then(function(){return registerPush(S.persona==='pro'?'artisan':'client',true);})
+            .then(function(etat){toast(pushPhrase(etat));render();})
+            .catch(function(){toast(pushPhrase('ecriture'));render();});
+        };
         const r=Notification.requestPermission(); if(r&&r.then){r.then(after);}else{after(r);} break;}
       // SIX CASES POUR SIX DOCUMENTS, et un septième qui n'aurait pas eu la sienne : le
       // bouton existait, le clic ne faisait rien. La clé passe par la MÊME liste fermée
@@ -22132,37 +22161,66 @@
   async function pushConsentRevoked(uid){
     try{ const s=await FB.f.getDoc(FB.f.doc(FB.db,'users',uid)); return !!(s&&s.exists()&&s.data().notifOn===false); }catch(_){ return false; }
   }
+  /* « J'AI BIEN ACTIVÉ LES NOTIFICATIONS ET J'AI REÇU LE MAIL, MAIS PAS LA
+     NOTIFICATION. » Le mail est précisément le repli pour un prestataire que le serveur
+     ne peut PAS joindre : il prouve qu'aucun jeton n'était enregistré pour ce compte.
+
+     OR « Notifications activées » SE DISAIT DEPUIS LA PERMISSION DU NAVIGATEUR, pas
+     depuis le jeton arrivé en base. L'enregistrement avait quatre sorties muettes (pas
+     de session, déjà fait, pas de clé VAPID, pas de jeton rendu) et son écriture était
+     enveloppée d'un `catch` vide : tout pouvait échouer, l'écran annonçait le succès, et
+     la personne attendait des notifications qui ne viendraient jamais.
+
+     ET L'ÉCHEC ÉTAIT DÉFINITIF : `pushRegUid` était posé AVANT l'écriture, donc une
+     écriture ratée laissait croire à l'enregistrement et `pushNeedsRegister` refusait
+     toute nouvelle tentative — retoucher le bouton ne pouvait plus rien y faire.
+     Il se pose désormais APRÈS, et seulement si l'écriture a abouti.
+
+     `registerPush` rend donc un MOT d'une liste fermée. Les appelants le disent. */
+  const PUSH_ETATS=['ok','deja','pas-de-session','refus-navigateur','pas-de-cle','pas-de-jeton','ecriture','consentement-retire'];
+  function pushPhrase(etat){
+    if(etat==='ok'||etat==='deja')return 'Notifications activées';
+    if(etat==='refus-navigateur')return 'Autorisez les notifications dans les réglages du téléphone';
+    if(etat==='pas-de-session')return 'Reconnectez-vous, puis réactivez les notifications';
+    if(etat==='pas-de-cle')return 'Notifications indisponibles sur cette version, prévenez Ti-Services';
+    return 'Notifications autorisées, mais cet appareil n’a pas pu être enregistré. Réessayez, ou rouvrez l’application.';
+  }
   async function registerPush(role,force){
-    if(!force){ try{ const u=FB&&FB.auth&&FB.auth.currentUser; if(u&&await pushConsentRevoked(u.uid))return; }catch(_){} }
+    if(!force){ try{ const u=FB&&FB.auth&&FB.auth.currentUser; if(u&&await pushConsentRevoked(u.uid))return 'consentement-retire'; }catch(_){} }
     if(isNativeShell()){
       try{
-        if(!FB||!FB.auth||!FB.auth.currentUser)return;
-        if(!pushNeedsRegister(FB.auth.currentUser.uid))return;
-        const tok=await nativeFcmToken(); if(!tok)return;
-        pushRegUid=FB.auth.currentUser.uid; pushRegTok=tok; pushRegAt=Date.now(); pushRegRole=role||'client';
-        try{ await FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{pushTokens:FB.f.arrayUnion(tok),role:role,notifOn:true,notifAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
-        try{ await FB.f.setDoc(FB.f.doc(FB.db,'fcmOwners',tok),{uid:FB.auth.currentUser.uid,role:role,at:FB.f.serverTimestamp()}); }catch(_){}
-      }catch(e){ console.warn('push natif',e); }
-      return;
+        if(!FB||!FB.auth||!FB.auth.currentUser)return 'pas-de-session';
+        if(!pushNeedsRegister(FB.auth.currentUser.uid))return 'deja';
+        const tok=await nativeFcmToken(); if(!tok)return 'pas-de-jeton';
+        const uidN=FB.auth.currentUser.uid;
+        await FB.f.setDoc(FB.f.doc(FB.db,'users',uidN),{pushTokens:FB.f.arrayUnion(tok),role:role,notifOn:true,notifAt:FB.f.serverTimestamp()},{merge:true});
+        pushRegUid=uidN; pushRegTok=tok; pushRegAt=Date.now(); pushRegRole=role||'client';
+        try{ await FB.f.setDoc(FB.f.doc(FB.db,'fcmOwners',tok),{uid:uidN,role:role,at:FB.f.serverTimestamp()}); }catch(_){}
+        return 'ok';
+      }catch(e){ console.warn('push natif',e); return 'ecriture'; }
     }
     try{
-      if(!FB||!FB.auth||!FB.auth.currentUser)return;
-      if(!pushNeedsRegister(FB.auth.currentUser.uid))return;
-      if(!('Notification'in window)||Notification.permission!=='granted')return;
-      if(!('serviceWorker'in navigator)||!CONFIG.vapidKey)return;
+      if(!FB||!FB.auth||!FB.auth.currentUser)return 'pas-de-session';
+      if(!pushNeedsRegister(FB.auth.currentUser.uid))return 'deja';
+      if(!('Notification'in window)||Notification.permission!=='granted')return 'refus-navigateur';
+      if(!('serviceWorker'in navigator)||!CONFIG.vapidKey)return 'pas-de-cle';
       const msgM=await import('https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging.js');
       const reg=await navigator.serviceWorker.ready;
       const messaging=msgM.getMessaging(FB.app);
       const token=await msgM.getToken(messaging,{vapidKey:CONFIG.vapidKey,serviceWorkerRegistration:reg});
-      if(token){ pushRegUid=FB.auth.currentUser.uid; pushRegTok=token; pushRegAt=Date.now(); pushRegRole=role||'client';
-        try{ await FB.f.setDoc(FB.f.doc(FB.db,'users',FB.auth.currentUser.uid),{pushTokens:FB.f.arrayUnion(token),role:role,notifOn:true,notifAt:FB.f.serverTimestamp()},{merge:true}); }catch(_){}
-        // Propriété EXCLUSIVE du jeton par ce compte : si l'appareil a déjà servi à un
-        // autre compte (ex. ancien profil prestataire), on récupère la propriété du jeton
-        // pour que les notifications de l'ancien compte cessent (voir notifyArtisansNewRequest).
-        try{ await FB.f.setDoc(FB.f.doc(FB.db,'fcmOwners',token),{uid:FB.auth.currentUser.uid,role:role,at:FB.f.serverTimestamp()}); }catch(_){}
-      }
+      if(!token)return 'pas-de-jeton';
+      const uidW=FB.auth.currentUser.uid;
+      /* L'ÉCRITURE N'EST PLUS AVALÉE : si le jeton n'atteint pas la base, le serveur ne
+         peut pas joindre cette personne, et c'est précisément ce qu'il faut dire. */
+      await FB.f.setDoc(FB.f.doc(FB.db,'users',uidW),{pushTokens:FB.f.arrayUnion(token),role:role,notifOn:true,notifAt:FB.f.serverTimestamp()},{merge:true});
+      pushRegUid=uidW; pushRegTok=token; pushRegAt=Date.now(); pushRegRole=role||'client';
+      // Propriété EXCLUSIVE du jeton par ce compte : si l'appareil a déjà servi à un
+      // autre compte (ex. ancien profil prestataire), on récupère la propriété du jeton
+      // pour que les notifications de l'ancien compte cessent (voir notifyArtisansNewRequest).
+      try{ await FB.f.setDoc(FB.f.doc(FB.db,'fcmOwners',token),{uid:uidW,role:role,at:FB.f.serverTimestamp()}); }catch(_){}
       msgM.onMessage(messaging,function(payload){ const n=(payload&&(payload.data||payload.notification))||{}; toast((n.title||'Ti-Services')+(n.body?', '+n.body:'')); });
-    }catch(e){ console.warn('push register',e); }
+      return 'ok';
+    }catch(e){ console.warn('push register',e); return 'ecriture'; }
   }
   async function fbLogin(f){ try{
       // « Se souvenir de moi » : session PERSISTANTE (reste connecté après fermeture) si
