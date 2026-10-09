@@ -59,5 +59,28 @@ ok(!/\$\{m\.competitors\} artisans notifiés/.test(src),
 ok(/id="notif"/.test(src),
   'le compteur SIMULÉ du mode démonstration reste — là, il montre l’application telle qu’elle sera');
 
+/* F — EN LIGNE PAR DÉFAUT. LE DÉFAUT QUI RENDAIT LE PARC INVISIBLE.
+   « Il faut qu'ils soient tous en ligne, le hors ligne sera une nouvelle action
+   volontaire de leur part. » C'était l'inverse : `S.proOnline=false` au nettoyage des
+   données de démonstration, et la fiche `artisans` ne porte `online` qu'APRÈS le premier
+   enregistrement des réglages. Un inscrit qui n'avait jamais ouvert cet écran restait
+   donc à faux : son interrupteur affichait « Hors ligne » sans qu'il l'ait touché, le
+   fil des missions se taisait (`S.proOnline===false`) et il lisait « Aucune mission
+   disponible » pendant qu'une demande de son métier cherchait quelqu'un.
+
+   Mesuré en production le 09/10/2026, capture à l'appui, sur une demande de ménage qui
+   n'a trouvé personne. C'est le MÊME raisonnement que les notifications, deux lignes
+   plus bas dans la source, qui partent actives pour cette raison exacte — il n'avait
+   pas été appliqué ici. */
+console.log('\nF — en ligne par défaut, hors ligne seulement s’il le décide');
+ok(/S\.proFounder=false;S\.proOnline=true;/.test(src),
+  'un compte réel démarre EN LIGNE');
+ok(!/S\.proOnline=false;S\.proRating/.test(src),
+  'et plus rien ne le met hors ligne à son insu');
+ok(/if\(typeof ad\.online==='boolean'\)S\.proOnline=ad\.online;/.test(src),
+  'ce qu’il a enregistré l’emporte toujours : des vacances restent des vacances');
+ok(/case 'toggle-online':S\.proOnline=!S\.proOnline;saveProSettings\(\)/.test(src),
+  'et se mettre hors ligne reste un geste VOLONTAIRE, enregistré');
+
 console.log(f?('\n'+f+' ÉCHEC(S)'):'\nTOUT PASSE');
 process.exit(f?1:0);
