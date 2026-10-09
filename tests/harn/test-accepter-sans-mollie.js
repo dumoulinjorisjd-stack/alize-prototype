@@ -107,6 +107,53 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   ok(/t’attendent|t’attendent/.test(relance), 'elle annonce la somme qui l’attend');
   ok(/await netEnAttente\(db, d\.id\)/.test(relance), 'et cette somme est MESURÉE, pas supposée');
 
+  /* F — ET ON LE FAIT POUR DE VRAI. Les épreuves ci-dessus lisent des écrans et des
+     sources ; celle-ci CLIQUE « Accepter » avec un compte sans la moindre trace de
+     Mollie, et regarde CE QUI PART VERS FIRESTORE. C'est la seule qui dirait si la
+     porte s'est refermée ailleurs. */
+  console.log('F — on clique « Accepter », sans Mollie, et on lit ce qui est écrit');
+  const ecrit = await p.evaluate(async () => {
+    window.__ecrites = [];
+    window.__setFB({ db: {}, auth: { currentUser: { uid: 'pro1', email: 'p@e.fr' } },
+      f: { doc: (db, col, id) => ({ col: col, id: id }),
+        updateDoc: (ref, patch) => { window.__ecrites.push({ col: ref.col, id: ref.id, patch: patch }); return Promise.resolve(); },
+        setDoc: () => Promise.resolve(),
+        getDoc: () => Promise.resolve({ exists: () => false, data: () => ({}) }),
+        serverTimestamp: () => 'ts' },
+      fn: { httpsCallable: () => () => new Promise(() => {}) }, functions: {} });
+    const S = window.__S;
+    S.lang = 'fr'; S.onboarded = true; S.guest = false; S.demoMode = false; S.persona = 'pro';
+    S.proNav = 'home'; S.mission = null; S.proCats = ['menage']; S.proOnline = true;
+    S.proStatus = 'valide'; S.avail = null; S.proName = 'Nouveau Pro';
+    /* AUCUNE TRACE DE MOLLIE : ni organisation, ni statut, ni autorisation. */
+    S.proMollie = 'none'; S.proMollieOrgId = ''; S.proMollieOnb = ''; S.proMollieCanPay = false;
+    S.openRequests = [{ id: 'r1', service: 'menage', serviceName: 'Ménage', status: 'pending',
+      clientUid: 'c1', clientName: 'Camille', when: 'Demain', slot: '09:00', zone: 'Lorient',
+      unit: 'h', duration: 3, rate: 35, total: 105, locationMode: 'domicile', slotFlex: 0 }];
+    S.proReqView = 'r1';
+    window.__render();
+    const b = document.querySelector('#view [data-act^="accept-req:"]');
+    if (!b) return { bouton: false };
+    b.click();
+    await new Promise((r) => setTimeout(r, 900));
+    return { bouton: true, ecrites: window.__ecrites, statut: (window.__S.mission || {}).status || '' };
+  });
+  ok(ecrit.bouton, 'le bouton « Accepter » est cliquable');
+  const maj = (ecrit.ecrites || []).find((e) => e.col === 'requests' && e.patch && e.patch.status === 'accepted');
+  ok(!!maj, 'une mise à jour « accepted » part vers la demande ('
+    + (ecrit.ecrites || []).length + ' écriture(s))');
+  ok(!!maj && maj.id === 'r1', 'sur la BONNE demande (' + (maj && maj.id) + ')');
+  ok(!!maj && maj.patch.providerUid === 'pro1', 'et elle s’attribue le prestataire (' + (maj && maj.patch.providerUid) + ')');
+  ok(!!maj && maj.patch.acceptedSlot === '09:00', 'avec l’heure convenue (' + (maj && maj.patch.acceptedSlot) + ')');
+  /* ET LA RÈGLE FIRESTORE LAISSERA PASSER CETTE ÉCRITURE : elle n'exige plus rien de
+     Mollie, et le patch ne touche ni les montants ni les termes du contrat. */
+  const interdits = ['rate', 'boost', 'unit', 'service', 'serviceName', 'duration', 'clientUid',
+    'grossTotal', 'netAmount', 'commissionAmount', 'molliePaymentId'];
+  const touche = maj ? interdits.filter((k) => Object.prototype.hasOwnProperty.call(maj.patch, k)) : ['(pas d’écriture)'];
+  ok(touche.length === 0,
+    'le patch ne touche aucun champ verrouillé par la règle' + (touche.length ? ' : ' + touche.join(', ') : ''));
+  ok(ecrit.statut === 'accepted', 'et l’écran du prestataire bascule sur sa mission (' + ecrit.statut + ')');
+
   ok(errs.length === 0, 'aucune erreur de page' + (errs.length ? ' : ' + errs[0] : ''));
   await b.close();
   console.log(f ? '\n' + f + ' ÉCHEC(S)' : '\nTout est vert');

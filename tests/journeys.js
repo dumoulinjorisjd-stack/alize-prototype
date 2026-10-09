@@ -13,6 +13,12 @@ const fs = require('fs');
 const { chromium } = require('playwright-core');
 
 const INDEX = 'file://' + path.resolve(__dirname, '..', 'index.html');
+/* ON CLIQUE CE QUI EST VISIBLE. Plusieurs boutons de l'accueil existent EN DEUX
+   exemplaires — un dans la coquille servie, un dans la vue rendue — et le sélecteur
+   prenait le premier venu, c'est-à-dire le caché : le harnais s'arrêtait à l'épreuve 3
+   depuis assez longtemps pour que plus personne ne le lance, et aucun workflow ne
+   l'appelle. Un utilisateur, lui, clique forcément celui qu'il voit. */
+const clic = (page, sel, opts) => page.locator(sel + ':visible').first().click(opts);
 // Chromium : chemin pré-provisionné (environnement local) sinon celui de Playwright (CI).
 const LOCAL_CHROMIUM = '/opt/pw-browsers/chromium';
 const launchOpts = { headless: true };
@@ -74,7 +80,7 @@ function realErrors(errs) {
     ok(await page.$('[data-act="go-artisan-signup"]'), 'bouton « Je propose un service » présent');
     ok(!(await page.$('[data-act="enter-guest"]')), 'bouton découverte sans compte retiré');
     // Création de compte client : le bouton Google DOIT être proposé (inscription rapide).
-    await page.click('[data-act="onb-start"]');
+    await clic(page, '[data-act="onb-start"]');
     await page.waitForTimeout(700);
     let txt = await page.evaluate(() => document.body.innerText);
     ok(/Créer mon compte/.test(txt), 'écran infos de création affiché');
@@ -98,7 +104,7 @@ function realErrors(errs) {
   {
     const errs = [];
     const page = await newPage(browser, errs);
-    await page.click('[data-act="go-artisan-signup"]');
+    await clic(page, '[data-act="go-artisan-signup"]');
     await page.waitForTimeout(700);
     const kind = await page.$('[data-act="signup-kind:artisan"]');
     if (kind) { await kind.click(); await page.waitForTimeout(700); }
@@ -112,12 +118,12 @@ function realErrors(errs) {
     await page.fill('[data-pf="email"]', 'lea@test.fr');
     await page.fill('[data-pf="password"]', 'azerty');
     await page.fill('[data-pf="password2"]', 'azerty');
-    await page.click('[data-act="pro-account-create"]'); await page.waitForTimeout(700);
+    await clic(page, '[data-act="pro-account-create"]'); await page.waitForTimeout(700);
     const hub = await page.evaluate(() => document.body.innerText);
     ok(/Bienvenue Léa/.test(hub), 'brouillon : accueil « Bienvenue » après création');
     ok(/0\/4|1\/4/.test(hub), 'brouillon : compteur d’étapes');
     // Ouvrir l'étape Identité → les mentions société (forme/RCS) sont là.
-    await page.click('[data-act="draft-step:id"]'); await page.waitForTimeout(600);
+    await clic(page, '[data-act="draft-step:id"]'); await page.waitForTimeout(600);
     ok(await page.$('[data-pf="siret"]'), 'étape Identité : champ SIRET présent');
     ok(await page.$('[data-pf="legalForm"]'), 'étape Identité : forme juridique (société)');
     ok(await page.$('[data-pf="rcsCity"]'), 'étape Identité : ville RCS (société)');
@@ -141,14 +147,14 @@ function realErrors(errs) {
     // Le mode invité a été retiré de l'accueil.
     ok(!(await page.$('[data-act="enter-guest"]')), 'accueil sans bouton invité');
     // Client : Google proposé sur l'écran de création.
-    await page.click('[data-act="onb-start"]');
+    await clic(page, '[data-act="onb-start"]');
     await page.waitForTimeout(700);
     ok(!!(await page.$('[data-act="google-client"]')), 'Google proposé à l’inscription client');
     ok(realErrors(errs).length === 0, 'aucune erreur JS (client)');
     await page.close();
     // Prestataire : Google proposé sur le formulaire de candidature.
     const page2 = await newPage(browser, errs);
-    await page2.click('[data-act="go-artisan-signup"]');
+    await clic(page2, '[data-act="go-artisan-signup"]');
     await page2.waitForTimeout(700);
     const kind = await page2.$('[data-act="signup-kind:artisan"]');
     if (kind) { await kind.click(); await page2.waitForTimeout(700); }
@@ -178,25 +184,34 @@ function realErrors(errs) {
       window.matchMedia = function (q) { return /display-mode:\s*standalone/.test(q)
         ? { matches: true, addEventListener: function () {}, addListener: function () {} } : vrai.call(window, q); }; });
     // Création de compte (démo) → l'accueil client (aucune adresse enregistrée).
-    await page.click('[data-act="onb-start"]'); await page.waitForTimeout(500);
+    await clic(page, '[data-act="onb-start"]'); await page.waitForTimeout(500);
     await page.fill('[data-cf="name"]', 'Jean Test');
     await page.fill('[data-cf="email"]', 'jean@test.fr');
     await page.fill('[data-cf="password"]', 'azerty');
     await page.fill('[data-cf="password2"]', 'azerty');
-    await page.click('[data-act="toggle-cterms"]'); await page.waitForTimeout(150);
-    await page.click('[data-act="finish-onboard"]'); await page.waitForTimeout(600);
+    await clic(page, '[data-act="toggle-cterms"]'); await page.waitForTimeout(150);
+    await clic(page, '[data-act="finish-onboard"]'); await page.waitForTimeout(600);
     ok(/Bonjour|Bonsoir/i.test(await page.evaluate(() => document.body.innerText)), 'compte créé → accueil client');
     // Commande d'un service à domicile → écran de configuration (adresse ponctuelle, sans GPS).
     const svc = await page.$('[data-svc="menage"]'); ok(!!svc, 'tuile Ménage présente');
     if (svc) { await svc.click(); await page.waitForTimeout(500); }
     // Confirmer SANS point GPS doit être BLOQUÉ (on reste sur la configuration).
-    await page.click('[data-cfg="confirm"]'); await page.waitForTimeout(400);
+    await clic(page, '[data-cfg="confirm"]'); await page.waitForTimeout(400);
     ok(/obligatoire/i.test(await page.evaluate(() => document.body.innerText)), 'blocage : « obligatoire » sans GPS');
     ok(!!(await page.$('[data-cfg="confirm"]')), 'toujours sur la configuration (commande non envoyée)');
-    // Enregistrer le point GPS (repli sur coordonnées par défaut si géoloc refusée) → la commande avance.
-    const geo = await page.$('[data-cfg="geoloc"]'); ok(!!geo, 'bouton « Enregistrer le point GPS » présent');
+    /* POSER LE POINT GPS → la commande avance. Le bouton s'appelait « Enregistrer le
+       point GPS » et portait `data-cfg="geoloc"` ; depuis qu'on peut aussi poser le
+       point SANS être sur place, il y en a deux — « Je suis sur place » (`cfg-geoloc`)
+       et « Placer sur la carte ». L'épreuve suivait l'ancien identifiant et ne trouvait
+       plus rien : elle a rougi en silence pendant tout ce temps, parce que ce harnais
+       n'était plus lancé par personne. */
+    const geo = await page.$('[data-act="cfg-geoloc"]');
+    ok(!!geo, 'bouton « Je suis sur place » présent');
+    ok(!!(await page.$('[data-act="pose-pt"], [data-cfg="pose-pt"], [data-act="cfg-pose"]'))
+      || /Placer sur la carte/.test(await page.evaluate(() => document.body.innerText)),
+      'et l’autre voie, « Placer sur la carte », pour qui n’y est pas');
     if (geo) { await geo.click(); await page.waitForTimeout(900); }
-    await page.click('[data-cfg="confirm"]'); await page.waitForTimeout(600);
+    await clic(page, '[data-cfg="confirm"]'); await page.waitForTimeout(600);
     ok(!(await page.$('[data-cfg="confirm"]')), 'GPS enregistré → la commande est acceptée');
     ok(realErrors(errs).length === 0, 'aucune erreur JS');
     await page.close(); await gctx.close();
@@ -220,7 +235,7 @@ function realErrors(errs) {
     await page.evaluate(() => { const vrai = window.matchMedia;
       window.matchMedia = function (q) { return /display-mode:\s*standalone/.test(q)
         ? { matches: true, addEventListener: function () {}, addListener: function () {} } : vrai.call(window, q); }; });
-    await page.click('[data-act="go-artisan-signup"]'); await page.waitForTimeout(600);
+    await clic(page, '[data-act="go-artisan-signup"]'); await page.waitForTimeout(600);
     const kind = await page.$('[data-act="signup-kind:artisan"]');
     if (kind) { await kind.click(); await page.waitForTimeout(600); }
     // Créer le compte (démo) puis ouvrir l'étape Identité : le code parrain y est prérempli.
@@ -228,8 +243,8 @@ function realErrors(errs) {
     await page.fill('[data-pf="email"]', 'lea@test.fr');
     await page.fill('[data-pf="password"]', 'azerty');
     await page.fill('[data-pf="password2"]', 'azerty');
-    await page.click('[data-act="pro-account-create"]'); await page.waitForTimeout(600);
-    await page.click('[data-act="draft-step:id"]'); await page.waitForTimeout(500);
+    await clic(page, '[data-act="pro-account-create"]'); await page.waitForTimeout(600);
+    await clic(page, '[data-act="draft-step:id"]'); await page.waitForTimeout(500);
     const val = await page.$eval('[data-pf="refCode"]', (el) => el.value).catch(() => null);
     ok(val === 'KEVIN-8A3F', 'code de parrainage prérempli en majuscules depuis le lien');
     ok(realErrors(errs).length === 0, 'aucune erreur JS');
@@ -242,15 +257,15 @@ function realErrors(errs) {
     const errs = [];
     const page = await newPage(browser, errs);
     // Création de compte (démo) → accueil client.
-    await page.click('[data-act="onb-start"]'); await page.waitForTimeout(500);
+    await clic(page, '[data-act="onb-start"]'); await page.waitForTimeout(500);
     await page.fill('[data-cf="name"]', 'Zoé Test');
     await page.fill('[data-cf="email"]', 'zoe@test.fr');
     await page.fill('[data-cf="password"]', 'azerty');
     await page.fill('[data-cf="password2"]', 'azerty');
-    await page.click('[data-act="toggle-cterms"]'); await page.waitForTimeout(150);
-    await page.click('[data-act="finish-onboard"]'); await page.waitForTimeout(600);
+    await clic(page, '[data-act="toggle-cterms"]'); await page.waitForTimeout(150);
+    await clic(page, '[data-act="finish-onboard"]'); await page.waitForTimeout(600);
     // Catégorie Beauté → tuile Épilation définitive.
-    await page.click('[data-catopen="beaute"]'); await page.waitForTimeout(400);
+    await clic(page, '[data-catopen="beaute"]'); await page.waitForTimeout(400);
     const tile = await page.$('[data-svc="epilationdef"]');
     ok(!!tile, 'tuile « Épilation définitive » dans Beauté');
     if (tile) { await tile.click(); await page.waitForTimeout(600); }
@@ -259,16 +274,27 @@ function realErrors(errs) {
     // Catalogue repris tel quel (zones, combinés, packs).
     ok(/Aisselles/.test(body) && /Maillot complet/.test(body), 'actes « zones » présents');
     ok(/Pack 6 séances/.test(body) && /1[  ]?680|1680/.test(body.replace(/ | /g, '')), 'packs 6 séances présents (1 680 €)');
-    // Lieu IMPOSÉ chez le prestataire : pas de choix domicile/salon, pas d'adresse ni GPS.
-    ok(/Chez le prestataire/.test(body), 'bannière « Chez le prestataire »');
+    /* LIEU IMPOSÉ CHEZ LE PRESTATAIRE. L'écran disait « Chez le prestataire » ; il NOMME
+       désormais le local du métier — « institut » pour une épilation définitive, « salon
+       de massage » pour un massage — et promet l'adresse exacte à l'acceptation. C'est
+       plus précis, et l'épreuve suivait encore l'ancienne formule. */
+    ok(/vous vous rendez|institut|salon|studio/i.test(body),
+      'l’écran nomme le local où le client se rend');
+    ok(/adresse exacte s’affiche dès qu’il accepte|adresse exacte s'affiche dès qu'il accepte/.test(body),
+      'et promet l’adresse exacte dès l’acceptation');
     ok(!(await page.$('[data-loc="domicile"]')), 'aucun choix de lieu (salon imposé)');
-    ok(!/Adresse de la prestation/.test(body), 'aucune adresse client demandée');
+    /* « Adresse de la prestation » était le libellé du champ ; depuis que l'écran est
+       rangé par question, c'est le TITRE de la carte qui le porte — et il n'apparaît
+       que hors salon. Chercher l'ancien libellé rendait l'assertion toujours vraie,
+       donc muette : on cherche ce qui est rendu aujourd'hui. */
+    ok(!/Adresse exacte/.test(body) && !(await page.$('[data-addr]')),
+      'aucune adresse client demandée');
     ok(!/Enregistrer le point GPS/.test(body), 'aucun point GPS demandé');
     // Cocher un acte → le total suit ; la confirmation passe SANS GPS.
-    await page.click('[data-actpick="ed_aiss"]'); await page.waitForTimeout(300);
+    await clic(page, '[data-actpick="ed_aiss"]'); await page.waitForTimeout(300);
     body = await page.evaluate(() => document.body.innerText);
     ok(/70/.test(body), 'acte « Aisselles » coché (70 €)');
-    await page.click('[data-cfg="confirm"]'); await page.waitForTimeout(600);
+    await clic(page, '[data-cfg="confirm"]'); await page.waitForTimeout(600);
     body = await page.evaluate(() => document.body.innerText);
     ok(!/obligatoire/i.test(body), 'aucun blocage GPS pour une prestation en salon');
     ok(realErrors(errs).length === 0, 'aucune erreur JS');
