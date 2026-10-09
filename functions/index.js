@@ -1102,6 +1102,39 @@ async function _alerteAbus(db, cle, sujet, texte) {
 }
 const EST_PROD = (process.env.GCLOUD_PROJECT || 't-service-prod').indexOf('prod') >= 0;
 
+/* CE QUI EST PARTI, ÉCRIT SUR LA DEMANDE ELLE-MÊME.
+   « Rien ne semble être parti. » On ne pouvait pas lui répondre : la diffusion décide en
+   silence — garantie refusée, plafond atteint, aucun artisan du métier, personne de
+   disponible sur le créneau — et ne laisse qu'une ligne dans les journaux du serveur,
+   que la console ne lit pas. Le fait vit désormais SUR LA DEMANDE : combien de
+   prestataires visés, combien par notification, combien par e-mail, et la RAISON quand
+   personne n'a été prévenu.
+
+   AUCUN NOM, AUCUNE ADRESSE : des nombres et un motif d'une liste fermée. La demande est
+   lisible par son client et par les artisans validés — ce qu'on y écrit doit pouvoir
+   être lu par eux sans rien révéler de personne.
+
+   LE CHAMP EST RÉSERVÉ AU SERVEUR (`serverKeys` dans les règles) : laissé libre, un
+   compte pourrait écrire « 12 prestataires prévenus » sur sa propre demande, et la
+   console afficherait ce chiffre comme un fait. */
+const DIFFUSION_MOTIFS = ['envoyee', 'sans-garantie', 'plafond-client', 'aucun-artisan',
+  'aucun-disponible', 'dirige-introuvable'];
+async function _noterDiffusion(db, reqId, info) {
+  try {
+    if (!reqId) return;
+    const m = String((info || {}).motif || '');
+    await db.collection('requests').doc(reqId).set({
+      diffusion: {
+        at: FieldValue.serverTimestamp(),
+        motif: DIFFUSION_MOTIFS.indexOf(m) >= 0 ? m : 'envoyee',
+        cibles: Math.max(0, Math.round(Number((info || {}).cibles) || 0)),
+        push: Math.max(0, Math.round(Number((info || {}).push) || 0)),
+        mail: Math.max(0, Math.round(Number((info || {}).mail) || 0)),
+      },
+    }, { merge: true });
+  } catch (e) { console.warn('_noterDiffusion', reqId, e); }
+}
+
 async function mailArtisansSansAppareil(db, artById, targetUids, tokenToUid, r, dirigee) {
   try {
     const joignables = {};
@@ -1174,6 +1207,7 @@ exports.notifyArtisansNewRequest = onDocumentCreated({document: 'requests/{reqId
   const g = ANTI.diffusionAdmise(r, { estProd: EST_PROD });
   if (!g.ok) {
     console.warn('Diffusion refusée (' + g.motif + ') pour la demande ' + (event.params && event.params.reqId));
+    await _noterDiffusion(db, event.params && event.params.reqId, { motif: 'sans-garantie' });
     await _alerteAbus(db, 'diffusion-sans-garantie', 'demande publiée sans paiement',
       'Une demande a été créée directement « publiée », sans conciergerie ni autorisation de carte. '
       + 'Elle n\'a été diffusée à personne. Client : ' + String(r.clientUid || 'inconnu') + '.');
@@ -1183,6 +1217,7 @@ exports.notifyArtisansNewRequest = onDocumentCreated({document: 'requests/{reqId
   const qc = await _quotaJour(db, 'diff-' + (r.clientUid || 'inconnu'), ANTI.plafondDiffusion(r));
   if (!qc.ok) {
     console.warn('Diffusion plafonnée pour le client ' + r.clientUid + ' (' + qc.plafond + '/jour).');
+    await _noterDiffusion(db, event.params && event.params.reqId, { motif: 'plafond-client' });
     await _alerteAbus(db, 'diff-client-' + (r.clientUid || 'x'), 'plafond de diffusions atteint',
       'Le compte ' + String(r.clientUid || 'inconnu') + ' a atteint ' + qc.plafond
       + ' diffusions de demande aujourd\'hui. Les suivantes ne préviennent plus personne.');
@@ -1194,7 +1229,8 @@ exports.notifyArtisansNewRequest = onDocumentCreated({document: 'requests/{reqId
   const uids = artsSnap.docs
     .filter((d) => { const dd = d.data() || {}; const c = dd.cats || []; return (!svc || c.indexOf(svc) >= 0) && siteOk(dd, svc, r.locationMode); })
     .map((d) => d.id);
-  if (!uids.length) { console.log('Aucun artisan validé pour ce service.'); return; }
+  if (!uids.length) { console.log('Aucun artisan validé pour ce service.');
+    await _noterDiffusion(db, event.params && event.params.reqId, { motif: 'aucun-artisan' }); return; }
 
   // Demande DIRIGÉE : si le client a demandé un artisan précis (choix / renouvellement),
   // SEUL cet artisan est notifié — la demande ne tombe jamais dans la recherche standard
@@ -1208,7 +1244,9 @@ exports.notifyArtisansNewRequest = onDocumentCreated({document: 'requests/{reqId
   const targetUids = preferred
     ? (uids.indexOf(preferred) >= 0 ? [preferred] : [])
     : uids.filter((uid) => availOk(availById[uid], r) && enLigne(onlineById[uid]));
-  if (!targetUids.length) { console.log('Aucun artisan disponible pour ce créneau.'); return; }
+  if (!targetUids.length) { console.log('Aucun artisan disponible pour ce créneau.');
+    await _noterDiffusion(db, event.params && event.params.reqId,
+      { motif: preferred ? 'dirige-introuvable' : 'aucun-disponible' }); return; }
 
   const svcNm = (r.serviceName || 'Nouvelle prestation').toString().slice(0, 60);
   const secteur = (r.zone || 'Saint-Barth').toString().slice(0, 40);
@@ -1261,8 +1299,10 @@ exports.notifyArtisansNewRequest = onDocumentCreated({document: 'requests/{reqId
   }));
   const tokens = Object.keys(tokenToUid);
 
-  await mailArtisansSansAppareil(db, artById, targetUids, tokenToUid, r, !!preferred);
-  if (!tokens.length) { console.log('Aucun jeton artisan enregistré, e-mail(s) envoyé(s) à la place.'); return; }
+  const nMail = await mailArtisansSansAppareil(db, artById, targetUids, tokenToUid, r, !!preferred);
+  if (!tokens.length) { console.log('Aucun jeton artisan enregistré, e-mail(s) envoyé(s) à la place.');
+    await _noterDiffusion(db, event.params && event.params.reqId,
+      { motif: 'envoyee', cibles: targetUids.length, push: 0, mail: nMail }); return; }
 
   const svcName = (r.serviceName || 'Nouvelle prestation').toString().slice(0, 60);
   const zone = (r.zone || '').toString().slice(0, 40);
@@ -1281,6 +1321,8 @@ exports.notifyArtisansNewRequest = onDocumentCreated({document: 'requests/{reqId
 
   const res = await getMessaging().sendEachForMulticast(message);
   console.log(`Push artisans : ${res.successCount}/${tokens.length}`);
+  await _noterDiffusion(db, event.params && event.params.reqId,
+    { motif: 'envoyee', cibles: targetUids.length, push: res.successCount, mail: nMail });
 
   const dels = [];
   res.responses.forEach((rp, i) => {
@@ -1738,7 +1780,7 @@ exports.notifyNewMessage = onDocumentUpdated('requests/{reqId}', async (event) =
 // notifications. Enfin, `messaging/invalid-argument` peut venir de la CHARGE UTILE et
 // pas du jeton : supprimer le jeton sur ce code purgeait des appareils valides.
 async function pushMulticast(tokens, title, body, link, onInvalid, tag) {
-  if (!tokens.length) return;
+  if (!tokens.length) return { successCount: 0, failureCount: 0 };
   try {
     const msg = getMessaging();
     let ok = 0; let ko = 0;
@@ -1765,7 +1807,11 @@ async function pushMulticast(tokens, title, body, link, onInvalid, tag) {
       if (dels.length) await Promise.all(dels);
     }
     if (ko) console.warn('pushMulticast : ' + ok + ' envoyés, ' + ko + ' échecs sur ' + tokens.length + ' jetons');
-  } catch (e) { console.warn('pushMulticast', (e && e.message) || e); }
+    /* ELLE REND CE QU'ELLE A FAIT. Elle ne rendait rien : l'appelant qui voulait écrire
+       « N prestataires prévenus » devait retomber sur le nombre de JETONS, c'est-à-dire
+       annoncer des envois qui ont pu tous échouer. */
+    return { successCount: ok, failureCount: ko };
+  } catch (e) { console.warn('pushMulticast', (e && e.message) || e); return { successCount: 0, failureCount: tokens.length }; }
 }
 // Jetons push d'un utilisateur, en RESPECTANT son choix : notifOn === false (il a coupé
 // les notifications) => aucun jeton. Seul le pool « nouvelle mission » faisait ce
@@ -2701,6 +2747,7 @@ exports.notifyReopenedRequest = onDocumentUpdated({document: 'requests/{reqId}',
   const qr = await _quotaJour(db, 'diff-' + (after.clientUid || 'inconnu'), ANTI.plafondDiffusion(after));
   if (!qr.ok) {
     console.warn('Réouverture plafonnée pour le client ' + after.clientUid + ' (' + qr.plafond + '/jour).');
+    await _noterDiffusion(db, event.params && event.params.reqId, { motif: 'plafond-client' });
     await _alerteAbus(db, 'diff-client-' + (after.clientUid || 'x'), 'plafond de diffusions atteint',
       'Le compte ' + String(after.clientUid || 'inconnu') + ' a atteint ' + qr.plafond
       + ' diffusions de demande aujourd\'hui (créations et réouvertures). Les suivantes ne préviennent plus personne.');
@@ -2712,10 +2759,21 @@ exports.notifyReopenedRequest = onDocumentUpdated({document: 'requests/{reqId}',
   //    SEULE la personne nouvellement demandée est notifiée — jamais le pool.
   try {
     const artsSnap = await db.collection('artisans').where('status', '==', 'valide').get();
-    let uids = artsSnap.docs
-      .filter((d) => { const dd = d.data() || {}; const c = dd.cats || []; return (!svc || c.indexOf(svc) >= 0) && d.id !== exclude && siteOk(dd, svc, after.locationMode) && enLigne(dd.online); })
-      .map((d) => d.id);
     const preferred = after.directed ? (after.preferredProviderUid || '') : '';
+    /* UNE DEMANDE DIRIGÉE ATTEINT LA PERSONNE DEMANDÉE, qu'elle soit « en ligne » ou non.
+       Le chemin de la création le dit déjà — « l'artisan choisi est notifié quelle que
+       soit sa grille de dispo, le client l'a demandé ; il déclinera au besoin » — mais
+       la réouverture appliquait `online` et la grille à TOUT LE MONDE, y compris à lui.
+       Or EN PRODUCTION TOUTE COMMANDE PASSE PAR ICI : une demande naît
+       « pending_payment » et ne devient « pending » qu'après l'autorisation de la carte.
+       L'exemption écrite sur l'autre chemin ne servait donc jamais, et un client qui
+       choisit son prestataire ne prévenait personne dès que celui-ci avait coupé son
+       interrupteur — sans que ni l'un ni l'autre ne l'apprenne. */
+    let uids = artsSnap.docs
+      .filter((d) => { const dd = d.data() || {}; const c = dd.cats || [];
+        if (preferred && d.id === preferred) return (!svc || c.indexOf(svc) >= 0) && d.id !== exclude;
+        return (!svc || c.indexOf(svc) >= 0) && d.id !== exclude && siteOk(dd, svc, after.locationMode) && enLigne(dd.online); })
+      .map((d) => d.id);
     if (preferred) {
       uids = uids.indexOf(preferred) >= 0 ? [preferred] : [];
     } else {
@@ -2728,13 +2786,15 @@ exports.notifyReopenedRequest = onDocumentUpdated({document: 'requests/{reqId}',
       try { const u = await db.collection('users').doc(uid).get(); ((u.data() || {}).pushTokens || []).forEach((t) => { tokenToUid[t] = uid; }); } catch (_) {}
     }));
     const tokens = Object.keys(tokenToUid);
+    let nPush = 0;
     if (tokens.length) {
       const svcName = (after.serviceName || 'Une mission').toString().slice(0, 60);
       const zone = (after.zone || '').toString().slice(0, 40);
       const title = wasPendingPayment ? 'Espace artisan · Nouvelle mission' : 'Espace artisan · Mission de nouveau disponible';
       const body = svcName + (zone ? ' · ' + zone : '') + (wasPendingPayment ? ', une nouvelle demande, à saisir.' : ', un créneau se libère, à saisir.');
-      await pushMulticast(tokens, title, body, '/?open=missions',
+      const rp = await pushMulticast(tokens, title, body, '/?open=missions',
         (t) => db.collection('users').doc(tokenToUid[t]).update({ pushTokens: FieldValue.arrayRemove(t) }));
+      nPush = (rp && typeof rp.successCount === 'number') ? rp.successCount : 0;
     }
     // C'EST ICI que part l'alerte d'une commande réelle : une demande naît en
     // « pending_payment » et ne devient « pending » qu'une fois la carte autorisée. La
@@ -2742,7 +2802,13 @@ exports.notifyReopenedRequest = onDocumentUpdated({document: 'requests/{reqId}',
     // côtés, sinon il ne sert à rien là où ça compte.
     const artById = {};
     artsSnap.docs.forEach((d) => { artById[d.id] = d.data() || {}; });
-    await mailArtisansSansAppareil(db, artById, uids, tokenToUid, after, !!preferred);
+    const nMail = await mailArtisansSansAppareil(db, artById, uids, tokenToUid, after, !!preferred);
+    /* ON ÉCRIT L'ISSUE, MÊME QUAND ELLE EST « PERSONNE ». C'est le seul cas où la console
+       pouvait laisser croire que la demande cherchait un prestataire alors que personne
+       n'avait été prévenu. */
+    await _noterDiffusion(db, event.params && event.params.reqId, uids.length
+      ? { motif: 'envoyee', cibles: uids.length, push: nPush, mail: nMail }
+      : { motif: preferred ? 'dirige-introuvable' : (after.service ? 'aucun-disponible' : 'aucun-artisan') });
   } catch (e) { console.warn('reopen notify artisans', e); }
 
   // 2) Prévenir le client que la recherche est relancée — uniquement en cas de

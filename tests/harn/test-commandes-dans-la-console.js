@@ -13,6 +13,8 @@
 const fs = require('fs'), path = require('path');
 const { chromium } = require('playwright-core');
 const RACINE = '/home/user/alize-work';
+const SRV = fs.readFileSync(path.join(RACINE, 'functions', 'index.js'), 'utf8');
+const RULES = fs.readFileSync(path.join(RACINE, 'firestore.rules'), 'utf8');
 const o = { headless: true }; if (fs.existsSync('/opt/pw-browsers/chromium')) o.executablePath = '/opt/pw-browsers/chromium';
 let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; console.log('  ✗ ÉCHEC : ' + l); } };
 
@@ -97,6 +99,63 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   ok(x.lignes >= 1 && /onerror/.test(x.txt), 'le texte hostile se LIT, en toutes lettres');
   const vivants = await p.evaluate(() => document.querySelectorAll('#view script, #view img[onerror]').length);
   ok(vivants === 0, 'et aucune balise ne s’est ouverte (' + vivants + ')');
+
+  /* F — LA CONSOLE DIT CE QUI EST PARTI AUX PRESTATAIRES. « Rien ne semble être parti »
+     n'avait aucune réponse : la diffusion décide en silence — garantie de paiement
+     refusée, plafond du jour, aucun artisan du métier, personne de disponible — et ne
+     laissait qu'une ligne dans les journaux du serveur, que la console ne lit pas. */
+  console.log('F — qui a été prévenu, et sinon pourquoi');
+  const envoyee = await console_([Object.assign({}, EN_RECHERCHE,
+    { diff: { motif: 'envoyee', cibles: 4, push: 3, mail: 1 } })], []);
+  ok(/4 prestataires prévenus/.test(envoyee.txt), 'combien ont été prévenus');
+  ok(/3 par notification/.test(envoyee.txt) && /1 par e-mail/.test(envoyee.txt),
+    'et par quel chemin — la notification ET l’e-mail de secours');
+  for (const [motif, mot] of [['sans-garantie', /paiement n’a jamais été garanti/],
+    ['plafond-client', /plafond de diffusions/],
+    ['aucun-artisan', /aucun prestataire validé/],
+    ['aucun-disponible', /disponible sur ce créneau/],
+    ['dirige-introuvable', /prestataire demandé/]]) {
+    const r = await console_([Object.assign({}, EN_RECHERCHE, { diff: { motif: motif, cibles: 0, push: 0, mail: 0 } })], []);
+    ok(/Personne prévenu/.test(r.txt) && mot.test(r.txt), motif + ' : la raison est dite');
+  }
+  /* UNE DEMANDE D'AVANT CE CHAMP NE DIT RIEN plutôt que de dire « personne » : on ne
+     sait pas, et ce n'est pas la même chose. */
+  const muette = await console_([EN_RECHERCHE], []);
+  ok(!/Personne prévenu/.test(muette.txt) && !/prévenus/.test(muette.txt),
+    'une demande d’avant ce champ ne prétend rien');
+
+  /* G — LA CONSOLE NE PEUT DIRE QUE CE QUE LE SERVEUR ÉCRIT. Aucun banc ne fait tourner
+     les fonctions Firebase : le câblage se lit donc dans la source, comme pour l'anti-abus. */
+  console.log('G — le câblage serveur, lu dans la source');
+  const issues = ['sans-garantie', 'plafond-client', 'aucun-artisan', 'aucun-disponible', 'dirige-introuvable'];
+  issues.forEach(function (m) {
+    ok(SRV.indexOf("'" + m + "'") >= 0, 'le serveur sait écrire l’issue « ' + m + ' »');
+  });
+  ok((SRV.match(/_noterDiffusion\(/g) || []).length >= 8,
+    'et il l’écrit à chaque sortie des deux chemins de diffusion ('
+    + (SRV.match(/_noterDiffusion\(/g) || []).length + ' appels)');
+
+  /* LE CHAMP EST RÉSERVÉ AU SERVEUR. Laissé libre, un compte écrirait « 12 prestataires
+     prévenus » sur sa propre demande, et la console afficherait ce chiffre comme un fait. */
+  ok(/'diffusion'\]/.test(RULES.replace(/\s+/g, ' ')) || /'diffusion'/.test(RULES),
+    'la règle Firestore réserve `diffusion` au serveur');
+  const dep = RULES.indexOf('function serverKeys()');
+  const bloc = RULES.slice(dep, RULES.indexOf('];', dep));
+  ok(/'diffusion'/.test(bloc), 'et c’est bien dans `serverKeys`, la liste que nul client ne peut écrire');
+
+  /* UNE DEMANDE DIRIGÉE ATTEINT LA PERSONNE DEMANDÉE, en ligne ou non. Le chemin de la
+     création le disait déjà ; la réouverture — par laquelle passe TOUTE commande réelle,
+     puisqu'une demande naît « pending_payment » — appliquait `online` à tout le monde,
+     y compris à elle. L'exemption ne servait donc jamais. */
+  const rd = SRV.indexOf('exports.notifyReopenedRequest');
+  const reopen = SRV.slice(rd, SRV.indexOf('exports.', rd + 20));
+  ok(/if \(preferred && d\.id === preferred\)/.test(reopen),
+    'à la réouverture, le prestataire demandé échappe au filtre « en ligne » et à la grille');
+
+  /* ELLE REND CE QU'ELLE A FAIT : sans cela, l'appelant retombait sur le nombre de
+     JETONS et annonçait des envois qui ont pu tous échouer. */
+  ok(/return \{ successCount: ok, failureCount: ko \}/.test(SRV),
+    'pushMulticast rend le nombre réellement envoyé');
 
   ok(errs.length === 0, 'aucune erreur de page' + (errs.length ? ' : ' + errs[0] : ''));
   await b.close();

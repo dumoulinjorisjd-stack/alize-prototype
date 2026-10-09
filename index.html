@@ -3654,7 +3654,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='833';
+  const VERSION_APP='834';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -11172,6 +11172,30 @@
        « Réglées » — parce qu'il sert au tableau des compteurs ; `bkStatus` nomme UNE
        réservation, et il existait déjà. On ne fabrique pas une troisième table. */
     const BK_CONNUS=['pending','accepted','working','done_pro','paid','rated'];
+    /* QUI A ÉTÉ PRÉVENU, ET SINON POURQUOI. « Rien ne semble être parti » n'avait aucune
+       réponse dans la console : la diffusion décide en silence — garantie de paiement
+       refusée, plafond du jour, aucun artisan du métier, personne de disponible sur le
+       créneau — et ne laissait qu'une ligne dans les journaux du serveur. Le serveur
+       l'écrit maintenant sur la demande, et la ligne la lit. Une demande d'AVANT ce
+       champ ne dit rien plutôt que de dire « personne » : on ne sait pas, ce n'est pas
+       la même chose. */
+    const DIFF_MOTIFS={
+      'sans-garantie':['Personne prévenu','le paiement n’a jamais été garanti, la demande n’a été diffusée à personne'],
+      'plafond-client':['Personne prévenu','ce compte a atteint son plafond de diffusions du jour'],
+      'aucun-artisan':['Personne prévenu','aucun prestataire validé sur ce métier'],
+      'aucun-disponible':['Personne prévenu','aucun prestataire disponible sur ce créneau, ou tous hors ligne'],
+      'dirige-introuvable':['Personne prévenu','le prestataire demandé n’est pas joignable sur ce métier']};
+    const cmdDiffusion=function(r){
+      const d=r&&r.diff; if(!d)return '';
+      if(d.motif==='envoyee'){
+        const bouts=[];
+        if(d.push)bouts.push(d.push+' par notification');
+        if(d.mail)bouts.push(d.mail+' par e-mail');
+        return `<div class="mini" style="margin-top:5px;color:var(--good)">${I.check} ${plN(d.cibles,'prestataire')} prévenu${d.cibles>1?'s':''}${bouts.length?' · '+esc(bouts.join(', ')):''}</div>`;
+      }
+      const M=DIFF_MOTIFS[d.motif]; if(!M)return '';
+      return `<div class="mini" style="margin-top:5px;color:var(--coral-deep);line-height:1.45"><b>${esc(M[0])}</b> — ${esc(M[1])}.</div>`;
+    };
     const cmdLigne=function(r){
       const L=(BK_CONNUS.indexOf(r.status)>=0)?bkStatus(r.status):(REQ_LIB[r.status]||['grey',r.status,'']);
       const vif=(r.status==='pending'||r.status==='working'||r.status==='done_pro');
@@ -11192,6 +11216,7 @@
         <div class="row between" style="align-items:center;margin-top:4px;gap:8px">
           <span class="mini money">${eur(montant)}${coup?' <span style="color:var(--coral-deep)">+'+eur(coup)+'</span>':''}</span>
           <span class="mini" style="color:${longue?'var(--coral-deep);font-weight:700':'var(--muted)'}">${esc(age)}${r.directed?' · dirigée':''}</span></div>
+        ${cmdDiffusion(r)}
       </div>`;
     };
     const bookingsReels=(function(){
@@ -12592,7 +12617,11 @@
             total:Number(r0.total)||0,unit:txt(r0.unit,10),duration:Number(r0.duration)||0,
             client:txt(r0.clientName,60),provider:txt(r0.providerName,60),
             providerUid:txt(r0.providerUid,60),directed:!!r0.directed,
-            boostEur:Number(r0.boostEur)||0});
+            boostEur:Number(r0.boostEur)||0,
+            /* CE QUI EST PARTI AUX PRESTATAIRES, écrit par le serveur sur la demande. */
+            diff:(function(){const d=r0.diffusion;if(!d||typeof d!=='object')return null;
+              return {motif:txt(d.motif,24),cibles:Number(d.cibles)||0,
+                push:Number(d.push)||0,mail:Number(d.mail)||0};})()});
         });
         S.adminReqs=reqs; S.adminReqsLus=true;
         snap.forEach(function(docu){
