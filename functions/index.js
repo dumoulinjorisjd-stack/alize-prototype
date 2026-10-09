@@ -2041,6 +2041,42 @@ exports.notifyClientStatus = onDocumentUpdated('requests/{reqId}', async (event)
 });
 
 /**
+ * notifyClientCounterOffer : un prestataire ne peut pas au moment demandé, mais il
+ * PROPOSE un autre créneau. Le client doit l'apprendre même application fermée, sans
+ * quoi la proposition dort jusqu'à ce qu'il rouvre l'application par hasard — et la
+ * demande expire pendant ce temps.
+ *
+ * ON NE DIT PAS AU CLIENT CE QUE LA PROPOSITION VAUT : le message nomme le métier et
+ * invite à ouvrir. La date et l'heure sont relues dans l'application, où le noyau les
+ * contrôle ; une date abîmée recopiée telle quelle dans une notification ferait croire
+ * à un rendez-vous qui n'existe pas.
+ */
+exports.notifyClientCounterOffer = onDocumentCreated('requests/{reqId}/propositions/{proUid}', async (event) => {
+  const reqId = event.params.reqId;
+  const db = getFirestore();
+  let req;
+  try {
+    const snap = await db.collection('requests').doc(reqId).get();
+    if (!snap.exists) return;
+    req = snap.data() || {};
+  } catch (e) { console.warn('contre-proposition : lecture demande', e); return; }
+  // Une demande qui n'est plus en recherche n'a plus rien à décider.
+  if ((req.status || '') !== 'pending') return;
+  const clientUid = req.clientUid;
+  if (!clientUid) return;
+
+  const svcName = (req.serviceName || 'votre prestation').toString().slice(0, 60);
+  const tokens = await userPushTokens(db, clientUid);
+  if (!tokens.length) { console.log('Contre-proposition : aucun jeton pour ' + clientUid); return; }
+  await pushMulticast(tokens,
+    'Vos réservations · Autre créneau proposé',
+    'Un prestataire peut faire ' + svcName + ', à un autre moment. À vous de décider.',
+    '/?open=wallet&r=' + reqId,
+    (tok) => db.collection('users').doc(clientUid).update({ pushTokens: FieldValue.arrayRemove(tok) }));
+  console.log('Push contre-proposition envoyé à ' + clientUid + ' (' + reqId + ')');
+});
+
+/**
  * settleCommission : au moment où une demande passe à « paid », calcule et FIGE la
  * commission Ti-Services CÔTÉ SERVEUR — source de vérité comptable, indépendante de
  * l'appareil de l'artisan. Base = tarif (fixé par l'admin, non modifiable par l'artisan)

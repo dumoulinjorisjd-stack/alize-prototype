@@ -404,6 +404,39 @@ service cloud.firestore {
           || parent().providerUid == uid();
       }
 
+      /* CONTRE-PROPOSITIONS : « je peux, mais à un autre moment ». Un prestataire
+         validé ne peut RIEN écrire sur une demande qui n'est pas la sienne, et c'est
+         bien ainsi : la proposition vit donc à côté, une par prestataire.
+
+         L'IDENTIFIANT EST SON UID. Pas un identifiant libre : il ne peut donc pas en
+         semer cent sur la même demande, et reproposer remplace sa proposition au lieu
+         d'en ajouter une. Liste de champs FERMÉE et tailles bornées, comme partout où
+         un compte écrit ce qu'un autre écran affiche.
+
+         ET JAMAIS SUR LA DEMANDE DE QUELQU'UN D'AUTRE QUE SOI : un prestataire peut
+         commander un renfort, il est alors le client ; se contre-proposer à soi-même
+         n'aurait aucun sens et fausserait ses statistiques. */
+      match /propositions/{proUid} {
+        function parent() {
+          return get(/databases/$(database)/documents/requests/$(reqId)).data;
+        }
+        allow read: if isAdmin() || (signedIn() && uid() == proUid) || (signedIn() && parent().clientUid == uid());
+        allow create, update: if isValidArtisan()
+          && uid() == proUid
+          && parent().status == 'pending'
+          && parent().clientUid != uid()
+          && request.resource.data.keys().hasOnly(['providerUid','providerName','dateISO','slot','at'])
+          && request.resource.data.providerUid == uid()
+          && request.resource.data.providerName is string
+          && request.resource.data.providerName.size() <= 60
+          && request.resource.data.dateISO is string
+          && request.resource.data.dateISO.size() == 10
+          && request.resource.data.slot is string
+          && request.resource.data.slot.size() <= 5;
+        // Le prestataire retire la sienne ; le client écarte celle qu'il refuse.
+        allow delete: if isAdmin() || (signedIn() && uid() == proUid) || (signedIn() && parent().clientUid == uid());
+      }
+
       // Détails privés (adresse exacte, GPS, accès) : créés par le client,
       // lisibles seulement par le client, l'artisan ASSIGNÉ et l'admin
       // (jamais par les artisans qui parcourent les demandes ouvertes).

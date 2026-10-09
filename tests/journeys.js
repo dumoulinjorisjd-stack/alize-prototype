@@ -95,7 +95,7 @@ function realErrors(errs) {
       ok(/Continuer avec Google/.test(txt), 'Google présent sur l\'écran de connexion');
       ok(!!(await page.$('[data-loginform]')) || /Mot de passe/i.test(txt), 'formulaire de connexion affiché');
     }
-    ok(realErrors(errs).length === 0, 'aucune erreur JS');
+    ok(realErrors(errs).length === 0, 'aucune erreur JS (' + realErrors(errs).join(' | ').slice(0, 220) + ')');
     await page.close();
   }
 
@@ -135,7 +135,7 @@ function realErrors(errs) {
       await page.waitForTimeout(500);
       ok(!(await page.$('[data-pf="legalForm"]')), 'mentions société masquées en micro-entreprise');
     }
-    ok(realErrors(errs).length === 0, 'aucune erreur JS');
+    ok(realErrors(errs).length === 0, 'aucune erreur JS (' + realErrors(errs).join(' | ').slice(0, 220) + ')');
     await page.close();
   }
 
@@ -213,7 +213,7 @@ function realErrors(errs) {
     if (geo) { await geo.click(); await page.waitForTimeout(900); }
     await clic(page, '[data-cfg="confirm"]'); await page.waitForTimeout(600);
     ok(!(await page.$('[data-cfg="confirm"]')), 'GPS enregistré → la commande est acceptée');
-    ok(realErrors(errs).length === 0, 'aucune erreur JS');
+    ok(realErrors(errs).length === 0, 'aucune erreur JS (' + realErrors(errs).join(' | ').slice(0, 220) + ')');
     await page.close(); await gctx.close();
   }
 
@@ -247,7 +247,7 @@ function realErrors(errs) {
     await clic(page, '[data-act="draft-step:id"]'); await page.waitForTimeout(500);
     const val = await page.$eval('[data-pf="refCode"]', (el) => el.value).catch(() => null);
     ok(val === 'KEVIN-8A3F', 'code de parrainage prérempli en majuscules depuis le lien');
-    ok(realErrors(errs).length === 0, 'aucune erreur JS');
+    ok(realErrors(errs).length === 0, 'aucune erreur JS (' + realErrors(errs).join(' | ').slice(0, 220) + ')');
     await page.close(); await ctx.close();
   }
 
@@ -297,7 +297,7 @@ function realErrors(errs) {
     await clic(page, '[data-cfg="confirm"]'); await page.waitForTimeout(600);
     body = await page.evaluate(() => document.body.innerText);
     ok(!/obligatoire/i.test(body), 'aucun blocage GPS pour une prestation en salon');
-    ok(realErrors(errs).length === 0, 'aucune erreur JS');
+    ok(realErrors(errs).length === 0, 'aucune erreur JS (' + realErrors(errs).join(' | ').slice(0, 220) + ')');
     await page.close();
   }
 

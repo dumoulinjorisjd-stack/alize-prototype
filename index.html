@@ -3654,7 +3654,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='844';
+  const VERSION_APP='845';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -5468,7 +5468,7 @@
     adminDrafts:[],adminArtsLoaded:false,
     sepaIban:(function(){try{return localStorage.getItem('ts_sepa_iban')||'';}catch(_){return '';}})(),concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,
     proPhoto:null,proStatus:'approved',proFounder:true,proNotifPush:true,proNotifWa:true,proPhone:'0690 00 00 00',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proPendingCats:[],proPendingOther:'',proSiteMode:'both',proSalonAddress:'',proSalonZone:'Gustavia',proSalonGeo:null,proAddView:false,proAddForm:null,proForm:{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:'',photo:''},
-    proOnline:true,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proReqSlot:null,proReqPick:false,proMissions:[],proSkipped:[],proSkipAt:{},proConflict:null,proStmt:false,commInvId:null,commStmt:false,signupKind:null,concSignup:null,concStatus:'approved',adminConcierges:[],
+    proOnline:true,contreProp:null,contrePropEnvoyees:{},contrePropsRecues:{},propAsk:null,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proReqSlot:null,proReqPick:false,proMissions:[],proSkipped:[],proSkipAt:{},proConflict:null,proStmt:false,commInvId:null,commStmt:false,signupKind:null,concSignup:null,concStatus:'approved',adminConcierges:[],
     proHistory:PRO_HISTORY(),
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),
     chat:false,advantages:false,referral:false,fidDetail:false,interv:false,invoiceId:null,clientInv:false,blocked:[],report:null,blockAsk:null,blockedView:false,histInvoice:null,histCat:null,signPad:false,colisProc:false,imgView:null,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,delAcct:false,
@@ -5899,6 +5899,73 @@
   }
   function proSlotList(m){const w=flexWindow(m);const step=(m.slotFlex==='day'||m.slotFlex==='week')?60:30;
     return creneauxRonds(slotToMin(w[0]),slotToMin(w[1]),step).map(minToSlot);}
+  /* ══ LA CONTRE-PROPOSITION ═══════════════════════════════════════════════════════
+     « Il faut mettre à jour pour proposer le lendemain » — une prestataire, le
+     09/10/2026, sur la première vraie mission du service.
+
+     CE QU'ELLE DEMANDE N'EST PAS CE QUI EXISTE. Quand le client laisse de la souplesse,
+     le prestataire choisit l'HEURE dans la journée que le client a fixée, et elle
+     s'applique toute seule. Changer de JOUR n'est plus la même commande : la date est
+     le choix du client, et personne ne la déplace à sa place. Le prestataire PROPOSE,
+     le client DÉCIDE — et la demande reste proposée aux autres pendant ce temps, sans
+     quoi un client attendrait une réponse qui ne vient pas.
+
+     ET L'ACCEPTATION NE DÉSIGNE PAS LE PRESTATAIRE, ELLE LUI ADRESSE LA DEMANDE. Une
+     mission acceptée porte la photo, le téléphone, l'identité légale et le SIRET du
+     prestataire — c'est LUI qui les écrit en acceptant, et la facture en dépend. Si le
+     client l'assignait lui-même, la mission naîtrait sans rien de tout cela. Accepter
+     une contre-proposition rend donc la demande DIRIGÉE vers celui qui l'a faite, à la
+     nouvelle date : le mécanisme existe déjà, lui seul la voit, le serveur le prévient,
+     et il accepte par la porte ordinaire.
+
+     CE QUI ARRIVE ICI VIENT D'UN AUTRE COMPTE et finit dans la commande du client :
+     liste de champs FERMÉE, tailles bornées, aucune date devinée, et le jour se REÇOIT. */
+  const CONTREPROP_CHAMPS=['providerUid','providerName','dateISO','slot','at'];
+  const CONTREPROP_MAX=5;
+  function contrePropLue(brut,dem,jourISO){
+    const b=brut||{},d=dem||{};
+    const txt=function(v,n){return String(v==null?'':v).slice(0,n);};
+    const uid=txt(b.providerUid,64);
+    if(!uid)return {ok:false,raison:'sans-prestataire'};
+    const dateISO=txt(b.dateISO,10);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(dateISO))return {ok:false,raison:'date-illisible'};
+    const slot=txt(b.slot,5);
+    if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(slot))return {ok:false,raison:'heure-illisible'};
+    /* UNE PROPOSITION DÉJÀ PASSÉE N'EN EST PLUS UNE : elle resterait affichée des jours
+       durant, et l'accepter fixerait un rendez-vous dans le passé. */
+    if(jourISO&&dateISO<jourISO)return {ok:false,raison:'deja-passee'};
+    /* ET PROPOSER EXACTEMENT CE QUI EST DEMANDÉ N'EST PAS UNE CONTRE-PROPOSITION : il
+       n'y a rien à décider, le prestataire n'a qu'à accepter. */
+    if(dateISO===txt(d.dateISO,10)&&slot===txt(d.slot,5))return {ok:false,raison:'identique'};
+    return {ok:true,prop:{providerUid:uid,providerName:txt(b.providerName,60)||'Un prestataire',
+      dateISO:dateISO,slot:slot,at:(Number(b.at)||0)}};
+  }
+  /* CE QUE LE PRESTATAIRE A LE DROIT D'ENVOYER, et rien d'autre. Même liste fermée que
+     la règle Firestore : ce qui n'y figure pas est refusé des deux côtés. */
+  function contrePropEnvoi(uid,nom,dateISO,slot,maintenant){
+    const v=contrePropLue({providerUid:uid,providerName:nom,dateISO:dateISO,slot:slot,at:maintenant},null,null);
+    return v.ok?v.prop:null;
+  }
+  /* CE QUE L'ACCEPTATION ÉCRIT SUR LA DEMANDE. Le statut ne bouge PAS : elle reste
+     `pending`, dirigée vers celui qui a proposé, à la nouvelle date, et la souplesse
+     tombe — l'heure est désormais convenue, il n'y a plus rien à choisir. Le libellé du
+     jour est DONNÉ : le noyau ne connaît ni la langue ni la façon de dire une date. */
+  function contrePropAccepter(prop,libelleJour,maintenant){
+    return {status:'pending',directed:true,
+      preferredProviderUid:prop.providerUid,preferredProviderName:prop.providerName,
+      providerUid:null,providerName:'',acceptedSlot:null,clientConfirmed:false,
+      dateISO:prop.dateISO,slot:prop.slot,slotFlex:0,when:libelleJour,
+      declinedBy:null,declinedName:'',
+      reopenedAt:maintenant,reopenedBy:'contre-proposition'};
+  }
+  /* LES PROPOSITIONS LISIBLES D'UNE DEMANDE, dans l'ordre où elles sont arrivées, et
+     bornées : au-delà de cinq, l'écran n'aide plus à choisir. */
+  function contrePropListe(bruts,dem,jourISO){
+    const out=[];
+    (bruts||[]).forEach(function(b){const v=contrePropLue(b,dem,jourISO);if(v.ok)out.push(v.prop);});
+    out.sort(function(a,b){return (a.at||0)-(b.at||0);});
+    return out.slice(0,CONTREPROP_MAX);
+  }
   // Borne l'heure proposée par le prestataire à la fenêtre acceptée par le client.
   function clampSlot(m,s){if(!m.slotFlex||!/^\d{1,2}:\d{2}$/.test(s||''))return s;const w=flexWindow(m);return minToSlot(Math.max(slotToMin(w[0]),Math.min(slotToMin(w[1]),slotToMin(s))));}
   function isForfait(m){return !!(m&&m.unit==='forfait');}
@@ -14217,6 +14284,36 @@
       ${att?`<p class="mini et-att${att.qui==='vous'?' moi':''}">${esc(att.txt)}</p>`:''}
     </div>`;
   }
+  /* « UN PRESTATAIRE PROPOSE UN AUTRE CRÉNEAU. » Le client a fixé une date ; quelqu'un
+     peut le faire, mais à un autre moment. C'est à lui de trancher, et rien n'a bougé
+     tant qu'il n'a pas répondu : sa demande continue d'être proposée aux autres.
+
+     CE QUI EST AFFICHÉ VIENT D'UN AUTRE COMPTE : il passe par le noyau, qui écarte une
+     date illisible, une proposition déjà passée, ou celle qui redit le créneau demandé.
+     Ce qui est écarté ne s'affiche pas — et ne s'efface pas non plus : on ne touche pas
+     à ce que quelqu'un d'autre a écrit. */
+  function blocPropositionsRecues(m){
+    if(!m||m.status!=='pending'||!m.reqId||m.preferredUid)return '';
+    const bruts=(S.contrePropsRecues&&S.contrePropsRecues[m.reqId])||[];
+    if(!bruts.length)return '';
+    const props=contrePropListe(bruts,{dateISO:m.dateISO||'',slot:m.slot||''},todayISO());
+    if(!props.length)return '';
+    const lignes=props.map(function(pr){
+      const arme=(S.propAsk===pr.providerUid);
+      return `<div class="card" style="padding:13px;margin-top:9px">
+        <div class="row between" style="gap:8px;align-items:flex-start">
+          <div style="flex:1;min-width:0"><b style="font-size:14px">${esc(fmtJourLong(pr.dateISO))} à ${esc(pr.slot)}</b>
+          <div class="mini" style="margin-top:2px;color:var(--muted)">Proposé par ${esc(pr.providerName)}</div></div></div>
+        ${arme?`<div class="mini" style="margin-top:8px;line-height:1.45">Votre prestation passe au <b>${esc(fmtJourLong(pr.dateISO))} à ${esc(pr.slot)}</b>. La demande est alors adressée à ${esc(pr.providerName)} seul, qui vous la confirme. <b>Le montant ne change pas.</b></div>
+          <div class="row" style="gap:8px;margin-top:10px"><button class="btn good sm" data-act="prop-go:${esc(pr.providerUid)}">${I.check}&nbsp;Confirmer ce créneau</button><button class="btn ghost sm" data-act="prop-annule">Annuler</button></div>`
+        :`<div class="row" style="gap:8px;margin-top:10px">
+          <button class="btn good sm" data-act="prop-ok:${esc(pr.providerUid)}">Accepter ce créneau</button>
+          <button class="btn ghost sm" data-act="prop-non:${esc(pr.providerUid)}">Refuser</button></div>`}</div>`;}).join('');
+    return `<div class="card" style="padding:16px;margin-top:12px;border-left:4px solid var(--teal-deep)">
+      <b style="font-size:14px">${I.clock}&nbsp;${props.length>1?'Des prestataires proposent':'Un prestataire propose'} un autre créneau</b>
+      <p class="mini" style="margin-top:4px;color:var(--muted)">Vous aviez demandé ${esc(m.when||'')}${m.slot&&!m.slotFlex?' · '+esc(m.slot):''}. ${props.length>1?'Ils ne sont pas disponibles':'Il n’est pas disponible'} à ce moment-là. Acceptez si cela vous va, sinon votre demande reste proposée aux autres.</p>
+      ${lignes}</div>`;
+  }
   function clientTracking(){
     const m=S.mission,t=totals(m),p=m.provider;
     // L'escalade dépend du temps écoulé : on re-rend l'écran chaque minute tant que
@@ -14250,6 +14347,7 @@
       ${(m.slotFlex&&m.status==='pending')?`<p class="mini" style="text-align:center;margin-top:4px">${I.clock} Créneau souhaité&nbsp;: ${m.when} · ${flexTxtClient(m)}, un prestataire vous proposera une heure précise.</p>`:''}
       ${(m.slotFlex&&m.proposedSlot&&m.status!=='pending')?`<div class="banner teal" style="margin-top:10px">${I.clock}<span>${p?esc(p.nm.split(' ')[0]):'Le prestataire'} a confirmé son passage à <b>${m.slot}</b> (votre souhait&nbsp;: ${flexTxtClient(m)}).</span></div>`:''}
       ${m.status==='pending'?(m.preferredUid?`<div class="card" style="padding:16px;margin-top:12px"><div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="background:var(--teal-wash);color:var(--teal-deep)">${I.clock}</span><div><b style="font-size:14px">Demande réservée à ${esc((m.preferredName||'votre prestataire').split(' ')[0])}</b><p class="mini" style="margin-top:4px">Votre demande est adressée <b>uniquement à ${esc(m.preferredName||'votre prestataire')}</b>, pas aux autres artisans, puisque vous l'avez choisi. L'attente est normale&nbsp;: elle dure tant qu'il n'a pas encore répondu. Dès qu'il accepte ou décline, vous êtes prévenu.</p></div></div></div>`:`<div class="card" style="padding:16px;margin-top:12px;text-align:center">${searchRadar(true)}<p class="sub" style="margin:0">Vous saurez qui intervient dès l'acceptation.</p></div>`):((m.svc==='baby'&&p)?babyConfirmBlock(m):(p?`<div class="card provider-pop" style="padding:14px;margin-top:12px"><div class="row" style="gap:12px">${avatarFounder(m.providerPhoto,p.ini,'',p.founder)}<div style="flex:1"><b style="font-size:15px">${esc(p.nm)}</b><div class="mini">${I.pin} ${m.zone}${m.providerAgeBand?' · '+esc(m.providerAgeBand):''}</div></div><div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">${p.founder?`<span class="chip founder-chip">${I.star} Ambassadeur</span>`:''}<span class="chip good">${I.check} ${p.insured?'Vérifié · Assuré':'Vérifié'}</span></div></div>${boutonsContact({tel:(bothAccepted(m)&&m.providerPhone)?m.providerPhone:'',nom:p.nm,nMsg:(m.chat&&m.chat.length)||0,dot:unreadDot(m)})}</div>`:''))}
+      ${blocPropositionsRecues(m)}
       ${waitEscalation(m)}
       ${(m.status==='pending'&&!m.preferredUid)?liveBoostBlock(m):''}
       ${(p&&locModeOf(m)==='salon')?`<div class="card" style="padding:16px;margin-top:12px;border-left:4px solid var(--teal-deep)"><div class="row" style="gap:10px;align-items:flex-start"><span class="benic" style="background:var(--teal-wash);color:var(--teal-deep)">${I.pin}</span><div style="flex:1"><b style="font-size:14px">${lieuDuSvc(m.svc)==='depart'?'Point de départ':'Vous vous rendez chez le prestataire'}</b>${m.providerSalonAddress?`<p class="sub" style="margin-top:4px;color:var(--ink)">${esc(m.providerSalonAddress)}${m.providerSalonZone?' · '+esc(m.providerSalonZone):''}</p>`:`<p class="mini" style="margin-top:4px;color:var(--muted)">${lieuDuSvc(m.svc)==='depart'?'Le prestataire va vous communiquer le point de départ.':'Le prestataire va vous communiquer son adresse.'}</p>`}</div></div>${m.providerSalonGeo?miniMap(m.providerSalonGeo,'view','salon'):''}${m.providerSalonGeo?`<a class="btn ghost sm" href="${navUrl(m.providerSalonGeo.lat,m.providerSalonGeo.lng)}" target="_blank" rel="noopener" style="margin-top:10px;text-decoration:none;justify-content:center;gap:8px">${I.pin} Ouvrir l'itinéraire (${navAppName()})</a>`:''}</div>`:''}
@@ -14988,7 +15086,31 @@
     }catch(e){console.warn(e);}
   }
   // Rétro-compatibilité : anciens appels.
-  function subscribeClientRequest(id){watchRequest(id);}
+  const clientPropUnsubs={};
+  /* LES CONTRE-PROPOSITIONS REÇUES SUR SA DEMANDE. Elles vivent dans une
+     sous-collection : sans écoute, le client ne les verrait jamais. Côté CLIENT
+     seulement — un prestataire n'a pas à lire les propositions de ses confrères, et la
+     règle les lui refuse de toute façon. */
+  function watchPropositions(id){
+    if(!FB||!id||!FB.f.onSnapshot||!FB.f.collection)return;
+    unsubPropositions(id);
+    try{
+      clientPropUnsubs[id]=FB.f.onSnapshot(FB.f.collection(FB.db,'requests',id,'propositions'),function(snap){
+        const bruts=[];snap.forEach(function(d){bruts.push(d.data()||{});});
+        S.contrePropsRecues=S.contrePropsRecues||{};
+        const avant=(S.contrePropsRecues[id]||[]).length;
+        S.contrePropsRecues[id]=bruts;
+        if(bruts.length>avant&&S.persona==='client'){
+          const m=findMissionByReq(id);
+          notify('Un prestataire propose un autre créneau',(m&&m.svcName?m.svcName+' : ':'')+'ouvrez votre demande pour accepter ou refuser.','ti-prop-'+id);
+          toast('Un prestataire propose un autre créneau');
+        }
+        if(S.persona==='client')render();
+      },function(err){console.warn('propositions',err);});
+    }catch(e){console.warn('propositions',e);}
+  }
+  function unsubPropositions(id){if(clientPropUnsubs[id]){try{clientPropUnsubs[id]();}catch(_){}delete clientPropUnsubs[id];}}
+  function subscribeClientRequest(id){watchRequest(id);watchPropositions(id);}
   function onRemoteStatus(m,oldS,newS){
     if(S.persona==='client'){
       if(newS==='accepted'){burstConfetti();notify('Ti-Services',(m.provider?m.provider.nm:'Un prestataire')+' a accepté votre demande.','ti-'+m.reqId);}
@@ -15057,7 +15179,7 @@
   }
   // Persistance des revenus/missions du prestataire dans sa fiche (mode réel).
   function saveProStats(){try{ if(FB&&FB.auth&&FB.auth.currentUser&&typeof isDemo==='function'&&!isDemo()&&S.persona==='pro'){ FB.f.setDoc(FB.f.doc(FB.db,'artisans',FB.auth.currentUser.uid),{earnings:S.proEarnings||0,jobsTotal:S.proJobsTotal||0,history:(S.proHistory||[]).slice(0,500)},{merge:true}).catch(function(){}); } }catch(_){}}
-  function unsubClientRequest(id){if(clientReqUnsubs[id]){try{clientReqUnsubs[id]();}catch(_){}delete clientReqUnsubs[id];}}
+  function unsubClientRequest(id){if(clientReqUnsubs[id]){try{clientReqUnsubs[id]();}catch(_){}delete clientReqUnsubs[id];}unsubPropositions(id);}
   // Enregistre l'état d'activation Mollie du prestataire (persisté sur sa fiche hors démo).
   function setMollieStatus(status){
     S.proMollie=status;
@@ -18809,7 +18931,60 @@
         if(clash){S.proConflict={reqId:rid,slot:accSlot,when:req.when||'',clashSlot:clash.slot||'',clashName:clash.svcName||svcNm(clash.svc)};render();return;}}
       acceptRequestReal(rid);return;}
     if(b.dataset.act&&b.dataset.act.indexOf('decline-req:')===0){declineRequestReal(b.dataset.act.slice('decline-req:'.length));return;}
+    /* CONTRE-PROPOSITION, CÔTÉ PRESTATAIRE. Le premier jour offert et sa première heure
+       tenable font le défaut : un formulaire qui s'ouvre sur du vide se referme. */
+    if(b.dataset.act&&b.dataset.act.indexOf('contreprop-open:')===0){
+      const rid=b.dataset.act.slice('contreprop-open:'.length);
+      const req=(S.openRequests||[]).find(function(x){return x.id===rid;});
+      if(!req)return;
+      const deja=(S.contrePropEnvoyees&&S.contrePropEnvoyees[rid])||null;
+      const J=metierDuSvc(req.service).jours;
+      const jours=dayOptions(J).filter(function(o){return heuresTenables({svc:req.service,slotFlex:0,slot:'12:00'},o.iso).length>0;});
+      if(!jours.length){toast('Aucun créneau à proposer sur ce métier');return;}
+      /* QUEL JOUR OFFRIR D'ABORD. Si le client a déjà laissé toute la journée ouverte,
+         proposer une autre HEURE ce jour-là n'est pas une contre-proposition : la carte
+         « Proposez votre heure de passage », juste au-dessus, le fait déjà. On part donc
+         du jour SUIVANT. S'il a demandé une heure précise, le même jour à une autre
+         heure est une vraie proposition, et c'est celle qui l'arrange le plus. */
+      const large=(req.slotFlex==='day'||req.slotFlex==='week');
+      const apres=jours.filter(function(o){return !large||!req.dateISO||o.iso>req.dateISO;});
+      const choix=apres.length?apres:jours;
+      const jour=(deja&&choix.some(function(o){return o.iso===deja.dateISO;}))?deja.dateISO:choix[0].iso;
+      const hs=heuresTenables({svc:req.service,slotFlex:0,slot:'12:00'},jour).map(function(o){return o.s;});
+      S.contreProp={reqId:rid,dateISO:jour,slot:((deja&&hs.indexOf(deja.slot)>=0)?deja.slot:hs[0])};
+      render();return;}
+    if(b.dataset.act==='contreprop-cancel'){S.contreProp=null;render();return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('contreprop-send:')===0){
+      envoyerContreProposition(b.dataset.act.slice('contreprop-send:'.length));return;}
     if(b.dataset.act==='client-open-standard'){openToStandard(S.mission);return;}
+    /* CONTRE-PROPOSITION, CÔTÉ CLIENT. Accepter DÉPLACE sa commande : on le DIT avant de
+       le faire, jamais après. Et l'on n'assigne pas le prestataire — on lui ADRESSE la
+       demande : c'est lui qui écrit sa photo, son identité légale et son SIRET en
+       acceptant, et la facture en dépend. */
+    if(b.dataset.act&&b.dataset.act.indexOf('prop-ok:')===0){S.propAsk=b.dataset.act.slice('prop-ok:'.length);render();return;}
+    if(b.dataset.act==='prop-annule'){S.propAsk=null;render();return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('prop-go:')===0){
+      (function(){const uid=b.dataset.act.slice('prop-go:'.length);const m=S.mission;
+        S.propAsk=null;
+        if(!m||!m.reqId){render();return;}
+        const props=contrePropListe((S.contrePropsRecues&&S.contrePropsRecues[m.reqId])||[],
+          {dateISO:m.dateISO||'',slot:m.slot||''},todayISO());
+        const pr=props.find(function(x){return x.providerUid===uid;});
+        if(!pr){render();toast('Cette proposition n’est plus disponible');return;}
+        const patch=contrePropAccepter(pr,dayLabelFor(pr.dateISO),Date.now());
+        m.dateISO=pr.dateISO;m.slot=pr.slot;m.slotFlex=0;m.when=patch.when;
+        m.preferredUid=pr.providerUid;m.preferredName=pr.providerName;m.directed=true;
+        if(!isDemo())pushReqUpdate(m,patch);
+        try{cacheClientLocal();}catch(_){}
+        render();toast('Créneau accepté, '+pr.providerName.split(' ')[0]+' va confirmer');})();return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('prop-non:')===0){
+      (function(){const uid=b.dataset.act.slice('prop-non:'.length);const m=S.mission;S.propAsk=null;
+        if(!m||!m.reqId)return;
+        const l=(S.contrePropsRecues&&S.contrePropsRecues[m.reqId])||[];
+        S.contrePropsRecues[m.reqId]=l.filter(function(x){return (x&&x.providerUid)!==uid;});
+        if(!isDemo()&&FB&&FB.db&&FB.f.deleteDoc){
+          try{FB.f.deleteDoc(FB.f.doc(FB.db,'requests',m.reqId,'propositions',uid));}catch(_){}}
+        render();toast('Proposition écartée, votre demande reste en recherche');})();return;}
     // Attente trop longue : le client élargit son créneau à la journée en un geste —
     // la demande redevient visible des prestataires qui l'avaient passée (reboostedAt).
     if(b.dataset.act==='widen-slot'){(function(){const m=S.mission;if(!m||m.status!=='pending')return;m.slotFlex='day';m.reboostedAt=Date.now();if(!isDemo())pushReqUpdate(m,{slotFlex:'day',reboostedAt:Date.now()});try{cacheClientLocal();}catch(_){}render();toast('Créneau élargi à la journée, prestataires re-sollicités');})();return;}
@@ -20019,6 +20194,19 @@
     const ppfx=e.target.closest('[data-phonepfx]');
     if(ppfx){readPhoneCombo(ppfx.dataset.phonepfx);if(ppfx.dataset.phonepfx==='wa')saveProSettings();if(S.proForm)refreshProSubmit();const cb1=document.querySelector('[data-act="conc-submit"]');if(cb1&&S.concSignup)cb1.disabled=!concSignupOk(S.concSignup);return;}
     // Menus déroulants jour / heure de la commande.
+    /* UNE LISTE DÉROULANTE SE LIT SUR « change », pas sur « input » : c'est la
+       convention de l'application (le jour de la commande, juste en dessous, y vit
+       déjà) et c'est ce qu'un téléphone émet à coup sûr. Changer de jour peut rendre l'heure choisie intenable (jour partiellement passé) :
+       on reprend alors la première qui tient, jamais une heure qu'on ne pourrait pas
+       honorer. */
+    const cpj=e.target.closest('[data-contrepropjour]');
+    if(cpj&&S.contreProp){const req=(S.openRequests||[]).find(function(x){return x.id===S.contreProp.reqId;});
+      S.contreProp.dateISO=cpj.value;
+      const hs=req?heuresTenables({svc:req.service,slotFlex:0,slot:'12:00'},cpj.value).map(function(o){return o.s;}):[];
+      if(hs.length&&hs.indexOf(S.contreProp.slot)<0)S.contreProp.slot=hs[0];
+      render();return;}
+    const cph=e.target.closest('[data-contrepropheure]');
+    if(cph&&S.contreProp){S.contreProp.slot=cph.value;render();return;}
     const dcy=e.target.closest('[data-cfday]');
     if(dcy&&S.draft){if(!dcy.value)return;S.draft.dateISO=dcy.value;S.draft.dateMode='pick';S.draft.when=dayLabelFor(dcy.value,metierDuSvc(S.draft.svc).jours);renderConfig();return;}
     const dch=e.target.closest('[data-cfhour]');
@@ -22155,6 +22343,29 @@
     S.openRequests=demandesVisibles(S._openReqBrut);
     return true;
   }
+  /* L'ENVOI D'UNE CONTRE-PROPOSITION. Elle ne touche PAS la demande — un prestataire
+     validé n'a aucun droit d'écriture dessus tant qu'il ne l'accepte pas, et c'est bien
+     ainsi : elle vit dans `requests/{id}/propositions/{sonUid}`. Un identifiant qui est
+     son uid, donc une proposition par prestataire : reproposer remplace la sienne au
+     lieu d'en semer cent. */
+  async function envoyerContreProposition(reqId){
+    const C=S.contreProp; if(!C||C.reqId!==reqId)return;
+    const req=(S.openRequests||[]).find(function(x){return x.id===reqId;});
+    if(!req){toast('Cette mission n’est plus disponible');S.contreProp=null;render();return;}
+    const uid=(FB&&FB.auth&&FB.auth.currentUser)?FB.auth.currentUser.uid:'';
+    const prop=contrePropEnvoi(uid,S.proName||'',C.dateISO,C.slot,Date.now());
+    if(!prop){toast('Choisissez un jour et une heure');return;}
+    if(prop.dateISO===(req.dateISO||'')&&prop.slot===(req.slot||'')){
+      toast('C’est le créneau demandé, acceptez la mission');return;}
+    if(isDemo()||!(FB&&FB.db&&FB.f.setDoc)){
+      S.contrePropEnvoyees[reqId]=prop;S.contreProp=null;render();
+      toast('Proposition envoyée au client');return;}
+    try{
+      await FB.f.setDoc(FB.f.doc(FB.db,'requests',reqId,'propositions',uid),prop);
+      S.contrePropEnvoyees[reqId]=prop;S.contreProp=null;render();
+      toast('Proposition envoyée, le client décide');
+    }catch(e){toast('⚠︎ Proposition non envoyée : '+fbErrTxt(e));}
+  }
   // Le prestataire accepte une demande : « premier arrivé, premier servi » (la règle
   // Firestore refuse la prise si la demande n'est plus « pending »).
   async function acceptRequestReal(reqId){
@@ -22306,6 +22517,7 @@
           return `<div class="banner" style="margin-top:12px;background:var(--coral-wash);color:var(--coral-deep)">${I.warn}<span><b>Conflit possible avec votre agenda Google</b>, vous êtes déjà occupé ${esc(bs)} ce jour-là.</span></div>`;}
         return `<p class="mini" style="margin-top:10px;color:var(--teal-deep)">${I.check} Aucun conflit avec votre agenda Google sur ce créneau.</p>`;})()}
       ${(r.locationMode==='salon')?`<div class="card" style="padding:14px;margin-top:12px"><div class="row" style="gap:10px;align-items:flex-start"><span class="benic">${I.shop}</span><div><b style="font-size:13px">Chez vous, le client se déplace</b><p class="mini" style="margin-top:3px">Cette prestation a lieu dans <b>votre salon / studio</b>. En acceptant, votre adresse est communiquée au client pour qu'il vous rejoigne. ${S.proSalonAddress?'':I.warn+' Renseignez d’abord l’adresse de votre salon dans votre profil.'}</p></div></div></div>`:`<div class="card" style="padding:14px;margin-top:12px"><div class="row" style="gap:10px;align-items:flex-start"><span class="benic">${I.lock}</span><div><b style="font-size:13px">Adresse exacte masquée</b><p class="mini" style="margin-top:3px">L'adresse précise, le point GPS et les infos d'accès s'affichent <b>dès que vous acceptez</b> la mission.</p></div></div></div>`}
+      ${blocContreProposition(r)}
       ${blocPaiementDiffere()}
       <div class="footcta" style="position:static;background:none;padding:18px 0 0">
         <button class="btn accept" data-act="accept-req:${r.id}">${I.flame} Accepter${accLabel||' cette mission'}</button>
@@ -22326,6 +22538,50 @@
       <p class="mini" style="margin-top:4px;color:var(--muted)">Le client a laissé de la souplesse (${flexTxt(r)}). Choisissez l'heure qui vous arrange, il l'accepte automatiquement.</p>
       <div class="segs" style="margin-top:10px">${btns}</div>${custom?`<input class="txt" type="time" data-proreqslottime step="900" min="${flexWindow(r)[0]}" max="${flexWindow(r)[1]}" style="margin-top:10px" value="${/^\d{2}:\d{2}$/.test(sel)?sel:''}">`:''}
       <div class="banner teal" style="margin-top:10px">${I.check}<span>Vous arriverez à <b>${esc(sel)}</b>, confirmé au client en acceptant.</span></div></div>`;
+  }
+  /* « JE PEUX, MAIS À UN AUTRE MOMENT. » Le prestataire ne déplace pas la commande : il
+     PROPOSE, et le client décide. La demande reste proposée aux autres pendant ce
+     temps — sans quoi le client attendrait une réponse qui peut ne jamais venir.
+     Les jours offerts sont ceux que le métier permet de réserver, et l'on n'offre
+     qu'un jour qui a encore une heure tenable : proposer un jour vide serait promettre
+     un créneau qu'on ne peut pas tenir. */
+  function blocContreProposition(r){
+    if(!r||r.status!=='pending')return '';
+    const ouvert=(S.contreProp&&S.contreProp.reqId===r.id);
+    const envoyee=(S.contrePropEnvoyees&&S.contrePropEnvoyees[r.id])||null;
+    if(envoyee&&!ouvert){
+      return `<div class="card" style="padding:14px;margin-top:12px;border-left:4px solid var(--teal-deep)">
+        <div class="row" style="gap:10px;align-items:flex-start"><span class="benic" style="background:var(--teal-wash);color:var(--teal-deep)">${I.clock}</span>
+        <div style="flex:1"><b style="font-size:13px">Vous avez proposé ${esc(fmtJourLong(envoyee.dateISO))} à ${esc(envoyee.slot)}</b>
+        <p class="mini" style="margin-top:3px">Le client décide. S'il accepte, la demande vous est réservée et vous n'aurez plus qu'à la confirmer. En attendant, elle reste proposée aux autres.</p>
+        <button class="linklike mini" data-act="contreprop-open:${r.id}" style="margin-top:7px">Changer ma proposition</button></div></div></div>`;
+    }
+    if(!ouvert){
+      return `<div class="card" style="padding:14px;margin-top:12px">
+        <div class="row" style="gap:10px;align-items:flex-start"><span class="benic">${I.clock}</span>
+        <div style="flex:1"><b style="font-size:13px">Pas disponible à ce moment-là&nbsp;?</b>
+        <p class="mini" style="margin-top:3px">Proposez un autre jour ou une autre heure. Le client reçoit votre proposition et décide.</p>
+        <button class="btn ghost sm" data-act="contreprop-open:${r.id}" style="margin-top:9px">${I.clock}&nbsp;Proposer un autre moment</button></div></div></div>`;
+    }
+    const C=S.contreProp;
+    const J=metierDuSvc(r.service).jours;
+    const tous=dayOptions(J).filter(function(o){return heuresTenables({svc:r.service,slotFlex:0,slot:'12:00'},o.iso).length>0;});
+    const large=(r.slotFlex==='day'||r.slotFlex==='week');
+    const apres=tous.filter(function(o){return !large||!r.dateISO||o.iso>r.dateISO;});
+    const jours=apres.length?apres:tous;
+    const heures=heuresTenables({svc:r.service,slotFlex:0,slot:'12:00'},C.dateISO).map(function(o){return o.s;});
+    const identique=(C.dateISO===(r.dateISO||'')&&C.slot===(r.slot||''));
+    return `<div class="card" style="padding:16px;margin-top:12px;border-left:4px solid var(--teal-deep)">
+      <b style="font-size:14px">${I.clock}&nbsp;Proposer un autre moment</b>
+      <p class="mini" style="margin-top:4px;color:var(--muted)">Le client a demandé ${esc(r.when||'')}${r.slot?' · '+esc(r.slot):''}. Votre proposition lui est envoyée, il l'accepte ou la refuse. <b>La demande reste proposée aux autres</b> en attendant.</p>
+      <div class="field" style="margin-top:12px"><label>Jour</label>
+        <select class="txt" data-contrepropjour>${jours.map(function(o){return `<option value="${esc(o.iso)}"${C.dateISO===o.iso?' selected':''}>${esc(o.lbl)}</option>`;}).join('')}</select></div>
+      <div class="field" style="margin-bottom:0"><label>Heure</label>
+        <select class="txt" data-contrepropheure>${heures.map(function(h){return `<option value="${esc(h)}"${C.slot===h?' selected':''}>${esc(h)}</option>`;}).join('')}</select></div>
+      ${identique?`<p class="mini" style="margin-top:9px;color:var(--coral-deep)">${I.warn} C'est exactement ce que le client a demandé&nbsp;: il n'y a rien à proposer, acceptez la mission.</p>`:''}
+      <div class="row" style="gap:8px;margin-top:12px">
+        <button class="btn primary sm" data-act="contreprop-send:${r.id}" ${identique?'disabled':''}>Envoyer ma proposition</button>
+        <button class="btn ghost sm" data-act="contreprop-cancel">Annuler</button></div></div>`;
   }
   // Suppression de compte (droit à l'effacement — RGPD). Avertissement clair
   // sur la perte définitive des données, puis suppression Firestore + Auth.
