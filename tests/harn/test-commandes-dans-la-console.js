@@ -218,6 +218,112 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   ok(/runTransaction/.test(purge),
     'elle relit dans une transaction : une demande acceptée à la seconde près n’est pas écrasée');
 
+  /* I — UNE COMMANDE ANNULÉE NE DISPARAÎT PLUS EN SILENCE. « Si une commande est
+     finalement annulée il faut bien que la console le signale. » Elle quittait la carte
+     sans un mot — ni « en cours » ni « réglée » — et ne restait qu'en « +1 » dans le
+     compteur par statut. Or c'est l'issue qui appelle le plus souvent un geste. */
+  console.log('I — une commande annulée, et ce qui s’est passé à la fin');
+  const H2 = 3600000;
+  const ANNUL = Object.assign({}, EN_RECHERCHE, { id: 'r9', status: 'cancelled',
+    fin: Date.now() - 2 * H2, tardive: false, frais: 0, decision: 'none' });
+  const ann = await console_([ANNUL], []);
+  ok(/Annulées ou expirées/.test(ann.txt), 'elles ont leur section');
+  ok(ann.lignes >= 1, 'et la commande y figure');
+  ok(/Annulée depuis 2 h, sans frais/.test(ann.txt),
+    'avec ce qui s’est passé : quand, et sans frais');
+  ok(/Annulée/.test(ann.txt) && !/Annulées/.test(ann.txt.replace('Annulées ou expirées', '')),
+    'et la pastille parle au singulier — une ligne n’est pas un compteur');
+
+  /* UNE ANNULATION TARDIVE N'EST PAS UNE ANNULATION : une part reste due, et c'est le
+     PRESTATAIRE qui décide. Tant qu'il n'a pas tranché, quelque chose attend vraiment. */
+  const tard = await console_([Object.assign({}, ANNUL, { tardive: true, frais: 52.5, decision: 'pending' })], []);
+  ok(/Annulée tardivement/.test(tard.txt), 'une annulation tardive est nommée comme telle');
+  ok(/52,50/.test(tard.txt) && /décision du prestataire/.test(tard.txt),
+    'avec l’indemnité en jeu et qui doit trancher');
+  const levee = await console_([Object.assign({}, ANNUL, { tardive: true, frais: 52.5, decision: 'waived' })], []);
+  ok(/levée par le prestataire/.test(levee.txt), 'et une fois tranchée, on sait ce qu’il a décidé');
+
+  /* UNE EXPIRATION N'EST PAS UNE ANNULATION : personne n'a renoncé, personne n'a pris. */
+  const exp = await console_([Object.assign({}, EN_RECHERCHE, { id: 'rx', status: 'expired',
+    fin: Date.now() - 30 * H2, parQui: 'auto' })], []);
+  ok(/Expirée/.test(exp.txt) && /faute de preneur/.test(exp.txt),
+    'une demande expirée dit qu’elle n’a trouvé personne');
+  const clos = await console_([Object.assign({}, EN_RECHERCHE, { id: 'rc', status: 'expired',
+    fin: Date.now() - H2, parQui: 'admin' })], []);
+  ok(/close depuis la console/.test(clos.txt),
+    'et celle que vous avez close le dit — ce n’est pas le même fait');
+
+  /* LES ARRÊTÉES PASSENT AVANT LES RÉGLÉES : c'est là qu'il peut y avoir un geste. */
+  const melange = await console_([ANNUL,
+    Object.assign({}, EN_RECHERCHE, { id: 'rp', status: 'paid', at: Date.now() - H2 })], []);
+  const iArr = melange.txt.indexOf('Annulées ou expirées'), iReg = melange.txt.indexOf('Dernières réglées');
+  ok(iArr >= 0 && iReg >= 0 && iArr < iReg,
+    'elles sont placées avant les réglées (les deux sections présentes, dans cet ordre)');
+
+  /* ET CE QU'ON NE MONTRE PAS, ON LE DIT. Une septième annulation qui disparaîtrait en
+     silence serait le défaut même qu'on vient de corriger, à six près. */
+  const huit = []; for (let i = 0; i < 8; i++) huit.push(Object.assign({}, ANNUL, { id: 'a' + i, fin: Date.now() - i * H2 }));
+  const trop = await console_(huit, []);
+  ok(trop.lignes === 6, 'la section en montre six au plus (' + trop.lignes + ')');
+  ok(/et 2 autres plus anciennes/.test(trop.txt), 'et elle dit combien restent derrière');
+
+  /* ET PAS UN SEUL TIRET CADRATIN. « Enlève les tirets cadratins partout dans
+     l'application » : la règle vaut aussi pour la console, que le balayage des quinze
+     écrans ne visite pas. Elle s'éprouve donc ici, sur ce que la carte REND, avec toutes
+     les formes de ligne à la fois. Un tiret écrit demain fait rougir celle-ci. */
+  const toutes = await console_([
+    ANNUL,
+    Object.assign({}, ANNUL, { id: 'r9b', tardive: true, frais: 52.5, decision: 'pending' }),
+    Object.assign({}, ANNUL, { id: 'r9c', tardive: true, frais: 52.5, decision: 'waived' }),
+    Object.assign({}, ANNUL, { id: 'r9d', tardive: true, frais: 52.5, decision: 'applied' }),
+    Object.assign({}, EN_RECHERCHE, { id: 'rx2', status: 'expired', fin: Date.now(), parQui: 'auto' }),
+    Object.assign({}, EN_RECHERCHE, { id: 'rx3', status: 'expired', fin: Date.now(), parQui: 'admin' }),
+    Object.assign({}, EN_RECHERCHE, { id: 'rd', diff: { motif: 'aucun-disponible', cibles: 0, push: 0, mail: 0 } }),
+    Object.assign({}, EN_RECHERCHE, { id: 'rd2', diff: { motif: 'envoyee', cibles: 3, push: 2, mail: 1 } }),
+    Object.assign({}, EN_RECHERCHE, { id: 'rp2', status: 'paid', provider: 'Prestataire' }),
+  ], []);
+  ok(toutes.txt.indexOf('\u2014') < 0,
+    'pas un seul tiret cadratin sur la carte, toutes formes de ligne confondues');
+  ok(/Camille Demain/.test(toutes.txt),
+    'et sans prestataire la flèche ne paraît pas : elle promettrait un destinataire');
+  ok(/Camille → Prestataire/.test(toutes.txt), 'alors qu’avec un prestataire elle le nomme');
+
+  /* J — LA PROJECTION ELLE-MÊME. Les sections précédentes posent `S.adminReqs` à la
+     main : elles mesurent ce que la console REND, jamais ce qu'elle GARDE du document.
+     Un champ qui cesserait d'être recopié se serait donc tu sans faire rougir personne.
+     Et il y a un piège réel : le navigateur écrit la date d'arrêt en nombre
+     (`Date.now()`), le balayage nocturne du serveur en horodatage (`serverTimestamp()`,
+     qui porte `.toMillis()`) — `Number()` sur le second rend NaN, donc « pas de date ». */
+  console.log('J — ce que la console garde du document, les deux formes de date comprises');
+  const proj = await p.evaluate(({ t }) => {
+    const num = window.__cmd.projette('r1', { status: 'cancelled', cancelledAt: t - 7200000,
+      lateCancel: true, cancelFee: 52.5, feeDecision: 'pending', clientName: 'Camille' });
+    /* Un horodatage serveur, tel que le SDK le rend : un objet qui sait se convertir. */
+    const horo = window.__cmd.projette('r2', { status: 'expired', expiredBy: 'auto',
+      expiredAt: { toMillis: function () { return t - 108000000; } } });
+    const sans = window.__cmd.projette('r3', { status: 'pending' });
+    return { num: num, horo: horo, sans: sans,
+      dateNum: window.__cmd.date(t), dateHoro: window.__cmd.date({ toMillis: function () { return t; } }),
+      dateVide: window.__cmd.date(null), dateTexte: window.__cmd.date('bonjour') };
+  }, { t: Date.now() });
+  ok(proj.num.fin > 0 && proj.num.tardive === true && proj.num.frais === 52.5
+    && proj.num.decision === 'pending',
+    'une annulation tardive est recopiée en entier : quand, tardive, indemnité, décision');
+  ok(proj.horo.fin > 0 && proj.horo.parQui === 'auto',
+    'un horodatage SERVEUR donne bien une date — le balayage nocturne n’écrit pas un nombre');
+  ok(proj.sans.fin === 0 && proj.sans.tardive === false,
+    'et une demande vivante ne porte aucune fin');
+  ok(proj.dateNum > 0 && proj.dateHoro > 0 && proj.dateVide === 0 && proj.dateTexte === 0,
+    'la lecture d’une date accepte les deux formes et refuse le reste');
+  /* Et l'on ne recopie PAS l'adresse : elle vit dans la sous-collection privée de la
+     demande, la console n'a pas à la sortir pour dresser une liste. */
+  const fuite = await p.evaluate(() => Object.keys(window.__cmd.projette('r', {
+    status: 'pending', address: '12 rue des Lataniers', addr: 'x', phone: '0690', email: 'a@b.c',
+  })));
+  ok (fuite.indexOf('address') < 0 && fuite.indexOf('addr') < 0
+    && fuite.indexOf('phone') < 0 && fuite.indexOf('email') < 0,
+    'ni adresse, ni téléphone, ni courriel : la liste est fermée');
+
   ok(errs.length === 0, 'aucune erreur de page' + (errs.length ? ' : ' + errs[0] : ''));
   await b.close();
   console.log(f ? '\n' + f + ' ÉCHEC(S)' : '\nTout est vert');

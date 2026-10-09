@@ -3654,7 +3654,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='841';
+  const VERSION_APP='842';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -5551,7 +5551,43 @@
   function hoursUntilMission(m){const ms=missionStartMs(m);if(ms==null)return null;return (ms-Date.now())/3600000;}
   // Échéance EFFECTIVE d'une demande = fin de la fenêtre de créneau (souplesse comprise)
   // + durée estimée. Base de la purge auto des demandes jamais honorées.
-  function reqCreatedMs(m){if(!m)return null;if(m._createdMs)return m._createdMs;const c=m.createdAt;if(c&&c.toMillis)return c.toMillis();if(typeof c==='number')return c;return null;}
+  /* UNE DATE VENUE DE FIRESTORE A DEUX FORMES : un nombre quand c'est le navigateur
+     qui l'a écrite (`Date.now()`), un horodatage quand c'est le serveur
+     (`serverTimestamp()`, qui porte `.toMillis()`). `Number()` sur le second rend NaN,
+     donc zéro, donc « pas de date » — et la ligne se taisait sans qu'on sache pourquoi.
+     Une seule fonction le sait, les lecteurs n'ont pas à y penser. */
+  function dateMs(v){if(v==null||v==='')return 0;if(v.toMillis)return Number(v.toMillis())||0;const n=Number(v);return isFinite(n)?n:0;}
+  function reqCreatedMs(m){if(!m)return null;if(m._createdMs)return m._createdMs;return dateMs(m.createdAt)||null;}
+  /* CE QUE LA CONSOLE GARDE D'UNE DEMANDE, et rien de plus. Une liste FERMÉE et des
+     textes BORNÉS : ce qui revient d'un compte ne décide de rien ici, il s'affiche.
+     L'adresse n'y est PAS — elle vit dans la sous-collection privée de la demande, et
+     la console n'a pas à la sortir pour dresser une liste.
+
+     La projection vivait DANS le corps de l'écoute : rien ne pouvait l'éprouver, et
+     un champ qui cesserait d'être recopié se serait tu sans un mot. Elle est pure, elle
+     reçoit le document et rend la ligne. */
+  function reqPourConsole(id,r0){
+    r0=r0||{};
+    const txt=function(v,n){return String(v==null?'':v).slice(0,n||60);};
+    return {id:String(id||''),status:String(r0.status||'inconnu'),uid:String(r0.clientUid||''),
+      at:(reqCreatedMs(r0)||0),
+      svc:txt(r0.service,40),svcName:txt(r0.serviceName,60),
+      when:txt(r0.when,40),slot:txt(r0.slot,10),zone:txt(r0.zone,40),
+      total:Number(r0.total)||0,unit:txt(r0.unit,10),duration:Number(r0.duration)||0,
+      client:txt(r0.clientName,60),provider:txt(r0.providerName,60),
+      providerUid:txt(r0.providerUid,60),directed:!!r0.directed,
+      boostEur:Number(r0.boostEur)||0,
+      /* QUAND ELLE S'EST ARRÊTÉE, tardive ou non, et si une indemnité attend une
+         décision du prestataire. Le navigateur écrit un nombre, le balayage nocturne
+         un horodatage serveur : `dateMs` est la seule à le savoir. */
+      fin:(dateMs(r0.cancelledAt)||dateMs(r0.expiredAt)),
+      tardive:!!r0.lateCancel, frais:Number(r0.cancelFee)||0,
+      decision:txt(r0.feeDecision,16), parQui:txt(r0.expiredBy,10),
+      /* CE QUI EST PARTI AUX PRESTATAIRES, écrit par le serveur sur la demande. */
+      diff:(function(){const d=r0.diffusion;if(!d||typeof d!=='object')return null;
+        return {motif:txt(d.motif,24),cibles:Number(d.cibles)||0,
+          push:Number(d.push)||0,mail:Number(d.mail)||0};})()};
+  }
   function missionDeadlineMs(m){
     if(!m)return null;
     let base;
@@ -11191,6 +11227,10 @@
        « Réglées » — parce qu'il sert au tableau des compteurs ; `bkStatus` nomme UNE
        réservation, et il existait déjà. On ne fabrique pas une troisième table. */
     const BK_CONNUS=['pending','accepted','working','done_pro','paid','rated'];
+    /* Les issues d'arrêt au SINGULIER : `REQ_LIB` nomme des groupes pour les compteurs
+       (« Annulées », « Expirées ») et `bkStatus` ne les connaît pas — une ligne qui dit
+       « Annulées » pour une commande se lit comme une faute. */
+    const FIN_LIB={cancelled:['grey','Annulée'],expired:['grey','Expirée'],declined:['grey','Déclinée']};
     /* QUI A ÉTÉ PRÉVENU, ET SINON POURQUOI. « Rien ne semble être parti » n'avait aucune
        réponse dans la console : la diffusion décide en silence — garantie de paiement
        refusée, plafond du jour, aucun artisan du métier, personne de disponible sur le
@@ -11213,15 +11253,18 @@
         return `<div class="mini" style="margin-top:5px;color:var(--good)">${I.check} ${plN(d.cibles,'prestataire')} prévenu${d.cibles>1?'s':''}${bouts.length?' · '+esc(bouts.join(', ')):''}</div>`;
       }
       const M=DIFF_MOTIFS[d.motif]; if(!M)return '';
-      return `<div class="mini" style="margin-top:5px;color:var(--coral-deep);line-height:1.45"><b>${esc(M[0])}</b> — ${esc(M[1])}.</div>`;
+      return `<div class="mini" style="margin-top:5px;color:var(--coral-deep);line-height:1.45"><b>${esc(M[0])}</b>&nbsp;: ${esc(M[1])}.</div>`;
     };
     const cmdLigne=function(r){
-      const L=(BK_CONNUS.indexOf(r.status)>=0)?bkStatus(r.status):(REQ_LIB[r.status]||['grey',r.status,'']);
+      const L=(BK_CONNUS.indexOf(r.status)>=0)?bkStatus(r.status)
+        :(FIN_LIB[r.status]||REQ_LIB[r.status]||['grey',r.status,'']);
       const vif=(r.status==='pending'||r.status==='working'||r.status==='done_pro');
       const age=cmdAge(r.at);
       /* Une recherche qui dure est le seul cas où l'on attend quelque chose de nous. */
       const longue=(r.status==='pending'&&(Date.now()-(Number(r.at)||Date.now()))>3*3600000);
-      const qui=r.provider?esc(r.provider):(r.status==='pending'?'<i>personne n’a encore accepté</i>':'—');
+      /* La flèche promet un destinataire : sans prestataire, il n'y en a pas. On n'écrit
+         pas un tiret à sa place, on ne met pas la flèche. */
+      const qui=r.provider?(' → '+esc(r.provider)):(r.status==='pending'?' → <i>personne n’a encore accepté</i>':'');
       /* UNE LIGNE NE FAIT PAS TOMBER LA CONSOLE. Les champs viennent d'un document écrit
          par quelqu'un d'autre : une demande d'avant cette liste, ou abîmée, n'en porte
          aucun. On affiche ce qu'on a, on ne suppose rien. */
@@ -11230,12 +11273,13 @@
         <div class="row between" style="align-items:flex-start;gap:8px">
           <b style="font-size:14px;flex:1;min-width:0">${esc(r.svcName||svcNm(r.svc)||r.svc||'Prestation')}</b>
           <span class="chip ${L[0]}${vif?' live':''}" style="flex:none">${esc(L[1])}</span></div>
-        <div class="mini" style="margin-top:3px">${r.client?esc(r.client):'<i>client sans nom</i>'} → ${qui}</div>
+        <div class="mini" style="margin-top:3px">${r.client?esc(r.client):'<i>client sans nom</i>'}${qui}</div>
         <div class="mini" style="margin-top:2px;color:var(--muted)">${esc([r.when,r.slot,r.zone].filter(Boolean).join(' · '))}</div>
         <div class="row between" style="align-items:center;margin-top:4px;gap:8px">
           <span class="mini money">${eur(montant)}${coup?' <span style="color:var(--coral-deep)">+'+eur(coup)+'</span>':''}</span>
           <span class="mini" style="color:${longue?'var(--coral-deep);font-weight:700':'var(--muted)'}">${esc(age)}${r.directed?' · dirigée':''}</span></div>
         ${cmdDiffusion(r)}
+        ${cmdFin(r)}
         ${cmdClore(r)}
       </div>`;
     };
@@ -11261,16 +11305,49 @@
         ${arme?`<div class="mini" style="margin-top:5px;color:var(--muted);line-height:1.45">Elle passera en « expirée »&nbsp;: elle sort des demandes en cours, l'empreinte bancaire du client est libérée et il est prévenu que rien ne lui est prélevé. Son historique est gardé.</div>`:''}
       </div>`;
     };
+    /* UNE COMMANDE ANNULÉE NE DOIT PAS DISPARAÎTRE EN SILENCE. Elle quittait la carte
+       « Réservations en cours » sans un mot — elle n'était ni « en cours » ni « réglée »
+       — et ne restait que comme « +1 » dans le compteur par statut. Or c'est l'issue qui
+       appelle le plus souvent un geste : un client déçu, un prestataire qui s'est
+       déplacé, une indemnité qui attend une décision.
+
+       ET UNE ANNULATION TARDIVE N'EST PAS UNE ANNULATION. Sous le délai du métier, une
+       part reste due au prestataire, et c'est LUI qui décide de l'appliquer ou d'y
+       renoncer : tant qu'il n'a pas tranché (`feeDecision === 'pending'`), quelque chose
+       attend vraiment, et la ligne le dit en corail. */
+    const cmdFin=function(r){
+      if(!r)return '';
+      if(r.status==='expired'){
+        return `<div class="mini" style="margin-top:5px;color:var(--muted)">${I.clock} Expirée${r.parQui==='admin'?' (close depuis la console)':' faute de preneur'}${r.fin?' · '+esc(cmdAge(r.fin)):''}.</div>`;
+      }
+      if(r.status!=='cancelled')return '';
+      const quand=r.fin?(' '+cmdAge(r.fin)):'';
+      if(r.tardive&&r.decision==='pending'){
+        return `<div class="mini" style="margin-top:5px;color:var(--coral-deep);line-height:1.45"><b>Annulée tardivement${esc(quand)}.</b> Indemnité de ${eur(r.frais)} en attente de la décision du prestataire.</div>`;
+      }
+      if(r.tardive){
+        return `<div class="mini" style="margin-top:5px;color:var(--muted);line-height:1.45">Annulée tardivement${esc(quand)}. Indemnité ${r.decision==='waived'?'levée par le prestataire':(r.decision==='applied'?('appliquée, '+eur(r.frais)):'tranchée')}.</div>`;
+      }
+      return `<div class="mini" style="margin-top:5px;color:var(--muted)">Annulée${esc(quand)}, sans frais.</div>`;
+    };
     const bookingsReels=(function(){
       if(!S.adminReqsLus)return `<p class="mini" style="color:var(--muted)">Lecture des demandes…</p>`;
       const tri=function(a,b){return (b.at||0)-(a.at||0);};
       const vives=reqsVrais.filter(function(r){return CMD_VIVANTES.indexOf(r.status)>=0;}).sort(tri);
       const finies=reqsVrais.filter(function(r){return r.status==='paid'||r.status==='rated';}).sort(tri);
-      if(!vives.length&&!finies.length)return `<p class="mini" style="color:var(--muted)">Aucune commande, à aucun statut. Les demandes qui n’ont jamais abouti sont comptées dans la carte « Demandes, par statut ».</p>`;
+      /* Les arrêtées passent AVANT les réglées : c'est là qu'il peut y avoir un geste à
+         faire, pas dans une prestation qui s'est bien terminée. */
+      const arretees=reqsVrais.filter(function(r){return r.status==='cancelled'||r.status==='expired';}).sort(function(a,b){return (b.fin||b.at||0)-(a.fin||a.at||0);});
+      if(!vives.length&&!finies.length&&!arretees.length)return `<p class="mini" style="color:var(--muted)">Aucune commande, à aucun statut. Les demandes qui n’ont jamais abouti sont comptées dans la carte « Demandes, par statut ».</p>`;
       const reste=Math.max(0,finies.length-5);
       return (vives.length
           ? `<p class="mini" style="margin:0;color:var(--muted)">${plN(vives.length,'commande')} en cours.</p>`+vives.slice(0,CMD_MAX).map(cmdLigne).join('')
           : `<p class="mini" style="margin:0;color:var(--muted)">Aucune commande en cours en ce moment.</p>`)
+        +(arretees.length?`<div class="mini" style="color:var(--coral-deep);font-weight:800;text-transform:uppercase;letter-spacing:.03em;margin-top:14px">Annulées ou expirées</div>`
+          +arretees.slice(0,6).map(cmdLigne).join('')
+          /* Et ce qu'on ne montre pas, on le DIT : une septième annulation qui
+             disparaîtrait en silence, c'est le défaut même qu'on vient de corriger. */
+          +(arretees.length>6?`<p class="mini" style="margin-top:8px;color:var(--muted)">et ${plN(arretees.length-6,'autre')} plus ancienne${arretees.length-6>1?'s':''}.</p>`:''):'')
         +(finies.length?`<div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em;margin-top:14px">Dernières réglées</div>`
           +finies.slice(0,5).map(cmdLigne).join('')
           +(reste?`<p class="mini" style="margin-top:8px;color:var(--muted)">et ${plN(reste,'autre')} plus ancienne${reste>1?'s':''}.</p>`:''):'');
@@ -12671,22 +12748,7 @@
            sous-collection privée de la demande, et la console n'a pas à la sortir pour
            dresser une liste. */
         const reqs=[];
-        snap.forEach(function(docu){
-          const r0=docu.data()||{};
-          const txt=function(v,n){return String(v==null?'':v).slice(0,n||60);};
-          reqs.push({id:docu.id,status:String(r0.status||'inconnu'),uid:String(r0.clientUid||''),
-            at:(reqCreatedMs(r0)||0),
-            svc:txt(r0.service,40),svcName:txt(r0.serviceName,60),
-            when:txt(r0.when,40),slot:txt(r0.slot,10),zone:txt(r0.zone,40),
-            total:Number(r0.total)||0,unit:txt(r0.unit,10),duration:Number(r0.duration)||0,
-            client:txt(r0.clientName,60),provider:txt(r0.providerName,60),
-            providerUid:txt(r0.providerUid,60),directed:!!r0.directed,
-            boostEur:Number(r0.boostEur)||0,
-            /* CE QUI EST PARTI AUX PRESTATAIRES, écrit par le serveur sur la demande. */
-            diff:(function(){const d=r0.diffusion;if(!d||typeof d!=='object')return null;
-              return {motif:txt(d.motif,24),cibles:Number(d.cibles)||0,
-                push:Number(d.push)||0,mail:Number(d.mail)||0};})()});
-        });
+        snap.forEach(function(docu){reqs.push(reqPourConsole(docu.id,docu.data()||{}));});
         S.adminReqs=reqs; S.adminReqsLus=true;
         snap.forEach(function(docu){
           const r=docu.data()||{};
