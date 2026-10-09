@@ -185,13 +185,13 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
     const sp = document.getElementById('splash'); if (sp) sp.style.display = 'none';
     const br = document.querySelector('aside.brief'); if (br) br.style.display = 'none';
     window.__render();
-    const sel = document.querySelector('[data-proreqheure]');
+    const sel = document.querySelector('[data-passageheure]');
     const btns = sel ? Array.from(sel.options).map((o) => o.value) : [];
     /* ON CHOISIT UNE HEURE, comme elle le ferait, et l'on regarde si elle tient. */
     let apres = null;
     if (sel && btns.indexOf('14:00') >= 0) {
       sel.value = '14:00'; sel.dispatchEvent(new Event('change', { bubbles: true }));
-      const s2 = document.querySelector('[data-proreqheure]');
+      const s2 = document.querySelector('[data-passageheure]');
       apres = { valeur: s2 ? s2.value : null, etat: window.__S.proReqSlot,
         banniere: /arriverez à 14:00/.test(document.getElementById('view').textContent || '') };
     }
@@ -200,7 +200,7 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
     return { btns: btns, liste: !!sel, apres: apres, vestiges: vestiges,
       txt: (document.getElementById('view').textContent || '').replace(/\s+/g, ' ') };
   });
-  ok(/Proposez votre heure de passage/.test(carte.txt), 'la carte est bien là');
+  ok(/Quand passez-vous/.test(carte.txt), 'la carte est bien là');
   /* UNE LISTE DÉROULANTE, ET PLUS DE GRILLE DE PASTILLES : vingt-quatre boutons sur une
      journée ouverte, suivis d'un « Autre… » qui n'ouvrait rien d'utilisable. */
   ok(carte.liste, 'les heures sont dans une liste déroulante');

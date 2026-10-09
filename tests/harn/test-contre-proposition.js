@@ -120,10 +120,12 @@ const jPlus = (n) => { const d = new Date(Date.now() + n * 86400000);
   ok(!/dateISO/.test(fn),
     'et elle ne recopie PAS la date dans la notification : une date abîmée ferait croire à un rendez-vous qui n’existe pas');
 
-  /* F — L'ÉCRAN DU PRESTATAIRE. Le noyau peut être juste et le câblage faux : c'est ici
-     qu'on le vérifie, en touchant les boutons. */
-  console.log('F — le prestataire propose, depuis sa fiche de mission');
-  const pro = await p.evaluate(({ demain }) => {
+  /* F — L'ÉCRAN DU PRESTATAIRE, UNE SEULE CARTE. Il y en avait deux et elles se
+     marchaient dessus : « Proposez votre heure de passage » et « Proposer un autre
+     moment » offraient toutes deux de choisir une heure. Une carte, deux listes — jour,
+     heure — et le bouton du bas DIT lequel des deux gestes il accomplit. */
+  console.log('F — une seule carte : quand passez-vous ?');
+  const pro = await p.evaluate(({ demain, apres }) => {
     const ecrits = [];
     window.__setFB({ auth: { currentUser: { uid: 'pro1', email: 'p@x.c' } }, db: {},
       f: { doc: function () { return { _p: Array.prototype.slice.call(arguments, 1) }; },
@@ -137,61 +139,82 @@ const jPlus = (n) => { const d = new Date(Date.now() + n * 86400000);
     S.account = { name: 'Laure M.', email: 'p@x.c', uid: 'pro1', role: 'artisan' };
     S.mission = null; S._accepting = false; S.proMissions = []; S.proCats = ['menage'];
     S.proSiteMode = 'both'; S.avail = null; S.proOnline = true;
-    S.contreProp = null; S.contrePropEnvoyees = {};
+    S.proReqSlot = null; S.proReqJour = null; S.contrePropEnvoyees = {};
     S.adminMetier = { menage: { ouvre: 480, ferme: 1080 } };
     S.openRequests = [{ id: 'r1', status: 'pending', clientUid: 'cli1', clientName: 'Un client',
-      service: 'menage', serviceName: 'Ménage', when: 'Aujourd’hui', dateISO: new Date().toISOString().slice(0, 10),
-      slot: '09:00', slotFlex: 'day', zone: 'Lorient', total: 70, unit: 'h', duration: 2, locationMode: 'domicile' }];
+      /* POUR DEMAIN, et non pour aujourd'hui : passé l'heure de fermeture du métier,
+         le jour courant n'a plus une seule heure tenable et l'épreuve mesurerait
+         l'heure à laquelle elle tourne au lieu de ce qu'elle annonce. */
+      service: 'menage', serviceName: 'Ménage', when: 'Demain', dateISO: demain,
+      slot: '09:00', slotFlex: 'day', zone: 'Lorient', total: 70, unit: 'h', duration: 2,
+      rate: 35, locationMode: 'domicile' }];
     S.proReqView = 'r1';
     document.body.classList.add('standalone');
     const sp = document.getElementById('splash'); if (sp) sp.style.display = 'none';
     const br = document.querySelector('aside.brief'); if (br) br.style.display = 'none';
     window.__render();
-    const v = document.getElementById('view');
-    const bouton = v.querySelector('[data-act="contreprop-open:r1"]');
-    if (bouton) bouton.click();
-    const jours = Array.from(document.querySelectorAll('[data-contrepropjour] option')).map((o) => o.value);
-    const premier = (window.__S.contreProp || {}).dateISO;
-    const heures = Array.from(document.querySelectorAll('[data-contrepropheure] option')).map((o) => o.value);
-    /* On choisit DEMAIN, puis on envoie, exactement comme elle le ferait. */
-    const sel = document.querySelector('[data-contrepropjour]');
-    let change = false;
-    if (sel && jours.indexOf(demain) >= 0) { sel.value = demain;
-      sel.dispatchEvent(new Event('input', { bubbles: true }));
-      sel.dispatchEvent(new Event('change', { bubbles: true })); change = true; }
-    const heuresDemain = Array.from(document.querySelectorAll('[data-contrepropheure] option')).map((o) => o.value);
-    const env = document.querySelector('[data-act="contreprop-send:r1"]');
-    if (env) env.click();
-    return { bouton: !!bouton, jours: jours, premier: premier, heures: heures, heuresDemain: heuresDemain, change: change, ecrits: ecrits };
-  }, { demain: jPlus(1) });
-  ok(pro.bouton, 'la fiche porte « Proposer un autre moment »');
-  ok(pro.jours.length > 1 && pro.jours.indexOf(jPlus(1)) >= 0,
-    'le formulaire offre plusieurs jours, dont demain (' + pro.jours.length + ')');
-  /* LE CLIENT A DÉJÀ OUVERT TOUTE SA JOURNÉE : une autre HEURE ce jour-là n'est pas une
-     contre-proposition, la carte du dessus le fait déjà. Le formulaire part du
-     lendemain, et n'offre même pas le jour demandé. */
-  ok(pro.jours.indexOf(jPlus(0)) < 0,
-    'et pas le jour que le client a déjà entièrement ouvert : il n’y a rien à y proposer');
-  ok(pro.premier === jPlus(1), 'il s’ouvre donc sur demain (' + pro.premier + ')');
-  /* Une contre-proposition est une heure PRÉCISE, pas un cran d'une fenêtre souple :
-     la grille est celle du client, à la demi-heure, et bornée par le métier. */
-  ok(pro.heures.length > 0 && pro.heures.every((h) => /:(00|30)$/.test(h)),
-    'et des heures à la demie, comme celles que le client choisit (' + pro.heures.slice(0, 3).join(', ') + '…)');
-  ok(pro.heuresDemain[0] === '08:00' && pro.heuresDemain[pro.heuresDemain.length - 1] === '18:00',
-    'bornées par les horaires du métier (' + pro.heuresDemain[0] + ' → ' + pro.heuresDemain[pro.heuresDemain.length - 1] + ')');
-  ok(pro.ecrits.length === 1, 'envoyer écrit une fois, et une seule (' + pro.ecrits.length + ')');
+    const lire = function () {
+      const v = document.getElementById('view');
+      const j = v.querySelector('[data-passagejour]'), h = v.querySelector('[data-passageheure]');
+      const bt = v.querySelector('.footcta .btn.accept');
+      return { jours: j ? Array.from(j.options).map((o) => o.value) : [],
+        jour: j ? j.value : null, heures: h ? Array.from(h.options).map((o) => o.value) : [],
+        heure: h ? h.value : null, bouton: bt ? (bt.textContent || '').trim() : '',
+        acte: bt ? bt.dataset.act : '',
+        txt: (v.textContent || '').replace(/\s+/g, ' ') };
+    };
+    const memeJour = lire();
+    /* ON CHOISIT DEMAIN : le même geste, et la nature du bouton doit changer. */
+    const sj = document.querySelector('[data-passagejour]');
+    if (sj && memeJour.jours.indexOf(apres) >= 0) { sj.value = apres;
+      sj.dispatchEvent(new Event('change', { bubbles: true })); }
+    const autreJour = lire();
+    const bt = document.querySelector('.footcta .btn.accept'); if (bt) bt.click();
+    return { memeJour: memeJour, autreJour: autreJour, ecrits: ecrits,
+      deuxCartes: /Proposer un autre moment/.test(memeJour.txt) };
+  }, { demain: jPlus(1), apres: jPlus(2) });
+  ok(!pro.deuxCartes, 'il n’y a plus de seconde carte « Proposer un autre moment »');
+  ok(pro.memeJour.jours.length > 1 && pro.memeJour.heures.length > 1,
+    'une carte, deux listes : le jour et l’heure (' + pro.memeJour.jours.length + ' jours, '
+      + pro.memeJour.heures.length + ' heures)');
+  ok(pro.memeJour.jour === jPlus(1),
+    'elle s’ouvre sur le jour que le client a demandé, jamais sur un autre');
+  ok(pro.memeJour.acte && pro.memeJour.acte.indexOf('accept-req:') === 0,
+    'dans ce que le client a accepté, le bouton ACCEPTE (' + pro.memeJour.acte + ')');
+  ok(/j’arrive à/.test(pro.memeJour.bouton), 'et il dit à quelle heure');
+  ok(pro.autreJour.jour === jPlus(2), 'on peut choisir un autre jour');
+  ok(pro.autreJour.acte && pro.autreJour.acte.indexOf('passage-envoyer:') === 0,
+    'et le bouton devient « envoyer ma proposition » (' + pro.autreJour.acte + ')');
+  ok(/Envoyer ma proposition/.test(pro.autreJour.bouton) && /à /.test(pro.autreJour.bouton),
+    'en nommant le jour et l’heure qu’il propose (' + pro.autreJour.bouton + ')');
+  ok(/pas ce que le client a demandé/.test(pro.autreJour.txt),
+    'la carte dit pourquoi ce n’est plus une acceptation');
+  ok(pro.ecrits.length === 1, 'le bouton écrit une fois, et une seule (' + pro.ecrits.length + ')');
   const e0 = pro.ecrits[0] || { chemin: [], data: {} };
   ok(e0.chemin.join('/') === 'requests/r1/propositions/pro1',
-    'à sa place, sous SON uid : il ne peut pas en semer cent (' + e0.chemin.join('/') + ')');
+    'à sa place, sous SON uid (' + e0.chemin.join('/') + ')');
   ok(Object.keys(e0.data).sort().join(',') === 'at,dateISO,providerName,providerUid,slot',
-    'avec les cinq champs de la liste fermée, et rien d’autre (' + Object.keys(e0.data).sort().join(',') + ')');
-  ok(e0.data.dateISO === jPlus(1) && e0.data.providerUid === 'pro1',
-    'le jour choisi et son uid, jamais devinés');
-  /* L'envoi est asynchrone : on attend que l'écran soit redessiné avant de le lire,
-     plutôt que de mesurer l'instant d'avant. */
-  await p.waitForFunction(() => /Vous avez proposé/.test(document.getElementById('view').textContent || ''), { timeout: 4000 })
-    .then(() => ok(true, 'et la fiche dit ensuite ce qu’il a proposé, au lieu de reproposer le formulaire'))
-    .catch(() => ok(false, 'et la fiche dit ensuite ce qu’il a proposé, au lieu de reproposer le formulaire'));
+    'avec les cinq champs de la liste fermée (' + Object.keys(e0.data).sort().join(',') + ')');
+  ok(e0.data.dateISO === jPlus(2), 'et le jour choisi, jamais deviné');
+
+  /* ET SI LE JOUR DU CLIENT N'A PLUS UNE SEULE HEURE TENABLE — il est 19 h, le métier
+     ferme à 18 h, la demande est pour aujourd'hui — la carte ne s'ouvre pas sur une
+     liste vide : elle part du premier jour qui a quelque chose à offrir. */
+  console.log('F bis — un jour sans heure disponible ne laisse pas la carte vide');
+  const vide = await p.evaluate(({ auj }) => {
+    const S = window.__S;
+    S.proReqJour = null; S.proReqSlot = null;
+    /* Un métier dont la journée est DÉJÀ finie, quelle que soit l'heure de l'épreuve. */
+    S.adminMetier = { menage: { ouvre: 0, ferme: 30 } };
+    const r = { id: 'rv', status: 'pending', service: 'menage', serviceName: 'Ménage',
+      when: 'Aujourd’hui', dateISO: auj, slot: '09:00', slotFlex: 'day', duration: 2 };
+    const c = window.__prop.choisi(r);
+    S.adminMetier = {};
+    return { jour: c.jour, n: c.heures.length, slot: c.slot, demande: auj };
+  }, { auj: jPlus(0) });
+  ok(vide.n > 0, 'la liste des heures n’est jamais vide (' + vide.n + ')');
+  ok(vide.jour !== vide.demande,
+    'elle s’ouvre sur un autre jour, celui qui a des heures (' + vide.jour + ')');
 
   /* G — L'ÉCRAN DU CLIENT. Accepter DÉPLACE sa commande : ce qui va se passer se lit
      AVANT le clic, comme pour l'annulation et pour « Clore ». */
@@ -267,17 +290,17 @@ const jPlus = (n) => { const d = new Date(Date.now() + n * 86400000);
     const vuParAutre = window.__fil.visibles([dirigee]).length;
     const vuParPersonne = window.__fil.visibles([base]).length;
     /* ET CELUI À QUI ELLE EST ADRESSÉE ne se voit plus offrir de proposer : il accepte. */
-    const boutonDirigee = /contreprop-open/.test(window.__blocCP(dirigee));
-    const boutonOuverte = /contreprop-open/.test(window.__blocCP(base));
+    const boutonDirigee = (window.__blocCP(dirigee) || '').length > 0;
+    const boutonOuverte = (window.__blocCP(base) || '').length > 0;
     return { vuParAutre: vuParAutre, vuParPersonne: vuParPersonne,
       boutonDirigee: boutonDirigee, boutonOuverte: boutonOuverte };
   }, { demain: jPlus(1) });
   ok(ferme.vuParPersonne === 1, 'tant que personne n’a été choisi, la demande est au fil de tous');
   ok(ferme.vuParAutre === 0,
     'une fois le créneau accepté, elle disparaît du fil des autres prestataires');
-  ok(ferme.boutonOuverte === true, 'et « Proposer un autre moment » s’offre sur une demande ouverte');
+  ok(ferme.boutonOuverte === true, 'et la carte « Quand passez-vous ? » s’offre sur une demande ouverte');
   ok(ferme.boutonDirigee === false,
-    'mais plus du tout une fois le client décidé : celui qui est choisi n’a qu’à accepter');
+    'mais plus du tout une fois le client décidé : celui qui est choisi n’a qu’à confirmer');
   /* LA BASE LE TIENT AUSSI, et c'est elle qui compte : un écran se contourne. */
   const blocR = RULES.slice(RULES.indexOf('match /propositions/{proUid}'), RULES.indexOf('match /propositions/{proUid}') + 2400);
   ok(/parent\(\)\.get\('directed', false\) == false/.test(blocR),

@@ -87,7 +87,7 @@ const AUJ = iso(0), DEM = iso(1);
     S.account = { name: nom, email: uid + '@x.c', uid: uid, role: 'artisan' };
     S.mission = null; S._accepting = false; S.proMissions = []; S.proSkipped = []; S.proSkipAt = {};
     S.proCats = [R.service]; S.proSiteMode = 'both'; S.avail = null; S.proOnline = true;
-    S.proReqSlot = null; S.contreProp = null;
+    S.proReqSlot = null; S.proReqJour = null;
     S.contrePropEnvoyees = window.__base.props[uid] ? { r1: window.__base.props[uid] } : {};
     S.adminMetier = { menage: { ouvre: 480, ferme: 1080 } };
     S._openReqBrut = [Object.assign({ id: 'r1' }, R)];
@@ -145,10 +145,11 @@ const AUJ = iso(0), DEM = iso(1);
   await planche('1-heure-precise.png', 'CLIENT · en recherche', 'PRESTATAIRE · fiche de la mission',
     async () => { C = await ecranClient(); }, async () => { P = await ecranPro('pro1', 'Laure M.'); });
   ok(P.voit, 'le prestataire voit la demande');
-  ok(!/Proposez votre heure de passage/.test(P.txt),
-    'aucune carte « proposez votre heure » : il n’y a rien à choisir');
-  ok(/Proposer un autre moment/.test(P.txt),
-    'mais il peut proposer un autre moment s’il ne peut pas');
+  /* UNE SEULE CARTE, MÊME SUR UNE DEMANDE À HEURE PRÉCISE : elle s'ouvre sur le jour et
+     l'heure demandés, et le bouton ACCEPTE. Il y en avait deux, et sur une demande à
+     journée ouverte elles offraient toutes deux de choisir une heure. */
+  ok(/Quand passez-vous/.test(P.txt), 'la carte du passage est là, et il n’y en a qu’une');
+  ok(!/Proposer un autre moment/.test(P.txt), 'plus de seconde carte qui fait doublon');
   ok(/09:00/.test(C.txt) && /09:00/.test(P.txt), 'les deux écrans lisent la même heure');
 
   /* ══ 2 ── JOURNÉE OUVERTE, LE PRESTATAIRE CHOISIT L'HEURE ═══════════════════════ */
@@ -158,8 +159,10 @@ const AUJ = iso(0), DEM = iso(1);
     async () => { C = await ecranClient(); }, async () => { P = await ecranPro('pro1', 'Laure M.'); });
   ok(/proposera une heure précise/.test(C.txt),
     'le client sait qu’un prestataire lui proposera une heure');
-  ok(/Proposez votre heure de passage/.test(P.txt), 'et le prestataire a la carte pour le faire');
-  const heures = await p.evaluate(() => { const s = document.querySelector('[data-proreqheure]');
+  ok(/Quand passez-vous/.test(P.txt), 'et le prestataire a la carte pour le faire');
+  ok(/confirmé au client en acceptant/.test(P.txt),
+    'dans la journée ouverte, l’heure choisie s’applique en acceptant');
+  const heures = await p.evaluate(() => { const s = document.querySelector('[data-passageheure]');
     return s ? Array.from(s.options).map((x) => x.value) : []; });
   ok(heures.length > 0 && heures[0] === '08:00' && heures[heures.length - 1] === '18:00',
     'dans les horaires du métier, à la demie (' + heures.length + ' créneaux, ' + heures[0] + ' → ' + heures[heures.length - 1] + ')');
@@ -169,15 +172,17 @@ const AUJ = iso(0), DEM = iso(1);
      « 17:30 » dans la liste, « j'arrive à 17:29 » sur le bouton, relevé sur capture. Et
      c'est cette seconde qui était ÉCRITE et montrée au client. */
   const deux = await p.evaluate(() => {
-    const sel = document.querySelector('[data-proreqheure]');
-    const bt = Array.from(document.querySelectorAll('[data-act^="accept-req:"]'))[0];
+    const sel = document.querySelector('[data-passageheure]');
+    const bt = document.querySelector('.footcta .btn.accept');
     const ban = Array.from(document.querySelectorAll('.banner')).map((x) => x.textContent || '').join(' ');
-    return { liste: sel ? sel.value : null, bouton: (bt ? bt.textContent : '') || '', banniere: ban };
+    return { liste: sel ? sel.value : null, bouton: (bt ? bt.textContent : '') || '',
+      acte: bt ? bt.dataset.act : '', banniere: ban };
   });
+  ok(deux.acte && deux.acte.indexOf('accept-req:') === 0,
+    'le bouton accepte, puisque l’heure est dans ce que le client a ouvert');
   ok(deux.liste && deux.bouton.indexOf(deux.liste) >= 0,
-    'la liste et le bouton « Accepter » annoncent la MÊME heure (' + deux.liste + ' / ' + deux.bouton.trim() + ')');
-  ok(deux.banniere.indexOf(deux.liste) >= 0,
-    'et la phrase sous la liste aussi');
+    'la liste et le bouton annoncent la MÊME heure (' + deux.liste + ' / ' + deux.bouton.trim() + ')');
+  ok(deux.banniere.indexOf(deux.liste) >= 0, 'et la phrase sous la liste aussi');
   /* ET C'EST CETTE HEURE-LÀ QUI PART CHEZ LE CLIENT. */
   /* Le défaut est l'heure que le CLIENT a demandée quand elle tient encore : c'est celle
      qui l'arrange, et le prestataire n'a rien à changer. */
@@ -199,10 +204,11 @@ const AUJ = iso(0), DEM = iso(1);
   const memeHeure = await p.evaluate(() => {
     const S = window.__S; const avant = S.proReqView;
     S.proReqView = 'r1'; S.proReqSlot = null; window.__render();
-    const sel = document.querySelector('[data-proreqheure]');
-    const bt = document.querySelector('[data-act^="accept-req:"]');
+    const sel = document.querySelector('[data-passageheure]');
+    const bt = document.querySelector('.footcta .btn.accept');
     const r = Object.assign({ id: 'r1' }, window.__base.req);
     const out = { liste: sel ? sel.value : null, bouton: (bt ? bt.textContent : '') || '',
+      acte: bt ? bt.dataset.act : '',
       ecrite: window.__heures.proposee(r), crans: window.__heures.proposables(r) };
     S.proReqView = avant;
     return out;
@@ -210,12 +216,21 @@ const AUJ = iso(0), DEM = iso(1);
   ok(memeHeure.liste && memeHeure.bouton.indexOf(memeHeure.liste) >= 0,
     'la liste et le bouton « Accepter » annoncent la MÊME heure (' + memeHeure.liste
       + ' / ' + memeHeure.bouton.trim() + ')');
-  ok(memeHeure.ecrite === memeHeure.liste,
-    'et c’est elle qui sera écrite sur la demande, donc lue par le client ('
-      + memeHeure.ecrite + ')');
-  ok(memeHeure.crans.indexOf(memeHeure.ecrite) >= 0,
-    'jamais une minute intermédiaire, toujours un créneau offert');
-  ok(/Vous avez proposé/.test(P.txt), 'le prestataire lit ce qu’il a proposé');
+  /* L'heure ÉCRITE n'a de sens que si le bouton accepte : dès que le jour choisi n'est
+     plus celui du client, ce n'est plus une heure d'arrivée mais une proposition. */
+  if (memeHeure.acte && memeHeure.acte.indexOf('accept-req:') === 0) {
+    ok(memeHeure.ecrite === memeHeure.liste,
+      'et c’est elle qui sera écrite sur la demande, donc lue par le client ('
+        + memeHeure.ecrite + ')');
+    ok(memeHeure.crans.indexOf(memeHeure.ecrite) >= 0,
+      'jamais une minute intermédiaire, toujours un créneau offert');
+  } else {
+    ok(memeHeure.acte.indexOf('passage-envoyer:') === 0,
+      'le jour du client n’ayant plus d’heure tenable, la carte bascule en proposition');
+    ok(memeHeure.bouton.indexOf(memeHeure.liste) >= 0,
+      'et le bouton nomme l’heure proposée (' + memeHeure.bouton.trim() + ')');
+  }
+  ok(/Vous avez déjà proposé/.test(P.txt), 'le prestataire lit ce qu’il a proposé');
   ok(/Le client décide/.test(P.txt), 'et que c’est au client de trancher');
   P2 = await ecranPro('pro9', 'Marc T.');
   ok(P2.voit, 'pendant ce temps la demande reste proposée aux autres');
