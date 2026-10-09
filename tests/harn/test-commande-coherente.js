@@ -110,7 +110,10 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
     return { k: m ? m.disabled : null, d: d ? d.disabled : null };
   });
   ok(kid.k === true, 'à 1 enfant aussi');
-  ok(kid.d === false, 'la durée, elle, part à 3 h : son « − » reste actif');
+  /* LA DURÉE PART MAINTENANT À UNE HEURE, le plus petit engagement : son « − » est donc
+     éteint lui aussi, exactement comme le compteur d'enfants à 1. C'était « 3 h » et son
+     « − » restait actif — on ne mesure plus la même règle. */
+  ok(kid.d === true, 'et la durée part à 1 h : son « − » est éteint, on ne descend pas sous une heure');
 
   /* On mesure sur un massage : c'est l'écran qui porte le PLUS de petites commandes de
      rangs différents — les cinq chips de souplesse, les deux boutons de lieu, le retour. */
@@ -131,8 +134,11 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   for (const svc of ['menage', 'jardin', 'baby', 'animaux', 'plomberie', 'clim']) {
     await poser(svc); await p.waitForTimeout(220); prix[svc] = await total();
   }
-  ok(prix.menage === '105,00 €' && prix.jardin === '120,00 €' && prix.baby === '84,00 €',
-    'les totaux horaires sont inchangés (' + prix.menage + ' / ' + prix.jardin + ' / ' + prix.baby + ')');
+  /* UNE HEURE PAR DÉFAUT, DONC UN TIERS DU TOTAL D'AVANT : c'est le prix d'ouverture
+     d'écran, pas le panier. On nomme les trois valeurs attendues plutôt que « inchangé »,
+     qui ne voudrait plus rien dire. */
+  ok(prix.menage === '35,00 €' && prix.jardin === '40,00 €' && prix.baby === '28,00 €',
+    'les totaux horaires suivent la durée d’une heure (' + prix.menage + ' / ' + prix.jardin + ' / ' + prix.baby + ')');
 
   ok(errs.length === 0, 'aucune erreur de page' + (errs.length ? ' : ' + errs[0] : ''));
   await b.close();

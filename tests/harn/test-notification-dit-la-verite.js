@@ -105,8 +105,14 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   ok(retry.troisieme === 'deja',
     'et le troisième ne refait rien, en le disant (' + retry.troisieme + ')');
   const d0 = retry.ecrits[0] || {};
-  ok(d0.notifOn === true && d0.role === 'artisan' && Array.isArray(d0.pushTokens),
-    'ce qui est écrit est bien le jeton, le rôle et le consentement — ce que le serveur lit');
+  ok(d0.notifOn === true && Array.isArray(d0.pushTokens),
+    'ce qui est écrit est le jeton et le consentement — ce que le serveur lit');
+  /* ET PAS LE RÔLE. Il l'était, et il valait l'écran où l'on se trouvait au moment du
+     clic : un prestataire qui active ses notifications depuis l'interface CLIENT
+     s'inscrivait `role:'client'`, et le serveur écarte justement ces comptes-là du choix
+     des prestataires à prévenir. Le rôle appartient au compte, pas à un abonnement. */
+  ok(!('role' in d0),
+    'le rôle du compte n’est PAS réécrit par un abonnement aux notifications');
 
   ok(errs.length === 0, 'aucune erreur de page' + (errs.length ? ' : ' + errs[0] : ''));
   await b.close();

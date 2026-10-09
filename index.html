@@ -3662,7 +3662,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='851';
+  const VERSION_APP='852';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -5511,7 +5511,11 @@
      n'admet pas la souplesse large (garde d'enfants, prestation chez le prestataire,
      séjour compté en jours) repasse à 0 tout seul, on n'énumère pas les exceptions. */
   const SOUPLE_DEFAUT=['menage','jardin','piscine'];
-  function newMission(svc){const a=S.addresses.find(x=>x.id===S.addrDefault)||S.addresses[0]||null;const day=svc.id==='animaux';const colis=svc.id==='colis';const cat=isCatalogForfait(svc.id);const forf=colis||cat;const px=(S.adminPrices&&S.adminPrices[svc.id]!=null)?S.adminPrices[svc.id]:svcBase(svc.id);const m={svc:svc.id,svcName:svc.nm,unit:forf?'forfait':(day?'j':'h'),rate:day?DAY_RECO:px,boost:0,finalHours:null,disputeMsg:null,frequency:'ponctuelle',people:1,locationMode:'domicile',duration:forf?1:(day?2:3),zone:a?a.zone:'Gustavia',address:a?a.address:'',addressId:a?a.id:'__manual',geo:a?a.geo:null,access:a?(a.access||''):'',notes:'',photos:[],when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',slotMode:null,slotFlex:(SOUPLE_DEFAUT.indexOf(svc.id)>=0?'day':0),proposedSlot:null,status:'draft',provider:null,rating:0,competitors:0,chat:[],support:{client:[],pro:[]}};
+  function newMission(svc){const a=S.addresses.find(x=>x.id===S.addrDefault)||S.addresses[0]||null;const day=svc.id==='animaux';const colis=svc.id==='colis';const cat=isCatalogForfait(svc.id);const forf=colis||cat;const px=(S.adminPrices&&S.adminPrices[svc.id]!=null)?S.adminPrices[svc.id]:svcBase(svc.id);const m={svc:svc.id,svcName:svc.nm,unit:forf?'forfait':(day?'j':'h'),rate:day?DAY_RECO:px,boost:0,finalHours:null,disputeMsg:null,frequency:'ponctuelle',people:1,locationMode:'domicile',/* UNE HEURE PAR DÉFAUT. Trois heures étaient posées d'office : c'est le panier
+       moyen d'un ménage, pas le besoin de qui ouvre l'écran, et le prix affiché partait
+       donc au triple avant le premier geste. On part du plus petit engagement, la
+       personne monte. (La garde d'animaux se compte en JOURS et garde son défaut.) */
+    duration:forf?1:(day?2:1),zone:a?a.zone:'Gustavia',address:a?a.address:'',addressId:a?a.id:'__manual',geo:a?a.geo:null,access:a?(a.access||''):'',notes:'',photos:[],when:'Aujourd’hui',dateMode:null,dateISO:'',slot:'14:00',slotMode:null,slotFlex:(SOUPLE_DEFAUT.indexOf(svc.id)>=0?'day':0),proposedSlot:null,status:'draft',provider:null,rating:0,competitors:0,chat:[],support:{client:[],pro:[]}};
     // Métier « à l'acte » (coiffure, manucure, plomberie…) : le client compose sa commande
     // à partir de la grille catalogue ; total = somme des actes cochés (m.acts).
     if(cat){m.acts=[];}
@@ -6302,7 +6306,14 @@
   function recoFor(m){return isDayU(m)?fixedRate(m):svcReco(m.svc);}
   function endDateTxt(m){if(!isDayU(m))return '';let startISO=m.dateISO;if(!startISO){const d=new Date();if(m.when==='Demain')d.setDate(d.getDate()+1);startISO=d.toISOString().slice(0,10);}const d=new Date(startISO+'T00:00:00');const e=new Date(d);e.setDate(d.getDate()+Math.max(1,m.duration)-1);const f=(x)=>x.getDate()+'/'+(x.getMonth()+1);return f(d)+' → '+f(e);}
   function finalizePaid(m){if(m.commPct==null)m.commPct=myCommPct();const tt=totals(m);m.status='paid';S.proEarnings+=tt.payout;if(m._appt){m._appt.status='done';m._appt.duration=billHours(m);m._appt.amount=tt.total;}S.proHistory=S.proHistory||[];const seq='2026-'+String(43+S.proHistory.length).padStart(4,'0');m.invNo=seq;const cliN=(m.clientName||m.client||(isDemo()?'Camille M.':((S.account&&S.account.name)||'Client')));S.proHistory.unshift({id:'hm'+S.proHistory.length,dateISO:(m.dateISO||new Date().toISOString().slice(0,10)),svc:m.svc,client:cliN,clientFull:cliN,clientZone:m.zone,duration:billHours(m),unit:m.unit,acts:(m.acts&&m.acts.length)?m.acts.map(function(a){return {id:a.id,nm:a.nm,price:a.price,qty:a.qty||1};}):null,travel:tt.travel||0,tip:tt.tip||0,rate:tt.rate,amount:tt.total,commPct:tt.commPct,commission:tt.commission,net:tt.payout,invNo:seq,paidVia:'carte'});}
-  const eur=(n)=>n.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
+  /* AFFICHER UN MONTANT NE FAIT JAMAIS TOMBER UN ÉCRAN. `eur` appelait `toLocaleString`
+     sur ce qu'on lui donnait : une valeur absente levait, et comme tout l'écran est
+     fabriqué d'une seule traite, c'est l'ÉCRAN ENTIER qui ne se dessinait pas — plus de
+     titre, plus de bouton retour, rien. Relevé sur la facture d'une indemnité
+     d'annulation, dont la ligne d'historique n'a pas de tarif horaire (il n'y en a pas,
+     c'est une indemnité). Une somme qu'on ne sait pas lire vaut zéro et s'affiche ;
+     elle ne prend pas la page avec elle. */
+  const eur=(n)=>{const v=Number(n);return (isFinite(v)?v:0).toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';};
   const fmtDate=(iso)=>{if(!iso)return 'Aujourd’hui';const p=iso.split('-');return p[2]+'/'+p[1];};
   // Repli visuel (hors-ligne / carte non chargée) : petite carte stylisée.
   function mapFallbackSvg(){return `<svg viewBox="0 0 300 180" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="300" height="180" fill="var(--teal-wash)"/><path d="M0 130 Q80 116 150 127 T300 122 V180 H0Z" fill="color-mix(in srgb,var(--teal) 20%,transparent)"/><g stroke="color-mix(in srgb,var(--teal) 22%,transparent)" stroke-width="1"><path d="M0 60h300M0 110h300M60 0v180M150 0v180M240 0v180"/></g><g transform="translate(150 88)"><circle r="20" fill="color-mix(in srgb,var(--coral) 20%,transparent)"><animate attributeName="r" values="10;22;10" dur="2.2s" repeatCount="indefinite"/></circle><circle r="7" fill="var(--coral)"/><circle r="2.6" fill="#fff"/></g></svg><div class="maploading">Chargement de la carte…</div>`;}
@@ -17598,7 +17609,12 @@
         <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Prestataire</div><b>${S.proLegal}</b><div class="mut">${S.proStatusType==='particulier'?'Particulier':'Entreprise'} · ${S.proAddress}</div><div class="mut">SIRET ${S.proSiret||'—'} · Assurance RC ${S.proInsurer||'—'}</div></div>
         <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Client</div><b>${h.clientFull}</b><div class="mut">${h.clientZone}, Saint-Barthélemy</div></div>
         <table><thead><tr><th>Prestation</th><th class="r">Qté</th><th class="r">PU</th><th class="r">Total</th></tr></thead>
-        <tbody>${(h.acts&&h.acts.length)?h.acts.map(function(a){return `<tr><td>${esc(a.nm)}, ${esc(svcName(h.svc))}</td><td class="r">${a.qty||1}</td><td class="r">${eur(a.price)}</td><td class="r">${eur((a.price||0)*(a.qty||1))}</td></tr>`;}).join('')+(h.travel?`<tr><td>Forfait de déplacement</td><td class="r">1</td><td class="r">${eur(h.travel)}</td><td class="r">${eur(h.travel)}</td></tr>`:''):`<tr><td>${svcName(h.svc)}, prestation à domicile</td><td class="r">${durTxt({unit:h.unit},h.duration)}</td><td class="r">${eur(h.rate)}</td><td class="r">${eur(h.amount)}</td></tr>`}</tbody></table>
+        <tbody>${(h.acts&&h.acts.length)?h.acts.map(function(a){return `<tr><td>${esc(a.nm)}, ${esc(svcName(h.svc))}</td><td class="r">${a.qty||1}</td><td class="r">${eur(a.price)}</td><td class="r">${eur((a.price||0)*(a.qty||1))}</td></tr>`;}).join('')+(h.travel?`<tr><td>Forfait de déplacement</td><td class="r">1</td><td class="r">${eur(h.travel)}</td><td class="r">${eur(h.travel)}</td></tr>`:''):(h.cancelFee
+          /* UNE INDEMNITÉ N'EST PAS UNE PRESTATION À L'HEURE : elle n'a ni durée ni
+             tarif horaire, et la ligne générique en inventait deux (« 0 h », « 0,00 € »
+             de l'heure) sous un intitulé qui parlait d'un travail jamais fait. */
+          ? `<tr><td>Indemnité d'annulation tardive, ${esc(svcName(h.svc))}</td><td class="r">1</td><td class="r">${eur(h.amount)}</td><td class="r">${eur(h.amount)}</td></tr>`
+          : `<tr><td>${svcName(h.svc)}, prestation à domicile</td><td class="r">${durTxt({unit:h.unit},h.duration)}</td><td class="r">${eur(h.rate)}</td><td class="r">${eur(h.amount)}</td></tr>`)}</tbody></table>
         <div class="row between sec"><span class="mut">Total net à payer</span><span class="tot">${eur(h.amount)}</span></div>
         <div class="row between" style="margin-top:6px"><span class="mut">Réglé par ${h.paidVia==='carte'?'carte bancaire':'virement'} via Ti-Services le ${fmtLong(h.dateISO)}</span><b style="color:#1c8f5f">Payé</b></div>
         <div class="legal">
@@ -22213,7 +22229,7 @@
         if(!pushNeedsRegister(FB.auth.currentUser.uid))return 'deja';
         const tok=await nativeFcmToken(); if(!tok)return 'pas-de-jeton';
         const uidN=FB.auth.currentUser.uid;
-        await FB.f.setDoc(FB.f.doc(FB.db,'users',uidN),{pushTokens:FB.f.arrayUnion(tok),role:role,notifOn:true,notifAt:FB.f.serverTimestamp()},{merge:true});
+        await FB.f.setDoc(FB.f.doc(FB.db,'users',uidN),{pushTokens:FB.f.arrayUnion(tok),notifOn:true,notifAt:FB.f.serverTimestamp()},{merge:true});
         pushRegUid=uidN; pushRegTok=tok; pushRegAt=Date.now(); pushRegRole=role||'client';
         try{ await FB.f.setDoc(FB.f.doc(FB.db,'fcmOwners',tok),{uid:uidN,role:role,at:FB.f.serverTimestamp()}); }catch(_){}
         return 'ok';
@@ -22232,7 +22248,14 @@
       const uidW=FB.auth.currentUser.uid;
       /* L'ÉCRITURE N'EST PLUS AVALÉE : si le jeton n'atteint pas la base, le serveur ne
          peut pas joindre cette personne, et c'est précisément ce qu'il faut dire. */
-      await FB.f.setDoc(FB.f.doc(FB.db,'users',uidW),{pushTokens:FB.f.arrayUnion(token),role:role,notifOn:true,notifAt:FB.f.serverTimestamp()},{merge:true});
+      /* LE RÔLE N'EST PAS ÉCRIT ICI. Il l'était, et il valait `S.persona==='pro'?'artisan':'client'`
+         — c'est-à-dire l'écran où l'on se trouvait au moment du clic. Un prestataire qui
+         active ses notifications depuis l'interface CLIENT (où le bouton retour le
+         renvoie, entre autres) se voyait inscrire `role:'client'` sur son compte ; or le
+         serveur écarte justement ces comptes-là du choix des prestataires à prévenir
+         (`_jetonsArtisans`). Le rôle appartient au COMPTE : il est posé à l'inscription
+         et par la console, jamais par un abonnement aux notifications. */
+      await FB.f.setDoc(FB.f.doc(FB.db,'users',uidW),{pushTokens:FB.f.arrayUnion(token),notifOn:true,notifAt:FB.f.serverTimestamp()},{merge:true});
       pushRegUid=uidW; pushRegTok=token; pushRegAt=Date.now(); pushRegRole=role||'client';
       // Propriété EXCLUSIVE du jeton par ce compte : si l'appareil a déjà servi à un
       // autre compte (ex. ancien profil prestataire), on récupère la propriété du jeton

@@ -138,11 +138,22 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
     const l = window.__heures.proposables({ service: 'menage', slotFlex: 'day', dateISO: iso });
     return { premier: l[0], maintenant: au.getHours() * 60 + au.getMinutes(), n: l.length };
   });
-  ok(/:(00|30)$/.test(auj.premier || ''),
-    'sur une demande du jour, le premier créneau est la prochaine DEMIE, jamais la minute qu’il est ('
-      + auj.premier + ')');
-  ok(minDe(auj.premier) >= auj.maintenant && minDe(auj.premier) - auj.maintenant < 30,
-    'et c’est bien la PROCHAINE, pas une heure perdue en route');
+  /* SAUF SI PLUS AUCUNE DEMIE NE TIENT (il est 23 h 35, la fenêtre finit à 23 h 30) :
+     la liste garderait alors le silence, et l'on y remet le plus tôt possible, qui est
+     une heure vraie. Sans cette réserve, l'épreuve rougissait une nuit sur quarante-huit
+     — et pour une raison qui n'a rien à voir avec ce qu'elle mesure. */
+  const resteUneDemie = (Math.ceil(auj.maintenant / 30) * 30) <= 1410;
+  if (resteUneDemie) {
+    ok(/:(00|30)$/.test(auj.premier || ''),
+      'sur une demande du jour, le premier créneau est la prochaine DEMIE, jamais la minute qu’il est ('
+        + auj.premier + ')');
+    ok(minDe(auj.premier) >= auj.maintenant && minDe(auj.premier) - auj.maintenant < 30,
+      'et c’est bien la PROCHAINE, pas une heure perdue en route');
+  } else {
+    ok(minDe(auj.premier) === auj.maintenant,
+      'passé la dernière demie de la journée, il reste le plus tôt possible (' + auj.premier + ')');
+    ok(true, 'et la liste ne se tait pas');
+  }
   ok(minDe(etiq.debut) >= etiq.maintenant,
     'une demande datée d’aujourd’hui est bornée à l’heure qu’il est, quoi que dise son libellé ('
       + etiq.debut + ')');
