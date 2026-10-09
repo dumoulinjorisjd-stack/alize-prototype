@@ -3662,7 +3662,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='849';
+  const VERSION_APP='850';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -17355,8 +17355,20 @@
         <div class="legal">Procuration établie via Ti-Services (mise en relation). Certains plis « à remettre en main propre » ne peuvent être retirés par un tiers. Document valable pour la période indiquée. ${ccsInline?ccsInline():''}</div>
       </div></div><div style="height:12px"></div></div>`;
   }
+  /* UNE FOIS LA PRESTATION DÉMARRÉE, L'ÉCRAN S'ALLÈGE. « L'écran pour dire que l'on a
+     terminé doit être plus léger, pas besoin de revoir toutes les informations. » Juste :
+     il n'y a plus qu'UN geste à faire, et deux blocs de cet écran n'existent que pour
+     ARRIVER — la carte avec l'itinéraire (on y est) et « Ajouter à mon agenda » (on y
+     est aussi). Les garder, c'est faire défiler un plan du quartier pour atteindre le
+     bouton « J'ai terminé ».
+     CE QU'ON NE RETIRE PAS : le recours. « Un problème ? Contacter Ti-Services » est
+     ENCADRÉ sur la capture avec l'agenda, mais c'est pendant la prestation qu'un
+     problème survient — ce n'est pas une information à relire, c'est une porte de
+     sortie. L'adresse, le client et le montant restent aussi : on les lit d'un coup
+     d'œil et ils ne poussent rien vers le bas. */
   function proActive(){
     const m=S.mission,t=totals(m);
+    const enCours=(m.status==='working');
     const next={accepted:{lbl:'Démarrer la prestation',to:'working'},working:{lbl:'J’ai terminé la prestation',to:'done_pro'}}[m.status];
     const stLabel={accepted:'À venir · '+m.slot,working:'En cours'}[m.status];
     return `<div class="pad"><button class="reset" data-act="promiss-back" style="margin:8px 0 2px">← Mes missions</button><div class="row between"><span class="chip good">${stLabel}</span><span class="mini">Mission remportée ${I.party}</span></div>
@@ -17366,11 +17378,11 @@
       :`<div class="card" style="padding:15px;margin-top:12px"><div class="row" style="gap:8px;flex-wrap:wrap"><span class="chip grey">${I.clock} ${m.slot}</span>${(m.acts&&m.acts.length)?'':`<span class="chip grey">${durTxt(m)}</span>`}</div><div class="row" style="gap:8px;flex-wrap:wrap;margin-top:8px"><span class="chip grey">${I.pin} ${esc(m.address)}</span></div>${(m.acts&&m.acts.length)?`<div class="row between" style="margin-top:10px;align-items:flex-start"><span class="sub">Prestations</span><b style="text-align:right;max-width:60%">${m.acts.map(function(a){return esc(a.nm)+((a.qty||1)>1?' ×'+a.qty:'');}).join('<br>')}</b></div>`:''}<hr class="dashed"><div class="row between"><span class="sub">Client</span><span class="row" style="gap:8px;align-items:center">${avatarPhoto(proClientPhoto(m),inits(proClientName(m)),'sm')}<b>${esc(proClientName(m))}</b></span></div><div class="row between" style="margin-top:6px"><span class="sub">Vous percevez</span><b class="money" style="color:var(--teal-deep)">${eur(t.payout)}</b></div></div>`}
       ${(m.photos&&m.photos.length)?`<div class="card" style="padding:14px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">Photos du client</div><div class="thumbs" style="margin-top:8px">${m.photos.map(u=>`<div class="thumb"><img class="viewable" data-docname="photo-client" src="${u}" alt="Photo du client, appuyer pour agrandir"></div>`).join('')}</div></div>`:''}
       ${m.access?`<div class="card" style="padding:14px;margin-top:12px"><div class="eyebrow" style="color:var(--muted)">${I.key} Infos d'accès</div><p class="sub" style="margin-top:6px;color:var(--ink-soft)">${esc(m.access)}</p></div>`:''}
-      ${m.geo?`<div class="card" style="padding:14px;margin-top:12px"><div class="row between"><span class="chip">${I.pin} Localisation du domicile</span><span class="mini" style="color:var(--muted)">Itinéraire ci-dessous</span></div>${miniMap(m.geo,'route')}
+      ${(m.geo&&!enCours)?`<div class="card" style="padding:14px;margin-top:12px"><div class="row between"><span class="chip">${I.pin} Localisation du domicile</span><span class="mini" style="color:var(--muted)">Itinéraire ci-dessous</span></div>${miniMap(m.geo,'route')}
         <a class="btn primary sm" href="${navUrl(m.geo.lat,m.geo.lng)}" target="_blank" rel="noopener" style="margin-top:12px;justify-content:center">${I.compass} Lancer la navigation</a>
         <p class="mini" style="margin-top:8px;color:var(--muted)">Le trajet s'affiche ici sans quitter l'app. « Lancer la navigation » ouvre le guidage vocal (${navAppName()}) de votre téléphone.</p></div>`:''}
       ${blocContact({tel:(bothAccepted(m)&&m.clientPhone)?m.clientPhone:'', nom:(proClientName(m)||'le client'), titre:'Le client',
-        nMsg:(m.chat&&m.chat.length)||0, ics:(m.status==='accepted'||m.status==='working'),
+        nMsg:(m.chat&&m.chat.length)||0, ics:(m.status==='accepted'),
         nSup:((m.support&&m.support.pro)||[]).length, dot:unreadDot(m)})}
       <div class="banner teal" style="margin-top:12px">${I.shield}<span>Paiement du client déjà sécurisé, versé dès qu'il valide la prestation.</span></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0">${m.status==='accepted'?`<button class="btn primary" data-act="pro-advance" data-to="working">Démarrer la prestation</button>`:`<button class="btn primary" data-act="pro-finish-start">J'ai terminé la prestation</button>`}${isDemo()?`<p class="mini" style="text-align:center;margin-top:10px"><button class="linklike" data-act="demo-go-client">${I.user} Voir côté client (démo)</button></p>`:''}</div>
