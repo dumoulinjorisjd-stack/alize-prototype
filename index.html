@@ -3654,7 +3654,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='840';
+  const VERSION_APP='841';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -11586,6 +11586,18 @@
            avoir besoin d'ouvrir le sien. Une ligne qui les NOMME, repliée, hors des
            chiffres : « écartés des compteurs » est écrit, pour qu'on ne s'étonne pas de
            ne pas les retrouver ailleurs. */''}
+      ${(function(){
+        /* Il ne paraît QUE s'il a quelque chose à faire : un bouton qui ne sert à rien
+           dilue ceux qui servent, et celui-ci touche tout le parc d'un coup. */
+        const horsLigne=(S.adminArtisans||[]).filter(function(a){return a&&a.real&&a.uid&&a.online===false;}).length;
+        if(!horsLigne)return '';
+        const arme=(S.admEnLigneArme===true);
+        return `<div class="card" style="padding:14px;margin-top:12px;border-left:4px solid var(--coral)">
+          <b style="font-size:14px">${plN(horsLigne,'prestataire')} hors ligne</b>
+          <p class="mini" style="margin-top:5px;color:var(--muted);line-height:1.5">Ils ne reçoivent AUCUNE demande. Jusqu'au 09/10/2026 l'application les mettait hors ligne d'office&nbsp;: la plupart ne l'ont jamais décidé.</p>
+          <button class="btn ghost sm" data-adm="tous-en-ligne" style="margin-top:10px;width:auto;padding:8px 12px;${arme?'color:#fff;background:var(--coral-deep);border-color:var(--coral-deep)':'color:var(--coral-deep)'}">${arme?I.warn+' Confirmer, tous en ligne':I.check+' Remettre tout le monde en ligne'}</button>
+          ${arme?`<div class="mini" style="margin-top:6px;color:var(--muted);line-height:1.45">Chacun pourra se remettre hors ligne quand il veut&nbsp;: c'est son interrupteur, et ce sera alors son choix.</div>`:''}
+        </div>`;})()}
       ${artsTest?foldCard('a-arts-test',I.shield,'Comptes de test',plN(artsTest,'compte')+' · écarté'+(artsTest>1?'s':'')+' de tous les compteurs',
         `<p class="mini" style="margin:0 0 4px;color:var(--muted);line-height:1.5">Ces comptes ne figurent ni dans « Fiches artisans », ni dans le nombre d’artisans du tableau de bord, ni dans les métiers « sans prestataire ». Ils restent ouvrables ici.</p>`
         +artsDeTest.map(function(a){const c=acctChip(a.status);
@@ -18372,6 +18384,10 @@
          second écrit. On ne touche QU'À une demande encore en recherche — le bouton ne
          paraît pas ailleurs, et la garde est reposée ici parce qu'une garde qui ne vit
          que dans le balisage se contourne. */
+      else if(act==='tous-en-ligne'){
+        if(S.admEnLigneArme!==true){S.admEnLigneArme=true;render();return;}
+        S.admEnLigneArme=false; remettreToutEnLigne(); return;
+      }
       else if(act==='reqclore'){
         if(S.admClore!==id){S.admClore=id;render();return;}
         S.admClore=null;
@@ -21604,6 +21620,29 @@
         <button class="btn ghost sm" data-telfix="main:${c.kind}:${c.uid}" style="width:auto;padding:8px 13px">${I.check} Enregistrer ce numéro</button>
         ${c.email?`<a class="btn ghost sm" href="mailto:${esc(c.email)}?subject=${sujet}&body=${corps}" style="width:auto;padding:8px 13px;text-decoration:none">${I.mail||''} Le lui demander</a>`:''}
       </div>`;
+  }
+  /* REMETTRE TOUT LE MONDE EN LIGNE, UNE FOIS. « Il faut qu'ils soient tous en ligne, le
+     hors ligne sera une nouvelle action volontaire de leur part. » Le correctif du défaut
+     (en ligne par défaut) ne vaut que pour les comptes dont la fiche ne porte PAS le
+     champ : ceux qui ont enregistré leurs réglages pendant que l'application les croyait
+     hors ligne ont `online:false` ÉCRIT, et ils y resteraient. Ce bouton efface cette
+     ardoise-là — après lui, « hors ligne » ne peut plus venir que d'un geste.
+
+     ON ÉCRIT `true`, ON N'EFFACE PAS LE CHAMP : l'absence et le vrai se valent pour le
+     code, mais l'absence se relit comme « on n'a jamais rien décidé » alors qu'ici on
+     vient justement de décider. Et c'est une écriture FUSIONNÉE, comme toutes celles de
+     la console sur une fiche vivante. */
+  async function remettreToutEnLigne(){
+    if(!(FB&&FB.db&&FB.f))return;
+    const arts=(S.adminArtisans||[]).filter(function(a){return a&&a.real&&a.uid&&a.online===false;});
+    if(!arts.length){toast('Personne n’est hors ligne');return;}
+    let n=0,ko=0;
+    for(const a of arts){
+      try{ await FB.f.setDoc(FB.f.doc(FB.db,'artisans',a.uid),{online:true},{merge:true}); a.online=true; n++; }
+      catch(e){ ko++; console.warn('remettreToutEnLigne',a.uid,e); }
+    }
+    render();
+    toast(n+' prestataire'+(n>1?'s':'')+' remis en ligne'+(ko?(', '+ko+' en échec'):''));
   }
   function adminWriteStatus(a,status){ if(FB&&a&&a.real&&a.uid){ try{ FB.f.updateDoc(FB.f.doc(FB.db,'artisans',a.uid),{status:status}); }catch(_){} } }
   // Validation admin d'un métier ajouté : cats += sv, pendingCats -= sv (admin seul).

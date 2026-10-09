@@ -129,6 +129,60 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   ok(!/online:!!a\.online/.test(APP),
     'et plus rien n’écrase l’absence en « hors ligne »');
 
+  /* F — REMETTRE TOUT LE MONDE EN LIGNE. Le correctif du défaut ne vaut que pour les
+     fiches qui ne portent PAS le champ : celles qui ont enregistré leurs réglages pendant
+     que l'application les croyait hors ligne ont `online:false` ÉCRIT, et y resteraient.
+     Ce geste efface cette ardoise-là — une fois, et après lui « hors ligne » ne peut plus
+     venir que d'une décision. */
+  console.log('F — remettre tout le monde en ligne, une fois');
+  const parc = (arts) => p.evaluate((arts) => {
+    window.__ecrites = [];
+    window.__setFB({ auth: { currentUser: { uid: 'a', email: 'ccs.dumoulin@gmail.com' } }, db: {},
+      f: { doc: (db, col, id) => ({ col: col, id: id }),
+        setDoc: (ref, patch, opt) => { window.__ecrites.push({ id: ref.id, patch: patch, opt: opt }); return Promise.resolve(); },
+        updateDoc: () => Promise.resolve(),
+        getDoc: () => Promise.resolve({ exists: () => false, data: () => ({}) }) },
+      fn: { httpsCallable: () => () => new Promise(() => {}) }, functions: {} });
+    const S = window.__S;
+    S.adminArtisans = JSON.parse(JSON.stringify(arts)); S.adminArtsLoaded = true;
+    S.admEnLigneArme = false; S.admin = { view: 'home' }; S._fold = {};
+    window.__render();
+    const b = document.querySelector('[data-adm="tous-en-ligne"]');
+    return { bouton: !!b, txt: b ? (b.closest('.card').textContent || '').replace(/\s+/g, ' ') : '' };
+  }, arts);
+
+  const R = (u, on) => ({ id: u, uid: u, real: true, name: 'Pro ' + u, email: u + '@e.fr',
+    status: 'valide', cats: ['menage'], online: on });
+
+  const horsLigne = await parc([R('p1', false), R('p2', false), R('p3', true)]);
+  ok(horsLigne.bouton, 'le bouton paraît quand quelqu’un est hors ligne');
+  ok(/2 prestataires hors ligne/.test(horsLigne.txt),
+    'et il dit combien (' + horsLigne.txt.slice(0, 50) + ')');
+
+  const tousEnLigne = await parc([R('p1', true), R('p3', true)]);
+  ok(!tousEnLigne.bouton, 'et il disparaît quand personne ne l’est — un bouton inutile dilue les autres');
+
+  /* DEUX TOUCHERS, et on regarde CE QUI PART. */
+  await parc([R('p1', false), R('p2', false), R('p3', true)]);
+  const fait = await p.evaluate(async () => {
+    document.querySelector('[data-adm="tous-en-ligne"]').click();
+    await new Promise((r) => setTimeout(r, 200));
+    const arme = /Confirmer/.test(document.querySelector('[data-adm="tous-en-ligne"]').textContent || '');
+    document.querySelector('[data-adm="tous-en-ligne"]').click();
+    await new Promise((r) => setTimeout(r, 600));
+    return { arme: arme, ecrites: window.__ecrites,
+      restants: (window.__S.adminArtisans || []).filter((a) => a.online === false).length };
+  });
+  ok(fait.arme, 'un premier toucher ARME');
+  ok((fait.ecrites || []).length === 2, 'le second n’écrit que sur les DEUX hors ligne (' + (fait.ecrites || []).length + ')');
+  ok((fait.ecrites || []).every((e) => e.patch && e.patch.online === true),
+    'et il écrit « en ligne »');
+  ok((fait.ecrites || []).every((e) => e.opt && e.opt.merge === true),
+    'en FUSION : une fiche vivante ne se remplace pas');
+  ok((fait.ecrites || []).map((e) => e.id).sort().join(',') === 'p1,p2',
+    'sur les bons comptes (' + (fait.ecrites || []).map((e) => e.id).join(',') + ')');
+  ok(fait.restants === 0, 'plus personne n’est hors ligne');
+
   ok(errs.length === 0, 'aucune erreur de page' + (errs.length ? ' : ' + errs[0] : ''));
   await b.close();
   console.log(f ? '\n' + f + ' ÉCHEC(S)' : '\nTout est vert');
