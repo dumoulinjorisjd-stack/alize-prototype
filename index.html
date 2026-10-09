@@ -3654,7 +3654,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='829';
+  const VERSION_APP='830';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -5718,6 +5718,31 @@
   }
   const RESA_JOURS=[[30,'30 jours'],[90,'3 mois'],[180,'6 mois'],[365,'1 an']];
   const METIER_DEFAUT={exclusif:false,jours:30};
+  /* À QUELLES HEURES CE MÉTIER SE COMMANDE. Le sélecteur d'heure offrait 00:00 à 23:30
+     sur les vingt et un métiers, sans exception : on pouvait demander un ménage à trois
+     heures du matin. Une demande qu'aucun prestataire n'acceptera, et le client ne
+     l'apprend jamais — il attend, puis s'en va.
+
+     DEUX MINUTES DEPUIS MINUIT, RIEN D'AUTRE, et le PAS DE TRENTE MINUTES est celui du
+     sélecteur : une plage réglée à 8 h 10 ne proposerait aucune heure qui commence par
+     8 h 10. NON RÉGLÉE, LA PLAGE EST LA JOURNÉE ENTIÈRE — c'est l'état de tous les
+     métiers du parc aujourd'hui, et aucun ne change tant que l'administrateur n'a rien
+     posé. UNE PLAGE QUI NE TIENT PAS DEBOUT N'EST PAS UNE PLAGE : fermer avant d'ouvrir
+     viderait le sélecteur, et un écran de commande sans aucune heure est pire que des
+     heures improbables — on refuse, et on le dit. Un métier d'urgence qui travaille la
+     nuit ne règle simplement rien. */
+  const PLAGE_PAS=30, PLAGE_FIN=23*60+30;
+  function plageMin(v){const n=Math.round(Number(v));
+    return (isFinite(n)&&n>=0&&n<=PLAGE_FIN&&n%PLAGE_PAS===0)?n:null;}
+  // PUR : la table lui est donnée.
+  function plageDe(table,svcId){
+    const r=(table&&table[svcId])||{};
+    const o=plageMin(r.ouvre),f=plageMin(r.ferme);
+    // Les deux, et dans cet ordre, sinon la plage n'existe pas.
+    if(o==null||f==null||f<=o)return {ouvre:0,ferme:PLAGE_FIN,reglee:false};
+    return {ouvre:o,ferme:f,reglee:true};
+  }
+  function plageDuSvc(svcId){return plageDe(S.adminMetier,svcId);}
   function resaJoursNet(v){const n=Math.round(Number(v));return RESA_JOURS.some(function(d){return d[0]===n;})?n:null;}
   // PUR : la table lui est donnée.
   function metierDe(table,svcId){
@@ -11212,6 +11237,29 @@
                 <div class="mini" style="color:var(--muted);line-height:1.45">Pour des FORMULES qui s’excluent (demie journée ou journée). Laissé ouvert, le client peut en cocher plusieurs et elles s’additionnent.</div></div>
               <button class="switch" data-adm="metexcl:${s.id}" style="flex:none;background:${M.exclusif?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${M.exclusif?'25px':'3px'}"></span></button>
             </div>`:''}
+            ${(function(){const P=plageDuSvc(s.id);
+              /* UNE CASE VIDE N'EST PAS MINUIT. Sans choix explicite le navigateur retient la
+                 première option : les deux sélecteurs auraient affiché « 00:00 à 00:00 »,
+                 c'est-à-dire une plage que personne n'a posée, lisible comme une plage. */
+              const pose=(S.adminMetier&&S.adminMetier[s.id])||{};
+              const opts=function(sel){let o='<option value=""'+(sel==null?' selected':'')+'>—</option>';
+                for(let t=0;t<=PLAGE_FIN;t+=PLAGE_PAS)o+='<option value="'+t+'"'+(t===sel?' selected':'')+'>'+minToSlot(t)+'</option>';return o;};
+              return `<div class="mini" style="color:var(--muted);margin-top:11px">À quelles heures on peut réserver</div>
+              ${/* LE REMBOURREMENT DROIT N'EST PAS DÉCORATIF : `select.txt` réserve 42 px pour
+                    son chevron, et un `padding` écrit en ligne l'écrase — la flèche se posait
+                    alors SUR l'heure, qui se lisait « 08✕0 ». Et le bouton quitte la rangée :
+                    à trois éléments sur 390 px, les deux sélecteurs tombaient à 60 px. */''}
+              <div class="row" style="gap:8px;align-items:center;margin-top:5px">
+                <select class="txt" data-admplage="${s.id}:ouvre" style="flex:1;min-width:0;padding:9px 38px 9px 12px;font-size:14px;background-position:right 10px center">${opts(plageMin(pose.ouvre))}</select>
+                <span class="mini" style="color:var(--muted);flex:none">à</span>
+                <select class="txt" data-admplage="${s.id}:ferme" style="flex:1;min-width:0;padding:9px 38px 9px 12px;font-size:14px;background-position:right 10px center">${opts(plageMin(pose.ferme))}</select>
+              </div>
+              ${(pose.ouvre!=null||pose.ferme!=null)?`<button class="btn ghost sm" data-adm="metplageoff:${s.id}" style="margin-top:7px;width:auto;padding:7px 11px">Toute la journée</button>`:''}
+              <p class="mini" style="color:var(--muted);margin-top:6px;line-height:1.5">${P.reglee
+                ? 'Le client ne peut demander qu’entre <b>'+minToSlot(P.ouvre)+'</b> et <b>'+minToSlot(P.ferme)+'</b>.'
+                : ((pose.ouvre!=null||pose.ferme!=null)
+                  ? '<b style="color:var(--coral-deep)">Il manque '+(pose.ouvre==null?'l’heure d’ouverture':'l’heure de fermeture')+'</b>&nbsp;: tant que les deux ne sont pas posées, le client peut demander à toute heure.'
+                  : 'Rien de posé&nbsp;: le client peut demander <b>à toute heure, de 00:00 à 23:30</b>. Une demande de nuit sur un métier de jour n’est jamais acceptée, et il ne l’apprend pas — il attend.')}</p>`;})()}
             <div class="mini" style="color:var(--muted);margin-top:11px">Jusqu’à quand on peut réserver</div>
             <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:5px">${RESA_JOURS.map(function(D){const on=M.jours===D[0];
               return `<button class="btn ghost sm" data-adm="metjours:${s.id}:${D[0]}" style="flex:none;width:auto;padding:7px 11px;${on?'border-color:var(--teal-deep);background:var(--teal-wash);color:var(--teal-deep);font-weight:800':''}">${esc(D[1])}</button>`;}).join('')}</div>
@@ -18067,6 +18115,14 @@
           })
           .catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
       })();return;}
+      else if(act==='metplageoff'){
+        /* On RETIRE les deux clés plutôt que de les mettre à 00:00 / 23:30 : une plage
+           absente et une plage qui couvre la journée se valent à l'écran, mais seule
+           l'absence dit « rien n'a été décidé ici », et c'est ce que le parc porte. */
+        if(S.adminMetier&&S.adminMetier[id]){delete S.adminMetier[id].ouvre;delete S.adminMetier[id].ferme;
+          if(!Object.keys(S.adminMetier[id]).length)delete S.adminMetier[id];saveCatalog();render();}
+        return;
+      }
       else if(act==='metexcl'||act==='metjours'){
         S.adminMetier=S.adminMetier||{};
         const cur=metierDuSvc(id);
@@ -18989,7 +19045,11 @@
   function hourOptions(m){const minM=minSlotToday(m);const out=[];
     const D=heuresDuDraft(m);
     if(D.declare){D.heures.forEach(function(s){out.push({s:s,past:(minM>=0&&slotToMin(s)<minM)});});return out;}
-    for(let t=0;t<=23*60+30;t+=30){out.push({s:minToSlot(t),past:(minM>=0&&t<minM)});}return out;}
+    /* LES HEURES DÉCLARÉES PAR UNE PRESTATION PASSENT AVANT (branche du dessus) : ce sont
+       des départs précis, posés prestation par prestation, plus spécifiques qu'une plage
+       de métier — les filtrer par la plage pourrait vider la liste en silence. */
+    const P=plageDuSvc(m&&m.svc);
+    for(let t=P.ouvre;t<=P.ferme;t+=PLAGE_PAS){out.push({s:minToSlot(t),past:(minM>=0&&t<minM)});}return out;}
   // Les heures encore tenables pour CE jour-là. Vide un jour donné = ce jour n'a plus
   // rien à proposer, et il ne doit pas être offert.
   /* ON NE LAISSE PAS UNE HEURE PÉRIMÉE DANS LA COMMANDE. Changer de formule, ou de jour,
@@ -19513,6 +19573,27 @@
     }
   },true);
   view.addEventListener('change',(e)=>{
+    /* LA PLAGE HORAIRE D'UN MÉTIER (console). On refuse en le DISANT plutôt que de
+       corriger en devinant : fermer avant d'ouvrir viderait le sélecteur d'heure du
+       client, et un écran de commande sans aucune heure est pire que des heures
+       improbables. Le sélecteur reprend sa valeur précédente. */
+    const pl=e.target.closest('[data-admplage]');
+    if(pl){
+      const q=pl.dataset.admplage.split(':'), id=q[0], quoi=q[1];
+      const v=plageMin(pl.value);
+      S.adminMetier=S.adminMetier||{};
+      const e0=Object.assign({},S.adminMetier[id]||{});
+      // « — » retire la borne : on n'écrit jamais une valeur pour dire « rien ».
+      if(v==null)delete e0[quoi]; else e0[quoi]=v;
+      const essai={};essai[id]=e0;
+      if(!plageDe(essai,id).reglee&&e0.ouvre!=null&&e0.ferme!=null){
+        toast('L’heure de fermeture doit venir après l’ouverture');render();return;}
+      if(Object.keys(e0).length)S.adminMetier[id]=e0; else delete S.adminMetier[id];
+      saveCatalog();render();
+      const P=plageDuSvc(id);
+      if(P.reglee)toast('Réservable de '+minToSlot(P.ouvre)+' à '+minToSlot(P.ferme));
+      return;
+    }
     // Sortie du champ « Nom du métier ». Deux refus, les mêmes qu'à la création : un métier
     // SANS NOM s'afficherait comme une tuile vide sur l'accueil de tous les clients, et deux
     // métiers de MÊME NOM sont indiscernables à l'écran tout en restant deux catalogues.
