@@ -3654,7 +3654,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='830';
+  const VERSION_APP='832';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -3926,11 +3926,28 @@
      depuis la console AVANT cette mesure, on garde la photo : elle y était hier, et la
      retirer en silence d'un métier qu'on n'a pas pu interroger serait une perte. */
   const PHOTO_ROLES=['etat','envie'];
-  function photoDemandee(svcId){
+  /* CE QUE LE CODE A DÉCIDÉ POUR CE MÉTIER, et qui reste le DÉFAUT. */
+  function photoDuCode(svcId){
     const s=findSvc(svcId);if(!s)return '';
     const v=String(s.photo||'');
     if(PHOTO_ROLES.indexOf(v)>=0)return v;
     return (s.custom&&s.photo==null)?'etat':'';
+  }
+  /* ET CE QUE LA CONSOLE EN A DIT. Les deux interrupteurs — « le client choisit son
+     prestataire » et « demander une photo » — n'étaient ouverts que sur les métiers
+     AJOUTÉS depuis la console : sur les vingt et un métiers d'origine ils étaient
+     éteints, pâles, sous une phrase qui disait « réglé dans le code ». Or ce sont
+     exactement les réglages qu'on veut corriger en regardant le parc vivre — un ménage
+     dont on découvre qu'il mérite le choix du prestataire, un cours qui n'a rien à
+     photographier. On ne TOUCHE PAS au code : la valeur du code reste le défaut, et
+     l'on n'enregistre QUE ce qui s'en écarte (reposer la valeur d'origine RETIRE la
+     clé, elle ne l'écrit pas à l'identique). Un parc qui ne change rien ne pèse rien
+     de plus, et le jour où le code change d'avis, les métiers non touchés suivent. */
+  function photoDemandee(svcId){
+    const o=metierDuSvc(svcId).photo;
+    if(o==='non')return '';
+    if(PHOTO_ROLES.indexOf(o)>=0)return o;
+    return photoDuCode(svcId);
   }
   function photoAideTxt(svcId){
     return photoDemandee(svcId)==='envie'
@@ -5748,14 +5765,18 @@
   function metierDe(table,svcId){
     const r=(table&&table[svcId])||{};
     const j=resaJoursNet(r.jours);
+    // Listes FERMÉES : une valeur abîmée ne devient pas un réglage.
+    const ph=(r.photo==='non'||PHOTO_ROLES.indexOf(r.photo)>=0)?r.photo:null;
+    const cp=(r.choixPro===true||r.choixPro===false)?r.choixPro:null;
     return {exclusif:r.exclusif===true,jours:j==null?METIER_DEFAUT.jours:j,
+      photo:ph,choixPro:cp,
       regle:(r.exclusif===true||j!=null)};
   }
   function metierDuSvc(svcId){return metierDe(S.adminMetier,svcId);}
   const ARRHES_DEFAUT={pct:50,h:8};
   // Délais offerts : une liste FERMÉE, parce qu'un champ libre laisserait écrire « 0 »
   // (annulation jamais gratuite) ou « 10000 » (jamais payante) sans que rien ne le dise.
-  const ANNUL_DELAIS=[[8,'8 heures'],[24,'24 heures'],[48,'2 jours'],[72,'3 jours'],
+  const ANNUL_DELAIS=[[4,'4 heures'],[8,'8 heures'],[24,'24 heures'],[48,'2 jours'],[72,'3 jours'],
     [168,'7 jours'],[336,'14 jours'],[720,'30 jours']];
   function arrhesPctNet(v){const n=Math.round(Number(v));return (isFinite(n)&&n>=0&&n<=100)?n:null;}
   function annulHNet(v){const n=Math.round(Number(v));return ANNUL_DELAIS.some(function(d){return d[0]===n;})?n:null;}
@@ -5784,6 +5805,12 @@
     if(!m||m.status==='searching'||m.status==='pending'||!m.provider){return {free:true,fee:0,pct:0};}
     const a=arrhesDuSvc(m&&m.svc);
     const h=hoursUntilMission(m);
+    /* ZÉRO POUR CENT VEUT DIRE AUCUNE INDEMNITÉ, et il faut le dire ici aussi. La part
+       retenue descend jusqu'à 0 dans la console — c'est ainsi qu'on retire complètement
+       les conditions d'annulation sur un métier — mais seule la PHRASE le savait :
+       l'annulation se déclarait encore « payante » pour 0,00 €, le client passait par
+       l'écran de confirmation d'une indemnité qui n'existe pas. */
+    if(!(a.pct>0)){return {free:true,fee:0,pct:0,hours:h,limite:a.h,sansIndemnite:true};}
     if(h==null||h>=a.h){return {free:true,fee:0,pct:0,hours:h,limite:a.h};}
     const base=totals(m).total;
     return {free:false,fee:arrhesMontant(base,a.pct),pct:a.pct,hours:h,base:base,limite:a.h};
@@ -7266,7 +7293,7 @@
     // Connexion / inscription
     "Créer mon compte":"Create my account","Créer mon compte, c'est gratuit":"Create my account, it's free","Créer un compte":"Create an account","Vos informations":"Your details","Mot de passe":"Password","Confirmer le mot de passe":"Confirm password","Votre quartier":"Your area","Mot de passe oublié ?":"Forgot password?","Content de vous revoir":"Good to see you again","Connectez-vous pour retrouver vos réservations.":"Log in to find your bookings.","Pas encore de compte ?":"No account yet?","Déjà un compte ?":"Already have an account?","Les mots de passe ne correspondent pas.":"Passwords don't match.","✓ Les mots de passe correspondent":"✓ Passwords match","ou":"or","Continuer avec Google":"Continue with Google","6 caractères minimum":"6 characters minimum","Votre mot de passe":"Your password","Retapez votre mot de passe":"Re-type your password","Afficher le mot de passe":"Show password","Afficher":"Show","bientôt":"soon","politique de confidentialité":"privacy policy",
     // Suivi de mission
-    "Demande envoyée":"Request sent","Mission acceptée":"Job accepted","Prestation à venir":"Service upcoming","à confirmer par vous":"to confirm by you","En attente d’acceptation":"Awaiting acceptance","Les prestataires disponibles regardent votre demande":"Available pros are reviewing your request","Travail en cours à votre domicile":"Work in progress at your home","Vous laissez toute la journée, le pro choisit son heure de passage.":"You leave the whole day open, the pro picks their time.","Vous laissez toute la semaine, le pro vous proposera un jour et une heure.":"You leave the whole week open, the pro will suggest a day and a time.","Montant estimé":"Estimated amount","Montant":"Amount","Si le prestataire déclare plus d’heures, rien de plus n’est prélevé sans votre accord.":"If the provider reports more hours, nothing extra is charged without your approval.","bloqué":"held","à la validation":"on approval","Annuler la demande":"Cancel request","Annuler la prestation":"Cancel service","Aucun débit maintenant.":"No charge now.","Vous avez été payé":"You've been paid","Prestation terminée":"Service completed","Confirmer la prestation":"Confirm service","Signaler un problème":"Report a problem","Contacter Ti-Services (support)":"Contact Ti-Services (support)","Recherche en cours…":"Searching…",
+    "Demande envoyée":"Request sent","Mission acceptée":"Job accepted","Prestation à venir":"Service upcoming","à confirmer par vous":"to confirm by you","En attente d’acceptation":"Awaiting acceptance","Les prestataires disponibles regardent votre demande":"Available pros are reviewing your request","Travail en cours à votre domicile":"Work in progress at your home","Vous laissez toute la journée, le pro choisit son heure de passage.":"You leave the whole day open, the pro picks their time.","Vous laissez toute la semaine, le pro vous proposera un jour et une heure.":"You leave the whole week open, the pro will suggest a day and a time.","Montant estimé":"Estimated amount","Montant":"Amount","Si le prestataire déclare plus d’heures, rien de plus n’est prélevé sans votre accord.":"If the provider reports more hours, nothing extra is charged without your approval.","bloqué":"held","à la validation":"on approval","Annuler la demande":"Cancel request","Annuler la prestation":"Cancel service","Annulation gratuite à tout moment, aucune indemnité sur ce métier.":"Free cancellation at any time, no fee on this trade.","Aucun débit maintenant.":"No charge now.","Vous avez été payé":"You've been paid","Prestation terminée":"Service completed","Confirmer la prestation":"Confirm service","Signaler un problème":"Report a problem","Contacter Ti-Services (support)":"Contact Ti-Services (support)","Recherche en cours…":"Searching…",
     "Date de naissance":"Date of birth",
     "Réservé aux personnes majeures. Une tranche d'âge (ex. 25-34 ans) est indiquée aux clients, jamais votre date exacte.":"Adults only. An age range (e.g. 25-34 yrs) is shown to clients, never your exact date.",
     "L'inscription est réservée aux personnes majeures (18 ans et plus).":"Sign-up is for adults only (18 and over).",
@@ -8976,7 +9003,7 @@
     "bloqué":"retido",
     "à la validation":"na validação",
     "Annuler la demande":"Cancelar o pedido",
-    "Annuler la prestation":"Cancelar o serviço",
+    "Annuler la prestation":"Cancelar o serviço","Annulation gratuite à tout moment, aucune indemnité sur ce métier.":"Cancelamento gratuito a qualquer momento, sem indemnização neste serviço.",
     "Aucun débit maintenant.":"Sem cobrança agora.",
     "Vous avez été payé":"Recebeu o pagamento",
     "Prestation terminée":"Serviço concluído",
@@ -11274,20 +11301,22 @@
               :[(S.adminPrices&&S.adminPrices[s.id]!=null)?S.adminPrices[s.id]:s.rate].filter(function(x){return x>0;});
             const ex=prix.slice(0,3).map(function(x){return eur(arrhesMontant(x,A.pct));}).join(' · ');
             return `<div class="row between" style="align-items:center;margin-top:9px"><span class="sub">Part retenue si le client annule</span><span class="row" style="gap:8px;align-items:center"><button class="btn ghost sm" style="width:36px;padding:6px 0" data-adm="arrhes:${s.id}:down">−</button><b class="money" style="min-width:58px;text-align:center;white-space:nowrap">${A.pct} %</b><button class="btn ghost sm" style="width:36px;padding:6px 0" data-adm="arrhes:${s.id}:up">+</button></span></div>
-            ${ex?`<div class="mini" style="color:var(--muted);margin-top:4px">Soit ${ex}${prix.length>3?' …':''} sur ${prix.length>1?'les prestations de ce métier':'ce métier'}.</div>`:''}
+            ${(A.pct>0)
+              ? (ex?`<div class="mini" style="color:var(--muted);margin-top:4px">Soit ${ex}${prix.length>3?' …':''} sur ${prix.length>1?'les prestations de ce métier':'ce métier'}.</div>`:'')
+              : `<div class="mini" style="color:var(--good);margin-top:4px"><b>Aucune indemnité sur ce métier</b>&nbsp;: le client peut annuler à tout moment, même une heure avant, sans rien devoir. Le délai ci-dessous ne sert alors à rien.</div>`}
             <div class="mini" style="color:var(--muted);margin-top:11px">Annulation gratuite jusqu’à</div>
             <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:5px">${ANNUL_DELAIS.map(function(D){const on=A.h===D[0];
               return `<button class="btn ghost sm" data-adm="annul:${s.id}:${D[0]}" style="flex:none;width:auto;padding:7px 11px;${on?'border-color:var(--teal-deep);background:var(--teal-wash);color:var(--teal-deep);font-weight:800':''}">${esc(D[1])}</button>`;}).join('')}</div>
             <p class="mini" style="color:var(--muted);margin-top:7px;line-height:1.5">Passé ce délai, cette part est <b>due au prestataire</b>, commission déduite, et <b>c’est lui qui décide</b> de l’appliquer ou d’y renoncer. Avant le délai, l’annulation ne coûte rien. ${A.regle?'':'<b>Réglage d’origine</b>&nbsp;: 50 % au-delà de 8 heures.'}</p>`;})()}
           <div class="row between" style="align-items:center;gap:10px;margin-top:12px">
             <div style="flex:1;min-width:0"><span class="sub">Le client choisit son prestataire</span>
-              <div class="mini" style="color:var(--muted);line-height:1.45">Annuaire du métier dès la première commande (photo, badge). Pour les prestations où la PERSONNE compte&nbsp;: coiffure, massage, garde d'enfants. Sinon, le client ne peut viser que quelqu'un qu'il a déjà eu.${s.custom?'':' Réglé dans le code pour les métiers d\'origine.'}</div></div>
-            <button class="switch" data-adm="catchoix:${s.id}" ${s.custom?'':'disabled style="opacity:.45;"'} style="flex:none;background:${s.choixPro?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${s.choixPro?'25px':'3px'}"></span></button>
+              <div class="mini" style="color:var(--muted);line-height:1.45">Annuaire du métier dès la première commande (photo, badge). Pour les prestations où la PERSONNE compte&nbsp;: coiffure, massage, garde d'enfants. Sinon, le client ne peut viser que quelqu'un qu'il a déjà eu.${(pickProSvc(s.id)!==choixProDuCode(s.id))?' <b>Réglé ici</b>, le code disait «&nbsp;'+(choixProDuCode(s.id)?'oui':'non')+'&nbsp;».':''}</div></div>
+            <button class="switch" data-adm="catchoix:${s.id}" style="flex:none;background:${pickProSvc(s.id)?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${pickProSvc(s.id)?'25px':'3px'}"></span></button>
           </div>
           <div class="row between" style="align-items:center;gap:10px;margin-top:12px">
             <div style="flex:1;min-width:0"><span class="sub">Demander une photo à la commande</span>
-              <div class="mini" style="color:var(--muted);line-height:1.45">Pour les prestations où l'on a quelque chose à MONTRER&nbsp;: une fuite, un jardin, un volume à déménager. Inutile sur un massage ou un cours, où le client n'a rien à photographier.${s.custom?'':' Réglé dans le code pour les métiers d\'origine.'}</div></div>
-            <button class="switch" data-adm="catphoto:${s.id}" ${s.custom?'':'disabled style="opacity:.45;"'} style="flex:none;background:${photoDemandee(s.id)?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${photoDemandee(s.id)?'25px':'3px'}"></span></button>
+              <div class="mini" style="color:var(--muted);line-height:1.45">Pour les prestations où l'on a quelque chose à MONTRER&nbsp;: une fuite, un jardin, un volume à déménager. Inutile sur un massage ou un cours, où le client n'a rien à photographier.${((photoDemandee(s.id)||'non')!==(photoDuCode(s.id)||'non'))?' <b>Réglé ici</b>, le code disait «&nbsp;'+(photoDuCode(s.id)?'oui':'non')+'&nbsp;».':''}</div></div>
+            <button class="switch" data-adm="catphoto:${s.id}" style="flex:none;background:${photoDemandee(s.id)?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${photoDemandee(s.id)?'25px':'3px'}"></span></button>
           </div>`;
         const artLines=catArts.length?catArts.map(function(a){return `<div class="row between" style="align-items:center;margin-top:8px"><button class="linklike" data-adm="art:${a.id}" style="font-size:13px;text-align:left;color:var(--ink)">${esc(a.name)}</button><span class="chip ${acctChip(a.status)[0]}">${acctChip(a.status)[1]}</span></div>`;}).join(''):`<p class="mini" style="margin-top:6px;color:var(--muted)">Aucun prestataire sur ce métier : « Bientôt disponible » côté client.</p>`;
         return `${header}<div class="card" style="padding:13px;margin:6px 0 0;background:var(--sand)"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Artisans (${catArts.length})</div>${artLines}<hr class="dashed" style="margin:12px 0 2px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Tarif client</div>${priceEditor}${optionsEditorHtml(s.id)}${metierEditor}
@@ -13956,7 +13985,16 @@
       ${(function(){const fixe=isForfait(m);return `<div class="est" style="background:var(--card-2);border-color:var(--hair)"><div class="line"><span>${fixe?'Montant':'Montant estimé'}</span><b>${eur(t.total)}</b></div><div class="line"><span>Sur ${cardTxt()}</span><b>${S.card?'bloqué':'à la validation'}</b></div><small>${I.shield} Rien à faire&nbsp;: débité automatiquement à la fin, seulement si vous validez.${fixe?'':' Si le prestataire déclare plus d’heures, rien de plus n’est prélevé sans votre accord.'}</small></div>`;})()}
       ${m.status==='pending'?`<div class="footcta" style="position:static;background:none;padding:16px 0 0">${isDemo()?`<button class="demobtn" data-act="demo-go-pro">${I.hardhat} Voir côté prestataire (démo)</button>`:''}${S.cancelAsk?cancelConfirmCard(m):`<button class="btn ghost" data-act="cancel-mission" style="margin-top:12px">Annuler la demande</button>`}</div>`:'<div style="height:18px"></div>'}
       ${m.status==='accepted'?`<div class="card" style="padding:14px;margin-top:12px;background:var(--card-2)"><p class="mini" style="text-align:center;margin:0">${S.clientNoShowAsk?`<span style="color:var(--coral-deep)">Le prestataire ne s'est pas présenté&nbsp;? Nous <b>relançons aussitôt</b> la recherche auprès des autres artisans, et <b>vous ne payez rien</b> pour une absence.</span><br><button class="linklike" data-act="client-noshow-confirm" style="color:var(--coral-deep);font-weight:700;margin-top:6px;display:inline-block">Oui, relancer la recherche</button> &nbsp;·&nbsp; <button class="linklike" data-act="client-noshow-cancel">Annuler</button>`:`${I.clock} <button class="linklike" data-act="client-noshow" style="color:var(--muted)">Le prestataire ne s'est pas présenté&nbsp;?</button>`}</p></div>`:''}
-      ${m.status==='accepted'?`<div style="text-align:center;margin-top:12px">${S.cancelAsk?cancelConfirmCard(m):`<button class="linklike" data-act="cancel-mission" style="color:var(--muted)">Annuler la prestation</button><p class="mini" style="margin-top:6px;color:var(--muted)">Gratuit jusqu'à 8&nbsp;h avant le rendez-vous, au-delà, une indemnité de 50&nbsp;% revient au prestataire (voir CGV).</p>`}</div>`:''}
+      ${m.status==='accepted'?`<div style="text-align:center;margin-top:12px">${S.cancelAsk?cancelConfirmCard(m):`<button class="linklike" data-act="cancel-mission" style="color:var(--muted)">Annuler la prestation</button>${(function(){/* LA PHRASE DISAIT « 8 h » ET « 50 % » EN DUR, sur un écran où le métier a
+      ses propres conditions depuis longtemps : un chantier réglé à 4 h et 20 % annonçait
+      au client exactement autre chose que ce qui lui serait retenu. Et quand la part est
+      à ZÉRO — conditions d'annulation retirées sur ce métier — elle promettait une
+      indemnité qui n'existe pas. Elle lit les vraies valeurs, et se tait quand il n'y a
+      rien à dire. */
+      const A=arrhesDuSvc(m&&m.svc);
+      return `<p class="mini" style="margin-top:6px;color:var(--muted)">${(A.pct>0)
+        ?('Gratuit jusqu’à '+annulDelaiTxt(A.h)+' avant le rendez-vous, au-delà, une indemnité de '+A.pct+' % revient au prestataire (voir CGV).')
+        :'Annulation gratuite à tout moment, aucune indemnité sur ce métier.'}</p>`;})()}`}</div>`:''}
       </div>${clientNavbar()}`;
   }
   // Écran de DÉCISION : le prestataire précisément demandé (renouvellement / choix) a
@@ -14096,7 +14134,11 @@
   // Le métier DÉCLARE si l'on peut y viser quelqu'un dès la première commande (cf.
   // `choixPro` sur SERVICES) : on n'énumère plus d'identifiants ici, et un métier créé
   // depuis la console pose la question au moment où on le crée.
-  function pickProSvc(svc){const s=findSvc(svc);return !!(s&&s.choixPro);}
+  function choixProDuCode(svc){const s=findSvc(svc);return !!(s&&s.choixPro);}
+  function pickProSvc(svc){
+    const o=metierDuSvc(svc).choixPro;
+    return (o==null)?choixProDuCode(svc):!!o;
+  }
   // Annuaire du métier (callable listProviders) — chargé une fois par service et par
   // session. Rend null tant que la liste arrive (le rendu affiche « chargement »).
   function proDirFor(svc){
@@ -18150,19 +18192,35 @@
       else if(act==='catlieu'){const sv=(S.customServices||[]).find(function(x){return x.id===id;});
         if(sv){const l=lieuValide(parts[2]);if(l&&sv.lieu!==l){sv.lieu=l;saveCatalog();render();
           const L=LIEUX.filter(function(x){return x[0]===l;})[0];toast(L?('Enregistré : '+L[1]):'Enregistré');}}}
-      // Ne bascule QUE les métiers créés depuis la console : ceux d'origine portent la
-      // propriété dans le code, et un réglage qui ne se sauve pas se défait au rendu
-      // suivant sans rien dire.
-      else if(act==='catchoix'){const sv=(S.customServices||[]).find(function(x){return x.id===id;});
-        if(sv){sv.choixPro=!sv.choixPro;saveCatalog();render();
-          toast(sv.choixPro?'Les clients pourront choisir leur prestataire sur ce métier':'Choix du prestataire retiré : le premier disponible, ou quelqu\'un de déjà venu');}}
-      else if(act==='catphoto'){const sv=(S.customServices||[]).find(function(x){return x.id===id;});
-        /* L'ABSENCE N'EST PAS UNE RÉPONSE, SAUF POUR LES MÉTIERS D'AVANT. `photoDemandee`
-           rend « etat » pour un métier créé sans la clé : on ne retire pas en silence une
-           photo qui était là hier. Dès qu'on touche l'interrupteur, la clé est ÉCRITE —
-           des deux côtés — et l'absence cesse de décider à la place de quelqu'un. */
-        if(sv){sv.photo=photoDemandee(sv.id)?'':'etat';saveCatalog();render();
-          toast(sv.photo?'Une photo sera proposée à la commande':'Plus de photo demandée sur ce métier');}}
+      /* LES DEUX RÉGLAGES VALENT POUR TOUS LES MÉTIERS, pas seulement ceux qu'on a créés.
+         Ils vivent dans `adminMetier`, à côté de la plage horaire et de l'horizon de
+         réservation — UN SEUL endroit pour tous, métiers d'origine compris. Et l'on
+         n'enregistre QUE ce qui s'écarte du code : reposer la valeur d'origine RETIRE la
+         clé au lieu de la réécrire à l'identique, donc un parc qui ne change rien ne
+         pèse rien de plus, et le jour où le code change d'avis les métiers non touchés
+         le suivent. */
+      else if(act==='catchoix'||act==='catphoto'){
+        S.adminMetier=S.adminMetier||{};
+        const e=Object.assign({},S.adminMetier[id]||{});
+        let dit='';
+        if(act==='catchoix'){
+          const veut=!pickProSvc(id);
+          if(veut===choixProDuCode(id))delete e.choixPro; else e.choixPro=veut;
+          dit=veut?'Les clients pourront choisir leur prestataire sur ce métier'
+                  :'Choix du prestataire retiré : le premier disponible, ou quelqu\'un de déjà venu';
+        } else {
+          /* La photo n'est pas un oui/non mais un RÔLE : « l'état des lieux » ou « l'envie ».
+             Allumée, on rend au métier celui que le code lui donne — et « etat » s'il n'en
+             a aucun, c'est le cas ordinaire : il y a quelque chose à MONTRER. */
+          const veut=photoDemandee(id)?'non':(photoDuCode(id)||'etat');
+          const codeVaut=photoDuCode(id)||'non';
+          if(veut===codeVaut)delete e.photo; else e.photo=veut;
+          dit=(veut==='non')?'Plus de photo demandée sur ce métier'
+                            :'Une photo sera proposée à la commande';
+        }
+        if(Object.keys(e).length)S.adminMetier[id]=e; else delete S.adminMetier[id];
+        saveCatalog();render();toast(dit);return;
+      }
       // Rendre à un métier du code le nom qui y est écrit — la clé est RETIRÉE du compte,
       // et la correction suivante faite dans le code lui reviendra.
       else if(act==='catnomdef'){if(S.nomsMetiers&&S.nomsMetiers[id]!=null){delete S.nomsMetiers[id];appliquerNoms();saveCatalog();toast('Nom d’origine rétabli');}}

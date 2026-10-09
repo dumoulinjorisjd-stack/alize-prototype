@@ -45,7 +45,17 @@ const srv = fs.readFileSync(path.join(RACINE, 'functions/index.js'), 'utf8');
 
   // L'annuaire du métier, tel que le serveur le rend. On le pose à la main : la
   // commande doit se régler sur CE QUI EXISTE, et c'est ce fait-là qu'on fait varier.
+  /* LA SESSION SE REPOSE À CHAQUE MESURE, et ce n'est pas une précaution de confort.
+     `proDirFor` rend l'annuaire de DÉMONSTRATION — où quelqu'un reçoit — dès que
+     `FB.auth.currentUser` manque. Le SDK Firebase est chargé depuis le réseau, qui n'est
+     pas joignable ici : son échec arrive de façon ASYNCHRONE et remet la session à plat.
+     Posée une seule fois au démarrage, elle tenait quand l'épreuve tournait seule et
+     sautait quand la machine était chargée — l'épreuve rougissait alors une fois sur
+     trois, sur un défaut qui n'existe pas. On la repose juste avant de mesurer. */
   const commande = (svc, annuaire) => p.evaluate(({ svc, annuaire }) => {
+    window.__setFB({ auth: { currentUser: { uid: 'u-test' } }, db: {},
+      f: { doc: () => ({}), setDoc: () => Promise.resolve() },
+      fn: { httpsCallable: () => () => new Promise(() => {}) }, functions: {} });
     const S = window.__S;
     S.lang = 'fr'; S.onboarded = true; S.guest = false; S.demoMode = false;
     S.persona = 'client'; S.clientNav = 'home'; S.jalons = {}; S._cfgVu = null;
@@ -81,6 +91,9 @@ const srv = fs.readFileSync(path.join(RACINE, 'functions/index.js'), 'utf8');
 
   console.log('C — un choix devenu impossible ne survit pas en silence');
   const bascule = await p.evaluate(({ SANS }) => {
+    window.__setFB({ auth: { currentUser: { uid: 'u-test' } }, db: {},
+      f: { doc: () => ({}), setDoc: () => Promise.resolve() },
+      fn: { httpsCallable: () => () => new Promise(() => {}) }, functions: {} });
     const S = window.__S;
     S._proDir = { massage: { list: SANS } };
     S.draft.locationMode = 'salon';     // comme s'il venait d'un brouillon enregistré
