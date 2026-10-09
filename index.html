@@ -3654,7 +3654,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='842';
+  const VERSION_APP='843';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -18616,7 +18616,7 @@
       try{localStorage.setItem('tiExtCals',JSON.stringify(ext));}catch(_){}
       S._calListKey=null;S._gcalChk={};render();toast('Agenda retiré');
     })();return;}
-    if(b.dataset.sitemode!=null){S.proSiteMode=b.dataset.sitemode;persistSiteMode();render();return;}
+    if(b.dataset.sitemode!=null){S.proSiteMode=b.dataset.sitemode;persistSiteMode();rafraichirDemandes();render();return;}
     if(b.dataset.invclient!=null){S.invClient=b.dataset.invclient;render();return;}
     if(b.dataset.prefart!=null){if(S.draft){S.draft.preferredUid=b.dataset.prefart||null;S.draft.preferredName=b.dataset.prefnm||'';}renderConfig();return;}
     // Garde d'enfants : le client, non convaincu après l'appel, redirige sa demande
@@ -19004,10 +19004,10 @@
       case 'renew-mission':renewMission();break;
       case 'show-client-invoice':S.clientInv=true;render();break;
       case 'close-client-invoice':S.clientInv=false;S.histInvoice=null;render();break;
-      case 'toggle-online':S.proOnline=!S.proOnline;saveProSettings();render();break;
+      case 'toggle-online':S.proOnline=!S.proOnline;saveProSettings();rafraichirDemandes();render();break;
       case 'notif-push':{const napi=(typeof Notification!=='undefined'&&typeof Notification.requestPermission==='function');if(napi&&Notification.permission==='denied'){toast('Notifications bloquées, réactivez-les dans les réglages du téléphone');break;}if(!S.proNotifPush){S.proNotifPush=true;requestPush();}else{S.proNotifPush=false;pushOptOut();}saveProSettings();render();break;}
       case 'notif-wa':S.proNotifWa=!S.proNotifWa;saveProSettings();render();break;
-      case 'save-dispo':saveProSettings();toast('Disponibilités enregistrées');break;
+      case 'save-dispo':saveProSettings();rafraichirDemandes();render();toast('Disponibilités enregistrées');break;
       // Réponse à la proposition de Ti-Services (« vous êtes un professionnel ? »).
       case 'prosug-yes':{
         // La bascule est DÉFINITIVE. Si la personne a réellement quelque chose à perdre
@@ -21990,6 +21990,19 @@
         const ad=snap.data()||{};
         if(ad.insuranceStatus)S.proInsuranceStatus=ad.insuranceStatus;
       S.proTierForce=ad.tierForce||'';S.proFounder=!!ad.founder;
+        /* CE QUI CHANGE SON FILTRE DEPUIS AILLEURS. Cette écoute est vivante et reçoit
+           déjà chaque retouche de sa fiche, mais elle ne lisait ni son interrupteur ni
+           ses métiers : la console pouvait le remettre EN LIGNE sans que son téléphone
+           l'apprenne avant le prochain démarrage de l'application, et lui ajouter un
+           métier sans que les demandes correspondantes paraissent. On n'écrit que ce
+           qui DIFFÈRE, sinon chaque relecture redessinerait l'écran pour rien. */
+        let _filtre=false;
+        if(typeof ad.online==='boolean'&&S.proOnline!==ad.online){S.proOnline=ad.online;_filtre=true;}
+        if(Array.isArray(ad.cats)&&ad.cats.length&&ad.cats.slice().sort().join('|')!==(S.proCats||[]).slice().sort().join('|')){
+          S.proCats=ad.cats.slice();const _rr=ad.rates||{};
+          S.proRate=Math.min.apply(null,ad.cats.map(function(c){return _rr[c]!=null?_rr[c]:svcBase(c);}));
+          _filtre=true;}
+        if(_filtre){rafraichirDemandes();if(S.persona==='pro')render();}
         const newStatus=(ad.status==='valide')?'approved':(ad.status==='refuse'?'refused':'pending');
         const was=S.proStatus;
         if(newStatus!==was){
@@ -22020,7 +22033,7 @@
       const firstSnap=!S._openReqSeen;S._openReqSeen=S._openReqSeen||{};
       openReqUnsub=FB.f.onSnapshot(q,function(snap){
         S._openReqLoading=false;
-        const cats=S.proCats||[];const list=[];
+        const cats=S.proCats||[];
         const myUid=(FB.auth&&FB.auth.currentUser)?FB.auth.currentUser.uid:'';
         // Demande DIRIGÉE nouvellement adressée à MOI : notification spéciale — elle
         // sort de la file « aléatoire », le client m'a choisi précisément.
@@ -22048,8 +22061,26 @@
           notify('Demande réservée pour vous',who+' vous demande directement pour '+(r.serviceName||svcNm(r.service))+', hors file d’attente.','ti-directed-'+id,function(){S.persona='pro';S.mission=null;S.proReqView=rid;S.proNav='home';render();});
           if(S.persona==='pro')toast(who+' vous demande directement · '+(r.serviceName||svcNm(r.service)));
         });}catch(_){}
-        const mySite=S.proSiteMode||'both';
-        snap.forEach(function(d){const r=d.data()||{};
+        const brut=[];snap.forEach(function(d){brut.push(Object.assign({id:d.id},d.data()||{}));});
+        S._openReqBrut=brut;
+        S.openRequests=demandesVisibles(brut);
+        if(S.persona==='pro'&&!S.mission&&!S._accepting)render();
+      },function(err){console.warn('open requests listen',err);});
+    }catch(e){console.warn(e);}
+  }
+  /* CE QUE CE PRESTATAIRE A LE DROIT DE VOIR, à un instant donné. Le filtre vivait DANS
+     le corps de l'instantané : la liste n'était donc reconstruite que lorsqu'une AUTRE
+     personne touchait une demande. Or trois gestes du prestataire changent son propre
+     filtre — son interrupteur, sa grille de disponibilité, son mode de lieu — et aucun
+     n'est une écriture sur une demande : il rallumait son interrupteur et son fil restait
+     vide, parfois jusqu'au prochain démarrage de l'application. Le fil se rejoue donc
+     depuis le brut gardé (`rafraichirDemandes`), sans réseau et sans réabonnement. */
+  function demandesVisibles(brut){
+    const cats=S.proCats||[];
+    const myUid=(FB&&FB.auth&&FB.auth.currentUser)?FB.auth.currentUser.uid:'';
+    const mySite=S.proSiteMode||'both';
+    const list=[];
+    (brut||[]).forEach(function(r){
           // Jamais sa propre demande : un prestataire qui commande un renfort ne doit
           // pas pouvoir se l'attribuer à lui-même (mission fictive, statistiques faussées).
           if(myUid&&r.clientUid===myUid)return;
@@ -22079,13 +22110,17 @@
           // Même exception que les disponibilités : une demande qui m'est ADRESSÉE passe
           // toujours, sinon le client qui m'a choisi attendrait sans jamais savoir pourquoi.
           if(!_directedMe&&S.proOnline===false)return;
-          list.push(Object.assign({id:d.id},r));});
-        // Les missions demandées en priorité pour MOI passent en tête.
-        list.sort(function(a,b){const ap=(a.preferredProviderUid&&a.preferredProviderUid===myUid)?1:0,bp=(b.preferredProviderUid&&b.preferredProviderUid===myUid)?1:0;if(ap!==bp)return bp-ap;return ((b.boostEur||0)-(a.boostEur||0))||((b.boost||0)-(a.boost||0));});
-        S.openRequests=list;
-        if(S.persona==='pro'&&!S.mission&&!S._accepting)render();
-      },function(err){console.warn('open requests listen',err);});
-    }catch(e){console.warn(e);}
+          list.push(r);});
+    // Les missions demandées en priorité pour MOI passent en tête.
+    list.sort(function(a,b){const ap=(a.preferredProviderUid&&a.preferredProviderUid===myUid)?1:0,bp=(b.preferredProviderUid&&b.preferredProviderUid===myUid)?1:0;if(ap!==bp)return bp-ap;return ((b.boostEur||0)-(a.boostEur||0))||((b.boost||0)-(a.boost||0));});
+    return list;
+  }
+  /* LA PORTE UNIQUE : « mon filtre a changé, refais la liste ». Sans instantané reçu il
+     n'y a rien à rejouer, et l'on ne prétend pas le contraire. */
+  function rafraichirDemandes(){
+    if(!S._openReqBrut)return false;
+    S.openRequests=demandesVisibles(S._openReqBrut);
+    return true;
   }
   // Le prestataire accepte une demande : « premier arrivé, premier servi » (la règle
   // Firestore refuse la prise si la demande n'est plus « pending »).
