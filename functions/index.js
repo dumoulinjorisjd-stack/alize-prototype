@@ -1397,6 +1397,36 @@ exports.notifyArtisanApproved = onDocumentUpdated({document: 'artisans/{artisanI
    * console le DIT sur la carte du statut avant le clic. */
   const dejaAccueilli = !!after.approvedNotifiedAt;
 
+  /* CE QUI L'ATTEND DÉJÀ. Le fil des missions n'a AUCUNE borne de date : un prestataire
+     fraîchement validé y voit toutes les demandes encore en recherche, y compris celles
+     écrites avant son inscription. Mais aucune notification ne part pour elles — les
+     alertes se déclenchent à la CRÉATION d'une demande et à son ouverture au pool, deux
+     instants déjà passés. Il fallait donc qu'il pense à ouvrir l'application et à
+     regarder, le jour même, sans rien qui le lui suggère.
+
+     ON COMPTE PAR MÉTIER, et rien d'autre. Le fil filtre aussi par lieu, par grille de
+     disponibilités et par interrupteur « en ligne » — trois réglages qu'un compte du
+     premier jour n'a pas encore posés, et dont le résultat changerait d'une minute à
+     l'autre. Annoncer « 3 demandes » puis n'en montrer qu'une serait pire que se taire :
+     on nomme le métier, on laisse le fil trancher. */
+  let enAttente = 0;
+  try {
+    const cats = Array.isArray(after.cats) ? after.cats : [];
+    if (cats.length) {
+      const q = await db.collection('requests').where('status', '==', 'pending').get();
+      q.forEach((d) => {
+        const r = d.data() || {};
+        if (cats.indexOf(r.service) < 0) return;
+        if (r.clientUid === uid) return;
+        if (r.directed && r.preferredProviderUid && r.preferredProviderUid !== uid) return;
+        enAttente++;
+      });
+    }
+  } catch (e) { console.warn('approve : demandes en attente', e); }
+  const attenteTxt = enAttente
+    ? (enAttente > 1 ? (enAttente + ' demandes vous attendent déjà') : 'Une demande vous attend déjà')
+    : '';
+
   // 1) Notification push (immédiate, sans configuration).
   if (tokens.length && !dejaAccueilli) {
     try {
@@ -1404,7 +1434,9 @@ exports.notifyArtisanApproved = onDocumentUpdated({document: 'artisans/{artisanI
         tokens,
         data: {
           title: 'Espace artisan · Inscription validée 🎉',
-          body: 'Votre compte Ti-Services est activé, vous pouvez recevoir des missions.',
+          body: attenteTxt
+            ? (attenteTxt + ' dans vos métiers, à saisir.')
+            : 'Votre compte Ti-Services est activé, vous pouvez recevoir des missions.',
           url: './?open=missions',
         },
         webpush: { fcmOptions: { link: '/?open=missions' }, headers: { Urgency: 'high' } },
@@ -1424,7 +1456,7 @@ exports.notifyArtisanApproved = onDocumentUpdated({document: 'artisans/{artisanI
       } catch (_) {}
       await sendMail(db, email, {
         subject: 'Votre inscription Ti-Services est validée 🎉',
-        html: approvedArtisanHtml(name === 'Bonjour' ? '' : name, sansAssurance),
+        html: approvedArtisanHtml(name === 'Bonjour' ? '' : name, sansAssurance, attenteTxt),
         attachments,
       });
     } catch (e) { console.warn('approve email queue', e); }
@@ -5963,7 +5995,7 @@ function mollieReminderHtml(name, n, cas) {
  *
  * ET IL NE PARAÎT QUE LÀ OÙ IL EST VRAI : un intervenant qui a joint son attestation
  * reçoit exactement l'e-mail d'avant, au pixel près. */
-function approvedArtisanHtml(name, sansAssurance) {
+function approvedArtisanHtml(name, sansAssurance, attenteTxt) {
   const app = APP_URL.replace(/\/$/, '');
   // Accent sarcelle (teal) : même code couleur que l'e-mail de bienvenue intervenant.
   const { c1, c2, btn, dot } = mailPalette(true);
@@ -5987,6 +6019,20 @@ function approvedArtisanHtml(name, sansAssurance) {
           mailBouton(app + '/?open=missions', 'Activer mes paiements', true) +
         '</td></tr></table>' +
         '<div style="font-size:12px;color:#8a8494;line-height:1.5;margin-top:10px;text-align:center">Astuce&nbsp;: cette étape est plus simple depuis un <b>ordinateur</b>.</div>' +
+      '</td></tr>' +
+    '</table>';
+  /* CE QUI L'ATTEND DÉJÀ, s'il y a quelque chose. Le fil des missions n'a pas de borne
+     de date : les demandes écrites avant son inscription y sont, mais aucune alerte
+     n'est partie pour elles — elles ont été créées avant qu'il existe. Un bloc vide
+     ne s'imprime pas : « 0 demande vous attend » découragerait au premier jour. */
+  const attenteBlock = !attenteTxt ? '' :
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FDEEEA;border:1px solid #F6CFC4;border-radius:14px;margin-top:14px">' +
+      '<tr><td style="padding:16px 18px">' +
+        '<div style="font-size:16px;font-weight:800;color:#231E33">' + escHtmlS(attenteTxt) + '</div>' +
+        '<div style="font-size:13.5px;color:#4a4556;line-height:1.55;margin-top:7px">Des clients cherchent déjà quelqu\'un dans vos métiers. Ouvrez vos missions&nbsp;: <b>premier arrivé, premier servi</b>.</div>' +
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px"><tr><td align="center">' +
+          mailBouton(app + '/?open=missions', 'Voir les demandes', true) +
+        '</td></tr></table>' +
       '</td></tr>' +
     '</table>';
   // Réserve d'assurance : bord ambre, ton sobre — ce n'est ni une alerte ni une
@@ -6019,7 +6065,7 @@ function approvedArtisanHtml(name, sansAssurance) {
             '<p style="font-size:15px;line-height:1.6;color:#4a4556;margin:12px 0 0">Bonjour ' + hi + ',</p>' +
             '<p style="font-size:15px;line-height:1.6;color:#4a4556;margin:10px 0 0">Bonne nouvelle&nbsp;: votre profil <b>intervenant</b> sur Ti-Services vient d\'être <b>validé</b> par notre équipe. Bienvenue à bord&nbsp;! Il reste une dernière étape avant de recevoir vos premières missions.</p>' +
           '</td></tr>' +
-          '<tr><td style="padding:18px 30px 4px">' + mollieBlock + assuranceBlock + '</td></tr>' +
+          '<tr><td style="padding:18px 30px 4px">' + attenteBlock + mollieBlock + assuranceBlock + '</td></tr>' +
           mailPied('À très vite,') +
         '</table>' +
       '</td></tr>' +

@@ -80,7 +80,10 @@ ok(reserve.length - normal.length === insere.length,
 console.log('\nD — le déclencheur sait, et il garde la trace');
 ok(/const sansAssurance = after\.insuranceNone === true \|\| after\.insuranceStatus === 'aucune';/.test(fn),
   'il lit le MÊME fait que la console : la déclaration ou l’état');
-ok(/approvedArtisanHtml\(name === 'Bonjour' \? '' : name, sansAssurance\)/.test(fn),
+/* La garde porte sur le FAIT transmis, pas sur le nombre d'arguments : l'e-mail a
+   gagné depuis un bloc « ce qui vous attend déjà », et figer la signature entière
+   faisait rougir une épreuve d'assurance pour une raison qui ne la regarde pas. */
+ok(/approvedArtisanHtml\(name === 'Bonjour' \? '' : name, sansAssurance[,)]/.test(fn),
   'et il le passe à l’e-mail');
 ok(/if \(sansAssurance && !after\.insuranceNoticeAt\)/.test(fn),
   'la date de la demande ne s’écrit qu’UNE fois');
