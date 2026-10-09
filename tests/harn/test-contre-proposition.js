@@ -243,6 +243,46 @@ const jPlus = (n) => { const d = new Date(Date.now() + n * 86400000);
   ok(!/propose un autre créneau/.test(cli.apres),
     'la carte se tait alors : « réservée à Laure » dit la suite, deux cartes se contrediraient');
 
+  /* H — UNE FOIS QUE LE CLIENT A TRANCHÉ, LA PORTE SE FERME. « À partir du moment où le
+     client a accepté l'une des propositions, la demande de service n'apparaît plus et il
+     ne reçoit plus de contre-proposition. » Accepter rend la demande DIRIGÉE, mais son
+     statut reste « pending » — le prestataire choisi doit encore la confirmer. Sans une
+     garde sur la DIRECTION, un confrère continuerait d'en proposer et le client verrait
+     arriver des créneaux pour une prestation déjà décidée. */
+  console.log('H — le client a tranché : plus de demande au fil, plus de proposition');
+  const ferme = await p.evaluate(({ demain }) => {
+    const S = window.__S;
+    S.persona = 'pro'; S.proCats = ['menage']; S.proSiteMode = 'both'; S.avail = null;
+    S.proOnline = true; S.contreProp = null; S.contrePropEnvoyees = {}; S.adminMetier = {};
+    const base = { id: 'r1', status: 'pending', clientUid: 'cli1', clientName: 'Un client',
+      service: 'menage', serviceName: 'Ménage', when: 'Aujourd’hui',
+      dateISO: new Date().toISOString().slice(0, 10), slot: '09:00', slotFlex: 'day',
+      zone: 'Lorient', total: 70, unit: 'h', duration: 2, locationMode: 'domicile' };
+    /* CE QUE VOIT UN CONFRÈRE (uid pro9) une fois la demande dirigée vers pro1. */
+    window.__setFB({ auth: { currentUser: { uid: 'pro9', email: 'x@x.c' } }, db: {},
+      f: { doc: () => ({}), setDoc: () => Promise.resolve(), collection: () => ({}), onSnapshot: () => (() => {}) },
+      fn: { httpsCallable: () => () => new Promise(() => {}) }, functions: {} });
+    const dirigee = Object.assign({}, base, { directed: true, preferredProviderUid: 'pro1',
+      preferredProviderName: 'Laure M.', dateISO: demain, slot: '09:00', slotFlex: 0 });
+    const vuParAutre = window.__fil.visibles([dirigee]).length;
+    const vuParPersonne = window.__fil.visibles([base]).length;
+    /* ET CELUI À QUI ELLE EST ADRESSÉE ne se voit plus offrir de proposer : il accepte. */
+    const boutonDirigee = /contreprop-open/.test(window.__blocCP(dirigee));
+    const boutonOuverte = /contreprop-open/.test(window.__blocCP(base));
+    return { vuParAutre: vuParAutre, vuParPersonne: vuParPersonne,
+      boutonDirigee: boutonDirigee, boutonOuverte: boutonOuverte };
+  }, { demain: jPlus(1) });
+  ok(ferme.vuParPersonne === 1, 'tant que personne n’a été choisi, la demande est au fil de tous');
+  ok(ferme.vuParAutre === 0,
+    'une fois le créneau accepté, elle disparaît du fil des autres prestataires');
+  ok(ferme.boutonOuverte === true, 'et « Proposer un autre moment » s’offre sur une demande ouverte');
+  ok(ferme.boutonDirigee === false,
+    'mais plus du tout une fois le client décidé : celui qui est choisi n’a qu’à accepter');
+  /* LA BASE LE TIENT AUSSI, et c'est elle qui compte : un écran se contourne. */
+  const blocR = RULES.slice(RULES.indexOf('match /propositions/{proUid}'), RULES.indexOf('match /propositions/{proUid}') + 2400);
+  ok(/parent\(\)\.get\('directed', false\) == false/.test(blocR),
+    'la règle refuse toute nouvelle proposition sur une demande déjà dirigée');
+
   ok(errs.length === 0, 'aucune erreur de page' + (errs.length ? ' : ' + errs[0] : ''));
   await b.close();
   console.log(f ? '\n' + f + ' ÉCHEC(S)' : '\nTout est vert');

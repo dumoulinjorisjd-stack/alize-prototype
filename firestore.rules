@@ -424,6 +424,12 @@ service cloud.firestore {
         allow create, update: if isValidArtisan()
           && uid() == proUid
           && parent().status == 'pending'
+          /* DÈS QUE LE CLIENT A TRANCHÉ, ON N'EN REÇOIT PLUS. Accepter une proposition
+             rend la demande DIRIGÉE : elle disparaît du fil des autres, mais son statut
+             reste « pending » (le prestataire choisi doit encore la confirmer) — sans
+             cette ligne, un confrère pourrait continuer d'en proposer, et le client
+             verrait arriver des créneaux pour une prestation déjà décidée. */
+          && parent().get('directed', false) == false
           && parent().clientUid != uid()
           && request.resource.data.keys().hasOnly(['providerUid','providerName','dateISO','slot','at'])
           && request.resource.data.providerUid == uid()
