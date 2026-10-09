@@ -3654,7 +3654,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='832';
+  const VERSION_APP='833';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -11143,6 +11143,77 @@
     const reqsVrais=(S.adminReqs||[]).filter(function(r){return !uidsTest[r.uid];});
     const reqsExclues=(S.adminReqs||[]).length-reqsVrais.length;
     const parClientVrais=(function(){const o={};reqsVrais.forEach(function(r){if(r.uid)(o[r.uid]=o[r.uid]||[]).push(r);});return o;})();
+    /* ── LA LISTE DES COMMANDES RÉELLES ──────────────────────────────────────────
+       « J'ai une personne qui a passé une commande mais aucun moyen de voir quoi que ce
+       soit dans la console. » Exact, et pas seulement avant l'acceptation : la seule
+       liste de la console, « Réservations en cours », était bâtie sur `S.mission` —
+       c'est-à-dire la commande de L'ADMINISTRATEUR sur CET appareil — complétée de lignes
+       de démonstration. Une commande réelle n'existait donc nulle part ailleurs que comme
+       « +1 » dans le compteur par statut, et n'atteignait la messagerie que si quelqu'un
+       y écrivait un message.
+
+       CE QUI MANQUAIT N'ÉTAIT PAS LA DONNÉE, C'ÉTAIT L'ÉCRAN : la console écoute déjà
+       TOUTES les demandes (c'est ainsi qu'elle les compte), elle n'en gardait que trois
+       champs. Elle en garde de quoi les montrer, et les montre.
+
+       ON NOMME CE QUI APPELLE UN GESTE : une demande en recherche depuis des heures est
+       la seule ligne sur laquelle on peut agir, et son ÂGE est le fait utile — « en
+       recherche depuis 3 h » se corrige, « en recherche » non. */
+    const CMD_VIVANTES=['pending','accepted','working','done_pro','disputed'];
+    const CMD_MAX=40;
+    const cmdAge=function(at){
+      const t=Number(at)||0; if(!t)return '';
+      const mn=Math.max(0,Math.round((Date.now()-t)/60000));
+      if(mn<60)return 'depuis '+mn+' min';
+      const h=Math.floor(mn/60); if(h<48)return 'depuis '+h+' h';
+      return 'depuis '+Math.floor(h/24)+' jours';
+    };
+    /* UNE LIGNE PARLE AU SINGULIER. `REQ_LIB` nomme des GROUPES — « Acceptées »,
+       « Réglées » — parce qu'il sert au tableau des compteurs ; `bkStatus` nomme UNE
+       réservation, et il existait déjà. On ne fabrique pas une troisième table. */
+    const BK_CONNUS=['pending','accepted','working','done_pro','paid','rated'];
+    const cmdLigne=function(r){
+      const L=(BK_CONNUS.indexOf(r.status)>=0)?bkStatus(r.status):(REQ_LIB[r.status]||['grey',r.status,'']);
+      const vif=(r.status==='pending'||r.status==='working'||r.status==='done_pro');
+      const age=cmdAge(r.at);
+      /* Une recherche qui dure est le seul cas où l'on attend quelque chose de nous. */
+      const longue=(r.status==='pending'&&(Date.now()-(Number(r.at)||Date.now()))>3*3600000);
+      const qui=r.provider?esc(r.provider):(r.status==='pending'?'<i>personne n’a encore accepté</i>':'—');
+      /* UNE LIGNE NE FAIT PAS TOMBER LA CONSOLE. Les champs viennent d'un document écrit
+         par quelqu'un d'autre : une demande d'avant cette liste, ou abîmée, n'en porte
+         aucun. On affiche ce qu'on a, on ne suppose rien. */
+      const montant=Number(r.total)||0, coup=Number(r.boostEur)||0;
+      return `<div class="card" style="padding:13px;margin-top:9px${longue?';border-left:4px solid var(--coral)':''}">
+        <div class="row between" style="align-items:flex-start;gap:8px">
+          <b style="font-size:14px;flex:1;min-width:0">${esc(r.svcName||svcNm(r.svc)||r.svc||'Prestation')}</b>
+          <span class="chip ${L[0]}${vif?' live':''}" style="flex:none">${esc(L[1])}</span></div>
+        <div class="mini" style="margin-top:3px">${r.client?esc(r.client):'<i>client sans nom</i>'} → ${qui}</div>
+        <div class="mini" style="margin-top:2px;color:var(--muted)">${esc([r.when,r.slot,r.zone].filter(Boolean).join(' · '))}</div>
+        <div class="row between" style="align-items:center;margin-top:4px;gap:8px">
+          <span class="mini money">${eur(montant)}${coup?' <span style="color:var(--coral-deep)">+'+eur(coup)+'</span>':''}</span>
+          <span class="mini" style="color:${longue?'var(--coral-deep);font-weight:700':'var(--muted)'}">${esc(age)}${r.directed?' · dirigée':''}</span></div>
+      </div>`;
+    };
+    const bookingsReels=(function(){
+      if(!S.adminReqsLus)return `<p class="mini" style="color:var(--muted)">Lecture des demandes…</p>`;
+      const tri=function(a,b){return (b.at||0)-(a.at||0);};
+      const vives=reqsVrais.filter(function(r){return CMD_VIVANTES.indexOf(r.status)>=0;}).sort(tri);
+      const finies=reqsVrais.filter(function(r){return r.status==='paid'||r.status==='rated';}).sort(tri);
+      if(!vives.length&&!finies.length)return `<p class="mini" style="color:var(--muted)">Aucune commande, à aucun statut. Les demandes qui n’ont jamais abouti sont comptées dans la carte « Demandes, par statut ».</p>`;
+      const reste=Math.max(0,finies.length-5);
+      return (vives.length
+          ? `<p class="mini" style="margin:0;color:var(--muted)">${plN(vives.length,'commande')} en cours.</p>`+vives.slice(0,CMD_MAX).map(cmdLigne).join('')
+          : `<p class="mini" style="margin:0;color:var(--muted)">Aucune commande en cours en ce moment.</p>`)
+        +(finies.length?`<div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em;margin-top:14px">Dernières réglées</div>`
+          +finies.slice(0,5).map(cmdLigne).join('')
+          +(reste?`<p class="mini" style="margin-top:8px;color:var(--muted)">et ${plN(reste,'autre')} plus ancienne${reste>1?'s':''}.</p>`:''):'');
+    })();
+    /* UN SEUL CHIFFRE POUR LA TUILE ET POUR LA CARTE. La tuile « En cours » du tableau
+       de bord comptait encore `S.mission` + les lignes de démonstration pendant que la
+       carte comptait les demandes réelles : deux nombres pour le même fait, sur le même
+       écran, à trois centimètres l'un de l'autre. */
+    const cmdEnCours=isDemo()?allB.length
+      :(S.adminReqsLus?reqsVrais.filter(function(r){return CMD_VIVANTES.indexOf(r.status)>=0;}).length:0);
     const demandesBody=(function(){
       if(!S.adminReqsLus)return `<p class="mini" style="color:var(--muted)">Lecture des demandes…</p>`;
       const st={};reqsVrais.forEach(function(r){st[r.status]=(st[r.status]||0)+1;});
@@ -11426,7 +11497,7 @@
     })();
     return `<div class="pad">
       <div class="row between isle-wm" style="margin-top:10px"><div><span class="eyebrow">Console admin · Ti-Services</span><div class="h-hello">Tableau de bord</div></div><div class="avatar" style="background:linear-gradient(135deg,var(--ink),#000)">TS</div></div>
-      <div class="row" style="gap:9px;margin-top:12px">${stat('En cours',allB.length,'réservations','adm-list:a-bookings')}${stat('Artisans',validA,pendA.length+' en attente','adm-list:a-arts')}${stat('Clients',clis.length,pendC.length+' en attente','adm-list:a-clis')}</div>
+      <div class="row" style="gap:9px;margin-top:12px">${stat('En cours',cmdEnCours,'réservations','adm-list:a-bookings')}${stat('Artisans',validA,pendA.length+' en attente','adm-list:a-arts')}${stat('Clients',clis.length,pendC.length+' en attente','adm-list:a-clis')}</div>
       <div class="card listrow" style="margin-top:10px"><span class="benic" style="flex:none">${I.card}</span><div class="lr-main"><span class="sub">Commission ce mois</span></div><b class="money" style="font-size:18px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(adminMonthCommission())}</b></div>
       ${/* L'alerte de candidature parle de la file « À traiter » : elle se lit juste au-dessus
            d'elle, pas au milieu des compteurs. Une fois les notifications acceptées, elle
@@ -11574,7 +11645,9 @@
       <button class="card" data-adm="wishes" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block"><div class="row between" style="align-items:center"><b style="font-size:14px">Services réclamés par les clients</b>${(S.adminWishes&&S.adminWishes.length)?`<span class="chip coral">${S.adminWishes.length}</span>`:`<span class="mini" style="color:var(--muted)">Aucune pour l'instant</span>`}</div><p class="sub" style="margin-top:8px">Voir ce que les clients aimeraient trouver sur la plateforme.</p></button>
 
       <div style="height:18px"></div><span class="eyebrow">${I.shield} Fonctionnement</span>
-      ${foldCard('a-bookings',I.cal,'Réservations en cours','Recherche → acceptée → en cours → validée → réglée',bookings,chip(allB.length?'good':'grey',allB.length),(S.adminThreads||[]).some(function(t){return t&&t.reqId&&admThreadNew(t);}))}
+      ${foldCard('a-bookings',I.cal,'Réservations en cours','Recherche → acceptée → en cours → validée → réglée',
+        isDemo()?bookings:bookingsReels,
+        (!isDemo()&&!S.adminReqsLus)?chip('grey','…'):chip(cmdEnCours?'good':'grey',cmdEnCours),(S.adminThreads||[]).some(function(t){return t&&t.reqId&&admThreadNew(t);}))}
       ${foldCard('a-prices',I.euro,'Prestations · artisans &amp; tarifs',svcAll.length+' métiers'+(svcNoPro?' · '+svcNoPro+' sans prestataire':''),pricesBody,svcNoPro?chip('coral',svcNoPro+' sans pro'):chip('good',svcAll.length))}
       ${foldCard('a-demandes',I.wallet,'Demandes, par statut','Y compris celles qui n’ont jamais abouti',demandesBody,(function(){
         const m=reqsVrais.filter(function(r){return REQ_AVANT_COMMANDE.indexOf(r.status)>=0;}).length;
@@ -12497,10 +12570,29 @@
         /* ON GARDE LA LISTE, ON DÉRIVE AU RENDU. Les comptes de test ne sont connus
            qu'une fois les fiches clients lues, et l'écoute des demandes ne les attend
            pas : compter ici figerait des totaux qu'on ne pourrait plus filtrer. */
+        /* ON GARDE DE QUOI LA MONTRER, PAS SEULEMENT DE QUOI LA COMPTER. On ne retenait
+           que le statut, le compte et la date : une commande réelle n'existait donc dans
+           la console que comme « +1 » dans un compteur, et la seule liste — « Réservations
+           en cours » — était bâtie sur `S.mission`, c'est-à-dire la commande de
+           L'ADMINISTRATEUR sur CET appareil. Un client passait commande et il n'y avait
+           rien à regarder : ni qui, ni quoi, ni quand, ni pour combien.
+
+           UNE LISTE FERMÉE, ET DES TEXTES BORNÉS : ce qui revient d'un compte ne décide
+           de rien ici, il s'affiche. L'adresse n'y est PAS — elle vit dans la
+           sous-collection privée de la demande, et la console n'a pas à la sortir pour
+           dresser une liste. */
         const reqs=[];
         snap.forEach(function(docu){
           const r0=docu.data()||{};
-          reqs.push({status:String(r0.status||'inconnu'),uid:String(r0.clientUid||''),at:(reqCreatedMs(r0)||0)});
+          const txt=function(v,n){return String(v==null?'':v).slice(0,n||60);};
+          reqs.push({id:docu.id,status:String(r0.status||'inconnu'),uid:String(r0.clientUid||''),
+            at:(reqCreatedMs(r0)||0),
+            svc:txt(r0.service,40),svcName:txt(r0.serviceName,60),
+            when:txt(r0.when,40),slot:txt(r0.slot,10),zone:txt(r0.zone,40),
+            total:Number(r0.total)||0,unit:txt(r0.unit,10),duration:Number(r0.duration)||0,
+            client:txt(r0.clientName,60),provider:txt(r0.providerName,60),
+            providerUid:txt(r0.providerUid,60),directed:!!r0.directed,
+            boostEur:Number(r0.boostEur)||0});
         });
         S.adminReqs=reqs; S.adminReqsLus=true;
         snap.forEach(function(docu){
