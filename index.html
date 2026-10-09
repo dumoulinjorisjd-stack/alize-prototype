@@ -3654,7 +3654,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='846';
+  const VERSION_APP='847';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -5468,7 +5468,7 @@
     adminDrafts:[],adminArtsLoaded:false,
     sepaIban:(function(){try{return localStorage.getItem('ts_sepa_iban')||'';}catch(_){return '';}})(),concForm:null,concOrder:null,concView:null,concInvoice:null,concRetInv:false,concClientView:null,
     proPhoto:null,proStatus:'approved',proFounder:true,proNotifPush:true,proNotifWa:true,proPhone:'0690 00 00 00',proName:'Marie-Lou',proLegal:'Marie-Lou Cagan',proAddress:'Gustavia, 97133 Saint-Barthélemy',proRate:35,proStatusType:'entreprise',proSiret:'80412578900014',proBio:'',proInsured:true,proInsurer:'AXA',proCats:['menage','jardin'],proPendingCats:[],proPendingOther:'',proSiteMode:'both',proSalonAddress:'',proSalonZone:'Gustavia',proSalonGeo:null,proAddView:false,proAddForm:null,proForm:{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,rates:{},otherService:'',photo:''},
-    proOnline:true,contreProp:null,contrePropEnvoyees:{},contrePropsRecues:{},propAsk:null,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proReqSlot:null,proReqPick:false,proMissions:[],proSkipped:[],proSkipAt:{},proConflict:null,proStmt:false,commInvId:null,commStmt:false,signupKind:null,concSignup:null,concStatus:'approved',adminConcierges:[],
+    proOnline:true,contreProp:null,contrePropEnvoyees:{},contrePropsRecues:{},propAsk:null,proEarnings:1284.50,proJobsToday:3,history:[],proReqView:null,proReqSlot:null,proMissions:[],proSkipped:[],proSkipAt:{},proConflict:null,proStmt:false,commInvId:null,commStmt:false,signupKind:null,concSignup:null,concStatus:'approved',adminConcierges:[],
     proHistory:PRO_HISTORY(),
     agendaTab:'presta',agenda:SEED_AGENDA.map(a=>({...a})),recurring:[],avgOffers:AVG_SEED(),floors:FLOORS_INIT(),
     chat:false,advantages:false,referral:false,fidDetail:false,interv:false,invoiceId:null,clientInv:false,blocked:[],report:null,blockAsk:null,blockedView:false,histInvoice:null,histCat:null,signPad:false,colisProc:false,imgView:null,rebookFreq:'hebdo',showPitch:false,demoMode:false,share:false,delAcct:false,
@@ -5809,6 +5809,12 @@
     return {ouvre:o,ferme:f,reglee:true};
   }
   function plageDuSvc(svcId){return plageDe(S.adminMetier,svcId);}
+  /* LE MÉTIER NE PORTE PAS LE MÊME NOM DES DEUX CÔTÉS. Le brouillon du client dit `svc`,
+     la demande relue de la base dit `service` — et `flexWindow` ne lisait que `svc`.
+     Côté prestataire, le seul endroit où elle serve, elle recevait donc `undefined` : les
+     horaires du métier étaient IGNORÉS et la liste repartait de minuit, exactement le
+     défaut qu'on croyait corrigé. Une seule fonction le sait désormais. */
+  function svcDe(m){return (m&&(m.svc||m.service))||'';}
   function resaJoursNet(v){const n=Math.round(Number(v));return RESA_JOURS.some(function(d){return d[0]===n;})?n:null;}
   // PUR : la table lui est donnée.
   function metierDe(table,svcId){
@@ -5874,7 +5880,7 @@
      Et l'on ne rend JAMAIS une demande déjà passée improposable : si l'heure du client
      tombe hors des horaires (horaires resserrés après coup), la fenêtre se referme sur
      elle plutôt que de disparaître. */
-  function flexWindow(m){let lo,hi;const P=plageDuSvc(m&&m.svc);
+  function flexWindow(m){let lo,hi;const P=plageDuSvc(svcDe(m));
     if(m.slotFlex==='day'||m.slotFlex==='week'){lo=P.ouvre;hi=P.ferme;}
     else{const b=slotToMin(m.slot),d=Number(m.slotFlex)||0;lo=Math.max(P.ouvre,b-d);hi=Math.min(P.ferme,b+d);}
     const mm=minSlotToday(m);if(mm>=0)lo=Math.max(lo,mm);if(hi<lo)hi=lo;return [minToSlot(lo),minToSlot(hi)];}
@@ -5897,8 +5903,8 @@
     if(!out.length)out.push(debut);
     return out;
   }
-  function proSlotList(m){const w=flexWindow(m);const step=(m.slotFlex==='day'||m.slotFlex==='week')?60:30;
-    return creneauxRonds(slotToMin(w[0]),slotToMin(w[1]),step).map(minToSlot);}
+  function proSlotList(m){const w=flexWindow(m);
+    return creneauxRonds(slotToMin(w[0]),slotToMin(w[1]),PLAGE_PAS).map(minToSlot);}
   /* ══ LA CONTRE-PROPOSITION ═══════════════════════════════════════════════════════
      « Il faut mettre à jour pour proposer le lendemain » — une prestataire, le
      09/10/2026, sur la première vraie mission du service.
@@ -14344,7 +14350,11 @@
       <div class="row between"><span class="chip ${m.status==='pending'?'coral':'good'}">${m.status==='pending'?'En attente':'Confirmée'}</span><span class="mini">${m.svcName} · ${durTxt(m)}${(needsPeople(m.svc)&&peopleOf(m)>1)?' · '+I.users+' '+peopleLbl(peopleOf(m)):''}${(m.frequency&&m.frequency!=='ponctuelle')?' · '+I.repeat+' '+freqInfo(m.frequency).short:''}</span></div>
       <div class="h-hello" style="margin-top:8px;text-align:center">${head.t}</div><p class="sub" style="text-align:center">${head.d}</p>
       ${barreEtapes(m)}
-      ${(m.slotFlex&&m.status==='pending')?`<p class="mini" style="text-align:center;margin-top:4px">${I.clock} Créneau souhaité&nbsp;: ${m.when} · ${flexTxtClient(m)}, un prestataire vous proposera une heure précise.</p>`:''}
+      ${/* CE QU'IL A DEMANDÉ SE RELIT PENDANT L'ATTENTE. La ligne n'existait QUE pour un
+            créneau souple ; celui qui avait fixé une heure précise n'avait, sur tout
+            l'écran, ni sa date ni son heure — il ne pouvait plus vérifier ce qu'il avait
+            commandé sans rouvrir sa commande. Deux cas, une seule ligne. */''}
+      ${(m.status==='pending')?`<p class="mini" style="text-align:center;margin-top:4px">${I.clock} Créneau souhaité&nbsp;: ${esc(m.when||'')}${m.slotFlex?(' · '+flexTxtClient(m)+', un prestataire vous proposera une heure précise.'):(m.slot?(' · '+esc(m.slot)+'.'):'.')}</p>`:''}
       ${(m.slotFlex&&m.proposedSlot&&m.status!=='pending')?`<div class="banner teal" style="margin-top:10px">${I.clock}<span>${p?esc(p.nm.split(' ')[0]):'Le prestataire'} a confirmé son passage à <b>${m.slot}</b> (votre souhait&nbsp;: ${flexTxtClient(m)}).</span></div>`:''}
       ${m.status==='pending'?(m.preferredUid?`<div class="card" style="padding:16px;margin-top:12px"><div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="background:var(--teal-wash);color:var(--teal-deep)">${I.clock}</span><div><b style="font-size:14px">Demande réservée à ${esc((m.preferredName||'votre prestataire').split(' ')[0])}</b><p class="mini" style="margin-top:4px">Votre demande est adressée <b>uniquement à ${esc(m.preferredName||'votre prestataire')}</b>, pas aux autres artisans, puisque vous l'avez choisi. L'attente est normale&nbsp;: elle dure tant qu'il n'a pas encore répondu. Dès qu'il accepte ou décline, vous êtes prévenu.</p></div></div></div>`:`<div class="card" style="padding:16px;margin-top:12px;text-align:center">${searchRadar(true)}<p class="sub" style="margin:0">Vous saurez qui intervient dès l'acceptation.</p></div>`):((m.svc==='baby'&&p)?babyConfirmBlock(m):(p?`<div class="card provider-pop" style="padding:14px;margin-top:12px"><div class="row" style="gap:12px">${avatarFounder(m.providerPhoto,p.ini,'',p.founder)}<div style="flex:1"><b style="font-size:15px">${esc(p.nm)}</b><div class="mini">${I.pin} ${m.zone}${m.providerAgeBand?' · '+esc(m.providerAgeBand):''}</div></div><div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">${p.founder?`<span class="chip founder-chip">${I.star} Ambassadeur</span>`:''}<span class="chip good">${I.check} ${p.insured?'Vérifié · Assuré':'Vérifié'}</span></div></div>${boutonsContact({tel:(bothAccepted(m)&&m.providerPhone)?m.providerPhone:'',nom:p.nm,nMsg:(m.chat&&m.chat.length)||0,dot:unreadDot(m)})}</div>`:''))}
       ${blocPropositionsRecues(m)}
@@ -18912,14 +18922,13 @@
     if(b.dataset.act&&b.dataset.act.indexOf('rm-diploma:')===0){const i=+b.dataset.act.split(':')[1];if(S.proForm&&S.proForm.diplomaDocs)S.proForm.diplomaDocs.splice(i,1);render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('signup-kind:')===0){const k=b.dataset.act.split(':')[1];if(k==='concierge'){S.signupKind='concierge';S.concSignup={name:'',siret:'',contact:'',phone:'',email:'',password:'',password2:'',cgu:false,mandat:false};}else{S.signupKind='artisan';S.proForm={name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,cgu:false,charte:false,rates:{},otherService:'',photo:'',refCode:storedParrain()};}render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('rbfreq:')===0){S.rebookFreq=b.dataset.act.split(':')[1];render();return;}
-    if(b.dataset.act&&b.dataset.act.indexOf('reqview:')===0){const orow=b.closest('.swipe-row');if(orow&&orow.classList.contains('open')){orow.classList.remove('open');return;}S.proReqView=b.dataset.act.slice('reqview:'.length);S.proReqSlot=null;S.proReqPick=false;
+    if(b.dataset.act&&b.dataset.act.indexOf('reqview:')===0){const orow=b.closest('.swipe-row');if(orow&&orow.classList.contains('open')){orow.classList.remove('open');return;}S.proReqView=b.dataset.act.slice('reqview:'.length);S.proReqSlot=null;
       // Agenda Google connecté : vérifie les créneaux occupés de ce jour-là (alerte conflit).
       try{ if(calOn()&&FB&&FB.auth&&FB.auth.currentUser){ const rq=(S.openRequests||[]).find(function(x){return x.id===S.proReqView;}); if(rq&&rq.dateISO&&!(S._gcalChk&&S._gcalChk[rq.id])){ S._gcalChk=S._gcalChk||{}; S._gcalChk[rq.id]={pending:true}; FB.fn.httpsCallable(FB.functions,'gcalFreeBusy')({dateISO:rq.dateISO,slot:rq.acceptedSlot||rq.slot||'',hours:rq.duration||1}).then(function(res){ S._gcalChk[rq.id]=(res&&res.data)||{}; if(S.persona==='pro'&&S.proReqView===rq.id)render(); }).catch(function(){ try{delete S._gcalChk[rq.id];}catch(_){} }); } } }catch(_){}
       render();return;}
     // « Passer » depuis le fil (glisser pour révéler) : retire la mission de la liste
     // du prestataire (proSkipped) — même effet que « Pas cette fois » dans la fiche.
     if(b.dataset.act&&b.dataset.act.indexOf('pro-skip:')===0){persistSkip(b.dataset.act.slice('pro-skip:'.length));render();toast('Mission passée, proposée aux autres artisans');return;}
-    if(b.dataset.proreqslot){if(b.dataset.proreqslot==='__pick'){S.proReqPick=true;}else{S.proReqPick=false;S.proReqSlot=b.dataset.proreqslot;}render();return;}
     if(b.dataset.act==='reqview-close'){S.proReqView=null;render();return;}
     if(b.dataset.act==='reqview-skip'){persistSkip(S.proReqView);S.proReqView=null;render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('promiss:')===0){const id=b.dataset.act.slice('promiss:'.length);const mm=(S.proMissions||[]).find(function(x){return (x._id||'')===id;});if(mm){S.mission=mm;S.proReqView=null;S.proNav='home';render();}return;}
@@ -18927,7 +18936,7 @@
     if(b.dataset.act&&b.dataset.act.indexOf('accept-req:')===0){
       const rid=b.dataset.act.slice('accept-req:'.length);
       const req=(S.openRequests||[]).find(function(x){return x.id===rid;});
-      if(req){const accSlot=req.slotFlex?clampSlot(req,S.proReqSlot||req.slot):(req.slot||'');const clash=proSlotConflict(req,accSlot);
+      if(req){const accSlot=heureProposee(req);const clash=proSlotConflict(req,accSlot);
         if(clash){S.proConflict={reqId:rid,slot:accSlot,when:req.when||'',clashSlot:clash.slot||'',clashName:clash.svcName||svcNm(clash.svc)};render();return;}}
       acceptRequestReal(rid);return;}
     if(b.dataset.act&&b.dataset.act.indexOf('decline-req:')===0){declineRequestReal(b.dataset.act.slice('decline-req:'.length));return;}
@@ -19618,7 +19627,7 @@
     /* LES HEURES DÉCLARÉES PAR UNE PRESTATION PASSENT AVANT (branche du dessus) : ce sont
        des départs précis, posés prestation par prestation, plus spécifiques qu'une plage
        de métier — les filtrer par la plage pourrait vider la liste en silence. */
-    const P=plageDuSvc(m&&m.svc);
+    const P=plageDuSvc(svcDe(m));
     for(let t=P.ouvre;t<=P.ferme;t+=PLAGE_PAS){out.push({s:minToSlot(t),past:(minM>=0&&t<minM)});}return out;}
   // Les heures encore tenables pour CE jour-là. Vide un jour donné = ce jour n'a plus
   // rien à proposer, et il ne doit pas être offert.
@@ -20053,7 +20062,6 @@
     const cd=e.target.closest('[data-cfdate]');if(cd&&S.draft){S.draft.dateISO=cd.value;S.draft.when=fmtDate(cd.value);renderConfig();}
     const ct=e.target.closest('[data-cftime]');if(ct&&S.draft&&ct.value){let v=ct.value;const mm=minSlotToday(S.draft);if(mm>=0&&slotToMin(v)<mm){v=minToSlot(Math.ceil(mm/15)*15);ct.value=v;toast('Heure déjà passée, ajustée');}S.draft.slot=v;}
     const pt=e.target.closest('[data-proslottime]');if(pt&&S.mission&&pt.value){S.mission.proposedSlot=clampSlot(S.mission,pt.value);S.mission.proSlotMode='pick';render();}
-    const prt=e.target.closest('[data-proreqslottime]');if(prt&&prt.value){const r=(S.openRequests||[]).find(function(x){return x.id===S.proReqView;});if(r){S.proReqSlot=clampSlot(r,prt.value);render();}}
     const am=e.target.closest('[data-addrmanual]');if(am&&S.draft){S.draft.address=am.value;const sb=document.querySelector('[data-cfg="addr-save-draft"]');if(sb)sb.disabled=!am.value.trim();}
     // Colis : champs texte/date (pas de re-render pour ne pas perdre le focus de saisie).
     if(S.draft&&S.draft.colis){const cc=S.draft.colis;
@@ -20199,6 +20207,9 @@
        déjà) et c'est ce qu'un téléphone émet à coup sûr. Changer de jour peut rendre l'heure choisie intenable (jour partiellement passé) :
        on reprend alors la première qui tient, jamais une heure qu'on ne pourrait pas
        honorer. */
+    const prh=e.target.closest('[data-proreqheure]');
+    if(prh){const r=(S.openRequests||[]).find(function(x){return x.id===S.proReqView;});
+      if(r){S.proReqSlot=clampSlot(r,prh.value);render();}return;}
     const cpj=e.target.closest('[data-contrepropjour]');
     if(cpj&&S.contreProp){const req=(S.openRequests||[]).find(function(x){return x.id===S.contreProp.reqId;});
       S.contreProp.dateISO=cpj.value;
@@ -22297,11 +22308,17 @@
      vide, parfois jusqu'au prochain démarrage de l'application. Le fil se rejoue donc
      depuis le brut gardé (`rafraichirDemandes`), sans réseau et sans réabonnement. */
   function demandesVisibles(brut){
+    /* LE STATUT SE JUGE ICI AUSSI. La requête Firestore ne rend que des demandes
+       « pending », et le filtre s'en remettait entièrement à elle : rejoué sur une
+       demande déjà prise — une liste gardée en mémoire, un instantané en retard — il
+       l'aurait affichée comme étant à saisir. Un noyau qui dépend de son appelant pour
+       un fait aussi simple finit par être appelé autrement. */
     const cats=S.proCats||[];
     const myUid=(FB&&FB.auth&&FB.auth.currentUser)?FB.auth.currentUser.uid:'';
     const mySite=S.proSiteMode||'both';
     const list=[];
     (brut||[]).forEach(function(r){
+      if((r&&r.status)!=='pending')return;
           // Jamais sa propre demande : un prestataire qui commande un renfort ne doit
           // pas pouvoir se l'attribuer à lui-même (mission fictive, statistiques faussées).
           if(myUid&&r.clientUid===myUid)return;
@@ -22379,7 +22396,11 @@
     S._accepting=reqId;
     try{
       const uid=FB.auth.currentUser.uid;
-      const acceptedSlot=req.slotFlex?clampSlot(req,S.proReqSlot||req.slot):(req.slot||'');
+      /* L'HEURE ÉCRITE EST CELLE QUI EST AFFICHÉE. Elle se recalculait ici avec le
+         simple rabotage sur la fenêtre, pendant que la liste du prestataire montrait le
+         premier cran rond : le client recevait « 17:29 » quand son prestataire avait lu
+         « 17:30 ». Une seule fonction, partout. */
+      const acceptedSlot=heureProposee(req);
       const acc={status:'accepted',providerUid:uid,providerName:S.proName||'',providerJobs:(S.proJobsTotal||0),providerBabyJobs:((S.proHistory||[]).filter(function(h){return h&&h.svc==='baby'&&!h.cancelFee;}).length),providerFounder:!!S.proFounder,providerInsured:(!!S.proInsured&&S.proInsuranceStatus!=='refuse'),providerPhoto:S.proPhoto||null,
         // Identité légale du prestataire — mentions obligatoires de la facture émise en son nom
         // (mandat de facturation, art. 242 nonies A CGI) : raison sociale, SIRET, adresse, statut.
@@ -22400,8 +22421,8 @@
       S.mission=Object.assign(newMission(base),{reqId:reqId,status:'accepted',svc:req.service,svcName:req.serviceName||svcNm(req.service),rate:req.rate,duration:req.duration||1,unit:req.unit||'h',acts:req.acts||null,when:req.when||'',slot:acceptedSlot,slotFlex:req.slotFlex||0,proposedSlot:req.slotFlex?acceptedSlot:null,zone:req.zone||det.zone||'',address:det.address||'',geo:det.geo||null,access:det.access||'',boost:req.boost||0,boostEur:req.boostEur||0,people:req.people||1,locationMode:req.locationMode||'domicile',notes:req.notes||'',photos:(req.photos||[]).slice(),clientName:req.clientName||det.clientName||'',clientPhoto:req.clientPhoto||det.clientPhoto||null,clientPhone:det.clientPhone||'',provider:{nm:S.proName||'Vous',ini:inits(S.proName||'Vous'),rating:0,jobs:S.proJobsTotal||0,founder:!!S.proFounder}});
       // Colis : reprend la fenêtre de dates + le dossier de retrait (pièces privées).
       if(req.service==='colis'){S.mission.poste=req.poste||det.poste||'';S.mission.dateFrom=req.dateFrom||det.dateFrom||'';S.mission.dateTo=req.dateTo||det.dateTo||'';if(det.colis){S.mission.colis=Object.assign({},det.colis,{signed:!!req.colisSigned,signedAt:req.colisSignedAt||(det.colis&&det.colis.signedAt)||null,signature:req.colisSignature||(det.colis&&det.colis.signature)||''});}}
-      proAddMission(S.mission);watchRequest(reqId);S._accepting=null;S.proReqView=null;S.proReqSlot=null;S.proReqPick=false;S.proNav='home';render();burstConfetti();toast('Mission acceptée, à vous de jouer !');
-    }catch(e){console.warn('accept failed',e);S._accepting=null;S.proReqView=null;S.proReqSlot=null;S.proReqPick=false;S.proNav='home';render();toast('Trop tard, cette mission vient d’être prise');}
+      proAddMission(S.mission);watchRequest(reqId);S._accepting=null;S.proReqView=null;S.proReqSlot=null;S.proNav='home';render();burstConfetti();toast('Mission acceptée, à vous de jouer !');
+    }catch(e){console.warn('accept failed',e);S._accepting=null;S.proReqView=null;S.proReqSlot=null;S.proNav='home';render();toast('Trop tard, cette mission vient d’être prise');}
   }
   // Le prestataire PRÉCISÉMENT demandé (renouvellement / choix client) décline une demande
   // dirigée : elle passe en « declined » — elle sort de tous les fils, et c'est le CLIENT
@@ -22485,12 +22506,19 @@
     const win=reqWinTxt(r);const dayU=(r.unit==='j');
     const myUid=(FB&&FB.auth&&FB.auth.currentUser)?FB.auth.currentUser.uid:'';
     const directedMe=!!(r.directed&&r.preferredProviderUid&&myUid&&r.preferredProviderUid===myUid);
-    const accLabel=r.slotFlex?(' · j’arrive à '+esc(clampSlot(r,S.proReqSlot||r.slot))):'';
+    const accLabel=r.slotFlex?(' · j’arrive à '+esc(heureProposee(r))):'';
     return `<div class="pad"><button class="reset" data-act="reqview-close" style="margin:8px 0 2px">← Missions disponibles</button>
       <span class="eyebrow" style="color:var(--teal-deep)">${directedMe?I.star+' Demande réservée pour vous':I.flame+' Mission à saisir'}</span>
       <div class="h-hello">${esc(r.serviceName||svcNm(r.service))}</div>
       <div class="row" style="gap:11px;margin-top:10px;align-items:center">${avatarPhoto(r.clientPhoto,inits(r.clientName||'Client'),'sm')}<div><b style="font-size:14px">${esc(r.clientName||'Client')}</b><div class="mini">Client Ti-Services · ${esc(migZone(r.zone))}</div></div></div>
-      ${directedMe?`<div class="banner teal" style="margin-top:12px">${I.star}<span><b>${esc(r.clientName||'Ce client')} vous a demandé personnellement.</b> Cette demande ne passe pas par la file d’attente habituelle, elle vous est adressée à vous seul, parce que vous avez déjà travaillé ensemble. Vous êtes le premier informé.</span></div>`:''}
+      ${/* UNE DEMANDE ADRESSÉE N'A PAS TOUJOURS LA MÊME ORIGINE. Le bandeau affirmait
+            « parce que vous avez déjà travaillé ensemble » : vrai quand le client a
+            choisi son prestataire habituel, FAUX depuis qu'accepter une contre-
+            proposition adresse la demande à celui qui l'a faite — il lisait une raison
+            inventée. La demande porte son origine (`reopenedBy`), on la lit. */''}
+      ${directedMe?(r.reopenedBy==='contre-proposition'
+        ? `<div class="banner teal" style="margin-top:12px">${I.check}<span><b>${esc(r.clientName||'Ce client')} a accepté le créneau que vous avez proposé.</b> La demande vous est réservée au ${esc(fmtJourLong(r.dateISO||''))}${r.slot?(' à '+esc(r.slot)):''}. Confirmez-la pour la bloquer.</span></div>`
+        : `<div class="banner teal" style="margin-top:12px">${I.star}<span><b>${esc(r.clientName||'Ce client')} vous a demandé personnellement.</b> Cette demande ne passe pas par la file d’attente habituelle, elle vous est adressée à vous seul, parce que vous avez déjà travaillé ensemble. Vous êtes le premier informé.</span></div>`):''}
       <div class="card" style="padding:16px;margin-top:14px">
         <div class="row between"><span class="sub">Vous percevez</span><b class="money" style="font-size:22px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(reqPayout(r))}</b></div>
         <p class="mini" style="margin-top:4px;color:var(--muted)">Montant net que vous touchez pour cette mission, versé après la prestation.</p>
@@ -22529,14 +22557,38 @@
       </div></div>`;
   }
   // Créneau souple : le prestataire propose une heure précise dans la fenêtre du client.
+  /* UNE LISTE DÉROULANTE, ET RIEN D'AUTRE. C'était une grille de pastilles — jusqu'à
+     vingt-quatre sur une journée ouverte — suivie d'un bouton « Autre… » qui ouvrait un
+     champ d'heure. CE CHAMP NE PERMETTAIT RIEN : son gestionnaire vit dans l'écoute
+     « input », qui REDESSINE l'écran à chaque frappe ; le champ était donc remplacé par
+     un autre à la première touche, et le sélecteur d'heure du téléphone se refermait
+     aussitôt. Mesuré : l'élément n'est plus le même après l'événement, et le focus est
+     perdu.
+
+     Une liste déroulante règle les deux d'un coup : elle tient sur une ligne quel que
+     soit le nombre d'heures, elle n'a pas besoin d'« Autre… » puisqu'elle les porte
+     toutes, et un `select` ne se redessine pas sous les doigts — on le repeint APRÈS le
+     choix, pas pendant. La granularité est la DEMIE, celle que le client emploie pour
+     choisir son heure : proposer une heure qu'il n'aurait pas pu demander n'aurait pas
+     de sens. */
+  /* L'HEURE QU'IL VA DONNER AU CLIENT, calculée À UN SEUL ENDROIT. La carte et le bouton
+     « Accepter » la calculaient chacun de leur côté : la carte prenait le premier cran
+     de la liste (17:30), le bouton le simple rabotage de l'heure demandée sur la fenêtre
+     (17:29, la minute qu'il était). Le même écran annonçait donc deux heures
+     différentes pour le même geste — relevé sur capture. */
+  function heureProposee(r){
+    if(!r||!r.slotFlex)return r?(r.slot||''):'';
+    const list=proSlotList(r);
+    let sel=clampSlot(r,S.proReqSlot||r.slot);
+    if(list.indexOf(sel)<0&&list.length)sel=list[0];
+    return sel;
+  }
   function flexProposalBlock(r){
     const list=proSlotList(r);
-    let sel=S.proReqSlot||r.slot;sel=clampSlot(r,sel);
-    const custom=!!S.proReqPick||list.indexOf(sel)<0;
-    const btns=list.map(function(s){return `<button class="seg ${(!custom&&sel===s)?'on':''}" data-proreqslot="${s}">${s}</button>`;}).join('')+`<button class="seg ${custom?'on':''}" data-proreqslot="__pick">Autre…</button>`;
+    const sel=heureProposee(r);
     return `<div class="card" style="padding:16px;margin-top:12px"><b style="font-size:14px">${I.clock}&nbsp;Proposez votre heure de passage</b>
       <p class="mini" style="margin-top:4px;color:var(--muted)">Le client a laissé de la souplesse (${flexTxt(r)}). Choisissez l'heure qui vous arrange, il l'accepte automatiquement.</p>
-      <div class="segs" style="margin-top:10px">${btns}</div>${custom?`<input class="txt" type="time" data-proreqslottime step="900" min="${flexWindow(r)[0]}" max="${flexWindow(r)[1]}" style="margin-top:10px" value="${/^\d{2}:\d{2}$/.test(sel)?sel:''}">`:''}
+      <div class="field" style="margin:10px 0 0"><select class="txt" data-proreqheure>${list.map(function(h){return `<option value="${esc(h)}"${sel===h?' selected':''}>${esc(h)}</option>`;}).join('')}</select></div>
       <div class="banner teal" style="margin-top:10px">${I.check}<span>Vous arriverez à <b>${esc(sel)}</b>, confirmé au client en acceptant.</span></div></div>`;
   }
   /* « JE PEUX, MAIS À UN AUTRE MOMENT. » Le prestataire ne déplace pas la commande : il

@@ -31,6 +31,18 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   await p.goto('file://' + path.join(RACINE, 'tests/harn/app.html'));
   await p.waitForFunction(() => window.__S && window.__render && window.__fil);
 
+  /* LE SDK FIREBASE NE SE CHARGE PAS DANS CE CONTENEUR, et son échec ASYNCHRONE remet
+     `FB` à nul — l'écran bascule alors sur « Liste indisponible », et l'épreuve rougit
+     pour une raison qui n'a rien à voir avec ce qu'elle mesure. Sous charge, le moment
+     de cet échec se déplace : d'où une rougeur intermittente. On rattache donc le faux
+     Firebase JUSTE AVANT chaque mesure, jamais une seule fois au début. */
+  const RATTACHER = `window.__setFB({ auth: { currentUser: { uid: 'pro1', email: 'p@x.c' } }, db: {},
+    f: { doc: function(){return {};}, setDoc: function(){return Promise.resolve();},
+      getDoc: function(){return Promise.resolve({ exists: function(){return false;}, data: function(){return {};} });},
+      collection: function(){return {};}, onSnapshot: function(){return function(){};} },
+    fn: { httpsCallable: function(){ return function(){ return new Promise(function(){}); }; } }, functions: {} });`;
+  const rattacher = () => p.evaluate(RATTACHER);
+
   /* Un prestataire ménage validé, et UNE demande de ménage en attente : exactement la
      situation réelle du jour où la question a été posée. */
   const poser = (etat) => p.evaluate((etat) => {
@@ -63,6 +75,7 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   ok(off.n === 0, 'aucune demande visible interrupteur coupé (' + off.n + ')');
 
   console.log('B — il le rallume, et la mission paraît SANS attendre qu’un tiers bouge');
+  await rattacher();
   const apres = await p.evaluate(() => {
     const S = window.__S;
     /* Le geste réel : le bouton de la carte « Disponibilité ». */
@@ -85,6 +98,7 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   ok(/Vous êtes en ligne/.test(apres.texte), 'la carte confirme qu’il est en ligne');
 
   console.log('C — et il la perd s’il se recoupe : la porte joue dans les deux sens');
+  await rattacher();
   const recoupe = await p.evaluate(() => {
     const bt = document.querySelector('[data-act="toggle-online"]'); if (bt) bt.click();
     return { online: window.__S.proOnline, n: (window.__S.openRequests || []).length };
@@ -94,6 +108,7 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   /* D — LA GRILLE DE DISPONIBILITÉ ET LE MODE DE LIEU SONT LE MÊME DÉFAUT. Ce ne sont
      pas trois corrections, c'en est une : « mon filtre a changé, refais la liste ». */
   console.log('D — la grille de disponibilité change le filtre, elle aussi');
+  await rattacher();
   const dispo = await p.evaluate((dateISO) => {
     const S = window.__S;
     S.proOnline = true; window.__fil.rafraichit();
@@ -116,6 +131,7 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   /* Le filtre de LIEU ne joue que sur les métiers qui peuvent se faire en salon : le
      ménage n'en est pas, et l'éprouver sur lui ne mesurerait rien. */
   console.log('E — le mode de lieu aussi');
+  await rattacher();
   const lieu = await p.evaluate(() => {
     const S = window.__S;
     S.proCats = ['coiffure']; S.proSiteMode = 'both'; S.avail = null; S.proOnline = true;
@@ -135,6 +151,7 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   /* F — SANS INSTANTANÉ REÇU, IL N'Y A RIEN À REJOUER, et l'on ne prétend pas le
      contraire : la porte rend faux plutôt que d'écrire une liste vide par-dessus. */
   console.log('F — sans instantané, la porte ne fabrique rien');
+  await rattacher();
   const vide = await p.evaluate(() => {
     const S = window.__S; S._openReqBrut = null; S.openRequests = [{ id: 'gardee' }];
     const rendu = window.__fil.rafraichit();

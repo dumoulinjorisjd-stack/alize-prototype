@@ -52,7 +52,11 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
     const S = window.__S;
     const dm = new Date(Date.now() + 86400000);
     const demain = dm.getFullYear() + '-' + String(dm.getMonth() + 1).padStart(2, '0') + '-' + String(dm.getDate()).padStart(2, '0');
-    const dem = { svc: 'menage', slotFlex: 'day', dateMode: 'pick', dateISO: demain };
+    /* LA FORME RÉELLE D'UNE DEMANDE RELUE DE LA BASE : elle porte `service`, jamais
+       `svc` — c'est le brouillon du CLIENT qui dit `svc`. Une première version de cette
+       épreuve employait `svc` : elle passait au vert sur un code qui ignorait les
+       horaires du métier partout où ils comptent. */
+    const dem = { service: 'menage', slotFlex: 'day', dateISO: demain };
     S.adminMetier = {};
     const sans = window.__heures.fenetre(dem), sansL = window.__heures.proposables(dem);
     S.adminMetier = { menage: { ouvre: 480, ferme: 1080 } };
@@ -63,10 +67,12 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
     const demie = window.__heures.proposables(dem);
     /* Et une souplesse « ± 2 h » autour de 09:00 ne déborde pas l'ouverture. */
     S.adminMetier = { menage: { ouvre: 480, ferme: 1080 } };
-    const pm = { svc: 'menage', slotFlex: 120, slot: '09:00', dateMode: 'pick', dateISO: demain };
+    const pm = { service: 'menage', slotFlex: 120, slot: '09:00', dateISO: demain };
+    /* Et le brouillon du client, qui dit `svc`, doit donner la même fenêtre. */
+    const brouillon = window.__heures.fenetre({ svc: 'menage', slotFlex: 'day', dateISO: demain });
     const marge = window.__heures.fenetre(pm);
     S.adminMetier = {};
-    return { sans: sans, sansL: sansL, avec: avec, avecL: avecL, marge: marge, demie: demie };
+    return { sans: sans, sansL: sansL, avec: avec, avecL: avecL, marge: marge, demie: demie, brouillon: brouillon };
   });
   ok(fen.sans[0] === '00:00' && fen.sans[1] === '23:30',
     'métier sans horaires réglés : la fenêtre ne bouge pas (' + fen.sans.join(' → ') + ')');
@@ -76,11 +82,16 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   ok(fen.avecL.indexOf('00:00') < 0 && fen.avecL[0] === '08:00'
     && fen.avecL[fen.avecL.length - 1] === '18:00',
     'plus une seule heure de nuit proposée (' + fen.avecL.length + ' crans, ' + fen.avecL[0] + ' → ' + fen.avecL[fen.avecL.length - 1] + ')');
-  ok(fen.demie.indexOf('08:30') < 0 && fen.demie[0] === '09:00',
-    'un métier qui ouvre à 8 h 30 ne propose pas « 08:30, 09:30, 10:30 » mais des heures pleines ('
+  ok(fen.avecL.every((h) => /:(00|30)$/.test(h)),
+    'et le pas est la DEMIE, celui que le client emploie pour choisir son heure : proposer une heure qu’il n’aurait pas pu demander n’aurait pas de sens');
+  ok(fen.demie[0] === '08:30' && fen.demie[1] === '09:00',
+    'un métier qui ouvre à 8 h 30 commence à 8 h 30, sans perdre ce premier créneau ('
       + fen.demie.slice(0, 3).join(', ') + ')');
   ok(fen.marge[0] === '08:00' && fen.marge[1] === '11:00',
     'une souplesse de ± 2 h autour de 9 h ne déborde pas l’ouverture (' + fen.marge.join(' → ') + ')');
+  ok(fen.brouillon.join('→') === fen.avec.join('→'),
+    'et le brouillon du client, qui nomme le métier « svc », donne la MÊME fenêtre ('
+      + fen.brouillon.join(' → ') + ')');
 
   /* C — ET L'ON NE REND JAMAIS IMPROPOSABLE UNE DEMANDE DÉJÀ PASSÉE. Des horaires
      resserrés après coup laisseraient une demande de 22 h sans aucun créneau : la
@@ -91,7 +102,7 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
     const dm = new Date(Date.now() + 86400000);
     const demain = dm.getFullYear() + '-' + String(dm.getMonth() + 1).padStart(2, '0') + '-' + String(dm.getDate()).padStart(2, '0');
     S.adminMetier = { menage: { ouvre: 480, ferme: 1080 } };
-    const r = { svc: 'menage', slotFlex: 60, slot: '22:00', dateMode: 'pick', dateISO: demain };
+    const r = { service: 'menage', slotFlex: 60, slot: '22:00', dateISO: demain };
     const w = window.__heures.fenetre(r), l = window.__heures.proposables(r);
     S.adminMetier = {};
     return { w: w, l: l };
@@ -109,16 +120,29 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
     const au = new Date();
     const iso = au.getFullYear() + '-' + String(au.getMonth() + 1).padStart(2, '0') + '-' + String(au.getDate()).padStart(2, '0');
     /* Telle qu'elle arrive de la base : pas de `dateMode`, un libellé périmé. */
-    const vieille = { svc: 'menage', slotFlex: 'day', when: 'Demain', dateISO: iso };
+    const vieille = { service: 'menage', slotFlex: 'day', when: 'Demain', dateISO: iso };
     const w = window.__heures.fenetre(vieille);
     /* Et une vraie demande de demain n'est PAS bornée à l'heure qu'il est. */
     const dm = new Date(Date.now() + 86400000);
     const dIso = dm.getFullYear() + '-' + String(dm.getMonth() + 1).padStart(2, '0') + '-' + String(dm.getDate()).padStart(2, '0');
-    const w2 = window.__heures.fenetre({ svc: 'menage', slotFlex: 'day', when: 'Demain', dateISO: dIso });
+    const w2 = window.__heures.fenetre({ service: 'menage', slotFlex: 'day', when: 'Demain', dateISO: dIso });
     const maintenant = au.getHours() * 60 + au.getMinutes();
     return { debut: w[0], demain: w2[0], maintenant: maintenant };
   });
   const minDe = (s) => (+s.split(':')[0]) * 60 + (+s.split(':')[1]);
+  /* LE FAIT QUI A DÉCLENCHÉ TOUT CECI : à 11 h 48, la liste commençait à 11 h 48. */
+  const auj = await p.evaluate(() => {
+    const S = window.__S; S.adminMetier = {};
+    const au = new Date();
+    const iso = au.getFullYear() + '-' + String(au.getMonth() + 1).padStart(2, '0') + '-' + String(au.getDate()).padStart(2, '0');
+    const l = window.__heures.proposables({ service: 'menage', slotFlex: 'day', dateISO: iso });
+    return { premier: l[0], maintenant: au.getHours() * 60 + au.getMinutes(), n: l.length };
+  });
+  ok(/:(00|30)$/.test(auj.premier || ''),
+    'sur une demande du jour, le premier créneau est la prochaine DEMIE, jamais la minute qu’il est ('
+      + auj.premier + ')');
+  ok(minDe(auj.premier) >= auj.maintenant && minDe(auj.premier) - auj.maintenant < 30,
+    'et c’est bien la PROCHAINE, pas une heure perdue en route');
   ok(minDe(etiq.debut) >= etiq.maintenant,
     'une demande datée d’aujourd’hui est bornée à l’heure qu’il est, quoi que dise son libellé ('
       + etiq.debut + ')');
@@ -150,16 +174,34 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
     const sp = document.getElementById('splash'); if (sp) sp.style.display = 'none';
     const br = document.querySelector('aside.brief'); if (br) br.style.display = 'none';
     window.__render();
-    const btns = Array.from(document.querySelectorAll('[data-proreqslot]'))
-      .map((x) => x.dataset.proreqslot).filter((x) => x !== '__pick');
+    const sel = document.querySelector('[data-proreqheure]');
+    const btns = sel ? Array.from(sel.options).map((o) => o.value) : [];
+    /* ON CHOISIT UNE HEURE, comme elle le ferait, et l'on regarde si elle tient. */
+    let apres = null;
+    if (sel && btns.indexOf('14:00') >= 0) {
+      sel.value = '14:00'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+      const s2 = document.querySelector('[data-proreqheure]');
+      apres = { valeur: s2 ? s2.value : null, etat: window.__S.proReqSlot,
+        banniere: /arriverez à 14:00/.test(document.getElementById('view').textContent || '') };
+    }
+    const vestiges = !!document.querySelector('[data-proreqslot],[data-proreqslottime]');
     S.adminMetier = {};
-    return { btns: btns, txt: (document.getElementById('view').textContent || '').replace(/\s+/g, ' ') };
+    return { btns: btns, liste: !!sel, apres: apres, vestiges: vestiges,
+      txt: (document.getElementById('view').textContent || '').replace(/\s+/g, ' ') };
   });
   ok(/Proposez votre heure de passage/.test(carte.txt), 'la carte est bien là');
-  ok(carte.btns.length > 0 && carte.btns.every((s) => /:00$/.test(s)),
-    'toutes les heures offertes sont rondes (' + carte.btns.slice(0, 4).join(', ') + '…)');
+  /* UNE LISTE DÉROULANTE, ET PLUS DE GRILLE DE PASTILLES : vingt-quatre boutons sur une
+     journée ouverte, suivis d'un « Autre… » qui n'ouvrait rien d'utilisable. */
+  ok(carte.liste, 'les heures sont dans une liste déroulante');
+  ok(!carte.vestiges, 'et il ne reste ni pastille ni champ d’heure libre');
+  ok(carte.btns.length > 0 && carte.btns.every((s) => /:(00|30)$/.test(s)),
+    'toutes les heures offertes sont à la demie (' + carte.btns.slice(0, 4).join(', ') + '…)');
   ok(carte.btns[0] === '08:00' && carte.btns[carte.btns.length - 1] === '18:00',
     'et elles tiennent dans les horaires du métier (' + carte.btns[0] + ' → ' + carte.btns[carte.btns.length - 1] + ')');
+  ok(carte.apres && carte.apres.etat === '14:00' && carte.apres.valeur === '14:00',
+    'choisir une heure la retient — le champ d’heure, lui, était remplacé à chaque frappe');
+  ok(carte.apres && carte.apres.banniere,
+    'et la phrase sous la liste dit l’heure choisie, avant d’accepter');
 
   ok(errs.length === 0, 'aucune erreur de page' + (errs.length ? ' : ' + errs[0] : ''));
   await b.close();
