@@ -45,10 +45,15 @@ ok(iNeeds > 0 && iTrav > iNeeds,
   'et il est traité AVANT : la branche suivante ne concerne que les dossiers auxquels Mollie ne demande rien');
 ok(/<b>Rien à faire\.<\/b> Vos gains partent dès que Mollie a fini de vérifier\./.test(src),
   'à qui Mollie ne demande rien, on le dit en une phrase — et on s’arrête là');
-// ET QUAND MOLLIE RÉCLAME UNE PIÈCE À QUELQU'UN QUI TRAVAILLE DÉJÀ, on ne lui annonce
-// pas qu'il est bloqué : ce qui attend, ce sont ses virements.
-ok(/\$\{peut\?'Vos gains sont mis de côté en attendant/.test(src),
-  'et la branche « pièce manquante » distingue celui qui peut déjà accepter des missions');
+/* QUAND MOLLIE RÉCLAME UNE PIÈCE, on n'annonce à personne qu'il est bloqué : ce qui
+   attend, ce sont ses VIREMENTS. La branche distinguait auparavant celui qui pouvait
+   déjà encaisser de celui qui ne le pouvait pas — depuis le 09/10/2026, accepter
+   n'exige plus Mollie du tout, les deux acceptent, et la distinction a disparu avec la
+   phrase fausse qu'elle servait à éviter. */
+ok(/<b>Un document à fournir\.<\/b> Vos gains sont mis de côté en attendant/.test(src),
+  'la branche « pièce manquante » dit ce qui est vrai : les gains sont mis de côté');
+ok(!/impossible d'accepter des missions\.'/.test(src),
+  'et plus aucune branche ne prétend qu’il ne peut pas accepter');
 ok(!/déclenche à votre première transaction/.test(src),
   'sans lui expliquer la plomberie bancaire : il n’a rien à en faire');
 ok(/S\.proMollieOnb==='needs-data'\?' Il manque une pièce à votre dossier/.test(src),

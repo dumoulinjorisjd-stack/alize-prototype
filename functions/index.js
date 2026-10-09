@@ -727,6 +727,20 @@ async function relancerComplements(db, clientUid) {
   }
   return n;
 }
+/* CE QUI L'ATTEND DÉJÀ, EN EUROS. Depuis qu'accepter n'exige plus Mollie, un
+   prestataire peut avoir travaillé, été noté, et ne pas avoir touché un centime : son
+   net est sur le solde Ti-Services en attendant son organisation. C'est le seul argument
+   qui porte pour lui faire finir son inscription — et c'est un FAIT, pas une relance. */
+async function netEnAttente(db, uid) {
+  let net = 0;
+  try {
+    const q = await db.collection('requests')
+      .where('providerUid', '==', uid).where('molliePayout', '==', 'unrouted').get();
+    q.forEach((d) => { net += Number((d.data() || {}).molliePayoutNet) || 0; });
+  } catch (e) { console.warn('netEnAttente', uid, e); }
+  return round2(net);
+}
+
 // RATTRAPAGE DES VERSEMENTS EN ATTENTE. Un artisan peut travailler dès que Mollie
 // l'autorise à encaisser ; si ses virements ne sont pas encore ouverts, son net reste sur
 // le solde plateforme (jamais perdu, mais pas versé). Dès que Mollie les ouvre, on repasse
@@ -4687,15 +4701,23 @@ exports.mollieActivationReminder = onSchedule({schedule: 'every monday 13:00',
     if (last && (nowMs - last) < 6 * 86400 * 1000) continue;
     const n = (Number(a.mollieRelances) || 0) + 1;
     // Notification : le canal qui porte le mieux sur un téléphone.
+    /* ACCEPTER N'EXIGE PLUS MOLLIE : « sans cette étape tu ne peux accepter aucune
+       mission » est devenu FAUX, et une relance qui dit faux se fait ignorer. Ce qui est
+       vrai, et bien plus fort : ce qu'il a déjà gagné l'attend. */
+    const du = await netEnAttente(db, d.id);
+    const duTxt = du > 0 ? (du.toFixed(2).replace('.', ',') + ' €') : '';
     try {
       const u = (await db.collection('users').doc(d.id).get()).data() || {};
       const tokens = u.pushTokens || [];
       if (tokens.length) {
         await pushMulticast(tokens,
-          cas === 'piece' ? 'Un document pour ouvrir tes virements' : 'Tes paiements ne sont pas encore activés',
-          cas === 'piece'
-            ? 'Tu peux accepter des missions ; Mollie attend une pièce pour te verser. Ce qui est gagné est mis de côté.'
-            : 'Sans cette étape tu ne peux accepter aucune mission. Quelques minutes suffisent.',
+          duTxt ? (duTxt + ' t’attendent')
+            : (cas === 'piece' ? 'Un document pour ouvrir tes virements' : 'Tes paiements ne sont pas encore activés'),
+          duTxt
+            ? ('Ton gain est mis de côté : il part sur ton compte dès que tes paiements sont activés. Quelques minutes suffisent.')
+            : (cas === 'piece'
+              ? 'Tu peux accepter des missions ; Mollie attend une pièce pour te verser. Ce qui est gagné est mis de côté.'
+              : 'Tu peux accepter des missions, mais ton gain sera mis de côté au lieu de t’être versé. Quelques minutes suffisent.'),
           '/?open=missions',
           (tok) => db.collection('users').doc(d.id).update({pushTokens: FieldValue.arrayRemove(tok)}).catch(() => {}));
       }
@@ -4704,8 +4726,9 @@ exports.mollieActivationReminder = onSchedule({schedule: 'every monday 13:00',
     if (a.email) {
       try {
         await sendMail(db, a.email, {
-          subject: cas === 'piece' ? 'Un document pour ouvrir tes virements' : 'Il te reste une étape pour recevoir des missions',
-          html: mollieReminderHtml(String(a.name || '').trim(), n, cas),
+          subject: duTxt ? (duTxt + ' t’attendent sur Ti-Services')
+            : (cas === 'piece' ? 'Un document pour ouvrir tes virements' : 'Il te reste une étape pour être payé'),
+          html: mollieReminderHtml(String(a.name || '').trim(), n, cas, duTxt),
           attachments,
         });
       } catch (e) { console.warn('mollieActivationReminder mail', d.id, e); }
@@ -5915,7 +5938,7 @@ function inviteArtisanHtml(name, message) {
    fois suffit pour que le message suivant ne soit plus lu.
    `cas` vaut « piece » pour eux, « paiements » pour ceux qui n'ont pas encore de compte
    — le seul cas où la phrase d'origine est vraie. */
-function mollieReminderHtml(name, n, cas) {
+function mollieReminderHtml(name, n, cas, duTxt) {
   const app = APP_URL.replace(/\/$/, '');
   const { c1, c2, btn } = mailPalette(true);
   const hi = name ? escHtmlS(String(name).split(/\s+/)[0]) : '';
@@ -5924,11 +5947,16 @@ function mollieReminderHtml(name, n, cas) {
   const titre = piece ? ' te reste un document' : ' te reste une étape';
   const accroche = piece
     ? 'Tu peux <b>accepter des missions</b>&nbsp;: c\'est tes <b>virements</b> qui attendent. Mollie a besoin d\'une pièce pour les ouvrir. Ce que tu gagnes d\'ici là ne se perd pas&nbsp;: c\'est mis de côté et versé dès que ton dossier est complet.'
-    : (relance >= 3
-      ? 'Ton profil est validé depuis un moment, et tu ne peux toujours <b>pas accepter de mission</b>. Il ne manque qu\'une chose.'
-      : (relance === 2
-        ? 'Petit rappel&nbsp;: sans compte de paiement, tu ne peux <b>pas encore accepter de mission</b>.'
-        : 'Ton profil est validé, il ne manque plus que tes <b>paiements</b>.'));
+    /* « TU NE PEUX PAS ACCEPTER DE MISSION » EST DEVENU FAUX (09/10/2026) : accepter
+       n'exige plus Mollie. Une relance qui dit faux se fait ignorer, et celle-ci avait
+       de surcroît plus fort à dire — ce qu'il a DÉJÀ gagné l'attend. */
+    : (duTxt
+      ? ('<b>' + escHtmlS(duTxt) + '</b> sont mis de côté pour toi. Ils partent sur ton compte dès que tes paiements sont activés — pas avant.')
+      : (relance >= 3
+        ? 'Ton profil est validé depuis un moment. Tu peux accepter des missions, mais <b>ton gain restera mis de côté</b> tant que tes paiements ne sont pas activés.'
+        : (relance === 2
+          ? 'Petit rappel&nbsp;: tu peux accepter des missions, mais tu ne seras <b>payé</b> qu\'une fois tes paiements activés.'
+          : 'Ton profil est validé, il ne manque plus que tes <b>paiements</b> pour être réglé.')));
   const bloc1Titre = piece ? '1 · Donne à Mollie ce qui manque' : '1 · Active tes paiements';
   const bloc1Texte = piece
     ? 'Mollie vérifie l\'identité et l\'IBAN de chaque prestataire avant d\'ouvrir ses virements, et il te dit <b>précisément</b> ce qui lui manque (pièce d\'identité, justificatif, IBAN…). L\'application t\'emmène directement sur ton dossier. C\'est <b>une seule fois</b>.'

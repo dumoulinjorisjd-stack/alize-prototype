@@ -104,13 +104,20 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
     'et on ne lui dit PLUS qu’il ne peut pas accepter de mission : il en accepte déjà');
   ok(!!fb && /vous continuez d’accepter des missions|vous continuez d'accepter des missions/.test(fb),
     'on le lui dit même franchement, puisque le titre de la carte ne le dit pas ici');
+  /* DEPUIS LE 09/10/2026, ACCEPTER N'EXIGE PLUS MOLLIE. « Sans lui, impossible
+     d'accepter des missions » était dit à qui n'avait pas encore l'autorisation
+     d'encaisser ; c'est devenu faux dans TOUS les états du dossier. Les deux branches
+     disent donc la même chose, qui est vraie : les gains sont mis de côté. */
   const fc = await compte('pending', 'needs-data', false);
-  ok(!!fc && /Sans lui, impossible d’accepter|Sans lui, impossible d'accepter/.test(fc),
-    'bloqué, la conséquence est dite — là elle est exacte');
+  ok(!!fc && !/impossible d’accepter|impossible d'accepter/.test(fc),
+    'même sans autorisation d’encaisser, on ne lui dit plus qu’il ne peut pas accepter');
+  ok(!!fc && /gains sont mis de côté/.test(fc),
+    'on lui dit ce qui est vrai : ses gains sont mis de côté en attendant');
   const fd = await compte('pending', 'in-review', false);
   ok(!!fd && /En examen chez Mollie\. Vous serez prévenu\./.test(fd), 'en examen : une ligne');
   const fe = await compte('none', '', false);
-  ok(!!fe && /Activez vos paiements, ~5 min, une seule fois\./.test(fe), 'jamais commencé : une ligne');
+  ok(!!fe && /Obligatoire pour être payé\./.test(fe) && /~5 min, une seule fois\./.test(fe),
+    'jamais commencé : une ligne, et elle dit « pour être PAYÉ », pas « pour accepter »');
   const ff = await compte('active', 'completed', true);
   ok(!!ff && /Réglé automatiquement, net, après chaque prestation\./.test(ff),
     'actif : la carte reste, elle rappelle ce qui se passe tout seul');

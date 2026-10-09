@@ -296,18 +296,26 @@ service cloud.firestore {
             // confrère : il est alors le client de cette demande. Sans ce garde-fou, il
             // pourrait s'attribuer une mission fictive et gonfler ses statistiques.
             && resource.data.clientUid != uid()
-            // OBLIGATION PAIEMENTS MOLLIE : sans compte Mollie connecté, le client réglerait
-            // sans qu'aucun versement ne puisse parvenir à l'artisan — son RIB est détenu par
-            // Mollie, jamais par l'app. On exige donc l'organisation connectée ET que Mollie
-            // l'autorise à encaisser : soit son dossier est validé (« active »), soit Mollie a
-            // déjà ouvert l'encaissement (mollieCanWork). Ce second cas est indispensable :
-            // Mollie ne termine sa vérification qu'APRÈS une première transaction — exiger le
-            // dossier validé enfermerait l'artisan dans un cercle sans issue. Si ses virements
-            // ne sont pas encore ouverts, son net reste sur le solde plateforme et lui est
-            // versé automatiquement dès l'ouverture (rerouteArtisanPayouts).
-            && artisanDoc(uid()).get('mollieOrgId', '').size() >= 3
-            && (artisanDoc(uid()).get('mollieStatus', '') == 'active'
-                || artisanDoc(uid()).get('mollieCanWork', false) == true)
+            /* ACCEPTER N'EXIGE PLUS MOLLIE — décision de l'éditeur (09/10/2026).
+               La porte demandait l'organisation connectée ET l'autorisation d'encaisser.
+               Elle protégeait un vrai risque — sans destinataire, Mollie ne peut router
+               nulle part — mais elle coûtait plus qu'elle ne rapportait : un prestataire
+               validé voyait des demandes qu'il ne pouvait pas prendre, et une demande
+               mourait faute de preneur pendant qu'il remplissait un formulaire.
+
+               CE QUI SE PASSE SANS MOLLIE EST CONNU ET TENU : le client est débité
+               normalement à la validation, la totalité reste sur le solde Ti-Services, le
+               net dû est inscrit sur la demande (`molliePayoutNet`, état `no_org`), le
+               registre comptable l'enregistre comme une DETTE et non comme un revenu,
+               l'artisan est prévenu et l'administrateur alerté. Le rattrapage est
+               automatique s'il active Mollie pendant que le paiement est encore routable,
+               manuel ensuite.
+
+               IL NE SERA DONC PAYÉ QU'UNE FOIS MOLLIE ACTIVÉ, et c'est écrit devant lui
+               AVANT qu'il accepte, pas découvert après. Ce qui reste verrouillé, c'est ce
+               qui compte vraiment : il ne peut pas se déclarer lui-même « autorisé à
+               encaisser » (l. 133-135), et aucun euro ne lui parvient sans que Mollie ait
+               vérifié son identité et son IBAN. */
             && (resource.data.get('directed', false) == false
                 || resource.data.get('preferredProviderUid', '') == uid())
             && !changed().hasAny(serverKeys())
