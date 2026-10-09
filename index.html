@@ -2131,6 +2131,14 @@
   // ou au mode démo. Un prestataire réel ne doit JAMAIS retomber dans l'interface client
   // via le bouton retour : son compte a un rôle fixe.
   function isRealArtisan(){ return !isDemo() && !!(S.account && S.account.role==='artisan'); }
+  /* QUELQU'UN EST CONNECTÉ, QUEL QUE SOIT CE QU'ON SAIT ENCORE DE LUI. `isRealArtisan`
+     lit `S.account.role`, qui n'est posé qu'une fois la fiche artisan relue : entre
+     l'ouverture de l'application et ce moment-là, il rend FAUX pour un prestataire
+     parfaitement inscrit. Certains chemins ouvrent d'ailleurs l'espace pro AVANT
+     l'authentification (le lien d'une notification, `?open=missions`). Là où la
+     conséquence d'une erreur est de renvoyer quelqu'un à un formulaire d'inscription,
+     on se fie à la session, pas à ce qu'on a eu le temps d'en lire. */
+  function sessionConnectee(){ return !isDemo() && !!(typeof FB!=='undefined' && FB && FB.auth && FB.auth.currentUser); }
 
   const I = {
     menage:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="9" width="9" height="12" rx="2"/><path d="M10 9V6h3v3"/><path d="M10 6H7L5 4.5"/><path d="M13 7h2.5"/><path d="M3 3h.01"/><path d="M2.5 6h.01"/><path d="M4 8.5h.01"/></svg>',
@@ -3654,7 +3662,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='847';
+  const VERSION_APP='848';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -21042,7 +21050,13 @@
       // Artisan RÉEL : le retour reste dans l'espace pro — jamais de bascule vers le
       // client (sinon un prestataire validé se retrouve à tort dans l'interface client).
       if(S.proStatus==='draft'){if(S.proStep){S.proStep=null;saveProDraft();render();}return;}
-      if(S.proStatus==='pending'){if(isRealArtisan())return;S.proStatus='signup';render();return;}
+      /* UN RETOUR NE FABRIQUE JAMAIS UN FORMULAIRE D'INSCRIPTION. Cette ligne faisait
+         passer « candidature déposée » à « remplir ma candidature » : pour quiconque est
+         connecté, c'est un écran qu'il a déjà rempli, et le revoir se lit comme un compte
+         perdu — relevé en production, « ça m'a remis sur l'écran comme si je n'étais
+         jamais inscrit, avec tous les documents à remplir ». Reculer, ici, n'a pas de
+         destination : on ne bouge pas. Le parcours de démonstration, lui, le garde. */
+      if(S.proStatus==='pending'){if(isRealArtisan()||sessionConnectee())return;S.proStatus='signup';render();return;}
       if(S.proStatus==='signup'){if(isRealArtisan())return;S.persona='client';S.proStatus='approved';render();return;}
       if(S.mollieGuideView){S.mollieGuideView=false;render();return;}
       if(S.proMollieView){S.proMollieView=false;render();return;}
