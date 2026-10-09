@@ -3654,7 +3654,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='843';
+  const VERSION_APP='844';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -5535,7 +5535,15 @@
   function fmtShort(iso){if(!iso||!/^\d{4}-\d{2}-\d{2}$/.test(iso))return '';const p=iso.split('-');return (+p[2])+'/'+(+p[1]);}
   const COLIS_TYPES=[['recommande','Recommandé'],['colis','Colis'],['suivi','Lettre suivie'],['autre','Autre']];
   function colisTypeLabel(t){const x=COLIS_TYPES.find(function(c){return c[0]===t;});return x?x[1]:'Objet';}
-  function isTodaySel(m){if(!m)return false;if(m.dateMode==='pick')return m.dateISO===todayISO();return m.when==='Aujourd’hui';}
+  /* LA DATE FAIT FOI, PAS SON ÉTIQUETTE. `when` est un libellé FIGÉ à la commande : une
+     demande passée hier soir pour « Demain » porte encore « Demain » ce matin, alors que
+     `dateISO` dit aujourd'hui. On lisait l'étiquette, donc on ne bornait pas à l'heure
+     courante, et le prestataire se voyait proposer des heures DÉJÀ PASSÉES. Une demande
+     relue de la base ne porte de toute façon pas `dateMode`, qui ne vit que dans le
+     brouillon du client. Sans date absolue (brouillon neuf), l'étiquette reste. */
+  function isTodaySel(m){if(!m)return false;
+    if(/^\d{4}-\d{2}-\d{2}$/.test(m.dateISO||''))return m.dateISO===todayISO();
+    return m.when==='Aujourd’hui';}
   function minSlotToday(m){return isTodaySel(m)?nowMin():-1;}
   // Horodatage (ms) du rendez-vous d'une mission, à partir de when/dateISO + slot.
   function missionStartMs(m){
@@ -5858,14 +5866,39 @@
   }
   // « day » (dans la journée) et « week » (n'importe quel jour de la semaine) ouvrent
   // toute la plage 24 h/24 : le prestataire y choisit lui-même son heure de passage.
-  function flexWindow(m){let lo,hi;if(m.slotFlex==='day'||m.slotFlex==='week'){lo=0;hi=1410;}else{const b=slotToMin(m.slot),d=Number(m.slotFlex)||0;lo=b-d;hi=b+d;}const mm=minSlotToday(m);if(mm>=0)lo=Math.max(lo,mm);if(hi<lo)hi=lo;return [minToSlot(lo),minToSlot(hi)];}
+  /* LA FENÊTRE PROPOSABLE RESPECTE LES HORAIRES DU MÉTIER. Elle allait de minuit à
+     23 h 30 : un ménage « à tout moment de la journée » offrait donc 00:00, 01:00,
+     02:00… Les horaires de métier existent et bornent déjà le choix du CLIENT
+     (`hourOptions`) ; rien ne les lisait du côté du prestataire. Un métier sans horaires
+     réglés rend 0 → 23 h 30, donc rien ne change pour lui.
+     Et l'on ne rend JAMAIS une demande déjà passée improposable : si l'heure du client
+     tombe hors des horaires (horaires resserrés après coup), la fenêtre se referme sur
+     elle plutôt que de disparaître. */
+  function flexWindow(m){let lo,hi;const P=plageDuSvc(m&&m.svc);
+    if(m.slotFlex==='day'||m.slotFlex==='week'){lo=P.ouvre;hi=P.ferme;}
+    else{const b=slotToMin(m.slot),d=Number(m.slotFlex)||0;lo=Math.max(P.ouvre,b-d);hi=Math.min(P.ferme,b+d);}
+    const mm=minSlotToday(m);if(mm>=0)lo=Math.max(lo,mm);if(hi<lo)hi=lo;return [minToSlot(lo),minToSlot(hi)];}
   function flexTxt(m){if(!m.slotFlex)return '';if(m.slotFlex==='week')return 'n’importe quel jour de la semaine';if(m.slotFlex==='day')return 'à tout moment de la journée';const w=flexWindow(m);return 'entre '+w[0]+' et '+w[1];}
   // Version CÔTÉ CLIENT : ancrée sur l'heure QU'IL A CHOISIE (m.slot), pas sur la
   // fenêtre bornée à « maintenant » (qui affichait l'heure de commande comme début et
   // le désorientait). flexTxt (bornée) reste réservé au prestataire, qui doit voir la
   // fenêtre réellement proposable (créneaux à venir).
   function flexTxtClient(m){if(!m.slotFlex)return '';if(m.slotFlex==='week')return 'n’importe quel jour de la semaine';if(m.slotFlex==='day')return 'à tout moment de la journée';const d=Number(m.slotFlex)||0;const marge=(d%60===0)?('± '+(d/60)+' h'):('± '+d+' min');return 'vers '+(m.slot||'')+' ('+marge+')';}
-  function proSlotList(m){const w=flexWindow(m);const start=slotToMin(w[0]),end=slotToMin(w[1]);const step=(m.slotFlex==='day'||m.slotFlex==='week')?60:30;const out=[];for(let t=start;t<=end;t+=step)out.push(minToSlot(t));return out;}
+  /* DES HEURES RONDES. La liste partait de l'heure COURANTE et avançait d'un cran : à
+     11 h 48 le prestataire se voyait proposer « 12:48, 13:48, … 22:48 » — et c'est
+     l'heure d'ARRIVÉE que le client lit ensuite. Personne ne dit « je passe à 17 h 48 ».
+     On part donc du prochain cran rond au-delà du plus tôt possible.
+     SI AUCUN CRAN ROND NE TIENT (il est 23 h 10, le métier ferme à 23 h 30), la liste
+     serait VIDE et l'écran n'offrirait plus rien : on y remet le plus tôt possible, qui
+     est une heure vraie. PUR : les bornes et le pas lui sont donnés. */
+  function creneauxRonds(debut,fin,pas){
+    if(!(pas>0)||fin<debut)return [];
+    const out=[];for(let t=Math.ceil(debut/pas)*pas;t<=fin;t+=pas)out.push(t);
+    if(!out.length)out.push(debut);
+    return out;
+  }
+  function proSlotList(m){const w=flexWindow(m);const step=(m.slotFlex==='day'||m.slotFlex==='week')?60:30;
+    return creneauxRonds(slotToMin(w[0]),slotToMin(w[1]),step).map(minToSlot);}
   // Borne l'heure proposée par le prestataire à la fenêtre acceptée par le client.
   function clampSlot(m,s){if(!m.slotFlex||!/^\d{1,2}:\d{2}$/.test(s||''))return s;const w=flexWindow(m);return minToSlot(Math.max(slotToMin(w[0]),Math.min(slotToMin(w[1]),slotToMin(s))));}
   function isForfait(m){return !!(m&&m.unit==='forfait');}
