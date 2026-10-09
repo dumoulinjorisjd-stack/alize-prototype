@@ -177,6 +177,47 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   ok(/pro-injoignable/.test(SRV),
     'et un prestataire validé que rien ne peut joindre déclenche une alerte');
 
+  /* H — FAIRE LE TRI. Rien n'expirait jamais une demande que personne n'a prise : le
+     serveur promet pourtant, noir sur blanc, une demande « purgée 12 h après son
+     créneau ». Des demandes d'essai de quatre-vingts jours étaient donc toujours
+     comptées « en cours ». Le geste à la main est ici, la purge au serveur. */
+  console.log('H — clore une demande que personne n’a prise');
+  const clo = await p.evaluate(() => {
+    const S = window.__S; const out = {};
+    const bouton = function () { return document.querySelector('[data-adm^="reqclore:"]'); };
+    out.offert = !!bouton();
+    out.libelle = bouton() ? bouton().textContent.trim() : '';
+    if (bouton()) bouton().click();
+    out.arme = !!(bouton() && /Confirmer/.test(bouton().textContent));
+    out.phrase = /empreinte bancaire du client est libérée/.test(document.getElementById('view').textContent || '');
+    return out;
+  });
+  ok(clo.offert, 'une demande en recherche porte un bouton « Clore » (' + clo.libelle + ')');
+  ok(clo.arme, 'un premier toucher ARME, il n’écrit rien');
+  ok(clo.phrase, 'et l’écran dit ce que le second fera avant de le faire');
+
+  /* ON NE PROPOSE PAS DE CLORE CE QUI EST ENGAGÉ. Clore une mission acceptée serait une
+     annulation : un prestataire s'est engagé, une empreinte tient, une indemnité peut
+     être due — cela se décide dans la mission, pas dans une liste. */
+  for (const st of ['accepted', 'working', 'done_pro', 'paid']) {
+    const r = await console_([Object.assign({}, EN_RECHERCHE, { status: st, provider: 'Maya' })], []);
+    const offert = await p.evaluate(() => !!document.querySelector('[data-adm^="reqclore:"]'));
+    ok(!offert, st + ' : aucun bouton « Clore » — ce n’est plus une demande qui cherche');
+  }
+
+  /* LA PURGE AUTOMATIQUE, lue dans la source : aucun banc ne fait tourner les tâches. */
+  const purge = SRV.slice(SRV.indexOf('exports.expirerDemandesNonHonorees'),
+    SRV.indexOf('exports.autoValidate'));
+  ok(purge.length > 100, 'le serveur porte une tâche qui expire les demandes non honorées');
+  ok(/where\('status', '==', 'pending'\)/.test(purge),
+    'elle ne touche QUE ce qui cherche encore, jamais une mission acceptée');
+  ok(/PURGE_APRES_MS/.test(purge) && /12 \* 3600000/.test(SRV),
+    'douze heures APRÈS LE CRÉNEAU, pas après la création');
+  ok(/dateISO/.test(purge) && /sansDate\+\+/.test(purge),
+    'et sans date lisible elle ne devine pas : elle laisse la demande et le dit');
+  ok(/runTransaction/.test(purge),
+    'elle relit dans une transaction : une demande acceptée à la seconde près n’est pas écrasée');
+
   ok(errs.length === 0, 'aucune erreur de page' + (errs.length ? ' : ' + errs[0] : ''));
   await b.close();
   console.log(f ? '\n' + f + ' ÉCHEC(S)' : '\nTout est vert');

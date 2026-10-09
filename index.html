@@ -3654,7 +3654,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='835';
+  const VERSION_APP='836';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -11217,6 +11217,29 @@
           <span class="mini money">${eur(montant)}${coup?' <span style="color:var(--coral-deep)">+'+eur(coup)+'</span>':''}</span>
           <span class="mini" style="color:${longue?'var(--coral-deep);font-weight:700':'var(--muted)'}">${esc(age)}${r.directed?' · dirigée':''}</span></div>
         ${cmdDiffusion(r)}
+        ${cmdClore(r)}
+      </div>`;
+    };
+    /* FAIRE LE TRI. Rien n'expire jamais une demande que personne n'a honorée : le
+       commentaire du serveur promet une purge « 12 h après le créneau », mais aucune
+       tâche ne la fait — d'où des demandes d'essai vieilles de quatre-vingts jours
+       toujours comptées « en cours ». La purge automatique est posée côté serveur ; ici
+       c'est le geste À LA MAIN, pour ce qui traîne déjà.
+
+       SEULEMENT CE QUI CHERCHE ENCORE. Clore une mission ACCEPTÉE serait une annulation :
+       un prestataire s'est engagé, une empreinte bancaire tient, une indemnité peut être
+       due — cela se décide dans la mission, pas dans une liste. Ici, personne n'a accepté
+       et aucun euro n'a bougé.
+
+       DEUX TOUCHERS, comme la purge d'un compte : le premier arme, le second agit. Et
+       l'on DIT ce que le second fera — clore libère l'empreinte du client et le prévient
+       que rien ne lui est prélevé (`settleCancellation` s'en charge). */
+    const cmdClore=function(r){
+      if(!r||r.status!=='pending'||!r.id)return '';
+      const arme=(S.admClore===r.id);
+      return `<div style="margin-top:8px">
+        <button class="btn ghost sm" data-adm="reqclore:${esc(r.id)}" style="width:auto;padding:7px 11px;${arme?'color:#fff;background:var(--coral-deep);border-color:var(--coral-deep)':'color:var(--coral-deep)'}">${arme?I.warn+' Confirmer, clore cette demande':I.trash+' Clore'}</button>
+        ${arme?`<div class="mini" style="margin-top:5px;color:var(--muted);line-height:1.45">Elle passera en « expirée »&nbsp;: elle sort des demandes en cours, l'empreinte bancaire du client est libérée et il est prévenu que rien ne lui est prélevé. Son historique est gardé.</div>`:''}
       </div>`;
     };
     const bookingsReels=(function(){
@@ -18278,6 +18301,21 @@
           })
           .catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
       })();return;}
+      /* CLORE UNE DEMANDE QUE PERSONNE N'A PRISE. Deux touchers : le premier arme, le
+         second écrit. On ne touche QU'À une demande encore en recherche — le bouton ne
+         paraît pas ailleurs, et la garde est reposée ici parce qu'une garde qui ne vit
+         que dans le balisage se contourne. */
+      else if(act==='reqclore'){
+        if(S.admClore!==id){S.admClore=id;render();return;}
+        S.admClore=null;
+        const r=(S.adminReqs||[]).find(function(x){return x.id===id;});
+        if(!r||r.status!=='pending'){render();toast('Cette demande n’est plus en recherche');return;}
+        if(!(FB&&FB.db&&FB.f)){render();toast('Hors ligne, rien n’a été écrit');return;}
+        FB.f.updateDoc(FB.f.doc(FB.db,'requests',id),{status:'expired',expiredBy:'admin',expiredAt:Date.now()})
+          .then(function(){toast('Demande close');})
+          .catch(function(e){toast('⚠︎ Non close : '+fbErrTxt(e));});
+        render();return;
+      }
       else if(act==='metplageoff'){
         /* On RETIRE les deux clés plutôt que de les mettre à 00:00 / 23:30 : une plage
            absente et une plage qui couvre la journée se valent à l'écran, mais seule

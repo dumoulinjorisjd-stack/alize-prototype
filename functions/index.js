@@ -4745,6 +4745,55 @@ exports.mollieOnboardingSweep = onSchedule({schedule: 'every 15 minutes', secret
  * date envoyée par un téléphone.
  */
 const AUTO_VALID_H = 48, AUTO_RAPPEL_H = 24;
+/* LA PURGE QUE LE CODE PROMETTAIT DÉJÀ. `settleCancellation` annonce, noir sur blanc,
+   une demande « non honorée, purgée 12 h après son créneau » — et rien ne la purgeait :
+   aucune tâche n'expirait une demande que personne n'avait prise. Des demandes d'essai
+   de quatre-vingts jours étaient donc toujours comptées « en cours » dans la console, et
+   une vraie demande oubliée gardait l'empreinte bancaire de son client réservée.
+
+   SEULEMENT CE QUI CHERCHE ENCORE (`pending`). Une demande acceptée qui dérape est une
+   annulation — un prestataire s'est engagé, une indemnité peut être due : cela ne se
+   décide pas dans un balayage. Et `pending_payment` a déjà son alerte à part.
+
+   ON N'EXPIRE QUE CE DONT ON CONNAÎT LA DATE : sans `dateISO` lisible, on ne sait pas si
+   le créneau est passé, et deviner fermerait des demandes vivantes. DOUZE HEURES APRÈS
+   LE CRÉNEAU, pas après la création : une demande posée longtemps à l'avance est
+   normale, c'est le RENDEZ-VOUS qui dit qu'il est trop tard.
+
+   Passer en « expired » suffit : `settleCancellation` écoute déjà cette transition,
+   libère l'empreinte et prévient les deux parties. */
+const PURGE_APRES_MS = 12 * 3600000;
+const PURGE_MAX = 200;
+exports.expirerDemandesNonHonorees = onSchedule({schedule: 'every day 04:10', secrets: [SMTP_PASS]}, async () => {
+  const db = getFirestore();
+  let snap;
+  try { snap = await db.collection('requests').where('status', '==', 'pending').get(); }
+  catch (e) { console.warn('expirerDemandes : lecture', e); return; }
+  const now = Date.now();
+  let n = 0, sansDate = 0;
+  for (const d of snap.docs) {
+    if (n >= PURGE_MAX) break;
+    const r = d.data() || {};
+    const iso = String(r.dateISO || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) { sansDate++; continue; }
+    // Fin du créneau : la date, plus l'heure si elle est lisible, en heure de Saint-Barth
+    // (UTC−4) — c'est l'heure dans laquelle le client a choisi son rendez-vous.
+    const hm = /^(\d{1,2}):(\d{2})$/.exec(String(r.slot || ''));
+    const t = Date.parse(iso + 'T' + (hm ? (String(hm[1]).padStart(2, '0') + ':' + hm[2]) : '23:59') + ':00-04:00');
+    if (!isFinite(t) || (now - t) < PURGE_APRES_MS) continue;
+    try {
+      await db.runTransaction(async (tx) => {
+        const cur = await tx.get(d.ref);
+        if (!cur.exists || (cur.data() || {}).status !== 'pending') return;
+        tx.update(d.ref, { status: 'expired', expiredBy: 'auto', expiredAt: FieldValue.serverTimestamp() });
+      });
+      n++;
+    } catch (e) { console.warn('expirerDemandes', d.id, e); }
+  }
+  console.log('expirerDemandesNonHonorees : ' + n + ' demande(s) expirée(s) sur ' + snap.size + ' en recherche'
+    + (sansDate ? (', ' + sansDate + ' sans date lisible, laissée(s) telle(s) quelle(s)') : '') + '.');
+});
+
 exports.autoValidate = onSchedule({schedule: 'every 1 hours', secrets: [SMTP_PASS]}, async () => {
   const db = getFirestore();
   const now = Date.now();
