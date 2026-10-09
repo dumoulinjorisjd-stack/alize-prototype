@@ -76,8 +76,50 @@ ok(/rien à faire de son côté'\);/.test(NP),
 ok(!/Vous pouvez accepter — votre virement partira un peu plus tard/.test(src),
   'et le pavé qui s’affichait sur CHAQUE demande a disparu');
 
+/* B ter — ET ON N'ANNONCE AUCUN DÉLAI QU'ON NE TIENT PAS. La carte « Revenus » promettait
+   « Prochain virement : sous 48 h après validation ». Ce délai ne dépend pas de nous : il
+   dépend de Mollie, de l'état du dossier du prestataire et du calendrier de règlement.
+   Un délai annoncé qu'on ne maîtrise pas se retient, et c'est lui qu'on nous oppose —
+   c'est la même règle que « Vous avez été payé », corrigée plus haut. */
 console.log('C — sur l’écran réel de fin de mission');
 (async () => {
+  console.log('B ter — aucun délai de virement promis');
+  // ON DEMANDE À L'ÉCRAN, PAS À LA SOURCE : un test qui lit le fichier trébuche sur son
+  // propre commentaire d'explication, et passerait au vert le jour où la phrase
+  // reviendrait par un autre chemin.
+  let revTxt = '';
+  {
+    const b2 = await chromium.launch(o);
+    const p2 = await b2.newPage({ viewport: { width: 390, height: 1300 } });
+    await p2.goto(INDEX);
+    await p2.waitForFunction(() => window.__S && window.__render);
+    revTxt = await p2.evaluate(() => {
+      window.__setFB({ auth: { currentUser: { uid: 'pro1', email: 'p@x.c' } }, db: {},
+        f: { doc: () => ({}), setDoc: () => Promise.resolve(), collection: () => ({}), onSnapshot: () => (() => {}) },
+        fn: { httpsCallable: () => () => new Promise(() => {}) }, functions: {} });
+      document.body.classList.add('standalone');
+      const sp = document.getElementById('splash'); if (sp) sp.style.display = 'none';
+      const br = document.querySelector('aside.brief'); if (br) br.style.display = 'none';
+      const S = window.__S;
+      S.lang = 'fr'; S.onboarded = true; S.demoMode = false; S.persona = 'pro';
+      S.proStatus = 'approved'; S.proNav = 'earnings'; S.proName = 'Laure M.';
+      S.account = { name: 'Laure M.', email: 'p@x.c', uid: 'pro1', role: 'artisan' };
+      S.mission = null; S.proMissions = [];
+      S.proHistory = [{ id: 'h1', reqId: 'r1', dateISO: new Date().toISOString().slice(0, 10),
+        svc: 'menage', client: 'Joris', duration: 2, unit: 'h', amount: 70, commPct: 15,
+        commission: 10.5, net: 59.5, invNo: 'F001', paidVia: 'carte' }];
+      window.__render();
+      return (document.getElementById('view').textContent || '').replace(/\s+/g, ' ');
+    });
+    await b2.close();
+  }
+  ok(/Net perçu/.test(revTxt), 'la carte « Revenus » est bien à l’écran');
+  ok(!/sous 48 h/.test(revTxt),
+    'elle ne promet plus de virement sous 48 h : ce délai dépend de Mollie, pas de nous');
+  ok(!/Prochain virement/.test(revTxt), 'et la ligne a disparu');
+  ok(!/Missions réalisées/.test(revTxt),
+    'le nombre de missions non plus : il se relit juste en dessous, prestation par prestation');
+
   const b = await chromium.launch(o);
   const ctx = await b.newContext({locale: 'fr-FR', viewport: {width: 390, height: 1400}});
   const p = await ctx.newPage();
