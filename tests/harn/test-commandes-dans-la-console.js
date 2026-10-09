@@ -157,6 +157,26 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   ok(/return \{ successCount: ok, failureCount: ko \}/.test(SRV),
     'pushMulticast rend le nombre réellement envoyé');
 
+  /* LES DEUX CHEMINS LISENT LE CONSENTEMENT PAR LA MÊME PORTE. La réouverture — celle
+     que prend TOUTE commande réelle — se contentait de `pushTokens` : un prestataire qui
+     avait COUPÉ ses notifications était quand même poussé, et comme un jeton périmé le
+     faisait compter comme « joignable », il ne recevait pas non plus l'e-mail de
+     secours. Il n'était prévenu par AUCUN chemin. */
+  ok((SRV.match(/await _jetonsArtisans\(db,/g) || []).length === 2,
+    'les deux chemins passent par la même porte à jetons');
+  ok(!/\(\(u\.data\(\) \|\| \{\}\)\.pushTokens \|\| \[\]\)\.forEach/.test(SRV),
+    'et plus personne ne lit `pushTokens` à côté de cette porte');
+  const porte = SRV.slice(SRV.indexOf('async function _jetonsArtisans'), SRV.indexOf('/* CE QUI EST PARTI'));
+  ok(/ud\.role && ud\.role !== 'artisan'/.test(porte), 'la porte écarte un compte qui n’est plus artisan');
+  ok(/consent\[uid\] === false/.test(porte), 'elle respecte un refus de notifications');
+  ok(/fcmOwners/.test(porte), 'et elle départage deux comptes sur un même téléphone');
+
+  /* SANS APPAREIL ET SANS ADRESSE, PERSONNE NE LE PRÉVIENT — et on le comptait comme
+     courriellé. Le chiffre que la console affiche doit être celui des envois RÉELS. */
+  ok(/return envoyes;/.test(SRV), 'le repli e-mail rend le nombre d’envois réels');
+  ok(/pro-injoignable/.test(SRV),
+    'et un prestataire validé que rien ne peut joindre déclenche une alerte');
+
   ok(errs.length === 0, 'aucune erreur de page' + (errs.length ? ' : ' + errs[0] : ''));
   await b.close();
   console.log(f ? '\n' + f + ' ÉCHEC(S)' : '\nTout est vert');

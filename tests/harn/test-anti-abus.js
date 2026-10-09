@@ -116,7 +116,16 @@ ok(/!request\.resource\.data\.keys\(\)\.hasAny/.test(create),
   'et c’est un REFUS de clés, pas une liste blanche de valeurs : on ne peut pas les glisser autrement');
 
 console.log('\nF — le contenu de l’e-mail reste minimal');
-const mail=/async function mailArtisansSansAppareil[\s\S]*?\n\}/.exec(src)[0];
+const fonc=/async function mailArtisansSansAppareil[\s\S]*?\n\}/.exec(src)[0];
+/* ON MESURE LE MESSAGE, PAS LA FONCTION. La garde lisait la fonction ENTIÈRE —
+   commentaires, ligne de journal, alerte à l'administrateur comprises. Une phrase disant
+   qu'un prestataire « sans adresse e-mail » ne peut être joint la faisait donc rougir,
+   alors que rien n'avait changé à CE QUI PART CHEZ LUI. On lit maintenant l'appel à
+   `sendMail` et lui seul : sujet, corps, bouton. La règle ne se relâche pas, elle vise
+   ce qu'elle a toujours prétendu viser — et elle rougirait toujours si un nom de client
+   entrait dans l'enveloppe. */
+const mail=/await sendMail\(db, mail, \{[\s\S]*?\n        \}\);/.exec(fonc)[0]
+  .replace(/\/\*[\s\S]*?\*\//g,'').replace(/(^|[^:])\/\/[^\n]*/g,'$1');
 ok(!/clientName|address|adresse|phone/i.test(mail),
   'la demande envoyée par e-mail ne porte ni nom, ni adresse, ni téléphone du client');
 ok(/sendMail\(db, mail,/.test(mail)&&!/\.join\(','\)/.test(mail),

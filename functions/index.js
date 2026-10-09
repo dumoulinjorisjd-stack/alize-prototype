@@ -1102,6 +1102,45 @@ async function _alerteAbus(db, cle, sujet, texte) {
 }
 const EST_PROD = (process.env.GCLOUD_PROJECT || 't-service-prod').indexOf('prod') >= 0;
 
+/* LES JETONS D'UN GROUPE D'ARTISANS, EN RESPECTANT CE QU'ILS ONT CHOISI.
+   Le chemin de la CRÉATION faisait ces trois contrôles ; celui de la RÉOUVERTURE lisait
+   `pushTokens` et rien d'autre. Or en production TOUTE commande passe par la réouverture
+   (elle naît « pending_payment » et ne devient « pending » qu'après l'autorisation de la
+   carte) : les trois contrôles ne servaient donc jamais là où ça compte.
+
+   1. LE COMPTE N'EST PLUS ARTISAN (redevenu client) : il recevait encore des
+      « nouvelle prestation » tant que sa fiche traînait.
+   2. IL A COUPÉ SES NOTIFICATIONS (`notifOn === false`) : son refus était ignoré — et,
+      pire, un jeton périmé le faisait compter comme « joignable », donc il ne recevait
+      pas non plus l'E-MAIL DE SECOURS. Il n'était prévenu par AUCUN chemin.
+   3. DEUX COMPTES SUR UN MÊME TÉLÉPHONE : le jeton appartient à l'appareil, pas au
+      compte. Sans consentement enregistré, il revient au dernier qui l'a inscrit
+      (`fcmOwners`), sinon un ex-artisan devenu client recevrait les missions de l'autre. */
+async function _jetonsArtisans(db, uids) {
+  const tokenToUid = {};
+  const consent = {};
+  await Promise.all((uids || []).map(async (uid) => {
+    try {
+      const u = await db.collection('users').doc(uid).get();
+      const ud = u.data() || {};
+      if (ud.role && ud.role !== 'artisan') return;
+      if (typeof ud.notifOn === 'boolean') consent[uid] = ud.notifOn;
+      (ud.pushTokens || []).forEach((tok) => { tokenToUid[tok] = uid; });
+    } catch (_) {}
+  }));
+  await Promise.all(Object.keys(tokenToUid).map(async (tok) => {
+    try {
+      const uid = tokenToUid[tok];
+      if (consent[uid] === true) return;
+      if (consent[uid] === false) { delete tokenToUid[tok]; return; }
+      const o = await db.collection('fcmOwners').doc(tok).get();
+      const od = o.exists ? (o.data() || {}) : null;
+      if (od && od.uid && od.uid !== uid) delete tokenToUid[tok];
+    } catch (_) {}
+  }));
+  return tokenToUid;
+}
+
 /* CE QUI EST PARTI, ÉCRIT SUR LA DEMANDE ELLE-MÊME.
    « Rien ne semble être parti. » On ne pouvait pas lui répondre : la diffusion décide en
    silence — garantie refusée, plafond atteint, aucun artisan du métier, personne de
@@ -1145,11 +1184,15 @@ async function mailArtisansSansAppareil(db, artById, targetUids, tokenToUid, r, 
     const zoneM = (r.zone || '').toString().slice(0, 40);
     const quandM = ((r.when || '') + (r.slot ? (' à ' + r.slot) : '')).trim().slice(0, 60);
     const lien = APP_URL.replace(/\/$/, '') + '/?open=missions';
-    let plafonnes = 0;
+    let plafonnes = 0, envoyes = 0, muets = 0;
     await Promise.all(sansAppareil.map(async (uid) => {
       const a = artById[uid] || {};
       const mail = (a.email || '').trim();
-      if (!mail) return;
+      /* SANS APPAREIL ET SANS ADRESSE, PERSONNE NE LE PRÉVIENT. On comptait pourtant ce
+         prestataire comme courriellé : le journal — et maintenant la console — annonçait
+         un envoi qui n'a pas eu lieu. C'est un fait d'exploitation, pas un détail : un
+         prestataire validé que rien ne peut joindre ne prendra jamais une mission. */
+      if (!mail) { muets++; return; }
       // PLAFOND PAR PRESTATAIRE : il protège la personne qui reçoit, quelle que soit
       // l'origine des demandes. C'est le dernier filet, après la garantie et le plafond
       // par client.
@@ -1175,16 +1218,23 @@ async function mailArtisansSansAppareil(db, artById, targetUids, tokenToUid, r, 
           // premier qui répond : c'est le bouton de l'enveloppe, et il mène aux missions.
           cta: {label: 'Ouvrir mes missions', url: lien},
         });
+        envoyes++;
       } catch (e) { console.warn('mailArtisansSansAppareil', uid, e); }
     }));
-    console.log('E-mail « nouvelle demande » à ' + (sansAppareil.length - plafonnes) + ' artisan(s) sans appareil notifié'
-      + (plafonnes ? (', ' + plafonnes + ' au-delà du plafond du jour') : '') + '.');
+    console.log('E-mail « nouvelle demande » à ' + envoyes + ' artisan(s) sans appareil notifié'
+      + (plafonnes ? (', ' + plafonnes + ' au-delà du plafond du jour') : '')
+      + (muets ? (', ' + muets + ' sans adresse e-mail') : '') + '.');
+    if (muets) {
+      await _alerteAbus(db, 'pro-injoignable', 'prestataire(s) injoignable(s)',
+        muets + ' prestataire(s) validé(s) n\'ont NI appareil notifié NI adresse e-mail : '
+        + 'aucune demande ne peut leur parvenir. Ouvrez leur fiche et complétez-la.');
+    }
     if (plafonnes) {
       await _alerteAbus(db, 'mail-pro-plafond', 'plafond d\'e-mails atteint',
         plafonnes + ' prestataire(s) ont atteint le plafond de ' + ANTI.MAILS_JOUR_PRESTATAIRE
         + ' e-mails de mission pour aujourd\'hui. Leurs alertes suivantes ne partiront pas avant demain.');
     }
-    return sansAppareil.length - plafonnes;
+    return envoyes;
   } catch (e) { console.warn('mailArtisansSansAppareil', e); return 0; }
 }
 
@@ -1266,37 +1316,7 @@ exports.notifyArtisansNewRequest = onDocumentCreated({document: 'requests/{reqId
   }
 
   // Jetons push de ces artisans (avec correspondance jeton -> uid pour le nettoyage).
-  const tokenToUid = {};
-  const consent = {};   // users/{uid}.notifOn : ce compte veut-il être notifié sur cet appareil ?
-  await Promise.all(targetUids.map(async (uid) => {
-    try {
-      const u = await db.collection('users').doc(uid).get();
-      const ud = u.data() || {};
-      // Le compte n'est PLUS un artisan (redevenu client) : on ne lui envoie aucune
-      // notification « nouvelle prestation », même si sa fiche artisan traîne encore.
-      if (ud.role && ud.role !== 'artisan') return;
-      if (typeof ud.notifOn === 'boolean') consent[uid] = ud.notifOn;
-      (ud.pushTokens || []).forEach((tok) => { tokenToUid[tok] = uid; });
-    } catch (_) {}
-  }));
-  // PLUSIEURS COMPTES SUR UN MÊME TÉLÉPHONE. Le jeton appartient à l'appareil, pas au
-  // compte : deux artisans qui utilisent le même téléphone partagent le même jeton.
-  // Chacun peut vouloir être notifié — c'est le cas d'un gérant qui suit deux comptes.
-  // On respecte donc le CONSENTEMENT de chaque compte (users/{uid}.notifOn), posé
-  // quand il active les notifications et levé quand il les coupe.
-  // Pour les comptes anciens, sans consentement enregistré, on garde l'ancienne règle :
-  // le jeton revient au dernier qui l'a enregistré (fcmOwners/{token}.uid) — sinon un
-  // ex-artisan devenu client recevrait encore des « prestations à faire ».
-  await Promise.all(Object.keys(tokenToUid).map(async (tok) => {
-    try {
-      const uid = tokenToUid[tok];
-      if (consent[uid] === true) return;          // ce compte a dit oui : on le notifie
-      if (consent[uid] === false) { delete tokenToUid[tok]; return; }
-      const o = await db.collection('fcmOwners').doc(tok).get();
-      const od = o.exists ? (o.data() || {}) : null;
-      if (od && od.uid && od.uid !== uid) delete tokenToUid[tok];
-    } catch (_) {}
-  }));
+  const tokenToUid = await _jetonsArtisans(db, targetUids);
   const tokens = Object.keys(tokenToUid);
 
   const nMail = await mailArtisansSansAppareil(db, artById, targetUids, tokenToUid, r, !!preferred);
@@ -2781,10 +2801,7 @@ exports.notifyReopenedRequest = onDocumentUpdated({document: 'requests/{reqId}',
       const availById = {}; artsSnap.docs.forEach((d) => { availById[d.id] = (d.data() || {}).avail; });
       uids = uids.filter((uid) => availOk(availById[uid], after));
     }
-    const tokenToUid = {};
-    await Promise.all(uids.map(async (uid) => {
-      try { const u = await db.collection('users').doc(uid).get(); ((u.data() || {}).pushTokens || []).forEach((t) => { tokenToUid[t] = uid; }); } catch (_) {}
-    }));
+    const tokenToUid = await _jetonsArtisans(db, uids);
     const tokens = Object.keys(tokenToUid);
     let nPush = 0;
     if (tokens.length) {
