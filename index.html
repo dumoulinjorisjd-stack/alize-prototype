@@ -3662,7 +3662,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='858';
+  const VERSION_APP='859';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -14088,7 +14088,12 @@
       // l'attente n'est pas un bug — personne n'a simplement encore répondu.
       const srchNote=canDel?`<div class="row" style="gap:11px;align-items:center;margin-top:11px;background:var(--coral-wash);border-radius:12px;padding:10px 12px"><span class="srch-badge">${I.search}</span><span class="mini" style="color:var(--coral-deep);line-height:1.4">On sollicite les meilleurs prestataires de votre zone pour vous.</span></div>`:'';
       if(canDel){
-        const foot=`<div class="row between" style="margin-top:10px"><button class="linklike" data-act="del-demand:${m._id||''}" style="color:var(--coral-deep);font-weight:700">${I.trash} Supprimer</button><span class="mini" style="color:var(--teal-deep);font-weight:700">${eur(totals(m).total)} · Suivre ›</span></div>`;
+        /* IL DIT CE QU'IL FAIT, ET IL DEMANDE. « Supprimer » annonçait un effacement (c'en
+           était un) ; c'est une ANNULATION, et le message de confirmation le disait déjà.
+           Et il partait au PREMIER toucher, sur une commande vivante : deux touchers,
+           comme partout ailleurs où l'on touche à quelque chose qui engage. */
+        const arme=(S.delAsk===(m._id||''));
+        const foot=`<div class="row between" style="margin-top:10px;gap:8px"><button class="linklike" data-act="del-demand:${m._id||''}" style="color:var(--coral-deep);font-weight:700;text-align:left">${arme?I.warn+' Confirmer l’annulation':I.trash+' Annuler la demande'}</button><span class="mini" style="color:var(--teal-deep);font-weight:700;flex:none">${eur(totals(m).total)} · Suivre ›</span></div>${arme?`<p class="mini" style="margin-top:6px;color:var(--muted);line-height:1.45">La recherche s’arrête${payReal()?', et la somme réservée vous est rendue':''}. Vous pourrez la repasser depuis l’accueil.</p>`:''}`;
         return `<div class="swipe-row"><button class="swipe-del" data-act="del-demand:${m._id||''}" aria-label="Supprimer la demande">${I.trash}&nbsp;Supprimer</button><div class="card swipe-card" data-follow="${m._id||''}" role="button" tabindex="0" style="padding:14px;text-align:left;border-left:4px solid var(--coral)">${head}${srchNote}${foot}</div></div>`;
       }
       return `<button class="card" data-follow="${m._id||''}" style="padding:14px;margin-top:9px;width:100%;text-align:left;display:block;border-left:4px solid ${sm.c==='good'?'var(--good)':'var(--coral)'}">${head}<div class="row between" style="margin-top:9px"><span class="mini" style="color:var(--muted)">${eur(totals(m).total)}</span><span class="mini" style="color:var(--teal-deep);font-weight:700">Suivre ›</span></div></button>`;};
@@ -15624,13 +15629,37 @@
       // L'écoute en direct de la demande met l'écran à jour ; rien à forcer ici.
     }).catch(function(){});
   }
+  /* ON ANNULE, ON NE SUPPRIME PLUS. Cette fonction EFFAÇAIT le document Firestore.
+     « Bizarre, la commande urgente d'une vraie cliente d'hier pour deux heures de ménage
+     est introuvable » — l'éditeur, le 16/10/2026. Elle était introuvable parce qu'elle
+     n'existait plus : ni dans « Toutes les commandes », ni dans aucun compteur, ni dans
+     aucune statistique. Rien ne pouvait la montrer.
+
+     ET C'ÉTAIT LE CAS LE PLUS COURANT QUI PARTAIT. Une demande ACCEPTÉE se annule par son
+     STATUT — les deux branches de `cancel-confirm` le font, et leur commentaire explique
+     même pourquoi (« la suppression du document est interdite par les règles »). Seule la
+     demande SANS prestataire, c'est-à-dire exactement celle que personne n'a prise,
+     tombait dans cette branche-ci et disparaissait. Le bouton « Supprimer » du portefeuille
+     et son glissé y mènent aussi, à un seul toucher.
+
+     LE STATUT FAIT TOUT CE QUE LA SUPPRESSION FAISAIT, ET MIEUX. `settleCancellation`
+     écoute « cancelled » : il libère l'empreinte bancaire, rend les arrhes et prévient.
+     `releaseHoldOnDelete` reste en place pour une suppression d'administrateur, mais plus
+     personne n'a besoin d'effacer pour annuler.
+
+     RIEN N'EST DÛ : aucun prestataire ne s'est engagé, donc pas d'indemnité — on l'écrit
+     plutôt que de le laisser deviner, sinon la console afficherait « le prestataire décide
+     de l'indemnité » sur une demande que personne n'avait prise. */
   async function cancelActiveRequest(m){
     if(!m)return false;
     const id=m.reqId;
-    if(!id)return true;                       // jamais partie au serveur : rien à supprimer
-    if(!(FB&&FB.db&&FB.f&&FB.f.deleteDoc))return true;   // bêta / démo : local uniquement
+    if(!id)return true;                       // jamais partie au serveur : rien à annuler
+    if(!(FB&&FB.db&&FB.f&&FB.f.updateDoc))return true;   // bêta / démo : local uniquement
     try{
-      await withBusy(FB.f.deleteDoc(FB.f.doc(FB.db,'requests',id)));
+      const t=Date.now();
+      await withBusy(FB.f.updateDoc(FB.f.doc(FB.db,'requests',id),
+        {status:'cancelled',lateCancel:false,cancelFee:0,feeDecision:'none',cancelledAt:t}));
+      m.status='cancelled';m.cancelledAt=t;
       unsubClientRequest(id);
       return true;
     }catch(e){
@@ -19197,7 +19226,12 @@
         S.adminSupervise=false;S.support=false;S.mission=null;
       }}
       render();return;}
-    if(b.dataset.act&&b.dataset.act.indexOf('del-demand:')===0){const id=b.dataset.act.slice('del-demand:'.length);const m=(S.missions||[]).find(function(x){return (x._id||'')===id;});if(m){(async function(){
+    if(b.dataset.act&&b.dataset.act.indexOf('del-demand:')===0){const id=b.dataset.act.slice('del-demand:'.length);const m=(S.missions||[]).find(function(x){return (x._id||'')===id;});
+      // Premier toucher : on arme et l'on DIT ce que le second fera. Le glissé mène au
+      // même bouton, donc à la même confirmation.
+      if(m&&S.delAsk!==id){S.delAsk=id;render();return;}
+      S.delAsk=null;
+      if(m){(async function(){
       const ok=await cancelActiveRequest(m);
       if(!ok){toast('⚠︎ Annulation non enregistrée, la demande est toujours active, réessayez');render();return;}
       removeMission(m);if(S.mission===m)S.mission=null;cacheClientLocal();
