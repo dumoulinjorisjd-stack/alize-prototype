@@ -3662,7 +3662,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='854';
+  const VERSION_APP='855';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -13960,10 +13960,33 @@
     const activeBlock=active.length?`<div style="margin-top:16px"><div class="eyebrow" style="color:var(--teal-deep)">${I.bolt} En cours · ${active.length}</div>${active.map(activeCard).join('')}</div>`:'';
     const newBtn=`<button class="btn ${active.length?'ghost':'primary'} sm" data-cnav="home" style="margin-top:14px">${I.search} Passer une nouvelle commande</button>`;
     const summary='';
-    const list=done.length?clientHistoryBlock(done):(active.length?'':(S._clientReqLoading?`<div style="margin-top:12px">${reqSkeleton(2)}</div>`:`<div class="card" style="padding:26px 24px;margin-top:12px;text-align:center;color:var(--muted)"><div style="display:flex;justify-content:center">${octoMini(72,'wave')}</div><div style="margin-top:10px;font-weight:600;color:var(--ink-soft)">Aucune prestation pour l’instant</div><div style="margin-top:4px">Vos réservations et reçus apparaîtront ici.</div></div>`));
+    /* LE PANNEAU DES COMMANDES SANS SUITE. Il ne dit pas seulement qu'elles ont expiré :
+       il porte le seul geste qui a du sens après, redemander la même chose. Le bouton
+       ouvre l'écran de commande ORDINAIRE, pré-rempli : tout reste modifiable, et rien
+       n'est envoyé ni payé sans que le client repasse par la confirmation habituelle. */
+    const expBlock=(function(){
+      const l=S.expirees||[];
+      if(!l.length)return '';
+      return `<div style="margin-top:16px"><div class="eyebrow" style="color:var(--muted)">${I.clock} Sans suite · ${l.length}</div>
+        ${l.map(function(x){
+          const quand=[x.when,x.slot].filter(Boolean).join(' · ');
+          return `<div class="card" style="padding:14px;margin-top:9px;border-left:4px solid var(--hair)">
+            <div class="row between" style="gap:8px"><b style="font-size:14px;flex:1;min-width:0">${esc(x.svcName||svcNm(x.svc))}</b><span class="chip" style="background:var(--sand-2);color:var(--muted);flex:none">Expirée</span></div>
+            ${quand?`<div class="mini" style="margin-top:3px">${esc(quand)}</div>`:''}
+            <div class="mini" style="margin-top:3px;color:var(--muted)">Personne n’a accepté à temps${x.total?(' · '+eur(x.total)):''}. Rien ne vous a été prélevé.</div>
+            ${x.ouvert
+              ? `<button class="btn ghost sm" data-act="reprendre:${esc(x.id)}" style="margin-top:10px;width:auto;padding:9px 14px">${I.repeat} Commander à nouveau</button>`
+              : `<div class="mini" style="margin-top:8px;color:var(--coral-deep)">Ce métier n’est plus proposé pour le moment.</div>`}
+          </div>`;}).join('')}</div>`;
+    })();
+    /* « AUCUNE PRESTATION POUR L'INSTANT » SOUS TROIS COMMANDES. Le carton de vide ne
+       connaissait que l'historique et les demandes en cours : relevé sur la capture, il
+       s'affichait juste sous le panneau des commandes sans suite, et contredisait ce qui
+       était écrit au-dessus de lui. Un écran qui porte quelque chose n'est pas vide. */
+    const list=done.length?clientHistoryBlock(done):((active.length||expBlock)?'':(S._clientReqLoading?`<div style="margin-top:12px">${reqSkeleton(2)}</div>`:`<div class="card" style="padding:26px 24px;margin-top:12px;text-align:center;color:var(--muted)"><div style="display:flex;justify-content:center">${octoMini(72,'wave')}</div><div style="margin-top:10px;font-weight:600;color:var(--ink-soft)">Aucune prestation pour l’instant</div><div style="margin-top:4px">Vos réservations et reçus apparaîtront ici.</div></div>`));
     const recList=(S.recurring||[]).filter(function(r){return r&&r.active!==false;});
     const rec=recList.length?`<div style="margin-top:16px"><div class="eyebrow" style="color:var(--muted)">${I.repeat} Mes abonnements</div>${recList.map(recurCard).join('')}</div>`:'';
-    return `<div class="pad">${headRow(I.wallet+' Réservations',active.length?'Vos demandes':'Mes réservations',headBtn('refresh-requests','Rafraîchir mes réservations',I.repeat),cliAvatar())}${active.length?notifCTA('client'):''}${activeBlock}${newBtn}${summary}${rec}${list}<div style="height:6px"></div></div>${clientNavbar()}`;
+    return `<div class="pad">${headRow(I.wallet+' Réservations',active.length?'Vos demandes':'Mes réservations',headBtn('refresh-requests','Rafraîchir mes réservations',I.repeat),cliAvatar())}${active.length?notifCTA('client'):''}${activeBlock}${newBtn}${summary}${expBlock}${rec}${list}<div style="height:6px"></div></div>${clientNavbar()}`;
   }
   // Carte de partage : QR à flasher + lien + partage natif (aucun fichier à chercher).
   function shareCard(){
@@ -18206,10 +18229,126 @@
   /* Refaire une prestation passée : pré-remplit une NOUVELLE commande (tous les champs
      modifiables), avec le même prestataire pré-sélectionné. Pas de recherche automatique —
      le client vérifie/ajuste puis confirme normalement. src : mission (historique ou en cours). */
+  /* ══ REPRENDRE UNE COMMANDE QUI N'A PAS ABOUTI ═══════════════════════════════════
+     « Il faut un panneau pour les commandes expirées avec la possibilité de commander à
+     l'identique mais en pouvant modifier les informations, c'est juste pré-rempli à
+     l'identique. » — l'éditeur, le 16/10/2026.
+
+     ELLES DISPARAISSAIENT SANS LAISSER DE TRACE. `loadActiveRequests` ne lit que les
+     statuts vivants : une demande expirée n'était jamais rechargée, et la purge locale
+     la retirait de la liste. Le client n'avait donc AUCUN moyen de retrouver ce qu'il
+     avait demandé, ni de le redemander autrement qu'en refaisant tout de mémoire.
+
+     SEULEMENT LES EXPIRÉES. Une commande ANNULÉE l'a été exprès, par le client ou faute
+     d'un prestataire après engagement : la reproposer d'office serait présomptueux. Une
+     expirée, personne ne l'a voulue ainsi — c'est le seul cas où « vous voulez
+     réessayer ? » répond à quelque chose.
+
+     BORNÉ DANS LE TEMPS ET EN NOMBRE. Au-delà de trois mois, ni le besoin ni le tarif ne
+     sont les mêmes, et un panneau qui garde tout cesse d'être un panneau. Six lignes au
+     plus, la plus récente d'abord.
+
+     UN MÉTIER FERMÉ DEPUIS NE SE REPROPOSE PAS SILENCIEUSEMENT : on le montre et l'on
+     DIT qu'il n'est plus ouvert, plutôt que d'offrir un bouton qui échouera. La question
+     « ce métier est-il ouvert ? » est INJECTÉE, le noyau ne lit pas l'état. */
+  const REPRENDRE_MAX=6;
+  const REPRENDRE_JOURS=90;
+  function reprendreLue(brut,maintenant){
+    const r=brut||{};
+    const txt=function(v,n){return String(v==null?'':v).slice(0,n);};
+    if(txt(r.status,20)!=='expired')return null;
+    const id=txt(r.id,64),svc=txt(r.service,40);
+    if(!id||!svc)return null;
+    /* SANS DATE DE FIN, ON NE SAIT PAS SI C'EST VIEUX, et l'on ne devine pas : une
+       commande d'il y a deux ans remonterait en tête du panneau. */
+    const fin=Number(r.fin)||0;
+    if(!fin)return null;
+    const age=Math.floor(((Number(maintenant)||0)-fin)/86400000);
+    if(age<0||age>REPRENDRE_JOURS)return null;
+    return {id:id,svc:svc,svcName:txt(r.serviceName,60),when:txt(r.when,40),
+      dateISO:txt(r.dateISO,10),slot:txt(r.slot,5),
+      total:Math.max(0,Number(r.total)||0),fin:fin,age:age,ouvert:true};
+  }
+  function reprendreListe(bruts,maintenant,estOuvert){
+    const out=[];
+    (bruts||[]).forEach(function(b){const v=reprendreLue(b,maintenant);
+      if(v){v.ouvert=estOuvert?!!estOuvert(v.svc):true;out.push(v);}});
+    out.sort(function(a,b){return b.fin-a.fin;});
+    return out.slice(0,REPRENDRE_MAX);
+  }
+  /* REPRENDRE UNE COMMANDE EXPIRÉE. On reconstitue la commande d'origine, puis on passe
+     par `renewMission`, la porte qui existe déjà pour « refaire la même » : une seconde
+     fabrique de brouillon aurait divergé de la première au premier champ ajouté.
+
+     L'ADRESSE EXACTE VIT DANS LE SOUS-DOCUMENT PRIVÉ (`requests/{id}/private/details`),
+     jamais dans la demande : sans cette lecture, « à l'identique » rendrait la commande à
+     l'adresse par défaut du compte, ce qui n'est pas la même chose pour qui a plusieurs
+     lieux. Une lecture qui échoue n'empêche RIEN et n'écrase RIEN : on ne pose l'adresse
+     que si on l'a eue, sinon celle du compte reste, et le client la voit avant de payer.
+
+     LE COUP DE POUCE NE SUIT PAS. C'était un levier de désespoir sur la commande qui n'a
+     pas trouvé preneur ; le recopier augmenterait le prix de la nouvelle sans que
+     personne ne l'ait demandé. Le client peut le remettre, s'il le veut, et il le verra.
+
+     ET ELLE NE REPART PAS DIRIGÉE. Une demande adressée à un prestataire précis qui n'a
+     jamais répondu est exactement ce qui vient d'expirer : la readresser à lui seul la
+     ferait très probablement expirer une seconde fois. Elle repart ouverte à tous. */
+  async function reprendreCommande(x){
+    if(!x)return;
+    const svc=findSvc(x.svc);
+    if(!svc||!svcAvailable(x.svc)){toast('Ce métier n’est plus proposé pour le moment');return;}
+    const r=(S._expireesBrut||{})[x.id]||{};
+    let det={};
+    try{
+      if(FB&&FB.db&&FB.f.getDoc&&!isDemo()){
+        const sn=await FB.f.getDoc(FB.f.doc(FB.db,'requests',x.id,'private','details'));
+        if(sn&&sn.exists&&sn.exists())det=sn.data()||{};
+      }
+    }catch(_){}
+    const src={svc:x.svc,svcName:x.svcName||svcNm(x.svc),
+      duration:r.duration||1,unit:r.unit||'h',slot:r.slot||'',slotFlex:r.slotFlex||0,boost:0,
+      zone:r.zone||det.zone||'',notes:r.notes||'',
+      photos:Array.isArray(r.photos)?r.photos.slice():[],
+      acts:Array.isArray(r.acts)?r.acts.slice():null,
+      options:Array.isArray(r.options)?r.options.map(function(o){return Object.assign({},o);}):null,
+      people:r.people||1,locationMode:r.locationMode||'domicile',poste:r.poste||''};
+    if(det.address){src.address=det.address;src.addressId='__manual';src.geo=det.geo||null;src.access=det.access||'';}
+    renewMission(src);
+  }
   function renewMission(src){
     const old=src||S.mission;if(!old)return;const p=old.provider;
     const svc=SERVICES.find(s=>s.id===old.svc)||{id:old.svc,nm:old.svcName||svcNm(old.svc)};
-    const nm=Object.assign(newMission(svc),{rate:old.rate,duration:old.duration||1,unit:old.unit||'h',slot:old.slot,slotMode:old.slotMode||null,slotFlex:old.slotFlex||0,boost:old.boost||0,zone:old.zone,address:old.address,addressId:old.addressId,geo:old.geo?{...old.geo}:null,access:old.access,notes:old.notes,photos:(old.photos||[]).slice(),frequency:'ponctuelle'});
+    /* LE TARIF EST CELUI DU JOUR, JAMAIS CELUI D'AVANT. `newMission` pose le prix du
+       catalogue ; recopier `old.rate` le remplaçait par celui en vigueur à la commande
+       d'origine. Cela ne se voyait pas à l'écran — `totals` lit `fixedRate`, c'est-à-dire
+       le catalogue — mais ce nombre périmé était ÉCRIT sur la nouvelle demande et part au
+       serveur, qui s'en sert. Une commande reprise trois mois plus tard aurait porté un
+       tarif que nous ne pratiquons plus. On garde donc celui que `newMission` vient de
+       poser : tout le reste se recopie, le prix se relit.
+
+       ET CE QUI AVAIT ÉTÉ CHOISI REVIENT AUSSI. Les actes d'un métier au catalogue
+       (coiffure, manucure) et les options n'étaient pas repris : « à l'identique »
+       rendait une commande vide de son contenu, à recomposer entièrement. `recurConfirm`
+       les recopiait déjà pour un abonnement — deux chemins, deux comportements.
+
+       ET UN CHAMP ABSENT N'EFFACE PLUS CELUI QUE `newMission` VIENT DE POSER. L'adresse,
+       son point GPS et les consignes d'accès étaient recopiés de la source QUELLE QU'ELLE
+       SOIT : une source partielle vidait donc l'adresse par défaut du compte au lieu de
+       la laisser. Mesuré en reprenant une commande dont le sous-document privé ne se lit
+       pas (réseau coupé, lecture refusée) : l'écran de commande s'ouvrait sans adresse du
+       tout. On n'écrase qu'avec ce qu'on a — et pour les actes comme pour les options,
+       « rien » se dit en ne disant rien, sans quoi `acts: null` remplacerait la liste
+       vide qu'un métier au catalogue attend. */
+    const nm=newMission(svc);
+    const repris={duration:old.duration||1,unit:old.unit||'h',slot:old.slot,slotMode:old.slotMode||null,
+      slotFlex:old.slotFlex||0,boost:old.boost||0,zone:old.zone,address:old.address,addressId:old.addressId,
+      geo:old.geo?Object.assign({},old.geo):undefined,access:old.access,notes:old.notes,
+      photos:(old.photos&&old.photos.length)?old.photos.slice():undefined,
+      acts:(old.acts&&old.acts.length)?old.acts.slice():undefined,
+      options:(old.options&&old.options.length)?old.options.map(function(o){return Object.assign({},o);}):undefined,
+      people:old.people||1,locationMode:old.locationMode||'domicile',frequency:'ponctuelle'};
+    Object.keys(repris).forEach(function(k){if(repris[k]!==undefined)nm[k]=repris[k];});
+    if(old.svc==='colis'&&old.poste)nm.poste=old.poste;
     // Prestataire déjà connu → pré-sélectionné en priorité (le client peut le changer).
     if(old.providerUid){nm.preferredUid=old.providerUid;nm.preferredName=p?p.nm:'';}
     // Nouvelle prestation → on repart d'aujourd'hui (jamais une date passée).
@@ -19147,6 +19286,11 @@
     if(b.dataset.act&&b.dataset.act.indexOf('passage-envoyer:')===0){
       envoyerContreProposition(b.dataset.act.slice('passage-envoyer:'.length));return;}
     if(b.dataset.act==='client-open-standard'){openToStandard(S.mission);return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('reprendre:')===0){
+      (function(){const id=b.dataset.act.slice('reprendre:'.length);
+        const x=(S.expirees||[]).find(function(y){return y.id===id;});
+        if(!x){toast('Cette commande n’est plus disponible');return;}
+        reprendreCommande(x);})();return;}
     /* CRÉNEAU PASSÉ : LE CLIENT DÉPLACE SA DEMANDE. Les valeurs voyagent dans l'attribut
        plutôt que dans l'état : le bouton marche même si l'on n'a touché aucun des deux
        menus, puisqu'il porte alors les valeurs par défaut que la carte affiche. Un
@@ -21644,8 +21788,16 @@
         S._clientReqLoading=false;
         S.missions=S.missions||[];
         let changed=false;
+        /* LES EXPIRÉES VOYAGENT DANS LE MÊME INSTANTANÉ. La requête ne filtre pas sur le
+           statut (elle porte toutes les demandes du client) : on ramassait donc ces
+           documents pour les jeter. Deux seaux, une seule lecture — et surtout elles ne
+           rejoignent PAS `S.missions`, sinon elles compteraient parmi les réservations en
+           cours et paraîtraient dans les écrans qui les comptent. */
+        const brutExp={};
         snap.forEach(function(docu){
           const r=docu.data()||{};
+          if(r.status==='expired')brutExp[docu.id]=Object.assign({id:docu.id},r,
+            {fin:(dateMs(r.expiredAt)||dateMs(r.createdAt))});
           if(active.indexOf(r.status)<0)return;
           let m=S.missions.find(function(x){return x.reqId===docu.id;});
           if(!m){
@@ -21668,6 +21820,12 @@
           if(r.finalHours!=null)m.finalHours=r.finalHours;if(r.disputeMsg)m.disputeMsg=r.disputeMsg;if(r.disputeKind)m.disputeKind=r.disputeKind;
           if(Array.isArray(r.messages))m.chat=mergeChat(m.chat,r.messages);
         });
+        /* CE QUI MÉRITE D'ÊTRE REPROPOSÉ. Le brut est gardé à part (`_expireesBrut`),
+           comme le fil du prestataire garde `_openReqBrut` : le panneau n'a besoin que
+           d'une projection bornée, mais reprendre la commande demande tout le document. */
+        S._expireesBrut=brutExp;
+        S.expirees=reprendreListe(Object.keys(brutExp).map(function(k){return brutExp[k];}),
+          Date.now(),function(id){return svcAvailable(id);});
         // Réconciliation de l'HISTORIQUE : toute réservation réglée (paid/rated) rejoint
         // l'historique si elle n'y est pas déjà — pour qu'AUCUNE réservation terminée ne
         // disparaisse (app fermée avant archivage, ou validée sur un autre appareil).
