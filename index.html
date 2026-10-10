@@ -3662,7 +3662,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='856';
+  const VERSION_APP='857';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -5634,6 +5634,35 @@
      savoir qu'un métier se renomme. */
   const CMD_ORDRE=['pending','accepted','working','done_pro','disputed',
     'cancelled','expired','declined','pending_payment','payment_failed','paid','rated'];
+  /* CE QUI S'EST ARRÊTÉ ET QU'ON DOIT VOIR SANS RIEN DÉPLIER.
+     « Je ne vois pas la commande qui a été passée par une cliente hier et qui n'a pas
+     trouvé preneur. » — l'éditeur, le 16/10/2026, juste après la mise en ligne.
+
+     C'EST MOI QUI L'AI CACHÉE. En rangeant tout dans « Toutes les commandes », j'ai
+     retiré de la carte vivante la section « Annulées ou expirées » et je l'ai remplacée
+     par une phrase. La commande est bien là, mais à TROIS DÉPLIAGES de distance (la
+     carte, le statut, le métier), dans un bloc replié par défaut. Ranger ce qu'on
+     consulte rarement est juste ; ranger ce qui s'est passé HIER ne l'est pas.
+
+     LA BORNE EST LE TEMPS, PAS LE NOMBRE. C'était le défaut d'origine : « six au plus »
+     coupait selon une quantité arbitraire. Une commande arrêtée hier est une personne
+     qu'on peut encore rappeler ; une d'il y a trois semaines est de l'archive. Toutes
+     celles des dernières 48 h paraissent, sans exception et sans compteur.
+
+     ET CE QUI ATTEND UNE DÉCISION RESTE, QUEL QUE SOIT SON ÂGE : une indemnité
+     d'annulation que le prestataire n'a pas tranchée attend vraiment quelqu'un. */
+  const ARRET_RECENT_MS=48*3600000;
+  function arretsAMontrer(arretees,maintenant){
+    const t0=Number(maintenant)||0;
+    return (arretees||[]).filter(function(r){
+      if(!r)return false;
+      if(r.status==='cancelled'&&r.tardive&&r.decision==='pending')return true;
+      const t=Number(r.fin||r.at)||0;
+      /* Sans date d'arrêt on ne sait pas si c'est récent : on ne devine pas, et la
+         commande reste dans le registre, où elle est de toute façon. */
+      return t>0&&(t0-t)>=0&&(t0-t)<=ARRET_RECENT_MS;
+    });
+  }
   function commandesParStatut(liste,ordre,nomMetier){
     const parSt={};
     (liste||[]).forEach(function(r){
@@ -11554,13 +11583,14 @@
          désormais rangé dans « Toutes les commandes », par statut puis par métier, sans
          aucune coupe. Reste ici ce qui attend vraiment quelqu'un : une annulation
          tardive dont le prestataire n'a pas tranché l'indemnité. */
-      const aTrancher=arretees.filter(function(r){return r.status==='cancelled'&&r.tardive&&r.decision==='pending';});
+      const aMontrer=arretsAMontrer(arretees,Date.now());
+      const reste=arretees.length-aMontrer.length;
       return (vives.length
           ? `<p class="mini" style="margin:0;color:var(--muted)">${plN(vives.length,'commande')} en cours.</p>`+vives.slice(0,CMD_MAX).map(function(r){return cmdLigne(r,false);}).join('')
           : `<p class="mini" style="margin:0;color:var(--muted)">Aucune commande en cours en ce moment.</p>`)
-        +(aTrancher.length?`<div class="mini" style="color:var(--coral-deep);font-weight:800;text-transform:uppercase;letter-spacing:.03em;margin-top:14px">Indemnité à trancher</div>`
-          +aTrancher.map(function(r){return cmdLigne(r,false);}).join(''):'')
-        +`<p class="mini" style="margin-top:14px;color:var(--muted)">${plN(arretees.length,'commande')} arrêtée${arretees.length>1?'s':''} et ${plN(finies.length,'réglée')} : toutes sont dans « Toutes les commandes », par statut puis par métier.</p>`;
+        +(aMontrer.length?`<div class="mini" style="color:var(--coral-deep);font-weight:800;text-transform:uppercase;letter-spacing:.03em;margin-top:14px">Arrêtées récemment</div>`
+          +aMontrer.map(function(r){return cmdLigne(r,false);}).join(''):'')
+        +`<p class="mini" style="margin-top:14px;color:var(--muted)">${arretees.length?`${plN(arretees.length,'commande')} arrêtée${arretees.length>1?'s':''}${reste>0?` (${reste} de plus de 48 h)`:''} et `:''}${plN(finies.length,'réglée')} : toutes sont dans « Toutes les commandes », par statut puis par métier.</p>`;
     })();
     /* LA CARTE QUI RANGE TOUT. Repliée par statut, puis par métier : on déplie ce qu'on
        cherche. Aucune ligne n'est coupée, c'est la raison d'être de cette carte. */

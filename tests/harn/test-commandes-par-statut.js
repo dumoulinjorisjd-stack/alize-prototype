@@ -100,6 +100,13 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
        SECONDE ligne (la première reçoit l'indice 0, qui est faux). */
     reqs.push({ id: 'v1', status: 'working', svc: 'menage', svcName: 'Ménage', client: 'Alix', provider: 'Maya', total: 70, at: 300 });
     reqs.push({ id: 'v2', status: 'pending', svc: 'jardin', svcName: 'Jardinage', client: 'Bruno', total: 96, at: 290 });
+    /* UNE EXPIRÉE D'HIER, datée pour de vrai : le jeu d'essai utilisait `fin: 2000`,
+       c'est-à-dire 1970, donc AUCUNE commande n'était « récente » et l'assertion
+       passait au vert en comptant les commandes vivantes. Une épreuve qui mesure
+       autre chose que ce qu'elle annonce est pire qu'une épreuve absente. */
+    reqs.push({ id: 'hier', status: 'expired', svc: 'menage', svcName: 'Ménage',
+      client: 'Capucine', when: 'Hier', slot: '09:00', total: 70,
+      at: Date.now() - 44 * 3600000, fin: Date.now() - 20 * 3600000, parQui: 'auto' });
     S.adminReqs = reqs;
     window.__render();
     const view = document.getElementById('view');
@@ -108,6 +115,11 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
       mets: Array.prototype.map.call(view.querySelectorAll('[data-adm^="cmdmet:"]'), function (b) { return b.dataset.adm.slice(7); }),
       lignes: view.querySelectorAll('[data-adm^="reqclore:"]').length,
       /* Le TITRE de chaque ligne de commande, carte par carte. */
+      txtVivante: (function () {
+        const c = Array.prototype.slice.call(view.querySelectorAll('.foldc'))
+          .find(function (x) { return /Recherche → acceptée → en cours/.test(x.textContent || ''); });
+        return c ? (c.textContent || '').replace(/\s+/g, ' ') : '';
+      })(),
       titres: (function () {
         /* ON NOMME LES DEUX CARTES, on ne classe pas « tout le reste » comme vivante : la
            console en compte une quinzaine, et la dernière écrasait la mesure. */
@@ -137,9 +149,12 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   ok(/Ménage/.test(ouvEx.txt) && /Jardinage/.test(ouvEx.txt), 'nommés');
 
   const ouvMet = await console_({ stat: { expired: true }, met: { 'expired|menage': true } });
-  const nMenage = (ouvMet.txt.match(/Client \d+/g) || []).length;
-  ok(nMenage === 8,
-    'et déplier un métier montre TOUTES ses commandes, ici les huit ménages expirés : '
+  /* ON COMPTE DANS LE REGISTRE, pas dans tout l'écran : « Capucine » paraît AUSSI dans
+     la carte vivante (elle s'est arrêtée il y a vingt heures), et un compte sur le texte
+     entier la comptait deux fois. */
+  const nMenage = ((ouvMet.titres || {}).registre || []).length;
+  ok(nMenage === 9,
+    'et déplier un métier montre TOUTES ses commandes, ici les neuf ménages expirés : '
     + 'au-delà des six que l’ancienne carte s’arrêtait de montrer (' + nMenage + ')');
 
   const ouvDeux = await console_({ stat: { expired: true, paid: true }, met: { 'expired|menage': true } });
@@ -150,8 +165,8 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
 
   /* ── C. LA CARTE DES RÉSERVATIONS NE GARDE QUE CE QUI APPELLE UN GESTE ────────── */
   console.log('C — « Réservations en cours » ne coupe plus, elle renvoie');
-  ok(/Indemnité à trancher/.test(plie.txt) && /Zoé/.test(plie.txt),
-    'une annulation tardive dont le prestataire n’a pas tranché reste en vue : c’est le seul cas qui attend quelqu’un');
+  ok(/Arrêtées récemment/.test(plie.txt) && /Zoé/.test(plie.txt),
+    'une annulation tardive dont le prestataire n’a pas tranché reste en vue, dans la section des arrêts récents');
   ok(!/plus ancienne/.test(plie.txt),
     'et les queues coupées ont disparu : « et N autres plus anciennes » ne menait nulle part');
   ok(/toutes sont dans « Toutes les commandes »/.test(plie.txt),
@@ -160,9 +175,10 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   /* ── D. LE TITRE D'UNE LIGNE DÉPEND DE CE QUI EST ÉCRIT AU-DESSUS ─────────────── */
   console.log('D — sous « Ménage », on cherche le client, pas le métier');
   const titres = ouvMet.titres || {};
-  ok((titres.registre || []).length === 8 && (titres.registre || []).every(function (t) { return /^Client \d+$/.test(t); }),
-    'sous une sous-carte « Ménage », chaque ligne est titrée par son CLIENT : le métier y était écrit huit fois et ne distinguait plus rien ('
-    + (titres.registre || []).slice(0, 2).join(', ') + '…)');
+  const tr = titres.registre || [];
+  ok(tr.length === 9 && tr.every(function (t) { return /^(Client \d+|Capucine)$/.test(t); }),
+    'sous une sous-carte « Ménage », chaque ligne est titrée par son CLIENT : le métier y était écrit neuf fois et ne distinguait plus rien ('
+    + tr.slice(0, 2).join(', ') + '…)');
   /* LE PIÈGE DU `.map` : `liste.map(cmdLigne)` passe l'INDICE en second argument, donc la
      PREMIÈRE ligne garderait son métier et toutes les suivantes le perdraient. Il faut
      donc mesurer au moins DEUX lignes de la carte vivante, jamais une seule. */
@@ -174,6 +190,49 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
      && tv.indexOf('Alix') < 0 && tv.indexOf('Bruno') < 0,
     'et dans la carte des réservations, la ligne reste titrée par son MÉTIER, sur TOUTES les lignes ('
     + tv.join(', ') + ') : `map(cmdLigne)` aurait passé l’indice en second argument et dégradé toutes les suivantes en silence');
+
+  /* ── E. CE QUI S'EST ARRÊTÉ HIER DOIT SE VOIR SANS RIEN DÉPLIER ───────────────
+     « Je ne vois pas la commande passée par une cliente hier et qui n'a pas trouvé
+     preneur. » En rangeant tout dans le registre, la carte vivante avait perdu sa
+     section « Annulées ou expirées » : la commande était à TROIS dépliages de distance,
+     dans un bloc replié par défaut. La borne redevient le TEMPS, pas le nombre. */
+  console.log('E — une commande arrêtée hier se voit tout de suite');
+  const H = 3600000;
+  const arr = await p.evaluate(({ H }) => {
+    const T = 1760000000000, A = window.__grp.arrets;
+    const r = (id, st, fin, extra) => Object.assign({ id: id, status: st, svc: 'menage', fin: fin, at: fin }, extra || {});
+    return {
+      recent: A([r('a', 'expired', T - 20 * H)], T).map(function (x) { return x.id; }),
+      hier: A([r('b', 'expired', T - 30 * H)], T).map(function (x) { return x.id; }),
+      vieille: A([r('c', 'expired', T - 72 * H)], T).map(function (x) { return x.id; }),
+      limite: A([r('d', 'expired', T - 47 * H)], T).map(function (x) { return x.id; }),
+      sansDate: A([r('e', 'expired', 0)], T).map(function (x) { return x.id; }),
+      future: A([r('f', 'expired', T + H)], T).map(function (x) { return x.id; }),
+      vieilleEnAttente: A([r('g', 'cancelled', T - 400 * H, { tardive: true, decision: 'pending' })], T).map(function (x) { return x.id; }),
+      vieilleTranchee: A([r('h', 'cancelled', T - 400 * H, { tardive: true, decision: 'waived' })], T).map(function (x) { return x.id; }),
+      borne: window.__grp.recent(),
+    };
+  }, { H });
+  ok(arr.borne === 48 * H, 'la borne est 48 h, et c’est une DURÉE, pas un nombre de lignes');
+  ok(arr.recent.join(',') === 'a' && arr.hier.join(',') === 'b' && arr.limite.join(',') === 'd',
+    'tout ce qui s’est arrêté dans les deux derniers jours paraît, sans compteur et sans coupe');
+  ok(arr.vieille.length === 0, 'au-delà, c’est de l’archive : elle vit dans le registre');
+  ok(arr.sansDate.length === 0 && arr.future.length === 0,
+    'sans date d’arrêt on ne devine pas, et une date dans le futur n’est pas un arrêt récent');
+  ok(arr.vieilleEnAttente.join(',') === 'g',
+    'MAIS une indemnité que le prestataire n’a pas tranchée reste en vue, même vieille de deux semaines : elle attend vraiment quelqu’un');
+  ok(arr.vieilleTranchee.length === 0, 'une fois tranchée, elle rejoint l’archive');
+
+  /* Et sur l'écran : une expirée d'hier se lit dans la carte vivante, sans un clic. */
+  const hierExp = await console_({});
+  ok(/Arrêtées récemment/.test(hierExp.txt),
+    'la carte vivante a de nouveau sa section, et c’est là qu’on regarde en premier');
+  /* ON CHERCHE LA COMMANDE D'HIER PAR SON CLIENT, dans la carte VIVANTE. Compter les
+     lignes ne prouvait rien : les commandes en cours en fournissent déjà trois. */
+  ok(/Capucine/.test(hierExp.txtVivante),
+    'la commande expirée il y a vingt heures se lit dans la carte vivante, sans qu’on déplie quoi que ce soit');
+  ok(!/Client 0/.test(hierExp.txtVivante),
+    'tandis que les expirées anciennes n’y sont pas : la borne est bien le TEMPS, et elles restent dans le registre');
 
   ok(errs.length === 0, 'aucune erreur JS sur la console' + (errs.length ? ' (' + errs[0] + ')' : ''));
   await b.close();

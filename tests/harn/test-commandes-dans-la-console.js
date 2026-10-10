@@ -269,8 +269,12 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   const ann = await console_([ANNUL], []);
   ok(/Annulées/.test(ann.txt), 'les annulées ont leur carte, nommée au PLURIEL : elle en réunit un paquet');
   ok(ann.lignesRegistre >= 1, 'et la commande y figure');
-  ok(ann.lignes === 0,
-    'tandis que « Réservations en cours » ne la garde PAS : sans frais et sans décision en attente, elle n’appelle aucun geste');
+  /* ET « RÉSERVATIONS EN COURS » LA GARDE AUSSI, parce qu'elle date de DEUX HEURES.
+     Cette épreuve affirmait l'inverse le temps d'une version : en rangeant tout dans le
+     registre, la carte vivante avait perdu ses arrêts, et l'éditeur n'a pas retrouvé la
+     commande d'une cliente de la veille. La borne est le TEMPS (48 h), pas le nombre. */
+  ok(ann.lignes === 1,
+    'et « Réservations en cours » la garde, parce qu’elle s’est arrêtée il y a deux heures : on peut encore rappeler cette personne');
   ok(/Annulée depuis 2 h, sans frais/.test(ann.txt),
     'avec ce qui s’est passé : quand, et sans frais');
   ok(ann.pastilles.indexOf('Annulée') >= 0,
