@@ -87,10 +87,18 @@ const apres=await p.evaluate((B)=>{window.__S.draft=eval('('+B+')');
 ok(!apres,'une fois la commande envoyée, la carte disparaît');
 ok(/S\.mission=d;S\.draft=null;oublierBrouillon\(\);/.test(src),
   'l’effacement est posé à l’endroit où la commande part, pas ailleurs');
-ok(/if\(c==='back'\)\{S\.draft=null;oublierBrouillon\(\);render\(\);\}/.test(src),
-  '« ← Retour » abandonne vraiment');
-ok(/case 'go-home':S\.mission=null;S\.draft=null;oublierBrouillon\(\);/.test(src),
-  'le bouton d’accueil aussi — le brouillon ne survit qu’à une mise en arrière-plan, le cas qu’on répare');
+/* CETTE RÈGLE A ÉTÉ RENVERSÉE, ET C'EST UNE DÉCISION, PAS UN OUBLI. Elle disait
+   « ← Retour abandonne vraiment » et « le brouillon ne survit qu'à une mise en
+   arrière-plan » : c'était délibéré, et c'était trop dur. L'éditeur, le 16/10/2026 :
+   « vois ce qui se sauvegarde, si on doit tout recommencer à zéro à la moindre erreur
+   de manipulation. » Une flèche et une icône maison sont des NAVIGATIONS ; l'abandon
+   explicite existe déjà, c'est « Abandonner cette commande » sous la carte de reprise.
+   Les deux gestes enregistrent donc au lieu d'effacer. Le comportement est mesuré à
+   l'écran dans `test-retour-ne-perd-rien.js` ; ici on garde ce qui ne change pas. */
+ok(/if\(c==='back'\)\{[\s\S]{0,900}?sauverBrouillon\(\);S\.draft=null;render\(\);\}/.test(src),
+  '« ← Retour » enregistre avant de quitter, il n’efface plus');
+ok(/case 'go-home':S\.mission=null;sauverBrouillon\(\);S\.draft=null;/.test(src),
+  'le bouton d’accueil aussi : le même geste à deux centimètres ne peut pas avoir deux conséquences');
 
 console.log('\nD — le quota du téléphone : on perd les photos, jamais la saisie');
 ok(/photos:\[\]\}\),ts:Date\.now\(\),photosPerdues:n/.test(src),

@@ -3662,7 +3662,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='857';
+  const VERSION_APP='858';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -19351,7 +19351,12 @@
     if(b.dataset.optqty){const m=S.draft;if(!m)return;const parts=b.dataset.optqty.split(':');const id=parts[0],dir=parts[1];const o=(m.options||[]).find(function(x){return x.id===id;});if(o){if(dir==='up')o.qty=Math.min(99,(o.qty||1)+1);else{o.qty=(o.qty||1)-1;if(o.qty<1)m.options=m.options.filter(function(x){return x.id!==id;});}}renderConfig();return;}
     if(b.dataset.freq){if(!S.draft)return;S.draft.frequency=b.dataset.freq;renderConfig();return;}
     if(b.dataset.star){const n=+b.dataset.star;S.mission.rating=n;document.querySelectorAll('#rateStars button').forEach(x=>x.classList.toggle('lit',+x.dataset.star<=n));const rb=document.getElementById('rateBtn');if(rb)rb.disabled=false;return;}
-    if(b.dataset.cfg){const c=b.dataset.cfg;if(!S.draft)return;if(c==='back'){S.draft=null;oublierBrouillon();render();}else if(c==='minus'){S.draft.duration=Math.max(1,S.draft.duration-1);renderConfig();}else if(c==='plus'){S.draft.duration=Math.min(isDayU(S.draft)?30:10,S.draft.duration+1);renderConfig();}else if(c==='kids-minus'){S.draft.kids=Math.max(1,enfantsDe(S.draft)-1);renderConfig();}else if(c==='kids-plus'){S.draft.kids=Math.min(10,enfantsDe(S.draft)+1);renderConfig();}else if(c==='people-minus'){S.draft.people=Math.max(1,peopleOf(S.draft)-1);renderConfig();}else if(c==='people-plus'){S.draft.people=Math.min(20,peopleOf(S.draft)+1);renderConfig();}else if(c==='unit-h'){S.draft.unit='h';S.draft.rate=(S.adminPrices&&S.adminPrices[S.draft.svc]!=null)?S.adminPrices[S.draft.svc]:svcBase(S.draft.svc);S.draft.duration=3;renderConfig();}else if(c==='unit-j'){S.draft.unit='j';S.draft.rate=DAY_RECO;S.draft.duration=2;renderConfig();}else if(c==='geoloc'){geolocate(g=>{if(S.draft){S.draft.geo=g;renderConfig();}});}else if(c==='more'){S.cfgMore=true;renderConfig();}else if(c==='addr-save-draft'){const d=S.draft;if(!(d.address||'').trim()){toast('Indiquez d’abord l’adresse');renderConfig();return;}const id='ad'+Date.now();S.addresses.push({id,label:((d.addrLabel||'').trim()||d.address||'Adresse ponctuelle').slice(0,40),address:d.address,zone:d.zone,geo:d.geo,access:d.access||''});d.addressId=id;if(S.addresses.length===1)S.addrDefault=id;saveClientCloud();toast(d.geo?'Adresse enregistrée dans votre profil':'Adresse enregistrée, pensez à ajouter le point GPS');renderConfig();}else if(c==='confirm'){
+    if(b.dataset.cfg){const c=b.dataset.cfg;if(!S.draft)return;if(c==='back'){/* ON ENREGISTRE AVANT DE QUITTER, ET L'ON N'EFFACE PLUS. Ce chemin
+          appelait `oublierBrouillon()` : non seulement la commande en cours disparaissait,
+          mais la copie locale d'une session précédente était supprimée avec elle. Une
+          adresse, une durée, des consignes d'accès et deux lignes de notes ne se retapent
+          pas parce qu'on a touché une flèche. L'accueil propose de reprendre. */
+          sauverBrouillon();S.draft=null;render();}else if(c==='minus'){S.draft.duration=Math.max(1,S.draft.duration-1);renderConfig();}else if(c==='plus'){S.draft.duration=Math.min(isDayU(S.draft)?30:10,S.draft.duration+1);renderConfig();}else if(c==='kids-minus'){S.draft.kids=Math.max(1,enfantsDe(S.draft)-1);renderConfig();}else if(c==='kids-plus'){S.draft.kids=Math.min(10,enfantsDe(S.draft)+1);renderConfig();}else if(c==='people-minus'){S.draft.people=Math.max(1,peopleOf(S.draft)-1);renderConfig();}else if(c==='people-plus'){S.draft.people=Math.min(20,peopleOf(S.draft)+1);renderConfig();}else if(c==='unit-h'){S.draft.unit='h';S.draft.rate=(S.adminPrices&&S.adminPrices[S.draft.svc]!=null)?S.adminPrices[S.draft.svc]:svcBase(S.draft.svc);S.draft.duration=3;renderConfig();}else if(c==='unit-j'){S.draft.unit='j';S.draft.rate=DAY_RECO;S.draft.duration=2;renderConfig();}else if(c==='geoloc'){geolocate(g=>{if(S.draft){S.draft.geo=g;renderConfig();}});}else if(c==='more'){S.cfgMore=true;renderConfig();}else if(c==='addr-save-draft'){const d=S.draft;if(!(d.address||'').trim()){toast('Indiquez d’abord l’adresse');renderConfig();return;}const id='ad'+Date.now();S.addresses.push({id,label:((d.addrLabel||'').trim()||d.address||'Adresse ponctuelle').slice(0,40),address:d.address,zone:d.zone,geo:d.geo,access:d.access||''});d.addressId=id;if(S.addresses.length===1)S.addrDefault=id;saveClientCloud();toast(d.geo?'Adresse enregistrée dans votre profil':'Adresse enregistrée, pensez à ajouter le point GPS');renderConfig();}else if(c==='confirm'){
       // Colis : validation du dossier de retrait par un tiers avant paiement.
       if(S.draft.svc==='colis'){const cc=S.draft.colis||{};
         if(!(cc.recipient||'').trim()){toast('Indiquez le nom du destinataire');renderConfig();return;}
@@ -19697,7 +19702,9 @@
       case 'submit-rating':S.mission.status='rated';pushReqUpdate(S.mission,{rating:Number(S.mission.rating)||0,ratedAt:Date.now()});render();break;
       case 'new-mission':archiveMission(S.mission);S.mission=null;S.clientNav='home';render();break;
       case 'app-back':goBack();break;
-      case 'go-home':S.mission=null;S.draft=null;oublierBrouillon();S.payStep=false;S.payEdit=false;S.chat=false;S.support=false;S.clientInv=false;S.advantages=false;S.addrForm=null;S.referral=false;S.fidDetail=false;S.interv=false;S.invoiceId=null;S.finishing=false;S.disputing=false;S.persona='client';S.clientNav='home';render();break;
+      /* L'ICÔNE ACCUEIL EST UNE NAVIGATION, PAS UN ABANDON : elle vit dans l'en-tête de
+         l'écran de commande, et elle effaçait la commande en cours. On enregistre. */
+      case 'go-home':S.mission=null;sauverBrouillon();S.draft=null;S.payStep=false;S.payEdit=false;S.chat=false;S.support=false;S.clientInv=false;S.advantages=false;S.addrForm=null;S.referral=false;S.fidDetail=false;S.interv=false;S.invoiceId=null;S.finishing=false;S.disputing=false;S.persona='client';S.clientNav='home';render();break;
       case 'renew-mission':renewMission();break;
       case 'show-client-invoice':S.clientInv=true;render();break;
       case 'close-client-invoice':S.clientInv=false;S.histInvoice=null;render();break;
@@ -21563,7 +21570,12 @@
       S.persona='client';render();return;
     }
     if(S.payStep){if(S.payEdit&&S.card){S.payEdit=false;render();return;}S.payStep=false;S.payEdit=false;if(S.draft)renderConfig();else render();return;}
-    if(S.draft){S.draft=null;render();return;}
+    /* MÊME MÉMOIRE QUE LA FLÈCHE DE L'ÉCRAN. `sauverBrouillon()` n'était appelé que sur
+       `visibilitychange` et `pagehide` — c'est-à-dire en QUITTANT l'application — donc un
+       retour perdait tout ce qui avait été saisi depuis la dernière fois qu'on avait
+       fermé l'onglet, le plus souvent la commande entière. Deux chemins de retour ne
+       peuvent pas avoir deux mémoires différentes. */
+    if(S.draft){sauverBrouillon();S.draft=null;render();return;}
     if(S.mission){const st=S.mission.status;if(st==='searching'){cancelActiveRequest(S.mission);removeMission(S.mission);}else if(st==='paid'||st==='rated'){archiveMission(S.mission);}S.mission=null;S.clientNav='wallet';render();return;}
     if(!S.onboarded){if(S.authView){
       // Flèche retour du NAVIGATEUR depuis la barrière « Votre compte se crée dans
