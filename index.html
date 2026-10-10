@@ -3662,7 +3662,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='853';
+  const VERSION_APP='854';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -5610,6 +5610,21 @@
   }
   function missionDeadlineMs(m){
     if(!m)return null;
+    /* UN COLIS SE RETIRE DANS UNE FENÊTRE, ET IL N'A PAS DE `dateISO` : l'écran de
+       commande ne le remplit jamais (vérifié, aucune occurrence dans `renderColisConfig`).
+       On retombait donc sur la branche d'en dessous, celle de la date de CRÉATION, et
+       l'appareil du client fermait sa demande douze heures après le jour de la commande
+       alors que la fenêtre de retrait courait encore six jours — en poussant « expired »
+       sur une demande parfaitement vivante. C'est la fin de la fenêtre qui fait foi, la
+       même que le serveur. Sans fenêtre lisible, on ne devine pas : `null`, et rien ne
+       se ferme. */
+    if(svcDe(m)==='colis'){
+      const lis=function(x){return /^\d{4}-\d{2}-\d{2}$/.test(String(x||''));};
+      const fen=lis(m.dateTo)?m.dateTo:(lis(m.dateFrom)?m.dateFrom:'');
+      if(!fen)return null;
+      const q=String(fen).split('-'),dc=new Date(+q[0],(+q[1])-1,+q[2]);
+      dc.setHours(23,59,0,0);return dc.getTime();
+    }
     let base;
     if(/^\d{4}-\d{2}-\d{2}$/.test(m.dateISO||'')){const p=(''+m.dateISO).split('-');base=new Date(+p[0],(+p[1])-1,+p[2]);}
     else{const cm=reqCreatedMs(m);base=cm?new Date(cm):new Date();base.setHours(0,0,0,0);if(m.when==='Demain')base.setDate(base.getDate()+1);}
@@ -5632,6 +5647,13 @@
     if(!m)return false;
     // Ne s'applique qu'aux demandes non honorées (jamais à une prestation validée/en litige).
     if(['paid','rated','done_pro','disputed','expired','cancelled'].indexOf(m.status)>=0)return false;
+    /* ON NE FERME PAS UNE DEMANDE DONT ON VIENT DE DEMANDER QUOI FAIRE. Le serveur a
+       relancé le client pour CE créneau : la carte « votre créneau est passé » est à
+       l'écran avec ses deux gestes, et cette purge l'effacerait sous ses doigts — en
+       poussant « expired » au passage. Mesuré en capturant l'écran : la demande
+       disparaissait et l'on tombait sur « Aucune prestation pour l'instant ». Le serveur
+       la fermera lui-même, douze heures après avoir demandé, et préviendra. */
+    if(relanceEnCours(m))return false;
     const dl=missionDeadlineMs(m);
     return dl!=null && Date.now()>dl+STALE_GRACE_MS;
   }
@@ -14191,6 +14213,116 @@
       ${canWiden?`<button class="btn ghost sm" data-act="widen-slot" style="margin-top:10px;width:auto;padding:9px 14px">${I.clock} Élargir à la journée, le pro propose l'heure</button>`:''}
       <p class="mini" style="margin-top:8px;color:var(--muted)">${I.bolt} Ou ajoutez un coup de pouce ci-dessous, les prestataires sont re-sollicités aussitôt.</p></div>`;
   }
+  /* ══ LE CRÉNEAU EST PASSÉ, ET PERSONNE N'A PRIS ══════════════════════════════════
+     « Quand la prestation souhaitée est dépassée dans le temps voulu, il faut que le
+     client reçoive une notification qui lui propose de mettre une nouvelle date ou de
+     l'annuler. » — l'éditeur, le 16/10/2026.
+
+     ELLE SE FERMAIT TOUTE SEULE, À QUATRE HEURES DU MATIN, SANS UN MOT. Le client n'avait
+     aucun écran pour un créneau dépassé et aucun choix : il l'apprenait par la
+     notification d'EXPIRATION, c'est-à-dire une fois qu'il n'y avait plus rien à décider.
+     Le serveur envoie désormais une relance (`relancerDemandesDepassees`) ; elle ouvre
+     cette carte, qui porte les deux gestes. Sans la carte, la notification mènerait à un
+     écran qui ne propose rien.
+
+     C'EST LE SERVEUR QUI DIT QUE LE CRÉNEAU EST PASSÉ, PAS LE TÉLÉPHONE. Un second calcul
+     ici aurait dérivé du premier : `missionDeadlineMs` existe à côté, plus riche, mais il
+     raisonne en heure LOCALE de l'appareil — un client en métropole verrait la carte six
+     heures trop tôt, une montre déréglée n'importe quand, et surtout l'écran ne tomberait
+     pas d'accord avec la notification qu'on vient de lire. On lit donc le VERDICT du
+     serveur, posé sur la demande : la relance est partie POUR CE rendez-vous.
+
+     LA CLÉ DU RENDEZ-VOUS EST LA SEULE CHOSE QU'ON RECOPIE, et elle est purement
+     syntaxique (ni fuseau, ni durée, ni arithmétique de dates). Une épreuve compare cette
+     fonction à celle du serveur sur une table de cas : c'est elle qui les tient ensemble,
+     et non la mémoire de celui qui touchera l'une des deux.
+
+     ET LA CARTE REMPLACE L'ESCALADE D'ATTENTE, elle ne s'ajoute pas. « Élargir à la
+     journée » et le coup de pouce re-sollicitent les prestataires POUR UNE JOURNÉE QUI EST
+     FINIE : deux cartes qui proposent d'agir, dont une seule peut encore servir. Le bouton
+     « Annuler la demande » du bas s'efface aussi, puisque la carte le porte : le même
+     geste à deux endroits du même écran est le doublon qu'on nous a déjà signalé. */
+  function cleCreneauDoc(m){
+    const d=m||{};
+    const lis=function(x){return /^\d{4}-\d{2}-\d{2}$/.test(String(x||''));};
+    if(svcDe(d)==='colis'){
+      const fen=lis(d.dateTo)?d.dateTo:(lis(d.dateFrom)?d.dateFrom:'');
+      return fen?('colis:'+fen):'';
+    }
+    if(!lis(d.dateISO))return '';
+    const hm=/^(\d{1,2}):(\d{2})$/.exec(String(d.slot||''));
+    const f=d.slotFlex;
+    const cf=(f==='day'||f==='week')?String(f):((isFinite(Number(f))&&Number(f)>0)?String(Math.min(1440,Math.round(Number(f)))):'');
+    return String(d.dateISO)+'T'+(hm?(String(hm[1]).padStart(2,'0')+':'+hm[2]):'--:--')+'/'+cf;
+  }
+  /* LA RELANCE EST-ELLE PARTIE POUR LE RENDEZ-VOUS ACTUEL. Les deux champs comptent : une
+     fiche à moitié écrite ne fait pas paraître une carte. Et dès que le client déplace sa
+     demande, la clé ne correspond plus — la carte s'efface d'elle-même, sans que personne
+     ait rien à effacer. */
+  function relanceEnCours(m){
+    if(!m||m.status!=='pending')return false;
+    const cle=cleCreneauDoc(m);
+    return !!cle&&String(m.relancePour||'')===cle&&(Number(m.relanceAt)||0)>0;
+  }
+  /* CE QUE « NOUVELLE DATE » ÉCRIT SUR LA DEMANDE. Même forme que l'acceptation d'une
+     contre-proposition — la demande reste en recherche et change de rendez-vous — à ceci
+     près qu'elle n'est adressée à PERSONNE : c'est le client qui déplace, aucun prestataire
+     n'a rien proposé.
+
+     ON N'EFFACE NI `relancePour` NI `relanceAt`, ET C'EST VOULU : la clé porte le
+     rendez-vous, donc elle s'invalide d'elle-même et le serveur repartira sur la nouvelle
+     date. Les deux champs lui appartiennent de toute façon, la règle Firestore les refuse
+     au client.
+
+     UNE DEMANDE SOUPLE RESTE SOUPLE, et son heure est RETIRÉE. Le client avait dit « à
+     n'importe quelle heure » : lui faire choisir une heure maintenant contredirait son
+     propre choix, et garder l'ancienne ferait juger la nouvelle date sur une heure que
+     personne n'a demandée.
+
+     ET TOUT LE MONDE EST RE-SOLLICITÉ (`reboostedAt`) : une nouvelle date est une nouvelle
+     chance, y compris pour ceux qui avaient passé. */
+  function redatePatch(dateISO,slot,libelleJour,flex,maintenant){
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(dateISO||''))return null;
+    const souple=(flex==='day'||flex==='week');
+    if(!souple&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(slot||''))return null;
+    return {status:'pending',dateISO:dateISO,slot:souple?'':slot,slotFlex:souple?flex:0,
+      when:libelleJour,reopenedAt:maintenant,reopenedBy:'nouvelle-date',reboostedAt:maintenant};
+  }
+  function blocCreneauPasse(m){
+    if(!relanceEnCours(m))return '';
+    const souple=(m.slotFlex==='day'||m.slotFlex==='week');
+    const J=metierDuSvc(svcDe(m)).jours;
+    const R=(S.redate&&S.redate.reqId===m.reqId)?S.redate:null;
+    /* Un jour qui n'a plus aucune heure tenable ne doit pas être offert : on le
+       choisirait, et rien ne suivrait. Une demande souple n'a pas d'heure à tenir. */
+    const jours=dayOptions(J).filter(function(o){return souple||heuresTenables(m,o.iso).length>0;});
+    const dISO=(R&&R.dateISO&&jours.some(function(o){return o.iso===R.dateISO;}))?R.dateISO:((jours[0]||{}).iso||'');
+    const heures=(souple||!dISO)?[]:heuresTenables(m,dISO).map(function(o){return o.s;});
+    const slot=souple?'':((R&&R.slot&&heures.indexOf(R.slot)>=0)?R.slot:(heures[0]||''));
+    const lbl=dISO?dayLabelFor(dISO,J):'';
+    const pret=!!dISO&&(souple||!!slot);
+    const choix=dISO?`<div class="row" style="gap:8px;margin-top:11px;align-items:stretch">
+        <div style="flex:1"><select class="txt" data-ndday>${jours.map(function(o){return `<option value="${esc(o.iso)}"${o.iso===dISO?' selected':''}>${esc(o.lbl)}</option>`;}).join('')}</select></div>
+        ${souple?'':`<div style="flex:0 0 108px"><select class="txt" data-ndslot>${heures.map(function(h){return `<option value="${esc(h)}"${h===slot?' selected':''}>${esc(h)}</option>`;}).join('')}</select></div>`}
+      </div>
+      ${souple?`<p class="mini" style="margin-top:6px;color:var(--muted)">Vous laissez le prestataire choisir l’heure, comme à votre commande.</p>`:''}`
+      :`<p class="mini" style="margin-top:9px;color:var(--muted)">Plus aucun créneau à proposer pour cette prestation.</p>`;
+    return `<div class="card" style="padding:16px;margin-top:12px;border-left:4px solid var(--coral)">
+      <div class="row" style="gap:10px;align-items:flex-start"><span class="benic" style="background:var(--coral-wash);color:var(--coral-deep)">${I.clock}</span><div style="flex:1">
+        <b style="font-size:14px">Votre créneau est passé</b>
+        <p class="mini" style="margin-top:3px">Personne n’a accepté votre demande à temps. Choisissez une nouvelle date, ou annulez&nbsp;: <b>rien ne vous a été prélevé</b>.</p>
+      </div></div>
+      ${choix}
+      ${S.cancelAsk?cancelConfirmCard(m):`<div class="stack" style="margin-top:11px">
+        ${/* « Déplacer AU Aujourd’hui » : les libellés relatifs (« Aujourd’hui », « Demain »)
+              et les libellés de date (« mardi 14 octobre ») ne prennent pas la même
+              préposition. On n'en choisit pas une au cas par cas, on la retire. */''}
+        ${pret?`<button class="btn primary" data-act="redate:${esc(dISO)}|${esc(slot)}">${I.clock} Déplacer&nbsp;: ${esc(lbl.charAt(0).toLowerCase()+lbl.slice(1))}${slot?(' à '+esc(slot)):''}</button>`:''}
+        <button class="btn ghost sm" data-act="cancel-mission">Annuler ma demande</button>
+      </div>`}
+      <p class="mini" style="margin-top:9px;color:var(--muted)">Sans réponse de votre part, la demande se fermera d’elle-même.</p>
+    </div>`;
+  }
   /* ══ OÙ EN EST LA COMMANDE, ET QUI DOIT AGIR ════════════════════════════════════
      « Une petite barre qui montre les prochaines étapes ; quand elles sont validées,
      un badge vert. On visualise d'un coup d'œil les étapes que l'on aura à valider et
@@ -14360,7 +14492,12 @@
         </div>
         </div>${clientNavbar()}`;
     }
-    let head={pending:{t:'En attente d’acceptation',d:'Les prestataires disponibles regardent votre demande'},accepted:{t:'Mission acceptée',d:(p?esc(p.nm):'')+' interviendra à '+m.slot},working:{t:'Prestation en cours',d:'Travail en cours à votre domicile'}}[m.status];
+    /* DEUX PHRASES QUI SE CONTREDISENT SUR LE MÊME ÉCRAN. « Les prestataires disponibles
+       regardent votre demande » au-dessus de « Votre créneau est passé, personne n'a
+       accepté » : l'un des deux ment, et c'est le premier — le créneau étant passé, plus
+       personne ne peut la prendre. Relevé sur la capture du rendu, pas à la relecture. */
+    let head={pending:(relanceEnCours(m)?{t:'Créneau passé',d:'Personne n’a accepté votre demande à temps'}
+      :{t:'En attente d’acceptation',d:'Les prestataires disponibles regardent votre demande'}),accepted:{t:'Mission acceptée',d:(p?esc(p.nm):'')+' interviendra à '+m.slot},working:{t:'Prestation en cours',d:'Travail en cours à votre domicile'}}[m.status];
     // Demande dirigée en attente : c'est un seul prestataire précis qui répond, pas le pool.
     if(m.status==='pending'&&m.preferredUid){const who=(m.preferredName||'Votre prestataire').split(' ')[0];head={t:'En attente de '+esc(who),d:esc(m.preferredName||'Votre prestataire')+' a reçu votre demande, vous serez prévenu dès sa réponse.'};}
     return `<div class="pad"><div style="height:8px"></div>
@@ -14373,10 +14510,9 @@
             commandé sans rouvrir sa commande. Deux cas, une seule ligne. */''}
       ${(m.status==='pending')?`<p class="mini" style="text-align:center;margin-top:4px">${I.clock} Créneau souhaité&nbsp;: ${esc(m.when||'')}${m.slotFlex?(' · '+flexTxtClient(m)+', un prestataire vous proposera une heure précise.'):(m.slot?(' · '+esc(m.slot)+'.'):'.')}</p>`:''}
       ${(m.slotFlex&&m.proposedSlot&&m.status!=='pending')?`<div class="banner teal" style="margin-top:10px">${I.clock}<span>${p?esc(p.nm.split(' ')[0]):'Le prestataire'} a confirmé son passage à <b>${m.slot}</b> (votre souhait&nbsp;: ${flexTxtClient(m)}).</span></div>`:''}
-      ${m.status==='pending'?(m.preferredUid?`<div class="card" style="padding:16px;margin-top:12px"><div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="background:var(--teal-wash);color:var(--teal-deep)">${I.clock}</span><div><b style="font-size:14px">Demande réservée à ${esc((m.preferredName||'votre prestataire').split(' ')[0])}</b><p class="mini" style="margin-top:4px">Votre demande est adressée <b>uniquement à ${esc(m.preferredName||'votre prestataire')}</b>, pas aux autres artisans, puisque vous l'avez choisi. L'attente est normale&nbsp;: elle dure tant qu'il n'a pas encore répondu. Dès qu'il accepte ou décline, vous êtes prévenu.</p></div></div></div>`:`<div class="card" style="padding:16px;margin-top:12px;text-align:center">${searchRadar(true)}<p class="sub" style="margin:0">Vous saurez qui intervient dès l'acceptation.</p></div>`):((m.svc==='baby'&&p)?babyConfirmBlock(m):(p?`<div class="card provider-pop" style="padding:14px;margin-top:12px"><div class="row" style="gap:12px">${avatarFounder(m.providerPhoto,p.ini,'',p.founder)}<div style="flex:1"><b style="font-size:15px">${esc(p.nm)}</b><div class="mini">${I.pin} ${m.zone}${m.providerAgeBand?' · '+esc(m.providerAgeBand):''}</div></div><div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">${p.founder?`<span class="chip founder-chip">${I.star} Ambassadeur</span>`:''}<span class="chip good">${I.check} ${p.insured?'Vérifié · Assuré':'Vérifié'}</span></div></div>${boutonsContact({tel:(bothAccepted(m)&&m.providerPhone)?m.providerPhone:'',nom:p.nm,nMsg:(m.chat&&m.chat.length)||0,dot:unreadDot(m)})}</div>`:''))}
+      ${m.status==='pending'?(m.preferredUid?`<div class="card" style="padding:16px;margin-top:12px"><div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="background:var(--teal-wash);color:var(--teal-deep)">${I.clock}</span><div><b style="font-size:14px">Demande réservée à ${esc((m.preferredName||'votre prestataire').split(' ')[0])}</b><p class="mini" style="margin-top:4px">Votre demande est adressée <b>uniquement à ${esc(m.preferredName||'votre prestataire')}</b>, pas aux autres artisans, puisque vous l'avez choisi. L'attente est normale&nbsp;: elle dure tant qu'il n'a pas encore répondu. Dès qu'il accepte ou décline, vous êtes prévenu.</p></div></div></div>`:(relanceEnCours(m)?'':`<div class="card" style="padding:16px;margin-top:12px;text-align:center">${searchRadar(true)}<p class="sub" style="margin:0">Vous saurez qui intervient dès l'acceptation.</p></div>`)):((m.svc==='baby'&&p)?babyConfirmBlock(m):(p?`<div class="card provider-pop" style="padding:14px;margin-top:12px"><div class="row" style="gap:12px">${avatarFounder(m.providerPhoto,p.ini,'',p.founder)}<div style="flex:1"><b style="font-size:15px">${esc(p.nm)}</b><div class="mini">${I.pin} ${m.zone}${m.providerAgeBand?' · '+esc(m.providerAgeBand):''}</div></div><div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">${p.founder?`<span class="chip founder-chip">${I.star} Ambassadeur</span>`:''}<span class="chip good">${I.check} ${p.insured?'Vérifié · Assuré':'Vérifié'}</span></div></div>${boutonsContact({tel:(bothAccepted(m)&&m.providerPhone)?m.providerPhone:'',nom:p.nm,nMsg:(m.chat&&m.chat.length)||0,dot:unreadDot(m)})}</div>`:''))}
       ${blocPropositionsRecues(m)}
-      ${waitEscalation(m)}
-      ${(m.status==='pending'&&!m.preferredUid)?liveBoostBlock(m):''}
+      ${relanceEnCours(m)?blocCreneauPasse(m):`${waitEscalation(m)}${(m.status==='pending'&&!m.preferredUid)?liveBoostBlock(m):''}`}
       ${(p&&locModeOf(m)==='salon')?`<div class="card" style="padding:16px;margin-top:12px;border-left:4px solid var(--teal-deep)"><div class="row" style="gap:10px;align-items:flex-start"><span class="benic" style="background:var(--teal-wash);color:var(--teal-deep)">${I.pin}</span><div style="flex:1"><b style="font-size:14px">${lieuDuSvc(m.svc)==='depart'?'Point de départ':'Vous vous rendez chez le prestataire'}</b>${m.providerSalonAddress?`<p class="sub" style="margin-top:4px;color:var(--ink)">${esc(m.providerSalonAddress)}${m.providerSalonZone?' · '+esc(m.providerSalonZone):''}</p>`:`<p class="mini" style="margin-top:4px;color:var(--muted)">${lieuDuSvc(m.svc)==='depart'?'Le prestataire va vous communiquer le point de départ.':'Le prestataire va vous communiquer son adresse.'}</p>`}</div></div>${m.providerSalonGeo?miniMap(m.providerSalonGeo,'view','salon'):''}${m.providerSalonGeo?`<a class="btn ghost sm" href="${navUrl(m.providerSalonGeo.lat,m.providerSalonGeo.lng)}" target="_blank" rel="noopener" style="margin-top:10px;text-decoration:none;justify-content:center;gap:8px">${I.pin} Ouvrir l'itinéraire (${navAppName()})</a>`:''}</div>`:''}
       ${(m.svc==='colis'&&p)?colisDossier(m,false):''}
       ${/* On joint son prestataire depuis SA carte, en haut : c'est là qu'on le regarde.
@@ -14388,7 +14524,7 @@
             validation silencieuse de toute hausse) — c'est que rien de plus n'est prélevé sans
             l'accord du client. Un forfait, lui, ne bouge pas : son montant EST le montant. */''}
       ${(function(){const fixe=isForfait(m);return `<div class="est" style="background:var(--card-2);border-color:var(--hair)"><div class="line"><span>${fixe?'Montant':'Montant estimé'}</span><b>${eur(t.total)}</b></div><div class="line"><span>Sur ${cardTxt()}</span><b>${S.card?'bloqué':'à la validation'}</b></div><small>${I.shield} Rien à faire&nbsp;: débité automatiquement à la fin, seulement si vous validez.${fixe?'':' Si le prestataire déclare plus d’heures, rien de plus n’est prélevé sans votre accord.'}</small></div>`;})()}
-      ${m.status==='pending'?`<div class="footcta" style="position:static;background:none;padding:16px 0 0">${isDemo()?`<button class="demobtn" data-act="demo-go-pro">${I.hardhat} Voir côté prestataire (démo)</button>`:''}${S.cancelAsk?cancelConfirmCard(m):`<button class="btn ghost" data-act="cancel-mission" style="margin-top:12px">Annuler la demande</button>`}</div>`:'<div style="height:18px"></div>'}
+      ${m.status==='pending'?`<div class="footcta" style="position:static;background:none;padding:16px 0 0">${isDemo()?`<button class="demobtn" data-act="demo-go-pro">${I.hardhat} Voir côté prestataire (démo)</button>`:''}${relanceEnCours(m)?'':(S.cancelAsk?cancelConfirmCard(m):`<button class="btn ghost" data-act="cancel-mission" style="margin-top:12px">Annuler la demande</button>`)}</div>`:'<div style="height:18px"></div>'}
       ${m.status==='accepted'?`<div class="card" style="padding:14px;margin-top:12px;background:var(--card-2)"><p class="mini" style="text-align:center;margin:0">${S.clientNoShowAsk?`<span style="color:var(--coral-deep)">Le prestataire ne s'est pas présenté&nbsp;? Nous <b>relançons aussitôt</b> la recherche auprès des autres artisans, et <b>vous ne payez rien</b> pour une absence.</span><br><button class="linklike" data-act="client-noshow-confirm" style="color:var(--coral-deep);font-weight:700;margin-top:6px;display:inline-block">Oui, relancer la recherche</button> &nbsp;·&nbsp; <button class="linklike" data-act="client-noshow-cancel">Annuler</button>`:`${I.clock} <button class="linklike" data-act="client-noshow" style="color:var(--muted)">Le prestataire ne s'est pas présenté&nbsp;?</button>`}</p></div>`:''}
       ${m.status==='accepted'?`<div style="text-align:center;margin-top:12px">${S.cancelAsk?cancelConfirmCard(m):`<button class="linklike" data-act="cancel-mission" style="color:var(--muted)">Annuler la prestation</button>${(function(){/* LA PHRASE DISAIT « 8 h » ET « 50 % » EN DUR, sur un écran où le métier a
       ses propres conditions depuis longtemps : un chantier réglé à 4 h et 20 % annonçait
@@ -15036,6 +15172,13 @@
         if(!m.provider&&['accepted','working','done_pro','disputed'].indexOf(r.status||m.status)>=0){
           m.provider={nm:r.providerName||'Votre prestataire',ini:inits(r.providerName||'Votre prestataire'),rating:0,jobs:(r.providerJobs||0),founder:!!r.providerFounder,insured:!!r.providerInsured};
         }
+        /* LA RELANCE DU CRÉNEAU PASSÉ, en direct. L'horodatage AVANT la clé : `relanceEnCours`
+           exige les deux, et annoncer sur une moitié de fiche ferait passer le message sans
+           que la carte paraisse. Le client qui a l'application ouverte ne reçoit pas
+           toujours la notification système (premier plan) : le bandeau est son seul signal. */
+        {const ra=dateMs(r.relanceAt);if(ra&&m.relanceAt!==ra){m.relanceAt=ra;touched=true;}}
+        if(r.relancePour!=null&&m.relancePour!==r.relancePour){const avant=m.relancePour;m.relancePour=r.relancePour;touched=true;
+          if(S.persona==='client'&&!avant&&relanceEnCours(m))toast('Votre créneau est passé, choisissez une nouvelle date ou annulez');}
         if(r.acceptedSlot&&m.slot!==r.acceptedSlot){m.slot=r.acceptedSlot;if(r.slotFlex)m.proposedSlot=r.acceptedSlot;touched=true;}
         if(r.finalHours!=null&&m.finalHours!==r.finalHours){m.finalHours=r.finalHours;touched=true;}
         if(r.disputeMsg&&m.disputeMsg!==r.disputeMsg){m.disputeMsg=r.disputeMsg;touched=true;}
@@ -19004,6 +19147,20 @@
     if(b.dataset.act&&b.dataset.act.indexOf('passage-envoyer:')===0){
       envoyerContreProposition(b.dataset.act.slice('passage-envoyer:'.length));return;}
     if(b.dataset.act==='client-open-standard'){openToStandard(S.mission);return;}
+    /* CRÉNEAU PASSÉ : LE CLIENT DÉPLACE SA DEMANDE. Les valeurs voyagent dans l'attribut
+       plutôt que dans l'état : le bouton marche même si l'on n'a touché aucun des deux
+       menus, puisqu'il porte alors les valeurs par défaut que la carte affiche. Un
+       bouton qui nomme un rendez-vous doit écrire CELUI-LÀ. */
+    if(b.dataset.act&&b.dataset.act.indexOf('redate:')===0){
+      (function(){const v=b.dataset.act.slice('redate:'.length).split('|');const m=S.mission;
+        if(!m||m.status!=='pending')return;
+        const p=redatePatch(v[0]||'',v[1]||'',dayLabelFor(v[0]||'',metierDuSvc(svcDe(m)).jours),m.slotFlex,Date.now());
+        if(!p){toast('Choisissez une date et une heure');return;}
+        m.dateISO=p.dateISO;m.slot=p.slot;m.slotFlex=p.slotFlex;m.when=p.when;
+        S.redate=null;S.cancelAsk=null;
+        if(!isDemo())pushReqUpdate(m,p);
+        try{cacheClientLocal();}catch(_){}
+        render();toast('Demande déplacée au '+p.when+(p.slot?(' à '+p.slot):'')+', prestataires re-sollicités');})();return;}
     /* CONTRE-PROPOSITION, CÔTÉ CLIENT. Accepter DÉPLACE sa commande : on le DIT avant de
        le faire, jamais après. Et l'on n'assigne pas le prestataire — on lui ADRESSE la
        demande : c'est lui qui écrit sa photo, son identité légale et son SIRET en
@@ -20271,6 +20428,15 @@
     if(pgh){const r=(S.openRequests||[]).find(function(x){return x.id===S.proReqView;});
       if(r){if(!(S.proReqJour&&S.proReqJour.reqId===r.id))S.proReqJour={reqId:r.id,d:(r.dateISO||'')};
         S.proReqSlot=pgh.value;render();}return;}
+    /* Les menus de la carte « créneau passé ». Changer de JOUR efface l'heure : une heure
+       tenable hier ne l'est pas forcément aujourd'hui, et la carte reprend la première
+       qui tient. L'heure, elle, lit le jour DANS le menu plutôt que dans l'état, pour
+       que toucher l'heure en premier marche aussi. */
+    const ndd=e.target.closest('[data-ndday]');
+    if(ndd&&S.mission){S.redate={reqId:S.mission.reqId,dateISO:ndd.value,slot:''};render();return;}
+    const nds=e.target.closest('[data-ndslot]');
+    if(nds&&S.mission){const j=document.querySelector('[data-ndday]');
+      S.redate={reqId:S.mission.reqId,dateISO:(j&&j.value)||'',slot:nds.value};render();return;}
     const dcy=e.target.closest('[data-cfday]');
     if(dcy&&S.draft){if(!dcy.value)return;S.draft.dateISO=dcy.value;S.draft.dateMode='pick';S.draft.when=dayLabelFor(dcy.value,metierDuSvc(S.draft.svc).jours);renderConfig();return;}
     const dch=e.target.closest('[data-cfhour]');
@@ -21491,6 +21657,9 @@
           }
           m.status=r.status;m.svc=r.service;m.svcName=r.serviceName||svcNm(r.service);m.rate=r.rate;m.duration=r.duration||1;m.unit=r.unit||'h';m.when=r.when||'';m.slot=r.acceptedSlot||r.slot||m.slot||'';m.zone=r.zone||m.zone||'';m.boost=r.boost||0;m.boostEur=r.boostEur||0;m.tip=r.tip||0;m.slotFlex=r.slotFlex||0;m.notes=r.notes||m.notes||'';m.frequency=r.frequency||m.frequency||'ponctuelle';m.people=r.people||m.people||1;m.locationMode=r.locationMode||m.locationMode||'domicile';m.providerSalonAddress=r.providerSalonAddress||m.providerSalonAddress||'';m.providerSalonZone=r.providerSalonZone||m.providerSalonZone||'';m.providerSalonGeo=r.providerSalonGeo||m.providerSalonGeo||null;
           m.dateISO=r.dateISO||m.dateISO||'';if(r.createdAt&&r.createdAt.toMillis)m._createdMs=r.createdAt.toMillis();
+          // Le verdict du serveur sur le créneau passé : la carte qui propose une nouvelle
+          // date ne paraît que s'il a relancé POUR ce rendez-vous (voir `relanceEnCours`).
+          m.relancePour=r.relancePour||'';m.relanceAt=dateMs(r.relanceAt);
           // Demande DIRIGÉE : restaurer le prestataire visé pour afficher le bon écran de suivi
           // (« réservée à X ») au lieu du générique. Vidé si la demande a été rouverte à tous.
           m.preferredUid=r.preferredProviderUid||null;m.preferredName=r.preferredProviderName||'';m.directed=!!r.directed;

@@ -211,9 +211,21 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   ok(purge.length > 100, 'le serveur porte une tâche qui expire les demandes non honorées');
   ok(/where\('status', '==', 'pending'\)/.test(purge),
     'elle ne touche QUE ce qui cherche encore, jamais une mission acceptée');
-  ok(/PURGE_APRES_MS/.test(purge) && /12 \* 3600000/.test(SRV),
-    'douze heures APRÈS LE CRÉNEAU, pas après la création');
-  ok(/dateISO/.test(purge) && /sansDate\+\+/.test(purge),
+  /* LA DÉCISION A DÉMÉNAGÉ, ET C'EST LE CORRECTIF. La purge calculait sa propre fin de
+     créneau ; depuis la relance du client (« choisissez une nouvelle date ou annulez »),
+     les deux tâches lisent le même noyau, sinon l'une fermerait ce que l'autre n'a pas
+     encore annoncé. On vérifie donc la PORTE, puis la règle là où elle vit désormais. */
+  ok(/DEPASSE\.creneauDepasse/.test(purge) && !/Date\.parse/.test(purge),
+    'elle ne calcule plus sa propre date : la fin du créneau est écrite une fois, dans le noyau partagé');
+  const NOYAU = require('/home/user/alize-work/functions/creneau-depasse.js');
+  const t9 = Date.parse('2026-10-10T09:00:00-04:00');
+  const base = { status: 'pending', dateISO: '2026-10-10', slot: '09:00' };
+  ok(NOYAU.PURGE_APRES_MS === 12 * 3600000, 'douze heures APRÈS LE CRÉNEAU, pas après la création');
+  ok(!NOYAU.creneauDepasse(base, t9 + 11 * 3600000).expirer,
+    'onze heures après le créneau, la demande vit encore');
+  ok(NOYAU.creneauDepasse(Object.assign({}, base, { relancePour: NOYAU.cleCreneau(base), relanceAt: t9 }),
+    t9 + 13 * 3600000).expirer, 'treize heures après, et le client prévenu, elle se ferme');
+  ok(NOYAU.creneauDepasse(Object.assign({}, base, { dateISO: '' }), t9 + 999 * 3600000).motif === 'sans-date',
     'et sans date lisible elle ne devine pas : elle laisse la demande et le dit');
   ok(/runTransaction/.test(purge),
     'elle relit dans une transaction : une demande acceptée à la seconde près n’est pas écrasée');

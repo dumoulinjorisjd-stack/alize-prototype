@@ -1081,6 +1081,7 @@ exports.assignFounderSpot = onDocumentCreated('artisans/{artisanId}', async (eve
  * de paiement) et le passage à « pending » (le cas normal, après autorisation de la carte).
  */
 const ANTI = require('./anti-abus');
+const DEPASSE = require('./creneau-depasse');
 /* LE COMPTEUR DU JOUR. Un document par clé et par jour dans `quotas` — collection
  * SERVEUR (aucune règle ne l'ouvre, l'Admin SDK passe outre). Transaction : deux demandes
  * simultanées ne peuvent pas lire le même nombre et l'écrire deux fois.
@@ -4846,14 +4847,14 @@ const AUTO_VALID_H = 48, AUTO_RAPPEL_H = 24;
    annulation — un prestataire s'est engagé, une indemnité peut être due : cela ne se
    décide pas dans un balayage. Et `pending_payment` a déjà son alerte à part.
 
-   ON N'EXPIRE QUE CE DONT ON CONNAÎT LA DATE : sans `dateISO` lisible, on ne sait pas si
-   le créneau est passé, et deviner fermerait des demandes vivantes. DOUZE HEURES APRÈS
-   LE CRÉNEAU, pas après la création : une demande posée longtemps à l'avance est
-   normale, c'est le RENDEZ-VOUS qui dit qu'il est trop tard.
+   DEPUIS LA RELANCE, LA DÉCISION N'EST PLUS ICI. Les deux tâches lisent le même noyau
+   (`functions/creneau-depasse.js`) : la fin du créneau, la clé du rendez-vous annoncé et
+   les trois issues y sont écrites UNE fois. Deux calculs voisins finissaient par ne plus
+   tomber sur la même seconde, et l'une fermait alors ce que l'autre n'avait pas encore
+   annoncé. Ce qui reste ici est le balayage, la transaction et la trace.
 
    Passer en « expired » suffit : `settleCancellation` écoute déjà cette transition,
    libère l'empreinte et prévient les deux parties. */
-const PURGE_APRES_MS = 12 * 3600000;
 const PURGE_MAX = 200;
 exports.expirerDemandesNonHonorees = onSchedule({schedule: 'every day 04:10', secrets: [SMTP_PASS]}, async () => {
   const db = getFirestore();
@@ -4861,28 +4862,103 @@ exports.expirerDemandesNonHonorees = onSchedule({schedule: 'every day 04:10', se
   try { snap = await db.collection('requests').where('status', '==', 'pending').get(); }
   catch (e) { console.warn('expirerDemandes : lecture', e); return; }
   const now = Date.now();
-  let n = 0, sansDate = 0;
+  let n = 0;
+  const motifs = {};
   for (const d of snap.docs) {
     if (n >= PURGE_MAX) break;
     const r = d.data() || {};
-    const iso = String(r.dateISO || '');
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) { sansDate++; continue; }
-    // Fin du créneau : la date, plus l'heure si elle est lisible, en heure de Saint-Barth
-    // (UTC−4) — c'est l'heure dans laquelle le client a choisi son rendez-vous.
-    const hm = /^(\d{1,2}):(\d{2})$/.exec(String(r.slot || ''));
-    const t = Date.parse(iso + 'T' + (hm ? (String(hm[1]).padStart(2, '0') + ':' + hm[2]) : '23:59') + ':00-04:00');
-    if (!isFinite(t) || (now - t) < PURGE_APRES_MS) continue;
+    const v = DEPASSE.creneauDepasse(r, now);
+    motifs[v.motif] = (motifs[v.motif] || 0) + 1;
+    if (!v.expirer) continue;
     try {
       await db.runTransaction(async (tx) => {
         const cur = await tx.get(d.ref);
-        if (!cur.exists || (cur.data() || {}).status !== 'pending') return;
+        // ON REVÉRIFIE AVEC LE MÊME NOYAU, pas avec un bout de condition recopié : la
+        // demande a pu être acceptée, déplacée ou relancée pendant le balayage.
+        if (!cur.exists || !DEPASSE.creneauDepasse(cur.data() || {}, now).expirer) return;
         tx.update(d.ref, { status: 'expired', expiredBy: 'auto', expiredAt: FieldValue.serverTimestamp() });
       });
       n++;
     } catch (e) { console.warn('expirerDemandes', d.id, e); }
   }
-  console.log('expirerDemandesNonHonorees : ' + n + ' demande(s) expirée(s) sur ' + snap.size + ' en recherche'
-    + (sansDate ? (', ' + sansDate + ' sans date lisible, laissée(s) telle(s) quelle(s)') : '') + '.');
+  console.log('expirerDemandesNonHonorees : ' + n + ' demande(s) expirée(s) sur ' + snap.size
+    + ' en recherche. ' + JSON.stringify(motifs));
+});
+
+/* LA RELANCE QUAND LE CRÉNEAU EST PASSÉ.
+   « Quand la prestation souhaitée est dépassée dans le temps voulu, il faut que le client
+   reçoive une notification qui lui propose de mettre une nouvelle date ou de l'annuler. »
+
+   TOUTES LES HEURES, ET NON UNE FOIS PAR NUIT. La purge tourne à 04:10 : un créneau passé
+   à 09:00 n'aurait été vu qu'à quatre heures du matin le lendemain, dix-neuf heures plus
+   tard, c'est-à-dire déjà expirable. La relance arriverait alors en même temps que la
+   fermeture, ou après. Elle doit donc avoir sa propre horloge, et serrée.
+
+   ON ÉCRIT D'ABORD, ON PRÉVIENT ENSUITE. Une notification partie deux fois est pire
+   qu'une notification partie une fois sans trace : le client ne saurait plus combien de
+   demandes attendent sa réponse. La transaction pose la clé du créneau et l'horodatage,
+   et c'est ce qui tient l'idempotence — l'envoi qui suit peut échouer sans rien casser,
+   la demande vit alors ses douze heures et se ferme comme avant.
+
+   PUSH ET COURRIEL, LES DEUX. Un compte sans jeton de notification est le cas ORDINAIRE,
+   pas l'exception : c'est tout le sujet de « les notifications ne partent presque jamais ».
+   Une relance qui n'atteint personne vaut l'ancienne fermeture muette. */
+const RELANCE_MAX = 120;
+exports.relancerDemandesDepassees = onSchedule({schedule: 'every 1 hours', secrets: [SMTP_PASS]}, async () => {
+  const db = getFirestore();
+  let snap;
+  try { snap = await db.collection('requests').where('status', '==', 'pending').get(); }
+  catch (e) { console.warn('relance : lecture', e); return; }
+  const now = Date.now();
+  let partis = 0, muets = 0;
+  for (const d of snap.docs) {
+    if (partis + muets >= RELANCE_MAX) break;
+    const r = d.data() || {};
+    if (!DEPASSE.creneauDepasse(r, now).relancer) continue;
+    const cle = DEPASSE.cleCreneau(r);
+    if (!cle) continue;
+    let ecrit = false;
+    try {
+      await db.runTransaction(async (tx) => {
+        const cur = await tx.get(d.ref);
+        if (!cur.exists || !DEPASSE.creneauDepasse(cur.data() || {}, now).relancer) return;
+        tx.update(d.ref, { relancePour: cle, relanceAt: now });
+        ecrit = true;
+      });
+    } catch (e) { console.warn('relance', d.id, e); continue; }
+    if (!ecrit) continue;
+
+    const T = DEPASSE.texteRelance(r);
+    const clientUid = r.clientUid;
+    let touche = false;
+    if (clientUid) {
+      try {
+        const tokens = await userPushTokens(db, clientUid);
+        if (tokens.length) {
+          await pushMulticast(tokens, T.titre, T.corps, '/?open=wallet&r=' + d.id,
+            (tok) => db.collection('users').doc(clientUid).update({ pushTokens: FieldValue.arrayRemove(tok) }),
+            'ti-relance-' + d.id);
+          touche = true;
+        }
+      } catch (e) { console.warn('relance push', d.id, e); }
+      try {
+        const u = (await db.collection('users').doc(clientUid).get()).data() || {};
+        if (u.email) {
+          await sendMail(db, u.email, {
+            subject: 'Ti-Services · ' + T.titre,
+            html: '<p>' + escHtmlS(T.corps) + '</p>'
+              + '<p>Ouvrez votre demande pour choisir une nouvelle date, ou pour l\'annuler :</p>'
+              + '<p><a href="https://ti-services.fr/?open=wallet&r=' + escHtmlS(d.id) + '">Voir ma demande</a></p>'
+              + '<p>Sans réponse de votre part, elle se fermera d\'elle-même et rien ne vous sera prélevé.</p>',
+          });
+          touche = true;
+        }
+      } catch (e) { console.warn('relance mail', d.id, e); }
+    }
+    if (touche) partis++; else muets++;
+  }
+  console.log('relancerDemandesDepassees : ' + partis + ' client(s) prévenu(s), ' + muets
+    + ' sans moyen de contact, sur ' + snap.size + ' en recherche.');
 });
 
 exports.autoValidate = onSchedule({schedule: 'every 1 hours', secrets: [SMTP_PASS]}, async () => {
