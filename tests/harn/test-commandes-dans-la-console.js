@@ -40,12 +40,40 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
     S.adminBookings = []; S.adminArtisans = []; S.adminClients = clients || [];
     S.adminArtsLoaded = true; S.adminClisLoaded = true;
     S.adminReqs = JSON.parse(JSON.stringify(reqs)); S.adminReqsLus = true;
-    S.admin = { view: 'home' }; S._fold = { 'a-bookings': true };
+    /* LES ARRÊTÉES ONT DÉMÉNAGÉ. « Réservations en cours » ne garde que ce qui appelle
+       un geste ; tout le reste est rangé dans « Toutes les commandes », par statut puis
+       par métier, sans aucune coupe. On ouvre donc les DEUX cartes, et l'on déplie tout
+       ce que le jeu d'essai contient — les assertions vérifient que la console le DIT,
+       pas l'endroit où elle le dit. */
+    S.admin = { view: 'home' }; S._fold = { 'a-bookings': true, 'a-cmd-toutes': true };
+    S._admCmdStat = {}; S._admCmdMet = {};
+    (reqs || []).forEach(function (r) {
+      S._admCmdStat[r.status] = true;
+      S._admCmdMet[r.status + '|' + (r.svc || 'autre')] = true;
+    });
     window.__render();
     const v = document.getElementById('view');
-    const carte = Array.from(v.querySelectorAll('.foldc')).find((c) => /Réservations en cours/.test(c.textContent || ''));
-    return { txt: carte ? (carte.textContent || '').replace(/\s+/g, ' ') : '(carte absente)',
-      lignes: carte ? carte.querySelectorAll('.fold-body .card').length : 0 };
+    const toutes = Array.from(v.querySelectorAll('.foldc'));
+    const vivante = toutes.find((c) => /Réservations en cours/.test(c.textContent || ''));
+    const registre = toutes.find((c) => /Par statut, puis par métier/.test(c.textContent || ''));
+    const cartes = [vivante, registre].filter(Boolean);
+    const txt = cartes.map((c) => (c.textContent || '')).join(' ').replace(/\s+/g, ' ');
+    /* UNE LIGNE DE COMMANDE EST UN `div.card` ; les cartes de regroupement (statut,
+       métier) sont des `button.card`. La distinction est structurelle, pas cosmétique :
+       compter « .card » comptait désormais les paquets avec leur contenu.
+       ET L'ON COMPTE LES DEUX CARTES SÉPARÉMENT : une commande VIVANTE paraît dans les
+       deux, et c'est voulu — la première dit ce qui se passe, la seconde est le registre
+       complet, et un registre qui sauterait les commandes en cours aurait un trou. */
+    const compte = (c) => c ? c.querySelectorAll('.fold-body div.card').length : 0;
+    const lignes = compte(vivante), lignesRegistre = compte(registre);
+    /* Les pastilles des LIGNES de commande (jamais celles des cartes de regroupement) :
+       une ligne nomme UNE réservation, une carte en nomme un paquet. */
+    const pastilles = Array.from(v.querySelectorAll('[data-adm^="cmdmet:"] ~ .card .chip, .fold-body > .card > .row .chip'))
+      .map((c) => (c.textContent || '').trim());
+    const texteDe = (c) => c ? (c.textContent || '').replace(/\s+/g, ' ') : '';
+    return { txt: cartes.length ? txt : '(carte absente)', lignes: lignes,
+      lignesRegistre: lignesRegistre, pastilles: pastilles,
+      txtVivante: texteDe(vivante), txtRegistre: texteDe(registre) };
   }, { reqs, clients });
 
   const H = 3600000;
@@ -239,12 +267,15 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   const ANNUL = Object.assign({}, EN_RECHERCHE, { id: 'r9', status: 'cancelled',
     fin: Date.now() - 2 * H2, tardive: false, frais: 0, decision: 'none' });
   const ann = await console_([ANNUL], []);
-  ok(/Annulées ou expirées/.test(ann.txt), 'elles ont leur section');
-  ok(ann.lignes >= 1, 'et la commande y figure');
+  ok(/Annulées/.test(ann.txt), 'les annulées ont leur carte, nommée au PLURIEL : elle en réunit un paquet');
+  ok(ann.lignesRegistre >= 1, 'et la commande y figure');
+  ok(ann.lignes === 0,
+    'tandis que « Réservations en cours » ne la garde PAS : sans frais et sans décision en attente, elle n’appelle aucun geste');
   ok(/Annulée depuis 2 h, sans frais/.test(ann.txt),
     'avec ce qui s’est passé : quand, et sans frais');
-  ok(/Annulée/.test(ann.txt) && !/Annulées/.test(ann.txt.replace('Annulées ou expirées', '')),
-    'et la pastille parle au singulier — une ligne n’est pas un compteur');
+  ok(ann.pastilles.indexOf('Annulée') >= 0,
+    'et la pastille de la LIGNE parle au singulier — une ligne n’est pas un compteur ('
+    + ann.pastilles.join(', ') + ')');
 
   /* UNE ANNULATION TARDIVE N'EST PAS UNE ANNULATION : une part reste due, et c'est le
      PRESTATAIRE qui décide. Tant qu'il n'a pas tranché, quelque chose attend vraiment. */
@@ -268,16 +299,21 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   /* LES ARRÊTÉES PASSENT AVANT LES RÉGLÉES : c'est là qu'il peut y avoir un geste. */
   const melange = await console_([ANNUL,
     Object.assign({}, EN_RECHERCHE, { id: 'rp', status: 'paid', at: Date.now() - H2 })], []);
-  const iArr = melange.txt.indexOf('Annulées ou expirées'), iReg = melange.txt.indexOf('Dernières réglées');
+  const iArr = melange.txt.indexOf('Annulées'), iReg = melange.txt.indexOf('Réglées');
   ok(iArr >= 0 && iReg >= 0 && iArr < iReg,
-    'elles sont placées avant les réglées (les deux sections présentes, dans cet ordre)');
+    'les arrêtées passent avant les réglées : c’est là qu’il peut y avoir un geste');
 
-  /* ET CE QU'ON NE MONTRE PAS, ON LE DIT. Une septième annulation qui disparaîtrait en
-     silence serait le défaut même qu'on vient de corriger, à six près. */
+  /* ET PLUS RIEN N'EST COUPÉ. Cette épreuve affirmait l'inverse — « la section en montre
+     six au plus » et « elle dit combien restent derrière » — parce que c'était la règle :
+     une carte « en cours » ne pouvait pas dérouler tout l'historique. L'éditeur a relevé
+     le prix de ce choix (« je ne vois pas toutes celles qui ont expiré ou annulé »), et
+     la réponse n'a pas été une limite plus haute mais une carte à part, repliée par
+     statut puis par métier. Huit annulations donnent donc huit lignes. */
   const huit = []; for (let i = 0; i < 8; i++) huit.push(Object.assign({}, ANNUL, { id: 'a' + i, fin: Date.now() - i * H2 }));
   const trop = await console_(huit, []);
-  ok(trop.lignes === 6, 'la section en montre six au plus (' + trop.lignes + ')');
-  ok(/et 2 autres plus anciennes/.test(trop.txt), 'et elle dit combien restent derrière');
+  ok(trop.lignesRegistre === 8, 'huit annulations, huit lignes dans le registre : rien n’est coupé (' + trop.lignesRegistre + ')');
+  ok(!/plus ancienne/.test(trop.txt),
+    'et l’aveu « et N autres plus anciennes » n’a plus lieu d’être : il ne menait nulle part');
 
   /* ET PAS UN SEUL TIRET CADRATIN. « Enlève les tirets cadratins partout dans
      l'application » : la règle vaut aussi pour la console, que le balayage des quinze
@@ -296,9 +332,16 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   ], []);
   ok(toutes.txt.indexOf('\u2014') < 0,
     'pas un seul tiret cadratin sur la carte, toutes formes de ligne confondues');
-  ok(/Camille Demain/.test(toutes.txt),
+  ok(/Camille Demain/.test(toutes.txtVivante),
     'et sans prestataire la flèche ne paraît pas : elle promettrait un destinataire');
-  ok(/Camille → Prestataire/.test(toutes.txt), 'alors qu’avec un prestataire elle le nomme');
+  /* LA FLÈCHE APPARTIENT À LA FORME « CARTE VIVANTE », où le titre est le MÉTIER et la
+     ligne du dessous dit « client → prestataire ». Dans le registre, la sous-carte nomme
+     déjà le métier : le titre devient le CLIENT et le prestataire se lit juste en
+     dessous, sans flèche — il n'y a plus rien à faire pointer, le client est au-dessus. */
+  const avecPro = await console_([Object.assign({}, EN_RECHERCHE, { id: 'rv', status: 'accepted', provider: 'Maya' })], []);
+  ok(/Camille → Maya/.test(avecPro.txtVivante), 'alors qu’avec un prestataire elle le nomme');
+  ok(/Maya/.test(avecPro.txtRegistre) && !/→/.test(avecPro.txtRegistre),
+    'et dans le registre, le prestataire est nommé sans flèche : le client est déjà le titre de la ligne');
 
   /* J — LA PROJECTION ELLE-MÊME. Les sections précédentes posent `S.adminReqs` à la
      main : elles mesurent ce que la console REND, jamais ce qu'elle GARDE du document.

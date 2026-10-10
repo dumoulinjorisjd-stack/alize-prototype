@@ -3662,7 +3662,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='855';
+  const VERSION_APP='856';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -5607,6 +5607,61 @@
       diff:(function(){const d=r0.diffusion;if(!d||typeof d!=='object')return null;
         return {motif:txt(d.motif,24),cibles:Number(d.cibles)||0,
           push:Number(d.push)||0,mail:Number(d.mail)||0};})()};
+  }
+  /* ══ TOUTES LES COMMANDES, PAR STATUT PUIS PAR MÉTIER ═══════════════════════════
+     « Dans les réservations en cours, je ne vois pas toutes celles qui ont expiré ou
+     annulé », et « pour s'y retrouver dans toutes les commandes passées, il faut une
+     carte par statut, avec une sous-carte par métier. » — l'éditeur, le 16/10/2026.
+
+     LA CARTE DES RÉSERVATIONS COUPE, ET C'EST VOULU : elle montre ce qui est VIVANT,
+     là où un geste peut être nécessaire. Six annulations, cinq réglées, et le reste
+     annoncé par « et N autres plus anciennes » — une phrase honnête, mais qui ne mène
+     nulle part. Ce qui manquait n'est pas une limite plus haute, c'est un endroit où
+     TOUT est rangé.
+
+     RANGER N'EST PAS AFFICHER. Un parc de plusieurs centaines de commandes ne tient
+     pas sur un écran : chaque statut est une carte REPLIÉE qui porte son nombre et son
+     montant, chaque métier à l'intérieur en est une autre. On déplie ce qu'on cherche,
+     et rien n'est coupé.
+
+     L'ORDRE DES STATUTS EST DÉCLARÉ, jamais celui des clés d'un objet : le vivant
+     d'abord (c'est là qu'on agit), puis ce qui s'est arrêté, puis ce qui s'est bien
+     terminé. Un statut INCONNU — une version plus récente, un document abîmé — ne
+     disparaît pas pour autant : il passe en queue, sous son propre nom. Une commande
+     qu'on ne sait pas nommer reste une commande.
+
+     LE NOM DU MÉTIER EST INJECTÉ : le noyau ne lit pas le catalogue, et n'a pas à
+     savoir qu'un métier se renomme. */
+  const CMD_ORDRE=['pending','accepted','working','done_pro','disputed',
+    'cancelled','expired','declined','pending_payment','payment_failed','paid','rated'];
+  function commandesParStatut(liste,ordre,nomMetier){
+    const parSt={};
+    (liste||[]).forEach(function(r){
+      if(!r||!r.status)return;
+      const st=String(r.status);
+      const g=parSt[st]||(parSt[st]={n:0,total:0,parSvc:{}});
+      g.n++;g.total+=Number(r.total)||0;
+      /* Un métier vide n'est pas un métier sans nom : il se range sous « autre »,
+         visiblement, plutôt que de créer un groupe à clé vide que personne ne lit. */
+      const svc=String((r&&r.svc)||'')||'autre';
+      const m=g.parSvc[svc]||(g.parSvc[svc]={svc:svc,n:0,total:0,lignes:[]});
+      m.n++;m.total+=Number(r.total)||0;m.lignes.push(r);
+    });
+    const connus=(ordre||[]).filter(function(k){return parSt[k];});
+    const inconnus=Object.keys(parSt).filter(function(k){return (ordre||[]).indexOf(k)<0;});
+    return connus.concat(inconnus).map(function(k){
+      const g=parSt[k];
+      const metiers=Object.keys(g.parSvc).map(function(x){return g.parSvc[x];})
+        /* Le plus fourni d'abord ; à égalité, la clé du métier — jamais l'ordre de
+           déclaration d'un objet, qui dépend de l'ordre d'arrivée des documents. */
+        .sort(function(a,b){return (b.n-a.n)||(a.svc<b.svc?-1:(a.svc>b.svc?1:0));});
+      metiers.forEach(function(m){
+        m.nm=nomMetier?nomMetier(m.svc):m.svc;
+        m.lignes.sort(function(a,b){return ((b.fin||b.at||0)-(a.fin||a.at||0));});
+        m.total=Math.round(m.total*100)/100;
+      });
+      return {statut:k,n:g.n,total:Math.round(g.total*100)/100,metiers:metiers};
+    });
   }
   function missionDeadlineMs(m){
     if(!m)return null;
@@ -11400,7 +11455,16 @@
       const M=DIFF_MOTIFS[d.motif]; if(!M)return '';
       return `<div class="mini" style="margin-top:5px;color:var(--coral-deep);line-height:1.45"><b>${esc(M[0])}</b>&nbsp;: ${esc(M[1])}.</div>`;
     };
-    const cmdLigne=function(r){
+    /* LE TITRE D'UNE LIGNE DÉPEND DE CE QUI EST ÉCRIT AU-DESSUS D'ELLE. Dans la carte
+       des réservations, le métier est l'information qui distingue deux lignes. Sous une
+       sous-carte « Ménage », il est écrit neuf fois de suite et ne distingue plus rien :
+       c'est le CLIENT qu'on cherche des yeux. Relevé sur la capture du rendu.
+
+       `sansMetier` est un BOOLÉEN EXPLICITE, et tous les appels passent par une fonction
+       nommée : `liste.map(cmdLigne)` aurait passé l'INDICE en second argument, donc une
+       première ligne avec son métier et toutes les suivantes sans — le piège classique,
+       et il est silencieux. */
+    const cmdLigne=function(r,sansMetier){
       const L=(BK_CONNUS.indexOf(r.status)>=0)?bkStatus(r.status)
         :(FIN_LIB[r.status]||REQ_LIB[r.status]||['grey',r.status,'']);
       const vif=(r.status==='pending'||r.status==='working'||r.status==='done_pro');
@@ -11416,9 +11480,9 @@
       const montant=Number(r.total)||0, coup=Number(r.boostEur)||0;
       return `<div class="card" style="padding:13px;margin-top:9px${longue?';border-left:4px solid var(--coral)':''}">
         <div class="row between" style="align-items:flex-start;gap:8px">
-          <b style="font-size:14px;flex:1;min-width:0">${esc(r.svcName||svcNm(r.svc)||r.svc||'Prestation')}</b>
+          <b style="font-size:14px;flex:1;min-width:0">${sansMetier?(r.client?esc(r.client):'<i>client sans nom</i>'):esc(r.svcName||svcNm(r.svc)||r.svc||'Prestation')}</b>
           <span class="chip ${L[0]}${vif?' live':''}" style="flex:none">${esc(L[1])}</span></div>
-        <div class="mini" style="margin-top:3px">${r.client?esc(r.client):'<i>client sans nom</i>'}${qui}</div>
+        <div class="mini" style="margin-top:3px">${sansMetier?(r.provider?esc(r.provider):(r.status==='pending'?'<i>personne n’a encore accepté</i>':'')):((r.client?esc(r.client):'<i>client sans nom</i>')+qui)}</div>
         <div class="mini" style="margin-top:2px;color:var(--muted)">${esc([r.when,r.slot,r.zone].filter(Boolean).join(' · '))}</div>
         <div class="row between" style="align-items:center;margin-top:4px;gap:8px">
           <span class="mini money">${eur(montant)}${coup?' <span style="color:var(--coral-deep)">+'+eur(coup)+'</span>':''}</span>
@@ -11484,18 +11548,58 @@
          faire, pas dans une prestation qui s'est bien terminée. */
       const arretees=reqsVrais.filter(function(r){return r.status==='cancelled'||r.status==='expired';}).sort(function(a,b){return (b.fin||b.at||0)-(a.fin||a.at||0);});
       if(!vives.length&&!finies.length&&!arretees.length)return `<p class="mini" style="color:var(--muted)">Aucune commande, à aucun statut. Les demandes qui n’ont jamais abouti sont comptées dans la carte « Demandes, par statut ».</p>`;
-      const reste=Math.max(0,finies.length-5);
+      /* CETTE CARTE NE GARDE QUE CE QUI APPELLE UN GESTE. Elle portait deux queues
+         coupées — six annulations, cinq réglées, et « et N autres plus anciennes » —
+         qui disaient honnêtement ce qu'elles cachaient sans mener nulle part. Tout est
+         désormais rangé dans « Toutes les commandes », par statut puis par métier, sans
+         aucune coupe. Reste ici ce qui attend vraiment quelqu'un : une annulation
+         tardive dont le prestataire n'a pas tranché l'indemnité. */
+      const aTrancher=arretees.filter(function(r){return r.status==='cancelled'&&r.tardive&&r.decision==='pending';});
       return (vives.length
-          ? `<p class="mini" style="margin:0;color:var(--muted)">${plN(vives.length,'commande')} en cours.</p>`+vives.slice(0,CMD_MAX).map(cmdLigne).join('')
+          ? `<p class="mini" style="margin:0;color:var(--muted)">${plN(vives.length,'commande')} en cours.</p>`+vives.slice(0,CMD_MAX).map(function(r){return cmdLigne(r,false);}).join('')
           : `<p class="mini" style="margin:0;color:var(--muted)">Aucune commande en cours en ce moment.</p>`)
-        +(arretees.length?`<div class="mini" style="color:var(--coral-deep);font-weight:800;text-transform:uppercase;letter-spacing:.03em;margin-top:14px">Annulées ou expirées</div>`
-          +arretees.slice(0,6).map(cmdLigne).join('')
-          /* Et ce qu'on ne montre pas, on le DIT : une septième annulation qui
-             disparaîtrait en silence, c'est le défaut même qu'on vient de corriger. */
-          +(arretees.length>6?`<p class="mini" style="margin-top:8px;color:var(--muted)">et ${plN(arretees.length-6,'autre')} plus ancienne${arretees.length-6>1?'s':''}.</p>`:''):'')
-        +(finies.length?`<div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em;margin-top:14px">Dernières réglées</div>`
-          +finies.slice(0,5).map(cmdLigne).join('')
-          +(reste?`<p class="mini" style="margin-top:8px;color:var(--muted)">et ${plN(reste,'autre')} plus ancienne${reste>1?'s':''}.</p>`:''):'');
+        +(aTrancher.length?`<div class="mini" style="color:var(--coral-deep);font-weight:800;text-transform:uppercase;letter-spacing:.03em;margin-top:14px">Indemnité à trancher</div>`
+          +aTrancher.map(function(r){return cmdLigne(r,false);}).join(''):'')
+        +`<p class="mini" style="margin-top:14px;color:var(--muted)">${plN(arretees.length,'commande')} arrêtée${arretees.length>1?'s':''} et ${plN(finies.length,'réglée')} : toutes sont dans « Toutes les commandes », par statut puis par métier.</p>`;
+    })();
+    /* LA CARTE QUI RANGE TOUT. Repliée par statut, puis par métier : on déplie ce qu'on
+       cherche. Aucune ligne n'est coupée, c'est la raison d'être de cette carte. */
+    const cmdToutes=(function(){
+      if(!S.adminReqsLus)return `<p class="mini" style="color:var(--muted)">Lecture des demandes…</p>`;
+      const G=commandesParStatut(reqsVrais,CMD_ORDRE,function(id){return svcNm(id)||id;});
+      if(!G.length)return `<p class="mini" style="color:var(--muted)">Aucune commande en base, à aucun statut.</p>`;
+      const oS=S._admCmdStat||{},oM=S._admCmdMet||{};
+      const tot=G.reduce(function(t,g){return t+g.n;},0);
+      return `<p class="mini" style="margin:0 0 4px;color:var(--muted)">${plN(tot,'commande')} au total.${reqsExclues?` ${plN(reqsExclues,'commande')} de comptes de test ${reqsExclues>1?'sont écartées':'est écartée'}.`:''} Rien n'est coupé&nbsp;: dépliez un statut, puis un métier.</p>`
+        +G.map(function(g){
+          /* REQ_LIB nomme des GROUPES (« Annulées », « Réglées ») : c'est exactement le
+             vocabulaire d'une carte qui en réunit plusieurs. `bkStatus` nomme UNE
+             réservation et dirait « Annulé » au singulier sur un paquet de douze. */
+          const L=REQ_LIB[g.statut]||['grey',g.statut,''];
+          const ouv=!!oS[g.statut];
+          return `<button class="card" data-adm="cmdstat:${esc(g.statut)}" style="width:100%;text-align:left;padding:13px;margin-top:9px;display:block${ouv?';border-left:4px solid var(--teal-deep)':''}">
+            <div class="row between" style="align-items:center;gap:8px">
+              <span style="flex:1;min-width:0;font-weight:700;font-size:14px">${esc(L[1])}</span>
+              <span class="row" style="gap:6px;align-items:center;flex:none">
+                <span class="mini money" style="color:var(--muted)">${eur(g.total)}</span>
+                <span class="chip ${L[0]}">${g.n}</span>
+                <span style="display:inline-block;transform:rotate(${ouv?'90deg':'0deg'});transition:transform .15s;color:var(--muted)">${I.chevron||'›'}</span></span></div>
+            ${L[2]?`<div class="mini" style="margin-top:2px;color:var(--muted);line-height:1.4">${esc(L[2])}</div>`:''}
+          </button>`
+          +(ouv?g.metiers.map(function(m){
+            const cle=g.statut+'|'+m.svc,ouvM=!!oM[cle];
+            return `<div style="margin-left:12px">
+              <button class="card" data-adm="cmdmet:${esc(cle)}" style="width:100%;text-align:left;padding:11px 13px;margin-top:8px;display:block;background:var(--card-2)${ouvM?';border-left:3px solid var(--teal-deep)':''}">
+                <div class="row between" style="align-items:center;gap:8px">
+                  <span style="flex:1;min-width:0;font-weight:600;font-size:13.5px">${esc(m.nm||m.svc)}</span>
+                  <span class="row" style="gap:6px;align-items:center;flex:none">
+                    <span class="mini money" style="color:var(--muted)">${eur(m.total)}</span>
+                    <span class="chip grey">${m.n}</span>
+                    <span style="display:inline-block;transform:rotate(${ouvM?'90deg':'0deg'});transition:transform .15s;color:var(--muted)">${I.chevron||'›'}</span></span></div>
+              </button>
+              ${ouvM?m.lignes.map(function(r){return cmdLigne(r,true);}).join(''):''}
+            </div>`;}).join(''):'');
+        }).join('');
     })();
     /* UN SEUL CHIFFRE POUR LA TUILE ET POUR LA CARTE. La tuile « En cours » du tableau
        de bord comptait encore `S.mission` + les lignes de démonstration pendant que la
@@ -11959,6 +12063,8 @@
       ${foldCard('a-bookings',I.cal,'Réservations en cours','Recherche → acceptée → en cours → validée → réglée',
         isDemo()?bookings:bookingsReels,
         (!isDemo()&&!S.adminReqsLus)?chip('grey','…'):chip(cmdEnCours?'good':'grey',cmdEnCours),(S.adminThreads||[]).some(function(t){return t&&t.reqId&&admThreadNew(t);}))}
+      ${isDemo()?'':foldCard('a-cmd-toutes',I.wallet,'Toutes les commandes','Par statut, puis par métier. Rien n’est coupé.',cmdToutes,
+        (!S.adminReqsLus)?chip('grey','…'):chip('grey',reqsVrais.length))}
       ${foldCard('a-prices',I.euro,'Prestations · artisans &amp; tarifs',svcAll.length+' métiers'+(svcNoPro?' · '+svcNoPro+' sans prestataire':''),pricesBody,svcNoPro?chip('coral',svcNoPro+' sans pro'):chip('good',svcAll.length))}
       ${foldCard('a-demandes',I.wallet,'Demandes, par statut','Y compris celles qui n’ont jamais abouti',demandesBody,(function(){
         const m=reqsVrais.filter(function(r){return REQ_AVANT_COMMANDE.indexOf(r.status)>=0;}).length;
@@ -18664,6 +18770,11 @@
       })();return;}
       else if(act==='prospect-filter'){S._prospectFilter=id||'all';render();return;}
       else if(act==='prospect-cat'){S._prospectCats=S._prospectCats||{};S._prospectCats[id]=!S._prospectCats[id];render();return;}
+      /* Dépliage d'un statut, puis d'un métier dans ce statut. Deux tables distinctes :
+         la clé d'un métier porte son statut (`expired|menage`), sinon déplier « ménage »
+         sous « Expirées » le déplierait aussi sous « Réglées ». */
+      else if(act==='cmdstat'){S._admCmdStat=S._admCmdStat||{};S._admCmdStat[id]=!S._admCmdStat[id];render();return;}
+      else if(act==='cmdmet'){S._admCmdMet=S._admCmdMet||{};S._admCmdMet[id]=!S._admCmdMet[id];render();return;}
       else if(act==='molrelance'){(function(){
         // 1er appui : on arme (le bouton demande confirmation, 6 s). 2e appui : ça part.
         if(S._molArm!==id){S._molArm=id;render();setTimeout(function(){if(S._molArm===id){S._molArm=null;try{render();}catch(_){}}},6000);return;}
