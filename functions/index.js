@@ -1082,6 +1082,7 @@ exports.assignFounderSpot = onDocumentCreated('artisans/{artisanId}', async (eve
  */
 const ANTI = require('./anti-abus');
 const DEPASSE = require('./creneau-depasse');
+const ARCH = require('./archive-messages');
 /* LE COMPTEUR DU JOUR. Un document par clé et par jour dans `quotas` — collection
  * SERVEUR (aucune règle ne l'ouvre, l'Admin SDK passe outre). Transaction : deux demandes
  * simultanées ne peuvent pas lire le même nombre et l'écrire deux fois.
@@ -7453,31 +7454,78 @@ const JOURNAL_JOURS = 90;
    BORNÉE, parce qu'un document Firestore plafonne à un mébioctet : les derniers messages,
    chacun tronqué. Un fil qui dépasserait ces bornes serait coupé par le DÉBUT, et l'on
    garde le nombre réel pour que la coupe se voie. */
-const ARCHIVE_MSG_MAX = 200;
-const ARCHIVE_TXT_MAX = 2000;
+/* CE BLOC A ÉTÉ RÉÉCRIT LE 12/10/2026, ET LA RAISON VAUT D'ÊTRE ÉCRITE ICI.
+   Cette archive était prise AU MOMENT DE LA SUPPRESSION, et le commentaire de
+   `journaliserDepart`, trois lignes plus bas, disait déjà pourquoi elle ne pouvait pas
+   tenir : « les fiches ont pu être effacées AVANT nous ». Quand l'application supprime
+   `users/{uid}` puis l'identifiant de connexion, `u` arrive VIDE et il n'y a plus rien à
+   copier — silencieusement, et c'est le seul instant où la conversation était lisible.
+   Une archive qui dépend du bon ordre de deux effacements n'est pas une archive.
+
+   LA COPIE SE FAIT DÉSORMAIS À L'ÉCRITURE (`archiverMessagesSupport`, plus bas). Ce
+   passage-ci reste comme FILET : il rattrape une conversation écrite avant que le
+   déclencheur existe. Et il ne REMPLACE plus le tableau — il fusionne : l'archive ne
+   peut plus rétrécir, ce qui est exactement le défaut qu'on corrige. */
+const ARCHIVE_MSG_MAX = ARCH.ARCHIVE_MSG_MAX;
+const ARCHIVE_TXT_MAX = ARCH.ARCHIVE_TXT_MAX;
 async function archiverSupportGeneral(db, uid, u, a) {
   try {
     const brut = Array.isArray(u && u.support) ? u.support : [];
     if (!brut.length) return 0;
-    const tri = brut.slice().sort((x, y) => (Number(x && x.at) || 0) - (Number(y && y.at) || 0));
-    const gardes = tri.slice(-ARCHIVE_MSG_MAX).map((m) => ({
-      from: String((m && m.from) || '').slice(0, 20),
-      text: String((m && m.text) || '').slice(0, ARCHIVE_TXT_MAX),
-      at: Number(m && m.at) || 0,
-    }));
-    await db.collection('supportArchive').doc(uid).set({
-      uid: uid,
-      nom: String((a && a.name) || (u && u.name) || '').slice(0, 80),
-      email: String((u && u.email) || (a && a.email) || '').slice(0, 200),
-      role: String((u && u.role) || ((a && a.name) ? 'artisan' : 'client')).slice(0, 20),
-      support: gardes,
-      nTotal: brut.length,
-      tronque: brut.length > gardes.length,
-      archiveLe: Date.now(),
+    const ref = db.collection('supportArchive').doc(uid);
+    let deja = {};
+    try { deja = (await ref.get()).data() || {}; } catch (_) {}
+    const f = ARCH.fusionMessages(deja.support, brut, ARCHIVE_MSG_MAX);
+    const qui = ARCH.identiteArchive(
+      {name: (a && a.name) || (u && u.name), email: (u && u.email) || (a && a.email),
+        role: (u && u.role) || ((a && a.name) ? 'artisan' : 'client')}, deja);
+    await ref.set({
+      uid: uid, nom: qui.nom, email: qui.email, role: qui.role,
+      support: f.liste, nTotal: f.total, tronque: f.tronque, archiveLe: Date.now(),
     }, {merge: true});
-    return gardes.length;
+    return f.liste.length;
   } catch (e) { console.warn('archiverSupportGeneral', e && e.message); return 0; }
 }
+
+/* LE DÉCLENCHEUR QUI REND LA PREUVE INDÉPENDANTE DU COMPTE.
+   « Les messages … ont disparu de la console, je n'ai plus le moyen de prouver ce qu'elle
+   m'a dit, cela ne doit plus se reproduire. »
+
+   Chaque message de la messagerie générale est copié dans `supportArchive/{uid}` À LA
+   SECONDE OÙ IL EST ÉCRIT. Après quoi, plus rien de ce que fait un compte — ni sa
+   désinscription, ni un vidage depuis la console, ni une fiche perdue — ne peut retirer
+   la pièce : la collection est en écriture INTERDITE au règlement, seul l'Admin SDK y
+   entre, et l'on n'y enlève jamais rien.
+
+   IL VOIT TOUTES LES ÉCRITURES DE `users` — un jeton de notification, une adresse, un
+   jalon. Sortir tôt n'est donc pas une optimisation mais une exigence : sans
+   `supportBouge`, chaque geste de chaque utilisateur du parc coûterait une lecture et une
+   écriture de plus. Le test se fait sur ce qu'on a DÉJÀ EN MAIN (avant/après), sans
+   toucher la base.
+
+   ET L'ON N'ÉCRIT QUE S'IL Y A DU NEUF : la fusion dit combien de messages elle ajoute,
+   zéro arrête tout. Sans cela, deux appareils qui réordonnent le tableau se renverraient
+   des écritures sans fin — le défaut des deux appareils ouverts, sur une autre table. */
+exports.archiverMessagesSupport = onDocumentWritten('users/{uid}', async (event) => {
+  const avant = (event.data && event.data.before && event.data.before.exists) ? event.data.before.data() : null;
+  const apres = (event.data && event.data.after && event.data.after.exists) ? event.data.after.data() : null;
+  if (!ARCH.supportBouge(avant, apres)) return;
+  const uid = (event.params && event.params.uid) || '';
+  if (!uid) return;
+  const db = getFirestore();
+  try {
+    const ref = db.collection('supportArchive').doc(uid);
+    const deja = (await ref.get()).data() || {};
+    const f = ARCH.fusionMessages(deja.support, apres.support, ARCHIVE_MSG_MAX);
+    if (!f.ajoutes) return;
+    const qui = ARCH.identiteArchive(apres, deja);
+    await ref.set({
+      uid: uid, nom: qui.nom, email: qui.email, role: qui.role,
+      support: f.liste, nTotal: f.total, tronque: f.tronque, archiveLe: Date.now(),
+    }, {merge: true});
+    console.log('[supportArchive] ' + uid + ' +' + f.ajoutes + ' message(s), ' + f.liste.length + ' gard\u00e9(s)');
+  } catch (e) { console.warn('archiverMessagesSupport', e && e.message); }
+});
 
 async function journaliserDepart(db, uid, origine, authUser) {
   try {

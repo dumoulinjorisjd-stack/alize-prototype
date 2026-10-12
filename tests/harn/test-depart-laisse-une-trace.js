@@ -131,10 +131,22 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
     'dans une collection à part, pas dans le journal des départs qui se purge à 90 jours');
   ok(!/expireLe/.test(ARCH),
     'et SANS date d’expiration : une pièce de litige n’a pas la durée de vie d’un journal');
-  ok(/slice\(-ARCHIVE_MSG_MAX\)/.test(ARCH) && /slice\(0, ARCHIVE_TXT_MAX\)/.test(ARCH),
-    'bornée, parce qu’un document Firestore plafonne à un mébioctet');
-  ok(/tronque: brut\.length > gardes\.length/.test(ARCH),
+  /* CES DEUX MESURES LISAIENT LE TEXTE DE L'ANCIENNE IMPLÉMENTATION (`slice(-MAX)`,
+     `tronque: brut.length > gardes.length`). Elles ont rougi le 12/10/2026 quand l'archive
+     est passée par un noyau pur — et c'est le bon comportement d'un garde-fou. Mais une
+     épreuve qui décrit une écriture rouille à chaque réécriture : on mesure désormais la
+     PROPRIÉTÉ, en faisant tourner le noyau. */
+  const NOYAU = require(path.join(RACINE, 'functions', 'archive-messages.js'));
+  const trop = []; for (let i = 1; i <= NOYAU.ARCHIVE_MSG_MAX + 3; i++) trop.push({at: i, from: 'client', text: 'm' + i});
+  const borne = NOYAU.fusionMessages([], trop, NOYAU.ARCHIVE_MSG_MAX);
+  ok(borne.liste.length === NOYAU.ARCHIVE_MSG_MAX,
+    'bornée, parce qu’un document Firestore plafonne à un mébioctet (' + borne.liste.length + ')');
+  ok(NOYAU.msgNet({text: 'x'.repeat(NOYAU.ARCHIVE_TXT_MAX + 50)}).text.length === NOYAU.ARCHIVE_TXT_MAX,
+    'chaque message tronqué à sa longueur maximale');
+  ok(borne.tronque === true && borne.total === NOYAU.ARCHIVE_MSG_MAX + 3,
     'et la coupe se VOIT : on garde le nombre réel, sinon un fil amputé passerait pour complet');
+  ok(/ARCH\.fusionMessages\(/.test(ARCH) && /tronque: f\.tronque/.test(ARCH),
+    'et c’est bien par ce noyau que l’archive du départ passe');
   const JD = SRV.slice(SRV.indexOf('async function journaliserDepart'), SRV.indexOf('async function purgerCompte'));
   ok(JD.indexOf('archiverSupportGeneral') >= 0 && JD.indexOf('archiverSupportGeneral') < JD.indexOf("collection('comptesSupprimes')"),
     'l’archivage a lieu PENDANT la lecture des fiches, le seul instant où la conversation est encore lisible');

@@ -3662,7 +3662,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='864';
+  const VERSION_APP='865';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -5632,6 +5632,15 @@
 
      ET « RIEN, NULLE PART » EST UNE RÉPONSE. C'est même celle qu'on vient chercher : tant
      qu'aucun écran ne la donne, on reste avec l'impression d'avoir rêvé. */
+  /* UNE CONVERSATION CLASSÉE QUI REÇOIT UN MESSAGE N'EST PLUS CLASSÉE. Sans cette règle,
+     ranger une conversation la rendrait SOURDE : la personne réécrit, sa ligne reste dans
+     le bloc replié d'en bas, et le message n'est jamais lu — un silence pire que l'ancien
+     bouton, qui au moins se voyait. Le classement est donc un INSTANT, pas un état : il
+     vaut tant que rien n'est arrivé depuis. */
+  function conversationClassee(clos,dernierMsg){
+    const c=Number(clos)||0; if(!c)return false;
+    return c>=(Number(dernierMsg)||0);
+  }
   const RECHERCHE_MIN=2;
   const RECHERCHE_PAR_FAMILLE=8;
   /* ON N'AFFIRME PAS « RIEN » TANT QU'ON N'A PAS TOUT LU. Les listes de la console
@@ -13205,6 +13214,7 @@
             // admin (carte « Litige à arbitrer » + règlement à la durée arbitrée, synchronisé
             // en base → le serveur capture le paiement Mollie sur finalHours).
             duration:(r.duration!=null?r.duration:1),rate:(r.rate!=null?r.rate:0),finalHours:(r.finalHours!=null?r.finalHours:null),disputeMsg:r.disputeMsg||'',disputeKind:r.disputeKind||'duree',unit:r.unit||'h',acts:Array.isArray(r.acts)?r.acts:null,options:Array.isArray(r.options)?r.options:null,boost:r.boost||0,boostEur:r.boostEur||0,people:(r.people!=null?r.people:1),tip:r.tip||0,locationMode:r.locationMode||'',forfaitTotal:(r.forfaitTotal!=null?r.forfaitTotal:null),commPct:(r.commPct!=null?r.commPct:null),molliePaymentId:r.molliePaymentId||'',
+            clos:Number(r.chatClos)||0,
             chat:chat,support:{client:supC,pro:supP},supCReadAdmin:r.supCReadAdmin||0,supCReadUser:r.supCReadUser||0,supPReadAdmin:r.supPReadAdmin||0,supPReadUser:r.supPReadUser||0,provider:r.providerName?{nm:r.providerName,ini:inits(r.providerName)}:null,ts:Math.max(lastAt(chat),lastAt(supC),lastAt(supP))});
         });
         list.sort(function(a,b){return b.ts-a.ts;});
@@ -13219,34 +13229,46 @@
   // l'utilisateur est plus récent que le marqueur de lecture admin de ce fil.
   function adminSupportPending(){const m=(S.adminThreads||[]).reduce(function(n,t){[['client','supCReadAdmin'],['pro','supPReadAdmin']].forEach(function(pr){const th=t.support[pr[0]];const last=th&&th[th.length-1];if(last&&last.from!=='admin'&&(last.at||0)>(t[pr[1]]||0))n++;});return n;},0);const g=(S.adminGeneral||[]).reduce(function(n,u){const last=u.support[u.support.length-1];return n+((last&&last.from!=='admin'&&(last.at||0)>(u.supReadAdmin||0))?1:0);},0);const disp=(S.adminThreads||[]).filter(function(t){return t.status==='disputed';}).length;return m+g+disp;}
   function adminMessagerie(){
-    const threads=S.adminThreads||[];
-    const rows=threads.map(function(t){
+    const threadsTout=S.adminThreads||[];
+    const threads=threadsTout.filter(function(t){return !conversationClassee(t.clos,t.ts);});
+    const threadsClos=threadsTout.filter(function(t){return conversationClassee(t.clos,t.ts);});
+    const ligneFil=function(t){
       const cP=t.support.client,pP=t.support.pro;
-      const cPend=cP.length&&cP[cP.length-1].from!=='admin',pPend=pP.length&&pP[pP.length-1].from!=='admin';
+      const _clos=conversationClassee(t.clos,t.ts);
+      const cPend=!_clos&&cP.length&&cP[cP.length-1].from!=='admin',pPend=!_clos&&pP.length&&pP[pP.length-1].from!=='admin';
       const btn=function(lbl,act,badge,pend){return `<button class="btn ghost sm" data-adm="${act}" style="justify-content:space-between">${lbl}${badge?`<span class="chip ${pend?'coral':'grey'}">${badge}</span>`:''}</button>`;};
       const acts=[];
       if(t.chat.length)acts.push(btn(`${I.chat} Discussion client-artisan`,'supervise:'+t.reqId,String(t.chat.length),false));
       if(cP.length)acts.push(btn(`${I.support} Support client · ${esc(t.clientName)}`,'sup:'+t.reqId+':client',String(cP.length),cPend));
       if(t.providerName&&pP.length)acts.push(btn(`${I.support} Support artisan · ${esc(t.providerName)}`,'sup:'+t.reqId+':pro',String(pP.length),pPend));
       const sm=missionStatusMeta(t.status);
-      const tkey='thread:'+t.reqId,tarm=(S._msgDelArm===tkey);
+      const tkey='thread:'+t.reqId,tarm=(S._msgDelArm===tkey),tClos=conversationClassee(t.clos,t.ts);
       const disp=(t.status==='disputed');
       return `<div class="card" style="padding:14px;margin-top:10px;${(disp||cPend||pPend)?'border-left:4px solid var(--coral)':''}">
-        <div class="row between"><span class="row" style="gap:7px;align-items:center">${admDot(admThreadNew(t))}<b style="font-size:14px">${esc(t.svcName)}</b></span><span class="row" style="gap:8px;align-items:center"><span class="chip ${sm.c}">${sm.l}</span><button data-adm="delmsg:${tkey}" aria-label="Supprimer la conversation" title="Supprimer la conversation" style="flex:none;background:${tarm?'var(--coral-wash)':'none'};border:${tarm?'1px solid var(--coral)':'none'};border-radius:8px;padding:4px 6px;color:var(--coral-deep);font-size:11px;font-weight:800;display:inline-flex;align-items:center;gap:4px">${tarm?I.check+'Sûr&nbsp;?':I.trash}</button></span></div>
+        <div class="row between"><span class="row" style="gap:7px;align-items:center">${admDot(admThreadNew(t))}<b style="font-size:14px">${esc(t.svcName)}</b></span><span class="row" style="gap:8px;align-items:center"><span class="chip ${sm.c}">${sm.l}</span><button data-adm="${tClos?'remsg':'delmsg'}:${tkey}" aria-label="${tClos?'Remettre la conversation en cours':'Classer la conversation'}" title="${tClos?'Remettre en cours':'Classer, les messages sont gardés'}" style="flex:none;background:${tarm?'var(--coral-wash)':'none'};border:${tarm?'1px solid var(--coral)':'none'};border-radius:8px;padding:4px 6px;color:var(--muted);font-size:11px;font-weight:800;display:inline-flex;align-items:center;gap:4px">${tClos?I.repeat:(tarm?I.check+'Sûr&nbsp;?':I.folder)}</button></span></div>
         <div class="mini" style="margin-top:3px">${esc(t.clientName)}${t.providerName?' · '+esc(t.providerName):' · en recherche'} · ${esc(t.when)} ${esc(t.slot)}</div>
         <div class="stack" style="gap:7px;margin-top:11px">${disp?`<button class="btn sm" data-adm="supervise:${t.reqId}" style="background:var(--coral-deep);color:#fff;justify-content:center">${I.scales} Litige, arbitrer</button>`:''}${acts.join('')}</div>
       </div>`;
-    }).join('');
-    const gen=S.adminGeneral||[];
-    const genRows=gen.map(function(u){
-      const pend=u.support.length&&u.support[u.support.length-1].from!=='admin';
+    };
+    const rows=threads.map(ligneFil).join('');
+    const rowsClos=threadsClos.map(ligneFil).join('');
+    /* LES CLASSÉES SORTENT DE LA LISTE, PAS DE L'APPLICATION. Elles ont leur bloc, en
+       dessous, et un bouton les remet en cours. Une conversation qui disparaîtrait pour
+       de bon serait exactement ce qu'on vient de corriger. */
+    const genTout=S.adminGeneral||[];
+    const gen=genTout.filter(function(u){return !conversationClassee(u.clos,u.ts);});
+    const genClos=genTout.filter(function(u){return conversationClassee(u.clos,u.ts);});
+    const ligneGen=function(u){
+      const dkey='gen:'+u.uid,arm=(S._msgDelArm===dkey),uClos=conversationClassee(u.clos,u.ts);
+      const pend=!uClos&&u.support.length&&u.support[u.support.length-1].from!=='admin';
       const last=u.support[u.support.length-1]||{};
-      const dkey='gen:'+u.uid,arm=(S._msgDelArm===dkey);
       return `<div class="row" style="gap:8px;margin-top:9px;align-items:stretch">
-        <button class="card" data-adm="gensup:${u.uid}" style="flex:1;min-width:0;padding:13px;text-align:left;display:block;${pend?'border-left:4px solid var(--coral)':''}"><div class="row between"><b style="font-size:14px">${esc(u.name)}</b><span class="chip ${pend?'coral':'grey'}">${u.role==='artisan'?'Artisan':'Client'}${pend?' · à répondre':''}</span></div><div class="mini" style="margin-top:4px;color:var(--ink-soft)">« ${esc(String(last.text||'')).slice(0,64)} »</div></button>
-        <button class="card" data-adm="delmsg:${dkey}" aria-label="Supprimer la conversation" title="Supprimer" style="flex:none;width:54px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:0;color:var(--coral-deep);${arm?'background:var(--coral-wash);border:1px solid var(--coral)':''}">${arm?I.check:I.trash}${arm?'<span style="font-size:9px;font-weight:800">Sûr&nbsp;?</span>':''}</button>
+        <button class="card" data-adm="gensup:${u.uid}" style="flex:1;min-width:0;padding:13px;text-align:left;display:block;${pend?'border-left:4px solid var(--coral)':''}"><div class="row between"><b style="font-size:14px">${esc(u.name)}</b><span class="chip ${pend?'coral':'grey'}">${u.role==='artisan'?'Artisan':'Client'}${pend?' · à répondre':(uClos?' · classée':'')}</span></div><div class="mini" style="margin-top:4px;color:var(--ink-soft)">« ${esc(String(last.text||'')).slice(0,64)} »</div></button>
+        <button class="card" data-adm="${uClos?'remsg':'delmsg'}:${dkey}" aria-label="${uClos?'Remettre la conversation en cours':'Classer la conversation'}" title="${uClos?'Remettre en cours':'Classer, les messages sont gardés'}" style="flex:none;width:54px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:0;color:var(--muted);${arm?'background:var(--coral-wash);border:1px solid var(--coral)':''}">${uClos?(I.repeat):(arm?I.check:(I.folder))}${arm?'<span style="font-size:9px;font-weight:800">Sûr&nbsp;?</span>':''}</button>
       </div>`;
-    }).join('');
+    };
+    const genRows=gen.map(ligneGen).join('');
+    const genClosRows=genClos.map(ligneGen).join('');
     /* LES CONVERSATIONS DES COMPTES PARTIS. Elles ne sont plus dans `users` : le serveur
        les a archivées juste avant d'effacer la fiche. On les montre DANS la même section,
        parce qu'on les cherche au même endroit, et marquées : la personne n'est plus là,
@@ -13261,13 +13283,18 @@
           <div class="mini" style="margin-top:3px;color:var(--muted)">${esc(u.role==='artisan'?'Prestataire':'Client')}${u.email?' · '+esc(u.email):''}</div>
           <div class="mini" style="margin-top:4px;color:var(--muted)">«&nbsp;${esc(String(last.text||'').slice(0,70))}&nbsp;»</div>
         </button></div>`;}).join('');
-    const nothing=!threads.length&&!gen.length&&!arch.length;
+    const nClos=genClos.length+threadsClos.length;
+    const nothing=!threadsTout.length&&!genTout.length&&!arch.length;
     return `<div class="pad"><div style="height:12px"></div>
       <span class="eyebrow">${I.chat} Messagerie</span><div class="h-hello">Conversations</div>
       <p class="sub" style="margin-top:4px">Répondez au support (général et par prestation) des clients et artisans, et supervisez les échanges client↔artisan.</p>
       ${(typeof Notification!=='undefined'&&Notification.permission!=='granted')?`<button class="banner teal" data-act="admin-notif" style="margin-top:12px;width:100%;text-align:left;cursor:pointer">${I.bell}<span>Activez les notifications pour être alerté à chaque message support.</span></button>`:''}
       ${(gen.length||arch.length)?`<div style="height:14px"></div><span class="eyebrow" style="color:var(--muted)">${I.support} Support général</span>${genRows}${archRows}`:''}
       ${threads.length?`<div style="height:14px"></div><span class="eyebrow" style="color:var(--muted)">${I.wallet} Par prestation</span>${rows}`:''}
+      ${nClos?`<div style="height:16px"></div>${foldCard('a-msg-clos',I.folder,'Conversations classées',
+        nClos+' conversation'+(nClos>1?'s':'')+' rangé'+(nClos>1?'es':'e')+', rien n’est effacé',
+        `<p class="mini" style="margin:0 0 6px;color:var(--muted);line-height:1.5">Elles sont sorties de la liste du dessus, pas de l’application : les messages sont intacts et un bouton les remet en cours. <b>Une conversation ne se détruit pas</b>, c’est une pièce en cas de litige.</p>`
+        +genClosRows+rowsClos, `<span class="chip grey" style="flex:none">${nClos}</span>`)}`:''}
       ${nothing?`<div class="card" style="padding:22px;text-align:center;color:var(--muted);margin-top:12px">Aucune conversation pour l'instant.<br>Les messages support et les discussions apparaîtront ici.</div>`:''}
       <div style="height:8px"></div></div>`;
   }
@@ -13542,7 +13569,7 @@
         buildAdminClients(snap);
         buildAdminDrafts(snap);
         buildAdminNotifs(snap);
-        snap.forEach(function(docu){const d=docu.data()||{};const sup=Array.isArray(d.support)?d.support.slice().sort(function(a,b){return (a.at||0)-(b.at||0);}):[];if(!sup.length)return;list.push({uid:docu.id,name:d.name||'Utilisateur',role:d.role||'client',support:sup,supReadUser:d.supReadUser||0,supReadAdmin:d.supReadAdmin||0,ts:sup[sup.length-1].at||0});});
+        snap.forEach(function(docu){const d=docu.data()||{};const sup=Array.isArray(d.support)?d.support.slice().sort(function(a,b){return (a.at||0)-(b.at||0);}):[];if(!sup.length)return;list.push({uid:docu.id,name:d.name||'Utilisateur',role:d.role||'client',support:sup,supReadUser:d.supReadUser||0,supReadAdmin:d.supReadAdmin||0,clos:Number(d.supportClos)||0,ts:sup[sup.length-1].at||0});});
         list.sort(function(a,b){return b.ts-a.ts;});
         S.adminGeneral=list;
         if(S.genUser){const u=list.find(function(x){return x.uid===S.genUser.uid;});if(u){const grew=(u.support||[]).length>((S.genUser.support||[]).length);S.genUser=u;if(S.generalSupport&&S.persona==='admin'){if(grew)markGenSupportReadAdmin();render();}return;}}
@@ -18887,16 +18914,45 @@
            nulle part, et le proposer serait mentir. */
         if(u){S.genUser=Object.assign({},u,{name:u.nom});S.generalSupport=true;S.support=false;S.adminSupervise=false;S.admin.view='msg';render();try{view.scrollTop=view.scrollHeight;}catch(_){}}
         return;}
-      else if(act==='delmsg'){
-        // Suppression d'une conversation dans la messagerie admin. Double-clic de sécurité :
-        // 1er clic = « armé » (le bouton demande « Sûr ? »), 2e clic = suppression réelle.
+      /* ON CLASSE, ON NE DÉTRUIT PLUS. « La conversation de ce matin ayant disparu je n'ai
+         plus le moyen de prouver ce qu'elle m'a dit, cela ne doit plus se reproduire. »
+
+         CE BOUTON ÉCRIVAIT `support: []` et `messages: []` : la conversation était
+         DÉTRUITE, sans copie, sans retour. Il vit à cinquante pixels de la conversation
+         elle-même, et son arme-puis-confirme dure quatre secondes — c'est-à-dire le temps
+         qu'il faut pour s'apercevoir qu'on a raté sa cible et retoucher au même endroit.
+         Deux touchers manqués au même pixel suffisaient à effacer une pièce de litige.
+
+         UNE BOÎTE SE RANGE, ELLE NE SE BRÛLE PAS. Le geste qu'on vient faire ici est
+         « je l'ai traitée, qu'elle sorte de ma liste », jamais « que personne ne puisse
+         plus jamais la lire ». On pose donc une DATE de classement, les messages ne
+         bougent pas, et un bouton la remet en cours. Le double toucher reste : classer par
+         mégarde est sans gravité, mais faire disparaître une ligne sous le doigt sans
+         l'avoir voulu reste désagréable. */
+      else if(act==='delmsg'||act==='remsg'){
+        const rouvre=(act==='remsg');
         const kind=parts[1],rid=parts[2],key=kind+':'+rid;
-        if(S._msgDelArm!==key){ S._msgDelArm=key; render(); setTimeout(function(){ if(S._msgDelArm===key){S._msgDelArm=null;try{render();}catch(_){}} },4000); return; }
-        S._msgDelArm=null;
-        if(!FB||isDemo()){ if(kind==='gen')S.adminGeneral=(S.adminGeneral||[]).filter(function(x){return x.uid!==rid;}); else S.adminThreads=(S.adminThreads||[]).filter(function(x){return x.reqId!==rid;}); if(S.genUser&&S.genUser.uid===rid){S.generalSupport=false;S.genUser=null;} if(S.mission&&S.mission.reqId===rid){S.support=false;S.adminSupervise=false;S.mission=null;} toast('Conversation supprimée'); render(); return; }
+        if(!rouvre){
+          if(S._msgDelArm!==key){ S._msgDelArm=key; render(); setTimeout(function(){ if(S._msgDelArm===key){S._msgDelArm=null;try{render();}catch(_){}} },4000); return; }
+          S._msgDelArm=null;
+        }
+        const quand=rouvre?0:Date.now();
+        const dit=rouvre?'Conversation remise en cours':'Conversation classée, les messages sont gardés';
+        // L'écran suit sans attendre le serveur : les listes sont tenues en mémoire, et un
+        // geste qui ne se voit pas se refait deux fois.
+        const marquer=function(){
+          if(kind==='gen')(S.adminGeneral||[]).forEach(function(x){if(x.uid===rid)x.clos=quand;});
+          else (S.adminThreads||[]).forEach(function(x){if(x.reqId===rid)x.clos=quand;});
+          if(!rouvre){
+            if(S.genUser&&S.genUser.uid===rid){S.generalSupport=false;S.genUser=null;}
+            if(S.mission&&S.mission.reqId===rid){S.support=false;S.adminSupervise=false;S.mission=null;}
+          }
+        };
+        if(!FB||isDemo()){ marquer(); toast(dit); render(); return; }
         try{
-          if(kind==='gen'){ FB.f.updateDoc(FB.f.doc(FB.db,'users',rid),{support:[],supReadAdmin:0,supReadUser:0}).then(function(){toast('Conversation supprimée');}).catch(function(e){toast('⚠︎ Échec : '+fbErrTxt(e));}); if(S.genUser&&S.genUser.uid===rid){S.generalSupport=false;S.genUser=null;} }
-          else if(kind==='thread'){ FB.f.updateDoc(FB.f.doc(FB.db,'requests',rid),{messages:[],supportClient:[],supportPro:[]}).then(function(){toast('Conversation supprimée');}).catch(function(e){toast('⚠︎ Échec : '+fbErrTxt(e));}); if(S.mission&&S.mission.reqId===rid){S.support=false;S.adminSupervise=false;S.mission=null;} }
+          if(kind==='gen'){ FB.f.updateDoc(FB.f.doc(FB.db,'users',rid),{supportClos:quand}).then(function(){toast(dit);}).catch(function(e){toast('⚠︎ Échec : '+fbErrTxt(e));}); }
+          else if(kind==='thread'){ FB.f.updateDoc(FB.f.doc(FB.db,'requests',rid),{chatClos:quand}).then(function(){toast(dit);}).catch(function(e){toast('⚠︎ Échec : '+fbErrTxt(e));}); }
+          marquer();
         }catch(e){ toast('⚠︎ Échec : '+fbErrTxt(e)); }
         render(); return;
       }
