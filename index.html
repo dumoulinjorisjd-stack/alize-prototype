@@ -3662,7 +3662,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='860';
+  const VERSION_APP='861';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -13087,12 +13087,26 @@
         <button class="card" data-adm="delmsg:${dkey}" aria-label="Supprimer la conversation" title="Supprimer" style="flex:none;width:54px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:0;color:var(--coral-deep);${arm?'background:var(--coral-wash);border:1px solid var(--coral)':''}">${arm?I.check:I.trash}${arm?'<span style="font-size:9px;font-weight:800">Sûr&nbsp;?</span>':''}</button>
       </div>`;
     }).join('');
-    const nothing=!threads.length&&!gen.length;
+    /* LES CONVERSATIONS DES COMPTES PARTIS. Elles ne sont plus dans `users` : le serveur
+       les a archivées juste avant d'effacer la fiche. On les montre DANS la même section,
+       parce qu'on les cherche au même endroit, et marquées : la personne n'est plus là,
+       il n'y a rien à lui répondre. */
+    const arch=S.adminGeneralArchive||[];
+    const archRows=arch.map(function(u){
+      const last=(u.support||[])[(u.support||[]).length-1]||{};
+      return `<div class="row" style="gap:8px;margin-top:9px;align-items:stretch">
+        <button class="card" data-adm="gensuparch:${esc(u.uid)}" style="flex:1;min-width:0;padding:13px;text-align:left;display:block;opacity:.86">
+          <div class="row between" style="gap:8px"><b style="font-size:14px;flex:1;min-width:0">${esc(u.nom||'Sans nom')}</b>
+            <span class="chip grey" style="flex:none">Compte supprimé</span></div>
+          <div class="mini" style="margin-top:3px;color:var(--muted)">${esc(u.role==='artisan'?'Prestataire':'Client')}${u.email?' · '+esc(u.email):''}</div>
+          <div class="mini" style="margin-top:4px;color:var(--muted)">«&nbsp;${esc(String(last.text||'').slice(0,70))}&nbsp;»</div>
+        </button></div>`;}).join('');
+    const nothing=!threads.length&&!gen.length&&!arch.length;
     return `<div class="pad"><div style="height:12px"></div>
       <span class="eyebrow">${I.chat} Messagerie</span><div class="h-hello">Conversations</div>
       <p class="sub" style="margin-top:4px">Répondez au support (général et par prestation) des clients et artisans, et supervisez les échanges client↔artisan.</p>
       ${(typeof Notification!=='undefined'&&Notification.permission!=='granted')?`<button class="banner teal" data-act="admin-notif" style="margin-top:12px;width:100%;text-align:left;cursor:pointer">${I.bell}<span>Activez les notifications pour être alerté à chaque message support.</span></button>`:''}
-      ${gen.length?`<div style="height:14px"></div><span class="eyebrow" style="color:var(--muted)">${I.support} Support général</span>${genRows}`:''}
+      ${(gen.length||arch.length)?`<div style="height:14px"></div><span class="eyebrow" style="color:var(--muted)">${I.support} Support général</span>${genRows}${archRows}`:''}
       ${threads.length?`<div style="height:14px"></div><span class="eyebrow" style="color:var(--muted)">${I.wallet} Par prestation</span>${rows}`:''}
       ${nothing?`<div class="card" style="padding:22px;text-align:center;color:var(--muted);margin-top:12px">Aucune conversation pour l'instant.<br>Les messages support et les discussions apparaîtront ici.</div>`:''}
       <div style="height:8px"></div></div>`;
@@ -13152,10 +13166,16 @@
   function markGenSupportReadAdmin(){
     if(!S.genUser||!(FB&&FB.db)||isDemo())return;
     const now=Date.now();S.genUser.supReadAdmin=now;
+    // La fiche d'un compte parti n'existe plus : marquer « lu » dessus recréerait un
+    // document utilisateur fantôme, que la console afficherait comme un compte vivant.
+    if(S.genUser.parti)return;
     try{FB.f.updateDoc(FB.f.doc(FB.db,'users',S.genUser.uid),{supReadAdmin:now});}catch(_){}
   }
   function generalSupportChat(){
     const admin=(S.persona==='admin');
+    /* COMPTE PARTI : la conversation est une pièce, plus un échange. Ni barre de réponse
+       (le message n'arriverait nulle part), ni accusé de lecture (personne ne lira). */
+    const parti=!!(admin&&S.genUser&&S.genUser.parti);
     const raw=admin?((S.genUser&&S.genUser.support)||[]):(S.genSupport||[]);
     const thread=raw.slice().sort(function(a,b){return (a.at||0)-(b.at||0);});
     const who=admin?((S.genUser&&S.genUser.name)||'Utilisateur'):'';
@@ -13170,9 +13190,10 @@
     const back=admin?`data-adm="msg"`:`data-act="close-general-support"`;
     return `<div class="pad"><button class="reset" ${back} style="margin:8px 0 2px">← Retour</button>
       <div class="row" style="gap:11px;align-items:center;margin-top:2px"><div class="avatar" style="width:42px;height:42px;font-size:14px;background:linear-gradient(135deg,var(--teal),var(--teal-deep))">TS</div><div style="flex:1"><b style="font-size:16px;font-family:var(--f-disp)">Ti-Services · Support</b><div class="mini">${admin?('Support général · '+esc(who)+' ('+roleLbl+')'):'Assistance Ti-Services'}</div></div></div>
-      <div class="banner teal" style="margin-top:12px">${I.support}<span>${admin?'Question générale, hors réservation.':'Une question générale (compte, application, autre)&nbsp;? Écrivez-nous ici, ce n’est lié à aucune prestation.'}</span></div>
-      <div class="chat-msgs">${list}${readStatus}</div>
-      <div class="chatbar"><input id="gsupInput" placeholder="${admin?'Répondre…':'Écrire à Ti-Services…'}" autocomplete="off" maxlength="500"><button class="btn primary" data-act="gsup-send">Envoyer</button></div>
+      ${parti?`<div class="banner coral" style="margin-top:12px">${I.warn}<span><b>Ce compte a été supprimé.</b> La conversation est gardée comme pièce${S.genUser.tronque?', tronquée aux '+((S.genUser.support||[]).length)+' derniers messages sur '+S.genUser.nTotal:''}. Il n'y a plus personne à qui répondre.</span></div>`:''}
+      ${parti?'':`<div class="banner teal" style="margin-top:12px">${I.support}<span>${admin?'Question générale, hors réservation.':'Une question générale (compte, application, autre)&nbsp;? Écrivez-nous ici, ce n’est lié à aucune prestation.'}</span></div>`}
+      <div class="chat-msgs">${list}${parti?'':readStatus}</div>
+      ${parti?'':`<div class="chatbar"><input id="gsupInput" placeholder="${admin?'Répondre…':'Écrire à Ti-Services…'}" autocomplete="off" maxlength="500"><button class="btn primary" data-act="gsup-send">Envoyer</button></div>`}
       <div style="height:6px"></div></div>`;
   }
   // Écoute du support général de l'utilisateur connecté (client/artisan).
@@ -13328,6 +13349,26 @@
         S.adminDeparts=out;render();
       },function(e){console.warn('journal départs',e);});
     }catch(e){console.warn('journal départs',e);}
+  }
+  /* Admin : les conversations des comptes PARTIS, archivées par le serveur avant
+     l'effacement de la fiche. Lecture seule, et réservée à l'administrateur par la règle. */
+  let adminArchUnsub=null;
+  function subscribeAdminSupportArchive(){
+    if(!(FB&&FB.db&&FB.f.onSnapshot))return;
+    try{ if(adminArchUnsub){try{adminArchUnsub();}catch(_){}}
+      adminArchUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'supportArchive'),function(snap){
+        const list=[];
+        snap.forEach(function(d){const x=d.data()||{};
+          const sup=Array.isArray(x.support)?x.support.slice().sort(function(a,b){return (a.at||0)-(b.at||0);}):[];
+          if(!sup.length)return;
+          list.push({uid:d.id,nom:String(x.nom||''),email:String(x.email||''),role:String(x.role||''),
+            support:sup,nTotal:Number(x.nTotal)||sup.length,tronque:!!x.tronque,
+            archiveLe:Number(x.archiveLe)||0,parti:true});});
+        list.sort(function(a,b){return (b.archiveLe||0)-(a.archiveLe||0);});
+        S.adminGeneralArchive=list;
+        if(S.persona==='admin')render();
+      },function(e){console.warn('archives support',e);});
+    }catch(e){console.warn('archives support',e);}
   }
   // Admin : écoute des supports généraux de tous les utilisateurs.
   let adminGeneralUnsub=null;
@@ -18680,6 +18721,12 @@
       else if(act==='sup'){const th=(S.adminThreads||[]).find(function(x){return x.reqId===id;});if(th){S.mission=th;S.supportSide=(parts[2]==='pro'?'pro':'client');S.support=true;S.adminSupervise=false;S.admin.view='msg';markSupportReadAdmin(th,S.supportSide);watchRequest(th.reqId);render();view.scrollTop=view.scrollHeight;}return;}
       else if(act==='supervise'){const th=(S.adminThreads||[]).find(function(x){return x.reqId===id;});if(th){S.mission=th;S.adminSupervise=true;S.support=false;S.admin.view='msg';watchRequest(th.reqId);render();view.scrollTop=view.scrollHeight;}return;}
       else if(act==='gensup'){const u=(S.adminGeneral||[]).find(function(x){return x.uid===id;});if(u){S.genUser=u;S.generalSupport=true;S.support=false;S.adminSupervise=false;S.admin.view='msg';markGenSupportReadAdmin();render();view.scrollTop=view.scrollHeight;}return;}
+      else if(act==='gensuparch'){const u=(S.adminGeneralArchive||[]).find(function(x){return x.uid===id;});
+        /* On réutilise l'écran des conversations : même forme, même rendu. `parti` retire
+           la barre de réponse et change le bandeau — écrire à un compte supprimé n'arrive
+           nulle part, et le proposer serait mentir. */
+        if(u){S.genUser=Object.assign({},u,{name:u.nom});S.generalSupport=true;S.support=false;S.adminSupervise=false;S.admin.view='msg';render();try{view.scrollTop=view.scrollHeight;}catch(_){}}
+        return;}
       else if(act==='delmsg'){
         // Suppression d'une conversation dans la messagerie admin. Double-clic de sécurité :
         // 1er clic = « armé » (le bouton demande « Sûr ? »), 2e clic = suppression réelle.
@@ -21776,7 +21823,7 @@
         S.account={name:'Ti-Services',email:user.email||'',uid:user.uid,role:'admin'};
         S.referralCode=genReferralCode('Ti-Services',user.uid);
         S.persona='admin';S.admin={view:'home',sel:null};S.onboarded=true;S.authView=null;render();
-        refreshAdminArtisans();refreshAdminConcierges();refreshAdminWishes();initAdminPush();subscribeAdminThreads();subscribeAdminGeneralSupport();subscribeAdminDeparts();subscribeAdminLedger();subscribeAdminReports();return;
+        refreshAdminArtisans();refreshAdminConcierges();refreshAdminWishes();initAdminPush();subscribeAdminThreads();subscribeAdminGeneralSupport();subscribeAdminSupportArchive();subscribeAdminDeparts();subscribeAdminLedger();subscribeAdminReports();return;
       }
       // Lecture du compte, sous garde-fou de temps : sans lui, une requête qui reste
       // sans réponse (réseau capricieux, blocage) laisse la personne devant un écran

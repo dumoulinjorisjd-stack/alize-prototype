@@ -118,6 +118,56 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   ok(!/désinscrit|Retiré depuis|console Firebase/.test(inconnue.txt),
     'une origine inconnue ne devient pas une phrase : la liste est fermée');
 
+  /* ── E. LA CONVERSATION DE SUPPORT GÉNÉRAL SURVIT AU COMPTE ───────────────────
+     Elle ne vit pas où vivent les autres : un échange lié à une prestation est un champ
+     de la DEMANDE, qu'une purge « profil » ne touche pas ; une question générale est un
+     champ de la FICHE UTILISATEUR, et la fiche part dans les DEUX modes. Le fil
+     s'effaçait donc avec le compte, y compris sur une simple désinscription. Or c'est
+     exactement celui qu'on ressort des mois après. */
+  console.log('E — la conversation d’un compte parti est gardée comme pièce');
+  const ARCH = SRV.slice(SRV.indexOf('async function archiverSupportGeneral'), SRV.indexOf('async function journaliserDepart'));
+  ok(ARCH.length > 100, 'le serveur archive le support général');
+  ok(/collection\('supportArchive'\)\.doc\(uid\)/.test(ARCH),
+    'dans une collection à part, pas dans le journal des départs qui se purge à 90 jours');
+  ok(!/expireLe/.test(ARCH),
+    'et SANS date d’expiration : une pièce de litige n’a pas la durée de vie d’un journal');
+  ok(/slice\(-ARCHIVE_MSG_MAX\)/.test(ARCH) && /slice\(0, ARCHIVE_TXT_MAX\)/.test(ARCH),
+    'bornée, parce qu’un document Firestore plafonne à un mébioctet');
+  ok(/tronque: brut\.length > gardes\.length/.test(ARCH),
+    'et la coupe se VOIT : on garde le nombre réel, sinon un fil amputé passerait pour complet');
+  const JD = SRV.slice(SRV.indexOf('async function journaliserDepart'), SRV.indexOf('async function purgerCompte'));
+  ok(JD.indexOf('archiverSupportGeneral') >= 0 && JD.indexOf('archiverSupportGeneral') < JD.indexOf("collection('comptesSupprimes')"),
+    'l’archivage a lieu PENDANT la lecture des fiches, le seul instant où la conversation est encore lisible');
+  ok(/match \/supportArchive\/\{uid\} \{[\s\S]{0,200}?allow read: if isAdmin\(\);[\s\S]{0,80}?allow write: if false;/.test(
+    fs.readFileSync(path.join(RACINE, 'firestore.rules'), 'utf8')),
+    'la règle la réserve à l’administrateur en lecture, et l’interdit en écriture : personne ne l’écrit depuis un navigateur');
+
+  const archive = await p.evaluate(() => {
+    const S = window.__S;
+    S.adminGeneralArchive = [{ uid: 'proX', nom: 'Une prestataire', email: 'a@x.c', role: 'artisan',
+      support: [{ from: 'user', text: 'Mollie ne prend pas en charge Saint-Barthélemy', at: 1 },
+        { from: 'admin', text: 'Mollie prend bien en charge Saint-Barthélemy', at: 2 }],
+      nTotal: 2, tronque: false, archiveLe: Date.now(), parti: true }];
+    S.adminGeneral = []; S.adminThreads = []; S.admin = { view: 'msg' }; S.genUser = null;
+    S.generalSupport = false; S.persona = 'admin';
+    window.__render();
+    const v = document.getElementById('view');
+    const liste = (v.textContent || '').replace(/\s+/g, ' ');
+    const b = v.querySelector('[data-adm^="gensuparch:"]');
+    if (b) b.click();
+    const w = document.getElementById('view');
+    return { liste: liste, bouton: !!b,
+      ouvert: (w.textContent || '').replace(/\s+/g, ' '),
+      repondre: w.querySelectorAll('#gsupInput').length };
+  });
+  ok(/Support général/.test(archive.liste) && /Une prestataire/.test(archive.liste) && /Compte supprimé/.test(archive.liste),
+    'elle paraît dans la messagerie, au même endroit qu’on la cherche, et marquée');
+  ok(archive.bouton && /Mollie ne prend pas en charge/.test(archive.ouvert) && /prend bien en charge/.test(archive.ouvert),
+    'elle s’ouvre, et les DEUX côtés de l’échange sont là');
+  ok(archive.repondre === 0,
+    'mais sans barre de réponse : écrire à un compte supprimé n’arrive nulle part, et le proposer serait mentir');
+  ok(/Ce compte a été supprimé/.test(archive.ouvert), 'et l’écran le dit');
+
   ok(errs.length === 0, 'aucune erreur JS' + (errs.length ? ' (' + errs[0] + ')' : ''));
   await b.close();
   console.log(f ? ('\n' + f + ' ÉCHEC(S)') : '\nTout est vert');

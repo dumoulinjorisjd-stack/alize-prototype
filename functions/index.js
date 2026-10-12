@@ -7430,6 +7430,55 @@ async function effacerRequetes(db, snapDocs) {
 // garde que ce qui répond à la question — qui, quand, quel rôle, où en était le
 // dossier — et le journal se purge tout seul au bout de JOURNAL_JOURS.
 const JOURNAL_JOURS = 90;
+/* UNE CONVERSATION DE SUPPORT GÉNÉRAL SURVIT AU COMPTE.
+   « Je ne retrouve pas cette conversation, ça m'embête » — l'éditeur, le 12/10/2026,
+   capture à l'appui : un échange avec une prestataire au sujet de Mollie, disparu.
+
+   ELLE NE VIT PAS OÙ VIVENT LES AUTRES. Une conversation liée à une prestation est un
+   champ de la DEMANDE, et une purge « profil » ne touche pas aux demandes : elle reste.
+   Une question générale, hors réservation, est un champ de la FICHE UTILISATEUR
+   (`users/{uid}.support`) — et la fiche part dans les DEUX modes de purge. Le fil
+   s'effaçait donc avec le compte, quelle que soit l'origine du départ, y compris une
+   simple désinscription.
+
+   OR C'EST EXACTEMENT LE FIL QU'ON VEUT GARDER : « la messagerie et les messages doivent
+   rester, c'est une preuve en cas de litige ». Un échange sur un paiement refusé ou une
+   inscription qui n'aboutit pas est précisément ce qu'on ressort des mois après.
+
+   ON ARCHIVE AVANT D'EFFACER, dans une collection à part, en lecture ADMIN seulement.
+   PAS DANS LE JOURNAL DES DÉPARTS : celui-ci se purge à quatre-vingt-dix jours, ce qui
+   est le bon délai pour savoir qui est parti et le mauvais pour une pièce de litige.
+   L'archive, elle, n'expire pas.
+
+   BORNÉE, parce qu'un document Firestore plafonne à un mébioctet : les derniers messages,
+   chacun tronqué. Un fil qui dépasserait ces bornes serait coupé par le DÉBUT, et l'on
+   garde le nombre réel pour que la coupe se voie. */
+const ARCHIVE_MSG_MAX = 200;
+const ARCHIVE_TXT_MAX = 2000;
+async function archiverSupportGeneral(db, uid, u, a) {
+  try {
+    const brut = Array.isArray(u && u.support) ? u.support : [];
+    if (!brut.length) return 0;
+    const tri = brut.slice().sort((x, y) => (Number(x && x.at) || 0) - (Number(y && y.at) || 0));
+    const gardes = tri.slice(-ARCHIVE_MSG_MAX).map((m) => ({
+      from: String((m && m.from) || '').slice(0, 20),
+      text: String((m && m.text) || '').slice(0, ARCHIVE_TXT_MAX),
+      at: Number(m && m.at) || 0,
+    }));
+    await db.collection('supportArchive').doc(uid).set({
+      uid: uid,
+      nom: String((a && a.name) || (u && u.name) || '').slice(0, 80),
+      email: String((u && u.email) || (a && a.email) || '').slice(0, 200),
+      role: String((u && u.role) || ((a && a.name) ? 'artisan' : 'client')).slice(0, 20),
+      support: gardes,
+      nTotal: brut.length,
+      tronque: brut.length > gardes.length,
+      archiveLe: Date.now(),
+    }, {merge: true});
+    return gardes.length;
+  } catch (e) { console.warn('archiverSupportGeneral', e && e.message); return 0; }
+}
+
 async function journaliserDepart(db, uid, origine, authUser) {
   try {
     let u = {}; let a = {};
@@ -7441,7 +7490,11 @@ async function journaliserDepart(db, uid, origine, authUser) {
     const inscrit = (a.createdAt && a.createdAt.toMillis) ? a.createdAt.toMillis()
       : (u.createdAt && u.createdAt.toMillis) ? u.createdAt.toMillis()
       : (au.metadata && au.metadata.creationTime) ? Date.parse(au.metadata.creationTime) || 0 : 0;
+    // AVANT D'ÉCRIRE LE JOURNAL : les deux fiches sont encore là, c'est le seul instant
+    // où la conversation est lisible.
+    const nArchive = await archiverSupportGeneral(db, uid, u, a);
     await db.collection('comptesSupprimes').doc(uid).set({
+      supportArchive: nArchive,
       uid: uid,
       nom: String(a.name || u.name || au.displayName || '').slice(0, 80),
       email: String(u.email || a.email || au.email || '').slice(0, 200),
