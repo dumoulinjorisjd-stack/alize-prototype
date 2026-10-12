@@ -1083,6 +1083,7 @@ exports.assignFounderSpot = onDocumentCreated('artisans/{artisanId}', async (eve
 const ANTI = require('./anti-abus');
 const DEPASSE = require('./creneau-depasse');
 const ARCH = require('./archive-messages');
+const DEP = require('./journal-departs');
 /* LE COMPTEUR DU JOUR. Un document par clé et par jour dans `quotas` — collection
  * SERVEUR (aucune règle ne l'ouvre, l'Admin SDK passe outre). Transaction : deux demandes
  * simultanées ne peuvent pas lire le même nombre et l'écrire deux fois.
@@ -5074,15 +5075,22 @@ exports.autoValidate = onSchedule({schedule: 'every 1 hours', secrets: [SMTP_PAS
 exports.paymentReconciliation = onSchedule({schedule: '0 9 * * *', secrets: [SMTP_PASS]}, async () => {
   const db = getFirestore();
   const now = Date.now();
-  // JOURNAL DES DÉPARTS : on efface les lignes échues. Il répond à « qui a disparu
-  // ces dernières semaines », pas à « qui est parti il y a deux ans » — garder au-delà
-  // reviendrait à conserver indéfiniment les coordonnées de gens qui ont demandé leur
-  // effacement.
+  /* JOURNAL DES DÉPARTS : à l'échéance on RÉDUIT la ligne, on ne la supprime plus.
+     « Le prestataire s'appelait sunnyregards mais il apparaît absolument nulle part. »
+     La suppression confondait la COORDONNÉE (ce qu'un effacement vise) et le FAIT
+     (quelqu'un a été référencé ici, de telle date à telle date, et il est parti de
+     lui-même). L'adresse part, le fait reste — et l'archive des conversations, elle,
+     n'expirait déjà pas : on gardait ce qu'une personne avait DIT en oubliant qu'elle
+     avait EXISTÉ. Le détail de la règle est dans `journal-departs.js`. */
   try {
     const vieux = await db.collection('comptesSupprimes').where('expireLe', '<=', now).limit(400).get();
-    for (const d of vieux.docs) { try { await d.ref.delete(); } catch (_) {} }
-    if (vieux.size) console.log('journal des départs : ' + vieux.size + ' ligne(s) échue(s) effacée(s)');
-  } catch (e) { console.warn('purge journal départs', e && e.message); }
+    for (const d of vieux.docs) {
+      // Écriture SANS fusion : c'est ce qui fait partir les champs retirés, `expireLe`
+      // compris — un `merge` les laisserait en place et la ligne reviendrait chaque nuit.
+      try { await d.ref.set(DEP.reduireDepart(d.data() || {}, now)); } catch (_) {}
+    }
+    if (vieux.size) console.log('journal des départs : ' + vieux.size + ' ligne(s) réduite(s), le fait est gardé');
+  } catch (e) { console.warn('réduction journal départs', e && e.message); }
   /* COMPTEURS DU JOUR : ils ne servent qu'au jour qu'ils portent. On garde une semaine
      (de quoi lire ce qui s'est passé si une alerte tombe un vendredi soir), puis on
      efface — sans quoi la collection grossit d'une ligne par client et par jour, pour

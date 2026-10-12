@@ -3662,7 +3662,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='865';
+  const VERSION_APP='866';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -5641,6 +5641,9 @@
     const c=Number(clos)||0; if(!c)return false;
     return c>=(Number(dernierMsg)||0);
   }
+  // Miroir de JOURNAL_JOURS (functions/index.js) : une durée annoncée à l'écran doit
+  // être celle qu'applique le serveur, et une épreuve compare les deux.
+  const JOURNAL_JOURS_CLI=90;
   const RECHERCHE_MIN=2;
   const RECHERCHE_PAR_FAMILLE=8;
   /* ON N'AFFIRME PAS « RIEN » TANT QU'ON N'A PAS TOUT LU. Les listes de la console
@@ -12231,6 +12234,7 @@
         const uidsPro={};reqsVrais.forEach(function(r){if(r.providerUid)uidsPro[r.providerUid]=1;});
         const cand=dep.filter(function(d){return d.avaitCandidature&&d.statut==='attente';});
         const corps=dep.length?`<p class="mini" style="margin:0;color:var(--muted);line-height:1.55">Chaque départ est inscrit <b>avant</b> l'effacement des fiches, quelle que soit son origine, désinscription depuis l'application, purge depuis cette console, ou suppression depuis Firebase. Le journal se vide tout seul au bout de 90&nbsp;jours.</p>
+          <p class="mini" style="margin:8px 0 0;color:var(--muted);line-height:1.55">Au bout de ${JOURNAL_JOURS_CLI} jours la ligne perd son <b>adresse</b> et garde son <b>fait</b> : on ne recontacte plus personne, mais la question « cette personne a-t-elle existé ? » garde une réponse.</p>
           <p class="mini" style="margin:8px 0 0;color:var(--muted);line-height:1.55">Un départ n'efface que la FICHE. <b>Ses prestations restent</b>, avec son nom, sa raison sociale et son SIRET figés dessus, <b>le registre comptable reste</b>, et <b>les conversations restent</b>&nbsp;: un échange se produit en cas de litige, même des années après. Seule une purge «&nbsp;tout effacer&nbsp;» depuis cette console emporte la comptabilité.</p>
           ${cand.length?`<div class="banner coral" style="margin-top:11px">${I.warn}<span><b>${cand.length} candidature${cand.length>1?'s':''} partie${cand.length>1?'s':''} avant validation.</b> C'est la réponse à « je reçois l'e-mail, et il n'y a plus personne ».</span></div>`:''}
           ${dep.slice(0,40).map(function(d){
@@ -12242,7 +12246,7 @@
                 <b style="font-size:14px;flex:1 1 auto;min-width:0">${esc(d.nom||'Sans nom')}</b>
                 <span class="chip ${av?'coral':(R.role==='artisan'?'teal':'grey')}" style="flex:none">${av?'Candidature perdue':(R.role==='artisan'?'Prestataire':'Client')}</span></div>
                 ${R.preuve?`<div class="mini" style="margin-top:3px;color:var(--teal-deep);line-height:1.45">Retrouvé comme prestataire&nbsp;: ${esc(R.preuve)}. Le journal l'avait inscrit comme client, avant le correctif.</div>`:''}
-              <div class="mini" style="margin-top:4px;color:var(--muted);line-height:1.5">${esc(d.email||'—')}${d.metiers.length?' · '+esc(d.metiers.map(svcNm).join(', ')):''}</div>
+              <div class="mini" style="margin-top:4px;color:var(--muted);line-height:1.5">${d.reduitLe?'<i>Coordonnées effacées après '+JOURNAL_JOURS_CLI+' jours</i>':esc(d.email||'—')}${d.metiers.length?' · '+esc(d.metiers.map(svcNm).join(', ')):''}</div>
               <div class="mini" style="margin-top:3px;color:var(--muted)">Parti le ${d.supprimeLe?dateFr(d.supprimeLe):'—'}${jours!=null?' · '+(jours<1?'moins d\'un jour':jours+' jour'+(jours>1?'s':''))+' après son inscription':''}</div>
               ${DEPART_ORIGINES[d.origine]?`<div class="mini" style="margin-top:3px;color:${d.origine==='desinscription'?'var(--coral-deep)':'var(--muted)'}">${esc(DEPART_ORIGINES[d.origine])}</div>`:''}
             </div>`;}).join('')}`
@@ -13531,7 +13535,8 @@
         snap.forEach(function(d){const x=d.data()||{};out.push({uid:d.id,nom:x.nom||'',email:x.email||'',
           role:x.role||'',statut:x.statut||'',avaitCandidature:!!x.avaitCandidature,
           metiers:Array.isArray(x.metiers)?x.metiers:[],
-          inscritLe:Number(x.inscritLe)||0,supprimeLe:Number(x.supprimeLe)||0,origine:x.origine||''});});
+          inscritLe:Number(x.inscritLe)||0,supprimeLe:Number(x.supprimeLe)||0,origine:x.origine||'',
+          reduitLe:Number(x.reduitLe)||0,supportArchive:Number(x.supportArchive)||0});});
         out.sort(function(a,b){return (b.supprimeLe||0)-(a.supprimeLe||0);});
         S.adminDeparts=out;render();
       },function(e){console.warn('journal départs',e);});
