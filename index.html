@@ -3662,7 +3662,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='862';
+  const VERSION_APP='863';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -5611,6 +5611,69 @@
     if(d&&d.avaitCandidature)return {role:'artisan',preuve:'il avait déposé une candidature'};
     if(d&&(d.metiers||[]).length)return {role:'artisan',preuve:'des métiers lui étaient rattachés'};
     return {role:rec||'client',preuve:''};
+  }
+  /* CHERCHER QUELQU'UN DANS TOUT CE QUE NOUS GARDONS.
+     « Il n'apparaît pas, ça me donne l'impression de rêver qu'il ait existé. »
+
+     LE PROBLÈME N'EST PLUS UNE CARTE, C'EST QU'IL N'Y A PAS D'ENDROIT OÙ DEMANDER.
+     Ce qu'un compte laisse est éparpillé par nature : sa fiche s'il est encore là, le
+     journal des départs s'il est parti après la mise en service de celui-ci, ses
+     PRESTATIONS qui portent son nom et son SIRET figés et ne partent jamais, et depuis
+     peu ses conversations archivées. Chacune de ces listes a sa carte, et aucune ne
+     répond à « est-ce que cette personne a existé ».
+
+     ON NE LIT RIEN DE NEUF : tout est déjà chargé dans la console. Ce noyau ne fait que
+     croiser, et il est PUR — on lui passe les listes, il ne connaît ni `S` ni Firestore.
+
+     DEUX CARACTÈRES AU MINIMUM : une seule lettre rapporte tout le parc, ce qui ne
+     répond à rien. Et l'on cherche sans accents ni casse, parce qu'on tape un nom comme
+     on s'en souvient ; chaque MOT doit tomber, pas la chaîne entière, pour que « laure
+     menage » trouve la prestation de ménage de Laure.
+
+     ET « RIEN, NULLE PART » EST UNE RÉPONSE. C'est même celle qu'on vient chercher : tant
+     qu'aucun écran ne la donne, on reste avec l'impression d'avoir rêvé. */
+  const RECHERCHE_MIN=2;
+  const RECHERCHE_PAR_FAMILLE=8;
+  function rechNet(v){
+    return String(v==null?'':v).toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g,'')
+      .replace(/\s+/g,' ').trim();
+  }
+  function rechercheParc(q,src){
+    const t=rechNet(q);
+    if(t.length<RECHERCHE_MIN)return null;      // null = on n'a pas cherché, ≠ rien trouvé
+    const mots=t.split(' ').filter(Boolean);
+    const S0=src||{};
+    const tient=function(champs){
+      const foin=rechNet((champs||[]).filter(Boolean).join(' '));
+      return mots.every(function(m){return foin.indexOf(m)>=0;});
+    };
+    const familles=[];
+    const pousser=function(cle,titre,lignes){
+      if(lignes.length)familles.push({cle:cle,titre:titre,n:lignes.length,
+        lignes:lignes.slice(0,RECHERCHE_PAR_FAMILLE)});
+    };
+    pousser('artisan','Fiche prestataire',(S0.artisans||[]).filter(function(a){
+      return tient([a.name,a.legalName,a.email,a.siret,a.uid||a.id]);
+    }).map(function(a){return {titre:a.name||'Prestataire',detail:[a.email,a.siret].filter(Boolean).join(' · '),cle:a.uid||a.id};}));
+    pousser('client','Fiche client',(S0.clients||[]).filter(function(c){
+      return tient([c.name,c.email,c.phone,c.uid||c.id]);
+    }).map(function(c){return {titre:c.name||'Client',detail:[c.email,c.phone].filter(Boolean).join(' · '),cle:c.uid||c.id};}));
+    pousser('depart','Compte parti',(S0.departs||[]).filter(function(d){
+      return tient([d.nom,d.email,d.uid]);
+    }).map(function(d){return {titre:d.nom||'Sans nom',detail:[d.email,(d.role==='artisan'?'prestataire':'client')].filter(Boolean).join(' · '),cle:d.uid};}));
+    /* LES PRESTATIONS SONT LA TRACE QUI NE PART JAMAIS : le nom et le SIRET y sont figés
+       au moment de l'acceptation, et aucune purge « profil » n'y touche. C'est souvent le
+       SEUL endroit où retrouver quelqu'un parti avant le journal des départs. */
+    pousser('prestation','Prestations',(S0.demandes||[]).filter(function(r){
+      return tient([r.client,r.provider,r.providerUid,r.uid,r.svcName]);
+    }).map(function(r){return {titre:[r.svcName||r.svc,r.provider||'sans prestataire'].filter(Boolean).join(' · '),
+      detail:[r.client,r.when,r.status].filter(Boolean).join(' · '),cle:r.id};}));
+    pousser('archive','Conversation gardée',(S0.archives||[]).filter(function(x){
+      return tient([x.nom,x.email,x.uid]);
+    }).map(function(x){return {titre:x.nom||'Sans nom',detail:(x.support||[]).length+' message'+(((x.support||[]).length)>1?'s':''),cle:x.uid};}));
+    const total=familles.reduce(function(n,f){return n+f.n;},0);
+    return {q:q,total:total,familles:familles};
   }
   function reqPourConsole(id,r0){
     r0=r0||{};
@@ -11960,6 +12023,28 @@
       ${supBlocks.length?`<div style="height:14px"></div><span class="eyebrow">Messages support · ${supBlocks.length}</span>${supBlocks.join('')}`:''}
       ${nsBlock}
 
+      ${(function(){
+        /* UNE SEULE PORTE POUR « EST-CE QUE CETTE PERSONNE A EXISTÉ ». Elle est en tête
+           de console parce que c'est la première question qu'on se pose quand on ne
+           retrouve pas quelqu'un, et qu'aucune des cartes du dessous n'y répond seule. */
+        const R=rechercheParc(S.admRech||'',{
+          artisans:S.adminArtisans||[], clients:S.adminClients||[],
+          departs:S.adminDeparts||[], demandes:reqsVrais,
+          archives:S.adminGeneralArchive||[]});
+        const corps=!R?`<p class="mini" style="margin:8px 0 0;color:var(--muted);line-height:1.5">Un nom, un e-mail, un SIRET. On cherche dans les fiches, le journal des départs, les prestations et les conversations gardées, <b>y compris pour un compte supprimé</b>.</p>`
+          :(R.total?R.familles.map(function(f){
+            return `<div style="margin-top:12px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">${esc(f.titre)} · ${f.n}</div>
+              ${f.lignes.map(function(l){
+                return `<div class="card" style="padding:11px 13px;margin-top:7px"><b style="font-size:13.5px">${esc(l.titre)}</b>${l.detail?`<div class="mini" style="margin-top:2px;color:var(--muted)">${esc(l.detail)}</div>`:''}</div>`;}).join('')}
+              ${f.n>f.lignes.length?`<p class="mini" style="margin-top:6px;color:var(--muted)">et ${f.n-f.lignes.length} autre${(f.n-f.lignes.length)>1?'s':''}.</p>`:''}</div>`;}).join('')
+          /* « RIEN, NULLE PART » EST LA RÉPONSE QU'ON VIENT CHERCHER. Tant qu'aucun écran
+             ne la donne, on reste avec l'impression d'avoir rêvé. */
+          :`<div class="banner coral" style="margin-top:12px">${I.warn}<span><b>Rien, nulle part.</b> Ni fiche, ni départ enregistré, ni prestation, ni conversation gardée. Si cette personne a existé, elle est partie <b>avant la mise en service du journal des départs</b>, sans avoir réalisé de prestation&nbsp;: il ne reste alors aucune trace dans l'application.</span></div>`);
+        return `<div class="card" style="padding:15px;margin-top:12px">
+          <div class="row" style="gap:9px;align-items:center"><span class="benic" style="background:var(--teal-wash);color:var(--teal-deep);flex:none">${I.search}</span>
+            <b style="font-size:14px;flex:1">Retrouver quelqu'un</b>${R?`<span class="chip ${R.total?'teal':'coral'}" style="flex:none">${R.total}</span>`:''}</div>
+          <div class="field" style="margin-top:11px;margin-bottom:0"><input class="txt" data-rech value="${esc(S.admRech||'')}" placeholder="Nom, e-mail ou SIRET"></div>
+          ${corps}</div>`;})()}
       <div style="height:18px"></div><span class="eyebrow">${I.hardhat} Prestataires</span>
       <p class="mini" style="margin:6px 0 0;color:var(--muted)">Touchez une carte pour la déplier.</p>
       ${foldCard('a-arts',I.hardhat,'Fiches artisans',validA+' validé'+(validA>1?'s':'')+(pendA.length?' · '+pendA.length+' en attente':'')+(refA.length?' · '+refA.length+' refusé'+(refA.length>1?'s':''):'')+(nbAmb?' · '+nbAmb+' ambassadeur'+(nbAmb>1?'s':''):''),artList+(refA.length?`<hr class="dashed" style="margin:14px 0 2px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Prestataires refusés (${refA.length})</div>${refList}`:''),chip('grey',activeArts.length),(S.adminArtisans||[]).some(function(x){return x&&admArtNew(x);}))}
@@ -20679,6 +20764,14 @@
       }
       refreshProSubmit();
     }
+    /* La recherche de la console attend la fin de la frappe : l'accueil admin est un gros
+       écran, le redessiner à chaque lettre le ferait sauter sous les doigts. On garde le
+       curseur là où il est en ne repeignant qu'après la pause. */
+    const rch=e.target.closest('[data-rech]');
+    if(rch){const v=rch.value;clearTimeout(window._rechT);
+      window._rechT=setTimeout(function(){S.admRech=v;render();
+        try{const el=document.querySelector('[data-rech]');if(el){el.focus();el.setSelectionRange(v.length,v.length);}}catch(_){}
+      },260);return;}
     const ar=e.target.closest('[data-arst]');if(ar){S._arst=S._arst||{};S._arst[ar.dataset.arst]=ar.value;}
     const dn=e.target.closest('[data-dnet]');if(dn&&S.proForm){S.proForm.desiredNet=S.proForm.desiredNet||{};S.proForm.desiredNet[dn.dataset.dnet]=dn.value;refreshProSubmit();}
     const pad=e.target.closest('[data-padnet]');if(pad&&S.proAddForm){S.proAddForm.desiredNet=S.proAddForm.desiredNet||{};S.proAddForm.desiredNet[pad.dataset.padnet]=pad.value;}
