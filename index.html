@@ -3662,7 +3662,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='861';
+  const VERSION_APP='862';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -5586,6 +5586,32 @@
      La projection vivait DANS le corps de l'écoute : rien ne pouvait l'éprouver, et
      un champ qui cesserait d'être recopié se serait tu sans un mot. Elle est pure, elle
      reçoit le document et rend la ligne. */
+  /* RETROUVER UN PRESTATAIRE QUE LE JOURNAL A MAL ÉTIQUETÉ.
+     « Je vois les comptes client supprimés mais pas les comptes prestataire. »
+
+     JUSQU'À LA v860, UNE DÉSINSCRIPTION ÉCRASAIT SON PROPRE JOURNAL : l'application
+     effaçait les fiches avant que le serveur ne les lise, et la ligne
+     `role: a.name ? 'artisan' : 'client'` répondait donc toujours CLIENT. Les départs
+     d'avant sont dans la console, mais tous étiquetés clients : on les regarde sans les
+     voir. Le correctif tient pour la suite, il ne répare pas le passé.
+
+     ON NE DEVINE PAS, ON LIT CE QUI RESTE. Les demandes portent `providerUid`, figé au
+     moment de l'acceptation, et une purge « profil » n'y touche pas : un compte qui
+     apparaît comme prestataire sur une seule prestation A ÉTÉ prestataire, c'est un fait
+     et non une supposition. Deux autres faits, plus faibles mais sûrs, servent de
+     secours quand la personne est partie sans avoir travaillé : une candidature déposée,
+     ou des métiers rattachés.
+
+     ET LA PREUVE SE DIT. Requalifier en silence un compte que le journal appelle client
+     serait remplacer une erreur par une affirmation ; on montre sur quoi elle repose. */
+  function departRole(d,aPreste){
+    const rec=String((d&&d.role)||'');
+    if(aPreste)return {role:'artisan',preuve:rec==='artisan'?'':'il a réalisé des prestations'};
+    if(rec==='artisan')return {role:'artisan',preuve:''};
+    if(d&&d.avaitCandidature)return {role:'artisan',preuve:'il avait déposé une candidature'};
+    if(d&&(d.metiers||[]).length)return {role:'artisan',preuve:'des métiers lui étaient rattachés'};
+    return {role:rec||'client',preuve:''};
+  }
   function reqPourConsole(id,r0){
     r0=r0||{};
     const txt=function(v,n){return String(v==null?'':v).slice(0,n||60);};
@@ -12062,17 +12088,22 @@
         // console a UNE explication vérifiable : la personne s'est désinscrite. On le dit,
         // avec la date et l'état du dossier au moment du départ.
         const dep=S.adminDeparts||[];
+        /* Les comptes qui ont réellement travaillé : la demande garde `providerUid`, et
+           une purge « profil » ne touche pas aux demandes. */
+        const uidsPro={};reqsVrais.forEach(function(r){if(r.providerUid)uidsPro[r.providerUid]=1;});
         const cand=dep.filter(function(d){return d.avaitCandidature&&d.statut==='attente';});
         const corps=dep.length?`<p class="mini" style="margin:0;color:var(--muted);line-height:1.55">Chaque départ est inscrit <b>avant</b> l'effacement des fiches, quelle que soit son origine, désinscription depuis l'application, purge depuis cette console, ou suppression depuis Firebase. Le journal se vide tout seul au bout de 90&nbsp;jours.</p>
           <p class="mini" style="margin:8px 0 0;color:var(--muted);line-height:1.55">Un départ n'efface que la FICHE. <b>Ses prestations restent</b>, avec son nom, sa raison sociale et son SIRET figés dessus, <b>le registre comptable reste</b>, et <b>les conversations restent</b>&nbsp;: un échange se produit en cas de litige, même des années après. Seule une purge «&nbsp;tout effacer&nbsp;» depuis cette console emporte la comptabilité.</p>
           ${cand.length?`<div class="banner coral" style="margin-top:11px">${I.warn}<span><b>${cand.length} candidature${cand.length>1?'s':''} partie${cand.length>1?'s':''} avant validation.</b> C'est la réponse à « je reçois l'e-mail, et il n'y a plus personne ».</span></div>`:''}
           ${dep.slice(0,40).map(function(d){
             const av=d.avaitCandidature&&d.statut==='attente';
+            const R=departRole(d,!!uidsPro[d.uid]);
             const jours=(d.inscritLe&&d.supprimeLe)?Math.max(0,Math.round((d.supprimeLe-d.inscritLe)/86400000)):null;
             return `<div class="card" style="padding:12px;margin-top:9px${av?';border-left:3px solid var(--coral)':''}">
               <div class="row between" style="gap:8px;align-items:flex-start;flex-wrap:wrap">
                 <b style="font-size:14px;flex:1 1 auto;min-width:0">${esc(d.nom||'Sans nom')}</b>
-                <span class="chip ${av?'coral':'grey'}" style="flex:none">${av?'Candidature perdue':(d.role==='artisan'?'Prestataire':'Client')}</span></div>
+                <span class="chip ${av?'coral':(R.role==='artisan'?'teal':'grey')}" style="flex:none">${av?'Candidature perdue':(R.role==='artisan'?'Prestataire':'Client')}</span></div>
+                ${R.preuve?`<div class="mini" style="margin-top:3px;color:var(--teal-deep);line-height:1.45">Retrouvé comme prestataire&nbsp;: ${esc(R.preuve)}. Le journal l'avait inscrit comme client, avant le correctif.</div>`:''}
               <div class="mini" style="margin-top:4px;color:var(--muted);line-height:1.5">${esc(d.email||'—')}${d.metiers.length?' · '+esc(d.metiers.map(svcNm).join(', ')):''}</div>
               <div class="mini" style="margin-top:3px;color:var(--muted)">Parti le ${d.supprimeLe?dateFr(d.supprimeLe):'—'}${jours!=null?' · '+(jours<1?'moins d\'un jour':jours+' jour'+(jours>1?'s':''))+' après son inscription':''}</div>
               ${DEPART_ORIGINES[d.origine]?`<div class="mini" style="margin-top:3px;color:${d.origine==='desinscription'?'var(--coral-deep)':'var(--muted)'}">${esc(DEPART_ORIGINES[d.origine])}</div>`:''}

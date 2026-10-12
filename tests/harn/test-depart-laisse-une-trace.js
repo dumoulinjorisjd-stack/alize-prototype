@@ -168,6 +168,58 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
     'mais sans barre de réponse : écrire à un compte supprimé n’arrive nulle part, et le proposer serait mentir');
   ok(/Ce compte a été supprimé/.test(archive.ouvert), 'et l’écran le dit');
 
+  /* ── F. RETROUVER CEUX QUE L'ANCIEN JOURNAL A MAL ÉTIQUETÉS ───────────────────
+     « Je vois les comptes client supprimés mais pas les comptes prestataire. » Le
+     correctif de la v860 tient pour la suite, il ne répare pas le passé : les départs
+     d'avant sont tous inscrits « client ». On ne devine pas, on lit ce qui reste. */
+  console.log('F — un prestataire mal étiqueté se retrouve par ses prestations');
+  const roles = await p.evaluate(() => {
+    const R = window.__cmd.role;
+    const cli = { role: 'client', avaitCandidature: false, metiers: [] };
+    return {
+      aPreste: R(cli, true),
+      candidature: R({ role: 'client', avaitCandidature: true, metiers: [] }, false),
+      metiers: R({ role: 'client', avaitCandidature: false, metiers: ['menage'] }, false),
+      vraiClient: R(cli, false),
+      dejaJuste: R({ role: 'artisan', avaitCandidature: true, metiers: ['menage'] }, true),
+      vide: R(null, false),
+    };
+  });
+  ok(roles.aPreste.role === 'artisan' && /réalisé des prestations/.test(roles.aPreste.preuve),
+    'un compte qui apparaît comme prestataire sur une prestation A ÉTÉ prestataire : c’est un fait, pas une supposition');
+  ok(roles.candidature.role === 'artisan' && /candidature/.test(roles.candidature.preuve),
+    'une candidature déposée suffit aussi, pour qui est parti sans avoir travaillé');
+  ok(roles.metiers.role === 'artisan' && /métiers/.test(roles.metiers.preuve), 'des métiers rattachés également');
+  ok(roles.vraiClient.role === 'client' && !roles.vraiClient.preuve,
+    'et un vrai client reste un client : on ne requalifie pas tout le monde pour faire disparaître le défaut');
+  ok(roles.dejaJuste.role === 'artisan' && !roles.dejaJuste.preuve,
+    'un enregistrement DÉJÀ juste ne porte aucune preuve : on n’explique que ce qu’on corrige');
+  ok(roles.vide.role === 'client', 'un enregistrement vide ne fait pas tomber la carte');
+
+  const vue = await p.evaluate(() => {
+    const S = window.__S;
+    S.admin = { view: 'home' }; S.generalSupport = false; S.genUser = null;
+    S.adminGeneralArchive = []; S.adminGeneral = []; S.adminThreads = [];
+    S.adminReqsLus = true;
+    /* Une prestation RÉGLÉE portant son uid : la preuve qui survit à son compte. */
+    S.adminReqs = [{ id: 'r1', status: 'paid', svc: 'menage', svcName: 'Ménage', client: 'Camille',
+      provider: 'Une prestataire', providerUid: 'proX', total: 70, at: Date.now() - 86400000, fin: 0 }];
+    S._fold = { 'a-departs': true };
+    S.adminDeparts = [{ uid: 'proX', nom: 'Une prestataire', email: 'a@x.c',
+      /* ÉTIQUETÉE CLIENT par l'ancien journal, sans métier et sans candidature : la
+         signature exacte du défaut. */
+      role: 'client', statut: '', avaitCandidature: false, metiers: [],
+      inscritLe: Date.now() - 200 * 86400000, supprimeLe: Date.now() - 3 * 86400000, origine: 'auth' }];
+    window.__render();
+    const c = Array.prototype.slice.call(document.querySelectorAll('.foldc'))
+      .find(function (x) { return /Comptes supprimés/.test(x.textContent || ''); });
+    return { txt: c ? (c.textContent || '').replace(/\s+/g, ' ') : '(absente)' };
+  });
+  ok(/Une prestataire/.test(vue.txt) && /Prestataire/.test(vue.txt),
+    'dans la console, elle redevient visible comme PRESTATAIRE, alors que le journal l’avait inscrite cliente');
+  ok(/Retrouvé comme prestataire/.test(vue.txt) && /réalisé des prestations/.test(vue.txt),
+    'et la carte DIT sur quoi elle se fonde : requalifier en silence remplacerait une erreur par une affirmation');
+
   ok(errs.length === 0, 'aucune erreur JS' + (errs.length ? ' (' + errs[0] + ')' : ''));
   await b.close();
   console.log(f ? ('\n' + f + ' ÉCHEC(S)') : '\nTout est vert');
