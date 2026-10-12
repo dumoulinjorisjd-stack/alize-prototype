@@ -213,12 +213,32 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
     window.__render();
     const c = Array.prototype.slice.call(document.querySelectorAll('.foldc'))
       .find(function (x) { return /Comptes supprimés/.test(x.textContent || ''); });
-    return { txt: c ? (c.textContent || '').replace(/\s+/g, ' ') : '(absente)' };
+    /* SOUS QUEL INTITULÉ ? On remonte au `.eyebrow` qui précède la carte dans la page :
+       c'est ce qu'un œil lit au-dessus d'elle, et c'est ce qui disait « Clients ». */
+    let titre = '';
+    if (c) {
+      const tous = Array.prototype.slice.call(document.querySelectorAll('.eyebrow, .foldc'));
+      const i = tous.indexOf(c);
+      for (let j = i - 1; j >= 0; j--) {
+        if (tous[j].classList.contains('eyebrow')) { titre = (tous[j].textContent || '').trim(); break; }
+      }
+    }
+    return { txt: c ? (c.textContent || '').replace(/\s+/g, ' ') : '(absente)', titre: titre };
   });
   ok(/Une prestataire/.test(vue.txt) && /Prestataire/.test(vue.txt),
     'dans la console, elle redevient visible comme PRESTATAIRE, alors que le journal l’avait inscrite cliente');
   ok(/Retrouvé comme prestataire/.test(vue.txt) && /réalisé des prestations/.test(vue.txt),
     'et la carte DIT sur quoi elle se fonde : requalifier en silence remplacerait une erreur par une affirmation');
+
+  /* ── G. ET ON SAIT OÙ ALLER LA CHERCHER ───────────────────────────────────────
+     « Je vais où pour voir ce prestataire qui est parti ? » Sous « Clients », entre les
+     fiches clients et la récupération : l'intitulé disait le contraire de ce que la carte
+     contient, et personne ne cherche un prestataire là. */
+  console.log('G — la carte n’est plus rangée sous « Clients »');
+  ok(!/Clients/.test(vue.titre),
+    'elle ne vit plus sous l’intitulé « Clients » (' + (vue.titre || 'aucun') + ')');
+  ok(/Comptes partis/.test(vue.titre),
+    'mais sous le sien, qui couvre les deux populations');
 
   ok(errs.length === 0, 'aucune erreur JS' + (errs.length ? ' (' + errs[0] + ')' : ''));
   await b.close();
