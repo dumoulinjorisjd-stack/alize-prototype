@@ -3662,7 +3662,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='863';
+  const VERSION_APP='864';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -5634,6 +5634,11 @@
      qu'aucun écran ne la donne, on reste avec l'impression d'avoir rêvé. */
   const RECHERCHE_MIN=2;
   const RECHERCHE_PAR_FAMILLE=8;
+  /* ON N'AFFIRME PAS « RIEN » TANT QU'ON N'A PAS TOUT LU. Les listes de la console
+     arrivent par abonnement, chacune à son rythme : répondre « rien, nulle part »
+     pendant qu'une source n'est pas rentrée serait un faux négatif affirmé, c'est-à-dire
+     pire que pas de recherche du tout. Celui qui cherche classerait l'affaire. */
+  const RECHERCHE_LUS=[['artisans','les fiches prestataires'],['clients','les fiches clients'],['demandes','les prestations']];
   function rechNet(v){
     return String(v==null?'':v).toLowerCase()
       .normalize('NFD').replace(/[̀-ͯ]/g,'')
@@ -5656,9 +5661,27 @@
     pousser('artisan','Fiche prestataire',(S0.artisans||[]).filter(function(a){
       return tient([a.name,a.legalName,a.email,a.siret,a.uid||a.id]);
     }).map(function(a){return {titre:a.name||'Prestataire',detail:[a.email,a.siret].filter(Boolean).join(' · '),cle:a.uid||a.id};}));
+    /* LA CANDIDATURE JAMAIS ENVOYÉE est le seul état où quelqu'un se COMPORTE en
+       prestataire — il a monté son dossier, il pose des questions de prestataire — sans
+       avoir de fiche dans `artisans`. Il n'existe alors que comme `users.role = artisan`,
+       et la seule carte qui le montre est tout en bas de la console. On ne le déclare
+       ainsi QUE si les fiches prestataires sont rentrées : sinon tout le monde en serait
+       une, y compris les validés. */
+    const dejaFiche={};(S0.artisans||[]).forEach(function(a){const u=a.uid||a.id;if(u)dejaFiche[u]=1;});
+    pousser('draft','Candidature jamais envoyée',(S0.drafts||[]).filter(function(d){
+      return !dejaFiche[d.uid]&&tient([d.name,d.email,d.phone,d.uid]);
+    }).map(function(d){return {titre:d.name||'Sans nom',detail:[d.email,d.phone].filter(Boolean).join(' · '),cle:d.uid};}));
+    /* LE RÔLE SE DIT SUR LA LIGNE. « Son compte est bien dans client, mais elle nous
+       parlait de Mollie comme une prestataire » : un compte devenu prestataire RESTE
+       listé chez les clients (il garde ses adresses, sa carte, son historique d'achats),
+       et une ligne qui ne dit que « Fiche client » fait croire à une erreur de la
+       personne alors que c'est l'écran qui tait la moitié du fait. */
     pousser('client','Fiche client',(S0.clients||[]).filter(function(c){
       return tient([c.name,c.email,c.phone,c.uid||c.id]);
-    }).map(function(c){return {titre:c.name||'Client',detail:[c.email,c.phone].filter(Boolean).join(' · '),cle:c.uid||c.id};}));
+    }).map(function(c){return {titre:c.name||'Client',detail:[c.email,c.phone,c.alsoPro?'devenu prestataire':''].filter(Boolean).join(' · '),cle:c.uid||c.id};}));
+    pousser('concierge','Conciergerie',(S0.concierges||[]).filter(function(c){
+      return tient([c.name,c.contact,c.email,c.phone,c.siret,c.uid||c.id]);
+    }).map(function(c){return {titre:c.name||'Conciergerie',detail:[c.contact,c.email].filter(Boolean).join(' · '),cle:c.uid||c.id};}));
     pousser('depart','Compte parti',(S0.departs||[]).filter(function(d){
       return tient([d.nom,d.email,d.uid]);
     }).map(function(d){return {titre:d.nom||'Sans nom',detail:[d.email,(d.role==='artisan'?'prestataire':'client')].filter(Boolean).join(' · '),cle:d.uid};}));
@@ -5669,11 +5692,21 @@
       return tient([r.client,r.provider,r.providerUid,r.uid,r.svcName]);
     }).map(function(r){return {titre:[r.svcName||r.svc,r.provider||'sans prestataire'].filter(Boolean).join(' · '),
       detail:[r.client,r.when,r.status].filter(Boolean).join(' · '),cle:r.id};}));
+    /* LA CONVERSATION EN COURS était la grande absente, alors que c'est elle qu'on vient
+       chercher : la messagerie générale vit sur `users/{uid}.support`, et tant que le
+       compte existe elle n'est PAS dans les archives. On cherchait donc partout sauf
+       dans la pièce où la personne nous a écrit. */
+    pousser('general','Conversation en cours',(S0.generaux||[]).filter(function(x){
+      return tient([x.name,x.uid]);
+    }).map(function(x){return {titre:x.name||'Utilisateur',
+      detail:[(x.support||[]).length+' message'+(((x.support||[]).length)>1?'s':''),(x.role==='artisan'?'prestataire':x.role==='concierge'?'conciergerie':'client')].filter(Boolean).join(' · '),cle:x.uid};}));
     pousser('archive','Conversation gardée',(S0.archives||[]).filter(function(x){
       return tient([x.nom,x.email,x.uid]);
     }).map(function(x){return {titre:x.nom||'Sans nom',detail:(x.support||[]).length+' message'+(((x.support||[]).length)>1?'s':''),cle:x.uid};}));
     const total=familles.reduce(function(n,f){return n+f.n;},0);
-    return {q:q,total:total,familles:familles};
+    // Ce qui n'est pas encore lu se NOMME : c'est ce qui interdit d'affirmer « rien ».
+    const attente=S0.lus?RECHERCHE_LUS.filter(function(e){return !S0.lus[e[0]];}).map(function(e){return e[1];}):[];
+    return {q:q,total:total,familles:familles,attente:attente};
   }
   function reqPourConsole(id,r0){
     r0=r0||{};
@@ -12028,10 +12061,11 @@
            de console parce que c'est la première question qu'on se pose quand on ne
            retrouve pas quelqu'un, et qu'aucune des cartes du dessous n'y répond seule. */
         const R=rechercheParc(S.admRech||'',{
-          artisans:S.adminArtisans||[], clients:S.adminClients||[],
-          departs:S.adminDeparts||[], demandes:reqsVrais,
-          archives:S.adminGeneralArchive||[]});
-        const corps=!R?`<p class="mini" style="margin:8px 0 0;color:var(--muted);line-height:1.5">Un nom, un e-mail, un SIRET. On cherche dans les fiches, le journal des départs, les prestations et les conversations gardées, <b>y compris pour un compte supprimé</b>.</p>`
+          artisans:S.adminArtisans||[], drafts:S.adminDrafts||[], clients:S.adminClients||[],
+          concierges:S.adminConcierges||[], departs:S.adminDeparts||[], demandes:reqsVrais,
+          generaux:S.adminGeneral||[], archives:S.adminGeneralArchive||[],
+          lus:{artisans:!!S.adminArtsLoaded,clients:!!S.adminClisLoaded,demandes:!!S.adminReqsLus}});
+        const corps=!R?`<p class="mini" style="margin:8px 0 0;color:var(--muted);line-height:1.5">Un nom, un e-mail, un SIRET. On cherche dans les fiches et les candidatures, le journal des départs, les prestations et les conversations, <b>y compris pour un compte supprimé</b>.</p>`
           :(R.total?R.familles.map(function(f){
             return `<div style="margin-top:12px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">${esc(f.titre)} · ${f.n}</div>
               ${f.lignes.map(function(l){
@@ -12039,7 +12073,11 @@
               ${f.n>f.lignes.length?`<p class="mini" style="margin-top:6px;color:var(--muted)">et ${f.n-f.lignes.length} autre${(f.n-f.lignes.length)>1?'s':''}.</p>`:''}</div>`;}).join('')
           /* « RIEN, NULLE PART » EST LA RÉPONSE QU'ON VIENT CHERCHER. Tant qu'aucun écran
              ne la donne, on reste avec l'impression d'avoir rêvé. */
-          :`<div class="banner coral" style="margin-top:12px">${I.warn}<span><b>Rien, nulle part.</b> Ni fiche, ni départ enregistré, ni prestation, ni conversation gardée. Si cette personne a existé, elle est partie <b>avant la mise en service du journal des départs</b>, sans avoir réalisé de prestation&nbsp;: il ne reste alors aucune trace dans l'application.</span></div>`);
+          :(R.attente.length
+            /* Une liste pas encore rentrée n'est pas une absence. On le DIT et l'on
+               attend, plutôt que d'affirmer un vide qu'on n'a pas mesuré. */
+            ?`<div class="banner" style="margin-top:12px">${I.clock||I.warn}<span><b>Pas encore de réponse&nbsp;:</b> ${esc(R.attente.join(', '))} ne sont pas encore remontées du serveur. Patientez une seconde&nbsp;: on ne peut pas dire « rien » avant d'avoir tout lu.</span></div>`
+            :`<div class="banner coral" style="margin-top:12px">${I.warn}<span><b>Rien, nulle part.</b> Ni fiche, ni candidature, ni départ enregistré, ni prestation, ni conversation. Si cette personne a existé, elle est partie <b>avant la mise en service du journal des départs</b>, sans avoir réalisé de prestation&nbsp;: il ne reste alors aucune trace dans l'application.</span></div>`));
         return `<div class="card" style="padding:15px;margin-top:12px">
           <div class="row" style="gap:9px;align-items:center"><span class="benic" style="background:var(--teal-wash);color:var(--teal-deep);flex:none">${I.search}</span>
             <b style="font-size:14px;flex:1">Retrouver quelqu'un</b>${R?`<span class="chip ${R.total?'teal':'coral'}" style="flex:none">${R.total}</span>`:''}</div>
