@@ -252,7 +252,15 @@ const AUJ = iso(0), DEM = iso(1);
   const req = await p.evaluate(() => window.__base.req);
   ok(req.directed === true && req.preferredProviderUid === 'pro1',
     'la demande est adressée à celui qui a proposé');
-  ok(req.dateISO === DEM && req.slot === '09:00' && req.slotFlex === 0,
+  /* ON COMPARE À LA PROPOSITION RÉELLEMENT ENVOYÉE, pas à une heure écrite en dur.
+     La scène 3 passe par l'ÉCRAN du prestataire : quand la journée du client n'a plus
+     d'heure tenable, la carte bascule sur le lendemain et propose le premier créneau du
+     métier. L'heure obtenue dépend donc de l'heure qu'il est — « 09:00 » le matin,
+     « 08:00 » le soir. L'épreuve attendait 09:00 et rougissait tous les après-midis, en
+     accusant le produit. La propriété qui compte n'est pas une heure, c'est que la
+     demande atterrisse EXACTEMENT sur le créneau proposé. */
+  const envoyee = await p.evaluate(() => window.__base.props.pro1 || {});
+  ok(req.dateISO === envoyee.dateISO && req.slot === envoyee.slot && req.slotFlex === 0,
     'au jour et à l’heure proposés (' + req.dateISO + ' ' + req.slot + ')');
   ok(req.status === 'pending' && req.providerUid === null,
     'et elle reste en recherche : c’est lui qui l’acceptera, avec son identité et son SIRET');

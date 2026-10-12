@@ -167,7 +167,24 @@ const J = 86400000;
   console.log('D — le clic rouvre la commande, pré-remplie et modifiable');
   await ecran([{ id: 'r1', svc: 'menage', svcName: 'Ménage', when: 'Vendredi 9 octobre',
     dateISO: '2026-10-09', slot: '09:00', total: 140, fin: T - 2 * J, age: 2, ouvert: true }]);
-  await p.evaluate(() => document.querySelector('[data-act^="reprendre:"]').click());
+  /* ON RÉÉPINGLE `FB` AVANT LE CLIC. `reprendreCommande` lit le sous-document privé en
+     ASYNCHRONE, après le retour de cette évaluation : le SDK Firebase est chargé depuis
+     un réseau injoignable, et son échec remet `FB` à null entre les deux. La lecture
+     échouait alors et l'adresse retombait sur celle du compte — l'épreuve accusait le
+     produit une fois sur quatre, et seulement sous la charge de la suite complète. */
+  await p.evaluate(() => {
+    window.__setFB({ auth: { currentUser: { uid: 'cli1', email: 'c@x.c' } }, db: {},
+      f: { doc: function () { return { _p: [] }; }, collection: function () { return {}; },
+        onSnapshot: function () { return function () {}; }, updateDoc: function () { return Promise.resolve(); },
+        setDoc: function () { return Promise.resolve(); },
+        getDoc: function () {
+          return Promise.resolve({ exists: function () { return true; },
+            data: function () { return { address: '12 rue des Flamboyants', zone: 'Lorient',
+              geo: { lat: 17.9, lng: -62.8 }, access: 'Portail bleu, chien gentil' }; } });
+        } },
+      fn: { httpsCallable: function () { return function () { return new Promise(function () {}); }; } }, functions: {} });
+    document.querySelector('[data-act^="reprendre:"]').click();
+  });
   await p.waitForFunction(() => !!window.__S.draft, { timeout: 4000 }).catch(() => {});
   const rep = await p.evaluate(() => {
     const d = window.__S.draft || {};
