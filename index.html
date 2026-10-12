@@ -3662,7 +3662,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='866';
+  const VERSION_APP='867';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -12256,11 +12256,27 @@
       ${foldCard('a-restore',I.shield,'Récupérer un compte supprimé','Lecture à un instant donné (PITR), fenêtre de 7 jours',(function(){
         const f=S._arst||{};
         const out=S._arstOut?`<div class="banner ${S._arstOut.ok?'good':'coral'}" style="margin-top:12px">${S._arstOut.ok?I.check:I.shield}<span>${esc(S._arstOut.msg)}</span></div>`:'';
-        return `<p class="mini" style="color:var(--muted);line-height:1.55">Firestore garde l'historique des données pendant <b>7 jours</b> (récupération à un instant donné, à activer dans la console Google Cloud). Indiquez l'e-mail du compte et une date/heure <b>où il existait encore</b> : ses fiches (client, artisan, conciergerie) sont relues telles quelles et réécrites, personne d'autre ne bouge. L'accès (e-mail/mot de passe) supprimé ne revient pas : si la personne s'est réinscrite, indiquez son nouvel identifiant pour tout raccrocher.</p>
-        <div class="field" style="margin-top:12px"><label>E-mail du compte supprimé</label><input class="txt" data-arst="email" value="${esc(f.email||'')}" inputmode="email" placeholder="ex. laure@exemple.com"></div>
-        <div class="field" style="margin-top:10px"><label>Le compte existait encore le…</label><input class="txt" data-arst="at" type="datetime-local" value="${esc(f.at||'')}"></div>
+        return `<p class="mini" style="color:var(--muted);line-height:1.55">Firestore garde l'historique des données pendant <b>7 jours</b> (récupération à un instant donné, à activer dans la console Google Cloud). Donnez une date/heure <b>où le compte existait encore</b>, puis cherchez-le par son nom : ses fiches (client, artisan, conciergerie) sont relues telles quelles et réécrites, personne d'autre ne bouge. L'accès (e-mail/mot de passe) supprimé ne revient pas : si la personne s'est réinscrite, indiquez son nouvel identifiant pour tout raccrocher.</p>
+        <div class="field" style="margin-top:12px"><label>Le compte existait encore le…</label><input class="txt" data-arst="at" type="datetime-local" value="${esc(f.at||'')}"></div>
+        ${/* ON CHERCHE PAR CE DONT ON SE SOUVIENT. Quand quelqu'un disparaît on a un NOM,
+             pas une adresse — et c'est précisément quand on ne sait plus rien qu'on vient
+             ici. L'adresse reste offerte juste en dessous, pour qui l'a. */''}
+        <div class="field" style="margin-top:10px"><label>Son nom, ou un bout de son nom</label><input class="txt" data-arst="q" value="${esc(f.q||'')}" placeholder="ex. sunnyregards"></div>
+        <button class="btn ghost" data-act="admin-restore-find" style="margin-top:10px;width:auto;padding:10px 14px" ${S._arstBusy?'disabled':''}>${I.search} ${S._arstBusy?'Lecture…':'Chercher à cette date'}</button>
+        ${(function(){
+          const H=S._arstHits;if(!H||!(H.candidats||[]).length)return '';
+          return `<div style="margin-top:12px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Trouvé à cette date · ${H.total}</div>
+            ${H.candidats.map(function(c){
+              const on=((S._arst||{}).uid===c.uid);
+              return `<button class="card" data-act="admin-restore-uid:${esc(c.uid)}" style="padding:11px 13px;margin-top:7px;width:100%;text-align:left;display:block;${on?'border-left:4px solid var(--teal)':''}">
+                <div class="row between" style="gap:8px"><b style="font-size:13.5px;flex:1;min-width:0">${esc(c.nom||'Sans nom')}</b><span class="chip ${on?'teal':'grey'}" style="flex:none">${on?'Choisi':(c.role==='artisan'?'Prestataire':'Client')}</span></div>
+                <div class="mini" style="margin-top:2px;color:var(--muted)">${esc([c.email,c.statut,(c.metiers||[]).map(svcNm).join(', ')].filter(Boolean).join(' · '))}</div></button>`;}).join('')}
+            ${H.tronque?`<p class="mini" style="margin-top:6px;color:var(--muted)">Et d’autres : précisez le nom.</p>`:''}
+            <p class="mini" style="margin-top:8px;color:var(--muted);line-height:1.5">Lu à cette date : ${H.lus?H.lus.users:0} compte${(H.lus&&H.lus.users>1)?'s':''} et ${H.lus?H.lus.artisans:0} fiche${(H.lus&&H.lus.artisans>1)?'s':''} prestataire.</p></div>`;})()}
+        <hr class="dashed" style="margin:14px 0 2px">
+        <div class="field" style="margin-top:10px"><label>Ou son e-mail, si vous l’avez</label><input class="txt" data-arst="email" value="${esc(f.email||'')}" inputmode="email" placeholder="ex. laure@exemple.com"></div>
         <div class="field" style="margin-top:10px"><label>Nouvel identifiant (si réinscription, facultatif)</label><input class="txt" data-arst="target" value="${esc(f.target||'')}" placeholder="uid du nouveau compte"></div>
-        <button class="btn primary" data-act="admin-restore-run" style="margin-top:12px" ${S._arstBusy?'disabled':''}>${S._arstBusy?'Récupération en cours…':'Récupérer ce compte'}</button>${out}`;
+        <button class="btn primary" data-act="admin-restore-run" style="margin-top:12px" ${(S._arstBusy||!(f.uid||f.email))?'disabled':''}>${S._arstBusy?'Récupération en cours…':(f.uid?'Récupérer le compte choisi':'Récupérer ce compte')}</button>${out}`;
       })(),'')}
       <button class="card" data-adm="wishes" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block"><div class="row between" style="align-items:center"><b style="font-size:14px">Services réclamés par les clients</b>${(S.adminWishes&&S.adminWishes.length)?`<span class="chip coral">${S.adminWishes.length}</span>`:`<span class="mini" style="color:var(--muted)">Aucune pour l'instant</span>`}</div><p class="sub" style="margin-top:8px">Voir ce que les clients aimeraient trouver sur la plateforme.</p></button>
 
@@ -19559,11 +19575,27 @@
     // Compteurs du tableau de bord admin : « Artisans » / « Clients » déplient la liste
     // correspondante et y amènent l'écran ; « En cours » ouvre le suivi (messagerie).
     if(b.dataset.act&&b.dataset.act.indexOf('adm-list:')===0){const id=b.dataset.act.split(':')[1];S._fold=S._fold||{};S._fold[id]=true;render();setTimeout(function(){try{const el=document.querySelector('[data-fold="'+id+'"]');if(el)el.scrollIntoView({behavior:'smooth',block:'start'});}catch(_){}},60);return;}
+    /* CHERCHER AVANT DE RÉÉCRIRE. « Il était là ce matin », et ce matin est encore
+       lisible — mais l'outil exigeait une ADRESSE, alors qu'on se souvient d'un NOM.
+       On regarde d'abord, on reconnaît, puis on restaure CELUI-LÀ : restaurer quelqu'un
+       qu'on n'a pas identifié reviendrait à réécrire des fiches au hasard. */
+    if(b.dataset.act==='admin-restore-find'){const f=S._arst||{};
+      if(!f.q||!f.at){toast('Un nom et une date/heure');return;}
+      if(!(FB&&FB.fn&&FB.functions)){toast('Indisponible hors connexion');return;}
+      S._arstBusy=true;S._arstOut=null;S._arstHits=null;render();
+      FB.fn.httpsCallable(FB.functions,'adminFindAtTime')({q:f.q,at:new Date(f.at).toISOString()})
+        .then(function(r){const d=(r&&r.data)||{};S._arstBusy=false;S._arstHits=d;
+          if(!(d.candidats||[]).length)S._arstOut={ok:false,msg:'Personne de ce nom dans la base à cette date. Essayez une heure plus tôt, ou une partie du nom seulement.'};
+          S._fold=Object.assign({},S._fold,{'a-restore':true});render();})
+        .catch(function(e){S._arstBusy=false;S._arstOut={ok:false,msg:fbErrTxt(e)};S._fold=Object.assign({},S._fold,{'a-restore':true});render();});
+      return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('admin-restore-uid:')===0){
+      S._arst=Object.assign({},S._arst||{},{uid:b.dataset.act.slice('admin-restore-uid:'.length)});render();return;}
     if(b.dataset.act==='admin-restore-run'){const f=S._arst||{};
-      if(!f.email||!f.at){toast('E-mail et date/heure requis');return;}
+      if(!(f.email||f.uid)||!f.at){toast('Un compte désigné et une date/heure');return;}
       if(!(FB&&FB.fn&&FB.functions)){toast('Indisponible hors connexion');return;}
       S._arstBusy=true;S._arstOut=null;render();
-      FB.fn.httpsCallable(FB.functions,'adminRestoreAccount')({email:f.email,at:new Date(f.at).toISOString(),targetUid:(f.target||'').trim()})
+      FB.fn.httpsCallable(FB.functions,'adminRestoreAccount')({email:f.email||'',uid:f.uid||'',at:new Date(f.at).toISOString(),targetUid:(f.target||'').trim()})
         .then(function(r){const d=(r&&r.data)||{};S._arstBusy=false;S._arstOut={ok:true,msg:'Récupéré ('+(d.restored||[]).join(', ')+') vers '+(d.wroteTo||'?')+'. '+(d.warning||'')};S._fold=Object.assign({},S._fold,{'a-restore':true});render();})
         .catch(function(e){S._arstBusy=false;S._arstOut={ok:false,msg:fbErrTxt(e)};S._fold=Object.assign({},S._fold,{'a-restore':true});render();});
       return;}

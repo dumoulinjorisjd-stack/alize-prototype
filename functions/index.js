@@ -1084,6 +1084,7 @@ const ANTI = require('./anti-abus');
 const DEPASSE = require('./creneau-depasse');
 const ARCH = require('./archive-messages');
 const DEP = require('./journal-departs');
+const PASSE = require('./recherche-passe');
 /* LE COMPTEUR DU JOUR. Un document par clé et par jour dans `quotas` — collection
  * SERVEUR (aucune règle ne l'ouvre, l'Admin SDK passe outre). Transaction : deux demandes
  * simultanées ne peuvent pas lire le même nombre et l'écrire deux fois.
@@ -6398,6 +6399,65 @@ function pitVal(v) {
   return null;   // bytes/référence/géopoint : inutilisés dans nos fiches
 }
 function pitFields(doc) { const o = {}; const f = (doc && doc.fields) || {}; for (const k of Object.keys(f)) o[k] = pitVal(f[k]); return o; }
+/* CHERCHER QUELQU'UN DANS LA BASE D'IL Y A QUELQUES HEURES (12/10/2026).
+   « Il était là ce matin » — et ce matin est encore LISIBLE : Firestore garde l'état de
+   la base pendant sept jours. L'outil de récupération existait déjà, mais il exigeait une
+   ADRESSE E-MAIL, cherchée par égalité stricte. Quand quelqu'un disparaît on se souvient
+   d'un NOM, et c'est précisément quand on ne sait plus rien qu'on vient chercher.
+
+   ON REGARDE AVANT DE RÉÉCRIRE. Cette fonction ne touche à RIEN : elle lit la base à une
+   heure donnée et rend les candidats. C'est l'éditeur qui reconnaît la personne, puis qui
+   décide de la restaurer — restaurer quelqu'un qu'on n'a pas identifié reviendrait à
+   réécrire des fiches au hasard. */
+exports.adminFindAtTime = onCall({timeoutSeconds: 120}, async (request) => {
+  const who = (request.auth && request.auth.token && request.auth.token.email) || '';
+  if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+    throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
+  }
+  const q = String((request.data && request.data.q) || '').trim().slice(0, 120);
+  const atISO = String((request.data && request.data.at) || '').trim();
+  if (q.length < 2) throw new HttpsError('invalid-argument', 'Donnez au moins deux caractères à chercher.');
+  const at = new Date(atISO);
+  if (isNaN(at.getTime())) throw new HttpsError('invalid-argument', 'Date/heure invalide.');
+  if (at.getTime() >= Date.now()) throw new HttpsError('invalid-argument', 'La date doit être dans le passé (au moment où le compte existait encore).');
+  if (Date.now() - at.getTime() > 7 * 86400000) throw new HttpsError('invalid-argument', 'Au-delà de 7 jours : hors fenêtre de lecture Firestore.');
+
+  const projet = process.env.GCLOUD_PROJECT || 't-service-prod';
+  const base = 'https://firestore.googleapis.com/v1/projects/' + projet + '/databases/(default)';
+  const readTime = at.toISOString();
+  const tok = await pitToken();
+  const lire = async (collection) => {
+    const res = await fetch(base + '/documents:runQuery', {
+      method: 'POST',
+      headers: {'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json'},
+      body: JSON.stringify({structuredQuery: {from: [{collectionId: collection}], limit: 3000}, readTime}),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      const msg = (data && data.error && data.error.message) || ('HTTP ' + res.status);
+      throw new HttpsError('failed-precondition', 'Firestore refuse la lecture à cette date : ' + String(msg).slice(0, 300)
+        + ', si la récupération 7 jours n\'est pas activée sur le projet, seule la dernière heure est lisible.');
+    }
+    return (Array.isArray(data) ? data : []).filter((x) => x.document && x.document.name)
+      .map((x) => Object.assign({uid: x.document.name.split('/').pop()}, pitFields(x.document)));
+  };
+  const [us, arts] = await Promise.all([lire('users'), lire('artisans')]);
+  // On filtre AVANT de réunir : une personne doit être trouvée par ce que porte l'une OU
+  // l'autre de ses fiches (le nom commercial est souvent sur la seule fiche artisan).
+  const fu = PASSE.filtrerCandidats(us, q, 200);
+  const fa = PASSE.filtrerCandidats(arts, q, 200);
+  const uids = {};
+  fu.candidats.concat(fa.candidats).forEach((l) => { uids[l.uid] = 1; });
+  const tous = PASSE.reunirParUid(us.filter((l) => uids[l.uid]), arts.filter((l) => uids[l.uid]));
+  console.log('adminFindAtTime « ' + q + ' » à ' + readTime + ' : ' + tous.length + ' candidat(s) sur '
+    + us.length + ' compte(s) et ' + arts.length + ' fiche(s) prestataire');
+  return {
+    readTime, candidats: tous.slice(0, PASSE.CANDIDATS_MAX),
+    total: tous.length, tronque: tous.length > PASSE.CANDIDATS_MAX,
+    lus: {users: us.length, artisans: arts.length},
+  };
+});
+
 exports.adminRestoreAccount = onCall({timeoutSeconds: 120}, async (request) => {
   const who = (request.auth && request.auth.token && request.auth.token.email) || '';
   if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
@@ -6406,7 +6466,12 @@ exports.adminRestoreAccount = onCall({timeoutSeconds: 120}, async (request) => {
   const email = String((request.data && request.data.email) || '').trim().toLowerCase().slice(0, 200);
   const atISO = String((request.data && request.data.at) || '').trim();
   const targetUid = String((request.data && request.data.targetUid) || '').trim().slice(0, 128);
-  if (!/.+@.+\..+/.test(email)) throw new HttpsError('invalid-argument', 'E-mail du compte à récupérer manquant.');
+  /* ON PEUT DÉSORMAIS DÉSIGNER LE COMPTE PAR SON IDENTIFIANT. C'est ce que rend
+     `adminFindAtTime` : on cherche par le NOM dont on se souvient, on reconnaît la
+     personne, puis on restaure CELLE-LÀ. Exiger une adresse e-mail obligeait à connaître
+     déjà ce qu'on venait chercher. */
+  const srcUid = String((request.data && request.data.uid) || '').trim().slice(0, 128);
+  if (!srcUid && !/.+@.+\..+/.test(email)) throw new HttpsError('invalid-argument', 'E-mail ou identifiant du compte à récupérer manquant.');
   const at = new Date(atISO);
   if (isNaN(at.getTime())) throw new HttpsError('invalid-argument', 'Date/heure invalide.');
   if (at.getTime() >= Date.now()) throw new HttpsError('invalid-argument', 'La date doit être dans le passé (au moment où le compte existait encore).');
@@ -6432,15 +6497,27 @@ exports.adminRestoreAccount = onCall({timeoutSeconds: 120}, async (request) => {
     return data;
   };
 
-  // 1) Retrouver le compte tel qu'il était à cette date, par son e-mail.
-  const q = await appel('/documents:runQuery', {
-    structuredQuery: {from: [{collectionId: 'users'}], where: {fieldFilter: {field: {fieldPath: 'email'}, op: 'EQUAL', value: {stringValue: email}}}, limit: 5},
-    readTime,
-  });
-  const ligne = (Array.isArray(q) ? q : []).find((x) => x.document && x.document.name);
-  if (!ligne) throw new HttpsError('not-found', 'Aucun compte « ' + email + ' » à cette date. Essayez une date où le compte existait encore (avant la suppression).');
-  const oldUid = ligne.document.name.split('/').pop();
-  const usersDoc = pitFields(ligne.document);
+  // 1) Retrouver le compte tel qu'il était à cette date : par son identifiant s'il est
+  //    connu (il vient de la recherche dans le passé), sinon par son e-mail.
+  const chemin = base.replace('https://firestore.googleapis.com/v1/', '');
+  let oldUid = '';
+  let usersDoc = null;
+  if (srcUid) {
+    const bgU = await appel('/documents:batchGet', {documents: [chemin + '/documents/users/' + srcUid], readTime});
+    const trouve = (Array.isArray(bgU) ? bgU : []).find((r) => r.found && r.found.name);
+    if (!trouve) throw new HttpsError('not-found', 'Aucun compte « ' + srcUid + ' » à cette date. Essayez une date où le compte existait encore (avant la suppression).');
+    oldUid = srcUid;
+    usersDoc = pitFields(trouve.found);
+  } else {
+    const q = await appel('/documents:runQuery', {
+      structuredQuery: {from: [{collectionId: 'users'}], where: {fieldFilter: {field: {fieldPath: 'email'}, op: 'EQUAL', value: {stringValue: email}}}, limit: 5},
+      readTime,
+    });
+    const ligne = (Array.isArray(q) ? q : []).find((x) => x.document && x.document.name);
+    if (!ligne) throw new HttpsError('not-found', 'Aucun compte « ' + email + ' » à cette date. Essayez une date où le compte existait encore (avant la suppression), ou cherchez-le par son nom.');
+    oldUid = ligne.document.name.split('/').pop();
+    usersDoc = pitFields(ligne.document);
+  }
 
   // 2) Relire les fiches artisan / conciergerie du même compte, à la même date.
   const bg = await appel('/documents:batchGet', {
@@ -6468,7 +6545,7 @@ exports.adminRestoreAccount = onCall({timeoutSeconds: 120}, async (request) => {
   await db.collection('users').doc(cible).set(Object.assign({}, usersDoc, marque), {merge: true}); restaure.push('users');
   if (artDoc) { await db.collection('artisans').doc(cible).set(Object.assign({}, artDoc, marque), {merge: true}); restaure.push('artisans'); }
   if (concDoc) { await db.collection('concierges').doc(cible).set(Object.assign({}, concDoc, marque), {merge: true}); restaure.push('concierges'); }
-  console.log('adminRestoreAccount : ' + email + ' (' + oldUid + ') → ' + cible + ' [' + restaure.join(', ') + '] à ' + readTime);
+  console.log('adminRestoreAccount : ' + (email || oldUid) + ' (' + oldUid + ') → ' + cible + ' [' + restaure.join(', ') + '] à ' + readTime);
   return {
     oldUid, wroteTo: cible, restored: restaure,
     warning: (cible === oldUid)
@@ -7565,14 +7642,25 @@ async function journaliserDepart(db, uid, origine, authUser) {
       origine: origine,          // console-total | console-profil | auth
       expireLe: Date.now() + JOURNAL_JOURS * 86400000,
     }, {merge: true});
-  } catch (e) { console.warn('journaliserDepart', e && e.message); }
+    return true;
+  } catch (e) { console.error('journaliserDepart ÉCHEC uid=' + uid + ' : ' + (e && e.message)); return false; }
 }
 
 async function purgerCompte(db, uid, mode, authUser, origine) {
   const bilan = {profils: 0, jetons: 0, demandes: 0, registre: 0, agenda: 0, auth: false};
 
-  // 0) ON NOTE LE DÉPART AVANT D'EFFACER — après, il ne resterait rien à noter.
-  await journaliserDepart(db, uid, origine || (authUser ? 'auth' : ('console-' + mode)), authUser);
+  /* 0) ON NOTE LE DÉPART AVANT D'EFFACER — après, il ne resterait rien à noter.
+        ET SI L'ON N'Y ARRIVE PAS, ON N'EFFACE RIEN. Cet appel avalait son erreur : une
+        écriture refusée ou un réseau coupé laissait la purge continuer, et la personne
+        disparaîtrait sans la moindre ligne — exactement ce qu'on cherche à rendre
+        impossible. Un compte qui reste se resupprime ; un compte effacé sans trace, non.
+        La levée remonte à l'appelant : la désinscription dit à la personne que ça n'a
+        pas marché, la console le dit à l'éditeur, et les deux peuvent recommencer. */
+  const inscrit0 = await journaliserDepart(db, uid, origine || (authUser ? 'auth' : ('console-' + mode)), authUser);
+  if (!inscrit0) {
+    throw new HttpsError('aborted',
+      'Le départ n’a pas pu être inscrit au journal : rien n’a été effacé. Réessayez.');
+  }
 
   // 1) FICHES DE PROFIL (toujours) — une par collection, l'uid EST l'identifiant.
   bilan.profils = await effacerDocs(['users', 'artisans', 'concierges']

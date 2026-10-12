@@ -72,8 +72,22 @@ service cloud.firestore {
       allow update: if isAdmin()
                     || (uid() == userId
                         && request.resource.data.get('supReadAdmin', 0) == resource.data.get('supReadAdmin', 0));
-      // Droit à l'effacement (RGPD) : l'utilisateur peut supprimer sa propre fiche.
-      allow delete: if isAdmin() || uid() == userId;
+      /* L'EFFACEMENT PASSE PAR LE SERVEUR, ET PAR LUI SEUL (12/10/2026).
+         « Il était là ce matin », et il n'a laissé AUCUNE ligne dans le journal des
+         départs. Les trois portes d'effacement du serveur inscrivent le départ avant
+         d'effacer quoi que ce soit — mais un navigateur pouvait effacer la fiche
+         LUI-MÊME, sans passer par aucune d'elles : la personne disparaît alors sans
+         trace, sans conversation archivée, sans rien. L'application ne le fait plus
+         depuis la v862, SAUF sur un appareil qui exécute encore une version installée
+         plus ancienne — et le service worker peut en servir une pendant des semaines.
+
+         UNE GARDE POSÉE DANS LE NAVIGATEUR SE CONTOURNE, UNE FRONTIÈRE NON. Le droit à
+         l'effacement reste entier : il s'exerce par `selfDeleteAccount`, qui travaille
+         sous l'Admin SDK (donc au-dessus de ces règles) et qui INSCRIT LE DÉPART avant
+         de toucher à une seule fiche. Une version ancienne échoue désormais à effacer
+         au lieu de réussir en silence : un compte qui reste est rattrapable, un compte
+         effacé sans trace ne l'est pas. */
+      allow delete: if isAdmin();
     }
 
     // Dossiers artisans : créés par le prestataire (statut « attente » forcé),
@@ -150,7 +164,9 @@ service cloud.firestore {
                         && (request.resource.data.get('insuranceStatus', '') == resource.data.get('insuranceStatus', '')
                             || insDeclaree()));
       // Droit à l'effacement (RGPD) : l'artisan peut supprimer son propre dossier.
-      allow delete: if isAdmin() || uid() == artisanId;
+      // Même frontière que `users` : l'effacement passe par `selfDeleteAccount`, qui
+      // inscrit le départ avant d'effacer. Voir le bloc `users`.
+      allow delete: if isAdmin();
     }
 
     // Souhaits de services envoyés par les clients (« boîte à idées » du profil) :
@@ -180,7 +196,8 @@ service cloud.firestore {
                         && request.resource.data.get('retroPaid', '') == resource.data.get('retroPaid', '')
                         && request.resource.data.get('earn', 0) == resource.data.get('earn', 0));
       // Droit à l'effacement (RGPD) : la conciergerie peut supprimer son dossier.
-      allow delete: if isAdmin() || uid() == concId;
+      // Même frontière que `users` et `artisans`.
+      allow delete: if isAdmin();
     }
 
     // Registre comptable IMMUABLE (source de vérité). Écrit UNIQUEMENT par le serveur
