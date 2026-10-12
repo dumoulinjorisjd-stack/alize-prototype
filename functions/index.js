@@ -7459,11 +7459,11 @@ async function journaliserDepart(db, uid, origine, authUser) {
   } catch (e) { console.warn('journaliserDepart', e && e.message); }
 }
 
-async function purgerCompte(db, uid, mode, authUser) {
+async function purgerCompte(db, uid, mode, authUser, origine) {
   const bilan = {profils: 0, jetons: 0, demandes: 0, registre: 0, agenda: 0, auth: false};
 
   // 0) ON NOTE LE DÉPART AVANT D'EFFACER — après, il ne resterait rien à noter.
-  await journaliserDepart(db, uid, (authUser ? 'auth' : ('console-' + mode)), authUser);
+  await journaliserDepart(db, uid, origine || (authUser ? 'auth' : ('console-' + mode)), authUser);
 
   // 1) FICHES DE PROFIL (toujours) — une par collection, l'uid EST l'identifiant.
   bilan.profils = await effacerDocs(['users', 'artisans', 'concierges']
@@ -7506,6 +7506,46 @@ async function purgerCompte(db, uid, mode, authUser) {
 
   return bilan;
 }
+
+/**
+ * selfDeleteAccount : SE DÉSINSCRIRE PASSE PAR LE SERVEUR, ET L'ORDRE COMPTE.
+ *
+ * « Je veux juste continuer de voir que ce prestataire a existé un jour, et voir qu'il a
+ * lui-même décidé de partir ; la messagerie et les messages doivent rester, c'est une
+ * preuve en cas de litige. » — l'éditeur, le 12/10/2026.
+ *
+ * L'APPLICATION EFFAÇAIT LES FICHES ELLE-MÊME, PUIS LE COMPTE. Quand le déclencheur
+ * `onUserDeleted` se réveillait pour écrire le journal des départs, il lisait
+ * `users/{uid}` et `artisans/{uid}` : deux documents qui n'existaient plus. Le journal
+ * ne gardait donc que l'adresse e-mail, et sa ligne `role: a.name ? 'artisan' : 'client'`
+ * répondait toujours CLIENT. Un prestataire parti de lui-même était inscrit comme un
+ * client sans métier, sans état de dossier et sans candidature : introuvable, dans une
+ * carte rangée sous « Clients ».
+ *
+ * ICI, ON JOURNALISE PUIS ON EFFACE, dans cet ordre, exactement comme la purge depuis la
+ * console le fait déjà. Le serveur a tout sous les yeux au moment où il écrit.
+ *
+ * MODE « PROFIL », TOUJOURS. Une désinscription n'est pas une instruction d'effacer la
+ * comptabilité : les demandes, le registre et LES MESSAGES restent. C'est ce qui permet
+ * de dire qui a fait quoi, et de produire un échange en cas de litige. Seul l'admin peut
+ * demander un effacement total, et seulement depuis sa console.
+ *
+ * ET L'ORIGINE EST DITE : « desinscription » n'est pas « auth ». La seconde couvre aussi
+ * une suppression faite dans la console Firebase ; confondre les deux reviendrait à ne
+ * pas savoir si la personne est partie d'elle-même.
+ */
+exports.selfDeleteAccount = onCall({timeoutSeconds: 300}, async (request) => {
+  const uid = (request.auth && request.auth.uid) || '';
+  if (!uid) throw new HttpsError('unauthenticated', 'Connectez-vous pour supprimer votre compte.');
+  const who = (request.auth.token && request.auth.token.email) || '';
+  // Même garde que la purge console : on ne se coupe pas la branche.
+  if (who && who.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+    throw new HttpsError('failed-precondition', 'Le compte administrateur ne se supprime pas depuis l\'application.');
+  }
+  const bilan = await purgerCompte(getFirestore(), uid, 'profil', null, 'desinscription');
+  console.log('Désinscription uid=' + uid + ' → ' + JSON.stringify(bilan));
+  return {ok: true};
+});
 
 exports.adminPurgeAccount = onCall({timeoutSeconds: 300}, async (request) => {
   const who = (request.auth && request.auth.token && request.auth.token.email) || '';

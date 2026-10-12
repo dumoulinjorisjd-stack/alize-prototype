@@ -3662,7 +3662,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='859';
+  const VERSION_APP='860';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -12064,6 +12064,7 @@
         const dep=S.adminDeparts||[];
         const cand=dep.filter(function(d){return d.avaitCandidature&&d.statut==='attente';});
         const corps=dep.length?`<p class="mini" style="margin:0;color:var(--muted);line-height:1.55">Chaque départ est inscrit <b>avant</b> l'effacement des fiches, quelle que soit son origine, désinscription depuis l'application, purge depuis cette console, ou suppression depuis Firebase. Le journal se vide tout seul au bout de 90&nbsp;jours.</p>
+          <p class="mini" style="margin:8px 0 0;color:var(--muted);line-height:1.55">Un départ n'efface que la FICHE. <b>Ses prestations restent</b>, avec son nom, sa raison sociale et son SIRET figés dessus, <b>le registre comptable reste</b>, et <b>les conversations restent</b>&nbsp;: un échange se produit en cas de litige, même des années après. Seule une purge «&nbsp;tout effacer&nbsp;» depuis cette console emporte la comptabilité.</p>
           ${cand.length?`<div class="banner coral" style="margin-top:11px">${I.warn}<span><b>${cand.length} candidature${cand.length>1?'s':''} partie${cand.length>1?'s':''} avant validation.</b> C'est la réponse à « je reçois l'e-mail, et il n'y a plus personne ».</span></div>`:''}
           ${dep.slice(0,40).map(function(d){
             const av=d.avaitCandidature&&d.statut==='attente';
@@ -12074,6 +12075,7 @@
                 <span class="chip ${av?'coral':'grey'}" style="flex:none">${av?'Candidature perdue':(d.role==='artisan'?'Prestataire':'Client')}</span></div>
               <div class="mini" style="margin-top:4px;color:var(--muted);line-height:1.5">${esc(d.email||'—')}${d.metiers.length?' · '+esc(d.metiers.map(svcNm).join(', ')):''}</div>
               <div class="mini" style="margin-top:3px;color:var(--muted)">Parti le ${d.supprimeLe?dateFr(d.supprimeLe):'—'}${jours!=null?' · '+(jours<1?'moins d\'un jour':jours+' jour'+(jours>1?'s':''))+' après son inscription':''}</div>
+              ${DEPART_ORIGINES[d.origine]?`<div class="mini" style="margin-top:3px;color:${d.origine==='desinscription'?'var(--coral-deep)':'var(--muted)'}">${esc(DEPART_ORIGINES[d.origine])}</div>`:''}
             </div>`;}).join('')}`
           :`<p class="mini" style="margin:0;color:var(--muted);line-height:1.55">Aucun départ enregistré. Le journal démarre à la mise en service&nbsp;: les comptes partis <b>avant</b> n'y figurent pas.</p>`;
         return foldCard('a-departs',I.trash,'Comptes supprimés',dep.length?(dep.length+' départ'+(dep.length>1?'s':'')+(cand.length?' · '+cand.length+' avant validation':'')):'Qui s\'est désinscrit, et quand',corps,cand.length?chip('coral',cand.length):chip('grey',dep.length));
@@ -13304,6 +13306,14 @@
   // JOURNAL DES DÉPARTS. Répond à « je reçois une candidature, j'y vais plus tard, la
   // personne n'y est plus » : le serveur inscrit chaque départ AVANT d'effacer les
   // fiches. Lecture admin seule, et le serveur purge les lignes de plus de 90 jours.
+  /* COMMENT LA PERSONNE EST PARTIE. « Parti le 3 octobre » ne dit pas si elle a claqué la
+     porte ou si on l'a retirée : ce n'est pas le même fait, et c'est le premier qu'on
+     cherche. Liste FERMÉE — une origine inconnue ne devient pas une phrase. */
+  const DEPART_ORIGINES={
+    'desinscription':'Il s’est désinscrit lui-même, depuis l’application.',
+    'auth':'Supprimé depuis la console Firebase.',
+    'console-profil':'Retiré depuis votre console (fiche seule, comptabilité gardée).',
+    'console-total':'Effacé depuis votre console (tout, comptabilité comprise).'};
   let adminPartisUnsub=null;
   function subscribeAdminDeparts(){
     if(!(FB&&FB.db))return;
@@ -23285,24 +23295,34 @@
         <button class="btn ghost" data-act="account-delete-cancel" style="margin-top:10px">Annuler</button>
       </div></div>`;
   }
+  /* LA DÉSINSCRIPTION PASSE PAR LE SERVEUR, ET N'EFFACE PLUS RIEN D'ICI.
+     L'application supprimait `users/{uid}`, `artisans/{uid}` et `concierges/{uid}` AVANT
+     de supprimer le compte d'authentification. Le déclencheur serveur qui écrit le
+     journal des départs se réveillait alors devant des fiches déjà effacées : il ne
+     gardait que l'adresse e-mail, et inscrivait un PRESTATAIRE parti de lui-même comme un
+     client sans métier ni candidature. « Je veux juste continuer de voir que ce
+     prestataire a existé un jour, et voir qu'il a lui-même décidé de partir. »
+
+     `selfDeleteAccount` journalise PUIS efface, en mode « profil » : les demandes, le
+     registre et LES MESSAGES restent — preuve en cas de litige.
+
+     ET ON NE RETOMBE PAS SUR L'ANCIEN CHEMIN EN CAS D'ÉCHEC : effacer sans journaliser
+     est précisément le défaut qu'on corrige. On le dit et on laisse le compte en place.
+     Au passage, « reconnectez-vous d'abord » disparaît : c'est le serveur qui supprime
+     l'identifiant, il n'a pas besoin d'une connexion récente. */
   async function deleteAccountReal(){
     // Démo / hors-ligne : simple réinitialisation locale.
     if(!(FB&&FB.auth&&FB.auth.currentUser)){ if(FB)blankAll(); S.delAcct=false;S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;S.missions=[];S.account=null;render();toast('Compte supprimé');return; }
-    const u=FB.auth.currentUser,uid=u.uid,wasPro=(S.persona==='pro');
     clearClientCache();
     try{
-      try{ if(FB.f.deleteDoc)await FB.f.deleteDoc(FB.f.doc(FB.db,'users',uid)); }catch(_){}
-      // On efface TOUJOURS d'éventuelles fiches artisan / conciergerie liées à ce compte
-      // (pas seulement selon la persona courante) : sinon une fiche artisan « valide »
-      // pouvait survivre à la suppression et continuer de générer des notifications.
-      try{ if(FB.f.deleteDoc)await FB.f.deleteDoc(FB.f.doc(FB.db,'artisans',uid)); }catch(_){}
-      try{ if(FB.f.deleteDoc)await FB.f.deleteDoc(FB.f.doc(FB.db,'concierges',uid)); }catch(_){}
-      await u.delete();
+      await withBusy(FB.fn.httpsCallable(FB.functions,'selfDeleteAccount')({}));
     }catch(e){
-      if(e&&e.code==='auth/requires-recent-login'){ toast('Reconnectez-vous, puis relancez la suppression'); S.delAcct=false; try{await FB.a.signOut(FB.auth);}catch(_){} return; }
-      console.warn('delete account',e); toast('Suppression impossible, réessayez'); return;
+      console.warn('delete account',e);
+      toast('⚠︎ Suppression impossible : '+fbErrTxt(e));
+      return;
     }
     try{Object.keys(clientReqUnsubs).forEach(unsubClientRequest);}catch(_){}
+    try{await FB.a.signOut(FB.auth);}catch(_){}
     if(FB)blankAll(); S.delAcct=false;S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;S.missions=[];S.proMissions=[];S.account=null;
     render();toast('Votre compte a été supprimé');
   }

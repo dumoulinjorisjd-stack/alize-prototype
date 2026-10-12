@@ -27,10 +27,23 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   console.log('A — le fil des missions ne regarde pas la date d’inscription');
   const req = /FB\.f\.query\(FB\.f\.collection\(FB\.db,'requests'\),FB\.f\.where\('status','==','pending'\)\)/.test(APP);
   ok(req, 'la requête demande les demandes en recherche, sans borne de date');
-  const fil = APP.slice(APP.indexOf("FB.f.where('status','==','pending')"),
-    APP.indexOf('S.openRequests=list;'));
+  /* CETTE MESURE AVAIT CESSÉ DE MESURER. Elle découpait la source entre deux repères,
+     et le second — `S.openRequests=list;` — a disparu le jour où le filtre du fil est
+     devenu `demandesVisibles`. `indexOf` rendait alors −1, donc `slice` prenait TOUT LE
+     FICHIER moins un caractère : l'assertion ne parlait plus du fil, elle parlait de
+     l'application entière, et il suffisait d'écrire « createdAt » n'importe où pour la
+     faire rougir. Deux ans de sursis par chance, puis une fausse alerte.
+
+     ON NE DÉCOUPE PLUS À L'AVEUGLE : on lit le NOYAU du filtre, qui est nommé, et l'on
+     vérifie d'abord que le repère existe — un repère introuvable doit faire rougir
+     l'épreuve, pas élargir sa portée. */
+  const iDeb = APP.indexOf('function demandesVisibles(brut){');
+  ok(iDeb >= 0, 'le filtre du fil est une fonction nommée, qu’on peut lire');
+  const fil = APP.slice(iDeb, APP.indexOf('\n  }', APP.indexOf('return list;', iDeb)));
+  ok(fil.length > 200 && fil.length < 6000,
+    'et l’on en lit le corps, pas tout le fichier (' + fil.length + ' caractères)');
   ok(!/createdAt|validatedAt|approvedAt|inscription/i.test(fil),
-    'et rien dans le fil ne compare une demande à la date d’inscription du prestataire');
+    'rien dans le fil ne compare une demande à la date d’inscription du prestataire');
 
   /* B — CE QUI FILTRE VRAIMENT, et qu'il faut savoir nommer quand on répond. */
   console.log('B — ce qui peut la lui cacher, en revanche');

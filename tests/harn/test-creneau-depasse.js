@@ -164,7 +164,15 @@ const T0900 = Date.parse('2026-10-10T09:00:00-04:00');
     S.adminMetier = { menage: { ouvre: 480, ferme: 1080 } };
     S.contrePropsRecues = {};
     const m = Object.assign(window.__newMission({ id: 'menage', nm: 'Ménage', rate: 35 }), {
-      reqId: 'r1', _id: 'mr1', status: 'pending', when: 'Hier', dateISO: '2026-10-10',
+      /* LA DATE NE S'ÉCRIT PLUS EN DUR. Elle valait « 2026-10-10 », c'est-à-dire le jour
+         où cette épreuve a été écrite : deux jours plus tard, `purgeStaleMissions` a
+         trouvé la commande périmée et l'a retirée de l'écran avant toute mesure, et deux
+         assertions ont rougi sans qu'une ligne de produit ait bougé. Une épreuve qui
+         dépend du calendrier ne mesure plus rien le lendemain.
+         ET ELLE PEUT ÊTRE DANS LE FUTUR : la carte paraît parce que le SERVEUR a relancé
+         pour ce rendez-vous (`relancePour`), jamais parce que l'horloge du téléphone juge
+         la date passée. C'est la décision de la v854, et la poser ainsi la met à l'épreuve. */
+      reqId: 'r1', _id: 'mr1', status: 'pending', when: 'Demain', dateISO: demain,
       slot: '09:00', slotFlex: 0, zone: 'Gustavia', duration: 2, provider: null,
       // créée il y a trois heures : l'escalade d'attente (45 min) voudrait paraître
       _createdMs: Date.now() - 3 * 3600000,
@@ -186,7 +194,7 @@ const T0900 = Date.parse('2026-10-10T09:00:00-04:00');
   ok(/Toujours en recherche/.test(avant.txt), 'et l’escalade d’attente ordinaire est bien là (sans elle, la mesure suivante ne prouverait rien)');
   ok(avant.annuler === 1, 'un seul « Annuler la demande », celui du bas');
 
-  const cleR1 = D.cleCreneau({ dateISO: '2026-10-10', slot: '09:00' });
+  const cleR1 = D.cleCreneau({ dateISO: jPlus(1), slot: '09:00' });
   const apres = await ecran({ relancePour: cleR1, relanceAt: Date.now() - 3600000 });
   ok(apres.carte && /Votre créneau est passé/.test(apres.txt), 'une fois relancé, la carte paraît');
   ok(/rien ne vous a été prélevé/i.test(apres.txt), 'elle lève l’inquiétude, comme la notification');
@@ -207,7 +215,7 @@ const T0900 = Date.parse('2026-10-10T09:00:00-04:00');
   ok(apres.annuler === 1,
     'et il reste UN SEUL « Annuler », dans la carte : le même geste à deux endroits du même écran est le doublon qu’on nous a signalé');
 
-  const souple = await ecran({ slotFlex: 'day', relancePour: D.cleCreneau({ dateISO: '2026-10-10', slot: '09:00', slotFlex: 'day' }), relanceAt: Date.now() - 3600000 });
+  const souple = await ecran({ slotFlex: 'day', relancePour: D.cleCreneau({ dateISO: jPlus(1), slot: '09:00', slotFlex: 'day' }), relanceAt: Date.now() - 3600000 });
   ok(souple.carte && souple.jours === 1 && souple.heures === 0,
     'une demande souple ne redemande QUE le jour : lui faire choisir une heure contredirait son propre choix');
   ok(/laissez le prestataire choisir l’heure/.test(souple.txt), 'et la carte le dit');

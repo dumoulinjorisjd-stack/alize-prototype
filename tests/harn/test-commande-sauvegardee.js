@@ -29,9 +29,16 @@ const accueil=()=>p.evaluate(()=>{const S=window.__S;document.body.classList.add
   S.account={name:'Camille',email:'c@e.fr',zone:'Gustavia'};S.mission=null;S.catView=null;
   try{localStorage.removeItem(window.__brouillon.cle());}catch(_){}
   window.__render();});
+/* LA DATE DOIT ÊTRE À VENIR, ET ELLE SE CALCULE. Elle valait « 2026-12-24 » : l'assertion
+   plus bas dit elle-même « une date à venir n'est pas retouchée », or le 25 décembre cette
+   date cesse d'être à venir, `recalerCreneau` la repousse et l'épreuve rougit sans qu'une
+   ligne de produit ait bougé. Une épreuve qui dépend du calendrier ne mesure plus rien le
+   lendemain — mesuré ailleurs le 12/10/2026, sur deux assertions d'un coup. */
+const DANS_30J=(function(){const d=new Date(Date.now()+30*86400000);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');})();
 const BROUILLON=`{svc:'menage',svcName:'Ménage',rate:35,duration:3,unit:'h',when:'Mardi 22 sept.',slot:'09:00',
   zone:'Gustavia',address:'Villa Rose, Lurin',notes:'Le portail est à gauche',
-  photos:['data:image/jpeg;base64,AAAA'],geo:{lat:17.89,lng:-62.84},dateISO:'2026-12-24',dateMode:'pick'}`;
+  photos:['data:image/jpeg;base64,AAAA'],geo:{lat:17.89,lng:-62.84},dateISO:'${DANS_30J}',dateMode:'pick'}`;
 
 console.log('\nA — l’application part en arrière-plan : la saisie est retenue');
 await accueil();
@@ -57,7 +64,7 @@ ok(retour.abandon,'et un lien discret permet de l’abandonner');
 await p.click('[data-act="brouillon-reprendre"]');
 const rendu=await p.evaluate(()=>{const d=window.__S.draft||{};
   return {svc:d.svc,notes:d.notes,adr:d.address,photos:(d.photos||[]).length,geo:!!d.geo,slot:d.slot,dateISO:d.dateISO};});
-ok(rendu.svc==='menage'&&rendu.slot==='09:00'&&rendu.dateISO==='2026-12-24',
+ok(rendu.svc==='menage'&&rendu.slot==='09:00'&&rendu.dateISO===DANS_30J,
   'le service, la DATE et le créneau reviennent intacts — une date à venir n’est pas retouchée');
 ok(rendu.notes==='Le portail est à gauche'&&rendu.adr==='Villa Rose, Lurin','les notes et l’adresse aussi');
 ok(rendu.photos===1,'les photos sont là');
