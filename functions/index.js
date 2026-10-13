@@ -6458,6 +6458,68 @@ exports.adminFindAtTime = onCall({timeoutSeconds: 120}, async (request) => {
   };
 });
 
+/* LIRE UNE CONVERSATION TELLE QU'ELLE ÉTAIT, SANS RIEN RESSUSCITER (13/10/2026).
+   « Mais si c'est elle qui a volontairement supprimé son compte, elle va avoir de nouveau
+   un compte actif ? » Non — l'accès n'est pas recréé — mais la FICHE, elle, redevient
+   vivante pour tout le reste : la console la montre comme un compte actif, et un
+   prestataire validé restauré retourne dans le vivier, où le serveur lui ENVOIE un e-mail
+   à chaque nouvelle demande de son métier (ses jetons de notification étant supprimés, il
+   tombe dans le repli courriel). Quelqu'un qui a demandé à partir serait donc sollicité de
+   nouveau, sans pouvoir ni répondre ni se désinscrire une seconde fois.
+
+   OR CE QU'ON VIENT CHERCHER, C'EST UNE PREUVE, PAS UN COMPTE. Cette fonction lit la
+   conversation à l'instant demandé et la rend. Elle n'écrit RIEN, nulle part : aucune
+   donnée personnelle ne revient en base, aucun e-mail ne part, et l'effacement que la
+   personne a demandé n'est pas défait. C'est la réponse à « je n'ai plus le moyen de
+   prouver ce qu'elle m'a dit » qui ne coûte rien à personne.
+
+   ON NE LIT QU'UN COMPTE À LA FOIS, désigné par son identifiant : la recherche rend les
+   candidats sans leurs messages, et c'est un second geste, explicite, qui ouvre celui
+   qu'on veut. Verser toutes les conversations du parc dans une liste de résultats serait
+   les étaler sans que personne l'ait demandé. */
+exports.adminSupportAtTime = onCall({timeoutSeconds: 120}, async (request) => {
+  const who = (request.auth && request.auth.token && request.auth.token.email) || '';
+  if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+    throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
+  }
+  const uid = String((request.data && request.data.uid) || '').trim().slice(0, 128);
+  const atISO = String((request.data && request.data.at) || '').trim();
+  if (!uid) throw new HttpsError('invalid-argument', 'Compte à lire manquant.');
+  const at = new Date(atISO);
+  if (isNaN(at.getTime())) throw new HttpsError('invalid-argument', 'Date/heure invalide.');
+  if (at.getTime() >= Date.now()) throw new HttpsError('invalid-argument', 'La date doit être dans le passé.');
+  if (Date.now() - at.getTime() > 7 * 86400000) throw new HttpsError('invalid-argument', 'Au-delà de 7 jours : hors fenêtre de lecture Firestore.');
+
+  const projet = process.env.GCLOUD_PROJECT || 't-service-prod';
+  const base = 'https://firestore.googleapis.com/v1/projects/' + projet + '/databases/(default)';
+  const readTime = at.toISOString();
+  const tok = await pitToken();
+  const res = await fetch(base + '/documents:batchGet', {
+    method: 'POST',
+    headers: {'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json'},
+    body: JSON.stringify({documents: [base.replace('https://firestore.googleapis.com/v1/', '') + '/documents/users/' + uid], readTime}),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    const msg = (data && data.error && data.error.message) || ('HTTP ' + res.status);
+    throw new HttpsError('failed-precondition', 'Firestore refuse la lecture à cette date : ' + String(msg).slice(0, 300)
+      + ', si la récupération 7 jours n\'est pas activée sur le projet, seule la dernière heure est lisible.');
+  }
+  const trouve = (Array.isArray(data) ? data : []).find((r) => r.found && r.found.name);
+  if (!trouve) throw new HttpsError('not-found', 'Ce compte n\'existait pas à cette date.');
+  const u = pitFields(trouve.found);
+  // Mêmes bornes que l'archive : ce qui sort d'ici part à l'écran, et vient d'un compte.
+  const f = ARCH.fusionMessages([], Array.isArray(u.support) ? u.support : [], ARCHIVE_MSG_MAX);
+  console.log('adminSupportAtTime ' + uid + ' à ' + readTime + ' : ' + f.liste.length + ' message(s), aucune écriture');
+  return {
+    uid, readTime,
+    nom: String(u.name || '').slice(0, 80),
+    email: String(u.email || '').slice(0, 200),
+    role: String(u.role || 'client').slice(0, 20),
+    support: f.liste, nTotal: f.total, tronque: f.tronque,
+  };
+});
+
 exports.adminRestoreAccount = onCall({timeoutSeconds: 120}, async (request) => {
   const who = (request.auth && request.auth.token && request.auth.token.email) || '';
   if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {

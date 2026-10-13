@@ -139,9 +139,29 @@ ok(r[0].email === 'j@d.fr', 'en gardant l’adresse, qui ne vit que sur la fiche
         .map(function (x) { return (x.textContent || '').replace(/\s+/g, ' '); }),
       chercher: v.querySelectorAll('[data-act="admin-restore-find"]').length,
       champQ: v.querySelectorAll('[data-arst="q"]').length,
+      lire: v.querySelectorAll('[data-act^="admin-conv-at:"]').length,
       recup: !!(v.querySelector('[data-act="admin-restore-run"]')
         && !v.querySelector('[data-act="admin-restore-run"]').disabled) };
   }, { hits, choisi });
+
+  /* LIRE N'EST PAS RESSUSCITER. « Si c'est elle qui a volontairement supprimé son compte,
+     elle va avoir de nouveau un compte actif ? » — l'accès n'est pas recréé, mais la
+     FICHE redevient vivante : la console la montre comme un compte actif, et un
+     prestataire validé restauré retourne dans le vivier, où le serveur lui ENVOIE un
+     e-mail à chaque demande de son métier. Ce qu'on vient chercher étant une preuve et
+     non un compte, la lecture seule est la bonne porte. */
+  const lecture = (conv) => p.evaluate((conv) => {
+    window.__S._arstConv = conv; window.__render();
+    const v = document.getElementById('view');
+    /* LE TEXTE DU SEUL PANNEAU, pas de l'écran entier. La console porte ailleurs une carte
+       qui dit « Lecture seule » à propos des CGU : une assertion qui lirait toute la page
+       serait sauvée par elle — elle l'a été, et n'a rien rougi à la preuve. */
+    const fer = v.querySelector('[data-act="admin-conv-close"]');
+    const pan = fer ? fer.closest('.card') : null;
+    return { txt: pan ? (pan.textContent || '').replace(/\s+/g, ' ') : '',
+      bulles: pan ? pan.querySelectorAll('.bub').length : 0,
+      fermer: v.querySelectorAll('[data-act="admin-conv-close"]').length };
+  }, conv);
 
   const vide = await ecran(null, '');
   ok(vide.champQ === 1 && vide.chercher === 1,
@@ -169,6 +189,33 @@ ok(r[0].email === 'j@d.fr', 'en gardant l’adresse, qui ne vit que sur la fiche
   ok(/Prestataire/.test(choisi.cartesTxt[0] || '') && /Client/.test(choisi.cartesTxt[1] || ''),
     'et le RÔLE de chaque candidat reste lisible, celui qu’on vient de choisir compris ('
     + (choisi.cartesTxt[0] || '—') + ')');
+
+  console.log('F — lire la conversation sans rien ressusciter');
+  ok(trouve.lire === 2, 'chaque candidat porte un bouton pour LIRE sa conversation à cette date');
+  const vue = await lecture({ uid: 'a1', nom: 'Sunnyregards', role: 'artisan', quand: '11/10/2026 20:20',
+    nTotal: 2, tronque: false,
+    support: [{ from: 'client', text: 'Bonjour, une question sur Mollie', at: 1 },
+      { from: 'admin', text: 'Je vous réponds tout de suite', at: 2 }] });
+  ok(vue.bulles === 2 && /question sur Mollie/.test(vue.txt),
+    'les messages de cette date s’affichent');
+  /* LA PROMESSE DOIT ÊTRE ÉCRITE : sans elle, on ne saurait pas que regarder ne réécrit
+     rien, et l'on hésiterait à cliquer — ou l'on croirait avoir restauré quelque chose. */
+  ok(/Lecture seule/.test(vue.txt) && /rien n’est écrit/.test(vue.txt),
+    'et l’écran PROMET que rien n’est écrit et qu’aucun compte n’est rétabli');
+  ok(/11\/10\/2026 20:20/.test(vue.txt),
+    'en nommant l’instant lu : une pièce sans date ne prouve rien');
+  ok(vue.fermer === 1, 'et elle se referme');
+  const muet = await lecture({ uid: 'a1', nom: 'Sunnyregards', quand: '11/10/2026 20:20', support: [], nTotal: 0 });
+  ok(/Aucun message/.test(muet.txt) && muet.bulles === 0,
+    'un compte sans message à cette date le DIT, au lieu d’un cadre vide');
+
+  /* ET LE SERVEUR N'ÉCRIT RIEN : c'est toute la différence avec la récupération. */
+  const LIRE = SRV.slice(SRV.indexOf('exports.adminSupportAtTime'), SRV.indexOf('exports.adminRestoreAccount'));
+  ok(LIRE.length > 100, 'la lecture a sa fonction serveur');
+  ok(!/\.set\(|\.delete\(|\.update\(|sendUserEmail|sendMail/.test(LIRE),
+    'qui n’écrit RIEN et n’envoie RIEN : aucune donnée ne revient en base, aucun e-mail ne part');
+  ok(/ADMIN_EMAIL\.toLowerCase\(\)/.test(LIRE) && /7 \* 86400000/.test(LIRE),
+    'réservée à l’administrateur, et bornée à la fenêtre de sept jours');
 
   ok(errs.length === 0, 'aucune erreur JS' + (errs.length ? ' (' + errs[0] + ')' : ''));
   await b.close();

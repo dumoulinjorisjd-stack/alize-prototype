@@ -2631,6 +2631,7 @@
   // Date courte, au niveau du module : plusieurs écrans en ont besoin et un helper
   // défini dans UNE fonction n'est pas visible depuis les autres.
   function dateFr(ms){try{return ms?new Date(ms).toLocaleDateString('fr-FR'):'';}catch(_){return '';}}
+  function dateHeureFr(ms){try{return ms?new Date(ms).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'';}catch(_){return '';}}
   function foldCard(id,icon,title,sub,body,chip,dot){
     const open=!!(S._fold&&S._fold[id]);
     return `<div class="card foldc${open?' open':''}" style="margin-top:12px">
@@ -3662,7 +3663,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='868';
+  const VERSION_APP='869';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -12268,10 +12269,30 @@
           return `<div style="margin-top:12px"><div class="mini" style="color:var(--muted);font-weight:800;text-transform:uppercase;letter-spacing:.03em">Trouvé à cette date · ${H.total}</div>
             ${H.candidats.map(function(c){
               const on=((S._arst||{}).uid===c.uid);
-              return `<button class="card" data-act="admin-restore-uid:${esc(c.uid)}" style="padding:11px 13px;margin-top:7px;width:100%;text-align:left;display:block;${on?'border-left:4px solid var(--teal)':''}">
-                <div class="row between" style="gap:8px"><b style="font-size:13.5px;flex:1;min-width:0">${esc(c.nom||'Sans nom')}</b><span class="chip ${on?'teal':'grey'}" style="flex:none">${on?'✓ ':''}${c.role==='artisan'?'Prestataire':'Client'}</span></div>
-                <div class="mini" style="margin-top:2px;color:var(--muted)">${esc([c.email,c.statut,(c.metiers||[]).map(svcNm).join(', ')].filter(Boolean).join(' · '))}</div></button>`;}).join('')}
+              return `<div class="row" style="gap:8px;margin-top:7px;align-items:stretch">
+                <button class="card" data-act="admin-restore-uid:${esc(c.uid)}" style="padding:11px 13px;flex:1;min-width:0;text-align:left;display:block;${on?'border-left:4px solid var(--teal)':''}">
+                  <div class="row between" style="gap:8px"><b style="font-size:13.5px;flex:1;min-width:0">${esc(c.nom||'Sans nom')}</b><span class="chip ${on?'teal':'grey'}" style="flex:none">${on?'✓ ':''}${c.role==='artisan'?'Prestataire':'Client'}</span></div>
+                  <div class="mini" style="margin-top:2px;color:var(--muted)">${esc([c.email,c.statut,(c.metiers||[]).map(svcNm).join(', ')].filter(Boolean).join(' · '))}</div></button>
+                ${/* LIRE N'EST PAS RESSUSCITER. Ce qu'on vient chercher est une preuve, pas
+                     un compte : ce bouton lit la conversation à la date demandée et
+                     n'écrit RIEN — ni fiche, ni e-mail, et l'effacement que la personne a
+                     demandé n'est pas défait. */''}
+                <button class="card" data-act="admin-conv-at:${esc(c.uid)}" aria-label="Voir sa conversation à cette date" title="Voir sa conversation à cette date, sans rien écrire" style="flex:none;width:54px;display:flex;align-items:center;justify-content:center;padding:0;color:var(--teal-deep)">${I.chat}</button>
+              </div>`;}).join('')}
             ${H.tronque?`<p class="mini" style="margin-top:6px;color:var(--muted)">Et d’autres : précisez le nom.</p>`:''}
+            ${(function(){
+              const C=S._arstConv;if(!C)return '';
+              if(C.erreur)return `<div class="banner coral" style="margin-top:11px">${I.warn}<span>${esc(C.erreur)}</span></div>`;
+              const th=(C.support||[]).slice().sort(function(a,b){return (a.at||0)-(b.at||0);});
+              return `<div class="card" style="padding:13px;margin-top:11px">
+                <div class="row between" style="gap:8px;align-items:center"><b style="font-size:14px;flex:1;min-width:0">${esc(C.nom||'Sans nom')}</b>
+                  <button class="reset" data-act="admin-conv-close" style="flex:none;color:var(--muted);font-size:12px;font-weight:800">Fermer</button></div>
+                <div class="banner teal" style="margin-top:9px">${I.shield}<span><b>Lecture seule.</b> Conversation telle qu’elle était le ${esc(C.quand||'')} : <b>rien n’est écrit</b>, aucun compte n’est rétabli.</span></div>
+                ${C.tronque?`<div class="mini" style="margin-top:7px;color:var(--muted)">Tronquée aux ${th.length} derniers messages sur ${C.nTotal}.</div>`:''}
+                ${th.length?`<div class="chat-msgs" style="margin-top:10px;max-height:420px;overflow:auto">${th.map(function(x){
+                  const mine=(x.from==='admin');
+                  return `<div class="bub ${mine?'me':'them'}"><span style="display:block;font-size:10px;opacity:.6;margin-bottom:2px">${mine?'Ti-Services':esc(C.nom||'Lui')}${x.at?' · '+dateHeureFr(x.at):''}</span>${esc(x.text)}</div>`;}).join('')}</div>`
+                  :`<p class="mini" style="margin-top:10px;color:var(--muted)">Aucun message dans son compte à cette date.</p>`}</div>`;})()}
             <p class="mini" style="margin-top:8px;color:var(--muted);line-height:1.5">Lu à cette date : ${H.lus?H.lus.users:0} compte${(H.lus&&H.lus.users>1)?'s':''} et ${H.lus?H.lus.artisans:0} fiche${(H.lus&&H.lus.artisans>1)?'s':''} prestataire.</p></div>`;})()}
         <hr class="dashed" style="margin:14px 0 2px">
         <div class="field" style="margin-top:10px"><label>Ou son e-mail, si vous l’avez</label><input class="txt" data-arst="email" value="${esc(f.email||'')}" inputmode="email" placeholder="ex. laure@exemple.com"></div>
@@ -19582,13 +19603,29 @@
     if(b.dataset.act==='admin-restore-find'){const f=S._arst||{};
       if(!f.q||!f.at){toast('Un nom et une date/heure');return;}
       if(!(FB&&FB.fn&&FB.functions)){toast('Indisponible hors connexion');return;}
-      S._arstBusy=true;S._arstOut=null;S._arstHits=null;render();
+      S._arstBusy=true;S._arstOut=null;S._arstHits=null;S._arstConv=null;render();
       FB.fn.httpsCallable(FB.functions,'adminFindAtTime')({q:f.q,at:new Date(f.at).toISOString()})
         .then(function(r){const d=(r&&r.data)||{};S._arstBusy=false;S._arstHits=d;
           if(!(d.candidats||[]).length)S._arstOut={ok:false,msg:'Personne de ce nom dans la base à cette date. Essayez une heure plus tôt, ou une partie du nom seulement.'};
           S._fold=Object.assign({},S._fold,{'a-restore':true});render();})
         .catch(function(e){S._arstBusy=false;S._arstOut={ok:false,msg:fbErrTxt(e)};S._fold=Object.assign({},S._fold,{'a-restore':true});render();});
       return;}
+    /* LIRE LA CONVERSATION D'UNE DATE, SANS RIEN ÉCRIRE. C'est l'alternative à la
+       récupération : on obtient la pièce sans remettre en base les données d'une personne
+       qui a demandé son effacement, et sans qu'un prestataire restauré se remette à
+       recevoir des offres de mission par courriel. */
+    if(b.dataset.act&&b.dataset.act.indexOf('admin-conv-at:')===0){const f=S._arst||{};
+      const uid=b.dataset.act.slice('admin-conv-at:'.length);
+      if(!f.at){toast('Indiquez d’abord une date/heure');return;}
+      if(!(FB&&FB.fn&&FB.functions)){toast('Indisponible hors connexion');return;}
+      S._arstConv={chargement:true};render();
+      FB.fn.httpsCallable(FB.functions,'adminSupportAtTime')({uid:uid,at:new Date(f.at).toISOString()})
+        .then(function(r){const d=(r&&r.data)||{};
+          S._arstConv={uid:d.uid,nom:d.nom,role:d.role,support:d.support||[],nTotal:d.nTotal||0,
+            tronque:!!d.tronque,quand:dateHeureFr(new Date(f.at).getTime())};render();})
+        .catch(function(e){S._arstConv={erreur:fbErrTxt(e)};render();});
+      return;}
+    if(b.dataset.act==='admin-conv-close'){S._arstConv=null;render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('admin-restore-uid:')===0){
       S._arst=Object.assign({},S._arst||{},{uid:b.dataset.act.slice('admin-restore-uid:'.length)});render();return;}
     if(b.dataset.act==='admin-restore-run'){const f=S._arst||{};
