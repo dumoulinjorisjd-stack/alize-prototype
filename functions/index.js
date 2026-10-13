@@ -1085,6 +1085,7 @@ const DEPASSE = require('./creneau-depasse');
 const ARCH = require('./archive-messages');
 const DEP = require('./journal-departs');
 const PASSE = require('./recherche-passe');
+const QUAND = require('./quand-disparu');
 /* LE COMPTEUR DU JOUR. Un document par clé et par jour dans `quotas` — collection
  * SERVEUR (aucune règle ne l'ouvre, l'Admin SDK passe outre). Transaction : deux demandes
  * simultanées ne peuvent pas lire le même nombre et l'écrire deux fois.
@@ -6518,6 +6519,75 @@ exports.adminSupportAtTime = onCall({timeoutSeconds: 120}, async (request) => {
     role: String(u.role || 'client').slice(0, 20),
     support: f.liste, nTotal: f.total, tronque: f.tronque,
   };
+});
+
+/* TROUVER L'HEURE À LA PLACE DE L'ÉDITEUR (13/10/2026).
+   La lecture à une date marche — c'est prouvé, Firestore a servi l'état de la veille,
+   donc la fenêtre de sept jours est bien ouverte sur ce projet. Ce qui manquait était
+   l'HEURE : à 11 h 54 la conversation était déjà vide, et tâtonner coûte une lecture par
+   essai pour une minute qui peut être n'importe où dans sept jours.
+
+   ON SONDE, PUIS ON ENCADRE : une douzaine de points donnent la forme, une dichotomie
+   resserre le passage jusqu'à la minute. Le nombre de lectures est PLAFONNÉ (`LECTURES_MAX`)
+   — une boucle qui interroge un service distant sans borne finit par coûter cher et par
+   expirer au milieu, sans rien rendre.
+
+   ELLE N'ÉCRIT RIEN, comme la lecture : on cherche une preuve, pas un compte. */
+exports.adminQuandDisparu = onCall({timeoutSeconds: 300}, async (request) => {
+  const who = (request.auth && request.auth.token && request.auth.token.email) || '';
+  if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+    throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
+  }
+  const uid = String((request.data && request.data.uid) || '').trim().slice(0, 128);
+  if (!uid) throw new HttpsError('invalid-argument', 'Compte à suivre manquant.');
+
+  const projet = process.env.GCLOUD_PROJECT || 't-service-prod';
+  const base = 'https://firestore.googleapis.com/v1/projects/' + projet + '/databases/(default)';
+  const chemin = base.replace('https://firestore.googleapis.com/v1/', '') + '/documents/users/' + uid;
+  const tok = await pitToken();
+  let lectures = 0;
+  // Combien de messages à cet instant. `-1` = le compte n'existait pas encore / plus :
+  // ça ne se confond pas avec « zéro message », et l'écran le dit.
+  const compter = async (t) => {
+    if (lectures >= QUAND.LECTURES_MAX) return null;
+    lectures++;
+    const res = await fetch(base + '/documents:batchGet', {
+      method: 'POST',
+      headers: {'Authorization': 'Bearer ' + tok, 'Content-Type': 'application/json'},
+      body: JSON.stringify({documents: [chemin], readTime: new Date(t).toISOString()}),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      const msg = (data && data.error && data.error.message) || ('HTTP ' + res.status);
+      throw new HttpsError('failed-precondition', 'Firestore refuse la lecture à cette date : ' + String(msg).slice(0, 300)
+        + ', si la récupération 7 jours n\'est pas activée sur le projet, seule la dernière heure est lisible.');
+    }
+    const trouve = (Array.isArray(data) ? data : []).find((r) => r.found && r.found.name);
+    if (!trouve) return {at: t, n: 0, absent: true};
+    const u = pitFields(trouve.found);
+    return {at: t, n: Array.isArray(u.support) ? u.support.length : 0};
+  };
+
+  // La fenêtre s'arrête une minute avant maintenant : `readTime` doit être dans le passé.
+  const fin = Date.now() - 60 * 1000;
+  const debut = Date.now() - 7 * 86400000 + 5 * 60 * 1000;
+  const sondes = [];
+  for (const t of QUAND.grilleSondes(debut, fin, QUAND.SONDES)) {
+    const r = await compter(t);
+    if (r) sondes.push(r);
+  }
+  let cadre = QUAND.encadrer(sondes);
+  for (let i = 0; i < QUAND.BISSECTIONS_MAX && cadre; i++) {
+    const t = QUAND.prochaineBissection(cadre.avant, cadre.apres, QUAND.PRECISION_MS);
+    if (t == null) break;
+    const r = await compter(t);
+    if (!r) break;
+    sondes.push(r);
+    cadre = QUAND.encadrer(sondes);
+  }
+  const v = QUAND.verdict(sondes, cadre);
+  console.log('adminQuandDisparu ' + uid + ' : ' + v.etat + ', ' + lectures + ' lecture(s), aucune écriture');
+  return Object.assign({uid, lectures}, v);
 });
 
 exports.adminRestoreAccount = onCall({timeoutSeconds: 120}, async (request) => {

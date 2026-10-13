@@ -2632,6 +2632,26 @@
   // défini dans UNE fonction n'est pas visible depuis les autres.
   function dateFr(ms){try{return ms?new Date(ms).toLocaleDateString('fr-FR'):'';}catch(_){return '';}}
   function dateHeureFr(ms){try{return ms?new Date(ms).toLocaleString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'';}catch(_){return '';}}
+  /* Un horodatage vers ce qu'attend un champ `datetime-local` : une heure LOCALE sans
+     fuseau. `toISOString` rendrait l'heure UTC, donc un champ décalé de quatre heures à
+     Saint-Barthélemy — et la lecture suivante partirait à côté. */
+  function heureLocaleChamp(ms){try{const d=new Date(ms);
+    const p=function(n){return String(n).padStart(2,'0');};
+    return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+p(d.getHours())+':'+p(d.getMinutes());
+  }catch(_){return '';}}
+  /* LA LECTURE A UNE PORTE UNIQUE : deux boutons y mènent (la bulle d'un candidat, et
+     « lire à cet instant » après avoir trouvé l'heure), et la question était posée deux
+     fois d'affilée. L'instant est un HORODATAGE, jamais le contenu du champ. */
+  function lireConversationA(uid,atMs){
+    if(!(FB&&FB.fn&&FB.functions)){toast('Indisponible hors connexion');return;}
+    if(!uid||!atMs){toast('Indiquez d’abord une date/heure');return;}
+    S._arstConv={chargement:true};render();
+    FB.fn.httpsCallable(FB.functions,'adminSupportAtTime')({uid:uid,at:new Date(atMs).toISOString()})
+      .then(function(r){const d=(r&&r.data)||{};
+        S._arstConv={uid:d.uid,nom:d.nom,role:d.role,support:d.support||[],nTotal:d.nTotal||0,
+          tronque:!!d.tronque,quand:dateHeureFr(atMs)};render();})
+      .catch(function(e){S._arstConv={erreur:fbErrTxt(e)};render();});
+  }
   function foldCard(id,icon,title,sub,body,chip,dot){
     const open=!!(S._fold&&S._fold[id]);
     return `<div class="card foldc${open?' open':''}" style="margin-top:12px">
@@ -3663,7 +3683,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='869';
+  const VERSION_APP='870';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -12278,8 +12298,25 @@
                      n'écrit RIEN — ni fiche, ni e-mail, et l'effacement que la personne a
                      demandé n'est pas défait. */''}
                 <button class="card" data-act="admin-conv-at:${esc(c.uid)}" aria-label="Voir sa conversation à cette date" title="Voir sa conversation à cette date, sans rien écrire" style="flex:none;width:54px;display:flex;align-items:center;justify-content:center;padding:0;color:var(--teal-deep)">${I.chat}</button>
+                ${/* TÂTONNER COÛTE UNE LECTURE PAR ESSAI, et la bonne minute peut être
+                     n'importe où dans sept jours. Celui-ci la cherche. */''}
+                <button class="card" data-act="admin-quand:${esc(c.uid)}" aria-label="Quand ses messages ont-ils disparu" title="Chercher à quelle heure ses messages ont disparu" style="flex:none;width:54px;display:flex;align-items:center;justify-content:center;padding:0;color:var(--muted)">${I.clock}</button>
               </div>`;}).join('')}
             ${H.tronque?`<p class="mini" style="margin-top:6px;color:var(--muted)">Et d’autres : précisez le nom.</p>`:''}
+            ${(function(){
+              const Q=S._arstQuand;if(!Q)return '';
+              if(Q.chargement)return `<div class="banner teal" style="margin-top:11px">${I.clock}<span>Lecture de la semaine écoulée…</span></div>`;
+              if(Q.erreur)return `<div class="banner coral" style="margin-top:11px">${I.warn}<span>${esc(Q.erreur)}</span></div>`;
+              /* CE QU'ON A VU, ET CE QU'ON N'A PAS VU. Les trois issues n'appellent pas le
+                 même geste : il reste une heure à lire, il n'y a jamais rien eu, ou les
+                 messages sont encore là et c'est ailleurs qu'il faut chercher. */
+              const t=function(ms){return esc(dateHeureFr(ms));};
+              if(Q.etat==='disparu')return `<div class="banner coral" style="margin-top:11px">${I.clock}<span>
+                <b>${Q.combien} message${Q.combien>1?'s':''} encore présent${Q.combien>1?'s':''} le ${t(Q.vuLe.at)}</b>, plus aucun le ${t(Q.videLe.at)}.
+                La disparition est entre ces deux instants. <b>Lisez à ${t(Q.vuLe.at)}</b> pour avoir la conversation entière.</span></div>
+                <button class="btn ghost sm" data-act="admin-quand-lire" style="margin-top:8px;width:auto;padding:9px 13px">${I.chat} Lire à cet instant</button>`;
+              if(Q.etat==='toujours-la')return `<div class="banner teal" style="margin-top:11px">${I.shield}<span><b>Ses messages n’ont pas disparu :</b> il y en avait encore ${Q.dernier?Q.dernier.n:0} il y a quelques minutes. La conversation que vous cherchez est donc ailleurs — une discussion <b>par prestation</b>, ou un autre compte.</span></div>`;
+              return `<div class="banner coral" style="margin-top:11px">${I.warn}<span><b>Aucun message à aucun moment des sept derniers jours</b>, sur ${Q.sondes?Q.sondes.length:0} lectures réparties sur la période. Soit la conversation est plus ancienne que la fenêtre, soit elle vit sur une <b>prestation</b> et non sur le compte.</span></div>`;})()}
             ${(function(){
               const C=S._arstConv;if(!C)return '';
               if(C.erreur)return `<div class="banner coral" style="margin-top:11px">${I.warn}<span>${esc(C.erreur)}</span></div>`;
@@ -19603,7 +19640,7 @@
     if(b.dataset.act==='admin-restore-find'){const f=S._arst||{};
       if(!f.q||!f.at){toast('Un nom et une date/heure');return;}
       if(!(FB&&FB.fn&&FB.functions)){toast('Indisponible hors connexion');return;}
-      S._arstBusy=true;S._arstOut=null;S._arstHits=null;S._arstConv=null;render();
+      S._arstBusy=true;S._arstOut=null;S._arstHits=null;S._arstConv=null;S._arstQuand=null;render();
       FB.fn.httpsCallable(FB.functions,'adminFindAtTime')({q:f.q,at:new Date(f.at).toISOString()})
         .then(function(r){const d=(r&&r.data)||{};S._arstBusy=false;S._arstHits=d;
           if(!(d.candidats||[]).length)S._arstOut={ok:false,msg:'Personne de ce nom dans la base à cette date. Essayez une heure plus tôt, ou une partie du nom seulement.'};
@@ -19614,16 +19651,28 @@
        récupération : on obtient la pièce sans remettre en base les données d'une personne
        qui a demandé son effacement, et sans qu'un prestataire restauré se remette à
        recevoir des offres de mission par courriel. */
+    if(b.dataset.act&&b.dataset.act.indexOf('admin-quand:')===0){
+      const uid=b.dataset.act.slice('admin-quand:'.length);
+      if(!(FB&&FB.fn&&FB.functions)){toast('Indisponible hors connexion');return;}
+      S._arstQuand={chargement:true};S._arstConv=null;render();
+      FB.fn.httpsCallable(FB.functions,'adminQuandDisparu')({uid:uid})
+        .then(function(r){S._arstQuand=Object.assign({uid:uid},(r&&r.data)||{});render();})
+        .catch(function(e){S._arstQuand={erreur:fbErrTxt(e)};render();});
+      return;}
+    /* LIRE À L'INSTANT TROUVÉ, sans retaper la date. Le champ du formulaire attend une
+       heure LOCALE (`datetime-local`) alors qu'on a un horodatage : on remplit le champ
+       pour que l'écran reste cohérent, mais la lecture part de l'horodatage lui-même —
+       repasser par le champ ferait tomber la lecture à côté de ce qu'on vient de mesurer,
+       du décalage du fuseau. */
+    if(b.dataset.act==='admin-quand-lire'){const Q=S._arstQuand||{};
+      if(!(Q.vuLe&&Q.vuLe.at&&Q.uid))return;
+      S._arst=Object.assign({},S._arst||{},{at:heureLocaleChamp(Q.vuLe.at)});
+      lireConversationA(Q.uid,Q.vuLe.at);
+      return;}
     if(b.dataset.act&&b.dataset.act.indexOf('admin-conv-at:')===0){const f=S._arst||{};
       const uid=b.dataset.act.slice('admin-conv-at:'.length);
       if(!f.at){toast('Indiquez d’abord une date/heure');return;}
-      if(!(FB&&FB.fn&&FB.functions)){toast('Indisponible hors connexion');return;}
-      S._arstConv={chargement:true};render();
-      FB.fn.httpsCallable(FB.functions,'adminSupportAtTime')({uid:uid,at:new Date(f.at).toISOString()})
-        .then(function(r){const d=(r&&r.data)||{};
-          S._arstConv={uid:d.uid,nom:d.nom,role:d.role,support:d.support||[],nTotal:d.nTotal||0,
-            tronque:!!d.tronque,quand:dateHeureFr(new Date(f.at).getTime())};render();})
-        .catch(function(e){S._arstConv={erreur:fbErrTxt(e)};render();});
+      lireConversationA(uid,new Date(f.at).getTime());
       return;}
     if(b.dataset.act==='admin-conv-close'){S._arstConv=null;render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('admin-restore-uid:')===0){

@@ -25,6 +25,7 @@ const RACINE = '/home/user/alize-work';
 const SRV = fs.readFileSync(path.join(RACINE, 'functions', 'index.js'), 'utf8');
 const RULES = fs.readFileSync(path.join(RACINE, 'firestore.rules'), 'utf8');
 const P = require(path.join(RACINE, 'functions', 'recherche-passe.js'));
+const Q = require(path.join(RACINE, 'functions', 'quand-disparu.js'));
 const o = { headless: true }; if (fs.existsSync('/opt/pw-browsers/chromium')) o.executablePath = '/opt/pw-browsers/chromium';
 let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; console.log('  ✗ ÉCHEC : ' + l); } };
 
@@ -103,7 +104,12 @@ ok(r[0].email === 'j@d.fr', 'en gardant l’adresse, qui ne vit que sur la fiche
 (async () => {
   console.log('E — l’écran : chercher, reconnaître, puis récupérer');
   const b = await chromium.launch(o);
-  const p = await b.newPage({ viewport: { width: 420, height: 2000 } });
+  /* AU FUSEAU DE SAINT-BARTHÉLEMY (UTC−4), ET C'EST UNE NÉCESSITÉ, PAS UN DÉTAIL. Le
+     conteneur tourne en UTC : l'heure locale y égale l'heure UTC, donc une épreuve qui
+     vérifie « le champ reçoit l'heure LOCALE » ne peut RIEN distinguer — mesuré, elle
+     passait au vert avec `toISOString()` remis à la place. Sous le fuseau réel, les deux
+     diffèrent de quatre heures et la mesure veut dire quelque chose. */
+  const p = await b.newPage({ viewport: { width: 420, height: 2000 }, timezoneId: 'America/Guadeloupe' });
   const errs = []; p.on('pageerror', (e) => errs.push(e.message));
   await p.goto('file://' + path.join(RACINE, 'tests/harn/app.html'));
   await p.waitForFunction(() => window.__S && window.__render);
@@ -216,6 +222,81 @@ ok(r[0].email === 'j@d.fr', 'en gardant l’adresse, qui ne vit que sur la fiche
     'qui n’écrit RIEN et n’envoie RIEN : aucune donnée ne revient en base, aucun e-mail ne part');
   ok(/ADMIN_EMAIL\.toLowerCase\(\)/.test(LIRE) && /7 \* 86400000/.test(LIRE),
     'réservée à l’administrateur, et bornée à la fenêtre de sept jours');
+
+  console.log('G — trouver L’HEURE, plutôt que de la faire chercher');
+  /* « À 11 h 54 : aucun message. » La lecture marchait, c'est l'HEURE qui manquait — et
+     tâtonner coûte une lecture par essai pour une minute qui peut être n'importe où dans
+     sept jours. */
+  const grille = Q.grilleSondes(0, 600000, 7);
+  ok(grille.length === 7 && grille[0] === 0 && grille[6] === 600000,
+    'les sondes couvrent la fenêtre, bornes comprises');
+  const S1 = [{ at: 0, n: 4 }, { at: 100, n: 4 }, { at: 200, n: 0 }, { at: 300, n: 0 }];
+  const c1 = Q.encadrer(S1);
+  ok(c1 && c1.avant.at === 100 && c1.apres.at === 200,
+    'le passage est ENCADRÉ : le dernier instant avec des messages, le premier sans');
+  ok(Q.prochaineBissection(c1.avant, c1.apres, 10) === 150,
+    'et la dichotomie resserre, au lieu de balayer minute par minute');
+  ok(Q.prochaineBissection({ at: 100 }, { at: 105 }, 10) === null,
+    'elle s’arrête quand on est assez précis : une lecture de plus n’apprendrait rien');
+  const v1 = Q.verdict(S1, c1);
+  ok(v1.etat === 'disparu' && v1.vuLe.at === 100 && v1.combien === 4,
+    'le verdict dit QUAND on les a vus pour la dernière fois, et COMBIEN');
+  /* LES TROIS AUTRES ISSUES N'APPELLENT PAS LE MÊME GESTE, et les confondre enverrait
+     chercher au mauvais endroit. */
+  const S2 = [{ at: 0, n: 0 }, { at: 100, n: 0 }];
+  ok(Q.encadrer(S2) === null && Q.verdict(S2, null).etat === 'jamais',
+    'aucun message nulle part se dit à part : la conversation est ailleurs, ou plus ancienne que la fenêtre');
+  const S3 = [{ at: 0, n: 2 }, { at: 100, n: 3 }];
+  ok(Q.encadrer(S3) === null && Q.verdict(S3, null).etat === 'toujours-la',
+    'et « ils sont encore là » aussi : rien n’a disparu, c’est ailleurs qu’il faut chercher');
+  ok(Q.verdict([], null).etat === 'rien-lu', 'aucune lecture ne se confond pas avec aucun message');
+  ok(Q.LECTURES_MAX > 0 && Q.LECTURES_MAX <= 64,
+    'le nombre de lectures est PLAFONNÉ : une boucle sans borne sur un service distant expire au milieu, sans rien rendre');
+  const SRVQ = SRV.slice(SRV.indexOf('exports.adminQuandDisparu'), SRV.indexOf('exports.adminRestoreAccount'));
+  ok(SRVQ.length > 100 && !/\.set\(|\.delete\(|\.update\(/.test(SRVQ),
+    'et elle n’écrit RIEN, comme la lecture');
+  ok(/lectures >= QUAND\.LECTURES_MAX/.test(SRVQ), 'le plafond est APPLIQUÉ, pas seulement déclaré');
+
+  /* LE CHAMP DE DATE ATTEND UNE HEURE LOCALE. `toISOString` y mettrait l'heure UTC :
+     à Saint-Barthélemy le champ afficherait quatre heures de plus, et la lecture
+     suivante tomberait à côté de ce qu'on vient de mesurer. */
+  const fuseau = await p.evaluate(() => {
+    const t = new Date(2026, 9, 12, 9, 14, 0).getTime();   // construit DANS la page
+    return { champ: window.__cmd.champHeure(t), utc: new Date(t).toISOString().slice(0, 16) };
+  });
+  ok(fuseau.champ === '2026-10-12T09:14' && fuseau.utc === '2026-10-12T13:14',
+    'l’instant trouvé remplit le champ en heure LOCALE, pas en UTC — quatre heures d’écart à Saint-Barthélemy ('
+    + fuseau.champ + ' vs ' + fuseau.utc + ')');
+
+  /* LES INSTANTS SE CONSTRUISENT DANS LA PAGE, pas dans Node. Le harnais tourne en UTC et
+     la page au fuseau de Saint-Barthélemy : un horodatage fabriqué d'un côté et rendu de
+     l'autre se décale de quatre heures, et l'épreuve mesurerait ce décalage au lieu de ce
+     qu'elle vise. On passe des composantes, la page en fait des instants. */
+  const verdictEcran = (q) => p.evaluate((q) => {
+    const h = function (c) { return c ? new Date(c[0], c[1], c[2], c[3], c[4]).getTime() : 0; };
+    if (q.vuLeC) q.vuLe = { at: h(q.vuLeC), n: q.combien };
+    if (q.videLeC) q.videLe = { at: h(q.videLeC), n: 0 };
+    window.__S._arstQuand = q; window.__S._arstConv = null; window.__render();
+    const v = document.getElementById('view');
+    const b = v.querySelector('[data-act="admin-quand-lire"]');
+    const pan = b ? b.previousElementSibling : null;
+    return { txt: (v.textContent || '').replace(/\s+/g, ' '), lire: !!b,
+      banniere: pan ? (pan.textContent || '').replace(/\s+/g, ' ') : '' };
+  }, q);
+
+  const dispa = await verdictEcran({ uid: 'a1', etat: 'disparu', combien: 3,
+    vuLeC: [2026, 9, 12, 9, 14], videLeC: [2026, 9, 12, 9, 29], sondes: [] });
+  ok(dispa.lire === true && /12\/10\/2026 09:14/.test(dispa.banniere),
+    'l’écran NOMME l’instant où les messages étaient encore là');
+  ok(/plus aucun le 12\/10\/2026 09:29/.test(dispa.banniere),
+    'et celui où il n’y en avait plus : la disparition est ENTRE les deux, pas « à » l’un d’eux');
+
+  const jamais = await verdictEcran({ uid: 'a1', etat: 'jamais', sondes: [{ at: 1, n: 0 }, { at: 2, n: 0 }] });
+  ok(/une <b>prestation<\/b>|prestation/.test(jamais.txt) && !/Lire à cet instant/.test(jamais.txt),
+    'rien nulle part envoie chercher ailleurs, sans proposer de lire du vide');
+  const encore = await verdictEcran({ uid: 'a1', etat: 'toujours-la', dernier: { at: 1, n: 5 }, sondes: [] });
+  ok(/n’ont pas disparu/.test(encore.txt),
+    'et « ils sont encore là » le dit, au lieu de laisser croire à une perte');
 
   ok(errs.length === 0, 'aucune erreur JS' + (errs.length ? ' (' + errs[0] + ')' : ''));
   await b.close();
