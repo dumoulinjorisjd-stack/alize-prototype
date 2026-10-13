@@ -74,7 +74,14 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   ok(/Confirmer l’annulation/.test(premier.txt), 'il demande confirmation…');
   ok(/La recherche s’arrête/.test(premier.txt), '…et DIT ce que le second toucher fera');
 
-  const second = await p.evaluate(() => {
+  /* RE-ÉPINGLER AVANT CHAQUE MESURE, et non une fois pour toutes. Le SDK Firebase est
+     téléchargé d'un réseau que le conteneur ne joint pas : son échec arrive de façon
+     ASYNCHRONE et remet `FB` à null. Entre deux mesures, le faux serveur disparaît donc
+     tout seul — `updateDoc` n'est jamais appelé, `maj[0]` est `undefined`, et l'épreuve
+     tombe sur « Cannot read properties of undefined ». Seule, elle passait ; sous la
+     charge de la suite entière, le minutage changeait et elle rougissait. Une épreuve qui
+     crie au loup finit désarmée : c'est le même correctif que sur deux autres. */
+  const second = await mesure(() => {
     document.querySelector('[data-act^="del-demand:"]').click();
     return new Promise(function (r) { setTimeout(function () {
       r({ suppr: window.__base.suppr.slice(), maj: window.__base.maj.slice(),
@@ -94,7 +101,7 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
 
   console.log('B — depuis l’écran de suivi, le même chemin');
   await commande();
-  const suivi = await p.evaluate(() => {
+  const suivi = await mesure(() => {
     const S = window.__S; S.mission = S.missions[0]; S.cancelAsk = true; window.__render();
     const el = document.querySelector('[data-act="cancel-confirm"]');
     if (!el) return { trouve: false };

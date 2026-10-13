@@ -132,6 +132,11 @@ ok(r[0].email === 'j@d.fr', 'en gardant l’adresse, qui ne vit que sur la fiche
     const v = document.getElementById('view');
     return { txt: (v.textContent || '').replace(/\s+/g, ' '),
       cartes: v.querySelectorAll('[data-act^="admin-restore-uid:"]').length,
+      // Le texte des SEULES cartes de candidats : l'écran entier contient « Prestataires »
+      // dans un intertitre sans rapport, et une assertion qui lirait toute la page serait
+      // sauvée par lui — elle l'a été, et n'a rien rougi à la preuve.
+      cartesTxt: Array.prototype.slice.call(v.querySelectorAll('[data-act^="admin-restore-uid:"]'))
+        .map(function (x) { return (x.textContent || '').replace(/\s+/g, ' '); }),
       chercher: v.querySelectorAll('[data-act="admin-restore-find"]').length,
       champQ: v.querySelectorAll('[data-arst="q"]').length,
       recup: !!(v.querySelector('[data-act="admin-restore-run"]')
@@ -158,6 +163,12 @@ ok(r[0].email === 'j@d.fr', 'en gardant l’adresse, qui ne vit que sur la fiche
   const choisi = await ecran(HITS, 'a1');
   ok(choisi.recup === true && /Récupérer le compte choisi/.test(choisi.txt),
     'une fois le compte reconnu, la récupération s’allume et le DIT');
+  /* ON NE CACHE PAS CE QU'ON S'APPRÊTE À RESTAURER. La pastille remplaçait le RÔLE par le
+     mot « Choisi » : au moment précis où l'on va écrire dans la base, l'écran cessait de
+     dire si c'est un prestataire — qui redevient visible des clients — ou un client. */
+  ok(/Prestataire/.test(choisi.cartesTxt[0] || '') && /Client/.test(choisi.cartesTxt[1] || ''),
+    'et le RÔLE de chaque candidat reste lisible, celui qu’on vient de choisir compris ('
+    + (choisi.cartesTxt[0] || '—') + ')');
 
   ok(errs.length === 0, 'aucune erreur JS' + (errs.length ? ' (' + errs[0] + ')' : ''));
   await b.close();
