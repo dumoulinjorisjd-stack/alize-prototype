@@ -3683,7 +3683,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='870';
+  const VERSION_APP='871';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -5665,6 +5665,26 @@
   // Miroir de JOURNAL_JOURS (functions/index.js) : une durée annoncée à l'écran doit
   // être celle qu'applique le serveur, et une épreuve compare les deux.
   const JOURNAL_JOURS_CLI=90;
+  /* « C'EST ÉCRIT COMPTE SUPPRIMÉ ALORS QU'IL N'EST PAS SUPPRIMÉ. » RÉGRESSION DE LA v865,
+     et elle était inévitable : jusque-là `supportArchive` ne contenait QUE des comptes
+     partis (l'archive était prise au moment de la purge), donc la console pouvait écrire
+     « parti » sans rien vérifier. Depuis que chaque message y est copié À L'ÉCRITURE,
+     l'archive contient AUSSI toutes les conversations vivantes : chacune paraissait donc
+     deux fois, dont une sous l'étiquette « Compte supprimé ».
+
+     UNE ARCHIVE NE DIT PAS SI QUELQU'UN EST PARTI, elle dit qu'on a gardé une copie. Ce
+     qui le dit est l'ABSENCE de sa fiche. On ne montre donc une conversation archivée que
+     si son compte n'existe plus — sinon la conversation VIVANTE est déjà dans la liste,
+     et la copie n'apprend rien.
+
+     ET TANT QU'ON N'A PAS LU LES COMPTES, ON NE DIT RIEN. Affirmer « supprimé » parce
+     qu'une liste n'est pas encore arrivée, c'est la faute qu'on vient de corriger
+     ailleurs : la discipline est la même qu'au « rien, nulle part ». */
+  function archivesAMontrer(archives,vivants,lu){
+    if(!lu)return [];
+    const v=vivants||{};
+    return (archives||[]).filter(function(a){return a&&a.uid&&!v[a.uid];});
+  }
   const RECHERCHE_MIN=2;
   const RECHERCHE_PAR_FAMILLE=8;
   /* ON N'AFFIRME PAS « RIEN » TANT QU'ON N'A PAS TOUT LU. Les listes de la console
@@ -12096,7 +12116,8 @@
         const R=rechercheParc(S.admRech||'',{
           artisans:S.adminArtisans||[], drafts:S.adminDrafts||[], clients:S.adminClients||[],
           concierges:S.adminConcierges||[], departs:S.adminDeparts||[], demandes:reqsVrais,
-          generaux:S.adminGeneral||[], archives:S.adminGeneralArchive||[],
+          generaux:S.adminGeneral||[],
+          archives:archivesAMontrer(S.adminGeneralArchive,S.adminUidsVivants,!!S.adminClisLoaded),
           lus:{artisans:!!S.adminArtsLoaded,clients:!!S.adminClisLoaded,demandes:!!S.adminReqsLus}});
         const corps=!R?`<p class="mini" style="margin:8px 0 0;color:var(--muted);line-height:1.5">Un nom, un e-mail, un SIRET. On cherche dans les fiches et les candidatures, le journal des départs, les prestations et les conversations, <b>y compris pour un compte supprimé</b>.</p>`
           :(R.total?R.familles.map(function(f){
@@ -13351,7 +13372,7 @@
        les a archivées juste avant d'effacer la fiche. On les montre DANS la même section,
        parce qu'on les cherche au même endroit, et marquées : la personne n'est plus là,
        il n'y a rien à lui répondre. */
-    const arch=S.adminGeneralArchive||[];
+    const arch=archivesAMontrer(S.adminGeneralArchive,S.adminUidsVivants,!!S.adminClisLoaded);
     const archRows=arch.map(function(u){
       const last=(u.support||[])[(u.support||[]).length-1]||{};
       return `<div class="row" style="gap:8px;margin-top:9px;align-items:stretch">
@@ -13630,6 +13651,8 @@
           list.push({uid:d.id,nom:String(x.nom||''),email:String(x.email||''),role:String(x.role||''),
             support:sup,nTotal:Number(x.nTotal)||sup.length,tronque:!!x.tronque,
             archiveLe:Number(x.archiveLe)||0,parti:true});});
+        // `parti` reste vrai sur la LIGNE : ce qu'on montre est filtré en amont, et une
+        // conversation archivée qu'on affiche est, par construction, celle d'un compte parti.
         list.sort(function(a,b){return (b.archiveLe||0)-(a.archiveLe||0);});
         S.adminGeneralArchive=list;
         if(S.persona==='admin')render();
@@ -13648,6 +13671,10 @@
         buildAdminClients(snap);
         buildAdminDrafts(snap);
         buildAdminNotifs(snap);
+        // QUI EXISTE ENCORE. C'est ce qui permet à l'archive de ne plus déclarer « parti »
+        // un compte bien vivant. On se greffe sur l'écoute qui tourne : pas un abonnement
+        // de plus, et la réponse est exacte (l'archive est indexée sur l'uid d'un `users`).
+        const vivants={};snap.forEach(function(d){vivants[d.id]=1;});S.adminUidsVivants=vivants;
         snap.forEach(function(docu){const d=docu.data()||{};const sup=Array.isArray(d.support)?d.support.slice().sort(function(a,b){return (a.at||0)-(b.at||0);}):[];if(!sup.length)return;list.push({uid:docu.id,name:d.name||'Utilisateur',role:d.role||'client',support:sup,supReadUser:d.supReadUser||0,supReadAdmin:d.supReadAdmin||0,clos:Number(d.supportClos)||0,ts:sup[sup.length-1].at||0});});
         list.sort(function(a,b){return b.ts-a.ts;});
         S.adminGeneral=list;
@@ -14373,7 +14400,11 @@
       done.forEach(function(h){const k=h.svc||'autre';(cats[k]=cats[k]||{svc:k,items:[],total:0});cats[k].items.push(h);cats[k].total+=totals(h).total;});
       const arr=Object.keys(cats).map(function(k){return cats[k];}).sort(function(a,b){return b.items.length-a.items.length;});
       return `<div class="eyebrow" style="color:var(--muted);margin-top:18px">Historique &amp; factures · ${done.length}</div>`+
-        arr.map(function(c){const col=SVC_COLORS[c.svc]||'#12A268';return `<button class="card" data-act="histcat:${esc(c.svc)}" style="width:100%;text-align:left;padding:14px;margin-top:10px;display:block"><div class="row" style="gap:12px;align-items:center"><span style="width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex:none;background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${svcIco(c.svc)}</span><div style="flex:1"><div class="row between"><b style="font-size:15px">${esc(svcNm(c.svc))}</b><span class="chip">${c.items.length}</span></div><div class="mini" style="margin-top:2px">${c.items.length} prestation${c.items.length>1?'s':''} · ${eur(c.total)}</div></div><span class="mini" style="color:var(--teal-deep);font-weight:700">›</span></div></button>`;}).join('');
+        arr.map(function(c){const col=SVC_COLORS[c.svc]||'#12A268';return `<button class="card" data-act="histcat:${esc(c.svc)}" style="width:100%;text-align:left;padding:14px;margin-top:10px;display:block"><div class="row" style="gap:12px;align-items:center"><span style="width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex:none;background:color-mix(in srgb, ${col} 15%, transparent);color:${col}">${svcIco(c.svc)}</span><div style="flex:1">${/* LA PASTILLE DISAIT LE MÊME NOMBRE QUE LA LIGNE EN DESSOUS. « Je ne sais pas à quoi
+      elle correspond » : un nombre seul dans une pastille de la couleur de la marque est,
+      partout ailleurs dans l'application, un COMPTEUR DE CHOSES À FAIRE. Ici il ne
+      comptait rien d'autre que ce que la ligne suivante écrit en toutes lettres. */''}
+                <b style="font-size:15px">${esc(svcNm(c.svc))}</b><div class="mini" style="margin-top:2px">${c.items.length} prestation${c.items.length>1?'s':''} · ${eur(c.total)}</div></div><span class="mini" style="color:var(--teal-deep);font-weight:700">›</span></div></button>`;}).join('');
     }
     const cat=S.histCat;
     const items=done.filter(function(h){return (h.svc||'autre')===cat;});
@@ -14382,7 +14413,7 @@
     items.forEach(function(h){const p=h.provider||{};const key=h.providerUid||p.nm||'—';(provs[key]=provs[key]||{nm:p.nm||'Prestataire',ini:p.ini||inits(p.nm||'--'),photo:p.photo||'',items:[]});provs[key].items.push(h);});
     const parr=Object.keys(provs).map(function(k){return provs[k];}).sort(function(a,b){return b.items.length-a.items.length;});
     const header=`<div class="row between" style="margin-top:18px;align-items:center"><button class="reset" data-act="histcat-back" style="font-weight:700">← Catégories</button><span class="eyebrow" style="color:var(--muted)">${esc(svcNm(cat))} · ${items.length}</span></div>`;
-    const body=parr.map(function(p){const ph=`<div class="row" style="gap:10px;align-items:center;margin-top:16px"><div class="avatar" style="width:34px;height:34px;font-size:13px${p.photo?`;background-image:url('${p.photo}');background-size:cover;background-position:center;color:transparent`:''}">${esc(p.ini||'--')}</div><b style="font-size:14px;flex:1">${esc(p.nm)}</b><span class="chip">${p.items.length}</span></div>`;return ph+p.items.map(function(h){return histCard(h,idx.get(h));}).join('');}).join('');
+    const body=parr.map(function(p){const ph=`<div class="row" style="gap:10px;align-items:center;margin-top:16px"><div class="avatar" style="width:34px;height:34px;font-size:13px${p.photo?`;background-image:url('${p.photo}');background-size:cover;background-position:center;color:transparent`:''}">${esc(p.ini||'--')}</div><b style="font-size:14px;flex:1">${esc(p.nm)}</b><span class="chip grey">${grpCount(p.items.length)}</span></div>`;return ph+p.items.map(function(h){return histCard(h,idx.get(h));}).join('');}).join('');
     return header+body;
   }
   function clientWallet(){
@@ -17287,8 +17318,28 @@
   function dayKey(x){return (x.dateISO||x.when||'').trim();}
   function proSlotConflict(req,acceptedSlot){const k=dayKey(req);if(!k)return null;const w1=slotWindow(req,acceptedSlot);return proActiveMissions().find(function(m){if(dayKey(m)!==k)return false;const w2=slotWindow(m,m.slot);return w1[0]<w2[1]&&w2[0]<w1[1];})||null;}
   function proRemoveMission(m){const i=(S.proMissions||[]).indexOf(m);if(i>=0)S.proMissions.splice(i,1);}
-  function proActiveMissions(){return (S.proMissions||[]).filter(function(m){return ['accepted','working','done_pro','disputed'].indexOf(m.status)>=0||(m.status==='cancelled'&&m.feeDecision==='pending');});}
-  function proMissionMeta(st){return {accepted:{l:'À réaliser',c:'good'},working:{l:'En cours',c:'good'},done_pro:{l:'Validation client',c:'coral'},disputed:{l:'En médiation',c:'coral'},cancelled:{l:'Annulation à trancher',c:'coral'}}[st]||{l:st,c:'grey'};}
+  /* « CÔTÉ PRESTATAIRE, IMPOSSIBLE D'OUVRIR POUR VOIR LA CONVERSATION SI J'ENVOIE UN
+     MESSAGE EN TANT QUE CLIENT APRÈS LA PRESTATION. » Exact, et le message n'était pas
+     perdu — il était INATTEIGNABLE. Une fois la prestation payée, la mission quitte la
+     liste du prestataire, et la carte de l'agenda ne porte aucune porte vers la
+     conversation. Le client, lui, garde « Écrire à X » sur sa prestation terminée : il
+     écrit, et personne ne lit jamais.
+
+     UNE MISSION TERMINÉE QUI PORTE UN MESSAGE NON LU RESTE DONC VISIBLE. Elle repart
+     d'elle-même dès qu'il est lu : ce n'est pas une liste qui se remplit, c'est une
+     boîte de réception qui se vide. Le noyau est PUR — il reçoit le nombre de non-lus,
+     il ne va pas le chercher — et rend POURQUOI la mission est là, parce que les deux
+     raisons ne se rangent pas au même endroit à l'écran. */
+  const PRO_EN_COURS=['accepted','working','done_pro','disputed'];
+  function proMissionGardee(status,feeDecision,nonLus){
+    const st=String(status||'');
+    if(PRO_EN_COURS.indexOf(st)>=0)return 'en-cours';
+    if(st==='cancelled'&&feeDecision==='pending')return 'en-cours';
+    return (Number(nonLus)>0)?'message':null;
+  }
+  function proActiveMissions(){return (S.proMissions||[]).filter(function(m){return proMissionGardee(m&&m.status,m&&m.feeDecision,missionUnreadCount(m))==='en-cours';});}
+  function proMessagesApres(){return (S.proMissions||[]).filter(function(m){return proMissionGardee(m&&m.status,m&&m.feeDecision,missionUnreadCount(m))==='message';});}
+  function proMissionMeta(st){return {accepted:{l:'À réaliser',c:'good'},working:{l:'En cours',c:'good'},done_pro:{l:'Validation client',c:'coral'},disputed:{l:'En médiation',c:'coral'},cancelled:{l:'Annulation à trancher',c:'coral'},paid:{l:'Terminée',c:'grey'},rated:{l:'Terminée',c:'grey'}}[st]||{l:st,c:'grey'};}
   // Indemnité d'annulation retenue : montant + net dus au prestataire (commission déduite).
   function cancelFeeCalc(m){const fee=(m.cancelFee!=null)?m.cancelFee:Math.round(totals(m).total*0.5*100)/100;const pct=(m.commPct!=null)?m.commPct:effCommPct(myCommPct(),fee);const commission=Math.round(fee*pct)/100;const net=Math.round((fee-commission)*100)/100;return {fee:fee,pct:pct,commission:commission,net:net};}
   // Décision du prestataire sur une annulation tardive : appliquer l'indemnité (50 %) ou
@@ -17351,10 +17402,21 @@
     return `<span class="benic" style="flex:none;margin-top:1px;background:color-mix(in srgb,${c} 15%,transparent);color:${c}">${svcIco(id)}</span>`;
   }
   function proTodoBlock(){
+    const carte=function(m){const sm=proMissionMeta(m.status);return `<button class="card" data-act="promiss:${m._id||''}" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block;border-left:4px solid ${sm.c==='good'?'var(--good)':'var(--coral)'}"><div class="row" style="gap:11px;align-items:flex-start">${svcPastille(m.svc)}<div style="flex:1;min-width:0"><div class="row between" style="gap:8px"><b style="font-size:14px">${proDots(m)}${esc(m.svcName||svcNm(m.svc))}</b><span class="chip ${sm.c}" style="flex:none">${sm.l}</span></div><div class="mini" style="margin-top:3px">${I.pin} ${esc(migZone(m.zone))} · ${esc(m.when||'')} · ${esc(m.slot||'')} · ${m.duration||1} ${m.unit==='j'?'j':'h'}</div></div></div><div class="row between" style="margin-top:9px"><span class="mini" style="color:var(--ink);font-weight:700">Vous percevez ${eur(totals(m).payout)}</span><span class="mini" style="color:var(--muted)">Ouvrir ›</span></div></button>`;};
     const list=proActiveMissions();
-    if(!list.length)return '';
-    return `<div style="margin-top:26px"><span class="eyebrow" style="color:var(--muted)">${I.check} Missions en cours · ${list.length}</span>${list.map(function(m){const sm=proMissionMeta(m.status);return `<button class="card" data-act="promiss:${m._id||''}" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block;border-left:4px solid ${sm.c==='good'?'var(--good)':'var(--coral)'}"><div class="row" style="gap:11px;align-items:flex-start">${svcPastille(m.svc)}<div style="flex:1;min-width:0"><div class="row between" style="gap:8px"><b style="font-size:14px">${proDots(m)}${esc(m.svcName||svcNm(m.svc))}</b><span class="chip ${sm.c}" style="flex:none">${sm.l}</span></div><div class="mini" style="margin-top:3px">${I.pin} ${esc(migZone(m.zone))} · ${esc(m.when||'')} · ${esc(m.slot||'')} · ${m.duration||1} ${m.unit==='j'?'j':'h'}</div></div></div><div class="row between" style="margin-top:9px"><span class="mini" style="color:var(--ink);font-weight:700">Vous percevez ${eur(totals(m).payout)}</span><span class="mini" style="color:var(--muted)">Ouvrir ›</span></div></button>`;}).join('')}</div>`;
+    /* LE MESSAGE REÇU APRÈS LA PRESTATION A SON PROPRE BLOC. Le ranger sous « Missions en
+       cours » dirait quelque chose de faux — elle ne l'est plus — et c'est justement parce
+       que la mission avait DISPARU de cette liste que le message n'arrivait nulle part. */
+    const apres=proMessagesApres();
+    if(!list.length&&!apres.length)return '';
+    const groupe=function(titre,l){
+      if(!l.length)return '';
+      return `<div style="margin-top:26px"><span class="eyebrow" style="color:var(--muted)">${titre} · ${l.length}</span>${l.map(carte).join('')}</div>`;
+    };
+    return groupe(I.check+' Missions en cours',list)
+      +groupe(I.chat+' Message reçu après la prestation',apres);
   }
+
   // En-tête d'onglet, commun au mode client ET au mode prestataire : intitulé + titre
   // à gauche, action de la page puis photo à droite, silhouette de l'île en filigrane.
   // Un seul gabarit → mêmes tailles et mêmes positions sur tous les onglets.
