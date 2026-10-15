@@ -6,7 +6,7 @@ SRC=${SRC:-/home/user/alize-work/index.html}
 OUT=${OUT:-/home/user/alize-work/tests/harn/app.html}
 sed 's/function render(){/function render(){window.__S=S;window.__render=render;window.__setFB=function(v){FB=v;};/
      s/^  function fbErrTxt(e){/  window.__err=function(e){return fbErrTxt(e);};\n  function fbErrTxt(e){/
-     s/^  function newMission(svc){/  window.__newMission=function(s){return newMission(s);};\n  function newMission(svc){/
+     s/^  function newMission(svc){/  window.__totals=function(m){return totals(m);};window.__newMission=function(s){return newMission(s);};\n  function newMission(svc){/
      s/^  function molliePeutTravailler(){/  window.__peutTravailler=function(){return molliePeutTravailler();};window.__differe=function(){return versementDiffere();};\n  function molliePeutTravailler(){/
      s/^  function adminLedgerGroups(){/  window.__ledgerTotal=function(){var l=adminCommissionLedger();return {lignes:l.length,commission:l.reduce(function(t,e){return t+(e.commissionAmount||0);},0)};};\n  function adminLedgerGroups(){/
      s/^  function srvMontants(src){/  window.__rev={srv:function(x){return srvMontants(x);},recale:function(h,r){return recaleHist(h,r);},record:function(m){return recordProPaid(m);}};\n  function srvMontants(src){/
@@ -48,7 +48,7 @@ sed 's/function render(){/function render(){window.__S=S;window.__render=render;
      s/^  function murSousLigne(f){/  window.__murs={sous:function(f){return murSousLigne(f);},qui:function(q,m){return murQuiHtml(q,m);},phrases:function(c){return murQuiPhrases(c);},depuis:function(){return CLIENT_JALONS_DEPUIS;},prepareDepuis:function(){return PREPARE_DEPUIS;}};\n  function murSousLigne(f){/
      s/^  function i18nApply(root){/  window.__tr=function(v,lang){var av=S.lang;S.lang=lang;try{return trOne(v);}finally{S.lang=av;}};window.__dict=function(lang){return lang===String.fromCharCode(112,116)?PT_DICT:EN_DICT;};\n  function i18nApply(root){/' \
   "$SRC" > "$OUT"
-for f in __S __render __err __newMission __peutTravailler __tr __adm __cat __rev __demo __back __svc __art __brouillon __inst __maj __dossier __assur __prix __statut __tel __murs __parcours __lieu __arrhes __metier __heures __gps __nl __cfg __fil __cmd __prop __push __eur __passe __repr __grp; do
+for f in __S __totals __render __err __newMission __peutTravailler __tr __adm __cat __rev __demo __back __svc __art __brouillon __inst __maj __dossier __assur __prix __statut __tel __murs __parcours __lieu __arrhes __metier __heures __gps __nl __cfg __fil __cmd __prop __push __eur __passe __repr __grp; do
   grep -q "window.$f" "$OUT" || { echo "MANQUE $f"; exit 1; }
 done
 echo "harnais complet"
