@@ -3683,7 +3683,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='872';
+  const VERSION_APP='873';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -15998,23 +15998,28 @@
      RIEN N'EST DÛ : aucun prestataire ne s'est engagé, donc pas d'indemnité — on l'écrit
      plutôt que de le laisser deviner, sinon la console afficherait « le prestataire décide
      de l'indemnité » sur une demande que personne n'avait prise. */
+  /* « JE N'ARRIVE PAS À ANNULER UNE COMMANDE. » Le refus était AVALÉ ici et l'écran
+     répondait « réessayez ». Or si l'écriture est REFUSÉE — règle, session expirée,
+     demande déjà fermée ailleurs — réessayer ne marchera JAMAIS : on retouche le bouton
+     indéfiniment sans rien apprendre, et c'est exactement ce que ça donne à l'usage. La
+     raison remonte donc avec l'échec. */
   async function cancelActiveRequest(m){
-    if(!m)return false;
+    if(!m)return {ok:false,raison:''};
     const id=m.reqId;
-    if(!id)return true;                       // jamais partie au serveur : rien à annuler
-    if(!(FB&&FB.db&&FB.f&&FB.f.updateDoc))return true;   // bêta / démo : local uniquement
+    if(!id)return {ok:true};                  // jamais partie au serveur : rien à annuler
+    if(!(FB&&FB.db&&FB.f&&FB.f.updateDoc))return {ok:true};  // bêta / démo : local uniquement
     try{
       const t=Date.now();
       await withBusy(FB.f.updateDoc(FB.f.doc(FB.db,'requests',id),
         {status:'cancelled',lateCancel:false,cancelFee:0,feeDecision:'none',cancelledAt:t}));
       m.status='cancelled';m.cancelledAt=t;
       unsubClientRequest(id);
-      return true;
+      return {ok:true};
     }catch(e){
       // On NE retire RIEN de l'écran : la demande existe encore, elle doit rester
       // annulable — c'est elle qui porte l'empreinte à libérer.
       console.warn('cancelActiveRequest',e);
-      return false;
+      return {ok:false,raison:fbErrTxt(e)};
     }
   }
   // Le scénario de DÉMO (toutes les données pré-remplies). Utilisé par « Voir la démo ».
@@ -19646,8 +19651,8 @@
       if(m&&S.delAsk!==id){S.delAsk=id;render();return;}
       S.delAsk=null;
       if(m){(async function(){
-      const ok=await cancelActiveRequest(m);
-      if(!ok){toast('⚠︎ Annulation non enregistrée, la demande est toujours active, réessayez');render();return;}
+      const r=await cancelActiveRequest(m);
+      if(!r||!r.ok){toast('⚠︎ Annulation refusée'+((r&&r.raison)?' : '+r.raison:'')+'. La demande est toujours active.');render();return;}
       removeMission(m);if(S.mission===m)S.mission=null;cacheClientLocal();
       toast(m.reqId&&payReal()?'Demande annulée, la somme réservée vous est rendue':'Demande supprimée');render();
     })();}else render();return;}
@@ -20123,8 +20128,8 @@
         } else {
           const _retenu=!!(m&&m.reqId&&payReal());
           (async function(){
-            const ok=await cancelActiveRequest(m);
-            if(!ok){toast('⚠︎ Annulation non enregistrée, réessayez dans un instant');render();return;}
+            const r=await cancelActiveRequest(m);
+            if(!r||!r.ok){toast('⚠︎ Annulation refusée'+((r&&r.raison)?' : '+r.raison:'')+'. La demande est toujours active.');render();return;}
             removeMission(m);S.mission=null;S.clientNav='wallet';render();
             toast(_retenu?'Demande annulée, la somme réservée vous est rendue':'Demande annulée');
           })();

@@ -99,6 +99,44 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
     'et SANS indemnité : personne ne s’était engagé, la console ne doit pas annoncer qu’un prestataire doit trancher');
   ok(second.encore === 0, 'elle quitte la liste du client, qui ne la cherche plus');
 
+  /* ── UN REFUS DOIT DIRE POURQUOI ──────────────────────────────────────────────
+     « Je n'arrive pas à annuler une commande. » L'échec était avalé et l'écran
+     répondait « réessayez ». Si l'écriture est REFUSÉE — règle, session expirée,
+     demande déjà fermée ailleurs — réessayer ne marchera JAMAIS : on retouche le
+     bouton indéfiniment sans rien apprendre. Et SURTOUT la demande doit RESTER :
+     c'est elle qui porte l'empreinte bancaire. */
+  console.log('C — quand le serveur refuse, on le DIT et l’on ne retire rien');
+  await commande();
+  const refus = await p.evaluate(() => {
+    window.__base = {suppr: [], maj: []};
+    window.__setFB({auth: {currentUser: {uid: 'cli1', email: 'c@x.c'}}, db: {},
+      f: {doc: function () { return {_p: Array.prototype.slice.call(arguments, 1)}; },
+        collection: function () { return {}; }, onSnapshot: function () { return function () {}; },
+        deleteDoc: function () { return Promise.reject({code: 'permission-denied'}); },
+        updateDoc: function () { return Promise.reject({code: 'permission-denied'}); },
+        setDoc: function () { return Promise.resolve(); },
+        getDoc: function () { return Promise.resolve({exists: function () { return false; }, data: function () { return {}; }}); }},
+      fn: {httpsCallable: function () { return function () { return new Promise(function () {}); }; }}, functions: {}});
+    const b = document.querySelector('[data-act^="del-demand:"]');
+    b.click();                       // arme
+    document.querySelector('[data-act^="del-demand:"]').click();   // confirme
+    return new Promise(function (r) { setTimeout(function () {
+      /* LE MESSAGE AFFICHÉ, PAS LE TEXTE DE LA PAGE. `document.body.textContent` inclut
+         le contenu des `<script>` : la table des erreurs y figure en clair, donc une
+         assertion qui y cherche la phrase passe au vert même si RIEN n'est affiché —
+         mesuré sur cette épreuve même, deux fois de suite. */
+      const t = document.getElementById('toast');
+      r({encore: (window.__S.missions || []).length,
+        statut: ((window.__S.missions || [])[0] || {}).status || '(partie)',
+        txt: t ? (t.textContent || '').replace(/\s+/g, ' ') : '(pas de bandeau)'}); }, 260); });
+  });
+  ok(refus.encore === 1 && refus.statut === 'pending',
+    'un refus ne retire RIEN de l’écran : la demande porte l’empreinte, elle doit rester annulable');
+  ok(/Annulation refusée/.test(refus.txt),
+    'et l’écran dit que c’est un REFUS, pas un incident passager');
+  ok(/droits pour cette action/.test(refus.txt),
+    'en NOMMANT la cause, au lieu d’un « réessayez » qui ne marchera jamais (' + refus.txt + ')');
+
   console.log('B — depuis l’écran de suivi, le même chemin');
   await commande();
   const suivi = await mesure(() => {
