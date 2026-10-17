@@ -3683,7 +3683,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='874';
+  const VERSION_APP='875';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -5611,6 +5611,29 @@
      porte. Le risque est acceptable ici — démarrer en avance ne fait gagner RIEN à un
      prestataire, il faut toujours faire le travail pour être payé — là où un verrou de
      paiement, lui, ne se poserait jamais dans le navigateur. */
+  /* « IL PEUT SE DÉSISTER ALORS QU'IL A COCHÉ QU'IL A COMMENCÉ LA PRESTATION ? »
+     NON, et j'avais répondu à côté : « en cours » est une PORTE À SENS UNIQUE. Vérifié aux
+     trois endroits — l'annulation du client n'est offerte que sur `accepted`, le
+     désistement du prestataire (« Rendre la mission ») aussi, et la clôture de la console
+     refuse tout ce qui n'est pas `pending`. Une fois le démarrage coché, PERSONNE ne peut
+     plus défaire : ni le client, ni le prestataire, ni l'éditeur. Il ne reste que la
+     console Firebase, à la main.
+
+     UN DÉMARRAGE EST UNE DÉCLARATION, PAS UN FAIT ACCOMPLI. Coché par erreur — et c'est
+     ce qui vient d'arriver — il doit se défaire tant que la prestation n'est pas
+     déclarée TERMINÉE. Revenir à « acceptée » ne paie personne et ne coûte rien : cela
+     rouvre simplement les deux portes qui existaient une seconde plus tôt. */
+  function demarrageAnnulable(status){return String(status||'')==='working';}
+  /* LE FILET DE SÉCURITÉ DE LA CONSOLE ne couvrait que `pending`, c'est-à-dire exactement
+     le seul état où l'on n'en a pas besoin : une demande en recherche s'annule déjà d'un
+     geste chez le client. Une demande ACCEPTÉE ou « en cours », elle, ne se défaisait de
+     NULLE PART. Jamais une pièce RÉGLÉE (la comptabilité ne se réécrit pas) ni un LITIGE
+     (il a son propre écran d'arbitrage ; le clore d'ici effacerait la décision à prendre).
+
+     AU NIVEAU DU MODULE, et c'est une leçon déjà payée deux fois dans ce fichier
+     (`plN`, `chip`) : déclarée dans la fonction de rendu, elle était invisible partout
+     ailleurs — l'épreuve a levé dessus. */
+  const CLORE_ETATS=['pending','pending_payment','payment_failed','declined','accepted','working'];
   const DEMARRAGE_COURTOISIE_MS=60*60*1000;
   function creneauDebutMs(dateISO,slot,slotFlex){
     if(!/^\d{4}-\d{2}-\d{2}$/.test(String(dateISO||'')))return null;
@@ -11752,8 +11775,14 @@
        DEUX TOUCHERS, comme la purge d'un compte : le premier arme, le second agit. Et
        l'on DIT ce que le second fera — clore libère l'empreinte du client et le prévient
        que rien ne lui est prélevé (`settleCancellation` s'en charge). */
+  /* LE FILET DE SÉCURITÉ NE COUVRAIT QUE `pending`, c'est-à-dire exactement le seul état
+     où l'on n'en a pas besoin : une demande en recherche s'annule déjà d'un geste chez le
+     client. Une demande ACCEPTÉE ou « EN COURS », elle, ne se défaisait de NULLE PART.
+     La console le peut désormais — c'est sa raison d'être. Mais jamais sur une pièce
+     RÉGLÉE (`paid`, `rated`) : la comptabilité ne se réécrit pas. Ni sur un LITIGE, qui
+     a son propre écran d'arbitrage — le clore d'ici effacerait la décision à prendre. */
     const cmdClore=function(r){
-      if(!r||r.status!=='pending'||!r.id)return '';
+      if(!r||!r.id||CLORE_ETATS.indexOf(String(r.status||''))<0)return '';
       const arme=(S.admClore===r.id);
       return `<div style="margin-top:8px">
         <button class="btn ghost sm" data-adm="reqclore:${esc(r.id)}" style="width:auto;padding:7px 11px;${arme?'color:#fff;background:var(--coral-deep);border-color:var(--coral-deep)':'color:var(--coral-deep)'}">${arme?I.warn+' Confirmer, clore cette demande':I.trash+' Clore'}</button>
@@ -18155,6 +18184,7 @@
         return d.ok?`<button class="btn primary" data-act="pro-advance" data-to="working">Démarrer la prestation</button>`
           :`<button class="btn primary" disabled style="opacity:.55">Démarrer la prestation</button>
             <p class="mini" style="margin-top:9px;color:var(--muted);line-height:1.5">${I.clock} Vous pourrez démarrer à partir du <b>${esc(dateHeureFr(d.ouvreA))}</b>. La prestation est prévue ${esc(m.when||'')}${m.slot?' à '+esc(m.slot):''}.</p>`;})():`<button class="btn primary" data-act="pro-finish-start">J'ai terminé la prestation</button>`}${isDemo()?`<p class="mini" style="text-align:center;margin-top:10px"><button class="linklike" data-act="demo-go-client">${I.user} Voir côté client (démo)</button></p>`:''}</div>
+      ${demarrageAnnulable(m.status)?`<p class="mini" style="text-align:center;margin-top:14px">${S.proUndoAsk?`<span style="color:var(--coral-deep)">Revenir en arrière&nbsp;? La mission redevient « à réaliser ».</span> <button class="linklike" data-act="pro-undo-start" style="color:var(--coral-deep);font-weight:700">Oui, je n’ai pas commencé</button> · <button class="linklike" data-act="pro-undo-cancel" style="color:var(--muted)">Non</button>`:`<button class="linklike" data-act="pro-undo-ask" style="color:var(--muted)">Je n’ai pas encore commencé</button>`}</p>`:''}
       ${m.status==='accepted'?`<p class="mini" style="text-align:center;margin-top:14px">${S.proReopenAsk?`<span style="color:var(--coral-deep)">Rendre la mission&nbsp;? Elle repart aux autres artisans.</span><br><button class="linklike" data-act="pro-reopen-confirm" style="color:var(--coral-deep);font-weight:700">Oui, je me désiste</button> · <button class="linklike" data-act="pro-reopen-cancel">Annuler</button>`:`<button class="linklike" data-act="pro-reopen" style="color:var(--muted)">Je ne peux plus assurer cette mission</button>`}</p>`:''}</div>`;
   }
   function proFinish(){
@@ -19594,7 +19624,7 @@
         if(S.admClore!==id){S.admClore=id;render();return;}
         S.admClore=null;
         const r=(S.adminReqs||[]).find(function(x){return x.id===id;});
-        if(!r||r.status!=='pending'){render();toast('Cette demande n’est plus en recherche');return;}
+        if(!r||CLORE_ETATS.indexOf(String(r.status||''))<0){render();toast('Cette demande ne peut plus être close : elle est réglée ou en litige');return;}
         if(!(FB&&FB.db&&FB.f)){render();toast('Hors ligne, rien n’a été écrit');return;}
         FB.f.updateDoc(FB.f.doc(FB.db,'requests',id),{status:'expired',expiredBy:'admin',expiredAt:Date.now()})
           .then(function(){toast('Demande close');})
@@ -20633,6 +20663,20 @@
           if(!_d.ok){toast('Trop tôt : vous pourrez démarrer à partir du '+dateHeureFr(_d.ouvreA));render();break;}
         }
         S.mission.status=b.dataset.to;if(S.mission._appt){if(b.dataset.to==='working')S.mission._appt.status='live';else if(b.dataset.to==='done_pro')S.mission._appt.status='tovalidate';}pushMissionStatus(S.mission);render();break;}
+      /* DÉFAIRE UN DÉMARRAGE. On repasse en « acceptée » : rien n'est payé, rien n'est
+         perdu, et les deux portes d'annulation se rouvrent — celle du client et celle du
+         prestataire. Le rendez-vous de l'agenda redevient « à venir ». */
+      case 'pro-undo-ask':S.proUndoAsk=true;render();break;
+      case 'pro-undo-cancel':S.proUndoAsk=false;render();break;
+      case 'pro-undo-start':{
+        S.proUndoAsk=false;
+        if(S.mission&&demarrageAnnulable(S.mission.status)){
+          S.mission.status='accepted';
+          if(S.mission._appt)S.mission._appt.status='upcoming';
+          pushMissionStatus(S.mission);
+          toast('Retour à « à réaliser »');
+        }
+        render();break;}
       case 'pro-back-home':if(S.mission){proRemoveMission(S.mission);S.history.unshift(S.mission);}S.mission=null;S.proNav='home';render();break;
     }
     paintPersona();

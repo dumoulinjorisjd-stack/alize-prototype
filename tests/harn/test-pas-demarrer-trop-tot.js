@@ -137,6 +137,51 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   ok(/Trop tôt/.test(force.msg),
     'et le refus se dit (' + force.msg + ')');
 
+  console.log('D — « en cours » n’est plus une porte à sens unique');
+  /* « Il peut se désister alors qu'il a coché qu'il a commencé ? » NON — vérifié aux trois
+     endroits : l'annulation du client n'est offerte que sur `accepted`, le désistement du
+     prestataire aussi, et la clôture de la console refusait tout ce qui n'est pas
+     `pending`. Une fois le démarrage coché, PERSONNE ne pouvait plus défaire. */
+  const portes = await p.evaluate(() => {
+    const D = window.__demarrage;
+    return {annulable: D.annulable('working'), surAccepte: D.annulable('accepted'),
+      surFini: D.annulable('done_pro'), surPaye: D.annulable('paid'),
+      clore: D.cloreEtats()};
+  });
+  ok(portes.annulable === true, 'un démarrage se défait');
+  ok(portes.surFini === false && portes.surPaye === false,
+    'mais plus une fois la prestation déclarée terminée ou réglée — là il s’est passé quelque chose');
+  ok(portes.surAccepte === false, 'et il n’y a rien à défaire sur une mission pas encore démarrée');
+  /* LE FILET DE LA CONSOLE ne couvrait que `pending`, le seul état où l'on n'en a pas
+     besoin — une demande en recherche s'annule déjà d'un geste chez le client. */
+  ok(portes.clore.indexOf('working') >= 0 && portes.clore.indexOf('accepted') >= 0,
+    'la console peut clore une demande ACCEPTÉE ou EN COURS : c’est là qu’on en a besoin');
+  ok(portes.clore.indexOf('paid') < 0 && portes.clore.indexOf('rated') < 0,
+    'jamais une pièce réglée : la comptabilité ne se réécrit pas');
+  ok(portes.clore.indexOf('disputed') < 0,
+    'ni un litige, qui a son propre écran d’arbitrage');
+
+  const defaire = await p.evaluate(() => {
+    const S = window.__S;
+    S.persona = 'pro'; S.proNav = 'home'; S.proUndoAsk = false;
+    S.mission.status = 'working';
+    window.__render();
+    const v = document.getElementById('view');
+    const lien = v.querySelector('[data-act="pro-undo-ask"]');
+    if (!lien) return {trouve: false};
+    lien.click();
+    const v2 = document.getElementById('view');
+    const oui = v2.querySelector('[data-act="pro-undo-start"]');
+    if (!oui) return {trouve: true, arme: false};
+    oui.click();
+    return {trouve: true, arme: true, statut: window.__S.mission.status,
+      txt: (document.getElementById('view').textContent || '').replace(/\s+/g, ' ')};
+  });
+  ok(defaire.trouve === true, 'le prestataire a un lien « Je n’ai pas encore commencé »');
+  ok(defaire.arme === true, 'qui demande confirmation avant d’agir');
+  ok(defaire.statut === 'accepted',
+    'et la mission redevient « à réaliser » : les deux portes d’annulation se rouvrent');
+
   ok(errs.length === 0, 'aucune erreur JS' + (errs.length ? ' (' + errs[0] + ')' : ''));
   await b.close();
   console.log(f ? ('\n' + f + ' ÉCHEC(S)') : '\nTout est vert');

@@ -224,13 +224,26 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   ok(clo.arme, 'un premier toucher ARME, il n’écrit rien');
   ok(clo.phrase, 'et l’écran dit ce que le second fera avant de le faire');
 
-  /* ON NE PROPOSE PAS DE CLORE CE QUI EST ENGAGÉ. Clore une mission acceptée serait une
-     annulation : un prestataire s'est engagé, une empreinte tient, une indemnité peut
-     être due — cela se décide dans la mission, pas dans une liste. */
-  for (const st of ['accepted', 'working', 'done_pro', 'paid']) {
+  /* CETTE RÈGLE A ÉTÉ RENVERSÉE LE 17/10/2026, ET LA RAISON VAUT D'ÊTRE ÉCRITE ICI.
+     Elle disait « on ne propose pas de clore ce qui est engagé : cela se décide dans la
+     mission, pas dans une liste ». C'était juste — à condition que cela se décide
+     QUELQUE PART. Or un prestataire avait coché « démarrer » sur une prestation de la
+     semaine suivante, et l'on a découvert que PERSONNE ne pouvait plus défaire : le
+     client n'annule que sur `accepted`, le prestataire ne se désiste que sur `accepted`,
+     et ce filet-ci refusait tout ce qui n'était pas `pending`. Le filet ne couvrait donc
+     que le seul état où l'on n'en a pas besoin.
+
+     IL COUVRE MAINTENANT CE QUI EST ENGAGÉ, et c'est là sa raison d'être. Mais JAMAIS une
+     pièce réglée, ni un litige — et c'est ce que les deux moitiés ci-dessous tiennent. */
+  for (const st of ['accepted', 'working']) {
     const r = await console_([Object.assign({}, EN_RECHERCHE, { status: st, provider: 'Maya' })], []);
     const offert = await p.evaluate(() => !!document.querySelector('[data-adm^="reqclore:"]'));
-    ok(!offert, st + ' : aucun bouton « Clore » — ce n’est plus une demande qui cherche');
+    ok(offert, st + ' : la console PEUT clore — c’est le seul recours quand le démarrage a été coché par erreur');
+  }
+  for (const st of ['done_pro', 'paid', 'rated', 'disputed']) {
+    const r = await console_([Object.assign({}, EN_RECHERCHE, { status: st, provider: 'Maya' })], []);
+    const offert = await p.evaluate(() => !!document.querySelector('[data-adm^="reqclore:"]'));
+    ok(!offert, st + ' : aucun bouton « Clore » — une pièce réglée ne se réécrit pas, un litige s’arbitre');
   }
 
   /* LA PURGE AUTOMATIQUE, lue dans la source : aucun banc ne fait tourner les tâches. */
