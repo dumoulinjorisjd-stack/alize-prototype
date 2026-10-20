@@ -206,8 +206,20 @@ function metiersDeLApp(src) {
     const s2 = o.SERVICES.find(x => x.id === id);
     if (!s2) throw new Error('Métier absent du catalogue : ' + id);
     if (!o.I[id]) throw new Error('Icône absente pour : ' + id);
-    return { nm: LIBELLES_COURTS[id] || s2.nm, ico: o.I[id], col: o.COULEURS[id] || '#CE301C' };
+    /* LE TARIF VIENT D'ICI, JAMAIS D'UNE SECONDE LISTE. Une affiche qui annonce
+       « dès 35 €/h » promet un prix du catalogue : recopié à la main dans le script
+       du visuel, il serait juste le jour où on l'écrit et faux au premier changement
+       de tarif, sur un support qu'on ne reprend pas. */
+    return { nm: LIBELLES_COURTS[id] || s2.nm, ico: o.I[id], col: o.COULEURS[id] || '#CE301C',
+      rate: s2.rate, forfait: !!s2.forfait };
   };
+}
+
+/* COMBIEN DE MÉTIERS EN TOUT. « … et 15 autres » se COMPTE : écrit à la main, ce nombre
+   se périme au prochain métier ajouté, et une affiche ne se corrige pas une fois
+   imprimée. */
+function nombreDeMetiers(src) {
+  return new Function('return ' + declaration(src, '  const SERVICES=[', '[', ']') + '.length;')();
 }
 
 // Zouti : le fichier statique, pas la version animée — une carte ne bouge pas.
@@ -720,7 +732,7 @@ async function main() {
    l'application, mélanger deux teintes, mesurer et recentrer les icônes du catalogue,
    embarquer la police. Les réécrire ailleurs, c'est se condamner à ce que les deux
    dérivent. */
-module.exports = { lireSource, couleurs, melange, qrDeLApp, metiersDeLApp, iconesDeLApp, zouti, police,
+module.exports = { lireSource, couleurs, melange, qrDeLApp, metiersDeLApp, nombreDeMetiers, iconesDeLApp, zouti, police,
   centrerIcones, icoCentree, poserDensite, poserDensiteJpeg, LIBELLES_COURTS, ICO_OPTIQUE };
 
 if (require.main === module) main().catch(e => { console.error(e); process.exit(1); });
