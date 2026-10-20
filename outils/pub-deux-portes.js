@@ -54,13 +54,22 @@ function fondEmbarque() {
 
 /* LA CARTE DE L'ÎLE EST LUE DANS L'APPLICATION, pas recopiée ici. C'est le MÊME tracé
    que le client touche du doigt pour choisir son quartier. */
-/* LES MÉTIERS MONTRÉS. Quatre, et leur prix. Au-delà, une affiche devient un catalogue
-   et plus personne ne lit. Ce sont les quatre que la vitrine nomme en premier. */
-const VITRINE = ['menage', 'jardin', 'baby', 'coiffure'];
+/* LES MÉTIERS MONTRÉS. Cinq, sans leur prix. Au-delà, une affiche devient un catalogue
+   et plus personne ne lit. Ce sont ceux que la vitrine nomme en premier. */
+const VITRINE = ['menage', 'jardin', 'baby', 'coiffure', 'massage'];
 
 /* LE SABLE AVEC UNE TRANSPARENCE. La couleur vient des jetons de l'application, seule
    l'opacité est écrite ici : c'est elle qu'on règle, pas la teinte. */
-const voile = (hex, a) => hex + Math.round(a * 255).toString(16).padStart(2, '0');
+const voile = (hex, a) => hex + Math.round(Math.max(0, Math.min(1, a)) * 255).toString(16).padStart(2, '0');
+
+/* ══ LA DENSITÉ DU VOILE SE MESURE, ELLE NE SE JUGE PAS ════════════════════════════
+   « Le filtre blanc est trop fort. » Un seul bouton tient les six arrêts du dégradé,
+   et le réglage a été trouvé en le baissant jusqu'à ce que la garde du contraste
+   refuse. Balayé le 20/10 : rouge à 0,65 (« Saint-Barthélemy », 4,46:1 sur le ciel) ;
+   et à 0,70 le « Ti » du logo tombe à 4,47 dès qu'on exige 4,5 PARTOUT, c'est-à-dire
+   sans s'abriter derrière le palier des grands caractères. 0,75 est donc la photo la
+   plus visible où CHAQUE mot garde une marge réelle. TS_VOILE rejoue le balayage. */
+const VOILE = Number(process.env.TS_VOILE || 0.75);
 
 const feuille = (c, polices, fond) => `
   ${polices.map(p => `@font-face{font-family:'Inter';font-style:normal;font-weight:${p.g};
@@ -82,12 +91,12 @@ const feuille = (c, polices, fond) => `
   .voile{position:absolute;inset:0;pointer-events:none;background:
       radial-gradient(60% 40% at 104% 2%, ${c['warn']}18, transparent 55%),
       linear-gradient(180deg,
-        ${voile(c['sand'], .96)} 0%,
-        ${voile(c['sand'], .93)} 20%,
-        ${voile(c['sand'], .70)} 44%,
-        ${voile(c['sand'], .70)} 62%,
-        ${voile(c['sand'], .90)} 78%,
-        ${voile(c['sand'], .95)} 100%)}
+        ${voile(c['sand'], .96 * VOILE)} 0%,
+        ${voile(c['sand'], .93 * VOILE)} 20%,
+        ${voile(c['sand'], .70 * VOILE)} 44%,
+        ${voile(c['sand'], .70 * VOILE)} 62%,
+        ${voile(c['sand'], .90 * VOILE)} 78%,
+        ${voile(c['sand'], .95 * VOILE)} 100%)}
   /* LA CARTE DES 16 QUARTIERS A ÉTÉ RETIRÉE QUAND LA PHOTO EST ARRIVÉE. Les deux
      disaient la même chose — « c'est ici » — et la photo le dit mieux ; superposées,
      le tracé passait sur les toits et ne se lisait plus que comme un défaut
@@ -139,15 +148,15 @@ const feuille = (c, polices, fond) => `
   .porte.client .trait svg{color:${c['good']}}
   .porte.pro .trait svg{color:${O.melange(c['teal'], '#ffffff', .3)}}
 
-  /* LES PRIX. Une seule rangée : ce qu'on y lit doit se lire d'un coup d'œil, pas se
-     parcourir. */
-  .prix{display:flex;flex-wrap:wrap;align-items:center;gap:13px;margin-top:40px}
-  .tarif{display:flex;align-items:center;gap:11px;background:${c['card']};
-    border:1.5px solid ${c['hair']};border-radius:999px;padding:13px 22px;white-space:nowrap;
+  /* LES MÉTIERS. Une rangée de pastilles, sans prix : décision de l'éditeur du 20/10.
+     Un tarif sur une affiche devient la seule chose qu'on en retient, et il se compare
+     avant même qu'on ait lu ce qu'il y a dedans. */
+  .prix{display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin-top:40px}
+  .tarif{display:flex;align-items:center;gap:12px;background:${c['card']};
+    border:1.5px solid ${c['hair']};border-radius:999px;padding:14px 26px;white-space:nowrap;
     box-shadow:0 6px 18px -13px rgba(70,40,32,.45)}
-  .tarif svg{width:28px;height:28px;flex:none;stroke-width:1.9}
-  .tarif .nm{font-size:24px;font-weight:700}
-  .tarif .mt{font-size:24px;font-weight:800;color:${c['teal-deep']}}
+  .tarif svg{width:30px;height:30px;flex:none;stroke-width:1.9}
+  .tarif .nm{font-size:27px;font-weight:700}
   /* LE GRIS DISCRET DE L'APPLICATION NE TIENT PAS SUR UNE PHOTO. « … et 17 autres »
      était écrit en « muted », comme partout dans l'app où il se pose sur du blanc : sur
      les toits de Gustavia la garde a mesuré 3,85:1, sous le seuil. Il descend d'un
@@ -177,21 +186,22 @@ const AFFICHE = {
   portes: [
     { classe: 'client', ico: 'home', etiq: 'Vous avez besoin',
       promesse: 'Un pro de confiance, chez vous en quelques minutes.',
-      traits: ['Prestataires vérifiés et assurés', 'Prix connu avant de réserver',
+      traits: ['Prestataires vérifiés', 'Prix connu avant de réserver',
                'Réglé après la prestation'] },
     { classe: 'pro', ico: 'hardhat', etiq: 'Vous êtes pro',
       promesse: 'Des clients de toute l’île, sans prospecter.',
       traits: ['Vous choisissez vos missions', 'Payé après validation, fini les impayés',
                'Zéro abonnement, zéro frais fixes'] }
   ],
-  pied: 'Les <b>16 quartiers</b> de Saint-Barthélemy · Gratuit, sans abonnement'
+  /* LES 16 QUARTIERS SONT PARTIS : « c'est une évidence » sur une affiche qui porte
+     SAINT-BARTHÉLEMY sous le logo et une photo de Gustavia derrière. */
+  pied: '<b>Gratuit</b>, sans abonnement'
 };
 
 function corps(c, logo, metier, nMetiers, I) {
   const tarif = id => { const m = metier(id);
-    const montant = m.forfait ? `${m.rate} €` : `dès ${m.rate} €/h`;
     return `<span class="tarif"><span style="color:${m.col};line-height:0">${m.ico}</span>` +
-      `<span class="nm">${m.nm}</span><span class="mt">${montant}</span></span>`; };
+      `<span class="nm">${m.nm}</span></span>`; };
   const portes = AFFICHE.portes.map(p => `<div class="porte ${p.classe}">
       <div class="etiq"><span class="rond-ico">${I[p.ico]}</span>${p.etiq}</div>
       <div class="promesse">${p.promesse}</div>
