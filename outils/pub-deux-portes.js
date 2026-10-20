@@ -56,10 +56,11 @@ const ECHELLE = 2;
    photo seule y vit. */
 const FORMATS = [
   { cle: 'deux-portes-story', L: 1080, H: 1920, haut: 250, bas: 380, nom: 'story 9:16',
-    r: Number(process.env.TS_R || .80), t: Number(process.env.TS_T || .90) },
-  { cle: 'deux-portes', L: 1080, H: 1350, haut: 74, bas: 74, nom: 'portrait 4:5', r: .72, t: .86 },
+    r: Number(process.env.TS_R || .72), t: Number(process.env.TS_T || .90) },
+  { cle: 'deux-portes', L: 1080, H: 1350, haut: 74, bas: 74, nom: 'portrait 4:5',
+    r: Number(process.env.TS_R2 || .64), t: Number(process.env.TS_T2 || .84) },
   { cle: 'deux-portes-carre', L: 1080, H: 1080, haut: 56, bas: 56, nom: 'carré 1:1',
-    r: Number(process.env.TS_R1 || .62), t: Number(process.env.TS_T1 || .80), sans: ['prix'] }
+    r: Number(process.env.TS_R1 || .56), t: Number(process.env.TS_T1 || .78), sans: ['prix'] }
 ];
 
 /* LA MÊME MISE EN PAGE, DEUX RESPIRATIONS. Une story offre 1 290 px de zone utile, un
@@ -72,9 +73,10 @@ const FORMATS = [
    ET LA STORY N'EST PAS PLUS GÉNÉREUSE QU'IL N'Y PARAÎT. Elle fait 1 920 px de haut
    contre 1 350, mais une fois les deux réserves posées il lui reste 1 290 px utiles
    contre 1 202 : quatre-vingt-huit de plus, pas cinq cent soixante-dix. C'est pour
-   cela que les deux formats se resserrent tous les deux. Balayé le 20/10 : à r = 0,80
-   et t = 1 la colonne débordait de 72 px ; 0,80 / 0,90 laisse 54 px de jeu, et 0,72 /
-   0,86 en laisse 21 sur le 4:5. TS_R et TS_T rejouent le balayage sur la story. */
+   cela que les TROIS formats se resserrent. Balayé le 20/10, puis REBALAYÉ le même
+   jour quand le titre a grandi : il ne restait alors que 23 px de jeu sur la story et
+   le 4:5 débordait de 3 px. Les réglages tenus aujourd'hui laissent 44, 61 et 50 px.
+   TS_R/TS_T, TS_R2/TS_T2, TS_R1/TS_T1 rejouent le balayage format par format. */
 
 /* LES MÉTIERS MONTRÉS. Cinq, sans leur prix. Au-delà, une affiche devient un catalogue
    et plus personne ne lit. Ce sont ceux que la vitrine nomme en premier. */
@@ -142,21 +144,31 @@ const feuille = (c, polices, fond, F) => `
     display:flex;flex-direction:column;align-items:center;justify-content:center;
     text-align:center}
 
-  .tete{display:flex;align-items:center;gap:20px}
-  .tete .zouti{width:98px;height:auto;display:block;flex:none}
-  .mot{font-weight:800;font-size:44px;letter-spacing:-.025em;line-height:1;text-align:left}
+  /* LE TITRE AVEC ZOUTI PREND SA PLACE (20/10). Il faisait 98 px de haut pour un
+     visuel de 1 920 : la marque arrivait après le titre dans l'ordre du regard, alors
+     que c'est elle qu'on doit reconnaître en premier dans un fil qui défile. Zouti
+     passe à 140, le mot de 44 à 62, le lieu de 18 à 24 — et les trois suivent la
+     taille du format, comme le reste. */
+  .tete{display:flex;align-items:center;gap:calc(26px * var(--t))}
+  .tete .zouti{width:calc(140px * var(--t));height:auto;display:block;flex:none}
+  .mot{font-weight:800;font-size:calc(62px * var(--t));letter-spacing:-.025em;line-height:1;
+    text-align:left}
   .mot b{color:${c['teal-deep']};font-weight:800} .mot span{color:${c['ink']}}
-  .lieu{display:flex;align-items:center;gap:8px;margin-top:7px;font-size:18px;font-weight:700;
+  .lieu{display:flex;align-items:center;gap:9px;margin-top:calc(9px * var(--t));
+    font-size:calc(24px * var(--t));font-weight:700;
     letter-spacing:.14em;text-transform:uppercase;color:${c['teal-deep']}}
-  .lieu svg{width:18px;height:18px}
+  .lieu svg{width:calc(24px * var(--t));height:calc(24px * var(--t))}
 
   /* LA PASTILLE « POUR LES GENS D'ICI ». Elle est le premier mot qu'on lit après la
      marque, et c'est voulu : la concurrence vend des extras aux établissements, nous
      servons ceux qui habitent l'île. Un aplat d'encre, pas de corail : le corail est
      déjà pris par le bouton, et deux appels à l'œil s'annulent. */
   .ici{margin-top:calc(42px * var(--r));display:inline-flex;align-items:center;gap:12px;
-    background:${c['ink']};color:#fff;border-radius:999px;padding:calc(16px * var(--t)) calc(30px * var(--t));
-    font-size:calc(22px * var(--t));font-weight:800;letter-spacing:.12em;text-transform:uppercase}
+    background:${c['ink']};color:#fff;border-radius:999px;padding:calc(15px * var(--t)) calc(32px * var(--t));
+    /* UNE PHRASE PERSONNELLE NE SE MET PAS EN CAPITALES ESPACÉES. « POUR LES GENS
+       D'ICI » était une étiquette et le supportait ; « Un ti coup de main » y perdait
+       exactement ce qu'on venait d'y mettre, et se lisait comme un sigle. */
+    font-size:calc(28px * var(--t));font-weight:750;letter-spacing:-.01em}
   .ici svg{width:24px;height:24px;stroke-width:2.2;color:${O.melange(c['teal'], '#ffffff', .3)}}
 
   h1{margin-top:calc(39px * var(--r));font-size:calc(76px * var(--t));font-weight:800;line-height:1.04;letter-spacing:-.035em;
@@ -233,7 +245,19 @@ const page = (titre, style, corps) => `<!DOCTYPE html><html lang="fr"><head><met
    qui promet autre chose que la page d'arrivée fait fuir au premier clic. Les deux
    seules neuves sont celles qui disent pour qui c'est fait. */
 const AFFICHE = {
-  ici: 'Pour les gens d’ici',
+  /* ══ LA PASTILLE DIT L'ÎLE, PAS « LES LOCAUX » ═════════════════════════════════
+     « Pour les gens d'ici » était juste et sans visage : n'importe quelle marque de
+     n'importe quelle île aurait pu l'écrire. « Un ti coup de main » est à nous deux
+     fois — c'est le registre des Antilles, et c'est le mot même de la marque, le TI
+     de Ti-Services, que personne ne peut reprendre.
+
+     CE QUI A ÉTÉ ÉCARTÉ, ET POURQUOI. Du créole guadeloupéen : Saint-Barth n'est pas
+     la Guadeloupe et la distinction compte sur l'île — une phrase en créole y serait
+     lue comme venue d'ailleurs. « Entre Saint-Barths » : le mot désigne, pour une
+     partie de l'île, les familles d'origine, et l'affiche s'adresse à tous ceux qui y
+     vivent. Et tout ce qui REDIT Saint-Barthélemy, écrit juste au-dessus dans le
+     bandeau : la pastille dit la RELATION, le bandeau dit le lieu. */
+  ici: 'Un ti coup de main',
   titre: 'D’un côté un besoin.<br>De l’autre, <em>un pro</em>.',
   sous: 'Entre habitants de Saint-Barth, <b>toute l’année</b>.',
   portes: [
