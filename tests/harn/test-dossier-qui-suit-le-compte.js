@@ -159,7 +159,16 @@ const DOSSIER = {
   ok(/retrouvé votre dossier/.test(html), 'et on le DIT quand quelque chose est revenu');
   // La fiche du compte est écrite par son propriétaire : aucune règle à desserrer.
   const regles = fs.readFileSync(path.join(RACINE, 'firestore.rules'), 'utf8');
-  ok(/match \/users\/\{userId\}[\s\S]{0,400}allow update: if isAdmin\(\)[\s\S]{0,200}uid\(\) == userId/.test(regles),
+  /* ON MESURE LA PROPRIÉTÉ, PLUS LA MISE EN PAGE. Cette assertion comptait les
+     caractères entre `match /users/{userId}` et `allow update` : un commentaire ajouté
+     au-dessus de la règle la faisait rougir alors que la règle elle-même n'avait pas
+     bougé d'un signe (23/10/2026, en la RESSERRANT). On découpe le bloc et l'on regarde
+     ce qu'il autorise. */
+  const blocUsers = regles.slice(regles.indexOf('match /users/{userId}'));
+  const updUsers = blocUsers.slice(blocUsers.indexOf('allow update:'), blocUsers.indexOf('allow delete:'));
+  ok(blocUsers.indexOf('match /users/{userId}') === 0 && updUsers.length > 0,
+    'le bloc « users » et sa règle de mise à jour sont bien retrouvés (sans quoi tout passerait)');
+  ok(/allow update: if isAdmin\(\)/.test(updUsers) && /uid\(\) == userId/.test(updUsers),
     'la fiche du compte est déjà écrite par son propriétaire : aucune règle n’est desserrée');
 
   ok(errs.length === 0, 'aucune erreur JS (' + errs.join(' | ') + ')');

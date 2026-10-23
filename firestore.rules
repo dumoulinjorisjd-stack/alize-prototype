@@ -59,7 +59,13 @@ service cloud.firestore {
     // Catalogue partagé (services « Autre » ajoutés par l'admin) : lu par tous
     // (les clients doivent voir les services proposés), écrit par l'admin seul.
     match /settings/{doc} {
-      allow read: if true;
+      /* LE CATALOGUE EST PUBLIC, L'ENTONNOIR NE L'EST PAS (23/10/2026). Le catalogue,
+         les disponibilités et la grille de prix s'affichent AVANT toute connexion —
+         l'application les charge au démarrage pour tout le monde, visiteur compris —
+         et ils restent donc lisibles de tous. Les compteurs de l'entonnoir
+         d'installation (`installFunnel_*`) vivaient dans le même espace et partaient
+         avec : ils ne regardent que l'éditeur, et seule sa console les lit. */
+      allow read: if isAdmin() || !doc.matches('installFunnel.*');
       allow write: if isAdmin();
     }
 
@@ -69,9 +75,24 @@ service cloud.firestore {
       allow create: if uid() == userId;
       // L'utilisateur met à jour sa fiche, MAIS l'accusé de lecture côté Ti-Services
       // (supReadAdmin) reste écrit par l'admin seul — sinon on pourrait feindre un « Lu ».
+      /* LES IDENTIFIANTS MOLLIE DU CLIENT SONT ÉCRITS PAR LE SERVEUR (23/10/2026).
+         `mollieCustomerId` et `mollieMandateId` arrivent du webhook Mollie, et le
+         serveur s'en sert pour PRÉLEVER HORS SESSION : `mollieChargeComplement` lit
+         l'identifiant sur la fiche, liste les mandats de ce client et débite sans
+         aucune interaction (pourboire, heures en plus). Laissés libres, il suffisait
+         de poser l'identifiant d'un tiers sur sa propre fiche pour faire débiter SA
+         carte — et, au passage, pour lire ses mandats par le diagnostic de carte et
+         pour révoquer le sien. Le seul verrou était qu'un `cst_…` ne se devine pas.
+         C'est exactement la discipline déjà appliquée aux champs Mollie d'`artisans`
+         (l. 143-156) ; `users` ne l'avait jamais reçue. Le navigateur ne les écrit
+         nulle part — mesuré, zéro occurrence — donc rien ne se ferme ici. */
       allow update: if isAdmin()
                     || (uid() == userId
-                        && request.resource.data.get('supReadAdmin', 0) == resource.data.get('supReadAdmin', 0));
+                        && request.resource.data.get('supReadAdmin', 0) == resource.data.get('supReadAdmin', 0)
+                        && request.resource.data.get('mollieCustomerId', '') == resource.data.get('mollieCustomerId', '')
+                        && request.resource.data.get('mollieMandateId', '') == resource.data.get('mollieMandateId', '')
+                        && request.resource.data.get('mollieCardSetupAt', 0) == resource.data.get('mollieCardSetupAt', 0)
+                        && request.resource.data.get('cardSetupReason', '') == resource.data.get('cardSetupReason', ''));
       /* L'EFFACEMENT PASSE PAR LE SERVEUR, ET PAR LUI SEUL (12/10/2026).
          « Il était là ce matin », et il n'a laissé AUCUNE ligne dans le journal des
          départs. Les trois portes d'effacement du serveur inscrivent le départ avant
@@ -291,6 +312,33 @@ service cloud.firestore {
         return ['rate','boost','boostEur','unit','service','serviceName','duration','clientUid'];
       }
 
+      /* UN FIL DE DISCUSSION NE PEUT QUE GRANDIR, ET L'ON NE SIGNE PAS À LA PLACE
+         DE L'AUTRE (23/10/2026). `messages` n'était piné nulle part : chaque partie
+         pouvait ajouter une ligne portant le `from` de l'AUTRE — ou « admin », que
+         l'application rend comme venant de Ti-Services et qui déclenche même une
+         notification « Ti-Services · Support » — et surtout réécrire ou vider le
+         tableau entier. Or les CGU (art. 6 et 7) désignent ces messages comme
+         éléments de preuve, et la console les relit pour arbitrer : une preuve que
+         chaque partie peut réécrire n'en est pas une.
+
+         LE MÊME RISQUE ÉTAIT DÉJÀ NOMMÉ TROIS LIGNES PLUS BAS, pour `supportPro` :
+         « il pouvait y écrire un message étiqueté "admin", que l'artisan recevait
+         comme venant officiellement de Ti-Services (phishing) ». Ce fil-là était
+         fermé ; le fil principal ne l'avait jamais été.
+
+         LA TAILLE DOIT MONTER D'EXACTEMENT UN, ce qui interdit d'effacer comme de
+         remplacer, et le message ajouté porte le rôle de celui qui écrit. On garde
+         ainsi `arrayUnion`, donc l'envoi HORS LIGNE continue de marcher — une porte
+         serveur l'aurait coûté, et sur cette île c'est le cas ordinaire. */
+      function filAjout(ancien, nouveau, role) {
+        return nouveau.size() == ancien.size() + 1
+               && nouveau[ancien.size()].get('from', '') == role;
+      }
+      function filSain(champ, role) {
+        return !changed().hasAny([champ])
+               || filAjout(resource.data.get(champ, []), request.resource.data.get(champ, []), role);
+      }
+
       // Lecture : client propriétaire, prestataire assigné, tout artisan validé
       // (pour découvrir les demandes ouvertes à accepter), admin.
       allow read: if isAdmin() || isClient() || isProvider() || isValidArtisan();
@@ -383,6 +431,9 @@ service cloud.firestore {
             // pas au client : il pouvait y écrire un message étiqueté « admin », que
             // l'artisan recevait comme venant officiellement de Ti-Services (phishing).
             && !changed().hasAny(['supportPro'])
+            // Son propre fil, signé de son propre rôle (voir filSain).
+            && filSain('messages', 'client')
+            && filSain('supportClient', 'client')
             // VERROU PAIEMENT : le client ne peut JAMAIS ouvrir lui-même sa demande au pool.
             // La bascule pending_payment/payment_failed -> pending est réservée au serveur
             // (webhook Mollie). Depuis un statut « paiement », il ne peut que renoncer.
@@ -417,6 +468,9 @@ service cloud.firestore {
             // Symétrique du verrou client : le fil client↔Ti-Services (supportClient)
             // n'est pas au prestataire.
             && !changed().hasAny(['supportClient'])
+            // Son propre fil, signé de son propre rôle (voir filSain).
+            && filSain('messages', 'pro')
+            && filSain('supportPro', 'pro')
             // Et il ne se note pas lui-même.
             && !changed().hasAny(['rating','ratedAt'])
             && (request.resource.data.get('providerUid', null) == resource.data.get('providerUid', null)
@@ -428,15 +482,13 @@ service cloud.firestore {
       // le registre immuable `ledger`, hors de portée du client.
       allow delete: if isAdmin() || (isClient() && (resource.data.status == 'pending' || resource.data.status == 'declined' || resource.data.status == 'pending_payment' || resource.data.status == 'payment_failed'));
 
-      // Messagerie : réservée au client, au prestataire assigné et à l'admin.
-      match /messages/{msgId} {
-        function parent() {
-          return get(/databases/$(database)/documents/requests/$(reqId)).data;
-        }
-        allow read, create: if isAdmin()
-          || parent().clientUid == uid()
-          || parent().providerUid == uid();
-      }
+      /* LA SOUS-COLLECTION `messages` EST RETIRÉE (23/10/2026). Elle était ouverte en
+         création au client et au prestataire SANS liste de champs fermée et SANS
+         bornes de taille — les trois garde-fous appliqués partout ailleurs. Et rien
+         ne l'écrivait ni ne la lisait : mesuré, zéro occurrence dans l'application
+         comme dans les fonctions. Le fil vit dans le CHAMP `messages` de la demande.
+         Une porte que personne n'emprunte et que rien ne borne finit par servir à
+         quelqu'un d'autre ; elle retombe donc dans le refus par défaut. */
 
       /* CONTRE-PROPOSITIONS : « je peux, mais à un autre moment ». Un prestataire
          validé ne peut RIEN écrire sur une demande qui n'est pas la sienne, et c'est
