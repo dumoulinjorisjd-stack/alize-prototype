@@ -420,9 +420,34 @@ async function mollieRouteNet(molliePaymentId, orgId, netAmount, label) {
  * son lien, à faire suivre au client. On ne verse jamais à l'artisan ce qui n'a pas
  * été encaissé : le versement du supplément n'a lieu qu'au webhook « paid ».
  */
-async function mollieChargeComplement(db, reqId, clientUid, amount, label) {
+async function mollieChargeComplement(db, reqId, clientUid, amount, label, plafond) {
   const out = {ok: false, direct: false, paymentId: '', checkoutUrl: '', reason: ''};
   if (!mollieApiConfigured() || !(amount > 0) || !reqId) { out.reason = 'inactif'; return out; }
+  /* ══ LE PLAFOND EST EXIGÉ, ET IL VIENT D'UNE AUTRE SOURCE QUE LE MONTANT ═══════════
+   * Un prélèvement hors session n'a ni écran ni 3-D Secure : c'est son principe, et c'est
+   * ce qui le rend dangereux. Jusqu'ici cette fonction n'avait pour toute garde que
+   * `amount > 0` — elle faisait entièrement CONFIANCE à son appelant pour un geste qui
+   * déplace de l'argent sans que personne ne voie rien.
+   *
+   * L'EMPREINTE JOUAIT CE RÔLE À LA BANQUE : `min(solde, autorisé)`, jamais plus que la
+   * somme consentie à la commande. En cessant de s'appuyer sur elle, on perd ce plafond
+   * matériel — il faut donc l'écrire.
+   *
+   * ET IL EST EXIGÉ, PAS FACULTATIF. Optionnel, un appelant écrit demain l'oublierait et
+   * n'en aurait aucun, en silence. Il doit par ailleurs venir d'une source DIFFÉRENTE du
+   * montant : le total validé face à un solde calculé, une assiette face à un
+   * pourcentage. Un plafond recopié du montant qu'il borne ne prouve rien. */
+  const max = Number(plafond);
+  if (!(isFinite(max) && max > 0)) {
+    out.reason = 'plafond-absent';
+    console.warn('mollieChargeComplement SANS plafond reqId=' + reqId + ' : refusé, rien n\'a été prélevé');
+    return out;
+  }
+  if (amount > max + 0.009) {
+    out.reason = 'plafond';
+    console.warn('mollieChargeComplement au-delà du plafond reqId=' + reqId + ' ' + round2(amount) + ' € > ' + round2(max) + ' € : refusé');
+    return out;
+  }
   let customerId = '';
   try { customerId = (await db.collection('users').doc(clientUid).get()).get('mollieCustomerId') || ''; } catch (_) {}
   const app = APP_URL.replace(/\/$/, '');
@@ -479,6 +504,90 @@ function commissionDuComplement(r, montant) {
     com = round2(Math.min(tip, montant) * pct / 100);
   }
   return Math.max(0, Math.min(com, montant));
+}
+/* ══ OÙ VIENT L'ARGENT D'UN RÈGLEMENT, ET OÙ LA COMMISSION EST RETENUE ═══════════════
+ * « On part sur cette solution. » Décision de l'éditeur, le 23/10/2026, après mesure :
+ * la fenêtre d'une empreinte dépend de la CARTE du client — sept jours sur une Visa,
+ * trente sur une Mastercard — pendant que l'horizon de réservation va de trente jours à
+ * un an. Sur une sortie réservée à quinze jours, l'empreinte est morte le jour venu. Le
+ * mandat, lui, n'a pas de durée propre : il vit jusqu'à la date d'expiration de la carte.
+ *
+ * TROIS DÉFAUTS MESURÉS, QUE CE NOYAU FERME ENSEMBLE.
+ *
+ * 1. L'EXPIRATION SE PERDAIT EN SILENCE. Quand le statut n'était plus « authorized », la
+ *    capture échouait, `captureOk` restait faux — donc AUCUN versement — et le supplément
+ *    valait ZÉRO, parce que `capte` était posé AVANT de connaître le statut. Aucun
+ *    courriel, aucune marque : le prestataire n'était pas payé et personne ne le savait.
+ *    Le rattrapage quotidien ne le voyait pas non plus : il ne cherche que
+ *    `molliePayout == 'unrouted'`, jamais écrit dans ce cas.
+ *
+ * 2. ON ROUTAIT PLUS QUE LE PAIEMENT NE PORTAIT. `mollieRouteNet` pose une route SUR UN
+ *    PAIEMENT ; or le net se calculait sur `capte`, qui inclut les arrhes — lesquelles
+ *    vivent sur un AUTRE paiement. Mission à 100 € avec 50 € d'arrhes : capture de 50 €,
+ *    et l'on demandait à Mollie de router 80 € sur un paiement de 50 €. Le commentaire
+ *    jurait « on ne verse JAMAIS plus que ce qui a été encaissé sur ce paiement » ; le
+ *    code le contredisait, et le versement partait en régularisation manuelle. Ici chaque
+ *    jambe porte un net qui ne dépasse jamais son propre paiement : c'est l'invariant.
+ *
+ * 3. LA COMMISSION ÉTAIT RETENUE LÀ OÙ L'ARGENT N'ÉTAIT PAS. Elle se retient désormais là
+ *    où il arrive, jambe après jambe, et la somme des nets retombe TOUJOURS sur
+ *    `brut − commission` : le prestataire touche la même chose quel que soit le découpage.
+ *
+ * LE NOYAU NE CONNAÎT NI MOLLIE NI FIRESTORE, ET NE LIT PAS L'HEURE : les statuts, les
+ * montants et la commission lui sont DONNÉS. C'est ce qui permet d'éprouver « l'empreinte
+ * a expiré » sans attendre sept jours, et ce qui garantit que deux exécutions rendent le
+ * même découpage — donc que le registre et le versement racontent la même histoire. */
+const REGLEMENT_MOTIFS = ['rien-a-prendre', 'empreinte', 'empreinte-partielle', 'hors-session', 'deja-regle'];
+function reglementDecider(e) {
+  e = e || {};
+  const gross = Math.max(0, round2(e.gross));
+  // Les arrhes ne peuvent pas dépasser le total : au-delà, ce n'est plus un acompte.
+  const arrhes = Math.min(gross, Math.max(0, round2(e.arrhes)));
+  const emp = (e.empreinte && typeof e.empreinte === 'object') ? e.empreinte : {};
+  const empMontant = Math.max(0, round2(emp.montant));
+  const statut = String(emp.statut || '');
+  const du = round2(Math.max(0, gross - arrhes));          // ce qui reste à encaisser
+  /* CE QUE L'EMPREINTE PEUT PORTER. « authorized » : elle tient, on capture — jamais plus
+     que la somme autorisée, parce que c'est le PLAFOND CONSENTI par le client à la
+     commande. « paid » : la capture a déjà eu lieu. Tout le reste — expired, canceled,
+     failed, open, pending, ou un statut qu'on ne reconnaît pas — ne porte RIEN : on ne
+     devine pas qu'une empreinte morte pourrait encore payer. */
+  const capturable = (statut === 'authorized');
+  const dejaPaye = (statut === 'paid') || emp.capturee === true;
+  const surEmpreinte = (capturable || dejaPaye) ? round2(Math.min(du, empMontant)) : 0;
+  const aCapturer = capturable ? surEmpreinte : 0;
+  const horsSession = round2(Math.max(0, du - surEmpreinte));
+  /* LA COMMISSION SE RETIENT LÀ OÙ L'ARGENT ARRIVE, et jamais plus que la jambe ne porte.
+     L'ordre — arrhes, empreinte, hors session — est arbitraire mais FIXE, et il place le
+     plus de commission possible sur la jambe la plus ancienne : son net à router est
+     d'autant plus petit, et c'est elle qui risque le plus d'être déjà réglée chez Mollie. */
+  /* ON NE PLAFONNE PAS LA COMMISSION AU BRUT EN SILENCE. Plafonnée, elle se retenait
+     toujours en entier et `commissionNonRetenue` ne pouvait STRUCTURELLEMENT jamais valoir
+     autre chose que zéro — une sortie écrite qu'aucune branche n'atteint. On retient donc
+     ce que les jambes portent, et ce qui dépasse est RENDU : une commission plus grosse
+     que l'encaissement est un défaut de calcul en amont, qui doit se voir. */
+  const comTotale = Math.max(0, round2(e.commissionTotale));
+  let reste = comTotale;
+  const prendre = (jambe) => { const c = round2(Math.min(reste, jambe)); reste = round2(reste - c); return c; };
+  const comArrhes = prendre(arrhes);
+  const comEmpreinte = prendre(surEmpreinte);
+  const comHorsSession = prendre(horsSession);
+  const motif = (du <= 0) ? 'rien-a-prendre'
+    : (horsSession <= 0) ? ((dejaPaye && !capturable) ? 'deja-regle' : 'empreinte')
+      : (surEmpreinte > 0 ? 'empreinte-partielle' : 'hors-session');
+  return {
+    du: du, aCapturer: aCapturer, surEmpreinte: surEmpreinte, horsSession: horsSession,
+    commissionArrhes: comArrhes, commissionEmpreinte: comEmpreinte, commissionHorsSession: comHorsSession,
+    netArrhes: round2(arrhes - comArrhes),
+    netEmpreinte: round2(surEmpreinte - comEmpreinte),
+    netHorsSession: round2(horsSession - comHorsSession),
+    // Une commission plus grosse que tout l'encaissement ne se retient pas dans le vide :
+    // ce qui reste est RENDU, pour que l'appelant le dise au lieu de le perdre.
+    commissionNonRetenue: reste,
+    // L'empreinte existait et ne porte plus rien : c'est le cas qui se perdait en silence.
+    empreinteMorte: (!capturable && !dejaPaye && empMontant > 0),
+    motif: motif,
+  };
 }
 // Vérifie l'onboarding RÉEL de l'organisation liée au jeton d'accès fourni. Avoir
 // une organisation connectée ne suffit PAS : Mollie doit avoir vérifié l'identité et
@@ -713,8 +822,11 @@ async function relancerComplements(db, clientUid) {
     if (!(montant > 0.009)) continue;
     let out;
     try {
+      // Le plafond ne peut pas être `montant` lui-même : il vient du TOTAL VALIDÉ de la
+      // demande, recalculé ici, donc d'une source indépendante de ce qui a été stocké.
       out = await mollieChargeComplement(db, d.id, clientUid, montant,
-        'Ti-Services · supplément · ' + (r.serviceName || r.service || 'prestation'));
+        'Ti-Services · supplément · ' + (r.serviceName || r.service || 'prestation'),
+        montantsDemande(r).gross);
     } catch (e) { console.warn('relancerComplements', d.id, e); continue; }
     if (!out || !out.ok) continue;                       // on retentera plus tard
     try {
@@ -2330,100 +2442,42 @@ function montantsDemande(r) {
     gross: round2(base + maj + travel + tip),
   };
 }
-/* ══ LES ARRHES RÉELLEMENT DÉTENUES ════════════════════════════════════════════════
- * « Fais les vraies arrhes détenues. »
+/* ══ ON NE PRÉLÈVE PLUS RIEN AVANT LA PRESTATION ═══════════════════════════════════
+ * « Le client est débité que la prestation finie. C'est une promesse commerciale. On ne
+ * peut pas déroger à cette règle. » — l'éditeur, le 23/10/2026.
  *
- * CE QUI MANQUAIT. La part réglée dans la console existait, mais ce n'était qu'un DROIT :
- * rien n'était encaissé tant que le client n'annulait pas tard ET que le prestataire ne
- * cliquait pas « appliquer ». Entre les deux, Ti-Services ne détenait rien — seulement
- * une empreinte, qui EXPIRE. Sur une sortie réservée trois semaines à l'avance, elle
- * était morte le jour venu.
+ * CE QUI ÉTAIT EN LIGNE, ET QUI LA ROMPAIT. `prelevementArrhes` débitait pour de bon une
+ * part du total à l'ACCEPTATION, sur la carte du client. Mesuré sur la configuration de
+ * production : sept services sur neuf — dont quatre à 50 % par simple REPLI du code,
+ * `jardin` et `massage` n'ayant qu'un délai d'annulation de réglé et jamais de
+ * pourcentage. Sur une journée de catamaran, 30 % font plusieurs centaines d'euros pris
+ * des semaines avant la sortie.
  *
- * CE QU'ON FAIT. À l'ACCEPTATION — pas à la commande : tant que personne n'a pris la
- * mission, on ne prend l'argent de personne — la part est PRÉLEVÉE pour de bon, sur le
- * mandat déjà en place (la carte du client est mémorisée depuis son premier paiement).
- * C'est le chemin de `mollieChargeComplement`, qui sait déjà encaisser hors session et,
- * à défaut de mandat, rendre un lien de paiement.
+ * ET L'ÉCRAN DU CLIENT ANNONÇAIT L'INVERSE. `arrhesAvisHtml` dit, avant de commander :
+ * « Annulation gratuite jusqu'à 8 heures avant. Passé ce délai, 745 € restent dus au
+ * prestataire. » C'est la description d'une INDEMNITÉ due si l'on annule tard — pas d'un
+ * acompte encaissé à l'acceptation. Un client qui annulait trois jours avant avait donc
+ * été débité de la moitié, et il fallait le rembourser : un vrai remboursement Mollie, à
+ * 0,25 € pièce, frais du paiement initial perdus, et DEUX lignes sur son relevé — un
+ * débit puis un crédit — pour quelqu'un à qui l'on avait promis une annulation gratuite.
  *
- * ON NE PRÉLÈVE JAMAIS DEUX FOIS. La réservation s'écrit AVANT l'appel à Mollie, dans une
- * transaction : si deux exécutions du déclencheur se croisent, la seconde voit la place
- * prise et s'arrête. Même discipline que le routage des paiements.
+ * LE POURCENTAGE RESTE, PARCE QU'IL VEUT DIRE AUTRE CHOSE. `arrhes.pct` servait à deux
+ * usages : la part prélevée d'avance, et le taux de l'INDEMNITÉ d'annulation tardive. Le
+ * mettre à zéro aurait supprimé l'indemnité, c'est-à-dire une fonction commerciale. On
+ * retire donc le PRÉLÈVEMENT, et le taux garde son seul sens réel — celui que l'écran du
+ * client lui donnait déjà. Rien à changer dans l'application, rien à migrer, et la
+ * console continue d'afficher « Arrhes & annulation » sur le bon nombre.
  *
- * ET ÇA NE DOUBLE PAS LA FACTURE. L'empreinte posée à la commande couvre le TOTAL ; au
- * règlement on n'en capture plus que le SOLDE, arrhes déduites. Le client paie son prix,
- * une fois, en deux fois. */
-const ARRHES_MIN = 1;   // en dessous d'un euro, un prélèvement coûte plus qu'il ne garde
-async function _reserverArrhes(db, reqId) {
-  const ref = db.collection('arrhesPrises').doc(String(reqId));
-  try {
-    await db.runTransaction(async (tx) => {
-      const d = await tx.get(ref);
-      if (d.exists) throw new Error('deja');
-      tx.set(ref, {reqId: String(reqId), at: FieldValue.serverTimestamp()});
-    });
-    return true;
-  } catch (e) {
-    if (String(e && e.message) !== 'deja') console.warn('_reserverArrhes', reqId, e);
-    return false;
-  }
-}
-exports.prelevementArrhes = onDocumentUpdated(
-  {document: 'requests/{reqId}', secrets: ['MOLLIE_ACCESS_TOKEN', SMTP_PASS]}, async (event) => {
-    const before = event.data.before.data() || {};
-    const after = event.data.after.data() || {};
-    const reqId = event.params.reqId;
-    if (!(before.status !== 'accepted' && after.status === 'accepted')) return;
-    if (after.arrhesPaymentId || after.arrhesStatut) return;      // déjà fait
-    const pct = await arrhesPctServeur(db, after.service);
-    if (!(pct > 0)) return;
-    const assiette = round2(Number(after.molliePaymentAmount) || 0);
-    const montant = round2(assiette * pct / 100);
-    const svc = (after.serviceName || after.service || 'Prestation').toString().slice(0, 60);
-    if (!(montant >= ARRHES_MIN)) {
-      console.log('Arrhes négligeables reqId=' + reqId + ' montant=' + montant);
-      return;
-    }
-    if (!(await _reserverArrhes(db, reqId))) { console.warn('Arrhes déjà réservées reqId=' + reqId); return; }
-    const r = await mollieChargeComplement(db, reqId, after.clientUid,
-      montant, 'Ti-Services · arrhes · ' + svc);
-    if (!r.ok) {
-      /* ON NE BLOQUE PAS LA MISSION. Un prélèvement refusé ne doit pas annuler une
-         réservation acceptée : on le DIT à l'administrateur, et le dossier reste tel
-         quel — l'indemnité d'annulation sur l'empreinte reste la voie de secours. */
-      console.warn('Arrhes NON prélevées reqId=' + reqId + ' (' + r.reason + ')');
-      try { await event.data.after.ref.update({arrhesStatut: 'echec', arrhesMotif: String(r.reason || '').slice(0, 60)}); } catch (_) {}
-      try {
-        await sendMail(db, ADMIN_EMAIL, {
-          subject: 'Arrhes NON prélevées, ' + svc,
-          html: '<p>La mission a été acceptée, mais les arrhes n\'ont pas pu être prélevées.</p>'
-            + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li><li><b>Montant :</b> ' + eurTxt(montant)
-            + ' (' + escHtmlS(String(pct)) + ' % de ' + eurTxt(assiette) + ')</li>'
-            + '<li><b>Cause :</b> ' + escHtmlS(String(r.reason || 'inconnue')) + '</li></ul>'
-            + '<p>La réservation reste valable&nbsp;; l\'indemnité d\'annulation sur l\'empreinte reste possible.</p>',
-        });
-      } catch (_) {}
-      return;
-    }
-    try {
-      await event.data.after.ref.update({
-        arrhesPaymentId: String(r.paymentId || ''), arrhesAmount: montant, arrhesPct: pct,
-        arrhesStatut: r.direct ? 'preleve' : 'lien', arrhesLien: String(r.checkoutUrl || ''),
-        arrhesAt: Date.now(),
-      });
-    } catch (e) { console.warn('Arrhes écriture', reqId, e); }
-    console.log('Arrhes reqId=' + reqId + ' ' + montant + ' € (' + pct + ' %) ' + r.reason);
-    /* LE CLIENT EST PRÉVENU DE CE QUI A ÉTÉ PRÉLEVÉ. Un débit qu'on ne comprend pas sur
-       son relevé devient une contestation, et une contestation coûte plus que le débit. */
-    try {
-      const tokens = await userPushTokens(db, after.clientUid);
-      if (tokens.length) {
-        await pushMulticast(tokens, 'Vos réservations · Arrhes prélevées',
-          eurTxt(montant) + ' prélevés pour ' + svc + ', à valoir sur le montant total.',
-          '/?open=wallet&r=' + reqId,
-          (tok) => db.collection('users').doc(after.clientUid).update({pushTokens: FieldValue.arrayRemove(tok)}));
-      }
-    } catch (e) { console.warn('Arrhes notification', e); }
-  });
+ * L'INDEMNITÉ SE PRÉLÈVE LE JOUR DE L'ANNULATION TARDIVE, et ce n'est pas déroger à la
+ * règle : il n'y a plus de prestation à attendre, le fait générateur est l'annulation
+ * elle-même. Elle passe par l'empreinte si elle tient encore, par le mandat sinon (voir
+ * `cancelFeeSettlement`) — donc elle devient prélevable à TOUT horizon, alors qu'elle
+ * était déjà inapplicable au-delà de sept jours sur une Visa.
+ *
+ * CE QUI SURVIT POUR LES MISSIONS DÉJÀ PRISES. `rendreArrhes` reste : des missions
+ * portent des arrhes prélevées avant ce jour, et une annulation sans frais doit encore
+ * les rendre. Le règlement continue de les déduire du solde à encaisser, et de router
+ * leur net sur LEUR paiement — ce qu'il ne faisait pas (voir `reglementDecider`). */
 
 exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}',
   // MOLLIE_CLIENT_ID / _SECRET : non pour encaisser, mais pour REVÉRIFIER le dossier du
@@ -2653,164 +2707,204 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}',
       } catch (e) { console.warn('settleCommission retro', e); }
     }
 
-    // 3) CAPTURE de l'empreinte puis VERSEMENT du net. À la validation, on débite
-    //    RÉELLEMENT le montant final (gross), plafonné à l'empreinte posée (« jamais
-    //    plus que le montant annoncé »). Sans molliePaymentId (paiement simulé) : no-op.
-    let captureOk = true;
-    // Montant RÉELLEMENT encaissé sur l'empreinte (jamais plus qu'elle) : c'est lui, et
-    // pas le total de la facture, qui borne ce qu'on peut verser à l'artisan.
-    let capte = gross;
-    /* LES ARRHES SONT DÉJÀ ENCAISSÉES : on ne capture plus que le SOLDE. Sans cette
-       déduction, le client paierait deux fois la même part — une fois à l'acceptation,
-       une fois à la validation. Elles restent dans l'assiette de la commission : le
-       prestataire est dû sur le TOTAL de la prestation, pas sur ce qui reste à prendre. */
+    /* ══ 3) D'OÙ VIENT L'ARGENT, ET OÙ VA LE NET ════════════════════════════════════
+     * Un seul endroit décide (`reglementDecider`, noyau pur) ; ici on ne fait que lire
+     * l'état chez Mollie, appliquer, et DIRE. Avant, trois calculs se partageaient la
+     * question — la capture, le supplément, le routage — et chacun posait ses propres
+     * bornes : l'empreinte expirée se perdait en silence, et le net routé pouvait
+     * dépasser le paiement qui le portait. */
     const arrhesPayees = (String(after.arrhesStatut || '') === 'preleve') ? round2(Number(after.arrhesAmount) || 0) : 0;
-    if (mollieApiConfigured() && after.molliePaymentId && !after.mollieCaptured) {
-      captureOk = false;
+    const dejaCapture = (after.mollieCaptured === true);
+    let empStatut = '';
+    let statutLu = true;
+    if (mollieApiConfigured() && after.molliePaymentId && !dejaCapture) {
+      /* SILENCE N'EST PAS RÉPONSE. Un statut qu'on n'a pas pu lire — réseau coupé, Mollie
+         en panne — n'est PAS une empreinte expirée. Le prendre pour tel ferait prélever le
+         solde hors session sur une empreinte encore vivante, donc DEUX FOIS. On s'arrête,
+         on le dit, et le balayage quotidien repassera. */
+      statutLu = false;
       try {
-        const held = round2(Number(after.molliePaymentAmount) || gross);
-        const solde = round2(Math.max(0, gross - arrhesPayees));
-        const toCapture = round2(Math.min(solde, held));
-        capte = round2(toCapture + arrhesPayees);
-        if (arrhesPayees > 0) {
-          console.log('Règlement reqId=' + reqId + ' total=' + gross + ' arrhes déjà prises='
-            + arrhesPayees + ' solde capturé=' + toCapture);
-        }
-        if (!(toCapture > 0)) {
-          /* Les arrhes couvraient déjà tout : il n'y a RIEN à capturer, et c'est normal.
-             Appeler Mollie avec « 0,00 € » ferait échouer un règlement qui va bien. */
-          captureOk = true;
-          await event.data.after.ref.update({mollieCaptured: true, mollieCaptureAmount: 0});
-        } else {
-          const p = await mollieApi('/payments/' + encodeURIComponent(after.molliePaymentId), 'GET');
-          const st = (p.ok && p.data) ? p.data.status : '';
-          if (st === 'authorized') {
-            const cap = await mollieApi('/payments/' + encodeURIComponent(after.molliePaymentId) + '/captures', 'POST',
-              {amount: {currency: 'EUR', value: toCapture.toFixed(2)}});
-            captureOk = cap.ok;
-          } else if (st === 'paid') {
-            captureOk = true;   // déjà capturé
-          }
-          await event.data.after.ref.update({mollieCaptured: captureOk, mollieCaptureAmount: toCapture});
-        }
-      } catch (e) { console.warn('settleCommission capture', e); }
-    } else if (after.mollieCaptureAmount != null) {
-      capte = round2((Number(after.mollieCaptureAmount) || 0) + arrhesPayees) || gross;
+        const p = await mollieApi('/payments/' + encodeURIComponent(after.molliePaymentId), 'GET');
+        if (p.ok && p.data) { empStatut = String(p.data.status || ''); statutLu = true; }
+      } catch (e) { console.warn('settleCommission lecture empreinte', reqId, e); }
     }
-
-    // 3 bis) SUPPLÉMENT NON COUVERT PAR L'EMPREINTE. Heures déclarées en plus, coup de
-    //    pouce ajouté après la commande, pourboire : le total validé peut dépasser la
-    //    somme autorisée à la commande. Une empreinte ne se relève pas — on encaisse
-    //    donc la différence par un SECOND paiement, directement sur la carte déjà
-    //    mémorisée quand c'est possible. Sans ça la facture annonçait une somme qui
-    //    n'était jamais prélevée, et le versement à l'artisan échouait.
-    const complement = round2(Math.max(0, gross - capte));
-    // OÙ VIT LE POURBOIRE ? Ajouté à la validation, il dépasse presque toujours
-    // l'empreinte posée à la commande : il voyage alors dans le SUPPLÉMENT, et sa
-    // commission est retenue sur ce second paiement. Cas particulier (durée revue à la
-    // baisse) : le pourboire tient dans l'empreinte — sa commission est alors retenue
-    // sur le versement de l'empreinte, comme celle de la prestation.
-    const tipDansComplement = Math.min(tip, complement);
-    const commTipComplement = round2(tipDansComplement * pct / 100);
-    const commTipEmpreinte = round2(tipCommission - commTipComplement);
-    // AUCUN SUPPLÉMENT NE DISPARAÎT EN SILENCE. Sans empreinte sur la demande (paiement
-    // jamais abouti, demande créée hors carte, Mollie non configuré), il n'y a personne à
-    // débiter : le pourboire figurait alors sur la facture sans laisser la moindre trace,
-    // ni chez Mollie ni côté client. On l'inscrit sur la demande et on alerte l'exploitant.
-    if (complement > 0.009 && !after.complementPaymentId && !mollieApiConfigured()) {
-      const motif = 'Mollie non configuré sur cet environnement';
-      try {
-        await event.data.after.ref.update({complementAmount: complement, complementStatus: 'impossible', complementIssue: motif});
-      } catch (_) {}
-      console.warn('Supplément NON prélevable reqId=' + reqId + ' ' + complement + ' €, ' + motif);
+    const R = reglementDecider({
+      gross: gross,
+      arrhes: arrhesPayees,
+      empreinte: dejaCapture
+        ? {montant: round2(Number(after.mollieCaptureAmount) || 0), capturee: true}
+        : {montant: round2(Number(after.molliePaymentAmount) || 0), statut: empStatut},
+      commissionTotale: commissionTotale,
+    });
+    if (!statutLu) {
+      console.warn('Règlement ajourné reqId=' + reqId + ' : état de l\'empreinte illisible chez Mollie');
+      try { await event.data.after.ref.update({reglementAjourne: 'empreinte-illisible', reglementAjourneAt: Date.now()}); } catch (_) {}
       try {
         await sendMail(db, ADMIN_EMAIL, {
-          subject: 'Supplément impossible à prélever, ' + (after.serviceName || after.service || 'prestation'),
-          html: '<p>La facture porte un supplément (pourboire, heures en plus, coup de pouce) qui n\'a pas pu être prélevé : <b>aucun prélèvement n\'a même été tenté</b>.</p>'
+          subject: 'Règlement ajourné, état de paiement illisible — ' + (after.serviceName || after.service || 'prestation'),
+          html: '<p>La prestation est validée, mais Mollie n\'a pas répondu sur l\'état du paiement : <b>rien n\'a été débité ni versé</b>.</p>'
             + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li>'
-            + '<li><b>Supplément :</b> ' + eurTxt(complement) + '</li>'
-            + '<li><b>Cause :</b> ' + escHtmlS(motif) + '</li></ul>'
-            + '<p>Cette part n\'est PAS versée à l\'artisan. Si la prestation elle-même n\'a pas été réglée par carte, c\'est toute la demande qu\'il faut vérifier.</p>',
+            + '<li><b>Total validé :</b> ' + eurTxt(gross) + '</li></ul>'
+            + '<p>On ne devine pas : prendre un état illisible pour une empreinte expirée prélèverait le client une seconde fois. À revoir au prochain balayage.</p>',
+        });
+      } catch (_) {}
+      return;
+    }
+    if (after.reglementAjourne) { try { await event.data.after.ref.update({reglementAjourne: FieldValue.delete()}); } catch (_) {} }
+
+    /* 3 a) CAPTURE. Jamais plus que la somme autorisée à la commande : c'est le plafond
+       que le client a consenti, et le noyau le tient. */
+    let captureOk = dejaCapture;
+    if (R.aCapturer > 0) {
+      try {
+        const cap = await mollieApi('/payments/' + encodeURIComponent(after.molliePaymentId) + '/captures', 'POST',
+          {amount: {currency: 'EUR', value: R.aCapturer.toFixed(2)}});
+        captureOk = cap.ok;
+        await event.data.after.ref.update({mollieCaptured: captureOk, mollieCaptureAmount: R.aCapturer});
+      } catch (e) { console.warn('settleCommission capture', reqId, e); }
+    } else if (!dejaCapture && R.surEmpreinte > 0) {
+      captureOk = true;                      // statut « paid » : la capture a déjà eu lieu
+      try { await event.data.after.ref.update({mollieCaptured: true, mollieCaptureAmount: R.surEmpreinte}); } catch (_) {}
+    } else if (!dejaCapture && R.du <= 0) {
+      /* Les arrhes couvraient déjà tout : il n'y a RIEN à capturer, et c'est normal.
+         Appeler Mollie avec « 0,00 € » ferait échouer un règlement qui va bien. */
+      captureOk = true;
+      try { await event.data.after.ref.update({mollieCaptured: true, mollieCaptureAmount: 0}); } catch (_) {}
+    }
+
+    /* 3 b) CE QUE L'EMPREINTE NE PORTE PAS, LE MANDAT LE PREND. Heures déclarées en plus,
+       coup de pouce relevé pendant la recherche, pourboire ajouté à la validation — et
+       désormais le cas qui se perdait en silence : une empreinte EXPIRÉE, dont le solde
+       entier repart ici. Une empreinte ne se relève jamais ; le mandat, lui, n'a pas de
+       date de péremption. À défaut de mandat valide, `mollieChargeComplement` rend un
+       lien de paiement, et rien n'est versé tant qu'il n'est pas réglé. */
+    if (R.horsSession > 0.009 && !after.complementPaymentId) {
+      if (!mollieApiConfigured()) {
+        const motif = 'Mollie non configuré sur cet environnement';
+        try { await event.data.after.ref.update({complementAmount: R.horsSession, complementStatus: 'impossible', complementIssue: motif}); } catch (_) {}
+        console.warn('Hors session NON prélevable reqId=' + reqId + ' ' + R.horsSession + ' €, ' + motif);
+        try {
+          await sendMail(db, ADMIN_EMAIL, {
+            subject: 'Montant impossible à prélever, ' + (after.serviceName || after.service || 'prestation'),
+            html: '<p>La facture porte une part qui n\'a pas pu être prélevée : <b>aucun prélèvement n\'a même été tenté</b>.</p>'
+              + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li>'
+              + '<li><b>Montant :</b> ' + eurTxt(R.horsSession) + '</li>'
+              + '<li><b>Cause :</b> ' + escHtmlS(motif) + '</li></ul>'
+              + '<p>Cette part n\'est PAS versée à l\'artisan.</p>',
+          });
+        } catch (_) {}
+      } else {
+        try {
+          /* LA COMMISSION S'ÉCRIT AVANT L'APPEL. Le webhook de Mollie peut répondre dans
+             la seconde et lit `complementCommission` pour savoir quoi retenir : écrite
+             après, il retombait sur la seule commission du pourboire — donc sous-retenue
+             sur une empreinte expirée, où c'est TOUTE la commission qui vit ici. */
+          await event.data.after.ref.update({complementAmount: R.horsSession, complementCommission: R.commissionHorsSession});
+          const r2 = await mollieChargeComplement(db, reqId, after.clientUid,
+            R.horsSession, 'Ti-Services · ' + (R.motif === 'hors-session' ? 'prestation' : 'supplément')
+              + ' · ' + (after.serviceName || after.service || 'prestation'),
+            // Le plafond est le total que le CLIENT a validé à l'écran : le solde vient du
+            // noyau, le plafond de la facture. Deux sources, donc une vraie borne.
+            gross);
+          await event.data.after.ref.update({
+            complementStatus: r2.ok ? (r2.direct ? 'en_cours' : 'a_regler') : 'echec',
+            complementPaymentId: r2.paymentId || '', complementCheckoutUrl: r2.checkoutUrl || '',
+          });
+          if (!r2.ok || !r2.direct) {
+            try {
+              const tokens = await userPushTokens(db, after.clientUid);
+              if (tokens.length) {
+                await pushMulticast(tokens, 'Un règlement reste à faire',
+                  'Votre prestation de ' + eurTxt(R.horsSession) + ' n\'a pas pu être prélevée sur votre carte.',
+                  '/?paid=' + encodeURIComponent(reqId),
+                  (tok) => db.collection('users').doc(after.clientUid).update({pushTokens: FieldValue.arrayRemove(tok)}).catch(() => {}));
+              }
+            } catch (_) {}
+            try {
+              await sendMail(db, ADMIN_EMAIL, {
+                subject: 'Montant à encaisser, ' + (after.serviceName || after.service || 'prestation'),
+                html: '<p>Le prélèvement hors session n\'a pas pu se faire.</p>'
+                  + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li>'
+                  + '<li><b>Montant :</b> ' + eurTxt(R.horsSession) + '</li>'
+                  + '<li><b>Cause :</b> ' + escHtmlS(r2.reason || 'inconnue') + '</li></ul>'
+                  + (r2.checkoutUrl ? ('<p>Lien de paiement à transmettre au client :<br>' + escHtmlS(r2.checkoutUrl) + '</p>') : '')
+                  + '<p>Tant qu\'il n\'est pas réglé, cette part n\'est PAS versée à l\'artisan.</p>',
+              });
+            } catch (_) {}
+          }
+          console.log('Hors session reqId=' + reqId + ' ' + R.horsSession + ' €, ' + r2.reason);
+        } catch (e) { console.warn('settleCommission hors session', reqId, e); }
+      }
+    }
+
+    /* 3 c) L'EMPREINTE ÉTAIT MORTE, ET PLUS PERSONNE NE L'IGNORE. Ce cas ne laissait
+       AUCUNE trace : pas de capture, pas de supplément (le solde valait zéro faute d'avoir
+       lu le statut avant de le calculer), pas de versement, pas de courriel. Le rattrapage
+       quotidien ne le voyait pas non plus. */
+    if (R.empreinteMorte) {
+      console.warn('Empreinte morte reqId=' + reqId + ' statut=' + (empStatut || 'inconnu') + ', solde pris hors session : ' + R.horsSession + ' €');
+      try { await event.data.after.ref.update({empreinteMorteAu: empStatut || 'inconnu', empreinteMorteAt: Date.now()}); } catch (_) {}
+      try {
+        await sendMail(db, ADMIN_EMAIL, {
+          subject: 'Empreinte expirée au règlement, ' + (after.serviceName || after.service || 'prestation'),
+          html: '<p>L\'autorisation bancaire posée à la commande n\'était plus valable au moment du règlement (<b>'
+            + escHtmlS(empStatut || 'état inconnu') + '</b>). Le solde a été prélevé sur la carte enregistrée.</p>'
+            + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li>'
+            + '<li><b>Total validé :</b> ' + eurTxt(gross) + '</li>'
+            + '<li><b>Pris hors session :</b> ' + eurTxt(R.horsSession) + '</li></ul>'
+            + '<p>Une empreinte vit de sept jours (Visa, Amex) à trente (Mastercard) : au-delà, seule la carte enregistrée peut encore encaisser.</p>',
         });
       } catch (_) {}
     }
-    if (complement > 0.009 && mollieApiConfigured() && !after.complementPaymentId) {
-      try {
-        const r2 = await mollieChargeComplement(db, reqId, after.clientUid,
-          complement, 'Ti-Services · supplément · ' + (after.serviceName || after.service || 'prestation'));
-        const patch = {complementAmount: complement, complementCommission: commTipComplement,
-          complementStatus: r2.ok ? (r2.direct ? 'en_cours' : 'a_regler') : 'echec',
-          complementPaymentId: r2.paymentId || '', complementCheckoutUrl: r2.checkoutUrl || ''};
-        await event.data.after.ref.update(patch);
-        if (!r2.ok || !r2.direct) {
-          // Le client doit repasser par sa carte : on le lui dit, et on prévient l'admin.
-          try {
-            const u = (await db.collection('users').doc(after.clientUid).get()).data() || {};
-            const tokens = u.pushTokens || [];
-            if (tokens.length) {
-              await pushMulticast(tokens, 'Un complément reste à régler',
-                'Votre prestation a coûté ' + eurTxt(complement) + ' de plus que le montant autorisé au départ.',
-                '/?paid=' + encodeURIComponent(reqId),
-                (tok) => db.collection('users').doc(after.clientUid).update({pushTokens: FieldValue.arrayRemove(tok)}).catch(() => {}));
-            }
-          } catch (_) {}
-          try {
-            await sendMail(db, ADMIN_EMAIL, {
-              subject: 'Supplément à encaisser, ' + (after.serviceName || after.service || 'prestation'),
-              html: '<p>Le montant validé dépasse l\'empreinte posée à la commande, et le prélèvement direct n\'a pas pu se faire.</p>'
-                + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li>'
-                + '<li><b>Supplément :</b> ' + eurTxt(complement) + '</li>'
-                + '<li><b>Cause :</b> ' + escHtmlS(r2.reason || 'inconnue') + '</li></ul>'
-                + (r2.checkoutUrl ? ('<p>Lien de paiement à transmettre au client :<br>' + escHtmlS(r2.checkoutUrl) + '</p>') : '')
-                + '<p>Tant qu\'il n\'est pas réglé, ce supplément n\'est PAS versé à l\'artisan.</p>',
-            });
-          } catch (_) {}
-        }
-        console.log('Supplément reqId=' + reqId + ' ' + complement + ' €, ' + r2.reason);
-      } catch (e) { console.warn('settleCommission complement', e); }
+    if (R.commissionNonRetenue > 0.009) {
+      console.warn('Commission non retenue reqId=' + reqId + ' ' + R.commissionNonRetenue + ' € : elle dépasse l\'encaissement');
+      try { await event.data.after.ref.update({commissionNonRetenue: R.commissionNonRetenue}); } catch (_) {}
     }
 
-    // 3 ter) VERSEMENT MOLLIE : route le NET vers l'organisation de l'artisan et garde
-    //    la commission sur le solde plateforme. Uniquement si la capture a réussi.
+    /* 3 d) VERSEMENT. Chaque jambe route un net qui ne dépasse JAMAIS le paiement qui le
+       porte — c'est l'invariant du noyau, et c'est le défaut corrigé : le net se calculait
+       sur la somme capture + arrhes, alors que la route porte sur UN paiement. Le net du
+       supplément, lui, est routé par le webhook quand Mollie confirme « paid ». */
     try {
       const orgId = after.mollieOrgId || (await db.collection('artisans').doc(providerUid).get()).get('mollieOrgId');
-      // On ne verse JAMAIS plus que ce qui a été encaissé sur ce paiement. La commission
-      // de la prestation est retenue ici (plus celle du pourboire s'il tient dans
-      // l'empreinte) ; celle du pourboire porté par le supplément est retenue sur le
-      // paiement du supplément (webhook) — le total versé à l'artisan reste `net`.
-      const netA = round2(Math.max(0, capte - commission - commTipEmpreinte));
-      if (after.molliePaymentId && captureOk) {
-        const routed = (orgId && netA > 0) ? await mollieRouteNet(after.molliePaymentId, orgId, netA,
-          'Ti-Services · ' + (after.serviceName || after.service || 'prestation') + ' · ' + saleInvoiceNo) : (netA <= 0);
-        if (routed) {
-          await event.data.after.ref.update({molliePayout: 'routed'});
-          // LE REGISTRE DOIT SAVOIR CE QUI EST PARTI. Tant que le net n'est pas versé, la
-          // TOTALITÉ de l'encaissement transite par le compte Ti-Services : la part de
-          // l'artisan y est une DETTE, pas un revenu. Sans cette information au registre,
-          // le justificatif comptable affiche un revenu juste… et tait un passif.
-          try { await db.collection('ledger').doc(reqId).set({molliePayout: 'routed'}, {merge: true}); } catch (_) {}
+      const jambes = [
+        {quoi: 'empreinte', payId: after.molliePaymentId || '', net: R.netEmpreinte, pret: captureOk, champ: 'molliePayout'},
+        {quoi: 'arrhes', payId: after.arrhesPaymentId || '', net: R.netArrhes, pret: arrhesPayees > 0, champ: 'arrhesPayout'},
+      ];
+      for (const j of jambes) {
+        if (!j.payId || !j.pret) continue;
+        if (after[j.champ] === 'routed' || after[j.champ] === 'manuel') continue;
+        /* LE MOTIF NE SE LIT QU'APRÈS UN APPEL RÉEL. `routeMotif()` est une variable de
+           module, remise à zéro au DÉBUT de `mollieRouteNet` : lue sans appel, la seconde
+           jambe héritait du motif de la première et l'on aurait cherché un refus de Mollie
+           là où il n'y avait pas d'organisation. */
+        let routed; let motif = '';
+        if (orgId && j.net > 0) {
+          routed = await mollieRouteNet(j.payId, orgId, j.net,
+            'Ti-Services · ' + (after.serviceName || after.service || 'prestation') + ' · ' + saleInvoiceNo);
+          if (!routed) motif = routeMotif() || '';
         } else {
-          // FILET DE SÉCURITÉ : le client a été débité mais le NET n'a PAS pu être versé
-          // à l'artisan (onboarding Mollie incomplet, organisation absente, refus API).
-          // L'argent reste sur le solde plateforme — on ne le perd JAMAIS en silence :
-          // on marque la mission et on alerte l'admin pour régularisation manuelle.
-          // On inscrit le NET DÛ : sans lui, aucun rattrapage automatique n'est possible
-          // quand Mollie ouvre enfin les virements de l'artisan.
-          await event.data.after.ref.update({molliePayout: 'unrouted', molliePayoutIssue: orgId ? 'route_failed' : 'no_org',
-            molliePayoutMotif: routeMotif() || '', molliePayoutNet: netA});
-          try { await db.collection('ledger').doc(reqId).set({molliePayout: 'unrouted'}, {merge: true}); } catch (_) {}
-          // On prévient AUSSI l'artisan : son compte Mollie n'est pas validé, un versement
-          // n'a pas pu lui être fait (la somme est en sécurité en attendant).
+          routed = (j.net <= 0);   // rien à verser : il n'y a pas de refus à expliquer
+        }
+        const patch = {};
+        patch[j.champ] = routed ? 'routed' : 'unrouted';
+        if (!routed) { patch[j.champ + 'Issue'] = orgId ? 'route_failed' : 'no_org'; patch[j.champ + 'Motif'] = motif; patch[j.champ + 'Net'] = j.net; }
+        await event.data.after.ref.update(patch);
+        try { await db.collection('ledger').doc(reqId).set(patch, {merge: true}); } catch (_) {}
+        if (!routed) {
+          /* FILET DE SÉCURITÉ : le client a été débité mais le NET n'a PAS pu être versé.
+             L'argent reste sur le solde plateforme — on ne le perd JAMAIS en silence. */
           try { await notifyArtisanMollieProblem(db, providerUid, orgId ? 'route_failed' : 'no_org'); } catch (_) {}
           try {
             await sendMail(db, ADMIN_EMAIL, {
-              subject: 'Versement Mollie à régulariser, ' + (after.serviceName || after.service || 'prestation'),
+              subject: 'Versement Mollie à régulariser (' + j.quoi + '), ' + (after.serviceName || after.service || 'prestation'),
               html: '<p>Le client a été débité, mais le versement du net à l\'artisan n\'a pas pu être routé automatiquement.</p>'
                 + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li>'
+                + '<li><b>Jambe :</b> ' + escHtmlS(j.quoi) + '</li>'
                 + '<li><b>Artisan :</b> ' + escHtmlS(after.providerName || providerUid) + '</li>'
-                + '<li><b>Net dû :</b> ' + eurTxt(netA) + '</li>'
-                + '<li><b>Cause :</b> ' + (orgId ? ('routage refusé par Mollie' + (routeMotif() ? (', ' + escHtmlS(routeMotif())) : '')) : 'aucune organisation Mollie connectée') + '</li></ul>'
-                + '<p>À faire : vérifier l\'onboarding Mollie de l\'artisan, puis re-router le paiement (ou virement manuel). L\'argent est en sécurité sur le solde plateforme.</p>',
+                + '<li><b>Net dû :</b> ' + eurTxt(j.net) + '</li>'
+                + '<li><b>Cause :</b> ' + (orgId ? ('routage refusé par Mollie' + (motif ? (', ' + escHtmlS(motif)) : '')) : 'aucune organisation Mollie connectée') + '</li></ul>'
+                + '<p>À faire : vérifier l\'onboarding Mollie de l\'artisan, puis re-router le paiement. L\'argent est en sécurité sur le solde plateforme.</p>',
             });
           } catch (_) {}
         }
@@ -4795,7 +4889,9 @@ exports.mollieOnboardingSweep = onSchedule({schedule: 'every 15 minutes', secret
   // pour toujours. Ici, on retente à chaque passage — zéro document = zéro coût.
   try {
     const uids = new Set();
-    for (const champ of ['molliePayout', 'complementPayout']) {
+    // La jambe des ARRHES entre dans le rattrapage : son net se route sur SON paiement
+    // (voir `reglementDecider`), elle peut donc échouer comme les deux autres.
+    for (const champ of ['molliePayout', 'complementPayout', 'arrhesPayout']) {
       const q = await db.collection('requests').where(champ, '==', 'unrouted').limit(50).get();
       q.forEach((d) => { const u = (d.data() || {}).providerUid; if (u) uids.add(u); });
     }

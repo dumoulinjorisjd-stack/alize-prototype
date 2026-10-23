@@ -126,7 +126,11 @@ const T0900 = Date.parse('2026-10-10T09:00:00-04:00');
   const E = SRV.slice(SRV.indexOf('exports.expirerDemandesNonHonorees'), SRV.indexOf('exports.expirerDemandesNonHonorees') + 1800);
   ok(/DEPASSE\.creneauDepasse/.test(E) && !/Date\.parse/.test(E),
     'l’expiration ne calcule plus sa propre date : elle lit le même noyau que la relance');
-  ok(/'relancePour','relanceAt'\]/.test(RULES),
+  // On mesure la PROPRIÉTÉ — les deux champs sont dans `serverKeys` — et non la mise en
+  // page : l'ancienne lecture exigeait qu'ils FERMENT la liste, donc tout champ ajouté
+  // ensuite la faisait rougir alors que la règle n'avait pas bougé.
+  const SK = RULES.slice(RULES.indexOf('function serverKeys()'), RULES.indexOf('function contractKeys()'));
+  ok(SK.length > 200 && /'relancePour'/.test(SK) && /'relanceAt'/.test(SK),
     'et les deux champs sont réservés au serveur : sinon un compte se déclarerait « déjà relancé » pour repousser sa fermeture');
 
   /* ── F. L'ÉCRAN DU CLIENT ─────────────────────────────────────────────────────── */

@@ -18,10 +18,16 @@ const src = fs.readFileSync(path.join(RACINE, 'index.html'), 'utf8');
 const fn = fs.readFileSync(path.join(RACINE, 'functions', 'index.js'), 'utf8');
 
 console.log('A — le registre sait ce qui est parti, et ce qui ne l’est pas');
-ok((fn.match(/collection\('ledger'\)\.doc\([^)]*\)\.set\(\{molliePayout/g) || []).length === 7,
-  'les sept endroits qui décident d’un versement l’inscrivent au registre (dont l’indemnité d’annulation)');
-ok(/collection\('ledger'\)\.doc\(reqId\)\.set\(\{molliePayout: 'unrouted'\}/.test(fn),
-  'un versement refusé y est marqué « non parti »');
+/* SIX ENDROITS, ET NON PLUS SEPT : les deux écritures du règlement — « routé » et « non
+   routé » — ont fusionné en une seule porte, qui tourne JAMBE PAR JAMBE (empreinte,
+   arrhes) et inscrit le même patch au registre. Un site de moins, une jambe de plus. */
+ok((fn.match(/collection\('ledger'\)\.doc\([^)]*\)\.set\(\{molliePayout/g) || []).length === 5,
+  'cinq endroits écrivent le versement en clair au registre (dont l’indemnité d’annulation)');
+ok(/patch\[j\.champ\] = routed \? 'routed' : 'unrouted'/.test(fn)
+  && /collection\('ledger'\)\.doc\(reqId\)\.set\(patch, \{merge: true\}\)/.test(fn),
+  'et le sixième est la porte du règlement, qui inscrit chaque jambe au registre');
+ok(/patch\[j\.champ \+ 'Issue'\] = orgId \? 'route_failed' : 'no_org'/.test(fn),
+  'un versement refusé y est marqué « non parti », avec sa cause');
 ok(/collection\('ledger'\)\.doc\(reqId\)\.set\(\{molliePayout: 'manuel'\}/.test(fn),
   'et un virement fait à la main solde la dette');
 // Les SUPPLÉMENTS (pourboire, heures en plus) ont leur propre versement, sur un second

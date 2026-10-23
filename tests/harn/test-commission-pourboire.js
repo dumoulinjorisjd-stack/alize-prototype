@@ -25,10 +25,17 @@ ok(/tipCommission: tipCommission/.test(fn),
   'et garde la part pourboire à part, pour la lire sans la recalculer');
 
 console.log('B — la retenue se fait sur le paiement qui transporte le pourboire');
-ok(/const tipDansComplement = Math\.min\(tip, complement\);/.test(fn),
-  'le règlement sait si le pourboire voyage dans le supplément ou dans l’empreinte');
-ok(/capte - commission - commTipEmpreinte/.test(fn),
-  'empreinte : on retient la commission de ce qu’elle transporte, rien de plus');
+/* LE PARTAGE CALCULÉ À LA MAIN A DISPARU, ET C'EST UN PROGRÈS. Il fallait savoir si le
+   pourboire tenait dans l'empreinte ou voyageait dans le supplément, puis découper sa
+   commission en deux (`commTipEmpreinte` / `commTipComplement`). `reglementDecider`
+   retient désormais la commission TOTALE jambe après jambe, et jamais plus que la jambe
+   ne porte : la propriété est devenue STRUCTURELLE au lieu d'être recalculée. */
+ok(/const comEmpreinte = prendre\(surEmpreinte\);/.test(fn) && /const comHorsSession = prendre\(horsSession\);/.test(fn),
+  'la commission se retient jambe par jambe, dans un ordre fixe');
+ok(/const c = round2\(Math\.min\(reste, jambe\)\);/.test(fn),
+  'empreinte : on retient la commission de ce qu’elle transporte, rien de plus — par construction');
+ok(/complementCommission: R\.commissionHorsSession/.test(fn),
+  'et le supplément reçoit SA part, écrite avant l’appel pour que le webhook la lise');
 ok(/function commissionDuComplement\(r, montant\)/.test(fn),
   'supplément : sa commission est figée au règlement, recalculée au taux figé sinon');
 ok(/const netC = round2\(Math\.max\(0, montant - commC\)\);/.test(fn) && /mollieRouteNet\(pay\.id, orgId, netC,/.test(fn),

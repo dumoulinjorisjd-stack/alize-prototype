@@ -303,13 +303,33 @@ service cloud.firestore {
                 // indéfiniment l'expiration de sa demande, empreinte bancaire comprise.
                 // Il n'a rien à y écrire : la clé s'invalide d'elle-même dès qu'il
                 // change sa date.
-                'relancePour','relanceAt'];
+                'relancePour','relanceAt',
+                // LE RÈGLEMENT SUR MANDAT (23/10/2026) : ce que le serveur constate
+                // d'un encaissement. Laissés libres, un compte se déclarerait « versé »
+                // ou effacerait la trace d'une empreinte morte — c'est-à-dire la seule
+                // chose qui dit que le prestataire n'a pas été payé.
+                'arrhesPayout','arrhesPayoutIssue','arrhesPayoutMotif','arrhesPayoutNet',
+                'reglementAjourne','reglementAjourneAt',
+                'empreinteMorteAu','empreinteMorteAt','commissionNonRetenue'];
       }
       // TERMES DU CONTRAT, figés dès l'acceptation : le tarif €/h, la majoration, l'unité,
       // le service et l'estimation convenue ne changent plus. Seule la DURÉE RÉELLE
       // (finalHours) peut bouger — déclarée par l'artisan, validée par le client.
       function contractKeys() {
         return ['rate','boost','boostEur','unit','service','serviceName','duration','clientUid'];
+      }
+      /* LES PRIX DÉTAILLÉS, FIGÉS DÈS L'ACCEPTATION — ET LUS PAR LES DEUX BRANCHES.
+         `acts` et `options` décident du TOTAL à prélever, et ils n'étaient épinglés NULLE
+         PART : mesuré contre le moteur, le prestataire comme le client pouvaient réécrire
+         un prix de 35 € en 5 000 € après acceptation. Avec le mandat, le plafond de la
+         banque ne protège plus : ce qui tient est que le client valide un total — encore
+         faut-il que ce total ne soit pas réécrit sous lui.
+         ILS NE REJOIGNENT PAS `contractKeys()`, et c'est mesuré aussi : la branche du
+         CLIENT ne la lit pas, elle porte sa propre liste parce que le coup de pouce doit
+         pouvoir MONTER pendant la recherche. Deux listes pour la même question finissent
+         par ne plus dire la même chose — celle-ci est donc nommée dans les deux. */
+      function prixKeys() {
+        return ['acts','options'];
       }
 
       /* UN FIL DE DISCUSSION NE PEUT QUE GRANDIR, ET L'ON NE SIGNE PAS À LA PLACE
@@ -427,6 +447,7 @@ service cloud.firestore {
             && !changed().hasAny(serverKeys())
             && !changed().hasAny(['finalHours'])
             && !changed().hasAny(['rate','unit','service','serviceName','duration','clientUid'])
+            && !changed().hasAny(prixKeys())
             // CHACUN SON FIL DE SUPPORT. Le fil artisan↔Ti-Services (supportPro) n'est
             // pas au client : il pouvait y écrire un message étiqueté « admin », que
             // l'artisan recevait comme venant officiellement de Ti-Services (phishing).
@@ -465,9 +486,13 @@ service cloud.firestore {
         || (isProvider()
             && !changed().hasAny(serverKeys())
             && !changed().hasAny(contractKeys())
+            && !changed().hasAny(prixKeys())
             // Symétrique du verrou client : le fil client↔Ti-Services (supportClient)
             // n'est pas au prestataire.
             && !changed().hasAny(['supportClient'])
+            // LE POURBOIRE EST AU CLIENT. Écrit par lui à la validation, dans la même
+            // opération que le règlement. Le prestataire ne s'en donne pas.
+            && !changed().hasAny(['tip'])
             // Son propre fil, signé de son propre rôle (voir filSain).
             && filSain('messages', 'pro')
             && filSain('supportPro', 'pro')

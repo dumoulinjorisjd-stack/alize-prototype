@@ -44,6 +44,8 @@ await env.withSecurityRulesDisabled(async (c) => {
     service: 'menage', serviceName: 'Ménage', unit: 'h',
     messages: [{ from: 'client', text: 'bonjour', at: 1 }],
     supportClient: [], supportPro: [],
+    // Les prix détaillés et le pourboire : ce qui décide du TOTAL à prélever.
+    acts: [{ id: 'a1', nm: 'Prestation', price: 35, qty: 2 }], options: [], tip: 0,
   });
   await setDoc(doc(d, 'settings', 'installFunnel_prod'), { install: 42 });
   await setDoc(doc(d, 'settings', 'catalog'), { services: [] });
@@ -120,6 +122,33 @@ ok(!(await passe(getDoc(doc(dAno, 'settings', 'installFunnel_prod')))), 'l’ent
 console.log('\n── LA SOUS-COLLECTION MORTE ──');
 ok(!(await passe(setDoc(doc(dCli, 'requests', 'R1', 'messages', 'm1'), { nimporte: 'quoi' }))),
    'plus rien ne s’écrit dans requests/{id}/messages');
+
+console.log('\n── QUI DÉCIDE DU MONTANT À PRÉLEVER ──');
+/* AVEC LE MANDAT, UN PRÉLÈVEMENT N'A NI ÉCRAN NI 3-D SECURE : ce qui protège le client
+   n'est plus le plafond de la banque mais le fait que rien ne bouge sans sa validation.
+   Encore faut-il que le prestataire ne puisse pas gonfler le total qu'on lui soumet.
+   Mesuré : `tip`, `acts` et `options` n'étaient épinglés dans AUCUNE règle. */
+ok(await passe(updateDoc(R(dPro), { finalHours: 3 })),
+   'le prestataire déclare la durée réelle — son seul levier légitime, qui doit rester possible');
+ok(await passe(updateDoc(R(dCli), { tip: 10, status: 'paid' })),
+   'le client ajoute son pourboire en validant — c’est le chemin RÉEL du règlement, il doit rester possible');
+ok(!(await passe(updateDoc(R(dPro), { tip: 500 }))),
+   'le prestataire NE se donne PAS de pourboire');
+ok(!(await passe(updateDoc(R(dPro), { acts: [{ id: 'a1', nm: 'Prestation', price: 5000, qty: 1 }] }))),
+   'il ne réécrit PAS les prix détaillés : ce sont des termes du contrat, figés dès l’acceptation');
+ok(!(await passe(updateDoc(R(dPro), { options: [{ id: 'o1', nm: 'Supplément', price: 900, qty: 1 }] }))),
+   'ni les options');
+ok(!(await passe(updateDoc(R(dCli), { acts: [{ id: 'a1', nm: 'Prestation', price: 1, qty: 1 }] }))),
+   'et le client non plus : un total n’est pas une saisie libre après acceptation');
+
+console.log('\n── CE QUE SEUL LE SERVEUR CONSTATE D’UN ENCAISSEMENT ──');
+for (const [champ, val] of [['arrhesPayout', 'routed'], ['reglementAjourne', ''],
+                            ['empreinteMorteAu', 'authorized'], ['commissionNonRetenue', 0]]) {
+  ok(!(await passe(updateDoc(R(dCli), { [champ]: val }))),
+     'le client ne se déclare pas « ' + champ + ' »');
+  ok(!(await passe(updateDoc(R(dPro), { [champ]: val }))),
+     'le prestataire non plus');
+}
 
 await env.cleanup();
 console.log(f ? '\n' + f + ' ÉCHEC(S)' : '\nTout est vert.');

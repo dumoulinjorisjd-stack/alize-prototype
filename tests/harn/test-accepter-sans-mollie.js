@@ -91,10 +91,10 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
 
   /* D — CE QUE LE SERVEUR FAIT DE L'ARGENT ENTRE-TEMPS, lu dans la source. */
   console.log('D — l’argent n’est jamais perdu, et il le sait');
-  ok(/molliePayoutIssue: orgId \? 'route_failed' : 'no_org'/.test(SRV),
+  ok(/'route_failed' : 'no_org'/.test(SRV),
     'le serveur nomme le cas « pas d’organisation » au lieu de le confondre avec un refus');
-  ok(/molliePayoutNet: netA/.test(SRV), 'il inscrit le net dû, sans quoi aucun rattrapage n’est possible');
-  ok(/set\(\{molliePayout: 'unrouted'\}, \{merge: true\}\)/.test(SRV),
+  ok(/\+ 'Net'\] = j\.net/.test(SRV), 'il inscrit le net dû, sans quoi aucun rattrapage n’est possible');
+  ok(/collection\('ledger'\)\.doc\(reqId\)\.set\(patch, \{merge: true\}\)/.test(SRV),
     'et le registre comptable l’enregistre comme une DETTE, pas comme un revenu');
   ok(/async function rerouteArtisanPayouts/.test(SRV), 'le rattrapage existe');
   ok(/async function netEnAttente/.test(SRV), 'et le serveur sait dire combien lui est dû');

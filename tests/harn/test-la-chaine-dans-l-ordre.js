@@ -123,10 +123,10 @@ const AUJ = Date.now();                   // il s'inscrit aujourd'hui
   /* ── 6 & 7 — CÔTÉ SERVEUR, ET C'EST LU, PAS DÉROULÉ. Aucun banc ne fait tourner les
      fonctions Firebase, et personne n'appelle l'API Mollie depuis ici. */
   console.log('6·7 — il fait Mollie plus tard, et il est payé (lu dans la source)');
-  ok(/molliePayoutIssue: orgId \? 'route_failed' : 'no_org'/.test(SRV),
+  ok(/'route_failed' : 'no_org'/.test(SRV),
     'sans organisation, le serveur nomme le cas au lieu de le confondre avec un refus');
-  ok(/molliePayoutNet: netA/.test(SRV), 'il inscrit le NET DÛ, sans quoi aucun rattrapage n’est possible');
-  ok(/set\(\{molliePayout: 'unrouted'\}, \{merge: true\}\)/.test(SRV), 'le registre l’enregistre comme une DETTE');
+  ok(/\+ 'Net'\] = j\.net/.test(SRV), 'il inscrit le NET DÛ, sans quoi aucun rattrapage n’est possible');
+  ok(/collection\('ledger'\)\.doc\(reqId\)\.set\(patch, \{merge: true\}\)/.test(SRV), 'le registre l’enregistre comme une DETTE');
   ok(/notifyArtisanMollieProblem\(db, providerUid/.test(SRV), 'le prestataire est prévenu');
   ok(/Versement Mollie à régulariser/.test(SRV), 'et l’administrateur alerté');
   /* Le rattrapage, aux trois endroits où l'organisation peut enfin arriver. */
