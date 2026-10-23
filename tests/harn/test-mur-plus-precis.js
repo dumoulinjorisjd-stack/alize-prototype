@@ -29,6 +29,19 @@ const JOUR = 864e5;
   await p.route('**/*', (r) => /gstatic|googleapis|firebase|cloudfunctions|maps/.test(r.request().url()) ? r.abort() : r.continue());
   await p.goto('file://' + path.join(RACINE, 'tests/harn/app.html'), { waitUntil: 'load' });
   await p.waitForFunction(() => window.__S && window.__parcours && window.__murs, null, { timeout: 20000 });
+  /* LA SCÈNE DÉRIVE SES CHAMPS D'AFFICHAGE AU LIEU DE LES RECOPIER. Elle écrivait
+     `card: 'Visa ••42'` — la phrase que `buildAdminClients` composait — et elle a rougi le
+     jour où la console a cessé de lire un champ de démonstration pour lire ce que le
+     SERVEUR écrit (23/10/2026). Un décor qui reproduit à la main la sortie d'un
+     constructeur s'en écarte au premier changement de règle, et accuse alors un produit
+     juste. La scène dit donc CE QU'EST le compte, et `carteDuCompte` — la règle elle-même —
+     en tire ce qui s'affiche. */
+  await p.evaluate(() => {
+    window.__sceneCompte = (o) => {
+      const k = window.__carteDuCompte(o || {});
+      return Object.assign({}, o, { card: k.texte, carteEtat: k.etat });
+    };
+  });
   await p.waitForTimeout(600);
 
   const DEPUIS = await p.evaluate(() => window.__murs.depuis());
@@ -39,12 +52,12 @@ const JOUR = 864e5;
   const A = await p.evaluate((d) => {
     const MAINT = d + 10 * 864e5;
     const cl = [
-      { uid: 'vieux1', name: 'Avant un', email: 'a1@x.fr', createdAt: d - 5 * 864e5, jalons: {}, push: 0, addresses: [], card: 'Aucune carte' },
-      { uid: 'vieux2', name: 'Avant deux', email: 'a2@x.fr', createdAt: d - 20 * 864e5, jalons: {}, push: 1, addresses: [], card: 'Aucune carte' },
+      { uid: 'vieux1', name: 'Avant un', email: 'a1@x.fr', createdAt: d - 5 * 864e5, jalons: {}, push: 0, addresses: [], card: null },
+      { uid: 'vieux2', name: 'Avant deux', email: 'a2@x.fr', createdAt: d - 20 * 864e5, jalons: {}, push: 1, addresses: [], card: null },
       // Inscrit avant, MAIS repassé depuis : il porte un jalon, donc il se mesure.
-      { uid: 'vieuxActif', name: 'Avant revenu', email: 'a3@x.fr', createdAt: d - 9 * 864e5, jalons: { revenu: d + 864e5 }, push: 1, addresses: [], card: 'Aucune carte' },
-      { uid: 'neuf', name: 'Après', email: 'n@x.fr', createdAt: d + 2 * 864e5, jalons: {}, push: 1, addresses: [], card: 'Aucune carte' },
-    ];
+      { uid: 'vieuxActif', name: 'Avant revenu', email: 'a3@x.fr', createdAt: d - 9 * 864e5, jalons: { revenu: d + 864e5 }, push: 1, addresses: [], card: null },
+      { uid: 'neuf', name: 'Après', email: 'n@x.fr', createdAt: d + 2 * 864e5, jalons: {}, push: 1, addresses: [], card: null },
+    ].map(window.__sceneCompte);
     const P = window.__parcours(cl, {}, MAINT);
     const mur = (c) => (P.murs.filter((m) => m.cle === c)[0] || {});
     return { total: P.total, avant: P.avant, quiAvant: P.quiAvant.map((c) => c.uid), cat: mur('catalogue').n, quiCat: (mur('catalogue').qui || []).map((c) => c.uid), bloques: P.bloques };
@@ -56,7 +69,7 @@ const JOUR = 864e5;
   console.log('B — chaque mur dit ce qu’il sait de SES occupants');
   const B = await p.evaluate((d) => {
     const MAINT = d + 30 * 864e5;
-    const n = (u, j, extra) => Object.assign({ uid: u, name: u, email: u + '@x.fr', createdAt: d + 864e5, jalons: j, push: 1, addresses: [{}], card: 'Visa ••42' }, extra || {});
+    const n = (u, j, extra) => window.__sceneCompte(Object.assign({ uid: u, name: u, email: u + '@x.fr', createdAt: d + 864e5, jalons: j, push: 1, addresses: [{}], card: { brand: 'Visa', last4: '42' } }, extra || {}));
     const cl = [
       n('parti1', {}), n('parti2', {}),
       n('revenu1', { revenu: 1 }),
@@ -79,9 +92,9 @@ const JOUR = 864e5;
   console.log('C — le nombre se déplie en NOMS, du plus ancien au plus récent');
   const C = await p.evaluate((d) => {
     const qui = [
-      { uid: 'b', name: 'Bernadette', email: 'b@x.fr', createdAt: d + 5 * 864e5, push: 0, addresses: [], card: 'Aucune carte', jalons: {} },
-      { uid: 'a', name: 'Alphonse', email: 'a@x.fr', createdAt: d + 1 * 864e5, push: 1, addresses: [{}], card: 'Visa ••42', jalons: { revenu: 1 } },
-    ];
+      { uid: 'b', name: 'Bernadette', email: 'b@x.fr', createdAt: d + 5 * 864e5, push: 0, addresses: [], card: null, jalons: {} },
+      { uid: 'a', name: 'Alphonse', email: 'a@x.fr', createdAt: d + 1 * 864e5, push: 1, addresses: [{}], card: { brand: 'Visa', last4: '42' }, jalons: { revenu: 1 } },
+    ].map(window.__sceneCompte);
     const h = window.__murs.qui(qui, d + 10 * 864e5);
     return { h: h, posA: h.indexOf('Alphonse'), posB: h.indexOf('Bernadette') };
   }, DEPUIS);
@@ -100,11 +113,11 @@ const JOUR = 864e5;
   const D = await p.evaluate((d) => {
     const MAINT = d + 30 * 864e5;
     const cl = [
-      { uid: 'cmd', name: 'A commandé', email: 'c@x.fr', createdAt: d + 864e5, jalons: { catalogue: 1, config: 1, paiement: 1 }, push: 1, addresses: [{}], card: 'Visa ••42' },
-      { uid: 'ko', name: 'Carte refusée', email: 'k@x.fr', createdAt: d + 864e5, jalons: { catalogue: 1, config: 1, paiement: 1 }, push: 1, addresses: [{}], card: 'Visa ••42' },
-      { uid: 'vieuxCmd', name: 'Avant, mais a commandé', email: 'v@x.fr', createdAt: d - 864e5, jalons: {}, push: 1, addresses: [{}], card: 'Visa ••42' },
-      { uid: 'test', name: 'Test', email: 't@x.fr', test: true, createdAt: d + 864e5, jalons: {}, push: 1, addresses: [], card: 'Aucune carte' },
-    ];
+      { uid: 'cmd', name: 'A commandé', email: 'c@x.fr', createdAt: d + 864e5, jalons: { catalogue: 1, config: 1, paiement: 1 }, push: 1, addresses: [{}], card: { brand: 'Visa', last4: '42' } },
+      { uid: 'ko', name: 'Carte refusée', email: 'k@x.fr', createdAt: d + 864e5, jalons: { catalogue: 1, config: 1, paiement: 1 }, push: 1, addresses: [{}], card: { brand: 'Visa', last4: '42' } },
+      { uid: 'vieuxCmd', name: 'Avant, mais a commandé', email: 'v@x.fr', createdAt: d - 864e5, jalons: {}, push: 1, addresses: [{}], card: { brand: 'Visa', last4: '42' } },
+      { uid: 'test', name: 'Test', email: 't@x.fr', test: true, createdAt: d + 864e5, jalons: {}, push: 1, addresses: [], card: null },
+    ].map(window.__sceneCompte);
     const req = { cmd: [{ status: 'done' }], ko: [{ status: 'payment_failed' }], vieuxCmd: [{ status: 'done' }] };
     const P = window.__parcours(cl, req, MAINT);
     return { total: P.total, exclus: P.exclus, abouti: P.abouti, cmdMur: P.murs.filter((m) => m.cle === 'commande')[0].n, sansJalon: P.sansJalon, avant: P.avant };
@@ -125,10 +138,10 @@ const JOUR = 864e5;
     S.adminArtisans = []; S.adminArtsLoaded = true;
     S.adminReqs = []; S.adminReqsLus = true; S.adminDrafts = []; S.adminClisLoaded = true;
     S.adminClients = [
-      { uid: 'u1', name: 'Jeanne Ledée', email: 'jeanne@x.fr', createdAt: d + 864e5, jalons: {}, push: 0, addresses: [], card: 'Aucune carte enregistrée' },
-      { uid: 'u2', name: 'Paul Magras', email: 'paul@x.fr', createdAt: d + 2 * 864e5, jalons: { revenu: 1 }, push: 1, addresses: [], card: 'Aucune carte enregistrée' },
-      { uid: 'u3', name: 'Marie Questel', email: 'marie@x.fr', createdAt: d - 4 * 864e5, jalons: {}, push: 0, addresses: [], card: 'Aucune carte enregistrée' },
-    ];
+      { uid: 'u1', name: 'Jeanne Ledée', email: 'jeanne@x.fr', createdAt: d + 864e5, jalons: {}, push: 0, addresses: [], card: null },
+      { uid: 'u2', name: 'Paul Magras', email: 'paul@x.fr', createdAt: d + 2 * 864e5, jalons: { revenu: 1 }, push: 1, addresses: [], card: null },
+      { uid: 'u3', name: 'Marie Questel', email: 'marie@x.fr', createdAt: d - 4 * 864e5, jalons: {}, push: 0, addresses: [], card: null },
+    ].map(window.__sceneCompte);
     S._fold = { 'a-parcours': true }; S.admMurOpen = {};
     window.__render();
     const carte = () => [...document.querySelectorAll('.card')].find((x) => x.querySelector('[data-fold="a-parcours"]'));
@@ -149,13 +162,13 @@ const JOUR = 864e5;
   // `DEPUIS` vit côté Node, l'évaluation côté navigateur : on le PASSE, sinon la fonction
   // le cherche dans la page et ne le trouve pas.
   const P = await p.evaluate(({ DEPUIS, PREPARE }) => {
-    const c = (o) => window.__murs.phrases(Object.assign({ jalons: {}, push: 0, addresses: [], card: 'Aucune carte' }, o));
+    const c = (o) => window.__murs.phrases(window.__sceneCompte(Object.assign({ jalons: {}, push: 0, addresses: [], card: null }, o)));
     return {
       perdu: c({}),
       revenuSansPush: c({ jalons: { revenu: 1 } }),
-      revenuAvecPush: c({ jalons: { revenu: 1 }, push: 1, addresses: [{}], card: 'Visa ••42' }),
-      jamaisAvecPush: c({ push: 1, addresses: [{}], card: 'Visa ••42' }),
-      sansAdresse: c({ push: 1, card: 'Visa ••42' }),
+      revenuAvecPush: c({ jalons: { revenu: 1 }, push: 1, addresses: [{}], card: { brand: 'Visa', last4: '42' } }),
+      jamaisAvecPush: c({ push: 1, addresses: [{}], card: { brand: 'Visa', last4: '42' } }),
+      sansAdresse: c({ push: 1, card: { brand: 'Visa', last4: '42' } }),
       sansCarte: c({ push: 1, addresses: [{}] }),
       // OÙ IL S'EST ARRÊTÉ : les quatre profondeurs, plus le cas d'avant la mesure.
       catalogue: c({ jalons: { catalogue: 1 } }),
