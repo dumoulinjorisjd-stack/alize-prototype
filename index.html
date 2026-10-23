@@ -615,10 +615,25 @@
   .bub.them{align-self:flex-start;background:var(--card-2);border:1px solid var(--hair);border-bottom-left-radius:5px;color:var(--ink)}
   .bub.me{align-self:flex-end;background:linear-gradient(180deg,var(--teal),var(--teal-deep));color:#fff;border-bottom-right-radius:5px}
   /* Barre de saisie sous les messages (statique : n'occulte JAMAIS le dernier message). */
-  .chatbar{display:flex;gap:8px;align-items:center;margin-top:14px}
+  .chatbar{display:flex;gap:8px;align-items:flex-end;margin-top:14px}
   /* font-size 16px OBLIGATOIRE : en dessous, iOS ZOOME au focus et pousse le bouton
      « Envoyer » hors de l'écran (bug « je ne vois plus le bouton envoyer »). */
-  .chatbar input{flex:1;min-width:0;padding:13px 14px;border-radius:14px;border:1.5px solid var(--hair);background:var(--card);color:var(--ink);font-size:16px;font-family:inherit}
+  .chatbar input,.chatbar textarea{flex:1;min-width:0;width:auto;padding:13px 14px;border-radius:14px;border:1.5px solid var(--hair);background:var(--card);color:var(--ink);font-size:16px;font-family:inherit}
+  /* LA CELLULE GRANDIT AVEC CE QU'ON ÉCRIT, ET JUSQU'À UNE BORNE. C'était un <input>
+     d'une seule ligne : au-delà d'une ligne et demie le texte défilait à l'horizontale et
+     l'on ne voyait plus que sa fin — sur un message de cinq lignes, on écrit à l'aveugle.
+     La hauteur est posée par `etirerSaisie` depuis `scrollHeight` ; au-delà de la borne
+     c'est la cellule qui défile, et non la page : une saisie qui prendrait tout l'écran
+     ferait disparaître la conversation à laquelle on répond. `align-items:flex-end`
+     garde « Envoyer » au bas de la cellule pendant qu'elle grandit.
+
+     LA BORNE EST MESURÉE, sur un téléphone de 390 px dont le clavier est levé (504 px
+     visibles) : 7,6em montre 4 lignes pour 122 px, 10,2em en montre 5 pour 163, 11,5em en
+     montre 6 pour 184. On prend SIX, parce que la cellule ne grandit qu'avec ce qu'on
+     écrit : une borne généreuse ne coûte RIEN tant qu'on n'écrit pas six lignes, et au
+     moment où on les écrit c'est exactement ce qu'on veut voir. Il reste alors 320 px de
+     conversation, soit quatre messages de contexte. */
+  .chatbar textarea{resize:none;line-height:1.45;max-height:11.5em;overflow-y:auto;display:block}
   .chatbar button{flex:none;white-space:nowrap}
   .chatbar button{width:auto;padding:13px 18px}
   .advcard{display:flex;gap:12px;align-items:flex-start;padding:14px;margin-top:10px}
@@ -3683,7 +3698,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='877';
+  const VERSION_APP='878';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -5485,6 +5500,13 @@
   })();
 
   const S={
+    /* CE QU'ON EST EN TRAIN D'ÉCRIRE SURVIT À TOUT REDESSIN. Un message reçu pendant
+       qu'on répond efface la réponse en cours : l'écoute en direct appelle `render()`,
+       qui reconstruit l'écran — donc la cellule de saisie — et le texte tapé partait avec
+       elle. Ne PAS redessiner n'est pas une option : c'est ce redessin qui affiche le
+       message qui vient d'arriver. Le brouillon vit donc dans l'état, rangé par
+       identifiant de cellule, et la cellule le reprend après chaque peinture. */
+    brouillons:{},
     lang:initLang(),
     persona:'client',clientNav:'home',proNav:'home',customServices:[],wishText:'',wishSent:false,adminWishes:[],onboarded:false,guest:false,onbStep:0,authView:null,account:loadAccount(),loginForm:{email:'',password:''},clientForm:{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''},
     card:null,cardForm:false,payStep:false,payEdit:false,paySaveCard:true,finishing:false,disputing:false,disputeKind:null,support:false,supportSide:null,mission:null,missions:[],draft:null,
@@ -10315,9 +10337,13 @@
   });
   function paintView(html,key){
     const same=(key===_scr);const keepScroll=same||(scrollGroup(key)===scrollGroup(_scr));const top=view.scrollTop;
+    // CE QU'ON TAPAIT, RELEVÉ AVANT L'EFFACEMENT. `paintView` est la porte unique de
+    // toute peinture : le brouillon survit donc à un redessin d'où qu'il vienne — un
+    // message reçu, un changement de statut, une peinture venue d'ailleurs.
+    const _brAvant=brouillonActif();
     view.innerHTML='<div'+(same?'':' class="anim"')+'>'+brandBarHtml(key)+html+'</div>';
     i18nApply(view);animateCounts(view);
-    view.scrollTop=keepScroll?top:0;_scr=key;updateHomeFab();mountMaps();mountSignPads();busyApresRendu();
+    view.scrollTop=keepScroll?top:0;_scr=key;updateHomeFab();mountMaps();mountSignPads();busyApresRendu();restaurerBrouillons(_brAvant);
     // iOS : retire la suggestion « Préremplir le contact » (barre du clavier) sur les
     // champs de texte libre où elle n'a aucun sens. Les vrais champs de contact
     // (e-mail, téléphone, mot de passe) gardent l'auto-remplissage natif.
@@ -12994,7 +13020,80 @@
   // propage (sinon l'expéditeur ne voyait plus son propre message après resync).
   function mergeChat(local,server){const map=new Map();(local||[]).concat(server||[]).forEach(function(x){if(x&&x.text!=null){map.set((x.from||'')+'|'+(x.at||0)+'|'+x.text,x);}});return Array.from(map.values()).sort(function(a,b){return (a.at||0)-(b.at||0);});}
   function chatInits(){const m=chatMission();return S.persona==='client'?(m&&m.provider?m.provider.ini:'··'):inits(proClientName(m)||'client');}
-  function sendChat(){const el=document.getElementById('chatInput');const m=chatMission();if(!el||!m)return;const v=el.value.trim();if(!v)return;el.value='';const msg={from:S.persona,text:v,at:Date.now()};m.chat=m.chat||[];m.chat.push(msg);render();view.scrollTop=view.scrollHeight;if(FB&&m.reqId&&!isDemo()){const p=FB.f.updateDoc(FB.f.doc(FB.db,'requests',m.reqId),{messages:FB.f.arrayUnion(msg)});if(p&&p.catch)p.catch(function(e){toast('⚠︎ Message non envoyé, réessayez');console.warn('chat send',e);});}}
+  /* ══ UNE SEULE BARRE DE SAISIE, ET UN SEUL BROUILLON ══════════════════════════════
+   * Trois conversations portaient leur propre barre, recopiée mot pour mot : messagerie
+   * client↔artisan, support d'une prestation, support général. Trois écritures de la même
+   * chose finissent par ne plus dire la même chose — et c'est déjà arrivé ici : la
+   * troisième n'avait jamais reçu la touche Entrée que les deux autres avaient.
+   *
+   * LA CELLULE DÉCLARE QU'ELLE PORTE UN BROUILLON (`data-brouillon`), elle ne se nomme
+   * pas dans une liste : la quatrième qu'on écrira demain est couverte sans qu'on
+   * l'inscrive nulle part.
+   *
+   * ENTRÉE ENVOIE, MAJ+ENTRÉE VA À LA LIGNE. C'est la convention d'une messagerie, et
+   * c'est l'inverse de la règle des champs de rédaction : ici le geste le plus fréquent
+   * est d'envoyer, et le retour à la ligne est l'exception. */
+  function barreDeSaisie(id, placeholder, act){
+    /* LE BROUILLON EST POSÉ DANS LE CONTENU, et non dans un attribut : une zone de texte
+       n'a pas d'attribut `value`. `restaurerBrouillons` le repose ensuite en JS, qui fait
+       foi — l'analyseur HTML avale un saut de ligne en tête de contenu, et c'est lui qui
+       rattrape ce cas. */
+    const d = (S.brouillons && S.brouillons[id]) || '';
+    return `<div class="chatbar"><textarea id="${id}" data-brouillon="${id}" rows="1" placeholder="${placeholder}" autocomplete="off" maxlength="500">${esc(d)}</textarea><button class="btn primary" data-act="${act}">Envoyer</button></div>`;
+  }
+  // La hauteur suit le texte, jusqu'à la borne que la feuille de style pose : on efface
+  // d'abord, sinon `scrollHeight` rend la hauteur ACTUELLE et la cellule ne redescend
+  // jamais quand on efface ce qu'on a écrit.
+  function etirerSaisie(t){
+    if(!t)return;
+    try{
+      t.style.height='auto';
+      /* LA BORDURE SE COMPTE, parce que `*{box-sizing:border-box}` : la hauteur CSS inclut
+         la bordure, tandis que `scrollHeight` ne rend que le contenu et son remplissage.
+         Posée telle quelle, la cellule perdait les 3 px de son filet — elle défilait dès
+         la PREMIÈRE ligne et rognait la dernière, c'est-à-dire le défaut qu'on corrige,
+         en miniature. Mon assertion passait pourtant : elle mesurait le débordement au
+         mauvais moment, et c'est la sonde qui l'a dit. */
+      const bord=t.offsetHeight-t.clientHeight;
+      t.style.height=(t.scrollHeight+bord)+'px';
+    }catch(_){}
+  }
+  function majBrouillon(t){
+    if(!t||!t.dataset||!t.dataset.brouillon)return;
+    S.brouillons[t.dataset.brouillon]=t.value;
+    etirerSaisie(t);
+  }
+  // Ce qui a le focus À L'INSTANT où l'on va remplacer l'écran, curseur compris. Lu juste
+  // avant l'effacement plutôt que tenu à jour par une écoute : le remplacement du DOM
+  // émet lui-même un « focusout », qui aurait effacé le repère avant qu'on s'en serve.
+  function brouillonActif(){
+    try{
+      const a=document.activeElement;
+      if(!a||!a.dataset||!a.dataset.brouillon)return null;
+      return {id:a.dataset.brouillon, d:a.selectionStart, f:a.selectionEnd};
+    }catch(_){ return null; }
+  }
+  function restaurerBrouillons(avant){
+    try{
+      view.querySelectorAll('[data-brouillon]').forEach(function(t){
+        const id=t.dataset.brouillon, d=(S.brouillons&&S.brouillons[id])||'';
+        if(t.value!==d)t.value=d;
+        etirerSaisie(t);
+        if(avant&&avant.id===id){
+          t.focus({preventScroll:true});
+          try{ t.setSelectionRange(avant.d,avant.f); }catch(_){}
+        }
+      });
+    }catch(_){}
+  }
+  // Envoyer vide le brouillon AVANT le redessin : laissé là, il reviendrait se poser dans
+  // la cellule et l'on croirait le message non parti.
+  function viderBrouillon(id){
+    if(S.brouillons)delete S.brouillons[id];
+    const t=document.getElementById(id);
+    if(t){t.value='';etirerSaisie(t);}
+  }
+  function sendChat(){const el=document.getElementById('chatInput');const m=chatMission();if(!el||!m)return;const v=el.value.trim();if(!v)return;viderBrouillon('chatInput');const msg={from:S.persona,text:v,at:Date.now()};m.chat=m.chat||[];m.chat.push(msg);render();view.scrollTop=view.scrollHeight;if(FB&&m.reqId&&!isDemo()){const p=FB.f.updateDoc(FB.f.doc(FB.db,'requests',m.reqId),{messages:FB.f.arrayUnion(msg)});if(p&&p.catch)p.catch(function(e){toast('⚠︎ Message non envoyé, réessayez');console.warn('chat send',e);});}}
   // Marque la conversation comme lue par le rôle courant (accusé « Lu » pour l'autre).
   function markChatRead(){const m=chatMission();if(!m||(S.persona!=='client'&&S.persona!=='pro'))return;const field=(S.persona==='pro')?'readProAt':'readClientAt';const now=Date.now();m[field]=now;if(FB&&m.reqId&&!isDemo()){try{FB.f.updateDoc(FB.f.doc(FB.db,'requests',m.reqId),{[field]:now});}catch(_){}}}
   // Accusés de lecture de la messagerie SUPPORT (par prestation). L'admin marque avoir lu
@@ -13002,7 +13101,7 @@
   // réponses de Ti-Services (supXReadUser). X = C (client) ou P (artisan).
   function markSupportReadAdmin(m,side){if(!m||!m.reqId||S.persona!=='admin')return;const f=(side==='pro')?'supPReadAdmin':'supCReadAdmin';const now=Date.now();m[f]=now;if(FB&&!isDemo()){try{FB.f.updateDoc(FB.f.doc(FB.db,'requests',m.reqId),{[f]:now});}catch(_){}}}
   function markSupportReadUser(m,side){if(!m||!m.reqId)return;const f=(side==='pro')?'supPReadUser':'supCReadUser';const now=Date.now();m[f]=now;if(FB&&!isDemo()){try{FB.f.updateDoc(FB.f.doc(FB.db,'requests',m.reqId),{[f]:now});}catch(_){}}}
-  function sendSupport(){const el=document.getElementById('supportInput');if(!el||!S.mission)return;const v=el.value.trim();if(!v)return;el.value='';const admin=(S.persona==='admin');const side=admin?(S.supportSide||'client'):(S.persona==='pro'?'pro':'client');const m=S.mission;m.support=m.support||{client:[],pro:[]};if(!m.support[side])m.support[side]=[];const msg={from:admin?'admin':side,text:v,at:Date.now()};m.support[side].push(msg);render();view.scrollTop=view.scrollHeight;
+  function sendSupport(){const el=document.getElementById('supportInput');if(!el||!S.mission)return;const v=el.value.trim();if(!v)return;viderBrouillon('supportInput');const admin=(S.persona==='admin');const side=admin?(S.supportSide||'client'):(S.persona==='pro'?'pro':'client');const m=S.mission;m.support=m.support||{client:[],pro:[]};if(!m.support[side])m.support[side]=[];const msg={from:admin?'admin':side,text:v,at:Date.now()};m.support[side].push(msg);render();view.scrollTop=view.scrollHeight;
     // Persistance bêta : la messagerie support vit dans le document de la demande
     // (supportClient / supportPro), lisible par le client/artisan concerné et l'admin.
     if(FB&&m.reqId&&!isDemo()){try{const field=(side==='pro')?'supportPro':'supportClient';FB.f.updateDoc(FB.f.doc(FB.db,'requests',m.reqId),{[field]:FB.f.arrayUnion(msg)});}catch(_){}}}
@@ -13233,7 +13332,7 @@
       ${(!tel&&m.svc==='baby'&&!m.clientConfirmed)?`<p class="mini" style="text-align:center;color:var(--muted);margin-top:12px">${I.lock} Le numéro de téléphone s'affichera sur le suivi de la prestation dès que la garde sera confirmée.</p>`:''}
       ${bloqueIci?`<div class="banner coral" style="margin-top:12px">${I.shield}<span>Vous avez bloqué ${other}. Vous ne recevez plus ses messages et vous ne serez plus mis en relation.</span></div>
         <button class="btn ghost sm" data-act="unblock:${esc(uidAutre)}" style="margin-top:10px">Débloquer ${other}</button>`
-      :`<div class="chatbar"><input id="chatInput" placeholder="Écrire à ${other}…" autocomplete="off" maxlength="500"><button class="btn primary" data-act="chat-send">Envoyer</button></div>`}
+      :barreDeSaisie('chatInput', `Écrire à ${other}…`, 'chat-send')}
       <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--hair)"><p class="mini" style="margin-bottom:8px;color:var(--muted)">Un souci, un litige, une question sur cette prestation&nbsp;?</p>
         <button class="btn ghost sm" data-act="open-support" style="justify-content:flex-start;gap:8px">${I.shield}&nbsp;Contacter Ti-Services (support)${(()=>{const th=(m.support&&m.support[S.persona])||[];return th.length?` · ${th.length}`:'';})()}</button></div>
       ${/* Signaler et bloquer : discrets, en bas, à leur juste rang, mais toujours
@@ -13270,7 +13369,7 @@
       <div class="row" style="gap:11px;align-items:center;margin-top:2px"><div class="avatar" style="width:42px;height:42px;font-size:14px;background:linear-gradient(135deg,var(--teal),var(--teal-deep))">TS</div><div style="flex:1"><b style="font-size:16px;font-family:var(--f-disp)">Ti-Services · Support</b><div class="mini">${admin?('Échange avec '+(side==='client'?'le client':'le prestataire')):'Assistance Ti-Services'}</div></div></div>
       <div class="banner teal" style="margin-top:12px">${I.shield}<span>À propos de&nbsp;: <b>${m.svcName}</b> · ${quandTxt(m)}${admin?` · ${whoLbl}`:''}. ${admin?'Vous voyez directement la prestation concernée.':'Ti-Services voit directement de quelle prestation il s’agit, pas besoin de tout réexpliquer.'}</span></div>
       <div class="chat-msgs">${list}${readStatus}</div>
-      <div class="chatbar"><input id="supportInput" placeholder="${admin?'Répondre…':'Écrire à Ti-Services…'}" autocomplete="off" maxlength="500"><button class="btn primary" data-act="support-send">Envoyer</button></div>
+      ${barreDeSaisie('supportInput', admin?'Répondre…':'Écrire à Ti-Services…', 'support-send')}
       ${isDemo()?`<p class="mini" style="text-align:center;margin-top:12px"><button class="linklike" data-act="${admin?'support-to-user':'support-to-admin'}">${admin?(I.user+' Voir côté '+(side==='client'?'client':'artisan')+' (démo)'):(I.gear+' Voir la réception côté Ti-Services (démo)')}</button></p>`:''}
       <div style="height:6px"></div></div>`;
   }
@@ -13503,7 +13602,7 @@
   // Stocké dans users/{uid}.support. Pas de prestation associée → aucun bandeau
   // « À propos de … ».
   function sendGeneralSupport(){
-    const el=document.getElementById('gsupInput');if(!el)return;const v=el.value.trim();if(!v)return;el.value='';
+    const el=document.getElementById('gsupInput');if(!el)return;const v=el.value.trim();if(!v)return;viderBrouillon('gsupInput');
     const admin=(S.persona==='admin');
     const msg={from:admin?'admin':(S.persona==='pro'?'pro':'client'),text:v,at:Date.now()};
     if(admin){ if(!S.genUser)return; S.genUser.support=(S.genUser.support||[]).concat([msg]); render();view.scrollTop=view.scrollHeight;
@@ -13550,7 +13649,7 @@
       ${parti?`<div class="banner coral" style="margin-top:12px">${I.warn}<span><b>Ce compte a été supprimé.</b> La conversation est gardée comme pièce${S.genUser.tronque?', tronquée aux '+((S.genUser.support||[]).length)+' derniers messages sur '+S.genUser.nTotal:''}. Il n'y a plus personne à qui répondre.</span></div>`:''}
       ${parti?'':`<div class="banner teal" style="margin-top:12px">${I.support}<span>${admin?'Question générale, hors réservation.':'Une question générale (compte, application, autre)&nbsp;? Écrivez-nous ici, ce n’est lié à aucune prestation.'}</span></div>`}
       <div class="chat-msgs">${list}${parti?'':readStatus}</div>
-      ${parti?'':`<div class="chatbar"><input id="gsupInput" placeholder="${admin?'Répondre…':'Écrire à Ti-Services…'}" autocomplete="off" maxlength="500"><button class="btn primary" data-act="gsup-send">Envoyer</button></div>`}
+      ${parti?'':barreDeSaisie('gsupInput', admin?'Répondre…':'Écrire à Ti-Services…', 'gsup-send')}
       <div style="height:6px"></div></div>`;
   }
   // Écoute du support général de l'utilisateur connecté (client/artisan).
@@ -21138,14 +21237,23 @@
   view.addEventListener('touchend',swEnd);
   view.addEventListener('touchcancel',swEnd);
   view.addEventListener('keydown',(e)=>{
-    if(e.key==='Enter'&&e.target.id==='chatInput'){e.preventDefault();sendChat();view.scrollTop=view.scrollHeight;}
-    if(e.key==='Enter'&&e.target.id==='supportInput'){e.preventDefault();sendSupport();}
+    /* ENTRÉE ENVOIE, MAJ+ENTRÉE VA À LA LIGNE — et la touche fait ce que fait LE BOUTON
+       DE SA BARRE, sans table à tenir : une barre déclare son geste dans son bouton, donc
+       la touche ne peut pas dériver de lui. C'est ce qui rendait la troisième barre muette
+       sous Entrée : elle n'était pas dans la liste. */
+    if(e.key==='Enter'&&!e.shiftKey&&e.target&&e.target.dataset&&e.target.dataset.brouillon){
+      const bar=e.target.closest('.chatbar'), bt=bar&&bar.querySelector('button[data-act]');
+      if(bt){e.preventDefault();bt.click();}
+    }
   });
   // Soumission du formulaire de connexion (bouton « Se connecter » ou touche Entrée) :
   // on empêche le rechargement et on lance la connexion. La soumission d'un vrai <form>
   // déclenche la proposition d'enregistrement du mot de passe par le navigateur.
   document.addEventListener('submit',function(e){ const fm=e.target&&e.target.closest&&e.target.closest('[data-loginform]'); if(!fm)return; e.preventDefault(); attemptLogin(); });
   view.addEventListener('input',(e)=>{
+    // Ce qu'on tape dans une barre de messagerie est retenu dans l'état à chaque frappe :
+    // c'est ce qui le fait survivre à un message reçu pendant qu'on répond.
+    if(e.target&&e.target.dataset&&e.target.dataset.brouillon)majBrouillon(e.target);
     // Validation verte en direct sur les champs obligatoires (data-v).
     if(e.target&&e.target.matches&&e.target.matches('input.txt[data-v]')){e.target.classList.toggle('vok',champOk(e.target));}
     // Téléphone composé (indicatif + numéro) : recompose la valeur complète dans l'état.
