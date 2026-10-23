@@ -27,12 +27,13 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
 console.log('A — une seule porte pour les trois barres');
 /* Trois conversations portaient leur barre recopiée mot pour mot, et la troisième
    n'avait jamais reçu la touche Entrée que les deux autres avaient. */
-ok(/function barreDeSaisie\(id, placeholder, act\)/.test(APP), 'la porte existe');
+ok(/function barreDeSaisie\(id, placeholder, act, conv\)/.test(APP), 'la porte existe, et elle re\u00e7oit la conversation');
 const barresEnDur = (APP.match(/<div class="chatbar"><input/g) || []).length;
 ok(barresEnDur === 0, 'aucune barre n’est plus écrite à la main (' + barresEnDur + ' trouvée(s))');
 const parLaPorte = (APP.match(/barreDeSaisie\('/g) || []).length;
 ok(parLaPorte === 3, 'les trois barres passent par elle (' + parLaPorte + ')');
-ok(/data-brouillon="\$\{id\}"/.test(APP), 'la cellule DÉCLARE qu’elle porte un brouillon');
+ok(/data-brouillon="\$\{esc\(cle\)\}"/.test(APP) && /function cleBrouillon\(id, conv\)/.test(APP),
+  'la cellule DÉCLARE sa clé, et la clé porte la conversation');
 ok(/<textarea id="\$\{id\}"/.test(APP), 'c’est une zone de texte, plus un champ d’une ligne');
 /* La touche ne tient aucune table : elle fait ce que fait le bouton de SA barre. */
 ok(/e\.key==='Enter'&&!e\.shiftKey&&e\.target&&e\.target\.dataset&&e\.target\.dataset\.brouillon/.test(APP)
@@ -108,6 +109,30 @@ ok(/const _brAvant=brouillonActif\(\);/.test(APP) && /restaurerBrouillons\(_brAv
   });
   ok(r2.texte === 'je réfléchis…', 'le brouillon survit même quand on n’a pas le champ');
   ok(r2.vole === false, 'et le champ ne VOLE pas le focus qu’on ne lui avait pas donné');
+
+  console.log('C bis — un brouillon ne fuit JAMAIS d’une conversation à l’autre');
+  /* LE DÉFAUT QUE LE BROUILLON LUI-MÊME A INTRODUIT, et qui était pire que celui qu’il
+     corrige : les trois barres gardent le même identifiant d’un interlocuteur à l’autre.
+     Rangé sous lui, un message commencé pour Marc se reposait dans la cellule de la
+     conversation avec Sophie — et il suffisait d’appuyer sur « Envoyer ». */
+  const r2b = await p.evaluate(() => {
+    const S = window.__S;
+    const faire = (id, nom) => { const m = window.__newMission({ id: 'massage', nm: 'Massage', rate: 60 });
+      m.reqId = id; m.svc = 'massage'; m.svcName = 'Massage'; m.status = 'accepted';
+      m.clientAccepted = true; m.proAccepted = true; m.clientName = 'Claire';
+      m.provider = { nm: nom, uid: 'p-' + id }; m.chat = [{ from: 'pro', text: 'bonjour', at: 1 }]; return m; };
+    const marc = faire('r-marc', 'Marc'), sophie = faire('r-sophie', 'Sophie');
+    S.mission = marc; S.chat = true; window.__render();
+    const el = document.getElementById('chatInput');
+    el.focus(); el.value = 'Marc, je confirme pour mardi'; el.dispatchEvent(new Event('input', { bubbles: true }));
+    S.chat = false; window.__render(); S.mission = sophie; S.chat = true; window.__render();
+    const chezSophie = (document.getElementById('chatInput') || {}).value;
+    S.chat = false; window.__render(); S.mission = marc; S.chat = true; window.__render();
+    const retourMarc = (document.getElementById('chatInput') || {}).value;
+    return { chezSophie, retourMarc };
+  });
+  ok(r2b.chezSophie === '', 'le message commencé pour Marc n’apparaît PAS chez Sophie (' + JSON.stringify(r2b.chezSophie) + ')');
+  ok(r2b.retourMarc === 'Marc, je confirme pour mardi', 'et revenir chez Marc le retrouve, comme une vraie messagerie');
 
   console.log('D — la cellule grandit avec ce qu’on écrit, et s’arrête');
   const r3 = await p.evaluate(() => {

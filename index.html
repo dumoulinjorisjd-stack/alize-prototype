@@ -13033,13 +13033,24 @@
    * ENTRÉE ENVOIE, MAJ+ENTRÉE VA À LA LIGNE. C'est la convention d'une messagerie, et
    * c'est l'inverse de la règle des champs de rédaction : ici le geste le plus fréquent
    * est d'envoyer, et le retour à la ligne est l'exception. */
-  function barreDeSaisie(id, placeholder, act){
+  /* LE BROUILLON EST RANGÉ PAR CONVERSATION, JAMAIS PAR CELLULE. Les trois barres gardent
+     le même identifiant d'un interlocuteur à l'autre : rangé sous lui, un message commencé
+     pour Marc se reposait dans la cellule de la conversation avec Sophie — et il suffisait
+     d'appuyer sur « Envoyer ». C'était pire que le défaut qu'on corrige, et c'est une sonde
+     qui l'a dit, pas la relecture. La clé porte donc la conversation ; revenir chez Marc y
+     retrouve son message, ce qui est exactement ce qu'on attend d'une messagerie. */
+  function cleBrouillon(id, conv){
+    const c = String(conv || '').trim();
+    return c ? (id + '|' + c) : id;
+  }
+  function barreDeSaisie(id, placeholder, act, conv){
     /* LE BROUILLON EST POSÉ DANS LE CONTENU, et non dans un attribut : une zone de texte
        n'a pas d'attribut `value`. `restaurerBrouillons` le repose ensuite en JS, qui fait
        foi — l'analyseur HTML avale un saut de ligne en tête de contenu, et c'est lui qui
        rattrape ce cas. */
-    const d = (S.brouillons && S.brouillons[id]) || '';
-    return `<div class="chatbar"><textarea id="${id}" data-brouillon="${id}" rows="1" placeholder="${placeholder}" autocomplete="off" maxlength="500">${esc(d)}</textarea><button class="btn primary" data-act="${act}">Envoyer</button></div>`;
+    const cle = cleBrouillon(id, conv);
+    const d = (S.brouillons && S.brouillons[cle]) || '';
+    return `<div class="chatbar"><textarea id="${id}" data-brouillon="${esc(cle)}" rows="1" placeholder="${placeholder}" autocomplete="off" maxlength="500">${esc(d)}</textarea><button class="btn primary" data-act="${act}">Envoyer</button></div>`;
   }
   // La hauteur suit le texte, jusqu'à la borne que la feuille de style pose : on efface
   // d'abord, sinon `scrollHeight` rend la hauteur ACTUELLE et la cellule ne redescend
@@ -13088,9 +13099,12 @@
   }
   // Envoyer vide le brouillon AVANT le redessin : laissé là, il reviendrait se poser dans
   // la cellule et l'on croirait le message non parti.
+  // La clé se lit SUR la cellule, qui la déclare : les trois envois continuent de nommer
+  // leur cellule, et la conversation reste une affaire de la barre.
   function viderBrouillon(id){
-    if(S.brouillons)delete S.brouillons[id];
     const t=document.getElementById(id);
+    const cle=(t&&t.dataset&&t.dataset.brouillon)||id;
+    if(S.brouillons)delete S.brouillons[cle];
     if(t){t.value='';etirerSaisie(t);}
   }
   function sendChat(){const el=document.getElementById('chatInput');const m=chatMission();if(!el||!m)return;const v=el.value.trim();if(!v)return;viderBrouillon('chatInput');const msg={from:S.persona,text:v,at:Date.now()};m.chat=m.chat||[];m.chat.push(msg);render();view.scrollTop=view.scrollHeight;if(FB&&m.reqId&&!isDemo()){const p=FB.f.updateDoc(FB.f.doc(FB.db,'requests',m.reqId),{messages:FB.f.arrayUnion(msg)});if(p&&p.catch)p.catch(function(e){toast('⚠︎ Message non envoyé, réessayez');console.warn('chat send',e);});}}
@@ -13332,7 +13346,7 @@
       ${(!tel&&m.svc==='baby'&&!m.clientConfirmed)?`<p class="mini" style="text-align:center;color:var(--muted);margin-top:12px">${I.lock} Le numéro de téléphone s'affichera sur le suivi de la prestation dès que la garde sera confirmée.</p>`:''}
       ${bloqueIci?`<div class="banner coral" style="margin-top:12px">${I.shield}<span>Vous avez bloqué ${other}. Vous ne recevez plus ses messages et vous ne serez plus mis en relation.</span></div>
         <button class="btn ghost sm" data-act="unblock:${esc(uidAutre)}" style="margin-top:10px">Débloquer ${other}</button>`
-      :barreDeSaisie('chatInput', `Écrire à ${other}…`, 'chat-send')}
+      :barreDeSaisie('chatInput', `Écrire à ${other}…`, 'chat-send', m.reqId||(m.provider&&m.provider.uid)||'')}
       <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--hair)"><p class="mini" style="margin-bottom:8px;color:var(--muted)">Un souci, un litige, une question sur cette prestation&nbsp;?</p>
         <button class="btn ghost sm" data-act="open-support" style="justify-content:flex-start;gap:8px">${I.shield}&nbsp;Contacter Ti-Services (support)${(()=>{const th=(m.support&&m.support[S.persona])||[];return th.length?` · ${th.length}`:'';})()}</button></div>
       ${/* Signaler et bloquer : discrets, en bas, à leur juste rang, mais toujours
@@ -13369,7 +13383,7 @@
       <div class="row" style="gap:11px;align-items:center;margin-top:2px"><div class="avatar" style="width:42px;height:42px;font-size:14px;background:linear-gradient(135deg,var(--teal),var(--teal-deep))">TS</div><div style="flex:1"><b style="font-size:16px;font-family:var(--f-disp)">Ti-Services · Support</b><div class="mini">${admin?('Échange avec '+(side==='client'?'le client':'le prestataire')):'Assistance Ti-Services'}</div></div></div>
       <div class="banner teal" style="margin-top:12px">${I.shield}<span>À propos de&nbsp;: <b>${m.svcName}</b> · ${quandTxt(m)}${admin?` · ${whoLbl}`:''}. ${admin?'Vous voyez directement la prestation concernée.':'Ti-Services voit directement de quelle prestation il s’agit, pas besoin de tout réexpliquer.'}</span></div>
       <div class="chat-msgs">${list}${readStatus}</div>
-      ${barreDeSaisie('supportInput', admin?'Répondre…':'Écrire à Ti-Services…', 'support-send')}
+      ${barreDeSaisie('supportInput', admin?'Répondre…':'Écrire à Ti-Services…', 'support-send', (m.reqId||'')+':'+side)}
       ${isDemo()?`<p class="mini" style="text-align:center;margin-top:12px"><button class="linklike" data-act="${admin?'support-to-user':'support-to-admin'}">${admin?(I.user+' Voir côté '+(side==='client'?'client':'artisan')+' (démo)'):(I.gear+' Voir la réception côté Ti-Services (démo)')}</button></p>`:''}
       <div style="height:6px"></div></div>`;
   }
@@ -13649,7 +13663,7 @@
       ${parti?`<div class="banner coral" style="margin-top:12px">${I.warn}<span><b>Ce compte a été supprimé.</b> La conversation est gardée comme pièce${S.genUser.tronque?', tronquée aux '+((S.genUser.support||[]).length)+' derniers messages sur '+S.genUser.nTotal:''}. Il n'y a plus personne à qui répondre.</span></div>`:''}
       ${parti?'':`<div class="banner teal" style="margin-top:12px">${I.support}<span>${admin?'Question générale, hors réservation.':'Une question générale (compte, application, autre)&nbsp;? Écrivez-nous ici, ce n’est lié à aucune prestation.'}</span></div>`}
       <div class="chat-msgs">${list}${parti?'':readStatus}</div>
-      ${parti?'':barreDeSaisie('gsupInput', admin?'Répondre…':'Écrire à Ti-Services…', 'gsup-send')}
+      ${parti?'':barreDeSaisie('gsupInput', admin?'Répondre…':'Écrire à Ti-Services…', 'gsup-send', admin?((S.genUser&&S.genUser.uid)||'genuser'):'moi')}
       <div style="height:6px"></div></div>`;
   }
   // Écoute du support général de l'utilisateur connecté (client/artisan).
