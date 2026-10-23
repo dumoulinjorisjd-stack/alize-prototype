@@ -4117,6 +4117,110 @@ exports.orderPaymentCheck = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (re
   return {status: st, attente: true, etat: etat};
 });
 
+/* ══ CE QUE MOLLIE SAIT DE LA CARTE D'UN CLIENT — UNE SEULE LECTURE ═══════════════
+ * « Le profil a enregistré une carte et la console me dit non » (23/10/2026), capture des
+ * deux écrans à l'appui. Les deux disaient vrai de LEUR source, et c'est le défaut : le
+ * profil demande à MOLLIE, la console lisait `users/{uid}.card` — un champ que seul le
+ * navigateur du client écrit, et seulement par le formulaire de DÉMONSTRATION, celui qui
+ * déchiffre un numéro de carte dans la page. En production la carte vit chez Mollie et
+ * n'atterrit jamais dans ce champ : la console annonçait donc « aucune carte » à propos
+ * de TOUS les clients réels, depuis toujours.
+ *
+ * LA LECTURE EST DONC EXTRAITE ICI, et les deux écrans l'appellent. Recopiée côté
+ * administration, elle aurait fini par ne plus dire la même chose que le profil — c'est
+ * exactement la divergence qu'on vient de corriger, par une autre porte.
+ *
+ * LE MANDAT INSCRIT SUR LA FICHE PASSE EN PREMIER : c'est celui que Mollie nous a NOMMÉ à
+ * l'enregistrement, donc la source sûre, qui ne dépend d'aucune recherche. À défaut, le
+ * mandat utile le plus récent — un mandat « valid » primant toujours un « pending ».
+ *
+ * LIRE N'EST PAS CRÉER : on retrouve un client Mollie orphelin par la marque qu'on y
+ * laisse, on ne fabrique jamais de fiche chez notre prestataire de paiement. */
+function carteDeMandat(m) {
+  if (!m || ['valid', 'pending'].indexOf(m.status) < 0) return null;
+  const d = m.details || {};
+  return {
+    id: String(m.id || ''),
+    brand: String(d.cardLabel || (m.method === 'creditcard' ? 'Carte' : m.method) || 'Carte'),
+    last4: String(d.cardNumber || '').slice(-4),
+    exp: String(d.cardExpiryDate || '').slice(0, 7),   // AAAA-MM
+    holder: String(d.cardHolder || ''),
+    status: String(m.status || ''),
+  };
+}
+async function lireCarteMollie(db, uid, connu) {
+  const out = {card: null, customerId: '', mandatInscrit: '', lu: false};
+  if (!uid || !mollieApiConfigured()) return out;
+  let udoc = {};
+  try {
+    const snap = await db.collection('users').doc(uid).get();
+    udoc = (snap.exists && snap.data()) || {};
+  } catch (e) { console.error('lireCarteMollie: fiche illisible pour ' + uid, e); return out; }
+  out.mandatInscrit = String(udoc.mollieMandateId || '');
+  let customerId = String((connu && connu.customerId) || udoc.mollieCustomerId || '');
+  /* RATTRAPAGE, SANS RIEN CRÉER : un client Mollie a pu naître lors d'une tentative dont
+     l'identifiant ne nous est pas revenu. On le retrouve par `metadata.uid` et on
+     l'inscrit — c'est une réparation de NOTRE fiche, juste quel que soit l'écran qui la
+     déclenche, et c'est ce qui empêche la console et le profil de diverger de nouveau. */
+  if (!customerId) {
+    try {
+      const liste = await mollieApi('/customers?limit=250', 'GET');
+      const arr = (liste.ok && liste.data && liste.data._embedded && liste.data._embedded.customers) || [];
+      const deja = arr.filter((c) => c && c.metadata && String(c.metadata.uid || '') === uid);
+      if (deja.length) {
+        deja.sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+        customerId = String(deja[0].id);
+        console.log('lireCarteMollie: client Mollie retrouvé pour ' + uid + ' → ' + customerId);
+        try { await db.collection('users').doc(uid).set({mollieCustomerId: customerId}, {merge: true}); } catch (e) {
+          console.error('lireCarteMollie: mollieCustomerId NON enregistré pour ' + uid, e);
+        }
+      }
+    } catch (e) { console.warn('lireCarteMollie: recherche du client Mollie', e); }
+  }
+  out.customerId = customerId;
+  if (!customerId) { out.lu = true; return out; }
+  const base = '/customers/' + encodeURIComponent(customerId) + '/mandates';
+  if (out.mandatInscrit) {
+    try {
+      const un = await mollieApi(base + '/' + encodeURIComponent(out.mandatInscrit), 'GET');
+      const c = (un.ok && un.data) ? carteDeMandat(un.data) : null;
+      if (c) { out.card = c; out.lu = true; return out; }
+    } catch (_) {}
+  }
+  try {
+    const rep = await mollieApi(base + '?limit=50', 'GET');
+    /* SILENCE N'EST PAS RÉPONSE : Mollie injoignable ne veut pas dire « aucune carte ».
+       Sans ce refus, une panne de réseau ferait annoncer à l'écran qu'un client n'a pas
+       de moyen de paiement — et l'on reprendrait la décision là-dessus. */
+    if (!rep.ok) return out;
+    const arr = (rep.data && rep.data._embedded && rep.data._embedded.mandates) || [];
+    const utiles = arr.filter((m) => m && ['valid', 'pending'].indexOf(m.status) >= 0);
+    out.lu = true;
+    if (!utiles.length) return out;
+    utiles.sort((a, b) => (a.status === b.status
+      ? String(b.createdAt || '').localeCompare(String(a.createdAt || ''))
+      : (a.status === 'valid' ? -1 : 1)));
+    out.card = carteDeMandat(utiles[0]);
+  } catch (e) { console.warn('lireCarteMollie: mandats', e); }
+  return out;
+}
+
+/* L'ADMINISTRATEUR VOIT LA MÊME CARTE QUE LE CLIENT, et par la même lecture. La liste
+   des comptes, elle, ne demande RIEN à Mollie : des centaines d'appels pour peindre un
+   écran. Elle dit ce que NOTRE fiche sait, et ce bouton va chercher le détail pour UN
+   compte, à la demande. */
+exports.adminClientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) => {
+  const who = (request.auth && request.auth.token && request.auth.token.email) || '';
+  if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+    throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
+  }
+  const uid = String((request.data && request.data.uid) || '').trim();
+  if (!uid) throw new HttpsError('invalid-argument', 'Compte manquant.');
+  if (!mollieApiConfigured()) return {card: null, simulated: true, lu: false};
+  const r = await lireCarteMollie(getFirestore(), uid);
+  return {card: r.card, customerId: r.customerId, mandatInscrit: r.mandatInscrit, lu: r.lu};
+});
+
 exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) => {
   const uid = request.auth && request.auth.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Connexion requise.');
@@ -4197,37 +4301,14 @@ exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) 
   // ne le rendre « valid » qu'une fois sa vérification faite : le filtrer sans le dire
   // revenait à annoncer « Aucune carte » à quelqu'un qui venait de l'enregistrer. On le
   // remonte donc avec son état, et l'écran dit lequel des deux c'est.
-  const carteDeMandat = (m) => {
-    if (!m || ['valid', 'pending'].indexOf(m.status) < 0) return null;
-    const d = m.details || {};
-    return {
-      id: String(m.id || ''),
-      brand: String(d.cardLabel || (m.method === 'creditcard' ? 'Carte' : m.method) || 'Carte'),
-      last4: String(d.cardNumber || '').slice(-4),
-      exp: String(d.cardExpiryDate || '').slice(0, 7),   // AAAA-MM
-      holder: String(d.cardHolder || ''),
-      status: String(m.status || ''),
-    };
-  };
+  /* LA LECTURE DE LA CARTE VIT HORS D'ICI (`lireCarteMollie`), et la console l'appelle
+     aussi : c'est ce qui garantit que les deux écrans ne pourront plus se contredire.
+     On lui passe le client Mollie DÉJÀ résolu par ce qui précède, pour qu'elle ne
+     recommence pas la recherche. */
   const readCard = async () => {
-    if (!customerId) return null;
-    const base = '/customers/' + encodeURIComponent(customerId) + '/mandates';
-    if (udoc.mollieMandateId) {
-      try {
-        const un = await mollieApi(base + '/' + encodeURIComponent(String(udoc.mollieMandateId)), 'GET');
-        const c = (un.ok && un.data) ? carteDeMandat(un.data) : null;
-        if (c) return c;
-      } catch (_) {}
-    }
-    const out = await mollieApi(base + '?limit=50', 'GET');
-    const arr = (out.ok && out.data && out.data._embedded && out.data._embedded.mandates) || [];
-    const utiles = arr.filter((m) => m && ['valid', 'pending'].indexOf(m.status) >= 0);
-    if (!utiles.length) return null;
-    // Un mandat valide prime toujours sur un mandat en attente ; à état égal, le plus récent.
-    utiles.sort((a, b) => (a.status === b.status
-      ? String(b.createdAt || '').localeCompare(String(a.createdAt || ''))
-      : (a.status === 'valid' ? -1 : 1)));
-    return carteDeMandat(utiles[0]);
+    const r = await lireCarteMollie(db, uid, {customerId: customerId});
+    if (r.customerId && !customerId) customerId = r.customerId;
+    return r.card;
   };
 
   // Peut-on proposer l'enregistrement ? On interrogeait l'API Methods avec un montant

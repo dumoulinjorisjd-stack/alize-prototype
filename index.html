@@ -3698,7 +3698,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='878';
+  const VERSION_APP='879';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -11240,7 +11240,7 @@
     const push=!!(c&&c.push);
     const revenu=!!j.revenu;
     const sansAdr=!((c&&c.addresses||[]).length);
-    const sansCarte=!(c&&c.card)||/Aucune/.test(String(c&&c.card||''));
+    const sansCarte=compteSansCarte(c);
     const out=[murOuEnEst(c)];
     // `indispo` n'est pas une marche, c'est le renseignement le plus utile de tous : il
     // dit ce qu'on vous demande et que vous ne vendez pas encore.
@@ -11410,7 +11410,7 @@
       return {n:g.length,
         sansPush:g.filter(function(c){return !c.push;}).length,
         sansAdresse:g.filter(function(c){return !((c.addresses||[]).length);}).length,
-        sansCarte:g.filter(function(c){return !c.card||/Aucune/.test(String(c.card));}).length,
+        sansCarte:g.filter(compteSansCarte).length,
         vieux:g.filter(function(c){return c.createdAt&&(maintenant-c.createdAt)>7*864e5;}).length,
         revenus:g.filter(function(c){return !!((c.jalons||{}).revenu);}).length,
         jamais:g.filter(function(c){return !((c.jalons||{}).revenu);}).length,
@@ -12982,7 +12982,20 @@
       <div class="card fiche" style="padding:16px;margin-top:16px">
         ${row('Statut',`<span class="chip ${acctChip(cc.status)[0]}">${acctChip(cc.status)[1]}</span>`)}
         ${row('Compte de test',`<div class="row between" style="align-items:center;gap:10px"><span class="mini" style="color:var(--muted);line-height:1.45;flex:1;min-width:0">${compteDeTest(cc)&&cc.test!==true?'Reconnu automatiquement (adresse d’administration ou compte de démonstration des magasins).':'Écarte ce compte des mesures « Où s’arrêtent les clients » et « Demandes, par statut ».'}</span><button class="switch" data-adm="clitest:${cc.id}" ${(compteDeTest(cc)&&cc.test!==true)?'disabled style="opacity:.5;flex:none;background:var(--good)"':`style="flex:none;background:${cc.test?'var(--good)':'var(--hair)'}"`}><span class="knob" style="left:${compteDeTest(cc)?'25px':'3px'}"></span></button></div>`)}
-        ${row('Moyen de paiement',`${esc(cc.card)}${cc.cardExp?`<div class="mini" style="margin-top:4px">Expire ${esc(cc.cardExp)}</div>`:''}`)}
+        ${row('Moyen de paiement',(()=>{
+          /* CE QUE NOTRE FICHE SAIT, puis ce que MOLLIE répond si on le demande — par la
+             même lecture que le profil du client, de sorte que les deux ne puissent plus
+             se contredire. Le détail (marque, quatre chiffres, échéance) n'est QUE chez
+             Mollie : l'afficher d'office coûterait un appel par compte de la liste. */
+          const m=S.admCarteMollie&&S.admCarteMollie[cc.uid];
+          if(m&&m.card)return `<b>${esc(m.card.brand||'Carte')} •••• ${esc(m.card.last4||'····')}</b>`
+            +`<div class="mini" style="margin-top:4px">Expire ${esc(m.card.exp||'—')}${m.card.status==='pending'?' · en cours de validation':''}</div>`
+            +`<div class="mini" style="color:var(--muted)">D'après Mollie, à l'instant</div>`;
+          if(m&&m.lu)return `<b>Aucune carte chez Mollie</b><div class="mini" style="margin-top:4px;color:var(--muted)">D'après Mollie, à l'instant</div>`;
+          if(m&&!m.lu&&!m.busy)return `<b>${esc(cc.card)}</b><div class="mini" style="margin-top:4px;color:var(--coral-deep)">Mollie n'a pas répondu : on ne sait pas</div>`;
+          return `<b>${esc(cc.card)}</b>${cc.cardExp?`<div class="mini" style="margin-top:4px">Expire ${esc(cc.cardExp)}</div>`:''}`
+            +`<div style="margin-top:7px"><button class="btn ghost sm" data-act="adm-carte:${esc(cc.uid)}" style="width:auto;padding:7px 12px"${(m&&m.busy)?' disabled':''}>${(m&&m.busy)?'Lecture…':'Demander à Mollie'}</button></div>`;
+        })())}
         ${row('Réservations',cc.bookings+(cc.lastAt?`<div class="mini" style="margin-top:4px">Dernière&nbsp;: ${dt(cc.lastAt)}</div>`:''))}
         ${row('Abonnements',(cc.recurring&&cc.recurring.length)?cc.recurring.map(function(r){return esc(svcNm(r.svc||r.service||''))+(r.freq?' · '+esc(r.freq):'');}).join('<br>'):'')}
         ${row('Notifications',cc.push?`<span class="chip good">${I.check} Actives</span><div class="mini" style="margin-top:4px">${cc.push} appareil${cc.push>1?'s':''} enregistré${cc.push>1?'s':''}</div>`:`<span class="chip grey">${I.bolt} Aucune</span><div class="mini" style="margin-top:4px">Ce client ne sera pas prévenu quand un prestataire répond : il faut qu'il ouvre l'application pour le voir.</div>`)}
@@ -13687,6 +13700,38 @@
   // Fiches clients de la console, construites depuis la collection `users`.
   // On remonte TOUT ce que le client a renseigné : la fiche admin doit permettre de
   // répondre à une question au téléphone sans aller fouiller ailleurs.
+  /* ══ CE QUE LA FICHE D'UN COMPTE SAIT DE SA CARTE ════════════════════════════════
+   * « Le profil a enregistré une carte et la console me dit non » (23/10/2026). Les deux
+   * disaient vrai de LEUR source : le profil demande à Mollie, la console lisait
+   * `users/{uid}.card` — un champ que seul le navigateur du client écrit, et seulement par
+   * le formulaire de DÉMONSTRATION. En production la carte vit chez Mollie et n'atterrit
+   * jamais là : la console annonçait « aucune carte » à propos de TOUS les clients réels.
+   *
+   * ON NE DEMANDE RIEN À MOLLIE POUR PEINDRE UNE LISTE : des centaines d'appels pour un
+   * écran. On dit ce que NOTRE fiche SAIT — le serveur y écrit le mandat dès qu'une carte
+   * est enregistrée (webhook, reprise de commande) — et le détail se va chercher compte
+   * par compte, à la demande, par la même lecture que le profil.
+   *
+   * ÉTATS FERMÉS, parce que deux statistiques du parc cherchaient le mot « Aucune » DANS
+   * la phrase affichée : un libellé reformulé les faisait compter faux, en silence. */
+  const CARTE_ETATS = ['carte', 'mandat', 'client-mollie', 'aucune'];
+  function carteDuCompte(d){
+    d = d || {};
+    // Carte de démonstration : elle porte son aperçu, et c'est le seul cas où nous l'avons.
+    if (d.card && (d.card.brand || d.card.last4)) {
+      return {etat:'carte', texte:(d.card.brand||'Carte')+' ••'+(d.card.last4||d.card.last||'····'), exp:d.card.exp||''};
+    }
+    // Le mandat inscrit par le SERVEUR : une carte est bien mémorisée chez Mollie.
+    if (d.mollieMandateId) return {etat:'mandat', texte:'Carte enregistrée', exp:''};
+    // Un client Mollie sans mandat : il a approché le paiement, rien n'est mémorisé.
+    if (d.mollieCustomerId) return {etat:'client-mollie', texte:'Client Mollie, aucune carte mémorisée', exp:''};
+    return {etat:'aucune', texte:'Aucune carte enregistrée', exp:''};
+  }
+  // « Ce compte a-t-il un moyen de paiement ? » — posée par les statistiques du parc.
+  function compteSansCarte(c){
+    const e = (c && c.carteEtat) || 'aucune';
+    return e === 'aucune' || e === 'client-mollie';
+  }
   function buildAdminClients(snap){
     const out=[];
     snap.forEach(function(docu){
@@ -13694,6 +13739,7 @@
       const role=d.role||'client';
       const hist=Array.isArray(d.history)?d.history:[];
       const card=d.card||null;
+      const carte=carteDuCompte(d);
       // Un compte qui passe de client à prestataire voit son rôle basculer à « artisan ».
       // Filtrer sur le seul rôle le faisait DISPARAÎTRE de la liste des clients, alors que
       // ses réservations, ses adresses et sa carte sont toujours dans sa fiche : on perdait
@@ -13703,14 +13749,19 @@
       const traceClient=hist.length>0
         ||(Array.isArray(d.addresses)&&d.addresses.length>0)
         ||!!card
+        // UNE CARTE MÉMORISÉE CHEZ MOLLIE EST UNE TRACE DE CLIENT, au même titre qu'une
+        // carte de démonstration : sans elle, un compte passé prestataire disparaissait de
+        // la liste alors qu'il avait bien un moyen de paiement enregistré.
+        ||carte.etat==='mandat'
         ||(Array.isArray(d.recurring)&&d.recurring.length>0)
         ||d.wasClient===true;
       if(role!=='client'&&!traceClient)return;      // artisans et conciergeries ont leur propre liste
       out.push({id:docu.id,uid:docu.id,real:true,role:role,alsoPro:role!=='client',
         name:d.name||'Client',email:d.email||'',phone:d.phone||'',zone:d.zone||'—',photo:d.photo||'',
         status:d.status||'valide',
-        card:card?((card.brand||'Carte')+' ••'+(card.last4||card.last||'····')):'Aucune carte enregistrée',
-        cardExp:card?(card.exp||''):'',
+        card:carte.texte, carteEtat:carte.etat,
+        mollieCustomerId:d.mollieCustomerId||'', mollieMandateId:d.mollieMandateId||'',
+        cardExp:carte.exp,
         addresses:Array.isArray(d.addresses)?d.addresses:[],addrDefault:d.addrDefault||null,
         bookings:hist.length,history:hist,
         lastAt:hist.reduce(function(t,h){return Math.max(t,h.at||0);},0),
@@ -20246,6 +20297,26 @@
     if(b.dataset.act&&b.dataset.act.indexOf('addr-edit:')===0){const a=S.addresses.find(x=>x.id===b.dataset.act.split(':')[1]);if(a){S.addrForm={id:a.id,label:a.label,address:a.address,zone:a.zone,geo:a.geo?{...a.geo}:null,access:a.access||''};render();}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('conc-view:')===0){S.concView=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('conc-invoice:')===0){S.concInvoice=b.dataset.act.split(':')[1];render();return;}
+    /* DEMANDER À MOLLIE LA CARTE D'UN COMPTE. Même lecture que le profil du client
+       (`lireCarteMollie`), donc même réponse : c'est ce qui empêche les deux écrans de se
+       contredire. Un appel, un compte, sur demande.
+       SILENCE N'EST PAS RÉPONSE : si Mollie ne répond pas, on garde `lu` à faux et l'écran
+       dit qu'on ne sait pas, au lieu d'annoncer une absence de carte. */
+    if(b.dataset.act&&b.dataset.act.indexOf('adm-carte:')===0){
+      const uid=b.dataset.act.slice(10);
+      S.admCarteMollie=S.admCarteMollie||{};
+      if(S.admCarteMollie[uid]&&S.admCarteMollie[uid].busy)return;
+      S.admCarteMollie[uid]={busy:true};render();
+      FB.fn.httpsCallable(FB.functions,'adminClientCard')({uid:uid}).then(function(r){
+        const d=(r&&r.data)||{};
+        S.admCarteMollie[uid]={card:d.card||null,lu:!!d.lu,busy:false};
+        render();
+      }).catch(function(e){
+        S.admCarteMollie[uid]={card:null,lu:false,busy:false};
+        toast('⚠︎ Lecture Mollie impossible : '+fbErrTxt(e));render();
+      });
+      return;
+    }
     if(b.dataset.act&&(b.dataset.act.indexOf('conc-client:')===0||b.dataset.act.indexOf('conc-client-edit:')===0)){const c=concClient(b.dataset.act.split(':')[1]);if(c){S.concClientView=null;S.concForm={id:c.id,name:c.name,email:c.email,phone:c.phone,alabel:c.addr?c.addr.label:'',aaddr:c.addr?c.addr.address:'',azone:c.addr?c.addr.zone:'Gustavia',ageo:c.addr?c.addr.geo:null,notes:c.notes||'',authorized:c.authorized,card:c.card};render();}return;}
     if(b.dataset.act&&b.dataset.act.indexOf('conc-client-view:')===0){S.concClientView=b.dataset.act.split(':')[1];render();return;}
     if(b.dataset.act&&b.dataset.act.indexOf('conc-new-for:')===0){S.concClientView=null;S.concOrder={step:'service',clientId:b.dataset.act.split(':')[1]};render();return;}

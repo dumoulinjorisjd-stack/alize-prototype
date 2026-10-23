@@ -4,7 +4,7 @@
 # fois avec l'environnement, emportant des dizaines de tests écrits au fil du projet.
 SRC=${SRC:-/home/user/alize-work/index.html}
 OUT=${OUT:-/home/user/alize-work/tests/harn/app.html}
-sed 's/function render(){/function render(){window.__S=S;window.__render=render;window.__setFB=function(v){FB=v;};/
+sed 's/function render(){/function render(){window.__S=S;window.__render=render;window.__carteDuCompte=carteDuCompte;window.__compteSansCarte=compteSansCarte;window.__CARTE_ETATS=CARTE_ETATS;window.__setFB=function(v){FB=v;};/
      s/^  function fbErrTxt(e){/  window.__err=function(e){return fbErrTxt(e);};\n  function fbErrTxt(e){/
      s/^  function newMission(svc){/  window.__totals=function(m){return totals(m);};window.__demarrage={decider:function(m,t,c){return demarrageDecider(m,t,c);},debut:function(d,s,f){return creneauDebutMs(d,s,f);},courtoisie:function(){return DEMARRAGE_COURTOISIE_MS;},annulable:function(st){return demarrageAnnulable(st);},cloreEtats:function(){return CLORE_ETATS.slice();}};window.__newMission=function(s){return newMission(s);};\n  function newMission(svc){/
      s/^  function molliePeutTravailler(){/  window.__peutTravailler=function(){return molliePeutTravailler();};window.__differe=function(){return versementDiffere();};\n  function molliePeutTravailler(){/
