@@ -150,6 +150,22 @@ for (const [champ, val] of [['arrhesPayout', 'routed'], ['reglementAjourne', '']
      'le prestataire non plus');
 }
 
+console.log('\n── LE MONTANT CONSENTI, ET CE QUI COUVRE LA COMMANDE ──');
+/* Le plafond du SILENCE : `autoValidate` ne valide seule que jusqu'à la somme que le
+   client a vue. Laissé libre, un client s'écrirait un consentement à sa convenance, et
+   un prestataire le mettrait à zéro pour bloquer toute validation automatique.
+   `couverturePar` / `cardSetupStatus` disent, eux, pourquoi une demande a été ouverte
+   aux prestataires SANS empreinte : s'en déclarer couvert sans qu'aucune carte soit
+   mémorisée enverrait quelqu'un travailler sur une prestation non prélevable. */
+for (const [champ, val] of [['totalConsenti', 1], ['totalConsentiAt', 1],
+                            ['cardSetupPaymentId', 'tr_x'], ['cardSetupStatus', 'paid'],
+                            ['couverturePar', 'mandat'], ['mollieMandateId', 'mdt_x']]) {
+  ok(!(await passe(updateDoc(R(dCli), { [champ]: val }))),
+     'le client ne s’écrit pas « ' + champ + ' »');
+  ok(!(await passe(updateDoc(R(dPro), { [champ]: val }))),
+     'le prestataire non plus');
+}
+
 await env.cleanup();
 console.log(f ? '\n' + f + ' ÉCHEC(S)' : '\nTout est vert.');
 process.exit(f ? 1 : 0);

@@ -420,6 +420,47 @@ async function mollieRouteNet(molliePaymentId, orgId, netAmount, label) {
  * son lien, à faire suivre au client. On ne verse jamais à l'artisan ce qui n'a pas
  * été encaissé : le versement du supplément n'a lieu qu'au webhook « paid ».
  */
+/* ══ LE MANDAT QUI PEUT PORTER DE L'ARGENT — UNE SEULE PORTE ═══════════════════════
+ * La question « ce client a-t-il un moyen de paiement utilisable ? » se posait à DEUX
+ * endroits avec deux réponses possibles : ici (prélèvement hors session, qui exige
+ * `valid`) et dans `clientCard` (affichage, qui accepte `pending` pour ne pas annoncer
+ * « aucune carte » à quelqu'un qui vient de la valider). Les deux ont raison pour LEUR
+ * question, et c'est précisément pourquoi il faut les nommer : celle-ci décide de
+ * l'ARGENT, celle de `clientCard` décide de ce qui S'AFFICHE.
+ *
+ * On rend donc l'état TEL QUEL — `valid`, `pending`, ou rien — et c'est
+ * `commandeCouverture` qui en tire une décision. Une lecture qui filtrerait elle-même
+ * ne saurait plus distinguer « aucune carte » de « enregistrement en cours ».
+ *
+ * NE LÈVE JAMAIS, et ne crée RIEN : un client Mollie se crée au moment où quelqu'un
+ * enregistre une carte, jamais en lisant (règle du 21/09/2026 — le simple affichage d'un
+ * écran laissait un nom et une adresse chez notre prestataire de paiement). */
+async function mandatDuClient(db, uid) {
+  const out = {customerId: '', mandat: null, lu: false};
+  if (!uid || !mollieApiConfigured()) return out;
+  try { out.customerId = String((await db.collection('users').doc(uid).get()).get('mollieCustomerId') || ''); } catch (_) {}
+  if (!out.customerId) { out.lu = true; return out; }   // pas de client Mollie : lecture faite, rien à porter
+  try {
+    const r = await mollieApi('/customers/' + encodeURIComponent(out.customerId) + '/mandates?limit=50', 'GET');
+    if (!r.ok) return out;                               // Mollie n'a pas répondu : on NE SAIT PAS (lu reste faux)
+    out.lu = true;
+    const arr = (r.data && r.data._embedded && r.data._embedded.mandates) || [];
+    const utiles = arr.filter((m) => m && ['valid', 'pending'].indexOf(m.status) >= 0);
+    // Un mandat valide prime sur un mandat en attente ; à état égal, le plus récent.
+    utiles.sort((a, b) => (a.status === b.status
+      ? String(b.createdAt || '').localeCompare(String(a.createdAt || ''))
+      : (a.status === 'valid' ? -1 : 1)));
+    const m = utiles[0];
+    if (m) {
+      const d = m.details || {};
+      out.mandat = {id: String(m.id || ''), statut: String(m.status || ''),
+        exp: String(d.cardExpiryDate || '').slice(0, 7),
+        brand: String(d.cardLabel || 'Carte'), last4: String(d.cardNumber || '').slice(-4)};
+    }
+  } catch (e) { console.warn('mandatDuClient', e); }
+  return out;
+}
+
 async function mollieChargeComplement(db, reqId, clientUid, amount, label, plafond) {
   const out = {ok: false, direct: false, paymentId: '', checkoutUrl: '', reason: ''};
   if (!mollieApiConfigured() || !(amount > 0) || !reqId) { out.reason = 'inactif'; return out; }
@@ -448,8 +489,9 @@ async function mollieChargeComplement(db, reqId, clientUid, amount, label, plafo
     console.warn('mollieChargeComplement au-delà du plafond reqId=' + reqId + ' ' + round2(amount) + ' € > ' + round2(max) + ' € : refusé');
     return out;
   }
-  let customerId = '';
-  try { customerId = (await db.collection('users').doc(clientUid).get()).get('mollieCustomerId') || ''; } catch (_) {}
+  // La porte unique : c'est elle qui sait quel mandat peut porter de l'argent.
+  const M = await mandatDuClient(db, clientUid);
+  const customerId = M.customerId;
   const app = APP_URL.replace(/\/$/, '');
   const body = {
     amount: {currency: 'EUR', value: round2(amount).toFixed(2)},
@@ -458,13 +500,8 @@ async function mollieChargeComplement(db, reqId, clientUid, amount, label, plafo
     metadata: {reqId: reqId, clientUid: clientUid, kind: 'complement', produit: PRODUIT},
   };
   if (customerId) {
-    let mandateId = '';
-    try {
-      const mds = await mollieApi('/customers/' + encodeURIComponent(customerId) + '/mandates?limit=50', 'GET');
-      const arr = (mds.ok && mds.data && mds.data._embedded && mds.data._embedded.mandates) || [];
-      const m = arr.find((x) => x && x.status === 'valid');   // « pending » ne peut rien porter
-      if (m) mandateId = m.id;
-    } catch (_) {}
+    // « pending » ne peut rien porter : seul un mandat VALIDE prélève hors session.
+    const mandateId = (M.mandat && M.mandat.statut === 'valid') ? M.mandat.id : '';
     if (mandateId) {
       const rec = await mollieApi('/payments', 'POST',
         Object.assign({customerId: customerId, sequenceType: 'recurring', mandateId: mandateId}, body));
@@ -589,6 +626,79 @@ function reglementDecider(e) {
     motif: motif,
   };
 }
+/* ══ CE QUI COUVRE UNE COMMANDE, ET CE QU'ON DEMANDE AU CLIENT MAINTENANT ══════════
+ * « L'enregistrement de la carte à la commande » (23/10/2026). Jusqu'ici la carte ne
+ * s'enregistrait que depuis le Profil, donc FACULTATIVEMENT : la plupart des clients
+ * n'avaient aucun mandat, et le filet posé au lot précédent — prélever le solde hors
+ * session quand l'empreinte est morte — retombait alors sur un LIEN DE PAIEMENT qu'il
+ * faut envoyer au client et attendre. Le prestataire, lui, a déjà travaillé.
+ *
+ * MOLLIE NE COMBINE PAS LES DEUX, ET C'EST MESURÉ — déjà payé en production, consigné
+ * dans `createClientPayment` : une empreinte (`captureMode:'manual'`) demandée en même
+ * temps qu'un premier paiement (`sequenceType:'first'`) ouvrait un écran de règlement
+ * VIDE, au tout premier paiement d'un client, donc au pire moment. Il faut donc CHOISIR
+ * lequel des deux gestes la commande demande. Un seul écran, jamais deux : doubler le
+ * 3-D Secure à l'instant de la commande se paierait en commandes abandonnées.
+ *
+ * LE CHOIX EST CELUI QUI PORTE : sans moyen mémorisé on enregistre la carte (0,00 € +
+ * 3-D Secure, aucun débit, aucune empreinte), parce que le mandat est le seul des deux
+ * qui soit encore vivant le jour de la prestation. Avec un mandat valide on pose
+ * l'empreinte comme avant — elle ne coûte rien de plus, et le mandat reste le filet.
+ *
+ * UN MANDAT « PENDING » NE COUVRE RIEN, et ce n'est pas une prudence : `mollieChargeComplement`
+ * exige `valid` — « pending » ne peut rien porter. Mais c'est un enregistrement EN COURS :
+ * on ne le redemande pas, on attend. Confondre les deux ferait, au choix, renvoyer le
+ * client saisir une carte qu'il vient de valider, ou compter sur un mandat qui ne
+ * prélèvera rien.
+ *
+ * UNE CARTE QUI EXPIRE AVANT LA PRESTATION NE COUVRE PAS. C'est la seule durée que le
+ * mandat possède (Mollie la rend dans `details.cardExpiryDate`, que `carteDeMandat` lit
+ * déjà). Une réservation à trois mois sur une carte qui expire dans deux ne sera pas
+ * prélevable le jour venu : on le dit À LA COMMANDE, quand le client peut encore en
+ * donner une autre, et non à la fin, devant un prestataire qui a travaillé.
+ *
+ * NOYAU PUR : ni horloge, ni réseau, ni base. Le mois de la prestation et l'état du
+ * mandat se REÇOIVENT — c'est ce qui permet d'éprouver « carte expirée en mars » sans
+ * attendre mars. */
+const COUVERTURE_MOTIFS = ['empreinte', 'mandat', 'mandat-en-cours', 'carte-expiree', 'sans-moyen'];
+const COUVERTURE_GESTES = ['rien', 'empreinte', 'carte', 'attendre'];
+/* AAAA-MM, comparés comme du texte : une carte vit JUSQU'À LA FIN de son mois
+ * d'expiration, donc elle est morte seulement si ce mois est STRICTEMENT antérieur à
+ * celui de la prestation. Un mois absent ou mal formé ne conclut RIEN — on ne déclare
+ * pas une carte expirée sur une valeur qu'on n'a pas su lire. */
+function moisAAMM(v) {
+  const m = /^(\d{4})-(\d{2})/.exec(String(v || ''));
+  return m ? (m[1] + '-' + m[2]) : '';
+}
+function carteExpireAvant(expCarte, moisPrestation) {
+  const a = moisAAMM(expCarte); const b = moisAAMM(moisPrestation);
+  if (!a || !b) return false;
+  return a < b;
+}
+function commandeCouverture(e) {
+  e = e || {};
+  const emp = String((e.empreinte && e.empreinte.statut) || '');
+  const man = (e.mandat && typeof e.mandat === 'object') ? e.mandat : {};
+  const statut = String(man.statut || '');
+  const expiree = carteExpireAvant(man.exp, e.moisPrestation);
+  // L'empreinte DÉJÀ autorisée passe en premier : les fonds sont retenus, il n'y a plus
+  // rien à demander pour cette commande. Qu'elle meure ensuite est l'affaire du
+  // règlement (`reglementDecider`), qui sait repartir sur le mandat.
+  if (emp === 'authorized' || emp === 'paid') {
+    return {couvert: true, par: 'empreinte', geste: 'rien', motif: 'empreinte', carteExpire: expiree};
+  }
+  if (statut === 'valid' && !expiree) {
+    return {couvert: true, par: 'mandat', geste: 'empreinte', motif: 'mandat', carteExpire: false};
+  }
+  if (statut === 'pending' && !expiree) {
+    return {couvert: false, par: 'rien', geste: 'attendre', motif: 'mandat-en-cours', carteExpire: false};
+  }
+  if (expiree && (statut === 'valid' || statut === 'pending')) {
+    return {couvert: false, par: 'rien', geste: 'carte', motif: 'carte-expiree', carteExpire: true};
+  }
+  return {couvert: false, par: 'rien', geste: 'carte', motif: 'sans-moyen', carteExpire: false};
+}
+
 // Vérifie l'onboarding RÉEL de l'organisation liée au jeton d'accès fourni. Avoir
 // une organisation connectée ne suffit PAS : Mollie doit avoir vérifié l'identité et
 // le compte bancaire (statut « completed » + capable de recevoir paiements ET
@@ -3793,7 +3903,20 @@ exports.refundOrder = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
   const snap = await ref.get();
   if (!snap.exists) throw new HttpsError('not-found', 'Prestation introuvable.');
   const r = snap.data() || {};
-  if (!r.molliePaymentId) throw new HttpsError('failed-precondition', 'Aucun paiement Mollie sur cette prestation.');
+  /* ══ LE PAIEMENT QUI PORTE L'ARGENT, PAS FORCÉMENT L'EMPREINTE ════════════════════
+   * Une commande couverte par le MANDAT (le client a enregistré sa carte à la commande,
+   * cf. `commandeCouverture`) n'a aucune empreinte : la somme a été prélevée hors session
+   * et vit sur le paiement de complément. Cette fonction ne connaissait que l'empreinte
+   * et refusait donc de rembourser une prestation pourtant bel et bien encaissée —
+   * l'administrateur n'avait plus que le tableau de bord Mollie, hors de toute trace.
+   *
+   * La route du prestataire se reprend sur le MÊME paiement, donc le drapeau de
+   * versement suit : `molliePayout` pour l'empreinte, `complementPayout` pour l'autre. */
+  const payId = String(r.molliePaymentId || r.complementPaymentId || '');
+  const champPayout = r.molliePaymentId ? 'molliePayout' : 'complementPayout';
+  if (!payId) {
+    throw new HttpsError('failed-precondition', 'Aucun paiement encaissé sur cette prestation : rien n\'a été prélevé au client.');
+  }
 
   // CE QUI A ÉTÉ ENCAISSÉ, PAS CE QUI A ÉTÉ FACTURÉ. Une empreinte autorisée mais jamais
   // capturée n'a rien prélevé : il n'y a rien à rendre, et le prétendre créerait une
@@ -3801,7 +3924,7 @@ exports.refundOrder = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
   // notre propre fiche, qui a déjà eu tort.
   let encaisse = 0; let orgId = String(r.mollieOrgId || '');
   try {
-    const p = await mollieApi('/payments/' + encodeURIComponent(r.molliePaymentId), 'GET');
+    const p = await mollieApi('/payments/' + encodeURIComponent(payId), 'GET');
     if (!p.ok || !p.data) throw new HttpsError('failed-precondition', 'Mollie ne retrouve pas ce paiement (HTTP ' + (p.status || '?') + ').');
     if (String(p.data.status || '') !== 'paid') {
       throw new HttpsError('failed-precondition', 'Ce paiement n\'a pas été encaissé (état Mollie : ' + String(p.data.status || 'inconnu') + '), il n\'y a rien à rembourser.');
@@ -3829,7 +3952,7 @@ exports.refundOrder = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
     description: ('Ti-Services · remboursement · ' + (r.serviceName || r.service || 'prestation')).slice(0, 100),
   };
   // La reprise de la part du prestataire n'a de sens que si elle lui a été routée.
-  if (reprise && r.molliePayout === 'routed') {
+  if (reprise && r[champPayout] === 'routed') {
     if (total) body.reverseRouting = true;
     else if (orgId) {
       body.routingReversals = [{amount: {currency: 'EUR', value: demande.toFixed(2)},
@@ -3837,7 +3960,7 @@ exports.refundOrder = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
     }
   }
 
-  const res = await mollieApi('/payments/' + encodeURIComponent(r.molliePaymentId) + '/refunds', 'POST', body);
+  const res = await mollieApi('/payments/' + encodeURIComponent(payId) + '/refunds', 'POST', body);
   if (!res.ok) {
     // LA RAISON DE MOLLIE, MOT POUR MOT. On a déjà perdu des jours à chercher à l'aveugle
     // derrière un « refus » sans explication.
@@ -3935,7 +4058,46 @@ exports.orderPaymentCheck = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (re
   if (r.clientUid && r.clientUid !== uid) throw new HttpsError('permission-denied', 'Demande non autorisée.');
   const st = r.status || '';
   if (st !== 'pending_payment' && st !== 'payment_failed') return {status: st, ouverte: st === 'pending'};
-  if (!mollieApiConfigured() || !r.molliePaymentId) return {status: st, attente: true};
+  if (!mollieApiConfigured()) return {status: st, attente: true};
+
+  /* ══ RATTRAPER UN ENREGISTREMENT DE CARTE, PAS SEULEMENT UNE EMPREINTE ════════════
+   * Cette fonction existe pour le cas où le webhook de Mollie ne parvient pas. Depuis
+   * que la commande peut demander la CARTE au lieu de l'empreinte, une demande peut
+   * n'avoir AUCUN paiement d'empreinte — et elle sortait alors par « attente », donc
+   * restait « à finaliser » indéfiniment : le client avait enregistré sa carte et
+   * n'aurait jamais eu de prestataire. Le rattrapage doit couvrir les deux gestes.
+   *
+   * ON ÉCRIT AUSSI LE MANDAT SUR LA FICHE DU CLIENT, comme le ferait le webhook : sans
+   * cela sa carte lui serait annoncée « non enregistrée » alors qu'il vient de la
+   * valider auprès de sa banque, et la commande suivante la redemanderait. */
+  if (r.cardSetupPaymentId && !r.molliePaymentId) {
+    const sp = await mollieApi('/payments/' + encodeURIComponent(r.cardSetupPaymentId));
+    if (!sp.ok || !sp.data) return {status: st, attente: true};
+    const et = String(sp.data.status || '');
+    const mid = String(sp.data.mandateId || '');
+    if (et === 'paid' && mid) {
+      await ref.update({status: 'pending', couverturePar: 'mandat', mollieMandateId: mid, cardSetupStatus: 'paid'});
+      try {
+        const patch = {mollieMandateId: mid, mollieCardSetupAt: Date.now()};
+        if (sp.data.customerId) patch.mollieCustomerId = String(sp.data.customerId);
+        await db.collection('users').doc(uid).set(patch, {merge: true});
+      } catch (_) {}
+      console.log('orderPaymentCheck : demande ' + reqId + ' ouverte par enregistrement de carte, webhook non parvenu à temps');
+      return {status: 'pending', ouverte: true, etat: et, par: 'mandat'};
+    }
+    // Payé sans mandat : la carte n'est PAS mémorisée, donc rien ne couvre la commande.
+    // L'ouvrir enverrait un prestataire travailler sur une prestation non prélevable.
+    if (et === 'paid') {
+      if (st !== 'payment_failed') await ref.update({status: 'payment_failed', cardSetupStatus: 'sans-mandat'});
+      return {status: 'payment_failed', echec: true, etat: 'sans-mandat'};
+    }
+    if (['expired', 'canceled', 'failed'].indexOf(et) >= 0) {
+      if (st !== 'payment_failed') await ref.update({status: 'payment_failed', cardSetupStatus: et});
+      return {status: 'payment_failed', echec: true, etat: et};
+    }
+    return {status: st, attente: true, etat: et};
+  }
+  if (!r.molliePaymentId) return {status: st, attente: true};
 
   const pay = await mollieApi('/payments/' + encodeURIComponent(r.molliePaymentId));
   if (!pay.ok || !pay.data) return {status: st, attente: true};
@@ -4194,8 +4356,35 @@ exports.createClientPayment = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (
   if (!snap.exists) throw new HttpsError('not-found', 'Demande introuvable.');
   const r = snap.data() || {};
   if (r.clientUid !== uid) throw new HttpsError('permission-denied', 'Demande d\u2019un autre compte.');
-  const amount = round2(Number(r.total) || 0);
+  const MT = montantsDemande(r);
+  const annonce = round2(Number(r.total) || 0);
+  const amount = annonce > 0 ? annonce : MT.gross;
   if (!(amount > 0)) throw new HttpsError('failed-precondition', 'Montant invalide.');
+  /* ══ LE MONTANT CONSENTI S'ÉCRIT, IL N'EST PLUS UN EFFET DE BORD DE L'EMPREINTE ════
+   * `autoValidate` promet au client que le silence ne vaut accord QUE jusqu'à la somme
+   * qu'il a vue — et son plafond était `molliePaymentAmount`, c'est-à-dire le montant de
+   * l'empreinte. Une commande SANS empreinte (le client enregistre sa carte, cf.
+   * `commandeCouverture`) rendait donc ce plafond INERTE : un total supérieur à ce qui
+   * avait été annoncé pouvait être validé par son silence, puis prélevé hors session,
+   * sans écran ni 3-D Secure. Le consentement doit donc être écrit pour lui-même.
+   *
+   * C'EST LE PLUS RESTRICTIF DES DEUX SOURCES, et c'est tout l'intérêt. `r.total` est ce
+   * que l'ÉCRAN a montré (« jamais plus que X ») mais il est écrit par le navigateur ;
+   * `MT.gross` est ce que le SERVEUR recalcule des champs que les règles protègent
+   * désormais (`acts`, `options`, `boost`). Prendre le minimum fait qu'aucun des deux
+   * côtés ne peut gonfler le plafond — ni un client qui s'annoncerait un gros total, ni
+   * une dérive de formule qui en calculerait un. Le commentaire de cette fonction jurait
+   * « total FIGÉ côté serveur » alors qu'elle lisait `r.total` : il devient vrai. */
+  const consenti = (annonce > 0 && MT.gross > 0) ? round2(Math.min(annonce, MT.gross)) : round2(annonce || MT.gross);
+  // Un écart se DIT : c'est soit une dérive entre les deux formules, soit un total
+  // annoncé que le serveur ne retrouve pas. On ne choisit pas en silence.
+  if (annonce > 0 && MT.gross > 0 && Math.abs(annonce - MT.gross) > 0.009) {
+    console.warn('createClientPayment ÉCART annoncé/recalculé reqId=' + reqId
+      + ' annonce=' + annonce + ' recalcul=' + MT.gross + ' → consenti=' + consenti);
+  }
+  try { await db.collection('requests').doc(reqId).set({totalConsenti: consenti, totalConsentiAt: Date.now()}, {merge: true}); } catch (e) {
+    console.error('createClientPayment: montant consenti NON écrit reqId=' + reqId, e);
+  }
 
   // Idempotence — mais SEULEMENT quand les fonds sont réellement retenus. Un paiement
   // « authorized » a bloqué la somme : on renvoie son lien, sûrement pas une seconde
@@ -4203,9 +4392,11 @@ exports.createClientPayment = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (
   // de règlement ne vit qu'un temps : le resservir renvoyait le client sur un « page
   // not found » chez Mollie, sans aucun moyen d'en sortir. On l'annule et on repart sur
   // un lien neuf — aucun risque de double blocage, puisque rien n'était retenu.
+  let empStatut = '';
   if (r.molliePaymentId) {
     const ex = await mollieApi('/payments/' + encodeURIComponent(r.molliePaymentId), 'GET');
     const st = (ex.ok && ex.data) ? ex.data.status : '';
+    empStatut = st;
     if (st === 'authorized') {
       const link = ex.data._links && ex.data._links.checkout && ex.data._links.checkout.href;
       if (link) return {paymentId: ex.data.id, checkoutUrl: link, status: st, reused: true};
@@ -4241,6 +4432,88 @@ exports.createClientPayment = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (
       }
     }
   } catch (_) {}
+
+  /* ══ UN SEUL ÉCRAN, ET C'EST CELUI QUI PORTE ══════════════════════════════════════
+   * Mollie ne combine pas l'empreinte et la création du mandat (mesuré, cf. plus bas) :
+   * la commande doit donc CHOISIR. `commandeCouverture` décide, cette fonction exécute.
+   *
+   * SANS MOYEN MÉMORISÉ → on enregistre la carte (0,00 € + 3-D Secure). Aucun débit,
+   * aucune empreinte : le mandat est le seul des deux qui soit encore vivant le jour de
+   * la prestation, et c'est lui que le règlement saura prélever (`reglementDecider` rend
+   * « hors session » dès que l'empreinte ne porte rien). Le prestataire est payé par la
+   * route posée sur ce prélèvement (`complementPayout`), comme pour un pourboire.
+   *
+   * AVEC UN MANDAT VALIDE → l'empreinte, comme avant. Elle ne coûte rien de plus et le
+   * mandat reste le filet. */
+  const MAND = await mandatDuClient(db, uid);
+  const COUV = commandeCouverture({
+    empreinte: {statut: empStatut},
+    mandat: MAND.mandat,
+    moisPrestation: String(r.dateISO || '').slice(0, 7),
+  });
+  // Un enregistrement est DÉJÀ en cours (le client revient de sa banque, Mollie n'a pas
+  // encore basculé le mandat en « valid ») : on ne lui redemande pas sa carte et on ne
+  // pose pas d'empreinte par-dessus. Il attend, l'app interroge `orderPaymentCheck`.
+  if (COUV.geste === 'attendre') return {geste: 'attendre', motif: COUV.motif};
+  /* RIEN À DEMANDER — ET SURTOUT PAS UNE SECONDE EMPREINTE. Trouvé en éprouvant : le
+   * garde-fou d'idempotence ci-dessus ne rend la main que s'il retrouve un LIEN de
+   * règlement chez Mollie. Une empreinte « authorized » dont le lien a expiré — ce qui
+   * arrive, l'écran de règlement ne vit qu'un temps — tombait donc jusqu'ici et faisait
+   * poser une SECONDE empreinte, pendant que la première retient encore les fonds : deux
+   * blocages sur la carte du client pour une seule commande. Maintenant qu'on lit l'état
+   * avant de décider, il n'y a plus de raison de le faire. La demande est de toute façon
+   * déjà ouverte (webhook), et `orderPaymentCheck` la rattrape sinon. */
+  if (COUV.geste === 'rien') {
+    console.log('createClientPayment : empreinte déjà autorisée reqId=' + reqId + ', rien à redemander');
+    return {geste: 'rien', motif: COUV.motif, status: empStatut};
+  }
+  if (COUV.geste === 'carte') {
+    if (!customerId) {
+      console.warn('createClientPayment : pas de client Mollie, enregistrement impossible reqId=' + reqId);
+    } else {
+      const setup = await mollieApi('/payments', 'POST', {
+        amount: {currency: 'EUR', value: '0.00'},
+        description: 'Ti-Services · enregistrement de votre carte',
+        redirectUrl: redirectUrl,
+        webhookUrl: webhookUrl,
+        method: 'creditcard',          // seule la carte accepte le 0,00 €
+        sequenceType: 'first',         // c'est lui qui crée le mandat
+        customerId: customerId,
+        // `reqId` EST la nouveauté : jusqu'ici un enregistrement ne savait rien de la
+        // commande, et le webhook n'avait donc aucun moyen d'ouvrir la demande aux
+        // prestataires. Sans lui, la réservation resterait « à finaliser » pour toujours.
+        metadata: {reqId: reqId, clientUid: uid, cardSetup: true, produit: PRODUIT},
+      });
+      const lien = setup.ok && setup.data && setup.data._links
+        && setup.data._links.checkout && setup.data._links.checkout.href;
+      if (setup.ok && setup.data && lien) {
+        try {
+          await db.collection('requests').doc(reqId).set({
+            cardSetupPaymentId: String(setup.data.id || ''), cardSetupAt: Date.now(),
+            couverturePar: 'mandat', couvertureMotif: COUV.motif,
+          }, {merge: true});
+        } catch (_) {}
+        console.log('Commande ' + reqId + ' : enregistrement de carte demandé (' + COUV.motif + ')');
+        return {geste: 'carte', checkoutUrl: lien, paymentId: String(setup.data.id || ''), motif: COUV.motif};
+      }
+      // UN REFUS NE BLOQUE PAS LA RÉSERVATION. Mollie a pu refuser le 0,00 € (réglage de
+      // compte, méthode indisponible) : on retombe sur l'empreinte, qui est le
+      // comportement d'hier, et on le DIT — sinon le client resterait devant une commande
+      // qu'il ne peut pas finaliser, pour une cause qui n'est pas la sienne.
+      const dd = (setup.data || {});
+      const motifMollie = String(dd.detail || dd.title || ('HTTP ' + (setup.status || '?'))).slice(0, 160);
+      console.warn('createClientPayment : enregistrement refusé reqId=' + reqId + ' → empreinte · ' + motifMollie);
+      try {
+        await sendMail(db, ADMIN_EMAIL, {
+          subject: 'Enregistrement de carte refusé à la commande',
+          html: '<p>Mollie a refusé l\'autorisation à 0,00 € au moment d\'une commande. La réservation s\'est poursuivie avec une EMPREINTE&nbsp;: elle expirera (7 jours sur Visa/Amex, 30 sur Mastercard).</p>'
+            + '<ul><li><b>Demande :</b> ' + escHtmlS(reqId) + '</li>'
+            + '<li><b>Motif Mollie :</b> ' + escHtmlS(motifMollie) + '</li></ul>'
+            + '<p>Si la prestation est lointaine, le solde devra être prélevé hors session&nbsp;: sans mandat, il partira en lien de paiement.</p>',
+        });
+      } catch (_) {}
+    }
+  }
 
   // CARTE UNIQUEMENT, et c'est structurel. Tout le modèle repose sur trois choses que
   // seule la carte permet : autoriser sans débiter (l'empreinte), débiter plus tard à la
@@ -4313,6 +4586,41 @@ exports.mollieWebhook = onRequest({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (req
           }
           // Aucun mandat sur un paiement d'enregistrement réussi : anomalie côté Mollie,
           // le client croirait sa carte mémorisée sans qu'elle le soit. On le signale.
+          /* ══ UN ENREGISTREMENT FAIT À LA COMMANDE OUVRE LA DEMANDE ══════════════════
+           * Depuis que la commande peut demander la CARTE au lieu de l'empreinte
+           * (`commandeCouverture`), ce paiement à 0,00 € est le geste qui finalise la
+           * réservation. Sans cette branche, la demande resterait « à finaliser » —
+           * invisible des prestataires — pour toujours : le client aurait enregistré sa
+           * carte et n'aurait jamais de prestataire, sans que rien ne le dise.
+           *
+           * ON N'OUVRE QUE SI QUELQUE CHOSE COUVRE. Un enregistrement « paid » SANS
+           * mandat (anomalie Mollie, signalée juste en dessous) ne mémorise aucune carte :
+           * ouvrir la demande enverrait un prestataire travailler sur une commande que
+           * rien ne pourra prélever. On la marque alors en échec, ce que l'écran du client
+           * sait dire et reprendre.
+           *
+           * ET ON NE TOUCHE QU'À LA SIENNE, et seulement si elle attend encore : un
+           * enregistrement refait depuis le Profil ne doit pas rouvrir une commande
+           * annulée ni réécrire une prestation en cours. */
+          const reqSetup = String((pay.metadata && pay.metadata.reqId) || '');
+          if (reqSetup) {
+            try {
+              const rref = db.collection('requests').doc(reqSetup);
+              const rs = await rref.get();
+              const rr = rs.exists ? (rs.data() || {}) : null;
+              const attend = rr && (rr.status === 'pending_payment' || rr.status === 'payment_failed');
+              if (rr && rr.clientUid === uid && attend) {
+                if (pay.mandateId) {
+                  await rref.set({status: 'pending', couverturePar: 'mandat',
+                    mollieMandateId: String(pay.mandateId), cardSetupStatus: 'paid'}, {merge: true});
+                  console.log('Commande ' + reqSetup + ' ouverte au pool par enregistrement de carte');
+                } else {
+                  await rref.set({status: 'payment_failed', cardSetupStatus: 'sans-mandat'}, {merge: true});
+                  console.warn('Commande ' + reqSetup + ' : enregistrement payé SANS mandat, demande non ouverte');
+                }
+              }
+            } catch (e) { console.warn('mollieWebhook cardSetup → demande', e); }
+          }
           if (!pay.mandateId) {
             try {
               await sendMail(db, ADMIN_EMAIL, {
@@ -4321,6 +4629,25 @@ exports.mollieWebhook = onRequest({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (req
                   + '<p>Sa carte ne sera donc pas proposée à la réservation. À vérifier dans le tableau de bord Mollie.</p>',
               });
             } catch (_) {}
+          }
+        }
+        // L'ENREGISTREMENT A ÉCHOUÉ : la commande qui l'attendait doit le savoir. Sans
+        // cela elle reste « à finaliser » en guettant un webhook qui ne viendra pas, et
+        // le client n'a aucun moyen de reprendre.
+        if (['failed', 'canceled', 'expired'].indexOf(String(pay.status || '')) >= 0) {
+          const reqEchec = String((pay.metadata && pay.metadata.reqId) || '');
+          const uidEchec = String((pay.metadata && pay.metadata.clientUid) || '');
+          if (reqEchec) {
+            try {
+              const db2 = getFirestore();
+              const rref2 = db2.collection('requests').doc(reqEchec);
+              const rs2 = await rref2.get();
+              const rr2 = rs2.exists ? (rs2.data() || {}) : null;
+              if (rr2 && rr2.clientUid === uidEchec && rr2.status === 'pending_payment') {
+                await rref2.set({status: 'payment_failed', cardSetupStatus: String(pay.status || '')}, {merge: true});
+                console.log('Commande ' + reqEchec + ' : enregistrement de carte ' + pay.status);
+              }
+            } catch (e) { console.warn('mollieWebhook cardSetup échec', e); }
           }
         }
         res.status(200).send('ok');
@@ -5079,7 +5406,14 @@ exports.autoValidate = onSchedule({schedule: 'every 1 hours', secrets: [SMTP_PAS
     // une somme qu'il n'a pas vue. On écarte donc les heures revues à la hausse, et tout
     // total qui dépasserait l'empreinte posée à la commande.
     const hausse = (r.finalHours != null && Number(r.finalHours) > (Number(r.duration) || 0));
-    const autorise = Number(r.molliePaymentAmount) || 0;
+    // LE PLAFOND DU SILENCE EST CE QUI A ÉTÉ CONSENTI, et non le montant de l'empreinte.
+    // `molliePaymentAmount` n'existe que s'il y a eu une empreinte : sur une commande
+    // couverte par le MANDAT (le client a enregistré sa carte, cf. `commandeCouverture`)
+    // il vaut zéro, et ce plafond devenait INERTE — un total supérieur à celui qu'il a vu
+    // pouvait être validé par son silence, puis prélevé hors session, sans écran ni
+    // 3-D Secure. `totalConsenti` est écrit à la commande ; le repli sur l'empreinte vaut
+    // pour les demandes antérieures à ce champ, qui, elles, en ont toujours une.
+    const autorise = round2(Number(r.totalConsenti) || Number(r.molliePaymentAmount) || 0);
     const duTotal = montantsDemande(r).gross;
     // Montant revu à la hausse : pas de validation automatique — mais SURTOUT pas le
     // silence. Le `continue` d'avant sautait AUSSI le rappel : c'était précisément le

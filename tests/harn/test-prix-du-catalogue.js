@@ -26,10 +26,16 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
 
 console.log('A — ce que le serveur fait du montant');
 /* LE PRÉLÈVEMENT LIT LE TOTAL STOCKÉ, écrit une fois à la création : il est juste, SAUF
-   si un geste du client l'a réécrit depuis une mission amputée. */
+   si un geste du client l'a réécrit depuis une mission amputée.
+   DEPUIS « L'ENREGISTREMENT DE LA CARTE À LA COMMANDE », le serveur recalcule AUSSI le
+   total depuis les lignes — mais seulement pour en tirer le PLAFOND CONSENTI (le minimum
+   des deux) et pour servir de repli quand rien n'est stocké. Ce qui est prélevé reste le
+   total stocké : c'est cette propriété-là qu'on tient, et elle mord si le recalculé se
+   met à gouverner. */
 const SRV = fs.readFileSync(path.join(RACINE, 'functions', 'index.js'), 'utf8');
-ok(/const amount = round2\(Number\(r\.total\) \|\| 0\);/.test(SRV),
-  'Mollie prélève le total STOCKÉ sur la demande, pas un total recalculé');
+ok(/const annonce = round2\(Number\(r\.total\) \|\| 0\);/.test(SRV)
+  && /const amount = annonce > 0 \? annonce : MT\.gross;/.test(SRV),
+  'Mollie prélève le total STOCKÉ sur la demande ; le recalculé n\u2019est qu\u2019un repli');
 ok(/pushReqUpdate\(m,\{boostEur:m\.boostEur,total:t\.total,reboostedAt/.test(APP),
   'mais le coup de pouce RÉÉCRIT ce total : c’est par là que l’erreur d’affichage devenait une erreur d’argent');
 

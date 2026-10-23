@@ -3683,7 +3683,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='876';
+  const VERSION_APP='877';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -14089,7 +14089,10 @@
         // à enregistrer sa carte (accueil) et l'aperçu de la carte (profil) n'apparaissent
         // jamais — on ne les voit qu'en changeant d'écran à la main. Jamais pendant qu'une
         // commande se remplit : on ne redessine pas sous les doigts de quelqu'un qui saisit.
-        if(S.persona==='client'&&!S.draft)render();
+        // L'écran de confirmation de commande n'a AUCUN champ de saisie en production :
+        // il peut donc se redessiner sans rien faire perdre, et il le DOIT — c'est lui
+        // qui annonce le geste à venir (enregistrer la carte, ou poser l'empreinte).
+        if(S.persona==='client'&&(!S.draft||(S.payStep&&!S.payEdit)))render();
       }).catch(function(){S._payCard={done:true,card:null};});
     }
     return undefined;
@@ -15387,6 +15390,14 @@
       const res=await call({reqId:m.reqId,returnUrl:base+'?paid='+encodeURIComponent(m.reqId)});
       const d=(res&&res.data)||{};
       if(d.simulated)return false;
+      // LE SERVEUR CHOISIT LE GESTE, le client l'exécute — il ne décide pas lui-même
+      // d'enregistrer une carte plutôt que de poser une empreinte.
+      // « attendre » : un enregistrement est déjà en cours chez Mollie (le client revient
+      // de sa banque, le mandat n'est pas encore « valid »). On ne marque SURTOUT pas la
+      // commande en échec — elle est en train d'aboutir, et `orderPaymentCheck` la suit.
+      if(d.geste==='attendre'){toast('Votre carte est en cours de validation…');return true;}
+      // « rien » : l'empreinte est déjà autorisée, il n'y a plus rien à demander.
+      if(d.geste==='rien')return true;
       if(d.checkoutUrl){attentePaiement(d.checkoutUrl);location.href=d.checkoutUrl;return true;}
       return false;
     }catch(e){console.warn('startMolliePayment',e);toast('\u26a0\ufe0e Paiement indisponible, réessayez');return false;}
@@ -16044,7 +16055,11 @@
     _payChkAt[reqId]=now;
     FB.fn.httpsCallable(FB.functions,'orderPaymentCheck')({reqId:reqId}).then(function(r){
       const d=(r&&r.data)||{};
-      if(d.ouverte)toast('Paiement confirmé, votre demande est envoyée aux prestataires');
+      // LE MESSAGE SUIT CE QUI S'EST PASSÉ : sur une commande couverte par le mandat,
+      // le client a enregistré sa carte et RIEN n'a été autorisé — « paiement confirmé »
+      // lui ferait chercher un débit sur son relevé.
+      if(d.ouverte)toast(d.par==='mandat'?'Carte enregistrée, votre demande est envoyée aux prestataires'
+        :'Paiement confirmé, votre demande est envoyée aux prestataires');
       // L'écoute en direct de la demande met l'écran à jour ; rien à forcer ici.
     }).catch(function(){});
   }
@@ -16153,23 +16168,37 @@
   function clientPay(){
     const m=S.draft,t=totals(m);
     const recap=`<div class="card" style="padding:15px;margin-top:14px"><div class="row between"><b style="font-size:14px">${m.svcName}</b><b class="money">${eur(t.total)}</b></div><div class="mini" style="margin-top:3px">${quandTxt(m)}${isForfait(m)?'':' · '+durTxt(m)} · ${m.zone}</div><hr class="dashed"><p class="mini" style="margin:0;color:var(--muted)">${(function(){const A=arrhesDuSvc(m&&m.svc);return A.pct>0?I.clock+' Annulation gratuite jusqu\'à '+annulDelaiTxt(A.h)+' avant. Ensuite, '+eur(arrhesMontant(t.total,A.pct))+' ('+A.pct+'&nbsp;%) dus au prestataire (CGV).':I.check+' Annulation gratuite à tout moment.';})()}</p></div>`;
+    // CE QUI VA SE PASSER, DIT AVANT LE CLIC. Le geste que la commande demande dépend de
+    // ce que le client a déjà : SANS carte mémorisée elle l'enregistre (autorisation à
+    // 0,00 €, validée par sa banque, aucun débit et aucune empreinte) ; AVEC une carte
+    // elle pose l'empreinte, comme avant. C'est le SERVEUR qui décide
+    // (`commandeCouverture`) — l'écran se contente de le dire.
+    // TANT QUE LA LECTURE N'A PAS ABOUTI on ne promet NI l'un NI l'autre : seule la phrase
+    // vraie dans les deux cas s'affiche. Annoncer une empreinte puis enregistrer une carte
+    // serait pire que de ne rien préciser.
+    const _pc=payReal()?payCard():null;
+    const _gesteConnu=payReal()&&_pc!==undefined;
+    const _enreg=_gesteConnu&&!_pc;
     // Bandeau rassurance : sur la BÊTA (paiement non réel), on ne mentionne PAS Mollie ni
     // d'empreinte bancaire — c'est une démonstration, aucun paiement réel n'a lieu.
     const reassure=payReal()
-      ? `<div class="banner teal" style="margin-top:14px">${I.shield}<span><b>Aucun débit maintenant.</b> Votre carte est seulement autorisée&nbsp;; vous n'êtes prélevé qu'après avoir validé la prestation, jamais plus que ${eur(t.total)}.</span></div>`
+      ? `<div class="banner teal" style="margin-top:14px">${I.shield}<span><b>Aucun débit maintenant.</b> Vous n'êtes prélevé qu'après avoir validé la prestation, jamais plus que ${eur(t.total)}.${_enreg?` Nous enregistrons seulement votre carte&nbsp;: une autorisation à 0,00&nbsp;€, validée par votre banque.`:(_gesteConnu?` Votre carte ${_pc.brand} ••••&nbsp;${_pc.last4} est seulement autorisée.`:``)}</span></div>`
       : `<div class="banner teal" style="margin-top:14px">${I.shield}<span><b>Démonstration${betaTag()?' (bêta)':''}.</b> Aucun paiement réel, aucune carte nécessaire, vous pouvez dérouler toute la commande librement.</span></div>`;
-    // PAIEMENT RÉEL (prod) : la carte est saisie sur la page sécurisée de Mollie, pas ici.
-    // Elle n'y est PAS mémorisée : Mollie ne combine pas l'enregistrement de la carte avec
-    // une empreinte (capture différée), et forcer les deux ouvrait un écran de règlement
-    // vide. L'enregistrement se fait par le chemin dédié (Profil → moyen de paiement,
-    // autorisation à 0 €). On ne demande donc AUCUNE carte dans l'app — juste la
-    // confirmation avant redirection.
+    // PAIEMENT RÉEL (prod) : la carte est saisie sur la page sécurisée de Mollie, jamais
+    // ici — on ne demande AUCUN numéro dans l'app, juste la confirmation avant redirection.
+    // MOLLIE NE COMBINE PAS LES DEUX GESTES (mesuré, déjà payé en production) : une
+    // empreinte demandée en même temps qu'un premier paiement ouvrait un écran de
+    // règlement VIDE. La commande en choisit donc UN, et un seul écran : enregistrer la
+    // carte quand il n'y en a pas, poser l'empreinte quand il y en a une. Le Profil garde
+    // son chemin dédié, qui devient un CONFORT et non plus la seule façon d'avoir un
+    // mandat — c'était tout le défaut : sans mandat, le solde d'une empreinte expirée
+    // partait en lien de paiement, et le prestataire attendait.
     if(payReal()){
       return `<div class="pad"><button class="reset" data-act="pay-back" style="margin:8px 0 2px">← Retour</button>
         <span class="eyebrow">${I.lock} Paiement sécurisé</span><div class="h-hello">Confirmer la réservation</div>
         ${recap}
         ${reassure}
-        <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-act="pay-confirm">${I.lock} Payer en sécurité · ${eur(t.total)}</button><p class="mini" style="text-align:center;margin-top:10px;line-height:1.5">${I.shield} Paiement par Mollie, établissement agréé : Ti-Services ne voit jamais votre carte.<br>L'ouverture peut prendre quelques secondes, ne fermez pas la fenêtre.</p></div></div>`;
+        <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-act="pay-confirm">${_enreg?`${I.card} Enregistrer ma carte`:(_gesteConnu?`${I.lock} Payer en sécurité · ${eur(t.total)}`:`${I.lock} Continuer · ${eur(t.total)}`)}</button><p class="mini" style="text-align:center;margin-top:10px;line-height:1.5">${I.shield} Paiement par Mollie, établissement agréé : Ti-Services ne voit jamais votre carte.<br>L'ouverture peut prendre quelques secondes, ne fermez pas la fenêtre.</p></div></div>`;
     }
     // BÊTA / démonstration (paiement non réel) : la carte n'est PAS requise pour dérouler la
     // démonstration complète. Écran de confirmation simple ; ajouter une carte reste possible

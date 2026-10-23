@@ -15,6 +15,7 @@
    Le moteur de paiement n'est pas joignable depuis le harnais : ce qui s'éprouve ici est
    la DÉCISION et le CÂBLAGE, pas un aller-retour Mollie. */
 const fs = require('fs'), path = require('path'), vm = require('vm');
+const {codeNu, verifieDetourage} = require('./lib-code-nu.js');
 const RACINE = '/home/user/alize-work';
 let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; console.log('  ✗ ÉCHEC : ' + l); } };
 const srv = fs.readFileSync(path.join(RACINE, 'functions/index.js'), 'utf8');
@@ -28,8 +29,16 @@ const source = srv.slice(i0, i1);
 ok(source.length > 1500 && /function reglementDecider/.test(source), 'et le relevé porte bien le noyau (sinon les gardes de pureté ne mesurent rien)');
 
 console.log('A — le noyau ne touche rien du monde extérieur');
+/* ON SCANNE LE CODE, PAS LA PROSE. Cette garde cherchait ses mots dans le TEXTE BRUT :
+   le 23/10/2026 elle a rougi sur un commentaire du noyau voisin qui cite
+   `details.cardExpiryDate` — c'est-à-dire sur la phrase qui EXPLIQUE pourquoi le noyau
+   ne lit pas l'heure. Une garde qui lit sa propre justification ne garde rien, et elle
+   pousse à cesser de l'écrire. Le détourage vit dans `lib-code-nu.js`, une seule fois,
+   et il porte son assertion arrière. */
+verifieDetourage(ok);
+const nu = codeNu(source);
 for (const mot of ['Date', 'Math.random', 'fetch', 'require', 'process', 'db.', 'getFirestore', 'mollieApi', 'console.', 'await']) {
-  ok(source.indexOf(mot) < 0, 'il n\'emploie pas ' + mot);
+  ok(nu.indexOf(mot) < 0, 'il n\'emploie pas ' + mot);
 }
 const bac = {round2: (x) => Math.round((Number(x) || 0) * 100) / 100};
 vm.createContext(bac);

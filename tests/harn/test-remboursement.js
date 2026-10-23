@@ -13,8 +13,13 @@ console.log('A — le serveur sait rendre, et seulement l’administrateur');
 ok(/exports\.refundOrder = onCall\(\{secrets: \['MOLLIE_ACCESS_TOKEN'\]\}/.test(fn),'la fonction existe');
 const bloc=fn.slice(fn.indexOf('exports.refundOrder'),fn.indexOf('exports.payoutManual'));
 ok(/who\.toLowerCase\(\) !== ADMIN_EMAIL\.toLowerCase\(\)/.test(bloc),'réservée à l’administrateur');
-ok(/payments\/' \+ encodeURIComponent\(r\.molliePaymentId\) \+ '\/refunds', 'POST'/.test(bloc),
-  'elle appelle bien l’API de remboursement de Mollie');
+/* ON REND SUR LE PAIEMENT QUI A PORTÉ L'ARGENT. Une prestation dont l'empreinte était
+   morte a été encaissée par un COMPLÉMENT : viser `molliePaymentId` seul, c'était ne
+   rien rembourser du tout sur ces demandes-là — et le refus « rien n'a été prélevé »
+   aurait porté sur un paiement qui n'existe pas. */
+ok(/const payId = String\(r\.molliePaymentId \|\| r\.complementPaymentId \|\| ''\);/.test(bloc)
+  && /payments\/' \+ encodeURIComponent\(payId\) \+ '\/refunds', 'POST'/.test(bloc),
+  'elle rembourse sur le paiement qui a porté l’argent — empreinte OU complément');
 
 console.log('B — on ne rend jamais plus que ce qui a été encaissé');
 ok(/String\(p\.data\.status \|\| ''\) !== 'paid'/.test(bloc),
@@ -24,8 +29,9 @@ ok(/On ne peut pas rendre plus que ce qui a été encaissé/.test(bloc),'et le d
 
 console.log('C — le motif décide du sort de la part du prestataire');
 ok(/const reprise = \(motif === 'non_faite'\);/.test(bloc),'le motif est lu');
-ok(/if \(reprise && r\.molliePayout === 'routed'\)/.test(bloc),
-  'la reprise n’a de sens que si la part lui a été routée');
+ok(/const champPayout = r\.molliePaymentId \? 'molliePayout' : 'complementPayout';/.test(bloc)
+  && /if \(reprise && r\[champPayout\] === 'routed'\)/.test(bloc),
+  'la reprise n’a de sens que si la part lui a été routée, sur CE paiement-là');
 ok(/body\.reverseRouting = true;/.test(bloc),'remboursement total → Mollie ramène sa part');
 ok(/body\.routingReversals = \[\{amount/.test(bloc),'remboursement partiel → reprise au prorata');
 ok(/type: 'organization', organizationId: orgId/.test(bloc),'depuis SON organisation, pas une autre');
