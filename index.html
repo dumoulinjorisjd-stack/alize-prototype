@@ -3683,7 +3683,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='875';
+  const VERSION_APP='876';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -17701,7 +17701,22 @@
     // On ouvre le Compte prestataire ET on déplie la carte des alertes — sinon la
     // personne arrive sur un écran de réglages et doit chercher.
     if(open==='alerts'){S.onboarded=true;S.persona='pro';if(S.proStatus!=='approved')S.proStatus='approved';S.proNav='account';S._fold=Object.assign({},S._fold,{'p-alerts':true});return true;}
-    if(open==='admin'){S.onboarded=true;S.persona='admin';S.admin={view:'home',sel:null};return true;}
+    /* « L'ACCÈS AUX PAGES D'ADMINISTRATEUR EST DÉCIDÉ DANS LE NAVIGATEUR » (23/10/2026).
+       Signalé par un développeur de l'île, et c'était exact : cette ligne posait
+       `S.persona='admin'` sur la seule foi de l'adresse. Les DONNÉES n'ont jamais bougé
+       — chaque lecture passe par les règles, refusées en production sur users, artisans,
+       prospects, ledger, reports, comptesSupprimés et adminTokens — mais la coquille de
+       la console se peignait, et avec elle ce que `settings` donne à tout le monde :
+       tarifs, taux de rétrocession, paliers de fidélité. Déconnecté, la page d'accueil
+       la recouvrait ; CONNECTÉ SOUS UN COMPTE ORDINAIRE, non — la branche client de
+       `loadUserProfile` pose `onboarded` et repeint SANS jamais remettre la persona.
+       ET LE LIEN NE SERVAIT À RIEN À CELUI QUI Y A DROIT : il vient de la notification
+       envoyée aux jetons de l'administrateur (`adminTokens`, lui seul), et quand sa
+       session se rétablit `loadUserProfile` le met DÉJÀ dans la console. La route
+       donnait donc zéro à l'administrateur et une porte à tous les autres : on la lit
+       encore, elle n'accorde plus rien. La porte de l'application reste `go-admin`,
+       gardée par `isAdminAccount()`. */
+    if(open==='admin'){return true;}
     if(open==='wallet'){S.clientNav='wallet';return true;}
     // Liens croisés des e-mails de bienvenue : « ?open=pro-signup » ouvre directement
     // l'inscription intervenant, « ?open=client-signup » l'inscription client (avec une
