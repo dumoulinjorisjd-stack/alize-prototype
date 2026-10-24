@@ -3698,7 +3698,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='879';
+  const VERSION_APP='880';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -16408,13 +16408,22 @@
   }
   function clientReceipt(rated){
     const m=S.mission,t=totals(m),p=m.provider;
+    /* LA NOTE CHOISIE SE RELIT AU RENDU, elle ne vit plus dans le seul DOM. Le clic
+       allumait les étoiles à la main et déverrouillait le bouton ; le rendu, lui, les
+       redessinait TOUJOURS éteintes et le bouton TOUJOURS désactivé. Or cet écran est
+       VIVANT : watchRequest redessine dès que la demande bouge, et c'est ici qu'elle
+       bouge le plus — la facture s'écrit et part côté serveur pendant qu'on regarde
+       les étoiles. La note survivait dans l'état (m.rating), mais l'écran l'oubliait
+       et le bouton redevenait inatteignable : on ne pouvait plus l'envoyer du tout.
+       Même défaut que le brouillon de message effacé par le message qui arrive. */
+    const note=Number(m.rating)||0;
     if(!rated){return `<div class="pad"><div class="paycap"><div class="checkmark">${I.bigcheck}</div><div><div class="h-hello" style="text-align:center">C'est réglé, automatiquement</div><p class="sub" style="text-align:center">${eur(t.total)} débité sur ${cardTxt()}</p></div></div>
       ${barreEtapes(m)}
       <div class="card rcpt" style="padding:22px 16px 16px"><div class="eyebrow" style="color:var(--muted)">Reçu</div><div class="receipt-line" style="margin-top:8px"><span>${m.svcName} · ${durTxt(m)}</span><b>${eur(t.sub)}</b></div><div class="receipt-line"><span>Prestataire</span><b>${esc(p.nm)}</b></div><hr class="dashed"><div class="receipt-line total"><span>Total réglé</span><b>${eur(t.total)}</b></div></div>
       ${factureCard()}
-      <p class="sub" style="text-align:center;margin:18px 0 10px">Comment s'est passée la prestation&nbsp;?</p><div class="rate-stars" id="rateStars">${[1,2,3,4,5].map(n=>`<button data-star="${n}">★</button>`).join('')}</div>
+      <p class="sub" style="text-align:center;margin:18px 0 10px">Comment s'est passée la prestation&nbsp;?</p><div class="rate-stars" id="rateStars">${[1,2,3,4,5].map(n=>`<button data-star="${n}"${note>=n?' class="lit"':''}>★</button>`).join('')}</div>
       <p class="mini" style="text-align:center;margin-top:6px;color:var(--muted)">${I.lock} Votre note est confidentielle, elle aide Ti-Services à veiller à la qualité du service. Elle n'est pas publiée.</p>
-      <div class="footcta" style="position:static;background:none;padding:6px 0 0"><button class="btn primary" data-act="submit-rating" id="rateBtn" disabled>Envoyer mon avis</button></div></div>`;}
+      <div class="footcta" style="position:static;background:none;padding:6px 0 0"><button class="btn primary" data-act="submit-rating" id="rateBtn"${note>=1?'':' disabled'}>Envoyer mon avis</button></div></div>`;}
     const rebookCard=(m.rating>=4)?`<div class="card" style="padding:16px;margin-top:12px"><b style="font-size:14px">${I.repeat} Ça s'est bien passé&nbsp;? Refaites appel à ${esc(p.nm.split(' ')[0])}</b><p class="mini" style="margin-top:3px">On pré-remplit une nouvelle demande avec les mêmes informations et <b>${esc(p.nm.split(' ')[0])}</b> déjà sélectionné, vous n'avez qu'à vérifier la date et confirmer.</p><button class="btn primary sm" data-act="renew-mission" style="margin-top:12px">${I.repeat} Refaire cette prestation</button></div>`:'';
     return `<div class="pad"><div class="paycap" style="height:auto;padding-top:14px">${octoMini(72,'bob')}<div><div class="h-hello" style="text-align:center">Merci&nbsp;!</div><p class="sub" style="text-align:center">${MASCOT} vous remercie, votre retour aide Ti-Services à veiller à la qualité.</p></div></div>
       <div class="card" style="padding:16px"><div class="row between"><b>${m.svcName}</b><span class="chip good">${I.check} Terminée</span></div><div class="mini" style="margin-top:4px">${esc(p.nm)} · ${m.when}</div><hr class="dashed"><div class="receipt-line"><span>Réglé</span><b>${eur(t.total)}</b></div></div>
