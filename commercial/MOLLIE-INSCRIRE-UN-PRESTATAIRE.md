@@ -156,20 +156,32 @@ le jeton se recrée sans restriction — **sans danger**, puisqu'il ne porte que
 `clients.*` et ne touche aucun paiement. C'est cette frontière qui rend le choix
 du profil sans conséquence.
 
-**CE QU'IL FAUT COCHER, ET RIEN D'AUTRE** : sous **Mollie Connect**,
-`clients.read` et `clients.write`. Mode **En direct**.
+**CE QU'IL A FALLU, ET RIEN DE PLUS** : un **jeton d'accès avancé**, mode
+**En direct**, portant **`clients.read` et `clients.write`** sous « Mollie
+Connect ». Le jeton est posé dans Secret Manager sous `MOLLIE_CLIENTS_TOKEN`,
+projet `t-service-prod`.
 
-**L'ORDRE EST CONTRAINT** : un secret déclaré dans `secrets:` doit exister au
-moment du déploiement, sinon le déploiement échoue. Donc d'abord
-`firebase functions:secrets:set MOLLIE_CLIENTS_TOKEN --project t-service-prod`,
-**ensuite** le déploiement des fonctions. **Le jeton ne se colle jamais dans une
-conversation.**
+## ET ÇA MARCHE — mesuré le 25/10/2026
 
-**L'ANCIENNE CLÉ NE SE RÉVOQUE PAS** — elle reste celle des paiements.
+Le bouton a été pressé sur la fiche d'une prestataire : **« Compte Mollie
+préparé ✓ »**. Ce message ne paraît que si Mollie a rendu un lien
+(`d.cree`), donc le client link existe et son adresse est mémorisée sur la
+fiche. La chaîne entière tient, de la console jusqu'à Mollie.
 
-Si `clients.write` venait à être refusée même sur un jeton avancé, c'est qu'elle
-est réservée au programme partenaire : c'est à Mollie qu'il faut la demander, en
-citant ce motif.
+**LA PRESTATAIRE N'A RIEN À SAVOIR DE TOUT CELA.** Son bouton « Activer mes
+paiements » ouvre désormais le parcours préparé — ses informations y sont, il
+ne lui reste que son identité à confirmer. Le bouton gris qui a ouvert ce lot
+n'existe plus pour elle.
+
+**L'ANCIENNE CLÉ N'A PAS BOUGÉ** : paiements, captures, remboursements, mandats
+et versements continuent sur `MOLLIE_ACCESS_TOKEN`, la clé de profil. C'est ce
+qui a permis de livrer sans rien risquer sur l'argent.
+
+**UN FAIT QU'IL RESTE À CONSIGNER** : l'écran de création proposait de
+restreindre le jeton au profil **Ti-services**. Si cette restriction a été
+conservée, alors une ressource d'ORGANISATION (`/client-links`) passe avec un
+jeton restreint à un profil — c'est bon à savoir pour le prochain jeton. Ce
+point n'a pas été relevé au moment de la création, et il ne se devine pas.
 
 ## La question qui reste
 
