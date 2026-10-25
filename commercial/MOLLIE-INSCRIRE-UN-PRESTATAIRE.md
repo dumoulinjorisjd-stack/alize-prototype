@@ -183,6 +183,53 @@ conservée, alors une ressource d'ORGANISATION (`/client-links`) passe avec un
 jeton restreint à un profil — c'est bon à savoir pour le prochain jeton. Ce
 point n'a pas été relevé au moment de la création, et il ne se devine pas.
 
+## CE QUE MOLLIE PERMET, ET OÙ LA LOI S'ARRÊTE
+
+Question de l'éditeur, le 25/10/2026, devant la liste des permissions : ne
+pourrait-on pas créer le compte Mollie **entièrement nous-mêmes**, dès
+l'inscription du prestataire ?
+
+**NON, ET LE CLIENT LINK EST DÉJÀ LE MAXIMUM.** Les quatorze permissions
+« Mollie Connect » ont été lues une à une : Balance Transfers, Clients,
+External Accounts, Onboarding, Organizations, Profiles, Tax Scheme. Aucune ne
+crée une organisation tierce de bout en bout — `organizations.write` porte sur
+la NÔTRE, et `/onboarding/me` désigne l'organisation du jeton présenté, c'est-
+à-dire nous. La documentation de Mollie nomme d'ailleurs le client link comme
+**le** moyen de créer une organisation pour un autre marchand : c'est ce que
+nous faisons.
+
+**ET CE N'EST PAS UNE LIMITE DE MOLLIE, C'EST LA LOI.** Mollie doit vérifier
+l'entreprise qui reçoit l'argent (KYB) et l'identité de son représentant. Une
+pièce d'identité ne se fournit pas par un tiers : aucune permission ne lèvera
+cela, et c'est très exactement ce qui fait qu'un établissement de paiement est
+un établissement de paiement.
+
+**L'ALTERNATIVE QUI SUPPRIMERAIT L'ÉTAPE EST UN CHANGEMENT DE MÉTIER** :
+encaisser sur notre compte et reverser nous-mêmes. Détenir des fonds pour
+compte de tiers demande un agrément. C'est précisément ce que le routage évite
+aujourd'hui — l'argent va du client au prestataire sans nous passer entre les
+mains.
+
+**DEUX FAITS RELEVÉS EN CHERCHANT.** Un client link **expire au bout de trente
+jours** : c'est ce qui a donné la refabrication automatique ci-dessous. Et
+l'onboarding d'un sous-marchand ne vaut que pour des **personnes morales** ;
+un entrepreneur individuel est une zone grise que nous n'avons pas éprouvée.
+
+## UN LIEN PÉRIMÉ SE REFAIT
+
+`mollieClientLinkAt` était écrit et **jamais relu** : le lien était servi
+indéfiniment. Une prestataire qui tarde un mois aurait pressé son bouton pour
+arriver sur une adresse morte — l'écran sans issue du début, revenu par la
+porte du temps.
+
+`clientLinkFrais` tranche à **vingt-huit jours**, deux de marge, et **ne lit
+pas l'horloge** : le moment se reçoit, donc « vingt-neuf jours » s'éprouve sans
+attendre un mois. Sans date, on ne sait pas : on refait. La porte du
+prestataire refabrique alors le lien depuis la fiche et le **pays déjà confirmé
+par un humain**, gardé à la création pour cela. Si quoi que ce soit manque ou
+si Mollie refuse, on retombe sur l'autorisation : jamais pire qu'avant, et
+c'est ce qui autorise ce rattrapage dans un geste du prestataire.
+
 ## La question qui reste
 
 **Saint-Barthélemy** : la liste de Mollie ne le propose pas. L'éditeur a mesuré
