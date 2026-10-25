@@ -88,23 +88,49 @@ Rien n'est cassé : le prestataire garde le chemin d'aujourd'hui, et le **motif 
 refus est affiché tel quel** dans la console. C'est lui qui se porte à Mollie.
 Le jour où Mollie répond oui, le bouton s'allume **sans nouvelle mise en ligne**.
 
-## Les trois questions à poser à Mollie
+## Ce que Mollie a répondu, le 25/10/2026
 
-Elles ne se mesurent pas depuis l'application — ce sont elles qui décident si le
-bouton marche :
+Le bouton a été pressé en production, sur la fiche d'une prestataire. Mollie a
+refusé, et son motif est la réponse aux deux questions qui restaient :
 
-1. **Saint-Barthélemy** : faut-il déclarer `FR` ou `BL` pour une entreprise qui a
-   un SIRET et un IBAN FR mais son établissement à Saint-Barthélemy ? La liste
-   déroulante de Mollie ne propose pas Saint-Barthélemy.
-2. **Notre compte a-t-il l'accès aux *client links* et à l'*onboarding
-   co-brandé* ?** C'est réservé aux comptes partenaires, et la fonction est en
-   bêta ouverte.
-3. **Un jeton d'organisation suffit-il** pour `POST /v2/client-links`, ou faut-il
-   un jeton OAuth ? Le SDK publié documente une autorisation OAuth ; notre
-   serveur présente `MOLLIE_ACCESS_TOKEN`, qui est un jeton d'organisation.
+> Not all required permissions (**clients.write**) for accessing this resource
+> were granted.
 
-Si la réponse à 2 ou 3 est non, la console affichera le motif et le parcours
-d'aujourd'hui continue de marcher — rien à défaire.
+**CE N'EST PAS UN REFUS D'ACCÈS À LA FONCTION.** Mollie ne dit ni « inconnu »,
+ni « réservé aux partenaires », ni « bêta fermée » : il nomme une PERMISSION
+manquante sur le jeton présenté. La requête a donc été comprise, et la ressource
+existe pour nous.
+
+**ET LE JETON D'ORGANISATION NE SUFFIT PAS.** `mollieApi` présente
+`process.env.MOLLIE_ACCESS_TOKEN` en `Bearer` : c'est ce jeton-là qui ne porte
+pas `clients.write`. Rien à changer dans le code — la charge utile, l'adresse et
+la méthode sont bonnes, c'est l'autorisation qui manque.
+
+**CE QU'IL RESTE À FAIRE, ET QUI N'EST PAS DANS L'APPLICATION :**
+
+1. Dans le tableau de bord Mollie, regarder le jeton que nous employons (jeton
+   d'organisation / clé d'API) et voir si **`clients.write`** — et sans doute
+   `clients.read` avec lui — peut lui être accordé. Les jetons d'organisation se
+   créent avec une liste de permissions à cocher.
+2. Si la permission est proposée : créer un jeton qui la porte, et remplacer le
+   secret `MOLLIE_ACCESS_TOKEN` (`firebase functions:secrets:set
+   MOLLIE_ACCESS_TOKEN --project t-service-prod`, puis redéployer les fonctions
+   — un secret est attaché au déploiement). **Le jeton ne se colle jamais dans
+   une conversation.**
+3. Si elle n'est PAS proposée, c'est qu'elle est réservée au programme
+   partenaire : c'est à Mollie qu'il faut la demander, en citant ce motif.
+
+**ET SI LA PERMISSION N'ARRIVE JAMAIS, rien n'est à défaire** : le prestataire
+garde le parcours d'aujourd'hui, celui qui relie un compte Mollie existant, et
+la console affiche le motif au lieu de prétendre avoir créé quelque chose.
+
+## La question qui reste
+
+**Saint-Barthélemy** : la liste de Mollie ne le propose pas. L'éditeur a mesuré
+le 25/10/2026 dans son propre compte qu'une entreprise de Saint-Barthélemy y est
+enregistrée en **France** ; c'est ce que la console propose, et cela reste
+modifiable. Ce qu'un contrôle d'identité Mollie en dira n'a pas encore été
+éprouvé.
 
 ## Et quelqu'un qui a DÉJÀ un compte Mollie ?
 
