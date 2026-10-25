@@ -115,6 +115,20 @@ ok(src.indexOf("legalName:(f.name||'').trim()", iEcr + 1) < 0,
 ok(/repGiven:\(f\.repGiven\|\|''\)\.trim\(\),repFamily:\(f\.repFamily\|\|''\)\.trim\(\)/.test(src.slice(iEcr, iEcr + 400)),
   'et la fiche les écrit : la console n\'aura plus à les demander au téléphone');
 
+console.log('F — un dossier commencé AVANT ce changement : ce qu\'il lui reste, et rien d\'autre');
+/* LA CONSÉQUENCE SE MESURE AU LIEU D'ÊTRE SUPPOSÉE. Un prestataire dont la candidature
+   dormait en brouillon voit deux cases de plus avant de pouvoir l'envoyer. C'est assumé —
+   mais ce qu'on doit garantir, c'est que RIEN D'AUTRE n'a bougé pour lui : son dossier est
+   refusé pour ces deux cases, et pour elles seules. */
+const hier = Object.assign({}, COMPLET);
+delete hier.repGiven; delete hier.repFamily;
+j = await juger(hier);
+ok(j.ok === false, 'son dossier d\'hier n\'est plus envoyable tel quel');
+ok(j.manque.length === 1 && /responsable/.test(j.manque[0]),
+  'et c\'est la SEULE chose qu\'on lui demande de plus : « ' + j.manque.join(' · ') + ' »');
+j = await juger(Object.assign({}, hier, {repGiven: 'Marc', repFamily: 'Ancien'}));
+ok(j.ok === true && j.manque.length === 0, 'les deux cases remplies, il repart exactement d\'où il en était');
+
 await b.close();
 console.log();
 if (f) { console.log(f + ' ÉCHEC(S)'); process.exit(1); }

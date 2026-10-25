@@ -230,7 +230,12 @@ const SERVICE = 'Location de catamaran avec skipper sur st Barthelemy et les Car
 
   console.log('\nJ — « Autre » seul suffit : aucun métier du catalogue n’est imposé');
   const J = await p.evaluate((d) => {
-    const f = { name: 'Skipper SAS', phone: '0690112233', siret: '12345678901234',
+    /* `repGiven` / `repFamily` : depuis le 25/10/2026 un dossier complet porte le prénom
+       et le nom du responsable — Mollie ouvre le compte qui le paiera au nom d'une
+       PERSONNE. Cette section mesure le métier « Autre », pas l'identité : le reste
+       du dossier doit donc être complet, comme il l'était quand elle a été écrite. */
+    const f = { name: 'Skipper SAS', repGiven: 'Jean', repFamily: 'Skipper',
+      phone: '0690112233', siret: '12345678901234',
       address: 'Gustavia', birth: '1980-01-01', cats: ['autre'], otherService: d.sv,
       otherPrice: '1450', otherUnit: 'forfait', mandat: true, cgu: true, charte: true,
       insuranceNone: true, authed: true, googleAuth: true };

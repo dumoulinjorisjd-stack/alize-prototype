@@ -25,9 +25,13 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
 const html = fs.readFileSync(path.join(RACINE, 'index.html'), 'utf8');
 const fns = fs.readFileSync(path.join(RACINE, 'functions', 'index.js'), 'utf8');
 
-// Un dossier complet, à l'attestation près.
+/* Un dossier complet, à l'attestation près. `repGiven` / `repFamily` : depuis le
+   25/10/2026 un dossier complet porte le prénom et le nom du responsable — Mollie ouvre
+   le compte qui le paiera au nom d'une PERSONNE. Ce fichier mesure l'ASSURANCE : le reste
+   doit être complet, sans quoi il mesurerait autre chose. */
 const PRESQUE = {
-  name: 'Léa Brin', phone: '0690112233', siret: '12345678901234', address: 'Gustavia',
+  name: 'Léa Brin', repGiven: 'Léa', repFamily: 'Brin',
+  phone: '0690112233', siret: '12345678901234', address: 'Gustavia',
   birth: '1990-05-05', cats: ['menage'], rates: { menage: 30 }, acceptsGrille: true,
   mandat: true, cgu: true, charte: true, googleAuth: true, authed: true,
 };
@@ -194,7 +198,13 @@ const PRESQUE = {
 
   console.log('\nH — une inscription COMMENCÉE AVANT ce changement ne casse pas');
   // Le brouillon tel qu'il a été écrit hier : il ne porte AUCUNE des clés nouvelles.
-  const AVANT = { name: 'Marc Ancien', phone: '0690998877', siret: '98765432101234',
+  /* `repGiven` / `repFamily` : voir plus haut — un dossier complet les porte depuis le
+     25/10/2026. Cette section mesure la clé d'ASSURANCE sur un brouillon d'hier ; le
+     reste doit être complet, sans quoi elle mesurerait autre chose. Ce que devient un
+     brouillon qui n'a PAS les deux cases est mesuré à part, dans
+     `test-nom-du-responsable.js` : il est refusé, et pour elles seules. */
+  const AVANT = { name: 'Marc Ancien', repGiven: 'Marc', repFamily: 'Ancien',
+    phone: '0690998877', siret: '98765432101234',
     address: 'Lorient', birth: '1985-03-03', cats: ['jardin'], rates: { jardin: 40 },
     acceptsGrille: true, mandat: true, cgu: true, charte: true, insuranceDoc: false,
     googleAuth: true, authed: true };
