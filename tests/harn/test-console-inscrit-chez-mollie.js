@@ -204,6 +204,55 @@ ok(!/Ce qui partira chez Mollie/.test(r.txt), 'ni de relire une déclaration');
 v = await lire();
 ok(v.appels.length === 0, 'aucun appel n\'a été fait pour lui');
 
+console.log('H — les deux boutons, sur un téléphone : aucun mot coupé en son milieu');
+/* RELEVÉ SUR SA CAPTURE, le 25/10/2026 : « Annuler » rendu « Ann / uler » et
+   « Créer chez Mollie » sur trois lignes. La cause n'est pas le bouton — la colonne de
+   valeur d'une fiche porte `overflow-wrap:anywhere` (un e-mail n'y tient pas autrement)
+   et cela S'HÉRITE, en changeant au passage la taille minimale d'un élément flex.
+   ON NE LIT AUCUNE FEUILLE DE STYLE : on demande au navigateur combien de LIGNES il a
+   peintes (Range), et plus de lignes que de mots EST un mot coupé. La moitié qui compte
+   est l'ordinateur, inchangé — sans elle, une règle qui empilerait tout passerait au
+   vert. */
+const mesurerBoutons = async (largeur) => {
+  const q = await b.newPage({viewport: {width: largeur, height: 1600}});
+  await q.goto('file://' + path.join(RACINE, 'tests/harn/app.html'));
+  await q.waitForFunction(() => window.__S && window.__render); await q.waitForTimeout(400);
+  await q.evaluate(([A, charge]) => {
+    window.__setFB({auth: {currentUser: {uid: 'adm', email: 'contact@ti-services.fr'}}, db: {},
+      f: {doc: () => ({}), setDoc: () => Promise.resolve(),
+        getDoc: () => Promise.resolve({exists: () => false, data: () => ({})}), serverTimestamp: () => 'ts'},
+      fn: {httpsCallable: () => () => new Promise(() => {})}, functions: {}});
+    document.body.classList.add('standalone');
+    const sp = document.getElementById('splash'); if (sp) sp.style.display = 'none';
+    const S = window.__S;
+    S.lang = 'fr'; S.onboarded = true; S.guest = false; S.demoMode = false; S.persona = 'admin';
+    S.account = {name: 'Admin', email: 'contact@ti-services.fr', uid: 'adm', role: 'admin'};
+    S.admMolInscr = {a1: {busy: false, pays: 'FR', manques: [], raison: '', cree: false, charge: charge}};
+    S.adminArtisans = A; S.admin = {view: 'art', sel: 'a1', fact: null};
+    window.__render();
+  }, [ARTS, PROPO.charge]);
+  await q.waitForTimeout(250);
+  const m = await q.evaluate(() => {
+    const lignes = (el) => { const rg = document.createRange(); rg.selectNodeContents(el);
+      const bandes = []; [].forEach.call(rg.getClientRects(), (x) => { if (x.width < 1 || x.height < 1) return;
+        if (!bandes.some((t) => Math.abs(t - x.top) < 4)) bandes.push(x.top); }); return bandes.length; };
+    const tous = [].slice.call(document.querySelectorAll('button')).filter((e) =>
+      /Créer chez Mollie|^Annuler$/.test(e.innerText.replace(/\s+/g, ' ').trim()));
+    return {boutons: tous.map((e) => { const t = e.innerText.replace(/\s+/g, ' ').trim();
+        return {txt: t, mots: t.split(/\s+/).filter((x) => /\p{L}/u.test(x)).length, lignes: lignes(e)}; }),
+      deborde: Math.round(document.documentElement.scrollWidth - document.documentElement.clientWidth)};
+  });
+  await q.close(); return m;
+};
+let tel = await mesurerBoutons(390);
+ok(tel.boutons.length === 2, 'les deux boutons sont bien là (sinon la mesure ne mesure rien) : ' + tel.boutons.length);
+tel.boutons.forEach((x) => ok(x.lignes <= x.mots,
+  '« ' + x.txt + ' » : ' + x.lignes + ' ligne(s) pour ' + x.mots + ' mot(s)'));
+ok(tel.deborde === 0, 'et la page ne déborde pas : ' + tel.deborde + ' px');
+let ordi = await mesurerBoutons(1100);
+ok(ordi.boutons.length === 2 && ordi.boutons.every((x) => x.lignes === 1),
+  'sur un ordinateur, chaque bouton tient sur UNE ligne, comme avant');
+
 await b.close();
 console.log();
 if (f) { console.log(f + ' ÉCHEC(S)'); process.exit(1); }
