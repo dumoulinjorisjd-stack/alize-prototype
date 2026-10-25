@@ -254,7 +254,8 @@ const mesurerBoutons = async (largeur) => {
     const tous = [].slice.call(document.querySelectorAll('button')).filter((e) =>
       /Créer chez Mollie|^Annuler$/.test(e.innerText.replace(/\s+/g, ' ').trim()));
     return {boutons: tous.map((e) => { const t = e.innerText.replace(/\s+/g, ' ').trim();
-        return {txt: t, coupes: motsCoupes(e)}; }),
+        const rg = document.createRange(); rg.selectNodeContents(e);
+        return {txt: t, coupes: motsCoupes(e), lignes: bandes(rg)}; }),
       deborde: Math.round(document.documentElement.scrollWidth - document.documentElement.clientWidth)};
   });
   await q.close(); return m;
@@ -265,6 +266,12 @@ for (const L of [390, 360]) {
   tel.boutons.forEach((x) => ok(x.coupes === 0,
     L + ' px \u00b7 \u00ab\u00a0' + x.txt + '\u00a0\u00bb : ' + (x.coupes < 0 ? 'texte introuvable' : x.coupes + ' mot(s) coupé(s) en leur milieu')));
   ok(tel.deborde === 0, L + ' px : la page ne déborde pas (' + tel.deborde + ')');
+  /* ET LE SECOND REPROCHE DE SA CAPTURE : « Créer chez Mollie » sur trois lignes. Ce
+     n'est pas un mot coupé — c'est la rangée qui ne passe pas à la ligne, donc les deux
+     boutons se serrent dans 176 px. À 360 px la colonne n'en fait que 146 et le libellé
+     ne peut PAS y tenir sur une ligne : on ne le mesure qu'à 390. */
+  if (L === 390) tel.boutons.forEach((x) => ok(x.lignes === 1,
+    '390 px \u00b7 \u00ab\u00a0' + x.txt + '\u00a0\u00bb tient sur une ligne : ' + x.lignes));
 }
 const ordi = await mesurerBoutons(1100);
 ok(ordi.boutons.length === 2 && ordi.boutons.every((x) => x.coupes === 0),
