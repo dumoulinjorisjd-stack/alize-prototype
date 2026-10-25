@@ -106,19 +106,71 @@ existe pour nous.
 pas `clients.write`. Rien à changer dans le code — la charge utile, l'adresse et
 la méthode sont bonnes, c'est l'autorisation qui manque.
 
-**CE QU'IL RESTE À FAIRE, ET QUI N'EST PAS DANS L'APPLICATION :**
+**CE QU'IL RESTE À FAIRE, ET QUI N'EST PAS DANS L'APPLICATION.** Le tableau de
+bord a été regardé le 25/10/2026, et il répond lui-même :
 
-1. Dans le tableau de bord Mollie, regarder le jeton que nous employons (jeton
-   d'organisation / clé d'API) et voir si **`clients.write`** — et sans doute
-   `clients.read` avec lui — peut lui être accordé. Les jetons d'organisation se
-   créent avec une liste de permissions à cocher.
-2. Si la permission est proposée : créer un jeton qui la porte, et remplacer le
-   secret `MOLLIE_ACCESS_TOKEN` (`firebase functions:secrets:set
-   MOLLIE_ACCESS_TOKEN --project t-service-prod`, puis redéployer les fonctions
-   — un secret est attaché au déploiement). **Le jeton ne se colle jamais dans
-   une conversation.**
-3. Si elle n'est PAS proposée, c'est qu'elle est réservée au programme
-   partenaire : c'est à Mollie qu'il faut la demander, en citant ce motif.
+> « Les Clés API standard ont accès à toutes les données appartenant au profil
+> sélectionné […] Pour personnaliser les autorisations accordées, créez plutôt
+> un **jeton d'accès avancé**. »
+
+Les quatre clés du compte sont des **clés standard**, « Toutes les autorisations
+au niveau du profil » — deux profils, Ti-services et Archipel-BTP, chacun en
+direct et en test. Une clé standard offre **2** permissions « Mollie Connect » ;
+le **jeton d'accès avancé** en offre **14**. `clients.write` est donc à notre
+portée, et il faut un jeton avancé pour l'atteindre.
+
+## LE PIÈGE : LA CLÉ PORTE LE PROFIL, ET LE CODE N'ENVOIE PAS DE `profileId`
+
+**On ne peut pas remplacer le secret tel quel**, et c'est le code lui-même qui
+le dit (`functions/index.js`, « DEUX PRODUITS SUR LE MÊME COMPTE MOLLIE ») :
+Ti-Services et Archipel BTP encaissent sur le même compte, la séparation se joue
+au niveau du **PROFIL**, et **c'est la clé API qui détermine le profil**.
+
+Mesuré : `profileId` n'apparaît **nulle part** dans les charges utiles — une
+seule occurrence dans tout le fichier, et c'est le commentaire ci-dessus. Les
+paiements n'en portent pas parce qu'ils n'en ont jamais eu besoin : la clé le
+portait pour eux.
+
+Un jeton avancé « Tous les profils » n'a plus de profil implicite, et la
+documentation Connect de Mollie est explicite — *« since payment creation
+requires association to a specific profile, you'll always need to specify the
+profileID parameter within the payment »*. Les paiements seraient donc refusés,
+ou — pire — rangés sur le profil par défaut, c'est-à-dire **l'argent de
+Ti-Services sur le produit d'à côté**.
+
+**DEUX ISSUES, ET ON ESSAIE LA PREMIÈRE AVANT D'ÉCRIRE UNE LIGNE :**
+
+**A · Jeton avancé RESTREINT au profil Ti-services.** L'écran de création
+l'offre (« Profil »). Si Mollie accorde `clients.write` à un jeton restreint,
+rien d'autre ne bouge : le profil reste implicite, les paiements ne changent
+pas, et le rayon d'action reste Ti-Services. **On ne sait pas si Mollie
+l'accepte** — `/client-links` est une ressource d'ORGANISATION, pas de profil,
+et la restriction pourrait la fermer. Ça s'essaie en trois minutes et le refus
+se lit tout de suite.
+
+**B · Jeton « Tous les profils », et le code envoie `profileId`.** Petit
+changement, mais il touche CHAQUE création de paiement, c'est-à-dire l'argent :
+un second secret `MOLLIE_PROFILE_ID`, et une épreuve qui jure qu'aucun paiement
+ne part sans. À ne faire que si A est refusé.
+
+**CE QU'IL FAUT COCHER**, relevé sur les ressources que le code appelle
+réellement : `/payments` (créer, lire, capturer, rembourser) → **Payments** et
+**Refunds**, lecture et écriture ; `/payments/{id}/routes`, le versement au
+prestataire → **Mollie Connect** ; `/customers` et `/customers/{id}/mandates` →
+**Recurring** ; `/organizations/me` → **Mollie Connect** ; `/client-links` →
+**`clients.write`** (et `clients.read`), à chercher en dépliant **Mollie
+Connect**. Mode **En direct**.
+
+**L'ANCIENNE CLÉ NE SE RÉVOQUE PAS** tant que la nouvelle n'a pas fait ses
+preuves : c'est le seul retour en arrière, et il tient en une commande.
+
+Puis : `firebase functions:secrets:set MOLLIE_ACCESS_TOKEN --project
+t-service-prod`, et **redéployer les fonctions** — un secret est attaché au
+déploiement. **Le jeton ne se colle jamais dans une conversation.**
+
+Si `clients.write` n'est PAS dans la liste des 14, c'est qu'elle est réservée au
+programme partenaire : c'est à Mollie qu'il faut la demander, en citant ce
+motif.
 
 **ET SI LA PERMISSION N'ARRIVE JAMAIS, rien n'est à défaire** : le prestataire
 garde le parcours d'aujourd'hui, celui qui relie un compte Mollie existant, et
