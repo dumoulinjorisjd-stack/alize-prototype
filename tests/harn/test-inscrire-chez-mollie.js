@@ -114,7 +114,23 @@ const bloc = srv.slice(srv.indexOf('exports.mollieOnboardingLink'));
 const lien = bloc.slice(0, bloc.indexOf('\n});'));
 ok(lien.length > 400, 'le départ du prestataire a bien été trouvé (sinon les mesures suivantes ne mesurent rien)');
 ok(/mollieClientLinkHref/.test(lien), 'il préfère le lien préparé par la console quand il existe');
-ok(/mollieLienClient\(href, uid/.test(lien), 'et le compose au dernier moment, avec un état frais');
+/* UNE GARDE DE SOURCE NE PROUVE PAS UN COMPORTEMENT. La première version cherchait la
+   PRÉSENCE de l'appel : `if (false) return mollieLienClient(...)` la laissait VERTE, et une
+   contre-épreuve a rendu zéro rouge — c'est-à-dire qu'elle ne mesurait rien. Elle épingle
+   donc la CONDITION qui déclenche le retour, et refuse les formes qui la neutralisent en
+   silence. Ce que le harnais ne peut pas rejouer est dit : cette fonction lit Firestore et
+   ne tourne pas ici ; le rendu côté console, lui, est mesuré à côté. */
+const iRet = lien.indexOf('return {url: mollieLienClient(href, uid');
+const iIf = iRet > 0 ? lien.lastIndexOf('if (', iRet) : -1;
+/* ON NE DEVINE PAS LA CONDITION PAR UNE EXPRESSION RÉGULIÈRE : un « .*? » partait du PREMIER
+   `if (` de la fonction et capturait tout son corps, si bien que « la condition porte sur
+   href » était vraie quoi qu'on mette — la contre-épreuve l'a dit. On remonte au `if (` le
+   plus proche du retour, et l'on lit ce qu'il y a entre. */
+const cond = (iIf > 0 && iRet > iIf) ? lien.slice(iIf + 4, lien.lastIndexOf(') ', iRet)).trim() : '';
+ok(!!cond && /\bhref\b/.test(cond),
+  'et il ne le compose que sous une condition portant sur ce lien, jamais sous une condition morte : « ' + (cond || '(aucune)') + ' »');
+ok(/indexOf\('https:\/\/'\) === 0/.test(cond),
+  'cette condition exige une vraie adresse, pas une chaîne quelconque');
 ok(/MOLLIE_AUTHORIZE/.test(lien), 'sinon il repart sur l\'autorisation d\'aujourd\'hui, qui relie un compte existant');
 ok(/catch \(e\) \{ console\.warn\('mollieOnboardingLink fiche'/.test(lien),
   'une fiche illisible ne ferme rien : le prestataire ne reste jamais devant un bouton sans issue');
