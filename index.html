@@ -3698,7 +3698,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='880';
+  const VERSION_APP='881';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -10927,6 +10927,54 @@
   function molDepuisTxt(a){const d=molDepuis(a);if(!d)return '';
     return '<div class="mini" style="margin-top:4px;color:'+(molLong(a)?'var(--coral-deep);font-weight:700':'var(--muted)')+'">'
       +(molLong(a)?I.warn+' ':'')+'En attente '+esc(d)+(molLong(a)?' \u2014 inhabituel, relancez Mollie.':'')+'</div>';}
+  /* INSCRIRE UN PRESTATAIRE CHEZ MOLLIE DEPUIS LA CONSOLE.
+     Mesuré avant d'écrire : le serveur ne créait AUCUN compte Mollie. Le lien de départ
+     mène à `oauth2/authorize`, qui AUTORISE une organisation existante — un prestataire
+     qui n'en a pas arrive donc sur un écran de consentement dont le bouton « Connecter »
+     reste gris. Le guide pas à pas donne les bonnes réponses à copier, mais copier-coller
+     chez Mollie reste créer un compte chez Mollie, et c'est là que tout le monde bute.
+     ON MONTRE AVANT D'ÉCRIRE : le premier appui ne fait RIEN chez Mollie, il rend ce qui
+     PARTIRAIT. C'est une déclaration faite à un établissement de paiement, à partir d'une
+     fiche remplie par quelqu'un d'autre : elle se relit avant de partir.
+     ET LE PAYS N'A AUCUN DÉFAUT, volontairement. Saint-Barthélemy est `BL` et la liste de
+     Mollie ne le propose pas ; ses entreprises sont françaises (SIRET, IBAN FR). Lequel
+     déclarer n'est pas à nous de le supposer — le choix est explicite, et le bouton reste
+     fermé tant qu'il n'est pas fait. */
+  function molInscrireBloc(a){
+    const E=(S.admMolInscr||{})[a.id]||{};
+    const btn=function(l,act,cls){return '<button class="btn '+(cls||'ghost')+' sm" data-adm="'+act+':'+a.id+'" style="width:auto;padding:7px 12px">'+l+'</button>';};
+    if(E.busy)return '<div class="mini" style="margin-top:7px;color:var(--muted)">Lecture de la fiche…</div>';
+    if(E.cree)return '<div class="mini" style="margin-top:7px;color:var(--good-deep);font-weight:650">'+I.check+' Son compte Mollie est préparé. Il n’a plus qu’à appuyer sur « Activer mes paiements » dans son profil : ses informations y sont déjà, il ne lui reste que son identité à confirmer chez Mollie.</div>';
+    if(!E.charge)return '<div style="margin-top:9px">'+btn(I.bolt+' Préparer son compte Mollie','mol-prep')
+      +'<p class="mini" style="margin-top:6px;color:var(--muted);line-height:1.45">Crée son compte chez Mollie à sa place, déjà rempli avec les informations de sa fiche. Rien ne part avant que vous ayez relu.</p></div>';
+    const c=E.charge, ad=c.address||{}, ow=c.owner||{};
+    const lg=function(l,v){return '<div class="row between" style="gap:10px;margin-top:5px"><span class="mini" style="color:var(--muted)">'+l+'</span><b style="font-size:12.5px;text-align:right;word-break:break-word">'+(v?esc(v):'<span style="color:var(--coral-deep)">—</span>')+'</b></div>';};
+    const manq=(E.manques||[]);
+    const noms={email:'adresse électronique',nom:'prénom et nom (deux mots)',entreprise:'nom ou raison sociale',pays:'pays'};
+    return '<div class="card" style="padding:12px;margin-top:9px;background:var(--sand-2);border:1px solid var(--hair)">'
+      +'<b style="font-size:12.5px">Ce qui partira chez Mollie</b>'
+      +lg('Prénom',ow.givenName)+lg('Nom',ow.familyName)+lg('Adresse électronique',ow.email)
+      +lg('Nom / raison sociale',c.name)
+      +lg('Voie',ad.streetAndNumber)+lg('Code postal',ad.postalCode)+lg('Commune',ad.city)
+      +lg('SIRET',c.registrationNumber||'')
+      +(c.registrationNumber?'':'<div class="mini" style="margin-top:4px;color:var(--muted)">SIRET absent ou incomplet : il est omis, jamais tronqué. Mollie le demandera lui-même.</div>')
+      +(ad.postalCode?'':'<div class="mini" style="margin-top:4px;color:var(--muted)">Aucun code postal lisible dans son adresse : seul le pays part, Mollie demandera le reste sur ses écrans.</div>')
+      +'<div style="margin-top:10px;padding-top:9px;border-top:1px solid var(--hair)">'
+      +'<div class="mini" style="color:var(--muted)">Pays à déclarer</div>'
+      +'<select data-molpays="'+a.id+'" style="margin-top:4px;width:100%;padding:8px 10px;border:1px solid var(--hair);border-radius:10px;font-size:13.5px;background:#fff">'
+      +'<option value=""'+(E.pays?'':' selected')+'>— à confirmer —</option>'
+      +'<option value="FR"'+(E.pays==='FR'?' selected':'')+'>France (FR)</option>'
+      +'<option value="BL"'+(E.pays==='BL'?' selected':'')+'>Saint-Barthélemy (BL)</option>'
+      +'</select>'
+      +'<p class="mini" style="margin-top:5px;color:var(--muted);line-height:1.45">Mollie ne propose pas Saint-Barthélemy dans sa propre liste, et ses entreprises sont françaises (SIRET, IBAN FR). C’est une déclaration à un établissement de paiement : elle se confirme, elle ne se devine pas.</p></div>'
+      +(manq.length?'<div class="mini" style="margin-top:9px;color:var(--coral-deep);font-weight:650">'+I.warn+' Il manque : '+manq.map(function(m){return noms[m]||m;}).join(', ')+'. À compléter sur sa fiche avant d’envoyer.</div>':'')
+      +(E.raison?'<div class="mini" style="margin-top:9px;color:var(--coral-deep);line-height:1.45"><b>'+I.warn+' Mollie a refusé :</b> '+esc(E.raison)+'<br>Rien n’est cassé : il garde le chemin actuel, celui qui relie un compte Mollie déjà créé. Ce motif se porte à Mollie.</div>':'')
+      +(E.dejaPrepare?'<div class="mini" style="margin-top:9px;color:var(--muted)">Un compte a déjà été préparé pour lui : son bouton ouvre déjà ce parcours.</div>':'')
+      +'<div class="row" style="gap:8px;margin-top:11px">'
+      +((manq.length||!E.pays)?'<button class="btn primary sm" disabled style="width:auto;padding:7px 12px;opacity:.45">'+I.bolt+' Créer chez Mollie</button>':btn(I.bolt+' Créer chez Mollie','mol-cree','primary'))
+      +btn('Annuler','mol-ferme')+'</div></div>';
+  }
+
   // — PURGER UN COMPTE DEPUIS LA CONSOLE —
   // Deux besoins distincts, donc deux boutons. « Retirer la fiche » efface le compte de
   // connexion et les profils, mais GARDE la comptabilité et les commandes (elles
@@ -12919,7 +12967,7 @@
             if(st==='pending'&&a.mollieCanWork)return `<span class="chip warn">${I.clock} Encaisse · virements en attente</span><div class="mini" style="margin-top:4px"><b>Il peut accepter des missions.</b> Mollie l'autorise à encaisser mais <b>retient ses virements</b> le temps de son contrôle de sécurité, déclenché par la première transaction. Son gain reste sur le compte Ti-Services et lui part dès l'ouverture. Rien à faire de son côté, si Mollie réclamait une pièce, la fiche afficherait « À compléter ».</div>${molDepuisTxt(a)}`;
             if(st==='pending'&&a.mollieOnb==='in-review')return `<span class="chip warn">${I.clock} Validation Mollie en cours</span><div class="mini" style="margin-top:4px">Mollie vérifie son identité et son IBAN. Rien à faire de son côté, dès que c'est validé, il passe « Actif » tout seul.</div>${molDepuisTxt(a)}`;
             if(st==='pending')return `<span class="chip warn">${I.clock} Activation Mollie inachevée</span><div class="mini" style="margin-top:4px">Son compte existe mais n'est pas encore pleinement ouvert chez Mollie.</div>${molDepuisTxt(a)}`;
-            return `<span class="chip coral">Jamais commencé</span><div class="mini" style="margin-top:4px">Sans activation, il peut accepter mais pas être payé&nbsp;: son gain reste sur le solde Ti-Services.</div>`;})()}`)}
+            return `<span class="chip coral">Jamais commencé</span><div class="mini" style="margin-top:4px">Sans activation, il peut accepter mais pas être payé&nbsp;: son gain reste sur le solde Ti-Services.</div>${molInscrireBloc(a)}`;})()}`)}
           ${a.insuranceUrl?`<div style="padding:11px 0;border-top:1px solid var(--hair)"><div class="row" style="gap:8px">${insStatus(a)!=='valide'?`<button class="btn good sm" data-adm="valid-ins:${a.id}">${I.check} Valider l'attestation</button>`:''}${insStatus(a)!=='refuse'?`<button class="btn ghost sm" data-adm="rej-ins:${a.id}">Refuser l'attestation</button>`:''}</div><p class="mini" style="margin-top:7px;color:var(--muted)">Ouvrez le document ci-dessus, puis validez ou refusez l'attestation. Rien n'est validé automatiquement.</p></div>`:''}
           ${a.bio?fRow('Présentation',`<span style="font-weight:500">${esc(a.bio)}</span>`):''}
           ${fRow('Notifications',(function(){const n=notifsDe(a.uid);
@@ -19335,6 +19383,40 @@
         // basculer dans l'espace client. En démo seulement, on explore les autres espaces.
         if(!isDemo()&&isAdminAccount()){ S.demoMode=false;clearClientCache();S.support=false;S.supportSide=null;S.adminSupervise=false;S.generalSupport=false;S.genUser=null;if(FB)blankAll();fbLogout();if(!FB){S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;S.missions=[];}render();return; }
         S.persona='client';S.admin.view='home';S.admin.sel=null;S.admin.fact=null;S.support=false;S.supportSide=null;S.adminSupervise=false;S.generalSupport=false;S.genUser=null;}
+      /* INSCRIRE CHEZ MOLLIE — TROIS GESTES, ET LE PREMIER N'ÉCRIT RIEN.
+         « Préparer » demande au serveur ce qui PARTIRAIT : il lit la fiche, rend la
+         proposition et ses manques, et ne touche pas à Mollie. « Créer » n'est offert
+         qu'une fois le pays confirmé et la fiche complète — la même frontière est tenue
+         côté serveur, un contrôle écrit dans le navigateur se contourne en effaçant une
+         ligne. SILENCE N'EST PAS RÉPONSE : un refus de Mollie laisse la proposition à
+         l'écran avec son motif, au lieu de refermer le bloc sur rien. */
+      else if(act==='mol-prep'||act==='mol-cree'){
+        S.admMolInscr=S.admMolInscr||{};
+        const E0=S.admMolInscr[id]||{};
+        if(E0.busy)return;
+        const creer=(act==='mol-cree');
+        S.admMolInscr[id]=Object.assign({},E0,{busy:true});render();
+        FB.fn.httpsCallable(FB.functions,'adminMollieInscrire')(
+          creer?{uid:id,pays:E0.pays||'',confirmer:true}:{uid:id}).then(function(r){
+          const d=(r&&r.data)||{};
+          if(d.deja){ S.admMolInscr[id]={busy:false};render();
+            toast('Son compte Mollie est déjà relié');return; }
+          /* On garde le pays choisi d'un appel à l'autre : le refaire choisir après un
+             refus de Mollie serait lui faire reprendre une déclaration qu'il a déjà
+             relue. */
+          S.admMolInscr[id]={busy:false,pays:E0.pays||'',charge:d.charge||E0.charge||null,
+            manques:d.manques||[],raison:d.raison||'',cree:!!d.cree,dejaPrepare:!!d.dejaPrepare};
+          render();
+          if(d.cree)toast('Compte Mollie préparé ✓');
+          else if(creer&&d.repli)toast('⚠︎ Mollie a refusé : '+(d.raison||'motif inconnu'));
+          else if(creer&&d.pret===false)toast('Fiche incomplète, rien n’a été envoyé');
+        }).catch(function(e){
+          S.admMolInscr[id]=Object.assign({},E0,{busy:false});
+          toast('⚠︎ Inscription Mollie impossible : '+fbErrTxt(e));render();
+        });
+        return;}
+      else if(act==='mol-ferme'){
+        S.admMolInscr=S.admMolInscr||{};delete S.admMolInscr[id];render();return;}
       // Signalement traité : l'écriture passe par la règle admin de la collection reports.
       else if(act==='reportdone'){
         (S.adminReports||[]).forEach(function(r){if(r.id===id)r.statut='traite';});
@@ -21504,6 +21586,15 @@
        corriger en devinant : fermer avant d'ouvrir viderait le sélecteur d'heure du
        client, et un écran de commande sans aucune heure est pire que des heures
        improbables. Le sélecteur reprend sa valeur précédente. */
+    /* LE PAYS D'UNE DÉCLARATION MOLLIE. Il n'a aucun défaut et ne se devine pas : on
+       enregistre le choix, le bouton de création s'ouvre, et rien ne part encore. */
+    const mp=e.target.closest('[data-molpays]');
+    if(mp){
+      const id=mp.dataset.molpays;
+      S.admMolInscr=S.admMolInscr||{};
+      S.admMolInscr[id]=Object.assign({},S.admMolInscr[id]||{},{pays:mp.value||''});
+      render();return;
+    }
     const pl=e.target.closest('[data-admplage]');
     if(pl){
       const q=pl.dataset.admplage.split(':'), id=q[0], quoi=q[1];

@@ -342,6 +342,13 @@ const MOLLIE_API = 'https://api.mollie.com/v2';
 const MOLLIE_RETURN_URL = 'https://europe-west1-t-service-prod.cloudfunctions.net/mollieOnboardingReturn';
 const MOLLIE_APP_RETURN = 'https://ti-services.fr';
 const APP_URL = process.env.APP_URL || 'https://ti-services.fr';
+/* LES PERMISSIONS DEMANDÉES, ÉCRITES UNE FOIS. Deux départs mènent au même endroit — le
+ * lien d'autorisation d'un prestataire qui a DÉJÀ un compte Mollie, et le client link qui
+ * lui en crée un — et les deux doivent demander exactement les mêmes droits. Deux listes
+ * finiraient par diverger, et un prestataire inscrit par l'une n'aurait pas les droits que
+ * l'autre suppose : les versements s'arrêteraient sans que rien ne le dise. */
+const MOLLIE_SCOPES = ['onboarding.read', 'onboarding.write', 'organizations.read',
+  'payments.read', 'payments.write', 'profiles.read'];
 function mollieOAuthConfigured() { return !!(process.env.MOLLIE_CLIENT_ID && process.env.MOLLIE_CLIENT_SECRET); }
 function mollieApiConfigured() { return !!process.env.MOLLIE_ACCESS_TOKEN; }
 // SIGNATURE DU `state` OAUTH (anti-détournement de liaison). Le state = uid de l'artisan +
@@ -722,6 +729,140 @@ async function mollieOnboardingReady(accessToken) {
       canPay: canPay, canSettle: canSettle};
   } catch (e) { console.warn('mollieOnboardingReady', e); return {ok: false, status: 'error', dashboard: '', canPay: false, canSettle: false}; }
 }
+/* ══ CE QU'ON PEUT DÉCLARER À MOLLIE À LA PLACE D'UN PRESTATAIRE ══════════════════════
+ * « Il faut que, depuis la console, une fois toutes les informations données par le
+ * prestataire dans son profil, on puisse quasiment d'un bouton l'enregistrer sur Mollie.
+ * Ou en tout cas, faire le plus de choses possible pour que lui n'ait plus qu'un bouton
+ * à cliquer. » — l'éditeur, le 24/10/2026.
+ *
+ * MESURÉ AVANT D'ÉCRIRE. L'écran d'activation envoie le prestataire sur
+ * `my.mollie.com/oauth2/authorize`, qui AUTORISE une organisation existante. Celui qui
+ * n'en a pas n'a donc rien à autoriser : l'écran s'affiche, « Connecter » reste gris, et
+ * aucun champ ne se remplit. Relevé sur une prestataire le 24/10 — sa fiche console
+ * disait « Jamais commencé », et l'écran de consentement était le PREMIER qu'elle voyait.
+ * Le guide pas à pas existe et donne ses informations à copier, mais copier-coller chez
+ * Mollie reste créer un compte chez Mollie.
+ *
+ * LE CLIENT LINK CRÉE L'ORGANISATION À SA PLACE, pré-remplie, et les permissions sont
+ * accordées automatiquement. La spécification vient du code publié par Mollie
+ * (mollie-api-php : CreateClientLinkRequest, Data/Owner, Data/OwnerAddress) — pas d'une
+ * documentation de mémoire, `docs.mollie.com` étant refusé depuis ce conteneur.
+ *
+ * CE NOYAU NE PARLE À PERSONNE. Il reçoit la fiche du prestataire et le pays CONFIRMÉ,
+ * il rend ce qu'on peut déclarer et ce qui manque. Ni horloge, ni réseau, ni base.
+ *
+ * LE PAYS SE REÇOIT, IL NE SE DEVINE PAS. C'est une déclaration faite à un établissement
+ * de paiement, et à la place de quelqu'un d'autre. Saint-Barthélemy est `BL` et la liste
+ * de Mollie ne le propose pas ; ses entreprises sont françaises (SIRET, IBAN FR). Lequel
+ * envoyer n'est pas à nous de le supposer : la console le montre, un humain confirme.
+ * C'est la même règle qui fait refuser « Saint-Marin » à qui cherchait Saint-Martin.
+ *
+ * CE QUE LE CLIENT LINK NE PEUT PAS PORTER, et qu'il ne faut pas croire prérempli : le
+ * site web, la description de l'activité et l'IBAN n'existent PAS dans sa charge utile
+ * (relevé dans CreateClientLinkRequest : `owner`, `name`, `address`, `registrationNumber`,
+ * `vatNumber`, et rien d'autre). Mollie les demandera sur ses propres écrans — c'est ce que
+ * le guide pas à pas continue de servir, et c'est pourquoi on ne le retire pas.
+ * `vatNumber` est le seul champ possible qu'on laisse vide : AUCUNE fiche du parc ne porte
+ * de numéro de TVA (relevé : zéro occurrence), et en inventer un serait une fausse
+ * déclaration à un établissement de paiement.
+ *
+ * ET ON N'ENVOIE QUE CE DONT ON EST SÛR. Un SIRET qui n'a pas ses quatorze chiffres n'est
+ * pas un numéro d'enregistrement : il est OMIS, pas tronqué. Une adresse d'où l'on ne
+ * sait pas extraire un code postal ne part pas découpée au hasard : seul le pays part, et
+ * Mollie demandera le reste sur ses propres écrans — un champ vide se corrige, un champ
+ * faux se découvre au contrôle d'identité, des jours plus tard. */
+const LIEN_MANQUES = ['email', 'nom', 'entreprise', 'pays'];
+/* Le prénom et le nom se séparent au PREMIER espace : « Marie-Lou Cagan » donne
+ * « Marie-Lou » et « Cagan ». Un seul mot ne fait pas un couple prénom/nom — on ne
+ * découpe pas ce qui n'a qu'une pièce, et le manque se dit. */
+function lienNomCoupe(v) {
+  const mots = String(v == null ? '' : v).trim().split(/\s+/).filter(Boolean);
+  if (mots.length < 2) return null;
+  return {givenName: mots[0], familyName: mots.slice(1).join(' ')};
+}
+/* UN CODE POSTAL FRANÇAIS FAIT CINQ CHIFFRES, et c'est la seule chose qu'on sache
+ * reconnaître à coup sûr dans une adresse écrite d'un seul tenant. Ce qui le précède est
+ * la voie, ce qui le suit la commune. Sans lui on ne rend RIEN : « Gustavia » seul n'est
+ * ni une rue ni un code, et le ranger dans un champ serait inventer. */
+function lienAdresseDecoupee(v) {
+  const txt = String(v == null ? '' : v).trim();
+  const m = /(^|[^0-9])(\d{5})([^0-9]|$)/.exec(txt);
+  if (!m) return null;
+  const i = txt.indexOf(m[2]);
+  const avant = txt.slice(0, i).replace(/[\s,;-]+$/, '').trim();
+  const apres = txt.slice(i + 5).replace(/^[\s,;-]+/, '').trim();
+  const out = {};
+  if (avant) out.streetAndNumber = avant;
+  out.postalCode = m[2];
+  if (apres) out.city = apres;
+  return out;
+}
+function clientLinkProposition(fiche, pays, locale) {
+  const f = (fiche && typeof fiche === 'object') ? fiche : {};
+  const manques = [];
+  const email = String(f.email == null ? '' : f.email).trim();
+  if (!email || email.indexOf('@') < 1) manques.push('email');
+  // L'identité LÉGALE d'abord : c'est elle qui figure au registre, et c'est elle que
+  // Mollie vérifiera. Le nom d'usage ne sert que si l'autre manque. Les deux champs sont
+  // ceux que la fiche `artisans` écrit vraiment (`legalName`, `name`) — relevés, pas
+  // supposés : un nom lu dans un champ qui n'existe pas rendrait « nom manquant » sur
+  // toutes les fiches du parc.
+  const nomSource = String(f.legalName == null ? '' : f.legalName).trim() || String(f.name == null ? '' : f.name).trim();
+  const coupe = lienNomCoupe(nomSource);
+  if (!coupe) manques.push('nom');
+  if (!nomSource) manques.push('entreprise');
+  const pay = String(pays == null ? '' : pays).trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(pay)) manques.push('pays');
+  const charge = {
+    owner: {email: email, givenName: coupe ? coupe.givenName : '', familyName: coupe ? coupe.familyName : '',
+      locale: String(locale == null ? '' : locale).trim() || 'fr_FR'},
+    name: nomSource,
+    address: Object.assign({country: pay}, lienAdresseDecoupee(f.address) || {}),
+  };
+  const siret = String(f.siret == null ? '' : f.siret).replace(/\D/g, '');
+  if (siret.length === 14) charge.registrationNumber = siret;
+  return {pret: manques.length === 0, manques: manques, charge: charge};
+}
+/* LE LIEN FINAL SE COMPOSE AU DERNIER MOMENT, jamais à la création. Le `state` est signé
+ * et ne vit que TRENTE MINUTES (`signMollieState`) : un lien mémorisé sur la fiche avec sa
+ * requête déjà écrite serait périmé avant que le prestataire l'ouvre — et l'on aurait
+ * reconstruit, sous un bouton neuf, l'écran gris qui a ouvert ce chantier. On ne garde
+ * donc que l'ADRESSE NUE rendue par Mollie, et l'on y accroche un état frais à chaque
+ * appui. La forme de la requête vient du code publié par Mollie
+ * (mollie-api-php : Resources/ClientLink::getRedirectUrl).
+ *
+ * ET LE RETOUR EST CELUI QUI EXISTE : la requête ne porte PAS de `redirect_uri` — Mollie
+ * emploie celle enregistrée dans l'app Connect, c'est-à-dire `MOLLIE_RETURN_URL`. Les deux
+ * chemins reviennent donc sur le MÊME `mollieOnboardingReturn`, qui lit le `state` et relie
+ * la fiche : rien de neuf à câbler, et rien de neuf à casser. */
+function mollieLienClient(href, uid, prompt) {
+  return String(href) +
+    '?client_id=' + encodeURIComponent(process.env.MOLLIE_CLIENT_ID || '') +
+    '&state=' + encodeURIComponent(signMollieState(uid)) +
+    '&scope=' + encodeURIComponent(MOLLIE_SCOPES.join(' ')) +
+    '&approval_prompt=' + (prompt === 'force' ? 'force' : 'auto');
+}
+/* Crée le client link chez Mollie. Rend {ok, href, id, raison} et NE LÈVE JAMAIS : un refus
+ * doit retomber proprement sur le lien d'autorisation d'aujourd'hui, qui continue de
+ * marcher pour qui a déjà un compte.
+ * CE QUI PEUT REFUSER, ET QU'ON NE PEUT PAS VÉRIFIER D'ICI : l'accès aux client links est
+ * réservé aux comptes partenaires et la fonction est en bêta ouverte ; le SDK de Mollie
+ * exige par ailleurs une autorisation OAuth là où notre serveur présente un jeton
+ * d'ORGANISATION. Le motif est rendu TEL QUEL pour que la console le dise — un « ça n'a
+ * pas marché » n'apprend rien et laisse chercher, alors que le motif se porte à Mollie. */
+async function mollieCreerClientLink(charge) {
+  const r = await mollieApi('/client-links', 'POST', charge);
+  if (!r.ok) {
+    const det = (r.data && (r.data.detail || r.data.title)) || ('HTTP ' + (r.status || '?'));
+    console.warn('mollieCreerClientLink refusé :', det);
+    return {ok: false, href: '', id: '', raison: String(det).slice(0, 220)};
+  }
+  const href = (r.data && r.data._links && r.data._links.clientLink && r.data._links.clientLink.href) || '';
+  const id = String((r.data && r.data.id) || '');
+  if (!href) return {ok: false, href: '', id: id, raison: 'réponse sans lien'};
+  return {ok: true, href: href, id: id, raison: ''};
+}
+
 // FRAIS MOLLIE RÉELS d'un paiement. Mollie expose `settlementAmount` = ce qu'il verse
 // vraiment après ses frais ; le frais exact = amount − settlementAmount. On enregistre ce
 // frais + le revenu net RÉEL de Ti-Services (commission − frais) sur le registre et la
@@ -4221,6 +4362,64 @@ exports.adminClientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (requ
   return {card: r.card, customerId: r.customerId, mandatInscrit: r.mandatInscrit, lu: r.lu};
 });
 
+/* LE BOUTON DE LA CONSOLE : inscrire un prestataire chez Mollie à sa place.
+ *
+ * SANS `confirmer`, IL NE FAIT RIEN CHEZ MOLLIE. Il rend ce qui PARTIRAIT, pour que
+ * l'administrateur le lise avant. C'est la discipline de toute écriture faite à partir
+ * d'une source qu'on ne maîtrise pas : on montre, puis on écrit. Et ici la source est une
+ * fiche remplie par quelqu'un d'autre, à destination d'un établissement de paiement.
+ *
+ * LE PAYS EST CONFIRMÉ PAR UN HUMAIN, JAMAIS DEVINÉ (voir `clientLinkProposition`).
+ *
+ * ET CE QUI MANQUE SE DIT AU LIEU DE PARTIR À MOITIÉ : une proposition incomplète est
+ * rendue telle quelle, avec la liste des champs, pour qu'on la fasse compléter — plutôt
+ * qu'un compte Mollie à demi rempli qui bloquera son propriétaire trois écrans plus loin,
+ * sans qu'il sache pourquoi. */
+exports.adminMollieInscrire = onCall({secrets: ['MOLLIE_ACCESS_TOKEN', 'MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET']}, async (request) => {
+  const who = (request.auth && request.auth.token && request.auth.token.email) || '';
+  if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+    throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
+  }
+  const uid = String((request.data && request.data.uid) || '').trim();
+  if (!uid) throw new HttpsError('invalid-argument', 'Compte manquant.');
+  const pays = String((request.data && request.data.pays) || '').trim();
+  const confirmer = (request.data && request.data.confirmer) === true;
+  const db = getFirestore();
+  const snap = await db.collection('artisans').doc(uid).get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Prestataire introuvable.');
+  const a = snap.data() || {};
+  /* DÉJÀ RELIÉ : il n'y a rien à créer, et en créer une seconde organisation serait le pire
+   * résultat possible — deux comptes Mollie pour un seul prestataire, dont un seul reçoit
+   * les versements, sans que personne sache lequel. */
+  if (a.mollieOrgId) return {deja: true, orgId: String(a.mollieOrgId), statut: String(a.mollieStatus || '')};
+  const P = clientLinkProposition(a, pays, 'fr_FR');
+  if (!confirmer) {
+    return {apercu: true, pret: P.pret, manques: P.manques, charge: P.charge,
+      dejaPrepare: !!a.mollieClientLinkHref};
+  }
+  if (!P.pret) return {pret: false, manques: P.manques, charge: P.charge};
+  if (!mollieApiConfigured()) return {pret: true, cree: false, repli: 'autorisation', raison: 'Mollie non configuré'};
+  const out = await mollieCreerClientLink(P.charge);
+  if (!out.ok) {
+    /* LE REPLI N'EST PAS UN ÉCHEC. Le prestataire garde le chemin d'aujourd'hui, celui qui
+     * relie un compte Mollie existant, et le motif du refus est DIT : c'est lui qui se
+     * porte à Mollie (accès client links non ouvert, jeton insuffisant), pas un constat
+     * d'impuissance. Le jour où Mollie répond oui, ce bouton s'allume sans mise en ligne. */
+    return {pret: true, cree: false, repli: 'autorisation', raison: out.raison};
+  }
+  /* ON NE GARDE QUE L'ADRESSE NUE. La requête signée se recompose au moment où le
+   * prestataire appuie (`mollieLienClient`) : son `state` ne vit que trente minutes. */
+  await db.collection('artisans').doc(uid).set({
+    mollieClientLinkHref: out.href, mollieClientLinkId: out.id, mollieClientLinkAt: Date.now(),
+  }, {merge: true});
+  /* ET LA CONSOLE NE REÇOIT AUCUN LIEN. Il serait tentant de le lui rendre pour l'envoyer
+   * par message — mais son `state` ne vit que trente minutes : un lien copié dans une
+   * conversation serait mort avant d'être lu, et le prestataire retrouverait un écran qui
+   * ne marche pas, c'est-à-dire exactement le défaut que ce lot corrige. Le lien se compose
+   * au moment où IL appuie, et nulle part ailleurs. */
+  return {pret: true, cree: true, id: out.id};
+});
+
 exports.clientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) => {
   const uid = request.auth && request.auth.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Connexion requise.');
@@ -4864,21 +5063,34 @@ exports.mollieWebhook = onRequest({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (req
 // Départ SÉCURISÉ du parcours Mollie : fonction AUTHENTIFIÉE. Seul l'artisan connecté
 // obtient un lien signé pour SA propre fiche (uid = request.auth.uid, jamais fourni par le
 // client). Renvoie l'URL OAuth Mollie ; l'app y redirige. Remplace l'ancien endpoint public.
-exports.mollieOnboardingLink = onCall({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET']}, (request) => {
+exports.mollieOnboardingLink = onCall({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET']}, async (request) => {
   const uid = request.auth && request.auth.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Connexion requise.');
   if (!mollieOAuthConfigured()) throw new HttpsError('failed-precondition', 'Mollie non configuré.');
-  const scope = ['onboarding.read', 'onboarding.write', 'organizations.read', 'payments.read', 'payments.write', 'profiles.read'].join(' ');
+  /* UNE SEULE PORTE, DEUX SOURCES. Le prestataire n'a qu'un bouton, et c'est celui-là : ce
+   * qui change est ce qu'il trouve derrière. Si la console lui a préparé un client link —
+   * son compte Mollie est déjà rempli de ses informations et n'attend que son identité —
+   * c'est ce lien-là qui s'ouvre. Sinon le lien d'autorisation d'aujourd'hui, qui relie un
+   * compte Mollie EXISTANT. Un second bouton côté prestataire l'obligerait à savoir laquelle
+   * des deux situations est la sienne, et c'est exactement ce qu'on lui retire. */
+  let href = '';
+  try {
+    const a = (await getFirestore().collection('artisans').doc(uid).get()).data() || {};
+    if (!a.mollieOrgId) href = String(a.mollieClientLinkHref || '');
+  } catch (e) { console.warn('mollieOnboardingLink fiche', e); }
+  // CE QU'ON NE SAIT PAS LIRE NE FERME RIEN : fiche illisible, lien absent, on repart sur
+  // l'autorisation. Le prestataire ne reste jamais devant un bouton sans issue.
+  if (href.indexOf('https://') === 0) return {url: mollieLienClient(href, uid, 'auto'), voie: 'client-link'};
   const url = MOLLIE_AUTHORIZE +
     '?client_id=' + encodeURIComponent(process.env.MOLLIE_CLIENT_ID) +
     '&redirect_uri=' + encodeURIComponent(MOLLIE_RETURN_URL) +
     '&state=' + encodeURIComponent(signMollieState(uid)) +
-    '&scope=' + encodeURIComponent(scope) +
+    '&scope=' + encodeURIComponent(MOLLIE_SCOPES.join(' ')) +
     // approval_prompt=force : Mollie affiche TOUJOURS l'écran de consentement. L'artisan voit
     // explicitement quelle organisation il relie (et peut annuler / changer de compte) au lieu
     // d'une validation silencieuse qui reliait par erreur le compte déjà ouvert sur l'appareil.
     '&response_type=code&approval_prompt=force';
-  return {url: url};
+  return {url: url, voie: 'autorisation'};
 });
 
 // PONT DE COMPATIBILITÉ : ancien départ public (uid en clair), désormais abandonné pour la
