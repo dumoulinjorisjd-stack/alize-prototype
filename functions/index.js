@@ -784,10 +784,19 @@ function lienNomCoupe(v) {
  * reconnaître à coup sûr dans une adresse écrite d'un seul tenant. Ce qui le précède est
  * la voie, ce qui le suit la commune. Sans lui on ne rend RIEN : « Gustavia » seul n'est
  * ni une rue ni un code, et le ranger dans un champ serait inventer. */
+/* CE QUE LA FICHE PORTE NE SE JETTE PAS. Un premier jet rendait `null` dès qu'aucun code
+ * postal à cinq chiffres ne se lisait — et la voie ET la commune partaient avec lui, alors
+ * qu'elles sont écrites dans la fiche. Relevé le 25/10/2026 sur une fiche de production :
+ * « Voie —, Code postal —, Commune — » pour une adresse pourtant remplie. À Saint-Barthélemy
+ * une adresse s'écrit « Gustavia » ou « Quartier de Lorient », sans code postal : le cas
+ * ORDINAIRE du parc tombait dans la branche vide.
+ * ON NE DEVINE RIEN POUR AUTANT : le code postal de l'île (97133) n'est pas ajouté — c'est
+ * une déclaration à un établissement de paiement, et un code postal supposé est une donnée
+ * fausse. Le texte part comme VOIE, tel qu'il a été saisi, et Mollie demande le reste. */
 function lienAdresseDecoupee(v) {
   const txt = String(v == null ? '' : v).trim();
   const m = /(^|[^0-9])(\d{5})([^0-9]|$)/.exec(txt);
-  if (!m) return null;
+  if (!m) return txt ? {streetAndNumber: txt} : null;
   const i = txt.indexOf(m[2]);
   const avant = txt.slice(0, i).replace(/[\s,;-]+$/, '').trim();
   const apres = txt.slice(i + 5).replace(/^[\s,;-]+/, '').trim();
@@ -808,7 +817,15 @@ function clientLinkProposition(fiche, pays, locale) {
   // supposés : un nom lu dans un champ qui n'existe pas rendrait « nom manquant » sur
   // toutes les fiches du parc.
   const nomSource = String(f.legalName == null ? '' : f.legalName).trim() || String(f.name == null ? '' : f.name).trim();
-  const coupe = lienNomCoupe(nomSource);
+  /* LE NOM DE L'ENTREPRISE N'EST PAS LE NOM D'UNE PERSONNE, et Mollie ouvre un compte sur
+   * une PERSONNE. Mesuré le 25/10/2026 : l'inscription prestataire ne demande qu'un seul
+   * champ, « nom / raison sociale », recopié tel quel dans `name`, `legalName` et
+   * `users.name` — il n'existe donc AUCUN prénom nulle part dans le parc. « CCS » ne se
+   * coupe pas en deux, et ce n'était pas une lecture fautive : la donnée n'était pas là.
+   * `repName` est ce champ qui manquait. À défaut, on garde la règle d'hier — chez un
+   * prestataire inscrit en PARTICULIER, « nom / raison sociale » EST son nom. */
+  const rep = String(f.repName == null ? '' : f.repName).trim();
+  const coupe = lienNomCoupe(rep) || lienNomCoupe(nomSource);
   if (!coupe) manques.push('nom');
   if (!nomSource) manques.push('entreprise');
   const pay = String(pays == null ? '' : pays).trim().toUpperCase();
@@ -4388,11 +4405,19 @@ exports.adminMollieInscrire = onCall({secrets: ['MOLLIE_ACCESS_TOKEN', 'MOLLIE_C
   const snap = await db.collection('artisans').doc(uid).get();
   if (!snap.exists) throw new HttpsError('not-found', 'Prestataire introuvable.');
   const a = snap.data() || {};
+  /* LE NOM DU RESPONSABLE PEUT SE CONFIRMER DEPUIS LA CONSOLE, et il n'y a à cela qu'une
+   * raison : il n'existe nulle part dans le parc — l'inscription ne demande qu'un champ,
+   * « nom / raison sociale ». L'éditeur l'a au téléphone au moment où il prépare le compte.
+   * C'est une déclaration à un établissement de paiement : elle se CONFIRME, comme le pays,
+   * elle ne se devine pas — rien n'est déduit du nom de l'entreprise. Et elle s'écrit dans
+   * la fiche en même temps que le lien, pour que personne ne la retape la fois d'après. */
+  const repName = String((request.data && request.data.repName) || '').trim().slice(0, 120);
+  const fiche = repName ? Object.assign({}, a, {repName: repName}) : a;
   /* DÉJÀ RELIÉ : il n'y a rien à créer, et en créer une seconde organisation serait le pire
    * résultat possible — deux comptes Mollie pour un seul prestataire, dont un seul reçoit
    * les versements, sans que personne sache lequel. */
   if (a.mollieOrgId) return {deja: true, orgId: String(a.mollieOrgId), statut: String(a.mollieStatus || '')};
-  const P = clientLinkProposition(a, pays, 'fr_FR');
+  const P = clientLinkProposition(fiche, pays, 'fr_FR');
   if (!confirmer) {
     /* ON N'A AUCUN MOYEN DE SAVOIR S'IL A DÉJÀ UN COMPTE MOLLIE non relié : rien dans sa
      * fiche ne le dit, et Mollie ne répond pas à cette question sur une adresse (ce serait
@@ -4414,9 +4439,9 @@ exports.adminMollieInscrire = onCall({secrets: ['MOLLIE_ACCESS_TOKEN', 'MOLLIE_C
   }
   /* ON NE GARDE QUE L'ADRESSE NUE. La requête signée se recompose au moment où le
    * prestataire appuie (`mollieLienClient`) : son `state` ne vit que trente minutes. */
-  await db.collection('artisans').doc(uid).set({
-    mollieClientLinkHref: out.href, mollieClientLinkId: out.id, mollieClientLinkAt: Date.now(),
-  }, {merge: true});
+  const ecrire = {mollieClientLinkHref: out.href, mollieClientLinkId: out.id, mollieClientLinkAt: Date.now()};
+  if (repName && repName !== String(a.repName || '').trim()) ecrire.repName = repName;
+  await db.collection('artisans').doc(uid).set(ecrire, {merge: true});
   /* ET LA CONSOLE NE REÇOIT AUCUN LIEN. Il serait tentant de le lui rendre pour l'envoyer
    * par message — mais son `state` ne vit que trente minutes : un lien copié dans une
    * conversation serait mort avant d'être lu, et le prestataire retrouverait un écran qui

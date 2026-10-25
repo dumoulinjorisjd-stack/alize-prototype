@@ -87,9 +87,35 @@ ok(!('registrationNumber' in siretCourt.charge),
   'mais il est OMIS, pas tronqué : un numéro d\'enregistrement faux se découvre au contrôle d\'identité, des jours plus tard');
 const siretEspaces = P(Object.assign({}, fiche, {siret: '804 125 789 00014'}), 'FR');
 ok(siretEspaces.charge.registrationNumber === '80412578900014', 'les espaces d\'un SIRET saisi à la main ne le disqualifient pas');
+/* UNE ADRESSE SANS CODE POSTAL EST LE CAS ORDINAIRE DU PARC — à Saint-Barthélemy on écrit
+   « Gustavia », pas « 97133 Gustavia ». Un premier jet la jetait tout entière ; ce qui est
+   ÉCRIT dans la fiche part, tel quel, comme voie. Et la moitié qui compte : le code postal
+   de l'île n'est pas ajouté pour autant — un code postal supposé est une donnée fausse
+   déclarée à un établissement de paiement. */
 const sansCp = P({name: 'A B', email: 'a@b.fr', address: 'Gustavia'}, 'FR');
-ok(sansCp.pret === true && Object.keys(sansCp.charge.address).join() === 'country',
-  'une adresse sans code postal ne part pas découpée au hasard : seul le pays part, et un champ vide se corrige');
+ok(sansCp.pret === true && sansCp.charge.address.streetAndNumber === 'Gustavia',
+  'une adresse sans code postal n\'est pas jetée : elle part comme voie (« ' + (sansCp.charge.address.streetAndNumber || '—') + ' »)');
+ok(!('postalCode' in sansCp.charge.address) && !('city' in sansCp.charge.address),
+  'et rien n\'est inventé autour : ni code postal ni commune');
+const avecCp = P({name: 'A B', email: 'a@b.fr', address: 'Rue de la Paix, 97133 Gustavia'}, 'FR');
+ok(avecCp.charge.address.postalCode === '97133' && avecCp.charge.address.streetAndNumber === 'Rue de la Paix'
+  && avecCp.charge.address.city === 'Gustavia',
+  'une adresse qui PORTE un code postal se découpe toujours comme hier');
+/* LE NOM D'UNE PERSONNE A SA PROPRE SOURCE. Mesuré sur l'inscription prestataire le
+   25/10/2026 : elle ne demande qu'un champ, « nom / raison sociale », recopié dans `name`,
+   `legalName` et `users.name`. « CCS » ne se coupe pas en deux — et ce n'était pas une
+   lecture fautive, la donnée n'existait nulle part. */
+const ent = P({name: 'CCS', legalName: 'CCS', email: 'a@b.fr'}, 'FR');
+ok(ent.pret === false && ent.manques.indexOf('nom') >= 0,
+  'une raison sociale d\'un seul mot ne fait toujours pas un prénom et un nom');
+const entRep = P({name: 'CCS', legalName: 'CCS', email: 'a@b.fr', repName: 'Joris Dumoulin'}, 'FR');
+ok(entRep.pret === true && entRep.charge.owner.givenName === 'Joris' && entRep.charge.owner.familyName === 'Dumoulin',
+  'le représentant déclaré donne le prénom et le nom');
+ok(entRep.charge.name === 'CCS',
+  'et il ne remplace PAS la raison sociale : ce sont deux faits, Mollie les demande tous les deux');
+const part = P({name: 'Marie-Lou Cagan', legalName: 'Marie-Lou Cagan', email: 'a@b.fr'}, 'FR');
+ok(part.pret === true && part.charge.owner.givenName === 'Marie-Lou',
+  'et un prestataire inscrit en son nom propre marche comme hier, sans rien saisir de plus');
 const sansAdr = P({name: 'A B', email: 'a@b.fr'}, 'FR');
 ok(sansAdr.charge.address.country === 'FR', 'une fiche sans adresse ne lève pas et ne perd pas le pays');
 
@@ -154,7 +180,18 @@ ok(/if \(!confirmer\)/.test(avantCreer), 'et le refus d\'écrire est posé AVANT
 ok(/if \(a\.mollieOrgId\) return \{deja: true/.test(corps),
   'un prestataire déjà relié n\'en reçoit pas un second : deux comptes Mollie pour un seul prestataire serait le pire résultat');
 ok(/if \(!P\.pret\) return \{pret: false/.test(corps), 'une proposition incomplète est rendue telle quelle, avec ses manques');
-ok(/clientLinkProposition\(a, pays, 'fr_FR'\)/.test(corps), 'la décision vient du noyau, la fonction ne la refait pas');
+ok(/clientLinkProposition\(fiche, pays, 'fr_FR'\)/.test(corps), 'la décision vient du noyau, la fonction ne la refait pas');
+/* LE NOM DU RESPONSABLE ARRIVE DE LA CONSOLE, parce qu'il n'est nulle part dans le parc —
+   l'inscription ne demande qu'un champ, « nom / raison sociale ». Ce qui compte ici : il
+   est BORNÉ (il vient d'un appelant), il entre dans la décision SANS écraser la fiche lue,
+   et il ne s'écrit qu'avec le lien — jamais sur un aperçu, qui ne doit RIEN écrire. */
+ok(/const repName = String\(\(request\.data && request\.data\.repName\) \|\| ''\)\.trim\(\)\.slice\(0, 120\)/.test(corps),
+  'le nom reçu est rogné et borné : il vient d\'un appelant, pas de la fiche');
+ok(/const fiche = repName \? Object\.assign\(\{\}, a, \{repName: repName\}\) : a;/.test(corps),
+  'il complète une COPIE de la fiche : ce qui est enregistré n\'est pas écrasé par un appel');
+const apresCreer = corps.slice(corps.indexOf('mollieCreerClientLink'));
+ok(/ecrire\.repName = repName/.test(apresCreer) && !/repName/.test(avantCreer.replace(/const repName[^\n]*\n/, '').replace(/const fiche[^\n]*\n/, '')),
+  'et il ne s\'écrit sur la fiche qu\'APRÈS le lien : un aperçu n\'écrit rien');
 ok(/repli: 'autorisation'/.test(corps) && /raison: out\.raison/.test(corps),
   'un refus de Mollie retombe sur le chemin d\'aujourd\'hui, et son motif est DIT');
 ok(/mollieClientLinkHref: out\.href/.test(corps) && !/mollieClientLinkUrl/.test(corps),

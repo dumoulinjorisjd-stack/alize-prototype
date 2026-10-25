@@ -204,6 +204,49 @@ ok(!/Ce qui partira chez Mollie/.test(r.txt), 'ni de relire une déclaration');
 v = await lire();
 ok(v.appels.length === 0, 'aucun appel n\'a été fait pour lui');
 
+console.log('I — le nom du responsable : il se confirme, il ne se déduit pas');
+/* « LE COMPTE PRESTATAIRE EST BIEN REMPLI DANS SON INTÉGRALITÉ ; s'il y a des manques,
+   c'est qu'on ne va pas les chercher correctement. » — l'éditeur, le 25/10/2026, devant
+   « Prénom —, Nom — » sur une fiche complète. Mesuré : l'inscription ne demande QU'UN
+   champ, « nom / raison sociale », recopié tel quel dans `name`, `legalName` et
+   `users.name`. Il n'y avait donc rien à aller chercher — la donnée n'existe nulle part,
+   et Mollie ouvre un compte sur une PERSONNE. L'éditeur l'a au téléphone : il la confirme
+   ici, elle s'écrit sur la fiche, et personne ne la retape la fois d'après. */
+await scene([{apercu: true, pret: false, manques: ['nom'], charge: {
+  owner: {email: 'ccs@exemple.fr', givenName: '', familyName: '', locale: 'fr_FR'},
+  name: 'CCS', address: {country: 'FR', streetAndNumber: 'Gustavia'}, registrationNumber: '93382066400011'}},
+  {pret: true, cree: true, id: 'cl_9'}]);
+await poser([{id: 'a1', uid: 'a1', name: 'CCS', legalName: 'CCS', status: 'valide',
+  email: 'ccs@exemple.fr', address: 'Gustavia', siret: '93382066400011', cats: ['menage'], zone: 'Gustavia'}], 'a1');
+await clic('mol-prep:a1'); await p.waitForTimeout(250);
+v = await lire();
+ok(/Prénom et nom du responsable/.test(v.txt), 'le champ qui manquait est posé là');
+ok(v.creeOff, 'et le bouton reste fermé tant qu\'il est vide');
+ok(/Gustavia/.test(v.txt), 'au passage, une adresse sans code postal n\'est plus jetée : elle paraît');
+
+const taper = (val) => p.evaluate((x) => { const e = document.querySelector('[data-molrep]');
+  if (!e) return null; e.focus(); e.value = x; e.dispatchEvent(new Event('input', {bubbles: true}));
+  const b = document.querySelector('[data-molcree]');
+  return {memeChamp: document.activeElement === e, valeur: e.value,
+    ouvert: !!(b && !b.disabled)}; }, val);
+
+let t = await taper('Joris');
+ok(t && t.ouvert === false, 'un seul mot ne fait pas un prénom ET un nom : le bouton ne s\'ouvre pas');
+t = await taper('Joris Dumoulin');
+ok(t && t.ouvert === true, 'deux mots l\'ouvrent');
+/* ET LE CURSEUR NE QUITTE PAS LE CHAMP : redessiner le bloc à chaque frappe le ferait
+   partir à la première lettre, et la saisie serait impossible. */
+ok(t && t.memeChamp === true, 'le curseur est resté dans le champ');
+ok(t && t.valeur === 'Joris Dumoulin', 'et ce qui est tapé y est encore');
+v = await lire();
+ok(v.appels.length === 1, 'taper un nom n\'envoie RIEN');
+
+await clic('mol-cree:a1'); await p.waitForTimeout(250);
+v = await lire();
+ok(v.appels.length === 2, 'c\'est l\'appui qui envoie');
+ok(v.appels[1].repName === 'Joris Dumoulin', 'et la confirmation porte le nom relu : « ' + v.appels[1].repName + ' »');
+ok(v.appels[1].confirmer === true && v.appels[1].pays === 'FR', 'avec la confirmation et le pays');
+
 console.log('H — les deux boutons, sur un téléphone : aucun mot coupé en son milieu');
 /* RELEVÉ SUR SA CAPTURE, le 25/10/2026 : « Annuler » rendu « Ann / uler » et
    « Créer chez Mollie » sur trois lignes. La cause n'est pas le bouton — la colonne de

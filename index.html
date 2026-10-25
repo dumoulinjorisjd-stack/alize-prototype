@@ -10960,6 +10960,15 @@
      défaut vit donc dans la DÉCISION, que le sélecteur, le verrou du bouton et l’appel
      lisent tous les trois. */
   function molPays(E){return (E&&E.pays)||'FR';}
+  /* LE NOM DU RESPONSABLE SE CONFIRME ICI, et nulle part ailleurs pour les fiches qui
+     existent déjà. Mesuré le 25/10/2026 : l'inscription prestataire ne demande qu'un
+     champ, « nom / raison sociale », recopié tel quel dans `name`, `legalName` et
+     `users.name` — « CCS » ne se coupe pas en prénom et nom, et ce n'était pas une lecture
+     fautive : la donnée n'est nulle part. L'éditeur, lui, a la personne au téléphone au
+     moment où il prépare son compte. RIEN N'EST DÉDUIT du nom de l'entreprise : deux mots,
+     ou le bouton reste fermé — la règle du pays, pour la même raison. */
+  function molNomOk(E){return String((E&&E.repName)||'').trim().split(/\s+/).filter(Boolean).length>=2;}
+  function molManquesRestants(E,manq){return (manq||[]).filter(function(m){return m!=='nom'||!molNomOk(E);});}
   function molInscrireBloc(a){
     const E=(S.admMolInscr||{})[a.id]||{};
     const btn=function(l,act,cls){return '<button class="btn '+(cls||'ghost')+' sm" data-adm="'+act+':'+a.id+'" style="width:auto;padding:7px 12px">'+l+'</button>';};
@@ -10971,6 +10980,7 @@
     const lg=function(l,v){return '<div class="row between" style="gap:10px;margin-top:5px"><span class="mini" style="color:var(--muted)">'+l+'</span><b style="font-size:12.5px;text-align:right;word-break:break-word">'+(v?esc(v):'<span style="color:var(--coral-deep)">—</span>')+'</b></div>';};
     const manq=(E.manques||[]);
     const noms={email:'adresse électronique',nom:'prénom et nom (deux mots)',entreprise:'nom ou raison sociale',pays:'pays'};
+    const reste=molManquesRestants(E,manq);
     return '<div class="card" style="padding:12px;margin-top:9px;background:var(--sand-2);border:1px solid var(--hair)">'
       +'<b style="font-size:12.5px">Ce qui partira chez Mollie</b>'
       +lg('Prénom',ow.givenName)+lg('Nom',ow.familyName)+lg('Adresse électronique',ow.email)
@@ -10985,8 +10995,12 @@
       +'<option value="FR"'+(molPays(E)==='FR'?' selected':'')+'>France (FR)</option>'
       +'<option value="BL"'+(molPays(E)==='BL'?' selected':'')+'>Saint-Barthélemy (BL)</option>'
       +'</select>'
+      +(manq.indexOf('nom')>=0?'<div style="margin-top:10px">'
+        +'<div class="mini" style="color:var(--muted)">Prénom et nom du responsable</div>'
+        +'<input data-molrep="'+a.id+'" value="'+esc(E.repName||'')+'" placeholder="Prénom Nom" style="margin-top:4px;width:100%;padding:8px 10px;border:1px solid var(--hair);border-radius:10px;font-size:13.5px;background:#fff">'
+        +'<p class="mini" style="margin-top:5px;color:var(--muted);line-height:1.45">Mollie ouvre un compte sur une <b>personne</b>, et sa fiche ne porte qu\u2019une raison sociale\u00a0: l\u2019inscription ne demande pas de prénom. Demandez-le-lui\u00a0\u2014 il sera enregistré sur sa fiche.</p></div>':'')
       +'<p class="mini" style="margin-top:5px;color:var(--muted);line-height:1.45">Relevé le 25/10/2026 dans le compte Mollie de Ti-Services : une entreprise de Saint-Barthélemy y est enregistrée en <b>France</b>. C’est la réponse, pas une supposition — et elle reste modifiable.</p></div>'
-      +(manq.length?'<div class="mini" style="margin-top:9px;color:var(--coral-deep);font-weight:650">'+I.warn+' Il manque : '+manq.map(function(m){return noms[m]||m;}).join(', ')+'. À compléter sur sa fiche avant d’envoyer.</div>':'')
+      +(reste.length?'<div class="mini" style="margin-top:9px;color:var(--coral-deep);font-weight:650">'+I.warn+' Il manque : '+reste.map(function(m){return noms[m]||m;}).join(', ')+'. À compléter sur sa fiche avant d’envoyer.</div>':'')
       +(E.raison?'<div class="mini" style="margin-top:9px;color:var(--coral-deep);line-height:1.45"><b>'+I.warn+' Mollie a refusé :</b> '+esc(E.raison)+'<br>Rien n’est cassé : il garde le chemin actuel, celui qui relie un compte Mollie déjà créé. Ce motif se porte à Mollie.</div>':'')
       +(E.dejaPrepare?'<div class="mini" style="margin-top:9px;color:var(--muted)">Un compte a déjà été préparé pour lui : son bouton ouvre déjà ce parcours.</div>':'')
       +'<div class="mini" style="margin-top:11px;padding:9px 10px;background:var(--teal-wash);border-radius:9px;line-height:1.45">'
@@ -10994,7 +11008,11 @@
       +'Si OUI, ne lui préparez rien— son bouton « Activer mes paiements » relie déjà un compte existant, et c’est ce qu’il faut. Rien dans sa fiche ne nous le dit, et Mollie ne répond pas à cette question sur une adresse : lui seul le sait. S’il se trompe, son écran garde de toute façon le lien « J’ai déjà un compte Mollie ».'
       +'</div>'
       +'<div class="row actes" style="gap:8px;margin-top:11px">'
-      +((manq.length)?'<button class="btn primary sm" disabled style="width:auto;padding:7px 12px;opacity:.45">'+I.bolt+' Créer chez Mollie</button>':btn(I.bolt+' Créer chez Mollie','mol-cree','primary'))
+      /* LE BOUTON EXISTE TOUJOURS, fermé tant qu'il manque quelque chose. Un premier jet
+         en rendait DEUX selon le cas : le nom du responsable se tapant juste au-dessus,
+         il aurait fallu redessiner le bloc à chaque frappe, et le curseur serait parti
+         du champ à la première lettre. Un seul élément, qu'on ouvre sur place. */
+      +'<button class="btn primary sm" data-adm="mol-cree:'+a.id+'" data-molcree="'+a.id+'"'+(reste.length?' disabled':'')+' style="width:auto;padding:7px 12px'+(reste.length?';opacity:.45':'')+'">'+I.bolt+' Créer chez Mollie</button>'
       +btn('Annuler','mol-ferme')+'</div></div>';
   }
 
@@ -19428,14 +19446,15 @@
         const creer=(act==='mol-cree');
         S.admMolInscr[id]=Object.assign({},E0,{busy:true});render();
         FB.fn.httpsCallable(FB.functions,'adminMollieInscrire')(
-          creer?{uid:id,pays:molPays(E0),confirmer:true}:{uid:id}).then(function(r){
+          creer?{uid:id,pays:molPays(E0),repName:(E0.repName||'').trim(),confirmer:true}
+                :{uid:id,repName:(E0.repName||'').trim()}).then(function(r){
           const d=(r&&r.data)||{};
           if(d.deja){ S.admMolInscr[id]={busy:false};render();
             toast('Son compte Mollie est déjà relié');return; }
           /* On garde le pays choisi d'un appel à l'autre : le refaire choisir après un
              refus de Mollie serait lui faire reprendre une déclaration qu'il a déjà
              relue. */
-          S.admMolInscr[id]={busy:false,pays:molPays(E0),charge:d.charge||E0.charge||null,
+          S.admMolInscr[id]={busy:false,pays:molPays(E0),repName:E0.repName||'',charge:d.charge||E0.charge||null,
             manques:d.manques||[],raison:d.raison||'',cree:!!d.cree,dejaPrepare:!!d.dejaPrepare};
           render();
           if(d.cree)toast('Compte Mollie préparé ✓');
@@ -21469,6 +21488,20 @@
     if(e.target&&e.target.matches&&e.target.matches('input.txt[data-v]')){e.target.classList.toggle('vok',champOk(e.target));}
     // Téléphone composé (indicatif + numéro) : recompose la valeur complète dans l'état.
     const pnum=e.target.closest('[data-phonenum]');if(pnum){readPhoneCombo(pnum.dataset.phonenum);if(S.proForm)refreshProSubmit();const cb0=document.querySelector('[data-act="conc-submit"]');if(cb0&&S.concSignup)cb0.disabled=!concSignupOk(S.concSignup);}
+    /* LE NOM DU RESPONSABLE, retenu à chaque frappe SANS redessiner : le bloc entier
+       repartirait et le curseur quitterait le champ à la première lettre. On ouvre donc
+       le bouton sur place — c'est la seule chose qui dépende de ce qu'on tape ici. */
+    const mr=e.target.closest('[data-molrep]');
+    if(mr){
+      const id=mr.dataset.molrep;
+      S.admMolInscr=S.admMolInscr||{};
+      const E=Object.assign({},S.admMolInscr[id]||{},{repName:mr.value||''});
+      S.admMolInscr[id]=E;
+      const reste=molManquesRestants(E,E.manques||[]);
+      const bt=document.querySelector('[data-molcree="'+id+'"]');
+      if(bt){bt.disabled=reste.length>0;bt.style.opacity=reste.length?'.45':'';}
+      return;
+    }
     const t=e.target.closest('[data-cfg="notes"]');if(t&&S.draft)S.draft.notes=t.value;
     // Pourboire libre : on met à jour le montant sans re-render (préserve le focus/curseur) ;
     // le total est recalculé à la validation. On tolère la virgule décimale française.
