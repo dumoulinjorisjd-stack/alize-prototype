@@ -233,25 +233,42 @@ const mesurerBoutons = async (largeur) => {
   }, [ARTS, PROPO.charge]);
   await q.waitForTimeout(250);
   const m = await q.evaluate(() => {
-    const lignes = (el) => { const rg = document.createRange(); rg.selectNodeContents(el);
-      const bandes = []; [].forEach.call(rg.getClientRects(), (x) => { if (x.width < 1 || x.height < 1) return;
-        if (!bandes.some((t) => Math.abs(t - x.top) < 4)) bandes.push(x.top); }); return bandes.length; };
+    /* UN MOT EST COUPÉ quand ses propres rectangles tombent sur deux bandes. Compter
+       les lignes du bouton ne suffit pas : « Créer / chez / Mollie » fait trois lignes
+       pour trois mots sans qu'aucun mot soit coupé — la mesure passait au vert sur un
+       écran cassé, et c'est la contre-épreuve qui l'a dit. */
+    const bandes = (rg) => { const t = []; [].forEach.call(rg.getClientRects(), (x) => {
+      if (x.width < 1 || x.height < 1) return;
+      if (!t.some((v) => Math.abs(v - x.top) < 4)) t.push(x.top); }); return t.length; };
+    const motsCoupes = (el) => {
+      const n = [].slice.call(el.childNodes).find((c) => c.nodeType === 3 && /\S/.test(c.nodeValue));
+      if (!n) return -1;                     /* pas de texte : la mesure ne mesure rien */
+      let coupes = 0; const re = /\S+/g; let m2;
+      while ((m2 = re.exec(n.nodeValue))) {
+        if (!/\p{L}/u.test(m2[0])) continue;
+        const rg = document.createRange(); rg.setStart(n, m2.index); rg.setEnd(n, m2.index + m2[0].length);
+        if (bandes(rg) > 1) coupes++;
+      }
+      return coupes;
+    };
     const tous = [].slice.call(document.querySelectorAll('button')).filter((e) =>
       /Créer chez Mollie|^Annuler$/.test(e.innerText.replace(/\s+/g, ' ').trim()));
     return {boutons: tous.map((e) => { const t = e.innerText.replace(/\s+/g, ' ').trim();
-        return {txt: t, mots: t.split(/\s+/).filter((x) => /\p{L}/u.test(x)).length, lignes: lignes(e)}; }),
+        return {txt: t, coupes: motsCoupes(e)}; }),
       deborde: Math.round(document.documentElement.scrollWidth - document.documentElement.clientWidth)};
   });
   await q.close(); return m;
 };
-let tel = await mesurerBoutons(390);
-ok(tel.boutons.length === 2, 'les deux boutons sont bien là (sinon la mesure ne mesure rien) : ' + tel.boutons.length);
-tel.boutons.forEach((x) => ok(x.lignes <= x.mots,
-  '« ' + x.txt + ' » : ' + x.lignes + ' ligne(s) pour ' + x.mots + ' mot(s)'));
-ok(tel.deborde === 0, 'et la page ne déborde pas : ' + tel.deborde + ' px');
-let ordi = await mesurerBoutons(1100);
-ok(ordi.boutons.length === 2 && ordi.boutons.every((x) => x.lignes === 1),
-  'sur un ordinateur, chaque bouton tient sur UNE ligne, comme avant');
+for (const L of [390, 360]) {
+  const tel = await mesurerBoutons(L);
+  ok(tel.boutons.length === 2, L + ' px : les deux boutons sont là (sinon la mesure ne mesure rien) : ' + tel.boutons.length);
+  tel.boutons.forEach((x) => ok(x.coupes === 0,
+    L + ' px \u00b7 \u00ab\u00a0' + x.txt + '\u00a0\u00bb : ' + (x.coupes < 0 ? 'texte introuvable' : x.coupes + ' mot(s) coupé(s) en leur milieu')));
+  ok(tel.deborde === 0, L + ' px : la page ne déborde pas (' + tel.deborde + ')');
+}
+const ordi = await mesurerBoutons(1100);
+ok(ordi.boutons.length === 2 && ordi.boutons.every((x) => x.coupes === 0),
+  'sur un ordinateur, rien ne change : aucun mot coupé');
 
 await b.close();
 console.log();
