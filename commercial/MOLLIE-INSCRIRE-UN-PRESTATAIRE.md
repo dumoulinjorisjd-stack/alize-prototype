@@ -138,43 +138,38 @@ profileID parameter within the payment »*. Les paiements seraient donc refusés
 ou — pire — rangés sur le profil par défaut, c'est-à-dire **l'argent de
 Ti-Services sur le produit d'à côté**.
 
-**DEUX ISSUES, ET ON ESSAIE LA PREMIÈRE AVANT D'ÉCRIRE UNE LIGNE :**
+**LA RÉPONSE EST UN SECOND JETON, PAS UN REMPLACEMENT.** Mesuré le 25/10/2026 :
+`clients.read` et `clients.write` sont bien dans « Mollie Connect », sur un jeton
+d'accès avancé — et ce jeton **n'a besoin de rien d'autre**. Il ne sert qu'aux
+client links.
 
-**A · Jeton avancé RESTREINT au profil Ti-services.** L'écran de création
-l'offre (« Profil »). Si Mollie accorde `clients.write` à un jeton restreint,
-rien d'autre ne bouge : le profil reste implicite, les paiements ne changent
-pas, et le rayon d'action reste Ti-Services. **On ne sait pas si Mollie
-l'accepte** — `/client-links` est une ressource d'ORGANISATION, pas de profil,
-et la restriction pourrait la fermer. Ça s'essaie en trois minutes et le refus
-se lit tout de suite.
+`MOLLIE_CLIENTS_TOKEN` est donc un secret SÉPARÉ, employé par la seule
+`mollieCreerClientLink`. `MOLLIE_ACCESS_TOKEN` — la clé de profil qui range
+chaque paiement sur Ti-services — **ne bouge pas d'un caractère**, et avec lui
+les paiements, les captures, les remboursements, les mandats et les versements
+aux prestataires. Si le second jeton est mauvais, seul le bouton de la console
+échoue : exactement comme aujourd'hui.
 
-**B · Jeton « Tous les profils », et le code envoie `profileId`.** Petit
-changement, mais il touche CHAQUE création de paiement, c'est-à-dire l'argent :
-un second secret `MOLLIE_PROFILE_ID`, et une épreuve qui jure qu'aucun paiement
-ne part sans. À ne faire que si A est refusé.
+Le profil peut rester restreint à **Ti-services**. S'il se trouve que
+`/client-links` est une ressource d'ORGANISATION et que la restriction la ferme,
+le jeton se recrée sans restriction — **sans danger**, puisqu'il ne porte que
+`clients.*` et ne touche aucun paiement. C'est cette frontière qui rend le choix
+du profil sans conséquence.
 
-**CE QU'IL FAUT COCHER**, relevé sur les ressources que le code appelle
-réellement : `/payments` (créer, lire, capturer, rembourser) → **Payments** et
-**Refunds**, lecture et écriture ; `/payments/{id}/routes`, le versement au
-prestataire → **Mollie Connect** ; `/customers` et `/customers/{id}/mandates` →
-**Recurring** ; `/organizations/me` → **Mollie Connect** ; `/client-links` →
-**`clients.write`** (et `clients.read`), à chercher en dépliant **Mollie
-Connect**. Mode **En direct**.
+**CE QU'IL FAUT COCHER, ET RIEN D'AUTRE** : sous **Mollie Connect**,
+`clients.read` et `clients.write`. Mode **En direct**.
 
-**L'ANCIENNE CLÉ NE SE RÉVOQUE PAS** tant que la nouvelle n'a pas fait ses
-preuves : c'est le seul retour en arrière, et il tient en une commande.
+**L'ORDRE EST CONTRAINT** : un secret déclaré dans `secrets:` doit exister au
+moment du déploiement, sinon le déploiement échoue. Donc d'abord
+`firebase functions:secrets:set MOLLIE_CLIENTS_TOKEN --project t-service-prod`,
+**ensuite** le déploiement des fonctions. **Le jeton ne se colle jamais dans une
+conversation.**
 
-Puis : `firebase functions:secrets:set MOLLIE_ACCESS_TOKEN --project
-t-service-prod`, et **redéployer les fonctions** — un secret est attaché au
-déploiement. **Le jeton ne se colle jamais dans une conversation.**
+**L'ANCIENNE CLÉ NE SE RÉVOQUE PAS** — elle reste celle des paiements.
 
-Si `clients.write` n'est PAS dans la liste des 14, c'est qu'elle est réservée au
-programme partenaire : c'est à Mollie qu'il faut la demander, en citant ce
-motif.
-
-**ET SI LA PERMISSION N'ARRIVE JAMAIS, rien n'est à défaire** : le prestataire
-garde le parcours d'aujourd'hui, celui qui relie un compte Mollie existant, et
-la console affiche le motif au lieu de prétendre avoir créé quelque chose.
+Si `clients.write` venait à être refusée même sur un jeton avancé, c'est qu'elle
+est réservée au programme partenaire : c'est à Mollie qu'il faut la demander, en
+citant ce motif.
 
 ## La question qui reste
 

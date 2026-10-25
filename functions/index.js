@@ -870,13 +870,22 @@ function mollieLienClient(href, uid, prompt) {
 /* Crée le client link chez Mollie. Rend {ok, href, id, raison} et NE LÈVE JAMAIS : un refus
  * doit retomber proprement sur le lien d'autorisation d'aujourd'hui, qui continue de
  * marcher pour qui a déjà un compte.
- * CE QUI PEUT REFUSER, ET QU'ON NE PEUT PAS VÉRIFIER D'ICI : l'accès aux client links est
- * réservé aux comptes partenaires et la fonction est en bêta ouverte ; le SDK de Mollie
- * exige par ailleurs une autorisation OAuth là où notre serveur présente un jeton
- * d'ORGANISATION. Le motif est rendu TEL QUEL pour que la console le dise — un « ça n'a
- * pas marché » n'apprend rien et laisse chercher, alors que le motif se porte à Mollie. */
+ * CE QUI REFUSAIT, ET CE QUE MOLLIE A RÉPONDU LE 25/10/2026 : « Not all required
+ * permissions (clients.write) for accessing this resource were granted. » Ni « inconnu »,
+ * ni « réservé aux partenaires » — une PERMISSION manquante sur le jeton présenté. La
+ * requête est comprise et la ressource existe pour nous.
+ * D'OÙ UN SECOND JETON, ET NON UN REMPLACEMENT DU PREMIER. Le tableau de bord ne porte
+ * `clients.write` que sur un « jeton d'accès avancé » ; or `MOLLIE_ACCESS_TOKEN` est une
+ * clé de PROFIL, et c'est elle qui range chaque paiement sur le profil Ti-services plutôt
+ * que sur celui d'Archipel BTP (voir « DEUX PRODUITS SUR LE MÊME COMPTE MOLLIE »). La
+ * remplacer par un jeton d'organisation ferait refuser les paiements, faute de `profileId`
+ * dans leurs charges utiles — mesuré, il n'y en a aucun. `MOLLIE_CLIENTS_TOKEN` ne sert
+ * donc QU'ICI, ne porte que `clients.read` / `clients.write`, et son absence laisse le
+ * comportement d'hier : rien de ce qui touche l'argent ne dépend de lui.
+ * LE MOTIF EST RENDU TEL QUEL pour que la console le dise — un « ça n'a pas marché »
+ * n'apprend rien et laisse chercher, alors qu'un motif se porte à Mollie. */
 async function mollieCreerClientLink(charge) {
-  const r = await mollieApi('/client-links', 'POST', charge);
+  const r = await mollieApi('/client-links', 'POST', charge, process.env.MOLLIE_CLIENTS_TOKEN || '');
   if (!r.ok) {
     const det = (r.data && (r.data.detail || r.data.title)) || ('HTTP ' + (r.status || '?'));
     console.warn('mollieCreerClientLink refusé :', det);
@@ -1260,12 +1269,16 @@ async function syncArtisanMollie(db, uid) {
   await db.collection('artisans').doc(uid).set(upd, {merge: true});
   return {status: ready.status, active: ready.ok, dashboard: dashboard};
 }
-// Appel bas-niveau à l'API Mollie (jeton plateforme). Renvoie {ok, data|status}.
-async function mollieApi(path, method, body) {
+/* Appel bas-niveau à l'API Mollie. Renvoie {ok, data|status}.
+ * UN JETON PAR USAGE, ET CELUI QUI TOUCHE L'ARGENT NE BOUGE PAS. `jeton` est facultatif :
+ * sans lui c'est `MOLLIE_ACCESS_TOKEN`, la clé de profil d'aujourd'hui, et AUCUN des appels
+ * existants n'en passe — ils sortent donc inchangés, au caractère près. Il n'existe que
+ * pour les client links, voir `mollieCreerClientLink`. */
+async function mollieApi(path, method, body, jeton) {
   try {
     const res = await fetch(MOLLIE_API + path, {
       method: method || 'GET',
-      headers: {'Authorization': 'Bearer ' + process.env.MOLLIE_ACCESS_TOKEN, 'Content-Type': 'application/json'},
+      headers: {'Authorization': 'Bearer ' + (jeton || process.env.MOLLIE_ACCESS_TOKEN), 'Content-Type': 'application/json'},
       body: body ? JSON.stringify(body) : undefined,
     });
     const txt = await res.text();
@@ -4400,7 +4413,7 @@ exports.adminClientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (requ
  * rendue telle quelle, avec la liste des champs, pour qu'on la fasse compléter — plutôt
  * qu'un compte Mollie à demi rempli qui bloquera son propriétaire trois écrans plus loin,
  * sans qu'il sache pourquoi. */
-exports.adminMollieInscrire = onCall({secrets: ['MOLLIE_ACCESS_TOKEN', 'MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET']}, async (request) => {
+exports.adminMollieInscrire = onCall({secrets: ['MOLLIE_ACCESS_TOKEN', 'MOLLIE_CLIENTS_TOKEN', 'MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET']}, async (request) => {
   const who = (request.auth && request.auth.token && request.auth.token.email) || '';
   if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
     throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');

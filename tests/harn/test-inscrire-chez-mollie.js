@@ -223,6 +223,44 @@ ok(/'réponse sans lien'/.test(cc), 'une réponse acceptée mais sans lien est u
 ok(!/lien: mollieLienClient/.test(corps),
   'et elle ne reçoit AUCUN lien à transmettre : un lien copié dans un message serait périmé avant d\'être lu');
 
+/* ── UN JETON PAR USAGE, ET CELUI QUI TOUCHE L'ARGENT NE BOUGE PAS ───────────────────
+   Mollie a refusé le 25/10/2026 sur une PERMISSION (`clients.write`), que seul un « jeton
+   d'accès avancé » porte. Remplacer `MOLLIE_ACCESS_TOKEN` par un tel jeton casserait les
+   paiements : c'est une clé de PROFIL, et c'est elle — pas une charge utile — qui range
+   chaque paiement sur Ti-services plutôt que sur Archipel BTP. D'où un SECOND secret, qui
+   ne sert qu'aux client links. Ce qui est mesuré ici est sa FRONTIÈRE. */
+console.log('\n── Le second jeton ne sert qu\'aux client links ──');
+const sigApi = srv.slice(srv.indexOf('async function mollieApi('));
+const corpsApi = sigApi.slice(0, sigApi.indexOf('\n}\n'));
+ok(/async function mollieApi\(path, method, body, jeton\)/.test(corpsApi),
+  'mollieApi accepte un jeton, en dernier et facultatif');
+ok(/'Bearer ' \+ \(jeton \|\| process\.env\.MOLLIE_ACCESS_TOKEN\)/.test(corpsApi),
+  'et sans lui elle présente la clé d\'aujourd\'hui : les appels existants ne changent pas d\'un caractère');
+ok(/'\/client-links', 'POST', charge, process\.env\.MOLLIE_CLIENTS_TOKEN \|\| ''/.test(cc),
+  'la porte des client links présente MOLLIE_CLIENTS_TOKEN');
+ok(/\|\| ''/.test(cc),
+  'et son absence retombe sur le comportement d\'hier : rien ne casse tant que le secret n\'est pas posé');
+/* LA MOITIÉ QUI COMPTE. Un jeton d'organisation employé sur /payments rangerait l'argent
+   sur le mauvais profil, ou le ferait refuser faute de `profileId` — qui n'existe dans
+   AUCUNE charge utile, mesuré juste en dessous. Le second jeton ne doit donc toucher
+   qu'une seule ressource. */
+/* ON COMPTE LE CODE, PAS LA PROSE. Un premier jet comptait les occurrences dans le
+   fichier entier et rougissait sur le COMMENTAIRE qui explique le correctif — la garde
+   mesurait sa propre justification. Les commentaires de bloc et les lignes entièrement
+   commentées partent donc ; une ligne de code n'est jamais tronquée, de sorte qu'aucune
+   occurrence réelle ne peut se cacher derrière un `//` de fin de ligne. */
+const codeSeul = srv.replace(/\/\*[\s\S]*?\*\//g, '')
+  .split('\n').filter((l) => !/^\s*(\/\/|\*)/.test(l)).join('\n');
+ok(codeSeul.length > srv.length / 3 && /exports\.adminMollieInscrire/.test(codeSeul),
+  'assertion arrière : le code dépouillé de ses commentaires est encore le serveur');
+const occ = codeSeul.split('MOLLIE_CLIENTS_TOKEN').length - 1;
+ok(occ >= 2, 'le second secret est bien dans le CODE, pas seulement dans un commentaire (assertion arrière : ' + occ + ')');
+ok(occ === 2, 'et il n\'y apparaît QUE deux fois : sa déclaration, et l\'appel aux client links — jamais sur un paiement');
+ok(/secrets: \['MOLLIE_ACCESS_TOKEN', 'MOLLIE_CLIENTS_TOKEN'/.test(codeSeul),
+  'il est déclaré sur la seule fonction qui emprunte cette porte');
+ok(codeSeul.split('profileId').length - 1 === 0,
+  'et aucune charge utile ne porte de profileId : c\'est la CLÉ qui range un paiement sur le bon profil, et elle ne bouge pas');
+
 console.log();
 if (f) { console.log(f + ' ÉCHEC(S)'); process.exit(1); }
 console.log('Inscription chez Mollie : tout est vert');
