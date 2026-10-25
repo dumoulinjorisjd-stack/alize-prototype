@@ -824,8 +824,16 @@ function clientLinkProposition(fiche, pays, locale) {
    * coupe pas en deux, et ce n'était pas une lecture fautive : la donnée n'était pas là.
    * `repName` est ce champ qui manquait. À défaut, on garde la règle d'hier — chez un
    * prestataire inscrit en PARTICULIER, « nom / raison sociale » EST son nom. */
-  const rep = String(f.repName == null ? '' : f.repName).trim();
-  const coupe = lienNomCoupe(rep) || lienNomCoupe(nomSource);
+  /* ET L'ORDRE D'UN NOM NE SE DEVINE PAS. Relevé le 25/10/2026 sur une fiche de
+   * production : « Courcot Laura » — le nom de famille d'abord, comme on l'écrit sur un
+   * registre. Le découpage au premier espace déclarait donc « Courcot » comme prénom.
+   * Ce n'est pas un détail d'affichage : Mollie vérifie cette identité pièce en main, et
+   * une inversion se découvre des jours plus tard, au contrôle. Les deux moitiés se
+   * SAISISSENT donc séparément quand on les connaît ; le découpage ne reste qu'un point
+   * de départ, montré avant d'être envoyé et corrigible. */
+  const rGiven = String(f.repGiven == null ? '' : f.repGiven).trim();
+  const rFamily = String(f.repFamily == null ? '' : f.repFamily).trim();
+  const coupe = (rGiven && rFamily) ? {givenName: rGiven, familyName: rFamily} : lienNomCoupe(nomSource);
   if (!coupe) manques.push('nom');
   if (!nomSource) manques.push('entreprise');
   const pay = String(pays == null ? '' : pays).trim().toUpperCase();
@@ -4410,9 +4418,13 @@ exports.adminMollieInscrire = onCall({secrets: ['MOLLIE_ACCESS_TOKEN', 'MOLLIE_C
    * « nom / raison sociale ». L'éditeur l'a au téléphone au moment où il prépare le compte.
    * C'est une déclaration à un établissement de paiement : elle se CONFIRME, comme le pays,
    * elle ne se devine pas — rien n'est déduit du nom de l'entreprise. Et elle s'écrit dans
-   * la fiche en même temps que le lien, pour que personne ne la retape la fois d'après. */
-  const repName = String((request.data && request.data.repName) || '').trim().slice(0, 120);
-  const fiche = repName ? Object.assign({}, a, {repName: repName}) : a;
+   * la fiche en même temps que le lien, pour que personne ne la retape la fois d'après.
+   * DEUX CHAMPS ET NON UN : l'ordre d'un nom ne se devine pas, et une identité inversée
+   * déclarée à un établissement de paiement se découvre au contrôle, des jours plus tard. */
+  const mot = (v) => String(v == null ? '' : v).trim().slice(0, 80);
+  const rGiven = mot(request.data && request.data.repGiven);
+  const rFamily = mot(request.data && request.data.repFamily);
+  const fiche = (rGiven && rFamily) ? Object.assign({}, a, {repGiven: rGiven, repFamily: rFamily}) : a;
   /* DÉJÀ RELIÉ : il n'y a rien à créer, et en créer une seconde organisation serait le pire
    * résultat possible — deux comptes Mollie pour un seul prestataire, dont un seul reçoit
    * les versements, sans que personne sache lequel. */
@@ -4440,7 +4452,9 @@ exports.adminMollieInscrire = onCall({secrets: ['MOLLIE_ACCESS_TOKEN', 'MOLLIE_C
   /* ON NE GARDE QUE L'ADRESSE NUE. La requête signée se recompose au moment où le
    * prestataire appuie (`mollieLienClient`) : son `state` ne vit que trente minutes. */
   const ecrire = {mollieClientLinkHref: out.href, mollieClientLinkId: out.id, mollieClientLinkAt: Date.now()};
-  if (repName && repName !== String(a.repName || '').trim()) ecrire.repName = repName;
+  if (rGiven && rFamily && (rGiven !== String(a.repGiven || '').trim() || rFamily !== String(a.repFamily || '').trim())) {
+    ecrire.repGiven = rGiven; ecrire.repFamily = rFamily;
+  }
   await db.collection('artisans').doc(uid).set(ecrire, {merge: true});
   /* ET LA CONSOLE NE REÇOIT AUCUN LIEN. Il serait tentant de le lui rendre pour l'envoyer
    * par message — mais son `state` ne vit que trente minutes : un lien copié dans une

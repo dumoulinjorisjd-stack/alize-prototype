@@ -108,9 +108,23 @@ ok(avecCp.charge.address.postalCode === '97133' && avecCp.charge.address.streetA
 const ent = P({name: 'CCS', legalName: 'CCS', email: 'a@b.fr'}, 'FR');
 ok(ent.pret === false && ent.manques.indexOf('nom') >= 0,
   'une raison sociale d\'un seul mot ne fait toujours pas un prénom et un nom');
-const entRep = P({name: 'CCS', legalName: 'CCS', email: 'a@b.fr', repName: 'Joris Dumoulin'}, 'FR');
+const entRep = P({name: 'CCS', legalName: 'CCS', email: 'a@b.fr', repGiven: 'Joris', repFamily: 'Dumoulin'}, 'FR');
 ok(entRep.pret === true && entRep.charge.owner.givenName === 'Joris' && entRep.charge.owner.familyName === 'Dumoulin',
   'le représentant déclaré donne le prénom et le nom');
+/* L'ORDRE D'UN NOM NE SE DEVINE PAS : « Courcot Laura », relevé sur une fiche de
+   production, est le nom de famille d'abord. Le découpage le propose, les deux moitiés
+   saisies l'emportent — et une seule moitié ne suffit pas, sinon on déclarerait un demi
+   nom à un établissement de paiement. */
+const inv = P({name: 'Courcot Laura', legalName: 'Courcot Laura', email: 'a@b.fr'}, 'FR');
+ok(inv.charge.owner.givenName === 'Courcot' && inv.charge.owner.familyName === 'Laura',
+  'sans rien saisir, le découpage reste celui d\'hier — proposé, et montré avant d\'être envoyé');
+const remis = P({name: 'Courcot Laura', legalName: 'Courcot Laura', email: 'a@b.fr',
+  repGiven: 'Laura', repFamily: 'Courcot'}, 'FR');
+ok(remis.charge.owner.givenName === 'Laura' && remis.charge.owner.familyName === 'Courcot',
+  'remis à l\'endroit, ce sont les moitiés saisies qui partent');
+const moitie = P({name: 'CCS', legalName: 'CCS', email: 'a@b.fr', repGiven: 'Joris'}, 'FR');
+ok(moitie.pret === false && moitie.manques.indexOf('nom') >= 0,
+  'une seule moitié ne fait pas une identité');
 ok(entRep.charge.name === 'CCS',
   'et il ne remplace PAS la raison sociale : ce sont deux faits, Mollie les demande tous les deux');
 const part = P({name: 'Marie-Lou Cagan', legalName: 'Marie-Lou Cagan', email: 'a@b.fr'}, 'FR');
@@ -185,13 +199,13 @@ ok(/clientLinkProposition\(fiche, pays, 'fr_FR'\)/.test(corps), 'la décision vi
    l'inscription ne demande qu'un champ, « nom / raison sociale ». Ce qui compte ici : il
    est BORNÉ (il vient d'un appelant), il entre dans la décision SANS écraser la fiche lue,
    et il ne s'écrit qu'avec le lien — jamais sur un aperçu, qui ne doit RIEN écrire. */
-ok(/const repName = String\(\(request\.data && request\.data\.repName\) \|\| ''\)\.trim\(\)\.slice\(0, 120\)/.test(corps),
-  'le nom reçu est rogné et borné : il vient d\'un appelant, pas de la fiche');
-ok(/const fiche = repName \? Object\.assign\(\{\}, a, \{repName: repName\}\) : a;/.test(corps),
-  'il complète une COPIE de la fiche : ce qui est enregistré n\'est pas écrasé par un appel');
+ok(/const mot = \(v\) => String\(v == null \? '' : v\)\.trim\(\)\.slice\(0, 80\)/.test(corps),
+  'les deux moitiés reçues sont rognées et bornées : elles viennent d\'un appelant, pas de la fiche');
+ok(/const fiche = \(rGiven && rFamily\) \? Object\.assign\(\{\}, a, \{repGiven: rGiven, repFamily: rFamily\}\) : a;/.test(corps),
+  'elles complètent une COPIE de la fiche, et seulement ENSEMBLE : un demi nom n\'écrase rien');
 const apresCreer = corps.slice(corps.indexOf('mollieCreerClientLink'));
-ok(/ecrire\.repName = repName/.test(apresCreer) && !/repName/.test(avantCreer.replace(/const repName[^\n]*\n/, '').replace(/const fiche[^\n]*\n/, '')),
-  'et il ne s\'écrit sur la fiche qu\'APRÈS le lien : un aperçu n\'écrit rien');
+ok(/ecrire\.repGiven = rGiven; ecrire\.repFamily = rFamily;/.test(apresCreer),
+  'et elles ne s\'écrivent sur la fiche qu\'APRÈS le lien : un aperçu n\'écrit rien');
 ok(/repli: 'autorisation'/.test(corps) && /raison: out\.raison/.test(corps),
   'un refus de Mollie retombe sur le chemin d\'aujourd\'hui, et son motif est DIT');
 ok(/mollieClientLinkHref: out\.href/.test(corps) && !/mollieClientLinkUrl/.test(corps),

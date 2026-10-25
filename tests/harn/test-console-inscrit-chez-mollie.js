@@ -204,48 +204,77 @@ ok(!/Ce qui partira chez Mollie/.test(r.txt), 'ni de relire une déclaration');
 v = await lire();
 ok(v.appels.length === 0, 'aucun appel n\'a été fait pour lui');
 
-console.log('I — le nom du responsable : il se confirme, il ne se déduit pas');
-/* « LE COMPTE PRESTATAIRE EST BIEN REMPLI DANS SON INTÉGRALITÉ ; s'il y a des manques,
-   c'est qu'on ne va pas les chercher correctement. » — l'éditeur, le 25/10/2026, devant
-   « Prénom —, Nom — » sur une fiche complète. Mesuré : l'inscription ne demande QU'UN
-   champ, « nom / raison sociale », recopié tel quel dans `name`, `legalName` et
-   `users.name`. Il n'y avait donc rien à aller chercher — la donnée n'existe nulle part,
-   et Mollie ouvre un compte sur une PERSONNE. L'éditeur l'a au téléphone : il la confirme
-   ici, elle s'écrit sur la fiche, et personne ne la retape la fois d'après. */
-await scene([{apercu: true, pret: false, manques: ['nom'], charge: {
-  owner: {email: 'ccs@exemple.fr', givenName: '', familyName: '', locale: 'fr_FR'},
-  name: 'CCS', address: {country: 'FR', streetAndNumber: 'Gustavia'}, registrationNumber: '93382066400011'}},
+console.log('I — le prénom et le nom : ils se corrigent, ils ne se devinent pas');
+/* DEUX DÉFAUTS RELEVÉS SUR UNE FICHE DE PRODUCTION, le 25/10/2026.
+   1. « Prénom Courcot / Nom Laura » : la fiche porte « Courcot Laura », nom de famille
+      d'abord, comme on l'écrit sur un registre — et le découpage au premier espace les
+      INVERSE. Une valeur fausse qui a l'air remplie, que seul un œil humain distingue, et
+      que Mollie vérifiera pièce en main des jours plus tard. Les montrer en lecture seule
+      revenait à faire relire sans pouvoir corriger : ce sont des champs.
+   2. « Il manque : pays » SOUS un sélecteur affichant « France (FR) » : `manques` est la
+      photo prise par le serveur au premier appui, et ce premier appel ne portait aucun
+      pays. Le bouton ne pouvait donc JAMAIS s'ouvrir. */
+await scene([{apercu: true, pret: true, manques: [], charge: {
+  owner: {email: 'laura.courcot@exemple.fr', givenName: 'Courcot', familyName: 'Laura', locale: 'fr_FR'},
+  name: 'Courcot Laura', address: {country: 'FR', streetAndNumber: 'Saint Barthélemy', postalCode: '97133'},
+  registrationNumber: '53990522400041'}},
   {pret: true, cree: true, id: 'cl_9'}]);
-await poser([{id: 'a1', uid: 'a1', name: 'CCS', legalName: 'CCS', status: 'valide',
-  email: 'ccs@exemple.fr', address: 'Gustavia', siret: '93382066400011', cats: ['menage'], zone: 'Gustavia'}], 'a1');
+await poser([{id: 'a1', uid: 'a1', name: 'Courcot Laura', legalName: 'Courcot Laura', status: 'valide',
+  email: 'laura.courcot@exemple.fr', address: 'Saint Barthélemy 97133', siret: '53990522400041',
+  cats: ['menage'], zone: 'Gustavia'}], 'a1');
 await clic('mol-prep:a1'); await p.waitForTimeout(250);
 v = await lire();
-ok(/Prénom et nom du responsable/.test(v.txt), 'le champ qui manquait est posé là');
-ok(v.creeOff, 'et le bouton reste fermé tant qu\'il est vide');
-ok(/Gustavia/.test(v.txt), 'au passage, une adresse sans code postal n\'est plus jetée : elle paraît');
+ok(v.appels.length === 1 && v.appels[0].pays === 'FR',
+  'le PREMIER appel porte déjà le pays que l\'écran montre : « ' + v.appels[0].pays + ' »');
 
-const taper = (val) => p.evaluate((x) => { const e = document.querySelector('[data-molrep]');
+const champs = () => p.evaluate(() => {
+  const g = document.querySelector('[data-molrep^="Given:"]'), f2 = document.querySelector('[data-molrep^="Family:"]');
+  const b = document.querySelector('[data-molcree]');
+  return {prenom: g ? g.value : null, nom: f2 ? f2.value : null, ouvert: !!(b && !b.disabled)};
+});
+let ch = await champs();
+ok(ch.prenom !== null && ch.nom !== null, 'le prénom et le nom sont des champs, pas des lignes mortes');
+ok(ch.prenom === 'Courcot' && ch.nom === 'Laura',
+  'ils partent de ce que le découpage a proposé, tel quel — y compris inversé : c\'est ce qu\'il faut voir');
+
+const taper = (cle, val) => p.evaluate(([k, x]) => { const e = document.querySelector('[data-molrep^="' + k + ':"]');
   if (!e) return null; e.focus(); e.value = x; e.dispatchEvent(new Event('input', {bubbles: true}));
   const b = document.querySelector('[data-molcree]');
-  return {memeChamp: document.activeElement === e, valeur: e.value,
-    ouvert: !!(b && !b.disabled)}; }, val);
+  return {memeChamp: document.activeElement === e, valeur: e.value, ouvert: !!(b && !b.disabled)}; }, [cle, val]);
 
-let t = await taper('Joris');
-ok(t && t.ouvert === false, 'un seul mot ne fait pas un prénom ET un nom : le bouton ne s\'ouvre pas');
-t = await taper('Joris Dumoulin');
-ok(t && t.ouvert === true, 'deux mots l\'ouvrent');
-/* ET LE CURSEUR NE QUITTE PAS LE CHAMP : redessiner le bloc à chaque frappe le ferait
-   partir à la première lettre, et la saisie serait impossible. */
-ok(t && t.memeChamp === true, 'le curseur est resté dans le champ');
-ok(t && t.valeur === 'Joris Dumoulin', 'et ce qui est tapé y est encore');
+let t = await taper('Given', 'Laura');
+ok(t && t.memeChamp === true, 'le curseur reste dans le champ qu\'on corrige');
+await taper('Family', 'Courcot');
 v = await lire();
-ok(v.appels.length === 1, 'taper un nom n\'envoie RIEN');
+ok(v.appels.length === 1, 'corriger n\'envoie RIEN');
 
 await clic('mol-cree:a1'); await p.waitForTimeout(250);
 v = await lire();
 ok(v.appels.length === 2, 'c\'est l\'appui qui envoie');
-ok(v.appels[1].repName === 'Joris Dumoulin', 'et la confirmation porte le nom relu : « ' + v.appels[1].repName + ' »');
+ok(v.appels[1].repGiven === 'Laura' && v.appels[1].repFamily === 'Courcot',
+  'et la confirmation porte les deux moitiés REMISES À L\'ENDROIT : « ' + v.appels[1].repGiven + ' » / « ' + v.appels[1].repFamily + ' »');
 ok(v.appels[1].confirmer === true && v.appels[1].pays === 'FR', 'avec la confirmation et le pays');
+
+console.log('I bis — ce que l\'écran montre ouvre le bouton, même si la photo dit le contraire');
+/* LA MOITIÉ QUI COMPTE : un manque RÉEL garde le bouton fermé. Sans elle, une règle qui
+   ignorerait tous les manques passerait au vert. */
+await scene([{apercu: true, pret: false, manques: ['pays', 'nom'], charge: {
+  owner: {email: 'ccs@exemple.fr', givenName: '', familyName: '', locale: 'fr_FR'},
+  name: 'CCS', address: {country: '', streetAndNumber: 'Gustavia'}, registrationNumber: '93382066400011'}}]);
+await poser([{id: 'a1', uid: 'a1', name: 'CCS', legalName: 'CCS', status: 'valide',
+  email: 'ccs@exemple.fr', address: 'Gustavia', siret: '93382066400011', cats: ['menage'], zone: 'Gustavia'}], 'a1');
+await clic('mol-prep:a1'); await p.waitForTimeout(250);
+ch = await champs();
+ok(ch.ouvert === false, 'une raison sociale d\'un seul mot laisse les deux champs vides : le bouton reste fermé');
+v = await lire();
+ok(!/Il manque[^.]*pays/.test(v.txt),
+  'et le pays ne figure plus dans les manques : l\'écran en montre un, c\'est lui qui fait foi');
+ok(/Il manque/.test(v.txt), 'ce qui manque VRAIMENT est toujours dit');
+t = await taper('Given', 'Joris');
+ok(t && t.ouvert === false, 'un prénom seul ne suffit pas');
+t = await taper('Family', 'Dumoulin');
+ok(t && t.ouvert === true, 'les deux moitiés l\'ouvrent');
+ok(/Gustavia/.test((await lire()).txt), 'au passage, une adresse sans code postal n\'est plus jetée : elle paraît');
 
 console.log('H — les deux boutons, sur un téléphone : aucun mot coupé en son milieu');
 /* RELEVÉ SUR SA CAPTURE, le 25/10/2026 : « Annuler » rendu « Ann / uler » et

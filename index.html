@@ -10967,8 +10967,23 @@
      fautive : la donnée n'est nulle part. L'éditeur, lui, a la personne au téléphone au
      moment où il prépare son compte. RIEN N'EST DÉDUIT du nom de l'entreprise : deux mots,
      ou le bouton reste fermé — la règle du pays, pour la même raison. */
-  function molNomOk(E){return String((E&&E.repName)||'').trim().split(/\s+/).filter(Boolean).length>=2;}
-  function molManquesRestants(E,manq){return (manq||[]).filter(function(m){return m!=='nom'||!molNomOk(E);});}
+  /* CE QUI EST À L'ÉCRAN FAIT FOI, et `manques` est une PHOTO prise par le serveur au
+     premier appui. Relevé le 25/10/2026 : l'écran montrait « France (FR) » et le bandeau
+     disait « Il manque : pays » — le bouton ne pouvait donc JAMAIS s'ouvrir, parce que le
+     premier appel ne portait aucun pays. Deux corrections, pas une : l'appel emporte
+     désormais ce que l'écran montre, et ce qui se saisit ICI (le pays, le prénom, le nom)
+     est relu sur l'écran plutôt que dans la photo. */
+  function molRep(E,charge,cle){
+    const v=(E&&E['rep'+cle]);
+    if(v!=null)return String(v);
+    const ow=(charge&&charge.owner)||{};
+    return String((cle==='Given'?ow.givenName:ow.familyName)||'');
+  }
+  function molNomOk(E,charge){return !!molRep(E,charge,'Given').trim()&&!!molRep(E,charge,'Family').trim();}
+  function molManquesRestants(E,manq,charge){return (manq||[]).filter(function(m){
+    if(m==='nom')return !molNomOk(E,charge);
+    if(m==='pays')return !/^[A-Z]{2}$/.test(molPays(E));
+    return true;});}
   function molInscrireBloc(a){
     const E=(S.admMolInscr||{})[a.id]||{};
     const btn=function(l,act,cls){return '<button class="btn '+(cls||'ghost')+' sm" data-adm="'+act+':'+a.id+'" style="width:auto;padding:7px 12px">'+l+'</button>';};
@@ -10978,12 +10993,20 @@
       +'<p class="mini" style="margin-top:6px;color:var(--muted);line-height:1.45">Crée son compte chez Mollie à sa place, déjà rempli avec les informations de sa fiche. Rien ne part avant que vous ayez relu.</p></div>';
     const c=E.charge, ad=c.address||{}, ow=c.owner||{};
     const lg=function(l,v){return '<div class="row between" style="gap:10px;margin-top:5px"><span class="mini" style="color:var(--muted)">'+l+'</span><b style="font-size:12.5px;text-align:right;word-break:break-word">'+(v?esc(v):'<span style="color:var(--coral-deep)">—</span>')+'</b></div>';};
+    const lgRep=function(l,cle,id,v){return '<div class="row between" style="gap:10px;margin-top:5px;align-items:center"><span class="mini" style="color:var(--muted)">'+l+'</span>'
+      +'<input data-molrep="'+cle+':'+id+'" value="'+esc(v)+'" placeholder="\u2014" style="flex:1;min-width:0;max-width:62%;text-align:right;padding:5px 8px;border:1px solid var(--hair);border-radius:8px;font-size:12.5px;font-weight:700;background:#fff"></div>';};
     const manq=(E.manques||[]);
     const noms={email:'adresse électronique',nom:'prénom et nom (deux mots)',entreprise:'nom ou raison sociale',pays:'pays'};
-    const reste=molManquesRestants(E,manq);
+    const reste=molManquesRestants(E,manq,c);
     return '<div class="card" style="padding:12px;margin-top:9px;background:var(--sand-2);border:1px solid var(--hair)">'
       +'<b style="font-size:12.5px">Ce qui partira chez Mollie</b>'
-      +lg('Prénom',ow.givenName)+lg('Nom',ow.familyName)+lg('Adresse électronique',ow.email)
+      /* LE PRÉNOM ET LE NOM SE CORRIGENT ICI. Ils ne manquaient pas toujours : sur une
+         fiche écrite « Courcot Laura », le découpage les rendait INVERSÉS — une valeur
+         fausse qui a l'air remplie, et que seul un œil humain distingue. Les montrer en
+         lecture seule revenait à faire relire sans pouvoir corriger. */
+      +lgRep('Prénom','Given',a.id,molRep(E,c,'Given'))
+      +lgRep('Nom','Family',a.id,molRep(E,c,'Family'))
+      +lg('Adresse électronique',ow.email)
       +lg('Nom / raison sociale',c.name)
       +lg('Voie',ad.streetAndNumber)+lg('Code postal',ad.postalCode)+lg('Commune',ad.city)
       +lg('SIRET',c.registrationNumber||'')
@@ -10995,10 +11018,7 @@
       +'<option value="FR"'+(molPays(E)==='FR'?' selected':'')+'>France (FR)</option>'
       +'<option value="BL"'+(molPays(E)==='BL'?' selected':'')+'>Saint-Barthélemy (BL)</option>'
       +'</select>'
-      +(manq.indexOf('nom')>=0?'<div style="margin-top:10px">'
-        +'<div class="mini" style="color:var(--muted)">Prénom et nom du responsable</div>'
-        +'<input data-molrep="'+a.id+'" value="'+esc(E.repName||'')+'" placeholder="Prénom Nom" style="margin-top:4px;width:100%;padding:8px 10px;border:1px solid var(--hair);border-radius:10px;font-size:13.5px;background:#fff">'
-        +'<p class="mini" style="margin-top:5px;color:var(--muted);line-height:1.45">Mollie ouvre un compte sur une <b>personne</b>, et sa fiche ne porte qu\u2019une raison sociale\u00a0: l\u2019inscription ne demande pas de prénom. Demandez-le-lui\u00a0\u2014 il sera enregistré sur sa fiche.</p></div>':'')
+      +(manq.indexOf('nom')>=0?'<p class="mini" style="margin-top:7px;color:var(--muted);line-height:1.45">Mollie ouvre un compte sur une <b>personne</b>, et sa fiche ne porte qu\u2019une raison sociale\u00a0: l\u2019inscription ne demande pas de prénom. Demandez-le-lui\u00a0\u2014 il sera enregistré sur sa fiche.</p>':'')
       +'<p class="mini" style="margin-top:5px;color:var(--muted);line-height:1.45">Relevé le 25/10/2026 dans le compte Mollie de Ti-Services : une entreprise de Saint-Barthélemy y est enregistrée en <b>France</b>. C’est la réponse, pas une supposition — et elle reste modifiable.</p></div>'
       +(reste.length?'<div class="mini" style="margin-top:9px;color:var(--coral-deep);font-weight:650">'+I.warn+' Il manque : '+reste.map(function(m){return noms[m]||m;}).join(', ')+'. À compléter sur sa fiche avant d’envoyer.</div>':'')
       +(E.raison?'<div class="mini" style="margin-top:9px;color:var(--coral-deep);line-height:1.45"><b>'+I.warn+' Mollie a refusé :</b> '+esc(E.raison)+'<br>Rien n’est cassé : il garde le chemin actuel, celui qui relie un compte Mollie déjà créé. Ce motif se porte à Mollie.</div>':'')
@@ -19446,15 +19466,17 @@
         const creer=(act==='mol-cree');
         S.admMolInscr[id]=Object.assign({},E0,{busy:true});render();
         FB.fn.httpsCallable(FB.functions,'adminMollieInscrire')(
-          creer?{uid:id,pays:molPays(E0),repName:(E0.repName||'').trim(),confirmer:true}
-                :{uid:id,repName:(E0.repName||'').trim()}).then(function(r){
+          Object.assign({uid:id,pays:molPays(E0)},
+            molNomOk(E0,E0.charge)?{repGiven:molRep(E0,E0.charge,'Given').trim(),
+                                    repFamily:molRep(E0,E0.charge,'Family').trim()}:{},
+            creer?{confirmer:true}:{})).then(function(r){
           const d=(r&&r.data)||{};
           if(d.deja){ S.admMolInscr[id]={busy:false};render();
             toast('Son compte Mollie est déjà relié');return; }
           /* On garde le pays choisi d'un appel à l'autre : le refaire choisir après un
              refus de Mollie serait lui faire reprendre une déclaration qu'il a déjà
              relue. */
-          S.admMolInscr[id]={busy:false,pays:molPays(E0),repName:E0.repName||'',charge:d.charge||E0.charge||null,
+          S.admMolInscr[id]={busy:false,pays:molPays(E0),repGiven:E0.repGiven,repFamily:E0.repFamily,charge:d.charge||E0.charge||null,
             manques:d.manques||[],raison:d.raison||'',cree:!!d.cree,dejaPrepare:!!d.dejaPrepare};
           render();
           if(d.cree)toast('Compte Mollie préparé ✓');
@@ -21493,11 +21515,13 @@
        le bouton sur place — c'est la seule chose qui dépende de ce qu'on tape ici. */
     const mr=e.target.closest('[data-molrep]');
     if(mr){
-      const id=mr.dataset.molrep;
+      const parts=String(mr.dataset.molrep||'').split(':'), cle=parts[0], id=parts.slice(1).join(':');
       S.admMolInscr=S.admMolInscr||{};
-      const E=Object.assign({},S.admMolInscr[id]||{},{repName:mr.value||''});
+      const E0=S.admMolInscr[id]||{}, chg={};
+      chg['rep'+cle]=mr.value||'';
+      const E=Object.assign({},E0,chg);
       S.admMolInscr[id]=E;
-      const reste=molManquesRestants(E,E.manques||[]);
+      const reste=molManquesRestants(E,E.manques||[],E.charge);
       const bt=document.querySelector('[data-molcree="'+id+'"]');
       if(bt){bt.disabled=reste.length>0;bt.style.opacity=reste.length?'.45':'';}
       return;
