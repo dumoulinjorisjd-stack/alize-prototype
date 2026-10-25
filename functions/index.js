@@ -351,6 +351,16 @@ const MOLLIE_SCOPES = ['onboarding.read', 'onboarding.write', 'organizations.rea
   'payments.read', 'payments.write', 'profiles.read'];
 function mollieOAuthConfigured() { return !!(process.env.MOLLIE_CLIENT_ID && process.env.MOLLIE_CLIENT_SECRET); }
 function mollieApiConfigured() { return !!process.env.MOLLIE_ACCESS_TOKEN; }
+/* UN CLIENT LINK NE VIT PAS TOUJOURS. Mollie le périme au bout de TRENTE JOURS, et un lien
+ * périmé rouvre exactement l'écran cassé que tout ce travail existe pour supprimer — le
+ * prestataire presse son bouton et n'arrive nulle part. On garde donc deux jours de marge,
+ * et au-delà on en refabrique un plutôt que de servir une adresse morte. */
+const CLIENT_LINK_JOURS = 28;
+function clientLinkFrais(at, maintenant) {
+  const t = Number(at);
+  if (!(t > 0)) return false;            // sans date, on ne sait pas : on refait.
+  return (maintenant - t) < CLIENT_LINK_JOURS * 24 * 60 * 60 * 1000;
+}
 // SIGNATURE DU `state` OAUTH (anti-détournement de liaison). Le state = uid de l'artisan +
 // expiration, signés par HMAC avec le secret Mollie. Seule la fonction AUTHENTIFIÉE
 // (mollieOnboardingLink) peut en produire un valide → un tiers ne peut PAS lier son compte
@@ -4464,7 +4474,12 @@ exports.adminMollieInscrire = onCall({secrets: ['MOLLIE_ACCESS_TOKEN', 'MOLLIE_C
   }
   /* ON NE GARDE QUE L'ADRESSE NUE. La requête signée se recompose au moment où le
    * prestataire appuie (`mollieLienClient`) : son `state` ne vit que trente minutes. */
-  const ecrire = {mollieClientLinkHref: out.href, mollieClientLinkId: out.id, mollieClientLinkAt: Date.now()};
+  /* LE PAYS CONFIRMÉ SE GARDE. Il a été lu et validé par un humain au moment de préparer
+   * le compte ; le réemployer pour refaire le MÊME lien, pour la MÊME personne, n'est pas
+   * le deviner — c'est ne pas redemander ce qui a déjà été répondu. Sans lui, un lien
+   * périmé ne pourrait pas se refabriquer et le prestataire retomberait sur l'autorisation. */
+  const ecrire = {mollieClientLinkHref: out.href, mollieClientLinkId: out.id,
+    mollieClientLinkAt: Date.now(), mollieClientLinkPays: pays};
   if (rGiven && rFamily && (rGiven !== String(a.repGiven || '').trim() || rFamily !== String(a.repFamily || '').trim())) {
     ecrire.repGiven = rGiven; ecrire.repFamily = rFamily;
   }
@@ -5120,7 +5135,7 @@ exports.mollieWebhook = onRequest({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (req
 // Départ SÉCURISÉ du parcours Mollie : fonction AUTHENTIFIÉE. Seul l'artisan connecté
 // obtient un lien signé pour SA propre fiche (uid = request.auth.uid, jamais fourni par le
 // client). Renvoie l'URL OAuth Mollie ; l'app y redirige. Remplace l'ancien endpoint public.
-exports.mollieOnboardingLink = onCall({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET']}, async (request) => {
+exports.mollieOnboardingLink = onCall({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET', 'MOLLIE_ACCESS_TOKEN', 'MOLLIE_CLIENTS_TOKEN']}, async (request) => {
   const uid = request.auth && request.auth.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Connexion requise.');
   if (!mollieOAuthConfigured()) throw new HttpsError('failed-precondition', 'Mollie non configuré.');
@@ -5142,8 +5157,36 @@ exports.mollieOnboardingLink = onCall({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLI
   const forcer = String((request.data && request.data.voie) || '') === 'autorisation';
   let href = '';
   if (!forcer) try {
-    const a = (await getFirestore().collection('artisans').doc(uid).get()).data() || {};
-    if (!a.mollieOrgId) href = String(a.mollieClientLinkHref || '');
+    const db0 = getFirestore();
+    const a = (await db0.collection('artisans').doc(uid).get()).data() || {};
+    if (!a.mollieOrgId) {
+      href = String(a.mollieClientLinkHref || '');
+      /* UN LIEN PÉRIMÉ NE SE SERT PAS, IL SE REFAIT. Trente jours passent vite quand on
+       * n'est pas pressé d'ouvrir un compte de paiement, et l'adresse morte rendrait
+       * exactement l'écran sans issue que ce travail a supprimé. On en refabrique un depuis
+       * la fiche et le pays DÉJÀ confirmé ; si quoi que ce soit manque ou si Mollie refuse,
+       * on retombe sur l'autorisation — le chemin d'hier, qui marche toujours. Ce n'est
+       * jamais pire qu'avant, et c'est pour cela que ce rattrapage peut vivre ici, dans un
+       * geste du prestataire. */
+      if (href && !clientLinkFrais(a.mollieClientLinkAt, Date.now())) {
+        href = '';
+        const paysGarde = String(a.mollieClientLinkPays || '').trim();
+        if (paysGarde) {
+          const P = clientLinkProposition(a, paysGarde, 'fr_FR');
+          if (P.pret) {
+            const out = await mollieCreerClientLink(P.charge);
+            if (out.ok) {
+              href = out.href;
+              try {
+                await db0.collection('artisans').doc(uid).set({mollieClientLinkHref: out.href,
+                  mollieClientLinkId: out.id, mollieClientLinkAt: Date.now(),
+                  mollieClientLinkPays: paysGarde}, {merge: true});
+              } catch (e2) { console.warn('mollieOnboardingLink refait écriture', e2); }
+            } else { console.warn('mollieOnboardingLink refait refusé :', out.raison); }
+          }
+        }
+      }
+    }
   } catch (e) { console.warn('mollieOnboardingLink fiche', e); }
   // CE QU'ON NE SAIT PAS LIRE NE FERME RIEN : fiche illisible, lien absent, on repart sur
   // l'autorisation. Le prestataire ne reste jamais devant un bouton sans issue.

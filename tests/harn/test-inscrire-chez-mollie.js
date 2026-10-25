@@ -253,13 +253,65 @@ const codeSeul = srv.replace(/\/\*[\s\S]*?\*\//g, '')
   .split('\n').filter((l) => !/^\s*(\/\/|\*)/.test(l)).join('\n');
 ok(codeSeul.length > srv.length / 3 && /exports\.adminMollieInscrire/.test(codeSeul),
   'assertion arrière : le code dépouillé de ses commentaires est encore le serveur');
-const occ = codeSeul.split('MOLLIE_CLIENTS_TOKEN').length - 1;
-ok(occ >= 2, 'le second secret est bien dans le CODE, pas seulement dans un commentaire (assertion arrière : ' + occ + ')');
-ok(occ === 2, 'et il n\'y apparaît QUE deux fois : sa déclaration, et l\'appel aux client links — jamais sur un paiement');
+/* ON COMPTE LES APPELS, PAS LES DÉCLARATIONS. Une liste `secrets:` n'envoie rien à
+   personne : elle dit seulement quelles fonctions ont le droit de lire le secret, et il y
+   en a légitimement plusieurs dès que deux portes mènent aux client links. Ce qui doit
+   rester unique est l'endroit où le jeton est PRÉSENTÉ à Mollie. (Première version : un
+   simple compte d'occurrences — elle a rougi dès qu'une seconde fonction a déclaré le
+   secret, sur un code parfaitement juste.) */
+const occDecl = codeSeul.split('MOLLIE_CLIENTS_TOKEN').length - 1;
+ok(occDecl >= 2, 'le second secret est bien dans le CODE, pas seulement dans un commentaire (assertion arrière : ' + occDecl + ')');
+const sansSecrets = codeSeul.replace(/secrets: \[[^\]]*\]/g, '');
+const occ = sansSecrets.split('MOLLIE_CLIENTS_TOKEN').length - 1;
+ok(occ === 1, 'et il n\'est PRÉSENTÉ qu\'une seule fois, hors des listes de secrets — jamais sur un paiement');
+ok(/'\/client-links', 'POST', charge, process\.env\.MOLLIE_CLIENTS_TOKEN/.test(sansSecrets),
+  'et cette unique fois est bien l\'appel aux client links');
 ok(/secrets: \['MOLLIE_ACCESS_TOKEN', 'MOLLIE_CLIENTS_TOKEN'/.test(codeSeul),
   'il est déclaré sur la seule fonction qui emprunte cette porte');
 ok(codeSeul.split('profileId').length - 1 === 0,
   'et aucune charge utile ne porte de profileId : c\'est la CLÉ qui range un paiement sur le bon profil, et elle ne bouge pas');
+
+/* ── UN LIEN PÉRIMÉ NE SE SERT PAS ──────────────────────────────────────────────────
+   Relevé le 25/10/2026 : Mollie périme un client link au bout de TRENTE JOURS. Nous
+   écrivions `mollieClientLinkAt` et ne le relisions JAMAIS — le lien était servi
+   indéfiniment. Une prestataire qui tarde un mois aurait donc pressé son bouton pour
+   arriver sur une adresse morte, c'est-à-dire exactement l'écran sans issue que tout ce
+   travail existe pour supprimer, revenu par la porte du temps. */
+console.log('\n── Un lien périmé se refait, il ne se sert pas ──');
+const iF0 = srv.indexOf('const CLIENT_LINK_JOURS');
+const iF1 = srv.indexOf('\n}\n', srv.indexOf('function clientLinkFrais'));
+ok(iF0 > 0 && iF1 > iF0, 'la durée de vie du lien est déclarée dans le serveur');
+const srcF = srv.slice(iF0, iF1 + 2);
+ok(/function clientLinkFrais/.test(srcF), 'assertion arrière : le relevé porte bien la décision');
+ok(codeNu(srcF).indexOf('Date') < 0,
+  'et elle ne lit PAS l\'horloge : le moment se reçoit, donc « vingt-neuf jours » s\'éprouve sans attendre un mois');
+const bacF = {};
+vm.createContext(bacF);
+new vm.Script(srcF + '\nthis.frais = clientLinkFrais; this.jours = CLIENT_LINK_JOURS;').runInContext(bacF);
+const J = 24 * 60 * 60 * 1000, T = 1800000000000;
+ok(bacF.jours < 30, 'elle garde une marge sous les trente jours de Mollie (' + bacF.jours + ')');
+ok(bacF.frais(T, T) === true, 'un lien du jour est frais');
+ok(bacF.frais(T - 27 * J, T) === true, 'à vingt-sept jours il l\'est encore');
+ok(bacF.frais(T - 29 * J, T) === false, 'à vingt-neuf jours il ne l\'est plus');
+ok(bacF.frais(0, T) === false && bacF.frais(undefined, T) === false && bacF.frais('x', T) === false,
+  'et SANS date on ne sait pas : on refait plutôt que de servir une adresse qu\'on ne peut pas dater');
+/* LE CÂBLAGE. La décision ne vaut que si le chemin du prestataire la consulte — et que si
+   l'échec retombe sur l'autorisation, le chemin d'hier, qui marche toujours. */
+const iL = srv.indexOf('exports.mollieOnboardingLink');
+const porteP = srv.slice(iL, srv.indexOf('\n});\n', iL));
+ok(porteP.length > 600, 'assertion arrière : le corps de la porte du prestataire est bien relevé');
+ok(/clientLinkFrais\(a\.mollieClientLinkAt, Date\.now\(\)\)/.test(porteP),
+  'la porte du prestataire consulte la fraîcheur avant de servir le lien');
+ok(/href = '';/.test(porteP) && /mollieCreerClientLink\(P\.charge\)/.test(porteP),
+  'un lien périmé est jeté, puis refait');
+ok(/String\(a\.mollieClientLinkPays \|\| ''\)\.trim\(\)/.test(porteP) && /if \(paysGarde\)/.test(porteP),
+  'et il se refait avec le pays DÉJÀ confirmé par un humain — jamais un pays deviné');
+ok(!/throw/.test(porteP.slice(porteP.indexOf('clientLinkFrais'))),
+  'rien ne LÈVE dans ce rattrapage : un refus de Mollie retombe sur l\'autorisation, jamais pire qu\'avant');
+ok(/secrets: \['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET', 'MOLLIE_ACCESS_TOKEN', 'MOLLIE_CLIENTS_TOKEN'\]/.test(srv),
+  'la porte déclare les secrets dont la refabrication a besoin');
+ok(/mollieClientLinkPays: pays/.test(corps),
+  'et le pays confirmé est gardé À LA CRÉATION, sans quoi il n\'y aurait rien à réemployer');
 
 console.log();
 if (f) { console.log(f + ' ÉCHEC(S)'); process.exit(1); }
