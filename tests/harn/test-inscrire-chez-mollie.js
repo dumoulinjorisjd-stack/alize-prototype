@@ -313,6 +313,70 @@ ok(/secrets: \['MOLLIE_CLIENT_ID', 'MOLLIE_CLIENT_SECRET', 'MOLLIE_ACCESS_TOKEN'
 ok(/mollieClientLinkPays: pays/.test(corps),
   'et le pays confirmé est gardé À LA CRÉATION, sans quoi il n\'y aurait rien à réemployer');
 
+/* ── CE QUE LE CLIENT LINK NE PORTE PAS, POSÉ ENSUITE ───────────────────────────────
+   « Fais aussi le pré-remplissage de tout ce que nous pouvons faire pour laisser le
+   prestataire en faire un minimum » — l'éditeur, le 25/10/2026. Restaient à sa charge le
+   site, la description et la catégorie : les étapes 1, 2 et 3 du guide. L'Onboarding API
+   les accepte, avec SON jeton à elle. La forme vient du code publié par Mollie
+   (@mollie/api-client, binders/onboarding/parameters.d.ts) — les sources secondaires se
+   contredisent sur les noms des champs, et cette charge part chez un établissement de
+   paiement. */
+console.log('\n── Le site, la description et la catégorie sont posés pour elle ──');
+const iP0 = srv.indexOf('const TI_SITE');
+const iP1 = srv.indexOf('\n}\n', srv.indexOf('function onboardingProfil'));
+ok(iP0 > 0 && iP1 > iP0, 'le noyau du profil se trouve dans le serveur, à sa place');
+const srcP = srv.slice(iP0, iP1 + 2);
+ok(/function onboardingProfil/.test(srcP) && srcP.length > 400,
+  'assertion arrière : le relevé porte bien le noyau (sinon les gardes ne mesurent rien)');
+const nuP = codeNu(srcP);
+for (const mot of ['Date', 'Math.random', 'fetch', 'require', 'process', 'getFirestore', 'await', 'console.']) {
+  ok(nuP.indexOf(mot) < 0, 'il ne touche pas ' + mot);
+}
+const bacP = {};
+vm.createContext(bacP);
+new vm.Script(srcP + '\nthis.prof = onboardingProfil; this.site = TI_SITE; this.cat = ONBOARDING_CATEGORIE; this.desc = ONBOARDING_DESC;').runInContext(bacP);
+const PR = bacP.prof;
+/* LES QUATRE CHAMPS, ET LEURS NOMS EXACTS. Un nom inventé fait refuser la charge entière. */
+const r1 = PR({name: 'Chez Laura', legalName: 'COURCOT LAURA'}, bacP.site).profile;
+ok(r1.url === 'https://ti-services.fr', 'le site part sous la clé `url`');
+ok(r1.description === bacP.desc && r1.description.length >= 50,
+  'la description part sous `description`, et elle passe les cinquante caractères que Mollie exige');
+ok(r1.categoryCode === 7299, 'la catégorie part sous `categoryCode`, et c\'est « Personal services »');
+ok(r1.name === 'Chez Laura', 'le nom commercial part sous `name`');
+ok(Object.keys(r1).length === 4, 'et RIEN d\'autre : ni téléphone (E.164 strict), ni organisation (le client link l\'a déjà posée)');
+/* CE QU'ON NE SAIT PAS NE PART PAS. */
+ok(PR({legalName: 'COURCOT LAURA'}, bacP.site).profile.name === 'COURCOT LAURA',
+  'sans nom commercial, la raison sociale fait office de nom de profil');
+ok(PR({}, bacP.site).profile.name === undefined,
+  'et sans nom du tout, la clé n\'est pas posée — plutôt qu\'un nom vide');
+for (const mauvais of ['http://ti-services.fr', 'https://a@b.fr', 'ti-services.fr', '']) {
+  ok(PR({name: 'X'}, mauvais).profile.url === undefined,
+    'une adresse que Mollie refuserait ne part pas : ' + (mauvais || '(vide)'));
+}
+ok(PR({name: 'X'}, '').profile.description === bacP.desc,
+  'et le reste part quand même : un site douteux ne doit pas emporter la description avec lui');
+/* LE CÂBLAGE, ET LE SEUL MOMENT OÙ MOLLIE EN TIENT COMPTE. */
+const iR = srv.indexOf('const ready = orgId ? await mollieOnboardingReady');
+const retour = srv.slice(iR, iR + 1400);
+ok(retour.length > 900, 'assertion arrière : le retour d\'autorisation est bien relevé');
+ok(/ready\.status === 'needs-data'/.test(retour),
+  'on ne pose le profil QUE tant que le dossier est `needs-data` : au-delà Mollie l\'ignore');
+ok(/onboardingProfil\(fiche, TI_SITE\)/.test(retour), 'la décision vient du noyau, le retour ne la refait pas');
+ok(/mollieSoumettreProfil\(tok\.access_token, prof\)/.test(retour),
+  'et elle part avec le jeton de LA PRESTATAIRE : `/onboarding/me` désigne l\'organisation du jeton présenté');
+ok(/try \{/.test(retour) && /catch \(e3\)/.test(retour),
+  'rien ne LÈVE : ce confort n\'a pas le droit de casser le retour d\'autorisation, qui relie son compte');
+const iS = srv.indexOf('async function mollieSoumettreProfil');
+const soum = srv.slice(iS, srv.indexOf('\n}\n', iS));
+ok(/'\/onboarding\/me'/.test(soum), 'l\'adaptateur poste bien sur /onboarding/me');
+/* ON MESURE LE CODE, PAS LES CHAÎNES. Première version : un `/throw/` sur le texte brut —
+   elle rougissait sur le LIBELLÉ de journal « mollieSoumettreProfil throw », qui distingue
+   justement l'exception du refus HTTP. Même famille que la garde du second jeton, qui
+   comptait son propre commentaire. */
+ok(!/throw/.test(codeNu(soum)), 'et lui non plus ne lève jamais');
+ok(!/MOLLIE_ACCESS_TOKEN/.test(soum),
+  'il ne présente PAS notre jeton : avec le nôtre, « me » serait Ti-Services');
+
 console.log();
 if (f) { console.log(f + ' ÉCHEC(S)'); process.exit(1); }
 console.log('Inscription chez Mollie : tout est vert');

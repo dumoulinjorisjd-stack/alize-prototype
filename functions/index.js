@@ -858,6 +858,54 @@ function clientLinkProposition(fiche, pays, locale) {
   if (siret.length === 14) charge.registrationNumber = siret;
   return {pret: manques.length === 0, manques: manques, charge: charge};
 }
+/* CE QUE LE CLIENT LINK NE PORTE PAS, ET QU'ON PEUT POSER ENSUITE.
+ *
+ * `CreateClientLinkRequest` ne transporte que l'organisation : propriétaire, raison sociale,
+ * adresse, numéro d'enregistrement. Restaient donc à la charge de la prestataire le SITE,
+ * la DESCRIPTION de l'activité et la CATÉGORIE — les étapes 1, 2 et 3 du guide, celles
+ * qu'elle recopiait à la main. L'Onboarding API les accepte, et elle les accepte avec SON
+ * jeton à elle, obtenu au retour de l'autorisation.
+ *
+ * LA FORME VIENT DU CODE PUBLIÉ PAR MOLLIE (@mollie/api-client, binders/onboarding/
+ * parameters.d.ts), comme celle du client link : `docs.mollie.com` est refusé par le
+ * mandataire de cette session, et les sources secondaires se contredisent sur les noms des
+ * champs (`url` ou `website`, `categoryCode` ou `businessCategory`). On ne devine pas une
+ * charge utile qui part chez un établissement de paiement.
+ *
+ * `7299` EST « PERSONAL SERVICES », pris dans la liste FERMÉE que Mollie publie au même
+ * endroit — ce n'est pas un code inventé, et c'est exactement ce que le guide fait choisir
+ * à la main (« Services à la personne »).
+ *
+ * LA DESCRIPTION NE NOMME PAS LES MÉTIERS, et c'est une décision. Le serveur ne sait pas
+ * les nommer : `a.cats` ne porte que des identifiants, et la table des libellés vit dans le
+ * client (plus les métiers créés depuis la console). La recopier ici, ce serait organiser
+ * la divergence. La phrase dit donc ce qui est vrai pour tous — c'est d'ailleurs celle que
+ * le guide propose déjà quand les métiers ne sont pas connus — et la prestataire peut la
+ * changer dans son tableau de bord : Mollie n'écrase JAMAIS ce qu'un marchand a saisi.
+ *
+ * ON N'ENVOIE QUE CE QUI MANQUE. Ni téléphone (E.164 strict, et nos numéros ne sont pas
+ * garantis dans ce format : un refus pour un champ que personne ne lui demande serait un
+ * mauvais marché), ni `organization` (le client link l'a déjà posée). Quatre champs. */
+// LE SITE QU'ON DÉCLARE À MOLLIE. C'est le nôtre : la page publique de Ti-Services fait
+// office de vitrine de l'activité, et c'est déjà ce que le guide fait copier-coller.
+const TI_SITE = 'https://ti-services.fr';
+const ONBOARDING_CATEGORIE = 7299;
+const ONBOARDING_DESC = 'Services à la personne à domicile à Saint-Barthélemy, ' +
+  'prestations réservées et réglées en ligne via la plateforme Ti-Services.';
+function onboardingProfil(fiche, site) {
+  const f = fiche || {};
+  const nom = String(f.name == null ? '' : f.name).trim() ||
+    String(f.legalName == null ? '' : f.legalName).trim();
+  const url = String(site == null ? '' : site).trim();
+  // L'ADRESSE EST JUGÉE, PAS SUPPOSÉE : Mollie exige http(s) et refuse une URL contenant
+  // un @. Ce qu'on ne reconnaît pas ne part pas — un champ refusé ferait refuser le tout.
+  const urlOk = url.indexOf('https://') === 0 && url.indexOf('@') < 0 && url.length < 200;
+  const profile = {description: ONBOARDING_DESC, categoryCode: ONBOARDING_CATEGORIE};
+  if (urlOk) profile.url = url;
+  if (nom) profile.name = nom.slice(0, 100);
+  return {profile: profile};
+}
+
 /* LE LIEN FINAL SE COMPOSE AU DERNIER MOMENT, jamais à la création. Le `state` est signé
  * et ne vit que TRENTE MINUTES (`signMollieState`) : un lien mémorisé sur la fiche avec sa
  * requête déjà écrite serait périmé avant que le prestataire l'ouvre — et l'on aurait
@@ -905,6 +953,29 @@ async function mollieCreerClientLink(charge) {
   const id = String((r.data && r.data.id) || '');
   if (!href) return {ok: false, href: '', id: id, raison: 'réponse sans lien'};
   return {ok: true, href: href, id: id, raison: ''};
+}
+
+/* POSE LE PROFIL CHEZ MOLLIE, AVEC LE JETON DE LA PRESTATAIRE. Ne LÈVE jamais : ce
+ * rattrapage est un confort, il n'a pas le droit de casser le retour d'autorisation, qui
+ * est le moment où son compte se relie. Un refus se journalise et la prestataire retrouve
+ * le guide, qui n'a pas bougé.
+ * LE JETON EST LE SIEN, et c'est ce qui rend l'appel possible : `/onboarding/me` désigne
+ * l'organisation du jeton présenté. Avec le nôtre, « me » serait Ti-Services. */
+async function mollieSoumettreProfil(accessToken, charge) {
+  if (!accessToken || !charge) return {ok: false, raison: 'jeton ou charge manquant'};
+  try {
+    const res = await fetch(MOLLIE_API + '/onboarding/me', {
+      method: 'POST',
+      headers: {'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json'},
+      body: JSON.stringify(charge),
+    });
+    if (!res.ok) {
+      const txt = await res.text();
+      console.warn('mollieSoumettreProfil', res.status, (txt || '').slice(0, 300));
+      return {ok: false, raison: 'HTTP ' + res.status};
+    }
+    return {ok: true, raison: ''};
+  } catch (e) { console.warn('mollieSoumettreProfil throw', e); return {ok: false, raison: String(e)}; }
 }
 
 // FRAIS MOLLIE RÉELS d'un paiement. Mollie expose `settlementAmount` = ce qu'il verse
@@ -5256,6 +5327,21 @@ exports.mollieOnboardingReturn = onRequest({secrets: ['MOLLIE_CLIENT_ID', 'MOLLI
     // (mollieCanWork) : Mollie ne finit sa vérification qu'après une première transaction,
     // exiger le dossier complet enfermerait l'artisan dans un cercle sans issue.
     const ready = orgId ? await mollieOnboardingReady(tok.access_token) : {ok: false, status: 'needs-data', dashboard: ''};
+    /* ON POSE CE QU'ON SAIT, PENDANT QUE MOLLIE L'ACCEPTE ENCORE. Les données d'onboarding
+     * ne prennent effet que tant que le dossier est `needs-data` — au-delà, Mollie les
+     * ignore, et il est inutile d'appeler. C'est donc ICI, à l'instant où elle revient de
+     * l'autorisation, et nulle part ailleurs.
+     * ET CE N'EST PAS UNE ÉCRITURE À SA PLACE : Mollie n'écrase jamais ce qu'un marchand a
+     * saisi lui-même, et tout ce qu'on pose lui est montré dans son tableau de bord, où
+     * elle peut le changer. On lui épargne trois recopies, on ne décide pas pour elle. */
+    if (orgId && ready.status === 'needs-data') {
+      try {
+        const fiche = (await getFirestore().collection('artisans').doc(uid).get()).data() || {};
+        const prof = onboardingProfil(fiche, TI_SITE);
+        const pose = await mollieSoumettreProfil(tok.access_token, prof);
+        if (!pose.ok) console.warn('mollieOnboardingReturn profil non posé :', pose.raison);
+      } catch (e3) { console.warn('mollieOnboardingReturn profil', e3); }
+    }
     const db = getFirestore();
     // Fiche AVANT écriture : ce chemin est le premier à voir un compte déjà vérifié
     // (« active » dès la liaison). Sans lecture préalable, il consommait la transition —
