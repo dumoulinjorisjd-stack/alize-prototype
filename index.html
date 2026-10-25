@@ -3698,7 +3698,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='881';
+  const VERSION_APP='882';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -10940,6 +10940,12 @@
      Mollie ne le propose pas ; ses entreprises sont françaises (SIRET, IBAN FR). Lequel
      déclarer n'est pas à nous de le supposer — le choix est explicite, et le bouton reste
      fermé tant qu'il n'est pas fait. */
+  /* LE PAYS A UNE SEULE SOURCE. Un premier jet posait « selected » dans le balisage et
+     laissait l’état vide : l’écran MONTRAIT la France et l’appel envoyait un pays VIDE —
+     deux surfaces qui se contredisent sur le même fait, et c’est l’épreuve qui l’a dit. Le
+     défaut vit donc dans la DÉCISION, que le sélecteur, le verrou du bouton et l’appel
+     lisent tous les trois. */
+  function molPays(E){return (E&&E.pays)||'FR';}
   function molInscrireBloc(a){
     const E=(S.admMolInscr||{})[a.id]||{};
     const btn=function(l,act,cls){return '<button class="btn '+(cls||'ghost')+' sm" data-adm="'+act+':'+a.id+'" style="width:auto;padding:7px 12px">'+l+'</button>';};
@@ -10962,16 +10968,19 @@
       +'<div style="margin-top:10px;padding-top:9px;border-top:1px solid var(--hair)">'
       +'<div class="mini" style="color:var(--muted)">Pays à déclarer</div>'
       +'<select data-molpays="'+a.id+'" style="margin-top:4px;width:100%;padding:8px 10px;border:1px solid var(--hair);border-radius:10px;font-size:13.5px;background:#fff">'
-      +'<option value=""'+(E.pays?'':' selected')+'>— à confirmer —</option>'
-      +'<option value="FR"'+(E.pays==='FR'?' selected':'')+'>France (FR)</option>'
-      +'<option value="BL"'+(E.pays==='BL'?' selected':'')+'>Saint-Barthélemy (BL)</option>'
+      +'<option value="FR"'+(molPays(E)==='FR'?' selected':'')+'>France (FR)</option>'
+      +'<option value="BL"'+(molPays(E)==='BL'?' selected':'')+'>Saint-Barthélemy (BL)</option>'
       +'</select>'
-      +'<p class="mini" style="margin-top:5px;color:var(--muted);line-height:1.45">Mollie ne propose pas Saint-Barthélemy dans sa propre liste, et ses entreprises sont françaises (SIRET, IBAN FR). C’est une déclaration à un établissement de paiement : elle se confirme, elle ne se devine pas.</p></div>'
+      +'<p class="mini" style="margin-top:5px;color:var(--muted);line-height:1.45">Relevé le 25/10/2026 dans le compte Mollie de Ti-Services : une entreprise de Saint-Barthélemy y est enregistrée en <b>France</b>. C’est la réponse, pas une supposition — et elle reste modifiable.</p></div>'
       +(manq.length?'<div class="mini" style="margin-top:9px;color:var(--coral-deep);font-weight:650">'+I.warn+' Il manque : '+manq.map(function(m){return noms[m]||m;}).join(', ')+'. À compléter sur sa fiche avant d’envoyer.</div>':'')
       +(E.raison?'<div class="mini" style="margin-top:9px;color:var(--coral-deep);line-height:1.45"><b>'+I.warn+' Mollie a refusé :</b> '+esc(E.raison)+'<br>Rien n’est cassé : il garde le chemin actuel, celui qui relie un compte Mollie déjà créé. Ce motif se porte à Mollie.</div>':'')
       +(E.dejaPrepare?'<div class="mini" style="margin-top:9px;color:var(--muted)">Un compte a déjà été préparé pour lui : son bouton ouvre déjà ce parcours.</div>':'')
+      +'<div class="mini" style="margin-top:11px;padding:9px 10px;background:var(--teal-wash);border-radius:9px;line-height:1.45">'
+      +'<b>Demandez-lui d’abord : a-t-il déjà un compte Mollie ?</b><br>'
+      +'Si OUI, ne lui préparez rien— son bouton « Activer mes paiements » relie déjà un compte existant, et c’est ce qu’il faut. Rien dans sa fiche ne nous le dit, et Mollie ne répond pas à cette question sur une adresse : lui seul le sait. S’il se trompe, son écran garde de toute façon le lien « J’ai déjà un compte Mollie ».'
+      +'</div>'
       +'<div class="row" style="gap:8px;margin-top:11px">'
-      +((manq.length||!E.pays)?'<button class="btn primary sm" disabled style="width:auto;padding:7px 12px;opacity:.45">'+I.bolt+' Créer chez Mollie</button>':btn(I.bolt+' Créer chez Mollie','mol-cree','primary'))
+      +((manq.length)?'<button class="btn primary sm" disabled style="width:auto;padding:7px 12px;opacity:.45">'+I.bolt+' Créer chez Mollie</button>':btn(I.bolt+' Créer chez Mollie','mol-cree','primary'))
       +btn('Annuler','mol-ferme')+'</div></div>';
   }
 
@@ -16168,7 +16177,7 @@
   // rediriger vers l'endpoint serveur qui renvoie l'URL OAuth de Mollie (hosted
   // onboarding), en pré-remplissant l'identité déjà connue —
   //   window.location.href = urlOnboardingMollie;   // obtenue via mollieOnboardingStart
-  async function startMollieOnboarding(){
+  async function startMollieOnboarding(voie){
     S._mollieWrongAccount=false; // nouvel essai : on efface l'alerte « mauvais compte »
     // Parcours RÉEL : on demande à une fonction AUTHENTIFIÉE l'URL OAuth Mollie signée
     // (le lien ne peut être créé que par l'artisan connecté, pour sa propre fiche), puis on
@@ -16176,7 +16185,7 @@
     if(payReal()&&FB&&FB.fn&&FB.functions&&FB.auth&&FB.auth.currentUser){
       toast('Ouverture du parcours Mollie…');
       try{
-        const r=await FB.fn.httpsCallable(FB.functions,'mollieOnboardingLink')();
+        const r=await FB.fn.httpsCallable(FB.functions,'mollieOnboardingLink')(voie?{voie:voie}:{});
         const url=r&&r.data&&r.data.url;
         if(url){location.href=url;return;}
         toast('Impossible d’ouvrir Mollie, réessayez.');
@@ -16704,7 +16713,15 @@
       ${idRow}
       <div class="banner good" style="margin-top:12px">${I.info||I.check}<span>Un peu long mais <b>une seule fois</b>, ensuite vous êtes payé automatiquement, sans jamais y repenser. <b>Préférez un ordinateur</b> si possible. Le <b>guide pas à pas</b> (bouton en haut) vous accompagne question par question.</span></div>
       <div class="footcta" style="position:static;background:none;padding:16px 0 0"><button class="btn primary" data-act="mollie-start">${I.lock} Continuer vers Mollie →</button></div>
-      <p class="mini" style="text-align:center;margin-top:8px;color:var(--muted)">La vérification d'identité est exigée par la loi (DSP2) pour tout encaissement.</p>`;
+      <p class="mini" style="text-align:center;margin-top:8px;color:var(--muted)">La vérification d'identité est exigée par la loi (DSP2) pour tout encaissement.</p>
+      ${/* LA PORTE DE CELUI QUI A DÉJÀ UN COMPTE MOLLIE.
+            Le bouton principal ouvre le parcours PRÉPARÉ quand la console lui en a fait un —
+            et CE QU'ON NE SAIT PAS, c'est si Mollie y reconnaîtrait un compte existant pour
+            l'autoriser, ou s'il en créerait un SECOND, préremplis. Deux comptes Mollie pour un
+            prestataire, dont un seul reçoit les versements, est le pire résultat possible.
+            Il est le SEUL à savoir s'il en a déjà un : la porte qui RELIE reste donc à un
+            toucher, nommée, et elle redemande explicitement le chemin d'autorisation. */''}
+      <p class="mini" style="text-align:center;margin-top:10px"><button class="linklike" data-act="mollie-relier" style="color:var(--teal-deep);font-weight:700">J'ai déjà un compte Mollie, le relier</button></p>`;
     }
     // Accès PERMANENT au compte Mollie (dès qu'un compte a été démarré) : l'artisan doit
     // toujours pouvoir rejoindre son espace Mollie pour compléter/gérer son dossier ou voir
@@ -19397,14 +19414,14 @@
         const creer=(act==='mol-cree');
         S.admMolInscr[id]=Object.assign({},E0,{busy:true});render();
         FB.fn.httpsCallable(FB.functions,'adminMollieInscrire')(
-          creer?{uid:id,pays:E0.pays||'',confirmer:true}:{uid:id}).then(function(r){
+          creer?{uid:id,pays:molPays(E0),confirmer:true}:{uid:id}).then(function(r){
           const d=(r&&r.data)||{};
           if(d.deja){ S.admMolInscr[id]={busy:false};render();
             toast('Son compte Mollie est déjà relié');return; }
           /* On garde le pays choisi d'un appel à l'autre : le refaire choisir après un
              refus de Mollie serait lui faire reprendre une déclaration qu'il a déjà
              relue. */
-          S.admMolInscr[id]={busy:false,pays:E0.pays||'',charge:d.charge||E0.charge||null,
+          S.admMolInscr[id]={busy:false,pays:molPays(E0),charge:d.charge||E0.charge||null,
             manques:d.manques||[],raison:d.raison||'',cree:!!d.cree,dejaPrepare:!!d.dejaPrepare};
           render();
           if(d.cree)toast('Compte Mollie préparé ✓');
@@ -20893,6 +20910,10 @@
           toast('Ouverture de votre dossier Mollie…');openMollieAccount();break;
         }
         startMollieOnboarding();break;}
+      /* « J'AI DÉJÀ UN COMPTE MOLLIE » : on redemande explicitement le chemin qui RELIE une
+         organisation existante, quoi que la console ait préparé. Lui seul sait s'il en a un,
+         et un second compte créé par erreur est le pire résultat possible. */
+      case 'mollie-relier':startMollieOnboarding('autorisation');break;
       case 'mollie-sim-approve':setMollieStatus('active');toast('Paiements activés ✓');break;
       case 'pro-payout':S.payoutForm={holder:(S.proIbanHolder||S.proName||''),iban:(S.proIban||''),bic:(S.proBic||'')};S.proPayoutView=true;render();break;
       case 'pro-payout-close':S.proPayoutView=false;render();break;

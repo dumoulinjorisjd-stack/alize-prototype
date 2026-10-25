@@ -4394,6 +4394,11 @@ exports.adminMollieInscrire = onCall({secrets: ['MOLLIE_ACCESS_TOKEN', 'MOLLIE_C
   if (a.mollieOrgId) return {deja: true, orgId: String(a.mollieOrgId), statut: String(a.mollieStatus || '')};
   const P = clientLinkProposition(a, pays, 'fr_FR');
   if (!confirmer) {
+    /* ON N'A AUCUN MOYEN DE SAVOIR S'IL A DÉJÀ UN COMPTE MOLLIE non relié : rien dans sa
+     * fiche ne le dit, et Mollie ne répond pas à cette question sur une adresse (ce serait
+     * un outil d'énumération de comptes). Le seul qui le sache est LUI. La console pose donc
+     * le fait avant de créer, au lieu de le supposer — et son bouton garde de toute façon la
+     * porte qui RELIE, pour que l'erreur reste sans conséquence. */
     return {apercu: true, pret: P.pret, manques: P.manques, charge: P.charge,
       dejaPrepare: !!a.mollieClientLinkHref};
   }
@@ -5073,8 +5078,18 @@ exports.mollieOnboardingLink = onCall({secrets: ['MOLLIE_CLIENT_ID', 'MOLLIE_CLI
    * c'est ce lien-là qui s'ouvre. Sinon le lien d'autorisation d'aujourd'hui, qui relie un
    * compte Mollie EXISTANT. Un second bouton côté prestataire l'obligerait à savoir laquelle
    * des deux situations est la sienne, et c'est exactement ce qu'on lui retire. */
+  /* ET IL PEUT DEMANDER LE CHEMIN QUI RELIE, quoi qu'on ait préparé pour lui.
+   * CE QU'ON NE SAIT PAS : si Mollie, sur un lien préparé, reconnaît un compte EXISTANT et
+   * l'autorise — ou s'il en crée un SECOND, préremplis. Sa documentation est hors d'atteinte
+   * depuis ce conteneur et son code publié n'en dit rien (relevé, y compris dans ses
+   * épreuves). C'est le seul cas où se tromper coûte deux comptes Mollie pour un prestataire,
+   * dont un seul reçoit les versements. On ne devine donc pas : on laisse la porte qui RELIE
+   * à un toucher, nommée, et le prestataire — qui est le seul à savoir s'il a déjà un compte
+   * — la prend. Ce paramètre ne peut que RESTREINDRE (il redemande le chemin d'hier) : l'uid
+   * vient toujours de l'authentification, jamais du client. */
+  const forcer = String((request.data && request.data.voie) || '') === 'autorisation';
   let href = '';
-  try {
+  if (!forcer) try {
     const a = (await getFirestore().collection('artisans').doc(uid).get()).data() || {};
     if (!a.mollieOrgId) href = String(a.mollieClientLinkHref || '');
   } catch (e) { console.warn('mollieOnboardingLink fiche', e); }

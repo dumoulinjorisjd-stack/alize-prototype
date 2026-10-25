@@ -45,16 +45,42 @@ reste utile pour ces trois-là et n'est pas retiré.
 (zéro occurrence relevée), et en inventer un serait une fausse déclaration à un
 établissement de paiement.
 
-## Pourquoi le pays n'a aucun défaut
+## Le pays : la France — mesuré, pas supposé
 
-C'est une **déclaration faite à un établissement de paiement, à la place de
-quelqu'un d'autre**. Saint-Barthélemy est `BL`, et la liste de Mollie ne le
-propose pas ; ses entreprises sont françaises (SIRET, IBAN FR). Lequel envoyer
-n'est pas à nous de le supposer : la console le montre, un humain confirme.
+**Relevé le 25/10/2026 dans le compte Mollie de Ti-Services** : une entreprise
+de Saint-Barthélemy y est enregistrée en **France**. C'est la réponse, et elle
+vient de la même juridiction que les prestataires. La France est donc proposée,
+et le sélecteur reste modifiable (`BL` disponible).
 
-C'est la même règle qui a fait refuser « Saint-Marin » à qui cherchait
-Saint-Martin — San Marino n'est pas Saint-Martin, et une entreprise déclarée au
-mauvais pays se découvre au contrôle d'identité, des jours plus tard.
+Ce qui ne change pas : l'écran **dit d'où vient la réponse**, pour que personne
+ne la croie devinée, et le serveur refuse toujours un code qui n'est pas deux
+lettres. C'était la question ouverte du lot précédent — une entreprise déclarée
+au mauvais pays se découvre au contrôle d'identité, des jours plus tard, et
+c'est la même prudence qui a fait refuser « Saint-Marin » à qui cherchait
+Saint-Martin.
+
+## Et s'il a DÉJÀ un compte Mollie non relié ?
+
+**On ne sait pas** ce que Mollie fait si on envoie quelqu'un qui a déjà un compte
+vers un lien préparé : l'autorise-t-il sur son organisation existante, ou en
+crée-t-il une **seconde**, préremplie ? `docs.mollie.com` est refusé depuis le
+conteneur et le code publié par Mollie n'en dit rien — relevé, y compris dans ses
+propres épreuves. Deux comptes Mollie pour un prestataire, dont un seul reçoit
+les versements, serait le pire résultat possible.
+
+**On rend donc la question sans conséquence**, sur les deux bords :
+
+- **La console POSE le fait** avant de créer : « demandez-lui d'abord, a-t-il déjà
+  un compte Mollie ? ». Rien dans sa fiche ne le dit, et Mollie ne répond pas à
+  cette question sur une adresse (ce serait un outil d'énumération de comptes) :
+  lui seul le sait, et l'administrateur l'a au téléphone.
+- **Son écran garde la porte qui relie** : sous le bouton principal, « J'ai déjà
+  un compte Mollie, le relier » redemande explicitement le chemin
+  d'autorisation, quoi qu'on ait préparé pour lui. Le paramètre ne peut que
+  **restreindre** — l'uid vient toujours de l'authentification.
+
+Donc : si tu lui prépares un compte par erreur, **il s'en sort tout seul en un
+toucher**, et rien n'est à défaire.
 
 ## Si Mollie refuse
 

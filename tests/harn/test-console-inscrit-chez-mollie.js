@@ -109,27 +109,57 @@ ok(/marielou@exemple\.fr/.test(v.txt), 'l\'adresse électronique');
 ok(/Rue de la Paix/.test(v.txt) && /97133/.test(v.txt) && /Gustavia/.test(v.txt), 'la voie, le code postal, la commune');
 ok(/80412578900014/.test(v.txt), 'et le SIRET');
 
-console.log('C — le pays n\'a aucun défaut, et le bouton reste fermé sans lui');
-ok(/à confirmer/.test(v.txt), 'le sélecteur part sur « à confirmer »');
-ok(v.creeAbsent || v.creeOff, 'et « Créer chez Mollie » ne part pas tant que le pays n\'est pas choisi');
-ok(/Mollie ne propose pas Saint-Barthélemy/.test(v.txt),
-  'l\'écran dit POURQUOI la question se pose, au lieu de la poser sans raison');
-ok(await choisirPays('a1', 'FR'), 'le sélecteur existe et se règle');
+console.log('C — le pays : la France, parce qu\'elle a été MESURÉE, et modifiable');
+/* LA SECTION ÉNONÇAIT L'ANCIENNE RÈGLE — « aucun défaut, le bouton reste fermé ». Elle a
+   rougi, et c'est le signal attendu : la question avait une réponse qu'on n'avait pas, et
+   l'éditeur l'a mesurée dans SON propre compte Mollie le 25/10/2026 — une entreprise de
+   Saint-Barthélemy y est enregistrée en FRANCE. Forcer un choix sur une question réglée
+   serait de la friction sans bénéfice ; ce qui reste exigé est qu'on dise D'OÙ vient la
+   réponse, et qu'elle se change. */
+ok(/France/.test(v.txt), 'la France est proposée');
+ok(/Relevé le 25\/10\/2026 dans le compte Mollie/.test(v.txt),
+  'et l\'écran dit d\'où vient la réponse : une mesure, pas une supposition');
+ok(!v.creeAbsent && !v.creeOff, 'le bouton de création est ouvert : la question est réglée');
+ok(v.appels.length === 1, 'et rien n\'a encore été envoyé');
+ok(await choisirPays('a1', 'BL'), 'le sélecteur reste modifiable');
 await p.waitForTimeout(150);
 v = await lire();
-ok(!v.creeAbsent && !v.creeOff, 'le pays confirmé ouvre le bouton de création');
-ok(v.appels.length === 1, 'et choisir un pays n\'envoie toujours RIEN');
+ok(v.appels.length === 1, 'changer de pays n\'envoie toujours RIEN');
+
+console.log('C bis — la console ÉTABLIT ce qu\'elle ne peut pas lire');
+/* ON NE SAIT PAS s'il a déjà un compte Mollie : rien dans sa fiche ne le dit, et Mollie ne
+   répond pas à cette question sur une adresse (ce serait un outil d'énumération de comptes).
+   Le seul qui le sache est LUI — la console pose donc le fait avant de créer. */
+ok(/a-t-il déjà un compte Mollie/.test(v.txt), 'elle demande de lui poser la question');
+ok(/ne lui préparez rien/.test(v.txt), 'et dit quoi faire si la réponse est oui');
+ok(/J.{0,3}ai déjà un compte Mollie/.test(v.txt),
+  'en nommant la porte qui reste de son côté : l\'erreur est sans conséquence');
 
 console.log('D — « Créer » porte le pays confirmé, et le dit quand c\'est fait');
 await scene([PROPO, {pret: true, cree: true, id: 'cl_1'}]);
 await poser(ARTS, 'a1');
 await clic('mol-prep:a1'); await p.waitForTimeout(250);
-await choisirPays('a1', 'BL'); await p.waitForTimeout(150);
+const paysVu = await p.evaluate(() => { const e = document.querySelector('[data-molpays="a1"]'); return e ? e.value : '(absent)'; });
 await clic('mol-cree:a1'); await p.waitForTimeout(250);
 v = await lire();
 ok(v.appels.length === 2, 'un second appel');
 ok(!!v.appels[1] && v.appels[1].confirmer === true, 'celui-là confirme');
-ok(!!v.appels[1] && v.appels[1].pays === 'BL', 'et il porte le pays CHOISI, pas un pays deviné');
+ok(!!v.appels[1] && v.appels[1].pays === 'FR',
+  'et il porte la France sans qu\'on ait rien touché : la réponse mesurée part telle quelle');
+/* ET L'ÉCRAN ET L'APPEL DISENT LA MÊME CHOSE. Un premier jet posait « selected » dans le
+   balisage en laissant l'état vide : la console MONTRAIT la France et envoyait un pays
+   VIDE. Deux surfaces qui se contredisent sur le même fait — c'est cette mesure qui l'a
+   trouvé, et c'est elle qui l'empêche de revenir. */
+ok(paysVu === ((v.appels[1] || {}).pays || '(aucun appel)'),
+  'le pays affiché est celui qui part : « ' + paysVu + ' » des deux côtés');
+/* ET UN AUTRE PAYS PART AUSSI, sans quoi le sélecteur serait un décor. */
+await scene([PROPO, {pret: true, cree: true, id: 'cl_2'}]);
+await poser(ARTS, 'a1');
+await clic('mol-prep:a1'); await p.waitForTimeout(250);
+await choisirPays('a1', 'BL'); await p.waitForTimeout(150);
+await clic('mol-cree:a1'); await p.waitForTimeout(250);
+v = await lire();
+ok(!!v.appels[1] && v.appels[1].pays === 'BL', 'et le pays qu\'on change part changé');
 ok(/compte Mollie est préparé/.test(v.txt), 'l\'écran dit que c\'est fait');
 ok(/n.{0,3}a plus qu.{0,3}à appuyer/.test(v.txt),
   'et ce qui reste à faire au prestataire : UN bouton');
@@ -145,10 +175,8 @@ ok(/Il manque/.test(v.txt), 'l\'écran dit qu\'il manque quelque chose');
 ok(/adresse électronique/.test(v.txt) && /prénom et nom/.test(v.txt),
   'et NOMME les champs, en français, pour qu\'on les fasse compléter');
 ok(/À compléter sur sa fiche/.test(v.txt), 'en disant où les compléter');
-await choisirPays('a2', 'FR'); await p.waitForTimeout(150);
-v = await lire();
 ok(v.creeAbsent || v.creeOff,
-  'et même le pays confirmé n\'ouvre pas la création : une déclaration incomplète ne part pas');
+  'et la création reste fermée, pays réglé ou non : une déclaration incomplète ne part pas');
 ok(/SIRET absent ou incomplet/.test(v.txt), 'un SIRET à trois chiffres est dit omis, pas tronqué');
 ok(/Aucun code postal lisible/.test(v.txt), 'et une adresse sans code postal le dit aussi');
 
@@ -156,7 +184,6 @@ console.log('F — Mollie refuse : la proposition reste, le motif est dit, rien 
 await scene([PROPO, {pret: true, cree: false, repli: 'autorisation', raison: 'Client links not enabled for this account'}]);
 await poser(ARTS, 'a1');
 await clic('mol-prep:a1'); await p.waitForTimeout(250);
-await choisirPays('a1', 'FR'); await p.waitForTimeout(150);
 await clic('mol-cree:a1'); await p.waitForTimeout(250);
 v = await lire();
 ok(/Mollie a refusé/.test(v.txt), 'le refus est annoncé');
@@ -164,7 +191,7 @@ ok(/Client links not enabled/.test(v.txt), 'avec le motif TEL QUEL : c\'est lui 
 ok(/Rien n.{0,3}est cassé/.test(v.txt) && /chemin actuel/.test(v.txt),
   'et l\'écran dit que le prestataire garde le chemin d\'aujourd\'hui');
 ok(/Ce qui partira chez Mollie/.test(v.txt), 'la déclaration relue reste à l\'écran — on n\'a pas à tout refaire');
-ok(!v.creeAbsent, 'et le bouton reste, pour réessayer sans rechoisir le pays');
+ok(!v.creeAbsent, 'et le bouton reste, pour réessayer sans tout refaire');
 
 console.log('G — ce qui ne doit PAS changer : un prestataire déjà relié');
 /* SANS CETTE MOITIÉ, un bouton qui s'afficherait partout passerait au vert — et l'on

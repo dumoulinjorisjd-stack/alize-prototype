@@ -201,17 +201,45 @@ const jPlus = (n) => { const d = new Date(Date.now() + n * 86400000);
      ferme à 18 h, la demande est pour aujourd'hui — la carte ne s'ouvre pas sur une
      liste vide : elle part du premier jour qui a quelque chose à offrir. */
   console.log('F bis — un jour sans heure disponible ne laisse pas la carte vide');
+  /* ON NE LIT PAS L'HEURE, ON LA FIGE. Cette mesure a besoin d'une journée DÉJÀ PASSÉE, donc
+     d'une heure tardive — et elle rougissait une demi-heure par nuit sur un produit juste :
+     lancée à 00:18, la fenêtre « 00:00–00:30 » que la scène posait n'était PAS derrière nous,
+     « 00:30 » était un créneau réellement disponible, et la carte avait raison de rester sur
+     le jour demandé. Une épreuve ne lit pas l'heure : on la pose à 19 h, et la mesure vaut à
+     n'importe quel moment de la nuit comme du jour. L'horloge est rendue juste après. */
+  const h19 = new Date(); h19.setHours(19, 0, 0, 0);
+  await p.clock.setFixedTime(h19);
   const vide = await p.evaluate(({ auj }) => {
     const S = window.__S;
     S.proReqJour = null; S.proReqSlot = null;
-    /* Un métier dont la journée est DÉJÀ finie, quelle que soit l'heure de l'épreuve. */
-    S.adminMetier = { menage: { ouvre: 0, ferme: 30 } };
+    /* LA JOURNÉE SE FERME SUR L'HEURE QU'IL EST, PAS SUR UNE HEURE ÉCRITE À LA MAIN.
+       Un premier jet posait « ouvert de 00:00 à 00:30 » en affirmant que la journée était
+       finie « quelle que soit l'heure de l'épreuve » — c'était faux entre minuit et 00:30,
+       et l'épreuve rougissait une demi-heure par nuit sur un produit parfaitement juste :
+       à 00:18, « 00:30 » est un créneau réellement disponible, et la carte avait raison de
+       rester sur le jour demandé. On ferme donc le métier à la minute COURANTE : la fenêtre
+       est alors entièrement passée, quelle que soit l'heure — c'est ce que la prémisse
+       promettait. */
+    const n = new Date();
+    const maintenantMin = n.getHours() * 60 + n.getMinutes();
+    /* ET LA BORNE TOMBE SUR LA GRILLE DES CRÉNEAUX. Mesuré : une fermeture à 19, 20, 29 ou
+       31 minutes est REFUSÉE par le lecteur de plage, qui rend alors la journée ENTIÈRE
+       (47 heures) ; 30, 60 et 120 sont honorées. Le dernier multiple de trente strictement
+       avant l'heure figée donne donc une fenêtre à la fois VALIDE et entièrement passée. */
+    const ferme = 30 * Math.floor((maintenantMin - 1) / 30);
+    S.adminMetier = { menage: { ouvre: 0, ferme: ferme } };
     const r = { id: 'rv', status: 'pending', service: 'menage', serviceName: 'Ménage',
       when: 'Aujourd’hui', dateISO: auj, slot: '09:00', slotFlex: 'day', duration: 2 };
     const c = window.__prop.choisi(r);
     S.adminMetier = {};
-    return { jour: c.jour, n: c.heures.length, slot: c.slot, demande: auj };
+    return { jour: c.jour, n: c.heures.length, slot: c.slot, demande: auj, ferme: ferme, vu: n.toTimeString().slice(0, 5) };
   }, { auj: jPlus(0) });
+  await p.clock.setFixedTime(new Date());   // l'horloge est rendue : la suite mesure le vrai temps
+  /* ASSERTION ARRIÈRE : la prémisse doit TENIR, sinon les deux mesures qui suivent ne
+     mesurent rien — une fenêtre qui n'est pas derrière nous laisse légitimement la carte sur
+     le jour demandé. */
+  ok(vide.vu === '19:00', 'l’heure est bien figée à 19 h pour cette mesure (' + vide.vu + ')');
+  ok(vide.ferme === 1110, 'la journée du métier est entièrement derrière nous (fermé à ' + vide.ferme + ' min)');
   ok(vide.n > 0, 'la liste des heures n’est jamais vide (' + vide.n + ')');
   ok(vide.jour !== vide.demande,
     'elle s’ouvre sur un autre jour, celui qui a des heures (' + vide.jour + ')');
