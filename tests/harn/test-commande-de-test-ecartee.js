@@ -83,8 +83,15 @@ ok(/isAdminAccount\(\)/.test(g), 'et l\'écran le réserve à l\'administrateur'
 /* TROIS APPELANTS, UN SEUL APPELABLE : la carte des factures, celle des versements, et
    celle des commandes. Un second chemin d'exclusion finirait par ne plus écrire les
    mêmes drapeaux. */
-ok((APP.match(/httpsCallable\(FB\.functions,'ledgerExclude'\)/g) || []).length === 3,
-  'trois appelants, un seul appelable');
+/* LA PROPRIÉTÉ EST « UNE PORTE, PLUSIEURS APPELANTS », PAS UN NOMBRE. Cette assertion
+   fixait le compte du jour (deux) et a rougi dès qu'une troisième carte a emprunté la
+   même porte — exactement la faute qu'elle était censée empêcher ailleurs. Ce qui doit
+   rester vrai : plusieurs écrans l'appellent, et AUCUN second chemin d'exclusion
+   n'existe à côté. */
+const appels = (APP.match(/httpsCallable\(FB\.functions,'ledgerExclude'\)/g) || []).length;
+ok(appels >= 2, 'plusieurs écrans passent par la même porte (' + appels + ' appelants)');
+ok(!/httpsCallable\(FB\.functions,'(ledgerExclure|excludeLedger|ledgerEcarter|reqExclude)'\)/.test(APP),
+  'et aucun second appelable d\'exclusion n\'a été écrit à côté');
 ok(!/chargerAdminReqs|chargerAdminCommandes/.test(g),
   'aucun rechargement inventé : la console écoute `requests` en instantané');
 
