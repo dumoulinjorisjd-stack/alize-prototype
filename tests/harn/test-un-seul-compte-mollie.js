@@ -72,12 +72,24 @@ ok(iCree > 0 && !/refaire/.test(bloc),
   'le bouton ordinaire « Créer chez Mollie » ne force jamais');
 
 console.log('E — rien n’est envoyé qu’on ne maîtrise pas');
-// Relevé en production : Mollie affiche « +31 6 00000000 ». Ce n'est PAS nous.
+/* RÈGLE RENVERSÉE LE 26/10/2026, ET CETTE ASSERTION DISAIT L'ANCIENNE. Elle exigeait
+   qu'AUCUN téléphone ne parte, au motif que « nos numéros ne sont pas garantis dans ce
+   format » — vrai du champ BRUT, faux de ce qu'on sait en faire : `telE164` rend de
+   l'E.164 ou RIEN. Le « +31 6 00000000 » vu chez Mollie n'était pas nous ; c'était leur
+   défaut, et on le laissait en place faute d'envoyer le vrai numéro.
+   CE QUI RESTE VRAI, ET QU'ON MESURE : on n'envoie que ce qui a traversé la porte. */
 const iCharge = srv.indexOf('function clientLinkProposition');
-const charge = srv.slice(iCharge, srv.indexOf('\n}', srv.indexOf('owner:', iCharge)));
+const charge = srv.slice(iCharge, srv.indexOf('\n  return {pret:', iCharge));
 ok(iCharge > 0 && /owner:/.test(charge), 'la charge se relève (sinon rien n’est mesuré)');
-ok(codeNu(charge).indexOf('phone') < 0,
-  'aucun téléphone ne part : le « +31 » vu chez Mollie est leur propre défaut');
+const nu = codeNu(charge);
+ok(/const tel = telE164\(f\.phone\);/.test(nu),
+  'le téléphone passe par la porte qui le met en E.164');
+ok(/if \(tel\) charge\.owner\.phone = tel;/.test(nu),
+  'et il ne part que si elle a rendu quelque chose');
+/* ON NE LIT JAMAIS LE CHAMP BRUT : c'est lui qui n'est pas garanti, et c'est l'erreur
+   que l'ancienne règle évitait en n'envoyant rien du tout. */
+ok(!/phone = (String\()?f\.phone/.test(nu) && !/phone: f\.phone/.test(nu),
+  'le champ brut de la fiche ne part jamais tel quel');
 
 /* ── ET CE QUE L'ÉCRAN FAIT VRAIMENT ────────────────────────────────────────────────
    Une garde de source ne prouve pas un comportement : on ouvre la fiche et on regarde
