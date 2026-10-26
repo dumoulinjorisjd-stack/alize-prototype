@@ -3712,7 +3712,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='888';
+  const VERSION_APP='889';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -11021,11 +11021,31 @@
      premier appel ne portait aucun pays. Deux corrections, pas une : l'appel emporte
      désormais ce que l'écran montre, et ce qui se saisit ICI (le pays, le prénom, le nom)
      est relu sur l'écran plutôt que dans la photo. */
+  /* UN DÉCOUPAGE DEVINÉ NE SE PRÉ-REMPLIT PAS. Mesuré le 26/10/2026 : une fiche qui ne
+     porte que « nom / raison sociale » fait deviner le prénom au serveur, au premier
+     espace — « ONETTI RODRIGUEZ JADE » proposait Prénom = ONETTI. Les deux cases
+     paraissaient remplies, `molNomOk` passait, et le bouton s'allumait sur une identité
+     INVERSÉE, que Mollie vérifie pièce en main et qui se découvre des jours plus tard.
+     Le serveur DIT maintenant laquelle des deux sources il a employée : ce que le
+     prestataire a lui-même saisi dans sa fiche se pré-remplit, ce qu'on a deviné non. */
   function molRep(E,charge,cle){
     const v=(E&&E['rep'+cle]);
     if(v!=null)return String(v);
+    if(E&&E.nomDevine)return '';
     const ow=(charge&&charge.owner)||{};
     return String((cle==='Given'?ow.givenName:ow.familyName)||'');
+  }
+  /* LES DEUX ORDRES POSSIBLES, PROPOSÉS AU CLIC. On ne devine pas, mais on ne laisse pas
+     non plus retaper un nom qui est à l'écran : « Courcot Laura » se lit sur un registre
+     comme sur une carte d'identité, et seul un humain sait lequel des deux mots est le
+     prénom. Un seul mot ne se coupe pas ; deux mots identiques ne font qu'une
+     proposition. L'ordre de la liste est celui du nom, donc le même à chaque rendu. */
+  function molNomSuggestions(charge){
+    const mots=String((charge&&charge.name)||'').trim().replace(/\s+/g,' ').split(' ').filter(Boolean);
+    if(mots.length<2)return [];
+    const a={given:mots[0],family:mots.slice(1).join(' ')};
+    const b={given:mots[mots.length-1],family:mots.slice(0,-1).join(' ')};
+    return (a.given===b.given&&a.family===b.family)?[a]:[a,b];
   }
   function molNomOk(E,charge){return !!molRep(E,charge,'Given').trim()&&!!molRep(E,charge,'Family').trim();}
   function molManquesRestants(E,manq,charge){return (manq||[]).filter(function(m){
@@ -11054,6 +11074,15 @@
          lecture seule revenait à faire relire sans pouvoir corriger. */
       +lgRep('Prénom','Given',a.id,molRep(E,c,'Given'))
       +lgRep('Nom','Family',a.id,molRep(E,c,'Family'))
+      +(function(){
+        if(!E.nomDevine)return '';
+        const sg=molNomSuggestions(c);
+        if(!sg.length)return '<p class="mini" style="margin-top:6px;color:var(--coral-deep);line-height:1.45">'+I.warn+' Sa fiche ne porte qu\u2019un nom d\u2019entreprise\u00a0: demandez-lui le pr\u00e9nom et le nom de la personne qui la repr\u00e9sente. Mollie v\u00e9rifie cette identit\u00e9 pi\u00e8ce en main.</p>';
+        return '<p class="mini" style="margin-top:7px;color:var(--muted);line-height:1.45">Sa fiche ne dit pas lequel est le pr\u00e9nom\u00a0: <b>choisissez</b>, ou tapez-les.</p>'
+          +'<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:5px">'
+          +sg.map(function(x,i){return '<button class="btn ghost sm" data-adm="mol-nom:'+a.id+':'+i+'" style="width:auto;padding:5px 9px;font-size:12px">'+esc(x.given)+' <span style="opacity:.5">/</span> '+esc(x.family)+'</button>';}).join('')
+          +'</div>';
+      })()
       +lg('Adresse électronique',ow.email)
       +lg('Nom / raison sociale',c.name)
       +lg('Voie',ad.streetAndNumber)+lg('Code postal',ad.postalCode)+lg('Commune',ad.city)
@@ -16722,6 +16751,14 @@
   // État d'activation des paiements Mollie : 'none' (à activer) | 'pending'
   // (dossier en cours de vérification chez Mollie) | 'active' (le prestataire est payé
   // automatiquement, net de commission, sans nous faire de virement).
+  /* L'ADRESSE QUI OUVRE SON COMPTE MOLLIE, ou rien. Le compte a été créé avec l'e-mail de
+     sa fiche `artisans`, que l'inscription écrit depuis le compte connecté — c'est donc
+     là qu'on le lit. ON NE NOMME PAS UNE ADRESSE QU'ON N'A PAS : illisible, la phrase dit
+     « l'adresse de votre fiche » plutôt que d'en inventer une, et un prestataire envoyé
+     se connecter avec la mauvaise adresse croirait son compte perdu. */
+  function monAdresseMollie(){
+    try{return String((FB&&FB.auth&&FB.auth.currentUser&&FB.auth.currentUser.email)||'').trim();}catch(_){return '';}
+  }
   function mollieState(){return S.proMollie||'none';}
   // Paiements prêts : l'onboarding Mollie est terminé (organisation connectée) ET le
   // statut est « actif ». Ce n'est PLUS la condition pour accepter une mission (09/10/2026),
@@ -16855,6 +16892,7 @@
         <div style="flex:1;min-width:0"><b style="font-size:14px">Mon compte Mollie</b>
         <p class="mini" style="margin-top:3px;color:var(--muted)">Accédez à votre espace Mollie pour compléter ou gérer votre dossier (identité, IBAN) et suivre vos versements.</p></div></div>
         <button class="btn ghost sm" data-act="mollie-manage" style="margin-top:11px;width:100%">${I.lock} Accéder à mon compte Mollie ↗</button>
+        <p class="mini" style="margin-top:7px;color:var(--muted);line-height:1.45">Mollie vous reconnaît à ${monAdresseMollie()?`<b>${esc(monAdresseMollie())}</b>`:`l’adresse de votre fiche`}. Le mot de passe est celui que vous avez choisi <b>chez Mollie</b> : nous ne le connaissons pas, et personne ici ne peut le voir. Oublié ? « Mot de passe oublié » sur son écran.</p>
         <button class="reset" data-act="mollie-refresh" style="margin-top:9px;display:block;width:100%;text-align:center;color:var(--teal-deep);font-weight:650;font-size:12.5px">↻ Actualiser mon statut</button>
       </div>` : '';
     return `<div class="pad"><button class="reset" data-act="pro-mollie-close" style="margin:8px 0 2px">← Retour</button>
@@ -19552,6 +19590,7 @@
              relue. */
           S.admMolInscr[id]={busy:false,pays:molPays(E0),repGiven:E0.repGiven,repFamily:E0.repFamily,charge:d.charge||E0.charge||null,
             manques:d.manques||[],raison:d.raison||'',cree:!!d.cree,dejaPrepare:!!d.dejaPrepare,
+            nomDevine:!!d.nomDevine,
             lienFrais:!!d.lienFrais,lienAt:Number(d.lienAt)||0};
           render();
           if(d.cree)toast('Compte Mollie préparé ✓');
@@ -19566,6 +19605,17 @@
       /* EN PRÉPARER UN SECOND EST UN GESTE À PART, ET IL S'ARME. Chaque création ouvre un
          NOUVEAU compte chez Mollie : le bouton dit d'abord ce qu'il va faire, et n'agit
          qu'au second appui — la discipline des deux boutons de purge, juste au-dessus. */
+      /* CHOISIR L'ORDRE DU NOM écrit dans les MÊMES champs que la frappe : la proposition
+         est un raccourci de saisie, pas une seconde source — et elle se recalcule du nom
+         de l'entreprise, donc le rang désigne toujours la même paire. Rien ne part chez
+         Mollie : c'est le bouton « Créer » qui envoie, après qu'on a relu. */
+      else if(act==='mol-nom'){
+        S.admMolInscr=S.admMolInscr||{};
+        const E=S.admMolInscr[id]||{};
+        const sug=molNomSuggestions(E.charge)[Number(parts[2])||0];
+        if(!sug)return;
+        S.admMolInscr[id]=Object.assign({},E,{repGiven:sug.given,repFamily:sug.family});
+        render();return;}
       else if(act==='mol-refait'){
         if(S._molRefait!==id){S._molRefait=id;render();
           toast('Un second appui ouvrira un NOUVEAU compte chez Mollie');return;}

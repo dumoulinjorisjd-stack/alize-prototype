@@ -817,6 +817,34 @@ function lienNomCoupe(v) {
   if (mots.length < 2) return null;
   return {givenName: mots[0], familyName: mots.slice(1).join(' ')};
 }
+/* UN NUMÉRO EN E.164, OU RIEN. Mollie affiche « +31 6 00000000 » sur un dossier qu'on
+ * vient de préparer : c'est SA valeur par défaut, pas la nôtre — on n'envoyait aucun
+ * téléphone, au motif que « nos numéros ne sont pas garantis dans ce format ». C'était
+ * vrai du champ BRUT, et faux de ce qu'on sait en faire : `waIntl` normalise déjà pour
+ * WhatsApp, et connaît même le préfixe des Antilles.
+ *
+ * ELLE SE TROMPAIT POURTANT SUR LES FIXES, ET C'EST MESURÉ : « 0590 27 62 18 » rendait
+ * « +33 590 27 62 18 » — l'indicatif de la métropole sur un numéro de Saint-Barthélemy,
+ * dont le pays est +590. Les mobiles (0690, 0691) étaient justes, les fixes non : on
+ * n'envoie pas de WhatsApp à un fixe, le défaut ne s'était jamais vu.
+ *
+ * UNE SEULE RÈGLE POUR LES DEUX USAGES. `waIntl` l'appelle désormais au lieu d'en porter
+ * une seconde — deux normalisations finiraient par ne plus rendre le même numéro. Et ce
+ * qu'on ne sait pas mettre en forme ne part pas : un numéro faux déclaré à un
+ * établissement de paiement se découvre au contrôle, comme une identité inversée. */
+const TEL_PREFIXES_590 = ['590', '690', '691'];
+function telE164(phone) {
+  let d = String(phone == null ? '' : phone).replace(/[^\d+]/g, '');
+  const avaitPlus = d.charAt(0) === '+';
+  d = d.replace(/\D/g, '');
+  if (d.indexOf('00') === 0) d = d.slice(2);
+  else if (!avaitPlus && d.charAt(0) === '0') {
+    const reste = d.slice(1);
+    const pays = TEL_PREFIXES_590.some(function (k) { return reste.indexOf(k) === 0; }) ? '590' : '33';
+    d = pays + reste;
+  }
+  return d.length >= 8 ? ('+' + d) : '';
+}
 /* UN CODE POSTAL FRANÇAIS FAIT CINQ CHIFFRES, et c'est la seule chose qu'on sache
  * reconnaître à coup sûr dans une adresse écrite d'un seul tenant. Ce qui le précède est
  * la voie, ce qui le suit la commune. Sans lui on ne rend RIEN : « Gustavia » seul n'est
@@ -883,7 +911,19 @@ function clientLinkProposition(fiche, pays, locale) {
   };
   const siret = String(f.siret == null ? '' : f.siret).replace(/\D/g, '');
   if (siret.length === 14) charge.registrationNumber = siret;
-  return {pret: manques.length === 0, manques: manques, charge: charge};
+  /* ON N'ENVOIE QUE CE QU'ON SAIT METTRE EN FORME : sans numéro lisible, le champ est
+   * OMIS — Mollie le demandera sur ses écrans, et un champ vide se corrige là où un
+   * champ faux se découvre au contrôle d'identité. */
+  const tel = telE164(f.phone);
+  if (tel) charge.owner.phone = tel;
+  /* ET ON DIT SI LE NOM A ÉTÉ SAISI OU DEVINÉ. Le commentaire ci-dessus posait la règle
+   * — « le découpage ne reste qu'un point de départ, montré avant d'être envoyé » — et
+   * la console ne pouvait pas la tenir : elle recevait deux moitiés sans savoir laquelle
+   * des deux sources les avait produites. Un découpage deviné pré-remplissait donc les
+   * champs, le bouton « Créer chez Mollie » s'allumait, et l'identité partait inversée
+   * chez un établissement qui la vérifie pièce en main. */
+  return {pret: manques.length === 0, manques: manques, charge: charge,
+    nomDevine: !(rGiven && rFamily) && !!coupe};
 }
 /* CE QUE LE CLIENT LINK NE PORTE PAS, ET QU'ON PEUT POSER ENSUITE.
  *
@@ -1446,14 +1486,8 @@ const WA_GRAPH = 'https://graph.facebook.com/v20.0';
 function whatsAppConfigured() { return !!(process.env.WHATSAPP_TOKEN && process.env.WHATSAPP_PHONE_ID); }
 // Numéro au format international SANS « + » (attendu par l'API). Gère le 0 de
 // tête (numéro national) : 0690… → 590690…, sinon indicatif France 33.
-function waIntl(phone) {
-  let d = (phone || '').toString().replace(/[^\d+]/g, '');
-  const hadPlus = d.charAt(0) === '+';
-  d = d.replace(/\D/g, '');
-  if (d.indexOf('00') === 0) d = d.slice(2);
-  else if (!hadPlus && d.charAt(0) === '0') { const rest = d.slice(1); d = (/^69[01]/.test(rest) ? '590' : '33') + rest; }
-  return d.length >= 8 ? d : '';
-}
+// WhatsApp veut les chiffres SANS le « + » ; la règle, elle, est celle de `telE164`.
+function waIntl(phone) { return telE164(phone).slice(1); }
 // Envoi best-effort d'un message modèle WhatsApp. No-op sûr si non configuré.
 async function sendWhatsAppTemplate(toPhone, param1, param2) {
   if (!whatsAppConfigured()) return false;
