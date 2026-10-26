@@ -3988,6 +3988,14 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
   const relance = String((request.data && request.data.action) || 'list') === 'run';
   const cible = String((request.data && request.data.reqId) || '').trim().slice(0, 128);
   const bloques = [];
+  /* CE QU'ON ÉCARTE SE COMPTE ET SE DIT : une liste qui rétrécit sans un mot se lit
+     comme une liste qui a perdu quelque chose.
+     DÉCLARÉ DEVANT LE `try`, comme `bloques`, ET POUR LA MÊME RAISON : le `return` final
+     est APRÈS le `catch`. À l'intérieur, il passait `node -c` et levait un
+     ReferenceError À L'EXÉCUTION — l'écran de l'administrateur affichait « incident
+     technique de notre côté » au lieu de ses versements bloqués. Relevé en production
+     le 26/10/2026, sur le lot qui venait de le poser. */
+  let ecartees = 0;
   try {
     // DEUX FAÇONS DE NE PAS ÊTRE VERSÉ, ET UNE SEULE ÉTAIT CHERCHÉE.
     //   • `unrouted` : le partage a été tenté et refusé — on connaît le motif.
@@ -4010,9 +4018,6 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
     const duRegistre = new Map();
     const orphelins = [];
     let vus = 0;
-    /* CE QU'ON ÉCARTE SE COMPTE ET SE DIT : une liste qui rétrécit sans un mot se lit
-       comme une liste qui a perdu quelque chose. */
-    let ecartees = 0;
     try {
       // Pas de filtre sur `type` : une écriture dont le frais Mollie a été enregistré
       // avant le règlement existe sans ce champ, et la filtrer la ferait disparaître —

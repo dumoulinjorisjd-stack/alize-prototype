@@ -65,17 +65,27 @@ console.log('\n── CE QU\'ON ÉCARTE SE COMPTE ET SE DIT ──────�
 /* Une liste qui rétrécit sans un mot se lit comme une liste qui a perdu quelque chose. */
 ok(/let ecartees = 0;/.test(corps), 'le serveur les compte');
 ok(/return \{bloques: bloques, verses: verses, ecartees: ecartees\};/.test(corps), 'et le rend');
-/* ET LE COMPTEUR EST EN PORTÉE AU RETOUR — un `let` déclaré dans le `try` passerait
-   `node -c` sans broncher et lèverait un ReferenceError À L'EXÉCUTION, c'est-à-dire sur
-   l'écran de l'administrateur, au moment de lire ses versements bloqués.
-   LE COMPTAGE D'ACCOLADES N'EST PAS INFAILLIBLE (une apostrophe dans une régulière peut
-   ouvrir une fausse chaîne) : on ne lui demande donc qu'une COMPARAISON de profondeurs,
-   et son assertion arrière vérifie qu'il a bien trouvé les deux points. */
+/* ET LE COMPTEUR EST EN PORTÉE AU RETOUR — ON LE DEMANDE À V8, ON NE COMPTE PLUS LES
+   ACCOLADES. Une première version comparait deux PROFONDEURS et rendait « 2 = 2 » :
+   la déclaration à (fonction + try), le retour à (fonction + objet littéral du
+   `return {`). Deux fois deux, pour deux raisons différentes — la comparaison ne
+   mesurait RIEN, et sa contre-épreuve passait parce qu'elle déplaçait la déclaration
+   d'un cran de plus. Le défaut est parti EN PRODUCTION : `let ecartees = 0;` vivait
+   dans le `try`, le `return` est après le `catch`, et l'écran de l'administrateur
+   affichait « incident technique de notre côté » au lieu de ses versements bloqués.
+
+   LE PROCÉDÉ EST EXACT PARCE QUE C'EST L'ANALYSEUR QUI RÉPOND : on insère une
+   REDÉCLARATION `let` juste avant le retour. V8 refuse à l'ANALYSE (« already been
+   declared ») si la variable est dans la même portée — donc l'erreur PROUVE qu'elle y
+   est, et un source qui passe prouve le contraire. Aucune heuristique. */
 (function () {
-  const prof = (j) => { let n = 0; for (let k = 0; k < j; k++) { const c = corps[k]; if (c === '{') n++; else if (c === '}') n--; } return n; };
-  const d = corps.indexOf('let ecartees = 0;'), r = corps.indexOf('ecartees: ecartees};');
-  ok(d > 0 && r > d, 'arrière : la déclaration et le retour se relèvent tous les deux');
-  ok(prof(r) >= prof(d), 'le compteur est en portée au retour (profondeur ' + prof(d) + ' → ' + prof(r) + ')');
+  const i = corps.indexOf('return {bloques:');
+  ok(i > 0, 'arrière : le retour final se relève');
+  const src = '(async function(){' + corps.slice(corps.indexOf('{') + 1, i)
+    + 'let ecartees;' + corps.slice(i) + '})';
+  let enPortee = false;
+  try { new vm.Script(src); } catch (e) { enPortee = /already been declared/.test(e.message); }
+  ok(enPortee, 'le compteur est en portée au retour (V8 refuse de le redéclarer)');
 })();
 ok(/ecartees:Number\(d\.ecartees\)\|\|0/.test(APP), 'la console le garde');
 ok(/prestation\$\{vers\.ecartees>1\?'s':''\} écartée/.test(APP), 'et l\'écrit sous la liste');
