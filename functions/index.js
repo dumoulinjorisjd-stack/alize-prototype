@@ -2393,6 +2393,58 @@ exports.notifyNewMessage = onDocumentUpdated('requests/{reqId}', async (event) =
 // unique du service worker et chaque push ÉCRASAIT le précédent dans le centre de
 // notifications. Enfin, `messaging/invalid-argument` peut venir de la CHARGE UTILE et
 // pas du jeton : supprimer le jeton sur ce code purgeait des appareils valides.
+/* DIFFUSER UNE DEMANDE AU POOL — LA PORTE DES TROIS GESTES QUI LE FONT.
+ * Elle était écrite DEUX fois : à la création d'une demande sans verrou de paiement, et
+ * au passage à « pending » (le cas normal, après autorisation de la carte). Mesuré le
+ * 26/10/2026, les deux copies avaient DÉJÀ divergé — l'opt-in WhatsApp ne part qu'à la
+ * création — et la relance demandée par la console en aurait fait une troisième, qui
+ * aurait divergé une troisième fois.
+ *
+ * ELLE NE DÉCIDE PAS DU PLAFOND, et c'est volontaire : le compteur du jour protège le
+ * parc d'un CLIENT qui ferait partir cent alertes avec une commande, et une relance
+ * d'administrateur n'est pas ce cas-là. Chaque appelant pose donc sa propre garde avant
+ * d'appeler — celle de la création, celle de la réouverture, aucune pour l'opérateur.
+ *
+ * ET ELLE ÉCRIT L'ISSUE, MÊME QUAND C'EST « PERSONNE » : c'est le seul endroit où la
+ * console pouvait laisser croire qu'une demande cherchait un prestataire alors que rien
+ * n'était parti. */
+async function diffuserAuPool(db, reqId, r, opts) {
+  const o = opts || {};
+  const svc = r.service;
+  const exclude = String(o.exclude == null ? '' : o.exclude);
+  const artsSnap = await db.collection('artisans').where('status', '==', 'valide').get();
+  const preferred = r.directed ? (r.preferredProviderUid || '') : '';
+  /* UNE DEMANDE DIRIGÉE ATTEINT LA PERSONNE DEMANDÉE, qu'elle soit « en ligne » ou non :
+     le client l'a choisie, elle déclinera au besoin. */
+  let uids = artsSnap.docs
+    .filter((d) => { const dd = d.data() || {}; const c = dd.cats || [];
+      if (preferred && d.id === preferred) return (!svc || c.indexOf(svc) >= 0) && d.id !== exclude;
+      return (!svc || c.indexOf(svc) >= 0) && d.id !== exclude && siteOk(dd, svc, r.locationMode) && enLigne(dd.online); })
+    .map((d) => d.id);
+  if (preferred) {
+    uids = uids.indexOf(preferred) >= 0 ? [preferred] : [];
+  } else {
+    // Pool : on ne notifie que les artisans DISPONIBLES sur ce créneau.
+    const availById = {}; artsSnap.docs.forEach((d) => { availById[d.id] = (d.data() || {}).avail; });
+    uids = uids.filter((uid) => availOk(availById[uid], r));
+  }
+  const tokenToUid = await _jetonsArtisans(db, uids);
+  const tokens = Object.keys(tokenToUid);
+  let nPush = 0;
+  if (tokens.length) {
+    const rp = await pushMulticast(tokens, String(o.titre || 'Espace artisan'), String(o.corps || ''), '/?open=missions',
+      (t) => db.collection('users').doc(tokenToUid[t]).update({ pushTokens: FieldValue.arrayRemove(t) }));
+    nPush = (rp && typeof rp.successCount === 'number') ? rp.successCount : 0;
+  }
+  const artById = {};
+  artsSnap.docs.forEach((d) => { artById[d.id] = d.data() || {}; });
+  const nMail = await mailArtisansSansAppareil(db, artById, uids, tokenToUid, r, !!preferred);
+  const issue = uids.length
+    ? { motif: o.motif || 'envoyee', cibles: uids.length, push: nPush, mail: nMail }
+    : { motif: preferred ? 'dirige-introuvable' : (r.service ? 'aucun-disponible' : 'aucun-artisan') };
+  await _noterDiffusion(db, reqId, issue);
+  return Object.assign({ uids: uids }, issue);
+}
 async function pushMulticast(tokens, title, body, link, onInvalid, tag) {
   if (!tokens.length) return { successCount: 0, failureCount: 0 };
   try {
@@ -3390,54 +3442,13 @@ exports.notifyReopenedRequest = onDocumentUpdated({document: 'requests/{reqId}',
   //    Demande re-DIRIGÉE (le client a choisi une autre baby-sitter après l'appel) :
   //    SEULE la personne nouvellement demandée est notifiée — jamais le pool.
   try {
-    const artsSnap = await db.collection('artisans').where('status', '==', 'valide').get();
-    const preferred = after.directed ? (after.preferredProviderUid || '') : '';
-    /* UNE DEMANDE DIRIGÉE ATTEINT LA PERSONNE DEMANDÉE, qu'elle soit « en ligne » ou non.
-       Le chemin de la création le dit déjà — « l'artisan choisi est notifié quelle que
-       soit sa grille de dispo, le client l'a demandé ; il déclinera au besoin » — mais
-       la réouverture appliquait `online` et la grille à TOUT LE MONDE, y compris à lui.
-       Or EN PRODUCTION TOUTE COMMANDE PASSE PAR ICI : une demande naît
-       « pending_payment » et ne devient « pending » qu'après l'autorisation de la carte.
-       L'exemption écrite sur l'autre chemin ne servait donc jamais, et un client qui
-       choisit son prestataire ne prévenait personne dès que celui-ci avait coupé son
-       interrupteur — sans que ni l'un ni l'autre ne l'apprenne. */
-    let uids = artsSnap.docs
-      .filter((d) => { const dd = d.data() || {}; const c = dd.cats || [];
-        if (preferred && d.id === preferred) return (!svc || c.indexOf(svc) >= 0) && d.id !== exclude;
-        return (!svc || c.indexOf(svc) >= 0) && d.id !== exclude && siteOk(dd, svc, after.locationMode) && enLigne(dd.online); })
-      .map((d) => d.id);
-    if (preferred) {
-      uids = uids.indexOf(preferred) >= 0 ? [preferred] : [];
-    } else {
-      // Pool : on ne re-notifie que les artisans DISPONIBLES sur ce créneau.
-      const availById = {}; artsSnap.docs.forEach((d) => { availById[d.id] = (d.data() || {}).avail; });
-      uids = uids.filter((uid) => availOk(availById[uid], after));
-    }
-    const tokenToUid = await _jetonsArtisans(db, uids);
-    const tokens = Object.keys(tokenToUid);
-    let nPush = 0;
-    if (tokens.length) {
-      const svcName = (after.serviceName || 'Une mission').toString().slice(0, 60);
-      const zone = (after.zone || '').toString().slice(0, 40);
-      const title = wasPendingPayment ? 'Espace artisan · Nouvelle mission' : 'Espace artisan · Mission de nouveau disponible';
-      const body = svcName + (zone ? ' · ' + zone : '') + (wasPendingPayment ? ', une nouvelle demande, à saisir.' : ', un créneau se libère, à saisir.');
-      const rp = await pushMulticast(tokens, title, body, '/?open=missions',
-        (t) => db.collection('users').doc(tokenToUid[t]).update({ pushTokens: FieldValue.arrayRemove(t) }));
-      nPush = (rp && typeof rp.successCount === 'number') ? rp.successCount : 0;
-    }
-    // C'EST ICI que part l'alerte d'une commande réelle : une demande naît en
-    // « pending_payment » et ne devient « pending » qu'une fois la carte autorisée. La
-    // fonction de création ne la voit donc jamais. Le filet e-mail doit être des DEUX
-    // côtés, sinon il ne sert à rien là où ça compte.
-    const artById = {};
-    artsSnap.docs.forEach((d) => { artById[d.id] = d.data() || {}; });
-    const nMail = await mailArtisansSansAppareil(db, artById, uids, tokenToUid, after, !!preferred);
-    /* ON ÉCRIT L'ISSUE, MÊME QUAND ELLE EST « PERSONNE ». C'est le seul cas où la console
-       pouvait laisser croire que la demande cherchait un prestataire alors que personne
-       n'avait été prévenu. */
-    await _noterDiffusion(db, event.params && event.params.reqId, uids.length
-      ? { motif: 'envoyee', cibles: uids.length, push: nPush, mail: nMail }
-      : { motif: preferred ? 'dirige-introuvable' : (after.service ? 'aucun-disponible' : 'aucun-artisan') });
+    const titre = wasPendingPayment ? 'Espace artisan · Nouvelle mission' : 'Espace artisan · Mission de nouveau disponible';
+    const svcName = (after.serviceName || 'Une mission').toString().slice(0, 60);
+    const zone = (after.zone || '').toString().slice(0, 40);
+    await diffuserAuPool(db, event.params && event.params.reqId, after, {
+      exclude: exclude, titre: titre,
+      corps: svcName + (zone ? ' · ' + zone : '') + (wasPendingPayment ? ', une nouvelle demande, à saisir.' : ', un créneau se libère, à saisir.'),
+    });
   } catch (e) { console.warn('reopen notify artisans', e); }
 
   // 2) Prévenir le client que la recherche est relancée — uniquement en cas de
@@ -3904,16 +3915,32 @@ exports.ledgerExclude = onCall(async (request) => {
   const motif = String((request.data && request.data.motif) || '').trim().slice(0, 200);
   const db = getFirestore();
   const ref = db.collection('ledger').doc(reqId);
-  if (!(await ref.get()).exists) throw new HttpsError('not-found', 'Aucune écriture pour cette prestation.');
-  await ref.set({
+  /* UNE PRESTATION PEUT N'AVOIR AUCUNE ÉCRITURE ET POURTANT DEVOIR ÊTRE ÉCARTÉE.
+   * La carte « Versements prestataires bloqués » part aussi de `molliePayout ==
+   * 'unrouted'` sur la DEMANDE : une commande d'essai qui a échoué avant d'entrer au
+   * registre n'y a donc pas de ligne, et le refus laissait la seule chose qu'on puisse
+   * en faire — l'écarter — hors de portée. ON EXIGE QUE QUELQUE CHOSE EXISTE, pas que
+   * ce soit l'écriture : sans cela on écrirait un drapeau sur un identifiant inventé. */
+  const dejaLed = (await ref.get()).exists;
+  const dejaReq = dejaLed ? true : (await db.collection('requests').doc(reqId).get()).exists;
+  if (!dejaLed && !dejaReq) throw new HttpsError('not-found', 'Ni écriture ni demande pour cette prestation.');
+  if (dejaLed) await ref.set({
     exclu: exclu,
     excluMotif: exclu ? (motif || 'prestation d\'essai, jamais réellement encaissée') : '',
     excluPar: exclu ? who : '',
     excluAt: exclu ? FieldValue.serverTimestamp() : null,
   }, {merge: true});
-  try { await db.collection('requests').doc(reqId).set({comptaExclue: exclu}, {merge: true}); } catch (_) {}
-  console.log('ledgerExclude ' + reqId + ' → ' + (exclu ? 'écartée' : 'réintégrée') + ' par ' + who);
-  return {ok: true, exclu: exclu};
+  /* LE DRAPEAU DE LA DEMANDE N'EST PLUS UNE COMMODITÉ : c'est lui que lit la carte des
+   * versements bloqués, donc son échec se DIT au lieu d'être avalé — sans quoi la ligne
+   * resterait à l'écran sans que personne sache pourquoi. */
+  let surDemande = false;
+  try { await db.collection('requests').doc(reqId).set({comptaExclue: exclu}, {merge: true}); surDemande = true; } catch (e) {
+    console.warn('ledgerExclude : drapeau sur la demande ' + reqId, e);
+  }
+  if (!dejaLed && !surDemande) throw new HttpsError('internal', 'Rien n\'a pu être écrit.');
+  console.log('ledgerExclude ' + reqId + ' → ' + (exclu ? 'écartée' : 'réintégrée') + ' par ' + who
+    + ' (registre ' + (dejaLed ? 'oui' : 'non') + ', demande ' + (surDemande ? 'oui' : 'non') + ')');
+  return {ok: true, exclu: exclu, registre: dejaLed, demande: surDemande};
 });
 
 /**
@@ -3931,6 +3958,27 @@ exports.ledgerExclude = onCall(async (request) => {
  * `list` inventorie, `run` retente (une prestation désignée, ou toutes). Rien n'est
  * détruit : au pire la demande garde le motif du dernier refus. Réservé à l'administrateur.
  */
+/* UNE PRESTATION ÉCARTÉE DES COMPTES N'A PLUS DE NET À VERSER.
+ * « Dans les versements prestataire bloqué, il y a des paiements qui ont échoué pour des
+ * raisons de test, je ne peux pas les supprimer. » Mesuré le 26/10/2026 : `payoutRetry`
+ * ne consultait NI `exclu` NI `comptaExclue` — une commande d'essai déjà écartée du
+ * registre restait donc dans « Versements prestataires bloqués », indéfiniment, à côté
+ * de vrais versements dus. Les deux seules issues offertes étaient « Réessayer » (qui
+ * échoue, c'est un essai) et « Je l'ai versé à la main » (qui NOTERAIT un virement qui
+ * n'a jamais eu lieu). Il n'y avait pas de troisième porte.
+ *
+ * DEUX SOURCES, PARCE QUE L'EXCLUSION S'ÉCRIT EN DEUX TEMPS : `ledgerExclude` pose
+ * `exclu` sur le registre, puis `comptaExclue` sur la demande dans un `try` qui AVALE
+ * son erreur — une exclusion ancienne peut donc ne porter que la première. Et les
+ * demandes trouvées par `molliePayout == 'unrouted'` n'ont pas toutes une écriture au
+ * registre : lire une seule des deux laisserait un cas dehors.
+ *
+ * `=== true` ET RIEN D'AUTRE : une chaîne, un zéro, un objet ne valent pas une décision
+ * d'administrateur — et écarter de l'argent réellement dû est la faute la plus chère ici,
+ * puisqu'elle est SILENCIEUSE. */
+function versementEcarte(r, reg) {
+  return (r && r.comptaExclue === true) || (reg && reg.exclu === true) || false;
+}
 exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) => {
   const who = (request.auth && request.auth.token && request.auth.token.email) || '';
   if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
@@ -3962,6 +4010,9 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
     const duRegistre = new Map();
     const orphelins = [];
     let vus = 0;
+    /* CE QU'ON ÉCARTE SE COMPTE ET SE DIT : une liste qui rétrécit sans un mot se lit
+       comme une liste qui a perdu quelque chose. */
+    let ecartees = 0;
     try {
       // Pas de filtre sur `type` : une écriture dont le frais Mollie a été enregistré
       // avant le règlement existe sans ce champ, et la filtrer la ferait disparaître —
@@ -3974,6 +4025,7 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
         // supprimée : la requête sur les demandes ne les trouve plus, et cette
         // seconde passe les ignorait aussi. De l'argent dû, invisible des deux côtés.
         if (x.molliePayout === 'routed' || x.molliePayout === 'manuel') continue;
+        if (versementEcarte(null, x)) { ecartees++; continue; }         // essai écarté des comptes
         if (!(round2(Number(x.netAmount) || 0) > 0.009)) continue;     // rien n'est dû
         vus++;
         duRegistre.set(e.id, x);
@@ -3992,6 +4044,10 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
       if (cible && d.id !== cible) continue;
       const r = d.data() || {};
       const reg = duRegistre.get(d.id) || null;
+      /* ON LE FILTRE ICI AUSSI : une demande trouvée par `molliePayout == 'unrouted'`
+         n'a pas forcément d'écriture au registre, donc la boucle ci-dessus ne l'a pas
+         vue passer. */
+      if (versementEcarte(r, reg)) { if (!cible) ecartees++; continue; }
       const net = round2(Number(r.molliePayoutNet) || (reg ? Number(reg.netAmount) : 0) || 0);
       let orgId = r.mollieOrgId || '';
       if (!orgId && r.providerUid) {
@@ -4159,7 +4215,7 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
   const verses = bloques.filter((b) => b.verse).length;
   console.log('payoutRetry (' + (relance ? 'relance' : 'inventaire') + ') : ' + bloques.length
     + ' versement(s) bloqué(s), ' + verses + ' réglé(s), par ' + who);
-  return {bloques: bloques, verses: verses};
+  return {bloques: bloques, verses: verses, ecartees: ecartees};
 });
 
 /**
@@ -4530,6 +4586,55 @@ async function lireCarteMollie(db, uid, connu) {
    des comptes, elle, ne demande RIEN à Mollie : des centaines d'appels pour peindre un
    écran. Elle dit ce que NOTRE fiche sait, et ce bouton va chercher le détail pour UN
    compte, à la demande. */
+/* RELANCER LES PRESTATAIRES D'UNE DEMANDE QUI N'A PAS TROUVÉ PRENEUR.
+ * « Il faudrait un bouton de relance pour renvoyer les notifications aux prestataires
+ * concernés d'une demande non satisfaite. » La console DIT déjà pourquoi personne n'a
+ * répondu — aucun prestataire disponible sur le créneau, tous hors ligne, plafond du
+ * jour atteint — et la seule issue était d'attendre : rien ne permettait de renvoyer
+ * l'alerte à celui qui s'est reconnecté depuis.
+ *
+ * ELLE NE DÉCIDE RIEN QUE LA DIFFUSION NE DÉCIDE DÉJÀ. `diffuserAuPool` choisit les
+ * destinataires, et c'est la même sélection qu'à la création et à la réouverture : le
+ * métier, le lieu, l'interrupteur « en ligne », la grille du créneau — donc la relance
+ * ne peut pas prévenir quelqu'un que les deux autres chemins n'auraient pas prévenu.
+ * Une seconde sélection écrite ici finirait par ne plus choisir les mêmes.
+ *
+ * ON NE RELANCE QUE CE QUI CHERCHE ENCORE. Une demande acceptée, annulée, expirée ou
+ * payée n'a personne à prévenir, et renvoyer une alerte sur une mission déjà prise
+ * ferait accourir des prestataires pour rien. Le statut est lu SUR LE DOCUMENT, jamais
+ * reçu de l'appelant — un écran qui propose le bouton à tort ne doit pas pouvoir
+ * déclencher l'envoi.
+ *
+ * ET LE PLAFOND DU CLIENT NE S'APPLIQUE PAS : il protège le parc d'un client qui ferait
+ * partir cent alertes avec une commande, pas l'opérateur qui rattrape une demande. Mais
+ * l'issue s'écrit dans le journal de la demande, sous son propre motif, de sorte qu'une
+ * relance ne se confonde jamais avec une diffusion automatique. */
+const RELANCE_STATUTS = ['pending'];
+exports.adminRelancerDemande = onCall({secrets: [SMTP_PASS]}, async (request) => {
+  const who = (request.auth && request.auth.token && request.auth.token.email) || '';
+  if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+    throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
+  }
+  const reqId = String((request.data && request.data.reqId) || '').trim();
+  if (!reqId) throw new HttpsError('invalid-argument', 'Demande manquante.');
+  const db = getFirestore();
+  const snap = await db.collection('requests').doc(reqId).get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Demande introuvable.');
+  const r = snap.data() || {};
+  if (RELANCE_STATUTS.indexOf(r.status) < 0) {
+    return { relance: false, raison: 'statut', statut: String(r.status || '') };
+  }
+  const svcName = (r.serviceName || 'Une mission').toString().slice(0, 60);
+  const zone = (r.zone || '').toString().slice(0, 40);
+  const out = await diffuserAuPool(db, reqId, r, {
+    titre: 'Espace artisan · Mission toujours à prendre',
+    corps: svcName + (zone ? ' · ' + zone : '') + ', personne ne l\'a encore saisie.',
+    motif: 'relancee',
+  });
+  console.log('Relance demande ' + reqId + ' par ' + who + ' : ' + JSON.stringify(out));
+  return { relance: true, cibles: (out.uids || []).length, push: out.push || 0, mail: out.mail || 0, motif: out.motif };
+});
+
 exports.adminClientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) => {
   const who = (request.auth && request.auth.token && request.auth.token.email) || '';
   if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {

@@ -3712,7 +3712,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='889';
+  const VERSION_APP='890';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -11929,16 +11929,30 @@
       'aucun-artisan':['Personne prévenu','aucun prestataire validé sur ce métier'],
       'aucun-disponible':['Personne prévenu','aucun prestataire disponible sur ce créneau, ou tous hors ligne'],
       'dirige-introuvable':['Personne prévenu','le prestataire demandé n’est pas joignable sur ce métier']};
+    /* LA RELANCE S'ÉCRIT SOUS SON PROPRE MOTIF : une diffusion que l'opérateur a
+       déclenchée ne se confond pas avec celle qui part toute seule, et la ligne doit
+       pouvoir dire laquelle on lit. */
     const cmdDiffusion=function(r){
       const d=r&&r.diff; if(!d)return '';
-      if(d.motif==='envoyee'){
+      if(d.motif==='envoyee'||d.motif==='relancee'){
         const bouts=[];
         if(d.push)bouts.push(d.push+' par notification');
         if(d.mail)bouts.push(d.mail+' par e-mail');
-        return `<div class="mini" style="margin-top:5px;color:var(--good)">${I.check} ${plN(d.cibles,'prestataire')} prévenu${d.cibles>1?'s':''}${bouts.length?' · '+esc(bouts.join(', ')):''}</div>`;
+        return `<div class="mini" style="margin-top:5px;color:var(--good)">${I.check} ${d.motif==='relancee'?'Relancé\u00a0: ':''}${plN(d.cibles,'prestataire')} prévenu${d.cibles>1?'s':''}${bouts.length?' · '+esc(bouts.join(', ')):''}</div>`;
       }
       const M=DIFF_MOTIFS[d.motif]; if(!M)return '';
       return `<div class="mini" style="margin-top:5px;color:var(--coral-deep);line-height:1.45"><b>${esc(M[0])}</b>&nbsp;: ${esc(M[1])}.</div>`;
+    };
+    /* RELANCER, LÀ OÙ L'ON LIT QUE PERSONNE N'A RÉPONDU. Le bouton ne paraît que sur une
+       demande qui CHERCHE ENCORE : sur une mission déjà prise il ferait accourir des
+       prestataires pour rien, et le serveur le refuse de toute façon — il lit le statut
+       sur le document, jamais celui que l'écran lui passe. Il s'ARME, comme les boutons
+       de purge : un appui dit ce qu'il va faire, le second envoie — une alerte partie ne
+       se rappelle pas. */
+    const cmdRelance=function(r){
+      if(!r||r.status!=='pending')return '';
+      const arme=(S._cmdRelance===r.id);
+      return `<button class="btn ghost sm" data-adm="cmd-relance:${esc(r.id)}" style="width:auto;padding:5px 10px;margin-top:6px;font-size:12px">${arme?I.warn+' Confirmer\u00a0: renvoyer l\u2019alerte':I.bolt+' Relancer les prestataires'}</button>`;
     };
     /* LE TITRE D'UNE LIGNE DÉPEND DE CE QUI EST ÉCRIT AU-DESSUS D'ELLE. Dans la carte
        des réservations, le métier est l'information qui distingue deux lignes. Sous une
@@ -11977,7 +11991,7 @@
           <span class="mini money">${eur(montant)}${coup?' <span style="color:var(--coral-deep)">+'+eur(coup)+'</span>':''}</span>
           ${nonEnc?`<span class="chip warn" style="flex:none">${esc(mollieEtatTxt(r.led||{}))}</span>`:''}
           <span class="mini" style="color:${longue?'var(--coral-deep);font-weight:700':'var(--muted)'}">${esc(age)}${r.directed?' · dirigée':''}</span></div>
-        ${cmdDiffusion(r)}
+        ${cmdDiffusion(r)}${cmdRelance(r)}
         ${cmdFin(r)}
         ${cmdClore(r)}
       </div>`;
@@ -12919,10 +12933,12 @@
             ${versRegle(v)?`<div class="mini" style="margin-top:6px;color:var(--muted)">Le partage fonctionne, mais Mollie ne connaît plus <b>ce paiement-ci</b>&nbsp;: un paiement déjà réglé et viré sur le compte bancaire n’est plus partageable. Virez le net au prestataire, puis appuyez sur «&nbsp;Je l’ai versé à la main&nbsp;».</div>`:''}
             ${v.org==='non'?`<div class="mini" style="margin-top:6px;color:var(--muted)">Ce prestataire n’a aucun compte Mollie connecté&nbsp;: le versement ne peut pas partir tant qu’il ne l’a pas fait.</div>`:''}
             <button class="btn ghost sm" data-adm="vers-one:${esc(v.reqId)}" style="margin-top:9px">${I.bolt}&nbsp;Réessayer ce versement</button>
+            <button class="btn ghost sm" data-adm="vers-essai:${esc(v.reqId)}" style="margin-top:7px">${S._versEssaiArm===v.reqId?(I.warn+'&nbsp;Confirmer&nbsp;: \u00e9carter des comptes'):(I.close||I.warn)+'&nbsp;C\u2019\u00e9tait un essai, \u00e9carter'}</button>
             <button class="btn ghost sm" data-adm="vers-main:${esc(v.reqId)}" style="margin-top:7px">${S._versMainArm===v.reqId?'Confirmer&nbsp;: je l’ai bien viré':(I.check+'&nbsp;Je l’ai versé à la main')}</button></div>`;}).join('')}
           <button class="btn primary sm" data-adm="vers-run" style="margin-top:12px">${I.bolt}&nbsp;Réessayer les ${versList.length}</button>
           <p class="mini" style="margin-top:8px;color:var(--muted)">Chaque tentative interroge Mollie&nbsp;: état réel du paiement, versements déjà partis, et motif exact du refus. Rien n’est perdu, le rattrapage repart aussi tout seul dès que Mollie ouvre les virements du prestataire.</p>`
         :`<div class="banner good" style="margin-top:12px">${I.check}<span>Aucun&nbsp;: tous les prestataires ont reçu leur net.</span></div>
+          ${vers.ecartees?`<div class="mini" style="margin-top:8px;color:var(--muted)">${vers.ecartees} prestation${vers.ecartees>1?'s':''} écartée${vers.ecartees>1?'s':''} des comptes (essai) n'appara\u00eet${vers.ecartees>1?'ssent':''} pas ici\u00a0: aucun net n'est d\u00fb. Carte «\u00a0Retrouver une facture\u00a0» pour les revoir ou les r\u00e9int\u00e9grer.</div>`:''}
           <button class="btn ghost sm" data-adm="vers-scan" style="margin-top:12px">${I.search}&nbsp;Revérifier</button>`)}`;
     return `<div class="pad">
       <div class="row between isle-wm" style="margin-top:10px"><div><span class="eyebrow">Console admin · Factures</span><div class="h-hello">Factures &amp; commissions</div></div><div class="avatar" style="background:linear-gradient(135deg,var(--ink),#000)">TS</div></div>
@@ -19609,6 +19625,24 @@
          est un raccourci de saisie, pas une seconde source — et elle se recalcule du nom
          de l'entreprise, donc le rang désigne toujours la même paire. Rien ne part chez
          Mollie : c'est le bouton « Créer » qui envoie, après qu'on a relu. */
+      /* RELANCER — IL S'ARME. Une alerte partie ne se rappelle pas, et le geste touche
+         des dizaines d'appareils : le premier appui dit ce qu'il va faire, le second
+         envoie. La discipline des deux boutons de purge. Le serveur refait le contrôle
+         du statut : ce qui est ouvert ici peut avoir été pris entre les deux appuis. */
+      else if(act==='cmd-relance'){
+        if(S._cmdRelance!==id){S._cmdRelance=id;render();
+          toast('Un second appui renverra l’alerte aux prestataires');return;}
+        S._cmdRelance=null;render();
+        FB.fn.httpsCallable(FB.functions,'adminRelancerDemande')({reqId:id}).then(function(r){
+          const d=(r&&r.data)||{};
+          if(d.relance===false&&d.raison==='statut'){toast('Cette demande ne cherche plus : rien n’a été envoyé');}
+          else if(!d.cibles){toast('⚠︎ Personne à prévenir : aucun prestataire disponible sur ce créneau');}
+          else{toast(plN(d.cibles,'prestataire')+' relancé'+(d.cibles>1?'s':'')+' ✓');}
+          /* RIEN À RECHARGER : la console écoute `requests` en instantané, et la porte
+             de diffusion écrit l'issue SUR la demande — la ligne se repeint donc d'elle
+             même. Un rechargement écrit ici n'aurait fait qu'une seconde lecture. */
+        }).catch(function(e){toast('⚠︎ Relance impossible : '+fbErrTxt(e));});
+        return;}
       else if(act==='mol-nom'){
         S.admMolInscr=S.admMolInscr||{};
         const E=S.admMolInscr[id]||{};
@@ -19790,7 +19824,7 @@
           if(d.erreur){toast('⚠︎ '+d.erreur);return;}
           const list=d.bloques||[];
           // Ce qui vient d'être versé sort de la liste : on n'affiche que ce qui reste.
-          S.adminVers={loaded:true,list:list.filter(function(v){return !v.verse;})};
+          S.adminVers={loaded:true,list:list.filter(function(v){return !v.verse;}),ecartees:Number(d.ecartees)||0};
           if(relance){
             const n=Number(d.verses)||0;
             if(n)toast(n+' versement'+(n>1?'s':'')+' parti'+(n>1?'s':'')+' ✓');
@@ -19802,6 +19836,27 @@
           render();
         }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
       })();return;}
+      /* « C'ÉTAIT UN ESSAI, ÉCARTER » — la troisième porte qui manquait. Les deux autres
+         étaient « Réessayer » (qui échoue, c'est un essai) et « Je l'ai versé à la main »
+         (qui NOTERAIT un virement qui n'a jamais eu lieu). On n'EFFACE rien : c'est le
+         geste d'exclusion comptable qui existe déjà, réversible, et qui garde qui l'a
+         fait, quand et pourquoi. Il S'ARME, comme son voisin. */
+      else if(act==='vers-essai'){
+        if(!isAdminAccount()){toast('Réservé à l’administrateur (compte réel)');return;}
+        if(!(FB&&FB.functions&&FB.fn&&FB.fn.httpsCallable)){toast('Indisponible hors ligne, réessayez connecté');return;}
+        if(S._versEssaiArm!==id){S._versEssaiArm=id;render();
+          toast('Un second appui l’écartera des comptes (réversible)');return;}
+        S._versEssaiArm=null;render();
+        FB.fn.httpsCallable(FB.functions,'ledgerExclude')({reqId:id,exclu:true,motif:'essai, versement jamais dû'}).then(function(){
+          /* ON RETIRE LA LIGNE SANS REDEMANDER À MOLLIE : le balayage l'écarterait de
+             toute façon, et une seconde tournée pour une ligne qu'on vient de décider
+             serait une dizaine d'appels pour rien. */
+          const v=S.adminVers||{};
+          S.adminVers=Object.assign({},v,{list:(v.list||[]).filter(function(x){return x.reqId!==id;}),
+            ecartees:(Number(v.ecartees)||0)+1});
+          toast('Écartée des comptes ✓ — « Retrouver une facture » pour la réintégrer');render();
+        }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
+        return;}
       else if(act==='remb-open'){S._rembFor=id;S._rembArm=null;render();return;}
       else if(act==='remb-close'){S._rembFor=null;S._rembArm=null;render();return;}
       else if(act==='remb-go'){(function(){

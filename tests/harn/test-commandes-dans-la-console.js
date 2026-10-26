@@ -175,10 +175,27 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
      création le disait déjà ; la réouverture — par laquelle passe TOUTE commande réelle,
      puisqu'une demande naît « pending_payment » — appliquait `online` à tout le monde,
      y compris à elle. L'exemption ne servait donc jamais. */
+/* LA SÉLECTION A DÉMÉNAGÉ DANS UNE PORTE, ET C'EST ELLE QU'ON MESURE. Cette assertion
+     lisait le CORPS de `notifyReopenedRequest` : la règle y était écrite, en double avec
+     celle de la création — mesuré le 26/10/2026, les deux copies avaient déjà divergé, et
+     la relance de la console en aurait fait une troisième. On lit donc la porte, et non
+     l'adresse où la règle se trouvait ce jour-là. */
+  const dp = SRV.indexOf('async function diffuserAuPool');
+  const portePool = SRV.slice(dp, SRV.indexOf('\nasync function pushMulticast', dp));
+  ok(dp > 0, 'la diffusion au pool est une porte nommée');
+  ok(/if \(preferred && d\.id === preferred\)/.test(portePool),
+    'le prestataire demandé échappe au filtre « en ligne » et à la grille');
+  ok(/availOk\(availById\[uid\], r\)/.test(portePool), 'le pool est filtré sur la grille du créneau');
+  ok(/siteOk\(dd, svc, r\.locationMode\)/.test(portePool), 'et sur le lieu de la prestation');
+  /* ET LA RÉOUVERTURE L'APPELLE AU LIEU DE RECOPIER : c'est ce qui empêche la divergence
+     de revenir. L'assertion arrière vérifie que la porte est bien appelée PLUSIEURS fois
+     — une porte qu'un seul chemin emprunte n'est pas une porte. */
   const rd = SRV.indexOf('exports.notifyReopenedRequest');
-  const reopen = SRV.slice(rd, SRV.indexOf('exports.', rd + 20));
-  ok(/if \(preferred && d\.id === preferred\)/.test(reopen),
-    'à la réouverture, le prestataire demandé échappe au filtre « en ligne » et à la grille');
+  const reopen = SRV.slice(rd, SRV.indexOf('\nexports.', rd + 20));
+  ok(/await diffuserAuPool\(db, event\.params/.test(reopen), 'la réouverture passe par la porte');
+  ok(!/where\('status', '==', 'valide'\)/.test(reopen), 'et ne refait plus la sélection de son côté');
+  ok((SRV.match(/await diffuserAuPool\(/g) || []).length >= 2,
+    'arrière : plusieurs chemins l\'empruntent (sans quoi « une porte unique » ne mesure rien)');
 
   /* ELLE REND CE QU'ELLE A FAIT : sans cela, l'appelant retombait sur le nombre de
      JETONS et annonçait des envois qui ont pu tous échouer. */

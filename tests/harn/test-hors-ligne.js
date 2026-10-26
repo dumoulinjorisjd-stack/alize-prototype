@@ -40,8 +40,18 @@ ok(/availOk\(availById\[uid\], r\) && enLigne\(onlineById\[uid\]\)/.test(srv),
   'nouvelle demande : le pot commun est filtré');
 ok(/availOk\(dd\.avail, after\) && enLigne\(dd\.online\)/.test(srv),
   'coup de pouce : un artisan hors ligne n’est pas re-sollicité');
-ok(/d\.id !== exclude && siteOk\(dd, svc, after\.locationMode\) && enLigne\(dd\.online\)/.test(srv),
+/* LA DIFFUSION AU POOL A DÉMÉNAGÉ DANS UNE PORTE (26/10/2026) : la règle était écrite en
+   double — réouverture et création — et une relance de console en aurait fait une
+   troisième. On mesure donc la PORTE, et sur ce qu'elle FAIT, non sur le nom que portait
+   sa variable ce jour-là (`after` est devenu `r`). */
+const dp=srv.indexOf('async function diffuserAuPool');
+const portePool=dp>0?srv.slice(dp,srv.indexOf('\nasync function pushMulticast',dp)):'';
+ok(dp>0,'la diffusion au pool est une porte nommée');
+ok(/d\.id !== exclude && siteOk\(dd, svc, r\.locationMode\) && enLigne\(dd\.online\)/.test(portePool),
   'demande rouverte après un lapin : même règle');
+/* ET LES TROIS CHEMINS L'EMPRUNTENT — c'est ce qui empêche la divergence de revenir. */
+ok((srv.match(/await diffuserAuPool\(/g)||[]).length>=2,
+  'arrière : plusieurs chemins passent par la porte (sans quoi « une seule règle » ne mesure rien)');
 
 console.log('\nD — la demande ADRESSÉE passe quand même, et on le dit');
 ok(/const targetUids = preferred\s*\n\s*\? \(uids\.indexOf\(preferred\) >= 0 \? \[preferred\] : \[\]\)/.test(srv),
