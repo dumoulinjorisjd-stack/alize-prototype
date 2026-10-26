@@ -3712,7 +3712,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='886';
+  const VERSION_APP='887';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -5938,6 +5938,56 @@
          commande reste dans le registre, où elle est de toute façon. */
       return t>0&&(t0-t)>=0&&(t0-t)<=ARRET_RECENT_MS;
     });
+  }
+  /* ══ CE QUE MOLLIE A VRAIMENT ENCAISSÉ ═════════════════════════════════════════
+     « Il y a beaucoup de commandes réglées alors que c'était des tests, ça n'a même
+     jamais été payé. » Exact, et la console le savait déjà ailleurs : le registre des
+     factures écarte depuis toujours ce que Mollie n'a pas encaissé — « mollieEncaisse,
+     vrai UNIQUEMENT si Mollie dit paid ; c'est ce champ, et lui seul, qui fait entrer
+     une prestation dans la comptabilité ». Mais « Toutes les commandes » range sur le
+     STATUT APPLICATIF, qui dit « réglée » dès que le parcours est allé au bout, qu'un
+     euro ait bougé ou non. Deux surfaces du même compte, deux vérités.
+
+     ON NE CACHE RIEN : cet écran promet que rien n'est coupé, et une commande qui
+     disparaîtrait serait pire que le chiffre qu'on corrige. On DIT — la discipline du
+     numéro trop long et de l'IBAN : la commande reste, son état d'encaissement est
+     nommé, et le total annonce ce qui est réellement entré.
+
+     SILENCE N'EST PAS RÉPONSE. Le registre ne porte que les écritures à commission non
+     nulle : une commande qui n'y figure pas n'est pas « jamais payée », c'est une
+     commande dont on ne sait rien ici. Elle a son état, et il se dit. */
+  const ENCAISSEMENT_ETATS=['encaisse','jamais','inconnu'];
+  function commandeEncaissement(e){
+    e=e||{};
+    if(!e.auRegistre)return 'inconnu';
+    return e.encaisse===true?'encaisse':'jamais';
+  }
+  function encaissementTotaux(lignes){
+    const o={encaisse:{n:0,total:0},jamais:{n:0,total:0},inconnu:{n:0,total:0}};
+    (lignes||[]).forEach(function(r){
+      const k=commandeEncaissement(r&&r.enc);
+      o[k].n++;o[k].total+=Number(r&&r.total)||0;
+    });
+    ENCAISSEMENT_ETATS.forEach(function(k){o[k].total=Math.round(o[k].total*100)/100;});
+    return o;
+  }
+  /* LES STATUTS OÙ L'ARGENT DEVRAIT AVOIR BOUGÉ. Ailleurs — en recherche, annulée,
+     expirée — il n'y a rien à encaisser, et l'annoncer serait du bruit sur une carte
+     qui n'a rien à se reprocher. Liste FERMÉE. */
+  const CMD_ARGENT=['paid','rated'];
+  /* CE QUI EST RÉELLEMENT ENTRÉ, dit sous le total du groupe — et seulement s'il y a
+     un écart : un groupe entièrement encaissé n'a rien à ajouter. */
+  function cmdEncaisseLigne(g){
+    if(!g||CMD_ARGENT.indexOf(g.statut)<0)return '';
+    const lignes=[];(g.metiers||[]).forEach(function(m){(m.lignes||[]).forEach(function(r){lignes.push(r);});});
+    const T=encaissementTotaux(lignes);
+    if(!T.jamais.n&&!T.inconnu.n)return '';
+    const bouts=[];
+    if(T.jamais.n)bouts.push(`<b>${T.jamais.n}</b> jamais encaissée${T.jamais.n>1?'s':''} (${eur(T.jamais.total)})`);
+    if(T.inconnu.n)bouts.push(`${T.inconnu.n} sans écriture au registre`);
+    return `<div class="mini" style="margin-top:5px;padding:7px 9px;background:var(--coral-wash);border-radius:9px;color:var(--coral-deep);line-height:1.45">`
+      +`Chez Mollie&nbsp;: <b>${eur(T.encaisse.total)}</b> réellement encaissé${T.encaisse.n?` sur ${T.encaisse.n}`:''}. `
+      +esc('').concat(bouts.join(' · '))+'.</div>';
   }
   function commandesParStatut(liste,ordre,nomMetier){
     const parSt={};
@@ -11880,6 +11930,10 @@
          par quelqu'un d'autre : une demande d'avant cette liste, ou abîmée, n'en porte
          aucun. On affiche ce qu'on a, on ne suppose rien. */
       const montant=Number(r.total)||0, coup=Number(r.boostEur)||0;
+      /* JAMAIS ENCAISSÉE : on ne le dit que lorsqu'on en est SÛR — le registre existe
+         et dit non. Une ligne sans écriture au registre ne se fait pas traiter de test ;
+         une ligne rendue par une autre carte (elle n'est pas croisée) non plus. */
+      const nonEnc=(r.enc&&r.enc.auRegistre&&!r.enc.encaisse&&CMD_ARGENT.indexOf(r.status)>=0);
       return `<div class="card" style="padding:13px;margin-top:9px${longue?';border-left:4px solid var(--coral)':''}">
         <div class="row between" style="align-items:flex-start;gap:8px">
           <b style="font-size:14px;flex:1;min-width:0">${sansMetier?(r.client?esc(r.client):'<i>client sans nom</i>'):esc(r.svcName||svcNm(r.svc)||r.svc||'Prestation')}</b>
@@ -11888,6 +11942,7 @@
         <div class="mini" style="margin-top:2px;color:var(--muted)">${esc([r.when,r.slot,r.zone].filter(Boolean).join(' · '))}</div>
         <div class="row between" style="align-items:center;margin-top:4px;gap:8px">
           <span class="mini money">${eur(montant)}${coup?' <span style="color:var(--coral-deep)">+'+eur(coup)+'</span>':''}</span>
+          ${nonEnc?`<span class="chip warn" style="flex:none">${esc(mollieEtatTxt(r.led||{}))}</span>`:''}
           <span class="mini" style="color:${longue?'var(--coral-deep);font-weight:700':'var(--muted)'}">${esc(age)}${r.directed?' · dirigée':''}</span></div>
         ${cmdDiffusion(r)}
         ${cmdFin(r)}
@@ -11975,7 +12030,15 @@
        cherche. Aucune ligne n'est coupée, c'est la raison d'être de cette carte. */
     const cmdToutes=(function(){
       if(!S.adminReqsLus)return `<p class="mini" style="color:var(--muted)">Lecture des demandes…</p>`;
-      const G=commandesParStatut(reqsVrais,CMD_ORDRE,function(id){return svcNm(id)||id;});
+      /* LE REGISTRE FAIT FOI, PAS LE STATUT. On croise par `reqId` — le document du
+         registre porte l'identifiant de la demande — sans une lecture de plus : la
+         console charge déjà les deux. */
+      const ledParReq=(function(){const o={};(S.adminLedger||[]).forEach(function(e){if(e&&e.reqId)o[e.reqId]=e;});return o;})();
+      const reqsEnc=reqsVrais.map(function(r){
+        const e=ledParReq[r.id]||null;
+        return Object.assign({},r,{led:e,enc:{auRegistre:!!e,encaisse:!!(e&&e.mollieEncaisse===true)}});
+      });
+      const G=commandesParStatut(reqsEnc,CMD_ORDRE,function(id){return svcNm(id)||id;});
       if(!G.length)return `<p class="mini" style="color:var(--muted)">Aucune commande en base, à aucun statut.</p>`;
       const oS=S._admCmdStat||{},oM=S._admCmdMet||{};
       const tot=G.reduce(function(t,g){return t+g.n;},0);
@@ -11994,6 +12057,7 @@
                 <span class="chip ${L[0]}">${g.n}</span>
                 <span style="display:inline-block;transform:rotate(${ouv?'90deg':'0deg'});transition:transform .15s;color:var(--muted)">${I.chevron||'›'}</span></span></div>
             ${L[2]?`<div class="mini" style="margin-top:2px;color:var(--muted);line-height:1.4">${esc(L[2])}</div>`:''}
+            ${cmdEncaisseLigne(g)}
           </button>`
           +(ouv?g.metiers.map(function(m){
             const cle=g.statut+'|'+m.svc,ouvM=!!oM[cle];
