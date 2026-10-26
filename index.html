@@ -3712,7 +3712,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='890';
+  const VERSION_APP='891';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -5873,6 +5873,10 @@
       client:txt(r0.clientName,60),provider:txt(r0.providerName,60),
       providerUid:txt(r0.providerUid,60),directed:!!r0.directed,
       boostEur:Number(r0.boostEur)||0,
+      /* ÉCARTÉE DES COMPTES À LA MAIN. Un booléen, et c'est tout ce que cette liste
+         fermée gagne : le motif, l'auteur et la date restent au registre, où l'écran
+         des factures les montre déjà. */
+      exclue:!!r0.comptaExclue,
       /* QUAND ELLE S'EST ARRÊTÉE, tardive ou non, et si une indemnité attend une
          décision du prestataire. Le navigateur écrit un nombre, le balayage nocturne
          un horodatage serveur : `dateMs` est la seule à le savoir. */
@@ -5956,6 +5960,22 @@
      SILENCE N'EST PAS RÉPONSE. Le registre ne porte que les écritures à commission non
      nulle : une commande qui n'y figure pas n'est pas « jamais payée », c'est une
      commande dont on ne sait rien ici. Elle a son état, et il se dit. */
+  /* QUELLE COMMANDE PEUT ÊTRE ÉCARTÉE DES COMPTES.
+     « Sur mes commandes, il y a beaucoup de commandes réglées alors que c'était des
+     tests, ça n'a même jamais été payé » — puis « oui, fais pareil pour les commandes
+     de test ». La v887 les a NOMMÉES en rapprochant le registre de Mollie ; elles
+     restaient dans la liste et dans les compteurs.
+     ON NE L'OFFRE QUE SUR UN FAIT VENU DE MOLLIE, jamais sur un jugement : seule une
+     commande dont le rapprochement dit « jamais encaissé » est écartable. Une commande
+     ENCAISSÉE ne doit pas pouvoir quitter les comptes d'un clic — ce serait cacher du
+     chiffre d'affaires réel —, et « on ne sait pas » n'est pas « ça n'a pas été payé » :
+     il faut d'abord rapprocher, ce qui est précisément le bouton d'à côté.
+     ET CE QUI EST DÉJÀ ÉCARTÉ NE SE RÉÉCARTE PAS : le bouton disparaît, la ligne aussi. */
+  const CMD_ECARTABLES=['jamais'];
+  function commandeEcartable(r){
+    if(!r||r.exclue)return false;
+    return CMD_ECARTABLES.indexOf(commandeEncaissement(r.enc))>=0;
+  }
   const ENCAISSEMENT_ETATS=['encaisse','jamais','inconnu'];
   function commandeEncaissement(e){
     e=e||{};
@@ -11880,8 +11900,13 @@
        cartes qui se contredisent. `uidsTest` ne vaut que si les fiches sont lues —
        sinon on n'écarte rien et on le dit, plutôt que d'écarter au hasard. */
     const uidsTest=(function(){const m={};if(S.adminClisLoaded)(S.adminClients||[]).forEach(function(c){if(compteDeTest(c))m[c.uid]=1;});return m;})();
-    const reqsVrais=(S.adminReqs||[]).filter(function(r){return !uidsTest[r.uid];});
-    const reqsExclues=(S.adminReqs||[]).length-reqsVrais.length;
+    /* DEUX RAISONS D'ÉCARTER, DEUX COMPTES — elles n'appellent pas le même geste. Un
+       COMPTE de test est un compte entier à nettoyer ; une COMMANDE écartée est une
+       décision qu'on a prise et qu'on peut défaire. Les fondre en un seul nombre ferait
+       mentir la phrase qui dit « de comptes de test ». */
+    const reqsVrais=(S.adminReqs||[]).filter(function(r){return !uidsTest[r.uid]&&!r.exclue;});
+    const reqsExclues=(S.adminReqs||[]).filter(function(r){return uidsTest[r.uid];}).length;
+    const reqsEssai=(S.adminReqs||[]).filter(function(r){return !uidsTest[r.uid]&&r.exclue;}).length;
     const parClientVrais=(function(){const o={};reqsVrais.forEach(function(r){if(r.uid)(o[r.uid]=o[r.uid]||[]).push(r);});return o;})();
     /* ── LA LISTE DES COMMANDES RÉELLES ──────────────────────────────────────────
        « J'ai une personne qui a passé une commande mais aucun moyen de voir quoi que ce
@@ -11949,6 +11974,16 @@
        sur le document, jamais celui que l'écran lui passe. Il s'ARME, comme les boutons
        de purge : un appui dit ce qu'il va faire, le second envoie — une alerte partie ne
        se rappelle pas. */
+    /* « C'ÉTAIT UN TEST, ÉCARTER » — sur une commande que le rapprochement Mollie
+       déclare JAMAIS ENCAISSÉE. C'est le même geste que pour un versement bloqué, et le
+       même appelable : rien n'est effacé, l'écriture reste au registre avec qui l'a
+       écartée, quand et pourquoi, et « Retrouver une facture » la réintègre.
+       IL S'ARME, comme ses deux voisins. */
+    const cmdEssai=function(r){
+      if(!commandeEcartable(r))return '';
+      const arme=(S._cmdEssai===r.id);
+      return `<button class="btn ghost sm" data-adm="cmd-essai:${esc(r.id)}" style="width:auto;padding:5px 10px;margin-top:6px;margin-left:6px;font-size:12px">${arme?I.warn+' Confirmer\u00a0: \u00e9carter des comptes':(I.close||I.warn)+' C\u2019\u00e9tait un test'}</button>`;
+    };
     const cmdRelance=function(r){
       if(!r||r.status!=='pending')return '';
       const arme=(S._cmdRelance===r.id);
@@ -11991,7 +12026,7 @@
           <span class="mini money">${eur(montant)}${coup?' <span style="color:var(--coral-deep)">+'+eur(coup)+'</span>':''}</span>
           ${nonEnc?`<span class="chip warn" style="flex:none">${esc(mollieEtatTxt(r.led||{}))}</span>`:''}
           <span class="mini" style="color:${longue?'var(--coral-deep);font-weight:700':'var(--muted)'}">${esc(age)}${r.directed?' · dirigée':''}</span></div>
-        ${cmdDiffusion(r)}${cmdRelance(r)}
+        ${cmdDiffusion(r)}${cmdRelance(r)}${cmdEssai(r)}
         ${cmdFin(r)}
         ${cmdClore(r)}
       </div>`;
@@ -12089,7 +12124,7 @@
       if(!G.length)return `<p class="mini" style="color:var(--muted)">Aucune commande en base, à aucun statut.</p>`;
       const oS=S._admCmdStat||{},oM=S._admCmdMet||{};
       const tot=G.reduce(function(t,g){return t+g.n;},0);
-      return `<p class="mini" style="margin:0 0 4px;color:var(--muted)">${plN(tot,'commande')} au total.${reqsExclues?` ${plN(reqsExclues,'commande')} de comptes de test ${reqsExclues>1?'sont écartées':'est écartée'}.`:''} Rien n'est coupé&nbsp;: dépliez un statut, puis un métier.</p>`
+      return `<p class="mini" style="margin:0 0 4px;color:var(--muted)">${plN(tot,'commande')} au total.${reqsExclues?` ${plN(reqsExclues,'commande')} de comptes de test ${reqsExclues>1?'sont écartées':'est écartée'}.`:''}${reqsEssai?` ${plN(reqsEssai,'commande')} ${reqsEssai>1?'écartées':'écartée'} à la main (tests)\u00a0: carte «\u00a0Retrouver une facture\u00a0» pour ${reqsEssai>1?'les':'la'} revoir.`:''} Rien n'est coupé&nbsp;: dépliez un statut, puis un métier.</p>`
         +G.map(function(g){
           /* REQ_LIB nomme des GROUPES (« Annulées », « Réglées ») : c'est exactement le
              vocabulaire d'une carte qui en réunit plusieurs. `bkStatus` nomme UNE
@@ -19629,6 +19664,21 @@
          des dizaines d'appareils : le premier appui dit ce qu'il va faire, le second
          envoie. La discipline des deux boutons de purge. Le serveur refait le contrôle
          du statut : ce qui est ouvert ici peut avoir été pris entre les deux appuis. */
+      /* ÉCARTER UNE COMMANDE DE TEST — même appelable que le versement bloqué, parce que
+         c'est la même décision : cette prestation n'a jamais été encaissée et ne doit
+         plus compter. On n'EFFACE rien, et c'est réversible. */
+      else if(act==='cmd-essai'){
+        if(!isAdminAccount()){toast('Réservé à l’administrateur (compte réel)');return;}
+        if(!(FB&&FB.functions&&FB.fn&&FB.fn.httpsCallable)){toast('Indisponible hors ligne, réessayez connecté');return;}
+        if(S._cmdEssai!==id){S._cmdEssai=id;render();
+          toast('Un second appui l’écartera des comptes (réversible)');return;}
+        S._cmdEssai=null;render();
+        FB.fn.httpsCallable(FB.functions,'ledgerExclude')({reqId:id,exclu:true,motif:'commande de test, jamais encaissée'}).then(function(){
+          /* RIEN À RECHARGER : la console écoute `requests` en instantané, et
+             `comptaExclue` est écrit SUR la demande — la ligne s'en va d'elle-même. */
+          toast('Écartée des comptes ✓ — « Retrouver une facture » pour la réintégrer');
+        }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
+        return;}
       else if(act==='cmd-relance'){
         if(S._cmdRelance!==id){S._cmdRelance=id;render();
           toast('Un second appui renverra l’alerte aux prestataires');return;}
