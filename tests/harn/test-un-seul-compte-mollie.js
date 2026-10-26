@@ -38,7 +38,10 @@ ok(/clientLinkFrais\(/.test(corps),
 ok(/if \(lienFrais && !refaire\) return/.test(corps),
   'et quand il est frais, la fonction rend AVANT de créer quoi que ce soit');
 // L'ORDRE EST LE FAIT : le garde-fou doit précéder l'appel, sinon il ne garde rien.
-ok(corps.indexOf('if (lienFrais && !refaire) return') < corps.indexOf('await mollieCreerClientLink'),
+// `indexOf` rend -1 quand la ligne n'existe pas, et -1 précède tout : sans la borne,
+// cette mesure serait verte sur un garde-fou RETIRÉ.
+const iRefus = corps.indexOf('if (lienFrais && !refaire) return');
+ok(iRefus > 0 && iRefus < corps.indexOf('await mollieCreerClientLink'),
   'le refus est posé AVANT l’appel à Mollie');
 ok(/const refaire = \(request\.data && request\.data\.refaire\) === true;/.test(corps),
   'refaire reste possible, mais seulement s’il est DEMANDÉ');
