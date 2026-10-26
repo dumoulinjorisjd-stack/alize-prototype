@@ -716,6 +716,33 @@ function commandeCouverture(e) {
   return {couvert: false, par: 'rien', geste: 'carte', motif: 'sans-moyen', carteExpire: false};
 }
 
+/* ══ CE QUI RESTE QUAND L'EMPREINTE MEURT ═══════════════════════════════════════════
+ * Le rapport du matin mettait toutes les empreintes qui vieillissent dans le MÊME seau.
+ * Or elles n'appellent pas le même geste : derrière certaines il y a une carte
+ * enregistrée — le solde se prélèvera tout seul, hors session — et derrière d'autres il
+ * n'y a RIEN : si l'autorisation expire, il faudra envoyer un lien de paiement et
+ * attendre, pendant que le prestataire a déjà travaillé.
+ *
+ * ON NE RÉÉCRIT PAS LA RÈGLE, ON LA REJOUE. « Ce mandat couvrira-t-il le jour venu ? »
+ * est la question de la commande, et `commandeCouverture` y répond déjà — carte expirant
+ * avant la prestation comprise. On l'appelle avec une empreinte VIDE, ce qui est
+ * exactement l'hypothèse posée : « si elle meurt, que reste-t-il ? ». Une seconde règle
+ * écrite ici finirait par ne plus dire la même chose que l'écran de commande.
+ *
+ * SILENCE N'EST PAS RÉPONSE. Mollie peut ne pas répondre, et le rapport ne range alors
+ * la commande ni parmi les couvertes (on promettrait un filet qui n'existe peut-être
+ * pas) ni parmi celles à relancer (on ferait courir après un client qui a sa carte
+ * enregistrée). Elle a son seau, et le rapport le dit. */
+const EMPREINTE_SEAUX = ['couverte', 'attente', 'relancer', 'inconnu'];
+function empreinteSeau(e) {
+  e = e || {};
+  if (!e.lu) return 'inconnu';
+  const c = commandeCouverture({empreinte: {statut: ''}, mandat: e.mandat, moisPrestation: e.moisPrestation});
+  if (c.motif === 'mandat') return 'couverte';
+  if (c.motif === 'mandat-en-cours') return 'attente';
+  return 'relancer';
+}
+
 // Vérifie l'onboarding RÉEL de l'organisation liée au jeton d'accès fourni. Avoir
 // une organisation connectée ne suffit PAS : Mollie doit avoir vérifié l'identité et
 // le compte bancaire (statut « completed » + capable de recevoir paiements ET
@@ -6051,19 +6078,56 @@ exports.paymentReconciliation = onSchedule({schedule: '0 9 * * *', secrets: [SMT
     if (items.length) sections.push('<h3>🛒 Commandes bloquées au paiement (' + items.length + ')</h3><ul>' + items.join('') + '</ul><p>Le pool de prestataires ne les voit pas. Le client doit finaliser (ou la demande expirer).</p>');
   }
   // 2. Empreintes qui vieillissent (> 5 jours sans capture) — risque d'expiration.
+  //    SÉPARÉES SELON CE QU'IL Y A DERRIÈRE (empreinteSeau) : une carte enregistrée se
+  //    prélèvera toute seule, une commande sans moyen demande un geste. Les ranger dans
+  //    le même seau, c'était faire chercher à la main lesquelles comptent.
   {
-    const items = [];
+    const bruts = [];
     for (const st of ['accepted', 'working', 'done_pro']) {
       for (const d of await scan(st)) {
         const r = d.data() || {};
         if (!r.molliePaymentId || r.mollieCaptured) continue;
         const a = ageH(r.acceptedAt || r.createdAt);
-        if (a !== null && a >= 5 * 24) items.push(row(d.id, r, 'autorisée il y a ' + Math.round(a / 24) + ' j (' + st + ')'));
+        if (a !== null && a >= 5 * 24) bruts.push({id: d.id, r: r, j: Math.round(a / 24), st: st});
       }
     }
-    if (items.length) sections.push('<h3>⏳ Empreintes bancaires qui vieillissent (' + items.length + ')</h3><ul>' + items.join('') + '</ul><p>Si l\'autorisation expire avant la validation, le client ne pourra plus être débité. Relancer la validation de la prestation.</p>');
+    if (bruts.length) {
+      /* UN APPEL PAR CLIENT, PAS PAR COMMANDE : deux commandes du même client partagent
+       * son mandat. Et un plafond, parce que c'est une tâche de nuit — au-delà on ne va
+       * pas chercher, et on le DIT plutôt que de ranger au hasard. */
+      const RECO_MANDATS_MAX = 40;
+      const uids = [];
+      bruts.forEach((b) => { const u = String(b.r.clientUid || ''); if (u && uids.indexOf(u) < 0) uids.push(u); });
+      const vus = uids.slice(0, RECO_MANDATS_MAX);
+      const parUid = {};
+      for (const u of vus) {
+        try { parUid[u] = await mandatDuClient(db, u); }
+        catch (e) { console.warn('reco mandat', u, e); parUid[u] = {lu: false, mandat: null}; }
+      }
+      const seaux = {couverte: [], attente: [], relancer: [], inconnu: []};
+      for (const b of bruts) {
+        const M = parUid[String(b.r.clientUid || '')] || {lu: false, mandat: null};
+        const s2 = empreinteSeau({lu: M.lu, mandat: M.mandat, moisPrestation: String(b.r.dateISO || '').slice(0, 7)});
+        seaux[s2].push(row(b.id, b.r, 'autorisée il y a ' + b.j + ' j (' + b.st + ')'));
+      }
+      const bloc = (t, l, ph) => (l.length
+        ? '<h4 style="margin:12px 0 4px">' + t + ' (' + l.length + ')</h4><ul>' + l.join('') + '</ul><p>' + ph + '</p>'
+        : '');
+      // CE QUI APPELLE UN GESTE PASSE DEVANT CE QUI SE CONSTATE.
+      sections.push('<h3>⏳ Empreintes bancaires qui vieillissent (' + bruts.length + ')</h3>'
+        + bloc('🔴 Rien derrière — à relancer', seaux.relancer,
+          'Aucune carte enregistrée, ou une carte qui expire avant la prestation. Si l\'autorisation expire, il faudra envoyer un lien de paiement et <b>attendre</b>, pendant que le prestataire a déjà travaillé. Relancer la validation de la prestation.')
+        + bloc('🟢 Couvertes par une carte enregistrée', seaux.couverte,
+          'Si l\'autorisation expire, le solde sera prélevé hors session sur la carte du client. Rien à faire.')
+        + bloc('🟡 Enregistrement de carte en cours', seaux.attente,
+          'Le client a commencé à enregistrer sa carte, Mollie n\'a pas encore validé le mandat. À revoir demain.')
+        + bloc('⚪ Mandat non lu', seaux.inconnu,
+          'Mollie n\'a pas répondu' + (uids.length > vus.length ? ', ou le plafond de ' + RECO_MANDATS_MAX + ' clients par rapport a été atteint (' + uids.length + ' clients concernés)' : '')
+          + ' : on ne sait pas si ces commandes sont couvertes. Elles ne sont rangées ni d\'un côté ni de l\'autre.'));
+    }
   }
-  // 3. Terminées côté pro, jamais validées (> 72 h).
+  
+// 3. Terminées côté pro, jamais validées (> 72 h).
   {
     const items = [];
     // Depuis la validation automatique à 48 h, rester ici plus longtemps est ANORMAL :
