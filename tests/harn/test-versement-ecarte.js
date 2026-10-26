@@ -65,6 +65,18 @@ console.log('\n── CE QU\'ON ÉCARTE SE COMPTE ET SE DIT ──────�
 /* Une liste qui rétrécit sans un mot se lit comme une liste qui a perdu quelque chose. */
 ok(/let ecartees = 0;/.test(corps), 'le serveur les compte');
 ok(/return \{bloques: bloques, verses: verses, ecartees: ecartees\};/.test(corps), 'et le rend');
+/* ET LE COMPTEUR EST EN PORTÉE AU RETOUR — un `let` déclaré dans le `try` passerait
+   `node -c` sans broncher et lèverait un ReferenceError À L'EXÉCUTION, c'est-à-dire sur
+   l'écran de l'administrateur, au moment de lire ses versements bloqués.
+   LE COMPTAGE D'ACCOLADES N'EST PAS INFAILLIBLE (une apostrophe dans une régulière peut
+   ouvrir une fausse chaîne) : on ne lui demande donc qu'une COMPARAISON de profondeurs,
+   et son assertion arrière vérifie qu'il a bien trouvé les deux points. */
+(function () {
+  const prof = (j) => { let n = 0; for (let k = 0; k < j; k++) { const c = corps[k]; if (c === '{') n++; else if (c === '}') n--; } return n; };
+  const d = corps.indexOf('let ecartees = 0;'), r = corps.indexOf('ecartees: ecartees};');
+  ok(d > 0 && r > d, 'arrière : la déclaration et le retour se relèvent tous les deux');
+  ok(prof(r) >= prof(d), 'le compteur est en portée au retour (profondeur ' + prof(d) + ' → ' + prof(r) + ')');
+})();
 ok(/ecartees:Number\(d\.ecartees\)\|\|0/.test(APP), 'la console le garde');
 ok(/prestation\$\{vers\.ecartees>1\?'s':''\} écartée/.test(APP), 'et l\'écrit sous la liste');
 const iEc = APP.indexOf('vers.ecartees?`<div');
