@@ -3712,7 +3712,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='885';
+  const VERSION_APP='886';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -6466,7 +6466,6 @@
   function yearAgg(list){var gross=0,comm=0,net=0,tips=0;(list||[]).forEach(function(h){var b=histBreakdown(h);gross+=b.gross;comm+=b.commission;net+=b.net;tips+=Number(h.tip)||0;});var r=function(n){return Math.round(n*100)/100;};return {gross:r(gross),comm:r(comm),net:r(net),tips:r(tips),count:(list||[]).length};}
   function commMonthly(history){
     const list=(history||[]).map(function(h){return {h:h,b:histBreakdown(h)};}).filter(function(x){return x.b.commission>0;});
-    const round2=function(n){return Math.round(n*100)/100;};
     return {list:list,count:list.length,
       gross:round2(list.reduce(function(t,x){return t+x.b.gross;},0)),
       comm:round2(list.reduce(function(t,x){return t+x.b.commission;},0)),
@@ -6479,7 +6478,6 @@
   // (la plateforme VERSE au lieu de retenir).
   function concMonthly(c){
     const orders=(c&&Array.isArray(c.orders)?c.orders:[]).filter(function(o){return o.status==='paid'&&(o.retro||0)>0;});
-    const round2=function(n){return Math.round(n*100)/100;};
     const retro=round2(orders.reduce(function(t,o){return t+(o.retro||0);},0));
     return {orders:orders,count:orders.length,
       base:round2(orders.reduce(function(t,o){return t+(o.amount||0);},0)),
@@ -12716,7 +12714,7 @@
     return `<div class="mini" style="margin-top:10px;color:var(--muted)">${hits.length} facture${hits.length>1?'s':''} trouvée${hits.length>1?'s':''}</div>${rows}${more}`;
   }
   function adminInvoices(){
-    const groups=adminCommissionGroups();const round2=function(n){return Math.round(n*100)/100;};
+    const groups=adminCommissionGroups();
     const totComm=round2(groups.reduce(function(t,x){return t+x.c.comm;},0));
     const totGross=round2(groups.reduce(function(t,x){return t+x.c.gross;},0));
     const chip=function(cls,txt){return `<span class="chip ${cls}" style="flex:none">${txt}</span>`;};
@@ -12937,6 +12935,13 @@
   // LE MOTIF DÉCIDE DU SORT DE LA PART DU PRESTATAIRE, et c'est le seul choix à faire :
   // prestation non faite → il n'a rien à percevoir, Mollie récupère sa part ; geste
   // commercial → la prestation a eu lieu, il garde ce qu'il a gagné et Ti-Services paie.
+  /* UN MONTANT A DEUX DÉCIMALES, et l'arrondi était écrit CINQ FOIS en local.
+     `adminRembBloc` l'a appelé sans l'avoir : le document d'une facture de
+     prestation LEVAIT, et comme l'écran se fabrique d'une seule traite, le clic
+     ne montrait rien — on restait sur la liste, sans un mot. Une déclaration de
+     fonction est hissée : elle couvre tout le fichier, y compris ce qui l'appelle
+     plus haut. Une valeur absente vaut zéro et ne prend pas la page avec elle. */
+  function round2(n){return Math.round((Number(n)||0)*100)/100;}
   function adminRembBloc(x){
     if(!x||!x.reqId)return '';
     const rendu=Number(x.refundedTotal)||0;
