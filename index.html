@@ -3712,7 +3712,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='887';
+  const VERSION_APP='888';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -11070,7 +11070,9 @@
       +'<p class="mini" style="margin-top:5px;color:var(--muted);line-height:1.45">Relevé le 25/10/2026 dans le compte Mollie de Ti-Services : une entreprise de Saint-Barthélemy y est enregistrée en <b>France</b>. C’est la réponse, pas une supposition — et elle reste modifiable.</p></div>'
       +(reste.length?'<div class="mini" style="margin-top:9px;color:var(--coral-deep);font-weight:650">'+I.warn+' Il manque : '+reste.map(function(m){return noms[m]||m;}).join(', ')+'. À compléter sur sa fiche avant d’envoyer.</div>':'')
       +(E.raison?'<div class="mini" style="margin-top:9px;color:var(--coral-deep);line-height:1.45"><b>'+I.warn+' Mollie a refusé :</b> '+esc(E.raison)+'<br>Rien n’est cassé : il garde le chemin actuel, celui qui relie un compte Mollie déjà créé. Ce motif se porte à Mollie.</div>':'')
-      +(E.dejaPrepare?'<div class="mini" style="margin-top:9px;color:var(--muted)">Un compte a déjà été préparé pour lui : son bouton ouvre déjà ce parcours.</div>':'')
+      +(E.lienFrais
+        ?'<div class="mini" style="margin-top:9px;padding:9px 10px;background:var(--teal-wash);border-radius:9px;line-height:1.45"><b>'+I.check+' Son compte est déjà préparé'+(E.lienAt?', le '+esc(fmtLong(new Date(E.lienAt).toISOString().slice(0,10))):'')+'.</b><br>Son bouton « Activer mes paiements » ouvre déjà ce parcours : il n\u2019y a rien à refaire. En préparer un second ouvrirait un <b>nouveau compte chez Mollie</b>, et s\u2019il a commencé sur le premier, il recommencerait à zéro.</div>'
+        :(E.dejaPrepare?'<div class="mini" style="margin-top:9px;color:var(--muted)">Un compte avait été préparé pour lui, mais son lien a expiré : en créer un nouveau est sans conséquence.</div>':''))
       +'<div class="mini" style="margin-top:11px;padding:9px 10px;background:var(--teal-wash);border-radius:9px;line-height:1.45">'
       +'<b>Demandez-lui d’abord : a-t-il déjà un compte Mollie ?</b><br>'
       +'Si OUI, ne lui préparez rien— son bouton « Activer mes paiements » relie déjà un compte existant, et c’est ce qu’il faut. Rien dans sa fiche ne nous le dit, et Mollie ne répond pas à cette question sur une adresse : lui seul le sait. S’il se trompe, son écran garde de toute façon le lien « J’ai déjà un compte Mollie ».'
@@ -11080,7 +11082,9 @@
          en rendait DEUX selon le cas : le nom du responsable se tapant juste au-dessus,
          il aurait fallu redessiner le bloc à chaque frappe, et le curseur serait parti
          du champ à la première lettre. Un seul élément, qu'on ouvre sur place. */
-      +'<button class="btn primary sm" data-adm="mol-cree:'+a.id+'" data-molcree="'+a.id+'"'+(reste.length?' disabled':'')+' style="width:auto;padding:7px 12px'+(reste.length?';opacity:.45':'')+'">'+I.bolt+' Créer chez Mollie</button>'
+      +(E.lienFrais
+        ?'<button class="btn ghost sm" data-adm="mol-refait:'+a.id+'"'+(reste.length?' disabled':'')+' style="width:auto;padding:7px 12px'+(reste.length?';opacity:.45':'')+'">'+(S._molRefait===a.id?(I.warn+' Confirmer : nouveau compte Mollie'):(I.bolt+' En préparer un nouveau'))+'</button>'
+        :'<button class="btn primary sm" data-adm="mol-cree:'+a.id+'" data-molcree="'+a.id+'"'+(reste.length?' disabled':'')+' style="width:auto;padding:7px 12px'+(reste.length?';opacity:.45':'')+'">'+I.bolt+' Créer chez Mollie</button>')
       +btn('Annuler','mol-ferme')+'</div></div>';
   }
 
@@ -19547,9 +19551,11 @@
              refus de Mollie serait lui faire reprendre une déclaration qu'il a déjà
              relue. */
           S.admMolInscr[id]={busy:false,pays:molPays(E0),repGiven:E0.repGiven,repFamily:E0.repFamily,charge:d.charge||E0.charge||null,
-            manques:d.manques||[],raison:d.raison||'',cree:!!d.cree,dejaPrepare:!!d.dejaPrepare};
+            manques:d.manques||[],raison:d.raison||'',cree:!!d.cree,dejaPrepare:!!d.dejaPrepare,
+            lienFrais:!!d.lienFrais,lienAt:Number(d.lienAt)||0};
           render();
           if(d.cree)toast('Compte Mollie préparé ✓');
+          else if(d.deja==='lien')toast('Son compte était déjà préparé, rien n’a été recréé');
           else if(creer&&d.repli)toast('⚠︎ Mollie a refusé : '+(d.raison||'motif inconnu'));
           else if(creer&&d.pret===false)toast('Fiche incomplète, rien n’a été envoyé');
         }).catch(function(e){
@@ -19557,7 +19563,32 @@
           toast('⚠︎ Inscription Mollie impossible : '+fbErrTxt(e));render();
         });
         return;}
+      /* EN PRÉPARER UN SECOND EST UN GESTE À PART, ET IL S'ARME. Chaque création ouvre un
+         NOUVEAU compte chez Mollie : le bouton dit d'abord ce qu'il va faire, et n'agit
+         qu'au second appui — la discipline des deux boutons de purge, juste au-dessus. */
+      else if(act==='mol-refait'){
+        if(S._molRefait!==id){S._molRefait=id;render();
+          toast('Un second appui ouvrira un NOUVEAU compte chez Mollie');return;}
+        S._molRefait=null;
+        const E1=(S.admMolInscr&&S.admMolInscr[id])||{};
+        S.admMolInscr[id]=Object.assign({},E1,{busy:true});render();
+        call('adminMollieInscrire')(Object.assign({uid:id,pays:molPays(E1),confirmer:true,refaire:true},
+          molNomOk(E1,E1.charge)?{repGiven:molRep(E1,E1.charge,'Given').trim(),
+                                  repFamily:molRep(E1,E1.charge,'Family').trim()}:{})).then(function(r){
+          const d=(r&&r.data)||{};
+          S.admMolInscr[id]=Object.assign({},E1,{busy:false,cree:!!d.cree,raison:d.raison||'',
+            lienFrais:!!d.cree,lienAt:d.cree?Date.now():(E1.lienAt||0)});
+          render();
+          if(d.cree)toast('Nouveau compte Mollie préparé ✓');
+          else if(d.deja)toast('Son compte Mollie est déjà relié');
+          else toast('⚠︎ Mollie a refusé : '+(d.raison||'motif inconnu'));
+        }).catch(function(e){
+          S.admMolInscr[id]=Object.assign({},E1,{busy:false});
+          toast('⚠︎ Impossible : '+fbErrTxt(e));render();
+        });
+        return;}
       else if(act==='mol-ferme'){
+        S._molRefait=null;
         S.admMolInscr=S.admMolInscr||{};delete S.admMolInscr[id];render();return;}
       // Signalement traité : l'écriture passe par la règle admin de la collection reports.
       else if(act==='reportdone'){

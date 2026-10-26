@@ -4550,6 +4550,16 @@ exports.adminMollieInscrire = onCall({secrets: ['MOLLIE_ACCESS_TOKEN', 'MOLLIE_C
    * résultat possible — deux comptes Mollie pour un seul prestataire, dont un seul reçoit
    * les versements, sans que personne sache lequel. */
   if (a.mollieOrgId) return {deja: true, orgId: String(a.mollieOrgId), statut: String(a.mollieStatus || '')};
+  /* UN LIEN ENCORE BON NE SE REFAIT PAS. Chaque appel à `/client-links` ouvre un NOUVEAU
+   * client chez Mollie : recliquer le bouton, c'est en semer un second — orphelin s'il n'y
+   * est pas encore allé, et PIRE s'il a déjà commencé son parcours sur le premier, puisque
+   * la fiche ne garde que le dernier identifiant et que c'est lui qui recommencerait à
+   * zéro. La fraîcheur se juge par `clientLinkFrais`, la règle que `mollieOnboardingLink`
+   * emploie DÉJÀ pour décider de refabriquer : une seconde écrite ici finirait par ne plus
+   * dire la même chose. Refaire reste possible, mais DEMANDÉ. */
+  const refaire = (request.data && request.data.refaire) === true;
+  const lienAt = Number(a.mollieClientLinkAt) || 0;
+  const lienFrais = !!a.mollieClientLinkHref && clientLinkFrais(lienAt, Date.now());
   const P = clientLinkProposition(fiche, pays, 'fr_FR');
   if (!confirmer) {
     /* ON N'A AUCUN MOYEN DE SAVOIR S'IL A DÉJÀ UN COMPTE MOLLIE non relié : rien dans sa
@@ -4558,10 +4568,13 @@ exports.adminMollieInscrire = onCall({secrets: ['MOLLIE_ACCESS_TOKEN', 'MOLLIE_C
      * le fait avant de créer, au lieu de le supposer — et son bouton garde de toute façon la
      * porte qui RELIE, pour que l'erreur reste sans conséquence. */
     return {apercu: true, pret: P.pret, manques: P.manques, charge: P.charge,
-      dejaPrepare: !!a.mollieClientLinkHref};
+      dejaPrepare: !!a.mollieClientLinkHref, lienFrais: lienFrais, lienAt: lienAt};
   }
   if (!P.pret) return {pret: false, manques: P.manques, charge: P.charge};
   if (!mollieApiConfigured()) return {pret: true, cree: false, repli: 'autorisation', raison: 'Mollie non configuré'};
+  /* ON NE CRÉE RIEN S'IL Y A DÉJÀ DE QUOI FAIRE. Son bouton recompose la requête signée
+   * au moment où il appuie : il n'a besoin d'aucun lien neuf. */
+  if (lienFrais && !refaire) return {pret: true, cree: false, deja: 'lien', at: lienAt};
   const out = await mollieCreerClientLink(P.charge);
   if (!out.ok) {
     /* LE REPLI N'EST PAS UN ÉCHEC. Le prestataire garde le chemin d'aujourd'hui, celui qui
