@@ -61,6 +61,7 @@ bornes.forEach((b, k) => { b.j = k + 1 < bornes.length ? bornes[k + 1].i : SRV.l
 ok(bornes.length > 40, 'les exports du serveur se relèvent (' + bornes.length + ')');
 
 let mesurees = 0, sautes = 0;
+const horsSonde = [];
 const fautifs = [];
 bornes.forEach((x) => {
   const c = SRV.slice(x.i, x.j);
@@ -78,10 +79,20 @@ bornes.forEach((x) => {
      token } ». L'analyseur rendait alors une erreur quelconque, la sonde classait
      « inapplicable », et `payoutRetry` était SAUTÉE une seconde fois. Deux
      contre-épreuves pour le voir ; aucune relecture ne l'aurait dit. */
-  const ferme = (function () { let n = 0; for (let k = corps; k < c.length; k++) { if (prof(c, k) === 0 && k > corps) return k; } return -1; })();
+  /* ET « ZÉRO » N'EST PAS LA FIN DU CORPS : `prof` compte aussi la parenthèse
+     d'`onCall`, donc la profondeur ne retombe à zéro qu'une fois l'APPEL fermé —
+     le faux corps emportait le `})` et l'analyseur rendait « Unexpected token } ».
+     La fin du corps est là où la profondeur retrouve celle d'AVANT son accolade. */
+  const dedans = prof(c, corps);
+  const ferme = (function () { for (let k = corps + 1; k < c.length; k++) { if (prof(c, k) === dedans) return k; } return -1; })();
   const rr = /return \{/g; let r;
   while ((r = rr.exec(c))) {
-    if (prof(c, r.index) !== 1) continue;             // retour imbriqué : hors sonde
+    /* ET « 1 » ÉTAIT ÉCRIT EN DUR : à l'intérieur du corps la profondeur vaut
+       `dedans + 1`, soit 2 pour tout `onCall(…, async (request) => {`. Aucun retour de
+       premier niveau d'un callable ne passait donc ce filtre : les 30 variables
+       « mesurées » venaient d'ailleurs, et `payoutRetry` était sautée une TROISIÈME
+       fois. Trois contre-épreuves pour le voir. */
+    if (prof(c, r.index) !== dedans + 1) continue;      // retour imbriqué : hors sonde
     const fin = c.indexOf('};', r.index);
     if (fin < 0) continue;
     const bloc = c.slice(r.index, fin + 2);
@@ -89,12 +100,28 @@ bornes.forEach((x) => {
       .map((y) => y[2])
       .forEach((nom) => {
         if (!new RegExp('\\b(let|const|var)\\s+' + nom + '\\b').test(c)) return;  // pas une locale
-        const src = '(async function(){' + c.slice(corps + 1, r.index) + 'let ' + nom + ';' + c.slice(r.index, ferme) + '})';
-        let verdict = 'absente';
-        try { new vm.Script(src); } catch (e) {
-          verdict = /already been declared/.test(e.message) ? 'presente' : 'inapplicable';
+        /* `c.slice(r.index, ferme)` PORTE DÉJÀ l'accolade qui ferme le corps : on
+           n'en rajoute pas une, on ferme la parenthèse. */
+        const sonder = (at) => {
+          try { new vm.Script('(async function(){' + c.slice(corps + 1, at) + 'let ' + nom + ';' + c.slice(at, ferme) + ')'); }
+          catch (e) { return /already been declared/.test(e.message) ? 'presente' : 'inapplicable'; }
+          return 'absente';
+        };
+        let verdict = sonder(r.index);
+        /* UN RETOUR QUI EST LE CORPS D'UN `if` SANS ACCOLADES rend une AUTRE SyntaxError
+           (« lexical declaration ... single-statement context ») : on la saute, on ne la
+           compte pas pour un défaut. Mais on ne l'abandonne pas non plus — on pose le
+           `let` devant l'INSTRUCTION, dans le même bloc, ce qui éprouve exactement la
+           même portée. L'y poser DANS le `if` ne vaudrait rien : un `let` d'un bloc
+           intérieur masque légalement celui du dehors, donc il n'entrerait jamais en
+           collision et la sonde accuserait TOUT LE MONDE. */
+        if (verdict === 'inapplicable') {
+          const ligne = c.lastIndexOf('\n', r.index) + 1;
+          if (ligne > corps) verdict = sonder(ligne);
         }
-        if (verdict === 'inapplicable') { sautes++; return; }
+        /* CE QU'ELLE NE PEUT PAS JUGER SE NOMME : un décompte muet se lirait comme une
+           couverture entière. Il n'y en a aucun aujourd'hui. */
+        if (verdict === 'inapplicable') { sautes++; horsSonde.push(x.nom + ' → « ' + nom + ' »'); return; }
         mesurees++;
         if (verdict === 'absente') fautifs.push(x.nom + ' → « ' + nom + ' »');
       });
@@ -103,6 +130,7 @@ bornes.forEach((x) => {
 
 console.log('\n── CHAQUE VARIABLE RENDUE EXISTE ENCORE AU RETOUR ──────────────────────');
 console.log('  (' + mesurees + ' mesurées · ' + sautes + ' hors de portée de la sonde)');
+if (horsSonde.length) console.log('  hors sonde : ' + horsSonde.join(', '));
 ok(fautifs.length === 0, 'aucune variable déclarée dans un bloc qui s\'est refermé' + (fautifs.length ? ' — ' + fautifs.join(', ') : ''));
 /* ASSERTION ARRIÈRE : une sonde qui ne reconnaîtrait plus rien rendrait zéro fautif et
    innocenterait tout le monde — c'est arrivé à la garde des noyaux d'Archipel. */
