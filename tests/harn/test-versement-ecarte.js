@@ -96,7 +96,13 @@ ok(/Retrouver une facture/.test(APP.slice(iEc, iEc + 500)) && iEc > 0,
 console.log('\n── LE GESTE, LÀ OÙ L\'ON LIT LE PROBLÈME ────────────────────────────────');
 ok(/data-adm="vers-essai:/.test(APP), 'la carte des versements porte le bouton');
 ok(/C\\u2019\\u00e9tait un essai, \\u00e9carter/.test(APP), 'il dit ce qu\'il fait');
-ok(/S\._versEssaiArm!==id\)\{S\._versEssaiArm=id;render\(\);/.test(APP), 'il s\'arme');
+/* ELLE NOMMAIT L'ÉCRITURE, PAS LA PROPRIÉTÉ : `S._versEssaiArm=id;render();` au
+   caractère près. Le jour où une troisième sortie est apparue à côté (v893), armer
+   l'une a dû DÉSARMER l'autre — deux confirmations en attente ne se lisent pas — et
+   l'épreuve a rougi sur un code juste. Ce qui compte est qu'un premier appui arme au
+   lieu d'agir, pas l'ordre des instructions. */
+ok(/S\._versEssaiArm!==id\)\{[\s\S]{0,160}?S\._versEssaiArm=id;[\s\S]{0,160}?render\(\);/.test(APP),
+  'il s\'arme : un premier appui pose l\'attente et redessine, il n\'écarte rien');
 ok(/Un second appui l\u2019écartera des comptes \(réversible\)/.test(APP), 'et le premier appui dit que c\'est réversible');
 /* MÊME APPELABLE QUE LA CARTE DES FACTURES : un second chemin d'exclusion finirait par
    ne plus écrire les mêmes drapeaux. */
