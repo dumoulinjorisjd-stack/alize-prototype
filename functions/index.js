@@ -832,6 +832,17 @@ function lienNomCoupe(v) {
  * une seconde — deux normalisations finiraient par ne plus rendre le même numéro. Et ce
  * qu'on ne sait pas mettre en forme ne part pas : un numéro faux déclaré à un
  * établissement de paiement se découvre au contrôle, comme une identité inversée. */
+/* CE QU'EST LE SECOND PAIEMENT D'UNE PRESTATION, dit depuis ce qu'on a RETENU.
+   `hors-session` : l'empreinte avait expiré, ce paiement porte la prestation entière —
+   l'appeler « Supplément » fait lire deux dettes là où il y en a une.
+   Rien de retenu (prestation d'avant le 27/10/2026) : on ne devine pas, on dit le seul
+   fait dont on soit sûr — c'est un second paiement. */
+function complementLibelle(motif) {
+  const m = String(motif || '');
+  if (m === 'hors-session') return 'Prestation';
+  if (m === 'empreinte-partielle') return 'Supplément';
+  return 'Second paiement';
+}
 const TEL_PREFIXES_590 = ['590', '690', '691'];
 function telE164(phone) {
   let d = String(phone == null ? '' : phone).replace(/[^\d+]/g, '');
@@ -3264,7 +3275,7 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}',
     if (R.horsSession > 0.009 && !after.complementPaymentId) {
       if (!mollieApiConfigured()) {
         const motif = 'Mollie non configuré sur cet environnement';
-        try { await event.data.after.ref.update({complementAmount: R.horsSession, complementStatus: 'impossible', complementIssue: motif}); } catch (_) {}
+        try { await event.data.after.ref.update({complementAmount: R.horsSession, complementMotif: R.motif, complementStatus: 'impossible', complementIssue: motif}); } catch (_) {}
         console.warn('Hors session NON prélevable reqId=' + reqId + ' ' + R.horsSession + ' €, ' + motif);
         try {
           await sendMail(db, ADMIN_EMAIL, {
@@ -3282,7 +3293,13 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}',
              la seconde et lit `complementCommission` pour savoir quoi retenir : écrite
              après, il retombait sur la seule commission du pourboire — donc sous-retenue
              sur une empreinte expirée, où c'est TOUTE la commission qui vit ici. */
-          await event.data.after.ref.update({complementAmount: R.horsSession, complementCommission: R.commissionHorsSession});
+          /* ET ON RETIENT POURQUOI. Ce second paiement porte tantôt un VRAI supplément
+             (pourboire, heures en plus) tantôt la PRESTATION ENTIÈRE, quand l'empreinte
+             a expiré et que tout le solde repart par le mandat. Le motif est connu ici
+             — la description envoyée à Mollie le dit déjà — et il était JETÉ : la
+             console appelait « Supplément · Massage » un paiement qui EST le massage,
+             à côté d'une ligne du même montant. Relevé le 27/10/2026. */
+          await event.data.after.ref.update({complementAmount: R.horsSession, complementMotif: R.motif, complementCommission: R.commissionHorsSession});
           const r2 = await mollieChargeComplement(db, reqId, after.clientUid,
             R.horsSession, 'Ti-Services · ' + (R.motif === 'hors-session' ? 'prestation' : 'supplément')
               + ' · ' + (after.serviceName || after.service || 'prestation'),
@@ -4145,7 +4162,7 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
         }
         const ligne = {
           reqId: cle, genre: 'supplement',
-          serviceName: 'Supplément · ' + String(r.serviceName || r.service || 'Prestation'),
+          serviceName: complementLibelle(r.complementMotif) + ' · ' + String(r.serviceName || r.service || 'Prestation'),
           providerName: String(r.providerName || ''), clientName: String(r.clientName || ''),
           net: net, invNo: String(r.saleInvoiceNo || ''), org: orgId ? 'oui' : 'non',
           motif: String(r.complementPayoutMotif || ''), etat: '', routes: -1, verse: false,

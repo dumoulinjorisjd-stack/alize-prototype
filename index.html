@@ -3712,7 +3712,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='892';
+  const VERSION_APP='893';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -12942,7 +12942,7 @@
     // quel. Sans ce motif, on cherche à l'aveugle (on y a déjà perdu des jours).
     const vers=S.adminVers||{};
     const versList=vers.list||[];
-    const versDu=round2(versList.reduce(function(t,v){return t+(Number(v.net)||0);},0));
+    let versDu=0,versRien=0;   // chiffres posés plus bas : `versAbouti` se déclare après
     const versChip=!vers.loaded?'':(versList.length?chip('coral',versList.length):chip('good','aucun'));
     // DEUX « 404 » QUI N'ONT RIEN À VOIR, et les confondre fait chercher au mauvais endroit.
     //  • « Invalid resource endpoint » : Mollie ne reconnaît pas l'ADRESSE de partage —
@@ -12952,13 +12952,32 @@
     //    banque n'est plus partageable. Seul recours : virer le net à la main.
     // On ne déclenchait que sur « 404 », si bien que le second cas affichait le message du
     // premier : « faites la demande auprès de Mollie » alors qu'elle était déjà accordée.
+    /* CE PAIEMENT A-T-IL ABOUTI ? Cet écran parle de DETTES, et la bannière affirme
+       « le client a payé, la somme reste due ». C'est faux d'une ligne dont l'empreinte
+       a EXPIRÉ : rien n'a été prélevé, donc rien n'est dû — et pourtant son net entrait
+       dans le total. Mesuré le 27/10/2026 : 209,00 € annoncés dus pour 104,50 €
+       réellement encaissés, sur une prestation dont l'empreinte avait expiré et dont le
+       solde était reparti par le mandat.
+       L'état vient de MOLLIE, pas de nous. Trois issues terminales sans argent
+       (`expired`, `failed`, `canceled`), deux où l'argent existe (`paid`, `authorized`),
+       et le reste est une IGNORANCE — `open`, `pending`, « introuvable » : on ne dit
+       rien et on ne retire rien, un versement réellement dû ne doit pas pouvoir
+       s'écarter sur un doute. */
+    const VERS_SANS_ARGENT=['expired','failed','canceled'],VERS_AVEC_ARGENT=['paid','authorized'];
+    const versAbouti=function(v){const e=String(v&&v.etat||'').trim().toLowerCase();
+      if(VERS_SANS_ARGENT.indexOf(e)>=0)return false;
+      if(VERS_AVEC_ARGENT.indexOf(e)>=0)return true;
+      return null;};
+    versDu=round2(versList.reduce(function(t,v){return t+(versAbouti(v)===false?0:(Number(v.net)||0));},0));
+    versRien=versList.filter(function(v){return versAbouti(v)===false;}).length;
+    const versNb=versList.length-versRien;
     const versAdresse=function(v){return /invalid resource endpoint/i.test(String(v.motif||'')+' '+String(v.lecture||''));};
     const versRegle=function(v){return /payment not found|no payment exists/i.test(String(v.motif||'')+' '+String(v.lecture||''));};
     const versOption=versList.some(versAdresse);
-    const versBody=`<div class="banner warn">${I.clock}<span>Le client a payé et la facture existe, mais le net n’a <b>pas pu être versé</b> au prestataire&nbsp;: la somme est restée <b>du côté de Ti-Services</b>, sur le solde Mollie, puis virée sur le compte bancaire une fois le paiement réglé. Elle <b>reste due</b> au prestataire&nbsp;: il faut la lui virer, puis l’acter ici.</span></div>
+    const versBody=`<div class="banner warn">${I.clock}<span>${versNb?'Le client a payé et la facture existe, mais le net n’a <b>pas pu être versé</b> au prestataire&nbsp;: la somme est restée <b>du côté de Ti-Services</b>, sur le solde Mollie, puis virée sur le compte bancaire une fois le paiement réglé. Elle <b>reste due</b> au prestataire&nbsp;: il faut la lui virer, puis l’acter ici.':'Aucun de ces paiements n’a abouti&nbsp;: <b>rien n’a été prélevé au client, rien n’est dû</b> au prestataire. Ces lignes restent affichées pour ne pas disparaître en silence&nbsp;; elles se retirent une par une.'}</span></div>
       ${versOption?`<div class="banner coral" style="margin-top:10px">${I.shield}<span><b>Ici, ce n’est pas le prestataire.</b> Mollie répond que l’adresse de partage n’existe pas sur le compte Ti-Services&nbsp;: le <b>partage de paiement</b> est une option que Mollie active <b>sur demande</b>, elle ne l’est pas par défaut. Tant qu’elle ne l’est pas, aucun versement automatique ne peut partir, il faut en faire la demande auprès de Mollie.</span></div>`:''}
       ${!vers.loaded?`<button class="btn ghost sm" data-adm="vers-scan" style="margin-top:12px">${I.search}&nbsp;Vérifier maintenant</button>`
-        :(versList.length?`<div class="mini" style="margin-top:11px;color:var(--muted)">${versList.length} versement${versList.length>1?'s':''} en attente · ${eur(versDu)} dû${versList.length>1?'s':''} au total</div>
+        :(versList.length?`<div class="mini" style="margin-top:11px;color:var(--muted)">${versNb} versement${versNb>1?'s':''} en attente · ${eur(versDu)} dû${versNb>1?'s':''} au total${versRien?(' · '+versRien+'&nbsp;ligne'+(versRien>1?'s':'')+' sans paiement abouti, rien à verser'):''}</div>
           ${versList.map(function(v){return `<div class="card" style="padding:13px;margin-top:9px">
             <div class="row between"><b style="font-size:14px">${esc(v.serviceName||'Prestation')}</b><span class="money" style="font-weight:700">${eur(Number(v.net)||0)}</span></div>
             <div class="mini" style="margin-top:3px">${esc(v.providerName||'—')}${v.invNo?(' · '+esc(v.invNo)):''}${v.etat?(' · état Mollie&nbsp;: '+esc(v.etat)):''}</div>
@@ -12967,7 +12986,9 @@
             ${(v.lecture&&versAdresse(v))?`<div class="mini" style="margin-top:4px;color:var(--muted)">Même réponse en simple lecture&nbsp;: ${esc(v.lecture)}, donc rien à voir avec ce versement-ci.</div>`:''}
             ${versRegle(v)?`<div class="mini" style="margin-top:6px;color:var(--muted)">Le partage fonctionne, mais Mollie ne connaît plus <b>ce paiement-ci</b>&nbsp;: un paiement déjà réglé et viré sur le compte bancaire n’est plus partageable. Virez le net au prestataire, puis appuyez sur «&nbsp;Je l’ai versé à la main&nbsp;».</div>`:''}
             ${v.org==='non'?`<div class="mini" style="margin-top:6px;color:var(--muted)">Ce prestataire n’a aucun compte Mollie connecté&nbsp;: le versement ne peut pas partir tant qu’il ne l’a pas fait.</div>`:''}
+            ${versAbouti(v)===false?`<div class="mini" style="margin-top:6px;color:var(--muted)"><b>Ce paiement n’a jamais abouti</b> (état Mollie&nbsp;: ${esc(v.etat)})&nbsp;: rien n’a été prélevé au client, <b>rien n’est dû</b> au prestataire. Son net n’entre pas dans le total ci-dessus.</div>`:''}
             <button class="btn ghost sm" data-adm="vers-one:${esc(v.reqId)}" style="margin-top:9px">${I.bolt}&nbsp;Réessayer ce versement</button>
+            ${versAbouti(v)===false?`<button class="btn ghost sm" data-adm="vers-rate:${esc(v.reqId)}" style="margin-top:7px">${S._versRateArm===v.reqId?(I.warn+'&nbsp;Confirmer&nbsp;: retirer de cet écran'):(I.close||I.warn)+'&nbsp;Paiement jamais abouti, retirer'}</button>`:''}
             <button class="btn ghost sm" data-adm="vers-essai:${esc(v.reqId)}" style="margin-top:7px">${S._versEssaiArm===v.reqId?(I.warn+'&nbsp;Confirmer&nbsp;: \u00e9carter des comptes'):(I.close||I.warn)+'&nbsp;C\u2019\u00e9tait un essai, \u00e9carter'}</button>
             <button class="btn ghost sm" data-adm="vers-main:${esc(v.reqId)}" style="margin-top:7px">${S._versMainArm===v.reqId?'Confirmer&nbsp;: je l’ai bien viré':(I.check+'&nbsp;Je l’ai versé à la main')}</button></div>`;}).join('')}
           <button class="btn primary sm" data-adm="vers-run" style="margin-top:12px">${I.bolt}&nbsp;Réessayer les ${versList.length}</button>
@@ -19891,10 +19912,30 @@
          (qui NOTERAIT un virement qui n'a jamais eu lieu). On n'EFFACE rien : c'est le
          geste d'exclusion comptable qui existe déjà, réversible, et qui garde qui l'a
          fait, quand et pourquoi. Il S'ARME, comme son voisin. */
+      /* UN PAIEMENT QUI N'A JAMAIS ABOUTI N'EST PAS UN ESSAI, et on ne doit pas avoir à
+         le DÉCLARER pour s'en débarrasser. « C'était un essai » est une affirmation sur
+         l'intention ; ici le fait est autre — l'empreinte a expiré, rien n'a été
+         prélevé. Même porte (`ledgerExclude`, réversible, qui garde qui, quand et
+         pourquoi), motif différent, et il ne s'offre QUE là où Mollie dit que le
+         paiement est mort : sur un doute, un versement réellement dû pourrait
+         s'écarter. Demandé le 27/10/2026. */
+      else if(act==='vers-rate'){
+        if(!isAdminAccount()){toast('Réservé à l’administrateur (compte réel)');return;}
+        if(!(FB&&FB.functions&&FB.fn&&FB.fn.httpsCallable)){toast('Indisponible hors ligne, réessayez connecté');return;}
+        if(S._versRateArm!==id){S._versRateArm=id;S._versEssaiArm=null;render();
+          toast('Un second appui la retirera de cet écran (réversible)');return;}
+        S._versRateArm=null;render();
+        FB.fn.httpsCallable(FB.functions,'ledgerExclude')({reqId:id,exclu:true,motif:'paiement jamais abouti, rien à verser'}).then(function(){
+          const v=S.adminVers||{};
+          S.adminVers=Object.assign({},v,{list:(v.list||[]).filter(function(x){return x.reqId!==id;}),
+            ecartees:(Number(v.ecartees)||0)+1});
+          toast('Retirée ✓ — « Retrouver une facture » pour la réintégrer');render();
+        }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
+        return;}
       else if(act==='vers-essai'){
         if(!isAdminAccount()){toast('Réservé à l’administrateur (compte réel)');return;}
         if(!(FB&&FB.functions&&FB.fn&&FB.fn.httpsCallable)){toast('Indisponible hors ligne, réessayez connecté');return;}
-        if(S._versEssaiArm!==id){S._versEssaiArm=id;render();
+        if(S._versEssaiArm!==id){S._versEssaiArm=id;S._versRateArm=null;render();
           toast('Un second appui l’écartera des comptes (réversible)');return;}
         S._versEssaiArm=null;render();
         FB.fn.httpsCallable(FB.functions,'ledgerExclude')({reqId:id,exclu:true,motif:'essai, versement jamais dû'}).then(function(){
