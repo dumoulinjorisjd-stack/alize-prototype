@@ -152,29 +152,122 @@ const ETATS = {
    commission). Le jour où le tarif du massage ou le taux de commission changent,
    la pastille mentirait et la capture, elle, serait parfaite. On exige donc le
    chiffre : la capture échoue, on reprend la pastille, et les deux restent d'accord. */
+/* OÙ SE POSE LE DOIGT. Le film met en scène quelqu'un qui SE SERT de l'app : il
+   lui faut les coordonnées des boutons qu'on touche. On ne les retape pas — on les
+   DEMANDE à l'écran capturé, et elles voyagent avec les images (reperes.json).
+   Le jour où une carte change de place, le doigt la suit. */
+/* ———————————————————————————————————————————————————————————————
+   L'ÉPURE DES CAPTURES.
+
+   « Enlève les textes explicatifs et les messages en rouge : tout ça est bien
+   dans l'application, mais pas dans une vidéo. » Juste — et ce n'est pas une
+   retouche d'image : on n'efface RIEN de la capture, on met l'application dans
+   l'état où ces blocs ne paraissent pas. Chacun est nommé avec sa raison, et
+   la garde ci-dessous REFUSE une entrée qui ne rencontre plus personne : une
+   liste de sélecteurs se périme en silence au premier renommage de classe.
+
+   Ce qui reste visible est ce qui PORTE le film : les prix, les boutons, les
+   montants, les cartes de mission. Ce qui part est ce qu'un utilisateur installé
+   ne voit plus, ou ce qui n'a de sens qu'immobile, sous les yeux. */
+const EPURE = [
+  { sel: '#view .notifcta',
+    quoi: 'la relance « activer les notifications » — quelqu\'un qui se sert de l\'app les a déjà activées' },
+  { sel: '#view .trust',
+    quoi: 'la rangée de réassurance de l\'accueil ; une de ses trois lignes promet plus que le produit ne tient (voir LISEZ-MOI)' },
+  { sel: '#view .zouti-line',
+    quoi: 'la phrase de l\'assistant : elle s\'adresse à qui regarde, pas à qui est filmé' },
+  { sel: '#view p.mini',
+    quoi: 'les mentions en petits caractères — illisibles à l\'écran d\'un téléphone filmé' },
+  /* UN SOUS-TITRE N'EST PAS TOUJOURS UNE EXPLICATION. `p.sub` emportait « De quel
+     service avez-vous besoin ? » — la QUESTION qui porte l'accueil, pas de la
+     prose. C'est la longueur qui les sépare : une question tient en une ligne,
+     une explication n'y tient jamais. (La garde du texte lisible l'a dit, et
+     seulement parce que l'épure passe désormais AVANT elle.) */
+  { sel: '#view p.sub', siPlusDe: 44,
+    quoi: 'le sous-titre explicatif d\'un écran, quand c\'est de la prose et non une question' },
+  /* L'ANCRE DÉSIGNE LE PARAGRAPHE, PAS SON CHAPEAU. « Aucun débit maintenant »
+     est dans un <b> : le plus petit élément qui le porte était ce <b>, et l'épure
+     retirait le titre en laissant les quatre lignes d'explication — l'inverse de
+     ce qu'on veut. On vise une phrase qui n'existe QUE dans le corps. */
+  { contient: 'Nous enregistrons seulement votre carte',
+    quoi: 'le pavé qui explique le paiement : il passe sur un CARTON plein cadre, où il se lit vraiment' },
+];
+
+/* On masque, on n'efface pas : `visibility` garde la place, donc la mise en page
+   ne se décale pas et les repères relevés restent ceux de l'écran réel. Sauf
+   pour les blocs qui laisseraient un grand trou — ceux-là sortent du flux. */
+async function epurer(p) {
+  const vus = await p.evaluate(liste => {
+    const n = [];
+    for (const e of liste) {
+      let cibles = [];
+      if (e.sel) cibles = [...document.querySelectorAll(e.sel)].filter(x =>
+        !e.siPlusDe || (x.textContent || '').trim().length > e.siPlusDe);
+      else {
+        const c = [...document.querySelectorAll('#view *')].filter(x =>
+          (x.textContent || '').indexOf(e.contient) >= 0 &&
+          ![...x.children].some(k => (k.textContent || '').indexOf(e.contient) >= 0));
+        // le bloc entier, pas seulement le mot : on remonte tant que le parent
+        // ne porte que cette prose-là
+        cibles = c.map(x => { let n2 = x;
+          while (n2.parentElement && n2.parentElement.id !== 'view' &&
+                 (n2.parentElement.textContent || '').trim().length <
+                 (x.textContent || '').trim().length * 1.25) n2 = n2.parentElement;
+          return n2; });
+      }
+      cibles = cibles.filter(x => x.getBoundingClientRect().height > 0);
+      cibles.forEach(x => { x.style.display = 'none'; });
+      n.push({ quoi: e.sel || ('« ' + e.contient + ' »'), n: cibles.length });
+    }
+    return n;
+  }, EPURE.map(e => ({ sel: e.sel, contient: e.contient, siPlusDe: e.siPlusDe })));
+  return vus;
+}
+
+const REPERES = {
+  '01-accueil-bas':  { massage:  e => /^Massage/.test(e.textContent || '') },
+  '02-config':       { relaxant: e => /1 h relaxant/.test(e.textContent || '') },
+  '03-confirmer':    { carte:    e => /Enregistrer ma carte/.test(e.textContent || ''),
+                       debit:    e => /Aucun débit maintenant/.test(e.textContent || ''),
+                       prix:     e => /^\s*110,00/.test(e.textContent || '') },
+  '05-pro-fil':      { mission:  e => /93,50/.test(e.textContent || '') },
+  '06-pro-acceptee': { percoit:  e => /Vous percevez/.test(e.textContent || '') },
+  '07-pro-revenus':  { net:      e => /^\s*824,50/.test(e.textContent || '') },
+};
+
 const ECRANS = [
   // Deux gardes par écran quand la phrase ET le chiffre comptent.
   { nom:'01-accueil',      dit:'De quel service avez-vous besoin',  pose: p => ETATS.client(p) },
+  // Le même accueil, défilé jusqu'au massage : c'est là que le doigt se pose.
+  { nom:'01-accueil-bas',  dit:'Massage',                           pose: async p => { await ETATS.client(p);
+      await p.evaluate(() => { const v = document.getElementById('view'); v.scrollTop = v.scrollHeight; }); } },
   { nom:'02-config',       dit:'1 h relaxant',                      pose: p => ETATS.configMassage(p) },
-  { nom:'03-confirmer',    dit:['Aucun débit maintenant', '110,00 €'], pose: p => ETATS.confirmer(p) },
+  { nom:'03-confirmer',    dit:['Confirmer la réservation', '110,00 €'], pose: p => ETATS.confirmer(p) },
   { nom:'04-suivi',        dit:'Artisan trouvé',                    pose: p => ETATS.suivi(p) },
   { nom:'05-pro-fil',      dit:'93,50 €',                            pose: p => ETATS.pro(p, { fil:true }) },
   { nom:'06-pro-acceptee', dit:'Vous percevez 93,50 €',              pose: p => ETATS.pro(p, { fil:true, mission:'accepted' }) },
-  { nom:'07-pro-revenus',  dit:'Paiement garanti',                  pose: p => ETATS.pro(p, { fil:false, mission:'paid', onglet:'earnings' }) },
+  { nom:'07-pro-revenus',  dit:['824,50 €', 'Ce mois-ci'],         pose: p => ETATS.pro(p, { fil:false, mission:'paid', onglet:'earnings' }) },
   { nom:'08-pro-agenda',   dit:'Mon planning',                      pose: p => ETATS.pro(p, { fil:false, mission:'accepted', onglet:'agenda' }) },
 ];
 
 async function capturer(sortie) {
   fs.mkdirSync(sortie, { recursive: true });
+  const reperes = {};
   const dir = preparerCopie();
   const opt = { headless: true };
   if (fs.existsSync(CHROME)) opt.executablePath = CHROME;
   const b = await chromium.launch(opt);
   const p = await ouvrirApp(b, dir);
   const faits = [];
+  const compteEpure = {};
   for (const e of ECRANS) {
     await e.pose(p);
     await p.waitForTimeout(350);
+    /* L'ÉPURE PASSE AVANT LE CONTRÔLE, et c'est l'ordre qui compte : ce qu'on
+       garantit lisible doit l'être sur l'écran TEL QU'IL SERA FILMÉ. Lu avant,
+       le contrôle validerait une phrase que l'épure vient de retirer. */
+    const epure = await epurer(p);
+    epure.forEach(x => { compteEpure[x.quoi] = (compteEpure[x.quoi] || 0) + x.n; });
     const txt = await p.evaluate(() => document.getElementById('view').innerText);
     // Les espaces d'un montant sont insécables dans l'app : on compare sur ce qui SE LIT.
     const lisible = t => t.replace(/[\u00A0\u202F\u2009]/g, ' ');
@@ -183,16 +276,57 @@ async function capturer(sortie) {
         throw new Error('Écran « ' + e.nom + ' » : « ' + attendu + ' » ne s\'y lit plus.\n' + txt.slice(0, 500));
       }
     }
+    const voulus = REPERES[e.nom];
+    if (voulus) {
+      reperes[e.nom] = {};
+      for (const [cle, reconnait] of Object.entries(voulus)) {
+        const box = await p.evaluate(src => {
+          /* LE PLUS PETIT ÉLÉMENT QUI PORTE LE TEXTE. Un premier jet prenait le
+             premier venu : « 1 h relaxant » ramenait la CARTE entière (354 × 276),
+             et le doigt se posait au milieu d'un bloc au lieu de la ligne. */
+          const reconnait = new Function('e', 'return (' + src + ')(e)');
+          const cible = [...document.querySelectorAll('#view button, #view .card, #view [data-act], #view label, #view div, #view span, #view b, #view strong')]
+            .filter(el => { const r = el.getBoundingClientRect();
+              /* UN REPÈRE DOIT ÊTRE VISIBLE. En élargissant la recherche aux spans,
+                 le relevé a ramené « 1 h relaxant » à y=1473 pour un écran haut de
+                 844 : l'élément existe, la capture ne le montre pas, et un doigt
+                 posé là désignerait du vide. Il doit tenir DANS l'image. */
+              return r.width > 20 && r.height > 20
+                  && r.top >= -2 && r.bottom <= window.innerHeight + 2
+                  && reconnait(el); })
+            .sort((a, b) => { const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+              return (ra.width * ra.height) - (rb.width * rb.height); })[0];
+          if (!cible) return null;
+          const r = cible.getBoundingClientRect();
+          return { x: r.left + r.width / 2, y: r.top + r.height / 2,
+                   w: Math.round(r.width), h: Math.round(r.height) };
+        }, reconnait.toString());
+        if (!box) throw new Error('Repère « ' + cle + ' » introuvable sur « ' + e.nom + ' ».');
+        reperes[e.nom][cle] = { x: Math.round(box.x), y: Math.round(box.y), w: box.w, h: box.h };
+      }
+    }
     await p.screenshot({ path: path.join(sortie, e.nom + '.png') });
     faits.push(e.nom);
   }
   if (p.__pannes.length) throw new Error('L\'app a levé pendant la capture :\n' + p.__pannes.join('\n'));
+  for (const nom of Object.keys(REPERES)) {
+    if (!reperes[nom]) throw new Error('Aucun repère relevé pour « ' + nom + ' » — l\'écran a-t-il disparu ?');
+  }
+  fs.writeFileSync(path.join(sortie, 'reperes.json'), JSON.stringify(reperes, null, 1));
   await b.close();
+  /* UNE LIGNE D'ÉPURE QUI NE RENCONTRE PLUS PERSONNE SE PÉRIME EN SILENCE : la
+     classe a été renommée, le bloc revient dans le film, et personne ne le voit. */
+  const mortes = Object.entries(compteEpure).filter(([, n]) => n === 0).map(([q]) => q);
+  if (mortes.length) {
+    throw new Error('Épure : ' + mortes.join(', ') + ' ne rencontre(nt) plus aucun élément.\n' +
+      'Soit le bloc a quitté l\'app, soit sa classe a changé — dans les deux cas la liste ment.');
+  }
+  console.log('  épure : ' + Object.entries(compteEpure).map(([q, n]) => q + ' ×' + n).join(', '));
   fs.rmSync(dir, { recursive: true, force: true });
   return faits;
 }
 
-module.exports = { capturer, ECRANS, ouvrirApp, preparerCopie, ETATS, RACINE, CHROME,
+module.exports = { capturer, ECRANS, REPERES, ouvrirApp, preparerCopie, ETATS, RACINE, CHROME,
   SERVICES_OUVERTS, CLIENTE, MASSEUSE, ADRESSE };
 
 if (require.main === module) {

@@ -1,84 +1,150 @@
-# La vidéo de présentation
+# La vidéo Ti-Services
 
-`ti-services.mp4` — **1080 × 1920**, 25 im/s, ~52 s, sans son.
-Format vertical : Instagram/Facebook Reels, statut WhatsApp, TikTok.
+`ti-services.mp4` — 1080 × 1920, 25 i/s, **40 s**, sans son.
+Format vertical : Instagram / TikTok / statut WhatsApp.
 
-## Ce qu'elle montre
+```bash
+NODE_PATH=$PWD/node_modules node outils/video/film.js              # capture + rendu
+NODE_PATH=$PWD/node_modules node outils/video/film.js --sans-capture   # rendu seul
+```
 
-Un massage à Lorient, de bout en bout, **avec les vrais écrans de l'application** :
+---
 
-1. le besoin — « Envie d'un massage. Aujourd'hui. »
-2. ce que fait une petite annonce — et où ça s'arrête
-3. côté client — l'accueil, le choix de la prestation, « Aucun débit maintenant »
-4. côté prestataire — la demande arrive, elle accepte, elle est payée et facturée
-5. ce qu'une annonce ne fera jamais — validation, paiement, documents
-6. la marque et l'adresse
+## Ce que c'est
 
-L'argument est celui-là, et un seul : **un site d'annonces vous laisse là,
-Ti-Services va jusqu'au paiement.**
+Une **bande-annonce**, pas une démonstration. Demandé dans cet ordre, et chaque
+phrase a changé le film :
 
-## Refabriquer
+1. « mettre en situation un prestataire, masseuse, et un client qui recherche un
+   massage, on doit voir l'intérêt et les **vrais écrans** de l'application » ;
+2. « il n'y a pas de mise en scène, juste une succession d'écran » ;
+3. « cela **reste** une succession d'écran, c'est ennuyeux » ;
+4. « enlève les textes explicatifs et les messages en rouge » ;
+5. « attention au texte de la vidéo qui s'empile sur les captures » ;
+6. « on enchaîne ça façon grand film américain à suspense, une bande-annonce
+   d'un film trépidant ».
 
-    node outils/video/film.js                 # capture les écrans PUIS rend le film
-    node outils/video/film.js --sans-capture  # rend le film, écrans inchangés
-    node outils/video/scene.js                # recapture les écrans seuls
+Le premier jet était un diaporama : des écrans qui se succèdent dans un cadre
+immobile, avec des légendes par-dessus. **Mesuré** : sur 48 secondes, trente
+étaient « un écran change dans un téléphone immobile », la caméra ne bougeait
+qu'ENTRE les plans, et les deux côtés se racontaient en deux blocs alors que
+tout l'argument est qu'ils se passent EN MÊME TEMPS.
 
-Il faut `ffmpeg` et le Chromium de Playwright. Le rendu prend ~2 min
-(1 290 images), puis ffmpeg assemble.
+Ce qui est livré :
 
-## Comment c'est fait
+- **un monde**, large de 2 400 points — Camille à gauche (Lorient), Léa à droite
+  (Gustavia), l'île entre les deux — et une **caméra** qui le parcourt ;
+- **vingt-huit plans** de 0,7 à 2 s, dont **huit plans de détail** qui poussent
+  sur le chiffre qui compte : « 110,00 € », « 93,50 € », « 824,50 € » ;
+- **zéro seconde de caméra figée** sur quarante (mesuré) ;
+- **six cartons pleins cadre** qui ponctuent, à la façon d'une bande-annonce — et
+  qui cachent le déplacement de la caméra, de sorte que la coupe suivante tombe
+  sur un cadre déjà en place ;
+- **le plan qui porte le film** : la caméra recule, et la demande TRAVERSE l'île
+  d'un téléphone à l'autre. C'est le seul plan long, et c'est volontaire : une
+  bande-annonce accélère partout sauf à l'endroit qu'elle veut faire voir.
 
-**Les écrans sont les VRAIS.** `scene.js` ouvre l'application dans le harnais de
-test, pose un état (Camille cliente, Léa masseuse, un massage à Lorient) et
-photographie ce que son propre `render()` produit. Un écran qui changerait dans
-l'app changerait dans la vidéo. Chaque capture est **gardée par une phrase** qui
-doit s'y lire : si « Aucun débit maintenant » quittait l'écran de confirmation,
-la capture échouerait au lieu de produire une vidéo qui dit autre chose que
-l'app.
+Le minutage, les points de regard et les textes sont dans `film.js`, en haut.
 
-**Rien n'est retapé.** La palette, Zouti, les icônes et la silhouette de l'île se
-lisent dans `index.html` (via `outils/cartes-visite.js`). La police est l'Inter
-des cartes de visite.
+---
 
-**Le film est déterministe.** `film.html` porte une fonction `anime(t)` qui place
-tout pour l'instant `t` : aucune transition CSS, aucun minuteur. On photographie
-image par image, puis ffmpeg assemble. Deux rendus donnent le même fichier.
-(Playwright sait filmer, mais son encodeur n'est pas installé ici.)
+## Les écrans sont les vrais
 
-`ecrans/08-pro-agenda.png` n'est pas employé par le film : il est capturé pour
-les affiches et les fiches de magasin, par la même porte et avec la même garde.
+`scene.js` ouvre l'**application réelle** dans le harnais des épreuves, la met
+dans l'état voulu et la photographie en 1170 × 2532 (trois fois la dalle, ce qui
+laisse de quoi pousser à 2,1 sans ramollir un pixel).
 
-## Ce que la scène suppose — à savoir avant de publier
+Rien n'est maquetté. La palette, le logo Zouti, les icônes et la silhouette de
+l'île se **lisent** dans `index.html` ; les endroits où le doigt se pose sont
+**relevés sur les écrans capturés** (`ecrans/reperes.json`), jamais écrits à la
+main.
 
-- **Tous les métiers sont ouverts** dans la grille d'accueil. Dans l'app, un
-  métier n'est réservable que s'il a au moins un prestataire validé ; la vidéo
-  montre l'application une fois le parc constitué.
-- **Léa a un mois de missions derrière elle** (824,50 € de net) : c'est ce que
-  l'écran Revenus additionne.
-- `IS_PROD` et `isProdHost()` sont posés à vrai **dans une copie**, jamais dans
-  le dépôt : sans cela l'app se croit en bêta et couvre ses écrans de
-  « Démonstration » et de « BÊTA ». La vidéo montre le produit tel qu'il est
-  servi sur ti-services.fr.
-- Les montants (110 € le massage d'une heure, 93,50 € pour la prestataire) ne
-  sont pas écrits dans la vidéo : ils viennent du catalogue et du taux de
-  commission de l'application. Ils suivront si les tarifs changent.
+Ce que la scène suppose, et qui n'est pas l'état d'un compte ordinaire :
 
-## Ce que la vidéo N'affirme PAS, et pourquoi
+- tous les métiers sont ouverts (`SERVICES_OUVERTS`) ;
+- Léa a un mois d'historique (sept massages, 824,50 € nets à 15 % de commission) ;
+- `IS_PROD` est forcé **dans une copie temporaire** du fichier, pour que les
+  bandeaux « Démonstration » et « BÊTA » ne paraissent pas. `index.html` n'est
+  jamais modifié.
 
-Un premier jet annonçait « prestataires vérifiés **et assurés** ». C'est faux :
-`draftInsDone` accepte `insuranceNone`, et `insPeutValider` laisse valider un
-dossier dont l'assurance est « déclarée absente » — le commentaire du code le dit
-en toutes lettres, c'est à l'éditeur de trancher au cas par cas. Une vidéo
-publique ne peut pas promettre ce que le produit ne tient pas.
+### L'épure des captures
 
-Ce qui EST vrai, et qui est dit à la place : **chaque prestataire est validé à la
-main** avant de recevoir la moindre demande (`status === 'valide'` conditionne
-tout), et son identité, son assurance et son statut sont **contrôlés** — l'état
-de l'assurance est connu et arbitré, qu'elle soit validée, à vérifier, refusée ou
-déclarée absente.
+« Tout ça est bien dans l'application, mais pas dans une vidéo. » On n'efface
+rien de l'image : on met l'application dans l'état où ces blocs ne paraissent
+pas. La liste est déclarée dans `scene.js` (`EPURE`), chaque ligne avec sa
+raison, et **une garde refuse une entrée qui ne rencontre plus personne** — une
+liste de sélecteurs se périme en silence au premier renommage de classe.
 
-## Pas de musique
+| retiré | pourquoi |
+|---|---|
+| `.notifcta` | la relance « activer les notifications » : qui se sert de l'app les a déjà activées |
+| `.trust` | la rangée de réassurance de l'accueil (voir plus bas) |
+| `.zouti-line` | la phrase de l'assistant : elle s'adresse à qui regarde, pas à qui est filmé |
+| `p.mini` | les mentions en petits caractères, illisibles sur un téléphone filmé |
+| `p.sub` **de plus de 44 signes** | un sous-titre explicatif — mais pas « De quel service avez-vous besoin ? », qui est la question qui porte l'écran |
+| le pavé « Nous enregistrons seulement votre carte » | il passe sur un **carton plein cadre**, où il se lit vraiment |
 
-Aucune piste sonore n'est jointe : nous n'avons pas de licence. Sur les réseaux,
-ajoutez la musique depuis l'éditeur de la plateforme (Instagram, TikTok), qui
-fournit les droits. La vidéo se lit sans son — tout est écrit à l'image.
+Ce qui reste est ce qui porte le film : les prix, les boutons, les montants, les
+cartes de mission.
+
+---
+
+## Ce que la vidéo N'AFFIRME PAS, et pourquoi
+
+Un premier jet annonçait des prestataires « vérifiés **et assurés** ». **Le
+produit ne le tient pas** : `draftInsDone` accepte `insuranceNone`,
+`insPeutValider` laisse passer le statut `'aucune'`, et la console
+d'administration porte un bouton nommé **« Valider sans assurance »**. Un dossier
+reste donc complet avec une assurance déclarée **absente**.
+
+La vidéo dit ce qui est vrai : **« Chaque prestataire est validé à la main —
+identité, assurance, statut : contrôlés avant qu'il reçoive une seule
+demande. »** Contrôlé n'est pas détenu.
+
+`verifierPromesses()` dans `film.js` **refuse de fabriquer le film** si une
+tournure de surengagement y reparaît, et porte son assertion arrière.
+
+> **À décider par l'éditeur, et ce n'est pas la vidéo.** L'application elle-même
+> fait la promesse que la vidéo refuse, à trois endroits : la rangée de
+> réassurance de l'accueil (« Prestataires assurés »), son dépliant (« Chaque
+> prestataire justifie d'une RC pro vérifiée ») et le paragraphe public indexé
+> par Google (« prestataires **vérifiés et assurés** », `index.html:1719`). Les
+> CGU, elles, sont justes : l'Intervenant *déclare* détenir une RC pro — une
+> déclaration n'est pas une vérification. Soit le texte change, soit la
+> validation sans assurance cesse. En attendant, l'épure tient cette rangée hors
+> du film, et aucun plan ne la magnifie.
+
+**Pas de musique** : aucune licence ici. À poser depuis l'éditeur de la
+plateforme (Instagram, TikTok) au moment de publier — leurs bibliothèques sont
+libres de droits pour un compte professionnel.
+
+---
+
+## Les gardes
+
+Le film **refuse de se fabriquer** si l'une d'elles tombe. Chacune porte son
+assertion arrière : une garde qui ne reconnaîtrait plus rien laisserait tout
+passer en silence.
+
+| garde | ce qu'elle refuse |
+|---|---|
+| `scene.js` · phrase par écran | une capture où le montant ou le libellé annoncé ne se lit plus |
+| `scene.js` · repères visibles | un repère hors de l'image — un doigt qui désignerait du vide |
+| `scene.js` · épure | une ligne d'épure qui ne rencontre plus aucun élément |
+| `film.js` · `verifierPromesses` | une tournure de surengagement dans le film |
+| `film.js` · `DETAIL_Z_MIN` + bornes | un plan de détail dont le cadre sort de la dalle |
+| `film.js` · `verifierGestes` | un doigt invisible ou hors du cadre |
+| `film.js` · `verifierLisibilite` | **du texte de la vidéo posé sur une capture** |
+
+Cette dernière vient du reproche n° 5. Elle relève le film tous les cinquièmes
+de seconde et compare, rectangle par rectangle, chaque mot visible à chaque
+dalle allumée.
+
+---
+
+## Ce qui reste à faire
+
+- Une version **carrée** (1:1) pour le fil Facebook : `LARGEUR`/`HAUTEUR` dans
+  `film.js`, puis refaire la mise en page des cartons.
+- `08-pro-agenda` est capturé et n'est employé par aucun plan — gardé pour une
+  version qui parlerait du planning.
