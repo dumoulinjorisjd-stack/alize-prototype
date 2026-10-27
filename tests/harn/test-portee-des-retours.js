@@ -18,6 +18,23 @@
    portée. L'erreur PROUVE qu'elle y est ; un source qui passe prouve le contraire.
    Aucune accolade comptée, aucune heuristique.
 
+   CE QU'ELLE COUVRE, ET CE QU'ELLE NE COUVRE PAS. Elle juge les variables RENDUES par un
+   `return {…}` de premier niveau : 38 sur les 79 exports du serveur, aucune hors sonde.
+   La classe est plus large — une variable déclarée dans un `try` et lue n'importe où
+   après le `catch` — et cette classe-là a été mesurée À LA MAIN le 26/10/2026 : elle est
+   PROPRE, aucun second cas. On n'en fait pas une garde, et c'est une décision : sans
+   analyseur de portées (il n'y en a aucun dans node_modules), la recherche textuelle
+   sur-accuse par nature, et une garde qui crie au loup finit désarmée. Les quatre
+   sources de bruit, relevées, pour qu'on ne refasse pas les trois sondes :
+     • la PROSE des commentaires — `a` et `n` se lisent dans « aux montants », « aucune
+       facture » : 6 faux positifs sur 8 ;
+     • le NOM RÉUTILISÉ dans un `try` frère — `notifyArtisanPaid` déclare trois `u`
+       distincts, chacun dans son bloc : 12 candidats ;
+     • la CLÉ d'objet et l'ACCÈS de propriété — `{j: …}` et `b.j` ne sont pas des
+       références à la variable `j` ;
+     • le PARAMÈTRE de `catch`, qui n'est ni `let` ni `const` et échappe au filtre des
+       redéclarations.
+
    CE QUE CETTE GARDE NE COUVRE PAS, ET C'EST DIT :
    • les retours IMBRIQUÉS (dans un `if`, une boucle) — un `let` intérieur masque
      légalement celui du dessus, et la sonde crierait au loup ;
