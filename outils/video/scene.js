@@ -20,8 +20,14 @@ const CHROME = '/opt/pw-browsers/chromium';
 // Les services ouverts et les noms de la scène : ce sont des choix de MISE EN SCÈNE,
 // au même titre que « Camille ». Ils sont déclarés ici, en un seul endroit, pour qu'on
 // sache en les lisant ce que la vidéo suppose.
+/* `colis` EST OUVERT ICI ET NULLE PART AILLEURS. Mesuré : c'est le seul des dix
+   pavés de l'accueil qui tombait en « Bientôt disponible » — un pavé gris, une
+   rangée de séparation, et le dernier mot d'un écran qui vend. Ouvrir un métier
+   est un état du marché (un prestataire validé), pas une promesse du produit :
+   il change d'une semaine à l'autre, et la vidéo montre l'accueil d'un bon jour.
+   Ce que la grille AFFIRME — les métiers, les prix — ne bouge pas d'un caractère. */
 const SERVICES_OUVERTS = ['menage','baby','jardin','demenagement','coiffure','animaux',
-  'massage','manucure','epilation','plomberie','elec','clim','coach','yoga'];
+  'massage','manucure','epilation','plomberie','elec','clim','coach','yoga','colis'];
 const CLIENTE = { uid:'cli1', name:'Camille', email:'camille@exemple.fr', phone:'0690123456' };
 const MASSEUSE = { uid:'pro1', name:'Léa Mercier', email:'lea@exemple.fr', phone:'0690887766' };
 const ADRESSE = { id:'a1', label:'Maison', zone:'Lorient',
@@ -122,13 +128,37 @@ const ETATS = {
       S.proMollieCanWork = true; S.proMollieOrgId = 'org_x'; S.proMollieReady = true;
       S.account = o.pro;
       const demain = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
-      const faire = st => { const d = window.__newMission(window.__svc.trouve('massage'));
-        d.id='r9'; d.status=st; d.duration=1; d.when='Demain'; d.dateISO=demain;
-        d.slot='17:00'; d.zone=o.adr.zone; d.address=o.adr.address;
-        d.acts = [{ id:'relax60', nm:'1 h relaxant', price:110 }];
-        d.client = { name:o.cli.name, phone:o.cli.phone }; return d; };
-      S.openRequests = o.fil ? [faire('pending')] : [];
-      S.proMissions = o.mission ? [faire(o.mission)] : [];
+      /* TROIS DEMANDES, PAS UNE. Mesuré sur la capture précédente : « Missions
+         disponibles · 1 », une carte, puis 470 px de blanc. Un marché à une seule
+         offre ne donne envie à personne de s'inscrire — et le fil d'une masseuse
+         un soir de saison n'en porte pas une. Les deux autres ne servent qu'à ça :
+         la première reste celle du film (c'est elle qu'on touche, c'est son
+         93,50 € que la garde exige). Les trois montants sont ceux que le mois
+         d'historique porte déjà, et les trois actes sont ceux du catalogue de
+         massage, relevés sur l'écran de configuration — on n'invente ni un tarif
+         ni une prestation.
+
+         LES TROIS DURÉES SONT DES HEURES ENTIÈRES, ET C'EST UNE CONTRAINTE DE
+         L'AFFICHAGE, PAS UN GOÛT : la carte du fil écrit `duration + ' h'` sans
+         mise en forme, donc une prestation d'une heure et demie s'y lit
+         « 1.5 h » — relevé sur un premier jet qui prenait l'acte « 1 h 30 » du
+         catalogue. C'est un défaut de l'application, pas de la vidéo (voir
+         LISEZ-MOI) ; on le contourne ici au lieu de le filmer. */
+      const DEMANDES = [
+        { id:'r9', cli:o.cli.name, zone:'Lorient · Camaruche', slot:'17:00', h:1, acte:'1 h relaxant',       px:110 },
+        { id:'r8', cli:'Noé',      zone:'Gustavia',            slot:'10:00', h:1, acte:'Duo (2 pers., 1 h)', px:210 },
+        { id:'r7', cli:'Inès',     zone:'Saint-Jean',          slot:'14:30', h:2, acte:'1 h relaxant',       px:110, fois:2 },
+      ];
+      const faire = (q, st) => { const d = window.__newMission(window.__svc.trouve('massage'));
+        d.id=q.id; d.status=st; d.duration=q.h; d.when='Demain'; d.dateISO=demain;
+        d.slot=q.slot; d.zone=q.zone; d.address=o.adr.address;
+        d.acts = [{ id:q.id+'a', nm:q.acte, price:q.px, qty:q.fois || 1 }];
+        d.client = { name:q.cli, phone:o.cli.phone }; return d; };
+      /* CE QU'ELLE A PRIS N'EST PLUS À PRENDRE. La demande acceptée quittait le
+         fil des disponibles — elle y restait, à côté d'elle-même, sous le même
+         identifiant. */
+      S.proMissions = o.mission ? [faire(DEMANDES[0], o.mission)] : [];
+      S.openRequests = o.fil ? DEMANDES.slice(o.mission ? 1 : 0).map(q => faire(q, 'pending')) : [];
       S.missions = [];
       // Un mois de travail derrière elle : c'est ce que l'écran Revenus additionne.
       const jour = n => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
@@ -185,12 +215,30 @@ const EPURE = [
      seulement parce que l'épure passe désormais AVANT elle.) */
   { sel: '#view p.sub', siPlusDe: 44,
     quoi: 'le sous-titre explicatif d\'un écran, quand c\'est de la prose et non une question' },
-  /* L'ANCRE DÉSIGNE LE PARAGRAPHE, PAS SON CHAPEAU. « Aucun débit maintenant »
-     est dans un <b> : le plus petit élément qui le porte était ce <b>, et l'épure
-     retirait le titre en laissant les quatre lignes d'explication — l'inverse de
-     ce qu'on veut. On vise une phrase qui n'existe QUE dans le corps. */
-  { contient: 'Nous enregistrons seulement votre carte',
-    quoi: 'le pavé qui explique le paiement : il passe sur un CARTON plein cadre, où il se lit vraiment' },
+  /* LA RELANCE D'INSTALLATION DU PRESTATAIRE. Encadrée de corail, elle décrit où
+     en est un dossier Mollie — une étape de mise en route, pas le produit. Elle
+     tenait un quart de l'écran du fil, juste sous la mission : c'est la place de
+     ce qu'on vend. (Même famille que `.notifcta` : quelqu'un qui travaille ne la
+     voit plus.) */
+  { sel: '#view [data-act="pro-mollie"]',
+    quoi: 'la carte d\'état du dossier de paiement du prestataire — une mise en route, pas le produit' },
+  /* ON GARDE LA PROMESSE, ON RETIRE SON MODE D'EMPLOI.
+     « Aucun débit maintenant. » est LE bloc qui vend cet écran, et la phrase qui
+     le suit explique le mécanisme en quatre lignes. Les deux vivent dans le MÊME
+     <span> : la prose est un nœud de TEXTE, frère du <b>, donc aucun élément à
+     masquer. On vide les nœuds de texte qui suivent le chapeau, et le bandeau
+     reste — sa couleur, son bouclier, sa phrase. Mesuré : 112 px deviennent 40,
+     et l'écran garde ce pour quoi on le montre.
+
+     C'EST LA SECONDE ÉCRITURE DE CETTE ÉPURE, ET LA PREMIÈRE A COSTÉ L'ÉCRAN.
+     Elle visait une phrase du corps (« Nous enregistrons seulement votre carte »)
+     pour ne pas emporter le chapeau — mais la remontée vers « le bloc entier »
+     reprenait le bandeau tout entier, chapeau compris. Résultat mesuré :
+     « Confirmer la réservation », une ligne de prix, un bouton, et 514 px de
+     blanc — 62 % de l'écran. Une épure qui vide l'écran qu'on vend coûte plus
+     qu'elle ne rapporte. */
+  { contient: 'Aucun débit maintenant', garder: 'b',
+    quoi: 'les quatre lignes qui expliquent le prélèvement, sous un chapeau qu\'on garde' },
 ];
 
 /* On masque, on n'efface pas : `visibility` garde la place, donc la mise en page
@@ -201,6 +249,21 @@ async function epurer(p) {
     const n = [];
     for (const e of liste) {
       let cibles = [];
+      if (e.garder) {
+        // on ne masque pas un élément : on vide la prose qui suit le chapeau,
+        // dans le parent qui les porte tous les deux.
+        const chapeau = [...document.querySelectorAll('#view ' + e.garder)]
+          .find(x => (x.textContent || '').indexOf(e.contient) >= 0);
+        let n3 = 0;
+        if (chapeau && chapeau.parentElement) {
+          const sac = chapeau.parentElement;
+          [...sac.childNodes].forEach(k => {
+            if (k.nodeType === 3 && (k.nodeValue || '').trim().length > 2) { k.nodeValue = ''; n3++; }
+          });
+        }
+        n.push({ quoi: '« ' + e.contient + ' » (sous son chapeau)', n: n3 });
+        continue;
+      }
       if (e.sel) cibles = [...document.querySelectorAll(e.sel)].filter(x =>
         !e.siPlusDe || (x.textContent || '').trim().length > e.siPlusDe);
       else {
@@ -220,19 +283,28 @@ async function epurer(p) {
       n.push({ quoi: e.sel || ('« ' + e.contient + ' »'), n: cibles.length });
     }
     return n;
-  }, EPURE.map(e => ({ sel: e.sel, contient: e.contient, siPlusDe: e.siPlusDe })));
+  }, EPURE.map(e => ({ sel: e.sel, contient: e.contient, siPlusDe: e.siPlusDe, garder: e.garder })));
   return vus;
 }
 
+/* DEUX REPÈRES PAR ÉCRAN PLUTÔT QU'UN, ET C'EST LA CAMÉRA QUI LES RÉCLAME.
+   « Trop de zoom et dézoom, ça fait mal à la tête » : un seul repère par écran
+   obligeait à repasser en plan large entre deux gros plans, donc à faire le
+   yo-yo. Avec deux points visés sur le même écran, la caméra se DÉPLACE à
+   focale constante — c'est une coupe, pas un zoom. */
 const REPERES = {
   '01-accueil-bas':  { massage:  e => /^Massage/.test(e.textContent || '') },
   '02-config':       { relaxant: e => /1 h relaxant/.test(e.textContent || '') },
   '03-confirmer':    { carte:    e => /Enregistrer ma carte/.test(e.textContent || ''),
                        debit:    e => /Aucun débit maintenant/.test(e.textContent || ''),
                        prix:     e => /^\s*110,00/.test(e.textContent || '') },
-  '05-pro-fil':      { mission:  e => /93,50/.test(e.textContent || '') },
-  '06-pro-acceptee': { percoit:  e => /Vous percevez/.test(e.textContent || '') },
-  '07-pro-revenus':  { net:      e => /^\s*824,50/.test(e.textContent || '') },
+  '05-pro-fil':      { mission:  e => /93,50/.test(e.textContent || ''),
+                       seconde:  e => /178,50/.test(e.textContent || ''),
+                       enligne:  e => /^Vous êtes en ligne/.test(e.textContent || '') },
+  '06-pro-acceptee': { percoit:  e => /Vous percevez/.test(e.textContent || ''),
+                       dispos:   e => /187,00/.test(e.textContent || '') },
+  '07-pro-revenus':  { net:      e => /^\s*824,50/.test(e.textContent || ''),
+                       factures: e => /^Mes factures par mission/.test(e.textContent || '') },
 };
 
 const ECRANS = [
@@ -326,7 +398,7 @@ async function capturer(sortie) {
   return faits;
 }
 
-module.exports = { capturer, ECRANS, REPERES, ouvrirApp, preparerCopie, ETATS, RACINE, CHROME,
+module.exports = { capturer, ECRANS, REPERES, EPURE, epurer, ouvrirApp, preparerCopie, ETATS, RACINE, CHROME,
   SERVICES_OUVERTS, CLIENTE, MASSEUSE, ADRESSE };
 
 if (require.main === module) {

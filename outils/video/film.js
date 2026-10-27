@@ -161,7 +161,39 @@ function montage(plans) {
         ', c\'est-à-dire avant la fin du précédent (' + K[i - 1].t + ') — le transit est trop long.');
     }
   }
+  _tangage = verifierTangage(K);
   return K;
+}
+
+/* LE TANGAGE : COMBIEN DE FOIS LA CAMÉRA CHANGE DE SENS.
+   « Trop de zoom et dézoom, ça fait mal à la tête. » Ce qui fatigue n'est pas
+   le nombre de plans — une bande-annonce en a cent — c'est l'aller-retour :
+   entrer, ressortir, rentrer sur le MÊME sujet. On compte donc les INVERSIONS de
+   direction du zoom sur tout le film, en ignorant les variations qui ne se voient
+   pas, et l'on refuse au-delà d'un petit nombre.
+
+   Mesuré sur la coupe précédente : 12. Chaque acte alternait plan large et gros
+   plan d'un facteur deux, sept fois. Après la re-coupe il en reste quatre, et les
+   quatre DISENT quelque chose : les bulles qui s'effondrent, la respiration avant
+   la traversée, et la poussée qui la referme. La borne est serrée exprès — un
+   cinquième aller-retour devra se justifier, pas se glisser. */
+let _tangage = null;
+const tangage = () => _tangage;
+const TANGAGE_MAX = 4;
+const TANGAGE_SEUIL = 0.04;   // en deçà, l'œil ne lit aucun mouvement d'échelle
+function verifierTangage(K) {
+  let sens = 0, n = 0; const ou = [];
+  for (let i = 1; i < K.length; i++) {
+    const d = K[i].z - K[i - 1].z;
+    if (Math.abs(d) < TANGAGE_SEUIL) continue;
+    const s = d > 0 ? 1 : -1;
+    if (sens && s !== sens) { n++; ou.push(K[i].t + 's (' + K[i - 1].z + '→' + K[i].z + ')'); }
+    sens = s;
+  }
+  if (!ou.length && n) throw new Error('Tangage : ' + n + ' inversion(s) comptée(s) et aucune située — le relevé ne mesure rien.');
+  if (n > TANGAGE_MAX) throw new Error('Tangage : ' + n + ' inversions de zoom pour ' +
+    TANGAGE_MAX + ' admises — la caméra fait le yo-yo. À ' + ou.join(', ') + '.');
+  return { n, ou };
 }
 
 const a = (de, duree) => `data-a="${de},${duree}"`;          // entrée
@@ -189,25 +221,50 @@ function page(c, src) {
      points de latitude : un détail est donc cadré sur toute la largeur de l'écran
      et ne balaie qu'en hauteur, ce qui est la façon dont on lit un téléphone. */
   const DETAIL_Z_MIN = 1.90;
-  const detail = (de, fin, tele, ecran, nom, z, transit, cale) => {
+  /* UNE SEULE FOCALE DE GROS PLAN POUR TOUT LE FILM. Tant qu'elle ne bouge pas,
+     passer d'un repère à l'autre est un DÉPLACEMENT — l'œil suit — au lieu
+     d'un changement d'échelle, qu'il subit. C'est la réponse à « trop de zoom
+     et dézoom », et c'est pour ça qu'elle est une constante et non un argument
+     qu'on réglerait plan par plan. */
+  const Z_PRES = 1.90;
+  const detail = (de, fin, tele, ecran, nom, z, transit) => {
     if (z < DETAIL_Z_MIN) throw new Error('Plan de détail à ' + z + ' : sous ' +
       DETAIL_Z_MIN + ' le cadre déborde de l\'écran (' + ecran + '.' + nom + ').');
     const q = vise(tele, ecran, nom);
     const demiL = 540 / z, demiH = 960 / z;
     const gx = TEL.w / 2 - TEL.bordure, gy = TEL.h / 2 - TEL.bordure;
     const borne = (v, c, g, demi) => Math.max(c - g + demi, Math.min(c + g - demi, v));
-    /* « haut » cale le cadre en tête d'écran. Un plan de détail peut emporter des
-       voisins qu'on ne veut pas magnifier — ici la rangée de réassurance de
-       l'accueil, dont une ligne promet plus que le produit ne tient (voir
-       LISEZ-MOI). On cadre, on ne retouche pas la capture. */
     const dans = k => ({ t: k.t, z: k.z,
       x: Math.round(borne(k.x, tele.x, gx, 540 / k.z)),
-      y: Math.round(cale === 'haut' ? tele.y - gy + 960 / k.z
-                                    : borne(k.y, tele.y, gy, 960 / k.z)) });
-    return { de, fin, z, transit, borne: dans,
+      y: Math.round(borne(k.y, tele.y, gy, 960 / k.z)) });
+    const plan = { de, fin, z, transit, borne: dans,
       x: Math.round(borne(q.x, tele.x, gx, demiL)),
-      y: Math.round(cale === 'haut' ? tele.y - gy + demiH : borne(q.y, tele.y, gy, demiH)),
-      derive: { x: 6, y: cale === 'haut' ? 0 : -10, z: 0.02 } };
+      y: Math.round(borne(q.y, tele.y, gy, demiH)),
+      /* AUCUNE DÉRIVE DE ZOOM SUR UN GROS PLAN. Elle poussait de 0,02 par plan et
+         RETOMBAIT à la coupe suivante : six plans d'affilée, c'est une scie, et
+         c'est précisément ce qui fatigue. Le mouvement est latéral, et lui seul. */
+      derive: { x: 6, y: -10, z: 0 } };
+    /* LE CADRE DOIT CONTENIR CE QU'IL VISE, ET ÇA NE VA PAS DE SOI : les repères
+       sont MESURÉS sur la capture, donc ils bougent quand l'écran bouge, et le
+       cadre est BORNÉ au téléphone. Un pavé ajouté à l'accueil a déjà fait
+       descendre la tuile « Massage » de 160 px : le plan la cadrait toujours
+       aussi fièrement, et elle n'était plus dedans. Un plan qui rate sa cible
+       ne se voit qu'à l'œil, une image sur mille — on le refuse ici. */
+    /* LE REPÈRE EST UN CENTRE, PAS UN COIN — `capturer` relève `left + width/2`
+       et `top + height/2`. Un premier jet de cette garde l'a lu comme un coin
+       haut-gauche et a refusé un plan parfaitement cadré, en annonçant une cible
+       large de 793 px sur un écran qui en fait 596. */
+    const r = R[ecran][nom], c = surEcran(tele, r.x, r.y);
+    const boite = { g: c.x - r.w * K / 2, d: c.x + r.w * K / 2,
+                    h: c.y - r.h * K / 2, b: c.y + r.h * K / 2 };
+    const cadre = { g: plan.x - demiL, d: plan.x + demiL, h: plan.y - demiH, b: plan.y + demiH };
+    if (boite.g < cadre.g || boite.d > cadre.d || boite.h < cadre.h || boite.b > cadre.b)
+      throw new Error('Plan de détail hors cible : ' + ecran + '.' + nom +
+        ' est en (' + Math.round(boite.g) + ',' + Math.round(boite.h) + ')–(' +
+        Math.round(boite.d) + ',' + Math.round(boite.b) + ') et le cadre couvre (' +
+        Math.round(cadre.g) + ',' + Math.round(cadre.h) + ')–(' +
+        Math.round(cadre.d) + ',' + Math.round(cadre.b) + ').');
+    return plan;
   };
   const plein = (de, fin, tele, z, transit, derive) =>
     ({ de, fin, x: tele.x, y: 1150, z: z || 1.00, transit, derive });
@@ -222,17 +279,20 @@ function page(c, src) {
     { de: 5.2,  fin: 6.4,  x: 640, y: 320, z: 0.600, transit: 0.50, derive: { x: -6, y: 5, z: -0.010 } },
     { de: 6.4,  fin: 7.3,  x: 600, y: 900, z: 0.800, transit: 0.50, derive: { x: 0, y: 24, z: 0.030 } },
 
-    /* ACTE 2 — elle commande. Le plein et le détail alternent, et les transits
-       tombent à un dixième de seconde : à cette durée ce n'est plus un mouvement,
-       c'est une COUPE. C'est la grammaire demandée. */
-    plein(7.3, 8.6, CLIENTE_TEL, 1.00, 0.55),
-    detail(8.6, 9.4, CLIENTE_TEL, '01-accueil-bas', 'massage', 1.92, 0.10, 'haut'),
-    plein(9.4, 10.5, CLIENTE_TEL, 1.00, 0.10),
-    detail(10.5, 11.2, CLIENTE_TEL, '02-config', 'relaxant', 1.95, 0.10),
-    plein(11.2, 12.3, CLIENTE_TEL, 1.00, 0.10),
-    detail(12.3, 13.1, CLIENTE_TEL, '03-confirmer', 'prix', 2.10, 0.10),
-    plein(13.1, 14.3, CLIENTE_TEL, 1.00, 0.40),        // sous le carton : on se replace
-    detail(14.3, 15.2, CLIENTE_TEL, '03-confirmer', 'carte', 1.95, 0.10),
+    /* ACTE 2 — elle commande. UNE SEULE POUSSÉE, PUIS ON NE BOUGE PLUS DE FOCALE.
+       « L'idée est bien mais trop de zoom et dézoom, ça fait mal à la tête » :
+       la coupe précédente alternait plan large (z 1,00) et gros plan (z 2,00)
+       SEPT fois — quatorze changements d'échelle en vingt secondes, chacun d'un
+       facteur deux. On entre une fois, on reste, et la caméra se DÉPLACE d'un
+       repère à l'autre : un transit d'un dixième de seconde à focale constante
+       est une COUPE, et c'est elle qui donne le rythme. Ce qui change sous le
+       cadre, ce sont les ÉCRANS — quatre en huit secondes. */
+    plein(7.3, 8.7, CLIENTE_TEL, 1.00, 0.55),
+    detail(8.7, 9.6, CLIENTE_TEL, '01-accueil-bas', 'massage', Z_PRES, 0.45),
+    detail(9.6, 11.3, CLIENTE_TEL, '02-config', 'relaxant', Z_PRES, 0.12),
+    detail(11.3, 12.3, CLIENTE_TEL, '03-confirmer', 'prix', Z_PRES, 0.10),
+    detail(12.3, 14.3, CLIENTE_TEL, '03-confirmer', 'debit', Z_PRES, 0.10),  // le carton le recouvre à 13,15
+    detail(14.3, 15.2, CLIENTE_TEL, '03-confirmer', 'carte', Z_PRES, 0.10),
 
     /* ACTE 3 — la traversée. LE SEUL PLAN LONG DU FILM, et c'est voulu : une
        bande-annonce accélère partout sauf à l'endroit qu'elle veut faire voir. */
@@ -240,13 +300,15 @@ function page(c, src) {
     { de: 16.4, fin: 18.4, x: 1200, y: 1100, z: 0.600, transit: 1.0, derive: { x: 0, y: -18, z: 0.026 } },
     plein(18.4, 19.4, PRO_TEL, 1.00, 0.70),            // le coup de poing sur son téléphone
 
-    /* ACTE 4 — elle gagne. Même alternance, encore un cran plus serrée. */
-    plein(19.4, 20.6, PRO_TEL, 1.00, 0.08),
-    detail(20.6, 21.4, PRO_TEL, '05-pro-fil', 'mission', 2.00, 0.10),
-    plein(21.4, 22.5, PRO_TEL, 1.00, 0.10),
-    detail(22.5, 23.3, PRO_TEL, '06-pro-acceptee', 'percoit', 1.95, 0.10),
-    plein(23.3, 24.4, PRO_TEL, 1.00, 0.10),
-    detail(24.4, 25.3, PRO_TEL, '07-pro-revenus', 'net', 2.10, 0.10),
+    /* ACTE 4 — elle gagne. MÊME GRAMMAIRE : une poussée, puis on descend son
+       écran repère après repère. Le plan large qui ouvrait l'acte faisait doublon
+       avec le coup de poing juste au-dessus — il part avec le yo-yo. */
+    detail(19.4, 20.5, PRO_TEL, '05-pro-fil', 'seconde', Z_PRES, 0.55),
+    detail(20.5, 21.5, PRO_TEL, '05-pro-fil', 'mission', Z_PRES, 0.10),
+    detail(21.5, 22.5, PRO_TEL, '06-pro-acceptee', 'dispos', Z_PRES, 0.10),
+    detail(22.5, 23.4, PRO_TEL, '06-pro-acceptee', 'percoit', Z_PRES, 0.10),
+    detail(23.4, 24.4, PRO_TEL, '07-pro-revenus', 'factures', Z_PRES, 0.10),
+    detail(24.4, 25.3, PRO_TEL, '07-pro-revenus', 'net', Z_PRES, 0.10),
     { de: 25.3, fin: 26.6, x: 1200, y: 640, z: 2.000, transit: 0.5, derive: { x: 0, y: 8, z: 0.008 } },
 
     /* ACTE 5 — ce qu'une annonce ne fera jamais, puis la fin. */
@@ -270,7 +332,14 @@ function page(c, src) {
   /* Un téléphone posé dans le monde, et les écrans qui s'y succèdent.
      LE PREMIER ÉCRAN ENTRE SANS FONDU, à l'instant où le téléphone paraît :
      avec un fondu, deux ou trois images montrent un cadre creux. */
-  const tel = (nom, p, ecrans, de) => `<div class="tel enMonde telMonte" id="tel-${nom}" ${pose(p)} ${a(de, 0.9)}>
+  /* UN TÉLÉPHONE QUI APPARAÎT PENDANT QU'ON LE REGARDE SE LIT COMME UN DÉFAUT.
+     Le corps est sombre : à mi-fondu, sur le sable, il donne un rectangle gris
+     pâle sans cadre ni ombre — ça ne ressemble pas à un téléphone endormi, ça
+     ressemble à une image qui n'a pas chargé. Mesuré à 16,0 s sur la traversée :
+     celui de Léa arrivait à 15,8 en neuf dixièmes, la caméra se posait à 16,1,
+     on le voyait donc à un cinquième d'opacité. Chacun arrive AVANT que la
+     caméra l'atteigne, et le fondu se raccourcit d'autant. */
+  const tel = (nom, p, ecrans, de) => `<div class="tel enMonde telMonte" id="tel-${nom}" ${pose(p)} ${a(de, 0.55)}>
     <div class="tel-dedans">` +
     ecrans.map((e, i) => `<img src="ecrans/${e.f}.png" class="ecran" ` +
       `${a(e.de, e.fondu != null ? e.fondu : (i === 0 ? 0.01 : 0.4))} ${e.s ? s(e.s, 0.35) : ''}>`).join('') +
@@ -468,7 +537,7 @@ body{font-family:Inter,sans-serif;background:${c.sand};color:${c.ink};-webkit-fo
     { f:'05-pro-fil',      de:18.26, fondu:0.18 },
     { f:'06-pro-acceptee', de:21.42, fondu:0.10 },
     { f:'07-pro-revenus',  de:23.32, fondu:0.10 },
-  ], 15.8)}
+  ], 15.3)}
 
   ${glisse(CLIENTE_TEL, 195, 640, 7.7, -300)}
   ${doigt(CLIENTE_TEL, R['01-accueil-bas'].massage, 8.9)}
@@ -754,7 +823,7 @@ async function rendre({ recapturer = true, fps = FPS } = {}) {
   return { mp4, images: total, duree: DUREE, gestes: nGestes, lisible };
 }
 
-module.exports = { rendre, page, verifierPromesses, verifierCouleurs, verifierGestes, verifierLisibilite, montage, DUREE, LARGEUR, HAUTEUR, FPS, MONDE, surEcran };
+module.exports = { rendre, page, verifierPromesses, verifierCouleurs, verifierGestes, verifierLisibilite, verifierTangage, tangage, montage, TANGAGE_MAX, DUREE, LARGEUR, HAUTEUR, FPS, MONDE, surEcran };
 
 if (require.main === module) {
   rendre({ recapturer: process.argv.indexOf('--sans-capture') < 0 })
