@@ -4,8 +4,9 @@
    vitrine ENTIÈRE et c'est l'écran d'accueil de l'application qu'on découvre — 121 mots
    contre 200 sur téléphone, sans rien en dessous. Un visiteur sur ordinateur n'apprenait
    ni comment ça marche, ni quels services existent, ni qu'on couvre les 16 quartiers,
-   ni — en pleine campagne de recrutement — que l'ouverture est le 1er octobre et qu'il y
-   a un programme Ambassadeur.
+   ni — en pleine campagne de recrutement — ce qu'on y propose. (Le relevé d'origine
+   nommait aussi la date d'ouverture et le programme Ambassadeur : les deux ont fermé
+   depuis, et l'épreuve garde désormais le fait inverse — rien ne les annonce plus.)
 
    ON NE RÉÉCRIT RIEN : le contenu est CLONÉ depuis la vitrine. Une seule source, une
    seule traduction — les nœuds clonés repassent par `i18nApply`, donc l'anglais et le
@@ -34,7 +35,7 @@ async function releve(w,h){
     const v=document.getElementById('view');
     return {mots:txt.split(/\s+/).filter(Boolean).length,
       etapes:n('.pstep'), metiers:n('.jchip'), ile:n('.cover-isle'),
-      ambassadeur:n('.land-founder'), ouverture:/services seront disponibles à partir du|services go live on|os serviços abrem a|ouverture aux clients/i.test(txt),
+      promesse:/Aucune place limitée|programme Ambassadeur|O programa Embaixador|The Ambassador programme|avant le 1er octobre|before 1 October|antes de 1 de outubro/i.test(txt), ouverture:/services seront disponibles à partir du|services go live on|os serviços abrem a|ouverture aux clients/i.test(txt),
       accroche:n('.pro-hook'),
       mobileDabord:/s.utilise sur téléphone|made for your phone|no telemóvel/.test(txt),
       plus:!!document.querySelector('.welcome-plus')&&vu(document.querySelector('.welcome-plus')),
@@ -46,11 +47,11 @@ async function releve(w,h){
 
 console.log('\nA — l’ordinateur dit enfin ce que dit le téléphone');
 const tel=await releve(390,844), ordi=await releve(1512,900);
-ok(ordi.mots>=400,'le contenu passe de 121 à '+ordi.mots+' mots (téléphone : '+tel.mots+')');
+ok(ordi.mots>=tel.mots,'le grand écran dit au moins ce que dit le téléphone : '+ordi.mots+' mots contre '+tel.mots+' (121 avant ce travail)');
 ok(ordi.etapes===6,'les trois étapes de CHAQUE public sont là ('+ordi.etapes+') — un visiteur d’ordinateur peut être l’un ou l’autre');
 ok(ordi.metiers>=9,'les métiers sont nommés ('+ordi.metiers+')');
 ok(ordi.ile===1,'la carte de l’île paraît UNE fois — elle dit la même chose des deux côtés');
-ok(ordi.ambassadeur===1,'le programme Ambassadeur est là : c’est l’argument de recrutement du moment');
+ok(!ordi.promesse&&!tel.promesse,'et plus un mot du programme Ambassadeur : il a fermé le 1er octobre, une promesse qu’on ne peut plus tenir ne s’affiche pas');
 ok(!ordi.ouverture&&!tel.ouverture,'et plus aucune date d’ouverture annoncée : les services sont ouverts, sur grand écran comme sur téléphone');
 
 console.log('\nB — et il dit que l’application se vit sur téléphone');
@@ -99,9 +100,13 @@ console.log('\nC bis — c’est une VITRINE : le client, les boutons, le profes
       const k=[...c.children]; if(!k.length)return false;
       const g=k[0].getBoundingClientRect().left, d=k[k.length-1].getBoundingClientRect().right;
       return Math.abs((g+d)/2-mi(c.parentElement))<=2;});
-    // La mesure d'un texte suivi : les trois encadrés ne courent plus sur toute la largeur.
-    const encadres=[...document.querySelectorAll('.welcome-plus .wp-mobile,.welcome-plus .land-founder')];
-    const mesure=encadres.length===2&&encadres.every(e=>e.getBoundingClientRect().width<=910);
+    // La mesure d'un texte suivi : l'encadré ne court plus sur toute la largeur. Le
+    // compte est une ASSERTION ARRIÈRE — `every` sur une liste vide passe sans rien
+    // mesurer, et un encadré ajouté demain doit faire rougir cette ligne pour qu'on
+    // lui donne sa mesure. (Ils étaient deux avant le 1er octobre : le second portait
+    // le programme Ambassadeur, retiré avec sa promesse.)
+    const encadres=[...document.querySelectorAll('.welcome-plus .wp-mobile')];
+    const mesure=encadres.length===1&&encadres.every(e=>e.getBoundingClientRect().width<=910);
     // L'entre-deux se nomme : deux boutons corail ne disent pas d'eux-mêmes ce qu'ils font.
     // Une punchline tient sur UNE ligne sur grand écran : le retour du balisage est celui
     // du téléphone, où la même phrase ne passe pas. On compte les rectangles de la ligne,
@@ -351,7 +356,7 @@ for(const [lg,mot] of [['en','made for your phone'],['pt','no telemóvel']]){
   const t=await p.evaluate(()=>{const wp=document.querySelector('.welcome-plus');
     const txt=wp?wp.innerText.replace(/\s+/g,' '):'';
     const FR=['Vous cherchez','Vous êtes professionnel','Commandez en deux gestes','Partout sur l\'île',
-      'Recevez des demandes','Le programme Ambassadeur','Ouverture aux clients','Installer sur mon'];
+      'Recevez des demandes','Ouverture aux clients','Installer sur mon'];
     return {reste:FR.filter(m=>txt.includes(m)), a:txt.includes('')};});
   ok(!t.reste.length,lg.toUpperCase()+' : aucun mot français ne subsiste'+(t.reste.length?' — '+t.reste.join(' · '):''));
   await ctx.close();
