@@ -367,6 +367,35 @@ ok(sien.cles.length===1&&sien.cles[0]==='ownCatalog',
     'le serveur l\u2019applique — ce qu\u2019il r\u00e8gle depuis son profil vaut autant que ce qu\u2019il a saisi \u00e0 l\u2019inscription');
 }
 
+{
+  /* SA CARTE DOIT DESCENDRE AVEC SON DOCUMENT, et cette mesure doit passer par le VRAI
+     chemin : une épreuve qui pose `S.proOwnCatalog` à la main ne mesure pas la descente —
+     c'est la contre-épreuve qui l'a dit, en ne faisant rougir personne. On livre donc un
+     instantané à `subscribeProStatus`, comme Firestore le fait. */
+  const desc=await p.evaluate(()=>{
+    const S=window.__S;
+    S.proOwnCatalog={};
+    let livrer=null;
+    window.__setFB({db:{},auth:{currentUser:{uid:'pro-maya'}},
+      f:{doc:function(){const a=arguments;return a.length<=1?{col:(a[0]&&a[0].col)||'',id:'auto'}:{col:a[1],id:a[2]||'auto'};},
+         collection:(d,c)=>({col:c}),
+         onSnapshot:(ref,cb)=>{livrer=cb;return function(){};},
+         setDoc:()=>Promise.resolve(),updateDoc:()=>Promise.resolve(),
+         serverTimestamp:()=>0,arrayUnion:(v)=>v,
+         getDoc:()=>Promise.resolve({exists:()=>false,data:()=>({})})},
+      fn:{httpsCallable:()=>()=>Promise.resolve({data:{}})}});
+    window.__fil.statut('pro-maya');
+    if(!livrer)return {livre:false};
+    livrer({exists:()=>true,data:()=>({status:'valide',cats:['massage','coiffure'],
+      ownCatalog:{massage:{on:true,lines:[{id:'m0',nm:'Signature 1 h',price:150}]}}})});
+    return {livre:true,lignes:(((S.proOwnCatalog||{}).massage||{}).lines||[]).length,
+            prix:((((S.proOwnCatalog||{}).massage||{}).lines||[])[0]||{}).price};
+  });
+  ok(desc.livre===true,'l\u2019\u00e9coute de son document est bien pos\u00e9e (assertion arri\u00e8re)');
+  ok(desc.lignes===1&&desc.prix===150,
+    'et son catalogue DESCEND avec son document : sa carte ne part pas vide \u00e0 chaque ouverture ('+desc.lignes+' ligne)');
+}
+
 const pPose=await profil({massage:{catalogueLibre:true}});
 ok(pPose.noms.length===1&&pPose.noms[0]==='Signature 1 h',
   'sa carte la relit ('+(pPose.noms[0]||'rien')+')');
