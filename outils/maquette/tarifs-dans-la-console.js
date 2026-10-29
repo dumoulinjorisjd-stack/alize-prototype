@@ -101,8 +101,15 @@ const o = { headless: true }; if (fs.existsSync('/opt/pw-browsers/chromium')) o.
     const dem = 128; // ce qu'elle demande, en net/h
     let h = '<div class="mini" style="font-weight:700">Ses tarifs · Massage</div>'
       + '<div class="mini" style="margin-top:3px;color:var(--muted)">Une case vide garde la grille Ti-Services. '
-      + 'Vous ne réglez que ce qui s\'en écarte.</div>';
+      + 'Vous ne réglez que ce qui s\'en écarte.</div>'
+      + ((variante === 'K' || variante === 'K2')
+        ? '<div class="mini" style="margin-top:3px;color:var(--muted)">La prestation reste la même ligne du catalogue&nbsp;: '
+          + 'seul son nom change, et la commande continue de se comparer.</div>' : '');
 
+    /* ON CLÉ SUR LE RANG, pas sur un identifiant inventé : un premier jet nommait
+       `relax60` et `duo`, qui n'existent pas — les noms ne sont jamais apparus et la
+       maquette montrait une fonction qui ne faisait rien. */
+    const noms = { 1: 'Massage californien · 1 h', 3: 'Duo en cabine · 1 h' };
     h += actes.map(function (a, i) {
       /* LE CAS QUI COMPTE EST LE TROISIÈME : UNE SEULE LIGNE RÉGLÉE. Une case vide
          n'est pas zéro — c'est « il reste à la grille sur cette prestation ». Un
@@ -110,18 +117,34 @@ const o = { headless: true }; if (fs.existsSync('/opt/pw-browsers/chromium')) o.
          qu'un seul net €/h ne pouvait pas dire. */
       const sien = (i === 1) ? 150 : (i === 3 ? 260 : '');
       const ecart = sien ? Math.round((sien - a.price) / a.price * 100) : 0;
-      return '<div class="row" style="gap:8px;align-items:center;margin-top:9px">'
-        + '<span class="mini" style="flex:1;min-width:0">' + a.nm + '</span>'
-        + '<span class="mini" style="flex:none;color:var(--muted);white-space:nowrap">' + a.price + ' €</span>'
+      const sonNom = (variante === 'K' || variante === 'K2') ? (noms[i] || '') : null;
+      if (sonNom === null) {
+        return '<div class="row" style="gap:8px;align-items:center;margin-top:9px">'
+          + '<span class="mini" style="flex:1;min-width:0">' + a.nm + '</span>'
+          + '<span class="mini" style="flex:none;color:var(--muted);white-space:nowrap">' + a.price + ' €</span>'
+          + '<input class="txt" value="' + sien + '" inputmode="decimal" placeholder="' + a.price + '"'
+          + ' style="flex:none;width:72px;text-align:right;padding:6px 8px">'
+          + '<span class="mini" style="flex:none;width:62px;text-align:right;white-space:nowrap">'
+          + (sien ? ((ecart > 0 ? '+' : '') + ecart + ' %<br><span style="color:var(--muted)">' + net(sien) + ' € net</span>')
+                  : '<span style="color:var(--muted)">grille</span>') + '</span>'
+          + '</div>';
+      }
+      /* K — LE NOM AUSSI. La référence Ti-Services reste AU-DESSUS, en gris : c'est elle
+         qui dit QUELLE prestation on règle, et sans elle on ne sait plus ce que la case
+         vide d'à côté garderait. Deux lignes par prestation, c'est le prix assumé. */
+      return '<div style="margin-top:11px;padding-top:9px;border-top:1px solid var(--hair)">'
+        + '<div class="mini" style="color:var(--muted)">' + a.nm + ' · ' + a.price + ' €</div>'
+        + '<div class="row" style="gap:8px;align-items:center;margin-top:5px">'
+        + '<input class="txt" value="' + sonNom + '" placeholder="' + a.nm + '" style="flex:1;min-width:0;padding:6px 8px">'
         + '<input class="txt" value="' + sien + '" inputmode="decimal" placeholder="' + a.price + '"'
-        + ' style="flex:none;width:72px;text-align:right;padding:6px 8px">'
-        + '<span class="mini" style="flex:none;width:62px;text-align:right;white-space:nowrap">'
+        + ' style="flex:none;width:66px;text-align:right;padding:6px 8px">'
+        + '<span class="mini" style="flex:none;width:58px;text-align:right;white-space:nowrap">'
         + (sien ? ((ecart > 0 ? '+' : '') + ecart + ' %<br><span style="color:var(--muted)">' + net(sien) + ' € net</span>')
                 : '<span style="color:var(--muted)">grille</span>') + '</span>'
-        + '</div>';
+        + '</div></div>';
     }).join('');
 
-    if (variante === 'H2') {
+    if (variante === 'H2' || variante === 'K2') {
       /* H2 — ET CE QU'ELLE A DEMANDÉ RESTE LISIBLE À CÔTÉ DE CE QU'ON LUI ACCORDE.
          Elle a demandé un NET à l'heure, la console règle un prix CLIENT : sans la
          conversion sous les yeux, on négocie à l'aveugle. Et l'on n'écrase pas sa
@@ -142,7 +165,7 @@ const o = { headless: true }; if (fs.existsSync('/opt/pw-browsers/chromium')) o.
     champ.insertAdjacentElement('afterend', bloc);
   }, variante);
 
-  for (const v of ['H', 'H2']) { await poser(v); await p.waitForTimeout(200); rendus.push([v, await tirer('3-console-apres-' + v)]); }
+  for (const v of ['H', 'H2', 'K', 'K2']) { await poser(v); await p.waitForTimeout(200); rendus.push([v, await tirer('3-console-apres-' + v)]); }
   console.log('\nMaquettes console :'); rendus.forEach(([n, f]) => console.log('  ' + n.padEnd(5) + ' ' + f));
   if (errs.length) console.log('\nErreurs de page : ' + errs.slice(0, 3).join(' | '));
   await b.close();

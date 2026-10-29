@@ -124,7 +124,7 @@ const PRIX = { grille: 110, sien: 150 };
       colonne(pros[1]).appendChild(ligne('Sa grille · sur choix uniquement', true));
       pool.querySelector('.mini').textContent = 'Proposé aux prestataires à la grille Ti-Services, le plus rapide.';
     }
-    if (variante === 'F' || variante === 'G') {
+    if (variante === 'F' || variante === 'G' || variante === 'J') {
       /* F — ON NE POINTE PERSONNE DU DOIGT. « Chacun ses tarifs, mais on ne pointe pas
          du doigt » (l'éditeur, 29/10). Mes six premières maquettes marquaient UNE
          personne : encre d'alerte sur elle seule, « SA grille » contre « la NÔTRE »,
@@ -144,6 +144,19 @@ const PRIX = { grille: 110, sien: 150 };
       champ.querySelector('.stack').insertAdjacentElement('beforebegin', t);
       corps(pool).appendChild(aDroite(acte.price + ' €'));
       pros.forEach((o) => corps(o).appendChild(aDroite(px(o.dataset.prefart) + ' €')));
+      if (variante === 'J') {
+        /* J — ELLE NOMME SA PRESTATION AUTREMENT, ET LA COMMANDE RESTE COMPARABLE.
+           La ligne du catalogue ne change pas d'identité : le client a demandé « 1 h
+           relaxant », chaque carte répond sur CETTE ligne — c'est ce qui permet de lire
+           110 € à côté de 150 €. Seul le NOM qu'elle lui donne s'ajoute, sous son propre
+           nom, là où vit déjà ce qui diffère d'une personne à l'autre.
+           ON NE REMPLACE PAS L'INTITULÉ DU HAUT par le sien : il dit ce que le CLIENT a
+           choisi, et le changer selon la carte qu'on regarde ferait croire qu'on commande
+           autre chose. */
+        colonne(pros[1]).appendChild(ligne('Massage californien · 1 h'));
+        colonne(pros[0]).appendChild(ligne('Voir tous ses tarifs'));
+        colonne(pros[1]).appendChild(ligne('Voir tous ses tarifs'));
+      }
       if (variante === 'G') {
         /* G — ET « VOIR TOUS SES TARIFS » SUR CHAQUE CARTE, pas sur une seule : offrir le
            geste à l'une et pas à l'autre, c'est remettre le doigt. */
@@ -200,7 +213,7 @@ const PRIX = { grille: 110, sien: 150 };
     }
   }, { variante, prix });
 
-  for (const v of ['A', 'B', 'D', 'C', 'C2', 'E', 'F', 'G']) {
+  for (const v of ['A', 'B', 'D', 'C', 'C2', 'E', 'F', 'G', 'J']) {
     await poser(v, PRIX);
     await p.waitForTimeout(220);
     rendus.push([v, await tirer('2-apres-' + v)]);
