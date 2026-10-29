@@ -280,6 +280,38 @@ ok(refer.ferme===false&&refer.rouvert===true,
   'le métier se referme et se rouvre : le choix évolue');
 ok(refer.lignes===4,'et ses lignes sont toujours là après l’aller-retour ('+refer.lignes+')');
 
+{
+  /* LE PREMIER AJOUT DEPUIS LA CONSOLE DOIT NAITRE EN SERVICE, et c'est le chemin ou le
+     defaut vivait : `catPoser('adm', ...)` ecrit l'entree TELLE QUELLE dans Firestore,
+     donc une entree neuve a `on:false` faisait naitre SUSPENDUE la carte qu'on venait de
+     remplir -- le serveur ne l'appliquait jamais. L'inscription, elle, n'etait pas
+     touchee : son payload ecrit `{on:true}` explicitement. C'est la contre-epreuve qui
+     l'a dit, apres que j'aie annonce le contraire. */
+  const neuf=await p.evaluate(()=>{
+    const S=window.__S; S.adminMetier={massage:{catalogueLibre:true}};
+    window.__ecrites=[];
+    const a={uid:'u-neuf',real:true,name:'Nouveau',cats:['massage'],acceptsGrille:false};
+    const e=window.__ownCat.entree('adm',a,'massage');
+    e.lines=[{id:'n0',nm:'Soin signature',price:175}];
+    window.__ownCat.poser('adm',a,'massage',e);
+    const w=(window.__ecrites||[]).filter((x)=>x.ref&&x.ref.col==='artisans');
+    const d=document.createElement('div');
+    d.innerHTML=window.__ownCat.editeur('massage','adm',a);
+    const txt=d.innerText||d.textContent||'';
+    return {on:((a.ownCatalog||{}).massage||{}).on,
+            ecrit:w.length?((((w[0].patch||{}).ownCatalog)||{}).massage||{}).on:'(rien)',
+            suspendue:/Suspendue/.test(txt)};
+  });
+  ok(neuf.on===true&&neuf.ecrit===true,
+    'la premiere prestation ajoutee depuis la console nait EN SERVICE (en memoire '+neuf.on+', ecrit '+neuf.ecrit+')');
+  ok(neuf.suspendue===false,
+    'et sa fiche ne la dit pas suspendue \u2014 une carte qu\u2019on vient de remplir s\u2019applique');
+  const CATP2=require(path.join(RACINE,'functions/catalogue-prestataire.js'));
+  ok(CATP2.catalogueProprePose({ownCatalog:{massage:{on:neuf.ecrit,lines:[{id:'n0',nm:'Soin signature',price:175}]}}},
+     'massage',{catalogueLibre:true})===true,
+    'donc le serveur l\u2019applique d\u00e8s le premier ajout');
+}
+
 // ═══ C — LA COMMANDE ═════════════════════════════════════════════════════════════════
 console.log('\nC — LA COMMANDE : le client le choisit et voit SON catalogue');
 
