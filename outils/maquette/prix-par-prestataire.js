@@ -48,7 +48,14 @@ const PRIX = { grille: 110, sien: 150 };
     S.account = { name: 'C', email: 'c@e.fr', zone: 'Gustavia' };
     S.addresses = [{ id: '1', label: 'Mon adresse', address: 'Lurin', zone: 'Gustavia', geo: { lat: 17.9, lng: -62.8 } }];
     S.mission = null; S.payStep = false; S.admin = null; S.catOpen = null; S.cfgMore = true;
-    S.draft = window.__newMission(window.__svc.trouve('massage')); S._cfgVu = null; window.__cfg.render();
+    S.draft = window.__newMission(window.__svc.trouve('massage'));
+    /* LE CLIENT A DÉJÀ CHOISI SA PRESTATION QUAND IL ARRIVE ICI : « Choisissez vos
+       prestations » est une carte PLUS HAUT que « Précisions », qui porte le choix du
+       prestataire. La scène le reflète, sans quoi la maquette mesurerait un écran que
+       personne ne voit. */
+    const a = (window.__cat.list('massage') || []).find((x) => x.price === 110);
+    if (a) S.draft.acts = [{ id: a.id, nm: a.nm, price: a.price, qty: 1 }];
+    S._cfgVu = null; window.__cfg.render();
   });
   await p.waitForTimeout(500);
 
@@ -117,6 +124,32 @@ const PRIX = { grille: 110, sien: 150 };
       colonne(pros[1]).appendChild(ligne('Sa grille · sur choix uniquement', true));
       pool.querySelector('.mini').textContent = 'Proposé aux prestataires à la grille Ti-Services, le plus rapide.';
     }
+    if (variante === 'F' || variante === 'G') {
+      /* F — ON NE POINTE PERSONNE DU DOIGT. « Chacun ses tarifs, mais on ne pointe pas
+         du doigt » (l'éditeur, 29/10). Mes six premières maquettes marquaient UNE
+         personne : encre d'alerte sur elle seule, « SA grille » contre « la NÔTRE »,
+         « sur choix uniquement » qui dit une restriction. Trois façons de désigner un
+         mauvais élève.
+         La symétrie est la correction : le client a DÉJÀ choisi sa prestation en arrivant
+         ici, donc chaque carte porte LE PRIX DE CE QU'IL A CHOISI, dans la même encre, au
+         même endroit. C'est un fait sur sa commande, pas un verdict sur une personne.
+         Et le seul fait qui reste asymétrique — l'une n'est pas dans l'aléatoire — vit
+         sur la carte du POOL, qui le dit déjà, et non en badge sur elle. */
+      const acte = (window.__S.draft.acts || [])[0];
+      const px = (uid) => uid === 'demo-b' ? Math.round(acte.price * prix.sien / prix.grille) : acte.price;
+      const t = document.createElement('div');
+      t.className = 'mini'; t.setAttribute('data-maq', '1');
+      t.style.cssText = 'margin:0 0 6px;color:var(--muted)';
+      t.textContent = acte.nm + ' · le prix chez chacun';
+      champ.querySelector('.stack').insertAdjacentElement('beforebegin', t);
+      corps(pool).appendChild(aDroite(acte.price + ' €'));
+      pros.forEach((o) => corps(o).appendChild(aDroite(px(o.dataset.prefart) + ' €')));
+      if (variante === 'G') {
+        /* G — ET « VOIR TOUS SES TARIFS » SUR CHAQUE CARTE, pas sur une seule : offrir le
+           geste à l'une et pas à l'autre, c'est remettre le doigt. */
+        pros.forEach((o) => colonne(o).appendChild(ligne('Voir tous ses tarifs')));
+      }
+    }
     if (variante === 'D') {
       /* D — LE PRIX NE S'ÉCRIT QUE LÀ OÙ IL DIFFÈRE. « Grille Ti-Services · dès 110 € »
          répété sur chaque carte est la faute de « VÉRIFIÉ · ASSURÉ » : la même mention
@@ -167,7 +200,7 @@ const PRIX = { grille: 110, sien: 150 };
     }
   }, { variante, prix });
 
-  for (const v of ['A', 'B', 'D', 'C', 'C2', 'E']) {
+  for (const v of ['A', 'B', 'D', 'C', 'C2', 'E', 'F', 'G']) {
     await poser(v, PRIX);
     await p.waitForTimeout(220);
     rendus.push([v, await tirer('2-apres-' + v)]);
