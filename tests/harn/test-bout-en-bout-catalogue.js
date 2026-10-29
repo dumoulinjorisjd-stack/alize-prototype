@@ -312,6 +312,68 @@ ok(refer.lignes===4,'et ses lignes sont toujours là après l’aller-retour ('+
     'donc le serveur l\u2019applique d\u00e8s le premier ajout');
 }
 
+// ═══ B2 — SON PROFIL ════════════════════════════════════════════════════════════════
+console.log('\nB2 — SON PROFIL : il règle ses prix lui-même, et seulement là où c\u2019est ouvert');
+
+const profil=async(metiers)=>p.evaluate((metiers)=>{
+  const S=window.__S; document.body.classList.add('standalone');
+  S.persona='pro';S.onboarded=true;S.guest=false;S.demoMode=false;S.lang='fr';
+  S.proStatus='approved';S.proName='Institut Lumi\u00e8re';S.proCats=['massage','coiffure'];
+  S.proNav='account';S.proOnline=true;S.authView=null;S.legalView=null;S.showPitch=false;
+  S.adminMetier=metiers;
+  S._fold=S._fold||{}; S._fold['p-tarifs']=true;   // on la déplie, comme on la toucherait
+  window.__ecrites=[];
+  window.__render();
+  const r=document.querySelector('.phone')||document.body;
+  return {titre:/Mes tarifs/.test(r.innerText),
+          noms:[...r.querySelectorAll('[data-catnm]')].map((i)=>i.value),
+          ajout:[...r.querySelectorAll('[data-catadd]')].map((b)=>b.dataset.catadd),
+          bascule:[...r.querySelectorAll('[data-caton]')].length,
+          txt:r.innerText.replace(/\s+/g,' ')};
+},metiers);
+
+const pOuvert=await profil({massage:{catalogueLibre:true}});
+ok(pOuvert.titre===true,'sa carte « Mes tarifs » existe d\u00e8s qu\u2019un de ses m\u00e9tiers est ouvert');
+ok(pOuvert.ajout.length===1&&pOuvert.ajout[0]==='moi:massage',
+  'et elle ne porte QUE le m\u00e9tier ouvert, pas la coiffure ('+pOuvert.ajout.join(', ')+')');
+ok(/grille Ti-Services/i.test(pOuvert.txt),
+  'sans carte pos\u00e9e, elle dit qu\u2019il est \u00e0 la grille et qu\u2019il re\u00e7oit l\u2019al\u00e9atoire');
+ok(pOuvert.bascule===0,
+  'et aucune bascule tant qu\u2019il n\u2019a rien pos\u00e9 : suspendre un catalogue vide ne veut rien dire');
+
+const pFerme=await profil({});
+ok(pFerme.titre===false,
+  'aucun m\u00e9tier ouvert : la carte n\u2019existe pas — on ne promet pas une porte qui ne m\u00e8ne nulle part');
+
+// Il pose une ligne depuis SON profil : elle part dans SON document.
+const sien=await p.evaluate(()=>{
+  const S=window.__S; S.adminMetier={massage:{catalogueLibre:true}};
+  S.proOwnCatalog={}; window.__ecrites=[];
+  const e=window.__ownCat.entree('moi',null,'massage');
+  e.lines=[{id:'m0',nm:'Signature 1 h',price:150}];
+  window.__ownCat.poser('moi',null,'massage',e);
+  const w=(window.__ecrites||[]).filter((x)=>x.ref&&x.ref.col==='artisans');
+  return {memoire:((S.proOwnCatalog||{}).massage||{}),
+          ecrit:w.length?(((w[0].patch||{}).ownCatalog||{}).massage||{}):null,
+          cles:w.length?Object.keys(w[0].patch||{}):[]};
+});
+ok(!!(sien.ecrit&&(sien.ecrit.lines||[]).length===1&&sien.ecrit.on===true),
+  'ce qu\u2019il pose part dans SON document `artisans`, en service');
+ok(sien.cles.length===1&&sien.cles[0]==='ownCatalog',
+  'et SEUL son catalogue y part : sa signature `acceptsGrille` ne bouge pas ('+sien.cles.join(', ')+')');
+{
+  const CATP3=require(path.join(RACINE,'functions/catalogue-prestataire.js'));
+  ok(CATP3.catalogueProprePose({ownCatalog:{massage:sien.ecrit}},'massage',{catalogueLibre:true})===true,
+    'le serveur l\u2019applique — ce qu\u2019il r\u00e8gle depuis son profil vaut autant que ce qu\u2019il a saisi \u00e0 l\u2019inscription');
+}
+
+const pPose=await profil({massage:{catalogueLibre:true}});
+ok(pPose.noms.length===1&&pPose.noms[0]==='Signature 1 h',
+  'sa carte la relit ('+(pPose.noms[0]||'rien')+')');
+ok(pPose.bascule===1,'et la bascule para\u00eet maintenant qu\u2019il a quelque chose \u00e0 suspendre');
+ok(/Vos clients voient vos prix/.test(pPose.txt),
+  'le mot suit la personne \u00e0 qui l\u2019on parle : « vos prix », pas « sa carte \u00e0 lui »');
+
 // ═══ C — LA COMMANDE ═════════════════════════════════════════════════════════════════
 console.log('\nC — LA COMMANDE : le client le choisit et voit SON catalogue');
 

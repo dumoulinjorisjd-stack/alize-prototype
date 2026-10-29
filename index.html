@@ -3703,7 +3703,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='895';
+  const VERSION_APP='896';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -19262,6 +19262,31 @@
         <button class="btn ghost sm" data-act="pro-add-service" style="width:auto;padding:8px 13px;margin-top:11px">${I.plus} Ajouter un métier</button>
         ${(S.proPendingCats||[]).length?`<p class="mini" style="margin-top:11px">${I.shield} En attente de validation par Ti-Services, proposé aux clients une fois vérifié.</p>`:`<p class="mini" style="margin-top:11px;color:var(--muted)">Ajoutez un métier à tout moment (vérifié avant d'être proposé aux clients). Touchez le <b>×</b> d'un métier pour ne plus recevoir ses demandes.</p>`}`,(S.proPendingCats||[]).length?`<span class="chip warn" style="flex:none">${I.clock} ${(S.proPendingCats||[]).length}</span>`:'')}
 
+      ${(function(){
+        /* MES TARIFS — « le prestataire dans son profil peut décocher la grille et mettre
+           son propre prix. Mais cela que dans les catégories que je choisis d'ouvrir dans
+           la console » (l'éditeur). Jusqu'ici ce geste n'existait QU'À L'INSCRIPTION :
+           tout le parc déjà inscrit était sans porte, et le jour où la console ouvre un
+           métier, personne ne pouvait en profiter.
+           ON NE PROMET PAS UNE PORTE QUI NE MÈNE NULLE PART : si aucun de ses métiers
+           n'est ouvert, la carte n'existe pas — c'est la règle du renvoi vers un écran
+           fermé. Et `acceptsGrille` ne bouge jamais ici : c'est la preuve de ce qu'il a
+           signé, pas un réglage. */
+        const ouv=(cats||[]).filter(function(c){return c!=='autre'&&catalogueLibreSvc(c);});
+        if(!ouv.length)return '';
+        const poses=ouv.filter(function(c){const e=(S.proOwnCatalog||{})[c]||{};
+          return e.on!==false&&(e.lines||[]).length>0;});
+        const sous=poses.length
+          ? ('Vos prix sur '+poses.map(function(c){return svcNm(c);}).join(' · '))
+          : 'Grille Ti-Services';
+        return foldCard('p-tarifs',I.euro,'Mes tarifs',sous,
+          `<p class="mini" style="color:var(--muted);line-height:1.5">${poses.length
+            ? 'Vos clients vous choisissent et voient <b>votre carte</b>. Vous ne recevez plus les commandes aléatoires de ces métiers&nbsp;: elles ne distribuent que les prix Ti-Services.'
+            : 'Vous appliquez la <b>grille Ti-Services</b>, et vous recevez les commandes aléatoires. Posez vos propres prestations pour que les clients qui vous choisissent voient votre carte&nbsp;; vous sortez alors de l’aléatoire sur ce métier.'}</p>
+          ${ouv.map(function(c){return catEditeurHtml(c,'moi',null);}).join('')}`,
+          poses.length?`<span class="chip good" style="flex:none">${I.check} Ma carte</span>`:'');
+      })()}
+
       ${(function(){var onSiteCats=(cats||[]).filter(canOnSite);if(!onSiteCats.length)return '';var sm=S.proSiteMode||'both';return foldCard('p-lieu',I.pin,"Lieu d'intervention",sm==='domicile'?'Je me déplace chez le client':sm==='salon'?'Dans mon salon / studio':'À domicile et dans mon salon',`
         <p class="mini" style="color:var(--muted)">${I.check} Filtre les demandes selon votre façon de travailler.</p>
         <div class="segs" style="margin-top:11px"><button class="seg ${sm==='domicile'?'on':''}" data-sitemode="domicile">${I.home} Je me déplace</button><button class="seg ${sm==='salon'?'on':''}" data-sitemode="salon">${I.shop} Dans mon salon</button><button class="seg ${sm==='both'?'on':''}" data-sitemode="both">Les deux</button></div>
@@ -24039,8 +24064,18 @@
     if(src!=='adm')return null;
     return (S.adminArtisans||[]).find(function(x){return x.id===(S.admin&&S.admin.sel);})||null;
   }
+  /* TROIS SOURCES, ET C'EST LA MÊME PORTE. `adm` écrit dans la fiche qu'un administrateur
+     a ouverte ; `pro` dans le BROUILLON d'inscription ; `moi` dans le compte du
+     prestataire CONNECTÉ, c'est-à-dire la demande « le prestataire dans son profil peut
+     décocher la grille et mettre son propre prix ». Une quatrième façon d'écrire un
+     catalogue finirait par ne plus écrire la même chose : l'hôte change, la porte non. */
+  function catHote(src,a){
+    if(src==='adm')return a||{};
+    if(src==='moi'){S.proOwnCatalog=S.proOwnCatalog||{};return {ownCatalog:S.proOwnCatalog};}
+    return S.proForm||{};
+  }
   function catEntree(src,a,svc){
-    const hote=(src==='adm')?(a||{}):(S.proForm||{});
+    const hote=catHote(src,a);
     const m=hote.ownCatalog||{};
     /* UNE ENTRÉE NEUVE EST EN SERVICE. Elle naissait à `on:false`, et c'est la CONSOLE
        que cela touchait : `catPoser('adm', …)` écrit l'entrée TELLE QUELLE dans Firestore
@@ -24056,6 +24091,20 @@
     return m[svc]||{on:true,lines:[]};
   }
   function catPoser(src,a,svc,e){
+    if(src==='moi'){
+      /* IL ÉCRIT DANS SON PROPRE DOCUMENT. `firestore.rules` autorise `artisans` par
+         défaut et ne verrouille que des champs NOMMÉS : `ownCatalog` n'en est pas, il n'y
+         a donc rien à relâcher. Et `acceptsGrille` NE BOUGE PAS — c'est la preuve de ce
+         qu'il a signé à l'inscription ; ce qui décide, côté serveur, est la présence de
+         son catalogue (`catalogueProprePose`), jamais cette signature. */
+      S.proOwnCatalog=S.proOwnCatalog||{};
+      S.proOwnCatalog[svc]=e;
+      if(FB&&FB.auth&&FB.auth.currentUser&&!isDemo()){
+        try{ FB.f.setDoc(FB.f.doc(FB.db,'artisans',FB.auth.currentUser.uid),
+               {ownCatalog:S.proOwnCatalog},{merge:true}); }catch(_){}
+      }
+      return;
+    }
     const hote=(src==='adm')?(a||{}):(S.proForm=S.proForm||{});
     hote.ownCatalog=hote.ownCatalog||{};
     hote.ownCatalog[svc]=e;
@@ -24085,11 +24134,15 @@
         :`<div class="mini" style="margin-top:7px;color:var(--muted)">Aucune prestation pour l’instant. Tant que cette carte est vide, c’est la grille Ti-Services qui s’applique.</div>`}
       <button class="btn ghost sm" data-catadd="${src}:${esc(svc)}" style="width:auto;margin:11px 0 0;padding:8px 12px">+ Ajouter une prestation</button>
       ${trop?`<div class="mini" style="margin-top:9px;color:var(--coral-deep);font-weight:600">${I.warn} Au-delà de ${CAT_LIGNES_MAX_CLI} prestations, les suivantes ne sont pas proposées aux clients.</div>`:''}
-      ${(src==='adm'&&lignes.length)?`<div class="row between" style="align-items:center;gap:10px;margin-top:12px;padding-top:11px;border-top:1px solid var(--hair)">
-        <div style="flex:1;min-width:0"><span class="sub">Sa carte s’applique</span>
-          <div class="mini" style="color:var(--muted);line-height:1.45">${e.on===false
-            ? 'Suspendue&nbsp;: il est à la grille Ti-Services, et il reçoit de nouveau les commandes aléatoires. <b>Ses '+lignes.length+' prestations sont gardées</b> et reviennent d’un seul geste.'
-            : 'Ses clients voient sa carte à lui. Suspendre le remet à la grille <b>sans rien effacer</b>&nbsp;— le temps d’un désaccord sur un prix, par exemple.'}</div></div>
+      ${((src==='adm'||src==='moi')&&lignes.length)?`<div class="row between" style="align-items:center;gap:10px;margin-top:12px;padding-top:11px;border-top:1px solid var(--hair)">
+        <div style="flex:1;min-width:0"><span class="sub">${src==='moi'?'Ma carte s’applique':'Sa carte s’applique'}</span>
+          <div class="mini" style="color:var(--muted);line-height:1.45">${src==='moi'
+            ? (e.on===false
+              ? 'Suspendue&nbsp;: vous êtes à la grille Ti-Services, et vous recevez de nouveau les commandes aléatoires. <b>Vos '+lignes.length+' prestations sont gardées</b> et reviennent d’un seul geste.'
+              : 'Vos clients voient vos prix. Suspendre vous remet à la grille <b>sans rien effacer</b>&nbsp;; vous recevez alors de nouveau les commandes aléatoires.')
+            : (e.on===false
+              ? 'Suspendue&nbsp;: il est à la grille Ti-Services, et il reçoit de nouveau les commandes aléatoires. <b>Ses '+lignes.length+' prestations sont gardées</b> et reviennent d’un seul geste.'
+              : 'Ses clients voient sa carte à lui. Suspendre le remet à la grille <b>sans rien effacer</b>&nbsp;— le temps d’un désaccord sur un prix, par exemple.')}</div></div>
         <button class="switch" data-caton="${src}:${esc(svc)}" style="flex:none;background:${e.on===false?'var(--hair)':'var(--good)'}"><span class="knob" style="left:${e.on===false?'3px':'25px'}"></span></button>
       </div>`:''}
     </div>`;
@@ -24397,6 +24450,9 @@
         const ad=snap.data()||{};
         if(ad.insuranceStatus)S.proInsuranceStatus=ad.insuranceStatus;
       S.proTierForce=ad.tierForce||'';S.proFounder=!!ad.founder;
+      /* SON CATALOGUE DESCEND AVEC SON DOCUMENT : sans cela sa carte « Mes tarifs »
+         partirait vide à chaque ouverture, et il la retaperait. */
+      if(ad.ownCatalog&&typeof ad.ownCatalog==='object')S.proOwnCatalog=ad.ownCatalog;
         /* CE QUI CHANGE SON FILTRE DEPUIS AILLEURS. Cette écoute est vivante et reçoit
            déjà chaque retouche de sa fiche, mais elle ne lisait ni son interrupteur ni
            ses métiers : la console pouvait le remettre EN LIGNE sans que son téléphone
