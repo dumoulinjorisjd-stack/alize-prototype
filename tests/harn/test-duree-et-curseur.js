@@ -93,6 +93,39 @@ const K2=await p.evaluate(()=>{
 ok(K2.disparu, 'le champ a bien disparu de l\'écran suivant');
 ok(K2.pasDeFoyerVolant, 'et personne ne lui rend le clavier sur un écran où il n\'est plus');
 
+/* ── 1 ter. LE CURSEUR NE PASSE PAS CHEZ QUELQU'UN D'AUTRE ─────────────── */
+console.log('\n1 ter. Le curseur ne passe pas dans le champ d\'un autre prestataire');
+const K3=await p.evaluate(()=>{
+  const S=window.__S;
+  /* LA CLÉ DU CHAMP NE DIT PAS DE QUI IL S'AGIT : « adm:massage:0 » désigne la première
+     ligne de CHAQUE prestataire. Sans la frontière de l'écran, passer de la fiche de
+     l'une à celle de l'autre rendrait le clavier au champ de même rang chez la seconde. */
+  const faire=(uid,nom,prix)=>({id:uid,uid:uid,real:true,name:nom,cats:['massage'],status:'valide',
+    acceptedTerms:true,acceptsGrille:false,
+    ownCatalog:{massage:{on:true,lines:[{id:'l1',nm:'Forfait '+nom,price:prix}]}}});
+  S.adminArtisans=[faire('u1','Maya',150),faire('u2','L\u00e9a',120)];
+  S.adminMetier={massage:{catalogueLibre:true}};
+  S.persona='admin';S.admin={sel:'u1',view:'art'};
+  window.__render();
+  let v=document.getElementById('view')||document.body;
+  const ch=v.querySelector('[data-catnm]');
+  ch.focus(); ch.setSelectionRange(3,3);
+  const cle=ch.dataset.catnm;
+  /* ON CHANGE DE FICHE — c'est une NAVIGATION, pas une peinture du même écran. */
+  S.admin={sel:'u2',view:'art'};
+  window.__render();
+  v=document.getElementById('view')||document.body;
+  const ch2=v.querySelector('[data-catnm]');
+  const a=document.activeElement;
+  return {memeCle:!!(ch2&&ch2.dataset.catnm===cle),
+          valeurDeLAutre:ch2?ch2.value:'',
+          foyerVole:!!(a&&a.dataset&&a.dataset.catnm)};
+});
+ok(K3.memeCle, 'la première ligne de l\'autre porte LA MÊME clé — c\'est ce qui rend le piège possible');
+ok(/L\u00e9a/.test(K3.valeurDeLAutre)||K3.valeurDeLAutre.indexOf('L')===8,
+   'et c\'est bien SA ligne à elle qui s\'affiche : « '+K3.valeurDeLAutre+' »');
+ok(!K3.foyerVole, 'changer de fiche NE rend pas le clavier : le curseur ne passe pas chez elle');
+
 /* ── 2. UNE LETTRE N'EST PAS UNE ÉCRITURE ────────────────────────────────────── */
 console.log('\n2. Une lettre n\'est pas une écriture Firestore');
 const W=await p.evaluate(async()=>{

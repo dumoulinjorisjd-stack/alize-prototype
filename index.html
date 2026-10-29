@@ -10571,7 +10571,7 @@
     const _saAvant=saisieActive();
     view.innerHTML='<div'+(same?'':' class="anim"')+'>'+brandBarHtml(key)+html+'</div>';
     i18nApply(view);animateCounts(view);
-    view.scrollTop=keepScroll?top:0;_scr=key;updateHomeFab();mountMaps();mountSignPads();busyApresRendu();restaurerBrouillons(_brAvant);restaurerSaisie(_saAvant);
+    view.scrollTop=keepScroll?top:0;_scr=key;updateHomeFab();mountMaps();mountSignPads();busyApresRendu();restaurerBrouillons(_brAvant);restaurerSaisie(_saAvant,same);
     // iOS : retire la suggestion « Préremplir le contact » (barre du clavier) sur les
     // champs de texte libre où elle n'a aucun sens. Les vrais champs de contact
     // (e-mail, téléphone, mot de passe) gardent l'auto-remplissage natif.
@@ -13593,7 +13593,13 @@
      DEUX REFUS. On ne restaure que si le champ EXISTE ENCORE : un champ disparu du
      nouvel écran ne doit pas faire revenir le clavier. Et si quelqu'un d'autre a déjà
      pris le foyer entre-temps, on se tait — une peinture qui déplace volontairement le
-     curseur garde le dernier mot. */
+     curseur garde le dernier mot.
+     TROISIÈME REFUS, ET C'EST LA FRONTIÈRE : on ne rend le curseur que sur L'ÉCRAN OÙ
+     L'ON EST. La clé d'écran porte le prestataire sélectionné (`admin:vue:uid`), donc
+     passer de la fiche de l'un à celle de l'autre est une NAVIGATION — sans ce refus,
+     le curseur atterrirait dans le champ de même rang chez quelqu'un d'autre, puisque
+     la clé du champ (`adm:massage:0`) ne dit pas DE QUI il s'agit. `paintView` calcule
+     déjà ce fait pour conserver le défilement : on le LIT, on ne le recalcule pas. */
   function saisieActive(){
     try{
       const a=document.activeElement;
@@ -13605,9 +13611,9 @@
       return {k:k,v:String(a.dataset[k]),d:a.selectionStart,f:a.selectionEnd};
     }catch(_){ return null; }
   }
-  function restaurerSaisie(avant){
+  function restaurerSaisie(avant,memeEcran){
     try{
-      if(!avant)return;
+      if(!avant||!memeEcran)return;
       const ae=document.activeElement;
       if(ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'))return;
       const attr='data-'+avant.k.replace(/[A-Z]/g,function(c){return '-'+c.toLowerCase();});
