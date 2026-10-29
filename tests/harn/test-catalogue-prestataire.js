@@ -111,11 +111,48 @@ ok(C.prixAttendu([{id:'a60',price:110,qty:1}],catMaya.lignes).ok,
 ok(!C.prixAttendu([{id:'s1',price:150,qty:1}],catMaya.lignes).ok,
   'tandis qu’une ligne du catalogue de QUELQU’UN D’AUTRE n’y passe pas');
 
+console.log('\nI — ce qui BLOQUE un prélèvement, et ce qui se DIT seulement');
+{
+  /* LA PRUDENCE EST L'INVERSE DE CELLE D'UN ÉCRAN : se tromper ici, c'est refuser le
+     paiement d'une prestation DÉJÀ FAITE, à laquelle les deux parties ont consenti —
+     le prestataire ACCEPTE la commande en voyant son montant, et les règles Firestore
+     figent `acts` dès cet instant. */
+  const sien=[{id:'s1',nm:'Signature 1 h',price:150}];
+  const u=C.lignesConnues(sien,GRILLE);
+  ok(u.length===5&&u[0].id==='s1',
+    'les lignes connues sont l\u2019UNION : son catalogue d\u2019abord, puis la grille ('+u.length+')');
+  ok(C.lignesConnues(sien,[{id:'s1',nm:'autre',price:9}]).length===1,
+    'et le catalogue qui fait foi gagne sur l\u2019identifiant en double');
+  /* LE CAS QUI AURAIT CASSÉ LA PRODUCTION AU PREMIER JOUR : une commande passée AVANT
+     qu'il pose sa carte porte des lignes de la GRILLE, et elle est légitime. */
+  ok(C.prixAttendu([{id:'a60',price:110,qty:1}],u).ok===true,
+    'une commande passée AVANT sa carte, \u00e0 la grille, passe encore — tout le parc est dans ce cas le jour de la mise en ligne');
+  const bouge=C.prixAttendu([{id:'s1',price:140,qty:1}],u);
+  ok(bouge.ok===false&&bouge.code==='prix'&&C.prixBloque(bouge)===false,
+    'un prix qui a BOUGÉ apr\u00e8s la commande ne bloque pas : la commande est fig\u00e9e, elle ne peut plus \u00eatre corrig\u00e9e');
+  ok(C.prixBloque(C.prixAttendu([{id:'inconnu',price:9,qty:1}],u))===true,
+    'une ligne qui n\u2019est \u00e0 AUCUN catalogue bloque : elle n\u2019a jamais pu \u00eatre affich\u00e9e');
+  ok(C.prixBloque(C.prixAttendu([],u))===true,'une commande vide bloque');
+  ok(C.prixBloque(C.prixAttendu([{id:'s1',price:150,qty:0}],u))===true,'une quantit\u00e9 nulle bloque');
+  /* LE CODE SE TESTE, LA PHRASE SE LIT — et c'est la mesure qui a trouvé que le noyau
+     rendait la PHRASE comme motif : `prixBloque` rendait faux pour TOUT, rempart entier
+     inerte, et rien ne le disait. */
+  ok(C.PRIX_BLOQUANTS.every((k)=>Object.prototype.hasOwnProperty.call(C.MOTIFS,k)),
+    'chaque code bloquant a sa phrase dans la table ('+C.PRIX_BLOQUANTS.join(', ')+')');
+  const v=C.prixAttendu([{id:'inconnu',price:9,qty:1}],u);
+  ok(v.code==='horsCatalogue'&&v.motif===C.MOTIFS.horsCatalogue&&v.code!==v.motif,
+    'le verdict porte les DEUX : un code stable pour d\u00e9cider, une phrase pour le journal');
+  ok(C.prixBloque({ok:false,motif:C.MOTIFS.horsCatalogue})===false,
+    'arri\u00e8re — un verdict sans code ne bloque pas : on ne d\u00e9cide jamais sur une phrase');
+}
+
 console.log('\nH — le câblage : un noyau que personne n’appelle ne garde rien');
 const corps=src.replace(/\/\*[\s\S]*?\*\//g,'').replace(/(^|[^:])\/\/[^\n]*/g,'$1');
 ok(/require\('\.\/catalogue-prestataire'\)/.test(src),'le serveur charge le noyau');
 ok(/recoitLAleatoire\s*\(/.test(corps),'la diffusion aléatoire LIT la décision, au lieu de la redire à sa façon');
 ok(/prixAttendu\s*\(/.test(corps),'et le prélèvement vérifie le prix contre le catalogue qui fait foi');
+ok(/prixBloque\s*\(/.test(corps),'et il LIT la d\u00e9cision de ce qui bloque, au lieu de refuser tout \u00e9cart');
+ok(/lignesConnues\s*\(/.test(corps),'sur l\u2019UNION de son catalogue et de la grille, jamais sur son seul catalogue');
 // Assertion arrière : un relevé qui ne reconnaîtrait plus rien innocenterait tout le monde.
 ok(/notifyArtisansNewRequest/.test(corps)&&/createClientPayment/.test(corps),
   'assertion arrière — le relevé lit bien un serveur qui porte ces deux fonctions');

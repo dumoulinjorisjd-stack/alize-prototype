@@ -121,7 +121,7 @@ function prixAttendu(acts, lignes) {
   const cat = Object.create(null);
   (Array.isArray(lignes) ? lignes : []).forEach((l) => { cat[l.id] = l; });
   const src = Array.isArray(acts) ? acts : [];
-  if (!src.length) return { ok: false, motif: MOTIFS.vide, total: 0, ecarts: [] };
+  if (!src.length) return { ok: false, code: 'vide', motif: MOTIFS.vide, total: 0, ecarts: [] };
   let total = 0; const ecarts = [];
   src.forEach((a) => {
     const id = txt(a && a.id);
@@ -132,20 +132,64 @@ function prixAttendu(acts, lignes) {
     const qBrut = (a && a.qty);
     const q = (qBrut === undefined || qBrut === null || qBrut === '') ? 1 : nbr(qBrut);
     const l = cat[id];
-    if (!l) { ecarts.push({ id: id, motif: MOTIFS.horsCatalogue }); return; }
-    if (!(q > 0) || q !== Math.floor(q)) { ecarts.push({ id: id, motif: MOTIFS.quantite }); return; }
+    if (!l) { ecarts.push({ id: id, code: 'horsCatalogue', motif: MOTIFS.horsCatalogue }); return; }
+    if (!(q > 0) || q !== Math.floor(q)) { ecarts.push({ id: id, code: 'quantite', motif: MOTIFS.quantite }); return; }
     const px = nbr(a && a.price);
     if (Math.abs(px - l.price) > CAT_CENTIME) {
-      ecarts.push({ id: id, motif: MOTIFS.prix, commande: px, catalogue: l.price });
+      ecarts.push({ id: id, code: 'prix', motif: MOTIFS.prix, commande: px, catalogue: l.price });
     }
     total += l.price * q;
   });
   total = Math.round(total * 100) / 100;
-  return { ok: ecarts.length === 0, motif: ecarts.length ? ecarts[0].motif : '', total: total, ecarts: ecarts };
+  /* LE CODE SE TESTE, LA PHRASE SE LIT. `motif` porte un texte — il part dans un journal
+     et sous les yeux de quelqu'un — et un adaptateur qui DÉCIDE sur un texte décide sur
+     quelque chose qui se reformule : `prixBloque` rendait faux pour TOUT, rempart entier
+     inerte, et rien ne le disait. C'est la leçon de `gmailRefusCode`, repayée ici. */
+  return { ok: ecarts.length === 0, code: ecarts.length ? ecarts[0].code : '',
+           motif: ecarts.length ? ecarts[0].motif : '', total: total, ecarts: ecarts };
+}
+
+/* CE QUI BLOQUE UN PRÉLÈVEMENT, ET CE QUI SE DIT SEULEMENT.
+
+   LA PRUDENCE ICI EST L'INVERSE DE CELLE D'UN ÉCRAN : se tromper, c'est refuser le
+   paiement d'une prestation DÉJÀ FAITE, à laquelle les deux parties ont consenti — le
+   prestataire ACCEPTE la commande en voyant son montant, et les règles Firestore figent
+   `acts` dès cet instant (`prixKeys`). On ne refuse donc que ce dont on est SÛR.
+
+   UNE LIGNE QUI N'EST À AUCUN CATALOGUE n'a jamais pu être affichée à personne : c'est un
+   identifiant inventé, et c'est le rempart qui compte. Une commande vide, une quantité
+   qui n'en est pas une : de même, et aucune des trois ne dépend du temps.
+
+   UN PRIX QUI DIFFÈRE, NON — et c'est une décision, pas une tolérance. Il peut venir
+   d'une hausse ou d'une baisse décidée APRÈS la commande : c'est sa carte, il en a le
+   droit, et la commande ne peut plus être corrigée puisqu'elle est figée. Refuser là
+   ferait de chaque changement de prix une panne au pire moment — la prestation est faite,
+   le client ne peut plus payer, et le message lui demanderait de « rouvrir » ce que les
+   règles interdisent de réécrire. On le DIT dans le journal, on ne bloque pas. */
+const PRIX_BLOQUANTS = ['horsCatalogue', 'vide', 'quantite'];
+function prixBloque(verdict) {
+  return !!(verdict && verdict.ok === false && PRIX_BLOQUANTS.indexOf(verdict.code) >= 0);
+}
+
+/* LES LIGNES QU'UNE COMMANDE A PU PORTER, et c'est l'UNION de son catalogue et de la
+   grille. Une commande passée AVANT qu'il pose sa carte porte des lignes de la GRILLE, et
+   elle est parfaitement légitime : le jour de la mise en ligne, c'est le cas de TOUT le
+   parc, et ne regarder que son catalogue aurait fait refuser chacune de ces commandes.
+   On dédoublonne sur l'identifiant, le catalogue qui fait foi en premier. */
+function lignesConnues(propres, grille) {
+  const vu = Object.create(null), out = [];
+  [].concat(Array.isArray(propres) ? propres : [], Array.isArray(grille) ? grille : [])
+    .forEach((l) => {
+      const id = l && String(l.id || '');
+      if (!id || vu[id]) return;
+      vu[id] = 1; out.push(l);
+    });
+  return out;
 }
 
 module.exports = {
   CAT_LIGNES_MAX, CAT_NOM_MAX, CAT_PRIX_MAX, CAT_CENTIME, MOTIFS,
   metierOuvreCatalogue, lignesPropres, catalogueProprePose, catalogueQuiFaitFoi,
   recoitLAleatoire, prixAttendu,
+  PRIX_BLOQUANTS, prixBloque, lignesConnues,
 };

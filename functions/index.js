@@ -5050,13 +5050,23 @@ exports.createClientPayment = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (
       if (proV) { const ds = await db.collection('artisans').doc(proV).get(); if (ds.exists) art = ds.data() || {}; }
       const grilleV = REGV.catalog[svcV];
       const faitFoi = CATP.catalogueQuiFaitFoi(art, svcV, grilleV, REGV.metier[svcV]);
-      if (faitFoi.lignes.length) {
-        const v = CATP.prixAttendu(r.acts, faitFoi.lignes);
-        if (!v.ok) {
+      /* ON JUGE SUR L'UNION : son catalogue ET la grille. Une commande passée avant qu'il
+         pose sa carte porte des lignes de la grille, et elle est légitime — sans cela, le
+         jour de la mise en ligne, chaque commande en cours du parc aurait été refusée. */
+      const connues = CATP.lignesConnues(faitFoi.lignes, grilleV);
+      if (connues.length) {
+        const v = CATP.prixAttendu(r.acts, connues);
+        if (CATP.prixBloque(v)) {
           console.warn('createClientPayment PRIX REFUSÉ reqId=' + reqId + ' motif=' + v.motif
             + ' ecarts=' + JSON.stringify(v.ecarts).slice(0, 300));
           throw new HttpsError('failed-precondition',
-            'Les prix de cette commande ne correspondent plus au catalogue. Rouvrez-la pour la mettre à jour.');
+            'Cette commande porte une prestation qui n\'est à aucun catalogue. Reprenez-la depuis le service.');
+        }
+        if (!v.ok) {
+          // UN PRIX QUI A BOUGÉ APRÈS LA COMMANDE N'EST PAS UNE ANOMALIE : on le dit, on
+          // ne bloque pas le paiement d'une prestation déjà faite. Voir `prixBloque`.
+          console.log('createClientPayment prix différent du catalogue (non bloquant) reqId=' + reqId
+            + ' motif=' + v.motif + ' ecarts=' + JSON.stringify(v.ecarts).slice(0, 300));
         }
       } else {
         console.log('createClientPayment prix non vérifiable (catalogue inconnu) reqId=' + reqId + ' service=' + svcV);

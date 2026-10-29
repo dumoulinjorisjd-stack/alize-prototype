@@ -47,8 +47,20 @@ ok(/availOk\(dd\.avail, after\) && enLigne\(dd\.online\)/.test(srv),
 const dp=srv.indexOf('async function diffuserAuPool');
 const portePool=dp>0?srv.slice(dp,srv.indexOf('\nasync function pushMulticast',dp)):'';
 ok(dp>0,'la diffusion au pool est une porte nommée');
-ok(/d\.id !== exclude && siteOk\(dd, svc, r\.locationMode\) && enLigne\(dd\.online\)/.test(portePool),
+/* ON MESURE LES CONDITIONS, PAS LEUR MISE EN PAGE. Écrite en une seule chaîne, cette
+   mesure rougissait dès qu'une condition s'ajoutait au filtre et le poussait sur deux
+   lignes — elle énonçait l'écriture du jour, ce que son propre commentaire, trois lignes
+   plus haut, demande justement d'éviter. La propriété est que la RÉOUVERTURE applique les
+   mêmes trois règles que la création : on ne diffuse pas à celui qu'on exclut, ni hors de
+   son lieu, ni à quelqu'un hors ligne. */
+ok(/d\.id !== exclude/.test(portePool)&&/siteOk\(dd, svc, r\.locationMode\)/.test(portePool)
+   &&/enLigne\(dd\.online\)/.test(portePool),
   'demande rouverte après un lapin : même règle');
+/* ET CE QUI S'AJOUTE AU FILTRE EST NOMMÉ ICI, pour que la mesure du dessus reste lisible
+   le jour où une quatrième condition arrive : un prestataire qui a posé SON catalogue ne
+   reçoit pas l'aléatoire, qui ne distribue que les prix de la maison. */
+ok(/CATP\.recoitLAleatoire\(dd, svc,/.test(portePool),
+  'et le catalogue propre sort du pot commun, par la même porte');
 /* ET LES TROIS CHEMINS L'EMPRUNTENT — c'est ce qui empêche la divergence de revenir. */
 ok((srv.match(/await diffuserAuPool\(/g)||[]).length>=2,
   'arrière : plusieurs chemins passent par la porte (sans quoi « une seule règle » ne mesure rien)');
