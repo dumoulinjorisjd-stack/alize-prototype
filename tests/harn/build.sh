@@ -16,7 +16,10 @@ sed 's/function render(){/function render(){window.__S=S;window.__render=render;
      s/^  function jalonClient(cle){/  window.__jalon=function(c){return jalonClient(c);};\n  function jalonClient(cle){/
      s/^  function activeServicesFromArtisans(){/  window.__dispo=function(){return activeServicesFromArtisans();};\n  function activeServicesFromArtisans(){/
      s/^  function parcoursPro(drafts){/  window.__pro={parcours:function(d){return parcoursPro(d);},jalons:function(f){return jalonsProDe(f);},etapes:function(){return PRO_ETAPES;}};\n  function parcoursPro(drafts){/
-     s/^  function catalogGroups(id){/  window.__cat={list:function(i){return catalogFor(i);},groups:function(i){return catalogGroups(i);}};\n  function catalogGroups(id){/
+     s/^  async function fbProSignup(f){/  window.__envoyer=function(f){return fbProSignup(f);};\n  async function fbProSignup(f){/
+     s/^  async function persistRequest(m){/  window.__demande=function(m){return persistRequest(m);};\n  async function persistRequest(m){/
+     s/^  function catalogueLibreSvc(svcId){/  window.__ownCat={libre:function(s){return catalogueLibreSvc(s);},rechiffre:function(m){return rechiffrerActes(m);},proOk:function(f,i){return catalogueProOk(f,i);},editeur:function(s,src,a){return catEditeurHtml(s,src,a);},entree:function(src,a,s){return catEntree(src,a,s);},poser:function(src,a,s,e){return catPoser(src,a,s,e);}};\n  function catalogueLibreSvc(svcId){/
+     s/^  function catalogGroups(id){/  window.__cat={list:function(i,u){return catalogFor(i,u);},groups:function(i){return catalogGroups(i);},foi:function(i,u){return catalogueQuiFaitFoi(i,u);},acte:function(i,a,u){return actInfo(i,a,u);}};\n  function catalogGroups(id){/
      s/^  function admSeenGet(){/  window.__adm={artNew:function(a){return admArtNew(a);},cliNew:function(c){return admCliNew(c);},thNew:function(t){return admThreadNew(t);},seen:function(k,v){return admSeenSet(k,v);},artSig:function(a){return admArtSig(a);},cliSig:function(c){return admCliSig(c);},count:function(){return adminNewCount();}};\n  function admSeenGet(){/
      s/^  function tryVisibleBackLink(){/  window.__back=function(){return goBack();};\n  function tryVisibleBackLink(){/
      s/^  function accepterDemo(m){/  window.__demo={accepte:function(m){return accepterDemo(m);},estExamen:function(){return isReviewDemo();}};\n  function accepterDemo(m){/
@@ -49,7 +52,7 @@ sed 's/function render(){/function render(){window.__S=S;window.__render=render;
      s/^  function murSousLigne(f){/  window.__murs={sous:function(f){return murSousLigne(f);},qui:function(q,m){return murQuiHtml(q,m);},phrases:function(c){return murQuiPhrases(c);},depuis:function(){return CLIENT_JALONS_DEPUIS;},prepareDepuis:function(){return PREPARE_DEPUIS;}};\n  function murSousLigne(f){/
      s/^  function i18nApply(root){/  window.__tr=function(v,lang){var av=S.lang;S.lang=lang;try{return trOne(v);}finally{S.lang=av;}};window.__dict=function(lang){return lang===String.fromCharCode(112,116)?PT_DICT:EN_DICT;};\n  function i18nApply(root){/' \
   "$SRC" > "$OUT"
-for f in __S __totals __demarrage __render __err __newMission __peutTravailler __tr __adm __cat __rev __demo __back __svc __art __brouillon __inst __maj __dossier __assur __prix __statut __tel __murs __parcours __lieu __arrhes __metier __heures __gps __nl __cfg __fil __cmd __prop __push __eur __passe __repr __grp __form; do
+for f in __S __totals __demarrage __render __err __newMission __peutTravailler __tr __adm __cat __rev __demo __back __svc __art __brouillon __inst __maj __dossier __assur __prix __statut __tel __murs __parcours __lieu __arrhes __metier __heures __gps __nl __cfg __fil __cmd __prop __push __eur __passe __repr __grp __form __ownCat __demande __envoyer; do
   grep -q "window.$f" "$OUT" || { echo "MANQUE $f"; exit 1; }
 done
 echo "harnais complet"
