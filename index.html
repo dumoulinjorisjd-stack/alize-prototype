@@ -3703,7 +3703,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='894';
+  const VERSION_APP='895';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -4455,8 +4455,56 @@
      zéro prestation, et le client y lisait « dès 0 € » devant un choix vide. C'est aussi
      ce qui permet de revenir au tarif horaire en retirant les prestations. */
   function isCatalogForfait(id){const c=baseCatalog(id);return !!(c&&c.length);}
-  function catalogFor(id){return baseCatalog(id)||[];}
-  function actInfo(svcId,actId){return catalogFor(svcId).find(function(a){return a.id===actId;})||null;}
+  /* ══ LE CATALOGUE QUI FAIT FOI — MIROIR DE `functions/catalogue-prestataire.js` ════
+     Décision de l'éditeur (29/10/2026) : « soit on choisit aléatoire pour ceux qui ont
+     accepté les prix, soit on choisit un prestataire qui a son propre catalogue, mais on
+     ne compare rien pour ne rendre personne dans une mauvaise posture ».
+
+     SON CATALOGUE N'EST PAS UNE VARIANTE DU NÔTRE, C'EST LE SIEN : ses lignes, ses noms,
+     ses durées, autant qu'il veut. Il n'y a donc rien à rapprocher — donc rien à mettre
+     côte à côte, et le problème de comparaison disparaît au lieu d'être habillé.
+
+     LES LIGNES ARRIVENT DÉJÀ NETTOYÉES ET BORNÉES PAR LE SERVEUR (`listProviders` les
+     passe par `lignesPropres`). Le client ne les rejuge pas : deux nettoyages finiraient
+     par ne pas rendre la même chose, et c'est le serveur qui fait foi — c'est lui qui
+     vérifie le prix avant d'autoriser la carte. */
+  function catalogueDuChoisi(svcId,uid){
+    if(!uid)return null;
+    /* `S._proDir[svc]` EST `{loading, list}`, PAS UN TABLEAU. Lu comme un tableau, le
+       `.find` rendait toujours rien et le catalogue retombait en silence sur la grille —
+       c'est-à-dire la fonction entière inerte, sans un message. On lit la LISTE. */
+    const e=(S._proDir&&S._proDir[svcId])||null;
+    const dir=(e&&e.list)||null;
+    const p=dir&&dir.find(function(x){return x.uid===uid;});
+    return (p&&p.ownCat&&Array.isArray(p.cat)&&p.cat.length)?p.cat:null;
+  }
+  function catalogueQuiFaitFoi(svcId,uid){
+    const sien=catalogueDuChoisi(svcId,uid);
+    if(sien)return {propre:true,lignes:sien};
+    return {propre:false,lignes:baseCatalog(svcId)||[]};
+  }
+  /* UN APPEL SANS PRESTATAIRE REND LA GRILLE, comme hier : tous les appelants d'avant
+     continuent donc de marcher sans savoir que la question a un second argument. */
+  function catalogFor(id,uid){return catalogueQuiFaitFoi(id,uid).lignes;}
+  function actInfo(svcId,actId,uid){return catalogFor(svcId,uid).find(function(a){return a.id===actId;})||null;}
+  /* RE-CHIFFRER UNE COMMANDE SUR LE CATALOGUE DE LA PERSONNE CHOISIE. Rend ce qui a été
+     RETIRÉ, pour que l'écran puisse le dire — on ne décoche pas une prestation en
+     silence. Le nom suit le prix : il s'imprime sur la facture et part dans la demande. */
+  function rechiffrerActes(m){
+    const r={retirees:[],rechiffrees:0};
+    if(!m||!Array.isArray(m.acts)||!m.acts.length)return r;
+    const cat=catalogFor(m.svc,m.preferredUid);
+    const par={};cat.forEach(function(a){par[a.id]=a;});
+    const garde=[];
+    m.acts.forEach(function(a){
+      const l=par[a.id];
+      if(!l){r.retirees.push(a.nm||a.id);return;}
+      if(l.price!==a.price||l.nm!==a.nm)r.rechiffrees++;
+      garde.push({id:l.id,nm:l.nm,price:l.price,qty:a.qty||1});
+    });
+    m.acts=garde;
+    return r;
+  }
   function minActPrice(id){const c=catalogFor(id);return c.length?Math.min.apply(null,c.map(function(a){return Number(a.price)||0;})):0;}
   // Sous-total forfait d'une mission à l'acte (somme des actes cochés × quantité), ou null
   // si la mission n'est pas de type « catalogue » (on retombe alors sur le tarif horaire).
@@ -4866,6 +4914,39 @@
       .map(function(p){return '<span class="chip '+(p[1]?'good':'coral')+'">'+(p[1]?I.check:'')+' '+p[0]+'</span>';}).join(' ');
     out.push(row('Engagements','<span class="chipwrap">'+eng+'</span>'
       +(a.termsVersion?'<div class="mini" style="margin-top:5px">Version '+esc(String(a.termsVersion))+(a.termsAt?' · '+new Date(a.termsAt).toLocaleDateString('fr-FR'):'')+'</div>':'')));
+    /* ══ SON CATALOGUE, MÉTIER PAR MÉTIER — ET CE QU'IL A SIGNÉ RESTE AU-DESSUS ══════
+       « Depuis la console n'importe lequel, si je décoche la grille tarifaire basique.
+       Le choix doit pouvoir évoluer » (l'éditeur, 29/10/2026).
+
+       CETTE RANGÉE N'EST PAS LA PASTILLE « GRILLE TARIFAIRE » D'AU-DESSUS, et c'est la
+       décision qui compte ici. Celle-là est une PREUVE D'ACCEPTATION — « ce qui protège
+       Ti-Services en cas de litige », dit son propre commentaire : la décocher d'un clic
+       réécrirait une signature. L'arrangement d'aujourd'hui vit donc à part, et la preuve
+       reste intacte à côté de lui.
+
+       ELLE NE PARAÎT QUE SUR LES MÉTIERS QUE LA CONSOLE A OUVERTS : la porte est au
+       métier, pas ici. Un réglage qu'on verrait sans pouvoir s'en servir est pire qu'un
+       réglage absent. */
+    (function(){
+      const ouverts=(a.cats||[]).filter(function(c){return c!=='autre'&&catalogueLibreSvc(c);});
+      if(!ouverts.length)return;
+      out.push(row('Catalogue',ouverts.map(function(c){
+        const e=catEntree('adm',a,c),en=!!e.on,n=(e.lines||[]).filter(function(l){return l&&l.nm&&Number(l.price)>0;}).length;
+        return `<div style="margin-top:${ouverts.indexOf(c)?'14px':'0'}">
+          <div class="row" style="gap:9px;align-items:flex-start">
+            <button data-caton="adm:${esc(c)}" aria-pressed="${en?'true':'false'}" style="background:none;border:none;padding:0;flex:none">${chkbox(en)}</button>
+            <div style="min-width:0"><b>${en?'Son propre catalogue':'Grille tarifaire Ti-Services'} · ${esc(svcNm(c))}</b>
+              <div class="mini" style="margin-top:4px;color:var(--muted)">${en
+                ? (n?'Il ne reçoit pas de commandes aléatoires sur ce métier. Les clients le choisissent, et voient ceci.'
+                    :'Sa carte est vide&nbsp;: tant qu’aucune prestation n’est saisie, c’est la grille qui s’applique et il reste dans l’aléatoire.')
+                : ((e.lines||[]).length
+                  ? 'Il reçoit de nouveau les commandes aléatoires, au catalogue et aux prix Ti-Services. Ses <b>'+(e.lines||[]).length+' prestations</b> sont conservées, simplement masquées.'
+                  : 'Il reçoit les commandes aléatoires, et les clients peuvent aussi le choisir. Dans les deux cas, le catalogue et les prix sont les nôtres.')}</div></div>
+          </div>
+          ${en?catEditeurHtml(c,'adm',a):''}
+        </div>`;
+      }).join('')));
+    })();
     // Grille refusée : son souhait tarifaire, métier par métier — la matière pour en
     // discuter avec lui (et, si besoin, faire évoluer la grille du secteur).
     if(!a.acceptsGrille&&a.desiredNetRates&&Object.keys(a.desiredNetRates).length){
@@ -6283,6 +6364,14 @@
       regle:(r.exclusif===true||j!=null)};
   }
   function metierDuSvc(svcId){return metierDe(S.adminMetier,svcId);}
+  /* CE MÉTIER OUVRE-T-IL LES CATALOGUES PROPRES ? Miroir de `metierOuvreCatalogue` du
+     module serveur, à la ligne près : absent = FERMÉ, et seul le VRAI booléen ouvre.
+     Deux échelles pour la même question finiraient par ne plus répondre pareil, et
+     c'est le serveur qui fait foi — c'est lui qui refuse l'empreinte bancaire. */
+  function catalogueLibreSvc(svcId){
+    const e=(S.adminMetier&&S.adminMetier[svcId])||{};
+    return e.catalogueLibre===true;
+  }
   const ARRHES_DEFAUT={pct:50,h:8};
   // Délais offerts : une liste FERMÉE, parce qu'un champ libre laisserait écrire « 0 »
   // (annulation jamais gratuite) ou « 10000 » (jamais payante) sans que rien ne le dise.
@@ -12319,6 +12408,23 @@
               <div class="mini" style="color:var(--muted);line-height:1.45">Annuaire du métier dès la première commande (photo, badge). Pour les prestations où la PERSONNE compte&nbsp;: coiffure, massage, garde d'enfants. Sinon, le client ne peut viser que quelqu'un qu'il a déjà eu.${(pickProSvc(s.id)!==choixProDuCode(s.id))?' <b>Réglé ici</b>, le code disait «&nbsp;'+(choixProDuCode(s.id)?'oui':'non')+'&nbsp;».':''}</div></div>
             <button class="switch" data-adm="catchoix:${s.id}" style="flex:none;background:${pickProSvc(s.id)?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${pickProSvc(s.id)?'25px':'3px'}"></span></button>
           </div>
+          ${/* ══ LA PORTE DES CATALOGUES PROPRES, MÉTIER PAR MÉTIER ═══════════════════
+               « Que dans les catégories que je choisis d'ouvrir à cette possibilité dans
+               la console » (l'éditeur, 29/10/2026). Le voisin exact : l'un ouvre le CHOIX
+               d'une personne, l'autre ouvre son CATALOGUE — et le second n'a aucun sens
+               sans le premier, ce que la phrase dit quand le choix est fermé.
+               FERMER LE MÉTIER REFERME TOUT, sans toucher à un seul compte : c'est ce qui
+               rend le choix réversible dans les deux sens, et c'est pour cela que la porte
+               est ici et pas sur la fiche de chacun. */''}
+          <div class="row between" style="align-items:center;gap:10px;margin-top:12px">
+            <div style="flex:1;min-width:0"><span class="sub">Catalogue propre autorisé</span>
+              <div class="mini" style="color:var(--muted);line-height:1.45">${catalogueLibreSvc(s.id)
+                ? 'Un prestataire de ce métier peut quitter la grille et proposer <b>ses propres prestations, autant qu’il veut</b>. Il ne reçoit plus de commandes aléatoires&nbsp;: les clients le choisissent, et voient sa carte à lui.'
+                : (pickProSvc(s.id)
+                  ? 'Fermé&nbsp;: tout le monde est à la grille Ti-Services sur ce métier. Les prestataires n’ont pas la case dans leur profil, et leur fiche ne la propose pas non plus.'
+                  : 'Fermé, et le choix d’un prestataire l’est aussi&nbsp;: un catalogue propre ne se lit que par quelqu’un qu’on a choisi.')}</div></div>
+            <button class="switch" data-adm="metcata:${s.id}" style="flex:none;background:${catalogueLibreSvc(s.id)?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${catalogueLibreSvc(s.id)?'25px':'3px'}"></span></button>
+          </div>
           <div class="row between" style="align-items:center;gap:10px;margin-top:12px">
             <div style="flex:1;min-width:0"><span class="sub">Demander une photo à la commande</span>
               <div class="mini" style="color:var(--muted);line-height:1.45">Pour les prestations où l'on a quelque chose à MONTRER&nbsp;: une fuite, un jardin, un volume à déménager. Inutile sur un massage ou un cours, où le client n'a rien à photographier.${((photoDemandee(s.id)||'non')!==(photoDuCode(s.id)||'non'))?' <b>Réglé ici</b>, le code disait «&nbsp;'+(photoDuCode(s.id)?'oui':'non')+'&nbsp;».':''}</div></div>
@@ -17066,10 +17172,19 @@
   // Grille refusée : l'inscription reste possible si le prestataire indique son prix
   // net souhaité pour CHAQUE métier du catalogue qu'il a coché — l'équipe l'étudie
   // ensuite. Imposer la grille bloquait des secteurs entiers à l'inscription.
+  /* SUR UN MÉTIER OUVERT AUX CATALOGUES PROPRES, LE PRIX SE DIT PAR DES PRESTATIONS.
+     Le champ « € net/h souhaités » ne peut pas porter une carte à l'acte : on exige donc
+     au moins une ligne lisible, et c'est tout — le nombre de lignes est à lui. */
+  function catalogueProOk(f,id){
+    const e=((f&&f.ownCatalog)||{})[id];
+    return !!(e&&Array.isArray(e.lines)&&e.lines.some(function(l){return l&&String(l.nm||'').trim()&&Number(String(l.price||'').toString().replace(',','.'))>0;}));
+  }
   function desiredNetOk(f){
     f=f||{};const cata=(f.cats||[]).filter(function(id){return id!=='autre';});
     if(!cata.length)return false;
-    return cata.every(function(id){const v=Number(String((f.desiredNet||{})[id]||'').replace(',','.'));return v>0;});
+    return cata.every(function(id){
+      if(catalogueLibreSvc(id))return catalogueProOk(f,id);
+      const v=Number(String((f.desiredNet||{})[id]||'').replace(',','.'));return v>0;});
   }
   // Service hors catalogue : le nom ET le prix voulu sont nécessaires, sinon la
   // candidature arrive sans qu'on sache ni quoi ni à quel tarif.
@@ -17429,8 +17544,28 @@
       <p class="mini" style="margin-top:12px;color:var(--muted);line-height:1.5">${amb?'Ce net d’ambassadeur court sur vos 3 premiers mois d’activité ou jusqu’à 2 000 € de prestations&nbsp;; ensuite votre net évolue avec votre ancienneté sur Ti-Services.':'Le net indiqué vaut pour un début sur Ti-Services&nbsp;: il augmente avec votre ancienneté.'} Les prix peuvent évoluer&nbsp;; vous en êtes informé et vous voyez toujours votre net avant d'accepter une mission.</p>
       <div class="chkline" style="margin-top:14px"><button data-act="toggle-grille" aria-label="Appliquer la grille" style="background:none;border:none;padding:0">${chkbox(f.acceptsGrille)}</button><span class="mini" style="line-height:1.5">J'ai lu la grille ci-dessus et je l'applique pour mes prestations. Je pourrai proposer d'enrichir le catalogue (validé par Ti-Services), mais les prix restent ceux de la grille.</span></div>
       ${f.acceptsGrille?'':`<div style="margin-top:12px;padding:13px 14px;background:var(--teal-wash);border-radius:12px">
-        <p class="mini" style="line-height:1.55">Vous n'appliquez pas la grille ? Indiquez, métier par métier, le prix que vous souhaitez toucher (net pour vous). L'équipe Ti-Services l'étudiera avec vous, cela ne bloque pas votre inscription.</p>
-        ${cata.map(function(id){const cur=(f.desiredNet&&f.desiredNet[id]!=null)?f.desiredNet[id]:'';const plat=(S.adminPrices&&S.adminPrices[id]!=null)?S.adminPrices[id]:svcBase(id);return `<div class="row" style="gap:9px;align-items:center;margin-top:9px"><span class="mini" style="flex:1;min-width:0;font-weight:700">${svcNm(id)}</span><input class="txt" data-dnet="${id}" value="${esc(String(cur))}" inputmode="decimal" placeholder="${proNetHint(plat)}" style="flex:none;width:86px;text-align:right"><span class="mini" style="flex:none;color:var(--muted)">€ net/h souhaités</span></div>`;}).join('')}
+        ${/* ══ SON PROPRE CATALOGUE, EN DÉTAIL, DÈS L'INSCRIPTION ════════════════════
+             « À l'inscription, si on refuse la grille tarifaire, on doit pouvoir mettre
+             en détail tout son propre catalogue » (l'éditeur, 29/10/2026).
+
+             CE QU'ON DEMANDAIT ICI NE POUVAIT PAS LE DIRE : un champ par métier, « € net/h
+             souhaités » — un seul nombre, en net, à l'heure. Pour un métier à l'acte il ne
+             dit ni les lignes, ni leurs durées, ni leurs noms ; et c'est du NET quand le
+             client paie un prix CLIENT.
+
+             MÊME BLOC, MÊME ÉTAPE, MÊME ENREGISTREMENT AU FIL DE LA FRAPPE : seule la
+             QUESTION change, et seulement sur les métiers que la console a ouverts. Les
+             autres gardent le champ d'avant — on ne retire pas à un métier fermé la seule
+             façon qu'il avait de dire son prix. */''}
+        ${(function(){const ouverts=cata.filter(function(id){return catalogueLibreSvc(id);});
+          if(!ouverts.length)return '';
+          return `<p class="mini" style="line-height:1.55">Vos prestations, telles que vos clients les liront, et le prix qu'ils paieront. Les clients vous choisiront <b>vous</b>&nbsp;: ils verront cette carte, et elle seule.</p>`
+            +ouverts.map(function(id){return catEditeurHtml(id,'pro',null);}).join('')
+            +`<p class="mini" style="margin-top:11px;padding-top:9px;border-top:1px solid rgba(0,0,0,.07)">Ti-Services relit votre catalogue avant de l'ouvrir aux clients.</p>`;})()}
+        ${(function(){const fermes=cata.filter(function(id){return !catalogueLibreSvc(id);});
+          if(!fermes.length)return '';
+          return `<p class="mini" style="line-height:1.55${cata.some(function(id){return catalogueLibreSvc(id);})?';margin-top:14px;padding-top:11px;border-top:1px solid rgba(0,0,0,.07)':''}">Vous n'appliquez pas la grille&nbsp;? Indiquez, métier par métier, le prix que vous souhaitez toucher (net pour vous). L'équipe Ti-Services l'étudiera avec vous, cela ne bloque pas votre inscription.</p>`;})()}
+        ${cata.filter(function(id){return !catalogueLibreSvc(id);}).map(function(id){const cur=(f.desiredNet&&f.desiredNet[id]!=null)?f.desiredNet[id]:'';const plat=(S.adminPrices&&S.adminPrices[id]!=null)?S.adminPrices[id]:svcBase(id);return `<div class="row" style="gap:9px;align-items:center;margin-top:9px"><span class="mini" style="flex:1;min-width:0;font-weight:700">${svcNm(id)}</span><input class="txt" data-dnet="${id}" value="${esc(String(cur))}" inputmode="decimal" placeholder="${proNetHint(plat)}" style="flex:none;width:86px;text-align:right"><span class="mini" style="flex:none;color:var(--muted)">€ net/h souhaités</span></div>`;}).join('')}
       </div>`}</div>`+autre;
   }
   function proServicesSection(f){
@@ -17548,7 +17683,7 @@
      groupées, à son rythme, puis clique « Envoyer ma candidature ». Tant qu'il n'a pas
      envoyé, aucune fiche `artisans` n'existe → il n'apparaît pas dans la file admin. */
   function proDraftKey(){return 'tiProDraft:'+((FB&&FB.auth&&FB.auth.currentUser&&FB.auth.currentUser.uid)||'anon');}
-  function saveProDraft(){noterJalonsPro();try{const f=S.proForm||{};const j={};['name','repGiven','repFamily','phone','siret','address','statusType','legalForm','capital','rcsCity','birth','bio','refCode','insurer','insuranceName','insuranceUrl','diplomaOther','otherService','otherPrice','otherPriceNote','otherUnit','photo','email'].forEach(function(k){if(f[k]!=null)j[k]=f[k];});j.insuranceDoc=!!f.insuranceDoc;j.insuranceNone=!!f.insuranceNone;j.mandat=!!f.mandat;j.cgu=!!f.cgu;j.charte=!!f.charte;j.acceptsGrille=!!f.acceptsGrille;j.desiredNet=f.desiredNet||{};j.cats=Array.isArray(f.cats)?f.cats:[];j.rates=f.rates||{};j.diplomas=Array.isArray(f.diplomas)?f.diplomas:[];j.googleAuth=!!f.googleAuth;j.authed=!!f.authed;localStorage.setItem(proDraftKey(),JSON.stringify(j));sauverBrouillonCloud(j);}catch(_){}}
+  function saveProDraft(){noterJalonsPro();try{const f=S.proForm||{};const j={};['name','repGiven','repFamily','phone','siret','address','statusType','legalForm','capital','rcsCity','birth','bio','refCode','insurer','insuranceName','insuranceUrl','diplomaOther','otherService','otherPrice','otherPriceNote','otherUnit','photo','email'].forEach(function(k){if(f[k]!=null)j[k]=f[k];});j.insuranceDoc=!!f.insuranceDoc;j.insuranceNone=!!f.insuranceNone;j.mandat=!!f.mandat;j.cgu=!!f.cgu;j.charte=!!f.charte;j.acceptsGrille=!!f.acceptsGrille;j.desiredNet=f.desiredNet||{};j.ownCatalog=f.ownCatalog||{};j.cats=Array.isArray(f.cats)?f.cats:[];j.rates=f.rates||{};j.diplomas=Array.isArray(f.diplomas)?f.diplomas:[];j.googleAuth=!!f.googleAuth;j.authed=!!f.authed;localStorage.setItem(proDraftKey(),JSON.stringify(j));sauverBrouillonCloud(j);}catch(_){}}
   /* ══ LE DOSSIER SUIT LE COMPTE, PAS LE TÉLÉPHONE ═══════════════════════════════
      « Ce qu'il a fait ne s'enregistre que dans son téléphone ; s'il veut continuer
      depuis un autre appareil, il ne retrouve pas ses informations ? »
@@ -19530,7 +19665,7 @@
         return;
       }
     }
-    const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actqty],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-psite],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-loc],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday],[data-tip],[data-pac],[data-sitemode],[data-invclient],[data-fold],[data-actgrp],[data-purge],[data-optpick],[data-optqty],[data-optadd],[data-optdel],[data-optprice],[data-optunit],[data-rf],[data-telfix],[data-actduree]');
+    const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actqty],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-psite],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-loc],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday],[data-tip],[data-pac],[data-sitemode],[data-invclient],[data-fold],[data-actgrp],[data-purge],[data-optpick],[data-optqty],[data-optadd],[data-optdel],[data-optprice],[data-optunit],[data-rf],[data-telfix],[data-actduree],[data-catdel],[data-catadd],[data-caton]');
     if(!b)return;
     // Un clic ISSU d'un <input type=file> (notamment déclenché par programme, ex. la
     // feuille « appareil photo / galerie ») remonte jusqu'ici : on ne le traite pas
@@ -20294,6 +20429,15 @@
           if(!Object.keys(S.adminMetier[id]).length)delete S.adminMetier[id];saveCatalog();render();}
         return;
       }
+      else if(act==='metcata'){
+        /* UNE CLÉ VIDE RETIRE L'ENTRÉE — la convention de cet écran, et ce qui fait
+           qu'un métier qui n'ouvre rien ne porte rien dans le document partagé. */
+        S.adminMetier=S.adminMetier||{};
+        const e=Object.assign({},S.adminMetier[id]||{});
+        if(e.catalogueLibre===true)delete e.catalogueLibre; else e.catalogueLibre=true;
+        if(Object.keys(e).length)S.adminMetier[id]=e; else delete S.adminMetier[id];
+        saveCatalog();render();
+      }
       else if(act==='metexcl'||act==='metjours'){
         S.adminMetier=S.adminMetier||{};
         const cur=metierDuSvc(id);
@@ -20406,7 +20550,7 @@
       // reste possible — on ne force pas une sélection, le total dirait un prix que
       // personne n'a demandé.
       const seul=metierDuSvc(m.svc).exclusif;
-      if(i>=0){m.acts.splice(i,1);}else{const a=actInfo(m.svc,id);if(a){if(seul)m.acts=[];m.acts.push({id:a.id,nm:a.nm,price:a.price,qty:1});}}renderConfig();return;}
+      if(i>=0){m.acts.splice(i,1);}else{const a=actInfo(m.svc,id,m.preferredUid);if(a){if(seul)m.acts=[];m.acts.push({id:a.id,nm:a.nm,price:a.price,qty:1});}}renderConfig();return;}
     if(b.dataset.actqty){const m=S.draft;if(!m)return;const parts=b.dataset.actqty.split(':');const id=parts[0],dir=parts[1];const a=(m.acts||[]).find(function(x){return x.id===id;});if(a){if(dir==='up')a.qty=(a.qty||1)+1;else{a.qty=(a.qty||1)-1;if(a.qty<1)m.acts=m.acts.filter(function(x){return x.id!==id;});}}renderConfig();return;}
     if(b.dataset.av){const[d,bl]=b.dataset.av.split(':');S.avail[d][bl]=S.avail[d][bl]?0:1;render();return;}
     if(b.dataset.atab){S.agendaTab=b.dataset.atab;render();return;}
@@ -20492,7 +20636,42 @@
     })();return;}
     if(b.dataset.sitemode!=null){S.proSiteMode=b.dataset.sitemode;persistSiteMode();rafraichirDemandes();render();return;}
     if(b.dataset.invclient!=null){S.invClient=b.dataset.invclient;render();return;}
-    if(b.dataset.prefart!=null){if(S.draft){S.draft.preferredUid=b.dataset.prefart||null;S.draft.preferredName=b.dataset.prefnm||'';}renderConfig();return;}
+    /* AJOUTER, RETIRER, BASCULER. « Il peut ajouter autant de lignes qu'il veut » —
+       l'identifiant est tiré une fois et ne change plus : une commande déjà passée le
+       porte, et renuméroter au rang la ferait pointer sur une autre prestation dès
+       qu'il réordonne sa carte. */
+    if(b.dataset.catadd){const p=b.dataset.catadd.split(':'),a=catArtDe(p[0]);const e2=catEntree(p[0],a,p[1]);
+      e2.lines=(e2.lines||[]).concat([{id:'c'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),nm:'',price:''}]);
+      e2.on=true;catPoser(p[0],a,p[1],e2);render();return;}
+    if(b.dataset.catdel){const p=b.dataset.catdel.split(':'),a=catArtDe(p[0]);const e2=catEntree(p[0],a,p[1]);
+      e2.lines=(e2.lines||[]).filter(function(_,i){return i!==+p[2];});
+      catPoser(p[0],a,p[1],e2);render();return;}
+    if(b.dataset.caton){const p=b.dataset.caton.split(':'),a=catArtDe(p[0]);const e2=catEntree(p[0],a,p[1]);
+      /* RECOCHER LA GRILLE MASQUE, N'EFFACE PAS. Effacer un travail qu'on ne sait pas
+         refaire ferait un choix à sens unique — or « le choix doit pouvoir évoluer ». */
+      e2.on=!e2.on;catPoser(p[0],a,p[1],e2);render();
+      toast(e2.on?'Son catalogue est en service. Il ne recevra plus de commandes aléatoires.'
+                 :'Retour à la grille Ti-Services. Ses prestations sont conservées.');
+      return;}
+    if(b.dataset.prefart!=null){
+      if(S.draft){
+        S.draft.preferredUid=b.dataset.prefart||null;S.draft.preferredName=b.dataset.prefnm||'';
+        /* CHANGER DE PRESTATAIRE RE-CHIFFRE LA COMMANDE, ET AVANT L'EMPREINTE BANCAIRE.
+           `m.acts` RECOPIE le nom et le prix au moment où le client coche sa prestation,
+           et c'est cette copie que `forfaitSub` additionne — côté client comme côté
+           serveur (`reqPayout`). Sans ce rafraîchissement, choisir quelqu'un après avoir
+           coché laisserait le prix de l'AUTRE catalogue dans la commande, et le serveur
+           refuserait l'empreinte au lieu de prélever le bon montant.
+           CE QUI N'EXISTE PAS CHEZ LUI EST RETIRÉ, ET C'EST DIT : son catalogue est le
+           sien, il n'a aucune raison de porter nos lignes. Effacer en silence ferait
+           disparaître sous les doigts une prestation qu'on venait de cocher. */
+        const chg=rechiffrerActes(S.draft);
+        renderConfig();
+        if(chg.retirees.length)toast(chg.retirees.length===1
+          ? 'La prestation « '+chg.retirees[0]+' » n\u2019est pas à son catalogue : choisissez parmi les siennes.'
+          : chg.retirees.length+' prestations ne sont pas à son catalogue : choisissez parmi les siennes.');
+      } else renderConfig();
+      return;}
     // Garde d'enfants : le client, non convaincu après l'appel, redirige sa demande
     // vers une AUTRE baby-sitter (ou la rouvre à toutes). Libération sans no-show
     // (reopenedBy:'client-choice' — recordNoShow ne vise que 'client').
@@ -21581,7 +21760,7 @@
     // pastillage du nombre choisi — une famille où l'on a déjà coché reste ouverte.
     const grpsCli=catalogGroups(m.svc);
     const actRows=(grpsCli.length<2)
-      ? `<div class="actlist">${catalogFor(m.svc).map(actLigne).join('')}</div>`
+      ? `<div class="actlist">${catalogFor(m.svc,m.preferredUid).map(actLigne).join('')}</div>`
       : `<div class="actgrps">${grpsCli.map(function(G){
           const n=G.acts.filter(function(a){return !!pickOf(a.id);}).length;
           const k=grpKey('cli',m.svc,G.g),ouv=grpOpen(k,n>0);
@@ -21855,6 +22034,18 @@
         try{const el=document.querySelector('[data-rech]');if(el){el.focus();el.setSelectionRange(v.length,v.length);}}catch(_){}
       },260);return;}
     const ar=e.target.closest('[data-arst]');if(ar){S._arst=S._arst||{};S._arst[ar.dataset.arst]=ar.value;}
+    /* LA FRAPPE S'ENREGISTRE SANS REDESSINER : la carte se refait à chaque caractère
+       ferait perdre le curseur au milieu d'un nom. Seul le net affiché attend le
+       prochain rendu, et c'est le bon compromis — il se recalcule, il ne se saisit pas. */
+    const catNm=e.target.closest('[data-catnm]');
+    if(catNm){const p=catNm.dataset.catnm.split(':'),ar=catArtDe(p[0]);const en=catEntree(p[0],ar,p[1]);
+      (en.lines=en.lines||[])[+p[2]]=Object.assign({},en.lines[+p[2]]||{},{nm:catNm.value});
+      catPoser(p[0],ar,p[1],en);return;}
+    const catPx=e.target.closest('[data-catpx]');
+    if(catPx){const p=catPx.dataset.catpx.split(':'),ar=catArtDe(p[0]);const en=catEntree(p[0],ar,p[1]);
+      const v=Number(String(catPx.value||'').replace(',','.'));
+      (en.lines=en.lines||[])[+p[2]]=Object.assign({},en.lines[+p[2]]||{},{price:isFinite(v)?v:0});
+      catPoser(p[0],ar,p[1],en);return;}
     const dn=e.target.closest('[data-dnet]');if(dn&&S.proForm){S.proForm.desiredNet=S.proForm.desiredNet||{};S.proForm.desiredNet[dn.dataset.dnet]=dn.value;refreshProSubmit();}
     const pad=e.target.closest('[data-padnet]');if(pad&&S.proAddForm){S.proAddForm.desiredNet=S.proAddForm.desiredNet||{};S.proAddForm.desiredNet[pad.dataset.padnet]=pad.value;}
     const csf=e.target.closest('[data-csf]');if(csf&&S.concSignup){S.concSignup[csf.dataset.csf]=csf.value;const b2=document.querySelector('[data-act="conc-submit"]');if(b2)b2.disabled=!concSignupOk(S.concSignup);}
@@ -23492,7 +23683,15 @@
         await stM.uploadBytes(sref,f.insuranceFile,{contentType:f.insuranceFile.type||'application/octet-stream'});
         insuranceUrl=await stM.getDownloadURL(sref);
       }catch(e){ console.warn('insurance upload failed',e); } }
-      try{ await FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{name:(f.name||'').trim(),legalName:(f.name||'').trim(),repGiven:(f.repGiven||'').trim(),repFamily:(f.repFamily||'').trim(),email:email,address:(f.address||'').trim(),statusType:f.statusType||'entreprise',legalForm:(f.legalForm||'').trim(),capital:(f.capital||'').toString().replace(/[^\d]/g,''),rcsCity:(f.rcsCity||'').trim(),birth:(f.birth||''),cats:f.cats.slice(),siteMode:(f.siteMode||''),salonAddress:(f.salonAddress||'').trim(),other:(f.otherService||'').trim(),otherPrice:prixAutreLu(f.otherPrice).valeur,otherPriceNote:(f.otherPriceNote||'').trim().slice(0,400),otherUnit:(f.otherUnit==='forfait'?'forfait':'h'),rates:rates,diplomas:(f.diplomas||[]).slice(),diplomaOther:(f.diplomaOther||'').trim(),siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,insuranceNone:!!f.insuranceNone,insurer:f.insurer||'',insuranceUrl:insuranceUrl,insuranceStatus:(f.insuranceNone?'aucune':'attente'),phone:f.phone||'',photo:f.photo||'',bio:(f.bio||'').trim(),acceptedTerms:!!f.cgu,acceptedCharte:!!f.charte,acceptedMandat:!!f.mandat,acceptsGrille:!!f.acceptsGrille,desiredNetRates:(f.acceptsGrille?null:(function(){const o={};(f.cats||[]).forEach(function(c){if(c==='autre')return;const v=Number(String((f.desiredNet||{})[c]||'').replace(',','.'));if(v>0)o[c]=v;});return Object.keys(o).length?o:null;})()),termsVersion:TERMS_VERSION,termsAt:FB.f.serverTimestamp(),
+      try{ await FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{name:(f.name||'').trim(),legalName:(f.name||'').trim(),repGiven:(f.repGiven||'').trim(),repFamily:(f.repFamily||'').trim(),email:email,address:(f.address||'').trim(),statusType:f.statusType||'entreprise',legalForm:(f.legalForm||'').trim(),capital:(f.capital||'').toString().replace(/[^\d]/g,''),rcsCity:(f.rcsCity||'').trim(),birth:(f.birth||''),cats:f.cats.slice(),siteMode:(f.siteMode||''),salonAddress:(f.salonAddress||'').trim(),other:(f.otherService||'').trim(),otherPrice:prixAutreLu(f.otherPrice).valeur,otherPriceNote:(f.otherPriceNote||'').trim().slice(0,400),otherUnit:(f.otherUnit==='forfait'?'forfait':'h'),rates:rates,diplomas:(f.diplomas||[]).slice(),diplomaOther:(f.diplomaOther||'').trim(),siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,insuranceNone:!!f.insuranceNone,insurer:f.insurer||'',insuranceUrl:insuranceUrl,insuranceStatus:(f.insuranceNone?'aucune':'attente'),phone:f.phone||'',photo:f.photo||'',bio:(f.bio||'').trim(),acceptedTerms:!!f.cgu,acceptedCharte:!!f.charte,acceptedMandat:!!f.mandat,acceptsGrille:!!f.acceptsGrille,desiredNetRates:(f.acceptsGrille?null:(function(){const o={};(f.cats||[]).forEach(function(c){if(c==='autre')return;const v=Number(String((f.desiredNet||{})[c]||'').replace(',','.'));if(v>0)o[c]=v;});return Object.keys(o).length?o:null;})()),ownCatalog:(function(){/* SON CATALOGUE PART AVEC SON DOSSIER, et seulement pour les
+        métiers que la console a ouverts : une carte saisie sur un métier fermé ne doit
+        pas s'ouvrir toute seule le jour où on l'ouvre. Rien de saisi, rien d'écrit. */
+        if(f.acceptsGrille)return null;const o={};
+        (f.cats||[]).forEach(function(c){if(c==='autre'||!catalogueLibreSvc(c))return;
+          const e=((f.ownCatalog||{})[c])||{};const L=(e.lines||[]).filter(function(l){return l&&String(l.nm||'').trim()&&Number(String(l.price).toString().replace(',','.'))>0;})
+            .map(function(l){return {id:l.id,nm:String(l.nm).trim().slice(0,80),price:Math.round(Number(String(l.price).toString().replace(',','.'))*100)/100};});
+          if(L.length)o[c]={on:true,lines:L};});
+        return Object.keys(o).length?o:null;})(),termsVersion:TERMS_VERSION,termsAt:FB.f.serverTimestamp(),
         // Parrainage : code PROPRE de l'artisan (pour être parrain) + code du parrain éventuel
         // (référencé à la validation par le serveur, qui crédite alors le parrain).
         referralCode:genReferralCode((f.name||'').trim(),uid),referredByCode:(f.refCode||'').trim().toUpperCase(),
@@ -23824,6 +24023,63 @@
       {cats:on?FB.f.arrayUnion(sv):FB.f.arrayRemove(sv),pendingCats:FB.f.arrayRemove(sv)});}catch(_){}}
     saveAvailability();
   }
+  /* ══ L'ÉDITEUR DE CATALOGUE PROPRE — UN SEUL, POUR LES DEUX ÉCRANS ═════════════════
+     La console le pose sur la fiche d'un prestataire ; son dossier le pose à
+     l'inscription et dans son profil. Deux éditeurs pour la même saisie finiraient par
+     ne plus nettoyer, borner ni nommer les mêmes choses — et c'est un écran dont la
+     sortie se retrouve sur la carte d'un client et dans un montant prélevé.
+
+     `src` dit seulement OÙ ça s'écrit : la fiche d'un artisan (console) ou le dossier
+     en cours (prestataire). Le reste est identique au caractère près. */
+  /* DE QUI PARLE-T-ON ? La console édite la fiche OUVERTE ; le dossier édite le sien.
+     L'identifiant ne voyage pas dans l'attribut : la fiche ouverte est déjà l'état de
+     l'écran, et un identifiant recopié dans le DOM finirait par désigner quelqu'un
+     d'autre après un rafraîchissement. */
+  function catArtDe(src){
+    if(src!=='adm')return null;
+    return (S.adminArtisans||[]).find(function(x){return x.id===(S.admin&&S.admin.sel);})||null;
+  }
+  function catEntree(src,a,svc){
+    const hote=(src==='adm')?(a||{}):(S.proForm||{});
+    const m=hote.ownCatalog||{};
+    return m[svc]||{on:false,lines:[]};
+  }
+  function catPoser(src,a,svc,e){
+    const hote=(src==='adm')?(a||{}):(S.proForm=S.proForm||{});
+    hote.ownCatalog=hote.ownCatalog||{};
+    hote.ownCatalog[svc]=e;
+    if(src==='adm')adminWriteField(a,{ownCatalog:hote.ownCatalog});
+    else saveProDraft();
+  }
+  /* LE NET QU'IL PERÇOIT SE LIT À CÔTÉ DU PRIX CLIENT, parce que c'est en net qu'il
+     raisonne — et il passe par la porte qui chiffre déjà sa commission, jamais par un
+     second barème écrit ici. */
+  function catNet(px,src){const p=Number(px)||0;if(!(p>0))return 0;return (src==='adm')?proNetHint(p):myNetHint(p);}
+  function catLigneHtml(l,i,svc,src){
+    return `<div class="catl" style="margin-top:10px">
+      <input class="txt" data-catnm="${src}:${esc(svc)}:${i}" value="${esc(l.nm||'')}" placeholder="Nom de la prestation, durée comprise" style="width:100%">
+      <div class="row" style="gap:8px;align-items:center;margin-top:5px">
+        <input class="txt" data-catpx="${src}:${esc(svc)}:${i}" value="${esc(String(l.price==null?'':l.price))}" inputmode="decimal" placeholder="Prix" style="flex:none;width:80px;text-align:right">
+        <span class="mini" style="flex:1;white-space:nowrap">€ client${l.price>0?(' · <b>'+catNet(l.price,src)+' € '+(src==='adm'?'net pour lui':'pour vous')+'</b>'):''}</span>
+        <button class="btn ghost sm" data-catdel="${src}:${esc(svc)}:${i}" title="Retirer cette prestation" style="flex:none;width:auto;padding:6px 10px;margin:0">✕</button>
+      </div></div>`;
+  }
+  function catEditeurHtml(svc,src,a){
+    const e=catEntree(src,a,svc);
+    const lignes=Array.isArray(e.lines)?e.lines:[];
+    const trop=lignes.length>CAT_LIGNES_MAX_CLI;
+    return `<div class="catbloc" style="margin-top:10px;padding:11px 12px;background:var(--sand-2);border:1px solid var(--hair);border-radius:12px">
+      <div class="mini" style="font-weight:700">${esc(svcNm(svc))}</div>
+      ${lignes.length?lignes.map(function(l,i){return catLigneHtml(l,i,svc,src);}).join('')
+        :`<div class="mini" style="margin-top:7px;color:var(--muted)">Aucune prestation pour l’instant. Tant que cette carte est vide, c’est la grille Ti-Services qui s’applique.</div>`}
+      <button class="btn ghost sm" data-catadd="${src}:${esc(svc)}" style="width:auto;margin:11px 0 0;padding:8px 12px">+ Ajouter une prestation</button>
+      ${trop?`<div class="mini" style="margin-top:9px;color:var(--coral-deep);font-weight:600">${I.warn} Au-delà de ${CAT_LIGNES_MAX_CLI} prestations, les suivantes ne sont pas proposées aux clients.</div>`:''}
+    </div>`;
+  }
+  /* LA MÊME BORNE QUE LE SERVEUR, et elle est NOMMÉE des deux côtés : c'est lui qui
+     coupe, l'écran ne fait que le dire avant qu'on s'en aperçoive chez un client. */
+  const CAT_LIGNES_MAX_CLI=40;
+
   function adminWriteField(a,obj){ if(FB&&a&&a.real&&a.uid){ try{ FB.f.setDoc(FB.f.doc(FB.db,'artisans',a.uid),obj,{merge:true}); }catch(_){} } }
   // Statut d'une conciergerie écrit en base par l'admin (validation / refus).
   function adminWriteConcStatus(c,status){ if(FB&&c&&c.uid){ try{ FB.f.updateDoc(FB.f.doc(FB.db,'concierges',c.uid),{status:status}); }catch(_){} } }
@@ -23870,7 +24126,7 @@
       adminArtUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'artisans'),function(snap){
         const list=[],pending=new Set();
         snap.forEach(function(d){ const a=d.data()||{}; const cats=Array.isArray(a.cats)?a.cats:[]; const rr=a.rates||{}; const st=a.status||'attente';
-          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Prestataire',status:st,type:(a.statusType==='particulier')?'particulier':'entreprise',statusType:a.statusType||'entreprise',legalName:a.legalName||'',legalForm:a.legalForm||'',capital:a.capital||'',rcsCity:a.rcsCity||'',birth:a.birth||'',referralCode:a.referralCode||'',referredByCode:a.referredByCode||'',acceptedTerms:!!a.acceptedTerms,acceptedCharte:!!a.acceptedCharte,acceptedMandat:!!a.acceptedMandat,acceptsGrille:!!a.acceptsGrille,desiredNetRates:a.desiredNetRates||null,termsVersion:a.termsVersion||'',termsAt:(a.termsAt&&a.termsAt.toMillis)?a.termsAt.toMillis():0,createdAt:(a.createdAt&&a.createdAt.toMillis)?a.createdAt.toMillis():0,cats:cats,other:a.other||'',otherPrice:Number(a.otherPrice)||0,otherPriceNote:a.otherPriceNote||'',otherUnit:(a.otherUnit==='forfait'?'forfait':'h'),pendingCats:Array.isArray(a.pendingCats)?a.pendingCats:[],pendingOther:a.pendingOther||'',pendingOtherPrice:Number(a.pendingOtherPrice)||0,pendingOtherUnit:(a.pendingOtherUnit==='forfait'?'forfait':'h'),pendingDesiredNet:(a.pendingDesiredNet&&typeof a.pendingDesiredNet==='object')?a.pendingDesiredNet:null,rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insuranceNone:!!a.insuranceNone,insuranceNoticeAt:Number(a.insuranceNoticeAt)||0,approvedNotifiedAt:Number(a.approvedNotifiedAt)||0,tierForce:a.tierForce||'',refBonusJobs:Number(a.refBonusJobs)||0,insuranceDueAt:Number(a.insuranceDueAt)||0,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,founderSince:(a.founderSince&&a.founderSince.toMillis)?a.founderSince.toMillis():(typeof a.founderSince==='number'?a.founderSince:null),founderGross:Number(a.founderGross)||0,test:!!a.test,rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,online:(a.online!==false)/* EN LIGNE PAR DÉFAUT, et hors ligne seulement si on l'a
+          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Prestataire',status:st,type:(a.statusType==='particulier')?'particulier':'entreprise',statusType:a.statusType||'entreprise',legalName:a.legalName||'',legalForm:a.legalForm||'',capital:a.capital||'',rcsCity:a.rcsCity||'',birth:a.birth||'',referralCode:a.referralCode||'',referredByCode:a.referredByCode||'',acceptedTerms:!!a.acceptedTerms,acceptedCharte:!!a.acceptedCharte,acceptedMandat:!!a.acceptedMandat,acceptsGrille:!!a.acceptsGrille,desiredNetRates:a.desiredNetRates||null,ownCatalog:(a.ownCatalog&&typeof a.ownCatalog==='object')?a.ownCatalog:{},termsVersion:a.termsVersion||'',termsAt:(a.termsAt&&a.termsAt.toMillis)?a.termsAt.toMillis():0,createdAt:(a.createdAt&&a.createdAt.toMillis)?a.createdAt.toMillis():0,cats:cats,other:a.other||'',otherPrice:Number(a.otherPrice)||0,otherPriceNote:a.otherPriceNote||'',otherUnit:(a.otherUnit==='forfait'?'forfait':'h'),pendingCats:Array.isArray(a.pendingCats)?a.pendingCats:[],pendingOther:a.pendingOther||'',pendingOtherPrice:Number(a.pendingOtherPrice)||0,pendingOtherUnit:(a.pendingOtherUnit==='forfait'?'forfait':'h'),pendingDesiredNet:(a.pendingDesiredNet&&typeof a.pendingDesiredNet==='object')?a.pendingDesiredNet:null,rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insuranceNone:!!a.insuranceNone,insuranceNoticeAt:Number(a.insuranceNoticeAt)||0,approvedNotifiedAt:Number(a.approvedNotifiedAt)||0,tierForce:a.tierForce||'',refBonusJobs:Number(a.refBonusJobs)||0,insuranceDueAt:Number(a.insuranceDueAt)||0,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,founderSince:(a.founderSince&&a.founderSince.toMillis)?a.founderSince.toMillis():(typeof a.founderSince==='number'?a.founderSince:null),founderGross:Number(a.founderGross)||0,test:!!a.test,rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,online:(a.online!==false)/* EN LIGNE PAR DÉFAUT, et hors ligne seulement si on l'a
             DÉCIDÉ. `!!a.online` rendait FAUX pour un compte qui n'a jamais touché
             l'interrupteur — c'est-à-dire tout nouvel inscrit, puisque le champ n'est
             écrit qu'au premier enregistrement de ses réglages. La console le

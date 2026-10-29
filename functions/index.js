@@ -1647,6 +1647,7 @@ exports.assignFounderSpot = onDocumentCreated('artisans/{artisanId}', async (eve
  * de paiement) et le passage à « pending » (le cas normal, après autorisation de la carte).
  */
 const ANTI = require('./anti-abus');
+const CATP = require('./catalogue-prestataire');
 const DEPASSE = require('./creneau-depasse');
 const ARCH = require('./archive-messages');
 const DEP = require('./journal-departs');
@@ -1861,8 +1862,15 @@ exports.notifyArtisansNewRequest = onDocumentCreated({document: 'requests/{reqId
 
   // Artisans validés (filtrage du service en mémoire : pas d'index composite requis).
   const artsSnap = await db.collection('artisans').where('status', '==', 'valide').get();
+  /* CELUI QUI A SON PROPRE CATALOGUE NE REÇOIT PAS LES COMMANDES ALÉATOIRES. Une demande
+     ouverte part à plusieurs prestataires à la fois, au prix que le client a vu — donc au
+     prix de la grille. Lui l'a quittée : il serait prévenu d'une commande qu'il ne peut
+     honorer qu'à un autre tarif. La décision est celle du noyau, jamais redite ici. */
+  const REGC = await reglagesCatalogueServeur(db);
   const uids = artsSnap.docs
-    .filter((d) => { const dd = d.data() || {}; const c = dd.cats || []; return (!svc || c.indexOf(svc) >= 0) && siteOk(dd, svc, r.locationMode); })
+    .filter((d) => { const dd = d.data() || {}; const c = dd.cats || [];
+      return (!svc || c.indexOf(svc) >= 0) && siteOk(dd, svc, r.locationMode)
+             && CATP.recoitLAleatoire(dd, svc, REGC.metier[svc]); })
     .map((d) => d.id);
   if (!uids.length) { console.log('Aucun artisan validé pour ce service.');
     await _noterDiffusion(db, event.params && event.params.reqId, { motif: 'aucun-artisan' }); return; }
@@ -2437,12 +2445,17 @@ async function diffuserAuPool(db, reqId, r, opts) {
   const exclude = String(o.exclude == null ? '' : o.exclude);
   const artsSnap = await db.collection('artisans').where('status', '==', 'valide').get();
   const preferred = r.directed ? (r.preferredProviderUid || '') : '';
+  const REGP = await reglagesCatalogueServeur(db);
   /* UNE DEMANDE DIRIGÉE ATTEINT LA PERSONNE DEMANDÉE, qu'elle soit « en ligne » ou non :
      le client l'a choisie, elle déclinera au besoin. */
   let uids = artsSnap.docs
     .filter((d) => { const dd = d.data() || {}; const c = dd.cats || [];
       if (preferred && d.id === preferred) return (!svc || c.indexOf(svc) >= 0) && d.id !== exclude;
-      return (!svc || c.indexOf(svc) >= 0) && d.id !== exclude && siteOk(dd, svc, r.locationMode) && enLigne(dd.online); })
+      /* MÊME FRONTIÈRE QU'À LA CRÉATION, et seulement sur le POOL : la branche du
+         dessus a déjà rendu la personne DEMANDÉE, qu'elle ait son catalogue ou non —
+         c'est elle qu'on a choisie, et c'est tout l'objet de la seconde porte. */
+      return (!svc || c.indexOf(svc) >= 0) && d.id !== exclude && siteOk(dd, svc, r.locationMode)
+             && enLigne(dd.online) && CATP.recoitLAleatoire(dd, svc, REGP.metier[svc]); })
     .map((d) => d.id);
   if (preferred) {
     uids = uids.indexOf(preferred) >= 0 ? [preferred] : [];
@@ -4268,6 +4281,28 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
  * (`settings/catalog`.`arrhes`), mêmes bornes, même défaut : 50 %. Un catalogue
  * illisible ou une valeur hors bornes retombe sur le défaut plutôt que d'appliquer un
  * nombre abîmé à une vraie carte bancaire. */
+/* LES RÉGLAGES DU CATALOGUE, LUS PAR LE SERVEUR — même document que la console
+ * (`settings/catalog`), une seule lecture pour les deux questions qu'on lui pose :
+ * quels métiers ouvrent les catalogues propres (`metier`), et quelles sont les lignes
+ * de la grille quand l'administrateur les a réglées (`catalog`).
+ *
+ * UN DOCUMENT ILLISIBLE NE BLOQUE RIEN : on rend des tables vides, donc « aucun métier
+ * n'ouvre » et « on ne connaît pas la grille ». Le premier referme la possibilité, ce
+ * qui est le côté sûr ; le second fait retomber la vérification de prix sur ce qu'elle
+ * faisait hier. Dans les deux cas une commande légitime passe — refuser à tort coûte un
+ * client qui paie, et c'est la prudence inverse de celle de la diffusion. */
+async function reglagesCatalogueServeur(db) {
+  try {
+    const snap = await db.collection('settings').doc('catalog').get();
+    const d = (snap && snap.exists) ? (snap.data() || {}) : {};
+    return {
+      metier: (d.metier && typeof d.metier === 'object') ? d.metier : {},
+      catalog: (d.catalog && typeof d.catalog === 'object') ? d.catalog : {},
+    };
+  } catch (e) { console.warn('reglagesCatalogueServeur', e); }
+  return {metier: {}, catalog: {}};
+}
+
 const ARRHES_PCT_DEFAUT = 50;
 async function arrhesPctServeur(db, svcId) {
   try {
@@ -4992,6 +5027,45 @@ exports.createClientPayment = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (
   if (!snap.exists) throw new HttpsError('not-found', 'Demande introuvable.');
   const r = snap.data() || {};
   if (r.clientUid !== uid) throw new HttpsError('permission-denied', 'Demande d\u2019un autre compte.');
+  /* ══ LE PRIX DES LIGNES SE VÉRIFIE CONTRE LE CATALOGUE QUI FAIT FOI ═══════════════
+   * `montantsDemande` chiffre depuis `r.acts[].price`, que le NAVIGATEUR a écrit. Les
+   * règles figent ces valeurs après acceptation (`prixKeys`) mais personne ne vérifiait
+   * leur valeur d'ORIGINE. Tant qu'il n'y avait qu'une grille l'écart se voyait ; avec
+   * un catalogue par personne, il faut une autorité — et c'est ici qu'elle sert, juste
+   * avant que la carte soit autorisée.
+   *
+   * ON NE CORRIGE RIEN, ON REFUSE. Recalculer en silence prélèverait une somme que le
+   * client n'a jamais vue à l'écran, ce qui est exactement ce qu'on protège.
+   *
+   * ET DANS LE DOUTE ON LAISSE PASSER : le serveur ne connaît les lignes de la grille
+   * que si l'administrateur les a réglées (`settings/catalog`.`catalog`). Sans autorité,
+   * on retombe sur ce qui se faisait hier — le minimum des deux chiffres — et on le DIT
+   * dans le journal. Refuser à tort coûte un client qui paie. */
+  if (Array.isArray(r.acts) && r.acts.length) {
+    try {
+      const REGV = await reglagesCatalogueServeur(db);
+      const svcV = String(r.service || '');
+      const proV = String(r.providerUid || r.preferredProviderUid || '');
+      let art = null;
+      if (proV) { const ds = await db.collection('artisans').doc(proV).get(); if (ds.exists) art = ds.data() || {}; }
+      const grilleV = REGV.catalog[svcV];
+      const faitFoi = CATP.catalogueQuiFaitFoi(art, svcV, grilleV, REGV.metier[svcV]);
+      if (faitFoi.lignes.length) {
+        const v = CATP.prixAttendu(r.acts, faitFoi.lignes);
+        if (!v.ok) {
+          console.warn('createClientPayment PRIX REFUSÉ reqId=' + reqId + ' motif=' + v.motif
+            + ' ecarts=' + JSON.stringify(v.ecarts).slice(0, 300));
+          throw new HttpsError('failed-precondition',
+            'Les prix de cette commande ne correspondent plus au catalogue. Rouvrez-la pour la mettre à jour.');
+        }
+      } else {
+        console.log('createClientPayment prix non vérifiable (catalogue inconnu) reqId=' + reqId + ' service=' + svcV);
+      }
+    } catch (e) {
+      if (e instanceof HttpsError) throw e;
+      console.warn('createClientPayment vérification du prix impossible reqId=' + reqId, e);
+    }
+  }
   const MT = montantsDemande(r);
   const annonce = round2(Number(r.total) || 0);
   const amount = annonce > 0 ? annonce : MT.gross;
@@ -8604,12 +8678,25 @@ exports.listProviders = onCall(async (request) => {
   if (!svc) throw new HttpsError('invalid-argument', 'Service requis.');
   const db = getFirestore();
   const snap = await db.collection('artisans').where('status', '==', 'valide').get();
+  /* SON CATALOGUE VOYAGE AVEC L'ANNUAIRE, et c'est ce qui permet au client de lire SA
+     carte dès qu'il l'a choisie, sans second aller-retour. Il est BORNÉ par le noyau
+     (quarante lignes, nom et prix nettoyés) : ce qui vient d'un compte et finit sur
+     l'écran d'un autre ne passe que par cette porte. À côté d'une photo de profil que
+     la même réponse borne à 90 000 caractères, deux kilo-octets ne pèsent rien. */
+  const REGL = await reglagesCatalogueServeur(db);
+  const regMet = REGL.metier[svc];
   const out = [];
   snap.docs.forEach((doc) => {
     const a = doc.data() || {};
     if ((a.cats || []).indexOf(svc) < 0) return;
     const sm = a.siteMode || 'both';
+    const propre = CATP.catalogueProprePose(a, svc, regMet);
     out.push({
+      /* ON N'ENVOIE SON CATALOGUE QUE S'IL EN A UN EN SERVICE. Une liste vide dirait
+         « il n'a rien à proposer » là où la vérité est « il est à la grille », et
+         l'écran du client n'aurait plus de quoi les distinguer. */
+      ownCat: propre,
+      cat: propre ? CATP.lignesPropres((((a.ownCatalog || {})[svc]) || {}).lines).lignes : null,
       uid: doc.id,
       name: String(a.name || 'Prestataire').slice(0, 60),
       // Photo de profil (vignette recadrée par l'app) — bornée pour la taille de réponse.
