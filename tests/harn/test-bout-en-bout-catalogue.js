@@ -295,13 +295,17 @@ ok(refer.lignes===4,'et ses lignes sont toujours là après l’aller-retour ('+
      remplir -- le serveur ne l'appliquait jamais. L'inscription, elle, n'etait pas
      touchee : son payload ecrit `{on:true}` explicitement. C'est la contre-epreuve qui
      l'a dit, apres que j'aie annonce le contraire. */
-  const neuf=await p.evaluate(()=>{
+  const neuf=await p.evaluate(async()=>{
     const S=window.__S; S.adminMetier={massage:{catalogueLibre:true}};
     window.__ecrites=[];
     const a={uid:'u-neuf',real:true,name:'Nouveau',cats:['massage'],acceptsGrille:false};
     const e=window.__ownCat.entree('adm',a,'massage');
     e.lines=[{id:'n0',nm:'Soin signature',price:175}];
     window.__ownCat.poser('adm',a,'massage',e);
+    /* L'ENVOI EST DIFFÉRÉ DEPUIS LA v898 — une lettre n'est pas une écriture. Lire
+       `__ecrites` dans la foulée ne mesurait donc plus ce qui PART, mais l'instant où
+       l'on regarde : on attend l'envoi, et l'épreuve garde ses dents. */
+    await new Promise((r)=>setTimeout(r,700));
     const w=(window.__ecrites||[]).filter((x)=>x.ref&&x.ref.col==='artisans');
     const d=document.createElement('div');
     d.innerHTML=window.__ownCat.editeur('massage','adm',a);
@@ -354,12 +358,16 @@ ok(pFerme.titre===false,
   'aucun m\u00e9tier ouvert : la carte n\u2019existe pas — on ne promet pas une porte qui ne m\u00e8ne nulle part');
 
 // Il pose une ligne depuis SON profil : elle part dans SON document.
-const sien=await p.evaluate(()=>{
+const sien=await p.evaluate(async()=>{
   const S=window.__S; S.adminMetier={massage:{catalogueLibre:true}};
   S.proOwnCatalog={}; window.__ecrites=[];
   const e=window.__ownCat.entree('moi',null,'massage');
   e.lines=[{id:'m0',nm:'Signature 1 h',price:150}];
   window.__ownCat.poser('moi',null,'massage',e);
+  /* L'ENVOI EST DIFFÉRÉ DEPUIS LA v898 — une lettre n'est pas une écriture. Lire
+     `__ecrites` dans la foulée ne mesurait donc plus ce qui PART, mais l'instant où
+     l'on regarde : on attend l'envoi, et l'épreuve garde ses dents. */
+  await new Promise((r)=>setTimeout(r,700));
   const w=(window.__ecrites||[]).filter((x)=>x.ref&&x.ref.col==='artisans');
   return {memoire:((S.proOwnCatalog||{}).massage||{}),
           ecrit:w.length?(((w[0].patch||{}).ownCatalog||{}).massage||{}):null,

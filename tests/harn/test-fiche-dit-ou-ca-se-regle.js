@@ -46,7 +46,12 @@ const C=await p.evaluate(()=>{
     return {ligne:!!r,
       mots:z?(z.textContent||'').replace(/\s+/g,' ').trim():'',
       champs:z?z.querySelectorAll('input').length:0,
-      prix:z?Array.from(z.querySelectorAll('input')).map(i=>i.value).filter(x=>/^\d/.test(x)):[],
+      /* ON NOMME CE QU'ON MESURE. « Tout champ commençant par un chiffre » attrapait
+         aussi la case de durée dès qu'elle a existé : l'épreuve rougissait sur un rendu
+         juste. On lit les champs de PRIX, par l'attribut qui les désigne. */
+      prix:z?Array.from(z.querySelectorAll('[data-catpx]')).map(i=>i.value):[],
+      nomsDeLignes:z?z.querySelectorAll('[data-catnm]').length:0,
+      durees:z?z.querySelectorAll('[data-catdv]').length:0,
       bascule:z?z.querySelectorAll('[data-caton]').length:0,
       porte:z?Array.from(z.querySelectorAll('[data-adm^="catouvrir:"]')).map(x=>x.dataset.adm):[]};
   };
@@ -66,8 +71,9 @@ ok(C.rien.porte.length===1&&C.rien.porte[0]==='catouvrir:massage,coiffure',
 ok(C.rien.champs===0&&C.rien.bascule===0,
    'et aucun réglage qu\'on ne pourrait pas servir : ni champ, ni bascule');
 // LA MOITIÉ QUI COMPTE : un métier ouvert ne bouge pas d'un cheveu.
-ok(C.un.champs===4&&C.un.prix.join(',')==='150,290',
+ok(C.un.nomsDeLignes===2&&C.un.prix.join(',')==='150,290',
    'métier ouvert : ses deux prestations restent saisissables, à ses prix ('+C.un.prix.join(' · ')+')');
+ok(C.un.durees===2, 'et chacune porte sa case de durée (v898) — '+C.un.durees);
 // L'EN-TÊTE CONSTATE, L'ÉDITEUR COMMANDE. Il y avait DEUX interrupteurs sur le même fil,
 // à dix lignes d'écart ; celui de l'éditeur est le seul conditionné (rien à suspendre,
 // pas d'interrupteur) et le seul qui explique ce qu'il fait.

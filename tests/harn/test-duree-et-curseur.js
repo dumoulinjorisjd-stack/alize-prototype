@@ -333,6 +333,39 @@ ok(A.prix===150&&A.nom==='Forfait 90 min', 'le prix et le nom traversent intacts
 const PA=CATP.prixAttendu([{id:'a',qty:1}],[{id:'a',nm:'Massage',price:150,dm:90}]);
 ok(PA.total===150, 'et l\'autorité du prix, côté serveur, ignore la durée : '+PA.total+' €');
 
+/* ── 10. CE QUE VOUS ÉCRIVEZ, ELLE LE VOIT ET LE MODIFIE CHEZ ELLE ────────── */
+console.log('\n10. Ce que la console écrit, elle le voit dans son profil — et peut le changer');
+const R=await p.evaluate(()=>{
+  const S=window.__S,O=window.__ownCat;
+  S.adminMetier={massage:{catalogueLibre:true}};
+  /* UNE SEULE DONNÉE, DEUX PORTES : `artisans/{uid}.ownCatalog`. Vous écrivez depuis la
+     fiche, son écoute le lui apporte, elle le modifie depuis son profil, et votre
+     instantané le reçoit en retour. On MESURE le premier sens, qui est celui de la
+     question posée — le second est tenu par `test-bout-en-bout-catalogue`. */
+  const art={id:'u1',uid:'u1',real:true,name:'Maya',cats:['massage'],status:'valide',ownCatalog:{}};
+  S.adminArtisans=[art];
+  O.poser('adm',art,'massage',{on:true,lines:[{id:'l1',nm:'Forfait 90 min',price:150,dm:90}]});
+  const ecrit=JSON.parse(JSON.stringify(art.ownCatalog));
+  /* CE QUE SON ÉCOUTE LUI POSE (`subscribeProStatus` fait exactement cela). */
+  S.proOwnCatalog=ecrit; S.persona='pro'; S.proForm=null;
+  const vue=O.entree('moi',null,'massage');
+  const d=document.createElement('div');
+  d.innerHTML=O.editeur('massage','moi',null);
+  return {nom:(vue.lines||[])[0].nm,prix:(vue.lines||[])[0].price,duree:(vue.lines||[])[0].dm,
+          enService:vue.on!==false,
+          saCase:!!d.querySelector('[data-catdv]'),
+          saValeur:(d.querySelector('[data-catdv]')||{}).value,
+          sonUnite:(d.querySelector('[data-catdu]')||{}).value,
+          sesChamps:Array.from(d.querySelectorAll('[data-catnm],[data-catpx]')).map(i=>i.value)};
+});
+ok(R.nom==='Forfait 90 min'&&R.prix===150, 'elle voit le nom et le prix que la console a écrits');
+ok(R.duree===90, 'et la durée avec — c’est le même champ, pas une copie');
+ok(R.enService, 'sa carte est en service : la console ne la pose jamais suspendue');
+ok(R.saCase&&R.saValeur==='90'&&R.sonUnite==='min',
+   'son profil porte LA MÊME case de durée, remplie : « '+R.saValeur+' '+R.sonUnite+' »');
+ok(R.sesChamps.indexOf('Forfait 90 min')>=0&&R.sesChamps.indexOf('150')>=0,
+   'et elle peut tout y changer elle-même : '+JSON.stringify(R.sesChamps));
+
 await b.close();
 console.log(f?('\n'+f+' ÉCHEC(S)'):'\nTOUT VERT');
 process.exit(f?1:0);
