@@ -3703,7 +3703,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='896';
+  const VERSION_APP='897';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -4924,12 +4924,27 @@
        réécrirait une signature. L'arrangement d'aujourd'hui vit donc à part, et la preuve
        reste intacte à côté de lui.
 
-       ELLE NE PARAÎT QUE SUR LES MÉTIERS QUE LA CONSOLE A OUVERTS : la porte est au
-       métier, pas ici. Un réglage qu'on verrait sans pouvoir s'en servir est pire qu'un
-       réglage absent. */
+       LE RÉGLAGE EST AU MÉTIER, MAIS LE SILENCE N'EST PAS UNE RÉPONSE. « Dans la console,
+       dans la fiche du prestataire je ne vois pas comment modifier ses tarifs »
+       (l'éditeur, 29/10/2026). MESURÉ : la rangée n'existait PAS DU TOUT tant qu'aucun
+       de ses métiers n'était ouvert — et c'est l'état de TOUTE console le premier jour,
+       `adminMetier` partant vide. Ni réglage, ni explication, ni chemin : on cherchait
+       dans un écran qui ne disait rien. Le réglage reste au MÉTIER (il vaut pour tous
+       les prestataires de ce métier, et ne pas le dire ici le ferait croire personnel),
+       mais la rangée paraît TOUJOURS et, quand c'est fermé, elle NOMME les métiers et
+       MÈNE au réglage — un geste, pas une phrase.
+       LES MÉTIERS FERMÉS SONT RÉUNIS EN UNE LIGNE : cinq métiers fermés feraient cinq
+       fois le même renvoi au même écran. */
     (function(){
-      const ouverts=(a.cats||[]).filter(function(c){return c!=='autre'&&catalogueLibreSvc(c);});
-      if(!ouverts.length)return;
+      const sesCats=(a.cats||[]).filter(function(c){return c!=='autre';});
+      if(!sesCats.length)return;
+      const ouverts=sesCats.filter(function(c){return catalogueLibreSvc(c);});
+      const fermes=sesCats.filter(function(c){return !catalogueLibreSvc(c);});
+      /* ON NOMME TOUT CE QUI EST FERMÉ, ON N'OFFRE LA PORTE QUE LÀ OÙ ELLE MÈNE. Un
+         métier qui n'est plus dans la liste de la console n'a aucun réglage à l'écran :
+         il EST à la grille, et le dire est juste, mais un bouton qui ouvrirait un
+         panneau inexistant serait un chemin qu'on cherche sans le trouver. */
+      const reglables=fermes.filter(function(c){return allSvc().some(function(x){return x&&x.id===c;});});
       out.push(row('Catalogue',ouverts.map(function(c){
         const e=catEntree('adm',a,c),en=!!e.on,n=(e.lines||[]).filter(function(l){return l&&l.nm&&Number(l.price)>0;}).length;
         return `<div style="margin-top:${ouverts.indexOf(c)?'14px':'0'}">
@@ -4945,7 +4960,11 @@
           </div>
           ${en?catEditeurHtml(c,'adm',a):''}
         </div>`;
-      }).join('')));
+      }).join('')+(fermes.length?`<div style="margin-top:${ouverts.length?'15px':'0'}">
+          <b>Grille tarifaire Ti-Services · ${fermes.map(function(c){return esc(svcNm(c)||c);}).join(' · ')}</b>
+          <div class="mini" style="margin-top:4px;color:var(--muted)">Le catalogue propre n’est pas ouvert sur ${fermes.length>1?'ces métiers':'ce métier'}&nbsp;: ${fermes.length>1?'ils appliquent':'il applique'} le catalogue et les prix Ti-Services, et ${fermes.length>1?'ils reçoivent':'il reçoit'} les commandes aléatoires. ${fermes.length>1?'Ces réglages sont au métier':'Ce réglage est au métier'}, pas à la personne&nbsp;: ${fermes.length>1?'les ouvrir vaut':'l’ouvrir vaut'} pour tous les prestataires ${fermes.length>1?'de ces métiers':'de ce métier'}.</div>
+          ${reglables.length?`<button class="btn ghost sm" data-adm="catouvrir:${esc(reglables.join(','))}" style="width:auto;margin-top:10px;padding:8px 13px">${I.euro} Régler ${reglables.length>1?'les métiers':'le métier'} ›</button>`:''}
+        </div>`:'')));
     })();
     // Grille refusée : son souhait tarifaire, métier par métier — la matière pour en
     // discuter avec lui (et, si besoin, faire évoluer la grille du secteur).
@@ -11148,13 +11167,51 @@
     if(m==='nom')return !molNomOk(E,charge);
     if(m==='pays')return !/^[A-Z]{2}$/.test(molPays(E));
     return true;});}
+  /* « POUR CERTAINS OÙ J'AI PRÉPARÉ LE COMPTE MOLLIE, IL ME LE DIT DÈS LA PREMIÈRE
+     PAGE, POUR D'AUTRES NON — ALORS QU'À LA SECONDE IL ME PRÉVIENT QU'UN COMPTE EXISTE
+     DÉJÀ » (l'éditeur, 29/10/2026). MESURÉ, ET C'EST LA FAUTE HABITUELLE : la première
+     page lisait `E.cree`, la mémoire de CETTE session — vraie pour le compte qu'on vient
+     de préparer sous ses yeux, fausse pour tous les autres, et perdue au rechargement.
+     Le fait DURABLE est sur sa fiche depuis toujours (`mollieClientLinkHref` /
+     `mollieClientLinkAt`), c'est ce que le serveur lit, et la console ne le regardait
+     nulle part : d'où une première page qui disait « Jamais commencé » et une seconde
+     qui répondait « déjà préparé, le 29 oct. ».
+     UNE SEULE PORTE POUR LE FAIT, UNE SEULE POUR LA PHRASE : les deux surfaces lisent
+     `molPrepare` et rendent `molPrepareBandeau`. La réponse du SERVEUR l'emporte quand
+     le panneau est ouvert (elle vient de relire la fiche là-bas) ; sinon c'est la fiche.
+     LA FRAÎCHEUR EST UN MIROIR de `clientLinkFrais`, gardé par l'épreuve : un lien
+     expiré n'appelle PAS le même geste qu'un lien vivant — « en créer un nouveau est
+     sans conséquence » d'un côté, « il recommencerait à zéro » de l'autre. */
+  const MOL_LIEN_JOURS=28;
+  function molLienFrais(at,maintenant){const t=Number(at);if(!(t>0))return false;return (maintenant-t)<MOL_LIEN_JOURS*24*60*60*1000;}
+  function molPrepare(a,E){
+    E=E||{};
+    if(E.charge)return E.lienFrais?{frais:true,at:Number(E.lienAt)||0}
+      :(E.dejaPrepare?{frais:false,at:Number(E.lienAt)||0}:null);
+    const href=(a||{}).mollieClientLinkHref,at=Number((a||{}).mollieClientLinkAt)||0;
+    if(!href)return null;
+    return {frais:molLienFrais(at,Date.now()),at:at};
+  }
+  function molPrepareBandeau(d){
+    if(!d)return '';
+    const quand=d.at?', le '+esc(fmtLong(new Date(d.at).toISOString().slice(0,10))):'';
+    return d.frais
+      ?'<div class="mini" style="margin-top:9px;padding:9px 10px;background:var(--teal-wash);border-radius:9px;line-height:1.45"><b>'+I.check+' Son compte est déjà préparé'+quand+'.</b><br>Son bouton « Activer mes paiements » ouvre déjà ce parcours : il n’y a rien à refaire. En préparer un second ouvrirait un <b>nouveau compte chez Mollie</b>, et s’il a commencé sur le premier, il recommencerait à zéro.</div>'
+      :'<div class="mini" style="margin-top:9px;color:var(--muted);line-height:1.45">Un compte avait été préparé pour lui'+quand+', mais son lien a expiré : en créer un nouveau est sans conséquence.</div>';
+  }
   function molInscrireBloc(a){
     const E=(S.admMolInscr||{})[a.id]||{};
     const btn=function(l,act,cls){return '<button class="btn '+(cls||'ghost')+' sm" data-adm="'+act+':'+a.id+'" style="width:auto;padding:7px 12px">'+l+'</button>';};
     if(E.busy)return '<div class="mini" style="margin-top:7px;color:var(--muted)">Lecture de la fiche…</div>';
     if(E.cree)return '<div class="mini" style="margin-top:7px;color:var(--good-deep);font-weight:650">'+I.check+' Son compte Mollie est préparé. Il n’a plus qu’à appuyer sur « Activer mes paiements » dans son profil : ses informations y sont déjà, il ne lui reste que son identité à confirmer chez Mollie.</div>';
-    if(!E.charge)return '<div style="margin-top:9px">'+btn(I.bolt+' Préparer son compte Mollie','mol-prep')
-      +'<p class="mini" style="margin-top:6px;color:var(--muted);line-height:1.45">Crée son compte chez Mollie à sa place, déjà rempli avec les informations de sa fiche. Rien ne part avant que vous ayez relu.</p></div>';
+    if(!E.charge){
+      const d0=molPrepare(a,E);
+      return '<div style="margin-top:9px">'+molPrepareBandeau(d0)
+        +'<div style="margin-top:'+(d0?'9px':'0')+'">'+btn(I.bolt+' '+(d0&&d0.frais?'Revoir sa préparation':'Préparer son compte Mollie'),'mol-prep')+'</div>'
+        +'<p class="mini" style="margin-top:6px;color:var(--muted);line-height:1.45">'+(d0&&d0.frais
+          ?'Ouvre ce qui a été envoyé chez Mollie. Rien ne part : en préparer un nouveau reste un geste à part.'
+          :'Crée son compte chez Mollie à sa place, déjà rempli avec les informations de sa fiche. Rien ne part avant que vous ayez relu.')+'</p></div>';
+    }
     const c=E.charge, ad=c.address||{}, ow=c.owner||{};
     const lg=function(l,v){return '<div class="row between" style="gap:10px;margin-top:5px"><span class="mini" style="color:var(--muted)">'+l+'</span><b style="font-size:12.5px;text-align:right;word-break:break-word">'+(v?esc(v):'<span style="color:var(--coral-deep)">—</span>')+'</b></div>';};
     const lgRep=function(l,cle,id,v){return '<div class="row between" style="gap:10px;margin-top:5px;align-items:center"><span class="mini" style="color:var(--muted)">'+l+'</span>'
@@ -11195,9 +11252,7 @@
       +'<p class="mini" style="margin-top:5px;color:var(--muted);line-height:1.45">Relevé le 25/10/2026 dans le compte Mollie de Ti-Services : une entreprise de Saint-Barthélemy y est enregistrée en <b>France</b>. C’est la réponse, pas une supposition — et elle reste modifiable.</p></div>'
       +(reste.length?'<div class="mini" style="margin-top:9px;color:var(--coral-deep);font-weight:650">'+I.warn+' Il manque : '+reste.map(function(m){return noms[m]||m;}).join(', ')+'. À compléter sur sa fiche avant d’envoyer.</div>':'')
       +(E.raison?'<div class="mini" style="margin-top:9px;color:var(--coral-deep);line-height:1.45"><b>'+I.warn+' Mollie a refusé :</b> '+esc(E.raison)+'<br>Rien n’est cassé : il garde le chemin actuel, celui qui relie un compte Mollie déjà créé. Ce motif se porte à Mollie.</div>':'')
-      +(E.lienFrais
-        ?'<div class="mini" style="margin-top:9px;padding:9px 10px;background:var(--teal-wash);border-radius:9px;line-height:1.45"><b>'+I.check+' Son compte est déjà préparé'+(E.lienAt?', le '+esc(fmtLong(new Date(E.lienAt).toISOString().slice(0,10))):'')+'.</b><br>Son bouton « Activer mes paiements » ouvre déjà ce parcours : il n\u2019y a rien à refaire. En préparer un second ouvrirait un <b>nouveau compte chez Mollie</b>, et s\u2019il a commencé sur le premier, il recommencerait à zéro.</div>'
-        :(E.dejaPrepare?'<div class="mini" style="margin-top:9px;color:var(--muted)">Un compte avait été préparé pour lui, mais son lien a expiré : en créer un nouveau est sans conséquence.</div>':''))
+      +molPrepareBandeau(molPrepare(a,E))
       +'<div class="mini" style="margin-top:11px;padding:9px 10px;background:var(--teal-wash);border-radius:9px;line-height:1.45">'
       +'<b>Demandez-lui d’abord : a-t-il déjà un compte Mollie ?</b><br>'
       +'Si OUI, ne lui préparez rien— son bouton « Activer mes paiements » relie déjà un compte existant, et c’est ce qu’il faut. Rien dans sa fiche ne nous le dit, et Mollie ne répond pas à cette question sur une adresse : lui seul le sait. S’il se trompe, son écran garde de toute façon le lien « J’ai déjà un compte Mollie ».'
@@ -11207,7 +11262,7 @@
          en rendait DEUX selon le cas : le nom du responsable se tapant juste au-dessus,
          il aurait fallu redessiner le bloc à chaque frappe, et le curseur serait parti
          du champ à la première lettre. Un seul élément, qu'on ouvre sur place. */
-      +(E.lienFrais
+      +((function(){const dd=molPrepare(a,E);return dd&&dd.frais;})()
         ?'<button class="btn ghost sm" data-adm="mol-refait:'+a.id+'"'+(reste.length?' disabled':'')+' style="width:auto;padding:7px 12px'+(reste.length?';opacity:.45':'')+'">'+(S._molRefait===a.id?(I.warn+' Confirmer : nouveau compte Mollie'):(I.bolt+' En préparer un nouveau'))+'</button>'
         :'<button class="btn primary sm" data-adm="mol-cree:'+a.id+'" data-molcree="'+a.id+'"'+(reste.length?' disabled':'')+' style="width:auto;padding:7px 12px'+(reste.length?';opacity:.45':'')+'">'+I.bolt+' Créer chez Mollie</button>')
       +btn('Annuler','mol-ferme')+'</div></div>';
@@ -20269,6 +20324,22 @@
         c.proSuggestAnswer=''; render(); return;
       }
       else if(act==='priceopen'){ S.admPriceOpen=S.admPriceOpen||{}; S.admPriceOpen[id]=!S.admPriceOpen[id]; render(); return; }
+      /* LA PORTE DE LA FICHE VERS LE RÉGLAGE DU MÉTIER. Le catalogue propre s'ouvre par
+         métier, et ce réglage vit sur l'écran d'accueil, sous DEUX plis (la carte des
+         tarifs, puis le métier) : la fiche d'un prestataire le NOMMAIT sans y mener, donc
+         il fallait savoir où chercher. On déplie les deux et l'on AMÈNE le réglage sous
+         les yeux — c'est l'idiome d'`adm-list`, qui fait déjà exactement cela pour une
+         liste. On ne touche PAS au réglage au passage : ouvrir un métier vaut pour tous
+         ses prestataires, ce n'est pas à un clic venu d'une fiche d'en décider. */
+      else if(act==='catouvrir'){
+        S.admin.view='home'; S.admin.sel=null; S.admin.fact=null;
+        S._fold=S._fold||{}; S._fold['a-prices']=true;
+        const mets=String(id||'').split(',').filter(Boolean);
+        S.admPriceOpen=S.admPriceOpen||{}; mets.forEach(function(m){S.admPriceOpen[m]=true;});
+        render();
+        setTimeout(function(){try{const el=document.querySelector('[data-adm="metcata:'+mets[0]+'"]');if(el)el.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){}},60);
+        return;
+      }
       // Déplier un mur du parcours client : on passe d'un nombre à des noms.
       else if(act==='mur'){ S.admMurOpen=S.admMurOpen||{}; S.admMurOpen[id]=!S.admMurOpen[id]; render(); return; }
       /* PASSER UN MÉTIER DE LA CONSOLE À L'ACTE. On crée sa première prestation : la
