@@ -39,6 +39,15 @@ const CAT_PRIX_MAX = 100000;
 /* UN MONTANT D'ARGENT SE COMPARE AU CENTIME. Les prix passent par JSON et par des
    champs de saisie : on ne refuse pas une commande pour un millième d'euro. */
 const CAT_CENTIME = 0.009;
+/* LA DURÉE D'UNE LIGNE, EN MINUTES. C'est elle qui ajuste le créneau à la commande, et
+   `lignesPropres` la JETAIT : la carte voyage par `listProviders`, donc la durée d'un
+   prestataire n'atteignait jamais l'écran du client — son agenda bloquait une heure pour
+   un massage de quatre-vingt-dix minutes, et le « retour prévu vers » était faux.
+   EN MINUTES, parce qu'une heure entière ne sait pas dire quatre-vingt-dix minutes.
+   PLAFONNÉE à vingt-quatre heures, comme la grille (`DUREE_MAX` côté client) : au-delà
+   ce n'est plus un créneau. Une durée qu'on ne sait pas lire N'EST PAS UNE DURÉE — la
+   ligne reste, sans elle, et l'écran retombe sur le calcul d'avant. */
+const CAT_DUREE_MIN_MAX = 24 * 60;
 
 const MOTIFS = {
   horsCatalogue: 'ligne absente du catalogue',
@@ -76,7 +85,10 @@ function lignesPropres(brut) {
     if (vus[id]) { ecartees++; return; }
     vus[id] = 1;
     if (out.length >= CAT_LIGNES_MAX) { coupees++; return; }
-    out.push({ id: id, nm: nm, price: Math.round(px * 100) / 100 });
+    const ligne = { id: id, nm: nm, price: Math.round(px * 100) / 100 };
+    const dm = Math.round(nbr(l && l.dm));
+    if (dm > 0 && dm <= CAT_DUREE_MIN_MAX) ligne.dm = dm;
+    out.push(ligne);
   });
   return { lignes: out, ecartees: ecartees, coupees: coupees };
 }
@@ -188,7 +200,7 @@ function lignesConnues(propres, grille) {
 }
 
 module.exports = {
-  CAT_LIGNES_MAX, CAT_NOM_MAX, CAT_PRIX_MAX, CAT_CENTIME, MOTIFS,
+  CAT_LIGNES_MAX, CAT_NOM_MAX, CAT_PRIX_MAX, CAT_CENTIME, CAT_DUREE_MIN_MAX, MOTIFS,
   metierOuvreCatalogue, lignesPropres, catalogueProprePose, catalogueQuiFaitFoi,
   recoitLAleatoire, prixAttendu,
   PRIX_BLOQUANTS, prixBloque, lignesConnues,

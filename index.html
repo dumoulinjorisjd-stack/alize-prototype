@@ -3703,7 +3703,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='897';
+  const VERSION_APP='898';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -5224,7 +5224,7 @@
     Object.keys(S.adminCatalog).forEach(function(id){
       const fusion=baseCatalog(id);
       if(fusion&&fusion.length!==(S.adminCatalog[id]||[]).length){
-        S.adminCatalog[id]=fusion.map(function(a){const o={id:a.id,nm:a.nm,price:a.price,grp:a.grp||''};if(heuresDeLActe(a).length)o.h=heuresDeLActe(a).join(', ');if(dureeDeLActe(a))o.d=dureeDeLActe(a);return o;});
+        S.adminCatalog[id]=fusion.map(function(a){const o={id:a.id,nm:a.nm,price:a.price,grp:a.grp||''};if(heuresDeLActe(a).length)o.h=heuresDeLActe(a).join(', ');if(dureeDeLActe(a))o.d=dureeDeLActe(a);if(dureeMinDeLActe(a)&&a.dm)o.dm=dureeMinDeLActe(a);return o;});
       }
     });
   }
@@ -6313,13 +6313,50 @@
      son planning sans qu'aucun conflit ne soit signalé. Elle sert aussi à dire au client
      quand il rentre. Non déclarée, RIEN ne change : on retombe sur le calcul d'avant. */
   const DUREE_MAX=24;
-  function dureeDeLActe(a){const n=Math.round(Number(a&&a.d));return (isFinite(n)&&n>0&&n<=DUREE_MAX)?n:0;}
+  const DUREE_MINUTES_MAX=DUREE_MAX*60;
+  /* LA DURÉE SE DÉCLARE EN MINUTES, et c'est la demande de l'éditeur (29/10/2026) :
+     « la durée doit se remplir dans une case à part propre à ça, avec le choix du type
+     d'unité et de la valeur, pour que lors de la commande le créneau horaire s'ajuste. »
+     MESURÉ AVANT D'ÉCRIRE : la grille Ti-Services porte déjà une durée (`a.d`), mais EN
+     HEURES ENTIÈRES — or un massage dure quatre-vingt-dix minutes, et une heure entière
+     ne sait pas le dire. Le catalogue propre, lui, n'en portait AUCUNE : elle était
+     noyée dans le nom (« Nom de la prestation, durée comprise »), donc inexploitable par
+     l'agenda.
+     UNE SEULE PORTE, EN MINUTES, ET RIEN NE MIGRE : elle lit les minutes quand elles
+     sont là, sinon les heures de la grille fois soixante. Un compte qui n'a jamais
+     déclaré de durée ne porte pas la clé, et le calcul d'avant tient au centième. */
+  function dureeMinDeLActe(a){
+    const m=Math.round(Number(a&&a.dm));
+    if(isFinite(m)&&m>0&&m<=DUREE_MINUTES_MAX)return m;
+    const h=Math.round(Number(a&&a.d));
+    return (isFinite(h)&&h>0&&h<=DUREE_MAX)?h*60:0;
+  }
   // La plus longue des prestations cochées : deux formules ne s'enchaînent pas, on
   // réserve la plus grosse plage, jamais la somme — ce serait faux dans les deux sens.
-  function dureeDesActes(actes){return (actes||[]).reduce(function(t,a){return Math.max(t,dureeDeLActe(a));},0);}
-  function dureeDuDraft(m){
+  function dureeMinDesActes(actes){return (actes||[]).reduce(function(t,a){return Math.max(t,dureeMinDeLActe(a));},0);}
+  /* LA DURÉE DU PRESTATAIRE CHOISI, PAS CELLE DE LA GRILLE. `actInfo` prend un troisième
+     argument depuis que chacun peut avoir sa carte — et il ne lui était pas passé ici :
+     une masseuse dont la formule dure quatre-vingt-dix minutes voyait le créneau calé
+     sur la durée de NOTRE grille. `rechiffrerActes` le passait déjà pour le prix. */
+  function dureeMinDuDraft(m){
     if(!m||!Array.isArray(m.acts)||!m.acts.length)return 0;
-    return dureeDesActes(m.acts.map(function(x){return actInfo(m.svc,x.id)||x;}));
+    return dureeMinDesActes(m.acts.map(function(x){return actInfo(m.svc,x.id,m.preferredUid)||x;}));
+  }
+  /* EN HEURES POUR CE QUI RAISONNE EN HEURES — l'agenda du prestataire, le serveur des
+     créneaux, la fin d'un rendez-vous. ON NE TRONQUE JAMAIS VERS LE BAS : quatre-vingt-dix
+     minutes valent 1,5 h, et les trois consommateurs savent compter en fractions
+     (mesuré : `providerSlots` fait `Number(d.hours)` puis `hours*3600*1000`, aucun
+     arrondi — aucun déploiement serveur n'est donc exigé par la fraction elle-même). */
+  function dureeDeLActe(a){return dureeMinDeLActe(a)/60;}
+  function dureeDesActes(actes){return dureeMinDesActes(actes)/60;}
+  function dureeDuDraft(m){return dureeMinDuDraft(m)/60;}
+  /* CE QU'ON LIT À L'ÉCRAN. « 1.5 h » n'est pas une durée qu'on écrit en français. */
+  function dureeTexte(min){
+    const n=Math.round(Number(min)||0);
+    if(!(n>0))return '';
+    const h=Math.floor(n/60),r=n%60;
+    if(!h)return r+' min';
+    return h+' h'+(r?' '+String(r).padStart(2,'0'):'');
   }
   // L'heure de fin annoncée, quand la durée est connue. Au-delà de minuit on le dit
   // plutôt que d'afficher une heure plus petite que celle du départ.
@@ -10531,9 +10568,10 @@
     // toute peinture : le brouillon survit donc à un redessin d'où qu'il vienne — un
     // message reçu, un changement de statut, une peinture venue d'ailleurs.
     const _brAvant=brouillonActif();
+    const _saAvant=saisieActive();
     view.innerHTML='<div'+(same?'':' class="anim"')+'>'+brandBarHtml(key)+html+'</div>';
     i18nApply(view);animateCounts(view);
-    view.scrollTop=keepScroll?top:0;_scr=key;updateHomeFab();mountMaps();mountSignPads();busyApresRendu();restaurerBrouillons(_brAvant);
+    view.scrollTop=keepScroll?top:0;_scr=key;updateHomeFab();mountMaps();mountSignPads();busyApresRendu();restaurerBrouillons(_brAvant);restaurerSaisie(_saAvant);
     // iOS : retire la suggestion « Préremplir le contact » (barre du clavier) sur les
     // champs de texte libre où elle n'a aucun sens. Les vrais champs de contact
     // (e-mail, téléphone, mot de passe) gardent l'auto-remplissage natif.
@@ -13540,6 +13578,44 @@
       if(!a||!a.dataset||!a.dataset.brouillon)return null;
       return {id:a.dataset.brouillon, d:a.selectionStart, f:a.selectionEnd};
     }catch(_){ return null; }
+  }
+  /* CE QU'ON TAPE SURVIT À UNE PEINTURE VENUE D'AILLEURS — PAS SEULEMENT UN MESSAGE.
+     « À chaque fois que je tape une lettre ça saute » (l'éditeur, 29/10/2026), sur le
+     catalogue d'un prestataire dans la console. MESURÉ : chaque lettre écrit dans
+     Firestore, l'instantané `artisans` revient, `render()` part sans condition et
+     `paintView` remplace tout le `innerHTML` — le champ est recréé, le curseur est
+     perdu, et la lettre suivante s'écrit au début du mot.
+     `brouillonActif` répondait déjà à cela, mais seulement pour les champs qui portent
+     `data-brouillon` (la messagerie), dont la valeur vit dans `S.brouillons`. ICI LA
+     VALEUR EST DÉJÀ ÉCRITE : il ne manque que le FOYER. On relève donc le champ actif
+     par l'attribut qui le NOMME — n'importe quel `data-…` — et on l'y rend, dans la
+     même porte unique de peinture.
+     DEUX REFUS. On ne restaure que si le champ EXISTE ENCORE : un champ disparu du
+     nouvel écran ne doit pas faire revenir le clavier. Et si quelqu'un d'autre a déjà
+     pris le foyer entre-temps, on se tait — une peinture qui déplace volontairement le
+     curseur garde le dernier mot. */
+  function saisieActive(){
+    try{
+      const a=document.activeElement;
+      if(!a||!a.dataset||!a.tagName)return null;
+      if(a.tagName!=='INPUT'&&a.tagName!=='TEXTAREA')return null;
+      if(a.dataset.brouillon)return null;
+      const k=Object.keys(a.dataset)[0];
+      if(!k)return null;
+      return {k:k,v:String(a.dataset[k]),d:a.selectionStart,f:a.selectionEnd};
+    }catch(_){ return null; }
+  }
+  function restaurerSaisie(avant){
+    try{
+      if(!avant)return;
+      const ae=document.activeElement;
+      if(ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'))return;
+      const attr='data-'+avant.k.replace(/[A-Z]/g,function(c){return '-'+c.toLowerCase();});
+      const el=view.querySelector('['+attr+'="'+String(avant.v).replace(/["\\]/g,'\\$&')+'"]');
+      if(!el)return;
+      el.focus({preventScroll:true});
+      try{ el.setSelectionRange(avant.d,avant.f); }catch(_){}
+    }catch(_){}
   }
   function restaurerBrouillons(avant){
     try{
@@ -20852,7 +20928,7 @@
     /* La durée d'une prestation, pour l'agenda du prestataire. Zéro veut dire « non
        dite » et RETIRE la clé : un métier qui n'en déclare pas se comporte comme avant. */
     if(b.dataset.actduree){const p=b.dataset.actduree.split(':');const arr=ensureCatalogCopy(p[0]);const a=arr.find(function(x){return x.id===p[1];});
-      if(a){const d=Math.max(0,Math.min(DUREE_MAX,dureeDeLActe(a)+(p[2]==='up'?1:-1)));if(d)a.d=d;else delete a.d;saveCatalog();render();}return;}
+      if(a){const d=Math.max(0,Math.min(DUREE_MAX,Math.round(dureeDeLActe(a))+(p[2]==='up'?1:-1)));if(d)a.d=d;else delete a.d;delete a.dm;saveCatalog();render();}return;}
     if(b.dataset.actprice){const p=b.dataset.actprice.split(':');const svc=p[0],aid=p[1],dir=p[2];const arr=ensureCatalogCopy(svc);const a=arr.find(function(x){return x.id===aid;});if(a){a.price=Math.max(1,(Number(a.price)||0)+(dir==='up'?1:-1));saveCatalog();render();}return;}
     if(b.dataset.actdel){const p=b.dataset.actdel.split(':');const svc=p[0],aid=p[1];const arr=ensureCatalogCopy(svc);S.adminCatalog[svc]=arr.filter(function(x){return x.id!==aid;});saveCatalog();render();return;}
     if(b.dataset.actadd){const svc=b.dataset.actadd;const arr=ensureCatalogCopy(svc);S._actSeq=(S._actSeq||0)+1;arr.push({id:'usr'+S._actSeq+'_'+arr.length,nm:'',price:50});saveCatalog();render();return;}
@@ -22150,11 +22226,42 @@
     if(catNm){const p=catNm.dataset.catnm.split(':'),ar=catArtDe(p[0]);const en=catEntree(p[0],ar,p[1]);
       (en.lines=en.lines||[])[+p[2]]=Object.assign({},en.lines[+p[2]]||{},{nm:catNm.value});
       catPoser(p[0],ar,p[1],en);return;}
+    /* LA VALEUR S'ÉCRIT EN MINUTES, QUELLE QUE SOIT L'UNITÉ TAPÉE. Et la phrase d'à côté
+       se repeint SUR PLACE : redessiner la carte à chaque chiffre ferait perdre le
+       curseur — c'est la discipline des deux champs voisins. */
+    const catDv=e.target.closest('[data-catdv]');
+    if(catDv){const cle=catDv.dataset.catdv,p=cle.split(':'),ar=catArtDe(p[0]);const en=catEntree(p[0],ar,p[1]);
+      const v=Number(String(catDv.value||'').replace(',','.'));
+      const u=catUniteDe(cle,dureeMinDeLActe((en.lines||[])[+p[2]]||{}));
+      let min=isFinite(v)&&v>0?Math.round(v*(u==='h'?60:1)):0;
+      const plafonne=min>DUREE_MINUTES_MAX;
+      if(plafonne)min=DUREE_MINUTES_MAX;
+      const l=Object.assign({},(en.lines=en.lines||[])[+p[2]]||{});
+      if(min>0)l.dm=min; else delete l.dm;
+      /* LA GRILLE GARDAIT SA DURÉE EN HEURES : une ligne qui en porte une et qu'on règle
+         ici en minutes aurait DEUX sources, et les minutes gagneraient — effacer l'autre
+         est la seule façon de ne pas laisser une valeur périmée derrière. */
+      delete l.d;
+      en.lines[+p[2]]=l;
+      catPoser(p[0],ar,p[1],en);
+      try{const inf=view.querySelector('[data-catdinfo="'+String(cle).replace(/["\\]/g,'\\$&')+'"]');
+        if(inf)inf.textContent=catDureePhrase(min,plafonne);}catch(_){}
+      return;}
     const catPx=e.target.closest('[data-catpx]');
     if(catPx){const p=catPx.dataset.catpx.split(':'),ar=catArtDe(p[0]);const en=catEntree(p[0],ar,p[1]);
       const v=Number(String(catPx.value||'').replace(',','.'));
       (en.lines=en.lines||[])[+p[2]]=Object.assign({},en.lines[+p[2]]||{},{price:isFinite(v)?v:0});
       catPoser(p[0],ar,p[1],en);return;}
+    /* CHANGER L'UNITÉ NE CHANGE PAS LA DURÉE : on la REDIT dans l'autre unité. Quatre-
+       vingt-dix minutes deviennent 1,5 h, et l'agenda n'a pas bronché. */
+    const catDu=e.target.closest('[data-catdu]');
+    if(catDu){const cle=catDu.dataset.catdu,p=cle.split(':');
+      S.catUnite=S.catUnite||{}; S.catUnite[cle]=(catDu.value==='h')?'h':'min';
+      const ar=catArtDe(p[0]),en=catEntree(p[0],ar,p[1]);
+      const min=dureeMinDeLActe((en.lines||[])[+p[2]]||{});
+      try{const champ=view.querySelector('[data-catdv="'+String(cle).replace(/["\\]/g,'\\$&')+'"]');
+        if(champ)champ.value=catValeurAffichee(min,S.catUnite[cle]);}catch(_){}
+      return;}
     const dn=e.target.closest('[data-dnet]');if(dn&&S.proForm){S.proForm.desiredNet=S.proForm.desiredNet||{};S.proForm.desiredNet[dn.dataset.dnet]=dn.value;refreshProSubmit();}
     const pad=e.target.closest('[data-padnet]');if(pad&&S.proAddForm){S.proAddForm.desiredNet=S.proAddForm.desiredNet||{};S.proAddForm.desiredNet[pad.dataset.padnet]=pad.value;}
     const csf=e.target.closest('[data-csf]');if(csf&&S.concSignup){S.concSignup[csf.dataset.csf]=csf.value;const b2=document.querySelector('[data-act="conc-submit"]');if(b2)b2.disabled=!concSignupOk(S.concSignup);}
@@ -24174,6 +24281,35 @@
        geste de suspension, jamais d'une absence. */
     return m[svc]||{on:true,lines:[]};
   }
+  /* UNE LETTRE N'EST PAS UNE ÉCRITURE. Taper « Forfait massage 90 min » envoyait
+     VINGT-DEUX écritures Firestore — et, dans la console, vingt-deux redessins complets
+     de l'écran, chacun déclenché par le retour de l'instantané. `restaurerSaisie` rend
+     le curseur, mais la tempête, elle, coûte des écritures, de la latence sur un
+     téléphone, et un écran qui tremble. La frappe reste donc IMMÉDIATE en local — ce
+     qui s'affiche est juste à la lettre — et l'on DIFFÈRE le seul envoi.
+     ON NE PERD JAMAIS LA DERNIÈRE LETTRE : ce qui attend part quand l'onglet se cache
+     ou se ferme, et l'objet qui attend est CELUI QUI VIT — on garde sa référence, donc
+     l'envoi porte l'état du moment où il part, jamais celui d'une lettre périmée. */
+  const _catEnVol={};
+  function catEnvoiDiffere(uid,obj){
+    if(!uid||!FB||!FB.f||!FB.db)return;
+    const v=_catEnVol[uid]||(_catEnVol[uid]={});
+    v.obj=obj;
+    if(v.t)clearTimeout(v.t);
+    v.t=setTimeout(function(){ catEnvoiVider(uid); },420);
+  }
+  function catEnvoiVider(uid){
+    const v=_catEnVol[uid]; if(!v)return;
+    if(v.t)clearTimeout(v.t);
+    const obj=v.obj; delete _catEnVol[uid];
+    if(!obj||!FB||!FB.f||!FB.db)return;
+    try{ FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),obj,{merge:true}); }catch(_){}
+  }
+  function catEnvoiViderTout(){ try{ Object.keys(_catEnVol).forEach(catEnvoiVider); }catch(_){} }
+  try{
+    window.addEventListener('pagehide',catEnvoiViderTout);
+    document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='hidden')catEnvoiViderTout(); });
+  }catch(_){}
   function catPoser(src,a,svc,e){
     if(src==='moi'){
       /* IL ÉCRIT DANS SON PROPRE DOCUMENT. `firestore.rules` autorise `artisans` par
@@ -24184,24 +24320,55 @@
       S.proOwnCatalog=S.proOwnCatalog||{};
       S.proOwnCatalog[svc]=e;
       if(FB&&FB.auth&&FB.auth.currentUser&&!isDemo()){
-        try{ FB.f.setDoc(FB.f.doc(FB.db,'artisans',FB.auth.currentUser.uid),
-               {ownCatalog:S.proOwnCatalog},{merge:true}); }catch(_){}
+        catEnvoiDiffere(FB.auth.currentUser.uid,{ownCatalog:S.proOwnCatalog});
       }
       return;
     }
     const hote=(src==='adm')?(a||{}):(S.proForm=S.proForm||{});
     hote.ownCatalog=hote.ownCatalog||{};
     hote.ownCatalog[svc]=e;
-    if(src==='adm')adminWriteField(a,{ownCatalog:hote.ownCatalog});
+    if(src==='adm')catEnvoiDiffere((a||{}).real?(a||{}).uid:'',{ownCatalog:hote.ownCatalog});
     else saveProDraft();
   }
   /* LE NET QU'IL PERÇOIT SE LIT À CÔTÉ DU PRIX CLIENT, parce que c'est en net qu'il
      raisonne — et il passe par la porte qui chiffre déjà sa commission, jamais par un
      second barème écrit ici. */
   function catNet(px,src){const p=Number(px)||0;if(!(p>0))return 0;return (src==='adm')?proNetHint(p):myNetHint(p);}
+  /* L'UNITÉ DE SAISIE EST UN CONFORT D'ÉCRAN, PAS UNE DONNÉE DU COMPTE. Le compte ne
+     porte que des MINUTES : deux champs dans la donnée finiraient par se contredire.
+     La préférence vit donc dans l'écran, et elle se DÉDUIT quand personne n'a choisi —
+     une durée ronde se lit en heures, le reste en minutes. */
+  function catUniteDe(cle,min){
+    if(S.catUnite&&S.catUnite[cle])return S.catUnite[cle];
+    return (min>0&&min%60===0)?'h':'min';
+  }
+  /* CE QUE LA CASE DIT À CÔTÉ D'ELLE, COMPOSÉ UNE FOIS. Le rendu et la repeinture à la
+     frappe la posent tous les deux ; deux compositions finiraient par ne pas dire la
+     même chose du même nombre.
+     ET UN PLAFOND QUI SE TAIT EST UN PLAFOND QUI MENT : taper « 90 » avec l'unité
+     « h » retient vingt-quatre heures — au-delà ce n'est plus un créneau — et la case
+     affiche encore 90 jusqu'au prochain rendu. On ne corrige pas en silence : on DIT. */
+  function catDureePhrase(min,plafonne){
+    if(plafonne)return dureeTexte(DUREE_MINUTES_MAX)+' au plus retenues — au-delà, ce n’est plus un créneau';
+    return min>0?(dureeTexte(min)+' réservées dans son agenda'):'non dite, le créneau ne s’ajuste pas';
+  }
+  function catValeurAffichee(min,unite){
+    if(!(min>0))return '';
+    return unite==='h'?String(Math.round(min/60*100)/100).replace('.',','):String(min);
+  }
   function catLigneHtml(l,i,svc,src){
+    const cle=src+':'+svc+':'+i,min=dureeMinDeLActe(l),unite=catUniteDe(cle,min);
     return `<div class="catl" style="margin-top:10px">
-      <input class="txt" data-catnm="${src}:${esc(svc)}:${i}" value="${esc(l.nm||'')}" placeholder="Nom de la prestation, durée comprise" style="width:100%">
+      <input class="txt" data-catnm="${src}:${esc(svc)}:${i}" value="${esc(l.nm||'')}" placeholder="Nom de la prestation" style="width:100%">
+      <div class="row" style="gap:8px;align-items:center;margin-top:5px">
+        <span class="mini" style="flex:none;color:var(--muted)">Durée</span>
+        <input class="txt" data-catdv="${esc(cle)}" value="${esc(catValeurAffichee(min,unite))}" inputmode="decimal" placeholder="—" style="flex:none;width:58px;text-align:right">
+        <select class="txt" data-catdu="${esc(cle)}" style="flex:none;width:72px;padding-left:8px">
+          <option value="min"${unite==='min'?' selected':''}>min</option>
+          <option value="h"${unite==='h'?' selected':''}>h</option>
+        </select>
+        <span class="mini" data-catdinfo="${esc(cle)}" style="flex:1;color:var(--muted)">${esc(catDureePhrase(min,false))}</span>
+      </div>
       <div class="row" style="gap:8px;align-items:center;margin-top:5px">
         <input class="txt" data-catpx="${src}:${esc(svc)}:${i}" value="${esc(String(l.price==null?'':l.price))}" inputmode="decimal" placeholder="Prix" style="flex:none;width:80px;text-align:right">
         <span class="mini" style="flex:1;white-space:nowrap">€ client${l.price>0?(' · <b>'+catNet(l.price,src)+' € '+(src==='adm'?'net pour lui':'pour vous')+'</b>'):''}</span>
