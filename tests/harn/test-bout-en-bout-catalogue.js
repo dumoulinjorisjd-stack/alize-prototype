@@ -156,22 +156,30 @@ ok(insc.lignes.length===4&&insc.lignes[3].price===290,
   'autant de lignes qu’il veut : la quatrième porte bien 290 € (rendu '+(insc.lignes[3]||{}).price+')');
 
 // Son dossier part : ownCatalog doit atteindre le document `artisans`.
-const envoi=await p.evaluate(async()=>{
-  window.__ecrites=[];
-  window.__setFB({db:{},auth:{currentUser:{uid:'pro-maya',email:'maya@e.fr'}},
-    /* `doc()` S'APPELLE DE DEUX FACONS : `doc(db,col,id)` pour une fiche connue, et
-       `doc(collection(db,col))` pour un identifiant a naitre, qui est celle que la
-       creation d'une demande emprunte. Un faux qui n'en connait qu'une rend un `ref.col`
-       vide, et le releve ne retrouve plus rien. */
-    f:{doc:function(){const a=arguments;
-         return a.length<=1?{col:(a[0]&&a[0].col)||'',id:'auto'}:{col:a[1],id:a[2]||'auto'};},
-       collection:(db,col)=>({col:col}),
-       setDoc:(ref,patch,opt)=>{window.__ecrites.push({ref:ref,patch:patch,opt:opt});return Promise.resolve();},
-       updateDoc:()=>Promise.resolve(), addDoc:()=>Promise.resolve({id:'x'}),
-       serverTimestamp:()=>0, arrayUnion:(v)=>v, getDoc:()=>Promise.resolve({exists:()=>false,data:()=>({})})},
-    fn:{httpsCallable:()=>()=>Promise.resolve({data:{}})}});
-  return true;
+/* UNE SEULE FABRIQUE DE FAUX RESEAU, ET CHAQUE SECTION LA REPOSE. Une section qui
+   remplace `FB` par un faux a elle et ne le repose pas laisse la suivante mesurer un
+   reseau qui ne note plus rien : la section D a trouve zero ecriture, et seule la SUITE
+   COMPLETE l'a dit -- j'avais verifie la sortie de ma section, pas le total.
+   `doc()` S'APPELLE DE DEUX FACONS : `doc(db,col,id)` pour une fiche connue, et
+   `doc(collection(db,col))` pour un identifiant a naitre, qui est celle que la creation
+   d'une demande emprunte. Un faux qui n'en connait qu'une rend un `ref.col` vide, et le
+   releve ne retrouve plus rien. */
+await p.evaluate(()=>{
+  window.__faux=function(extra){
+    window.__ecrites=window.__ecrites||[];
+    const f={doc:function(){const a=arguments;
+           return a.length<=1?{col:(a[0]&&a[0].col)||'',id:'auto'}:{col:a[1],id:a[2]||'auto'};},
+         collection:(db,col)=>({col:col}),
+         setDoc:(ref,patch,opt)=>{window.__ecrites.push({ref:ref,patch:patch,opt:opt});return Promise.resolve();},
+         updateDoc:()=>Promise.resolve(), addDoc:()=>Promise.resolve({id:'x'}),
+         onSnapshot:()=>function(){}, serverTimestamp:()=>0, arrayUnion:(v)=>v,
+         getDoc:()=>Promise.resolve({exists:()=>false,data:()=>({})})};
+    Object.assign(f, extra||{});
+    window.__setFB({db:{},auth:{currentUser:{uid:'pro-maya',email:'maya@e.fr'}},f:f,
+      fn:{httpsCallable:()=>()=>Promise.resolve({data:{}})}});
+  };
 });
+const envoi=await p.evaluate(()=>{ window.__ecrites=[]; window.__faux(); return true; });
 ok(envoi===true,'le réseau est simulé : on relève ce qui part réellement');
 
 /* LA PORTE D'ENVOI EST `fbProSignup`, PAS `proSignup` : la seconde REND L'ECRAN du
@@ -376,20 +384,15 @@ ok(sien.cles.length===1&&sien.cles[0]==='ownCatalog',
     const S=window.__S;
     S.proOwnCatalog={};
     let livrer=null;
-    window.__setFB({db:{},auth:{currentUser:{uid:'pro-maya'}},
-      f:{doc:function(){const a=arguments;return a.length<=1?{col:(a[0]&&a[0].col)||'',id:'auto'}:{col:a[1],id:a[2]||'auto'};},
-         collection:(d,c)=>({col:c}),
-         onSnapshot:(ref,cb)=>{livrer=cb;return function(){};},
-         setDoc:()=>Promise.resolve(),updateDoc:()=>Promise.resolve(),
-         serverTimestamp:()=>0,arrayUnion:(v)=>v,
-         getDoc:()=>Promise.resolve({exists:()=>false,data:()=>({})})},
-      fn:{httpsCallable:()=>()=>Promise.resolve({data:{}})}});
+    window.__faux({onSnapshot:(ref,cb)=>{livrer=cb;return function(){};}});
     window.__fil.statut('pro-maya');
     if(!livrer)return {livre:false};
     livrer({exists:()=>true,data:()=>({status:'valide',cats:['massage','coiffure'],
       ownCatalog:{massage:{on:true,lines:[{id:'m0',nm:'Signature 1 h',price:150}]}}})});
-    return {livre:true,lignes:(((S.proOwnCatalog||{}).massage||{}).lines||[]).length,
-            prix:((((S.proOwnCatalog||{}).massage||{}).lines||[])[0]||{}).price};
+    const out={livre:true,lignes:(((S.proOwnCatalog||{}).massage||{}).lines||[]).length,
+               prix:((((S.proOwnCatalog||{}).massage||{}).lines||[])[0]||{}).price};
+    window.__faux();   // on repose l'ecran comme on l'a trouve
+    return out;
   });
   ok(desc.livre===true,'l\u2019\u00e9coute de son document est bien pos\u00e9e (assertion arri\u00e8re)');
   ok(desc.lignes===1&&desc.prix===150,
