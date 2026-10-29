@@ -72,24 +72,29 @@ ok(iCree > 0 && !/refaire/.test(bloc),
   'le bouton ordinaire « Créer chez Mollie » ne force jamais');
 
 console.log('E — rien n’est envoyé qu’on ne maîtrise pas');
-/* RÈGLE RENVERSÉE LE 26/10/2026, ET CETTE ASSERTION DISAIT L'ANCIENNE. Elle exigeait
-   qu'AUCUN téléphone ne parte, au motif que « nos numéros ne sont pas garantis dans ce
-   format » — vrai du champ BRUT, faux de ce qu'on sait en faire : `telE164` rend de
-   l'E.164 ou RIEN. Le « +31 6 00000000 » vu chez Mollie n'était pas nous ; c'était leur
-   défaut, et on le laissait en place faute d'envoyer le vrai numéro.
-   CE QUI RESTE VRAI, ET QU'ON MESURE : on n'envoie que ce qui a traversé la porte. */
+/* DEUX FOIS RENVERSÉE, ET C'EST LA PREMIÈRE RÈGLE QUI AVAIT RAISON. Avant la v889 cette
+   garde exigeait qu'AUCUN téléphone ne parte ; la v889 l'a renversée en jugeant son MOTIF
+   (« nos numéros ne sont pas garantis en E.164 »), qui était en effet corrigeable et que
+   `telE164` a corrigé. Mais le motif n'était pas la raison : le champ `owner.phone`
+   N'EXISTE PAS dans cette API — « Non-existent body parameter "owner.phone" for this API
+   call », relevé sur la console le 29/10/2026 — et Mollie refuse la requête ENTIÈRE sur un
+   champ inconnu. Depuis la v889, « Créer chez Mollie » ne pouvait donc réussir pour
+   PERSONNE : l'inscription prestataire EXIGE un numéro valide, le champ partait sur chaque
+   fiche du parc, et le chemin du prestataire avalait le refus dans un `console.warn`.
+   ON NE JUGE PAS UN CHAMP SUR SON MOTIF, ON LE CHERCHE DANS LE SCHÉMA PUBLIÉ.
+   CE QUI RESTE VRAI, ET QU'ON MESURE : rien de ce qu'on ne maîtrise pas ne part. */
 const iCharge = srv.indexOf('function clientLinkProposition');
 const charge = srv.slice(iCharge, srv.indexOf('\n  return {pret:', iCharge));
 ok(iCharge > 0 && /owner:/.test(charge), 'la charge se relève (sinon rien n’est mesuré)');
 const nu = codeNu(charge);
-ok(/const tel = telE164\(f\.phone\);/.test(nu),
-  'le téléphone passe par la porte qui le met en E.164');
-ok(/if \(tel\) charge\.owner\.phone = tel;/.test(nu),
-  'et il ne part que si elle a rendu quelque chose');
-/* ON NE LIT JAMAIS LE CHAMP BRUT : c'est lui qui n'est pas garanti, et c'est l'erreur
-   que l'ancienne règle évitait en n'envoyant rien du tout. */
-ok(!/phone = (String\()?f\.phone/.test(nu) && !/phone: f\.phone/.test(nu),
-  'le champ brut de la fiche ne part jamais tel quel');
+ok(!/phone/i.test(nu), 'aucun téléphone ne part dans la charge, sous aucune forme');
+// Assertion arrière : un relèvement vide satisferait le refus ci-dessus sans rien mesurer.
+ok(/owner:/.test(nu) && /registrationNumber/.test(nu) && nu.length > 400,
+  'arrière : le code relevé est bien celui de la charge (' + nu.length + ' caractères)');
+/* ET LA PORTE N'EST PAS MORTE POUR AUTANT : `telE164` est lue par `waIntl`, qui adresse les
+   alertes WhatsApp. Une porte que plus rien ne lit se retire, celle-ci a un lecteur. */
+ok(/function waIntl\(phone\) \{ return telE164\(phone\)/.test(srv),
+  'et `telE164` garde son lecteur, WhatsApp');
 
 /* ── ET CE QUE L'ÉCRAN FAIT VRAIMENT ────────────────────────────────────────────────
    Une garde de source ne prouve pas un comportement : on ouvre la fiche et on regarde

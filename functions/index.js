@@ -922,12 +922,24 @@ function clientLinkProposition(fiche, pays, locale) {
   };
   const siret = String(f.siret == null ? '' : f.siret).replace(/\D/g, '');
   if (siret.length === 14) charge.registrationNumber = siret;
-  /* ON N'ENVOIE QUE CE QU'ON SAIT METTRE EN FORME : sans numéro lisible, le champ est
-   * OMIS — Mollie le demandera sur ses écrans, et un champ vide se corrige là où un
-   * champ faux se découvre au contrôle d'identité. */
-  const tel = telE164(f.phone);
-  if (tel) charge.owner.phone = tel;
-  /* ET ON DIT SI LE NOM A ÉTÉ SAISI OU DEVINÉ. Le commentaire ci-dessus posait la règle
+  /* LE TÉLÉPHONE N'EXISTE PAS DANS CETTE API, ET IL FAISAIT REFUSER TOUT L'APPEL.
+   * Relevé le 29/10/2026 sur la console : « Non-existent body parameter "owner.phone"
+   * for this API call. Did you mean: "owner.email"? » — Mollie refuse la requête
+   * ENTIÈRE sur un champ qu'il ne connaît pas, donc aucun compte ne pouvait se préparer
+   * pour un prestataire dont la fiche porte un numéro, c'est-à-dire le cas ORDINAIRE.
+   * ET IL N'Y A NULLE PART OÙ LE METTRE : la forme vient du code PUBLIÉ par Mollie
+   * (@mollie/api-client, binders/client-links/parameters.d.ts). `Owner` y vaut
+   * `PickRequired<Address, 'email'|'givenName'|'familyName'> & { locale? }` — un PICK,
+   * donc quatre champs et rien d'autre — et l'objet `Address` global de Mollie ne porte
+   * AUCUN téléphone, à aucun niveau. Son indice (« did you mean owner.email ») est
+   * trompeur : l'adresse électronique part déjà, deux lignes plus haut. Ce n'est donc
+   * pas un champ à déplacer, c'est un champ à ne pas envoyer ; Mollie demande le
+   * numéro sur ses propres écrans, où la prestataire le saisit elle-même.
+   * LE REFUS ÉTAIT MUET SUR L'AUTRE CHEMIN, et c'est ce qui l'a laissé vivre : dans
+   * `mollieOnboardingLink`, un lien périmé qu'on refait tombe sur un `console.warn` et
+   * repart sur l'autorisation — le prestataire voyait l'écran d'hier, personne ne
+   * voyait le motif. Seule la console, qui REND le refus de Mollie, l'a dit. */
+  /* ET ON DIT SI LE NOM A ÉTÉ SAISI OU DEVINÉ. La règle de `lienNomCoupe` la posait
    * — « le découpage ne reste qu'un point de départ, montré avant d'être envoyé » — et
    * la console ne pouvait pas la tenir : elle recevait deux moitiés sans savoir laquelle
    * des deux sources les avait produites. Un découpage deviné pré-remplissait donc les

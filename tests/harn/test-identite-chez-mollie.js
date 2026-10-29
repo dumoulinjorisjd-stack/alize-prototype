@@ -52,14 +52,36 @@ ok(S.telE164('') === '' && S.telE164(null) === '' && S.telE164(undefined) === ''
    ci-dessus sans rien mettre en forme. */
 ok(S.telE164('0690550421').indexOf('+590') === 0, 'arrière : la porte met bien en forme (sans quoi les refus ne mesurent rien)');
 
-console.log('\n── LE NUMÉRO PART DANS LA CHARGE, S\'IL SE MET EN FORME ──────────────────');
+console.log('\n── LE NUMÉRO NE PART PAS DANS LA CHARGE, ET LA PORTE RESTE ──────────');
+/* RÈGLE REMISE À L'ENDROIT LE 29/10/2026, ET CES TROIS ASSERTIONS DISAIENT LA FAUSSE.
+   Elles exigeaient que le numéro parte dans `owner.phone` — or ce champ N'EXISTE PAS dans
+   cette API : « Non-existent body parameter "owner.phone" for this API call », relevé sur
+   la console, et Mollie refuse la requête ENTIÈRE. Aucun compte ne pouvait donc se
+   préparer, pour personne.
+
+   LA RÈGLE D'AVANT LA v889 ÉTAIT JUSTE, et elle a été renversée pour la mauvaise raison :
+   on a jugé son MOTIF (« nos numéros ne sont pas garantis en E.164 », en effet corrigeable,
+   et `telE164` l'a corrigé) sans vérifier si le CHAMP existait. Le schéma publié était
+   disponible — c'est le fichier d'où vient le reste de la charge : `Owner` y est un PICK de
+   quatre champs, et l'objet `Address` de Mollie ne porte aucun téléphone, à aucun niveau.
+   Un bon motif ne rend pas un champ acceptable.
+
+   LA PORTE RESTE, et c'est mesuré plus bas : `telE164` est lue par `waIntl`, qui adresse les
+   alertes WhatsApp. Une porte que plus rien ne lit se retire ; celle-ci a un lecteur. */
 const fiche = {email: 'a@b.fr', legalName: 'ONETTI RODRIGUEZ JADE', repGiven: 'Jade', repFamily: 'Onetti Rodriguez',
   address: '12 rue des Palmiers, 97133 Gustavia', siret: '12345678901234'};
 const p1 = C.clientLinkProposition(Object.assign({}, fiche, {phone: '0590 27 62 18'}), 'BL', 'fr_FR');
-ok(p1.charge.owner.phone === '+590590276218', 'un fixe lisible part en E.164 dans owner.phone');
+ok(!('phone' in p1.charge.owner) && !/phone/i.test(JSON.stringify(p1.charge)),
+  'un numéro parfaitement lisible ne part nulle part : Mollie le demande sur ses propres écrans');
+// Assertion arrière : une charge vide satisferait le refus ci-dessus sans rien mesurer.
+ok(p1.pret === true && p1.charge.owner.email === 'a@b.fr' && p1.charge.owner.givenName === 'Jade',
+  'arrière : la charge est bien là, et prête à partir (sinon le refus ne mesure rien)');
 const p2 = C.clientLinkProposition(Object.assign({}, fiche, {phone: '12'}), 'BL', 'fr_FR');
-ok(!('phone' in p2.charge.owner), 'un numéro illisible : le champ est OMIS, pas envoyé vide');
-ok(p2.pret === true, 'et son absence n\'empêche pas la préparation (Mollie le demandera)');
+ok(JSON.stringify(p2.charge) === JSON.stringify(p1.charge),
+  'et un numéro illisible ne change rien non plus : le téléphone ne décide plus de ce qui part');
+ok(p2.pret === true, 'la préparation n\'en dépend pas, et c\'est le cas ordinaire : l\'inscription EXIGE un numéro');
+ok(/function waIntl\(phone\) \{ return telE164\(phone\)/.test(srv),
+  'et la porte garde son lecteur : WhatsApp adresse ses alertes avec elle');
 
 console.log('\n── SAISI OU DEVINÉ, LE SERVEUR LE DIT ──────────────────────────────────');
 ok(C.clientLinkProposition(fiche, 'BL', 'fr_FR').nomDevine === false, 'deux cases remplies par le prestataire : nomDevine faux');
@@ -103,7 +125,11 @@ ok(/act==='mol-nom'/.test(app), 'et le geste est branché');
 ok(/function waIntl\(phone\) \{ return telE164\(phone\)\.slice\(1\); \}/.test(srv),
    'waIntl APPELLE la porte au lieu d\'en porter une seconde');
 ok(!/\/\^69\[01\]\/\.test\(rest\)/.test(srv), 'et son ancienne règle, qui ignorait les fixes, a disparu');
-ok(/const tel = telE164\(f\.phone\);/.test(srv), 'la charge Mollie appelle la porte');
+/* LA CHARGE MOLLIE N'APPELLE PLUS LA PORTE, et c'est le correctif du 29/10/2026 : le champ
+   `owner.phone` n'existe pas dans cette API et faisait refuser la requête entière. Ce qu'on
+   mesure est donc l'inverse d'hier — le lecteur qui justifie que la porte vive encore est
+   mesuré à la section précédente. */
+ok(!/charge\.owner\.phone/.test(srv), 'la charge Mollie ne pose plus de téléphone');
 /* LE NOYAU RESTE PUR : il part dans une charge envoyée à un tiers. */
 ok(!/Date|Math\.random|fetch|getFirestore/.test(srv.slice(srv.indexOf('function telE164'), srv.indexOf('\n}\n', srv.indexOf('function telE164')))),
    'la porte ne lit ni l\'heure ni le réseau');

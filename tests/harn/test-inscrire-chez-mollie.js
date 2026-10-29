@@ -69,6 +69,75 @@ const sansLegal = P({name: 'Jean Dupont', email: 'j@x.fr', address: '97133 Gusta
 ok(sansLegal.charge.name === 'Jean Dupont' && sansLegal.pret === true,
   'et sans raison sociale on prend le nom d\'usage : un particulier n\'est pas un dossier incomplet');
 
+console.log('\n── La charge ne porte que ce que Mollie accepte ──');
+/* « Mollie a refusé : Non-existent body parameter "owner.phone" for this API call. Did you
+   mean: "owner.email"? » — la console, le 29/10/2026. Mollie refuse la requête ENTIÈRE sur
+   un champ qu'il ne connaît pas : depuis la v889, qui avait ajouté `owner.phone`, le bouton
+   « Créer chez Mollie » ne pouvait réussir pour PERSONNE — l'inscription prestataire EXIGE
+   un téléphone valide (`draftIdDone`, `telStockeLu(f.phone).ok`), donc le champ partait sur
+   chaque fiche du parc. Et le second chemin, celui du prestataire, tombait sur un
+   `console.warn` et repartait sur l'autorisation : le refus était MUET là-bas.
+
+   AUCUNE ÉPREUVE NE POUVAIT LE VOIR : la fiche de la scène B ne porte pas de numéro. Une
+   scène qui ne reproduit pas le cas ordinaire ne mesure pas le cas ordinaire. Elle en porte
+   un ici, et la garde ne vise pas LE téléphone mais la CLASSE : aucun champ hors de la liste
+   que Mollie publie, à aucun niveau. Un champ inventé demain fait rougir cette épreuve sans
+   qu'on ait rien à y inscrire.
+
+   LES LISTES SONT FERMÉES ET VIENNENT DU CODE PUBLIÉ (@mollie/api-client,
+   dist/types/binders/client-links/parameters.d.ts) : `Owner` y vaut
+   `PickRequired<Address,'email'|'givenName'|'familyName'> & { locale? }` — un PICK, donc ces
+   quatre champs et rien d'autre — et `OrganizationAddress` vaut
+   `PickRequired<Address,'country'> & PickOptional<Address,'streetAndNumber'|'postalCode'|'city'>`.
+   L'objet `Address` global de Mollie ne porte AUCUN téléphone, à aucun niveau : ce n'était
+   donc pas un champ à déplacer. `idempotencyKey` n'est pas dans la liste du CORPS : dans ce
+   client c'est un EN-TÊTE. */
+const MOLLIE_CORPS = ['owner', 'name', 'address', 'registrationNumber', 'vatNumber',
+  'legalEntity', 'registrationOffice', 'incorporationDate'];
+const MOLLIE_OWNER = ['email', 'givenName', 'familyName', 'locale'];
+const MOLLIE_ADRESSE = ['country', 'streetAndNumber', 'postalCode', 'city'];
+/* LA FICHE DU CAS ORDINAIRE : celle de la scène B, plus le numéro que l'inscription exige. */
+const avecTel = P(Object.assign({}, fiche, {phone: '0690 55 04 21'}), 'FR', 'fr_FR');
+// Assertion arrière : une charge vide, ou des clés qu'on n'a pas su relire, satisferaient
+// « aucun champ hors de la liste » sans rien mesurer.
+ok(avecTel.pret === true && !!avecTel.charge.owner && !!avecTel.charge.address
+  && Object.keys(avecTel.charge).length >= 4 && Object.keys(avecTel.charge.owner).length >= 4,
+  'la charge du cas ordinaire a bien été relevée : ' + Object.keys(avecTel.charge).length
+  + ' champs au corps, ' + Object.keys(avecTel.charge.owner).length + ' au propriétaire');
+const horsCorps = Object.keys(avecTel.charge).filter(function (k) { return MOLLIE_CORPS.indexOf(k) < 0; });
+const horsOwner = Object.keys(avecTel.charge.owner).filter(function (k) { return MOLLIE_OWNER.indexOf(k) < 0; });
+const horsAdr = Object.keys(avecTel.charge.address).filter(function (k) { return MOLLIE_ADRESSE.indexOf(k) < 0; });
+ok(horsCorps.length === 0, 'le corps ne porte aucun champ que Mollie refuserait' + (horsCorps.length ? ' — « ' + horsCorps.join(' », « ') + ' »' : ''));
+ok(horsOwner.length === 0, 'le propriétaire non plus' + (horsOwner.length ? ' — « owner.' + horsOwner.join(' », « owner.') + ' »' : ''));
+ok(horsAdr.length === 0, 'l\'adresse non plus' + (horsAdr.length ? ' — « address.' + horsAdr.join(' », « address.') + ' »' : ''));
+/* ET AUCUN OBJET IMBRIQUÉ QU'ON N'AURAIT PAS REGARDÉ : un champ inventé dans une structure
+   neuve échapperait aux trois listes ci-dessus. */
+const imbr = Object.keys(avecTel.charge).filter(function (k) {
+  const v = avecTel.charge[k];
+  return v && typeof v === 'object' && k !== 'owner' && k !== 'address';
+});
+ok(imbr.length === 0, 'et la charge n\'a que deux objets, ceux dont la forme est gardée ci-dessus'
+  + (imbr.length ? ' — « ' + imbr.join(' », « ') + ' »' : ''));
+/* LE FAIT SIGNALÉ, MESURÉ À PART : le numéro ne part NULLE PART dans la charge. */
+ok(JSON.stringify(avecTel.charge).indexOf('690550421') < 0
+  && !/phone/i.test(JSON.stringify(avecTel.charge)),
+  'le numéro de la fiche ne part nulle part : Mollie le demande sur ses propres écrans');
+/* ET LA MOITIÉ QUI COMPTE : on ne l'a pas corrigé en refusant la fiche. Un prestataire dont
+   la fiche est complète — numéro compris, donc tous — a toujours une charge prête à partir,
+   identique à celle de la scène B. */
+ok(JSON.stringify(avecTel.charge) === JSON.stringify(r.charge),
+  'et un numéro sur la fiche ne change plus rien à ce qui part : la charge est celle de la scène B, au caractère près');
+ok(!/charge\.owner\.phone|owner: \{[^}]*phone/.test(srv),
+  'le serveur ne pose plus ce champ nulle part');
+/* CE QUE LA CONSOLE PROMET REDEVIENT VRAI. Son encadré s'intitule « Ce qui partira chez
+   Mollie » et jure que « rien ne part avant que vous ayez relu » : le téléphone partait sans
+   y figurer. Tout ce que la charge tire de la FICHE y est maintenant montré ; `locale` est
+   le seul champ absent de l'écran, et c'est une constante que nous choisissons (la langue
+   des écrans de Mollie), pas une donnée à relire. */
+const litFiche = Object.keys(avecTel.charge.owner).filter(function (k) { return k !== 'locale'; });
+ok(litFiche.length === 3 && litFiche.indexOf('phone') < 0,
+  'du propriétaire, la charge ne tire de la fiche que les trois champs que la console montre');
+
 console.log('C — ce qu\'on ne sait pas se DIT, on ne l\'envoie pas à moitié');
 const vide = P({}, '');
 ok(vide.pret === false, 'une fiche vide ne part pas');
