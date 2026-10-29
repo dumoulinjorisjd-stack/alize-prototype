@@ -68,16 +68,59 @@ ok(C.rien.champs===0&&C.rien.bascule===0,
 // LA MOITIÉ QUI COMPTE : un métier ouvert ne bouge pas d'un cheveu.
 ok(C.un.champs===4&&C.un.prix.join(',')==='150,290',
    'métier ouvert : ses deux prestations restent saisissables, à ses prix ('+C.un.prix.join(' · ')+')');
-ok(C.un.bascule>=2, 'la bascule « grille / son catalogue » est toujours là');
+// L'EN-TÊTE CONSTATE, L'ÉDITEUR COMMANDE. Il y avait DEUX interrupteurs sur le même fil,
+// à dix lignes d'écart ; celui de l'éditeur est le seul conditionné (rien à suspendre,
+// pas d'interrupteur) et le seul qui explique ce qu'il fait.
+ok(C.un.bascule===1, 'un SEUL interrupteur, celui de l\'éditeur (relevé : '+C.un.bascule+')');
 ok(C.un.porte.length===1&&C.un.porte[0]==='catouvrir:coiffure',
    'et la porte ne nomme plus que le métier encore fermé');
 ok(C.deux.porte.length===0,
    'tous les métiers ouverts : plus de porte du tout, il n\'y a plus rien à régler');
 
+/* LE MÉTIER EST OUVERT : QUI PEUT TOUCHER À SES TARIFS ? « Elle seule peut le faire ou
+   je peux le faire moi-même ? » — les deux, et l'écran doit le dire. Sur un prestataire
+   qui n'a rien saisi, la case paraissait COCHÉE sous « Son propre catalogue » (faux : il
+   est à la grille) et la décocher faisait disparaître « + Ajouter une prestation »,
+   c'est-à-dire le seul chemin pour lui en donner un. */
+console.log('\n1 bis. Le métier ouvert : qui peut toucher aux tarifs');
+const E=await p.evaluate(()=>{
+  const S=window.__S;S.adminMetier={massage:{catalogueLibre:true}};
+  const lire=(own)=>{
+    S.adminArtisans=[{id:'u1',uid:'u1',name:'Maya',cats:['massage'],status:'valide',acceptedTerms:true,ownCatalog:own}];
+    S.persona='admin';S.admin={sel:'u1',view:'art'};window.__render();
+    const v=document.getElementById('view')||document.body;
+    const r=Array.from(v.querySelectorAll('.fiche .fr'))
+      .find(x=>/Catalogue/.test((x.querySelector('.k')||{}).textContent||''));
+    const z=r?r.querySelector('.v'):null;
+    return {titre:z?((z.querySelector('b')||{}).textContent||''):'',
+      bascule:z?z.querySelectorAll('[data-caton]').length:0,
+      ajouter:z?z.querySelectorAll('[data-catadd]').length:0,
+      mots:z?(z.textContent||'').replace(/\s+/g,' '):''};
+  };
+  return {rien:lire(undefined),
+    lignes:lire({massage:{on:true,lines:[{id:'l1',nm:'Forfait 60 min',price:150}]}}),
+    susp:lire({massage:{on:false,lines:[{id:'l1',nm:'Forfait 60 min',price:150}]}})};
+});
+ok(E.rien.ajouter===1&&E.lignes.ajouter===1&&E.susp.ajouter===1,
+   '« + Ajouter une prestation » est là dans les TROIS cas : c\'est par là qu\'on lui en donne un');
+ok(/Grille tarifaire/.test(E.rien.titre),
+   'rien de saisi : l\'en-tête dit la vérité, il est à la grille ('+E.rien.titre+')');
+ok(E.rien.bascule===0,
+   'et AUCUN interrupteur : rien à suspendre, donc rien à décocher par mégarde');
+ok(/vous pouvez le faire d’ici, et lui depuis son profil/.test(E.rien.mots),
+   'l\'écran DIT qui peut toucher aux tarifs : vous, et lui');
+ok(/Son propre catalogue/.test(E.lignes.titre),
+   'une ligne chiffrée, et l\'en-tête bascule : '+E.lignes.titre);
+ok(/Grille tarifaire/.test(E.susp.titre)&&/conservées/.test(E.susp.mots),
+   'suspendue : il repasse à la grille, et ses prestations sont dites conservées');
+
 /* ── 2. ET LA PORTE MÈNE ─────────────────────────────────────────────────────── */
 console.log('\n2. La porte mène au réglage, et ne le touche pas');
 const D=await p.evaluate(()=>{
   const S=window.__S;
+  // UNE SECTION QUI MUTE LA SCÈNE DOIT LA REPOSER — et celle d'avant l'a réduite à UN
+  // métier. On ne mesure pas les restes de la précédente : on pose la sienne.
+  S.adminArtisans=[{id:'u1',uid:'u1',name:'Maya',cats:['massage','coiffure'],status:'valide',acceptedTerms:true}];
   S.adminMetier={};S.admPriceOpen={};S._fold={};
   S.persona='admin';S.admin={sel:'u1',view:'art'};window.__render();
   const v=document.getElementById('view')||document.body;
@@ -130,6 +173,27 @@ ok(M.perime.expire&&!M.perime.dit,
    'un lien de 40 jours est annoncé EXPIRÉ : en créer un nouveau est sans conséquence');
 ok(/Préparer/.test(M.perime.bouton),
    'et le bouton redevient « préparer » — les deux cas n\'appellent pas le même geste');
+
+/* LES DEUX SURFACES, SUR LE MÊME COMPTE. C'est tout l'objet : la première page et le
+   panneau doivent dire la même chose, puisqu'ils décrivent le même fait. */
+const P=await p.evaluate((J)=>{
+  const S=window.__S;
+  S.adminArtisans=[{id:'u1',uid:'u1',name:'Marie Coursieres',cats:['massage'],status:'valide',
+    acceptedTerms:true,mollieClientLinkHref:'https://my.mollie.com/x',mollieClientLinkAt:Date.now()-3*J}];
+  S.persona='admin';S.admin={sel:'u1',view:'art'};
+  S.admMolInscr={u1:{charge:{name:'Marie Coursieres',owner:{email:'m@e.fr'},address:{}},
+    manques:[],lienFrais:true,lienAt:Date.now()-3*J,dejaPrepare:true}};
+  window.__render();
+  const v=document.getElementById('view')||document.body;
+  const t=(v.textContent||'').replace(/\s+/g,' ');
+  return {ouvert:/Ce qui partira chez Mollie/.test(t),dit:/d\u00e9j\u00e0 pr\u00e9par\u00e9/.test(t),
+    refait:v.querySelectorAll('[data-adm^="mol-refait:"]').length,
+    cree:v.querySelectorAll('[data-adm^="mol-cree:"]').length};
+},J);
+ok(P.ouvert, 'le panneau s\'ouvre encore (il lit la m\u00eame porte, sans rien casser)');
+ok(P.dit, 'et il dit la M\u00caME chose que la premi\u00e8re page : d\u00e9j\u00e0 pr\u00e9par\u00e9');
+ok(P.refait===1&&P.cree===0,
+   'son bouton d\'action suit la m\u00eame lecture : « en pr\u00e9parer un nouveau », pas « cr\u00e9er »');
 
 /* ── 4. LE MIROIR DE LA FRAÎCHEUR ────────────────────────────────────────────── */
 console.log('\n4. La fraîcheur du lien est la MÊME des deux côtés');
