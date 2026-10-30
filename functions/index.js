@@ -782,8 +782,24 @@ async function mollieOnboardingReady(accessToken) {
  *
  * LE CLIENT LINK CRÉE L'ORGANISATION À SA PLACE, pré-remplie, et les permissions sont
  * accordées automatiquement. La spécification vient du code publié par Mollie
- * (mollie-api-php : CreateClientLinkRequest, Data/Owner, Data/OwnerAddress) — pas d'une
- * documentation de mémoire, `docs.mollie.com` étant refusé depuis ce conteneur.
+ * (mollie-api-php : CreateClientLinkRequest, Data/Owner, Data/OwnerAddress), et depuis le
+ * 30/10/2026 `docs.mollie.com` est ATTEIGNABLE : elle la confirme et lève l'inconnue qui
+ * était consignée ici.
+ *
+ * ET IL RELIE AUSSI UNE ORGANISATION QUI EXISTE DÉJÀ. C'est la première phrase de
+ * l'endpoint, mot pour mot : « Link a NEW OR EXISTING organization to your OAuth
+ * application, in effect creating a new client. » Le mécanisme se lit dans la description
+ * de `owner.locale` : « the LOGIN screen, if applicable. For the consent screen, the
+ * preferred language of the LOGGED IN merchant will be used » — donc qui a déjà un compte
+ * s'y connecte, et c'est SON organisation qui se relie. La crainte écrite ici le 25/10 —
+ * un second compte créé par erreur — n'est donc PAS fondée pour cette voie, et le bouton
+ * « j'ai déjà un compte » reste utile par un autre motif : il va droit au consentement
+ * sans passer par un écran de création prérempli.
+ *
+ * CE QUE LA DOCUMENTATION NE DIT TOUJOURS PAS, et qu'on ne suppose pas : ce qui arrive
+ * quand l'adresse qu'on pré-remplit (`owner.email`, tirée de SA fiche Ti-Services) n'est
+ * pas celle de son compte Mollie. Elle est muette, et c'est la seule porte par laquelle
+ * un second compte pourrait encore naître.
  *
  * CE NOYAU NE PARLE À PERSONNE. Il reçoit la fiche du prestataire et le pays CONFIRMÉ,
  * il rend ce qu'on peut déclarer et ce qui manque. Ni horloge, ni réseau, ni base.

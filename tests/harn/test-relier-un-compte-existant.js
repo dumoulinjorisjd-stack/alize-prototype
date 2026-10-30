@@ -2,12 +2,18 @@
    le bouton, ça va le relier ou ça va lui créer un nouveau compte ? » — l'éditeur, le
    25/10/2026.
 
-   CE QU'ON NE SAIT PAS, ET QU'ON NE DEVINE PAS. Si la console a préparé un lien pour lui, son
-   bouton ouvre le parcours PRÉPARÉ. On ignore si Mollie y reconnaîtrait un compte EXISTANT
-   pour l'autoriser, ou s'il en créerait un SECOND, préremplis : `docs.mollie.com` est refusé
-   depuis ce conteneur, et son code publié n'en dit rien — relevé, y compris dans ses propres
-   épreuves (`CreateClientLinkRequestTest`). Or deux comptes Mollie pour un prestataire, dont
-   un seul reçoit les versements, est le pire résultat possible.
+   CE QU'ON NE SAVAIT PAS LE 25/10, ET QUI EST MESURÉ DEPUIS. `docs.mollie.com` était refusé
+   depuis ce conteneur ; il est atteignable depuis le 30/10/2026, et la première phrase de
+   l'endpoint répond : « Link a NEW OR EXISTING organization to your OAuth application. »
+   Le parcours PRÉPARÉ relie donc aussi un compte qui existe déjà — `owner.locale` décrit
+   « the LOGIN screen » puis le consentement « of the LOGGED IN merchant ». La crainte d'un
+   SECOND compte créé par erreur n'est pas fondée pour cette voie.
+
+   LA PORTE RESTE, ET SON MOTIF CHANGE. Elle ne protège plus d'un second compte : elle va
+   droit au consentement sans passer par un écran de création prérempli, et c'est LUI qui
+   sait s'il a déjà un compte. Ce que la documentation ne dit toujours pas, c'est ce qui
+   arrive quand l'adresse préremplie n'est pas celle de son compte Mollie — seule porte par
+   laquelle un second compte pourrait encore naître, et on ne la suppose pas.
 
    CE QU'ON FAIT À LA PLACE : on rend la question SANS CONSÉQUENCE. Le seul qui sache s'il a
    déjà un compte est LUI — la porte qui RELIE reste donc à un toucher, nommée, sur son écran,
