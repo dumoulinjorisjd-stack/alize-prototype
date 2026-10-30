@@ -26,6 +26,18 @@
  * et le run prod est mort sur celle qu'elle ne lisait pas. Une garde qui surveille la
  * bonne famille de défaut au mauvais endroit désigne les mauvaises lignes à corriger.
  * `functions/package.json` dit le runtime des fonctions ; les deux workflows de
+ * MESURÉ ENSUITE, ET CELA CORRIGE LE MOTIF DE CETTE GARDE : le run bêta #437, CLI sur
+ * Node 20 et `firebase.json` à `nodejs22`, est passé par « Loading and analyzing source
+ * code » puis « Serving at port 8790 » — la découverte des déclencheurs EXÉCUTE bien le
+ * code des fonctions, et ce code se charge sous Node 20 — et il est mort beaucoup plus
+ * loin, sur `SMTP_PASS` absent. Donc `firebase.json` SUFFISAIT, et les deux
+ * `node-version: '20'` NE BLOQUENT AUCUN DÉPLOIEMENT aujourd'hui. On garde la mesure :
+ * son raisonnement reste juste (le jour où ce code emploiera une syntaxe de Node 22, il
+ * ne se chargera plus sous Node 20), mais son rouge veut dire « à ranger », pas
+ * « la production est cassée ». Les deux rouges ne se distinguent pas dans le total de la
+ * suite, et c'est ce qui m'a fait annoncer à tort qu'un correctif serveur ne pouvait pas
+ * partir : c'est une décision d'éditeur, pas une ligne à changer ici.
+ *
  * déploiement disent le Node du RUNNER, celui qui fait tourner firebase-tools. Ce sont
  * deux choses différentes, et une seule a une échéance ; mais trois déclarations du même
  * nombre à trois endroits finissent par diverger, et c'est alors le runner qui ment sur ce
