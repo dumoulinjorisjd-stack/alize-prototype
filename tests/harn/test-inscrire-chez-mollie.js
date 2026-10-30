@@ -270,9 +270,39 @@ ok(/clientLinkProposition\(fiche, pays, 'fr_FR'\)/.test(corps), 'la décision vi
    et il ne s'écrit qu'avec le lien — jamais sur un aperçu, qui ne doit RIEN écrire. */
 ok(/const mot = \(v\) => String\(v == null \? '' : v\)\.trim\(\)\.slice\(0, 80\)/.test(corps),
   'les deux moitiés reçues sont rognées et bornées : elles viennent d\'un appelant, pas de la fiche');
-ok(/const fiche = \(rGiven && rFamily\) \? Object\.assign\(\{\}, a, \{repGiven: rGiven, repFamily: rFamily\}\) : a;/.test(corps),
-  'elles complètent une COPIE de la fiche, et seulement ENSEMBLE : un demi nom n\'écrase rien');
-const apresCreer = corps.slice(corps.indexOf('mollieCreerClientLink'));
+const apresCreerMail = corps.slice(corps.indexOf('mollieCreerClientLink'));
+const apresCreer = apresCreerMail;
+/* CETTE GARDE LISAIT L'ÉCRITURE DU JOUR. Elle épinglait l'expression exacte de `fiche`,
+   donc elle a rougi le 30/10/2026 sur une réécriture qui PRÉSERVAIT la propriété (l'ajout
+   de l'adresse Mollie confirmée) — et elle serait restée verte devant une autre écriture
+   qui la casse. On mesure donc les deux faits, et non leur formulation. */
+ok(/Object\.assign\(\{\}, a,/.test(corps) && !/\ba\.repGiven\s*=/.test(corps) && !/\ba\.repFamily\s*=/.test(corps),
+  'ce qui vient de la console complète une COPIE de la fiche : la fiche lue n\'est jamais écrasée');
+ok(/rGiven && rFamily/.test(corps) && !/rGiven \|\| rFamily/.test(corps),
+  'et les deux moitiés du nom ne valent qu\'ENSEMBLE : un demi nom n\'écrase rien');
+// Assertion arrière : sans les deux moitiés relevées, les mesures ci-dessus seraient
+// vraies d'un corps qui ne parle plus du tout du nom du responsable.
+ok(/rGiven/.test(corps) && /rFamily/.test(corps),
+  'et c\'est bien le nom du responsable qu\'on vient de mesurer');
+
+/* L'ADRESSE MOLLIE SE CONFIRME DEPUIS LA CONSOLE, et elle décide de quelle organisation se
+   relie : la documentation du 30/10/2026 dit que le parcours préparé « relie une
+   organisation NOUVELLE OU EXISTANTE », et c'est sur l'écran de connexion que le
+   prestataire se reconnaît. Une AUTRE adresse que la sienne chez Mollie est la dernière
+   porte par laquelle un second compte pourrait naître. */
+ok(/request\.data && request\.data\.mollieEmail/.test(corps),
+  'l\'adresse confirmée arrive de la console, comme le nom');
+ok(/mMail\.indexOf\('@'\) > 0/.test(corps),
+  'et une adresse sans « @ » n\'en est pas une : on ne déclare pas une valeur abîmée à un établissement de paiement');
+ok(/if \(mailOk\) surcouche\.mollieEmail = mMail;/.test(corps),
+  'reconnue, elle entre dans la décision ; sinon la fiche reprend la main');
+/* LA GARDE QUI COMPTE : `artisans.email` est l'adresse à laquelle NOUS écrivons. La
+   confirmer pour Mollie ne doit jamais la remplacer — le prestataire cesserait de
+   recevoir nos avis de mission sans que personne le sache. */
+ok(!/ecrire\.email\s*=/.test(corps) && /ecrire\.mollieEmail = mMail;/.test(corps),
+  'elle s\'écrit à CÔTÉ de l\'adresse du compte, jamais par-dessus');
+ok(/ecrire\.mollieEmail/.test(apresCreerMail),
+  'et seulement APRÈS le lien : un aperçu n\'écrit rien');
 ok(/ecrire\.repGiven = rGiven; ecrire\.repFamily = rFamily;/.test(apresCreer),
   'et elles ne s\'écrivent sur la fiche qu\'APRÈS le lien : un aperçu n\'écrit rien');
 ok(/repli: 'autorisation'/.test(corps) && /raison: out\.raison/.test(corps),

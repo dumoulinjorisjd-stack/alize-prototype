@@ -901,7 +901,13 @@ function lienAdresseDecoupee(v) {
 function clientLinkProposition(fiche, pays, locale) {
   const f = (fiche && typeof fiche === 'object') ? fiche : {};
   const manques = [];
-  const email = String(f.email == null ? '' : f.email).trim();
+  /* L'ADRESSE MOLLIE N'EST PAS L'ADRESSE DU COMPTE. `artisans.email` est celle à
+   * laquelle NOUS écrivons (relances, avis de mission) ; celle-ci part à Mollie et
+   * decide de quelle organisation se relie — la doc dit « the LOGIN screen », donc
+   * c'est par elle qu'il se reconnaît s'il a déjà un compte. Elles coïncident presque
+   * toujours, et quand elles diffèrent la console confirme la seconde SANS toucher à la
+   * première : écraser l'adresse du compte le couperait de nos envois. */
+  const email = String(f.mollieEmail || f.email || '').trim();
   if (!email || email.indexOf('@') < 1) manques.push('email');
   // L'identité LÉGALE d'abord : c'est elle qui figure au registre, et c'est elle que
   // Mollie vérifiera. Le nom d'usage ne sert que si l'autre manque. Les deux champs sont
@@ -4769,7 +4775,19 @@ exports.adminMollieInscrire = onCall({secrets: ['MOLLIE_ACCESS_TOKEN', 'MOLLIE_C
   const mot = (v) => String(v == null ? '' : v).trim().slice(0, 80);
   const rGiven = mot(request.data && request.data.repGiven);
   const rFamily = mot(request.data && request.data.repFamily);
-  const fiche = (rGiven && rFamily) ? Object.assign({}, a, {repGiven: rGiven, repFamily: rFamily}) : a;
+  /* L'ADRESSE SE CONFIRME AUSSI, et pour la raison que la documentation a donnée le
+   * 30/10/2026 : le parcours préparé « relie une organisation NOUVELLE OU EXISTANTE », et
+   * c'est sur l'écran de connexion que le prestataire se reconnaît. Si son compte Mollie
+   * est sous une AUTRE adresse que sa fiche, c'est la seule porte par laquelle un second
+   * compte pourrait encore naître — on la lui demande au téléphone plutôt que de la
+   * supposer. Une adresse sans « @ » n'en est pas une : on l'ignore et la fiche reprend
+   * la main, plutôt que de déclarer une valeur abîmée à un établissement de paiement. */
+  const mMail = mot(request.data && request.data.mollieEmail).toLowerCase();
+  const mailOk = mMail.indexOf('@') > 0;
+  const surcouche = {};
+  if (rGiven && rFamily) { surcouche.repGiven = rGiven; surcouche.repFamily = rFamily; }
+  if (mailOk) surcouche.mollieEmail = mMail;
+  const fiche = Object.keys(surcouche).length ? Object.assign({}, a, surcouche) : a;
   /* DÉJÀ RELIÉ : il n'y a rien à créer, et en créer une seconde organisation serait le pire
    * résultat possible — deux comptes Mollie pour un seul prestataire, dont un seul reçoit
    * les versements, sans que personne sache lequel. */
@@ -4818,6 +4836,11 @@ exports.adminMollieInscrire = onCall({secrets: ['MOLLIE_ACCESS_TOKEN', 'MOLLIE_C
   if (rGiven && rFamily && (rGiven !== String(a.repGiven || '').trim() || rFamily !== String(a.repFamily || '').trim())) {
     ecrire.repGiven = rGiven; ecrire.repFamily = rFamily;
   }
+  /* ON N'ÉCRIT QUE CE QUI DIFFÈRE DE SON ADRESSE DE COMPTE. Confirmer la même adresse ne
+   * pose pas de clé : une fiche qui porterait `mollieEmail` égale à `email` ferait croire
+   * à une confirmation qui n'a rien confirmé, et c'est `email` qui doit continuer de
+   * commander tant que personne n'a dit autre chose. */
+  if (mailOk && mMail !== String(a.email || '').trim().toLowerCase()) ecrire.mollieEmail = mMail;
   await db.collection('artisans').doc(uid).set(ecrire, {merge: true});
   /* ET LA CONSOLE NE REÇOIT AUCUN LIEN. Il serait tentant de le lui rendre pour l'envoyer
    * par message — mais son `state` ne vit que trente minutes : un lien copié dans une

@@ -3703,7 +3703,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='899';
+  const VERSION_APP='900';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -11252,10 +11252,23 @@
     const b={given:mots[mots.length-1],family:mots.slice(0,-1).join(' ')};
     return (a.given===b.given&&a.family===b.family)?[a]:[a,b];
   }
+  /* QUELLE ADRESSE PARTIRA CHEZ MOLLIE. C'est par elle qu'il se reconnaît sur l'écran
+     de connexion du parcours préparé — la documentation du 30/10/2026 le dit : le lien
+     « relie une organisation NOUVELLE OU EXISTANTE », et le consentement est celui du
+     « LOGGED IN merchant ». Si son compte Mollie est sous une autre adresse que sa
+     fiche, c'est la seule porte par laquelle un SECOND compte pourrait naître.
+     Ce qu'on tape ici l'emporte ; à défaut, la fiche. Même forme que le prénom. */
+  function molMail(E,charge){
+    const v=(E&&E.mollieEmail);
+    if(v!=null)return String(v);
+    return String(((charge&&charge.owner)||{}).email||'');
+  }
+  function molMailOk(E,charge){const v=molMail(E,charge).trim();return v.indexOf('@')>0;}
   function molNomOk(E,charge){return !!molRep(E,charge,'Given').trim()&&!!molRep(E,charge,'Family').trim();}
   function molManquesRestants(E,manq,charge){return (manq||[]).filter(function(m){
     if(m==='nom')return !molNomOk(E,charge);
     if(m==='pays')return !/^[A-Z]{2}$/.test(molPays(E));
+    if(m==='email')return !molMailOk(E,charge);
     return true;});}
   /* « POUR CERTAINS OÙ J'AI PRÉPARÉ LE COMPTE MOLLIE, IL ME LE DIT DÈS LA PREMIÈRE
      PAGE, POUR D'AUTRES NON — ALORS QU'À LA SECONDE IL ME PRÉVIENT QU'UN COMPTE EXISTE
@@ -11305,7 +11318,7 @@
     const c=E.charge, ad=c.address||{}, ow=c.owner||{};
     const lg=function(l,v){return '<div class="row between" style="gap:10px;margin-top:5px"><span class="mini" style="color:var(--muted)">'+l+'</span><b style="font-size:12.5px;text-align:right;word-break:break-word">'+(v?esc(v):'<span style="color:var(--coral-deep)">—</span>')+'</b></div>';};
     const lgRep=function(l,cle,id,v){return '<div class="row between" style="gap:10px;margin-top:5px;align-items:center"><span class="mini" style="color:var(--muted)">'+l+'</span>'
-      +'<input data-molrep="'+cle+':'+id+'" value="'+esc(v)+'" placeholder="\u2014" style="flex:1;min-width:0;max-width:62%;text-align:right;padding:5px 8px;border:1px solid var(--hair);border-radius:8px;font-size:12.5px;font-weight:700;background:#fff"></div>';};
+      +'<input '+(cle==='Mail'?'type="email" data-molmail="'+id+'"':'data-molrep="'+cle+':'+id+'"')+' value="'+esc(v)+'" placeholder="\u2014" style="flex:1;min-width:0;max-width:62%;text-align:right;padding:5px 8px;border:1px solid var(--hair);border-radius:8px;font-size:12.5px;font-weight:700;background:#fff"></div>';};
     const manq=(E.manques||[]);
     const noms={email:'adresse électronique',nom:'prénom et nom (deux mots)',entreprise:'nom ou raison sociale',pays:'pays'};
     const reste=molManquesRestants(E,manq,c);
@@ -11326,7 +11339,8 @@
           +sg.map(function(x,i){return '<button class="btn ghost sm" data-adm="mol-nom:'+a.id+':'+i+'" style="width:auto;padding:5px 9px;font-size:12px">'+esc(x.given)+' <span style="opacity:.5">/</span> '+esc(x.family)+'</button>';}).join('')
           +'</div>';
       })()
-      +lg('Adresse électronique',ow.email)
+      +lgRep('Adresse électronique','Mail',a.id,molMail(E,c))
+      +'<p class="mini" style="margin-top:6px;color:var(--muted);line-height:1.45">C\u2019est par elle qu\u2019il se reconna\u00eet chez Mollie\u00a0: <b>demandez-lui s\u2019il a d\u00e9j\u00e0 un compte, et sous quelle adresse</b>. Une autre adresse que celle-ci lui en ouvrirait un second.</p>'
       +lg('Nom / raison sociale',c.name)
       +lg('Voie',ad.streetAndNumber)+lg('Code postal',ad.postalCode)+lg('Commune',ad.city)
       +lg('SIRET',c.registrationNumber||'')
@@ -20006,6 +20020,7 @@
           Object.assign({uid:id,pays:molPays(E0)},
             molNomOk(E0,E0.charge)?{repGiven:molRep(E0,E0.charge,'Given').trim(),
                                     repFamily:molRep(E0,E0.charge,'Family').trim()}:{},
+            molMailOk(E0,E0.charge)?{mollieEmail:molMail(E0,E0.charge).trim()}:{},
             creer?{confirmer:true}:{})).then(function(r){
           const d=(r&&r.data)||{};
           if(d.deja){ S.admMolInscr[id]={busy:false};render();
@@ -20013,7 +20028,8 @@
           /* On garde le pays choisi d'un appel à l'autre : le refaire choisir après un
              refus de Mollie serait lui faire reprendre une déclaration qu'il a déjà
              relue. */
-          S.admMolInscr[id]={busy:false,pays:molPays(E0),repGiven:E0.repGiven,repFamily:E0.repFamily,charge:d.charge||E0.charge||null,
+          S.admMolInscr[id]={busy:false,pays:molPays(E0),repGiven:E0.repGiven,repFamily:E0.repFamily,
+            mollieEmail:E0.mollieEmail,charge:d.charge||E0.charge||null,
             manques:d.manques||[],raison:d.raison||'',cree:!!d.cree,dejaPrepare:!!d.dejaPrepare,
             nomDevine:!!d.nomDevine,
             lienFrais:!!d.lienFrais,lienAt:Number(d.lienAt)||0};
@@ -20081,6 +20097,7 @@
         const E1=(S.admMolInscr&&S.admMolInscr[id])||{};
         S.admMolInscr[id]=Object.assign({},E1,{busy:true});render();
         call('adminMollieInscrire')(Object.assign({uid:id,pays:molPays(E1),confirmer:true,refaire:true},
+          molMailOk(E1,E1.charge)?{mollieEmail:molMail(E1,E1.charge).trim()}:{},
           molNomOk(E1,E1.charge)?{repGiven:molRep(E1,E1.charge,'Given').trim(),
                                   repFamily:molRep(E1,E1.charge,'Family').trim()}:{})).then(function(r){
           const d=(r&&r.data)||{};
@@ -22220,6 +22237,19 @@
     /* LE NOM DU RESPONSABLE, retenu à chaque frappe SANS redessiner : le bloc entier
        repartirait et le curseur quitterait le champ à la première lettre. On ouvre donc
        le bouton sur place — c'est la seule chose qui dépende de ce qu'on tape ici. */
+    /* L'ADRESSE MOLLIE, MEME DISCIPLINE QUE LE NOM : on retient sans redessiner, et l'on
+       rouvre le bouton sur place — c'est tout ce qui depend de ce qu'on tape ici. */
+    const mm=e.target.closest('[data-molmail]');
+    if(mm){
+      const id=String(mm.dataset.molmail||'');
+      S.admMolInscr=S.admMolInscr||{};
+      const E=Object.assign({},S.admMolInscr[id]||{},{mollieEmail:mm.value||''});
+      S.admMolInscr[id]=E;
+      const reste=molManquesRestants(E,E.manques||[],E.charge);
+      const bt=document.querySelector('[data-molcree="'+id+'"]');
+      if(bt)bt.disabled=reste.length>0;
+      return;
+    }
     const mr=e.target.closest('[data-molrep]');
     if(mr){
       const parts=String(mr.dataset.molrep||'').split(':'), cle=parts[0], id=parts.slice(1).join(':');
