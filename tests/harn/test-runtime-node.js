@@ -18,8 +18,14 @@
  * connexion et devient une épreuve qu'on désarme. On écrit donc un PLANCHER, avec sa date
  * et sa raison, et c'est le plancher qu'on relève le jour où la date approche.
  *
- * ET LES TROIS DÉCLARATIONS DOIVENT S'ACCORDER — c'est le défaut RÉALISTE, pas le
- * plancher. `functions/package.json` dit le runtime des fonctions ; les deux workflows de
+ * ET LES QUATRE DÉCLARATIONS DOIVENT S'ACCORDER — c'est le défaut RÉALISTE, pas le
+ * plancher. Cette garde en nommait TROIS, et la quatrième est celle qui a refusé le
+ * déploiement du 30/10/2026 : `firebase.json` porte `functions.runtime`, et c'est CELUI-LÀ
+ * que la CLI envoie à Cloud Functions — `functions/package.json` disait déjà 22 pendant
+ * que `firebase.json` disait 20, la garde était verte sur les deux lignes qu'elle lisait,
+ * et le run prod est mort sur celle qu'elle ne lisait pas. Une garde qui surveille la
+ * bonne famille de défaut au mauvais endroit désigne les mauvaises lignes à corriger.
+ * `functions/package.json` dit le runtime des fonctions ; les deux workflows de
  * déploiement disent le Node du RUNNER, celui qui fait tourner firebase-tools. Ce sont
  * deux choses différentes, et une seule a une échéance ; mais trois déclarations du même
  * nombre à trois endroits finissent par diverger, et c'est alors le runner qui ment sur ce
@@ -40,6 +46,23 @@ const runtime = String(((pkg.engines || {}).node) || '');
 ok(/^\d+$/.test(runtime), 'le runtime des fonctions se relève dans functions/package.json : « ' + (runtime || '(aucun)') + ' »');
 ok(Number(runtime) >= PLANCHER,
   'et il est au moins Node ' + PLANCHER + ' : Node 20 est DÉCOMMISSIONNÉ depuis le 2026-10-30, un déploiement y est refusé');
+
+/* `firebase.json`, LA DÉCLARATION QUE LA CLI ENVOIE VRAIMENT. Mesuré le 30/10/2026 sur le
+   run prod #759 : « Runtime Node.js 20 was decommissioned on 2026-10-30. To deploy you
+   must first upgrade your runtime version. » Rien n'était sorti — l'erreur tombe à la
+   préparation des fonctions — mais aucune mesure de cette garde ne portait sur la ligne
+   en cause. */
+const fbj = JSON.parse(fs.readFileSync(path.join(RACINE, 'firebase.json'), 'utf8'));
+const fbRt = String(((fbj.functions || {}).runtime) || '');
+const fbNum = /^nodejs(\d+)$/.exec(fbRt);
+// Assertion arrière : sans runtime relevé, « il s'accorde » serait vrai d'une chaîne vide.
+ok(!!fbNum, 'firebase.json déclare le runtime des fonctions : « ' + (fbRt || '(aucun)') + ' »');
+if (fbNum) {
+  ok(Number(fbNum[1]) >= PLANCHER,
+    'et il est au moins Node ' + PLANCHER + ' — c\'est CETTE ligne que Google refuse (' + fbRt + ')');
+  ok(Number(fbNum[1]) === Number(runtime),
+    'et elle dit le même Node que functions/package.json (' + fbNum[1] + ' contre ' + runtime + ')');
+}
 
 /* LES DEUX WORKFLOWS QUI DÉPLOIENT. On relève, on ne suppose pas : un workflow renommé
    ou ajouté sans sa déclaration doit se voir. */
