@@ -3703,7 +3703,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='898';
+  const VERSION_APP='899';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -5966,6 +5966,41 @@
     const attente=S0.lus?RECHERCHE_LUS.filter(function(e){return !S0.lus[e[0]];}).map(function(e){return e[1];}):[];
     return {q:q,total:total,familles:familles,attente:attente};
   }
+  /* CE QUE LES CLIENTS ONT MIS COMME NOTE À QUELQU'UN.
+     « Je ne vois nulle part les notes que donnent les clients aux prestataires »
+     (l'éditeur, 30/10/2026). MESURÉ : elles partaient bien — `submit-rating` écrit
+     `rating` et `ratedAt` sur la DEMANDE — et elles étaient lues par PERSONNE. Trois
+     arrêts l'un derrière l'autre : la liste fermée de la console ne portait pas la
+     note, la projection des prestataires écrivait `rating: 0` EN DUR, et le mot
+     « rating » n'apparaît pas une seule fois dans tout `functions/`. La ligne
+     « Note · missions » de la fiche lisait donc un zéro câblé, et affichait « — »
+     pour tout le monde, pour toujours. Les seules notes non nulles du fichier étaient
+     celles des prestataires de DÉMONSTRATION de la vitrine.
+     PUR : on lui donne les demandes et un identifiant, il rend ce qui a été noté.
+     UNE NOTE EST ENTRE 1 ET 5. Zéro n'est pas une note, c'est son ABSENCE — la compter
+     ferait baisser une moyenne avec du vide, et le bouton d'envoi est d'ailleurs fermé
+     tant qu'aucune étoile n'est choisie.
+     ET SANS AUCUN AVIS ON REND `null`, JAMAIS ZÉRO : « 0,0 ★ » se lirait comme « il est
+     mauvais » là où la vérité est « personne ne l'a encore noté ».
+     LA MOYENNE EST ARRONDIE ICI, pas à l'affichage : c'est ce nombre-là qui se lit, et
+     deux endroits qui l'arrondiraient chacun de leur côté finiraient par ne pas dire
+     la même chose du même prestataire. */
+  const NOTE_MIN=1,NOTE_MAX=5;
+  function noteDeLaMission(r){
+    const n=Math.round(Number(r&&r.note));
+    return (isFinite(n)&&n>=NOTE_MIN&&n<=NOTE_MAX)?n:0;
+  }
+  function notesDuPrestataire(reqs,uid){
+    if(!uid)return null;
+    const lues=(Array.isArray(reqs)?reqs:[]).filter(function(r){
+      return r&&r.providerUid===uid&&noteDeLaMission(r)>0;});
+    if(!lues.length)return null;
+    const somme=lues.reduce(function(t,r){return t+noteDeLaMission(r);},0);
+    /* LA PLUS RÉCENTE D'ABORD, et à défaut de date l'ordre d'arrivée : une note sans
+       horodatage ne se range pas en tête sur une date qu'on aurait inventée. */
+    const liste=lues.slice().sort(function(x,y){return (Number(y.noteAt)||0)-(Number(x.noteAt)||0);});
+    return {avis:lues.length, moyenne:Math.round(somme/lues.length*10)/10, liste:liste};
+  }
   function reqPourConsole(id,r0){
     r0=r0||{};
     const txt=function(v,n){return String(v==null?'':v).slice(0,n||60);};
@@ -5976,6 +6011,10 @@
       total:Number(r0.total)||0,unit:txt(r0.unit,10),duration:Number(r0.duration)||0,
       client:txt(r0.clientName,60),provider:txt(r0.providerName,60),
       providerUid:txt(r0.providerUid,60),directed:!!r0.directed,
+      /* LA NOTE DU CLIENT, ET LE JOUR OÙ IL L'A DONNÉE. `submit-rating` l'écrit sur la
+         demande depuis toujours — cette liste fermée ne la portait pas, donc elle
+         était jetée à l'entrée de la console et personne ne la voyait nulle part. */
+      note:Number(r0.rating)||0, noteAt:(Number(r0.ratedAt)||0),
       boostEur:Number(r0.boostEur)||0,
       /* ÉCARTÉE DES COMPTES À LA MAIN. Un booléen, et c'est tout ce que cette liste
          fermée gagne : le motif, l'auteur et la date restent au registre, où l'écran
@@ -13412,7 +13451,24 @@
             const auto=compteDeTest(a)&&a.test!==true;
             const seul=(a.cats||[]).filter(function(c){return !(S.adminArtisans||[]).some(function(x){return x.id!==a.id&&x.status==='valide'&&!compteDeTest(x)&&(x.cats||[]).indexOf(c)>=0;});});
             return `<div class="row between" style="align-items:center;gap:10px"><span class="mini" style="color:var(--muted);line-height:1.45;flex:1;min-width:0">${auto?'Reconnu automatiquement (compte de démonstration des magasins).':'Écarte ce compte des compteurs — et il cesse d’ouvrir ses métiers aux clients.'}${(!auto&&a.status==='valide'&&seul.length)?`<br><b style="color:var(--coral-deep)">${seul.length===1?'« '+esc(svcNm(seul[0]))+' » repasserait':plN(seul.length,'métier')+' repasseraient'} en « bientôt disponible » : il en est le seul titulaire validé.</b>`:''}</span><button class="switch" data-adm="arttest:${a.id}" ${auto?'disabled style="opacity:.5;flex:none;background:var(--good)"':`style="flex:none;background:${a.test?'var(--good)':'var(--hair)'}"`}><span class="knob" style="left:${compteDeTest(a)?'25px':'3px'}"></span></button></div>`;})())}
-          ${fRow('Note · missions',a.rating?a.rating.toFixed(1)+' '+I.star+' · '+a.jobs:'—')}
+          ${fRow('Note · missions',(function(){
+            /* ON NE DIT PAS « AUCUN AVIS » AVANT D'AVOIR LU. Tant que les demandes ne sont
+               pas revenues, l'absence de note n'est pas un fait, c'est une ignorance —
+               la discipline de la ligne « Notifications » juste au-dessus. */
+            const missions=a.jobs?plN(a.jobs,'mission'):'aucune mission';
+            if(!S.adminReqsLus)return `<span class="mini" style="color:var(--muted)">Lecture des demandes…</span>`;
+            const n=notesDuPrestataire(S.adminReqs,a.uid);
+            if(!n)return `<span class="mini" style="color:var(--muted)">Aucun avis pour l'instant · ${esc(missions)}.</span>`;
+            const MONTREES=8;
+            const vues=n.liste.slice(0,MONTREES), reste=n.liste.length-vues.length;
+            return `<div><b style="font-size:15px">${String(n.moyenne).replace('.',',')}</b> ${I.star}
+              <span class="mini">${n.avis} avis · ${esc(missions)}</span></div>
+              <div style="margin-top:6px">${vues.map(function(r){
+                const nt=noteDeLaMission(r), bas=nt<=2;
+                return `<div class="row between mini" style="gap:8px;align-items:baseline;padding:3px 0;border-top:1px solid var(--hair)">
+                  <span style="flex:1;min-width:0">${esc(r.svcName||svcNm(r.svc)||'Prestation')}${r.noteAt?` <span style="color:var(--muted)">· ${new Date(r.noteAt).toLocaleDateString('fr-FR')}</span>`:''}</span>
+                  <b style="flex:none${bas?';color:var(--coral-deep)':''}">${nt} ${I.star}</b></div>`;}).join('')}</div>
+              ${reste>0?`<div class="mini" style="margin-top:4px;color:var(--muted)">et ${reste} avis plus anciens.</div>`:''}`;})())}
           ${fRow('Fiabilité · présence',(a.noShowCount||0)>0?`<span class="chip coral">${I.clock} ${a.noShowCount} absence${a.noShowCount>1?'s':''} signalée${a.noShowCount>1?'s':''}</span>${a.lastNoShowAt?`<div class="mini" style="margin-top:4px">Dernière&nbsp;: ${new Date(a.lastNoShowAt).toLocaleDateString('fr-FR')}</div>`:''}`:`<span class="chip good">${I.check} Aucun manquement</span>`)}
           ${fRow('Palier fidélité · commission',founderActiveFor(a)?`<span class="chip founder-chip">${I.star} Ambassadeur</span> ${FOUNDER_COMM_PCT} %`:`${a.founder?`<span class="chip" style="background:var(--hair);color:var(--muted)">${I.star} Ambassadeur, expiré</span> `:''}<span class="chip" style="background:${fidColor(fidFor(a.jobs).key)}22;color:${fidColor(fidFor(a.jobs).key)}">${I.star} ${fidFor(a.jobs).nm}</span> ${fidFor(a.jobs).pct} %`)}
           ${(a.status==='refuse'&&a.reason)?fRow('Motif du refus',`<span style="color:var(--coral-deep)">${esc(a.reason)}</span>`):''}
@@ -24454,7 +24510,7 @@
       adminArtUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'artisans'),function(snap){
         const list=[],pending=new Set();
         snap.forEach(function(d){ const a=d.data()||{}; const cats=Array.isArray(a.cats)?a.cats:[]; const rr=a.rates||{}; const st=a.status||'attente';
-          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Prestataire',status:st,type:(a.statusType==='particulier')?'particulier':'entreprise',statusType:a.statusType||'entreprise',legalName:a.legalName||'',legalForm:a.legalForm||'',capital:a.capital||'',rcsCity:a.rcsCity||'',birth:a.birth||'',referralCode:a.referralCode||'',referredByCode:a.referredByCode||'',acceptedTerms:!!a.acceptedTerms,acceptedCharte:!!a.acceptedCharte,acceptedMandat:!!a.acceptedMandat,acceptsGrille:!!a.acceptsGrille,desiredNetRates:a.desiredNetRates||null,ownCatalog:(a.ownCatalog&&typeof a.ownCatalog==='object')?a.ownCatalog:{},termsVersion:a.termsVersion||'',termsAt:(a.termsAt&&a.termsAt.toMillis)?a.termsAt.toMillis():0,createdAt:(a.createdAt&&a.createdAt.toMillis)?a.createdAt.toMillis():0,cats:cats,other:a.other||'',otherPrice:Number(a.otherPrice)||0,otherPriceNote:a.otherPriceNote||'',otherUnit:(a.otherUnit==='forfait'?'forfait':'h'),pendingCats:Array.isArray(a.pendingCats)?a.pendingCats:[],pendingOther:a.pendingOther||'',pendingOtherPrice:Number(a.pendingOtherPrice)||0,pendingOtherUnit:(a.pendingOtherUnit==='forfait'?'forfait':'h'),pendingDesiredNet:(a.pendingDesiredNet&&typeof a.pendingDesiredNet==='object')?a.pendingDesiredNet:null,rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insuranceNone:!!a.insuranceNone,insuranceNoticeAt:Number(a.insuranceNoticeAt)||0,approvedNotifiedAt:Number(a.approvedNotifiedAt)||0,tierForce:a.tierForce||'',refBonusJobs:Number(a.refBonusJobs)||0,insuranceDueAt:Number(a.insuranceDueAt)||0,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,founderSince:(a.founderSince&&a.founderSince.toMillis)?a.founderSince.toMillis():(typeof a.founderSince==='number'?a.founderSince:null),founderGross:Number(a.founderGross)||0,test:!!a.test,rating:0,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,online:(a.online!==false)/* EN LIGNE PAR DÉFAUT, et hors ligne seulement si on l'a
+          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Prestataire',status:st,type:(a.statusType==='particulier')?'particulier':'entreprise',statusType:a.statusType||'entreprise',legalName:a.legalName||'',legalForm:a.legalForm||'',capital:a.capital||'',rcsCity:a.rcsCity||'',birth:a.birth||'',referralCode:a.referralCode||'',referredByCode:a.referredByCode||'',acceptedTerms:!!a.acceptedTerms,acceptedCharte:!!a.acceptedCharte,acceptedMandat:!!a.acceptedMandat,acceptsGrille:!!a.acceptsGrille,desiredNetRates:a.desiredNetRates||null,ownCatalog:(a.ownCatalog&&typeof a.ownCatalog==='object')?a.ownCatalog:{},termsVersion:a.termsVersion||'',termsAt:(a.termsAt&&a.termsAt.toMillis)?a.termsAt.toMillis():0,createdAt:(a.createdAt&&a.createdAt.toMillis)?a.createdAt.toMillis():0,cats:cats,other:a.other||'',otherPrice:Number(a.otherPrice)||0,otherPriceNote:a.otherPriceNote||'',otherUnit:(a.otherUnit==='forfait'?'forfait':'h'),pendingCats:Array.isArray(a.pendingCats)?a.pendingCats:[],pendingOther:a.pendingOther||'',pendingOtherPrice:Number(a.pendingOtherPrice)||0,pendingOtherUnit:(a.pendingOtherUnit==='forfait'?'forfait':'h'),pendingDesiredNet:(a.pendingDesiredNet&&typeof a.pendingDesiredNet==='object')?a.pendingDesiredNet:null,rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insuranceNone:!!a.insuranceNone,insuranceNoticeAt:Number(a.insuranceNoticeAt)||0,approvedNotifiedAt:Number(a.approvedNotifiedAt)||0,tierForce:a.tierForce||'',refBonusJobs:Number(a.refBonusJobs)||0,insuranceDueAt:Number(a.insuranceDueAt)||0,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,founderSince:(a.founderSince&&a.founderSince.toMillis)?a.founderSince.toMillis():(typeof a.founderSince==='number'?a.founderSince:null),founderGross:Number(a.founderGross)||0,test:!!a.test,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,online:(a.online!==false)/* EN LIGNE PAR DÉFAUT, et hors ligne seulement si on l'a
             DÉCIDÉ. `!!a.online` rendait FAUX pour un compte qui n'a jamais touché
             l'interrupteur — c'est-à-dire tout nouvel inscrit, puisque le champ n'est
             écrit qu'au premier enregistrement de ses réglages. La console le
