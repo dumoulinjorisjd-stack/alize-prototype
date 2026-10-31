@@ -104,8 +104,31 @@ ok(!A.ecraseLaSienne&&A.resteLaSienne==='La sienne','la commande du compte gagne
 ok(!A.perimeeAdoptee,'une commande de plus de vingt-quatre heures n’est pas reprise');
 ok(/marquerAdoptionBrouillon\(\);\s*\n\s*S\._resumeOrder=true;S\.authView='signup'/.test(src),
   'le marqueur est posé au passage au paiement, AVANT qu’on quitte l’écran');
-ok(/const _ad=adopterBrouillonAnonyme\(\);/.test(src)&&/resumeOrderIfPending\(\);render\(\);/.test(src),
-  'et l’adoption précède la reprise : « il n’a plus qu’à cliquer pour payer »');
+
+/* ET LE VRAI CHEMIN SE REJOUE, pas seulement la porte. On fabrique la naissance de
+   session — « loadUserProfile » avec un faux Firebase — après avoir vidé la mémoire comme
+   une redirection Google le fait. C'est la seule mesure qui prouve la phrase demandée :
+   « une fois le compte créé, elle n'a plus qu'à cliquer pour payer ». */
+const A2=await p.evaluate(async()=>{
+  const S=window.__S,B=window.__brouillon; S.demoMode=false; localStorage.clear();
+  const faux={auth:{currentUser:{uid:'u-neuf',email:'a@b.fr'}},
+    f:{getDoc:()=>Promise.resolve({exists:()=>false,data:()=>null}),doc:()=>({}),
+       setDoc:()=>Promise.resolve(),updateDoc:()=>Promise.resolve(),onSnapshot:()=>function(){},
+       collection:()=>({}),query:()=>({}),where:()=>({}),serverTimestamp:()=>0,
+       arrayUnion:()=>({}),arrayRemove:()=>({})},
+    db:{},fn:{httpsCallable:()=>()=>Promise.resolve({data:{}})},functions:{}};
+  window.__setFB({auth:{currentUser:null}});
+  S.draft={svc:'menage',svcName:'Ménage',rate:35,duration:3,unit:'h'};
+  B.marquer();
+  S.draft=null;                                   // Google est parti en redirection
+  S.payStep=false;S._resumeOrder=false;S.onboarded=false;
+  window.__setFB(faux);
+  try{await window.__session(faux.auth.currentUser);}catch(e){return {err:String((e&&e.message)||e)};}
+  return {draft:S.draft&&S.draft.svc, pay:!!S.payStep, onb:!!S.onboarded};
+});
+ok(!A2.err,'la naissance de session se rejoue'+(A2.err?' — '+A2.err:''));
+ok(A2.draft==='menage','après la création du compte, sa commande est là');
+ok(A2.pay&&A2.onb,'et l’on retombe à l’étape PAIEMENT : « elle n’a plus qu’à cliquer pour payer »');
 await p.close();
 
 /* ──────────────── B — « Je cherche un service » ouvre les prestations ──────────────── */

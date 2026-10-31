@@ -24,6 +24,7 @@ sed 's/function render(){/function render(){window.__S=S;window.__render=render;
      s/^  function tryVisibleBackLink(){/  window.__back=function(){return goBack();};\n  function tryVisibleBackLink(){/
      s/^  function accepterDemo(m){/  window.__demo={accepte:function(m){return accepterDemo(m);},estExamen:function(){return isReviewDemo();}};\n  function accepterDemo(m){/
      s/^  function proDirFor(svc){/  window.__dirPour=function(s){return proDirFor(s);};window.__fichePub=function(p){return chargerFichePublique(p);};\n  function proDirFor(svc){/
+     s/^  async function loadUserProfile(user){/  window.__session=function(u){return loadUserProfile(u);};\n  async function loadUserProfile(user){/
      s/^  function handleDeepLink(){/  window.__deep=function(){return handleDeepLink();};\n  function handleDeepLink(){/
      s/^  function icoValide(k){/  window.__svc={ico:function(i){return svcIco(i);},valide:function(k){return icoValide(k);},choix:function(){return SVC_ICOS;},ajoute:function(n,r,c){return addCustomService(n,r,c);},trouve:function(i){return findSvc(i);},relit:function(d){return applyCatalogDoc(d);},table:function(){return I;},renomme:function(i,v){return renommerMetier(i,v);},nom:function(i){return nomCourant(i);},liste:function(){return nomsEnListe();},defaut:function(i){return nomDeCode(i);}};\n  function icoValide(k){/
      s/^  function noterInstallation(){/  window.__inst={systeme:function(){return demanderAuSysteme();},seCite:function(){return manifesteSeCite();},guide:function(o){return showInstallGuide(o);},tel:function(){return telConnu();}};\n  function noterInstallation(){/
@@ -54,7 +55,7 @@ sed 's/function render(){/function render(){window.__S=S;window.__render=render;
      s/^  function murSousLigne(f){/  window.__murs={sous:function(f){return murSousLigne(f);},qui:function(q,m){return murQuiHtml(q,m);},phrases:function(c){return murQuiPhrases(c);},depuis:function(){return CLIENT_JALONS_DEPUIS;},prepareDepuis:function(){return PREPARE_DEPUIS;}};\n  function murSousLigne(f){/
      s/^  function i18nApply(root){/  window.__tr=function(v,lang){var av=S.lang;S.lang=lang;try{return trOne(v);}finally{S.lang=av;}};window.__dict=function(lang){return lang===String.fromCharCode(112,116)?PT_DICT:EN_DICT;};\n  function i18nApply(root){/' \
   "$SRC" > "$OUT"
-for f in __S __totals __demarrage __render __err __newMission __peutTravailler __tr __adm __cat __rev __demo __back __svc __art __brouillon __inst __maj __dossier __assur __prix __statut __tel __murs __parcours __lieu __arrhes __metier __heures __gps __nl __cfg __fil __cmd __prop __push __eur __passe __repr __grp __form __ownCat __demande __envoyer __deep __dirPour __fichePub; do
+for f in __S __totals __demarrage __render __err __newMission __peutTravailler __tr __adm __cat __rev __demo __back __svc __art __brouillon __inst __maj __dossier __assur __prix __statut __tel __murs __parcours __lieu __arrhes __metier __heures __gps __nl __cfg __fil __cmd __prop __push __eur __passe __repr __grp __form __ownCat __demande __envoyer __deep __dirPour __fichePub __session; do
   grep -q "window.$f" "$OUT" || { echo "MANQUE $f"; exit 1; }
 done
 echo "harnais complet"
