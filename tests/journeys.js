@@ -71,16 +71,34 @@ function realErrors(errs) {
     await page.close();
   }
 
-  // ── Test 2 : écran d'accueil compte — deux CTA, plus de mode invité, Google partout ─
+  // ── Test 2 : accueil — deux CTA, et « Je cherche un service » OUVRE LES PRESTATIONS ─
+  //
+  // CES DEUX ASSERTIONS ÉNONÇAIENT L'ANCIENNE RÈGLE, et c'est le bon signal. Elles
+  // exigeaient l'ABSENCE du mode invité : « bouton découverte sans compte retiré ».
+  // La demande de l'éditeur l'a renversé — « quand on clique sur Je cherche un service,
+  // plutôt que tomber sur la page de création de compte, on tombe directement sur la
+  // page d'accueil où on peut choisir la prestation ». Le compte n'est plus demandé pour
+  // REGARDER, il l'est pour COMMANDER, et la commande configurée survit à sa naissance.
+  //
+  // CE QUI SE MESURE DONC MAINTENANT : une seule porte sous ces mots-là, elle mène aux
+  // prestations, et la création de compte reste à un geste depuis cet écran — avec son
+  // bouton Google, que les deux anciennes assertions gardaient à juste titre.
   console.log('Test 2 — création de compte');
   {
     const errs = [];
     const page = await newPage(browser, errs);
-    ok(await page.$('[data-act="onb-start"]'), 'bouton « Je cherche un service » présent');
+    ok(await page.$('[data-act="enter-guest"]'), 'bouton « Je cherche un service » présent');
     ok(await page.$('[data-act="go-artisan-signup"]'), 'bouton « Je propose un service » présent');
-    ok(!(await page.$('[data-act="enter-guest"]')), 'bouton découverte sans compte retiré');
-    // Création de compte client : le bouton Google DOIT être proposé (inscription rapide).
-    await clic(page, '[data-act="onb-start"]');
+    ok(!(await page.$('[data-act="onb-start"]')),
+      'et il n\'y a plus DEUX portes sous les mêmes mots (onb-start retiré)');
+    // La porte mène aux prestations, pas au formulaire.
+    await clic(page, '[data-act="enter-guest"]');
+    await page.waitForTimeout(700);
+    const accueil = await page.evaluate(() => document.body.innerText);
+    ok(/service|servi/i.test(accueil) && (await page.$$('[data-svc]')).length >= 5,
+      'les prestations s\'ouvrent sans compte (' + (await page.$$('[data-svc]')).length + ' métiers)');
+    // Et la création de compte est à un geste depuis là : Google DOIT y être proposé.
+    await clic(page, '[data-act="guest-signup"]');
     await page.waitForTimeout(700);
     let txt = await page.evaluate(() => document.body.innerText);
     ok(/Créer mon compte/.test(txt), 'écran infos de création affiché');
@@ -144,10 +162,13 @@ function realErrors(errs) {
   {
     const errs = [];
     const page = await newPage(browser, errs);
-    // Le mode invité a été retiré de l'accueil.
-    ok(!(await page.$('[data-act="enter-guest"]')), 'accueil sans bouton invité');
+    // Le mode invité EST la porte de l'accueil (voir Test 2) : on la prend, puis on
+    // demande la création de compte depuis les prestations.
+    ok(!!(await page.$('[data-act="enter-guest"]')), 'accueil : la porte invité est là');
     // Client : Google proposé sur l'écran de création.
-    await clic(page, '[data-act="onb-start"]');
+    await clic(page, '[data-act="enter-guest"]');
+    await page.waitForTimeout(600);
+    await clic(page, '[data-act="guest-signup"]');
     await page.waitForTimeout(700);
     ok(!!(await page.$('[data-act="google-client"]')), 'Google proposé à l’inscription client');
     ok(realErrors(errs).length === 0, 'aucune erreur JS (client)');
@@ -184,7 +205,10 @@ function realErrors(errs) {
       window.matchMedia = function (q) { return /display-mode:\s*standalone/.test(q)
         ? { matches: true, addEventListener: function () {}, addListener: function () {} } : vrai.call(window, q); }; });
     // Création de compte (démo) → l'accueil client (aucune adresse enregistrée).
-    await clic(page, '[data-act="onb-start"]'); await page.waitForTimeout(500);
+    // La création de compte se demande depuis les prestations : une seule porte sur
+    // l'accueil (« enter-guest »), puis « Créer un compte ».
+    await clic(page, '[data-act="enter-guest"]'); await page.waitForTimeout(400);
+    await clic(page, '[data-act="guest-signup"]'); await page.waitForTimeout(500);
     await page.fill('[data-cf="name"]', 'Jean Test');
     await page.fill('[data-cf="email"]', 'jean@test.fr');
     await page.fill('[data-cf="password"]', 'azerty');
@@ -257,7 +281,10 @@ function realErrors(errs) {
     const errs = [];
     const page = await newPage(browser, errs);
     // Création de compte (démo) → accueil client.
-    await clic(page, '[data-act="onb-start"]'); await page.waitForTimeout(500);
+    // La création de compte se demande depuis les prestations : une seule porte sur
+    // l'accueil (« enter-guest »), puis « Créer un compte ».
+    await clic(page, '[data-act="enter-guest"]'); await page.waitForTimeout(400);
+    await clic(page, '[data-act="guest-signup"]'); await page.waitForTimeout(500);
     await page.fill('[data-cf="name"]', 'Zoé Test');
     await page.fill('[data-cf="email"]', 'zoe@test.fr');
     await page.fill('[data-cf="password"]', 'azerty');

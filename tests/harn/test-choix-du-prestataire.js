@@ -40,6 +40,18 @@ await p.waitForFunction(()=>window.__S&&window.__render); await p.waitForTimeout
 // donner au client un prestataire DÉJÀ eu sur ce métier : c'est l'autre source de choix.
 const commande=(svc,histo)=>p.evaluate(([svc,histo])=>{
   const S=window.__S; document.body.classList.add('standalone');
+  /* L'ANNUAIRE EST SEMÉ COMME L'APPLICATION LE REÇOIT. Cette mise en scène lisait la
+     liste de DÉMONSTRATION — « Maya Beauté », « Chloé R. » — par un chemin qui n'existe
+     plus : `proDirFor` la rendait aussi quand aucune session n'était ouverte, et c'est
+     précisément la faute corrigée (un visiteur sans compte recevait de faux noms). Le
+     scénario déclare `demoMode=false` : il n'avait donc jamais le droit à cette liste,
+     et il passait par accident. On écrit ce que le `.then` de `listProviders` écrit,
+     c'est-à-dire la vraie porte, et la mesure — QUEL MÉTIER montre l'annuaire — ne
+     dépend plus du mode démo. */
+  S._proDir={};S._proDir[svc]={list:[
+    {uid:'p-a',name:'Maya B.',founder:true,cal:true,photo:null,siteMode:'both'},
+    {uid:'p-b',name:'Chloé R.',founder:false,cal:false,photo:null,siteMode:'domicile'}
+  ]};
   S.persona='client';S.onboarded=true;S.guest=false;S.demoMode=false;S.lang='fr';
   S.account={name:'Joris D.',email:'j@e.fr',zone:'Gustavia'};
   S.mission=null;S.payStep=false;S.authView=null;S.legalView=null;S.showPitch=false;
@@ -93,7 +105,12 @@ console.log('\nC — un métier créé depuis la console porte la propriété, e
     const S=window.__S;
     S.customServices=[{id:'c_tatouage',nm:'Tatouage',rate:80,custom:true,ico:'',choixPro:true},
                       {id:'c_vitrier',nm:'Vitrier',rate:50,custom:true,ico:'',choixPro:false}];
-    const lire=(id)=>{const m=window.__newMission(window.__svc.trouve(id));S.draft=m;S.history=[];S.clientNav='home';window.__render();
+    // Même porte que ci-dessus : l'annuaire du métier est semé tel que `listProviders`
+    // l'écrit. Ce qui se mesure est la propriété `choixPro`, pas le mode démo.
+    const lire=(id)=>{S._proDir={};S._proDir[id]={list:[
+        {uid:'p-a',name:'Maya B.',founder:true,cal:true,photo:null,siteMode:'both'},
+        {uid:'p-b',name:'Chloé R.',founder:false,cal:false,photo:null,siteMode:'domicile'}]};
+      const m=window.__newMission(window.__svc.trouve(id));S.draft=m;S.history=[];S.clientNav='home';window.__render();
       const rr=document.querySelector('.phone')||document.body;
       return rr.querySelectorAll('[data-prefart]').length;};
     return {avec:lire('c_tatouage'), sans:lire('c_vitrier')};

@@ -170,7 +170,12 @@ console.log('\nC bis — c’est une VITRINE : le client, les boutons, le profes
       cartes:cartes.length, uneRangee, sousLeHeros, axe, zouti:Math.round(zouti.width)};});
   ok(g.sections===2&&g.yClient<g.yCta&&g.yCta<g.yPro,
     'le client d’abord, les boutons, puis le professionnel — jamais côte à côte ('+g.yClient+' → '+g.yCta+' → '+g.yPro+')');
-  ok(g.boutons.join(',')==='onb-start,go-artisan-signup',
+  /* « enter-guest » EST LA PORTE DU CLIENT, ICI AUSSI. Ce bloc est celui que
+     l'ORDINATEUR affiche, et son bouton portait « onb-start » : les mêmes mots
+     menaient donc à la création de compte sur un ordinateur et aux prestations sur
+     un téléphone. Deux destinations sous un seul libellé — mesuré — et cette
+     assertion le gardait. */
+  ok(g.boutons.join(',')==='enter-guest,go-artisan-signup',
     'et ce sont les deux boutons d’inscription, dans l’ordre — '+g.boutons.join(' · '));
   ok(g.rangees[0]===1&&g.rangees[1]===1,
     'chaque partie déploie ses trois étapes sur UNE rangée : c’est elle qui emploie la largeur, pas deux discours qui se concurrencent');
@@ -289,7 +294,7 @@ console.log('\nC quater — les deux boutons d’inscription ne sont qu’à UN 
     return {heros:dans('.welcome .footcta>.btn.choice'), entre:dans('.wp-cta>.btn.choice'),
       connecter:[...document.querySelectorAll('.welcome .footcta [data-act="show-login"]')].filter(vu).length};});
   ok(r.heros.length===0,'plus de boutons corail en tête : on ne les offre pas avant d’avoir rien expliqué');
-  ok(r.entre.join(',')==='onb-start,go-artisan-signup','ils sont entre les deux parties, dans l’ordre');
+  ok(r.entre.join(',')==='enter-guest,go-artisan-signup','ils sont entre les deux parties, dans l’ordre');
   ok(r.connecter===1,'et « Déjà un compte ? Se connecter » reste : ce n’est pas la même demande');
   await ctx.close();
 }
@@ -327,9 +332,18 @@ console.log('\nF — la page d’accueil se met à jour TOUTE SEULE');
   ok(await p6.evaluate(()=>{const i=document.createElement('input');document.body.appendChild(i);i.focus();
       const v=window.__maj.sansRisque(); i.remove(); return !v;}),
     'et un champ en cours de frappe, même vide');
-  const ailleurs=await p6.evaluate(()=>{const x=[...document.querySelectorAll('[data-act="onb-start"]')]
-      .find(e=>e.getBoundingClientRect().width>0); if(!x)return null; x.click();
-    return new Promise(r=>setTimeout(()=>r({welcome:!!document.querySelector('.pad.welcome'),sr:window.__maj.sansRisque()}),600));});
+  /* DEUX GESTES AU LIEU D'UN, PARCE QUE LA PORTE A CHANGÉ : l'accueil ouvre les
+     prestations, et c'est « Créer un compte » qui entre dans l'inscription. Ce qui se
+     mesure ne bouge pas — dès qu'on EST dans le formulaire, la pastille reprend la
+     main — et c'est bien le second geste qui le déclenche. */
+  const ailleurs=await p6.evaluate(()=>{const vu=s2=>[...document.querySelectorAll(s2)]
+      .find(e=>e.getBoundingClientRect().width>0);
+    const x=vu('[data-act="enter-guest"]'); if(!x)return null; x.click();
+    return new Promise(r=>setTimeout(()=>{
+      const y=vu('[data-act="guest-signup"]'); if(!y)return r({manque:'guest-signup'});
+      y.click();
+      setTimeout(()=>r({welcome:!!document.querySelector('.pad.welcome'),sr:window.__maj.sansRisque()}),600);
+    },600));});
   ok(!!ailleurs&&!ailleurs.welcome&&!ailleurs.sr,
     'dès qu’on entre dans l’inscription, la pastille reprend la main — c’est là qu’un rechargement coûte quelque chose');
   await ctx.close();

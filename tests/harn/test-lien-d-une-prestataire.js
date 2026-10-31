@@ -137,13 +137,23 @@ p=await page();
 await p.evaluate(()=>{const S=window.__S;document.body.classList.add('standalone');
   S.lang='fr';S.onboarded=false;S.guest=false;S.authView=null;S.onbStep=0;S.demoMode=false;
   S.persona='client';S.draft=null;S.mission=null;S.account=null;S.proPublic=null;window.__render();});
-const Bv=await p.evaluate(()=>{const bt=document.querySelector('[data-act="enter-guest"]');
-  const sg=document.querySelector('[data-act="onb-start"]');
-  return {invite:!!bt, inviteVu:!!(bt&&(bt.offsetWidth||bt.offsetHeight)),
-    signupVu:!!(sg&&(sg.offsetWidth||sg.offsetHeight)),
+/* ON RELEVE TOUTES LES PORTES VISIBLES, PAS UN NOM. Chercher l'absence de
+   « onb-start » ne mesurait plus rien du jour où ce gestionnaire a été retiré : la
+   requête rendait `null` quoi qu'il arrive, et l'assertion serait restée verte avec une
+   porte vers le formulaire sous un autre nom. */
+const Bv=await p.evaluate(()=>{const vu=e=>!!(e&&(e.offsetWidth||e.offsetHeight));
+  const bt=document.querySelector('[data-act="enter-guest"]');
+  const portes=[...document.querySelectorAll('[data-act]')].filter(vu)
+    .map(e=>e.getAttribute('data-act'));
+  return {invite:!!bt, inviteVu:vu(bt), portes:portes,
+    versFormulaire:portes.filter(a=>a==='onb-start'||a==='guest-signup'||a==='land-client-signup'),
     connexion:!!document.querySelector('[data-act="show-login"]')};});
 ok(Bv.invite&&Bv.inviteVu,'le bouton de l’écran de bienvenue mène au mode invité');
-ok(!Bv.signupVu,'et plus aucun bouton visible n’ouvre la création de compte à ce moment');
+ok(Bv.versFormulaire.length===0,
+  'et plus aucune porte visible n’ouvre la création de compte à ce moment ('
+  +(Bv.versFormulaire.join(' · ')||'aucune')+')');
+ok(Bv.portes.length>=2,
+  'la mesure porte bien sur un écran RENDU — '+Bv.portes.length+' portes visibles relevées');
 ok(Bv.connexion,'« Déjà un compte ? Se connecter » reste offert — aucune porte n’est fermée');
 /* UN CLIC QUI BUTE N'EST PAS UNE MESURE. Le bouton peut manquer — c'est précisément ce
    que la contre-épreuve enlève — et « p.click » lèverait : l'épreuve s'arrêterait sur
