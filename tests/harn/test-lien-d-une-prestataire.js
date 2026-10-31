@@ -145,8 +145,10 @@ const Bv=await p.evaluate(()=>{const bt=document.querySelector('[data-act="enter
 ok(Bv.invite&&Bv.inviteVu,'le bouton de l’écran de bienvenue mène au mode invité');
 ok(!Bv.signupVu,'et plus aucun bouton visible n’ouvre la création de compte à ce moment');
 ok(Bv.connexion,'« Déjà un compte ? Se connecter » reste offert — aucune porte n’est fermée');
-await p.click('[data-act="enter-guest"]');
-await p.waitForTimeout(350);
+/* UN CLIC QUI BUTE N'EST PAS UNE MESURE. Le bouton peut manquer — c'est précisément ce
+   que la contre-épreuve enlève — et « p.click » lèverait : l'épreuve s'arrêterait sur
+   « n'a pas pu aller au bout », qui ne dit rien de ce qui est mesuré. */
+if(Bv.inviteVu){await p.click('[data-act="enter-guest"]');await p.waitForTimeout(350);}
 const Bg=await p.evaluate(()=>{const S=window.__S;
   return {guest:S.guest,auth:S.authView,tuiles:document.querySelectorAll('[data-svc]').length,
     question:document.body.innerText.indexOf('De quel service')>=0,
@@ -199,7 +201,8 @@ ok(C.tuiles.length===2&&C.tuiles.indexOf('coiffure')>=0&&C.tuiles.indexOf('massa
 console.log('\nD — la commande née sous le lien part dirigée, et porte SON catalogue');
 const D=await p.evaluate(()=>{const S=window.__S;
   const sv=window.__svc.trouve('coiffure');
-  const m=window.__newMission(sv);
+  if(!sv)return {err:'service introuvable dans la mise en scène'};
+  let m;try{m=window.__newMission(sv);}catch(e){return {err:String((e&&e.message)||e)};}
   const sien=window.__cat.foi('coiffure',m.preferredUid);
   const grille=window.__cat.foi('coiffure',null);
   S.draft=m;window.__render();
@@ -209,6 +212,7 @@ const D=await p.evaluate(()=>{const S=window.__S;
     grillePropre:!!grille.propre,
     carteFigee:txt.indexOf('Votre demande lui est adressée directement')>=0,
     selecteur:!!document.querySelector('[data-prefsel]')};});
+ok(!D.err,'le brouillon se fabrique'+(D.err?' — '+D.err:''));
 ok(D.uid==='u-maya'&&D.nom==='Maya Beauté'&&D.viaLien,
   'le brouillon naît dirigé vers elle (preferredUid + viaLien)');
 ok(D.propre&&D.lignes.indexOf('Brushing signature')>=0,
