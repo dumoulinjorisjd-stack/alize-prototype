@@ -19,7 +19,23 @@
 
    ICI LA PAGE RECHARGE POUR DE VRAI, et l'on mesure ce qui survit. Plus les trois façons
    dont la commande pourrait se perdre en silence : des photos trop lourdes, un stockage
-   plein, un stockage interdit (navigation privée). */
+   plein, un stockage interdit (navigation privée).
+
+   CE QUE CHAQUE CONTRE-ÉPREUVE FAIT ROUGIR — sans quoi on ne saurait pas si l'épreuve
+   mesure quelque chose :
+     · l'adoption ne rend plus rien ............................ 8 mesures
+     · le marqueur ne se pose plus ............................ 12 mesures
+     · la carte « Reprendre votre commande » disparaît ......... 2 mesures
+     · le repli du quota est retiré (on jette tout) ............ 2 mesures
+     · la démonstration réécrit sa marque ..................... 1 mesure
+     · les gardes de `sauverBrouillon` retirées EN ENTIER ...... 4 mesures
+
+   ET UNE QUI RESTE VERTE, DONC DITE : retirer le SEUL `catch` extérieur de
+   `sauverBrouillon` ne fait rougir personne — les `try` intérieurs, autour de chaque
+   accès au stockage, suffisent. Deux couches, et chacune couvre l'autre : c'est un filet
+   et non un hasard dont on se contente, le même constat que les deux gardes
+   d'`adopterBrouillonAnonyme`. Il faut les retirer TOUTES pour perdre la commande, et
+   c'est alors `proceedToPay` entier qui serait emporté par le jet. */
 const fs=require('fs'),path=require('path');
 const {chromium}=require('playwright-core');
 const RACINE=path.resolve(__dirname,'..','..');
@@ -197,12 +213,18 @@ const photos=await p.evaluate(()=>{
   const grosse='d'.repeat(600000);            // 600 Ko : au-delà du quota d'un seul coup
   S.draft={svc:'menage',svcName:'Ménage',hours:3,
     photos:[grosse,grosse,grosse,grosse,grosse,grosse,grosse,grosse,grosse]};
-  B.sauver();
+  /* UN JET N'EST PAS UNE MESURE. Sans les gardes, `sauver` LÈVE ici (QuotaExceededError)
+     et l'épreuve mourait avant les sections suivantes — relevé par une contre-épreuve.
+     On capture, et c'est la mesure qui le nomme : dans l'application ce jet remonterait
+     dans `proceedToPay` et emporterait le clic entier. */
+  let leve=null; try{B.sauver();}catch(e){leve=String((e&&e.name)||e);}
   let d=null; try{d=JSON.parse(localStorage.getItem('ti_draft_anon')||'null');}catch(_){}
-  return {gardee:!!(d&&d.draft&&d.draft.svc), svc:d&&d.draft&&d.draft.svc,
+  return {leve:leve, gardee:!!(d&&d.draft&&d.draft.svc), svc:d&&d.draft&&d.draft.svc,
     heures:d&&d.draft&&d.draft.hours,
     photos:d&&d.draft&&(d.draft.photos||[]).length, dites:d&&d.photosPerdues};
 });
+ok(!photos.leve,'quota dépassé : l’enregistrement ne LÈVE pas — sinon le clic entier serait emporté'
+  +(photos.leve?' — '+photos.leve:''));
 ok(photos.gardee&&photos.svc==='menage'&&photos.heures===3,
   'quota dépassé : la SAISIE est gardée, pas jetée avec les photos');
 ok(photos.photos===0&&photos.dites>0,'les photos partent, et leur nombre est retenu pour être DIT ('+photos.dites+')');
