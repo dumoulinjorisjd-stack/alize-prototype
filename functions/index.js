@@ -8893,6 +8893,15 @@ exports.poigneePoser = onCall(async (request) => {
 exports.providerPublic = onCall(async (request) => {
   // AUCUNE AUTHENTIFICATION : c'est tout l'objet de cette fonction. Elle ne rend QUE la
   // fiche nommée, et rien qui permette d'en découvrir une autre.
+  //
+  // ET AUCUNE LIMITE DE DÉBIT, PAR DÉCISION (éditeur, 31/10/2026). Mesuré : deux
+  // lectures Firestore par appel au plus — une seule quand la poignée n'existe pas,
+  // la fonction sortant avant d'ouvrir la fiche. Les deux autres appels publics de
+  // l'application (`trackFunnel`, `sendResetEmail`) n'en ont pas non plus : en poser
+  // une ici seulement serait incohérent, et la vraie question est « une limite pour
+  // les trois, ou aucune ». À rouvrir devant un fait — une facture Firestore qui
+  // sort de l'ordinaire, ou des appels en rafale dans le journal — jamais par
+  // précaution : une poignée est faite pour être tapée par des inconnus.
   const p = poigneeNette((request.data || {}).poignee);
   if (!poigneeValide(p)) throw new HttpsError('not-found', 'Introuvable.');
   const db = getFirestore();
