@@ -3703,7 +3703,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='900';
+  const VERSION_APP='901';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -3878,7 +3878,9 @@
   // disparaissaient si un appel arrivait, si le téléphone vidait l'onglet, ou d'un simple
   // « ← Retour ». Le formulaire d'inscription du prestataire, lui, était déjà protégé.
   const BROUILLON_MAX_MS=24*3600*1000;
-  function brouillonCle(){const u=(FB&&FB.auth&&FB.auth.currentUser)?FB.auth.currentUser.uid:null;return 'ti_draft_'+(u||'anon');}
+  /* LA CLÉ ANONYME SE DÉRIVE DE LA MÊME EXPRESSION, elle ne se recopie pas à côté :
+     `brouillonCle(null)` rend la clé du visiteur, `brouillonCle()` celle de la session. */
+  function brouillonCle(uid){const u=(uid!==undefined)?uid:((FB&&FB.auth&&FB.auth.currentUser)?FB.auth.currentUser.uid:null);return 'ti_draft_'+(u||'anon');}
   // Écrit le brouillon, ou l'efface s'il n'y en a plus : une seule fonction tient les deux
   // sens, donc l'enregistrement ne peut pas survivre à la commande qu'il décrivait.
   function sauverBrouillon(){
@@ -3896,18 +3898,66 @@
       }catch(_){try{localStorage.removeItem(brouillonCle());}catch(__){}}
     }catch(_){}
   }
-  function lireBrouillon(){
+  function lireBrouillon(cle){
     try{
-      const raw=localStorage.getItem(brouillonCle()); if(!raw)return null;
+      const k=cle||brouillonCle();
+      const raw=localStorage.getItem(k); if(!raw)return null;
       const p=JSON.parse(raw)||{};
       if(!p||!p.draft||!p.draft.svc)return null;
       // Passé vingt-quatre heures, la date et le créneau choisis sont probablement derrière
       // nous : reprendre une commande périmée ferait plus de mal que de ne rien proposer.
-      if(!p.ts||(Date.now()-p.ts)>BROUILLON_MAX_MS){oublierBrouillon();return null;}
+      // ON EFFACE LA CLÉ QU'ON VIENT DE LIRE, jamais celle de la session courante : appelée
+      // sur le brouillon d'un visiteur, cette ligne effaçait la commande du compte connecté.
+      if(!p.ts||(Date.now()-p.ts)>BROUILLON_MAX_MS){oublierBrouillon(k);return null;}
       return p;
     }catch(_){return null;}
   }
-  function oublierBrouillon(){try{localStorage.removeItem(brouillonCle());}catch(_){}}
+  function oublierBrouillon(cle){try{localStorage.removeItem(cle||brouillonCle());}catch(_){}}
+  /* LA COMMANDE D'UN VISITEUR SURVIT À LA NAISSANCE DE SON COMPTE.
+
+     Le brouillon est rangé PAR COMPTE (`ti_draft_<uid>`, `ti_draft_anon` sans session) :
+     à la seconde où le compte naît, la clé change et la commande du visiteur devient
+     ORPHELINE — la carte « Reprendre votre commande » ne la cherche jamais là. Mesuré :
+     écrite sous `ti_draft_anon`, introuvable sous `ti_draft_<uid>`, et elle reste dans
+     le téléphone sans que rien n'aille la chercher.
+
+     AVEC UNE INSCRIPTION PAR E-MAIL ÇA NE SE VOYAIT PAS : la page ne recharge pas,
+     `S.draft` survit en mémoire et `_resumeOrder` reprend. AVEC GOOGLE, SI : `fbGoogle`
+     tente le popup et retombe sur `signInWithRedirect` dès qu'il est bloqué, fermé ou
+     non supporté — l'app installée et les navigateurs mobiles, c'est-à-dire le chemin
+     de quelqu'un qui arrive d'une publicité sur son téléphone. La page recharge, la
+     mémoire part, et la commande avec elle.
+
+     ON N'ADOPTE PAS SUR N'IMPORTE QUELLE CONNEXION. Sur un téléphone de famille, le
+     compte qui se connecte hériterait d'une commande qu'il n'a pas faite, avec une
+     adresse et une date qui ne sont pas les siennes. Il faut un marqueur posé AVANT le
+     départ — le procédé de `tiSignupIntent`, qui survit déjà à la redirection — et il
+     se CONSOMME : il ne vaut que pour le compte qui naît de CE passage au paiement.
+
+     ET LA COMMANDE DU COMPTE GAGNE TOUJOURS : s'il a déjà un brouillon à lui, celui du
+     visiteur ne le remplace pas. */
+  const ADOPT_CLE='tiDraftAdopt';
+  // Ne marque QUE s'il y a une commande à sauver : appelée sans brouillon, elle ne pose
+  // rien, et un compte créé sans commande n'hérite de rien.
+  function marquerAdoptionBrouillon(){
+    try{ if(!S.draft||!S.draft.svc)return; sauverBrouillon(); localStorage.setItem(ADOPT_CLE,String(Date.now())); }catch(_){}
+  }
+  function adopterBrouillonAnonyme(){
+    try{
+      if(typeof isDemo==='function'&&isDemo())return null;
+      const k=brouillonCle(); if(k===brouillonCle(null))return null;   // toujours anonyme : rien à déplacer
+      let marque=0; try{marque=Number(localStorage.getItem(ADOPT_CLE))||0;}catch(_){}
+      if(!marque)return null;                       // personne n'est parti créer un compte pour une commande
+      try{localStorage.removeItem(ADOPT_CLE);}catch(_){}            // le marqueur se consomme, quoi qu'il arrive ensuite
+      if((Date.now()-marque)>BROUILLON_MAX_MS)return null;
+      const sien=lireBrouillon(k);                  // sa propre commande, si elle existe
+      const p=lireBrouillon(brouillonCle(null));
+      oublierBrouillon(brouillonCle(null));         // adoptée ou non, elle ne traîne pas dans le téléphone
+      if(sien||!p)return null;
+      try{localStorage.setItem(k,JSON.stringify(p));}catch(_){}
+      return p;
+    }catch(_){return null;}
+  }
   function cacheClientLocal(){try{ if(FB&&FB.auth&&FB.auth.currentUser&&typeof isDemo==='function'&&!isDemo()){ const uid=FB.auth.currentUser.uid; localStorage.setItem(clientCacheKey(uid),JSON.stringify({missions:(S.missions||[]),history:histSlim(S.history),addresses:S.addresses||[],addrDefault:S.addrDefault||null,card:S.card||null,recurring:S.recurring||[],ts:Date.now()})); } }catch(_){}}
   function restoreClientLocal(uid){try{ const raw=localStorage.getItem(clientCacheKey(uid)); if(!raw)return; const d=JSON.parse(raw)||{};
     if(Array.isArray(d.missions)&&d.missions.length&&!(S.missions&&S.missions.length)){S.missions=d.missions;d.missions.forEach(function(m){if(m&&m.reqId)watchRequest(m.reqId);});}
@@ -5672,6 +5722,50 @@
      n'admet pas la souplesse large (garde d'enfants, prestation chez le prestataire,
      séjour compté en jours) repasse à 0 tout seul, on n'énumère pas les exceptions. */
   const SOUPLE_DEFAUT=['menage','jardin','piscine'];
+  /* ── LA FICHE D'UNE PRESTATAIRE, OUVERTE PAR UN LIEN ──
+
+     « Un lien internet du site qui mène directement sur la commande de la prestation de
+     l'artisan en particulier. » On arrive par /?pro=sa-poignee : la fiche se lit SANS
+     compte (fonction serveur `providerPublic`, la seule publique), on configure en
+     invité, et le compte se demande au paiement.
+
+     ON N'ÉCRIT AUCUN SECOND MÉCANISME. La fiche est injectée dans `S._proDir[svc]`, là
+     où l'annuaire se range déjà : `catalogueDuChoisi` y trouve alors SON catalogue, et
+     `preferredUid` sur le brouillon fait partir la demande DIRIGÉE — elle lui arrivera
+     avec « Demande réservée pour vous », en tête de ses missions, et personne d'autre ne
+     la verra. Rien de neuf dans le modèle.
+
+     ET LE RÉGLAGE `choixPro` N'EST PAS TOUCHÉ. Il décide de ce que l'ÉCRAN DE CHOIX offre
+     à tout le monde ; un lien nominatif n'est pas un choix, c'est une adresse. La demande
+     part dirigée quel que soit le métier, et l'annuaire reste fermé là où il l'était. */
+  function chargerFichePublique(poignee){
+    if(!poignee)return;
+    S.proPublicBusy=true;
+    const fini=function(){S.proPublicBusy=false;try{render();}catch(_){}};
+    if(!(FB&&FB.fn&&FB.functions)){fini();return;}
+    FB.fn.httpsCallable(FB.functions,'providerPublic')({poignee:poignee}).then(function(r){
+      const f=(r&&r.data)||null;
+      if(!f||!f.uid){S.proPublicErr=true;fini();return;}
+      S.proPublic=f;S.proPublicErr=false;
+      // La fiche entre dans l'annuaire, par métier : le catalogue propre et le mode
+      // (domicile / son local) sont alors lus par les fonctions qui existent.
+      S._proDir=S._proDir||{};
+      (f.cats||[]).forEach(function(svc){
+        const c=((f.catalogues||{})[svc])||{};
+        const p={uid:f.uid,name:f.name,photo:f.photo||null,founder:!!f.founder,
+          siteMode:f.siteMode||'both',salonZone:f.salonZone||'',salonAddress:f.salonAddress||'',
+          salonGeo:null,cal:false,ownCat:!!c.ownCat,cat:Array.isArray(c.cat)?c.cat:null};
+        const e=S._proDir[svc];
+        const l=(e&&e.list)?e.list.filter(function(x){return x.uid!==f.uid;}):[];
+        S._proDir[svc]={list:[p].concat(l)};
+      });
+      fini();
+    }).catch(function(){S.proPublicErr=true;fini();});
+  }
+  // Le métier est-il un de ceux qu'elle exerce ? (l'accueil n'en montre pas d'autres)
+  function proPublicFaitSvc(svcId){
+    const f=S.proPublic; return !!(f&&(f.cats||[]).indexOf(svcId)>=0);
+  }
   function newMission(svc){const a=S.addresses.find(x=>x.id===S.addrDefault)||S.addresses[0]||null;const day=svc.id==='animaux';const colis=svc.id==='colis';const cat=isCatalogForfait(svc.id);const forf=colis||cat;const px=(S.adminPrices&&S.adminPrices[svc.id]!=null)?S.adminPrices[svc.id]:svcBase(svc.id);const m={svc:svc.id,svcName:svc.nm,unit:forf?'forfait':(day?'j':'h'),rate:day?DAY_RECO:px,boost:0,finalHours:null,disputeMsg:null,frequency:'ponctuelle',people:1,locationMode:'domicile',/* UNE HEURE PAR DÉFAUT. Trois heures étaient posées d'office : c'est le panier
        moyen d'un ménage, pas le besoin de qui ouvre l'écran, et le prix affiché partait
        donc au triple avant le premier geste. On part du plus petit engagement, la
@@ -5682,6 +5776,10 @@
     if(cat){m.acts=[];}
     // Prestation « Colis & courrier » : pas d'heure précise mais une FENÊTRE de dates,
     // un bureau de poste, et le dossier de retrait par un tiers (procuration + pièces).
+    /* NÉE SOUS UN LIEN NOMINATIF, LA COMMANDE PART DIRIGÉE. `viaLien` dit d'où vient le
+       choix : l'écran affiche alors sa carte au lieu d'un sélecteur, parce qu'on n'est
+       pas venu choisir — on est venu pour elle. */
+    if(proPublicFaitSvc(svc.id)){m.preferredUid=S.proPublic.uid;m.preferredName=S.proPublic.name;m.viaLien=true;}
     if(colis){m.poste='Gustavia';m.dateFrom=todayISO();m.dateTo=isoPlusDays(7);m.colis={recipient:((S.account&&S.account.name)||(S.clientForm&&S.clientForm.name)||'').trim(),idFront:null,idBack:null,items:[{type:'recommande',num:'',photo:null}],deadline:'',mainPropreAck:false,signed:false,signedAt:null};}
     return m;}
   // Créneau souple : le client propose une heure ± une marge ; le prestataire précise.
@@ -13435,6 +13533,28 @@
           ${fRow('Statut',`<span class="chip ${acctChip(a.status)[0]}">${acctChip(a.status)[1]}</span>`)}
           ${fRow('Services',esc(artSvcLabel(a)))}
           ${fRow('Tarifs Ti-Services',artPriceRows(a))}
+          ${(function(){
+            /* LE LIEN PUBLIC D'UNE PRESTATAIRE — la poignée qu'elle dira dans sa vidéo.
+               Elle est CHOISIE, jamais un numéro de série : devinable, elle permettrait
+               d'énumérer le parc fiche par fiche. Le serveur en garantit l'unicité par un
+               « create() » qui échoue si elle est prise.
+               ET LE LIEN NE PARAÎT QUE POUR QUELQU'UN DE VALIDÉ : « providerPublic »
+               refuse les autres, donc l'afficher ailleurs serait promettre une page qui
+               répond « introuvable ». */
+            const P=(S.admPoignee&&S.admPoignee[a.id])||{};
+            const val=(P.v!=null)?P.v:String(a.handle||'');
+            const pose=String(a.handle||'');
+            if(a.status!=='valide')return fRow('Lien public','<span class="mini" style="color:var(--muted)">Disponible une fois le compte validé.</span>');
+            return fRow('Lien public',
+              '<div class="row" style="gap:8px;align-items:center">'
+              +'<span class="mini" style="color:var(--muted);flex:none">ti-services.fr/?pro=</span>'
+              +'<input class="txt" data-poignee="'+a.id+'" value="'+esc(val)+'" placeholder="son-nom" maxlength="40" autocapitalize="off" autocorrect="off" spellcheck="false" style="flex:1;min-width:0">'
+              +'<button class="btn primary sm" data-adm="poignee:'+a.id+'"'+(P.busy?' disabled':'')+' style="width:auto;padding:7px 12px;flex:none">'+(P.busy?'…':'Enregistrer')+'</button>'
+              +'</div>'
+              +(pose?('<div class="row" style="gap:8px;margin-top:7px;align-items:center"><button class="sirettap" data-adm="copypoignee:'+a.id+'" title="Copier le lien">'+I.copy+' <span class="money">ti-services.fr/?pro='+esc(pose)+'</span></button></div>'):'')
+              +'<p class="mini" style="margin-top:6px;color:var(--muted);line-height:1.45">Ce lien ouvre <b>sa fiche et ses prestations</b>, lisible sans compte&nbsp;: la demande lui est adressée directement. Lettres sans accent, chiffres et tirets.</p>'
+              +(P.err?('<div class="mini" style="margin-top:5px;color:var(--coral-deep);font-weight:600">'+esc(P.err)+'</div>'):''));
+          })()}
           ${(a.cats&&a.cats.includes('baby'))?fRow('Diplômes garde d\'enfants',`${(a.diplomas&&a.diplomas.length)?a.diplomas.map(d=>esc(d==='Autre diplôme'&&a.diplomaOther?'Autre : '+a.diplomaOther:d)).join('<br>'):'<span style="color:var(--coral-deep)">Non renseignés</span>'}${(a.diplomas&&a.diplomas.length&&!a.diplomas.some(d=>/PSC1/.test(d)))?`<div class="mini" style="margin-top:5px;color:var(--coral-deep);font-weight:600">${I.shield} PSC1 (premiers secours) non déclaré, recommandé pour la garde d'enfants. Vérifiez les justificatifs avant validation.</div>`:''}`):''}
           ${fRow('SIRET',a.siret?`<button class="sirettap" data-adm="copysiret:${a.id}" title="Copier le numéro">${I.copy} <span class="money">${esc(fmtSiret(a.siret))}</span></button>
             <a class="siretlink" href="https://annuaire-entreprises.data.gouv.fr/etablissement/${esc(a.siret)}" target="_blank" rel="noopener">Vérifier à l'annuaire ›</a>`:'<span class="money">—</span>')}
@@ -14964,6 +15084,9 @@
   // automatiquement à l'étape paiement juste après la création du compte.
   function proceedToPay(){
     if(!S.onboarded){
+      // La commande est ÉCRITE et marquée avant qu'on quitte l'écran : si l'inscription
+      // Google part en redirection, la page recharge et la mémoire ne survit pas.
+      marquerAdoptionBrouillon();
       S._resumeOrder=true;S.authView='signup';S.onbStep=1;
       S.clientForm=S.clientForm||{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''};
       render();return;
@@ -15014,7 +15137,18 @@
       <div style="flex:1 0 auto;min-height:18px"></div>
       ${S.account?`<div class="card" style="padding:13px 15px;margin-top:16px;display:flex;align-items:center;justify-content:space-between;gap:10px"><div class="row" style="gap:9px"><span class="benic">${I.user}</span><div><b style="font-size:13px">Bon retour, ${esc(S.account.name.split(' ')[0])}</b><div class="mini">${esc(S.account.email)}</div></div></div><button class="btn primary sm" data-act="show-login" style="width:auto;padding:9px 14px">Se connecter</button></div>`:''}
       <div class="footcta" style="position:static;background:none;padding:0 0 26px;flex:none">
-        <button class="btn primary choice" data-act="onb-start">Je cherche un service<span class="ch-sub">Je veux réserver une prestation</span></button>
+        <!-- « JE CHERCHE UN SERVICE » OUVRE LES PRESTATIONS, PLUS LA CRÉATION DE COMPTE.
+             Il posait « onb-start » (authView signup) : le premier geste de quelqu'un qui
+             ouvre l'application était de donner son nom et un mot de passe, avant d'avoir
+             vu ce qu'on propose. Le MODE INVITÉ existait pour cela, écrit et câblé — et
+             « enter-guest » n'était offert par AUCUN bouton du fichier : mesuré, zéro
+             occurrence. Le compte se demande là où il sert, au paiement, et la commande
+             configurée revient avec lui (adopterBrouillonAnonyme). « Déjà un compte ? »
+             juste en dessous et « Créer un compte » en tête de l'accueil invité gardent
+             les deux portes ouvertes.
+             ET AUCUN ACCENT GRAVE DANS CE COMMENTAIRE : il vit dans un gabarit de chaîne,
+             où un accent grave FERME la chaîne et casse le fichier entier. -->
+        <button class="btn primary choice" data-act="enter-guest">Je cherche un service<span class="ch-sub">Je veux réserver une prestation</span></button>
         <button class="btn primary choice pro" data-act="go-artisan-signup">Je propose mes services<span class="ch-sub">Je suis un professionnel</span></button>
         <p class="mini" style="text-align:center;margin-top:14px">Déjà un compte&nbsp;? <button class="linklike" data-act="show-login">Se connecter</button></p>
       </div>
@@ -15130,7 +15264,16 @@
        donc son ordre, et seuls les « bientôt » passent derrière. L'intertitre ne paraît
        que si les deux groupes existent : sans lui, on ne comprend pas pourquoi un métier
        connu se retrouve en bas, et seul il annoncerait une section vide. */
-    const items=homeItems(), dispo=items.filter(function(it){return !bientot(it);}),
+    /* ARRIVÉ PAR LE LIEN D'UNE PRESTATAIRE, L'ACCUEIL NE MONTRE QUE SES MÉTIERS. On est
+       venu pour elle : lui offrir les sept services du catalogue, dont elle n'exerce
+       aucun, mènerait à une commande qui part à tout le monde — l'inverse de ce que le
+       lien promet. Les catégories sont écartées (elles regroupent plusieurs métiers) au
+       profit de ses métiers nommés. */
+    const _pp=S.proPublic;
+    const items=_pp
+      ? (_pp.cats||[]).map(function(id){const sv=findSvc(id);return sv?{type:'svc',svc:sv}:null;}).filter(Boolean)
+      : homeItems();
+    const dispo=items.filter(function(it){return !bientot(it);}),
           plusTard=items.filter(bientot);
     const dessine=function(it){return it.type==='cat'?catTile(it.cat):svcTile(it.svc);};
     const cats=dispo.map(dessine).join('')
@@ -15143,6 +15286,24 @@
     const zone=S.onboarded?((S.account&&S.account.zone)||(S.clientForm&&S.clientForm.zone)||'Gustavia'):'';
     return `<div class="pad">${headRow(I.pin+' '+(zone?esc(zone)+' · ':'')+'Saint-Barth',greetWord()+(first?' '+esc(first):'')+greetIco(),(!S.onboarded?headBtn('lang-toggle','Langue / Language',I.globe):'')+headBtn('open-share','Partager Ti-Services',I.share),S.onboarded?cliAvatar():'')}
       ${!S.onboarded?`<button class="card" data-act="guest-signup" style="width:100%;text-align:left;padding:12px 14px;margin-top:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;border-left:4px solid var(--teal-deep)"><div><b style="font-size:13px">${I.wave} Explorez librement</b><div class="mini" style="margin-top:2px">Compte requis seulement pour commander, c'est gratuit.</div></div><span class="chip good" style="flex:none">Créer un compte</span></button>`:''}
+      ${(function(){
+        /* SA CARTE, EN TÊTE : on vient de la voir en vidéo, c'est elle qu'on cherche.
+           Sans cela on retombait sur l'accueil générique et la personne était perdue. */
+        if(S.proPublicBusy&&!S.proPublic)return `<div class="card" style="padding:16px;margin-top:12px;text-align:center"><span class="mini">Chargement de la fiche…</span></div>`;
+        if(S.proPublicErr&&!S.proPublic)return `<div class="card" style="padding:14px;margin-top:12px;border-left:4px solid var(--coral)"><b style="font-size:14px">Ce lien ne mène à personne</b><div class="mini" style="margin-top:3px">La prestataire n'est plus disponible, ou le lien a changé. Choisissez un service ci-dessous, nous trouvons le bon prestataire.</div></div>`;
+        const f=S.proPublic; if(!f)return '';
+        const lieu=f.siteMode==='salon'?(I.shop+' Vous vous déplacez chez elle'+(f.salonZone?' · '+esc(f.salonZone):''))
+          :(f.siteMode==='both'?(I.home+' À domicile ou chez elle'+(f.salonZone?' · '+esc(f.salonZone):'')):(I.home+' À votre domicile'));
+        return `<div class="card" style="padding:14px;margin-top:12px;border-left:4px solid var(--teal-deep)">
+          <div class="row" style="gap:12px;align-items:center">
+            ${f.photo?`<img src="${esc(f.photo)}" alt="" style="width:54px;height:54px;border-radius:50%;object-fit:cover;flex:none">`:`<span class="benic" style="flex:none">${I.user}</span>`}
+            <div style="flex:1;min-width:0">
+              <b style="font-size:15px">${esc(f.name)}</b>${f.founder?`<span class="chip good" style="margin-left:7px">${I.star} Fondateur</span>`:''}
+              <div class="mini" style="margin-top:3px">${lieu}</div>
+            </div></div>
+          <p class="sub" style="margin-top:11px;margin-bottom:0">Choisissez la prestation&nbsp;: votre demande lui sera <b>adressée directement</b>.</p>
+        </div>`;
+      })()}
       ${closed?`<div class="card" style="padding:16px;margin-top:12px;border-left:4px solid var(--teal);text-align:center"><b style="font-size:15px">${I.party||I.bolt} Nos services ouvrent le 1ᵉʳ octobre&nbsp;!</b><p class="mini" style="margin-top:5px">Votre compte est prêt, on vous prévient par e-mail dès l'ouverture. Découvrez déjà tout ce qui vous attend&nbsp;:</p></div>`:`<p class="sub" style="margin-top:4px">De quel service avez-vous besoin&nbsp;?</p>`}${notifCTA('client')}<div class="cats">${cats}</div>
       ${(function(){const l=testSvcList();if(!l.length)return '';
         // Rappel permanent : on ne doit jamais confondre un déblocage d'essai avec une
@@ -16029,14 +16190,24 @@
   // Annuaire du métier (callable listProviders) — chargé une fois par service et par
   // session. Rend null tant que la liste arrive (le rendu affiche « chargement »).
   function proDirFor(svc){
+    /* CE QUI EST DÉJÀ CONNU PASSE EN PREMIER : l'annuaire chargé, ou la fiche injectée
+       par un lien nominatif (`chargerFichePublique`). Sans cela, un visiteur arrivé par
+       une publicité recevait la liste de DÉMONSTRATION. */
+    const e=S._proDir&&S._proDir[svc];
+    if(e&&e.list)return e.list;
     // Démo / simulation locale (Firebase indisponible) : annuaire factice pour montrer
-    // le parcours. En production le client est connecté → branche réelle ci-dessous.
-    if(isDemo()||!(FB&&FB.auth&&FB.auth.currentUser))return [
+    // le parcours.
+    if(isDemo())return [
       {uid:'demo-a',name:'Maya Beauté',founder:true,cal:true,photo:null,siteMode:'both'},
       {uid:'demo-b',name:'Chloé R.',founder:false,cal:false,photo:null,siteMode:'domicile'}
     ];
-    const e=S._proDir&&S._proDir[svc];
-    if(e&&e.list)return e.list;
+    /* UN VISITEUR SANS COMPTE NE REÇOIT PLUS DE FAUX NOMS. La condition englobait
+       l'absence de session et rendait « Maya Beauté » et « Chloé R. » — inoffensif tant
+       qu'aucun chemin n'y menait, mensonger dès que le mode invité s'ouvre. On rend
+       `null`, c'est-à-dire « l'annuaire n'est pas arrivé » : la discipline écrite pour
+       `salonsDuMetier` juste en dessous — ce qu'on ne sait pas ne s'affirme pas, et
+       l'option « chez le prestataire » reste offerte au lieu de disparaître. */
+    if(!(FB&&FB.auth&&FB.auth.currentUser))return null;
     if(FB&&FB.auth&&FB.auth.currentUser&&!(e&&e.loading)){
       S._proDir=S._proDir||{};S._proDir[svc]={loading:true,list:null};
       FB.fn.httpsCallable(FB.functions,'listProviders')({service:svc}).then(function(r){
@@ -16067,6 +16238,20 @@
   }
   function salonPossible(svcId){return salonsDuMetier(svcId)!==0;}
   function prefArtisanSelect(m){
+    /* VENU PAR SON LIEN, ON NE PROPOSE PAS DE CHOISIR QUELQU'UN D'AUTRE. Un sélecteur
+       sous-entendrait qu'on compare — alors qu'on a cliqué son nom dans une vidéo — et
+       le `<select>` des métiers non personnels n'offre que les prestataires DÉJÀ VENUS :
+       elle n'y serait pas, et le premier changement l'effacerait en silence. */
+    if(m&&m.viaLien&&m.preferredUid){
+      const f=S.proPublic;
+      return `<div class="field"><label>Votre prestataire</label>
+        <div class="card" style="padding:12px;display:flex;align-items:center;gap:11px">
+          ${(f&&f.photo)?`<img src="${esc(f.photo)}" alt="" style="width:40px;height:40px;border-radius:50%;object-fit:cover;flex:none">`:`<span class="benic" style="flex:none">${I.user}</span>`}
+          <div style="flex:1;min-width:0"><b style="font-size:14px">${esc(m.preferredName||(f&&f.name)||'Votre prestataire')}</b>
+            <div class="mini" style="margin-top:2px">${I.check} Votre demande lui est adressée directement</div></div>
+        </div>
+        <p class="mini" style="margin-top:6px">${I.clock} Si elle décline ou ne répond pas, vous pourrez la proposer à tous les prestataires d'un geste, vous n'êtes jamais bloqué.</p></div>`;
+    }
     const past=pastArtisans(m.svc);
     if(!pickProSvc(m.svc)){
       if(!past.length)return '';
@@ -18527,6 +18712,24 @@
     // Lien de parrainage « ?parrain=CODE » : on mémorise le code du parrain pour préremplir
     // l'inscription prestataire (survit à l'installation / la connexion Google).
     const par=q.get('parrain'); if(par){try{localStorage.setItem('tiParrain',par.toUpperCase().slice(0,40));localStorage.setItem('tiParrainAt',String(Date.now()));}catch(_){}}
+    /* « /?pro=sa-poignee » : LE LIEN D'UNE PRESTATAIRE, celui d'une publicité. On entre en
+       MODE INVITÉ (la fiche se lit sans compte) et la fiche se charge ; l'accueil montre
+       sa carte et ses seuls métiers. La poignée est RETENUE pour survivre à l'inscription
+       — un compte créé au paiement recharge la page quand Google part en redirection. */
+    try{
+      const pro=(q.get('pro')||'').trim().slice(0,40);
+      if(pro){
+        try{localStorage.setItem('tiProLien',pro);localStorage.setItem('tiProLienAt',String(Date.now()));}catch(_){}
+        S._proLien=pro;
+        if(!S.onboarded){S.guest=true;S.authView=null;S.persona='client';S.clientNav='home';S.showPitch=false;}
+        try{history.replaceState(null,'',location.origin+location.pathname);}catch(_){}
+      }else{
+        // Revenu d'une inscription : la poignée mémorisée reprend la main (24 h).
+        try{const m=localStorage.getItem('tiProLien'),at=Number(localStorage.getItem('tiProLienAt'))||0;
+          if(m&&at&&(Date.now()-at)<24*3600*1000)S._proLien=m;else{localStorage.removeItem('tiProLien');localStorage.removeItem('tiProLienAt');}}catch(_){}
+      }
+      if(S._proLien)setTimeout(function(){try{chargerFichePublique(S._proLien);}catch(_){}},300);
+    }catch(_){}
     const rid=q.get('r'); if(rid)S._openReq=rid; // réservation à ouvrir (après connexion)
     // Lien « installer l'app » (depuis l'e-mail de bienvenue) : ouvre directement le
     // guide d'installation (invite native Android / gestes iPhone) une fois l'app peinte.
@@ -20010,6 +20213,31 @@
          côté serveur, un contrôle écrit dans le navigateur se contourne en effaçant une
          ligne. SILENCE N'EST PAS RÉPONSE : un refus de Mollie laisse la proposition à
          l'écran avec son motif, au lieu de refermer le bloc sur rien. */
+      else if(act==='poignee'){
+        /* LA POIGNÉE SE POSE SUR LE SERVEUR, jamais ici : l'unicité se garantit par une
+           écriture qui ÉCHOUE si elle est prise, et une vérification faite dans le
+           navigateur laisserait passer deux poses simultanées. */
+        S.admPoignee=S.admPoignee||{};
+        const P0=S.admPoignee[id]||{};
+        if(P0.busy)return;
+        const ch=document.querySelector('[data-poignee="'+id+'"]');
+        const v=ch?String(ch.value||'').trim():'';
+        S.admPoignee[id]=Object.assign({},P0,{v:v,busy:true,err:''});render();
+        FB.fn.httpsCallable(FB.functions,'poigneePoser')({uid:id,poignee:v}).then(function(r){
+          const d=(r&&r.data)||{};
+          const art=(S.adminArtisans||[]).find(function(x){return x.id===id;});
+          if(art)art.handle=String(d.poignee||'');
+          S.admPoignee[id]={v:String(d.poignee||''),busy:false,err:''};render();
+          toast(d.retiree?'Lien public retiré':'Lien public enregistré');
+        }).catch(function(e){
+          S.admPoignee[id]=Object.assign({},S.admPoignee[id]||{},{busy:false,err:fbErrTxt(e)});render();
+        });
+      }
+      else if(act==='copypoignee'){
+        const art=(S.adminArtisans||[]).find(function(x){return x.id===id;});
+        const lien='https://ti-services.fr/?pro='+String((art&&art.handle)||'');
+        try{navigator.clipboard.writeText(lien);toast('Lien copié');}catch(_){toast(lien);}
+      }
       else if(act==='mol-prep'||act==='mol-cree'){
         S.admMolInscr=S.admMolInscr||{};
         const E0=S.admMolInscr[id]||{};
@@ -21216,10 +21444,13 @@
     switch(b.dataset.act){
       case 'onb-start':S.authView='signup';S.onbStep=1;render();break;
       // Entrer en mode invité depuis la page d'accueil → app à 3 onglets, sans compte.
-      case 'enter-guest':S.guest=true;S.authView=null;S.clientNav='home';S.mission=null;S.draft=null;render();break;
+      // N'EFFACE PLUS LA COMMANDE EN COURS : quelqu'un qui revient de l'inscription et
+      // reclique ici perdait ce qu'il venait de configurer. S'il en a une, il retombe
+      // dedans (`renderConfig` suit `S.draft`) ; sinon, l'accueil des prestations.
+      case 'enter-guest':S.guest=true;S.authView=null;S.clientNav='home';S.mission=null;render();break;
       // Revenir de l'app invité vers la page d'accueil (créer un compte / se connecter).
       case 'guest-to-welcome':S.guest=false;S.authView=null;S.clientNav='home';S.draft=null;render();break;
-      case 'guest-signup':S.authView='signup';S.onbStep=1;S.clientForm=S.clientForm||{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''};render();break;
+      case 'guest-signup':marquerAdoptionBrouillon();S.authView='signup';S.onbStep=1;S.clientForm=S.clientForm||{name:'',email:'',zone:'Gustavia',password:'',password2:'',photo:''};render();break;
       // « ← Retour » depuis le formulaire d'inscription : on ANNULE le flux d'auth et
       // on revient à la navigation invité (accueil, ou configurateur si une commande
       // était en cours). L'éventuelle commande en attente est relâchée.
@@ -22239,6 +22470,15 @@
        le bouton sur place — c'est la seule chose qui dépende de ce qu'on tape ici. */
     /* L'ADRESSE MOLLIE, MEME DISCIPLINE QUE LE NOM : on retient sans redessiner, et l'on
        rouvre le bouton sur place — c'est tout ce qui depend de ce qu'on tape ici. */
+    /* RETENU SANS REDESSINER : repeindre à chaque lettre ferait sortir le curseur du
+       champ dès la première — le défaut déjà payé sur l'adresse Mollie. */
+    const pg=e.target.closest('[data-poignee]');
+    if(pg){
+      const id=String(pg.dataset.poignee||'');
+      S.admPoignee=S.admPoignee||{};
+      S.admPoignee[id]=Object.assign({},S.admPoignee[id]||{},{v:pg.value||'',err:''});
+      return;
+    }
     const mm=e.target.closest('[data-molmail]');
     if(mm){
       const id=String(mm.dataset.molmail||'');
@@ -23721,6 +23961,22 @@
       // c'est demander des réglages à quelqu'un qui vient voir ce qu'on propose, et le
       // quartier se demande de toute façon au moment de la commande.
       if(signupIntent==='client'){try{localStorage.removeItem('tiSignupIntent');}catch(_){}if(!data&&!S._resumeOrder)S.clientNav='home';}
+      /* LA COMMANDE LAISSÉE AU PASSAGE AU PAIEMENT REVIENT AVEC LUI. Elle est rangée sous
+         la clé de son compte tout neuf, puis remise en mémoire pour que
+         `resumeOrderIfPending` ci-dessous l'emmène à l'étape paiement — « il n'a plus qu'à
+         cliquer pour payer ». Sans la remise en mémoire, elle serait bien sauvée mais il
+         retomberait sur l'accueil devant une carte « Reprendre votre commande ».
+         LES PHOTOS PERDUES SE DISENT, comme la reprise par la carte le fait déjà : une
+         pièce jointe qui disparaît sans un mot est pire que son absence. */
+      try{
+        const _ad=adopterBrouillonAnonyme();
+        if(_ad&&_ad.draft&&!S.draft){
+          S.draft=_ad.draft;S._resumeOrder=true;
+          if(_ad.photosPerdues>0)setTimeout(function(){try{toast(_ad.photosPerdues>1
+            ?('Vos '+_ad.photosPerdues+' photos n\u2019ont pas pu \u00eatre conserv\u00e9es, rajoutez-les')
+            :'Votre photo n\u2019a pas pu \u00eatre conserv\u00e9e, rajoutez-la');}catch(_){}},1400);
+        }
+      }catch(_){}
       resumeOrderIfPending();render();
       if(typeof Notification!=='undefined'&&Notification.permission==='granted')registerPush('client');
       S.genSupport=(data&&Array.isArray(data.support))?data.support.slice():[];subscribeUserSupport(user.uid);

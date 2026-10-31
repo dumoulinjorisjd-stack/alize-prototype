@@ -8791,7 +8791,145 @@ exports.listProviders = onCall(async (request) => {
   out.sort((x, y) => (Number(y.founder) - Number(x.founder)) || (y.jobs - x.jobs));
   // Le nombre de missions sert au TRI côté serveur mais ne sort JAMAIS vers le client
   // (le client ne doit pas voir les volumes d'activité des prestataires).
-  return { providers: out.slice(0, 20).map((p) => ({ uid: p.uid, name: p.name, photo: p.photo, founder: p.founder, siteMode: p.siteMode, salonZone: p.salonZone, salonAddress: p.salonAddress, salonGeo: p.salonGeo, cal: p.cal })) };
+  /* LE CATALOGUE PROPRE MANQUAIT À CETTE PROJECTION, et c'est la faute que le commentaire
+     de `salonPret` décrit trois champs plus haut : « une valeur qui n'est pas dans la
+     projection ne voyage pas : la liste blanche est la seule porte ». L'en-tête de cette
+     fonction promet depuis le début que « son catalogue voyage avec l'annuaire, et c'est
+     ce qui permet au client de lire SA carte dès qu'il l'a choisie » — il était posé sur
+     l'objet de travail, puis laissé tomber ici. Côté client, `catalogueDuChoisi` lit
+     `p.ownCat` et `p.cat` : elle ne trouvait donc JAMAIS rien, et `catalogueQuiFaitFoi`
+     retombait en silence sur la grille pour TOUT LE PARC. Celle qui a son propre
+     catalogue le voyait ignoré, et le message « choisissez parmi les siennes » de
+     `rechiffrerActes` ne pouvait pas se déclencher. Les deux champs sont déjà bornés
+     plus haut (quarante lignes, nom et prix nettoyés par le noyau). */
+  return { providers: out.slice(0, 20).map((p) => ({ uid: p.uid, name: p.name, photo: p.photo, founder: p.founder, siteMode: p.siteMode, salonZone: p.salonZone, salonAddress: p.salonAddress, salonGeo: p.salonGeo, cal: p.cal, ownCat: p.ownCat, cat: p.cat })) };
+});
+
+/* ── LA POIGNÉE D'UN PRESTATAIRE, ET LA FICHE QUE N'IMPORTE QUI PEUT LIRE ──
+
+   « Un lien internet du site qui mène directement sur la commande de la prestation de
+   l'artisan en particulier. » Pour une publicité — une vidéo qui dit « réservez avec
+   Maya » — la page doit se lire AVANT d'avoir un compte, comme la page d'un restaurant :
+   sinon on perd la personne qu'on vient de convaincre. Le compte se demande au paiement,
+   et la commande configurée revient avec lui (`adopterBrouillonAnonyme`, côté client).
+
+   `listProviders` NE CHANGE PAS D'UN CARACTÈRE : elle exige toujours une session et elle
+   rend la LISTE. Celle-ci rend UNE fiche, celle que la poignée nomme, et jamais la liste
+   — une fonction publique qui rendrait l'annuaire serait un outil pour l'aspirer.
+
+   LA POIGNÉE EST CHOISIE, JAMAIS UN NUMÉRO DE SÉRIE : devinable ou séquentielle, elle
+   permettrait d'énumérer le parc fiche par fiche. Son unicité est garantie par un
+   `create()` sur `poignees/<poignee>` — une écriture qui ÉCHOUE si le document existe,
+   le motif déjà employé pour n'ouvrir les droits d'un paiement qu'une seule fois.
+
+   CE QUI NE SORT PAS : ni e-mail, ni téléphone, ni SIRET, ni revenus, ni nombre de
+   missions (la règle de `listProviders`, qui s'en sert pour trier et ne l'envoie jamais).
+   Ce qu'un client voit en choisissant quelqu'un dans l'application, et rien de plus.
+
+   ET SEULEMENT QUELQU'UN DE VALIDÉ : une fiche en candidature, refusée ou suspendue n'est
+   pas une vitrine. On répond « introuvable » dans les deux cas — la page ne doit pas
+   permettre de distinguer « cette poignée n'existe pas » de « cette personne n'est pas
+   validée », sinon elle devient un oracle sur l'état du parc. ── */
+const POIGNEE_MAX = 40;
+function poigneeNette(v) {
+  let t = String(v == null ? '' : v).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  t = t.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').replace(/-{2,}/g, '-');
+  return t.slice(0, POIGNEE_MAX);
+}
+// Trois caractères au moins : « a » et « ab » se tapent au hasard, et la poignée est la
+// seule chose qui protège l'annuaire d'une énumération.
+function poigneeValide(p) { return /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/.test(String(p || '')); }
+
+exports.poigneePoser = onCall(async (request) => {
+  // LA PORTE DE L'ADMINISTRATEUR EST SON ADRESSE, comme aux seize autres appels réservés.
+  const who = (request.auth && request.auth.token && request.auth.token.email) || '';
+  if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+    throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
+  }
+  const d = request.data || {};
+  const uid = String(d.uid || '').slice(0, 128);
+  if (!uid) throw new HttpsError('invalid-argument', 'Prestataire requis.');
+  const db = getFirestore();
+  const ref = db.collection('artisans').doc(uid);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Prestataire introuvable.');
+  const avant = String((snap.data() || {}).handle || '');
+  const demande = String(d.poignee == null ? '' : d.poignee).trim();
+
+  // RETIRER : la poignée part, et son lien cesse de mener quelque part.
+  if (!demande) {
+    if (avant) { try { await db.collection('poignees').doc(avant).delete(); } catch (_) {} }
+    await ref.set({ handle: '' }, { merge: true });
+    return { poignee: '', retiree: true };
+  }
+
+  const p = poigneeNette(demande);
+  if (!poigneeValide(p)) {
+    throw new HttpsError('invalid-argument',
+      'Poignée invalide : 3 à 40 caractères, lettres sans accent, chiffres et tirets.');
+  }
+  if (p === avant) return { poignee: p, inchangee: true };
+
+  // L'UNICITÉ EST UNE ÉCRITURE QUI ÉCHOUE, pas une lecture suivie d'une écriture : entre
+  // les deux, une autre pose passerait. `create()` refuse un document qui existe déjà.
+  try {
+    await db.collection('poignees').doc(p).create({ uid: uid, at: Date.now() });
+  } catch (e) {
+    const pris = await db.collection('poignees').doc(p).get();
+    if (pris.exists && String((pris.data() || {}).uid || '') === uid) {
+      await ref.set({ handle: p }, { merge: true });
+      if (avant && avant !== p) { try { await db.collection('poignees').doc(avant).delete(); } catch (_) {} }
+      return { poignee: p };
+    }
+    throw new HttpsError('already-exists', 'Cette poignée est déjà prise.');
+  }
+  await ref.set({ handle: p }, { merge: true });
+  // L'ancienne est libérée APRÈS que la nouvelle est posée : si la seconde écriture
+  // échoue, la personne garde un lien qui marche plutôt que deux qui ne mènent nulle part.
+  if (avant) { try { await db.collection('poignees').doc(avant).delete(); } catch (_) {} }
+  return { poignee: p };
+});
+
+exports.providerPublic = onCall(async (request) => {
+  // AUCUNE AUTHENTIFICATION : c'est tout l'objet de cette fonction. Elle ne rend QUE la
+  // fiche nommée, et rien qui permette d'en découvrir une autre.
+  const p = poigneeNette((request.data || {}).poignee);
+  if (!poigneeValide(p)) throw new HttpsError('not-found', 'Introuvable.');
+  const db = getFirestore();
+  const pg = await db.collection('poignees').doc(p).get();
+  const uid = pg.exists ? String((pg.data() || {}).uid || '') : '';
+  if (!uid) throw new HttpsError('not-found', 'Introuvable.');
+  const snap = await db.collection('artisans').doc(uid).get();
+  const a = snap.exists ? (snap.data() || {}) : null;
+  // Même réponse que pour une poignée inconnue : la page ne dit pas l'état du parc.
+  if (!a || a.status !== 'valide') throw new HttpsError('not-found', 'Introuvable.');
+
+  const REGL = await reglagesCatalogueServeur(db);
+  const cats = (Array.isArray(a.cats) ? a.cats : []).map((c) => String(c || '').slice(0, 40))
+    .filter(Boolean).slice(0, 6);
+  const catalogues = {};
+  cats.forEach((svc) => {
+    const propre = CATP.catalogueProprePose(a, svc, REGL.metier[svc]);
+    catalogues[svc] = {
+      ownCat: propre,
+      cat: propre ? CATP.lignesPropres((((a.ownCatalog || {})[svc]) || {}).lines).lignes : null,
+    };
+  });
+  const sm = a.siteMode || 'both';
+  return {
+    poignee: p,
+    uid: uid,
+    name: String(a.name || 'Prestataire').slice(0, 60),
+    photo: (typeof a.photo === 'string' && a.photo.indexOf('data:image') === 0 && a.photo.length < 90000) ? a.photo : null,
+    founder: !!a.founder,
+    cats: cats,
+    catalogues: catalogues,
+    siteMode: sm,
+    salonZone: String(a.salonZone || '').slice(0, 40),
+    // L'adresse ne part que pour qui a déclaré RECEVOIR : celui qui se déplace n'a pas de
+    // local à montrer, et son adresse personnelle n'a rien à faire sur une page publique.
+    salonAddress: sm === 'domicile' ? '' : String(a.salonAddress || '').slice(0, 160),
+  };
 });
 
 /* ── Créneaux réellement libres d'un prestataire pour UNE journée : le client qui vise
