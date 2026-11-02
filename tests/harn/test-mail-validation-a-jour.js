@@ -16,7 +16,20 @@
    s'imprime juste au-dessus avec un bouton « Voir les demandes ».
 
    CETTE ÉPREUVE TIENT LES TROIS FAITS, et elle exécute la VRAIE fonction extraite du
-   source, avec ses vraies dépendances — jamais une imitation. */
+   source, avec ses vraies dépendances — jamais une imitation.
+
+   CE QUE CHAQUE CONTRE-ÉPREUVE FAIT ROUGIR :
+     · le bloc des notifications n'est plus posé .............. 4 mesures
+     · il revient, mais APRÈS Mollie .......................... 1 mesure
+     · le cas iPhone disparaît ................................ 1 mesure
+     · « à partir de là, vous pourrez recevoir des missions » .. 2 mesures
+     · le badge « DERNIÈRE ÉTAPE » revient .................... 1 mesure
+     · le bouton mène à une route qui n'existe pas ............ 1 mesure
+
+   ET UNE QUI RESTE VERTE QUAND LE BLOC DISPARAÎT, donc dite : la mesure de l'ORDRE
+   compare deux positions, et `indexOf` rend −1 pour ce qui est absent — « avant » est
+   alors vrai sans rien mesurer. Elle garde son sens tant que le bloc existe, et ce sont
+   les quatre autres qui tiennent son existence. */
 const fs=require('fs'),path=require('path');
 const RACINE=path.resolve(__dirname,'..','..');
 let f=0; const ok=(c,l)=>{if(c)console.log('  ✓ '+l);else{f++;console.log('  ✗ ÉCHEC : '+l);}};
