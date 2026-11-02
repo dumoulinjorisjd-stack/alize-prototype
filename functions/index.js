@@ -7447,7 +7447,7 @@ function approvedArtisanHtml(name, sansAssurance, attenteTxt) {
   const mollieBlock =
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#EAF6F3;border:1px solid #cfece7;border-radius:14px;margin-top:6px">' +
       '<tr><td style="padding:16px 18px">' +
-        '<span style="display:inline-block;font-size:11px;font-weight:800;letter-spacing:.04em;color:#ffffff;background:' + c1 + ';border-radius:999px;padding:4px 11px">DERNIÈRE ÉTAPE</span>' +
+        '<span style="display:inline-block;font-size:11px;font-weight:800;letter-spacing:.04em;color:#ffffff;background:' + c1 + ';border-radius:999px;padding:4px 11px">POUR ÊTRE PAYÉ</span>' +
         '<div style="font-size:16px;font-weight:800;color:#231E33;margin-top:11px">Activez vos paiements (Mollie)</div>' +
         '<div style="font-size:13.5px;color:#4a4556;line-height:1.55;margin-top:7px">Pour être réglé <b>automatiquement</b> après chaque prestation, vous devez ouvrir votre compte de paiement sécurisé chez <b>Mollie</b>, notre prestataire agréé. C\'est <b>une seule fois</b> et l\'application vous guide question par question (des réponses toutes prêtes à copier-coller).</div>' +
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px"><tr>' +
@@ -7456,12 +7456,45 @@ function approvedArtisanHtml(name, sansAssurance, attenteTxt) {
         '</tr></table>' +
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:9px"><tr>' +
           '<td width="26" valign="top"><div style="font-size:15px;line-height:1.3">✅</div></td>' +
-          '<td style="font-size:13px;color:#4a4556;line-height:1.5"><b>À partir de là, vous pourrez recevoir des missions</b> et accepter les demandes près de chez vous, votre gain net (commission déduite) vous est versé tout seul, sans virement à faire.</td>' +
+          '<td style="font-size:13px;color:#4a4556;line-height:1.5"><b>Vous pouvez accepter des missions sans attendre</b>&nbsp;: en attendant Mollie, votre gain est <b>mis de côté pour vous</b>. Une fois le compte ouvert, le gain net (commission déduite) vous est versé tout seul, sans virement à faire.</td>' +
         '</tr></table>' +
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px"><tr><td align="center">' +
           mailBouton(app + '/?open=missions', 'Activer mes paiements', true) +
         '</td></tr></table>' +
         '<div style="font-size:12px;color:#8a8494;line-height:1.5;margin-top:10px;text-align:center">Astuce&nbsp;: cette étape est plus simple depuis un <b>ordinateur</b>.</div>' +
+      '</td></tr>' +
+    '</table>';
+  /* LES NOTIFICATIONS, ET ELLES PASSENT AVANT MOLLIE.
+
+     Demandé par l'éditeur le 02/11/2026, et l'ordre n'est pas un goût : depuis le
+     09/10/2026 accepter une mission n'exige plus Mollie, donc les demandes arrivent
+     DÈS CET E-MAIL. Une demande part à tous les prestataires du métier en même temps et
+     le premier qui répond la prend : sans notification, il l'apprend trop tard. Mollie,
+     lui, ne compte qu'au premier versement — après une prestation faite, donc des jours
+     plus tard. Ce qui est urgent passe devant.
+
+     L'ARGUMENT EST CELUI QUE L'APPLICATION EMPLOIE DÉJÀ (« Ne manquez aucune mission,
+     c'est ainsi que les clients vous atteignent ») et le bouton mène à la porte qui
+     existe, `?open=alerts` : elle ouvre le Compte ET déplie la carte des alertes, pour
+     qu'on n'arrive pas sur un écran de réglages à fouiller.
+
+     ET LE CAS IPHONE EST DIT. `notifCTA` le relève : tant que Ti-Services n'est pas sur
+     l'écran d'accueil, l'API de notification n'existe même pas — le bouton ne peut rien
+     faire, et la personne croit avoir activé. C'est l'échec le plus silencieux de la
+     chaîne, il se dit ici en une ligne. */
+  const notifBlock =
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FFF4EF;border:1px solid #f6dcd0;border-radius:14px;margin-top:14px">' +
+      '<tr><td style="padding:16px 18px">' +
+        '<span style="display:inline-block;font-size:11px;font-weight:800;letter-spacing:.04em;color:#B04A22;background:#FBD9CA;border-radius:999px;padding:4px 11px">À FAIRE MAINTENANT</span>' +
+        '<div style="font-size:16px;font-weight:800;color:#231E33;margin-top:11px">Activez vos notifications</div>' +
+        '<div style="font-size:13.5px;color:#4a4556;line-height:1.55;margin-top:7px">Une demande part à <b>tous les prestataires du métier en même temps</b>, et <b>le premier qui répond la prend</b>. Sans notification, vous l\'apprenez trop tard. C\'est ainsi que les clients vous atteignent.</div>' +
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px"><tr>' +
+          '<td width="26" valign="top"><div style="font-size:15px;line-height:1.3">📲</div></td>' +
+          '<td style="font-size:13px;color:#4a4556;line-height:1.5"><b>Sur iPhone</b>, ajoutez d\'abord Ti-Services à votre écran d\'accueil (bouton <b>Partager</b> → «&nbsp;Sur l\'écran d\'accueil&nbsp;»), puis rouvrez l\'application&nbsp;: sans cela, l\'iPhone n\'autorise aucune notification.</td>' +
+        '</tr></table>' +
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:14px"><tr><td align="center">' +
+          mailBouton(app + '/?open=alerts', 'Activer mes notifications', true) +
+        '</td></tr></table>' +
       '</td></tr>' +
     '</table>';
   /* CE QUI L'ATTEND DÉJÀ, s'il y a quelque chose. Le fil des missions n'a pas de borne
@@ -7506,9 +7539,15 @@ function approvedArtisanHtml(name, sansAssurance, attenteTxt) {
           '<tr><td style="padding:14px 30px 0">' +
             '<h1 style="font-size:22px;margin:8px 0 0;color:#231E33">Votre inscription est validée&nbsp;🎉</h1>' +
             '<p style="font-size:15px;line-height:1.6;color:#4a4556;margin:12px 0 0">Bonjour ' + hi + ',</p>' +
-            '<p style="font-size:15px;line-height:1.6;color:#4a4556;margin:10px 0 0">Bonne nouvelle&nbsp;: votre profil <b>intervenant</b> sur Ti-Services vient d\'être <b>validé</b> par notre équipe. Bienvenue à bord&nbsp;! Il reste une dernière étape avant de recevoir vos premières missions.</p>' +
+            '<p style="font-size:15px;line-height:1.6;color:#4a4556;margin:10px 0 0">Bonne nouvelle&nbsp;: votre profil <b>intervenant</b> sur Ti-Services vient d\'être <b>validé</b> par notre équipe. Bienvenue à bord&nbsp;!</p>' +
+            /* LA PHRASE DISAIT « il reste une dernière étape avant de recevoir vos
+               premières missions », et elle était fausse DEUX FOIS depuis le
+               09/10/2026 : les demandes arrivent déjà, et il y a deux choses à
+               régler, pas une. Le bloc « des demandes vous attendent » juste en
+               dessous la contredisait d'ailleurs en proposant « Voir les demandes ». */
+            '<p style="font-size:15px;line-height:1.6;color:#4a4556;margin:10px 0 0">Les demandes de vos métiers vous sont <b>déjà adressées</b>. Deux choses à régler pour n\'en manquer aucune, et pour être payé.</p>' +
           '</td></tr>' +
-          '<tr><td style="padding:18px 30px 4px">' + attenteBlock + mollieBlock + assuranceBlock + '</td></tr>' +
+          '<tr><td style="padding:18px 30px 4px">' + attenteBlock + notifBlock + mollieBlock + assuranceBlock + '</td></tr>' +
           mailPied('À très vite,') +
         '</table>' +
       '</td></tr>' +

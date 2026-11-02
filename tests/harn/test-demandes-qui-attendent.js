@@ -77,7 +77,19 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
     'et sur le métier SEUL : on ne promet pas un chiffre que le fil ne tiendra pas');
   ok(/attenteTxt\s*\?/.test(appr) && /Votre compte Ti-Services est activé/.test(appr),
     'la notification le dit, et garde son texte d’origine quand rien n’attend');
-  const html = SRV.slice(SRV.indexOf('function approvedArtisanHtml'), SRV.indexOf('function approvedArtisanHtml') + 4000);
+  /* LE CORPS ENTIER, PAR COMPTAGE D'ACCOLADES. Cette ligne découpait 4000 caractères
+     à partir du nom de la fonction : un nombre écrit à la main, qui a lâché le jour où
+     l'e-mail a gagné son bloc de notifications (02/11/2026) — l'épreuve a rougi sur une
+     propriété qui n'avait pas bougé d'un caractère. */
+  const html = (function(){
+    const i = SRV.indexOf('function approvedArtisanHtml');
+    let n = 0;
+    for (let k = SRV.indexOf('{', i); k < SRV.length; k++) {
+      if (SRV[k] === '{') n++; else if (SRV[k] === '}') { n--; if (!n) return SRV.slice(i, k + 1); }
+    }
+    return '';
+  })();
+  ok(html.length > 0, 'le corps de l’e-mail d’acceptation se relève (sinon rien n’est mesuré)');
   ok(/!attenteTxt \? '' :/.test(html),
     'et le bloc de l’e-mail ne s’imprime pas quand rien n’attend — « 0 demande » découragerait');
 

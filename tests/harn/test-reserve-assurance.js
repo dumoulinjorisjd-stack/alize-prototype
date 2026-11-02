@@ -46,7 +46,11 @@ console.log('A — sans réserve, l’e-mail est celui d’avant');
 const normal = approvedArtisanHtml('Léa Brin', false);
 ok(!/SOUS RÉSERVE/.test(normal), 'aucun bloc de réserve');
 ok(!/legal=assurance/.test(normal), 'aucun lien vers le document');
-ok(/DERNIÈRE ÉTAPE/.test(normal) && /Mollie/.test(normal), 'et la dernière étape Mollie est bien là');
+/* LE BADGE DISAIT « DERNIÈRE ÉTAPE » : retiré le 02/11/2026, il était faux depuis que
+   l'acceptation n'exige plus Mollie (09/10) — et il y a désormais deux choses à faire,
+   les notifications d'abord. Ce que cette mesure veut dire reste vrai et se mesure sur
+   le BLOC, pas sur un mot d'étiquette. */
+ok(/Activez vos paiements/.test(normal) && /Mollie/.test(normal), 'et le bloc Mollie est bien là');
 ok(/Léa Brin/.test(normal), 'le prénom aussi');
 
 console.log('\nB — avec réserve, tout ce qui a été demandé y est');
@@ -61,7 +65,7 @@ ok(!!lien, 'le lien existe');
 ok(!!lien && lien[1] === 'https://ti-services.fr/?legal=assurance',
   'il pointe sur l’adresse publique du document (' + (lien ? lien[1] : '—') + ')');
 ok(/Lire les conditions de cette réserve/.test(reserve), 'et il porte un intitulé qui dit où il mène');
-ok(/DERNIÈRE ÉTAPE/.test(reserve), 'la dernière étape Mollie n’a pas disparu pour autant');
+ok(/Activez vos paiements/.test(reserve), 'le bloc Mollie n’a pas disparu pour autant');
 
 console.log('\nC — les deux e-mails ne diffèrent QUE par ce bloc');
 // On ne découpe pas le balisage à la main : on compare les deux textes. Préfixe commun
