@@ -18,7 +18,10 @@
 
    CE QUE CHAQUE CONTRE-ÉPREUVE FAIT ROUGIR :
      · la garde de `attemptLogin` retirée ................ 3 mesures (le fantôme revient)
-     · le bandeau de panne n'est plus posé ............... 3 mesures
+     · le bandeau n'est plus posé à l'échec du chargement .. 2 mesures — au boot, et après
+       le rechargement. Celui de `panneServeur` est un FILET : il repose le bandeau au premier
+       geste, donc le retirer seul ne fait rougir PERSONNE (mesuré), et avec le `catch` retiré
+       il garde « Réessayer » présent après « Se connecter ». Les deux portes restent.
      · `sansServeur` ne regarde plus le protocole ........ 2 mesures (le banc file:// devient une panne) */
 const fs=require('fs'),path=require('path'),http=require('http');
 const {chromium}=require('playwright-core');
@@ -72,7 +75,9 @@ console.log('\nA — servie par un hôte, sans réseau : c’est une panne, et e
   // Mesuré avant d'écrire : rappeler `initFirebase` ne redemandait RIEN (4 → 4 tentatives).
   const avant=tentatives.filter(u=>/firebasejs/.test(u)).length; const navs=[];
   p.on('framenavigated',fr=>{ if(fr===p.mainFrame())navs.push(fr.url()); });
-  await p.evaluate(()=>document.getElementById('fbPanneRetry').click()); await p.waitForTimeout(1500);
+  // On mesure l'ABSENCE du bouton au lieu de buter dessus : une épreuve qui lève n'est pas une mesure.
+  const retry=await p.evaluate(()=>{const b=document.getElementById('fbPanneRetry'); if(b)b.click(); return !!b;}); await p.waitForTimeout(1500);
+  ok(retry,'le bouton « Réessayer » est là');
   const apres=tentatives.filter(u=>/firebasejs/.test(u)).length;
   ok(navs.length>=1&&apres>avant,'le bouton recharge ('+navs.length+' navigation) et Firebase est redemandé ('+avant+' → '+apres+' tentatives)');
   await p.waitForFunction(()=>window.__srv).catch(()=>{}); await p.waitForTimeout(900);
