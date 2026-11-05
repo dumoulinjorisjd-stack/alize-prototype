@@ -72,11 +72,11 @@ ok(!a.legende,'plus de légende sous l’animation : elle redisait le sous-titre
 ok(/iOS 26/.test(a.badge),'le badge DIT la version reconnue — « '+a.badge+' »');
 ok(a.sortie,'et une issue existe si la reconnaissance se trompe');
 
-console.log('\nB — l’animation est enfin regardable, sans chasser la première étape');
-ok(a.animH>=170,'elle passe de 132 à '+a.animH+' px de haut ('+a.animW+' de large)');
+console.log('\nB — plus de dessin animé (v908) : il repoussait la dernière carte hors d’un écran de 667 px');
+ok(a.animH===0,'aucune animation dans la feuille ('+a.animH+' px)');
 const petit=await feuille(UA.ios26,0,667);
 ok(petit.etape1Visible,'sur un petit iPhone (390 × 667), l’étape 1 reste à l’écran sans défiler');
-ok(petit.animH>=170,'et le dessin n’y est pas rétréci pour autant ('+petit.animH+' px)');
+ok(petit.animH===0,'et là non plus');
 
 console.log('\nC — iPhone, Safari avant iOS 26 : deux gestes, pas trois');
 const c=await feuille(UA.ios18,0,667);

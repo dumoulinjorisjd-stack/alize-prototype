@@ -13,24 +13,23 @@
    l'attend : vide aujourd'hui, et le jour où elle se remplit, « Installer » y mène d'un
    toucher — sans que l'on puisse remplir l'adresse sans la bannière Safari, ni l'inverse.
 
-   CE QU'ON PEUT FAIRE AUJOURD'HUI, ET QUI EST MESURÉ ICI : le mode d'emploi se lit UNE
-   carte à la fois, en 18 px, avec un bouton de 58 px qui avance ; sur le plus petit
-   iPhone, la carte ET le bouton tiennent à l'écran sans défiler ; la dernière carte dit
-   de toucher l'icône ; et à la première ouverture en plein écran, l'application DIT
-   qu'elle est installée. « Minimise les textes, personne ne lit rien. Il faut juste des
-   boutons à suivre » (le même jour) : une carte dit un GESTE et trois mots pour dire où,
-   le bouton dit « Suivant », la progression est un chiffre — et c'est COMPTÉ (section A),
-   sans quoi les phrases reviendraient une à une. Relevé AVANT ce lot, feuille rendue à 390 px :
-   trois cartes empilées en 13,5 px, sous-titres en 12, et rien à la fin des gestes — on
-   revenait dans Safari devant le même écran, sans savoir si ça avait marché.
+   CE QU'ON PEUT FAIRE AUJOURD'HUI, ET QUI EST MESURÉ ICI. La v906 avait fait un PAS À PAS
+   (une carte, « Suivant ») — « quand on fait l'action on ne voit plus l'écran, ce pas à pas
+   ne peut jamais se visualiser » (l'éditeur, le lendemain) : dès le premier geste le menu
+   puis la feuille de partage RECOUVRENT la page. Donc UN SEUL ÉCRAN, tout se lit avant de
+   commencer, en grand, et tout tient sur le plus petit iPhone sans défiler. Et le premier
+   geste devient un BOUTON : Safari sait ouvrir sa feuille de partage depuis la page
+   (`navigator.share`) — deux gestes sur trois disparaissent SI cette feuille porte « Sur
+   l'écran d'accueil », ce que le banc ne peut pas voir (il n'a pas d'iPhone) : le chemin à
+   la main reste plié dessous, et c'est l'éditeur qui tranche sur son téléphone. La dernière
+   carte dit de toucher l'icône ; à la première ouverture en plein écran, l'application DIT
+   qu'elle est installée. « Minimise les textes, personne ne lit rien » : chaque carte dit un
+   GESTE, et c'est COMPTÉ.
 
    CE QUE CHAQUE CONTRE-ÉPREUVE FAIT ROUGIR, nommé :
-     · le pas à pas n'est plus branché (toutes les cartes à la fois) ...... 9 mesures
-     · l'accroche ET le sous-titre reviennent ............................. 2 mesures (le bouton sort de l'écran : 672 > 667)
-       (l'accroche SEULE ne suffit plus à le faire sortir depuis que le sous-titre est
-       parti : les deux retraits se partagent la marge, et c'est la mesure de TENUE qui
-       garde — pas l'absence de l'une ou de l'autre)
-     · la carte « C'est fait » n'est plus ajoutée ......................... 6 mesures
+     · l'écran unique n'est plus branché (igUnEcran retiré) ............... 4 mesures
+     · le bouton de partage n'est plus rendu (partage=false) ............. 7 mesures
+     · la carte « C'est fait » n'est plus ajoutée ......................... 3 mesures
      · la confirmation n'est plus posée à la 1ʳᵉ ouverture ................ 2 mesures
      · « Installer » n'envoie plus sur l'App Store renseigné .............. 2 mesures */
 const fs=require('fs'),path=require('path');
@@ -55,10 +54,15 @@ const b=await chromium.launch(o);
 async function ouvrir(ua,opts){
   opts=opts||{};
   const ctx=await b.newContext({viewport:{width:390,height:opts.h||667},userAgent:ua,locale:'fr-FR',isMobile:true,hasTouch:true});
-  await ctx.addInitScript(([inst,safari])=>{
+  await ctx.addInitScript(([inst,safari,share,refuse])=>{
     if(safari)try{Object.defineProperty(navigator,'standalone',{get:()=>!!inst});}catch(_){}
+    // `navigator.share` : on note ce que l'application lui donne. Chromium sous file://
+    // ne l'a pas forcément : on le pose (ou on le retire) EXPRÈS, selon ce qu'on mesure.
+    window.__parts=[];
+    try{ if(share){ navigator.share=function(d){ window.__parts.push(d); return refuse?Promise.reject(new DOMException('x','AbortError')):Promise.resolve(); }; }
+         else{ Object.defineProperty(navigator,'share',{get:()=>undefined,configurable:true}); } }catch(_){}
     if(inst){const mm=window.matchMedia; window.matchMedia=function(q){ if(/display-mode:\s*standalone/.test(q))return {matches:true,media:q,addEventListener(){},removeEventListener(){},addListener(){},removeListener(){}}; return mm.call(window,q); };}
-  },[!!opts.installee, opts.safari!==false]);
+  },[!!opts.installee, opts.safari!==false, opts.share!==false, !!opts.shareRefuse]);
   const p=await ctx.newPage(); p.on('pageerror',e=>console.log('ERREUR PAGE:',e.message));
   await p.goto('file://'+(opts.fichier||APP));
   await p.waitForFunction(()=>window.__S); await p.waitForTimeout(400);
@@ -67,68 +71,73 @@ async function ouvrir(ua,opts){
 }
 async function guide(p){ await p.evaluate(()=>{const t=document.querySelector('[data-act="get-app"]');t&&t.click();}); await p.waitForTimeout(450); }
 const releve=(p)=>p.evaluate(()=>{const s=document.querySelector('.ig-sheet'); if(!s)return {absent:true};
-  const cur=s.querySelector('.ig-card.ig-cur'), suiv=s.querySelector('.ig-suiv'), prec=s.querySelector('.ig-prec'), prog=s.querySelector('.ig-prog');
-  const cb=cur?cur.getBoundingClientRect():null, sb=suiv?suiv.getBoundingClientRect():null;
-  const vis=[...s.querySelectorAll('.ig-card')].filter(c=>c.offsetParent!==null);
-  return {pas:s.classList.contains('ig-pas'), cartes:s.querySelectorAll('.ig-cards')[0].children.length, visibles:vis.length,
-    txt:cur?cur.innerText.replace(/\s+/g,' ').trim():'', mots:cur?cur.innerText.replace(/\s+/g,' ').trim().split(' ').length:0, police:cur?parseFloat(getComputedStyle(cur.querySelector('.ig-txt')).fontSize):0,
-    sous:cur&&cur.querySelector('.ig-sub')?parseFloat(getComputedStyle(cur.querySelector('.ig-sub')).fontSize):null,
-    prog:prog?prog.textContent:null, bouton:suiv?suiv.textContent:null, bH:sb?Math.round(sb.height):0, bFont:suiv?parseFloat(getComputedStyle(suiv).fontSize):0,
-    carteBas:cb?Math.round(cb.bottom):0, boutonBas:sb?Math.round(sb.bottom):0, ecran:innerHeight,
-    precVisible:!!(prec&&!prec.hidden), anim:!!(s.querySelector('.ig-anim')&&s.querySelector('.ig-anim').getBoundingClientRect().height>0), fin:!!(cur&&cur.classList.contains('ig-fin')),
+  const cards=[...s.querySelectorAll('.ig-cards')[0].children];
+  const vis=cards.filter(c=>c.offsetParent!==null);
+  const visTous=[...s.querySelectorAll('.ig-card')].filter(c=>c.offsetParent!==null).length;
+  const o=s.querySelector('#igOuvrir'), ob=o?o.getBoundingClientRect():null;
+  const c2=vis[1]||vis[0];
+  const last=vis.length?vis[vis.length-1].getBoundingClientRect():{bottom:0};
+  const aide=s.querySelector('.ig-aide-lien'), ab=aide?aide.getBoundingClientRect():{bottom:0};
+  return {uni:s.classList.contains('ig-uni'), pas:s.classList.contains('ig-pas'), cartes:cards.length, visibles:vis.length, visTous,
+    txt:vis.map(c=>c.innerText.replace(/\s+/g,' ').trim()),
+    bouton:!!o, bTxt:o?o.innerText.replace(/\s+/g,' ').trim():null, bH:ob?Math.round(ob.height):0, bFont:o?parseFloat(getComputedStyle(o.querySelector('.ig-txt')).fontSize):0,
+    police:c2?parseFloat(getComputedStyle(c2.querySelector('.ig-txt')).fontSize):0,
+    sous:c2&&c2.querySelector('.ig-sub')?parseFloat(getComputedStyle(c2.querySelector('.ig-sub')).fontSize):null,
+    derniereBas:Math.round(last.bottom), aideBas:Math.round(ab.bottom), ecran:innerHeight,
+    anim:!!(s.querySelector('.ig-anim')&&s.querySelector('.ig-anim').getBoundingClientRect().height>0),
+    fin:!!(vis.length&&vis[vis.length-1].classList.contains('ig-fin')),
     sousTitre:!!s.querySelector('.ig-head span').offsetParent,
-    aide:parseFloat(getComputedStyle(s.querySelector('.ig-aide-lien')).fontSize)};});
+    repli:(s.querySelector('.ig-fallback summary')||{textContent:''}).textContent.replace(/\s+/g,' ').trim(),
+    repliTxt:(s.querySelector('.ig-fallback .ig-card')||{textContent:''}).textContent.replace(/\s+/g,' ').trim(),
+    suiv:!!s.querySelector('.ig-suiv'),
+    aide:aide?parseFloat(getComputedStyle(aide).fontSize):0};});
 
-console.log('\nA — iPhone (Safari, iOS 26), le plus petit écran : une carte, en grand, et le bouton sous l’œil');
+console.log('\nA — iPhone (Safari, iOS 26), le plus petit écran : UN écran, tout se lit avant de commencer');
 { const {ctx,p}=await ouvrir(UA.ios26); await guide(p); const r=await releve(p);
-  ok(r.pas&&r.visibles===1,'une seule carte est affichée à la fois ('+r.visibles+' visible sur '+r.cartes+')');
-  ok(r.cartes===4,'quatre cartes dans la feuille : les trois gestes, puis « C’est fait » ('+r.cartes+')');
-  ok(/^1 Touchez •••/.test(r.txt)&&r.mots<=8,'la première dit le geste et où, en '+r.mots+' mots — « '+r.txt+' »');
-  ok(!r.sousTitre,'le sous-titre de l’en-tête (« Pour créer votre compte… ») ne s’affiche pas : personne ne le lit');
-  ok(r.police>=18,'son texte fait '+r.police+' px (13,5 avant ce lot)');
-  ok(r.sous>=15,'et son sous-titre '+r.sous+' px (12 avant)');
-  ok(r.bH>=56&&r.bFont>=18,'le bouton qui avance fait '+r.bH+' px de haut et '+r.bFont+' px de corps : il se vise au pouce');
-  ok(r.carteBas<=r.ecran&&r.boutonBas<=r.ecran,'sur 390 × 667, la carte ('+r.carteBas+') ET le bouton ('+r.boutonBas+') tiennent dans l’écran sans défiler');
-  ok(r.prog==='1 / 3','la progression est un chiffre : « '+r.prog+' » — la carte finale n’est pas un geste, elle ne compte pas');
-  ok(r.bouton==='Suivant →','et le bouton, un mot : « '+r.bouton+' »');
-  ok(!r.precVisible,'pas de « précédente » sur la première');
-  ok(r.anim,'le dessin du geste est là, à la première étape');
-  ok(r.aide>=15,'le lien « je n’arrive pas à installer » lit à '+r.aide+' px (12,5 avant)');
+  ok(r.uni&&!r.pas&&!r.suiv,'pas de pas à pas, pas de « Suivant » : on ne voit plus l’écran pendant le geste');
+  ok(r.cartes===3&&r.visibles===3,'trois cartes, toutes visibles : le bouton, le geste, puis « C’est fait » ('+r.visibles+' / '+r.cartes+')');
+  ok(r.bouton&&r.bTxt==='1 Touchez ici','la première est un BOUTON qui ouvre le partage — « '+r.bTxt+' »');
+  ok(r.bH>=70&&r.bFont>=18,'il fait '+r.bH+' px de haut et '+r.bFont+' px de corps : il se vise au pouce');
+  ok(/^2 Touchez « Sur l.écran d.accueil », puis Ajouter/.test(r.txt[1]),'la deuxième dit le seul geste qui reste — « '+r.txt[1]+' »');
+  ok(r.police>=17&&r.sous>=14,'texte '+r.police+' px, sous-titre '+r.sous+' px (13,5 et 12 avant la v906)');
+  ok(!r.sousTitre,'le sous-titre de l’en-tête ne s’affiche pas : personne ne le lit');
+  ok(!r.anim,'pas de dessin animé : il repoussait la dernière carte hors de l’écran (744 > 667, mesuré)');
+  ok(r.derniereBas<=r.ecran&&r.aideBas<=r.ecran,'sur 390 × 667, la dernière carte ('+r.derniereBas+') ET le lien d’aide ('+r.aideBas+') tiennent sans défiler');
+  ok(r.fin&&/C.est fait/.test(r.txt[2])&&/Touchez l.icône Ti-Services/.test(r.txt[2]),'la dernière dit de toucher l’icône — « '+r.txt[2]+' »');
+  ok(r.repli==="rien ne s'ouvre ?"&&/Touchez •••, en bas à droite, puis « Partager », puis « Sur l.écran d.accueil »/.test(r.repliTxt),'le chemin à la main reste, plié, sous « '+r.repli+' » — « '+r.repliTxt+' »');
+  ok(r.aide>=15,'le lien « je n’arrive pas à installer » lit à '+r.aide+' px');
   await ctx.close(); }
 
-console.log('\nB — le parcours : trois « c’est fait », une carte finale, et le bouton ferme');
+console.log('\nB — le bouton ouvre la feuille de partage de Safari, et le guide reste derrière');
 { const {ctx,p}=await ouvrir(UA.ios26); await guide(p);
-  const suivant=async()=>{ await p.evaluate(()=>document.querySelector('.ig-suiv').click()); await p.waitForTimeout(250); return releve(p); };
-  const r2=await suivant();
-  ok(/^2 Touchez « Partager »/.test(r2.txt)&&r2.mots<=5&&r2.prog==='2 / 3','« Suivant » montre la deuxième — « '+r2.txt+' », '+r2.prog);
-  ok(!r2.anim,'le dessin se retire dès la deuxième étape : on a regardé, on fait');
-  ok(r2.precVisible,'et « étape précédente » apparaît');
-  ok(r2.carteBas<=r2.ecran&&r2.boutonBas<=r2.ecran,'carte et bouton toujours à l’écran ('+r2.carteBas+' / '+r2.boutonBas+')');
-  await p.evaluate(()=>document.querySelector('.ig-prec').click()); await p.waitForTimeout(200);
-  const r1=await releve(p); ok(/^1 /.test(r1.txt)&&r1.anim,'« précédente » revient à la première, dessin compris');
-  await suivant(); const r3=await suivant();
-  ok(/^3 Touchez « Sur l.écran d.accueil », puis Ajouter$/.test(r3.txt),'troisième geste, rien de plus — « '+r3.txt+' »');
-  const r4=await suivant();
-  ok(r4.fin&&/C.est fait/.test(r4.txt)&&/Touchez l.icône Ti-Services sur votre écran d.accueil/.test(r4.txt)&&r4.mots<=12,
-    'la carte finale dit de toucher l’icône, en '+r4.mots+' mots — « '+r4.txt+' »');
-  ok(r4.prog===''&&r4.bouton==='Fermer','plus de progression, et le bouton dit « Fermer »');
-  ok(r4.carteBas<=r4.ecran&&r4.boutonBas<=r4.ecran,'elle tient aussi dans 667 px ('+r4.carteBas+' / '+r4.boutonBas+')');
-  await p.evaluate(()=>document.querySelector('.ig-suiv').click()); await p.waitForTimeout(400);
-  ok(!(await p.evaluate(()=>!!document.querySelector('.ig-sheet'))),'il ferme : on ne laisse personne devant un bouton qui ne fait plus rien');
+  await p.evaluate(()=>document.getElementById('igOuvrir').click()); await p.waitForTimeout(300);
+  const r=await p.evaluate(()=>({parts:window.__parts, feuille:!!document.querySelector('.ig-sheet'), fin:!!document.querySelector('.ig-card.ig-fin')}));
+  ok(r.parts.length===1&&/\/app\.html$/.test(r.parts[0].url),'un toucher, UN appel à navigator.share, avec l’adresse de la page — '+JSON.stringify(r.parts[0]));
+  ok(r.parts[0]&&r.parts[0].title==='Ti-Services','et le nom de l’application');
+  ok(r.feuille&&r.fin,'le guide reste ouvert derrière : au retour, « C’est fait » est sous les yeux');
+  await ctx.close(); }
+{ const {ctx,p}=await ouvrir(UA.ios26,{shareRefuse:true}); await guide(p);
+  await p.evaluate(()=>document.getElementById('igOuvrir').click()); await p.waitForTimeout(300);
+  const r=await p.evaluate(()=>({parts:window.__parts.length, feuille:!!document.querySelector('.ig-sheet')}));
+  ok(r.parts===1&&r.feuille,'la feuille refermée sans rien choisir (AbortError) ne casse rien : le guide est toujours là');
   await ctx.close(); }
 
-console.log('\nC — les autres contextes : Safari 18, Chrome iPhone, WhatsApp, Android');
+console.log('\nC — les autres contextes : sans navigator.share, Safari 18, Chrome iPhone, WhatsApp, Android');
+{ const {ctx,p}=await ouvrir(UA.ios26,{share:false}); await guide(p); const r=await releve(p);
+  ok(r.uni&&!r.bouton&&r.cartes===4&&r.visibles===4&&/^1 Touchez ••• en bas à droite/.test(r.txt[0]),'sans partage programmable : les trois gestes à la main, tous visibles ('+r.visibles+')');
+  ok(r.derniereBas<=r.ecran&&r.aideBas<=r.ecran,'et ils tiennent dans 667 px ('+r.derniereBas+' / '+r.aideBas+')');
+  await ctx.close(); }
 { const {ctx,p}=await ouvrir(UA.ios18); await guide(p); const r=await releve(p);
-  ok(r.pas&&r.cartes===3&&r.prog==='1 / 2','Safari avant iOS 26 : deux gestes + la carte finale, « '+r.prog+' »');
+  ok(r.bouton&&r.cartes===3&&/Touchez Partager ⬆︎, en bas de l.écran, puis « Sur l.écran d.accueil »/.test(r.repliTxt),'Safari avant iOS 26 : même bouton, et le repli à la main nomme Partager EN BAS — « '+r.repliTxt+' »');
   await ctx.close(); }
 { const {ctx,p}=await ouvrir(UA.chrome); await guide(p); const r=await releve(p);
-  ok(r.pas&&r.cartes===3&&/en haut à droite/.test(r.txt),'Chrome sur iPhone : pas à pas aussi, deux gestes + la carte finale, et Partager en HAUT');
+  ok(r.uni&&!r.bouton&&r.cartes===3&&r.visibles===3&&/en haut à droite/.test(r.txt[0]),'Chrome sur iPhone : ses cartes, toutes visibles, Partager en HAUT, pas de bouton (sa feuille n’est pas mesurée)');
   await ctx.close(); }
 { const {ctx,p}=await ouvrir(UA.whatsapp,{safari:false}); await guide(p); const r=await releve(p);
-  ok(!r.pas&&r.visibles>=3,'dans WhatsApp, PAS de pas à pas : la feuille propose deux chemins et se lit d’un bloc ('+r.visibles+' cartes visibles)');
+  ok(!r.uni&&!r.bouton&&r.visTous>=3,'dans WhatsApp, rien de tout cela : la feuille propose deux chemins et se lit d’un bloc ('+r.visTous+' cartes visibles)');
   await ctx.close(); }
 { const {ctx,p}=await ouvrir(UA.android,{safari:false}); await guide(p); const r=await releve(p);
-  ok(!r.pas&&r.visibles===2&&r.bouton===null,'Android : inchangé — ses deux cartes, aucun bouton « suivante » (il a l’invite native)');
+  ok(!r.uni&&r.visibles===2&&!r.bouton&&!r.suiv,'Android : inchangé — ses deux cartes, aucun bouton (il a l’invite native)');
   await ctx.close(); }
 
 console.log('\nD — à la PREMIÈRE ouverture en plein écran, l’application dit qu’elle est installée');
@@ -187,11 +196,10 @@ ok(!meta===!urlId && (!meta || meta[1]===urlId[1]),'la bannière Safari (<meta a
 console.log('\nF — et tout cela se lit dans la langue choisie');
 for(const lang of ['en','pt']){
   const {ctx,p}=await ouvrir(UA.ios26,{lang}); await guide(p);
-  const tx=[]; for(let k=0;k<4;k++){ const r=await releve(p); tx.push(r.prog+' | '+r.bouton+' | '+r.txt); await p.evaluate(()=>document.querySelector('.ig-suiv').click()); await p.waitForTimeout(200); }
-  const all=tx.join(' ');
-  const FR=['Suivant','Fermer','Précédent','C\'est fait','Touchez','écran d\'accueil','Partager','en bas'];
+  const r=await releve(p); const all=[r.bTxt,...r.txt,r.repli,r.repliTxt].join(' | ');
+  const FR=['Touchez','C\'est fait','écran d\'accueil','Partager','en bas','rien ne s','faites défiler'];
   const reste=FR.filter(m=>all.includes(m));
-  ok(!reste.length,lang.toUpperCase()+' : progression, boutons et carte finale traduits'+(reste.length?' — reste : '+reste.join(' · '):''));
+  ok(!reste.length,lang.toUpperCase()+' : bouton, gestes, carte finale et repli traduits'+(reste.length?' — reste : '+reste.join(' · '):''));
   await ctx.close();
 }
 
