@@ -2197,6 +2197,24 @@
   // Mode démo (outil marketing, libre) vs vraie bêta (rôles cloisonnés).
   // Démo = bouton explicite « Voir la démo », OU build sans Firebase, OU tests.
   function isDemo(){ return !!(S.demoMode || !CONFIG.firebase || window.__NOFB); }
+  /* ══ FIREBASE N'A PAS DÉMARRÉ : ON NE JOUE PAS LA MAQUETTE À SA PLACE ═══════════════
+     « Avec le compte admin parfois la connexion marche mal et je tombe sur ce compte
+     [Camille Magras], je ferme tout et c'est bon » (05/11/2026). Le compte fantôme est
+     le personnage de la MAQUETTE : quand les modules Firebase ne se chargent pas (réseau
+     faible, gstatic injoignable), `initFirebase` tombait dans son `catch`, laissait
+     `FB` à null… et l'application continuait COMME SI elle était le prototype sans
+     serveur — « Se connecter » fabriquait alors un compte local nommé « Camille Magras »
+     (le repli écrit pour la maquette) et disait « Content de vous revoir ». Rien ne
+     distinguait « nous sommes la maquette » de « nous sommes la vraie application et le
+     serveur ne répond pas ». C'est cette distinction : la configuration Firebase existe
+     et nous sommes servis par un hôte — pas un fichier local, pas le banc d'essai —
+     donc l'absence de FB est une PANNE, jamais une maquette. On le dit, on réessaie,
+     et aucun geste ne fabrique une identité en attendant. */
+  function sansServeur(){ try{ return !!(CONFIG.firebase && !window.__NOFB && !FB && location.protocol!=='file:'); }catch(_){ return false; } }
+  function panneServeur(){
+    try{ toast('Pas de connexion au serveur pour l’instant.'); }catch(_){}
+    try{ bandeauPanneServeur(true); }catch(_){}
+  }
   // Le compte connecté est-il administrateur ? (rôle ou e-mail dans la liste admin)
   function isAdminAccount(){ if(!S.account)return false; if(S.account.role==='admin')return true; const e=(S.account.email||'').toLowerCase(); return (CONFIG.adminEmails||[]).map(function(x){return x.toLowerCase();}).indexOf(e)>=0; }
   // Vrai compte prestataire (créé côté Firebase), par opposition à une inscription en cours
@@ -3761,7 +3779,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='906';
+  const VERSION_APP='907';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -7700,6 +7718,9 @@
     "si vous ne la voyez pas, touchez « En voir plus » ▾ pour dérouler la liste":"if you don't see it, tap “Show More” ▾ to expand the list",
     "votre Safari ne ressemble pas à ça ?":"your Safari doesn't look like this?",
     "C'est fait !":"Done!",
+    "Pas de connexion au serveur.":"No connection to the server.",
+    "Vérifiez votre réseau, puis touchez le bouton.":"Check your network, then tap the button.",
+    "Pas de connexion au serveur pour l’instant.":"No connection to the server for now.",
     "Suivant →":"Next →",
     "← Précédent":"← Back",
     "Touchez l'icône Ti-Services sur votre écran d'accueil.":"Tap the Ti-Services icon on your home screen.",
@@ -9144,6 +9165,9 @@
     "si vous ne la voyez pas, touchez « En voir plus » ▾ pour dérouler la liste":"se não a vir, toque em “Mostrar mais” ▾ para expandir a lista",
     "votre Safari ne ressemble pas à ça ?":"o seu Safari não se parece com isto?",
     "C'est fait !":"Está feito!",
+    "Pas de connexion au serveur.":"Sem ligação ao servidor.",
+    "Vérifiez votre réseau, puis touchez le bouton.":"Verifique a sua rede e depois toque no botão.",
+    "Pas de connexion au serveur pour l’instant.":"Sem ligação ao servidor por agora.",
     "Suivant →":"Seguinte →",
     "← Précédent":"← Anterior",
     "Touchez l'icône Ti-Services sur votre écran d'accueil.":"Toque no ícone Ti-Services no seu ecrã inicial.",
@@ -21610,21 +21634,21 @@
            commande en attente reste prioritaire : `resumeOrderIfPending` ouvre le
            paiement, qui passe avant l'onglet dans le rendu. */
         S.clientNav='home';
-        if(FB){fbSignup(c);}else{S.account={name:c.name.trim(),email:c.email.trim(),zone:c.zone,photo:c.photo||''};saveAccount(S.account);S.onboarded=true;S.authView=null;resumeOrderIfPending();render();burstConfetti();toast('Compte créé, bienvenue, '+c.name.trim().split(' ')[0]+' !');}break;}
+        if(FB){fbSignup(c);}else if(sansServeur()){panneServeur();}else{S.account={name:c.name.trim(),email:c.email.trim(),zone:c.zone,photo:c.photo||''};saveAccount(S.account);S.onboarded=true;S.authView=null;resumeOrderIfPending();render();burstConfetti();toast('Compte créé, bienvenue, '+c.name.trim().split(' ')[0]+' !');}break;}
       case 'show-login':S.authView='login';S.loginForm={email:(S.account?S.account.email:(S.clientForm.email||'')),password:''};render();break;
       case 'login-back':S.authView=null;render();break;
       case 'login-to-signup':S.authView='signup';S.onbStep=1;render();break;
       case 'do-login':attemptLogin();break;
       case 'toggle-remember':S.loginForm.remember=(S.loginForm.remember===false);render();break;
       case 'forgot-pw':{let emDom='';try{const el=document.querySelector('[data-loginform] [data-lf="email"]');if(el&&el.value)emDom=el.value;}catch(_){}const em=(emDom||(S.loginForm&&S.loginForm.email)||(S.account&&S.account.email)||'').trim();if(!/.+@.+\..+/.test(em)){toast('Saisissez votre e-mail, puis « Mot de passe oublié ».');break;}if(FB){toast('Envoi de l’e-mail en cours…');fbResetPassword(em);}else{toast('Un lien de réinitialisation vous serait envoyé par e-mail.');}break;}
-      case 'google-soon':if(FB){fbGoogle();}else{toast('Connexion Google, bientôt disponible');}break;
+      case 'google-soon':if(FB){fbGoogle();}else if(sansServeur()){panneServeur();}else{toast('Connexion Google, bientôt disponible');}break;
       // Inscription CLIENT via Google : on mémorise l'intention (survit à une redirection
       // mobile) puis on lance l'authentification. loadUserProfile crée le compte client
       // et route vers le profil pour compléter les informations.
-      case 'google-client':try{localStorage.setItem('tiSignupIntent','client');}catch(_){}if(FB){fbGoogle();}else{toast('Connexion Google, bientôt disponible');}break;
+      case 'google-client':try{localStorage.setItem('tiSignupIntent','client');}catch(_){}if(FB){fbGoogle();}else if(sansServeur()){panneServeur();}else{toast('Connexion Google, bientôt disponible');}break;
       // Inscription PRESTATAIRE via Google : idem, mais on prépare le formulaire pro et on
       // reste dessus après authentification (SIRET, assurance, métiers restent à saisir).
-      case 'google-pro':try{localStorage.setItem('tiSignupIntent','artisan');}catch(_){}signupAsArtisan=true;S.proForm=S.proForm||{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,cgu:false,charte:false,rates:{},otherService:'',photo:'',refCode:storedParrain()};if(FB){fbGoogle();}else{toast('Connexion Google, bientôt disponible');}break;
+      case 'google-pro':try{localStorage.setItem('tiSignupIntent','artisan');}catch(_){}signupAsArtisan=true;S.proForm=S.proForm||{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,cgu:false,charte:false,rates:{},otherService:'',photo:'',refCode:storedParrain()};if(FB){fbGoogle();}else if(sansServeur()){panneServeur();}else{toast('Connexion Google, bientôt disponible');}break;
       case 'logout':S.demoMode=false;S.guest=false;clearClientCache();if(FB)blankAll();fbLogout();if(!FB){S.onboarded=false;S.persona='client';S.clientNav='home';S.mission=null;S.missions=[];render();}break;
       // Un prestataire qui veut commander un service pour lui-même utilise un compte
       // CLIENT séparé (autre e-mail). On le déconnecte de l'espace prestataire et on
@@ -21817,12 +21841,12 @@
       // « Enregistrer et continuer » : on enchaîne sur la prochaine étape incomplète (parcours
       // guidé, moins d'allers-retours), sinon retour au hub (prêt à envoyer).
       case 'draft-save':{saveProDraft();S.proStep=nextDraftStep(S.proStep);render();try{view.scrollTop=0;}catch(_){}break;}
-      case 'draft-submit':{const f=S.proForm;if(!proSignupOk(f)){toast('Complétez les 4 étapes pour envoyer');break;}saveProDraft();if(FB){signupAsArtisan=true;fbProSignup(f);}else{S.proStatus='pending';S.proStep=null;render();burstConfetti();toast('Candidature envoyée (démo)');}break;}
+      case 'draft-submit':{const f=S.proForm;if(!proSignupOk(f)){toast('Complétez les 4 étapes pour envoyer');break;}saveProDraft();if(FB){signupAsArtisan=true;fbProSignup(f);}else if(sansServeur()){panneServeur();}else{S.proStatus='pending';S.proStep=null;render();burstConfetti();toast('Candidature envoyée (démo)');}break;}
       case 'draft-logout':try{localStorage.removeItem('tiSignupIntent');}catch(_){}fbLogout();if(!FB){S.onboarded=false;S.persona='client';S.proStatus='signup';render();}toast('Déconnecté');break;
       case 'conc-signup-back':S.signupKind=null;render();break;
       case 'conc-toggle-cgu':if(S.concSignup)S.concSignup.cgu=!S.concSignup.cgu;render();break;
       case 'conc-toggle-mandat':if(S.concSignup)S.concSignup.mandat=!S.concSignup.mandat;render();break;
-      case 'conc-submit':{const f=S.concSignup||{};if(!concSignupOk(f)){toast('Complétez tous les champs obligatoires (marqués *).');break;}if(FB){signupAsConcierge=true;fbConciergeSignup(f);}else{S.persona='concierge';S.concStatus='pending';S.concName=(f.contact||f.name||'').trim();S.onboarded=true;S.concNav='home';render();toast('Candidature envoyée (démo)');}break;}
+      case 'conc-submit':{const f=S.concSignup||{};if(!concSignupOk(f)){toast('Complétez tous les champs obligatoires (marqués *).');break;}if(FB){signupAsConcierge=true;fbConciergeSignup(f);}else if(sansServeur()){panneServeur();}else{S.persona='concierge';S.concStatus='pending';S.concName=(f.contact||f.name||'').trim();S.onboarded=true;S.concNav='home';render();toast('Candidature envoyée (démo)');}break;}
       case 'back-to-client':try{localStorage.removeItem('tiSignupIntent');}catch(_){}signupAsArtisan=false;
         // Déjà authentifié via Google sur le formulaire pro : on le bascule proprement en
         // compte client (création + ouverture du profil) plutôt que de le laisser sur un
@@ -22127,6 +22151,7 @@
       case 'rcs-bt':if(S.proForm){S.proForm.rcsCity='Basse-Terre';if(S.proStatus==='draft')saveProDraft();}render();break;
       case 'pro-submit':{const f=S.proForm;if((f.name||'').trim().length<2){toast('Indiquez votre nom / raison sociale');break;}if(!f.birth){toast('Indiquez votre date de naissance');break;}if(!isAdult(f.birth)){toast('Inscription réservée aux personnes majeures (18 ans et plus).');break;}if((f.phone||'').trim().length<6){toast('Indiquez un numéro de téléphone');break;}if(!f.cats.length){toast('Sélectionnez au moins un service');break;}if(f.cats.includes('autre')&&!(f.otherService||'').trim()){toast('Précisez le service « Autre » que vous proposez');break;}if(f.cats.includes('autre')&&!prixAutreLu(f.otherPrice).ok){toast(prixAutreAvis(f.otherPrice,f.otherUnit).txt||('Indiquez ce que vous voulez percevoir pour « '+(f.otherService||'').trim()+' »'));break;}if(f.cats.includes('baby')&&!(f.diplomas&&f.diplomas.length)){toast('Garde d’enfants : indiquez vos diplômes (ou « Expérience seule »)');break;}if(!f.googleAuth&&!/.+@.+\..+/.test(f.email||'')){toast('Un e-mail valide est requis');break;}if(!f.googleAuth&&((f.password||'').length<6||f.password!==f.password2)){toast('Mot de passe : 6 caractères min., identiques');break;}if(!/^\d{14}$/.test((f.siret||'').replace(/\s/g,''))){toast('Un SIRET valide (14 chiffres) est requis');break;}if(!(f.address||'').trim()){toast('Indiquez votre adresse professionnelle (obligatoire sur les factures)');break;}if(!f.insuranceDoc&&!f.insuranceNone){toast('Joignez votre attestation, ou cochez « je ne dispose pas d’assurance »');break;}if(!f.mandat){toast('Acceptez le mandat de facturation pour continuer');break;}if(!f.cgu){toast('Acceptez les CGU et les CGV pour continuer');break;}if(!f.charte){toast('Acceptez la charte de responsabilité du prestataire');break;}
         if(FB){signupAsArtisan=true;fbProSignup(f);break;} // vrai compte prestataire Firebase
+        if(sansServeur()){panneServeur();break;}
         const rates={};f.cats.forEach(c=>{rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});const minRate=Math.min.apply(null,f.cats.map(c=>rates[c]));S.adminArtisans=S.adminArtisans.filter(x=>x.id!=='self');S.adminArtisans.unshift({id:'self',name:f.name||'Nouveau prestataire',status:'attente',type:'entreprise',cats:f.cats.slice(),other:(f.otherService||'').trim(),otherPrice:prixAutreLu(f.otherPrice).valeur,otherUnit:(f.otherUnit==='forfait'?'forfait':'h'),rates,rate:minRate,desiredNetRates:(f.acceptsGrille?null:(f.desiredNet||null)),siret:(f.siret||'').replace(/\s/g,''),insured:!!f.insuranceDoc,insuranceNone:!!f.insuranceNone,rating:0,jobs:0,zone:'—',phone:f.phone||'',email:f.email||'',photo:f.photo||''});S.proStatus='pending';render();break;}
       case 'pro-approve':{S.proStatus='approved';const f=S.proForm;S.proBirth=f.birth||S.proBirth;if(f.photo)S.proPhoto=f.photo;if(f.name)S.proName=f.name;if(f.cats.length)S.proCats=f.cats.slice();const rates={};f.cats.forEach(c=>{rates[c]=(f.rates&&f.rates[c]!=null)?f.rates[c]:svcBase(c);});S.proRates=rates;if(f.cats.length)S.proRate=Math.min.apply(null,f.cats.map(c=>rates[c]));S.proStatusType='entreprise';S.proSiret=(f.siret||'').replace(/\s/g,'');S.proBio=f.bio||'';S.proInsured=!!f.insuranceDoc;if(f.insurer)S.proInsurer=f.insurer;if(f.phone)S.proPhone=f.phone;
         // Nouveau prestataire = part de zéro : aucun historique ni agenda pré-rempli.
@@ -23977,7 +24002,41 @@
       loadPrices();  // grille de prix officielle (source de vérité du contrôle serveur)
       loadConfig();  // taux d'apport conciergerie officiel
       loadStats();   // compteur du programme fondateur (places restantes)
-    }catch(e){ console.warn('Firebase indisponible, mode démo',e); FB=null; try{window.__killSplash&&window.__killSplash();}catch(_){} }
+    }catch(e){
+      // Hors d'un fichier local, ce n'est PAS « mode démo » : c'est une panne, et elle se
+      // dit (voir `sansServeur`). Le prototype, lui, continue de s'ouvrir sans serveur.
+      console.warn('Firebase indisponible'+(location.protocol==='file:'?', mode démo':''),e); FB=null;
+      try{window.__killSplash&&window.__killSplash();}catch(_){}
+      try{ if(sansServeur()){ bandeauPanneServeur(true); reessayerQuandLeReseauRevient(); } }catch(_){}
+    }
+  }
+  // Le bandeau : une phrase, un bouton. RÉESSAYER, C'EST RECHARGER — et ce n'est pas un
+  // raccourci : un `import()` de module qui a échoué est MÉMORISÉ par le navigateur (la
+  // table des modules garde l'échec pour l'adresse), donc rappeler `initFirebase` ne
+  // redemande rien au réseau — mesuré, 4 tentatives avant comme après. Seule une nouvelle
+  // page recharge les modules. Rien n'est en jeu à ce moment-là : sans serveur, aucun
+  // compte n'est ouvert et aucune commande n'est en cours.
+  function bandeauPanneServeur(on){
+    let el=document.getElementById('fbPanne');
+    if(!on){ if(el)el.remove(); return; }
+    if(el)return;
+    el=document.createElement('div'); el.id='fbPanne'; el.setAttribute('role','alert');
+    el.style.cssText='position:fixed;left:12px;right:12px;bottom:calc(14px + env(safe-area-inset-bottom));z-index:10060;background:#231E33;color:#fff;border-radius:18px;padding:15px 16px;box-shadow:0 18px 40px -14px rgba(0,0,0,.45);max-width:520px;margin:0 auto;display:flex;flex-direction:column;gap:10px';
+    el.innerHTML='<b style="font-size:16px;line-height:1.35">Pas de connexion au serveur.</b><span style="font-size:14px;line-height:1.4;opacity:.9">Vérifiez votre réseau, puis touchez le bouton.</span><button type="button" id="fbPanneRetry" style="min-height:46px;border:none;border-radius:12px;background:#fff;color:#231E33;font-weight:750;font-size:16px;cursor:pointer">Réessayer</button>';
+    document.body.appendChild(el);
+    try{ i18nApply(el); }catch(_){}
+    el.querySelector('#fbPanneRetry').addEventListener('click',function(){ try{ location.reload(); }catch(_){} });
+  }
+  // Et quand le réseau revient de lui-même, on recharge sans attendre un toucher — mais
+  // seulement si rien n'est en train d'être tapé (la règle de `majSansRisque`).
+  function reessayerQuandLeReseauRevient(){
+    window.addEventListener('online',function(){
+      try{
+        if(!sansServeur())return;
+        const a=document.activeElement; if(a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))return;
+        location.reload();
+      }catch(_){}
+    },{once:true});
   }
   // Code de parrainage RÉEL et stable, dérivé du nom + uid (jamais le code de démo).
   function genReferralCode(name,uid){
@@ -25231,6 +25290,7 @@
     try{ const em=document.querySelector('[data-loginform] [data-lf="email"]'); const pw=document.querySelector('[data-loginform] [data-lf="password"]'); if(em&&em.value)f.email=em.value; if(pw&&pw.value)f.password=pw.value; }catch(_){}
     if(!(/.+@.+\..+/.test(f.email||'')&&(f.password||'').length>=1)){toast('E-mail et mot de passe requis');return;}
     if(FB){ toast('Connexion…'); fbLogin(f); }
+    else if(sansServeur()){ panneServeur(); }   // jamais le compte de la maquette à la place
     else{ const acc=(S.account&&S.account.email===f.email.trim())?S.account:{name:(S.account?S.account.name:'Camille Magras'),email:f.email.trim(),zone:(S.account?S.account.zone:'Gustavia')};S.account=acc;S.clientForm={name:acc.name,email:acc.email,zone:acc.zone,password:''};S.onboarded=true;S.authView=null;resumeOrderIfPending();render();toast('Content de vous revoir, '+acc.name.split(' ')[0]+' !'); }
   }
   // Réinitialisation par e-mail. Message identique que le compte existe ou non
