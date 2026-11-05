@@ -26,10 +26,13 @@
 
    CE QUE CHAQUE CONTRE-ÉPREUVE FAIT ROUGIR, nommé :
      · le pas à pas n'est plus branché (toutes les cartes à la fois) ...... 9 mesures
-     · l'accroche revient au-dessus du dessin ............................. 1 mesure (le bouton sort de l'écran)
-     · la carte « C'est fait » n'est plus ajoutée ......................... 4 mesures
+     · l'accroche ET le sous-titre reviennent ............................. 2 mesures (le bouton sort de l'écran : 672 > 667)
+       (l'accroche SEULE ne suffit plus à le faire sortir depuis que le sous-titre est
+       parti : les deux retraits se partagent la marge, et c'est la mesure de TENUE qui
+       garde — pas l'absence de l'une ou de l'autre)
+     · la carte « C'est fait » n'est plus ajoutée ......................... 6 mesures
      · la confirmation n'est plus posée à la 1ʳᵉ ouverture ................ 2 mesures
-     · « Installer » ouvre le guide même quand l'App Store est renseigné .. 2 mesures */
+     · « Installer » n'envoie plus sur l'App Store renseigné .............. 2 mesures */
 const fs=require('fs'),path=require('path');
 const {chromium}=require('playwright-core');
 const RACINE='/home/user/alize-work';
