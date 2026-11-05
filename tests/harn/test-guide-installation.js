@@ -16,7 +16,13 @@
 
    4. ET IL N'Y AVAIT AUCUNE ISSUE. La branche Safari ne portait pas de repli : le guide
       affirmait un chemin sans laisser passer à l'autre. On DEVINE la version d'iOS ;
-      mieux vaut une porte que de mieux parier. */
+      mieux vaut une porte que de mieux parier.
+
+   DEPUIS LA v906, LE GUIDE iPHONE SE LIT UNE CARTE À LA FOIS (test-installer-a-80-ans.js) :
+   les cartes sont toutes dans la feuille mais une seule est AFFICHÉE, et une carte finale
+   « C'est fait ! Retournez sur votre écran d'accueil » suit les gestes. On compte donc
+   gestes + 1, et l'on lit `textContent` — `innerText` ignore ce qui est masqué, et une
+   mesure « aucune position affirmée à l'iPad » serait alors vraie d'une feuille vide. */
 const fs=require('fs'),path=require('path');
 const {chromium}=require('playwright-core');
 const RACINE='/home/user/alize-work';
@@ -54,14 +60,14 @@ async function feuille(ua,touch,h,lang,deplier){
       etape1Visible: cb? cb.bottom<=window.innerHeight : false,
       sortie:!!s.querySelector('.ig-fallback'), legende:!!s.querySelector('.ig-cap'),
       video:!!s.querySelector('.ig-video'),
-      intro:(s.querySelector('.ig-intro')||{}).innerText||'',
-      txt:s.innerText.replace(/\s+/g,' ')};});
+      intro:(s.querySelector('.ig-intro')||{}).textContent||'',
+      txt:s.textContent.replace(/\s+/g,' ')};});
   await ctx.close(); return r;
 }
 
 console.log('\nA — iPhone, Safari, iOS 26 : trois gestes, et on ne se répète pas');
 const a=await feuille(UA.ios26,0,844);
-ok(a.etapes===3,'trois étapes — autant que l’animation joue de frappes ('+a.etapes+')');
+ok(a.etapes===4,'trois gestes — autant que l’animation joue de frappes — plus la carte « C’est fait » ('+a.etapes+')');
 ok(!a.legende,'plus de légende sous l’animation : elle redisait le sous-titre de l’étape 1');
 ok(/iOS 26/.test(a.badge),'le badge DIT la version reconnue — « '+a.badge+' »');
 ok(a.sortie,'et une issue existe si la reconnaissance se trompe');
@@ -74,7 +80,7 @@ ok(petit.animH>=170,'et le dessin n’y est pas rétréci pour autant ('+petit.a
 
 console.log('\nC — iPhone, Safari avant iOS 26 : deux gestes, pas trois');
 const c=await feuille(UA.ios18,0,667);
-ok(c.etapes===2,'« En voir plus » n’est pas une étape : elle ne se produit que si la liste est courte ('+c.etapes+' étapes)');
+ok(c.etapes===3,'« En voir plus » n’est pas une étape : elle ne se produit que si la liste est courte (2 gestes + la carte finale = '+c.etapes+')');
 ok(/En voir plus/.test(c.txt),'elle reste dite, en sous-titre de l’étape qu’elle sert');
 ok(/iOS 18/.test(c.badge),'badge — « '+c.badge+' »');
 ok(c.etape1Visible,'étape 1 visible sans défiler');
@@ -91,9 +97,9 @@ ok(d.sortie,'l’issue est là aussi');
 
 console.log('\nE — Chrome sur iPhone : inchangé, sauf l’étape conditionnelle');
 const e=await feuille(UA.chrome,0,844);
-ok(e.etapes===2,'deux étapes, comme son animation joue deux frappes ('+e.etapes+')');
+ok(e.etapes===3,'deux gestes, comme son animation joue deux frappes, plus la carte finale ('+e.etapes+')');
 ok(e.video,'la vidéo reste : elle a été filmée dans Chrome, le navigateur qu’iOS 26 n’a pas changé');
-ok(/en haut à droite de la barre d.adresse/.test(e.txt),'et son repère reste le sien : Partager est en HAUT');
+ok(/en haut à droite/.test(e.txt),'et son repère reste le sien : Partager est en HAUT');
 
 console.log('\nF — et la feuille se lit ENTIÈREMENT dans la langue choisie');
 // La règle du projet : une phrase mi-française mi-étrangère est pire qu'une phrase
@@ -101,7 +107,8 @@ console.log('\nF — et la feuille se lit ENTIÈREMENT dans la langue choisie');
 // libellé DESSINÉ dans l'animation se lisait « Partilhar » puis « Sur l'écran d'accueil ».
 const FR=['Touchez','le bouton','Sur l\'écran','d\'accueil','si vous ne la voyez pas',
           'ne ressemble pas','Regardez le geste','quelques secondes','barre d\'outils',
-          'Dans le menu','Pas de bouton','En voir plus','faites défiler'];
+          'Dans le menu','Pas de bouton','En voir plus','faites défiler',
+          'C\'est fait','Retournez sur','étape suivante','Étape','Plus besoin'];
 for(const lang of ['en','pt']){
   const r=await feuille(UA.ios26,0,844,lang,true);
   const reste=FR.filter(m=>r.txt.includes(m));
