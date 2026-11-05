@@ -27,9 +27,9 @@
    GESTE, et c'est COMPTÉ.
 
    CE QUE CHAQUE CONTRE-ÉPREUVE FAIT ROUGIR, nommé :
-     · l'écran unique n'est plus branché (igUnEcran retiré) ............... 4 mesures
-     · le bouton de partage n'est plus rendu (partage=false) ............. 7 mesures
-     · la carte « C'est fait » n'est plus ajoutée ......................... 3 mesures
+     · l'écran unique n'est plus branché (igUnEcran retiré) ............... 10 mesures
+     · le bouton de partage n'est plus rendu (partage=false) ............. 12 mesures
+     · la carte « C'est fait » n'est plus ajoutée ......................... 6 mesures
      · la confirmation n'est plus posée à la 1ʳᵉ ouverture ................ 2 mesures
      · « Installer » n'envoie plus sur l'App Store renseigné .............. 2 mesures */
 const fs=require('fs'),path=require('path');
@@ -110,14 +110,16 @@ console.log('\nA — iPhone (Safari, iOS 26), le plus petit écran : UN écran, 
 
 console.log('\nB — le bouton ouvre la feuille de partage de Safari, et le guide reste derrière');
 { const {ctx,p}=await ouvrir(UA.ios26); await guide(p);
-  await p.evaluate(()=>document.getElementById('igOuvrir').click()); await p.waitForTimeout(300);
+  // On mesure l'ABSENCE du bouton au lieu de buter dessus : une épreuve qui lève n'est pas une mesure.
+  const presse=await p.evaluate(()=>{const b=document.getElementById('igOuvrir'); if(b)b.click(); return !!b;}); await p.waitForTimeout(300);
+  ok(presse,'le bouton est là');
   const r=await p.evaluate(()=>({parts:window.__parts, feuille:!!document.querySelector('.ig-sheet'), fin:!!document.querySelector('.ig-card.ig-fin')}));
-  ok(r.parts.length===1&&/\/app\.html$/.test(r.parts[0].url),'un toucher, UN appel à navigator.share, avec l’adresse de la page — '+JSON.stringify(r.parts[0]));
+  ok(r.parts.length===1&&/\/app\.html$/.test((r.parts[0]||{}).url||''),'un toucher, UN appel à navigator.share, avec l’adresse de la page — '+JSON.stringify(r.parts[0]));
   ok(r.parts[0]&&r.parts[0].title==='Ti-Services','et le nom de l’application');
   ok(r.feuille&&r.fin,'le guide reste ouvert derrière : au retour, « C’est fait » est sous les yeux');
   await ctx.close(); }
 { const {ctx,p}=await ouvrir(UA.ios26,{shareRefuse:true}); await guide(p);
-  await p.evaluate(()=>document.getElementById('igOuvrir').click()); await p.waitForTimeout(300);
+  await p.evaluate(()=>{const b=document.getElementById('igOuvrir'); if(b)b.click();}); await p.waitForTimeout(300);
   const r=await p.evaluate(()=>({parts:window.__parts.length, feuille:!!document.querySelector('.ig-sheet')}));
   ok(r.parts===1&&r.feuille,'la feuille refermée sans rien choisir (AbortError) ne casse rien : le guide est toujours là');
   await ctx.close(); }
