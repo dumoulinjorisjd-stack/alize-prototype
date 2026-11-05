@@ -52,7 +52,9 @@ ok(!/compte se crée dans l/.test(avec.txt),'on atteint l’inscription — « '
 console.log('\nC — la marque n’est posée qu’aux instants où l’on SAIT');
 ok(/window\.addEventListener\('appinstalled',function\(\)\{ try\{ noterInstallation\(\); \}catch\(_\)\{\} /.test(src),
   'à l’événement `appinstalled` — il se déclenche dans l’onglet où l’on vient d’accepter');
-ok(/try\{ if\(appInstalled\(\)\)noterInstallation\(\); \}catch\(_\)\{\}/.test(src),
+// Depuis la v906 le démarrage en plein écran regarde AUSSI si la marque était déjà là,
+// pour dire « installée » une seule fois ; la pose, elle, reste inconditionnelle.
+ok(/if\(appInstalled\(\)\)\{\n\s*let deja=false;[^\n]*\n\s*noterInstallation\(\);/.test(src),
   'et à tout démarrage en plein écran');
 ok(/function accountsHere\(\)\{ try\{ return appDejaInstallee\(\)\|\|_adminWebFlag; \}/.test(src),
   'la barrière lit la mémoire, pas la fenêtre du moment');
