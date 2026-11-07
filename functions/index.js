@@ -1200,8 +1200,48 @@ async function notifyArtisanMollieProblem(db, uid, reason, dejaFrais) {
     console.log('Alerte Mollie NON envoyée à ' + uid + ' (' + reason + ', onboarding « ' + (onb || 'inconnu') + ' ») : rien à faire de son côté');
     return;
   }
-  // Déjà dit, et rien n'a changé depuis.
   const motif = manquePiece ? 'needs-data' : 'no_org';
+  /* PAS DE COMPTE : ON DIT LA SOMME, PAR UN SEUL CANAL (l'éditeur, 07/11/2026). « Connectez
+     votre compte de paiement » sans chiffre est une démarche ; « 85,00 € vous attendent »
+     est de l'argent à soi. La notification pour qui l'a activée, l'e-mail pour les autres,
+     jamais les deux — et c'est le noyau qui décide (une heure entre deux envois, sept
+     jours sur un montant inchangé). La somme est d'abord écrite sur la fiche : c'est elle
+     que l'écran d'accueil affiche, et c'est la même que celle du message. */
+  if (pasDeCompte) {
+    const net = await majNetMisDeCote(db, uid);
+    let email = '', tokens = [], name = '';
+    try {
+      const ud = (await db.collection('users').doc(uid).get()).data() || {};
+      email = ud.email || ''; tokens = ud.pushTokens || []; name = (ud.name || '').toString().slice(0, 60);
+    } catch (_) {}
+    const dec = ARGENT.rappelArgentDecider({net, aPush: tokens.length > 0, aMail: !!email,
+      dernierNet: ad.mollieArgentDitNet, dernierAt: ad.mollieArgentDitAt, now: Date.now()});
+    if (!dec.envoyer) { console.log('Argent mis de côté NON dit à ' + uid + ' : ' + dec.raison + ' (' + net + ' €)'); return; }
+    try { await db.collection('artisans').doc(uid).set({mollieArgentDitNet: net, mollieArgentDitAt: Date.now(), mollieIssueNotified: motif, mollieIssueNotifiedAt: Date.now()}, {merge: true}); } catch (_) {}
+    const T = ARGENT.rappelArgentTextes(net);
+    if (dec.canal === 'push') {
+      try {
+        await getMessaging().sendEachForMulticast({
+          tokens,
+          data: {title: T.titre, body: T.corps, url: './?open=missions'},
+          webpush: {fcmOptions: {link: '/?open=missions'}, headers: {Urgency: 'high'}},
+        });
+      } catch (e) { console.warn('argent mis de côté push', e); }
+    } else {
+      // Le même courriel que la relance du lundi : une seule mise en page, un seul ton.
+      const attachments = [];
+      try {
+        const logo = require('fs').readFileSync(require('path').join(__dirname, 'mail-logo.png'));
+        attachments.push({filename: 'ti-services.png', content: logo, cid: 'tilogo'});
+      } catch (_) {}
+      try {
+        await sendMail(db, email, {subject: T.montant + ' t’attendent sur Ti-Services',
+          html: mollieReminderHtml(name, Number(ad.mollieRelances) || 1, 'paiements', T.montant), attachments});
+      } catch (e) { console.warn('argent mis de côté mail', e); }
+    }
+    return;
+  }
+  // Déjà dit, et rien n'a changé depuis.
   const vu = Number(ad.mollieIssueNotifiedAt) || 0;
   if (ad.mollieIssueNotified === motif && vu && (Date.now() - vu) < MOLLIE_RELANCE_MS) {
     console.log('Alerte Mollie NON envoyée à ' + uid + ' (' + motif + ') : déjà dit il y a moins de sept jours');
@@ -1326,9 +1366,20 @@ async function netEnAttente(db, uid) {
   try {
     const q = await db.collection('requests')
       .where('providerUid', '==', uid).where('molliePayout', '==', 'unrouted').get();
-    q.forEach((d) => { net += Number((d.data() || {}).molliePayoutNet) || 0; });
+    net = ARGENT.netMisDeCote(q.docs.map((d) => d.data() || {}));
   } catch (e) { console.warn('netEnAttente', uid, e); }
   return round2(net);
+}
+/* LA SOMME MISE DE CÔTÉ VIT SUR LA FICHE DU PRESTATAIRE (`netMisDeCote`), écrite par le
+   serveur seul : c'est ce que son écran d'accueil affiche. Elle est recalculée à chaque
+   événement qui la change — un versement qui n'a pas pu partir, un rattrapage réussi —
+   et par la relance du lundi, qui la remet d'aplomb si un événement a été manqué. Le
+   client ne la calcule JAMAIS de son côté : un téléphone neuf n'a pas toutes les
+   missions, et deux chiffres pour le même argent seraient le défaut. */
+async function majNetMisDeCote(db, uid) {
+  const net = await netEnAttente(db, uid);
+  try { await db.collection('artisans').doc(uid).set({netMisDeCote: net}, {merge: true}); } catch (e) { console.warn('majNetMisDeCote', uid, e); }
+  return net;
 }
 
 // RATTRAPAGE DES VERSEMENTS EN ATTENTE. Un artisan peut travailler dès que Mollie
@@ -1337,6 +1388,11 @@ async function netEnAttente(db, uid) {
 // sur tout ce qui l'attendait et on le lui route — sans intervention humaine.
 async function rerouteArtisanPayouts(db, uid, orgId) {
   if (!orgId) return 0;
+  const n0 = await _rerouteArtisanPayoutsCorps(db, uid, orgId);
+  try { await majNetMisDeCote(db, uid); } catch (_) {}
+  return n0;
+}
+async function _rerouteArtisanPayoutsCorps(db, uid, orgId) {
   const q = await db.collection('requests')
     .where('providerUid', '==', uid).where('molliePayout', '==', 'unrouted').get();
   let n = 0;
@@ -1675,6 +1731,7 @@ const ARCH = require('./archive-messages');
 const DEP = require('./journal-departs');
 const PASSE = require('./recherche-passe');
 const QUAND = require('./quand-disparu');
+const ARGENT = require('./argent-mis-de-cote');
 /* LE COMPTEUR DU JOUR. Un document par clé et par jour dans `quotas` — collection
  * SERVEUR (aucune règle ne l'ouvre, l'Admin SDK passe outre). Transaction : deux demandes
  * simultanées ne peuvent pas lire le même nombre et l'écrire deux fois.
@@ -3439,6 +3496,8 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}',
         await event.data.after.ref.update(patch);
         try { await db.collection('ledger').doc(reqId).set(patch, {merge: true}); } catch (_) {}
         if (!routed) {
+          // La somme mise de côté change : la fiche le dit avant qu'on en parle à qui que ce soit.
+          try { await majNetMisDeCote(db, providerUid); } catch (_) {}
           /* FILET DE SÉCURITÉ : le client a été débité mais le NET n'a PAS pu être versé.
              L'argent reste sur le solde plateforme — on ne le perd JAMAIS en silence. */
           try { await notifyArtisanMollieProblem(db, providerUid, orgId ? 'route_failed' : 'no_org'); } catch (_) {}
@@ -5991,12 +6050,16 @@ exports.mollieActivationReminder = onSchedule({schedule: 'every monday 13:00',
     /* ACCEPTER N'EXIGE PLUS MOLLIE : « sans cette étape tu ne peux accepter aucune
        mission » est devenu FAUX, et une relance qui dit faux se fait ignorer. Ce qui est
        vrai, et bien plus fort : ce qu'il a déjà gagné l'attend. */
-    const du = await netEnAttente(db, d.id);
-    const duTxt = du > 0 ? (du.toFixed(2).replace('.', ',') + ' €') : '';
+    const du = await majNetMisDeCote(db, d.id);
+    const duTxt = du > 0 ? ARGENT.eurTexte(du) : '';
+    /* UN SEUL CANAL (l'éditeur, 07/11/2026) : la notification pour qui l'a activée,
+       l'e-mail pour les autres. Les deux à la fois, c'est deux fois le même message. */
+    let pushParti = false;
     try {
       const u = (await db.collection('users').doc(d.id).get()).data() || {};
       const tokens = u.pushTokens || [];
       if (tokens.length) {
+        pushParti = true;
         await pushMulticast(tokens,
           duTxt ? (duTxt + ' t’attendent')
             : (cas === 'piece' ? 'Un document pour ouvrir tes virements' : 'Tes paiements ne sont pas encore activés'),
@@ -6010,7 +6073,7 @@ exports.mollieActivationReminder = onSchedule({schedule: 'every monday 13:00',
       }
     } catch (e) { console.warn('mollieActivationReminder push', d.id, e); }
     // E-mail : le seul canal qui atteigne encore quelqu'un ayant désinstallé l'application.
-    if (a.email) {
+    if (a.email && !pushParti) {
       try {
         await sendMail(db, a.email, {
           subject: duTxt ? (duTxt + ' t’attendent sur Ti-Services')
