@@ -105,7 +105,9 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   ok(!/tu ne peux accepter aucune mission|pas accepter de mission|pas encore accepter de mission/.test(relance + SRV.slice(SRV.indexOf('function mollieReminderHtml'), SRV.indexOf('function mollieReminderHtml') + 3000)),
     'plus une ligne ne prétend qu’il ne peut pas accepter');
   ok(/t’attendent|t’attendent/.test(relance), 'elle annonce la somme qui l’attend');
-  ok(/await netEnAttente\(db, d\.id\)/.test(relance), 'et cette somme est MESURÉE, pas supposée');
+  // Depuis la v909 la relance passe par `majNetMisDeCote`, qui MESURE (netEnAttente) puis
+  // écrit la somme sur la fiche : ce qu'on tient est la mesure, pas le nom de la porte.
+  ok(/await majNetMisDeCote\(db, d\.id\)/.test(relance)&&/async function majNetMisDeCote[\s\S]{0,200}await netEnAttente\(db, uid\)/.test(SRV), 'et cette somme est MESURÉE, pas supposée');
 
   /* F — ET ON LE FAIT POUR DE VRAI. Les épreuves ci-dessus lisent des écrans et des
      sources ; celle-ci CLIQUE « Accepter » avec un compte sans la moindre trace de
