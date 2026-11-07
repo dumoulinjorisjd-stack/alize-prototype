@@ -22,7 +22,7 @@
          portugais aussi ; la bannière du compte la dit ; et sans argent, rien ne change.
 
    CE QUE CHAQUE CONTRE-ÉPREUVE FAIT ROUGIR, nommé :
-     · la carte d'accueil ignore la somme ........................ 4 mesures
+     · la carte d'accueil ignore la somme ........................ 5 mesures
      · la relance du lundi repart par les deux canaux ............ 1 mesure
      · le noyau redit sans attendre (dédoublonnage retiré) ....... 2 mesures */
 const fs=require('fs'),path=require('path'),assert=require('assert');
