@@ -40,6 +40,7 @@ const H=3600*1000, J=86400*1000;
 (async()=>{
 console.log('\nA — le noyau : la somme, et qui prévenir, par où, quand');
 { const net=M.netMisDeCote([{molliePayout:'unrouted',molliePayoutNet:50},{molliePayout:'routed',molliePayoutNet:999},{molliePayout:'unrouted',molliePayoutNet:77.5},{molliePayout:'unrouted'},null]);
+  ok(M.netMisDeCote([{complementPayout:'unrouted',complementNet:93.5}])===93.5,'le second paiement (empreinte expirée) compte aussi : 93,50 pour une prestation entière prélevée sur la carte');
   ok(net===127.5,'seuls les versements non partis comptent : 50 + 77,50 = '+net+' (le versé et le net inconnu sont ignorés)');
   ok(M.eurTexte(1234.5)==='1 234,50 €'&&M.eurTexte(127.5)==='127,50 €','le montant s’écrit en français : '+M.eurTexte(1234.5));
   const d0=M.rappelArgentDecider({net:0,aPush:true,aMail:true,now:10*J});

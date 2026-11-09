@@ -20,11 +20,20 @@ function round2(n) { return Math.round((Number(n) || 0) * 100) / 100; }
 /* Ce qui est mis de côté : le net de chaque mission dont le versement n'a pas pu partir.
    C'est la MÊME somme que la relance hebdomadaire annonce (`netEnAttente` côté serveur
    lit la même condition) — deux chiffres pour le même argent seraient le défaut. */
+/* TROIS JAMBES, PAS UNE. Une mission se paie par l'empreinte (molliePayout), ou par le
+   second paiement quand l'empreinte a expiré (complementPayout — c'est alors la
+   prestation ENTIÈRE), ou par des arrhes (arrhesPayout). Ne compter que la première
+   affichait 0 € à une prestataire dont les 110 € dormaient sur le second paiement —
+   relevé le 09/11/2026. Chaque jambe porte son net figé au moment du refus. */
+const JAMBES = [['molliePayout', 'molliePayoutNet'], ['complementPayout', 'complementNet'], ['arrhesPayout', 'arrhesPayoutNet']];
 function netMisDeCote(requests) {
   let net = 0;
   (Array.isArray(requests) ? requests : []).forEach((r) => {
-    if (!r || r.molliePayout !== 'unrouted') return;
-    net += Number(r.molliePayoutNet) || 0;
+    if (!r) return;
+    JAMBES.forEach(([etat, champNet]) => {
+      if (r[etat] !== 'unrouted') return;
+      net += Number(r[champNet]) || 0;
+    });
   });
   return round2(net);
 }
@@ -66,4 +75,4 @@ function rappelArgentTextes(net) {
   };
 }
 
-module.exports = {netMisDeCote, rappelArgentDecider, rappelArgentTextes, eurTexte, TROP_TOT_MS, DEJA_DIT_MS};
+module.exports = {JAMBES, netMisDeCote, rappelArgentDecider, rappelArgentTextes, eurTexte, TROP_TOT_MS, DEJA_DIT_MS};

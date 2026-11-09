@@ -1364,9 +1364,16 @@ async function relancerComplements(db, clientUid) {
 async function netEnAttente(db, uid) {
   let net = 0;
   try {
-    const q = await db.collection('requests')
-      .where('providerUid', '==', uid).where('molliePayout', '==', 'unrouted').get();
-    net = ARGENT.netMisDeCote(q.docs.map((d) => d.data() || {}));
+    // Les trois jambes de versement (ARGENT.JAMBES) : une mission peut devoir son net
+    // par le second paiement ou par les arrhes, pas seulement par l'empreinte. Deux
+    // égalités sur des champs distincts : aucun index composite n'est requis.
+    const vus = new Map();
+    for (const [etat] of ARGENT.JAMBES) {
+      const q = await db.collection('requests')
+        .where('providerUid', '==', uid).where(etat, '==', 'unrouted').get();
+      q.docs.forEach((d) => vus.set(d.id, d.data() || {}));
+    }
+    net = ARGENT.netMisDeCote(Array.from(vus.values()));
   } catch (e) { console.warn('netEnAttente', uid, e); }
   return round2(net);
 }
@@ -1732,6 +1739,7 @@ const DEP = require('./journal-departs');
 const PASSE = require('./recherche-passe');
 const QUAND = require('./quand-disparu');
 const ARGENT = require('./argent-mis-de-cote');
+const CSE = require('./complement-sans-etat');
 /* LE COMPTEUR DU JOUR. Un document par clé et par jour dans `quotas` — collection
  * SERVEUR (aucune règle ne l'ouvre, l'Admin SDK passe outre). Transaction : deux demandes
  * simultanées ne peuvent pas lire le même nombre et l'écrire deux fois.
@@ -4099,6 +4107,63 @@ exports.ledgerExclude = onCall(async (request) => {
  * `=== true` ET RIEN D'AUTRE : une chaîne, un zéro, un objet ne valent pas une décision
  * d'administrateur — et écarter de l'argent réellement dû est la faute la plus chère ici,
  * puisqu'elle est SILENCIEUSE. */
+/* LE SECOND PAIEMENT SANS ÉTAT (voir complement-sans-etat.js). On relit chez Mollie
+   chaque complément dont le statut dit « payé » ou « en cours » mais dont l'état de
+   versement n'a jamais été écrit, et l'on écrit ce que Mollie permet d'affirmer :
+   « routed » si une route existe déjà, « unrouted » + net si le paiement est payé et
+   qu'aucune route ne le porte. Appelé par la console (payoutRetry) ET par le balayage
+   des 15 minutes : un état qui n'est écrit que lorsque l'administrateur ouvre une
+   carte n'est pas un filet. Borné, ne lève jamais. */
+async function ratisserComplementsSansEtat(db) {
+  const bilan = {vus: 0, ecrits: 0};
+  if (!mollieApiConfigured()) return bilan;
+  for (const st of CSE.SANS_ETAT_STATUTS) {
+    let q;
+    try { q = await db.collection('requests').where('complementStatus', '==', st).limit(50).get(); }
+    catch (e) { console.warn('ratisserComplementsSansEtat', st, e); continue; }
+    for (const d of q.docs) {
+      const r = d.data() || {};
+      if (r.complementPayout || !r.complementPaymentId) continue;
+      bilan.vus++;
+      let statutMollie = null; let routes = null; let montantMollie = 0;
+      try {
+        const p = await mollieApi('/payments/' + encodeURIComponent(r.complementPaymentId));
+        if (p.ok && p.data) {
+          statutMollie = String(p.data.status || '');
+          montantMollie = Number(p.data.amount && p.data.amount.value) || 0;
+          if (statutMollie === 'paid') {
+            const l = await mollieApi('/payments/' + encodeURIComponent(r.complementPaymentId) + '/routes');
+            if (l.ok && l.data) {
+              const arr = (l.data._embedded && l.data._embedded.routes) || l.data.routes || [];
+              routes = Array.isArray(arr) ? arr.length : 0;
+            }
+          }
+        }
+      } catch (e) { console.warn('ratisserComplementsSansEtat mollie', d.id, e); }
+      const montant = round2(Number(r.complementAmount) || montantMollie || 0);
+      const dec = CSE.complementSansEtatDecider({
+        complementPayout: r.complementPayout, complementPaymentId: r.complementPaymentId,
+        statutMollie: statutMollie, routes: routes, complementNet: r.complementNet,
+        montant: montant, commission: commissionDuComplement(r, montant),
+      });
+      if (!dec.ecrire) continue;
+      let orgId = r.mollieOrgId || '';
+      if (!orgId && r.providerUid) {
+        try { orgId = (await db.collection('artisans').doc(r.providerUid).get()).get('mollieOrgId') || ''; } catch (_) {}
+      }
+      const patch = {complementPayout: dec.etat, complementPayoutIssue: dec.etat === 'unrouted' ? (orgId ? 'route_failed' : 'no_org') : '', complementPayoutMotif: ''};
+      if (dec.etat === 'unrouted') patch.complementNet = dec.net;
+      // Le webhook n'est pas passé : le statut de paiement se corrige avec l'état.
+      if (r.complementStatus !== 'paye') { patch.complementStatus = 'paye'; patch.complementPaidAt = Date.now(); }
+      try { await d.ref.set(patch, {merge: true}); } catch (e) { console.warn('ratisserComplementsSansEtat écriture', d.id, e); continue; }
+      try { await db.collection('ledger').doc(d.id).set({complementPayout: dec.etat, complementNet: dec.net != null ? dec.net : (r.complementNet != null ? r.complementNet : null)}, {merge: true}); } catch (_) {}
+      if (dec.etat === 'unrouted' && r.providerUid) { try { await majNetMisDeCote(db, r.providerUid); } catch (_) {} }
+      bilan.ecrits++;
+      console.warn('Complément sans état reqId=' + d.id + ' : ' + dec.etat + (dec.net != null ? (' ' + dec.net + ' €') : '') + ' (relu chez Mollie)');
+    }
+  }
+  return bilan;
+}
 function versementEcarte(r, reg) {
   return (r && r.comptaExclue === true) || (reg && reg.exclu === true) || false;
 }
@@ -4254,6 +4319,8 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
     // mission, identifiés par « c~ » devant la demande (deux lignes possibles pour une
     // même prestation : son net ET son supplément).
     try {
+      // D'abord ce que le webhook n'a jamais écrit, sinon la requête ci-dessous ne le voit pas.
+      try { await ratisserComplementsSansEtat(db); } catch (e) { console.warn('payoutRetry ratissage compléments', e); }
       const qc = await db.collection('requests').where('complementPayout', '==', 'unrouted').get();
       for (const d of qc.docs) {
         const cle = 'c~' + d.id;
@@ -6103,6 +6170,9 @@ exports.mollieOnboardingSweep = onSchedule({schedule: 'every 15 minutes', secret
   // Mollie (ou une transition consommée par le retour OAuth) laissait l'argent bloqué
   // pour toujours. Ici, on retente à chaque passage — zéro document = zéro coût.
   try {
+    // Le second paiement dont l'état n'a jamais été écrit n'a pas de clé à chercher :
+    // on le relit chez Mollie et on lui donne la sienne AVANT de collecter.
+    try { await ratisserComplementsSansEtat(db); } catch (e) { console.warn('sweep ratissage compléments', e); }
     const uids = new Set();
     // La jambe des ARRHES entre dans le rattrapage : son net se route sur SON paiement
     // (voir `reglementDecider`), elle peut donc échouer comme les deux autres.
