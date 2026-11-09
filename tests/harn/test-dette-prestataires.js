@@ -32,8 +32,13 @@ ok(/collection\('ledger'\)\.doc\(reqId\)\.set\(\{molliePayout: 'manuel'\}/.test(
   'et un virement fait à la main solde la dette');
 // Les SUPPLÉMENTS (pourboire, heures en plus) ont leur propre versement, sur un second
 // paiement : chaque endroit qui en décide doit l'inscrire au registre lui aussi.
-ok((fn.match(/collection\('ledger'\)\.doc\([^)]*\)\.set\(\{complementPayout/g) || []).length === 5,
-  'les cinq endroits qui décident du versement d’un supplément l’inscrivent au registre');
+/* SIX, DEPUIS LE 09/11/2026 : le ratissage du second paiement sans état
+   (`ratisserComplementsSansEtat`) décide lui aussi d'un versement — « dû » ou « déjà
+   versé », d'après ce que Mollie répond — et l'inscrit au registre comme les cinq autres. */
+ok((fn.match(/collection\('ledger'\)\.doc\([^)]*\)\.set\(\{complementPayout/g) || []).length === 6,
+  'les six endroits qui décident du versement d’un supplément l’inscrivent au registre');
+ok(/async function ratisserComplementsSansEtat[\s\S]*?collection\('ledger'\)\.doc\(d\.id\)\.set\(\{complementPayout: dec\.etat/.test(fn),
+  'dont le ratissage du second paiement sans état');
 ok(/collection\('ledger'\)\.doc\(reqId\)\.set\(\{complementPayout: 'manuel'\}/.test(fn),
   'et un supplément viré à la main solde sa dette');
 
