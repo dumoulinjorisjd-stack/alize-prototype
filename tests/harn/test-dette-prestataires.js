@@ -21,13 +21,14 @@ console.log('A — le registre sait ce qui est parti, et ce qui ne l’est pas')
 /* SIX ENDROITS, ET NON PLUS SEPT : les deux écritures du règlement — « routé » et « non
    routé » — ont fusionné en une seule porte, qui tourne JAMBE PAR JAMBE (empreinte,
    arrhes) et inscrit le même patch au registre. Un site de moins, une jambe de plus. */
-ok((fn.match(/collection\('ledger'\)\.doc\([^)]*\)\.set\(\{molliePayout/g) || []).length === 5,
+ok((fn.match(/collection\('ledger'\)\.doc\([^)]*\)\.set\(\{molliePayout:/g) || []).length === 5,
   'cinq endroits écrivent le versement en clair au registre (dont l’indemnité d’annulation)');
 ok(/patch\[j\.champ\] = routed \? 'routed' : 'unrouted'/.test(fn)
   && /collection\('ledger'\)\.doc\(reqId\)\.set\(patch, \{merge: true\}\)/.test(fn),
   'et le sixième est la porte du règlement, qui inscrit chaque jambe au registre');
-ok(/patch\[j\.champ \+ 'Issue'\] = orgId \? 'route_failed' : 'no_org'/.test(fn),
-  'un versement refusé y est marqué « non parti », avec sa cause');
+ok(/patch\[j\.champ \+ 'Issue'\] = issueDuRefus\(orgId\)/.test(fn)
+  && /function issueDuRefus\(orgId\) \{\s*if \(!orgId\) return 'no_org';\s*return IRR\.refusDefinitif\(routeMotif\(\)\) \? IRR\.ISSUE_LIAISON : 'route_failed';/.test(fn),
+  'un versement refusé y est marqué « non parti », avec sa cause (pas de compte, refus à retenter, ou refus définitif de Mollie)');
 ok(/collection\('ledger'\)\.doc\(reqId\)\.set\(\{molliePayout: 'manuel'\}/.test(fn),
   'et un virement fait à la main solde la dette');
 // Les SUPPLÉMENTS (pourboire, heures en plus) ont leur propre versement, sur un second
@@ -35,7 +36,7 @@ ok(/collection\('ledger'\)\.doc\(reqId\)\.set\(\{molliePayout: 'manuel'\}/.test(
 /* SIX, DEPUIS LE 09/11/2026 : le ratissage du second paiement sans état
    (`ratisserComplementsSansEtat`) décide lui aussi d'un versement — « dû » ou « déjà
    versé », d'après ce que Mollie répond — et l'inscrit au registre comme les cinq autres. */
-ok((fn.match(/collection\('ledger'\)\.doc\([^)]*\)\.set\(\{complementPayout/g) || []).length === 6,
+ok((fn.match(/collection\('ledger'\)\.doc\([^)]*\)\.set\(\{complementPayout:/g) || []).length === 6,
   'les six endroits qui décident du versement d’un supplément l’inscrivent au registre');
 ok(/async function ratisserComplementsSansEtat[\s\S]*?collection\('ledger'\)\.doc\(d\.id\)\.set\(\{complementPayout: dec\.etat/.test(fn),
   'dont le ratissage du second paiement sans état');

@@ -2876,6 +2876,23 @@
   function normIban(s){return (s||'').replace(/\s/g,'').toUpperCase();}
   function ibanValid(s){const v=normIban(s);return /^[A-Z]{2}[0-9]{2}[A-Z0-9]{10,30}$/.test(v);}
   function maskIban(s){const v=normIban(s);if(v.length<8)return v;return v.slice(0,4)+' •••• '+v.slice(-4);}
+  /* L'IBAN lisible, par groupes de quatre, et sa CLÉ (mod 97) : deux chiffres intervertis
+     ne passent pas. Un IBAN dont la clé ne tombe pas juste ne part pas dans un virement
+     fait à la main sur la foi de cet écran. */
+  /* LE REFUS QUE MOLLIE DIT DÉFINITIF : le compte du prestataire a été relié APRÈS le
+     paiement. Même règle que le serveur (functions/versement-irroutable.js) : la cause
+     écrite (`liaison_posterieure`) OU le motif de Mollie mot pour mot, pour qu'une jambe
+     refusée avant que la cause existe se reconnaisse aussi. */
+  const REGLE_MOLLIE='Mollie n’autorise le versement direct que pour les paiements reçus après la liaison du compte du prestataire.';
+  function jambeIrroutable(x){if(!x)return false;
+    return ['molliePayout','complementPayout','arrhesPayout'].some(function(c){
+      if(x[c]!=='unrouted')return false;
+      if(x[c+'Issue']==='liaison_posterieure')return true;
+      const mo=String(x[c+'Motif']||'');return /no marketplace partnership/i.test(mo)&&/when the payment was paid/i.test(mo);});}
+  function ibanEspace(s){return normIban(s).replace(/(.{4})(?=.)/g,'$1 ');}
+  function ibanCleOk(s){const v=normIban(s);if(!ibanValid(v))return false;
+    const r=(v.slice(4)+v.slice(0,4)).replace(/[A-Z]/g,function(c){return String(c.charCodeAt(0)-55);});
+    let m=0;for(let i=0;i<r.length;i++)m=(m*10+Number(r[i]))%97;return m===1;}
   const LEGAL_CGU=`
     <h3>1. Éditeur & objet</h3>
     <p>Ti-Services (ci-après « la Plateforme ») est un service de <b>mise en relation</b> entre des particuliers (« Clients ») et des professionnels indépendants (« Prestataires ») pour des prestations de services à la personne à Saint-Barthélemy.</p>
@@ -3770,7 +3787,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='909';
+  const VERSION_APP='910';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -7382,6 +7399,7 @@
   var DOW_EN={'lun':'Mon','mar':'Tue','mer':'Wed','jeu':'Thu','ven':'Fri','sam':'Sat','dim':'Sun'};
   var T_RE=[
     [/^([\d\s\u00A0\u202F]+,\d\d €) vous attendent$/,'$1 are waiting for you'],
+    [/^([\d\s\u00A0\u202F]+,\d\d €) vous sont dus$/,'$1 is owed to you'],
     [/^Point GPS enregistré, précision ±(\d+) m$/,'GPS point saved, accuracy ±$1 m'],
     [/^Position approximative à ±(\d+) m, dehors, elle s’affine\.$/,'Rough position, ±$1 m, it sharpens outdoors.'],
     [/^dès (\d+) € net$/,'from $1 € net'],
@@ -8317,6 +8335,18 @@
     "Statut":"Status","Adresse":"Address","Assureur":"Insurer","Présentation":"About you",
     "Diplômes / qualifications":"Diplomas / qualifications",
     "Modifier téléphone & présentation":"Edit phone & about you",
+    "Modifier téléphone, présentation & IBAN":"Edit phone, about you & IBAN",
+    "IBAN (facultatif)":"IBAN (optional)",
+    "Titulaire du compte":"Account holder",
+    "Utile seulement si Ti-Services doit vous virer une somme à la main. Vos versements habituels passent par Mollie.":"Only needed if Ti-Services has to send you an amount by hand. Your usual payouts go through Mollie.",
+    "Mollie n’autorise le versement direct que pour les paiements reçus après la liaison du compte du prestataire. Ti-Services vous les vire. Votre IBAN est enregistré.":"Mollie only allows direct payouts for payments received after the provider’s account was linked. Ti-Services transfers it to you. Your IBAN is saved.",
+    "Mollie n’autorise le versement direct que pour les paiements reçus après la liaison du compte du prestataire. Ti-Services vous les vire. Indiquez votre IBAN pour les recevoir.":"Mollie only allows direct payouts for payments received after the provider’s account was linked. Ti-Services transfers it to you. Enter your IBAN to receive it.",
+    "Cette somme vous est due, Ti-Services vous la vire.":"This amount is owed to you, Ti-Services transfers it to you.",
+    "Mollie n’autorise le versement direct que pour les paiements reçus après la liaison du compte du prestataire. Votre IBAN est enregistré.":"Mollie only allows direct payouts for payments received after the provider’s account was linked. Your IBAN is saved.",
+    "Mollie n’autorise le versement direct que pour les paiements reçus après la liaison du compte du prestataire. Indiquez votre IBAN dans Compte → Mes informations.":"Mollie only allows direct payouts for payments received after the provider’s account was linked. Enter your IBAN in Account → My details.",
+    "Cette somme vous est due, Ti-Services vous la vire. Mollie n’autorise le versement direct que pour les paiements reçus après la liaison du compte du prestataire.":"This amount is owed to you, Ti-Services transfers it to you. Mollie only allows direct payouts for payments received after the provider’s account was linked.",
+    "Indiquer ›":"Enter ›",
+    "⚠︎ IBAN invalide : vérifiez-le (clé de contrôle)":"⚠︎ Invalid IBAN: please check it (check digits)",
     "Décrivez votre expérience en quelques mots":"Describe your experience in a few words",
     "Coordonnées mises à jour ✓":"Details updated ✓",
     "Mes abonnements":"My subscriptions","Confirmer ce passage":"Confirm this visit",
@@ -10052,6 +10082,18 @@
     "Statut":"Estatuto","Adresse":"Morada","Assureur":"Seguradora","Présentation":"Apresentação",
     "Diplômes / qualifications":"Diplomas / qualificações",
     "Modifier téléphone & présentation":"Editar telefone e apresentação",
+    "Modifier téléphone, présentation & IBAN":"Editar telefone, apresentação e IBAN",
+    "IBAN (facultatif)":"IBAN (opcional)",
+    "Titulaire du compte":"Titular da conta",
+    "Utile seulement si Ti-Services doit vous virer une somme à la main. Vos versements habituels passent par Mollie.":"Só é útil se a Ti-Services tiver de lhe transferir um montante manualmente. Os seus pagamentos habituais passam pela Mollie.",
+    "Mollie n’autorise le versement direct que pour les paiements reçus après la liaison du compte du prestataire. Ti-Services vous les vire. Votre IBAN est enregistré.":"A Mollie só permite o pagamento direto dos pagamentos recebidos depois da ligação da conta do prestador. A Ti-Services transfere-lho. O seu IBAN está registado.",
+    "Mollie n’autorise le versement direct que pour les paiements reçus après la liaison du compte du prestataire. Ti-Services vous les vire. Indiquez votre IBAN pour les recevoir.":"A Mollie só permite o pagamento direto dos pagamentos recebidos depois da ligação da conta do prestador. A Ti-Services transfere-lho. Indique o seu IBAN para o receber.",
+    "Cette somme vous est due, Ti-Services vous la vire.":"Este montante é-lhe devido, a Ti-Services transfere-lho.",
+    "Mollie n’autorise le versement direct que pour les paiements reçus après la liaison du compte du prestataire. Votre IBAN est enregistré.":"A Mollie só permite o pagamento direto dos pagamentos recebidos depois da ligação da conta do prestador. O seu IBAN está registado.",
+    "Mollie n’autorise le versement direct que pour les paiements reçus après la liaison du compte du prestataire. Indiquez votre IBAN dans Compte → Mes informations.":"A Mollie só permite o pagamento direto dos pagamentos recebidos depois da ligação da conta do prestador. Indique o seu IBAN em Conta → As minhas informações.",
+    "Cette somme vous est due, Ti-Services vous la vire. Mollie n’autorise le versement direct que pour les paiements reçus après la liaison du compte du prestataire.":"Este montante é-lhe devido, a Ti-Services transfere-lho. A Mollie só permite o pagamento direto dos pagamentos recebidos depois da ligação da conta do prestador.",
+    "Indiquer ›":"Indicar ›",
+    "⚠︎ IBAN invalide : vérifiez-le (clé de contrôle)":"⚠︎ IBAN inválido: verifique-o (dígitos de controlo)",
     "Décrivez votre expérience en quelques mots":"Descreva a sua experiência em poucas palavras",
     "Coordonnées mises à jour ✓":"Dados atualizados ✓",
     "Mes abonnements":"As minhas subscrições","Confirmer ce passage":"Confirmar esta passagem",
@@ -10685,6 +10727,7 @@
   };
   var T_RE_PT=[
     [/^([\d\s\u00A0\u202F]+,\d\d €) vous attendent$/,'$1 estão à sua espera'],
+    [/^([\d\s\u00A0\u202F]+,\d\d €) vous sont dus$/,'$1 são-lhe devidos'],
     [/^Point GPS enregistré, précision ±(\d+) m$/,'Ponto GPS guardado, precisão ±$1 m'],
     [/^Position approximative à ±(\d+) m, dehors, elle s’affine\.$/,'Posição aproximada, ±$1 m, no exterior fica mais precisa.'],
     [/^dès (\d+) € net$/,'desde $1 € líquidos'],
@@ -13448,6 +13491,10 @@
        rien et on ne retire rien, un versement réellement dû ne doit pas pouvoir
        s'écarter sur un doute. */
     const VERS_SANS_ARGENT=['expired','failed','canceled'],VERS_AVEC_ARGENT=['paid','authorized'];
+    /* La règle de Mollie, dite avec ses mots : « the destination organization must be
+       connected to your platform at payment creation ». Même phrase que le serveur
+       (functions/versement-irroutable.js, REGLE_MOLLIE) — l'épreuve les compare. */
+    const VERS_REGLE_MOLLIE=REGLE_MOLLIE;
     const versAbouti=function(v){const e=String(v&&v.etat||'').trim().toLowerCase();
       if(VERS_SANS_ARGENT.indexOf(e)>=0)return false;
       if(VERS_AVEC_ARGENT.indexOf(e)>=0)return true;
@@ -13471,11 +13518,17 @@
             ${versRegle(v)?`<div class="mini" style="margin-top:6px;color:var(--muted)">Le partage fonctionne, mais Mollie ne connaît plus <b>ce paiement-ci</b>&nbsp;: un paiement déjà réglé et viré sur le compte bancaire n’est plus partageable. Virez le net au prestataire, puis appuyez sur «&nbsp;Je l’ai versé à la main&nbsp;».</div>`:''}
             ${v.org==='non'?`<div class="mini" style="margin-top:6px;color:var(--muted)">Ce prestataire n’a aucun compte Mollie connecté&nbsp;: le versement ne peut pas partir tant qu’il ne l’a pas fait.</div>`:''}
             ${versAbouti(v)===false?`<div class="mini" style="margin-top:6px;color:var(--muted)"><b>Ce paiement n’a jamais abouti</b> (état Mollie&nbsp;: ${esc(v.etat)})&nbsp;: rien n’a été prélevé au client, <b>rien n’est dû</b> au prestataire. Son net n’entre pas dans le total ci-dessus.</div>`:''}
-            <button class="btn ghost sm" data-adm="vers-one:${esc(v.reqId)}" style="margin-top:9px">${I.bolt}&nbsp;Réessayer ce versement</button>
+            ${v.definitif?`<div class="banner warn" style="margin-top:9px">${I.shield}<span><b>Mollie ne versera jamais ce paiement-ci.</b> ${VERS_REGLE_MOLLIE} Le compte du prestataire a été relié après ce paiement&nbsp;: ce n’est ni une panne, ni son dossier. ${v.libere?'':'Libérez le paiement sur le solde Ti-Services, puis virez-lui sa part à la main.'}</span></div>`:''}
+            ${v.libere?`<div class="mini" style="margin-top:6px;color:var(--teal-deep)"><b>Libéré sur le solde Ti-Services</b>${v.montantLibere?(' ('+eur(Number(v.montantLibere)||0)+')'):''}&nbsp;: il reste à virer <b>${eur(Number(v.net)||0)}</b> au prestataire, puis «&nbsp;Je l’ai versé à la main&nbsp;».</div>`:''}
+            ${(v.definitif||v.libere||versRegle(v))?(v.iban?`<div class="mini" style="margin-top:6px"><b>IBAN du prestataire&nbsp;:</b> <span style="font-family:var(--f-mono,monospace)">${esc(ibanEspace(v.iban))}</span>${v.ibanTitulaire?(' · '+esc(v.ibanTitulaire)):''}</div>`
+              :`<div class="mini" style="margin-top:6px;color:var(--coral-deep)"><b>Aucun IBAN saisi</b> par le prestataire&nbsp;: demandez-le lui, ou invitez-le à le renseigner dans son compte («&nbsp;Mes infos&nbsp;»).</div>`):''}
+            ${v.definitif?(!v.libere&&String(v.etat||'').toLowerCase()==='paid'?`<button class="btn primary sm" data-adm="vers-lib:${esc(v.reqId)}" style="margin-top:9px">${S._versLibArm===v.reqId?(I.warn+'&nbsp;Confirmer&nbsp;: router tout le paiement vers Ti-Services'):(I.euro+'&nbsp;Libérer sur le solde Ti-Services')}</button>`:'')
+              :`<button class="btn ghost sm" data-adm="vers-one:${esc(v.reqId)}" style="margin-top:9px">${I.bolt}&nbsp;Réessayer ce versement</button>`}
             ${versAbouti(v)===false?`<button class="btn ghost sm" data-adm="vers-rate:${esc(v.reqId)}" style="margin-top:7px">${S._versRateArm===v.reqId?(I.warn+'&nbsp;Confirmer&nbsp;: retirer de cet écran'):(I.close||I.warn)+'&nbsp;Paiement jamais abouti, retirer'}</button>`:''}
             <button class="btn ghost sm" data-adm="vers-essai:${esc(v.reqId)}" style="margin-top:7px">${S._versEssaiArm===v.reqId?(I.warn+'&nbsp;Confirmer&nbsp;: \u00e9carter des comptes'):(I.close||I.warn)+'&nbsp;C\u2019\u00e9tait un essai, \u00e9carter'}</button>
             <button class="btn ghost sm" data-adm="vers-main:${esc(v.reqId)}" style="margin-top:7px">${S._versMainArm===v.reqId?'Confirmer&nbsp;: je l’ai bien viré':(I.check+'&nbsp;Je l’ai versé à la main')}</button></div>`;}).join('')}
           <button class="btn primary sm" data-adm="vers-run" style="margin-top:12px">${I.bolt}&nbsp;Réessayer les ${versList.length}</button>
+          <button class="btn ghost sm" data-adm="vers-scan" style="margin-top:12px">${I.search}&nbsp;Revérifier</button>
           <p class="mini" style="margin-top:8px;color:var(--muted)">Chaque tentative interroge Mollie&nbsp;: état réel du paiement, versements déjà partis, et motif exact du refus. Rien n’est perdu, le rattrapage repart aussi tout seul dès que Mollie ouvre les virements du prestataire.</p>`
         :`<div class="banner good" style="margin-top:12px">${I.check}<span>Aucun&nbsp;: tous les prestataires ont reçu leur net.</span></div>
           ${vers.ecartees?`<div class="mini" style="margin-top:8px;color:var(--muted)">${vers.ecartees} prestation${vers.ecartees>1?'s':''} écartée${vers.ecartees>1?'s':''} des comptes n'appara\u00eet${vers.ecartees>1?'ssent':''} pas ici\u00a0: aucun net n'est d\u00fb. Carte «\u00a0Retrouver une facture\u00a0» pour les revoir ou les r\u00e9int\u00e9grer.</div>`:''}
@@ -14107,7 +14160,7 @@
           ? `${ligne('Prestation',eur(b.gross))}
              ${tip>0?ligne('Pourboire du client',eur(tip)):''}
              ${ligne((verse||reserve)?'Vous avez perçu':'Vous percevez',`<span class="money">${eur(b.net)}</span>`)}
-             <div class="mini" style="margin-top:9px;color:${(verse||reserve)?'var(--good)':'var(--muted)'}">${verse?(I.check+' Versement effectué.'):(reserve?(I.check+' Part réservée chez Mollie, versement au prochain règlement.'):(I.info+' Cette somme vous est due et partira dès que Mollie ouvrira vos virements.'))}</div>`
+             <div class="mini" style="margin-top:9px;color:${(verse||reserve)?'var(--good)':'var(--muted)'}">${verse?(I.check+' Versement effectué.'):(reserve?(I.check+' Part réservée chez Mollie, versement au prochain règlement.'):(jambeIrroutable(r)?(I.info+' Cette somme vous est due, Ti-Services vous la vire. '+REGLE_MOLLIE):(I.info+' Cette somme vous est due et partira dès que Mollie ouvrira vos virements.')))}</div>`
           : `${ligne('Total réglé',`<span class="money">${eur(t.total)}</span>`)}
              ${tip>0?ligne('dont pourboire',eur(tip)):''}`}
         ${pay?`<div class="mini" style="margin-top:9px;color:${pay.ok?'var(--good)':'var(--coral)'};font-weight:650">${pay.ok?I.check:I.info} ${esc(pay.txt)}</div>`:''}
@@ -16880,6 +16933,10 @@
         // vérité, et elle est écrite ici par le serveur.
         if(r.molliePayout!=null&&m.molliePayout!==r.molliePayout){m.molliePayout=r.molliePayout;touched=true;}
         if(r.molliePayoutNet!=null&&m.molliePayoutNet!==r.molliePayoutNet){m.molliePayoutNet=r.molliePayoutNet;touched=true;}
+        // La CAUSE d'un refus et le second paiement : sans elles, l'écran ne peut pas dire
+        // qu'une part ne partira jamais par Mollie et lui sera virée à la main.
+        ['molliePayoutIssue','molliePayoutMotif','complementPayout','complementPayoutIssue','complementPayoutMotif','complementNet'].forEach(function(k){
+          if(r[k]!=null&&m[k]!==r[k]){m[k]=r[k];touched=true;}});
         // Annulation tardive : montant de l'indemnité + décision du prestataire.
         if(r.lateCancel!=null&&m.lateCancel!==r.lateCancel){m.lateCancel=r.lateCancel;touched=true;}
         if(r.cancelFee!=null&&m.cancelFee!==r.cancelFee){m.cancelFee=r.cancelFee;touched=true;}
@@ -18754,6 +18811,15 @@
           <div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="${pend?'':'background:var(--coral-wash);color:var(--coral-deep)'}">${pend?I.clock:I.card}</span>
           <div style="flex:1;min-width:0"><b style="font-size:14px">${ttl}</b><p class="mini" style="margin-top:3px">${txt}</p></div>
           <span class="mini" style="color:var(--teal-deep);font-weight:700;white-space:nowrap;flex:none">${cta}</span></div></button>`;})();
+    /* LA PART QUE MOLLIE NE VERSERA JAMAIS. Le compte a été relié après le paiement :
+       Mollie refuse définitivement de router ce paiement vers lui — c'est sa règle, pas
+       une panne. La carte de paiements est muette dès que le compte est actif, donc
+       cette somme-là doit avoir la sienne, avec le seul geste qui la débloque : l'IBAN. */
+    const _carteIrroutable=(function(){const net=Number(S.proNetIrroutable)||0;if(!(net>0))return '';
+        return `<button class="card" data-act="pro-iban" style="padding:14px;margin-top:12px;width:100%;text-align:left;display:block${S.proIban?'':';border:1.5px solid color-mix(in srgb,var(--coral) 45%,transparent)'}">
+          <div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="${S.proIban?'':'background:var(--coral-wash);color:var(--coral-deep)'}">${I.card}</span>
+          <div style="flex:1;min-width:0"><b style="font-size:14px">${eur(net)} vous sont dus</b><p class="mini" style="margin-top:3px">${REGLE_MOLLIE} Ti-Services vous les vire. ${S.proIban?'Votre IBAN est enregistré.':'Indiquez votre IBAN pour les recevoir.'}</p></div>
+          <span class="mini" style="color:var(--teal-deep);font-weight:700;white-space:nowrap;flex:none">${S.proIban?'Voir ›':'Indiquer ›'}</span></div></button>`;})();
     const _bandeauOuverture=(function(){
         // Avant l'ouverture aux clients : expliquer POURQUOI le fil est calme, et
         // transformer l'attente en préparation. Se retire tout seul le 1er octobre.
@@ -18762,8 +18828,8 @@
     const _carteEnLigne=`<div class="card" style="padding:14px;margin-top:12px;${online?'':'border:1.5px solid color-mix(in srgb,var(--coral) 45%,transparent)'}"><div class="row between"><div><b style="font-size:15px">${online?'Vous êtes en ligne':'Hors ligne'}</b><div class="mini">${online?'Vous recevez les nouvelles demandes':'Activez pour recevoir des missions. Une demande qui vous est adressée personnellement vous parvient quand même.'}</div></div><button class="switch" data-act="toggle-online" style="background:${online?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${online?'25px':'3px'}"></span></button></div></div>`;
     // Hors ligne, l'interrupteur commande tout : il passe en tête. En ligne, il n'a plus
     // rien à dire d'urgent et redescend sous les missions.
-    const _enTete=(online?'':_carteEnLigne)+notifCTA('pro')+(_mollieBloque?_carteMollie:'');
-    const _pied=(online?_carteEnLigne:'')+(_mollieBloque?'':_carteMollie)+_bandeauOuverture;
+    const _enTete=(online?'':_carteEnLigne)+notifCTA('pro')+(_mollieBloque?_carteMollie:'')+(S.proIban?'':_carteIrroutable);
+    const _pied=(online?_carteEnLigne:'')+(_mollieBloque?'':_carteMollie)+(S.proIban?_carteIrroutable:'')+_bandeauOuverture;
     return `<div class="pad">${proHead('Prestataire · '+catNames,'Mes missions',proHeadBtn('open-share','Partager Ti-Services',I.share))}
       ${_enTete}
       ${proTodoBlock()}
@@ -19514,6 +19580,8 @@
     const verse=(m.molliePayout==='manuel');
     const reserve=(m.molliePayout==='routed');
     const bloque=(m.molliePayout==='unrouted');
+    // Mollie ne versera JAMAIS cette part : ne pas promettre un virement qui n'arrivera pas.
+    const irr=jambeIrroutable(m);
     const titre=verse?'Vous avez été payé':(reserve?'Votre part est réservée':(bloque?'Votre gain est acquis':'Prestation réglée'));
     const soustitre=verse?('+'+eur(t.payout)+' versés sur votre compte')
       :(reserve?(eur(t.payout)+' vous reviennent, versement au prochain règlement')
@@ -19521,7 +19589,8 @@
           :('+'+eur(t.payout)+' pour vous')));
     return `<div class="pad"><div class="paycap"><div class="checkmark">${I.bigcheck}</div><div><div class="h-hello" style="text-align:center">${titre}</div><p class="sub" style="text-align:center">${soustitre}</p></div></div>
       ${reserve?`<div class="banner teal" style="margin-bottom:12px">${I.check}<span><b>Votre part est mise de côté chez Mollie.</b> Elle arrivera sur votre compte au prochain règlement, quelques jours ouvrés. Rien à faire de votre côté.</span></div>`:''}
-      ${bloque?`<div class="banner warn" style="margin-bottom:12px">${I.clock}<span><b>Cette somme vous est due</b> et vous partira dès que Mollie ouvrira vos virements.${S.proMollieOnb==='needs-data'?' Il manque une pièce à votre dossier, <b>Compte → Recevoir mes paiements</b>.':''}</span></div>`:''}
+      ${irr?`<div class="banner warn" style="margin-bottom:12px">${I.clock}<span><b>Cette somme vous est due, Ti-Services vous la vire.</b> ${REGLE_MOLLIE} ${S.proIban?'Votre IBAN est enregistré.':'Indiquez votre IBAN dans Compte → Mes informations.'}</span></div>`
+        :(bloque?`<div class="banner warn" style="margin-bottom:12px">${I.clock}<span><b>Cette somme vous est due</b> et vous partira dès que Mollie ouvrira vos virements.${S.proMollieOnb==='needs-data'?' Il manque une pièce à votre dossier, <b>Compte → Recevoir mes paiements</b>.':''}</span></div>`:'')}
       <div class="card" style="padding:16px"><div class="eyebrow" style="color:var(--muted)">Détail du versement</div><div class="receipt-line" style="margin-top:8px"><span>${m.svcName} · ${durTxt(m)}</span><span class="mini">${m.when} · ${m.slot}</span></div><hr class="dashed"><div class="receipt-line"><span>Prestation</span><b>${eur(t.total-t.tip)}</b></div>${t.tip?`<div class="receipt-line"><span>${I.heart} Pourboire du client</span><b style="color:var(--good)">+${eur(t.tip)}</b></div>`:''}${t.commission>0?`<div class="receipt-line"><span>Commission Ti-Services (${t.commPct}&nbsp;%)</span><b style="color:var(--muted)">−${eur(t.commission)}</b></div>`:''}<hr class="dashed"><div class="receipt-line"><span>Net perçu</span><b style="color:var(--good)">${eur(t.payout)}</b></div></div>
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-act="pro-back-home">Retour aux missions</button></div></div>`;
   }
@@ -19829,7 +19898,7 @@
         const dips=(S.proDiplomas||[]).slice();
         if(S.proDiplomaOther)dips.push(S.proDiplomaOther);
         const row=function(lbl,val){return fRow(lbl,esc(val));};
-        const editing=!!S.proEditContact;const cf=S.proContactForm||{phone:S.proPhone||'',bio:S.proBio||''};
+        const editing=!!S.proEditContact;const cf=S.proContactForm||{phone:S.proPhone||'',bio:S.proBio||'',iban:S.proIban||'',ibanTitulaire:S.proIbanTitulaire||''};
         return foldCard('p-infos',I.user,"Mes informations d'inscription",esc(S.proLegal||S.proName||''),`
         <div class="fiche">
           ${row('Nom / raison sociale',S.proLegal||S.proName)}
@@ -19840,14 +19909,16 @@
           ${editing?`<div style="margin-top:12px"><label class="sub" style="display:block;margin-bottom:5px">Téléphone</label>${phoneCombo('proedit',cf.phone)}</div>`:row('Téléphone',S.proPhone)}
           ${row('E-mail',email)}
           ${row('Assureur',S.proInsurer)}
+          ${editing?'':row('IBAN',S.proIban?maskIban(S.proIban):'')}
         </div>
+        ${editing?`<div style="margin-top:12px"><label class="sub" style="display:block;margin-bottom:5px">IBAN (facultatif)</label><input class="txt" data-proeditiban value="${esc(cf.iban||'')}" placeholder="FR76 …" autocomplete="off" spellcheck="false" style="width:100%"><input class="txt" data-proeditibantit value="${esc(cf.ibanTitulaire||'')}" placeholder="Titulaire du compte" style="width:100%;margin-top:7px"><p class="mini" style="margin-top:5px;color:var(--muted)">Utile seulement si Ti-Services doit vous virer une somme à la main. Vos versements habituels passent par Mollie.</p></div>`:''}
         ${editing
           ?`<div style="margin-top:12px"><label class="sub" style="display:block;margin-bottom:5px">Présentation</label><textarea class="txt" data-proeditbio rows="3" placeholder="Décrivez votre expérience en quelques mots" style="width:100%;resize:vertical;font-family:inherit">${esc(cf.bio)}</textarea></div>`
           :(S.proBio?`<div style="margin-top:12px"><span class="sub">Présentation</span><p class="mini" style="margin-top:4px;white-space:pre-wrap;color:var(--ink)">${esc(S.proBio)}</p></div>`:'')}
         ${dips.length?`<div style="margin-top:12px"><span class="sub">Diplômes / qualifications</span><div class="row" style="gap:6px;margin-top:6px;flex-wrap:wrap">${dips.map(function(d){return `<span class="chip">${esc(d)}</span>`;}).join('')}</div></div>`:''}
         ${editing
           ?`<div class="row" style="gap:8px;margin-top:14px"><button class="btn primary sm" data-act="pro-contact-save" style="width:auto;padding:9px 16px">${I.check}&nbsp;Enregistrer</button><button class="btn ghost sm" data-act="pro-contact-cancel" style="width:auto;padding:9px 14px">Annuler</button></div>`
-          :`<button class="btn ghost sm" data-act="pro-contact-edit" style="margin-top:14px;width:auto;padding:9px 14px">${I.edit}&nbsp;Modifier téléphone &amp; présentation</button>`}
+          :`<button class="btn ghost sm" data-act="pro-contact-edit" style="margin-top:14px;width:auto;padding:9px 14px">${I.edit}&nbsp;Modifier téléphone, présentation &amp; IBAN</button>`}
         <p class="mini" style="margin-top:12px;color:var(--muted)">Info légale à corriger&nbsp;? Contactez Ti-Services.</p>`);})()}
 
       ${foldCard('p-metiers',I.hardhat,'Mes métiers',cats.map(function(c){return svcNm(c);}).join(' · '),`<div class="row" style="gap:8px;flex-wrap:wrap">
@@ -20665,7 +20736,13 @@
           if(d.erreur){toast('⚠︎ '+d.erreur);return;}
           const list=d.bloques||[];
           // Ce qui vient d'être versé sort de la liste : on n'affiche que ce qui reste.
-          S.adminVers={loaded:true,list:list.filter(function(v){return !v.verse;}),ecartees:Number(d.ecartees)||0};
+          // UNE RELANCE CIBLÉE NE RÉPOND QUE POUR SA LIGNE : remplacer la liste par sa
+          // réponse faisait disparaître toutes les autres, comme si elles étaient réglées.
+          if(cible&&S.adminVers&&S.adminVers.loaded){
+            const reste=(S.adminVers.list||[]).filter(function(v){return v.reqId!==cible;});
+            const neuve=list.filter(function(v){return v.reqId===cible&&!v.verse;});
+            S.adminVers=Object.assign({},S.adminVers,{list:reste.concat(neuve)});
+          } else S.adminVers={loaded:true,list:list.filter(function(v){return !v.verse;}),ecartees:Number(d.ecartees)||0};
           if(relance){
             const n=Number(d.verses)||0;
             if(n)toast(n+' versement'+(n>1?'s':'')+' parti'+(n>1?'s':'')+' ✓');
@@ -20689,6 +20766,25 @@
          pourquoi), motif différent, et il ne s'offre QUE là où Mollie dit que le
          paiement est mort : sur un doute, un versement réellement dû pourrait
          s'écarter. Demandé le 27/10/2026. */
+      /* LIBÉRER SUR LE SOLDE TI-SERVICES : le paiement ENTIER est routé vers notre propre
+         organisation, parce que Mollie refuse définitivement de router vers un compte
+         relié après le paiement. La part du prestataire reste due : on la vire à la main
+         et l'on acte « Je l'ai versé à la main ». Il S'ARME, comme ses voisins. */
+      else if(act==='vers-lib'){
+        if(!isAdminAccount()){toast('Réservé à l’administrateur (compte réel)');return;}
+        if(!(FB&&FB.functions&&FB.fn&&FB.fn.httpsCallable)){toast('Indisponible hors ligne, réessayez connecté');return;}
+        if(S._versLibArm!==id){S._versLibArm=id;render();
+          toast('Un second appui routera tout le paiement vers le solde Ti-Services');return;}
+        S._versLibArm=null;render();
+        toast('Libération auprès de Mollie…');
+        FB.fn.httpsCallable(FB.functions,'payoutLiberer')({reqId:id}).then(function(r){
+          const d=(r&&r.data)||{};
+          const v=S.adminVers||{};
+          S.adminVers=Object.assign({},v,{list:(v.list||[]).map(function(x){
+            return x.reqId===id?Object.assign({},x,{libere:true,montantLibere:Number(d.montant)||0}):x;})});
+          toast(d.deja?'Déjà libéré ✓':('Libéré ✓ '+eur(Number(d.montant)||0)+' sur le solde Ti-Services'));render();
+        }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
+        return;}
       else if(act==='vers-rate'){
         if(!isAdminAccount()){toast('Réservé à l’administrateur (compte réel)');return;}
         if(!(FB&&FB.functions&&FB.fn&&FB.fn.httpsCallable)){toast('Indisponible hors ligne, réessayez connecté');return;}
@@ -22070,10 +22166,20 @@
       // Modification en self-service des SEULES coordonnées « libres » (téléphone,
       // présentation) — simples champs Firestore, sans impact sur la connexion.
       // L'e-mail (identifiant Auth) et les infos légales restent gérés hors app.
-      case 'pro-contact-edit':S.proContactForm={phone:S.proPhone||'',bio:S.proBio||''};S.proEditContact=true;render();break;
+      case 'pro-contact-edit':S.proContactForm={phone:S.proPhone||'',bio:S.proBio||'',iban:S.proIban||'',ibanTitulaire:S.proIbanTitulaire||''};S.proEditContact=true;render();break;
+      /* La carte « X € vous sont dus » mène AU CHAMP : ouvrir le compte, déplier la fiche
+         et passer en saisie, plutôt que de laisser chercher où se met un IBAN. */
+      case 'pro-iban':S.proNav='account';S.proContactForm={phone:S.proPhone||'',bio:S.proBio||'',iban:S.proIban||'',ibanTitulaire:S.proIbanTitulaire||''};S.proEditContact=true;S._fold=Object.assign({},S._fold,{'p-infos':true});render();
+        setTimeout(function(){const el=document.querySelector('[data-proeditiban]');if(el){try{el.scrollIntoView({block:'center'});el.focus();}catch(_){}}},60);break;
       case 'pro-contact-cancel':S.proEditContact=false;S.proContactForm=null;render();break;
-      case 'pro-contact-save':{const f=S.proContactForm||{};S.proPhone=(f.phone||'').trim();S.proBio=(f.bio||'').trim();S.proEditContact=false;S.proContactForm=null;
-        if(FB&&FB.auth&&FB.auth.currentUser&&!isDemo()){const uid=FB.auth.currentUser.uid;FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{phone:S.proPhone,bio:S.proBio},{merge:true}).then(function(){toast('Coordonnées mises à jour ✓');}).catch(function(e){toast('⚠︎ Non enregistré : '+fbErrTxt(e));});try{FB.f.setDoc(FB.f.doc(FB.db,'users',uid),{phone:S.proPhone},{merge:true});}catch(_){}
+      case 'pro-contact-save':{const f=S.proContactForm||{};
+        /* L'IBAN SE CONTRÔLE AVANT DE S'ENREGISTRER : c'est sur lui qu'on virera une somme à
+           la main. Une clé qui ne tombe pas juste (deux chiffres intervertis, une lettre
+           mal lue) N'ENTRE PAS, et l'on garde la saisie à l'écran pour la corriger. */
+        const ibanSaisi=normIban(f.iban||'');
+        if(ibanSaisi&&!ibanCleOk(ibanSaisi)){toast('⚠︎ IBAN invalide : vérifiez-le (clé de contrôle)');break;}
+        S.proPhone=(f.phone||'').trim();S.proBio=(f.bio||'').trim();S.proIban=ibanSaisi;S.proIbanTitulaire=String(f.ibanTitulaire||'').trim().slice(0,100);S.proEditContact=false;S.proContactForm=null;
+        if(FB&&FB.auth&&FB.auth.currentUser&&!isDemo()){const uid=FB.auth.currentUser.uid;FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{phone:S.proPhone,bio:S.proBio,iban:S.proIban,ibanTitulaire:S.proIbanTitulaire},{merge:true}).then(function(){toast('Coordonnées mises à jour ✓');}).catch(function(e){toast('⚠︎ Non enregistré : '+fbErrTxt(e));});try{FB.f.setDoc(FB.f.doc(FB.db,'users',uid),{phone:S.proPhone},{merge:true});}catch(_){}
           // La présentation n'est visible du client QUE pour la garde d'enfants. On répercute
           // la nouvelle bio sur les gardes en cours (elle était figée à l'acceptation).
           (S.proMissions||[]).forEach(function(mm){if(mm&&mm.reqId&&mm.svc==='baby'){mm.providerBio=S.proBio;try{FB.f.updateDoc(FB.f.doc(FB.db,'requests',mm.reqId),{providerBio:S.proBio});}catch(_){}}});}
@@ -22779,6 +22885,8 @@
     const cf=e.target.closest('[data-cf]');if(cf){S.clientForm[cf.dataset.cf]=cf.value;const fb=document.querySelector('[data-act="finish-onboard"]');const c=S.clientForm;if(fb)fb.disabled=!((c.name||'').trim().length>1&&/.+@.+\..+/.test(c.email||'')&&(c.password||'').length>=6&&c.password===c.password2&&!!c.terms);}
     const pf2=e.target.closest('[data-pf2]');if(pf2&&S.profileForm){S.profileForm[pf2.dataset.pf2]=pf2.value;const sb=document.querySelector('[data-act="save-profile"]');if(sb)sb.disabled=!((S.profileForm.name||'').trim().length>1);}
     const peb=e.target.closest('[data-proeditbio]');if(peb){S.proContactForm=S.proContactForm||{};S.proContactForm.bio=peb.value;}
+    const pei=e.target.closest('[data-proeditiban]');if(pei){S.proContactForm=S.proContactForm||{};S.proContactForm.iban=pei.value;}
+    const pet=e.target.closest('[data-proeditibantit]');if(pet){S.proContactForm=S.proContactForm||{};S.proContactForm.ibanTitulaire=pet.value;}
     const lf=e.target.closest('[data-lf]');if(lf){(S.loginForm=S.loginForm||{email:'',password:'',remember:true})[lf.dataset.lf]=lf.value;}
     const pr=e.target.closest('[data-prate]');if(pr){S.proForm.rate=+pr.value;const el=document.getElementById('prateVal');if(el)el.textContent=pr.value+' €/h';}
     const cd=e.target.closest('[data-cfdate]');if(cd&&S.draft){S.draft.dateISO=cd.value;S.draft.when=fmtDate(cd.value);renderConfig();}
@@ -24084,7 +24192,7 @@
         S.proLegal=(ad&&(ad.legalName||ad.name))||name; S.proAddress=(ad&&ad.address)||''; S.proStatusType=(ad&&ad.statusType)||'entreprise'; S.proLegalForm=(ad&&ad.legalForm)||''; S.proCapital=(ad&&ad.capital)||''; S.proRcsCity=(ad&&ad.rcsCity)||'';
         if(ad&&Array.isArray(ad.cats)&&ad.cats.length){S.proCats=ad.cats.slice();const rr=ad.rates||{};S.proRate=Math.min.apply(null,ad.cats.map(c=>(rr[c]!=null?rr[c]:svcBase(c))));}
         if(ad){S.proPendingCats=Array.isArray(ad.pendingCats)?ad.pendingCats.slice():[];S.proPendingOther=ad.pendingOther||'';S.proSkipped=Array.isArray(ad.skippedRequests)?ad.skippedRequests.slice():[];S.proSkipAt=(ad.skippedAt&&typeof ad.skippedAt==='object')?ad.skippedAt:{};}
-        if(ad){ S.proFounder=!!ad.founder; S.proFounderSince=(ad.founderSince&&ad.founderSince.toMillis)?ad.founderSince.toMillis():(typeof ad.founderSince==='number'?ad.founderSince:null); S.proFounderGross=Number(ad.founderGross)||0; S.proRating=ad.rating||0; S.proTierForce=ad.tierForce||''; S.proInsured=!!ad.insured; S.proInsurer=ad.insurer||''; S.proInsuranceUrl=ad.insuranceUrl||''; S.proInsuranceStatus=ad.insuranceStatus||(ad.status==='valide'&&ad.insured?'valide':(ad.insuranceUrl||ad.insured?'attente':'none')); S.proSiret=ad.siret||''; S.proBirth=ad.birth||''; S.proBio=ad.bio||''; S.proDiplomas=Array.isArray(ad.diplomas)?ad.diplomas:[]; S.proDiplomaOther=ad.diplomaOther||''; S.proPhoto=ad.photo||S.proPhoto||loadPhotoLocal(user.uid)||null; if(S.proPhoto)savePhotoLocal(user.uid,S.proPhoto); if(!ad.photo&&S.proPhoto){try{FB.f.setDoc(FB.f.doc(FB.db,'artisans',user.uid),{photo:S.proPhoto},{merge:true});}catch(_){}} S.proAcceptedCharte=!!ad.acceptedCharte; S.proAcceptedTerms=!!ad.acceptedTerms; S.proTermsVersion=ad.termsVersion||''; S.proTermsAt=(ad.termsAt&&ad.termsAt.toDate)?ad.termsAt.toDate():null; S.proMollie=ad.mollieStatus||'none'; S.proMollieOnb=ad.mollieOnboardingStatus||''; S.proMollieCanWork=ad.mollieCanWork===true; S.proMollieCanSettle=ad.mollieCanSettle!==false; S.proMollieOrgId=ad.mollieOrgId||''; S.proMollieDashboard=ad.mollieDashboardUrl||''; S.proNetMisDeCote=Number(ad.netMisDeCote)||0; ensureBetaMollie(); if(S.proMollieOrgId&&!S._mollieAutoChecked){S._mollieAutoChecked=true;setTimeout(function(){try{refreshMollieStatus();}catch(_){}},1500);}
+        if(ad){ S.proFounder=!!ad.founder; S.proFounderSince=(ad.founderSince&&ad.founderSince.toMillis)?ad.founderSince.toMillis():(typeof ad.founderSince==='number'?ad.founderSince:null); S.proFounderGross=Number(ad.founderGross)||0; S.proRating=ad.rating||0; S.proTierForce=ad.tierForce||''; S.proInsured=!!ad.insured; S.proInsurer=ad.insurer||''; S.proInsuranceUrl=ad.insuranceUrl||''; S.proInsuranceStatus=ad.insuranceStatus||(ad.status==='valide'&&ad.insured?'valide':(ad.insuranceUrl||ad.insured?'attente':'none')); S.proSiret=ad.siret||''; S.proBirth=ad.birth||''; S.proBio=ad.bio||''; S.proDiplomas=Array.isArray(ad.diplomas)?ad.diplomas:[]; S.proDiplomaOther=ad.diplomaOther||''; S.proPhoto=ad.photo||S.proPhoto||loadPhotoLocal(user.uid)||null; if(S.proPhoto)savePhotoLocal(user.uid,S.proPhoto); if(!ad.photo&&S.proPhoto){try{FB.f.setDoc(FB.f.doc(FB.db,'artisans',user.uid),{photo:S.proPhoto},{merge:true});}catch(_){}} S.proAcceptedCharte=!!ad.acceptedCharte; S.proAcceptedTerms=!!ad.acceptedTerms; S.proTermsVersion=ad.termsVersion||''; S.proTermsAt=(ad.termsAt&&ad.termsAt.toDate)?ad.termsAt.toDate():null; S.proMollie=ad.mollieStatus||'none'; S.proMollieOnb=ad.mollieOnboardingStatus||''; S.proMollieCanWork=ad.mollieCanWork===true; S.proMollieCanSettle=ad.mollieCanSettle!==false; S.proMollieOrgId=ad.mollieOrgId||''; S.proMollieDashboard=ad.mollieDashboardUrl||''; S.proNetMisDeCote=Number(ad.netMisDeCote)||0; S.proNetIrroutable=Number(ad.netIrroutable)||0; S.proIban=ad.iban||''; S.proIbanTitulaire=ad.ibanTitulaire||''; ensureBetaMollie(); if(S.proMollieOrgId&&!S._mollieAutoChecked){S._mollieAutoChecked=true;setTimeout(function(){try{refreshMollieStatus();}catch(_){}},1500);}
           // Revenus / missions réalisées, rechargés depuis la fiche (persistés à chaque paiement).
           S.proEarnings=ad.earnings||0; S.proJobsTotal=ad.jobsTotal||0; S.proHistory=Array.isArray(ad.history)?ad.history:[];
           // Parrainage : filleuls validés (crédités par le serveur) + code propre de l'artisan.

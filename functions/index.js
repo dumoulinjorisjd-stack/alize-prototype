@@ -392,6 +392,20 @@ function verifyMollieState(state) {
 // dans un seul fil : pas de course possible).
 let _routeMotif = '';
 function routeMotif() { return _routeMotif; }
+/* LA CAUSE D'UN REFUS, EN TROIS MOTS. `no_org` : pas de compte Mollie ; `route_failed` :
+   refus à retenter ; `liaison_posterieure` : le compte a été relié APRÈS le paiement, et
+   Mollie ne versera JAMAIS (voir versement-irroutable.js). C'est la seule porte qui
+   écrit cette cause : les rattrapages la LISENT pour savoir s'ils doivent retenter. */
+function issueDuRefus(orgId) {
+  if (!orgId) return 'no_org';
+  return IRR.refusDefinitif(routeMotif()) ? IRR.ISSUE_LIAISON : 'route_failed';
+}
+/* La fiche du prestataire d'une demande, lue UNE fois : l'organisation Mollie ET
+   l'IBAN qu'il a saisi (pour le virement à la main quand Mollie ne versera pas). */
+async function ficheArtisan(db, r) {
+  if (!r || !r.providerUid) return {};
+  try { return (await db.collection('artisans').doc(r.providerUid).get()).data() || {}; } catch (_) { return {}; }
+}
 async function mollieRouteNet(molliePaymentId, orgId, netAmount, label) {
   _routeMotif = '';
   if (!mollieApiConfigured() || !molliePaymentId || !orgId || !(netAmount > 0)) {
@@ -1361,8 +1375,9 @@ async function relancerComplements(db, clientUid) {
    prestataire peut avoir travaillé, été noté, et ne pas avoir touché un centime : son
    net est sur le solde Ti-Services en attendant son organisation. C'est le seul argument
    qui porte pour lui faire finir son inscription — et c'est un FAIT, pas une relance. */
-async function netEnAttente(db, uid) {
-  let net = 0;
+async function netEnAttente(db, uid) { return (await sommesEnAttente(db, uid)).net; }
+async function sommesEnAttente(db, uid) {
+  let net = 0; let irroutable = 0;
   try {
     // Les trois jambes de versement (ARGENT.JAMBES) : une mission peut devoir son net
     // par le second paiement ou par les arrhes, pas seulement par l'empreinte. Deux
@@ -1374,8 +1389,9 @@ async function netEnAttente(db, uid) {
       q.docs.forEach((d) => vus.set(d.id, d.data() || {}));
     }
     net = ARGENT.netMisDeCote(Array.from(vus.values()));
+    irroutable = ARGENT.netIrroutable(Array.from(vus.values()));
   } catch (e) { console.warn('netEnAttente', uid, e); }
-  return round2(net);
+  return {net: round2(net), irroutable: round2(irroutable)};
 }
 /* LA SOMME MISE DE CÔTÉ VIT SUR LA FICHE DU PRESTATAIRE (`netMisDeCote`), écrite par le
    serveur seul : c'est ce que son écran d'accueil affiche. Elle est recalculée à chaque
@@ -1384,9 +1400,9 @@ async function netEnAttente(db, uid) {
    client ne la calcule JAMAIS de son côté : un téléphone neuf n'a pas toutes les
    missions, et deux chiffres pour le même argent seraient le défaut. */
 async function majNetMisDeCote(db, uid) {
-  const net = await netEnAttente(db, uid);
-  try { await db.collection('artisans').doc(uid).set({netMisDeCote: net}, {merge: true}); } catch (e) { console.warn('majNetMisDeCote', uid, e); }
-  return net;
+  const so = await sommesEnAttente(db, uid);
+  try { await db.collection('artisans').doc(uid).set({netMisDeCote: so.net, netIrroutable: so.irroutable}, {merge: true}); } catch (e) { console.warn('majNetMisDeCote', uid, e); }
+  return so.net;
 }
 
 // RATTRAPAGE DES VERSEMENTS EN ATTENTE. Un artisan peut travailler dès que Mollie
@@ -1407,6 +1423,10 @@ async function _rerouteArtisanPayoutsCorps(db, uid, orgId) {
     const r = d.data() || {};
     const net = round2(Number(r.molliePayoutNet) || 0);
     if (!r.molliePaymentId || net <= 0) continue;   // net inconnu : régularisation à la main
+    // Un refus DÉFINITIF (compte relié après le paiement) ne se retente pas : Mollie a
+    // dit que le moment du paiement tranche. Le retenter toutes les quinze minutes
+    // n'apprendrait rien et ferait croire à une panne de notre côté.
+    if (!IRR.jambeRetentable({issue: r.molliePayoutIssue, motif: r.molliePayoutMotif})) continue;
     let ok = false;
     try {
       ok = await mollieRouteNet(r.molliePaymentId, orgId, net,
@@ -1414,7 +1434,7 @@ async function _rerouteArtisanPayoutsCorps(db, uid, orgId) {
     } catch (e) { console.warn('rerouteArtisanPayouts', e); }
     if (ok) { try { await d.ref.update({molliePayout: 'routed', molliePayoutIssue: '', molliePayoutMotif: ''}); } catch (_) {}
       try { await db.collection('ledger').doc(d.id).set({molliePayout: 'routed'}, {merge: true}); } catch (_) {} n++; }
-    else { try { await d.ref.update({molliePayoutMotif: routeMotif() || ''}); } catch (_) {} }
+    else { try { await d.ref.update({molliePayoutMotif: routeMotif() || '', molliePayoutIssue: issueDuRefus(orgId)}); } catch (_) {} }
   }
   // MÊME RATTRAPAGE POUR LES SUPPLÉMENTS (pourboire, heures en plus, coup de pouce) :
   // encaissés sur un SECOND paiement, ils ont leur propre état de versement
@@ -1428,6 +1448,7 @@ async function _rerouteArtisanPayoutsCorps(db, uid, orgId) {
     const net = (r.complementNet != null) ? round2(Number(r.complementNet) || 0)
       : round2(Math.max(0, montant - commissionDuComplement(r, montant)));
     if (!r.complementPaymentId || net <= 0) continue;
+    if (!IRR.jambeRetentable({issue: r.complementPayoutIssue, motif: r.complementPayoutMotif})) continue;
     let ok = false;
     try {
       ok = await mollieRouteNet(r.complementPaymentId, orgId, net,
@@ -1435,7 +1456,7 @@ async function _rerouteArtisanPayoutsCorps(db, uid, orgId) {
     } catch (e) { console.warn('rerouteArtisanPayouts supplément', e); }
     if (ok) { try { await d.ref.update({complementPayout: 'routed', complementPayoutIssue: '', complementPayoutMotif: ''}); } catch (_) {}
       try { await db.collection('ledger').doc(d.id).set({complementPayout: 'routed'}, {merge: true}); } catch (_) {} n++; }
-    else { try { await d.ref.update({complementPayoutMotif: routeMotif() || ''}); } catch (_) {} }
+    else { try { await d.ref.update({complementPayoutMotif: routeMotif() || '', complementPayoutIssue: issueDuRefus(orgId)}); } catch (_) {} }
   }
   if (n) console.log('Versements rattrapés pour ' + uid + ' : ' + n);
   return n;
@@ -1740,6 +1761,7 @@ const PASSE = require('./recherche-passe');
 const QUAND = require('./quand-disparu');
 const ARGENT = require('./argent-mis-de-cote');
 const CSE = require('./complement-sans-etat');
+const IRR = require('./versement-irroutable');
 /* LE COMPTEUR DU JOUR. Un document par clé et par jour dans `quotas` — collection
  * SERVEUR (aucune règle ne l'ouvre, l'Admin SDK passe outre). Transaction : deux demandes
  * simultanées ne peuvent pas lire le même nombre et l'écrire deux fois.
@@ -3500,7 +3522,7 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}',
         }
         const patch = {};
         patch[j.champ] = routed ? 'routed' : 'unrouted';
-        if (!routed) { patch[j.champ + 'Issue'] = orgId ? 'route_failed' : 'no_org'; patch[j.champ + 'Motif'] = motif; patch[j.champ + 'Net'] = j.net; }
+        if (!routed) { patch[j.champ + 'Issue'] = issueDuRefus(orgId); patch[j.champ + 'Motif'] = motif; patch[j.champ + 'Net'] = j.net; }
         await event.data.after.ref.update(patch);
         try { await db.collection('ledger').doc(reqId).set(patch, {merge: true}); } catch (_) {}
         if (!routed) {
@@ -3518,7 +3540,9 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}',
                 + '<li><b>Artisan :</b> ' + escHtmlS(after.providerName || providerUid) + '</li>'
                 + '<li><b>Net dû :</b> ' + eurTxt(j.net) + '</li>'
                 + '<li><b>Cause :</b> ' + (orgId ? ('routage refusé par Mollie' + (motif ? (', ' + escHtmlS(motif)) : '')) : 'aucune organisation Mollie connectée') + '</li></ul>'
-                + '<p>À faire : vérifier l\'onboarding Mollie de l\'artisan, puis re-router le paiement. L\'argent est en sécurité sur le solde plateforme.</p>',
+                + (IRR.refusDefinitif(motif)
+                  ? '<p><b>Refus définitif de Mollie :</b> ' + escHtmlS(IRR.REGLE_MOLLIE) + ' Inutile de re-router. Console → Factures → «&nbsp;Versements prestataires bloqués&nbsp;» : libérer le paiement sur le solde Ti-Services, puis virer sa part à la main.</p>'
+                  : '<p>À faire : vérifier l\'onboarding Mollie de l\'artisan, puis re-router le paiement. L\'argent est en sécurité sur le solde plateforme.</p>'),
             });
           } catch (_) {}
         }
@@ -4117,6 +4141,7 @@ exports.ledgerExclude = onCall(async (request) => {
 async function ratisserComplementsSansEtat(db) {
   const bilan = {vus: 0, ecrits: 0};
   if (!mollieApiConfigured()) return bilan;
+  const orgPlateforme = await molliePlatformOrgId();
   for (const st of CSE.SANS_ETAT_STATUTS) {
     let q;
     try { q = await db.collection('requests').where('complementStatus', '==', st).limit(50).get(); }
@@ -4125,6 +4150,8 @@ async function ratisserComplementsSansEtat(db) {
       const r = d.data() || {};
       if (r.complementPayout || !r.complementPaymentId) continue;
       bilan.vus++;
+      const art = await ficheArtisan(db, r);
+      let orgId = r.mollieOrgId || art.mollieOrgId || '';
       let statutMollie = null; let routes = null; let montantMollie = 0;
       try {
         const p = await mollieApi('/payments/' + encodeURIComponent(r.complementPaymentId));
@@ -4135,7 +4162,10 @@ async function ratisserComplementsSansEtat(db) {
             const l = await mollieApi('/payments/' + encodeURIComponent(r.complementPaymentId) + '/routes');
             if (l.ok && l.data) {
               const arr = (l.data._embedded && l.data._embedded.routes) || l.data.routes || [];
-              routes = Array.isArray(arr) ? arr.length : 0;
+              // Seules les routes VERS LE PRESTATAIRE valent « versé » : une route vers
+              // notre propre organisation est une LIBÉRATION, sa part est encore chez nous.
+              const rd = IRR.routesDecider(arr, orgId, orgPlateforme);
+              routes = rd ? rd.versees : (Array.isArray(arr) ? arr.length : 0);
             }
           }
         }
@@ -4147,10 +4177,6 @@ async function ratisserComplementsSansEtat(db) {
         montant: montant, commission: commissionDuComplement(r, montant),
       });
       if (!dec.ecrire) continue;
-      let orgId = r.mollieOrgId || '';
-      if (!orgId && r.providerUid) {
-        try { orgId = (await db.collection('artisans').doc(r.providerUid).get()).get('mollieOrgId') || ''; } catch (_) {}
-      }
       const patch = {complementPayout: dec.etat, complementPayoutIssue: dec.etat === 'unrouted' ? (orgId ? 'route_failed' : 'no_org') : '', complementPayoutMotif: ''};
       if (dec.etat === 'unrouted') patch.complementNet = dec.net;
       // Le webhook n'est pas passé : le statut de paiement se corrige avec l'état.
@@ -4184,7 +4210,14 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
      technique de notre côté » au lieu de ses versements bloqués. Relevé en production
      le 26/10/2026, sur le lot qui venait de le poser. */
   let ecartees = 0;
+  // Les prestataires dont une ligne a été lue : leur somme sur la fiche se remet
+  // d'aplomb à la fin (un refus devenu définitif quitte « mis de côté »).
+  const aRecalculer = new Set();
   try {
+    // L'organisation de la plateforme : une route vers ELLE n'est pas un versement au
+    // prestataire, c'est une LIBÉRATION (payoutLiberer). Les compter ensemble ferait
+    // croire au prestataire payé, et le rattrapage le marquerait « routed ».
+    const orgPlateforme = await molliePlatformOrgId();
     // DEUX FAÇONS DE NE PAS ÊTRE VERSÉ, ET UNE SEULE ÉTAIT CHERCHÉE.
     //   • `unrouted` : le partage a été tenté et refusé — on connaît le motif.
     //   • AUCUN état : le partage n'a jamais été tenté, le champ n'a jamais été écrit.
@@ -4242,10 +4275,9 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
          vue passer. */
       if (versementEcarte(r, reg)) { if (!cible) ecartees++; continue; }
       const net = round2(Number(r.molliePayoutNet) || (reg ? Number(reg.netAmount) : 0) || 0);
-      let orgId = r.mollieOrgId || '';
-      if (!orgId && r.providerUid) {
-        try { orgId = (await db.collection('artisans').doc(r.providerUid).get()).get('mollieOrgId') || ''; } catch (_) {}
-      }
+      if (r.providerUid) aRecalculer.add(r.providerUid);
+      const art = await ficheArtisan(db, r);
+      let orgId = r.mollieOrgId || art.mollieOrgId || '';
       const ligne = {
         reqId: d.id, serviceName: String(r.serviceName || (reg && reg.serviceName) || r.service || 'Prestation'),
         providerName: String(r.providerName || (reg && reg.providerName) || ''), clientName: String(r.clientName || (reg && reg.clientName) || ''),
@@ -4255,6 +4287,12 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
         // doit le dire autrement qu'un refus : il n'y a pas de motif à afficher.
         tente: !!r.molliePayout,
         lecture: '', liensRoutes: null,
+        // Le refus que Mollie dit DÉFINITIF (compte relié après le paiement) : ni la
+        // console ni le rattrapage ne le retentent, et l'écran cite la règle de Mollie.
+        issue: String(r.molliePayoutIssue || ''),
+        definitif: !IRR.jambeRetentable({issue: r.molliePayoutIssue, motif: r.molliePayoutMotif}),
+        libere: !!r.molliePayoutLibere, montantLibere: round2(Number(r.molliePayoutLibereMontant) || 0),
+        iban: String(art.iban || ''), ibanTitulaire: String(art.ibanTitulaire || ''),
       };
       if (mollieApiConfigured() && r.molliePaymentId) {
         // L'état RÉEL du paiement : une empreinte autorisée mais jamais capturée n'a
@@ -4276,7 +4314,9 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
           const l = await mollieApi('/payments/' + encodeURIComponent(r.molliePaymentId) + '/routes');
           if (l.ok && l.data) {
             const arr = (l.data._embedded && l.data._embedded.routes) || l.data.routes || [];
-            ligne.routes = Array.isArray(arr) ? arr.length : 0;
+            const rd = IRR.routesDecider(arr, orgId, orgPlateforme);
+            ligne.routes = rd ? rd.versees : 0;
+            if (rd && rd.liberees > 0) { ligne.libere = true; ligne.montantLibere = rd.montantLibere; }
             if (ligne.routes > 0) {
               ligne.verse = true;
               ligne.motif = 'déjà versé, Mollie a bien la route, notre fiche était en retard';
@@ -4289,7 +4329,10 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
           }
         } catch (_) {}
       }
-      if (relance && !ligne.verse) {
+      if (relance && !ligne.verse && (ligne.definitif || ligne.libere)) {
+        ligne.motif = ligne.libere ? 'paiement libéré sur le solde Ti-Services : sa part se vire à la main'
+          : IRR.REGLE_MOLLIE;
+      } else if (relance && !ligne.verse) {
         if (r.molliePaymentId && orgId && net > 0) {
           let ok = false;
           try {
@@ -4298,9 +4341,10 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
           } catch (e) { console.warn('payoutRetry', d.id, e); }
           ligne.verse = ok;
           ligne.motif = ok ? '' : (routeMotif() || 'refus sans explication de Mollie');
+          if (!ok) { ligne.issue = issueDuRefus(orgId); ligne.definitif = ligne.issue === IRR.ISSUE_LIAISON; }
           try {
             await d.ref.update(ok ? {molliePayout: 'routed', molliePayoutIssue: '', molliePayoutMotif: ''}
-              : {molliePayoutMotif: ligne.motif});
+              : {molliePayoutMotif: ligne.motif, molliePayoutIssue: issueDuRefus(orgId)});
             await db.collection('ledger').doc(d.id).set({molliePayout: ok ? 'routed' : 'unrouted'}, {merge: true});
           } catch (_) {}
         } else {
@@ -4329,10 +4373,9 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
         const montant = round2(Number(r.complementAmount) || 0);
         const net = (r.complementNet != null) ? round2(Number(r.complementNet) || 0)
           : round2(Math.max(0, montant - commissionDuComplement(r, montant)));
-        let orgId = r.mollieOrgId || '';
-        if (!orgId && r.providerUid) {
-          try { orgId = (await db.collection('artisans').doc(r.providerUid).get()).get('mollieOrgId') || ''; } catch (_) {}
-        }
+        if (r.providerUid) aRecalculer.add(r.providerUid);
+        const art = await ficheArtisan(db, r);
+        let orgId = r.mollieOrgId || art.mollieOrgId || '';
         const ligne = {
           reqId: cle, genre: 'supplement',
           serviceName: complementLibelle(r.complementMotif) + ' · ' + String(r.serviceName || r.service || 'Prestation'),
@@ -4340,6 +4383,10 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
           net: net, invNo: String(r.saleInvoiceNo || ''), org: orgId ? 'oui' : 'non',
           motif: String(r.complementPayoutMotif || ''), etat: '', routes: -1, verse: false,
           tente: !!r.complementPayout, lecture: '', liensRoutes: null,
+          issue: String(r.complementPayoutIssue || ''),
+          definitif: !IRR.jambeRetentable({issue: r.complementPayoutIssue, motif: r.complementPayoutMotif}),
+          libere: !!r.complementPayoutLibere, montantLibere: round2(Number(r.complementPayoutLibereMontant) || 0),
+          iban: String(art.iban || ''), ibanTitulaire: String(art.ibanTitulaire || ''),
         };
         if (mollieApiConfigured() && r.complementPaymentId) {
           try {
@@ -4353,7 +4400,9 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
             const l = await mollieApi('/payments/' + encodeURIComponent(r.complementPaymentId) + '/routes');
             if (l.ok && l.data) {
               const arr = (l.data._embedded && l.data._embedded.routes) || l.data.routes || [];
-              ligne.routes = Array.isArray(arr) ? arr.length : 0;
+              const rd = IRR.routesDecider(arr, orgId, orgPlateforme);
+              ligne.routes = rd ? rd.versees : 0;
+              if (rd && rd.liberees > 0) { ligne.libere = true; ligne.montantLibere = rd.montantLibere; }
               if (ligne.routes > 0) {
                 ligne.verse = true;
                 ligne.motif = 'déjà versé, Mollie a bien la route, notre fiche était en retard';
@@ -4366,7 +4415,10 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
             }
           } catch (_) {}
         }
-        if (relance && !ligne.verse) {
+        if (relance && !ligne.verse && (ligne.definitif || ligne.libere)) {
+          ligne.motif = ligne.libere ? 'paiement libéré sur le solde Ti-Services : sa part se vire à la main'
+            : IRR.REGLE_MOLLIE;
+        } else if (relance && !ligne.verse) {
           if (r.complementPaymentId && orgId && net > 0) {
             let ok = false;
             try {
@@ -4375,9 +4427,10 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
             } catch (e) { console.warn('payoutRetry supplément', d.id, e); }
             ligne.verse = ok;
             ligne.motif = ok ? '' : (routeMotif() || 'refus sans explication de Mollie');
+            if (!ok) { ligne.issue = issueDuRefus(orgId); ligne.definitif = ligne.issue === IRR.ISSUE_LIAISON; }
             try {
               await d.ref.update(ok ? {complementPayout: 'routed', complementPayoutIssue: '', complementPayoutMotif: ''}
-                : {complementPayoutMotif: ligne.motif});
+                : {complementPayoutMotif: ligne.motif, complementPayoutIssue: issueDuRefus(orgId)});
               await db.collection('ledger').doc(d.id).set({complementPayout: ok ? 'routed' : 'unrouted'}, {merge: true});
             } catch (_) {}
           } else {
@@ -4407,6 +4460,7 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
     console.error('payoutRetry', e);
     return {erreur: String((e && e.message) || e).slice(0, 300)};
   }
+  for (const uid of aRecalculer) { try { await majNetMisDeCote(db, uid); } catch (_) {} }
   const verses = bloques.filter((b) => b.verse).length;
   console.log('payoutRetry (' + (relance ? 'relance' : 'inventaire') + ') : ' + bloques.length
     + ' versement(s) bloqué(s), ' + verses + ' réglé(s), par ' + who);
@@ -4620,6 +4674,100 @@ exports.payoutManual = onCall(async (request) => {
     : round2(Number(r.molliePayoutNet) || 0);
   console.log('payoutManual ' + brut + ', ' + net + ' € versés à la main par ' + who);
   return {ok: true, net: net};
+});
+
+/**
+ * payoutLiberer : SORTIR UN PAIEMENT DE L'ATTENTE QUAND MOLLIE NE VERSERA JAMAIS.
+ *
+ * Le compte Ti-Services est en ROUTAGE DIFFÉRÉ : un paiement reste en « solde en
+ * attente » tant qu'aucune route ne l'a dirigé. Quand le prestataire a relié son compte
+ * APRÈS le paiement, Mollie refuse de router vers lui, et c'est définitif — c'est sa
+ * règle documentée (« the destination organization must be connected to your platform at
+ * payment creation »). Sans geste, l'argent dort quatre-vingt-dix jours puis bascule seul.
+ *
+ * On route donc le paiement ENTIER vers NOTRE organisation (ce que Mollie autorise
+ * explicitement), puis on vire sa part au prestataire à la main. La jambe RESTE
+ * `unrouted` : sa part lui est toujours due, et c'est « Je l'ai versé à la main » qui la
+ * soldera. On note seulement qu'elle est libérée, pour ne jamais le refaire.
+ *
+ * QUATRE REFUS, et chacun protège de l'argent : un paiement non réglé n'a rien à
+ * libérer ; une route déjà posée vers le prestataire dit qu'il est payé ; une libération
+ * déjà faite ne se refait pas (deux routes dépasseraient le paiement) ; et un refus qui
+ * n'est PAS définitif se retente au lieu de se libérer — libérer trop tôt ferait virer à
+ * la main ce que Mollie aurait versé tout seul. Réservé à l'administrateur.
+ */
+const LIBERER_PHRASES = {
+  'plateforme-inconnue': 'L’organisation Mollie de Ti-Services est inconnue : jeton plateforme absent ou refusé.',
+  'non-paye': 'Ce paiement n’est pas réglé chez Mollie : il n’y a rien à libérer.',
+  'routes-inconnues': 'Mollie n’a pas répondu sur les routes de ce paiement : réessayez dans un instant.',
+  'deja-verse': 'Une route vers le prestataire existe déjà : il est payé, il n’y a rien à libérer.',
+  'deja-libere': 'Ce paiement est déjà libéré sur le solde Ti-Services.',
+  'montant-nul': 'Le montant de ce paiement est nul.',
+  'refus-non-definitif': 'Le refus de Mollie n’est pas définitif : réessayez le versement d’abord.',
+};
+exports.payoutLiberer = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) => {
+  const who = (request.auth && request.auth.token && request.auth.token.email) || '';
+  if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+    throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
+  }
+  const brut = String((request.data && request.data.reqId) || '').trim().slice(0, 132);
+  if (!brut) throw new HttpsError('invalid-argument', 'Prestation manquante.');
+  const estComplement = brut.indexOf('c~') === 0;
+  const reqId = estComplement ? brut.slice(2) : brut;
+  const db = getFirestore();
+  const ref = db.collection('requests').doc(reqId);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Prestation introuvable.');
+  const r = snap.data() || {};
+  const champ = estComplement ? 'complementPayout' : 'molliePayout';
+  const paymentId = String(estComplement ? (r.complementPaymentId || '') : (r.molliePaymentId || ''));
+  if (!paymentId) throw new HttpsError('failed-precondition', 'Aucun paiement Mollie sur cette prestation.');
+  if (r[champ] !== 'unrouted') throw new HttpsError('failed-precondition', 'Ce versement n’est pas en attente.');
+  const art = await ficheArtisan(db, r);
+  const orgPresta = r.mollieOrgId || art.mollieOrgId || '';
+  const orgPlateforme = await molliePlatformOrgId();
+  let statutMollie = ''; let montant = 0; let routes = null;
+  try {
+    const p = await mollieApi('/payments/' + encodeURIComponent(paymentId));
+    if (p.ok && p.data) {
+      statutMollie = String(p.data.status || '');
+      // On ne route jamais plus que ce qui reste encaissé : un remboursement partiel
+      // diminue ce qu'il y a à libérer.
+      montant = round2((Number(p.data.amount && p.data.amount.value) || 0)
+        - (Number(p.data.amountRefunded && p.data.amountRefunded.value) || 0));
+    }
+    const l = await mollieApi('/payments/' + encodeURIComponent(paymentId) + '/routes');
+    if (l.ok && l.data) routes = (l.data._embedded && l.data._embedded.routes) || l.data.routes || [];
+  } catch (e) { console.warn('payoutLiberer lecture', brut, e); }
+  const dec = IRR.libererDecider({
+    orgPlateforme, orgPresta, statutMollie, routes, montant,
+    issue: r[champ + 'Issue'], motif: r[champ + 'Motif'],
+  });
+  if (!dec.ok && dec.raison === 'deja-libere') {
+    // La route existe chez Mollie mais notre fiche ne le sait pas : on la met d'aplomb.
+    const upd = {}; upd[champ + 'Libere'] = true; upd[champ + 'LibereMontant'] = round2(dec.montant || 0);
+    try { await ref.set(upd, {merge: true}); } catch (_) {}
+    return {ok: true, deja: true, montant: round2(dec.montant || 0)};
+  }
+  if (!dec.ok) throw new HttpsError('failed-precondition', LIBERER_PHRASES[dec.raison] || 'Libération refusée.');
+  const ok = await mollieRouteNet(paymentId, orgPlateforme, dec.montant,
+    'Ti-Services · libération · ' + (r.serviceName || r.service || 'prestation') + (r.saleInvoiceNo ? (' · ' + r.saleInvoiceNo) : ''));
+  if (!ok) throw new HttpsError('failed-precondition', 'Mollie a refusé la libération : ' + (routeMotif() || 'sans explication'));
+  const upd = {};
+  upd[champ + 'Libere'] = true;
+  upd[champ + 'LibereMontant'] = dec.montant;
+  upd[champ + 'LiberePar'] = who;
+  upd[champ + 'LibereAt'] = FieldValue.serverTimestamp();
+  await ref.set(upd, {merge: true});
+  // Écritures au registre en toutes lettres (une par nature de versement), comme
+  // payoutManual : la jambe reste « unrouted », sa part est toujours due.
+  try {
+    if (estComplement) await db.collection('ledger').doc(reqId).set({complementPayoutLibere: true, complementPayoutLibereMontant: dec.montant}, {merge: true});
+    else await db.collection('ledger').doc(reqId).set({molliePayoutLibere: true, molliePayoutLibereMontant: dec.montant}, {merge: true});
+  } catch (_) {}
+  if (r.providerUid) { try { await majNetMisDeCote(db, r.providerUid); } catch (_) {} }
+  console.log('payoutLiberer ' + brut + ', ' + dec.montant + ' € libérés sur le solde Ti-Services par ' + who);
+  return {ok: true, montant: dec.montant};
 });
 
 /**
@@ -5573,7 +5721,7 @@ exports.mollieWebhook = onRequest({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (req
             await ref.set({complementStatus: 'paye', complementPaidAt: Date.now(),
               complementCommission: commC, complementNet: netC,
               complementPayout: verse ? 'routed' : 'unrouted',
-              complementPayoutIssue: verse ? '' : (orgId ? 'route_failed' : 'no_org'),
+              complementPayoutIssue: verse ? '' : issueDuRefus(orgId),
               complementPayoutMotif: verse ? '' : (routeMotif() || '')}, {merge: true});
           } catch (_) {}
           try { await db.collection('ledger').doc(reqId).set({complementPayout: verse ? 'routed' : 'unrouted', complementNet: netC}, {merge: true}); } catch (_) {}
@@ -5586,7 +5734,9 @@ exports.mollieWebhook = onRequest({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (req
                   + '<li><b>Encaissé :</b> ' + eurTxt(montant) + '</li>'
                   + '<li><b>Net à reverser :</b> ' + eurTxt(netC) + (commC ? (' (commission pourboire ' + eurTxt(commC) + ')') : '') + '</li>'
                   + '<li><b>Cause :</b> ' + (orgId ? (routeMotif() ? escHtmlS(routeMotif()) : 'routage refusé par Mollie, sans explication') : 'aucune organisation Mollie connectée') + '</li></ul>'
-                  + '<p>L\'argent est en sécurité sur le solde plateforme. Console → Factures → «&nbsp;Versements prestataires bloqués&nbsp;»&nbsp;: réessayer, ou acter un virement manuel.</p>',
+                  + (IRR.refusDefinitif(routeMotif())
+                    ? '<p><b>Refus définitif de Mollie :</b> ' + escHtmlS(IRR.REGLE_MOLLIE) + ' Console → Factures → «&nbsp;Versements prestataires bloqués&nbsp;» : libérer le paiement sur le solde Ti-Services, puis virer sa part à la main.</p>'
+                    : '<p>L\'argent est en sécurité sur le solde plateforme. Console → Factures → «&nbsp;Versements prestataires bloqués&nbsp;»&nbsp;: réessayer, ou acter un virement manuel.</p>'),
               });
             } catch (_) {}
           }
@@ -8511,7 +8661,7 @@ exports.settleCancellation = onDocumentUpdated({document: 'requests/{reqId}', se
       cancelFeeCommissionPct: pct, cancelFeeCommission: commission, cancelFeeNet: net,
       mollieCaptured: true, mollieCaptureAmount: fee,
       molliePayout: routed ? 'routed' : 'unrouted',
-      molliePayoutIssue: routed ? '' : (orgId ? 'route_failed' : 'no_org'),
+      molliePayoutIssue: routed ? '' : issueDuRefus(orgId),
       molliePayoutMotif: routed ? '' : (routeMotif() || ''), molliePayoutNet: net,
     });
     try { await db.collection('ledger').doc(reqId + '-annulation').set({molliePayout: routed ? 'routed' : 'unrouted'}, {merge: true}); } catch (_) {}

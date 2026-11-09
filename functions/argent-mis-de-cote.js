@@ -26,17 +26,30 @@ function round2(n) { return Math.round((Number(n) || 0) * 100) / 100; }
    affichait 0 € à une prestataire dont les 110 € dormaient sur le second paiement —
    relevé le 09/11/2026. Chaque jambe porte son net figé au moment du refus. */
 const JAMBES = [['molliePayout', 'molliePayoutNet'], ['complementPayout', 'complementNet'], ['arrhesPayout', 'arrhesPayoutNet']];
-function netMisDeCote(requests) {
+/* DEUX SOMMES, PARCE QU'ELLES N'APPELLENT PAS LE MÊME GESTE. « Mis de côté » part tout
+   seul le jour où le compte de paiement s'ouvre — on peut le promettre. Ce que Mollie
+   refuse DÉFINITIVEMENT (le compte a été relié après le paiement) ne partira JAMAIS par
+   Mollie : le promettre ferait attendre pour rien, et relancer « connectez votre compte »
+   quelqu'un dont le compte est connecté se lirait comme une panne de notre côté. Cette
+   part-là se vire à la main ; elle a sa propre somme, `netIrroutable`. */
+const IRR = require('./versement-irroutable');
+function jambeDefinitive(r, etat) {
+  return !IRR.jambeRetentable({issue: r[etat + 'Issue'], motif: r[etat + 'Motif']});
+}
+function _somme(requests, garder) {
   let net = 0;
   (Array.isArray(requests) ? requests : []).forEach((r) => {
     if (!r) return;
     JAMBES.forEach(([etat, champNet]) => {
       if (r[etat] !== 'unrouted') return;
+      if (!garder(jambeDefinitive(r, etat))) return;
       net += Number(r[champNet]) || 0;
     });
   });
   return round2(net);
 }
+function netMisDeCote(requests) { return _somme(requests, (definitif) => !definitif); }
+function netIrroutable(requests) { return _somme(requests, (definitif) => definitif); }
 
 /* Faut-il le dire maintenant, et par où.
    - rien à dire sans argent ;
@@ -75,4 +88,4 @@ function rappelArgentTextes(net) {
   };
 }
 
-module.exports = {JAMBES, netMisDeCote, rappelArgentDecider, rappelArgentTextes, eurTexte, TROP_TOT_MS, DEJA_DIT_MS};
+module.exports = {JAMBES, netMisDeCote, netIrroutable, jambeDefinitive, rappelArgentDecider, rappelArgentTextes, eurTexte, TROP_TOT_MS, DEJA_DIT_MS};
