@@ -3787,7 +3787,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='913';
+  const VERSION_APP='914';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -6271,7 +6271,17 @@
       /* CE QUI EST PARTI AUX PRESTATAIRES, écrit par le serveur sur la demande. */
       diff:(function(){const d=r0.diffusion;if(!d||typeof d!=='object')return null;
         return {motif:txt(d.motif,24),cibles:Number(d.cibles)||0,
-          push:Number(d.push)||0,mail:Number(d.mail)||0};})()};
+          push:Number(d.push)||0,mail:Number(d.mail)||0,at:dateMs(d.at)};})(),
+      /* À QUI ELLE EST PARTIE, ET QUI A REFUSÉ. Écrits par le serveur seul (règles :
+         `serverKeys`). Le refus EN COURS se lit aussi sur la demande tant que le client
+         ne l'a pas rouverte ; l'historique, lui, survit à la réouverture. */
+      prevenus:(Array.isArray(r0.prevenus)?r0.prevenus:[]).filter(function(u){return typeof u==='string'&&u;}).slice(0,80).map(function(u){return u.slice(0,128);}),
+      refus:(function(){
+        const l=(Array.isArray(r0.refusHisto)?r0.refusHisto:[]).filter(function(x){return x&&typeof x.uid==='string'&&x.uid;})
+          .slice(0,40).map(function(x){return {uid:x.uid.slice(0,128),nom:txt(x.nom,60),at:dateMs(x.at)};});
+        if(r0.status==='declined'&&typeof r0.declinedBy==='string'&&r0.declinedBy)
+          l.push({uid:r0.declinedBy.slice(0,128),nom:txt(r0.declinedName,60),at:dateMs(r0.declinedAt)});
+        return l;})()};
   }
   /* ══ TOUTES LES COMMANDES, PAR STATUT PUIS PAR MÉTIER ═══════════════════════════
      « Dans les réservations en cours, je ne vois pas toutes celles qui ont expiré ou
@@ -12520,6 +12530,40 @@
     /* LA RELANCE S'ÉCRIT SOUS SON PROPRE MOTIF : une diffusion que l'opérateur a
        déclenchée ne se confond pas avec celle qui part toute seule, et la ligne doit
        pouvoir dire laquelle on lit. */
+    /* QUI A RÉPONDU QUOI. « Est-ce que j'ai un moyen de voir sur la console si les
+       artisans concernés par la demande en cours ont cliqué sur passer cette demande ou
+       l'ont refusée ? » Trois sources, aucune nouvelle écriture côté artisan : la liste
+       des prévenus (serveur), l'historique des refus (serveur), l'heure de passage (fiche
+       de l'artisan). Une demande d'avant cette liste ne connaît pas ses prévenus : on le
+       DIT, au lieu d'afficher un silence qui se lirait « personne n'a été prévenu ». */
+    const cmdReponses=function(r){
+      if(!r||!r.id)return '';
+      const arts=S.adminArtisans||[];
+      const nomDe=function(uid,repli){const a=arts.find(function(x){return (x.uid||x.id)===uid;});return (a&&a.name)||repli||'Prestataire';};
+      const passeA=function(uid){const a=arts.find(function(x){return (x.uid||x.id)===uid;});return a&&a.skipAt?dateMs(a.skipAt[r.id]):0;};
+      const h=function(ms){if(!ms)return '';try{return new Date(ms).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});}catch(_){return '';}};
+      const vus={},lignes=[];
+      const ajoute=function(uid,etat,at,nom){if(!uid||vus[uid])return;vus[uid]=1;lignes.push({uid:uid,etat:etat,at:at,nom:nomDe(uid,nom)});};
+      const actif=['accepted','working','done_pro','done','paid','confirmed'].indexOf(r.status)>=0;
+      if(r.providerUid&&actif)ajoute(r.providerUid,'pris',0);
+      (r.refus||[]).slice().reverse().forEach(function(x){ajoute(x.uid,'refus',x.at,x.nom);});
+      arts.forEach(function(a){const uid=a.uid||a.id;const t=passeA(uid);if(t)ajoute(uid,'passe',t);});
+      (r.prevenus||[]).forEach(function(uid){ajoute(uid,'attente',0);});
+      if(!lignes.length)return '';
+      const relance=r.diff&&r.diff.motif==='relancee'?r.diff.at:0;
+      const MOTS={pris:['a pris la mission','var(--good)'],refus:['a refusé','var(--coral-deep)'],passe:['a passé','var(--ink-soft)'],attente:['sans réponse','var(--muted)']};
+      const MAX=12, vues=lignes.slice(0,MAX), reste=lignes.length-vues.length;
+      const items=vues.map(function(l){
+        const m=MOTS[l.etat];
+        const quand=l.at?(' '+h(l.at)):'';
+        const avant=(l.etat==='passe'&&relance&&l.at&&l.at<relance)?' (avant la relance)':'';
+        return `<span class="cmd-rep" data-etat="${l.etat}" style="white-space:nowrap"><b>${esc(l.nom)}</b> <span style="color:${m[1]}">${esc(m[0]+quand+avant)}</span></span>`;
+      }).join(' · ');
+      const nb=function(e){return lignes.filter(function(l){return l.etat===e;}).length;};
+      const resume=[nb('refus')?(nb('refus')+' refus'):'',nb('passe')?(nb('passe')+' passage'+(nb('passe')>1?'s':'')):'',nb('attente')?(nb('attente')+' sans réponse'):''].filter(Boolean).join(', ');
+      const ancienne=!(r.prevenus&&r.prevenus.length)&&r.diff&&r.diff.cibles>0;
+      return `<div class="mini cmd-reponses" style="margin-top:5px;line-height:1.55;color:var(--ink-soft)">${resume?'<b>Réponses</b>&nbsp;: '+esc(resume)+'<br>':''}${items}${reste>0?' · et '+reste+' autre'+(reste>1?'s':''):''}${ancienne?'<br><span style="color:var(--muted)">La liste des prestataires prévenus n’était pas encore gardée pour cette demande : seuls les passages et les refus connus s’affichent.</span>':''}</div>`;
+    };
     const cmdDiffusion=function(r){
       const d=r&&r.diff; if(!d)return '';
       if(d.motif==='envoyee'||d.motif==='relancee'){
@@ -12591,7 +12635,7 @@
           <span class="mini money">${eur(montant)}${coup?' <span style="color:var(--coral-deep)">· dont '+eur(coup)+' de coup de pouce</span>':''}</span>
           ${nonEnc?`<span class="chip warn" style="flex:none">${esc(mollieEtatTxt(r.led||{}))}</span>`:''}
           <span class="mini" style="color:${longue?'var(--coral-deep);font-weight:700':'var(--muted)'}">${esc(age)}${r.directed?' · dirigée':''}</span></div>
-        ${cmdDiffusion(r)}${cmdRelance(r)}${cmdEssai(r)}
+        ${cmdDiffusion(r)}${cmdReponses(r)}${cmdRelance(r)}${cmdEssai(r)}
         ${cmdFin(r)}
         ${cmdClore(r)}
       </div>`;
@@ -25216,7 +25260,11 @@
       adminArtUnsub=FB.f.onSnapshot(FB.f.collection(FB.db,'artisans'),function(snap){
         const list=[],pending=new Set();
         snap.forEach(function(d){ const a=d.data()||{}; const cats=Array.isArray(a.cats)?a.cats:[]; const rr=a.rates||{}; const st=a.status||'attente';
-          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Prestataire',status:st,type:(a.statusType==='particulier')?'particulier':'entreprise',statusType:a.statusType||'entreprise',legalName:a.legalName||'',legalForm:a.legalForm||'',capital:a.capital||'',rcsCity:a.rcsCity||'',birth:a.birth||'',referralCode:a.referralCode||'',referredByCode:a.referredByCode||'',acceptedTerms:!!a.acceptedTerms,acceptedCharte:!!a.acceptedCharte,acceptedMandat:!!a.acceptedMandat,acceptsGrille:!!a.acceptsGrille,desiredNetRates:a.desiredNetRates||null,ownCatalog:(a.ownCatalog&&typeof a.ownCatalog==='object')?a.ownCatalog:{},termsVersion:a.termsVersion||'',termsAt:(a.termsAt&&a.termsAt.toMillis)?a.termsAt.toMillis():0,createdAt:(a.createdAt&&a.createdAt.toMillis)?a.createdAt.toMillis():0,cats:cats,other:a.other||'',otherPrice:Number(a.otherPrice)||0,otherPriceNote:a.otherPriceNote||'',otherUnit:(a.otherUnit==='forfait'?'forfait':'h'),pendingCats:Array.isArray(a.pendingCats)?a.pendingCats:[],pendingOther:a.pendingOther||'',pendingOtherPrice:Number(a.pendingOtherPrice)||0,pendingOtherUnit:(a.pendingOtherUnit==='forfait'?'forfait':'h'),pendingDesiredNet:(a.pendingDesiredNet&&typeof a.pendingDesiredNet==='object')?a.pendingDesiredNet:null,rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insuranceNone:!!a.insuranceNone,insuranceNoticeAt:Number(a.insuranceNoticeAt)||0,approvedNotifiedAt:Number(a.approvedNotifiedAt)||0,tierForce:a.tierForce||'',refBonusJobs:Number(a.refBonusJobs)||0,insuranceDueAt:Number(a.insuranceDueAt)||0,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,founderSince:(a.founderSince&&a.founderSince.toMillis)?a.founderSince.toMillis():(typeof a.founderSince==='number'?a.founderSince:null),founderGross:Number(a.founderGross)||0,test:!!a.test,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,online:(a.online!==false)/* EN LIGNE PAR DÉFAUT, et hors ligne seulement si on l'a
+          list.push({id:d.id,uid:d.id,real:true,name:a.name||'Prestataire',status:st,
+            /* QUAND IL A PASSÉ CHAQUE DEMANDE (« Passer cette demande »). La relance retire
+               la demande de `skippedRequests` pour la lui remontrer, mais laisse l'heure :
+               c'est ce qui permet à la console de dire qui a passé, même après. */
+            skipAt:(a.skippedAt&&typeof a.skippedAt==='object')?a.skippedAt:{},type:(a.statusType==='particulier')?'particulier':'entreprise',statusType:a.statusType||'entreprise',legalName:a.legalName||'',legalForm:a.legalForm||'',capital:a.capital||'',rcsCity:a.rcsCity||'',birth:a.birth||'',referralCode:a.referralCode||'',referredByCode:a.referredByCode||'',acceptedTerms:!!a.acceptedTerms,acceptedCharte:!!a.acceptedCharte,acceptedMandat:!!a.acceptedMandat,acceptsGrille:!!a.acceptsGrille,desiredNetRates:a.desiredNetRates||null,ownCatalog:(a.ownCatalog&&typeof a.ownCatalog==='object')?a.ownCatalog:{},termsVersion:a.termsVersion||'',termsAt:(a.termsAt&&a.termsAt.toMillis)?a.termsAt.toMillis():0,createdAt:(a.createdAt&&a.createdAt.toMillis)?a.createdAt.toMillis():0,cats:cats,other:a.other||'',otherPrice:Number(a.otherPrice)||0,otherPriceNote:a.otherPriceNote||'',otherUnit:(a.otherUnit==='forfait'?'forfait':'h'),pendingCats:Array.isArray(a.pendingCats)?a.pendingCats:[],pendingOther:a.pendingOther||'',pendingOtherPrice:Number(a.pendingOtherPrice)||0,pendingOtherUnit:(a.pendingOtherUnit==='forfait'?'forfait':'h'),pendingDesiredNet:(a.pendingDesiredNet&&typeof a.pendingDesiredNet==='object')?a.pendingDesiredNet:null,rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insuranceNone:!!a.insuranceNone,insuranceNoticeAt:Number(a.insuranceNoticeAt)||0,approvedNotifiedAt:Number(a.approvedNotifiedAt)||0,tierForce:a.tierForce||'',refBonusJobs:Number(a.refBonusJobs)||0,insuranceDueAt:Number(a.insuranceDueAt)||0,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,founderSince:(a.founderSince&&a.founderSince.toMillis)?a.founderSince.toMillis():(typeof a.founderSince==='number'?a.founderSince:null),founderGross:Number(a.founderGross)||0,test:!!a.test,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,online:(a.online!==false)/* EN LIGNE PAR DÉFAUT, et hors ligne seulement si on l'a
             DÉCIDÉ. `!!a.online` rendait FAUX pour un compte qui n'a jamais touché
             l'interrupteur — c'est-à-dire tout nouvel inscrit, puisque le champ n'est
             écrit qu'au premier enregistrement de ses réglages. La console le

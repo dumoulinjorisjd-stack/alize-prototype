@@ -1853,6 +1853,16 @@ async function _jetonsArtisans(db, uids) {
    console afficherait ce chiffre comme un fait. */
 const DIFFUSION_MOTIFS = ['envoyee', 'sans-garantie', 'plafond-client', 'aucun-artisan',
   'aucun-disponible', 'dirige-introuvable'];
+function dateMsServeur(v) {
+  if (v == null || v === '') return 0;
+  if (v && typeof v.toMillis === 'function') return Number(v.toMillis()) || 0;
+  const n = Number(v); return isFinite(n) ? n : 0;
+}
+const PREVENUS_MAX = 80;
+function _uidsPrevenus(info) {
+  const l = Array.isArray((info || {}).uids) ? info.uids : [];
+  return l.filter((u) => typeof u === 'string' && u && u.length <= 128).slice(0, PREVENUS_MAX);
+}
 async function _noterDiffusion(db, reqId, info) {
   try {
     if (!reqId) return;
@@ -1865,6 +1875,12 @@ async function _noterDiffusion(db, reqId, info) {
         push: Math.max(0, Math.round(Number((info || {}).push) || 0)),
         mail: Math.max(0, Math.round(Number((info || {}).mail) || 0)),
       },
+      /* QUI A ÉTÉ PRÉVENU, ET PAS SEULEMENT COMBIEN. « Est-ce que je peux voir si les
+         artisans concernés ont passé la demande ou l'ont refusée ? » — la console ne
+         gardait que des NOMBRES : elle ne pouvait donc nommer personne. La liste
+         s'ACCUMULE (création, relance, réouverture) : un artisan prévenu une fois l'a
+         été, une relance ne l'efface pas. Bornée, comme toute liste écrite ici. */
+      ...(_uidsPrevenus(info).length ? { prevenus: FieldValue.arrayUnion(..._uidsPrevenus(info)) } : {}),
     }, { merge: true });
   } catch (e) { console.warn('_noterDiffusion', reqId, e); }
 }
@@ -2029,7 +2045,7 @@ exports.notifyArtisansNewRequest = onDocumentCreated({document: 'requests/{reqId
   const nMail = await mailArtisansSansAppareil(db, artById, targetUids, tokenToUid, r, !!preferred);
   if (!tokens.length) { console.log('Aucun jeton artisan enregistré, e-mail(s) envoyé(s) à la place.');
     await _noterDiffusion(db, event.params && event.params.reqId,
-      { motif: 'envoyee', cibles: targetUids.length, push: 0, mail: nMail }); return; }
+      { motif: 'envoyee', cibles: targetUids.length, push: 0, mail: nMail, uids: targetUids }); return; }
 
   const svcName = (r.serviceName || 'Nouvelle prestation').toString().slice(0, 60);
   const zone = (r.zone || '').toString().slice(0, 40);
@@ -2049,7 +2065,7 @@ exports.notifyArtisansNewRequest = onDocumentCreated({document: 'requests/{reqId
   const res = await getMessaging().sendEachForMulticast(message);
   console.log(`Push artisans : ${res.successCount}/${tokens.length}`);
   await _noterDiffusion(db, event.params && event.params.reqId,
-    { motif: 'envoyee', cibles: targetUids.length, push: res.successCount, mail: nMail });
+    { motif: 'envoyee', cibles: targetUids.length, push: res.successCount, mail: nMail, uids: targetUids });
 
   const dels = [];
   res.responses.forEach((rp, i) => {
@@ -2592,7 +2608,7 @@ async function diffuserAuPool(db, reqId, r, opts) {
   const issue = uids.length
     ? { motif: o.motif || 'envoyee', cibles: uids.length, push: nPush, mail: nMail }
     : { motif: preferred ? 'dirige-introuvable' : (r.service ? 'aucun-disponible' : 'aucun-artisan') };
-  await _noterDiffusion(db, reqId, issue);
+  await _noterDiffusion(db, reqId, Object.assign({ uids: uids }, issue));
   return Object.assign({ uids: uids }, issue);
 }
 async function pushMulticast(tokens, title, body, link, onInvalid, tag) {
@@ -3582,6 +3598,20 @@ exports.notifyReopenedRequest = onDocumentUpdated({document: 'requests/{reqId}',
   const db = getFirestore();
   const svc = after.service;
   const exclude = wasDeclined ? (before.declinedBy || '') : (wasActive ? (before.providerUid || '') : '');
+
+  /* LE REFUS NE S'EFFACE PLUS AVEC LA RÉOUVERTURE. Le client rouvre aussitôt une demande
+     déclinée et remet `declinedBy` à vide : au bout de quelques secondes, plus rien ne
+     disait QUI avait refusé. On le garde ici, côté serveur — avant le plafond, qui peut
+     faire sortir plus bas : un refus a eu lieu, qu'on rediffuse ou non. */
+  if (wasDeclined && before.declinedBy) {
+    try {
+      await db.collection('requests').doc(event.params.reqId).set({ refusHisto: FieldValue.arrayUnion({
+        uid: String(before.declinedBy).slice(0, 128),
+        nom: String(before.declinedName || '').slice(0, 60),
+        at: dateMsServeur(before.declinedAt) || Date.now(),
+      }) }, { merge: true });
+    } catch (e) { console.warn('refusHisto', e); }
+  }
 
   /* LE MÊME PLAFOND QU'À LA CRÉATION. Rouvrir une demande (déclinée → publiée) ne
      redemande AUCUN paiement : c'est le chemin le moins cher pour faire partir cent

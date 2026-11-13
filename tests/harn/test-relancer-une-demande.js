@@ -70,7 +70,7 @@ console.log('\n── L\'ISSUE S\'ÉCRIT, SOUS SON PROPRE MOTIF ─────�
 ok(/motif: 'relancee'/.test(corps), 'la relance porte son motif');
 ok(/d\.motif==='envoyee'\|\|d\.motif==='relancee'/.test(APP), 'et la console le lit comme un ENVOI, pas comme un refus');
 ok(/relancee'\?'Relanc/.test(APP), 'en le nommant');
-ok(/await _noterDiffusion\(db, reqId, issue\);/.test(SRV), 'et la porte écrit l\'issue sur la demande');
+ok(/await _noterDiffusion\(db, reqId, (issue|Object\.assign\(\{ uids: uids \}, issue\))\);/.test(SRV), 'et la porte écrit l\'issue sur la demande (avec la liste des prévenus)');
 /* CE QUE NUL CLIENT NE PEUT ÉCRIRE : `diffusion` est le journal de ce qui est parti. */
 const sk = RULES.slice(RULES.indexOf('function serverKeys()'), RULES.indexOf('];', RULES.indexOf('function serverKeys()')));
 ok(/'diffusion'/.test(sk), 'le journal de diffusion reste réservé au serveur');
@@ -94,7 +94,7 @@ const iR = APP.indexOf('const cmdRelance=function(r)');
 const rel = APP.slice(iR, iR + 700);
 ok(iR > 0, 'le bouton est composé par une fonction nommée');
 ok(/r\.status!=='pending'\)return ''/.test(rel), 'il ne paraît que sur une demande qui cherche encore');
-ok(/\$\{cmdDiffusion\(r\)\}\$\{cmdRelance\(r\)\}/.test(APP), 'et il suit la ligne qui dit l\'issue de la diffusion');
+ok(/\$\{cmdDiffusion\(r\)\}(\$\{cmdReponses\(r\)\})?\$\{cmdRelance\(r\)\}/.test(APP), 'et il suit la ligne qui dit l\'issue de la diffusion (et qui a répondu)');
 /* IL S'ARME. Une alerte partie ne se rappelle pas, et le geste touche des dizaines
    d'appareils : la discipline des deux boutons de purge. */
 ok(/S\._cmdRelance===r\.id/.test(rel), 'il s\'arme');

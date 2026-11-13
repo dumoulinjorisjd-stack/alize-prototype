@@ -67,7 +67,7 @@ ok(/Retrouver une facture/.test(APP.slice(APP.indexOf('à la main (tests)'), APP
 console.log('\n── LE BOUTON, SUR LE RENDU PARTAGÉ DES LIGNES ──────────────────────────');
 /* `cmdLigne` est le rendu des DEUX cartes — « Réservations en cours » et « Toutes les
    commandes ». Poser le bouton ailleurs le laisserait absent de l'une des deux. */
-ok(/\$\{cmdDiffusion\(r\)\}\$\{cmdRelance\(r\)\}\$\{cmdEssai\(r\)\}/.test(APP), 'il suit la relance dans cmdLigne');
+ok(/\$\{cmdDiffusion\(r\)\}(\$\{cmdReponses\(r\)\})?\$\{cmdRelance\(r\)\}\$\{cmdEssai\(r\)\}/.test(APP), 'il suit la relance dans cmdLigne');
 const iC = APP.indexOf('const cmdEssai=function(r)');
 const bl = APP.slice(iC, iC + 600);
 ok(/if\(!commandeEcartable\(r\)\)return '';/.test(bl), 'et il lit le noyau, sans refaire la règle');
