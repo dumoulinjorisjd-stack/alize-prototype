@@ -3787,7 +3787,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='910';
+  const VERSION_APP='911';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -4886,7 +4886,7 @@
     const prov=r.providerName?(' · '+esc(r.providerName.split(' ')[0])):'';
     return `<div class="card" style="padding:14px;margin-top:9px;border-left:4px solid ${due?'var(--coral)':'var(--teal)'}">
       <div class="row between"><b style="font-size:14px">${I.repeat}&nbsp;${esc(r.svcName||svcNm(r.svc))}</b><span class="chip">${esc(r.short||freqInfo(r.freq).short)}</span></div>
-      <div class="mini" style="margin-top:4px">Prochain passage : <b>${esc(nextTxt)}</b>${r.slot?' · '+esc(r.slot):''}${prov}</div>
+      <div class="mini" style="margin-top:4px">Prochain passage : <b>${esc(nextTxt)}</b>${heureAffichee(r)?' · '+esc(heureAffichee(r)):''}${prov}</div>
       ${due
         ? `<div class="row" style="gap:8px;margin-top:11px"><button class="btn primary sm" data-act="recur-confirm:${r.id}" style="width:auto;padding:9px 15px">${I.check}&nbsp;Confirmer ce passage</button><button class="btn ghost sm" data-act="recur-skip:${r.id}" style="width:auto;padding:9px 13px">Décaler</button></div>`
         : `<div class="row between" style="margin-top:10px"><button class="linklike" data-act="recur-confirm:${r.id}" style="color:var(--teal-deep);font-weight:700">${I.repeat} Réserver ce passage ›</button><button class="linklike" data-act="recur-stop:${r.id}" style="color:var(--muted)">Arrêter</button></div>`}
@@ -4897,7 +4897,7 @@
   // au moment où la commande est réellement placée.
   function recurConfirm(id){const r=(S.recurring||[]).find(function(x){return x.id===id;});if(!r)return;
     const svc=SERVICES.find(function(s){return s.id===r.svc;})||{id:r.svc,nm:r.svcName||svcNm(r.svc)};
-    const nm=Object.assign(newMission(svc),{rate:r.rate,duration:r.duration||1,unit:r.unit||'h',slot:r.slot,slotFlex:r.slotFlex||0,boost:r.boost||0,zone:r.zone,address:r.address,addressId:r.addressId,geo:r.geo?Object.assign({},r.geo):null,access:r.access,notes:r.notes,acts:r.acts?r.acts.slice():null,options:r.options?r.options.map(function(o){return Object.assign({},o);}):null,frequency:r.freq});
+    const nm=Object.assign(newMission(svc),{rate:r.rate,duration:r.duration||1,unit:r.unit||'h',slot:r.slot||'14:00',slotFlex:r.slotFlex||0,boost:r.boost||0,zone:r.zone,address:r.address,addressId:r.addressId,geo:r.geo?Object.assign({},r.geo):null,access:r.access,notes:r.notes,acts:r.acts?r.acts.slice():null,options:r.options?r.options.map(function(o){return Object.assign({},o);}):null,frequency:r.freq});
     if(r.providerUid){nm.preferredUid=r.providerUid;nm.preferredName=r.providerName||'';}
     const tod=todayISO();const dISO=(r.nextISO&&r.nextISO>=tod)?r.nextISO:tod;
     nm.dateISO=dISO;nm.when=fmtDate(dISO);nm.dateMode='pick';
@@ -5892,13 +5892,33 @@
   // une heure. On dit donc ce qui a réellement été choisi, et rien d'autre.
   function quandTxt(m){
     if(!m)return '';
-    if(m.svc==='colis'){
+    if(svcDe(m)==='colis'){
       const d1=m.dateFrom||'',d2=m.dateTo||'';
       if(d1&&d2&&d1!==d2)return 'Retrait entre le '+fmtShort(d1)+' et le '+fmtShort(d2);
       if(d1)return 'Retrait le '+fmtShort(d1);
       return m.when||'';
     }
-    return (m.when||'')+(m.slot?(' · '+m.slot):'');
+    const h=heureAffichee(m);
+    return (m.when||'')+(h?(' · '+h):'');
+  }
+  /* L'HEURE QU'ON MONTRE, ÉCRITE UNE SEULE FOIS. Une demande « à tout moment de la
+     journée » (ménage, jardin, piscine par défaut) n'a PAS d'heure : le menu est grisé,
+     le client n'en a choisi aucune. Elle s'enregistrait pourtant avec les 14:00 de départ
+     d'une réservation ordinaire, et la console, les cartes du prestataire et l'en-tête
+     d'une discussion affichaient « Aujourd'hui · 14:00 » — toutes les commandes
+     semblaient prises pour 14 h. On montre ce que le client a dit.
+     UNE HEURE CONVENUE L'EMPORTE TOUJOURS : celle que le prestataire a retenue
+     (`acceptedSlot` sur la fiche, `proposedSlot` sur la mission) ; sur une mission
+     acceptée, `slot` porte déjà cette heure-là et la souplesse n'y dit plus rien. */
+  const STATUTS_SANS_HEURE=['','draft','pending','pending_payment','payment_failed','expired','searching'];
+  function heureAffichee(x){
+    if(!x)return '';
+    const hm=function(v){return /^\d{1,2}:\d{2}$/.test(String(v||''));};
+    if(hm(x.acceptedSlot))return x.acceptedSlot;
+    if(hm(x.proposedSlot))return x.proposedSlot;
+    const souple=(x.slotFlex==='day'||x.slotFlex==='week');
+    if(souple&&STATUTS_SANS_HEURE.indexOf(String(x.status||''))>=0)return flexTxt(x);
+    return hm(x.slot)?x.slot:'';
   }
   function fmtShort(iso){if(!iso||!/^\d{4}-\d{2}-\d{2}$/.test(iso))return '';const p=iso.split('-');return (+p[2])+'/'+(+p[1]);}
   const COLIS_TYPES=[['recommande','Recommandé'],['colis','Colis'],['suivi','Lettre suivie'],['autre','Autre']];
@@ -12257,7 +12277,7 @@
       <div class="row" style="gap:8px;margin-top:10px"><button class="btn good sm" data-adm="valid-conc:${cc.id}" ${cc.siret?'':'disabled'}>Valider</button><button class="btn ghost sm" data-adm="rej-conc:${cc.id}">Refuser</button></div>
       ${!cc.siret?`<p class="mini" style="margin-top:6px;color:var(--coral-deep)">SIRET manquant, validation impossible.</p>`:''}</div>`));
     const queue=q.length?q.join(''):`<div class="banner good" style="margin-top:10px">${I.check}<span>Aucune candidature en attente, rien à traiter pour l’instant.</span></div>`;
-    const liveRow=live?[{client:((S.mission&&S.mission.clientName)||(isDemo()?'Camille Magras':'Client')),artisan:(S.mission.provider?S.mission.provider.nm:'en recherche…'),svc:S.mission.svc,status:S.mission.status,amount:totals(S.mission).total,when:S.mission.when+' '+S.mission.slot}]:[];
+    const liveRow=live?[{client:((S.mission&&S.mission.clientName)||(isDemo()?'Camille Magras':'Client')),artisan:(S.mission.provider?S.mission.provider.nm:'en recherche…'),svc:S.mission.svc,status:S.mission.status,amount:totals(S.mission).total,when:quandTxt(S.mission)}]:[];
     const allB=liveRow.concat(S.adminBookings);
     const bookings=allB.length?allB.map(bk=>{const st=bkStatus(bk.status);const sv=SERVICES.find(s=>s.id===bk.svc);const liv=(bk.status==='pending'||bk.status==='working'||bk.status==='done_pro')?' live':'';return `<div class="card" style="padding:13px;margin-top:9px"><div class="row between"><b style="font-size:14px">${sv?sv.nm:bk.svc}</b><span class="chip ${st[0]}${liv}">${st[1]}</span></div><div class="mini" style="margin-top:3px">${esc(bk.client)} → ${esc(bk.artisan)} · ${bk.when}</div><div class="mini" style="margin-top:2px">${eur(bk.amount)}</div></div>`;}).join(''):`<p class="mini" style="margin-top:8px;color:var(--muted)">Aucune réservation en cours.</p>`;
     /* `refA` partait de `arts` et non de `artsReels` : un compte de test REFUSÉ
@@ -12531,7 +12551,7 @@
           <b style="font-size:14px;flex:1;min-width:0">${sansMetier?(r.client?esc(r.client):'<i>client sans nom</i>'):esc(r.svcName||svcNm(r.svc)||r.svc||'Prestation')}</b>
           <span class="chip ${L[0]}${vif?' live':''}" style="flex:none">${esc(L[1])}</span></div>
         <div class="mini" style="margin-top:3px">${sansMetier?(r.provider?esc(r.provider):(r.status==='pending'?'<i>personne n’a encore accepté</i>':'')):((r.client?esc(r.client):'<i>client sans nom</i>')+qui)}</div>
-        <div class="mini" style="margin-top:2px;color:var(--muted)">${esc([r.when,r.slot,r.zone].filter(Boolean).join(' · '))}</div>
+        <div class="mini" style="margin-top:2px;color:var(--muted)">${esc([quandTxt(r),r.zone].filter(Boolean).join(' · '))}</div>
         <div class="row between" style="align-items:center;margin-top:4px;gap:8px">
           <span class="mini money">${eur(montant)}${coup?' <span style="color:var(--coral-deep)">+'+eur(coup)+'</span>':''}</span>
           ${nonEnc?`<span class="chip warn" style="flex:none">${esc(mollieEtatTxt(r.led||{}))}</span>`:''}
@@ -14418,7 +14438,7 @@
           // même sans message — sinon il n'apparaîtrait pas dans la messagerie admin.
           if(!chat.length&&!supC.length&&!supP.length&&r.status!=='disputed')return;
           const lastAt=function(a){return a.length?(a[a.length-1].at||0):0;};
-          list.push({reqId:docu.id,clientName:r.clientName||'Client',providerName:r.providerName||'',providerUid:r.providerUid||'',clientUid:r.clientUid||'',svc:r.service,svcName:r.serviceName||svcNm(r.service),when:r.when||'',slot:r.acceptedSlot||r.slot||'',status:r.status||'',
+          list.push({reqId:docu.id,clientName:r.clientName||'Client',providerName:r.providerName||'',providerUid:r.providerUid||'',clientUid:r.clientUid||'',svc:r.service,svcName:r.serviceName||svcNm(r.service),when:r.when||'',slot:r.acceptedSlot||r.slot||'',acceptedSlot:r.acceptedSlot||'',slotFlex:r.slotFlex||0,status:r.status||'',
             // Champs nécessaires à l'arbitrage d'un litige directement depuis la messagerie
             // admin (carte « Litige à arbitrer » + règlement à la durée arbitrée, synchronisé
             // en base → le serveur capture le paiement Mollie sur finalHours).
@@ -14455,7 +14475,7 @@
       const disp=(t.status==='disputed');
       return `<div class="card" style="padding:14px;margin-top:10px;${(disp||cPend||pPend)?'border-left:4px solid var(--coral)':''}">
         <div class="row between"><span class="row" style="gap:7px;align-items:center">${admDot(admThreadNew(t))}<b style="font-size:14px">${esc(t.svcName)}</b></span><span class="row" style="gap:8px;align-items:center"><span class="chip ${sm.c}">${sm.l}</span><button data-adm="${tClos?'remsg':'delmsg'}:${tkey}" aria-label="${tClos?'Remettre la conversation en cours':'Classer la conversation'}" title="${tClos?'Remettre en cours':'Classer, les messages sont gardés'}" style="flex:none;background:${tarm?'var(--coral-wash)':'none'};border:${tarm?'1px solid var(--coral)':'none'};border-radius:8px;padding:4px 6px;color:var(--muted);font-size:11px;font-weight:800;display:inline-flex;align-items:center;gap:4px">${tClos?I.repeat:(tarm?I.check+'Sûr&nbsp;?':I.folder)}</button></span></div>
-        <div class="mini" style="margin-top:3px">${esc(t.clientName)}${t.providerName?' · '+esc(t.providerName):' · en recherche'} · ${esc(t.when)} ${esc(t.slot)}</div>
+        <div class="mini" style="margin-top:3px">${esc(t.clientName)}${t.providerName?' · '+esc(t.providerName):' · en recherche'} · ${esc(quandTxt(t))}</div>
         <div class="stack" style="gap:7px;margin-top:11px">${disp?`<button class="btn sm" data-adm="supervise:${t.reqId}" style="background:var(--coral-deep);color:#fff;justify-content:center">${I.scales} Litige, arbitrer</button>`:''}${acts.join('')}</div>
       </div>`;
     };
@@ -14533,7 +14553,7 @@
     const list=msgs.length?msgs.map(function(x){return `<div class="bub ${x.from==='pro'?'them':'me'}" style="${x.from==='pro'?'':'background:var(--teal-wash);color:var(--ink)'}"><span style="display:block;font-size:10px;opacity:.6;margin-bottom:2px">${x.from==='pro'?esc((m.provider&&m.provider.nm)||'Artisan'):esc(m.clientName||'Client')}</span>${esc(x.text)}</div>`;}).join(''):`<p class="mini" style="text-align:center;color:var(--muted);margin:auto 0">Aucun message entre le client et le prestataire.</p>`;
     return `<div class="pad"><button class="reset" data-adm="msg" style="margin:8px 0 2px">← Retour</button>
       <div class="row" style="gap:11px;align-items:center;margin-top:2px"><div class="avatar" style="width:42px;height:42px;font-size:14px">${I.eye}</div><div style="flex:1"><b style="font-size:16px;font-family:var(--f-disp)">Supervision</b><div class="mini">${esc(m.clientName||'Client')} ↔ ${esc((m.provider&&m.provider.nm)||'artisan')}</div></div></div>
-      <div class="banner teal" style="margin-top:12px">${I.shield}<span>Lecture seule, discussion à propos de&nbsp;: <b>${esc(m.svcName)}</b> · ${esc(m.when)} ${esc(m.slot)}.</span></div>
+      <div class="banner teal" style="margin-top:12px">${I.shield}<span>Lecture seule, discussion à propos de&nbsp;: <b>${esc(m.svcName)}</b> · ${esc(quandTxt(m))}.</span></div>
       ${disputeArbitrationHtml(m)}
       <div class="chat-msgs">${list}</div>
       <div style="height:10px"></div></div>`;
@@ -15529,7 +15549,7 @@
       ${(function(){
         if(S.draft)return '';                       // il est déjà dedans
         const p=lireBrouillon(); if(!p)return '';
-        const d=p.draft,quand=[d.when,d.slot].filter(Boolean).join(' · ');
+        const d=p.draft,quand=quandTxt(d);
         return `<button class="card" data-act="brouillon-reprendre" style="width:100%;text-align:left;padding:14px;margin-top:12px;display:block;border-left:4px solid var(--teal-deep)">
           <div class="row between" style="gap:12px;align-items:center">
             <div style="flex:1;min-width:0"><b style="font-size:14px">Reprendre votre commande</b>
@@ -15619,11 +15639,11 @@
         const fee=(m.cancelFee!=null)?m.cancelFee:Math.round(totals(m).total*0.5*100)/100;
         const info=m.feeDecision==='applied'?{t:`Indemnité de 50 % appliquée · ${eur(fee)}`,c:'coral'}:m.feeDecision==='waived'?{t:'Sans indemnité, geste du prestataire',c:'good'}:{t:'Annulée, le prestataire décide de l’indemnité',c:'grey'};
         const decided=(m.feeDecision==='applied'||m.feeDecision==='waived');
-        return `<div class="card" style="padding:14px;margin-top:9px;border-left:4px solid var(--hair)"><div class="row between"><b style="font-size:14px">${esc(m.svcName||svcNm(m.svc))}</b><span class="chip" style="background:var(--sand-2);color:var(--muted)">Annulée</span></div><div class="mini" style="margin-top:3px">${esc(m.when||'')} · ${esc(m.slot||'')}${m.provider&&m.provider.nm?' · '+esc(m.provider.nm):''}</div><div class="row between" style="margin-top:9px"><span class="mini" style="color:var(--${info.c==='coral'?'coral-deep':info.c==='good'?'good':'muted'})">${info.t}</span>${decided?`<button class="linklike" data-act="dismiss-mission:${m._id||''}" style="color:var(--muted)">Retirer</button>`:''}</div></div>`;
+        return `<div class="card" style="padding:14px;margin-top:9px;border-left:4px solid var(--hair)"><div class="row between"><b style="font-size:14px">${esc(m.svcName||svcNm(m.svc))}</b><span class="chip" style="background:var(--sand-2);color:var(--muted)">Annulée</span></div><div class="mini" style="margin-top:3px">${esc(quandTxt(m))}${m.provider&&m.provider.nm?' · '+esc(m.provider.nm):''}</div><div class="row between" style="margin-top:9px"><span class="mini" style="color:var(--${info.c==='coral'?'coral-deep':info.c==='good'?'good':'muted'})">${info.t}</span>${decided?`<button class="linklike" data-act="dismiss-mission:${m._id||''}" style="color:var(--muted)">Retirer</button>`:''}</div></div>`;
       }
       const sm=missionStatusMeta(m.status);const canDel=(m.status==='searching'||m.status==='pending');
       const chip=`<span class="chip ${sm.c}">${sm.l}</span>`;
-      const head=`<div class="row between"><b style="font-size:14px">${unreadBadge(m)}${esc(m.svcName)}</b>${chip}</div><div class="mini" style="margin-top:3px">${esc(m.when||'')} · ${esc(m.slot||'')}${m.provider&&m.provider.nm?' · '+esc(m.provider.nm):''} · ${I.pin} ${esc(migZone(m.zone))}</div>`;
+      const head=`<div class="row between"><b style="font-size:14px">${unreadBadge(m)}${esc(m.svcName)}</b>${chip}</div><div class="mini" style="margin-top:3px">${esc(quandTxt(m))}${m.provider&&m.provider.nm?' · '+esc(m.provider.nm):''} · ${I.pin} ${esc(migZone(m.zone))}</div>`;
       // Indicateur permanent « recherche active » : rassure l'utilisateur que
       // l'attente n'est pas un bug — personne n'a simplement encore répondu.
       const srchNote=canDel?`<div class="row" style="gap:11px;align-items:center;margin-top:11px;background:var(--coral-wash);border-radius:12px;padding:10px 12px"><span class="srch-badge">${I.search}</span><span class="mini" style="color:var(--coral-deep);line-height:1.4">On sollicite les meilleurs prestataires de votre zone pour vous.</span></div>`:'';
@@ -15650,7 +15670,7 @@
       if(!l.length)return '';
       return `<div style="margin-top:16px"><div class="eyebrow" style="color:var(--muted)">${I.clock} Sans suite · ${l.length}</div>
         ${l.map(function(x){
-          const quand=[x.when,x.slot].filter(Boolean).join(' · ');
+          const quand=quandTxt(x);
           return `<div class="card" style="padding:14px;margin-top:9px;border-left:4px solid var(--hair)">
             <div class="row between" style="gap:8px"><b style="font-size:14px;flex:1;min-width:0">${esc(x.svcName||svcNm(x.svc))}</b><span class="chip" style="background:var(--sand-2);color:var(--muted);flex:none">Expirée</span></div>
             ${quand?`<div class="mini" style="margin-top:3px">${esc(quand)}</div>`:''}
@@ -16622,6 +16642,12 @@
     try{
       if(!(FB&&FB.auth&&FB.auth.currentUser))return; // démo / hors-ligne : aucune écriture
       if(m.reqId)return; // déjà enregistrée : on n'écrit jamais deux fois la même demande
+      /* UNE DEMANDE SOUPLE PART SANS HEURE, comme le fait déjà « Nouvelle date ». Les
+         14:00 du menu grisé ne sont qu'une valeur de départ que le client n'a pas choisie :
+         les garder ferait annoncer la demande sur une heure que personne n'a demandée. On
+         les retire aussi de la mission locale, pour que la clé du créneau calculée ici
+         soit celle que le serveur calcule. */
+      if(m.slotFlex==='day'||m.slotFlex==='week')m.slot='';
       const t=totals(m),u=FB.auth.currentUser;
       const first=((S.account&&S.account.name)||'').trim().split(' ')[0]||'Client';
       // Id généré AVANT l'écriture, et reqId posé de façon SYNCHRONE : ainsi l'écoute
@@ -18672,7 +18698,7 @@
     return `<div class="pad"><button class="reset" data-act="pro-cancel-back" style="margin:8px 0 2px">← Retour</button>
       <span class="eyebrow" style="color:var(--coral-deep)">${I.clock} Annulation tardive</span>
       <div class="h-hello">Le client a annulé à moins de 8 h</div>
-      <p class="sub" style="margin-top:6px"><b>${esc(m.clientName||'Le client')}</b> a annulé « ${esc(m.svcName||svcNm(m.svc))} » (${esc(m.when||'')}${m.slot?' · '+esc(m.slot):''}) à moins de 8 h du rendez-vous. Vous aviez réservé ce créneau.</p>
+      <p class="sub" style="margin-top:6px"><b>${esc(m.clientName||'Le client')}</b> a annulé « ${esc(m.svcName||svcNm(m.svc))} » (${esc(quandTxt(m))}) à moins de 8 h du rendez-vous. Vous aviez réservé ce créneau.</p>
       <div class="card" style="padding:16px;margin-top:14px">
         <div class="row between"><span class="sub">Indemnité d'annulation (50 %)</span><b>${eur(c.fee)}</b></div>
         <div class="row between" style="margin-top:6px"><span class="sub">Commission Ti-Services (${c.pct} %)</span><b style="color:var(--muted)">−${eur(c.commission)}</b></div>
@@ -18725,7 +18751,7 @@
     return `<span class="benic" style="flex:none;margin-top:1px;background:color-mix(in srgb,${c} 15%,transparent);color:${c}">${svcIco(id)}</span>`;
   }
   function proTodoBlock(){
-    const carte=function(m){const sm=proMissionMeta(m.status);return `<button class="card" data-act="promiss:${m._id||''}" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block;border-left:4px solid ${sm.c==='good'?'var(--good)':'var(--coral)'}"><div class="row" style="gap:11px;align-items:flex-start">${svcPastille(m.svc)}<div style="flex:1;min-width:0"><div class="row between" style="gap:8px"><b style="font-size:14px">${proDots(m)}${esc(m.svcName||svcNm(m.svc))}</b><span class="chip ${sm.c}" style="flex:none">${sm.l}</span></div><div class="mini" style="margin-top:3px">${I.pin} ${esc(migZone(m.zone))} · ${esc(m.when||'')} · ${esc(m.slot||'')} · ${m.duration||1} ${m.unit==='j'?'j':'h'}</div></div></div><div class="row between" style="margin-top:9px"><span class="mini" style="color:var(--ink);font-weight:700">Vous percevez ${eur(totals(m).payout)}</span><span class="mini" style="color:var(--muted)">Ouvrir ›</span></div></button>`;};
+    const carte=function(m){const sm=proMissionMeta(m.status);return `<button class="card" data-act="promiss:${m._id||''}" style="padding:14px;margin-top:10px;width:100%;text-align:left;display:block;border-left:4px solid ${sm.c==='good'?'var(--good)':'var(--coral)'}"><div class="row" style="gap:11px;align-items:flex-start">${svcPastille(m.svc)}<div style="flex:1;min-width:0"><div class="row between" style="gap:8px"><b style="font-size:14px">${proDots(m)}${esc(m.svcName||svcNm(m.svc))}</b><span class="chip ${sm.c}" style="flex:none">${sm.l}</span></div><div class="mini" style="margin-top:3px">${I.pin} ${esc(migZone(m.zone))} · ${esc(quandTxt(m))} · ${m.duration||1} ${m.unit==='j'?'j':'h'}</div></div></div><div class="row between" style="margin-top:9px"><span class="mini" style="color:var(--ink);font-weight:700">Vous percevez ${eur(totals(m).payout)}</span><span class="mini" style="color:var(--muted)">Ouvrir ›</span></div></button>`;};
     const list=proActiveMissions();
     /* LE MESSAGE REÇU APRÈS LA PRESTATION A SON PROPRE BLOC. Le ranger sous « Missions en
        cours » dirait quelque chose de faux — elle ne l'est plus — et c'est justement parce
@@ -20295,7 +20321,7 @@
        « rien » se dit en ne disant rien, sans quoi `acts: null` remplacerait la liste
        vide qu'un métier au catalogue attend. */
     const nm=newMission(svc);
-    const repris={duration:old.duration||1,unit:old.unit||'h',slot:old.slot,slotMode:old.slotMode||null,
+    const repris={duration:old.duration||1,unit:old.unit||'h',slot:old.slot||'14:00',slotMode:old.slotMode||null,
       slotFlex:old.slotFlex||0,boost:old.boost||0,zone:old.zone,address:old.address,addressId:old.addressId,
       geo:old.geo?Object.assign({},old.geo):undefined,access:old.access,notes:old.notes,
       photos:(old.photos&&old.photos.length)?old.photos.slice():undefined,

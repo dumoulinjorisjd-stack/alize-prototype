@@ -1877,7 +1877,12 @@ async function mailArtisansSansAppareil(db, artById, targetUids, tokenToUid, r, 
     if (!sansAppareil.length) return 0;
     const svcM = (r.serviceName || 'une prestation').toString().slice(0, 60);
     const zoneM = (r.zone || '').toString().slice(0, 40);
-    const quandM = ((r.when || '') + (r.slot ? (' à ' + r.slot) : '')).trim().slice(0, 60);
+    // Une demande « à tout moment » n'a pas d'heure : les 14:00 de départ du menu grisé
+    // ne sont pas un rendez-vous, l'e-mail ne doit pas en annoncer un.
+    const soupleM = (r.slotFlex === 'day' || r.slotFlex === 'week');
+    const heureM = soupleM ? (r.slotFlex === 'week' ? ', n’importe quel jour de la semaine' : ', à tout moment de la journée')
+      : (/^\d{1,2}:\d{2}$/.test(String(r.slot || '')) ? (' à ' + r.slot) : '');
+    const quandM = ((r.when || '') + heureM).trim().slice(0, 60);
     const lien = APP_URL.replace(/\/$/, '') + '/?open=missions';
     let plafonnes = 0, envoyes = 0, muets = 0;
     await Promise.all(sansAppareil.map(async (uid) => {
