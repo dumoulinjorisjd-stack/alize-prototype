@@ -3787,7 +3787,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='912';
+  const VERSION_APP='913';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -4236,8 +4236,20 @@
 
      ET ON NE CORRIGE PAS. Compléter « 90210902 » en « 690210902 » serait inventer un
      chiffre, donc fabriquer un numéro qui sonnera chez quelqu'un d'autre. */
-  const TEL_PLANS={'+590':{n:9,debuts:['590','690','691'],
-    ex:'0690 21 09 02 pour un mobile, 0590 27 55 55 pour un fixe'}};
+  /* UN NUMÉRO INCOMPLET NE S'ENREGISTRE PAS — QUEL QUE SOIT SON PAYS. Seul +590 avait
+     son plan ; partout ailleurs on acceptait de 6 à 14 chiffres, si bien qu'un numéro
+     français tronqué passait, et qu'on ne pouvait plus joindre l'artisan (relevé le
+     13/11/2026). On ne pose un plan QUE là où la longueur est FIXE et connue : le
+     Royaume-Uni, l'Allemagne, l'Italie et la Belgique ont des longueurs variables, les y
+     forcer ferait refuser des numéros justes. Ils gardent la fourchette large. */
+  const TEL_PLANS={'+590':{n:9,debuts:['590','690','691'],ici:'un numéro d’ici',pays:'de Saint-Barthélemy',
+    ex:'0690 21 09 02 pour un mobile, 0590 27 55 55 pour un fixe'},
+    '+33':{n:9,debuts:['1','2','3','4','5','6','7','8','9'],ici:'un numéro français',pays:'français',ex:'06 12 34 56 78'},
+    '+1':{n:10,debuts:['2','3','4','5','6','7','8','9'],ici:'un numéro nord-américain',pays:'nord-américain',ex:'514 555 0123'},
+    '+34':{n:9,debuts:['6','7','8','9'],ici:'un numéro espagnol',pays:'espagnol',ex:'612 34 56 78'},
+    '+351':{n:9,debuts:['2','9'],ici:'un numéro portugais',pays:'portugais',ex:'912 345 678'},
+    '+41':{n:9,debuts:['2','3','4','5','6','7','8','9'],ici:'un numéro suisse',pays:'suisse',ex:'079 123 45 67'},
+    '+31':{n:9,debuts:['1','2','3','4','5','6','7','8','9'],ici:'un numéro néerlandais',pays:'néerlandais',ex:'06 12345678'}};
   /* LE VERDICT JUGE CE QUI SERA ENREGISTRÉ, PAS CE QUI EST TAPÉ. On écrit son numéro
      « 0690 21 09 02 » : dix chiffres à l'écran, neuf une fois le zéro de tête retiré.
      L'avis lisait la case brute et annonçait « il manque -1 chiffre » — un reproche faux
@@ -4259,9 +4271,9 @@
     const r=telLu(pfx,num);const plan=TEL_PLANS[String(pfx||'')];
     if(r.cause==='vide')return {cls:'',txt:''};
     if(r.ok)return {cls:'ok',txt:''};
-    if(r.cause==='debut')return {cls:'ko',txt:'Ce numéro ne correspond à aucun numéro de Saint-Barthélemy. Attendu : '+plan.ex+'.'};
-    if(plan&&r.cause==='court')return {cls:'ko',txt:'Il manque '+(plan.n-r.chiffres)+' chiffre'+((plan.n-r.chiffres)>1?'s':'')+' : un numéro d’ici en compte '+plan.n+' après l’indicatif ('+plan.ex+').'};
-    if(plan)return {cls:'ko',txt:(r.chiffres-plan.n)+' chiffre'+((r.chiffres-plan.n)>1?'s':'')+' de trop : un numéro d’ici en compte '+plan.n+' après l’indicatif ('+plan.ex+').'};
+    if(r.cause==='debut')return {cls:'ko',txt:'Ce numéro ne correspond à aucun numéro '+plan.pays+'. Attendu : '+plan.ex+'.'};
+    if(plan&&r.cause==='court')return {cls:'ko',txt:'Il manque '+(plan.n-r.chiffres)+' chiffre'+((plan.n-r.chiffres)>1?'s':'')+' : '+plan.ici+' en compte '+plan.n+' après l’indicatif ('+plan.ex+').'};
+    if(plan)return {cls:'ko',txt:(r.chiffres-plan.n)+' chiffre'+((r.chiffres-plan.n)>1?'s':'')+' de trop : '+plan.ici+' en compte '+plan.n+' après l’indicatif ('+plan.ex+').'};
     return {cls:'ko',txt:r.cause==='court'?'Numéro trop court.':'Numéro trop long.'};
   }
   /* DANS LA CONSOLE, UN NUMÉRO QUI NE PEUT PAS SONNER SE DIT. Un prestataire validé
@@ -4272,7 +4284,7 @@
     const s=splitPhone(p||'');const r=telLu(s.pfx,s.num);
     if(r.ok)return '';
     if(r.cause==='vide')return '';
-    if(r.cause==='debut')return 'Ce numéro ne peut pas sonner : aucun numéro d’ici ne commence ainsi.';
+    if(r.cause==='debut')return 'Ce numéro ne peut pas sonner : aucun numéro '+((TEL_PLANS[s.pfx]||{}).pays||'')+' ne commence ainsi.';
     if(r.attendu)return 'Ce numéro ne peut pas sonner : '+r.chiffres+' chiffre'+(r.chiffres>1?'s':'')+' au lieu de '+r.attendu+'.';
     return 'Ce numéro ne peut pas sonner : '+r.chiffres+' chiffre'+(r.chiffres>1?'s':'')+'.';
   }
@@ -8381,6 +8393,9 @@
     "Mollie n’autorise le versement direct que pour les paiements reçus après la liaison du compte du prestataire. Indiquez votre IBAN dans Compte → Mes informations.":"Mollie only allows direct payouts for payments received after the provider’s account was linked. Enter your IBAN in Account → My details.",
     "Cette somme vous est due, Ti-Services vous la vire. Mollie n’autorise le versement direct que pour les paiements reçus après la liaison du compte du prestataire.":"This amount is owed to you, Ti-Services transfers it to you. Mollie only allows direct payouts for payments received after the provider’s account was linked.",
     "Indiquer ›":"Enter ›",
+    "Votre numéro ne permet pas de vous joindre":"Your phone number cannot be reached",
+    "Les clients et Ti-Services ne peuvent pas vous appeler.":"Clients and Ti-Services cannot call you.",
+    "Corriger ›":"Fix ›",
     "⚠︎ IBAN invalide : vérifiez-le (clé de contrôle)":"⚠︎ Invalid IBAN: please check it (check digits)",
     "Décrivez votre expérience en quelques mots":"Describe your experience in a few words",
     "Coordonnées mises à jour ✓":"Details updated ✓",
@@ -10128,6 +10143,9 @@
     "Mollie n’autorise le versement direct que pour les paiements reçus après la liaison du compte du prestataire. Indiquez votre IBAN dans Compte → Mes informations.":"A Mollie só permite o pagamento direto dos pagamentos recebidos depois da ligação da conta do prestador. Indique o seu IBAN em Conta → As minhas informações.",
     "Cette somme vous est due, Ti-Services vous la vire. Mollie n’autorise le versement direct que pour les paiements reçus après la liaison du compte du prestataire.":"Este montante é-lhe devido, a Ti-Services transfere-lho. A Mollie só permite o pagamento direto dos pagamentos recebidos depois da ligação da conta do prestador.",
     "Indiquer ›":"Indicar ›",
+    "Votre numéro ne permet pas de vous joindre":"O seu número não permite contactá-lo",
+    "Les clients et Ti-Services ne peuvent pas vous appeler.":"Os clientes e a Ti-Services não conseguem ligar-lhe.",
+    "Corriger ›":"Corrigir ›",
     "⚠︎ IBAN invalide : vérifiez-le (clé de contrôle)":"⚠︎ IBAN inválido: verifique-o (dígitos de controlo)",
     "Décrivez votre expérience en quelques mots":"Descreva a sua experiência em poucas palavras",
     "Coordonnées mises à jour ✓":"Dados atualizados ✓",
@@ -18871,7 +18889,16 @@
     const _carteEnLigne=`<div class="card" style="padding:14px;margin-top:12px;${online?'':'border:1.5px solid color-mix(in srgb,var(--coral) 45%,transparent)'}"><div class="row between"><div><b style="font-size:15px">${online?'Vous êtes en ligne':'Hors ligne'}</b><div class="mini">${online?'Vous recevez les nouvelles demandes':'Activez pour recevoir des missions. Une demande qui vous est adressée personnellement vous parvient quand même.'}</div></div><button class="switch" data-act="toggle-online" style="background:${online?'var(--good)':'var(--hair)'}"><span class="knob" style="left:${online?'25px':'3px'}"></span></button></div></div>`;
     // Hors ligne, l'interrupteur commande tout : il passe en tête. En ligne, il n'a plus
     // rien à dire d'urgent et redescend sous les missions.
-    const _enTete=(online?'':_carteEnLigne)+notifCTA('pro')+(_mollieBloque?_carteMollie:'')+(S.proIban?'':_carteIrroutable);
+    /* SON NUMÉRO NE PEUT PAS SONNER : C'EST À LUI DE LE DIRE, ET IL PEUT LE FAIRE ICI.
+       Un numéro enregistré avant le contrôle (ou incomplet hors de +590) restait faux
+       sans que personne le sache — ni lui, ni les clients qui l'appellent. On ne le
+       devine pas : on le lui montre, et la carte mène au champ. */
+    const _carteTel=(function(){const p=String(S.proPhone||'');if(!p.trim()||telStockeLu(p).ok)return '';
+      return `<button class="card" data-act="pro-tel" style="padding:14px;margin-top:12px;width:100%;text-align:left;display:block;border:1.5px solid color-mix(in srgb,var(--coral) 45%,transparent)">
+          <div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="background:var(--coral-wash);color:var(--coral-deep)">${I.phone}</span>
+          <div style="flex:1;min-width:0"><b style="font-size:14px">Votre numéro ne permet pas de vous joindre</b><p class="mini" style="margin-top:3px"><span>${esc(p)} · ${esc(telImpossibleTxt(p))}</span> <span>Les clients et Ti-Services ne peuvent pas vous appeler.</span></p></div>
+          <span class="mini" style="color:var(--coral-deep);font-weight:700;flex:none">Corriger ›</span></div></button>`;})();
+    const _enTete=_carteTel+(online?'':_carteEnLigne)+notifCTA('pro')+(_mollieBloque?_carteMollie:'')+(S.proIban?'':_carteIrroutable);
     const _pied=(online?_carteEnLigne:'')+(_mollieBloque?'':_carteMollie)+(S.proIban?_carteIrroutable:'')+_bandeauOuverture;
     return `<div class="pad">${proHead('Prestataire · '+catNames,'Mes missions',proHeadBtn('open-share','Partager Ti-Services',I.share))}
       ${_enTete}
@@ -22212,6 +22239,8 @@
       case 'pro-contact-edit':S.proContactForm={phone:S.proPhone||'',bio:S.proBio||'',iban:S.proIban||'',ibanTitulaire:S.proIbanTitulaire||''};S.proEditContact=true;render();break;
       /* La carte « X € vous sont dus » mène AU CHAMP : ouvrir le compte, déplier la fiche
          et passer en saisie, plutôt que de laisser chercher où se met un IBAN. */
+      case 'pro-tel':S.proNav='account';S.proContactForm={phone:S.proPhone||'',bio:S.proBio||'',iban:S.proIban||'',ibanTitulaire:S.proIbanTitulaire||''};S.proEditContact=true;S._fold=Object.assign({},S._fold,{'p-infos':true});render();
+        setTimeout(function(){const el=document.querySelector('[data-phonenum]');if(el){try{el.scrollIntoView({block:'center'});el.focus();}catch(_){}}},60);break;
       case 'pro-iban':S.proNav='account';S.proContactForm={phone:S.proPhone||'',bio:S.proBio||'',iban:S.proIban||'',ibanTitulaire:S.proIbanTitulaire||''};S.proEditContact=true;S._fold=Object.assign({},S._fold,{'p-infos':true});render();
         setTimeout(function(){const el=document.querySelector('[data-proeditiban]');if(el){try{el.scrollIntoView({block:'center'});el.focus();}catch(_){}}},60);break;
       case 'pro-contact-cancel':S.proEditContact=false;S.proContactForm=null;render();break;
@@ -22221,6 +22250,11 @@
            mal lue) N'ENTRE PAS, et l'on garde la saisie à l'écran pour la corriger. */
         const ibanSaisi=normIban(f.iban||'');
         if(ibanSaisi&&!ibanCleOk(ibanSaisi)){toast('⚠︎ IBAN invalide : vérifiez-le (clé de contrôle)');break;}
+        /* LE NUMÉRO AUSSI, ET C'ÉTAIT LE TROU : l'inscription le contrôlait, la
+           modification non. Un artisan pouvait donc remplacer un numéro juste par un
+           numéro incomplet, et plus personne ne pouvait le joindre. Un numéro qui ne
+           peut pas sonner N'ENTRE PAS, et la saisie reste à l'écran pour être corrigée. */
+        if(!telStockeLu(f.phone||'').ok){toast('⚠︎ '+(telImpossibleTxt(f.phone||'')||'Indiquez votre numéro de téléphone : c’est par lui qu’on vous joint.'));break;}
         S.proPhone=(f.phone||'').trim();S.proBio=(f.bio||'').trim();S.proIban=ibanSaisi;S.proIbanTitulaire=String(f.ibanTitulaire||'').trim().slice(0,100);S.proEditContact=false;S.proContactForm=null;
         if(FB&&FB.auth&&FB.auth.currentUser&&!isDemo()){const uid=FB.auth.currentUser.uid;FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{phone:S.proPhone,bio:S.proBio,iban:S.proIban,ibanTitulaire:S.proIbanTitulaire},{merge:true}).then(function(){toast('Coordonnées mises à jour ✓');}).catch(function(e){toast('⚠︎ Non enregistré : '+fbErrTxt(e));});try{FB.f.setDoc(FB.f.doc(FB.db,'users',uid),{phone:S.proPhone},{merge:true});}catch(_){}
           // La présentation n'est visible du client QUE pour la garde d'enfants. On répercute
