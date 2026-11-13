@@ -105,6 +105,33 @@ const fn = fs.readFileSync(path.join(RACINE, 'functions', 'index.js'), 'utf8');
     const dit2 = m ? (new Function('r', m[0] + ' return quandM;'))(r2) : '';
     ok(dit2 === 'Demain à 14:00', 'et garde l’heure d’une commande ordinaire'); }
 
+  console.log('E — le jour se recalcule (« Demain » depuis hier)');
+  const E = await p.evaluate(() => {
+    const iso = (n) => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + n);
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+    const q = window.__quand;
+    return {
+      hierPourDemain: q.txt({service: 'electricite', when: 'Demain', dateISO: iso(0), slot: '14:00', slotFlex: 0, status: 'pending'}),
+      demain: q.jour({when: 'Aujourd’hui', dateISO: iso(1)}),
+      passe: q.jour({when: 'Demain', dateISO: iso(-2)}),
+      sansDate: q.jour({when: 'Demain'}),
+      dateAbimee: q.jour({when: 'Demain', dateISO: '13/11'}),
+      absolue: q.jour({when: 'Vendredi 9 octobre', dateISO: '2026-10-09'}),
+    };
+  });
+  ok(E.hierPourDemain === 'Aujourd’hui · 14:00', 'une demande passée hier pour « Demain » se dit « Aujourd’hui » aujourd’hui (' + E.hierPourDemain + ')');
+  ok(E.demain === 'Demain', 'une date de demain se dit « Demain », quelle que soit l’étiquette enregistrée');
+  ok(E.passe !== 'Demain' && /\d/.test(E.passe), 'une date passée se dit en toutes lettres, jamais « Demain » (' + E.passe + ')');
+  ok(E.sansDate === 'Demain' && E.dateAbimee === 'Demain', 'sans date lisible, l’étiquette reste (on ne devine rien)');
+  ok(E.absolue === 'Vendredi 9 octobre', 'une date déjà écrite en toutes lettres reste telle que le client l’a lue');
+  const figees = [/\$\{m\.when\}/, /\$\{esc\(m\.when\|\|''\)\}/, /\$\{esc\(r\.when\|\|''\)\}/, /\$\{sm\.when\}/, /\$\{esc\(h\.when\|\|''\)\}/];
+  const restent = figees.filter((r) => r.test(src));
+  ok(restent.length === 0, 'plus aucun écran de mission ne lit l’étiquette figée' + (restent.length ? ' — reste : ' + restent.join(' ') : ''));
+
+  console.log('F — le coup de pouce est DANS le total');
+  ok(/· dont '\+eur\(coup\)\+' de coup de pouce/.test(src) && !/'\+'\+eur\(coup\)/.test(src),
+    'la console écrit « 95,00 € · dont 40,00 € de coup de pouce », plus « 95,00 € +40,00 € »');
+
   ok(errs.length === 0, 'aucune erreur de page' + (errs.length ? ' : ' + errs.join(' | ') : ''));
   await b.close();
   console.log(f ? '\n' + f + ' ÉCHEC(S)' : '\nTout est vert');
