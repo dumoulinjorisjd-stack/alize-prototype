@@ -2889,6 +2889,19 @@
       if(x[c]!=='unrouted')return false;
       if(x[c+'Issue']==='liaison_posterieure')return true;
       const mo=String(x[c+'Motif']||'');return /no marketplace partnership/i.test(mo)&&/when the payment was paid/i.test(mo);});}
+  /* CE QUE LA FICHE D'UN PRESTATAIRE DIT DE SON IBAN. Masqué : le numéro entier ne sert
+     qu'à faire un virement, et l'écran des versements bloqués le donne là où il sert.
+     Une clé qui ne tombe pas juste se DIT — l'enregistrement la refuse aujourd'hui, mais
+     un IBAN saisi avant ce contrôle peut être resté tel quel. */
+  function ibanFicheEtat(iban){const v=normIban(iban);if(!v)return 'absent';return ibanCleOk(v)?'ok':'invalide';}
+  function ibanFicheHtml(a){
+    const st=ibanFicheEtat(a&&a.iban);
+    if(st==='absent')return '<span class="chip coral">Non saisi</span><div class="mini" style="margin-top:4px">Sans lui, Ti-Services ne peut pas lui virer une somme que Mollie n’a pas versée.</div>';
+    const tit=(a.ibanTitulaire||'').trim();
+    const num='<span style="font-family:var(--f-mono,monospace)">'+esc(maskIban(a.iban))+'</span>'+(tit?' · '+esc(tit):'');
+    if(st==='invalide')return '<span class="chip warn">Saisi mais invalide</span><div class="mini" style="margin-top:4px">'+num+'<br>La clé de contrôle ne tombe pas juste : à lui faire corriger.</div>';
+    return '<span class="chip good">'+I.check+' Saisi</span><div class="mini" style="margin-top:4px">'+num+'</div>';
+  }
   function ibanEspace(s){return normIban(s).replace(/(.{4})(?=.)/g,'$1 ');}
   function ibanCleOk(s){const v=normIban(s);if(!ibanValid(v))return false;
     const r=(v.slice(4)+v.slice(0,4)).replace(/[A-Z]/g,function(c){return String(c.charCodeAt(0)-55);});
@@ -3787,7 +3800,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='914';
+  const VERSION_APP='915';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -13864,6 +13877,7 @@
             const due=a.insuranceDueAt||0, passe=due&&Date.now()>due;
             return `<div class="mini" style="margin-top:4px;color:var(--muted)">Demande envoyée le <b>${fmtAcceptDate(new Date(a.insuranceNoticeAt))}</b>${due?`, échéance le <b style="color:${passe?'var(--coral-deep)':'var(--ink)'}">${fmtAcceptDate(new Date(due))}</b>${passe?' (dépassée)':''}`:''}.</div>`;
           })()}`:`<div class="mini" style="margin-top:4px">Attestation non jointe</div>`))}`)}
+          ${fRow('IBAN (virements Ti-Services)',ibanFicheHtml(a))}
           ${fRow('Paiements (Mollie)',`${(function(){const st=a.mollieStatus||'none';
             if(st==='active')return `<span class="chip good">${I.check} Actif</span>`;
             if(st==='pending'&&a.mollieOnb==='needs-data')return `<span class="chip coral">${I.clip} Dossier à compléter</span><div class="mini" style="margin-top:4px">Un appel de 2 min peut débloquer, il ne lui manque qu'une pièce ou l'IBAN.</div>${molDepuisTxt(a)}`;
@@ -25264,7 +25278,12 @@
             /* QUAND IL A PASSÉ CHAQUE DEMANDE (« Passer cette demande »). La relance retire
                la demande de `skippedRequests` pour la lui remontrer, mais laisse l'heure :
                c'est ce qui permet à la console de dire qui a passé, même après. */
-            skipAt:(a.skippedAt&&typeof a.skippedAt==='object')?a.skippedAt:{},type:(a.statusType==='particulier')?'particulier':'entreprise',statusType:a.statusType||'entreprise',legalName:a.legalName||'',legalForm:a.legalForm||'',capital:a.capital||'',rcsCity:a.rcsCity||'',birth:a.birth||'',referralCode:a.referralCode||'',referredByCode:a.referredByCode||'',acceptedTerms:!!a.acceptedTerms,acceptedCharte:!!a.acceptedCharte,acceptedMandat:!!a.acceptedMandat,acceptsGrille:!!a.acceptsGrille,desiredNetRates:a.desiredNetRates||null,ownCatalog:(a.ownCatalog&&typeof a.ownCatalog==='object')?a.ownCatalog:{},termsVersion:a.termsVersion||'',termsAt:(a.termsAt&&a.termsAt.toMillis)?a.termsAt.toMillis():0,createdAt:(a.createdAt&&a.createdAt.toMillis)?a.createdAt.toMillis():0,cats:cats,other:a.other||'',otherPrice:Number(a.otherPrice)||0,otherPriceNote:a.otherPriceNote||'',otherUnit:(a.otherUnit==='forfait'?'forfait':'h'),pendingCats:Array.isArray(a.pendingCats)?a.pendingCats:[],pendingOther:a.pendingOther||'',pendingOtherPrice:Number(a.pendingOtherPrice)||0,pendingOtherUnit:(a.pendingOtherUnit==='forfait'?'forfait':'h'),pendingDesiredNet:(a.pendingDesiredNet&&typeof a.pendingDesiredNet==='object')?a.pendingDesiredNet:null,rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insuranceNone:!!a.insuranceNone,insuranceNoticeAt:Number(a.insuranceNoticeAt)||0,approvedNotifiedAt:Number(a.approvedNotifiedAt)||0,tierForce:a.tierForce||'',refBonusJobs:Number(a.refBonusJobs)||0,insuranceDueAt:Number(a.insuranceDueAt)||0,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,founderSince:(a.founderSince&&a.founderSince.toMillis)?a.founderSince.toMillis():(typeof a.founderSince==='number'?a.founderSince:null),founderGross:Number(a.founderGross)||0,test:!!a.test,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,online:(a.online!==false)/* EN LIGNE PAR DÉFAUT, et hors ligne seulement si on l'a
+            skipAt:(a.skippedAt&&typeof a.skippedAt==='object')?a.skippedAt:{},
+            /* L'IBAN QU'IL A SAISI DANS TI-SERVICES (« Mon compte »), pour les sommes que
+               Ti-Services lui vire à la main. Il n'était lu que par l'écran des versements
+               bloqués : tant que rien n'était bloqué, la console ne pouvait pas dire s'il
+               l'avait rempli. */
+            iban:typeof a.iban==='string'?a.iban.slice(0,40):'',ibanTitulaire:typeof a.ibanTitulaire==='string'?a.ibanTitulaire.slice(0,100):'',type:(a.statusType==='particulier')?'particulier':'entreprise',statusType:a.statusType||'entreprise',legalName:a.legalName||'',legalForm:a.legalForm||'',capital:a.capital||'',rcsCity:a.rcsCity||'',birth:a.birth||'',referralCode:a.referralCode||'',referredByCode:a.referredByCode||'',acceptedTerms:!!a.acceptedTerms,acceptedCharte:!!a.acceptedCharte,acceptedMandat:!!a.acceptedMandat,acceptsGrille:!!a.acceptsGrille,desiredNetRates:a.desiredNetRates||null,ownCatalog:(a.ownCatalog&&typeof a.ownCatalog==='object')?a.ownCatalog:{},termsVersion:a.termsVersion||'',termsAt:(a.termsAt&&a.termsAt.toMillis)?a.termsAt.toMillis():0,createdAt:(a.createdAt&&a.createdAt.toMillis)?a.createdAt.toMillis():0,cats:cats,other:a.other||'',otherPrice:Number(a.otherPrice)||0,otherPriceNote:a.otherPriceNote||'',otherUnit:(a.otherUnit==='forfait'?'forfait':'h'),pendingCats:Array.isArray(a.pendingCats)?a.pendingCats:[],pendingOther:a.pendingOther||'',pendingOtherPrice:Number(a.pendingOtherPrice)||0,pendingOtherUnit:(a.pendingOtherUnit==='forfait'?'forfait':'h'),pendingDesiredNet:(a.pendingDesiredNet&&typeof a.pendingDesiredNet==='object')?a.pendingDesiredNet:null,rates:rr,rate:cats.length?Math.min.apply(null,cats.map(function(c){return rr[c]!=null?rr[c]:svcBase(c);})):0,siret:a.siret||'',insured:!!a.insured,insuranceNone:!!a.insuranceNone,insuranceNoticeAt:Number(a.insuranceNoticeAt)||0,approvedNotifiedAt:Number(a.approvedNotifiedAt)||0,tierForce:a.tierForce||'',refBonusJobs:Number(a.refBonusJobs)||0,insuranceDueAt:Number(a.insuranceDueAt)||0,insurer:a.insurer||'',insuranceUrl:a.insuranceUrl||'',insuranceStatus:a.insuranceStatus||'',bio:a.bio||'',photo:a.photo||'',diplomas:Array.isArray(a.diplomas)?a.diplomas:[],diplomaOther:a.diplomaOther||'',founder:!!a.founder,founderSince:(a.founderSince&&a.founderSince.toMillis)?a.founderSince.toMillis():(typeof a.founderSince==='number'?a.founderSince:null),founderGross:Number(a.founderGross)||0,test:!!a.test,jobs:a.jobsTotal||0,zone:a.zone||'—',phone:a.phone||'',email:a.email||'',history:Array.isArray(a.history)?a.history:[],earnings:a.earnings||0,address:a.address||'',noShowCount:a.noShowCount||0,online:(a.online!==false)/* EN LIGNE PAR DÉFAUT, et hors ligne seulement si on l'a
             DÉCIDÉ. `!!a.online` rendait FAUX pour un compte qui n'a jamais touché
             l'interrupteur — c'est-à-dire tout nouvel inscrit, puisque le champ n'est
             écrit qu'au premier enregistrement de ses réglages. La console le
