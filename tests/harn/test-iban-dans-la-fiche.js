@@ -60,12 +60,43 @@ const FAUX = 'FR7630006000011234567890180';
   console.log('D — rien de saisi');
   const D = await fiche(ART({ iban: '' }));
   ok(/Non saisi/.test(D.ligne), 'un prestataire sans IBAN : « Non saisi »');
+  ok(/Facultatif/.test(D.ligne), 'et la console dit que c\'est facultatif (les missions passent par Mollie)');
+  const Dc = await p.evaluate(() => { const c = Array.from(document.querySelectorAll('#view .fiche .chip')).find((x) => /Non saisi/.test(x.textContent)); return c ? c.className : ''; });
+  ok(Dc === 'chip', 'la pastille est neutre, pas rouge (' + Dc + ')');
   const D2 = await fiche(ART({}));
   ok(/Non saisi/.test(D2.ligne), 'une fiche sans le champ du tout : « Non saisi », pas une erreur');
+
+  console.log('D bis — IBAN saisi, Mollie jamais ouvert : le malentendu se voit');
+  const Db = await fiche(ART({ iban: VALIDE, mollieStatus: 'none' }));
+  ok(/Mollie n’est pas activé : cet IBAN ne suffit pas/.test(Db.ligne), 'la console signale qu\'il croit peut-être avoir fait le nécessaire');
+  ok(!/ne suffit pas/.test(B.ligne), 'et se tait quand Mollie est actif');
 
   console.log('E — un titulaire venu d\'un compte ne s\'exécute pas');
   const E = await fiche(ART({ iban: VALIDE, ibanTitulaire: '<img src="x">' }));
   ok(!E.img && /<img src="x">/.test(E.ligne), 'le nom paraît en texte, aucune balise ne s\'ouvre');
+
+  console.log('F — côté prestataire, l\'IBAN ne se lit pas comme le moyen d\'être payé');
+  const compte = (mollie, canWork) => p.evaluate(({ mollie, canWork }) => {
+    const S = window.__S;
+    S.account = { name: 'Vincent', email: 'v@exemple.fr', uid: 'a1', role: 'artisan' };
+    S.persona = 'pro'; S.onboarded = true; S.authView = null; S.proValidated = true; S.proStatus = 'valide';
+    S.proMollie = mollie; S.proMollieCanWork = canWork; S.proMollieOrgId = canWork ? 'org_1' : '';
+    S.proNav = 'account'; S.proEditContact = true; S.proContactForm = { phone: '+590 690 12 34 56', bio: '', iban: '', ibanTitulaire: '' };
+    S._fold = Object.assign({}, S._fold, { 'p-infos': true });
+    window.__render();
+    const champ = document.querySelector('[data-proeditiban]');
+    const bloc = champ ? champ.parentElement : null;
+    return { champ: !!champ, txt: bloc ? bloc.textContent.replace(/\s+/g, ' ') : '(absent)',
+      bouton: !!(bloc && bloc.querySelector('[data-act="pro-mollie"]')) };
+  }, { mollie, canWork });
+  const F1 = await compte('none', false);
+  ok(F1.champ, 'le champ IBAN est bien là (assertion arrière)');
+  ok(/IBAN de secours/.test(F1.txt), 'il s\'appelle « IBAN de secours »');
+  ok(/Il ne remplace pas Mollie/.test(F1.txt) && F1.bouton, 'Mollie pas ouvert : il le dit, avec « Activer Mollie »');
+  const F2 = await compte('active', false);
+  ok(!/Il ne remplace pas Mollie/.test(F2.txt) && /payées par Mollie/.test(F2.txt) && !F2.bouton, 'Mollie actif : une phrase discrète, pas d\'alerte');
+  const F3 = await compte('pending', true);
+  ok(!/Il ne remplace pas Mollie/.test(F3.txt), 'Mollie l\'autorise déjà à travailler : pas d\'alerte non plus');
 
   ok(errs.length === 0, 'aucune erreur de page (' + errs.slice(0, 2).join(' | ') + ')');
   await b.close();

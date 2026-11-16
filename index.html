@@ -2893,14 +2893,30 @@
      qu'à faire un virement, et l'écran des versements bloqués le donne là où il sert.
      Une clé qui ne tombe pas juste se DIT — l'enregistrement la refuse aujourd'hui, mais
      un IBAN saisi avant ce contrôle peut être resté tel quel. */
+  /* « IL NE FAUT PAS QUE LE PRESTATAIRE LE RENTRE ET CROIE QUE DU COUP PAS BESOIN DE
+     MOLLIE » — l'éditeur. Un champ « IBAN » dans « Mon compte » se lit comme LE moyen
+     d'être payé. Il n'en est rien : les missions sont payées par Mollie, cet IBAN ne
+     sert qu'à un virement fait à la main. Tant que Mollie n'est pas ouvert, on le DIT,
+     en rouge, avec le geste qui manque — sous le champ même, là où naît le malentendu. */
+  function ibanPasMollieHtml(){
+    const ouvert=(mollieState()==='active'||molliePeutTravailler());
+    if(ouvert)return '<p class="mini" style="margin-top:5px;color:var(--muted)">Vos missions vous sont payées par Mollie. Cet IBAN ne sert que si Ti-Services doit vous virer une somme à la main.</p>';
+    return '<div class="banner coral" style="margin-top:8px">'+I.card+'<span><b>Il ne remplace pas Mollie.</b> Sans votre compte Mollie activé, vos missions ne vous sont pas payées. <button class="linklike" data-act="pro-mollie" style="font-weight:700">Activer Mollie ›</button></span></div>';
+  }
   function ibanFicheEtat(iban){const v=normIban(iban);if(!v)return 'absent';return ibanCleOk(v)?'ok':'invalide';}
   function ibanFicheHtml(a){
     const st=ibanFicheEtat(a&&a.iban);
-    if(st==='absent')return '<span class="chip coral">Non saisi</span><div class="mini" style="margin-top:4px">Sans lui, Ti-Services ne peut pas lui virer une somme que Mollie n’a pas versée.</div>';
+    /* FACULTATIF, ET LA PASTILLE LE DIT : les missions sont payées par Mollie ; cet IBAN
+       ne sert qu'à un virement fait à la main. Un rouge ici crierait pour rien. */
+    if(st==='absent')return '<span class="chip">Non saisi</span><div class="mini" style="margin-top:4px">Facultatif : il ne sert que si Ti-Services doit lui virer une somme à la main.</div>';
     const tit=(a.ibanTitulaire||'').trim();
     const num='<span style="font-family:var(--f-mono,monospace)">'+esc(maskIban(a.iban))+'</span>'+(tit?' · '+esc(tit):'');
-    if(st==='invalide')return '<span class="chip warn">Saisi mais invalide</span><div class="mini" style="margin-top:4px">'+num+'<br>La clé de contrôle ne tombe pas juste : à lui faire corriger.</div>';
-    return '<span class="chip good">'+I.check+' Saisi</span><div class="mini" style="margin-top:4px">'+num+'</div>';
+    /* LE MALENTENDU QU'ON CHERCHE À ÉVITER, VU DE LA CONSOLE : un IBAN saisi, Mollie
+       jamais ouvert. Il croit peut-être avoir fait le nécessaire. */
+    const sansMollie=(a.mollieStatus||'none')!=='active'&&!a.mollieCanWork;
+    const avis=sansMollie?'<div class="mini" style="margin-top:4px;color:var(--coral-deep)">Mollie n’est pas activé : cet IBAN ne suffit pas pour qu’il soit payé de ses missions.</div>':'';
+    if(st==='invalide')return '<span class="chip warn">Saisi mais invalide</span><div class="mini" style="margin-top:4px">'+num+'<br>La clé de contrôle ne tombe pas juste : à lui faire corriger.</div>'+avis;
+    return '<span class="chip good">'+I.check+' Saisi</span><div class="mini" style="margin-top:4px">'+num+'</div>'+avis;
   }
   function ibanEspace(s){return normIban(s).replace(/(.{4})(?=.)/g,'$1 ');}
   function ibanCleOk(s){const v=normIban(s);if(!ibanValid(v))return false;
@@ -3800,7 +3816,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='915';
+  const VERSION_APP='916';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -8422,6 +8438,12 @@
     "⚠︎ IBAN invalide : vérifiez-le (clé de contrôle)":"⚠︎ Invalid IBAN: please check it (check digits)",
     "Décrivez votre expérience en quelques mots":"Describe your experience in a few words",
     "Coordonnées mises à jour ✓":"Details updated ✓",
+    "IBAN de secours (facultatif)":"Backup IBAN (optional)","IBAN de secours":"Backup IBAN",
+    "Vos missions vous sont payées par Mollie. Cet IBAN ne sert que si Ti-Services doit vous virer une somme à la main.":"Your jobs are paid through Mollie. This IBAN is only used if Ti-Services has to send you an amount by hand.",
+    "Il ne remplace pas Mollie.":"It does not replace Mollie.",
+    "Sans votre compte Mollie activé, vos missions ne vous sont pas payées.":"Without your Mollie account activated, your jobs are not paid to you.",
+    "Activer Mollie ›":"Activate Mollie ›",
+    "IBAN enregistré. Pour être payé de vos missions, activez Mollie.":"IBAN saved. To get paid for your jobs, activate Mollie.",
     "Mes abonnements":"My subscriptions","Confirmer ce passage":"Confirm this visit",
     "Décaler":"Postpone","Arrêter":"Stop","Réserver ce passage ›":"Book this visit ›",
     "Passage pré-rempli, vérifiez et confirmez":"Visit pre-filled, check and confirm",
@@ -10172,6 +10194,12 @@
     "⚠︎ IBAN invalide : vérifiez-le (clé de contrôle)":"⚠︎ IBAN inválido: verifique-o (dígitos de controlo)",
     "Décrivez votre expérience en quelques mots":"Descreva a sua experiência em poucas palavras",
     "Coordonnées mises à jour ✓":"Dados atualizados ✓",
+    "IBAN de secours (facultatif)":"IBAN de reserva (opcional)","IBAN de secours":"IBAN de reserva",
+    "Vos missions vous sont payées par Mollie. Cet IBAN ne sert que si Ti-Services doit vous virer une somme à la main.":"As suas missões são pagas pela Mollie. Este IBAN só serve se a Ti-Services tiver de lhe transferir um montante manualmente.",
+    "Il ne remplace pas Mollie.":"Não substitui a Mollie.",
+    "Sans votre compte Mollie activé, vos missions ne vous sont pas payées.":"Sem a sua conta Mollie ativada, as suas missões não lhe são pagas.",
+    "Activer Mollie ›":"Ativar a Mollie ›",
+    "IBAN enregistré. Pour être payé de vos missions, activez Mollie.":"IBAN guardado. Para receber pelas suas missões, ative a Mollie.",
     "Mes abonnements":"As minhas subscrições","Confirmer ce passage":"Confirmar esta passagem",
     "Décaler":"Adiar","Arrêter":"Parar","Réserver ce passage ›":"Reservar esta passagem ›",
     "Passage pré-rempli, vérifiez et confirmez":"Passagem pré-preenchida, verifique e confirme",
@@ -20037,9 +20065,9 @@
           ${editing?`<div style="margin-top:12px"><label class="sub" style="display:block;margin-bottom:5px">Téléphone</label>${phoneCombo('proedit',cf.phone)}</div>`:row('Téléphone',S.proPhone)}
           ${row('E-mail',email)}
           ${row('Assureur',S.proInsurer)}
-          ${editing?'':row('IBAN',S.proIban?maskIban(S.proIban):'')}
+          ${editing?'':row('IBAN de secours',S.proIban?maskIban(S.proIban):'')}
         </div>
-        ${editing?`<div style="margin-top:12px"><label class="sub" style="display:block;margin-bottom:5px">IBAN (facultatif)</label><input class="txt" data-proeditiban value="${esc(cf.iban||'')}" placeholder="FR76 …" autocomplete="off" spellcheck="false" style="width:100%"><input class="txt" data-proeditibantit value="${esc(cf.ibanTitulaire||'')}" placeholder="Titulaire du compte" style="width:100%;margin-top:7px"><p class="mini" style="margin-top:5px;color:var(--muted)">Utile seulement si Ti-Services doit vous virer une somme à la main. Vos versements habituels passent par Mollie.</p></div>`:''}
+        ${editing?`<div style="margin-top:12px"><label class="sub" style="display:block;margin-bottom:5px">IBAN de secours (facultatif)</label><input class="txt" data-proeditiban value="${esc(cf.iban||'')}" placeholder="FR76 …" autocomplete="off" spellcheck="false" style="width:100%"><input class="txt" data-proeditibantit value="${esc(cf.ibanTitulaire||'')}" placeholder="Titulaire du compte" style="width:100%;margin-top:7px">${ibanPasMollieHtml()}</div>`:''}
         ${editing
           ?`<div style="margin-top:12px"><label class="sub" style="display:block;margin-bottom:5px">Présentation</label><textarea class="txt" data-proeditbio rows="3" placeholder="Décrivez votre expérience en quelques mots" style="width:100%;resize:vertical;font-family:inherit">${esc(cf.bio)}</textarea></div>`
           :(S.proBio?`<div style="margin-top:12px"><span class="sub">Présentation</span><p class="mini" style="margin-top:4px;white-space:pre-wrap;color:var(--ink)">${esc(S.proBio)}</p></div>`:'')}
@@ -22313,12 +22341,15 @@
            numéro incomplet, et plus personne ne pouvait le joindre. Un numéro qui ne
            peut pas sonner N'ENTRE PAS, et la saisie reste à l'écran pour être corrigée. */
         if(!telStockeLu(f.phone||'').ok){toast('⚠︎ '+(telImpossibleTxt(f.phone||'')||'Indiquez votre numéro de téléphone : c’est par lui qu’on vous joint.'));break;}
+        // Un IBAN enregistré n'ouvre pas les paiements : si Mollie ne l'est pas, on le
+        // redit au moment même où il croit avoir fait le nécessaire.
+        const enregistreTxt=function(){return (ibanSaisi&&!(mollieState()==='active'||molliePeutTravailler()))?'IBAN enregistré. Pour être payé de vos missions, activez Mollie.':'Coordonnées mises à jour ✓';};
         S.proPhone=(f.phone||'').trim();S.proBio=(f.bio||'').trim();S.proIban=ibanSaisi;S.proIbanTitulaire=String(f.ibanTitulaire||'').trim().slice(0,100);S.proEditContact=false;S.proContactForm=null;
-        if(FB&&FB.auth&&FB.auth.currentUser&&!isDemo()){const uid=FB.auth.currentUser.uid;FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{phone:S.proPhone,bio:S.proBio,iban:S.proIban,ibanTitulaire:S.proIbanTitulaire},{merge:true}).then(function(){toast('Coordonnées mises à jour ✓');}).catch(function(e){toast('⚠︎ Non enregistré : '+fbErrTxt(e));});try{FB.f.setDoc(FB.f.doc(FB.db,'users',uid),{phone:S.proPhone},{merge:true});}catch(_){}
+        if(FB&&FB.auth&&FB.auth.currentUser&&!isDemo()){const uid=FB.auth.currentUser.uid;FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{phone:S.proPhone,bio:S.proBio,iban:S.proIban,ibanTitulaire:S.proIbanTitulaire},{merge:true}).then(function(){toast(enregistreTxt());}).catch(function(e){toast('⚠︎ Non enregistré : '+fbErrTxt(e));});try{FB.f.setDoc(FB.f.doc(FB.db,'users',uid),{phone:S.proPhone},{merge:true});}catch(_){}
           // La présentation n'est visible du client QUE pour la garde d'enfants. On répercute
           // la nouvelle bio sur les gardes en cours (elle était figée à l'acceptation).
           (S.proMissions||[]).forEach(function(mm){if(mm&&mm.reqId&&mm.svc==='baby'){mm.providerBio=S.proBio;try{FB.f.updateDoc(FB.f.doc(FB.db,'requests',mm.reqId),{providerBio:S.proBio});}catch(_){}}});}
-        else{toast('Coordonnées mises à jour ✓');}
+        else{toast(enregistreTxt());}
         render();break;}
       case 'salon-geo':geolocate(function(g){S.proSalonGeo=g;render();});break;
       case 'salon-save':{const ai=document.querySelector('[data-salonaddr]');const zi=document.querySelector('[data-salonzone]');if(ai)S.proSalonAddress=(ai.value||'').trim();if(zi)S.proSalonZone=zi.value||'Gustavia';if(!S.proSalonAddress){toast('Indiquez l’adresse de votre salon');render();break;}persistSalon();render();break;}
