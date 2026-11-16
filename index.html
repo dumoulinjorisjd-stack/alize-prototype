@@ -3816,7 +3816,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='916';
+  const VERSION_APP='917';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -5356,7 +5356,18 @@
      avoir de RC n'a rien à faire vérifier : son dossier est complet, le fait est connu,
      et c'est à l'éditeur de trancher. Sans cela la case du prestataire débloquait son
      formulaire pour l'arrêter contre une porte que personne ne pouvait ouvrir. */
-  function insPeutValider(a){ const st=insStatus(a); return st==='valide'||st==='aucune'; }
+  /* UNE ATTESTATION REFUSÉE N'EMPÊCHE PAS DE VALIDER (l'éditeur, 16/11/2026). Le refus
+     porte sur le DOCUMENT (illisible, incomplet, échu), pas sur la personne : c'est à
+     l'éditeur de décider s'il l'accepte quand même. Ce qui suit le refus ne bouge pas —
+     le client ne voit jamais « Assuré » (`providerInsured` exclut 'refuse'), et le
+     prestataire a reçu l'avis qui lui demande d'en déposer une nouvelle. Reste fermé :
+     l'attestation MANQUANTE ou À VÉRIFIER, où il y a un geste à faire avant. */
+  function insPeutValider(a){ const st=insStatus(a); return st==='valide'||st==='aucune'||st==='refuse'; }
+  // Valider sans le repère « Assuré » : il a déclaré ne pas en avoir, ou son attestation a été refusée.
+  function insSansRepere(a){ const st=insStatus(a); return st==='aucune'||st==='refuse'; }
+  function insSansRepereTxt(a){ return insStatus(a)==='refuse'
+    ? 'Son <b>attestation d’assurance a été refusée</b>. Le valider le rend visible aux clients, sans le repère « Assuré ».'
+    : 'Il a <b>déclaré ne pas avoir d\'assurance responsabilité civile</b>. Le valider le rend visible aux clients, sans le repère « Assuré ».'; }
   function insLabel(st){ return st==='valide'?['good','Validée']:st==='refuse'?['coral','Refusée']:st==='attente'?['grey','À vérifier']:st==='aucune'?['coral','Déclarée absente']:['coral','Manquante']; }
   // — ICÔNE D'UN MÉTIER CRÉÉ DEPUIS LA CONSOLE —
   // Un métier ajouté sans code recevait le rond-plus générique À VIE : `svcIco` renvoyait
@@ -12345,10 +12356,10 @@
       ${(a.cats&&a.cats.includes('autre')&&a.other)?`<div class="banner teal" style="margin-top:7px">${I.other}<span>Service « Autre » proposé&nbsp;: <b>${esc(a.other)}</b>${a.otherPrice>0?`, il veut percevoir <b>${a.otherPrice} €</b> ${a.otherUnit==='forfait'?'par prestation':'de l\'heure'}`:', <b>aucun prix indiqué</b>'}.${a.otherPriceNote?`<div class="mini" style="margin-top:6px;color:var(--ink);line-height:1.5"><b>Ses autres formules&nbsp;:</b> ${esc(a.otherPriceNote)}</div>`:''}</span></div>`:''}
       <div class="row" style="gap:6px;margin-top:7px;flex-wrap:wrap"><span class="chip ${a.siret?'good':'coral'}">SIRET ${a.siret?'fourni':'manquant'}</span>${(function(){const l=insLabel(insStatus(a));return `<span class="chip ${l[0]}">Assurance ${l[1].toLowerCase()}</span>`;})()}</div>
       <p class="mini" style="margin-top:9px;color:var(--muted)">Échangez avant de décider&nbsp;:</p>${contactRow(a)}
-      <div class="row" style="gap:8px;margin-top:10px"><button class="btn ${insStatus(a)==='aucune'?'ghost':'good'} sm" data-adm="valid-art:${a.id}" ${(insPeutValider(a)&&a.siret)?'':'disabled'}>${insStatus(a)==='aucune'?'Valider sans assurance':'Valider'}</button><button class="btn ghost sm" data-adm="rej-art:${a.id}">Refuser</button><button class="btn ghost sm" data-adm="art:${a.id}">Fiche</button></div>
-      ${(insStatus(a)==='attente'||insStatus(a)==='refuse')?`<p class="mini" style="margin-top:6px;color:var(--muted)">Ouvrez la fiche pour vérifier et valider l'attestation avant d'accepter le prestataire.</p>`:''}
+      <div class="row" style="gap:8px;margin-top:10px"><button class="btn ${insSansRepere(a)?'ghost':'good'} sm" data-adm="valid-art:${a.id}" ${(insPeutValider(a)&&a.siret)?'':'disabled'}>${insSansRepere(a)?'Valider sans assurance':'Valider'}</button><button class="btn ghost sm" data-adm="rej-art:${a.id}">Refuser</button><button class="btn ghost sm" data-adm="art:${a.id}">Fiche</button></div>
+      ${insStatus(a)==='attente'?`<p class="mini" style="margin-top:6px;color:var(--muted)">Ouvrez la fiche pour vérifier et valider l'attestation avant d'accepter le prestataire.</p>`:''}
       ${insStatus(a)==='none'?`<p class="mini" style="margin-top:6px;color:var(--coral-deep)">Attestation d'assurance manquante, validation impossible.</p>`:''}
-      ${insStatus(a)==='aucune'?`<p class="mini" style="margin-top:6px;color:var(--coral-deep)">Il a <b>déclaré ne pas avoir d'assurance responsabilité civile</b>. Le valider le rend visible aux clients, sans le repère « Assuré ».</p>`:''}</div>`));
+      ${insSansRepere(a)?`<p class="mini" style="margin-top:6px;color:var(--coral-deep)">${insSansRepereTxt(a)}</p>`:''}</div>`));
     pendC.forEach(cc=>q.push(`<div class="card" style="padding:14px;margin-top:10px;border-left:4px solid var(--warn)">
       <div class="row between"><b style="font-size:14px">${esc(cc.name)}</b><span class="chip grey">Client</span></div>
       <div class="mini" style="margin-top:3px">${esc(migZone(cc.zone))} · ${esc(cc.card)}</div>
@@ -24854,7 +24865,7 @@
     if(etat==='refuse'&&!a.reason)a.reason=(!a.siret?'SIRET manquant. ':'')+(insStatus(a)==='aucune'?'Sans assurance responsabilité civile. ':(!a.insured?'Assurance manquante. ':''))||'Ne correspond pas aux critères Ti-Services';
     adminWriteStatus(a,etat);
     saveAvailability();
-    toast(etat==='valide'?(insStatus(a)==='aucune'?'Prestataire validé, sans assurance RC':'Prestataire validé')
+    toast(etat==='valide'?(insStatus(a)==='aucune'?'Prestataire validé, sans assurance RC':insStatus(a)==='refuse'?'Prestataire validé, sans le repère « Assuré »':'Prestataire validé')
       :etat==='refuse'?'Prestataire refusé, conservé dans l’historique'
       :'Prestataire remis en attente, invisible pour les clients');
   }
@@ -24981,8 +24992,8 @@
         const on=(cur===e[0]);
         return `<button class="seg ${on?'on':''}" data-adm="statut-art:${a.id}:${e[0]}"${(e[0]==='valide'&&bloque&&!on)?' disabled':''}>${on?'✓ ':''}${e[1]}</button>`;}).join('')}</div>
       <p class="mini" style="margin-top:10px;color:var(--ink);line-height:1.5">${dit}</p>
-      ${(bloque&&cur!=='valide')?`<p class="mini" style="margin-top:7px;color:var(--coral-deep);line-height:1.5">Validation impossible&nbsp;: ${!a.siret?'SIRET manquant. ':''}${insStatus(a)==='none'?'attestation d’assurance manquante.':insStatus(a)==='attente'?'attestation à vérifier et valider plus haut.':insStatus(a)==='refuse'?'attestation refusée.':'dossier incomplet.'}</p>`:''}
-      ${(!bloque&&insStatus(a)==='aucune'&&cur!=='valide')?`<p class="mini" style="margin-top:7px;color:var(--coral-deep);line-height:1.5">Il a <b>déclaré ne pas avoir d'assurance responsabilité civile</b>. Le valider le rend visible aux clients, sans le repère « Assuré ».</p>`:''}
+      ${(bloque&&cur!=='valide')?`<p class="mini" style="margin-top:7px;color:var(--coral-deep);line-height:1.5">Validation impossible&nbsp;: ${!a.siret?'SIRET manquant. ':''}${insStatus(a)==='none'?'attestation d’assurance manquante.':insStatus(a)==='attente'?'attestation à vérifier et valider plus haut.':'dossier incomplet.'}</p>`:''}
+      ${(!bloque&&insSansRepere(a)&&cur!=='valide')?`<p class="mini" style="margin-top:7px;color:var(--coral-deep);line-height:1.5">${insSansRepereTxt(a)}</p>`:''}
       ${cur==='valide'?`<p class="mini" style="margin-top:7px;color:var(--muted);line-height:1.5">Le sortir de « Validé » le retire des clients et il ne reçoit plus de demandes. <b>Ses missions déjà acceptées se terminent normalement.</b></p>`:''}
       ${a.approvedNotifiedAt?`<p class="mini" style="margin-top:7px;color:var(--muted);line-height:1.5">L’e-mail de bienvenue lui a déjà été envoyé&nbsp;: le revalider ne le renverra pas.</p>`:''}
     </div>`;

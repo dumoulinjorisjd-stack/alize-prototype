@@ -117,8 +117,12 @@ const PRESQUE = {
   });
   ok(V.rien === false, 'un dossier sans rien ne se valide pas');
   ok(V.declare === true, 'un prestataire qui a DÉCLARÉ ne pas avoir de RC se valide');
-  ok(V.aVerifier === false && V.refusee === false && V.validee === true,
-    'et les trois autres états gardent exactement leur règle');
+  ok(V.aVerifier === false && V.validee === true,
+    'à vérifier : fermé ; validée : ouvert — rien ne bouge');
+  /* « UNE ATTESTATION REFUSÉE NE DOIT PAS EMPÊCHER DE VALIDER UN PRESTATAIRE » — l'éditeur,
+     16/11/2026. Le refus porte sur le DOCUMENT ; décider d'accepter quand même la
+     personne lui revient. */
+  ok(V.refusee === true, 'une attestation REFUSÉE ne bloque plus la validation');
   // La console affiche la console pour de vrai : on la rend sur un dossier déclaré.
   await p.evaluate(() => {
     const S = window.__S;
@@ -146,6 +150,41 @@ const PRESQUE = {
   ok(/déclaré ne pas avoir d'assurance/i.test(C.t), 'la console dit le fait');
   ok(!/validation impossible/i.test(C.t), 'et ne parle plus d’une validation impossible');
   ok(/Déclarée absente/i.test(C.t), 'la pastille porte le mot juste');
+
+  console.log('\nD bis — attestation refusée : on valide, sans le repère « Assuré »');
+  await p.evaluate(() => {
+    const S = window.__S;
+    S.admin = { view: 'home', sel: null };
+    S.adminArtisans = [{ id: 'z', uid: 'z', name: 'Léa Brin', status: 'attente', type: 'entreprise',
+      cats: ['menage'], rates: { menage: 30 }, rate: 30, siret: '12345678901234',
+      insured: true, insuranceUrl: 'https://exemple.fr/a.pdf', insuranceStatus: 'refuse', phone: '0690112233',
+      email: 'lea@e.fr', rating: 0, jobs: 0, zone: 'Gustavia' }];
+    window.__render();
+  });
+  await p.waitForTimeout(300);
+  const R = await p.evaluate(() => {
+    const btns = Array.from(document.querySelectorAll('[data-adm^="valid-art:"]'));
+    const carte = btns.length ? btns[0].closest('.card') : null;
+    return { t: carte ? carte.textContent.replace(/\s+/g, ' ') : '(absente)',
+      btn: btns.map((b) => ({ txt: (b.textContent || '').trim(), off: b.disabled })) };
+  });
+  ok(R.btn.length > 0 && R.btn.every((x) => !x.off), 'le bouton n’est pas grisé (' + JSON.stringify(R.btn) + ')');
+  ok(R.btn.every((x) => /sans assurance/i.test(x.txt)), 'et il dit qu’il valide sans assurance');
+  ok(/attestation d’assurance a été refusée/.test(R.t) && /sans le repère « Assuré »/.test(R.t), 'la carte dit le fait, et sa conséquence');
+  ok(!/Ouvrez la fiche pour vérifier/.test(R.t), 'elle ne renvoie plus vérifier un document déjà jugé');
+  const Rf = await p.evaluate(() => {
+    const S = window.__S; S.admin = { view: 'art', sel: 'z' }; window.__render();
+    const seg = document.querySelector('[data-adm="statut-art:z:valide"]');
+    const v = (document.getElementById('view').textContent || '').replace(/\s+/g, ' ');
+    return { seg: seg ? !seg.disabled : null, impossible: /Validation impossible/.test(v), dit: /attestation d’assurance a été refusée/.test(v) };
+  });
+  ok(Rf.seg === true && !Rf.impossible && Rf.dit, 'la fiche aussi : « Validé » s’ouvre, plus de « validation impossible » (' + JSON.stringify(Rf) + ')');
+  const Rv = await p.evaluate(() => {
+    const S = window.__S; const a = S.adminArtisans[0];
+    document.querySelector('[data-adm="statut-art:z:valide"]').click();
+    return a.status;
+  });
+  ok(Rv === 'valide', 'et le clic valide pour de vrai');
 
   /* E — LE FAIT VOYAGE LÀ OÙ IL SERT. « Vérifié · Assuré » a quitté l'écran du CHOIX :
      la mention était la même sur tout le monde, donc elle ne distinguait personne. Le
