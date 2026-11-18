@@ -89,8 +89,10 @@ function montantLiberable(p) {
    Mollie) a été essayé le 18/11/2026 et Mollie a répondu qu'elle n'était pas partenaire
    du propriétaire du paiement — ce n'est PAS l'organisation qui encaisse Ti-Services, et
    la prendre pour elle aurait fait débrancher par le garde-fou tout compte relié à C.C.S.
-   Tant que la bonne valeur n'est pas donnée, la libération dit « organisation inconnue ». */
-const ORG_PLATEFORME = '';
+   La bonne valeur, `org_19553481`, a été RELEVÉE le 18/11/2026 dans le tableau de bord
+   Mollie de l'éditeur (organisation qui porte le profil Ti-services pfl_jw4dQ335VJ).
+   MOLLIE_PLATFORM_ORG_ID la remplace sans toucher au code. */
+const ORG_PLATEFORME = 'org_19553481';
 const ORG_RE = /^org_\d{3,}$/;
 function orgPlateforme(depuisMollie, configuree) {
   const a = String(depuisMollie || '').trim();

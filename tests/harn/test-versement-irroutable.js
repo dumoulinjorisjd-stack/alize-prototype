@@ -60,7 +60,8 @@ ok(IRR.jambeRetentable({issue: 'route_failed', motif: 'HTTP 503'}) && !IRR.jambe
 { // L'organisation de Ti-Services se connaît même avec une clé de PROFIL.
   const op = IRR.orgPlateforme;
   ok(op('', 'org_777') === 'org_777', 'Mollie refuse /organizations/me à une clé de profil : la configuration donne l’organisation');
-  ok(IRR.ORG_PLATEFORME === '' && op('', IRR.ORG_PLATEFORME) === '', 'aucune organisation devinée dans le code : C.C.S (org_19618413) n’encaisse pas Ti-Services');
+  ok(op('', IRR.ORG_PLATEFORME) === 'org_19553481', 'sans réponse de Mollie, c’est l’organisation relevée dans le tableau de bord (profil Ti-services) qui reçoit la libération');
+  ok(IRR.ORG_PLATEFORME !== 'org_19618413', 'jamais C.C.S (org_19618413) : Mollie a répondu qu’elle n’est pas propriétaire des paiements Ti-Services');
   ok(op('org_555', 'org_19618413') === 'org_555', 'quand Mollie répond, sa réponse l’emporte');
   ok(op('', 'n’importe quoi') === '' && op('org_', '') === '' && op(null, undefined) === '', 'un identifiant mal formé ne vaut rien'); }
 { // La somme libérable est ce qui a été CAPTURÉ, pas l'empreinte autorisée.
