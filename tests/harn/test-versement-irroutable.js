@@ -54,6 +54,15 @@ ok(IRR.jambeRetentable({issue: 'route_failed', motif: 'HTTP 503'}) && !IRR.jambe
   ok(raison({montant: 0}) === 'montant-nul', 'un montant nul ne se route pas');
   ok(raison({motif: 'HTTP 503'}) === 'refus-non-definitif', 'un refus passager se RETENTE au lieu de se libérer');
   ok(IRR.LIBERER_REFUS.length === 7, 'sept refus, tous nommés'); }
+{ // La somme libérable est ce qui a été CAPTURÉ, pas l'empreinte autorisée.
+  const ml = IRR.montantLiberable;
+  ok(ml({amount: {value: '120.00'}, amountCaptured: {value: '104.50'}}) === 104.5,
+    'empreinte de 120 € capturée à 104,50 € : on libère 104,50 €, pas 120 € (Mollie refuse de router au-delà du capturé)');
+  ok(ml({amount: {value: '120.00'}, amountCaptured: {value: '104.50'}, amountRefunded: {value: '10.00'}}) === 94.5,
+    'un remboursement partiel se retire du capturé');
+  ok(ml({amount: {value: '58.08'}}) === 58.08, 'un paiement sans capture (débit direct) : on libère son montant');
+  ok(ml({amount: {value: '50.00'}, amountCaptured: {value: '0.00'}}) === 0, 'rien de capturé : rien à libérer');
+  ok(ml({amount: {value: '50.00'}, amountRefunded: {value: '80.00'}}) === 0 && ml(null) === 0, 'jamais une somme négative, jamais une panne sur un paiement illisible'); }
 { const laura = [{complementPayout: 'unrouted', complementNet: 104.5, complementPayoutIssue: 'route_failed', complementPayoutMotif: MOTIF},
     {molliePayout: 'unrouted', molliePayoutNet: 20}];
   ok(ARGENT.netMisDeCote(laura) === 20, '« mis de côté » ne compte plus ce que Mollie ne versera jamais');
@@ -78,7 +87,8 @@ ok((fn.match(/issueDuRefus\(orgId\)/g) || []).length >= 6,
   ok(/mollieRouteNet\(paymentId, orgPlateforme, dec\.montant/.test(c), 'elle route le paiement entier vers NOTRE organisation');
   ok(!/Payout: 'routed'/.test(c) && !/Payout: 'manuel'/.test(c), 'et la jambe RESTE due : la part du prestataire n’est pas soldée pour autant');
   ok(/set\(\{molliePayoutLibere: true/.test(c) && /set\(\{complementPayoutLibere: true/.test(c), 'la libération est inscrite au registre, une fois par nature de paiement');
-  ok(/amountRefunded/.test(c), 'jamais plus que ce qui reste encaissé'); }
+  ok(/montant = IRR\.montantLiberable\(p\.data\)/.test(c), 'la libération demande au noyau ce qui a été capturé');
+  ok(!/p\.data\.amount && p\.data\.amount\.value/.test(c), 'elle ne relit plus le montant AUTORISÉ de l’empreinte'); }
 ok(/netIrroutable: so\.irroutable/.test(fn), 'la fiche du prestataire porte les deux sommes');
 ok(/IRR\.refusDefinitif\(motif\)/.test(fn) && /IRR\.REGLE_MOLLIE/.test(fn), 'l’alerte à l’administrateur cite la règle et dit qu’il est inutile de re-router');
 
@@ -171,6 +181,31 @@ console.log('D — sur l’écran réel');
     return {edit: S.proEditContact, iban: S.proIban};
   });
   ok(accepte.edit === false && accepte.iban === 'FR7630006000011234567890189', 'un IBAN juste s’enregistre, normalisé');
+
+  // Le refus du serveur arrive tel qu'il est rédigé : sept refus, sept messages.
+  const PHRASE = 'Ce paiement n’est pas réglé chez Mollie : il n’y a rien à libérer.';
+  const toastLib = async (erreur) => {
+    await console_([ligne({reqId: 'r9'})]);
+    return p.evaluate(async (erreur) => {
+      window.__setFB({auth: {currentUser: {uid: 'adm', email: 'contact@ti-services.fr'}}, db: {}, functions: {},
+        fn: {httpsCallable: () => () => Promise.reject(Object.assign(new Error(erreur.message), {code: erreur.code}))}});
+      const S = window.__S; S.account = {name: 'Admin', email: 'contact@ti-services.fr', uid: 'adm', role: 'admin'};
+      document.querySelector('[data-adm="vers-lib:r9"]').click();
+      document.querySelector('[data-adm="vers-lib:r9"]').click();
+      await new Promise((r) => setTimeout(r, 80));
+      const t = document.getElementById('toast').textContent; window.__setFB(null); return t;
+    }, erreur);
+  };
+  const t1 = await toastLib({code: 'functions/failed-precondition', message: PHRASE});
+  ok(t1.indexOf(PHRASE) >= 0, 'un refus de libération affiche SON motif (« ' + t1.slice(0, 70) + ' »)');
+  ok(t1.indexOf('action impossible dans l’état actuel') < 0, 'et plus la phrase générique qui les confondait tous');
+  const t2 = await toastLib({code: 'functions/failed-precondition', message: 'Mollie a refusé la libération : HTTP 422, The amount exceeds the captured amount'});
+  ok(/HTTP 422, The amount exceeds/.test(t2), 'la réponse de Mollie, même en anglais, atteint l’administrateur');
+  const t3 = await toastLib({code: 'functions/internal', message: 'internal'});
+  ok(/incident technique/.test(t3), 'une panne sans motif garde la phrase de repli');
+  ok(!/fbErrTxt\(/.test(src.slice(src.indexOf('if(b.dataset.adm){'), src.indexOf("if(b.dataset.act&&b.dataset.act.indexOf('del-demand:')===0)"))),
+    'aucun geste de la console ne retombe sur la phrase destinée aux clients');
+  ok(/msg\.slice\(0,300\)/.test(src) && /code\.indexOf\('functions\/'\)===0/.test(src), 'seuls les messages de NOS fonctions passent tels quels');
 
   ok(/vous sont dus\$\/,'\$1 is owed to you'\]/.test(src) && /vous sont dus\$\/,'\$1 são-lhe devidos'\]/.test(src), 'le titre chiffré se traduit en anglais et en portugais');
   const vrais = errs.filter((e) => !/net::ERR|Failed to load|firebase|firestore|ERR_FAILED/i.test(e));

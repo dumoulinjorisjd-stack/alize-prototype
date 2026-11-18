@@ -63,6 +63,20 @@ function routesDecider(routes, orgPresta, orgPlateforme) {
   return out;
 }
 
+/* Ce qu'on peut router d'un paiement : ce qui a été DÉBITÉ, moins ce qui a été rendu.
+   Une empreinte (`captureMode: manual`) autorise un plafond, puis la fin de prestation
+   n'en capture souvent qu'une partie : `amount` reste l'autorisation, `amountCaptured`
+   est le débit réel. Mollie refuse toute route qui dépasse le capturé — router
+   `amount` faisait échouer la libération de chaque prestation plus courte que prévu.
+   `p` est le paiement tel que Mollie le rend. */
+function montantLiberable(p) {
+  p = p || {};
+  const cap = p.amountCaptured && p.amountCaptured.value != null ? Number(p.amountCaptured.value) : NaN;
+  const debite = !isNaN(cap) ? cap : (Number(p.amount && p.amount.value) || 0);
+  const rendu = Number(p.amountRefunded && p.amountRefunded.value) || 0;
+  return Math.max(0, round2(debite - rendu));
+}
+
 /* Peut-on libérer ce paiement sur le solde Ti-Services ? Chaque refus est NOMMÉ : c'est
    ce que la console affichera, et chacun appelle un geste différent. */
 const LIBERER_REFUS = ['plateforme-inconnue', 'non-paye', 'routes-inconnues', 'deja-verse', 'deja-libere', 'montant-nul', 'refus-non-definitif'];
@@ -82,4 +96,4 @@ function libererDecider(e) {
   return {ok: true, montant: montant};
 }
 
-module.exports = {ISSUE_LIAISON, REGLE_MOLLIE, LIBERER_REFUS, refusDefinitif, jambeRetentable, routesDecider, libererDecider, round2};
+module.exports = {ISSUE_LIAISON, REGLE_MOLLIE, LIBERER_REFUS, refusDefinitif, jambeRetentable, routesDecider, libererDecider, montantLiberable, round2};

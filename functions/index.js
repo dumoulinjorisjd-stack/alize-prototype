@@ -4766,10 +4766,9 @@ exports.payoutLiberer = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (reques
     const p = await mollieApi('/payments/' + encodeURIComponent(paymentId));
     if (p.ok && p.data) {
       statutMollie = String(p.data.status || '');
-      // On ne route jamais plus que ce qui reste encaissé : un remboursement partiel
-      // diminue ce qu'il y a à libérer.
-      montant = round2((Number(p.data.amount && p.data.amount.value) || 0)
-        - (Number(p.data.amountRefunded && p.data.amountRefunded.value) || 0));
+      // On ne route jamais plus que ce qui a été CAPTURÉ et reste encaissé : une empreinte
+      // capturée en partie, ou un remboursement partiel, diminuent ce qu'il y a à libérer.
+      montant = IRR.montantLiberable(p.data);
     }
     const l = await mollieApi('/payments/' + encodeURIComponent(paymentId) + '/routes');
     if (l.ok && l.data) routes = (l.data._embedded && l.data._embedded.routes) || l.data.routes || [];

@@ -3816,7 +3816,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='917';
+  const VERSION_APP='918';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -3974,6 +3974,19 @@
     const francais=/[éèêàçùôîïû]/i.test(brut)||/\b(le|la|les|une|des|vous|votre|est|pas|aucun|impossible|requise|requis|connexion)\b/i.test(brut);
     if(brut.length<120&&!anglais&&(francais||/[.!?]$/.test(String(brut).trim())))return brut;
     return 'incident technique, réessayez dans un instant';
+  }
+  /* LA CONSOLE DIT LE VRAI MOTIF. Pour un client, un code d'erreur devient une phrase
+     générique (fbErrTxt) : il n'a rien à faire d'un détail. Mais l'administrateur, lui,
+     doit savoir POURQUOI un geste est refusé, et nos fonctions le rédigent à chaque refus
+     (« Ce paiement n'est pas réglé chez Mollie », « Mollie a refusé la libération : … »).
+     `failed-precondition` les écrasait tous sous « action impossible dans l'état
+     actuel » : sept refus différents, un seul message, et aucun geste possible. */
+  function fbErrAdmin(e){
+    const code=String((e&&e.code)||'').toLowerCase();
+    const msg=String((e&&e.message)||'').trim();
+    const mot=code.split('/').pop().trim();
+    if(code.indexOf('functions/')===0&&msg&&msg.toLowerCase()!==mot&&msg.toLowerCase()!==mot.replace(/-/g,' '))return msg.slice(0,300);
+    return fbErrTxt(e);
   }
   // ADRESSES : une liste VIDE n'est jamais écrite « en passant ». Cet enregistrement est
   // déclenché par tout et n'importe quoi — un historique qui bouge, une carte retirée — y
@@ -20640,7 +20653,7 @@
           S.admPoignee[id]={v:String(d.poignee||''),busy:false,err:''};render();
           toast(d.retiree?'Lien public retiré':'Lien public enregistré');
         }).catch(function(e){
-          S.admPoignee[id]=Object.assign({},S.admPoignee[id]||{},{busy:false,err:fbErrTxt(e)});render();
+          S.admPoignee[id]=Object.assign({},S.admPoignee[id]||{},{busy:false,err:fbErrAdmin(e)});render();
         });
       }
       else if(act==='copypoignee'){
@@ -20678,7 +20691,7 @@
           else if(creer&&d.pret===false)toast('Fiche incomplète, rien n’a été envoyé');
         }).catch(function(e){
           S.admMolInscr[id]=Object.assign({},E0,{busy:false});
-          toast('⚠︎ Inscription Mollie impossible : '+fbErrTxt(e));render();
+          toast('⚠︎ Inscription Mollie impossible : '+fbErrAdmin(e));render();
         });
         return;}
       /* EN PRÉPARER UN SECOND EST UN GESTE À PART, ET IL S'ARME. Chaque création ouvre un
@@ -20705,7 +20718,7 @@
           /* RIEN À RECHARGER : la console écoute `requests` en instantané, et
              `comptaExclue` est écrit SUR la demande — la ligne s'en va d'elle-même. */
           toast('Écartée des comptes ✓ — « Retrouver une facture » pour la réintégrer');
-        }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
+        }).catch(function(e){toast('⚠︎ '+fbErrAdmin(e));});
         return;}
       else if(act==='cmd-relance'){
         if(S._cmdRelance!==id){S._cmdRelance=id;render();
@@ -20719,7 +20732,7 @@
           /* RIEN À RECHARGER : la console écoute `requests` en instantané, et la porte
              de diffusion écrit l'issue SUR la demande — la ligne se repeint donc d'elle
              même. Un rechargement écrit ici n'aurait fait qu'une seconde lecture. */
-        }).catch(function(e){toast('⚠︎ Relance impossible : '+fbErrTxt(e));});
+        }).catch(function(e){toast('⚠︎ Relance impossible : '+fbErrAdmin(e));});
         return;}
       else if(act==='mol-nom'){
         S.admMolInscr=S.admMolInscr||{};
@@ -20747,7 +20760,7 @@
           else toast('⚠︎ Mollie a refusé : '+(d.raison||'motif inconnu'));
         }).catch(function(e){
           S.admMolInscr[id]=Object.assign({},E1,{busy:false});
-          toast('⚠︎ Impossible : '+fbErrTxt(e));render();
+          toast('⚠︎ Impossible : '+fbErrAdmin(e));render();
         });
         return;}
       else if(act==='mol-ferme'){
@@ -20806,10 +20819,10 @@
         };
         if(!FB||isDemo()){ marquer(); toast(dit); render(); return; }
         try{
-          if(kind==='gen'){ FB.f.updateDoc(FB.f.doc(FB.db,'users',rid),{supportClos:quand}).then(function(){toast(dit);}).catch(function(e){toast('⚠︎ Échec : '+fbErrTxt(e));}); }
-          else if(kind==='thread'){ FB.f.updateDoc(FB.f.doc(FB.db,'requests',rid),{chatClos:quand}).then(function(){toast(dit);}).catch(function(e){toast('⚠︎ Échec : '+fbErrTxt(e));}); }
+          if(kind==='gen'){ FB.f.updateDoc(FB.f.doc(FB.db,'users',rid),{supportClos:quand}).then(function(){toast(dit);}).catch(function(e){toast('⚠︎ Échec : '+fbErrAdmin(e));}); }
+          else if(kind==='thread'){ FB.f.updateDoc(FB.f.doc(FB.db,'requests',rid),{chatClos:quand}).then(function(){toast(dit);}).catch(function(e){toast('⚠︎ Échec : '+fbErrAdmin(e));}); }
           marquer();
-        }catch(e){ toast('⚠︎ Échec : '+fbErrTxt(e)); }
+        }catch(e){ toast('⚠︎ Échec : '+fbErrAdmin(e)); }
         render(); return;
       }
       else if(act==='fact'){S.admin.view='fact';S.admin.fact=null;S.admin.sel=null;S.support=false;S.supportSide=null;S.adminSupervise=false;S.generalSupport=false;S.genUser=null;S.mission=null;render();view.scrollTop=0;return;}
@@ -20831,7 +20844,7 @@
           // vérifié, pas ce qu'on espérait.
           toast(d.encaissees+' encaissée'+(d.encaissees>1?'s':'')+' · '+d.autres+' hors comptes'
             +(d.echecs?(' · '+d.echecs+' sans réponse de Mollie'):''));
-        }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
+        }).catch(function(e){toast('⚠︎ '+fbErrAdmin(e));});
       })();return;}
       else if(act==='factdel'){(function(){
         // Suppression d'une facture : double appui (armé 6 s), et le texte du bouton dit
@@ -20843,7 +20856,7 @@
         FB.fn.httpsCallable(FB.functions,'ledgerDelete')({reqId:id}).then(function(r){
           const d=(r&&r.data)||{};
           toast('Facture '+(d.invNo||'')+' supprimée');
-        }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
+        }).catch(function(e){toast('⚠︎ '+fbErrAdmin(e));});
         render();
       })();return;}
       else if(act==='exclu'){(function(){
@@ -20858,7 +20871,7 @@
         FB.fn.httpsCallable(FB.functions,'ledgerExclude')({reqId:rid,exclu:vers}).then(function(){
           // Le registre est réécrit côté serveur ; l'écoute en direct rafraîchira l'écran.
           toast(vers?'Écartée des comptes, l’écriture reste au registre':'Réintégrée dans les comptes');
-        }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
+        }).catch(function(e){toast('⚠︎ '+fbErrAdmin(e));});
         render();
       })();return;}
       else if(act==='orph-scan'||act==='orph-run'||act==='orph-one'){(function(){
@@ -20887,7 +20900,7 @@
             },6000);
           } else if(!(d.pending||[]).length) toast('Aucune prestation en attente ✓');
           render();
-        }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
+        }).catch(function(e){toast('⚠︎ '+fbErrAdmin(e));});
       })();return;}
       else if(act==='vers-scan'||act==='vers-run'||act==='vers-one'){(function(){
         // Inventaire (scan) puis nouvelle tentative (run) des versements bloqués. La
@@ -20919,7 +20932,7 @@
             }
           } else if(!list.length) toast('Aucun versement bloqué ✓');
           render();
-        }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
+        }).catch(function(e){toast('⚠︎ '+fbErrAdmin(e));});
       })();return;}
       /* « C'ÉTAIT UN ESSAI, ÉCARTER » — la troisième porte qui manquait. Les deux autres
          étaient « Réessayer » (qui échoue, c'est un essai) et « Je l'ai versé à la main »
@@ -20950,7 +20963,7 @@
           S.adminVers=Object.assign({},v,{list:(v.list||[]).map(function(x){
             return x.reqId===id?Object.assign({},x,{libere:true,montantLibere:Number(d.montant)||0}):x;})});
           toast(d.deja?'Déjà libéré ✓':('Libéré ✓ '+eur(Number(d.montant)||0)+' sur le solde Ti-Services'));render();
-        }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
+        }).catch(function(e){toast('⚠︎ '+fbErrAdmin(e));});
         return;}
       else if(act==='vers-rate'){
         if(!isAdminAccount()){toast('Réservé à l’administrateur (compte réel)');return;}
@@ -20963,7 +20976,7 @@
           S.adminVers=Object.assign({},v,{list:(v.list||[]).filter(function(x){return x.reqId!==id;}),
             ecartees:(Number(v.ecartees)||0)+1});
           toast('Retirée ✓ — « Retrouver une facture » pour la réintégrer');render();
-        }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
+        }).catch(function(e){toast('⚠︎ '+fbErrAdmin(e));});
         return;}
       else if(act==='vers-essai'){
         if(!isAdminAccount()){toast('Réservé à l’administrateur (compte réel)');return;}
@@ -20979,7 +20992,7 @@
           S.adminVers=Object.assign({},v,{list:(v.list||[]).filter(function(x){return x.reqId!==id;}),
             ecartees:(Number(v.ecartees)||0)+1});
           toast('Écartée des comptes ✓ — « Retrouver une facture » pour la réintégrer');render();
-        }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
+        }).catch(function(e){toast('⚠︎ '+fbErrAdmin(e));});
         return;}
       else if(act==='remb-open'){S._rembFor=id;S._rembArm=null;render();return;}
       else if(act==='remb-close'){S._rembFor=null;S._rembArm=null;render();return;}
@@ -21002,7 +21015,7 @@
           S._rembFor=null;
           toast(eur(d.montant||montant)+' rendus au client ✓'+(d.repriseArtisan?', part prestataire reprise':''));
           render();
-        }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));render();});
+        }).catch(function(e){toast('⚠︎ '+fbErrAdmin(e));render();});
       })();return;}
       else if(act==='vers-main'){(function(){
         // Acter un virement fait à la main. Toucher à de l'argent ne se fait pas d'un
@@ -21019,7 +21032,7 @@
           S.adminVers={loaded:true,list:((S.adminVers||{}).list||[]).filter(function(v){return v.reqId!==id;})};
           toast(d.deja?'Déjà noté comme versé à la main':'Noté, versement réglé à la main ✓');
           render();
-        }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
+        }).catch(function(e){toast('⚠︎ '+fbErrAdmin(e));});
         render();
       })();return;}
       else if(act==='prospect-filter'){S._prospectFilter=id||'all';render();return;}
@@ -21043,7 +21056,7 @@
             toast('Relance envoyée à '+(d.email||'ce prestataire')+' ✓');render();}
           else if(d.reason==='active'){toast('Ses paiements sont déjà actifs, rien à relancer');}
           else toast('⚠︎ Relance non envoyée');
-        }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
+        }).catch(function(e){toast('⚠︎ '+fbErrAdmin(e));});
       })();return;}
       else if(act==='testsvc'){(function(){
         // Le lien « ?ouvrir= » ne sert que hors de l'app installée : sur iPhone, ouvrir
@@ -21097,7 +21110,7 @@
         FB.fn.httpsCallable(FB.functions,'sendArtisanInvite')({email:p.email,name:(p.name||'').split(' ')[0],message:invMsgCustom()||undefined}).then(function(r){
           if(r&&r.data&&r.data.sent){p.status='contacted';p.updatedAt=Date.now();p._dirty=true;persistProspects();render();toast('Invitation envoyée à '+p.email+' ✓');}
           else toast('⚠︎ Invitation non envoyée');
-        }).catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
+        }).catch(function(e){toast('⚠︎ '+fbErrAdmin(e));});
       })();return;}
       else if(act==='prospect-export'){(function(){
         loadProspects();
@@ -21150,7 +21163,7 @@
                         :{proSuggest:false,proSuggestAnswer:''};
           try{ FB.f.setDoc(FB.f.doc(FB.db,'users',c.uid),patch,{merge:true})
                 .then(function(){toast(on?'Proposition envoyée ✓':'Proposition annulée');})
-                .catch(function(e){toast('⚠︎ Échec : '+fbErrTxt(e));}); }catch(e){ toast('⚠︎ Échec : '+fbErrTxt(e)); }
+                .catch(function(e){toast('⚠︎ Échec : '+fbErrAdmin(e));}); }catch(e){ toast('⚠︎ Échec : '+fbErrAdmin(e)); }
         } else { toast(on?'Proposition envoyée':'Proposition annulée'); }
         c.proSuggestAnswer=''; render(); return;
       }
@@ -21274,8 +21287,8 @@
           if(FB&&a.real&&a.uid){
             try{FB.f.updateDoc(FB.f.doc(FB.db,'artisans',a.uid),{siteMode:md})
               .then(function(){toast('Lieu d’exercice enregistré');})
-              .catch(function(err){toast('⚠︎ Non enregistré : '+fbErrTxt(err));});}
-            catch(err){toast('⚠︎ Non enregistré : '+fbErrTxt(err));}
+              .catch(function(err){toast('⚠︎ Non enregistré : '+fbErrAdmin(err));});}
+            catch(err){toast('⚠︎ Non enregistré : '+fbErrAdmin(err));}
           } else toast('Lieu d’exercice enregistré');
           render();}}
       else if(act==='artcat'){const a=(S.adminArtisans||[]).find(function(x){return x.id===id;}),sv=parts[2];
@@ -21327,7 +21340,7 @@
               +((Number(d.deja)||0)?' · '+d.deja+' avaient déjà reçu':'')
               +((Number(d.echecs)||0)?' · '+d.echecs+' en échec':''));
           })
-          .catch(function(e){toast('⚠︎ '+fbErrTxt(e));});
+          .catch(function(e){toast('⚠︎ '+fbErrAdmin(e));});
       })();return;}
       /* CLORE UNE DEMANDE QUE PERSONNE N'A PRISE. Deux touchers : le premier arme, le
          second écrit. On ne touche QU'À une demande encore en recherche — le bouton ne
@@ -21345,7 +21358,7 @@
         if(!(FB&&FB.db&&FB.f)){render();toast('Hors ligne, rien n’a été écrit');return;}
         FB.f.updateDoc(FB.f.doc(FB.db,'requests',id),{status:'expired',expiredBy:'admin',expiredAt:Date.now()})
           .then(function(){toast('Demande close');})
-          .catch(function(e){toast('⚠︎ Non close : '+fbErrTxt(e));});
+          .catch(function(e){toast('⚠︎ Non close : '+fbErrAdmin(e));});
         render();return;
       }
       else if(act==='metplageoff'){
