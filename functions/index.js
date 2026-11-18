@@ -1568,17 +1568,23 @@ async function mollieApi(path, method, body, jeton) {
 // si un artisan lance l'onboarding sur un appareil DÉJÀ connecté au compte Mollie de
 // Ti-Services/CCS, l'OAuth relie par erreur l'organisation de la PLATEFORME comme compte
 // de versement de l'artisan (elle est « complète » → faux « actif » très problématique).
-// On refuse ce cas en comparant l'org connectée à celle de la plateforme. Mémorisé par
-// instance (valeur fixe). Renvoie '' si le jeton plateforme n'est pas configuré (garde inerte).
+// On refuse ce cas en comparant l'org connectée à celle de la plateforme. C'est aussi la
+// destination d'une LIBÉRATION (payoutLiberer). Mémorisé par instance une fois connu ;
+// un échec ne se mémorise pas. Renvoie '' si le jeton plateforme n'est pas configuré.
+// `/organizations/me` refuse une clé de profil : la configuration prend le relais
+// (IRR.orgPlateforme, MOLLIE_PLATFORM_ORG_ID pour la changer sans toucher au code).
 let _platformOrgId = null;
 async function molliePlatformOrgId() {
-  if (_platformOrgId !== null) return _platformOrgId;
-  if (!mollieApiConfigured()) { _platformOrgId = ''; return ''; }
+  if (_platformOrgId) return _platformOrgId;
+  if (!mollieApiConfigured()) return '';
+  let depuisMollie = '';
   try {
     const r = await mollieApi('/organizations/me', 'GET');
-    _platformOrgId = (r.ok && r.data && r.data.id) ? String(r.data.id) : '';
-  } catch (_) { _platformOrgId = ''; }
-  return _platformOrgId;
+    depuisMollie = (r.ok && r.data && r.data.id) ? String(r.data.id) : '';
+  } catch (_) {}
+  const org = IRR.orgPlateforme(depuisMollie, process.env.MOLLIE_PLATFORM_ORG_ID || IRR.ORG_PLATEFORME);
+  if (org) _platformOrgId = org;
+  return org;
 }
 /* ============================================================================
  * WHATSAPP BUSINESS CLOUD API — alerte directe à l'artisan (officiel, Meta).

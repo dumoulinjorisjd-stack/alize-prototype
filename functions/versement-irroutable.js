@@ -77,6 +77,23 @@ function montantLiberable(p) {
   return Math.max(0, round2(debite - rendu));
 }
 
+/* L'ORGANISATION MOLLIE DE TI-SERVICES (C.C.S), et d'où on la tient.
+   Relevé en production le 18/11/2026 : « Libérer » répondait « organisation inconnue ».
+   `MOLLIE_ACCESS_TOKEN` est une clé de PROFIL (elle range chaque paiement sur le profil
+   Ti-Services), et Mollie ne répond à `/organizations/me` qu'à un jeton d'organisation :
+   l'appel échouait toujours, la libération était impossible et le garde-fou contre la
+   liaison croisée dormait. L'identifiant d'une organisation n'est pas un secret : on le
+   tient aussi en configuration. La réponse de Mollie, quand elle vient, l'emporte ; un
+   identifiant mal formé ne vaut rien. */
+const ORG_PLATEFORME = 'org_19618413';
+const ORG_RE = /^org_\d{3,}$/;
+function orgPlateforme(depuisMollie, configuree) {
+  const a = String(depuisMollie || '').trim();
+  if (ORG_RE.test(a)) return a;
+  const b = String(configuree || '').trim();
+  return ORG_RE.test(b) ? b : '';
+}
+
 /* Peut-on libérer ce paiement sur le solde Ti-Services ? Chaque refus est NOMMÉ : c'est
    ce que la console affichera, et chacun appelle un geste différent. */
 const LIBERER_REFUS = ['plateforme-inconnue', 'non-paye', 'routes-inconnues', 'deja-verse', 'deja-libere', 'montant-nul', 'refus-non-definitif'];
@@ -96,4 +113,4 @@ function libererDecider(e) {
   return {ok: true, montant: montant};
 }
 
-module.exports = {ISSUE_LIAISON, REGLE_MOLLIE, LIBERER_REFUS, refusDefinitif, jambeRetentable, routesDecider, libererDecider, montantLiberable, round2};
+module.exports = {ISSUE_LIAISON, REGLE_MOLLIE, LIBERER_REFUS, refusDefinitif, jambeRetentable, routesDecider, libererDecider, montantLiberable, orgPlateforme, ORG_PLATEFORME, round2};

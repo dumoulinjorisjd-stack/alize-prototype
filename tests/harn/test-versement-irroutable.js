@@ -54,6 +54,14 @@ ok(IRR.jambeRetentable({issue: 'route_failed', motif: 'HTTP 503'}) && !IRR.jambe
   ok(raison({montant: 0}) === 'montant-nul', 'un montant nul ne se route pas');
   ok(raison({motif: 'HTTP 503'}) === 'refus-non-definitif', 'un refus passager se RETENTE au lieu de se libérer');
   ok(IRR.LIBERER_REFUS.length === 7, 'sept refus, tous nommés'); }
+{ const c = corps('async function molliePlatformOrgId()', '\n}\n');
+  ok(/IRR\.orgPlateforme\(depuisMollie, process\.env\.MOLLIE_PLATFORM_ORG_ID \|\| IRR\.ORG_PLATEFORME\)/.test(c), 'le serveur retombe sur l’organisation configurée quand Mollie ne la dit pas');
+  ok(/if \(org\) _platformOrgId = org;/.test(c) && !/_platformOrgId = '';/.test(c), 'un échec ne se mémorise pas : il ne condamne plus l’instance'); }
+{ // L'organisation de Ti-Services se connaît même avec une clé de PROFIL.
+  const op = IRR.orgPlateforme;
+  ok(op('', IRR.ORG_PLATEFORME) === 'org_19618413', 'Mollie refuse /organizations/me à une clé de profil : la configuration donne l’organisation C.C.S');
+  ok(op('org_555', 'org_19618413') === 'org_555', 'quand Mollie répond, sa réponse l’emporte');
+  ok(op('', 'n’importe quoi') === '' && op('org_', '') === '' && op(null, undefined) === '', 'un identifiant mal formé ne vaut rien'); }
 { // La somme libérable est ce qui a été CAPTURÉ, pas l'empreinte autorisée.
   const ml = IRR.montantLiberable;
   ok(ml({amount: {value: '120.00'}, amountCaptured: {value: '104.50'}}) === 104.5,
