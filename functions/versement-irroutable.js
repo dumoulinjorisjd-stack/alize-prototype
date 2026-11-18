@@ -82,10 +82,15 @@ function montantLiberable(p) {
    `MOLLIE_ACCESS_TOKEN` est une clé de PROFIL (elle range chaque paiement sur le profil
    Ti-Services), et Mollie ne répond à `/organizations/me` qu'à un jeton d'organisation :
    l'appel échouait toujours, la libération était impossible et le garde-fou contre la
-   liaison croisée dormait. L'identifiant d'une organisation n'est pas un secret : on le
-   tient aussi en configuration. La réponse de Mollie, quand elle vient, l'emporte ; un
-   identifiant mal formé ne vaut rien. */
-const ORG_PLATEFORME = 'org_19618413';
+   liaison croisée dormait. L'identifiant d'une organisation n'est pas un secret : il se
+   donne en configuration (MOLLIE_PLATFORM_ORG_ID). La réponse de Mollie, quand elle vient,
+   l'emporte ; un identifiant mal formé ne vaut rien.
+   ON NE LE DEVINE PAS : `org_19618413` (C.C.S, l'organisation que voit le connecteur
+   Mollie) a été essayé le 18/11/2026 et Mollie a répondu qu'elle n'était pas partenaire
+   du propriétaire du paiement — ce n'est PAS l'organisation qui encaisse Ti-Services, et
+   la prendre pour elle aurait fait débrancher par le garde-fou tout compte relié à C.C.S.
+   Tant que la bonne valeur n'est pas donnée, la libération dit « organisation inconnue ». */
+const ORG_PLATEFORME = '';
 const ORG_RE = /^org_\d{3,}$/;
 function orgPlateforme(depuisMollie, configuree) {
   const a = String(depuisMollie || '').trim();
