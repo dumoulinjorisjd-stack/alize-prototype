@@ -3822,7 +3822,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='919';
+  const VERSION_APP='920';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -8927,6 +8927,8 @@
     "Composez votre commande, prix fixes Ti-Services, total ferme.":"Build your order, Ti-Services fixed prices, firm total.",
     "Retiré de votre commande, absent de sa carte :":"Removed from your order, not on their menu:",
     "Avec qui ?":"With whom?",
+    "Choisissez votre prestataire, puis composez votre commande.":"Choose your provider, then build your order.",
+    "Choisissez d’abord votre prestataire, juste au-dessus.":"Choose your provider first, just above.",
     "Studio / T1 (2 pers., ½ journée)":"Studio / 1-bed (2 people, ½ day)",
     "T2 (2 pers., journée)":"2-bed (2 people, full day)",
     "T3 (3 pers., journée)":"3-bed (3 people, full day)",
@@ -10695,6 +10697,8 @@
     "Composez votre commande, prix fixes Ti-Services, total ferme.":"Componha o seu pedido, preços fixos Ti-Services, total firme.",
     "Retiré de votre commande, absent de sa carte :":"Retirado do seu pedido, fora da sua carta:",
     "Avec qui ?":"Com quem?",
+    "Choisissez votre prestataire, puis composez votre commande.":"Escolha o seu prestador e depois componha o seu pedido.",
+    "Choisissez d’abord votre prestataire, juste au-dessus.":"Escolha primeiro o seu prestador, logo acima.",
     "Studio / T1 (2 pers., ½ journée)":"Estúdio / T1 (2 pessoas, ½ dia)",
     "T2 (2 pers., journée)":"T2 (2 pessoas, dia inteiro)",
     "T3 (3 pers., journée)":"T3 (3 pessoas, dia inteiro)",
@@ -16617,6 +16621,33 @@
     }).length;
   }
   function salonPossible(svcId){return salonsDuMetier(svcId)!==0;}
+  /* PERSONNE NE PREND LA DEMANDE OUVERTE À TOUS ? « J'ai un seul prestataire, ça me met
+     "le premier disponible" avec la grille Ti-Services et en dessous le nom du
+     prestataire avec sa grille ; mais la grille Ti-Services, personne ne l'applique »
+     (l'éditeur, 19/11/2026). Une demande ouverte ne part qu'à ceux qui la reçoivent
+     (`recoitLAleatoire`, dite par l'annuaire en `alea`) ; quand il n'y en a aucun, la
+     proposer, c'est offrir une grille sans personne derrière et une demande qui ne
+     part vers personne.
+     Rend `null` quand le choix reste libre (ou qu'on ne sait pas encore), sinon
+     `{seul}` : la seule personne à qui l'on peut s'adresser, ou `null` s'il faut choisir.
+     Un ancien annuaire sans `alea` se lit comme avant : à la grille sauf carte posée. */
+  function aleaDe(p){return (p&&p.alea!=null)?!!p.alea:!(p&&p.ownCat);}
+  function choixImpose(m){
+    if(!m||!m.svc||!pickProSvc(m.svc)||(m.viaLien&&m.preferredUid))return null;
+    const e=S._proDir&&S._proDir[m.svc];
+    const dir=(e&&Array.isArray(e.list))?e.list:(isDemo()?proDirFor(m.svc):null);
+    if(!Array.isArray(dir))return null;
+    const offerts=dir.filter(function(p){return p&&!estBloque(p.uid);});
+    if(!offerts.length||offerts.some(aleaDe))return null;
+    return {seul:offerts.length===1?offerts[0]:null};
+  }
+  /* LE SEUL QUI PEUT LA PRENDRE EST CHOISI D'OFFICE, et sa carte s'affiche : on ne fait
+     pas toucher son nom pour découvrir ses prix. */
+  function appliquerChoixImpose(m){
+    const c=choixImpose(m);
+    if(c&&c.seul&&!m.preferredUid){m.preferredUid=c.seul.uid;m.preferredName=c.seul.name||'';rechiffrerActes(m);}
+    return c;
+  }
   function prefArtisanSelect(m,o){
     /* `o.sansLibelle` : dans le bloc « Avec qui ? » de la commande à l'acte, le titre du
        bloc EST la question ; « Votre prestataire » juste dessous la redirait. */
@@ -16684,9 +16715,13 @@
          d'œil et ne coûte rien. C'est `avatarFounder`, la porte que la console emprunte
          déjà : un seul dessin pour les deux écrans. */
       return `<button class="addr-opt${m.preferredUid===p.uid?' on':''}" data-prefart="${esc(p.uid)}" data-prefnm="${esc(p.name)}"><div class="row" style="gap:10px;align-items:center">${avatarFounder(p.photo,inits(p.name),'sm',p.founder)}<div style="min-width:0"><b>${esc(p.name)}</b>${sub?`<div class="mini" style="margin-top:2px">${sub}</div>`:''}</div></div></button>`;};
-    const note=m.preferredUid?`<p class="mini" style="margin-top:6px">${I.clock} Adressée <b>uniquement à ${esc((m.preferredName||'').split(' ')[0])}</b>. S'il décline ou ne répond pas, vous pourrez la proposer à tous les prestataires d'un geste, vous n'êtes jamais bloqué.</p>`:'';
+    const impose=choixImpose(m);
+    /* « vous pourrez la proposer à tous » : faux quand personne ne la reçoit. */
+    const note=m.preferredUid?(impose
+      ? `<p class="mini" style="margin-top:6px">${I.clock} Adressée <b>uniquement à ${esc((m.preferredName||'').split(' ')[0])}</b>.</p>`
+      : `<p class="mini" style="margin-top:6px">${I.clock} Adressée <b>uniquement à ${esc((m.preferredName||'').split(' ')[0])}</b>. S'il décline ou ne répond pas, vous pourrez la proposer à tous les prestataires d'un geste, vous n'êtes jamais bloqué.</p>`):'';
     return `<div class="field">${lblPresta}<div class="stack" style="gap:8px;margin-top:2px">
-      <button class="addr-opt${!m.preferredUid?' on':''}" data-prefart="" data-prefnm=""><b>${I.bolt} Le premier disponible</b><div class="mini" style="margin-top:2px">Proposé à tous les prestataires du métier, le plus rapide.</div></button>
+      ${impose?'':`<button class="addr-opt${!m.preferredUid?' on':''}" data-prefart="" data-prefnm=""><b>${I.bolt} Le premier disponible</b><div class="mini" style="margin-top:2px">Proposé à tous les prestataires du métier, le plus rapide.</div></button>`}
       ${dir===null?`<p class="mini" style="margin:4px 0 0;color:var(--muted)">Chargement des prestataires…</p>`:list.map(card).join('')}
     </div>${note}</div>`;
   }
@@ -22720,6 +22755,7 @@
   }
   function renderForfaitConfig(m){
     m.acts=m.acts||[];
+    const impose=appliquerChoixImpose(m);
     const t=totals(m);
     // Date / heure (mêmes règles que la commande horaire : jamais de créneau passé).
     if(!/^\d{4}-\d{2}-\d{2}$/.test(m.dateISO||'')){const d0=new Date();if(m.when==='Demain')d0.setDate(d0.getDate()+1);m.dateISO=dayIso(d0);}
@@ -22762,7 +22798,11 @@
     const sienne=!!(m.preferredUid&&quiFaitFoi.propre);
     const nomChoisi=(m.preferredName||'').trim()||'votre prestataire';
     const retire=(S._cfgRetire&&S._cfgRetire.svc===m.svc&&S._cfgRetire.uid===m.preferredUid)?S._cfgRetire.noms:[];
-    const actRows=(sienne||grpsCli.length<2)
+    /* PLUSIEURS À CHOISIR ET AUCUN À LA GRILLE : pas de grille à cocher tant que la
+       personne n'est pas choisie — elle ne s'appliquerait à personne. */
+    const choisirDabord=!!(impose&&!m.preferredUid);
+    const actRows=choisirDabord?`<p class="mini" style="margin:0;color:var(--muted)">${I.users} Choisissez d’abord votre prestataire, juste au-dessus.</p>`
+      :(sienne||grpsCli.length<2)
       ? `<div class="actlist">${catalogFor(m.svc,m.preferredUid).map(actLigne).join('')}</div>`
       : `<div class="actgrps">${grpsCli.map(function(G){
           const n=G.acts.filter(function(a){return !!pickOf(a.id);}).length;
@@ -22774,14 +22814,14 @@
     const c=svcColor(m.svc);
     paintView(`<div class="pad"><div class="cfghead"><button class="reset" data-cfg="back">← Retour</button><span class="eyebrow" style="flex:1;justify-content:center;color:${c}">${svcIco(m.svc)} ${esc(m.svcName)}</span><button class="iconbtn" data-act="go-home" aria-label="Accueil" title="Accueil"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg></button></div>
       <div class="h-hello">Votre prestation</div>
-      <p class="sub" style="margin-top:4px">${sienne?('Composez votre commande aux prix de '+esc(nomChoisi)+', total ferme.'):'Composez votre commande, prix fixes Ti-Services, total ferme.'}</p>
+      <p class="sub" style="margin-top:4px">${sienne?('Composez votre commande aux prix de '+esc(nomChoisi)+', total ferme.'):(choisirDabord?'Choisissez votre prestataire, puis composez votre commande.':'Composez votre commande, prix fixes Ti-Services, total ferme.')}</p>
 
       ${blocCfg('Avec qui ?',I.users,prefArtisanSelect(m,{sansLibelle:true}))}
       ${blocCfg(sienne?('La carte de '+nomChoisi):'Choisissez vos prestations',I.bolt,`
       ${/* le titre de la carte EST le libellé : on ne le redit pas sous lui. */''}
       ${retire.length?`<p class="mini" style="margin:12px 0 0;color:var(--coral-deep)">${I.warn} <span>Retiré de votre commande, absent de sa carte&nbsp;:</span> <span>${esc(retire.join(' · '))}</span></p>`:''}
       <div class="field" style="margin-top:14px">${actRows}
-        ${minActPrice(m.svc,m.preferredUid)<TRAVEL_MIN?`<p class="mini" style="margin-top:8px">${I.pin} Déplacement <b>offert dès ${TRAVEL_MIN} €</b> de prestation, sinon forfait de ${TRAVEL_FEE} €.</p>`:''}</div>
+        ${(!choisirDabord&&minActPrice(m.svc,m.preferredUid)<TRAVEL_MIN)?`<p class="mini" style="margin-top:8px">${I.pin} Déplacement <b>offert dès ${TRAVEL_MIN} €</b> de prestation, sinon forfait de ${TRAVEL_FEE} €.</p>`:''}</div>
       ${optionsPickerHtml(m)}
       `)}
       ${blocCfg('Lieu et participants',I.users,`
@@ -22858,6 +22898,7 @@
   function renderConfig(){_renderConfigCorps();_cfgSuivre();}
   function _renderConfigCorps(){
     recalerCreneau(S.draft);
+    if(S.draft&&S.draft.svc!=='colis')appliquerChoixImpose(S.draft);
     const m=S.draft,t=totals(m);
     if(m&&m.svc==='colis'){renderColisConfig(m);return;}
     if(m&&isCatalogForfait(m.svc)){renderForfaitConfig(m);return;}

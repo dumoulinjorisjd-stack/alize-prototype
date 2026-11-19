@@ -9108,6 +9108,12 @@ exports.listProviders = onCall(async (request) => {
          l'écran du client n'aurait plus de quoi les distinguer. */
       ownCat: propre,
       cat: propre ? CATP.lignesPropres((((a.ownCatalog || {})[svc]) || {}).lines).lignes : null,
+      /* REÇOIT-IL LA DEMANDE OUVERTE À TOUS ? La même décision que la diffusion
+         (`recoitLAleatoire`), dite à l'écran : « Le premier disponible » ne doit pas
+         s'offrir quand personne ne le reçoit — un seul prestataire, avec sa carte, et
+         l'écran proposait la grille Ti-Services que personne n'applique (l'éditeur,
+         19/11/2026). */
+      alea: CATP.recoitLAleatoire(a, svc, regMet),
       uid: doc.id,
       name: String(a.name || 'Prestataire').slice(0, 60),
       // Photo de profil (vignette recadrée par l'app) — bornée pour la taille de réponse.

@@ -16,14 +16,14 @@ const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; console.log
 const CHLOE = [{id: 'c1', nm: 'Coupe et brushing signature', price: 85, min: 75},
   {id: 'c2', nm: 'Balayage soleil', price: 180, min: 150}, {id: 'c3', nm: 'Soin profond à la kératine', price: 120, min: 90}];
 
-async function ouvrir(b, largeur, svc, lang) {
+async function ouvrir(b, largeur, svc, lang, liste) {
   const p = await b.newPage({viewport: {width: largeur, height: 900}});
   const errs = []; p.on('pageerror', (e) => errs.push(e.message));
   await p.route('**/*', (r) => /gstatic|googleapis|firebase|cloudfunctions|google\.com/.test(r.request().url()) ? r.abort() : r.continue());
   await p.goto(INDEX, {waitUntil: 'load'});
   await p.waitForFunction(() => window.__S && window.__render);
   await p.waitForTimeout(400);
-  await p.evaluate(({CHLOE, svc, lang}) => {
+  await p.evaluate(({CHLOE, svc, lang, liste}) => {
     window.__setFB({auth: {currentUser: {uid: 'c1', email: 'c@e.fr'}}, db: {}, functions: {},
       f: {doc: () => ({}), setDoc: () => Promise.resolve(), getDoc: () => Promise.resolve({exists: () => false, data: () => ({})})},
       fn: {httpsCallable: () => () => new Promise(() => {})}});
@@ -32,12 +32,12 @@ async function ouvrir(b, largeur, svc, lang) {
     const S = window.__S;
     S.lang = lang || 'fr'; S.onboarded = true; S.guest = false; S.demoMode = false; S.persona = 'client'; S.authView = null;
     S.account = {name: 'Claire', email: 'c@e.fr', uid: 'c1', role: 'client'};
-    S._proDir = {}; S._proDir[svc] = {loading: false, list: [
+    S._proDir = {}; S._proDir[svc] = {loading: false, list: liste || [
       {uid: 'p1', name: 'Chloé Rivière', founder: false, cal: false, photo: null, siteMode: 'both', ownCat: true, cat: CHLOE},
       {uid: 'p2', name: 'Maya Beauté', founder: true, cal: true, photo: null, siteMode: 'both', ownCat: false, cat: null}]};
     window.__render();
     const t = document.createElement('button'); t.dataset.svc = svc; document.getElementById('view').appendChild(t); t.click();
-  }, {CHLOE, svc, lang});
+  }, {CHLOE, svc, lang, liste});
   await p.waitForTimeout(250);
   return {p, errs};
 }
@@ -98,6 +98,55 @@ const etat = (p) => p.evaluate(() => {
     const t = await p.evaluate(() => [...document.querySelectorAll('#view .cfg-bloc h3')].slice(0, 2).map((h) => h.textContent.trim()));
     ok(t[0] === 'With whom?' && t[1] === 'Chloé Rivière’s menu', 'les deux titres se traduisent (' + t.join(' | ') + ')');
     await p.close(); }
+  const CH = {uid: 'p1', name: 'Chloé Rivière', founder: false, cal: false, photo: null, siteMode: 'both', ownCat: true, alea: false, cat: CHLOE};
+  const LEA = {uid: 'p3', name: 'Léa Martin', founder: false, cal: false, photo: null, siteMode: 'both', ownCat: true, alea: false,
+    cat: [{id: 'l1', nm: 'Coupe courte', price: 60, min: 45}]};
+  const vue = (p) => p.evaluate(() => ({
+    premierDispo: !!document.querySelector('[data-prefart=""]'),
+    choisi: window.__S.draft.preferredUid || null,
+    titre: ([...document.querySelectorAll('#view .cfg-bloc h3')][1] || {}).textContent || '',
+    lignes: document.querySelectorAll('[data-actpick]').length, familles: document.querySelectorAll('.actgrp').length,
+    sous: (document.querySelector('#view .h-hello + .sub') || {}).textContent || '',
+    cta: (document.querySelector('[data-cfg="confirm"]') || {}).textContent || '', ctaOff: !!(document.querySelector('[data-cfg="confirm"]') || {}).disabled,
+    promet: /proposer à tous/.test(document.getElementById('view').textContent)}));
+
+  console.log('D — un seul prestataire, avec sa carte (l’éditeur, 19/11/2026)');
+  { const {p, errs} = await ouvrir(b, 390, 'coiffure', 'fr', [CH]);
+    const v = await vue(p);
+    ok(!v.premierDispo, '« Le premier disponible » n’est plus offert : personne ne prend la demande ouverte');
+    ok(v.choisi === 'p1' && v.titre.trim() === 'La carte de Chloé Rivière' && v.lignes === 3 && v.familles === 0,
+      'Chloé est choisie d’office et SA carte s’affiche, pas la grille (' + v.titre.trim() + ', ' + v.lignes + ' lignes, ' + v.familles + ' familles)');
+    ok(!/prix fixes Ti-Services/.test(v.sous) && /Envoyer à Chloé/.test(v.cta), 'ni « prix fixes Ti-Services », et le bouton dit à qui ça part');
+    ok(!v.promet, 'et l’écran ne promet plus « vous pourrez la proposer à tous »');
+    ok(errs.length === 0, 'aucune erreur JS');
+    await p.close(); }
+
+  console.log('E — plusieurs, tous avec leur carte');
+  { const {p} = await ouvrir(b, 390, 'coiffure', 'fr', [CH, LEA]);
+    let v = await vue(p);
+    ok(!v.premierDispo && !v.choisi, 'pas de « premier disponible », et personne n’est choisi à sa place');
+    ok(v.lignes === 0 && v.familles === 0 && v.ctaOff, 'aucune grille à cocher, le bouton reste éteint tant qu’on n’a pas choisi');
+    ok(/Choisissez votre prestataire, puis composez votre commande/.test(v.sous), 'la phrase du haut dit le geste');
+    await p.click('[data-prefart="p3"]'); await p.waitForTimeout(150);
+    v = await vue(p);
+    ok(v.titre.trim() === 'La carte de Léa Martin' && v.lignes === 1, 'Léa choisie : sa carte');
+    await p.close(); }
+
+  console.log('F — un prestataire à la grille parmi eux : rien ne change');
+  { const {p} = await ouvrir(b, 390, 'coiffure', 'fr', [CH, {uid: 'p2', name: 'Maya Beauté', founder: true, cal: true, photo: null, siteMode: 'both', ownCat: false, alea: true, cat: null}]);
+    const v = await vue(p);
+    ok(v.premierDispo && !v.choisi && v.familles > 1, '« Le premier disponible » reste, avec la grille');
+    await p.close(); }
+
+  console.log('G — hors grille sans carte : il ne prend pas la demande ouverte non plus');
+  { const {p} = await ouvrir(b, 390, 'coiffure', 'fr', [{uid: 'p4', name: 'Tom Hors', founder: false, cal: false, photo: null, siteMode: 'both', ownCat: false, alea: false, cat: null}]);
+    const v = await vue(p);
+    ok(!v.premierDispo && v.choisi === 'p4', 'l’annuaire le dit (alea), et l’écran ne propose pas une demande qui ne partirait vers personne');
+    await p.close(); }
+
+  console.log('H — le serveur dit qui prend la demande ouverte, avec la règle de la diffusion');
+  { const fn = fs.readFileSync(path.join(RACINE, 'functions', 'index.js'), 'utf8');
+    ok(/alea: CATP\.recoitLAleatoire\(a, svc, regMet\)/.test(fn), 'listProviders envoie alea = recoitLAleatoire, la même décision que la diffusion'); }
   await b.close();
   console.log(f ? '\n' + f + ' ÉCHEC(S)' : '\nTOUT EST VERT');
   process.exit(f ? 1 : 0);
