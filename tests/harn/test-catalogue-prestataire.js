@@ -60,6 +60,14 @@ ok(C.recoitLAleatoire({acceptsGrille:true,desiredNetRates:{massage:'55'}},'massa
   'grille acceptée : il reçoit l’aléatoire, quoi qu’il reste d’un ancien souhait');
 ok(C.recoitLAleatoire({acceptsGrille:false,desiredNetRates:{massage:''}},'massage',OUVERT),
   'un souhait vide n’est pas un refus');
+ok(!C.commandable(REFUS,'massage',OUVERT) && !C.commandable(REFUS,'massage',FERME),
+  'hors grille SANS carte : on ne peut pas le commander, il n’a aucun prix (éditeur, 19/11/2026)');
+ok(C.commandable(Object.assign({},REFUS,{ownCatalog:{massage:{on:true,lines:SIENNES}}}),'massage',OUVERT),
+  'hors grille AVEC sa carte en service : commandable, à ses prix');
+ok(!C.commandable(Object.assign({},REFUS,{ownCatalog:{massage:{on:true,lines:SIENNES}}}),'massage',FERME),
+  'métier refermé aux cartes : sa carte ne s’applique plus, il redevient sans prix');
+ok(C.commandable(REFUS,'coiffure',OUVERT) && C.commandable(MAYA,'massage',OUVERT) && C.commandable({},'massage',OUVERT),
+  'à la grille (ou métier non refusé, ou fiche ancienne) : commandable comme avant');
 
 console.log('\nC — le choix évolue dans les deux sens, et rien ne s’efface');
 const MASQUE={ownCatalog:{massage:{on:false,lines:SIENNES}}};

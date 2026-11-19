@@ -3822,7 +3822,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='920';
+  const VERSION_APP='921';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -16685,7 +16685,15 @@
     // Métier « personnel » : cartes sélectionnables (annuaire + déjà venus), défaut pool.
     const dir=proDirFor(m.svc);
     const seen={},list=[];
-    past.forEach(function(a){seen[a.uid]=1;list.push({uid:a.uid,name:a.nm,cal:false,photo:null,past:true});});
+    /* « DÉJÀ VENU » NE SUFFIT PLUS À ÊTRE COMMANDABLE (l'éditeur, 19/11/2026). L'annuaire
+       ne rend que ceux qu'on peut commander sur ce métier (`commandable` côté serveur :
+       hors grille sans carte, il n'a aucun prix). Une personne de l'historique absente de
+       l'annuaire chargé n'y est plus pour une raison — ne plus exercer ce métier, ne plus
+       être validée, ou n'avoir aucun prix — et la proposer, c'est une commande impossible.
+       Tant que l'annuaire n'est pas arrivé, l'historique s'affiche comme avant. */
+    const dansAnnuaire={};(Array.isArray(dir)?dir:[]).forEach(function(p){if(p&&p.uid)dansAnnuaire[p.uid]=1;});
+    past.filter(function(a){return !Array.isArray(dir)||dansAnnuaire[a.uid];})
+      .forEach(function(a){seen[a.uid]=1;list.push({uid:a.uid,name:a.nm,cal:false,photo:null,past:true});});
     /* ON NE RETIRE PERSONNE DE CETTE LISTE. Une version l'a fait — le prestataire qui
        n'exerce que dans son local et dont l'adresse de local n'est pas saisie — au motif
        qu'on le choisirait pour rien. C'était une faute : la masseuse a disparu de l'écran

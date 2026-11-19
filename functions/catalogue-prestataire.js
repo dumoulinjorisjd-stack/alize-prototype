@@ -136,6 +136,15 @@ function recoitLAleatoire(artisan, svcId, reglageMetier) {
    l'inscription exige pour chaque métier refusé — on lit donc le refus MÉTIER PAR
    MÉTIER, là où il a été écrit. Un ancien compte sans prix souhaité garde son rendu
    d'hier. */
+/* PEUT-ON LE COMMANDER SUR CE MÉTIER ? Décision de l'éditeur, 19/11/2026 : « on le
+   retire de la liste s'il n'a pas rentré sa propre grille, sinon le client risque de
+   passer une commande impossible ». Hors grille sans carte, il n'a AUCUN prix à
+   proposer : la grille, il l'a refusée ; la sienne, il ne l'a pas posée. Une seule
+   porte pour l'annuaire, sa page publique et le contrôle de la commande. */
+function commandable(artisan, svcId, reglageMetier) {
+  return !horsGrilleSur(artisan, svcId) || catalogueProprePose(artisan, svcId, reglageMetier);
+}
+
 function horsGrilleSur(artisan, svcId) {
   const a = artisan || {};
   if (a.acceptsGrille !== false) return false;
@@ -222,6 +231,6 @@ function lignesConnues(propres, grille) {
 module.exports = {
   CAT_LIGNES_MAX, CAT_NOM_MAX, CAT_PRIX_MAX, CAT_CENTIME, CAT_DUREE_MIN_MAX, MOTIFS,
   metierOuvreCatalogue, lignesPropres, catalogueProprePose, catalogueQuiFaitFoi,
-  recoitLAleatoire, horsGrilleSur, prixAttendu,
+  recoitLAleatoire, horsGrilleSur, commandable, prixAttendu,
   PRIX_BLOQUANTS, prixBloque, lignesConnues,
 };

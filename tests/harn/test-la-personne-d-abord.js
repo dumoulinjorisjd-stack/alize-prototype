@@ -16,14 +16,14 @@ const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; console.log
 const CHLOE = [{id: 'c1', nm: 'Coupe et brushing signature', price: 85, min: 75},
   {id: 'c2', nm: 'Balayage soleil', price: 180, min: 150}, {id: 'c3', nm: 'Soin profond à la kératine', price: 120, min: 90}];
 
-async function ouvrir(b, largeur, svc, lang, liste) {
+async function ouvrir(b, largeur, svc, lang, liste, histo) {
   const p = await b.newPage({viewport: {width: largeur, height: 900}});
   const errs = []; p.on('pageerror', (e) => errs.push(e.message));
   await p.route('**/*', (r) => /gstatic|googleapis|firebase|cloudfunctions|google\.com/.test(r.request().url()) ? r.abort() : r.continue());
   await p.goto(INDEX, {waitUntil: 'load'});
   await p.waitForFunction(() => window.__S && window.__render);
   await p.waitForTimeout(400);
-  await p.evaluate(({CHLOE, svc, lang, liste}) => {
+  await p.evaluate(({CHLOE, svc, lang, liste, histo}) => {
     window.__setFB({auth: {currentUser: {uid: 'c1', email: 'c@e.fr'}}, db: {}, functions: {},
       f: {doc: () => ({}), setDoc: () => Promise.resolve(), getDoc: () => Promise.resolve({exists: () => false, data: () => ({})})},
       fn: {httpsCallable: () => () => new Promise(() => {})}});
@@ -32,12 +32,13 @@ async function ouvrir(b, largeur, svc, lang, liste) {
     const S = window.__S;
     S.lang = lang || 'fr'; S.onboarded = true; S.guest = false; S.demoMode = false; S.persona = 'client'; S.authView = null;
     S.account = {name: 'Claire', email: 'c@e.fr', uid: 'c1', role: 'client'};
+    if (histo) S.history = histo;
     S._proDir = {}; S._proDir[svc] = {loading: false, list: liste || [
       {uid: 'p1', name: 'Chloé Rivière', founder: false, cal: false, photo: null, siteMode: 'both', ownCat: true, cat: CHLOE},
       {uid: 'p2', name: 'Maya Beauté', founder: true, cal: true, photo: null, siteMode: 'both', ownCat: false, cat: null}]};
     window.__render();
     const t = document.createElement('button'); t.dataset.svc = svc; document.getElementById('view').appendChild(t); t.click();
-  }, {CHLOE, svc, lang, liste});
+  }, {CHLOE, svc, lang, liste, histo});
   await p.waitForTimeout(250);
   return {p, errs};
 }
@@ -144,9 +145,30 @@ const etat = (p) => p.evaluate(() => {
     ok(!v.premierDispo && v.choisi === 'p4', 'l’annuaire le dit (alea), et l’écran ne propose pas une demande qui ne partirait vers personne');
     await p.close(); }
 
+  console.log('I — « déjà venu » ne suffit plus : absent de l’annuaire, il n’est pas proposé (éditeur, 19/11/2026)');
+  { const MAYA = {uid: 'p2', name: 'Maya Beauté', founder: true, cal: true, photo: null, siteMode: 'both', ownCat: false, alea: true, cat: null};
+    const histo = [{providerUid: 'p9', provider: {nm: 'Tom Ancien'}, svc: 'coiffure'}, {providerUid: 'p2', provider: {nm: 'Maya Beauté'}, svc: 'coiffure'}];
+    let r = await ouvrir(b, 390, 'coiffure', 'fr', [CH, MAYA], histo);
+    let noms = await r.p.evaluate(() => [...document.querySelectorAll('[data-prefart]')].map((x) => x.dataset.prefart));
+    ok(noms.indexOf('p9') < 0 && noms.indexOf('p2') >= 0,
+      'Tom, venu chez elle mais absent de l’annuaire (hors grille sans carte), n’est plus proposé ; Maya, oui (' + noms.join(',') + ')');
+    await r.p.close();
+    r = await ouvrir(b, 390, 'coiffure', 'fr', [CH, MAYA, {uid: 'p9', name: 'Tom Ancien', founder: false, cal: false, photo: null, siteMode: 'both', ownCat: false, alea: true, cat: null}], histo);
+    noms = await r.p.evaluate(() => [...document.querySelectorAll('[data-prefart]')].map((x) => x.dataset.prefart));
+    ok(noms.indexOf('p9') >= 0, 'présent dans l’annuaire, il reste proposé (assertion arrière)');
+    await r.p.close(); }
+
   console.log('H — le serveur dit qui prend la demande ouverte, avec la règle de la diffusion');
   { const fn = fs.readFileSync(path.join(RACINE, 'functions', 'index.js'), 'utf8');
-    ok(/alea: CATP\.recoitLAleatoire\(a, svc, regMet\)/.test(fn), 'listProviders envoie alea = recoitLAleatoire, la même décision que la diffusion'); }
+    ok(/alea: CATP\.recoitLAleatoire\(a, svc, regMet\)/.test(fn), 'listProviders envoie alea = recoitLAleatoire, la même décision que la diffusion');
+    const lp = fn.slice(fn.indexOf('exports.listProviders'), fn.indexOf('exports.listProviders') + 4000);
+    ok(/if \(!CATP\.commandable\(a, svc, regMet\)\) return;/.test(lp), 'l’annuaire écarte qui n’a aucun prix à proposer (commandable)');
+    const pp = fn.slice(fn.indexOf('exports.providerPublic'), fn.indexOf('exports.providerPublic') + 4000);
+    ok(/\.filter\(\(c\) => CATP\.commandable\(a, c, REGL\.metier\[c\]\)\)/.test(pp), 'sa page publique ne propose que les métiers où il est commandable');
+    const cp = fn.slice(fn.indexOf('PRESTATAIRE NON COMMANDABLE') - 1500, fn.indexOf('PRESTATAIRE NON COMMANDABLE') + 400);
+    ok(/if \(!r\.providerUid && r\.preferredProviderUid\)/.test(cp) && /CATP\.commandable\(ds\.data\(\) \|\| \{\}, svcD/.test(cp)
+      && fn.indexOf('PRESTATAIRE NON COMMANDABLE') < fn.indexOf('if (Array.isArray(r.acts) && r.acts.length)'),
+      'et une demande qui lui est adressée se refuse avant l’empreinte, à l’heure comme à l’acte'); }
   await b.close();
   console.log(f ? '\n' + f + ' ÉCHEC(S)' : '\nTOUT EST VERT');
   process.exit(f ? 1 : 0);

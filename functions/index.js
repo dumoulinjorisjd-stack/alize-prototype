@@ -5394,6 +5394,24 @@ exports.createClientPayment = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (
    * que si l'administrateur les a réglées (`settings/catalog`.`catalog`). Sans autorité,
    * on retombe sur ce qui se faisait hier — le minimum des deux chiffres — et on le DIT
    * dans le journal. Refuser à tort coûte un client qui paie. */
+  /* UNE DEMANDE ADRESSÉE À QUELQU'UN QU'ON NE PEUT PAS COMMANDER SE REFUSE AVANT
+     L'EMPREINTE, à l'acte comme à l'heure : hors grille sans carte, il n'a aucun prix
+     (CATP.commandable, l'éditeur, 19/11/2026). Seulement tant qu'elle n'est pas acceptée
+     — une prestation déjà prise se paie, quoi qu'il arrive. */
+  if (!r.providerUid && r.preferredProviderUid) {
+    let refus = false;
+    try {
+      const REGD = await reglagesCatalogueServeur(db);
+      const ds = await db.collection('artisans').doc(String(r.preferredProviderUid)).get();
+      const svcD = String(r.service || '');
+      if (ds.exists && !CATP.commandable(ds.data() || {}, svcD, REGD.metier[svcD])) refus = true;
+    } catch (e) { console.warn('createClientPayment contrôle du prestataire impossible reqId=' + reqId, e); }
+    if (refus) {
+      console.warn('createClientPayment PRESTATAIRE NON COMMANDABLE reqId=' + reqId + ' service=' + String(r.service || ''));
+      throw new HttpsError('failed-precondition',
+        'Ce prestataire ne propose pas encore ses prix pour ce service. Choisissez-en un autre.');
+    }
+  }
   if (Array.isArray(r.acts) && r.acts.length) {
     try {
       const REGV = await reglagesCatalogueServeur(db);
@@ -9100,6 +9118,8 @@ exports.listProviders = onCall(async (request) => {
   snap.docs.forEach((doc) => {
     const a = doc.data() || {};
     if ((a.cats || []).indexOf(svc) < 0) return;
+    // Hors grille sans carte : aucun prix à proposer, donc pas dans la liste (CATP.commandable).
+    if (!CATP.commandable(a, svc, regMet)) return;
     const sm = a.siteMode || 'both';
     const propre = CATP.catalogueProprePose(a, svc, regMet);
     out.push({
@@ -9282,8 +9302,12 @@ exports.providerPublic = onCall(async (request) => {
   if (!a || a.status !== 'valide') throw new HttpsError('not-found', 'Introuvable.');
 
   const REGL = await reglagesCatalogueServeur(db);
+  /* SA PAGE NE PROPOSE QUE CE QU'ON PEUT LUI COMMANDER : un métier hors grille sans carte
+     n'a aucun prix (CATP.commandable). S'il n'en reste aucun, la page répond comme une
+     poignée inconnue — elle ne dit pas l'état du parc. */
   const cats = (Array.isArray(a.cats) ? a.cats : []).map((c) => String(c || '').slice(0, 40))
-    .filter(Boolean).slice(0, 6);
+    .filter(Boolean).filter((c) => CATP.commandable(a, c, REGL.metier[c])).slice(0, 6);
+  if (!cats.length) throw new HttpsError('not-found', 'Introuvable.');
   const catalogues = {};
   cats.forEach((svc) => {
     const propre = CATP.catalogueProprePose(a, svc, REGL.metier[svc]);
