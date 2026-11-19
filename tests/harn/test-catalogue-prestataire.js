@@ -45,6 +45,22 @@ ok(C.catalogueQuiFaitFoi({ownCatalog:{massage:{on:true,lines:[]}}},'massage',GRI
 ok(C.recoitLAleatoire({ownCatalog:{massage:{on:true,lines:[]}}},'massage',OUVERT),
   'et il continue de recevoir l’aléatoire, puisque c’est la grille qui s’applique');
 
+console.log('\nB bis — qui a refusé la grille ne reçoit pas l’aléatoire (éditeur, 19/11/2026)');
+const REFUS={acceptsGrille:false,desiredNetRates:{massage:'55'},cats:['massage','coiffure']};
+ok(!C.recoitLAleatoire(REFUS,'massage',OUVERT) && !C.recoitLAleatoire(REFUS,'massage',FERME),
+  'grille refusée sur ce métier, sans carte : aucune commande aléatoire, métier ouvert ou fermé');
+ok(!C.recoitLAleatoire(Object.assign({},REFUS,{ownCatalog:{massage:{on:true,lines:SIENNES}}}),'massage',OUVERT),
+  'avec sa carte en service : toujours aucune (on le choisit à ses prix)');
+ok(C.recoitLAleatoire(REFUS,'coiffure',OUVERT),
+  'c’est PAR MÉTIER : un métier sans prix souhaité n’a pas été refusé');
+ok(C.recoitLAleatoire({acceptsGrille:false,desiredNetRates:{},cats:['massage']},'massage',OUVERT)
+  && C.recoitLAleatoire({acceptsGrille:false,cats:['massage']},'massage',OUVERT),
+  'la case seule ne prouve rien : un inscrit en « autre » qui ajoute un métier n’a jamais vu la question');
+ok(C.recoitLAleatoire({acceptsGrille:true,desiredNetRates:{massage:'55'}},'massage',OUVERT),
+  'grille acceptée : il reçoit l’aléatoire, quoi qu’il reste d’un ancien souhait');
+ok(C.recoitLAleatoire({acceptsGrille:false,desiredNetRates:{massage:''}},'massage',OUVERT),
+  'un souhait vide n’est pas un refus');
+
 console.log('\nC — le choix évolue dans les deux sens, et rien ne s’efface');
 const MASQUE={ownCatalog:{massage:{on:false,lines:SIENNES}}};
 ok(!C.catalogueProprePose(MASQUE,'massage',OUVERT),'recoché « grille » : son catalogue n’est plus en service');
@@ -157,6 +173,8 @@ ok(/lignesConnues\s*\(/.test(corps),'sur l\u2019UNION de son catalogue et de la 
 ok(/notifyArtisansNewRequest/.test(corps)&&/createClientPayment/.test(corps),
   'assertion arrière — le relevé lit bien un serveur qui porte ces deux fonctions');
 ok(/catalogueQuiFaitFoi/.test(app),'et le client passe par la même porte pour savoir quoi afficher');
+ok(/Il ne re\\u00e7oit pas les commandes al\\u00e9atoires sur ces m\\u00e9tiers/.test(app),
+  'la fiche du prestataire hors grille dit qu’il ne reçoit pas l’aléatoire, là où l’on décide de le valider');
 
 console.log(f?('\n'+f+' ÉCHEC(S)\n'):'\nTout est vert.\n');
 process.exit(f?1:0);

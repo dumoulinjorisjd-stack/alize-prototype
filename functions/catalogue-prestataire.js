@@ -122,7 +122,27 @@ function catalogueQuiFaitFoi(artisan, svcId, grille, reglageMetier) {
    l'éditeur, et elle se tient toute seule : une demande ouverte part à plusieurs
    prestataires à la fois, au prix annoncé au client — donc au prix de la grille. */
 function recoitLAleatoire(artisan, svcId, reglageMetier) {
+  if (horsGrilleSur(artisan, svcId)) return false;
   return !catalogueProprePose(artisan, svcId, reglageMetier);
+}
+
+/* A-T-IL REFUSÉ LA GRILLE SUR CE MÉTIER ? Décision de l'éditeur, 19/11/2026 : celui qui
+   n'a pas accepté la grille ne reçoit AUCUNE commande aléatoire — une demande ouverte
+   est au prix de la grille, celui-là même qu'il a refusé. Il n'est commandable qu'à ses
+   prix, c'est-à-dire par sa carte, quand elle existe.
+   LE FAIT, PAS LA CASE. `acceptsGrille: false` ne dit pas « a refusé » : un inscrit en
+   « autre » seulement la porte sans avoir jamais vu la question, et un métier ajouté plus
+   tard ne la repose pas. Ce qui prouve le refus, c'est le PRIX NET SOUHAITÉ, que
+   l'inscription exige pour chaque métier refusé — on lit donc le refus MÉTIER PAR
+   MÉTIER, là où il a été écrit. Un ancien compte sans prix souhaité garde son rendu
+   d'hier. */
+function horsGrilleSur(artisan, svcId) {
+  const a = artisan || {};
+  if (a.acceptsGrille !== false) return false;
+  const dn = a.desiredNetRates;
+  if (!dn || typeof dn !== 'object') return false;
+  const v = dn[svcId];
+  return v != null && String(v).trim() !== '';
 }
 
 /* CE QUE LA COMMANDE DOIT COÛTER, SELON LE CATALOGUE QUI FAIT FOI.
@@ -202,6 +222,6 @@ function lignesConnues(propres, grille) {
 module.exports = {
   CAT_LIGNES_MAX, CAT_NOM_MAX, CAT_PRIX_MAX, CAT_CENTIME, CAT_DUREE_MIN_MAX, MOTIFS,
   metierOuvreCatalogue, lignesPropres, catalogueProprePose, catalogueQuiFaitFoi,
-  recoitLAleatoire, prixAttendu,
+  recoitLAleatoire, horsGrilleSur, prixAttendu,
   PRIX_BLOQUANTS, prixBloque, lignesConnues,
 };
