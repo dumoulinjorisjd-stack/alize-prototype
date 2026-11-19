@@ -4712,7 +4712,7 @@
     m.acts=garde;
     return r;
   }
-  function minActPrice(id){const c=catalogFor(id);return c.length?Math.min.apply(null,c.map(function(a){return Number(a.price)||0;})):0;}
+  function minActPrice(id,uid){const c=catalogFor(id,uid);return c.length?Math.min.apply(null,c.map(function(a){return Number(a.price)||0;})):0;}
   // Sous-total forfait d'une mission à l'acte (somme des actes cochés × quantité), ou null
   // si la mission n'est pas de type « catalogue » (on retombe alors sur le tarif horaire).
   function forfaitSub(m){if(!m||!m.acts||!m.acts.length)return null;return m.acts.reduce(function(t,a){return t+(Number(a.price)||0)*(a.qty||1);},0);}
@@ -7527,6 +7527,8 @@
     [/^(\d+) € net\/retrait$/,'$1 € net per pickup'],
     [/^(\d+) € net$/,'$1 € net'],
     [/^uniquement à (.+)$/,'only to $1'],
+    [/^La carte de ([A-ZÀ-Ý].*)$/,'$1’s menu'],
+    [/^Composez votre commande aux prix de (.+), total ferme\.$/,'Build your order at $1’s prices, firm total.'],
     [/^(.+) n'a pas encore répondu$/,"$1 hasn't answered yet"],
     [/^Vérification des disponibilités de (.+)…$/,"Checking $1's availability…"],
     [/^Disponibilités réelles de (.+) prises en compte, les heures occupées sont grisées\.$/,"$1's real availability applied, busy hours are greyed out."],
@@ -8923,6 +8925,8 @@
     "Ex. tondre 200 m² et tailler une haie.":"e.g. mow 200 m² and trim a hedge.",
     "Votre prestation":"Your service",
     "Composez votre commande, prix fixes Ti-Services, total ferme.":"Build your order, Ti-Services fixed prices, firm total.",
+    "Retiré de votre commande, absent de sa carte :":"Removed from your order, not on their menu:",
+    "Avec qui ?":"With whom?",
     "Studio / T1 (2 pers., ½ journée)":"Studio / 1-bed (2 people, ½ day)",
     "T2 (2 pers., journée)":"2-bed (2 people, full day)",
     "T3 (3 pers., journée)":"3-bed (3 people, full day)",
@@ -10689,6 +10693,8 @@
     "Ex. tondre 200 m² et tailler une haie.":"Ex.: cortar 200 m² de relva e aparar uma sebe.",
     "Votre prestation":"O seu serviço",
     "Composez votre commande, prix fixes Ti-Services, total ferme.":"Componha o seu pedido, preços fixos Ti-Services, total firme.",
+    "Retiré de votre commande, absent de sa carte :":"Retirado do seu pedido, fora da sua carta:",
+    "Avec qui ?":"Com quem?",
     "Studio / T1 (2 pers., ½ journée)":"Estúdio / T1 (2 pessoas, ½ dia)",
     "T2 (2 pers., journée)":"T2 (2 pessoas, dia inteiro)",
     "T3 (3 pers., journée)":"T3 (3 pessoas, dia inteiro)",
@@ -10873,6 +10879,8 @@
     [/^(\d+) € net\/retrait$/,'$1 € líquidos por levantamento'],
     [/^(\d+) € net$/,'$1 € líquidos'],
     [/^uniquement à (.+)$/,'apenas a $1'],
+    [/^La carte de ([A-ZÀ-Ý].*)$/,'Os serviços de $1'],
+    [/^Composez votre commande aux prix de (.+), total ferme\.$/,'Componha o seu pedido aos preços de $1, total firme.'],
     [/^(.+) n'a pas encore répondu$/,'$1 ainda não respondeu'],
     [/^Vérification des disponibilités de (.+)…$/,'A verificar a disponibilidade de $1…'],
     [/^Disponibilités réelles de (.+) prises en compte, les heures occupées sont grisées\.$/,'Disponibilidade real de $1 tida em conta, as horas ocupadas estão acinzentadas.'],
@@ -16609,14 +16617,17 @@
     }).length;
   }
   function salonPossible(svcId){return salonsDuMetier(svcId)!==0;}
-  function prefArtisanSelect(m){
+  function prefArtisanSelect(m,o){
+    /* `o.sansLibelle` : dans le bloc « Avec qui ? » de la commande à l'acte, le titre du
+       bloc EST la question ; « Votre prestataire » juste dessous la redirait. */
+    const lblPresta=(o&&o.sansLibelle)?'':'<label>Votre prestataire</label>';
     /* VENU PAR SON LIEN, ON NE PROPOSE PAS DE CHOISIR QUELQU'UN D'AUTRE. Un sélecteur
        sous-entendrait qu'on compare — alors qu'on a cliqué son nom dans une vidéo — et
        le `<select>` des métiers non personnels n'offre que les prestataires DÉJÀ VENUS :
        elle n'y serait pas, et le premier changement l'effacerait en silence. */
     if(m&&m.viaLien&&m.preferredUid){
       const f=S.proPublic;
-      return `<div class="field"><label>Votre prestataire</label>
+      return `<div class="field">${lblPresta}
         <div class="card" style="padding:12px;display:flex;align-items:center;gap:11px">
           ${(f&&f.photo)?`<img src="${esc(f.photo)}" alt="" style="width:40px;height:40px;border-radius:50%;object-fit:cover;flex:none">`:`<span class="benic" style="flex:none">${I.user}</span>`}
           <div style="flex:1;min-width:0"><b style="font-size:14px">${esc(m.preferredName||(f&&f.name)||'Votre prestataire')}</b>
@@ -16674,7 +16685,7 @@
          déjà : un seul dessin pour les deux écrans. */
       return `<button class="addr-opt${m.preferredUid===p.uid?' on':''}" data-prefart="${esc(p.uid)}" data-prefnm="${esc(p.name)}"><div class="row" style="gap:10px;align-items:center">${avatarFounder(p.photo,inits(p.name),'sm',p.founder)}<div style="min-width:0"><b>${esc(p.name)}</b>${sub?`<div class="mini" style="margin-top:2px">${sub}</div>`:''}</div></div></button>`;};
     const note=m.preferredUid?`<p class="mini" style="margin-top:6px">${I.clock} Adressée <b>uniquement à ${esc((m.preferredName||'').split(' ')[0])}</b>. S'il décline ou ne répond pas, vous pourrez la proposer à tous les prestataires d'un geste, vous n'êtes jamais bloqué.</p>`:'';
-    return `<div class="field"><label>Votre prestataire</label><div class="stack" style="gap:8px;margin-top:2px">
+    return `<div class="field">${lblPresta}<div class="stack" style="gap:8px;margin-top:2px">
       <button class="addr-opt${!m.preferredUid?' on':''}" data-prefart="" data-prefnm=""><b>${I.bolt} Le premier disponible</b><div class="mini" style="margin-top:2px">Proposé à tous les prestataires du métier, le plus rapide.</div></button>
       ${dir===null?`<p class="mini" style="margin:4px 0 0;color:var(--muted)">Chargement des prestataires…</p>`:list.map(card).join('')}
     </div>${note}</div>`;
@@ -21495,7 +21506,7 @@
     if(b.dataset.catopen){jalonClient('catalogue');S.catView=b.dataset.catopen;render();return;}
     if(b.dataset.svc){if(!svcAvailable(b.dataset.svc)){toast('Bientôt disponible');return;}const svc=findSvc(b.dataset.svc);if(!svc)return;jalonClient('catalogue');jalonClient('config');S.catView=null;S.cfgMore=false;S.draft=newMission(svc);S._cfgVu=null;renderConfig();return;}
     // Menu d'actes (métiers à l'acte) : cocher / décocher une prestation.
-    if(b.dataset.actpick){const m=S.draft;if(!m)return;m.acts=m.acts||[];const id=b.dataset.actpick;const i=m.acts.findIndex(function(a){return a.id===id;});
+    if(b.dataset.actpick){const m=S.draft;if(!m)return;S._cfgRetire=null;m.acts=m.acts||[];const id=b.dataset.actpick;const i=m.acts.findIndex(function(a){return a.id===id;});
       // Choix EXCLUSIF : une formule remplace l'autre au lieu de s'y ajouter. Décocher
       // reste possible — on ne force pas une sélection, le total dirait un prix que
       // personne n'a demandé.
@@ -21616,10 +21627,10 @@
            sien, il n'a aucune raison de porter nos lignes. Effacer en silence ferait
            disparaître sous les doigts une prestation qu'on venait de cocher. */
         const chg=rechiffrerActes(S.draft);
+        /* CE QUI EST RETIRÉ SE DIT DANS LA LISTE, ET Y RESTE. Un message qui s'efface,
+           pendant que la liste change hors de la vue, c'était apprendre trop tard. */
+        S._cfgRetire=chg.retirees.length?{svc:S.draft.svc,uid:S.draft.preferredUid,noms:chg.retirees.slice(0,6)}:null;
         renderConfig();
-        if(chg.retirees.length)toast(chg.retirees.length===1
-          ? 'La prestation « '+chg.retirees[0]+' » n\u2019est pas à son catalogue : choisissez parmi les siennes.'
-          : chg.retirees.length+' prestations ne sont pas à son catalogue : choisissez parmi les siennes.');
       } else renderConfig();
       return;}
     // Garde d'enfants : le client, non convaincu après l'appel, redirige sa demande
@@ -22739,7 +22750,19 @@
     // famille par carte repliée, avec son nombre de prestations, son prix d'appel et un
     // pastillage du nombre choisi — une famille où l'on a déjà coché reste ouverte.
     const grpsCli=catalogGroups(m.svc);
-    const actRows=(grpsCli.length<2)
+    /* LA PERSONNE D'ABORD, PUIS SA CARTE (l'éditeur, 19/11/2026 : « on clique sur ce
+       prestataire parce qu'on veut lui, mais finalement il ne propose pas ces services à
+       ces prix »). Le choix est remonté en tête ; la liste juste en dessous suit le
+       catalogue qui fait foi pour la personne choisie, et le DIT par son titre.
+       ET LES FAMILLES DE LA GRILLE NE SONT PAS SA CARTE : en coiffure, choisir une
+       prestataire qui a la sienne retirait la prestation cochée, disait « choisissez
+       parmi les siennes » — et n'en affichait AUCUNE, les familles restant celles de la
+       grille (mesuré : 0 ligne sur 3). Sa carte s'affiche à plat, comme elle est. */
+    const quiFaitFoi=catalogueQuiFaitFoi(m.svc,m.preferredUid);
+    const sienne=!!(m.preferredUid&&quiFaitFoi.propre);
+    const nomChoisi=(m.preferredName||'').trim()||'votre prestataire';
+    const retire=(S._cfgRetire&&S._cfgRetire.svc===m.svc&&S._cfgRetire.uid===m.preferredUid)?S._cfgRetire.noms:[];
+    const actRows=(sienne||grpsCli.length<2)
       ? `<div class="actlist">${catalogFor(m.svc,m.preferredUid).map(actLigne).join('')}</div>`
       : `<div class="actgrps">${grpsCli.map(function(G){
           const n=G.acts.filter(function(a){return !!pickOf(a.id);}).length;
@@ -22751,12 +22774,14 @@
     const c=svcColor(m.svc);
     paintView(`<div class="pad"><div class="cfghead"><button class="reset" data-cfg="back">← Retour</button><span class="eyebrow" style="flex:1;justify-content:center;color:${c}">${svcIco(m.svc)} ${esc(m.svcName)}</span><button class="iconbtn" data-act="go-home" aria-label="Accueil" title="Accueil"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg></button></div>
       <div class="h-hello">Votre prestation</div>
-      <p class="sub" style="margin-top:4px">Composez votre commande, prix fixes Ti-Services, total ferme.</p>
+      <p class="sub" style="margin-top:4px">${sienne?('Composez votre commande aux prix de '+esc(nomChoisi)+', total ferme.'):'Composez votre commande, prix fixes Ti-Services, total ferme.'}</p>
 
-      ${blocCfg('Choisissez vos prestations',I.bolt,`
+      ${blocCfg('Avec qui ?',I.users,prefArtisanSelect(m,{sansLibelle:true}))}
+      ${blocCfg(sienne?('La carte de '+nomChoisi):'Choisissez vos prestations',I.bolt,`
       ${/* le titre de la carte EST le libellé : on ne le redit pas sous lui. */''}
+      ${retire.length?`<p class="mini" style="margin:12px 0 0;color:var(--coral-deep)">${I.warn} <span>Retiré de votre commande, absent de sa carte&nbsp;:</span> <span>${esc(retire.join(' · '))}</span></p>`:''}
       <div class="field" style="margin-top:14px">${actRows}
-        ${minActPrice(m.svc)<TRAVEL_MIN?`<p class="mini" style="margin-top:8px">${I.pin} Déplacement <b>offert dès ${TRAVEL_MIN} €</b> de prestation, sinon forfait de ${TRAVEL_FEE} €.</p>`:''}</div>
+        ${minActPrice(m.svc,m.preferredUid)<TRAVEL_MIN?`<p class="mini" style="margin-top:8px">${I.pin} Déplacement <b>offert dès ${TRAVEL_MIN} €</b> de prestation, sinon forfait de ${TRAVEL_FEE} €.</p>`:''}</div>
       ${optionsPickerHtml(m)}
       `)}
       ${blocCfg('Lieu et participants',I.users,`
@@ -22771,7 +22796,6 @@
       ${heuresDuDraft(m).declare?'':`<div class="field"><label>Souplesse sur le créneau</label><div class="segs souplesse"><button class="seg ${(!m.slotFlex)?'on':''}" data-slotflex="0">Précise</button><button class="seg ${m.slotFlex===60?'on':''}" data-slotflex="60">± 1 h</button><button class="seg ${m.slotFlex===120?'on':''}" data-slotflex="120">± 2 h</button>${souplesseLarge(m)?`<button class="seg ${m.slotFlex==='day'?'on':''}" data-slotflex="day">Journée</button><button class="seg ${m.slotFlex==='week'?'on':''}" data-slotflex="week">Semaine</button>`:''}</div>${(m.slotFlex&&!dayFlex)?`<p class="mini" style="margin-top:6px">${I.clock} Le pro confirmera un <b>créneau précis ${flexTxtClient(m)}</b> en acceptant.</p>`:''}</div>`}
       `)}
       ${blocCfg('Précisions',I.edit,`
-      ${prefArtisanSelect(m)}
 
 
       <div class="field"><label>Précisions (facultatif)</label><textarea rows="3" data-cfg="notes" placeholder="${PLACEHOLDERS[m.svc]||'Précisez votre demande…'}">${esc(m.notes)}</textarea></div>
