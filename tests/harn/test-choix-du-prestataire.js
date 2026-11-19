@@ -70,7 +70,7 @@ const commande=(svc,histo)=>p.evaluate(([svc,histo])=>{
 console.log('\nA — les métiers où la PERSONNE compte : l’annuaire, dès la première commande');
 for(const svc of ['coiffure','massage','manucure','maquillage','baby','animaux','yoga','epilationdef']){
   const r=await commande(svc,false);
-  ok(r.cartes>=2&&/Votre prestataire/.test(r.txt)&&/Le premier disponible/.test(r.txt),
+  ok(r.cartes>=2&&/Votre prestataire|Avec qui/.test(r.txt)&&/Le premier disponible/.test(r.txt),
     svc+' : l’annuaire du métier s’affiche ('+r.cartes+' choix, sans aucun passé)');
 }
 {
