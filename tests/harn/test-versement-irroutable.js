@@ -151,6 +151,19 @@ console.log('D — sur l’écran réel');
   ok(c2 && /Libéré sur le solde Ti-Services/.test(c2.txt) && /104,50/.test(c2.txt), 'libéré : il reste à virer sa part, et l’écran le chiffre');
   ok(c2 && c2.lib === 0, 'on ne libère pas deux fois');
   ok(c2 && c2.txt.indexOf('FR76 3000 6000 0112 3456 7890 189') >= 0 && /Laura Courcot/.test(c2.txt), 'son IBAN s’affiche en clair, par groupes de quatre, avec le titulaire');
+  const copie = await p.evaluate(async () => {
+    let pris = null;
+    try { Object.defineProperty(navigator, 'clipboard', {value: {writeText: (t) => { pris = t; return Promise.resolve(); }}, configurable: true}); } catch (_) {}
+    const S = window.__S; S.account = {name: 'Admin', email: 'contact@ti-services.fr', uid: 'adm', role: 'admin'};
+    const btn = document.querySelector('[data-adm="iban-copie:c~r1"]');
+    if (!btn) return {btn: false};
+    btn.click(); await new Promise((r) => setTimeout(r, 60));
+    return {btn: true, pris: pris, toast: document.getElementById('toast').textContent};
+  });
+  ok(copie.btn && copie.pris === 'FR7630006000011234567890189' && /IBAN copié/.test(copie.toast),
+    '« Copier l’IBAN » copie l’IBAN sans espaces, prêt à coller dans la banque (' + copie.pris + ')');
+  const sansIban = await console_([ligne({reqId: 'c~r1'})]);
+  ok(sansIban && !/Copier l’IBAN/.test(sansIban.txt), 'sans IBAN saisi, pas de bouton : rien à copier');
   const c3 = await console_([ligne({definitif: false, motif: 'HTTP 503'})]);
   ok(c3 && c3.txt.indexOf('Mollie ne versera jamais') < 0 && c3.lib === 0, 'un refus ordinaire ne parle pas de règle définitive (assertion arrière)');
 
