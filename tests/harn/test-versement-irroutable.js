@@ -100,6 +100,11 @@ ok((fn.match(/issueDuRefus\(orgId\)/g) || []).length >= 6,
   ok(/montant = IRR\.montantLiberable\(p\.data\)/.test(c), 'la libération demande au noyau ce qui a été capturé');
   ok(!/p\.data\.amount && p\.data\.amount\.value/.test(c), 'elle ne relit plus le montant AUTORISÉ de l’empreinte'); }
 ok(/netIrroutable: so\.irroutable/.test(fn), 'la fiche du prestataire porte les deux sommes');
+ok(/ligne\.parLeSecond = !!\(p\.ok && p\.data\) && ligne\.etat !== 'paid' && String\(r\.complementStatus \|\| ''\) === 'paye';/.test(fn),
+  'le serveur reconnaît l’empreinte non débitée d’une mission réglée par son second paiement');
+{ const c = corps('exports.ledgerExclude', 'const dejaLed');
+  ok(/if \(exclu && \/jamais abouti\/i\.test\(motif\)\)/.test(c) && /sec === 'paye'/.test(c) && /HttpsError\('failed-precondition'/.test(c),
+    'et refuse de l’écarter comme « jamais aboutie », même si un écran ancien le demande'); }
 ok(/IRR\.refusDefinitif\(motif\)/.test(fn) && /IRR\.REGLE_MOLLIE/.test(fn), 'l’alerte à l’administrateur cite la règle et dit qu’il est inutile de re-router');
 
 console.log('C — la règle Firestore');
@@ -164,6 +169,15 @@ console.log('D — sur l’écran réel');
     '« Copier l’IBAN » copie l’IBAN sans espaces, prêt à coller dans la banque (' + copie.pris + ')');
   const sansIban = await console_([ligne({reqId: 'c~r1'})]);
   ok(sansIban && !/Copier l’IBAN/.test(sansIban.txt), 'sans IBAN saisi, pas de bouton : rien à copier');
+  // LE PIÈGE DU 20/11/2026 : empreinte expirée, mission réglée par son second paiement.
+  const retirer = () => p.evaluate(() => document.querySelectorAll('[data-adm^="vers-rate:"]').length);
+  const ps = await console_([ligne({reqId: 'r5', definitif: false, motif: '', etat: 'expired', parLeSecond: true})]);
+  ok(ps && /réglée par son second paiement/.test(ps.txt) && !/Ce paiement n’a jamais abouti/.test(ps.txt),
+    'empreinte expirée, second paiement encaissé : la carte dit « réglée par son second paiement », pas « jamais abouti »');
+  ok((await retirer()) === 0, 'et ne propose plus « Paiement jamais abouti, retirer », qui sortait des comptes une mission payée');
+  const ja = await console_([ligne({reqId: 'r6', definitif: false, motif: '', etat: 'expired'})]);
+  ok(ja && /Ce paiement n’a jamais abouti/.test(ja.txt) && (await retirer()) === 1,
+    'sans second paiement : « jamais abouti » et le retrait restent offerts (assertion arrière)');
   const c3 = await console_([ligne({definitif: false, motif: 'HTTP 503'})]);
   ok(c3 && c3.txt.indexOf('Mollie ne versera jamais') < 0 && c3.lib === 0, 'un refus ordinaire ne parle pas de règle définitive (assertion arrière)');
 

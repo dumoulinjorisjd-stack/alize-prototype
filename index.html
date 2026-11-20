@@ -3822,7 +3822,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='922';
+  const VERSION_APP='923';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -13707,7 +13707,8 @@
             ${(v.lecture&&versAdresse(v))?`<div class="mini" style="margin-top:4px;color:var(--muted)">Même réponse en simple lecture&nbsp;: ${esc(v.lecture)}, donc rien à voir avec ce versement-ci.</div>`:''}
             ${versRegle(v)?`<div class="mini" style="margin-top:6px;color:var(--muted)">Le partage fonctionne, mais Mollie ne connaît plus <b>ce paiement-ci</b>&nbsp;: un paiement déjà réglé et viré sur le compte bancaire n’est plus partageable. Virez le net au prestataire, puis appuyez sur «&nbsp;Je l’ai versé à la main&nbsp;».</div>`:''}
             ${v.org==='non'?`<div class="mini" style="margin-top:6px;color:var(--muted)">Ce prestataire n’a aucun compte Mollie connecté&nbsp;: le versement ne peut pas partir tant qu’il ne l’a pas fait.</div>`:''}
-            ${versAbouti(v)===false?`<div class="mini" style="margin-top:6px;color:var(--muted)"><b>Ce paiement n’a jamais abouti</b> (état Mollie&nbsp;: ${esc(v.etat)})&nbsp;: rien n’a été prélevé au client, <b>rien n’est dû</b> au prestataire. Son net n’entre pas dans le total ci-dessus.</div>`:''}
+            ${(versAbouti(v)===false&&v.parLeSecond)?`<div class="mini" style="margin-top:6px;color:var(--muted)">L’empreinte a expiré sans débiter le client&nbsp;: <b>la prestation a été réglée par son second paiement</b> (ligne «&nbsp;Second paiement&nbsp;»). Rien à verser sur celle-ci, et elle reste dans les comptes.</div>`:''}
+            ${(versAbouti(v)===false&&!v.parLeSecond)?`<div class="mini" style="margin-top:6px;color:var(--muted)"><b>Ce paiement n’a jamais abouti</b> (état Mollie&nbsp;: ${esc(v.etat)})&nbsp;: rien n’a été prélevé au client, <b>rien n’est dû</b> au prestataire. Son net n’entre pas dans le total ci-dessus.</div>`:''}
             ${v.definitif?`<div class="banner warn" style="margin-top:9px">${I.shield}<span><b>Mollie ne versera jamais ce paiement-ci.</b> ${VERS_REGLE_MOLLIE} Le compte du prestataire a été relié après ce paiement&nbsp;: ce n’est ni une panne, ni son dossier. ${v.libere?'':'Libérez le paiement sur le solde Ti-Services, puis virez-lui sa part à la main.'}</span></div>`:''}
             ${v.libere?`<div class="mini" style="margin-top:6px;color:var(--teal-deep)"><b>Libéré sur le solde Ti-Services</b>${v.montantLibere?(' ('+eur(Number(v.montantLibere)||0)+')'):''}&nbsp;: il reste à virer <b>${eur(Number(v.net)||0)}</b> au prestataire, puis «&nbsp;Je l’ai versé à la main&nbsp;».</div>`:''}
             ${(v.definitif||v.libere||versRegle(v))?(v.iban?`<div class="mini" style="margin-top:6px"><b>IBAN du prestataire&nbsp;:</b> <span style="font-family:var(--f-mono,monospace)">${esc(ibanEspace(v.iban))}</span>${v.ibanTitulaire?(' · '+esc(v.ibanTitulaire)):''}</div>
@@ -13715,7 +13716,10 @@
               :`<div class="mini" style="margin-top:6px;color:var(--coral-deep)"><b>Aucun IBAN saisi</b> par le prestataire&nbsp;: demandez-le lui, ou invitez-le à le renseigner dans son compte («&nbsp;Mes infos&nbsp;»).</div>`):''}
             ${v.definitif?(!v.libere&&String(v.etat||'').toLowerCase()==='paid'?`<button class="btn primary sm" data-adm="vers-lib:${esc(v.reqId)}" style="margin-top:9px">${S._versLibArm===v.reqId?(I.warn+'&nbsp;Confirmer&nbsp;: router tout le paiement vers Ti-Services'):(I.euro+'&nbsp;Libérer sur le solde Ti-Services')}</button>`:'')
               :`<button class="btn ghost sm" data-adm="vers-one:${esc(v.reqId)}" style="margin-top:9px">${I.bolt}&nbsp;Réessayer ce versement</button>`}
-            ${versAbouti(v)===false?`<button class="btn ghost sm" data-adm="vers-rate:${esc(v.reqId)}" style="margin-top:7px">${S._versRateArm===v.reqId?(I.warn+'&nbsp;Confirmer&nbsp;: retirer de cet écran'):(I.close||I.warn)+'&nbsp;Paiement jamais abouti, retirer'}</button>`:''}
+            ${/* LE PIÈGE DU 20/11/2026 : l'empreinte expirée d'une mission réglée par son
+                 second paiement se lisait « jamais abouti », et « retirer » sortait des
+                 comptes TOUTE la mission, payée. Pas de retrait quand le second est encaissé. */''}
+            ${(versAbouti(v)===false&&!v.parLeSecond)?`<button class="btn ghost sm" data-adm="vers-rate:${esc(v.reqId)}" style="margin-top:7px">${S._versRateArm===v.reqId?(I.warn+'&nbsp;Confirmer&nbsp;: retirer de cet écran'):(I.close||I.warn)+'&nbsp;Paiement jamais abouti, retirer'}</button>`:''}
             <button class="btn ghost sm" data-adm="vers-essai:${esc(v.reqId)}" style="margin-top:7px">${S._versEssaiArm===v.reqId?(I.warn+'&nbsp;Confirmer&nbsp;: \u00e9carter des comptes'):(I.close||I.warn)+'&nbsp;C\u2019\u00e9tait un essai, \u00e9carter'}</button>
             <button class="btn ghost sm" data-adm="vers-main:${esc(v.reqId)}" style="margin-top:7px">${S._versMainArm===v.reqId?'Confirmer&nbsp;: je l’ai bien viré':(I.check+'&nbsp;Je l’ai versé à la main')}</button></div>`;}).join('')}
           <button class="btn primary sm" data-adm="vers-run" style="margin-top:12px">${I.bolt}&nbsp;Réessayer les ${versList.length}</button>

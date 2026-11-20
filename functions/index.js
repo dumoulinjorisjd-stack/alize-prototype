@@ -4136,6 +4136,17 @@ exports.ledgerExclude = onCall(async (request) => {
    * registre n'y a donc pas de ligne, et le refus laissait la seule chose qu'on puisse
    * en faire — l'écarter — hors de portée. ON EXIGE QUE QUELQUE CHOSE EXISTE, pas que
    * ce soit l'écriture : sans cela on écrirait un drapeau sur un identifiant inventé. */
+  /* « JAMAIS ABOUTI » NE S'APPLIQUE PAS À UNE MISSION RÉGLÉE PAR SON SECOND PAIEMENT :
+   * l'empreinte a expiré, mais le client a payé. L'écarter sortait des comptes une
+   * prestation encaissée (relevé le 20/11/2026). Un « essai » reste écartable : c'est
+   * une décision, pas un constat. */
+  if (exclu && /jamais abouti/i.test(motif)) {
+    let sec = '';
+    try { const rq = await db.collection('requests').doc(reqId).get(); if (rq.exists) sec = String((rq.data() || {}).complementStatus || ''); } catch (_) {}
+    if (sec === 'paye') {
+      throw new HttpsError('failed-precondition', 'Cette prestation a été réglée par son second paiement : elle ne s’écarte pas comme « jamais aboutie ».');
+    }
+  }
   const dejaLed = (await ref.get()).exists;
   const dejaReq = dejaLed ? true : (await db.collection('requests').doc(reqId).get()).exists;
   if (!dejaLed && !dejaReq) throw new HttpsError('not-found', 'Ni écriture ni demande pour cette prestation.');
@@ -4360,6 +4371,10 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
         try {
           const p = await mollieApi('/payments/' + encodeURIComponent(r.molliePaymentId));
           ligne.etat = (p.ok && p.data) ? String(p.data.status || '') : ('introuvable (HTTP ' + (p.status || '?') + ')');
+          /* EMPREINTE NON DÉBITÉE, MAIS PRESTATION PAYÉE PAR LE SECOND PAIEMENT : ce n'est
+             pas « jamais abouti ». La console ne doit ni le dire, ni proposer de retirer
+             la mission des comptes (relevé le 20/11/2026). */
+          ligne.parLeSecond = !!(p.ok && p.data) && ligne.etat !== 'paid' && String(r.complementStatus || '') === 'paye';
           // Mollie annonce lui-même les sous-ressources d'un paiement. Si `routes` n'y
           // figure pas, le partage n'existe PAS pour ce compte — la cause n'est pas le
           // dossier du prestataire, et il est inutile de le chercher de ce côté.
