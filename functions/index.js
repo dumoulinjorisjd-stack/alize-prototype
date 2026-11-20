@@ -298,6 +298,20 @@ function dowKey(dateISO) { const q = (dateISO || '').split('-'); if (q.length < 
 // existant deviendrait invisible à la première mise en ligne. Une demande ADRESSÉE à un
 // prestataire précis passe quand même — le client l'a choisi, il déclinera s'il le veut.
 function enLigne(v) { return v !== false; }
+
+/* POURQUOI CE PRESTATAIRE N'EST-IL PAS PRÉVENU D'UNE DEMANDE OUVERTE ? Une seule porte,
+   lue par la diffusion elle-même ET par la console (« Non prévenus », l'éditeur,
+   20/11/2026) : deux réponses écrites chacune de son côté finiraient par ne plus dire la
+   même chose. '' = il est prévenu. Dans l'ordre où la diffusion écarte. */
+function motifNonPrevenu(dd, r, svc, regMet) {
+  const c = (dd && dd.cats) || [];
+  if (svc && c.indexOf(svc) < 0) return 'metier';
+  if (!siteOk(dd, svc, r.locationMode)) return 'lieu';
+  if (!CATP.recoitLAleatoire(dd, svc, regMet)) return CATP.catalogueProprePose(dd, svc, regMet) ? 'carte' : 'hors-grille';
+  if (!availOk(dd.avail, r)) return 'indisponible';
+  if (!enLigne(dd.online)) return 'hors-ligne';
+  return '';
+}
 function availOk(avail, r) {
   if (!avail || typeof avail !== 'object') return true;
   if (r.slotFlex === 'week') { for (const d in avail) { const rw = avail[d]; if (rw && (rw.n || rw.m || rw.a || rw.s)) return true; } return false; }
@@ -2011,6 +2025,25 @@ async function mailArtisansSansAppareil(db, artById, targetUids, tokenToUid, r, 
   } catch (e) { console.warn('mailArtisansSansAppareil', e); return 0; }
 }
 
+/* LE MESSAGE D'UNE NOUVELLE MISSION, ÉCRIT UNE FOIS : la diffusion et « Prévenir quand
+   même » envoient le même. */
+function messageNouvelleMission(r, preferred, tokens) {
+  const svcName = (r.serviceName || 'Nouvelle prestation').toString().slice(0, 60);
+  const zone = (r.zone || '').toString().slice(0, 40);
+  const cliFirst = (r.clientName || 'Un client').toString().split(' ')[0].slice(0, 30);
+  return {
+    tokens,
+    data: {
+      title: preferred ? '🌟 Demande réservée pour vous' : 'Espace artisan · Nouvelle mission',
+      body: preferred
+        ? (cliFirst + ' vous demande directement, ' + svcName + (zone ? ' · ' + zone : '') + '. Hors file d’attente, rien que pour vous.')
+        : (svcName + (zone ? ' · ' + zone : '') + ', premier arrivé, premier servi.'),
+      url: './?open=missions',
+    },
+    webpush: { fcmOptions: { link: '/?open=missions' }, headers: { Urgency: 'high' } },
+  };
+}
+
 exports.notifyArtisansNewRequest = onDocumentCreated({document: 'requests/{reqId}', secrets: [SMTP_PASS]}, async (event) => {
   const snap = event.data;
   if (!snap) return;
@@ -2054,10 +2087,12 @@ exports.notifyArtisansNewRequest = onDocumentCreated({document: 'requests/{reqId
      prix de la grille. Lui l'a quittée : il serait prévenu d'une commande qu'il ne peut
      honorer qu'à un autre tarif. La décision est celle du noyau, jamais redite ici. */
   const REGC = await reglagesCatalogueServeur(db);
+  // Le métier, le lieu et la grille écartent toujours ; les créneaux et l'interrupteur
+  // ne valent que pour le POOL (une demande dirigée passe outre). Porte : motifNonPrevenu.
+  const motifs = {};
+  artsSnap.docs.forEach((d) => { motifs[d.id] = motifNonPrevenu(d.data() || {}, r, svc, REGC.metier[svc]); });
   const uids = artsSnap.docs
-    .filter((d) => { const dd = d.data() || {}; const c = dd.cats || [];
-      return (!svc || c.indexOf(svc) >= 0) && siteOk(dd, svc, r.locationMode)
-             && CATP.recoitLAleatoire(dd, svc, REGC.metier[svc]); })
+    .filter((d) => ['', 'indisponible', 'hors-ligne'].indexOf(motifs[d.id]) >= 0)
     .map((d) => d.id);
   if (!uids.length) { console.log('Aucun artisan validé pour ce service.');
     await _noterDiffusion(db, event.params && event.params.reqId, { motif: 'aucun-artisan' }); return; }
@@ -2069,11 +2104,9 @@ exports.notifyArtisansNewRequest = onDocumentCreated({document: 'requests/{reqId
   const preferred = r.preferredProviderUid;
   // Demande DIRIGÉE : l'artisan choisi est notifié quelle que soit sa grille de dispo (le
   // client l'a demandé ; il déclinera au besoin). Pour le POOL, on filtre par disponibilité.
-  const availById = {}; artsSnap.docs.forEach((d) => { availById[d.id] = (d.data() || {}).avail; });
-  const onlineById = {}; artsSnap.docs.forEach((d) => { onlineById[d.id] = (d.data() || {}).online; });
   const targetUids = preferred
     ? (uids.indexOf(preferred) >= 0 ? [preferred] : [])
-    : uids.filter((uid) => availOk(availById[uid], r) && enLigne(onlineById[uid]));
+    : uids.filter((uid) => motifs[uid] === '');
   if (!targetUids.length) { console.log('Aucun artisan disponible pour ce créneau.');
     await _noterDiffusion(db, event.params && event.params.reqId,
       { motif: preferred ? 'dirige-introuvable' : 'aucun-disponible' }); return; }
@@ -2104,20 +2137,7 @@ exports.notifyArtisansNewRequest = onDocumentCreated({document: 'requests/{reqId
     await _noterDiffusion(db, event.params && event.params.reqId,
       { motif: 'envoyee', cibles: targetUids.length, push: 0, mail: nMail, uids: targetUids }); return; }
 
-  const svcName = (r.serviceName || 'Nouvelle prestation').toString().slice(0, 60);
-  const zone = (r.zone || '').toString().slice(0, 40);
-  const cliFirst = (r.clientName || 'Un client').toString().split(' ')[0].slice(0, 30);
-  const message = {
-    tokens,
-    data: {
-      title: preferred ? '🌟 Demande réservée pour vous' : 'Espace artisan · Nouvelle mission',
-      body: preferred
-        ? (cliFirst + ' vous demande directement, ' + svcName + (zone ? ' · ' + zone : '') + '. Hors file d’attente, rien que pour vous.')
-        : (svcName + (zone ? ' · ' + zone : '') + ', premier arrivé, premier servi.'),
-      url: './?open=missions',
-    },
-    webpush: { fcmOptions: { link: '/?open=missions' }, headers: { Urgency: 'high' } },
-  };
+  const message = messageNouvelleMission(r, !!preferred, tokens);
 
   const res = await getMessaging().sendEachForMulticast(message);
   console.log(`Push artisans : ${res.successCount}/${tokens.length}`);
@@ -2144,6 +2164,77 @@ exports.notifyArtisansNewRequest = onDocumentCreated({document: 'requests/{reqId
  * prévient l'artisan par notification push ET met un e-mail en file d'envoi
  * (collection `mail`, lue par l'extension Firebase « Trigger Email »).
  */
+/* ── « NON PRÉVENUS », ET LES PRÉVENIR QUAND MÊME (l'éditeur, 20/11/2026) ──
+   « Il faut que je voie ceux qui ne sont pas prévenus et que je puisse les prévenir
+   quand même ; libre à eux d'accepter ou non. » La raison vient de `motifNonPrevenu`,
+   la porte de la diffusion. Réservé à l'administrateur. */
+function _adminOuRefus(request) {
+  const who = (request.auth && request.auth.token && request.auth.token.email) || '';
+  if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
+  return who;
+}
+exports.diffusionDiagnostic = onCall(async (request) => {
+  _adminOuRefus(request);
+  const reqId = String((request.data && request.data.reqId) || '').trim().slice(0, 128);
+  if (!reqId) throw new HttpsError('invalid-argument', 'Demande non désignée.');
+  const db = getFirestore();
+  const snap = await db.collection('requests').doc(reqId).get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Demande introuvable.');
+  const r = snap.data() || {};
+  if (r.status !== 'pending') return {ouverte: false, liste: []};
+  if (r.directed && r.preferredProviderUid) return {ouverte: true, dirigee: true, liste: []};
+  const svc = String(r.service || '');
+  const REG = await reglagesCatalogueServeur(db);
+  const prevenus = new Set(Array.isArray(r.prevenus) ? r.prevenus : []);
+  const invites = new Set(Array.isArray(r.invites) ? r.invites : []);
+  const bloques = new Set(Array.isArray(r.blockedUids) ? r.blockedUids : []);
+  const arts = await db.collection('artisans').where('status', '==', 'valide').get();
+  const liste = [];
+  arts.docs.forEach((d) => {
+    const a = d.data() || {};
+    if ((a.cats || []).indexOf(svc) < 0 || d.id === r.clientUid) return;
+    if (prevenus.has(d.id) && !invites.has(d.id)) return;
+    liste.push({
+      uid: d.id, nom: String(a.name || 'Prestataire').slice(0, 60),
+      motif: bloques.has(d.id) ? 'bloque' : (motifNonPrevenu(a, r, svc, REG.metier[svc]) || 'non-alerte'),
+      invite: invites.has(d.id),
+    });
+  });
+  liste.sort((x, y) => x.nom.localeCompare(y.nom, 'fr'));
+  return {ouverte: true, liste};
+});
+exports.prevenirQuandMeme = onCall({secrets: [SMTP_PASS]}, async (request) => {
+  const who = _adminOuRefus(request);
+  const reqId = String((request.data && request.data.reqId) || '').trim().slice(0, 128);
+  const uid = String((request.data && request.data.uid) || '').trim().slice(0, 128);
+  if (!reqId || !uid) throw new HttpsError('invalid-argument', 'Demande ou prestataire non désigné.');
+  const db = getFirestore();
+  const ref = db.collection('requests').doc(reqId);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Demande introuvable.');
+  const r = snap.data() || {};
+  if (r.status !== 'pending') throw new HttpsError('failed-precondition', 'Cette demande ne cherche plus de prestataire.');
+  if (r.directed && r.preferredProviderUid) throw new HttpsError('failed-precondition', 'Cette demande est adressée à un prestataire précis.');
+  if (uid === r.clientUid) throw new HttpsError('failed-precondition', 'C’est la demande de ce prestataire lui-même.');
+  if (Array.isArray(r.blockedUids) && r.blockedUids.indexOf(uid) >= 0) throw new HttpsError('failed-precondition', 'Le client a bloqué ce prestataire.');
+  const as = await db.collection('artisans').doc(uid).get();
+  const a = as.exists ? (as.data() || {}) : null;
+  if (!a || a.status !== 'valide') throw new HttpsError('failed-precondition', 'Ce prestataire n’est pas validé.');
+  if ((a.cats || []).indexOf(String(r.service || '')) < 0) throw new HttpsError('failed-precondition', 'Ce prestataire n’exerce pas ce métier.');
+  // INVITÉ : son app lui montre la demande même hors de ses créneaux ou hors ligne.
+  await ref.set({invites: FieldValue.arrayUnion(uid), prevenus: FieldValue.arrayUnion(uid)}, {merge: true});
+  const artById = {}; artById[uid] = a;
+  const tokenToUid = await _jetonsArtisans(db, [uid]);
+  const tokens = Object.keys(tokenToUid);
+  let push = 0;
+  const mail = await mailArtisansSansAppareil(db, artById, [uid], tokenToUid, r, false);
+  if (tokens.length) {
+    try { const res = await getMessaging().sendEachForMulticast(messageNouvelleMission(r, false, tokens)); push = res.successCount; } catch (e) { console.warn('prevenirQuandMeme push', e); }
+  }
+  console.log('prevenirQuandMeme ' + reqId + ' → ' + uid + ' (push ' + push + ', mail ' + mail + ') par ' + who);
+  return {push, mail};
+});
+
 exports.notifyArtisanApproved = onDocumentUpdated({document: 'artisans/{artisanId}', secrets: [SMTP_PASS]}, async (event) => {
   const before = (event.data && event.data.before && event.data.before.data()) || {};
   const after = (event.data && event.data.after && event.data.after.data()) || {};

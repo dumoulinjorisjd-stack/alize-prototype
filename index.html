@@ -3822,7 +3822,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='924';
+  const VERSION_APP='925';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -12691,6 +12691,25 @@
       const arme=(S._cmdEssai===r.id);
       return `<button class="btn ghost sm" data-adm="cmd-essai:${esc(r.id)}" style="width:auto;padding:5px 10px;margin-top:6px;margin-left:6px;font-size:12px">${arme?I.warn+' Confirmer\u00a0: \u00e9carter des comptes':(I.close||I.warn)+' C\u2019\u00e9tait un test'}</button>`;
     };
+    /* « NON PRÉVENUS » (l'éditeur, 20/11/2026) : la raison vient du SERVEUR
+       (`diffusionDiagnostic`, la porte de la diffusion), jamais d'une copie ici. */
+    const NP_TXT={'hors-ligne':'hors ligne','indisponible':'pas disponible à ce créneau','hors-grille':'a refusé la grille sur ce métier',
+      'carte':'a sa propre carte (ne reçoit pas l’aléatoire)','lieu':'ne travaille pas à ce lieu','bloque':'bloqué par le client',
+      'non-alerte':'pas encore alerté'};
+    const cmdNonPrevenus=function(r){
+      if(!r||r.status!=='pending'||(r.directed&&r.preferredProviderUid))return '';
+      const E=(S._nonPrev||{})[r.id];
+      if(!E)return `<button class="btn ghost sm" data-adm="np-voir:${esc(r.id)}" style="width:auto;padding:5px 10px;margin-top:6px;font-size:12px">${I.users} Voir les non prévenus</button>`;
+      if(E.charge)return `<p class="mini" style="margin-top:6px;color:var(--muted)">Recherche des non prévenus…</p>`;
+      if(!E.liste.length)return `<p class="mini" style="margin-top:6px;color:var(--muted)">${I.check} Tous les prestataires de ce métier ont été prévenus.</p>`;
+      return `<div class="mini" style="margin-top:8px"><b>Non prévenus</b>&nbsp;: ${E.liste.length}</div>`
+        +E.liste.map(function(x){
+          return `<div class="row between" style="gap:8px;align-items:center;margin-top:5px;flex-wrap:wrap">
+            <span class="mini" style="flex:1 1 160px;min-width:0"><b>${esc(x.nom)}</b> · <span style="color:var(--muted)">${esc(NP_TXT[x.motif]||x.motif)}</span></span>
+            ${x.invite?`<span class="chip good" style="flex:none">${I.check} Prévenu</span>`
+              :(x.motif==='bloque'?'':`<button class="btn ghost sm" data-adm="np-prev:${esc(r.id)}:${esc(x.uid)}" style="flex:none;width:auto;padding:5px 10px;margin:0;font-size:12px">${I.bolt} Prévenir quand même</button>`)}
+          </div>`;}).join('');
+    };
     const cmdRelance=function(r){
       if(!r||r.status!=='pending')return '';
       const arme=(S._cmdRelance===r.id);
@@ -12735,7 +12754,7 @@
           <span class="mini money">${eur(montant)}${coup?' <span style="color:var(--coral-deep)">· dont '+eur(coup)+' de coup de pouce</span>':''}</span>
           ${nonEnc?`<span class="chip warn" style="flex:none">${esc(mollieEtatTxt(r.led||{}))}</span>`:''}
           <span class="mini" style="color:${longue?'var(--coral-deep);font-weight:700':'var(--muted)'}">${esc(age)}${r.directed?' · dirigée':''}</span></div>
-        ${cmdDiffusion(r)}${cmdReponses(r)}${cmdRelance(r)}${cmdEssai(r)}
+        ${cmdDiffusion(r)}${cmdReponses(r)}${cmdNonPrevenus(r)}${cmdRelance(r)}${cmdEssai(r)}
         ${cmdFin(r)}
         ${cmdClore(r)}
       </div>`;
@@ -20802,6 +20821,25 @@
           toast('Écartée des comptes ✓ — « Retrouver une facture » pour la réintégrer');
         }).catch(function(e){toast('⚠︎ '+fbErrAdmin(e));});
         return;}
+      else if(act==='np-voir'){
+        if(!isAdminAccount()){toast('Réservé à l’administrateur (compte réel)');return;}
+        if(!(FB&&FB.functions&&FB.fn&&FB.fn.httpsCallable)){toast('Indisponible hors ligne, réessayez connecté');return;}
+        S._nonPrev=Object.assign({},S._nonPrev);S._nonPrev[id]={charge:true,liste:[]};render();
+        FB.fn.httpsCallable(FB.functions,'diffusionDiagnostic')({reqId:id}).then(function(r){
+          const d=(r&&r.data)||{};S._nonPrev=Object.assign({},S._nonPrev);
+          S._nonPrev[id]={charge:false,liste:Array.isArray(d.liste)?d.liste:[]};render();
+        }).catch(function(e){S._nonPrev=Object.assign({},S._nonPrev);delete S._nonPrev[id];render();toast('⚠︎ '+fbErrAdmin(e));});
+        return;}
+      else if(act==='np-prev'){
+        if(!isAdminAccount()){toast('Réservé à l’administrateur (compte réel)');return;}
+        if(!(FB&&FB.functions&&FB.fn&&FB.fn.httpsCallable)){toast('Indisponible hors ligne, réessayez connecté');return;}
+        const uid=parts[2]||'';if(!uid)return;
+        FB.fn.httpsCallable(FB.functions,'prevenirQuandMeme')({reqId:id,uid:uid}).then(function(r){
+          const d=(r&&r.data)||{};const E=(S._nonPrev||{})[id];
+          if(E){E.liste=E.liste.map(function(x){return x.uid===uid?Object.assign({},x,{invite:true}):x;});}
+          toast((d.push||d.mail)?'Prévenu ✓ (la demande s’affiche dans son app)':'Ajouté à la demande ✓ : aucun appareil ni e-mail joignable, elle s’affiche dans son app');render();
+        }).catch(function(e){toast('⚠︎ '+fbErrAdmin(e));});
+        return;}
       else if(act==='cmd-relance'){
         if(S._cmdRelance!==id){S._cmdRelance=id;render();
           toast('Un second appui renverra l’alerte aux prestataires');return;}
@@ -25812,6 +25850,11 @@
           if(estBloque(r.clientUid))return;
           if(myUid&&Array.isArray(r.blockedUids)&&r.blockedUids.indexOf(myUid)>=0)return;
           if(cats.length&&cats.indexOf(r.service)<0)return;
+          /* INVITÉ PAR TI-SERVICES (« Prévenir quand même », l'éditeur, 20/11/2026) : on
+             l'a prévenu exprès, il voit la demande quels que soient ses créneaux, son lieu
+             ou son interrupteur. Libre à lui d'accepter. */
+          const _invite=!!(myUid&&Array.isArray(r.invites)&&r.invites.indexOf(myUid)>=0);
+          if(_invite&&!(r.directed&&r.preferredProviderUid&&r.preferredProviderUid!==myUid)){list.push(r);return;}
           // Filtre LIEU : un prestataire « domicile seul » ne voit pas les demandes « en salon »
           // et inversement. « Les deux » (ou métier non concerné) voit tout.
           if(canOnSite(r.service)&&!siteMatches(mySite,r.locationMode||'domicile'))return;
