@@ -166,6 +166,13 @@ for (const [champ, val] of [['totalConsenti', 1], ['totalConsentiAt', 1],
      'le prestataire non plus');
 }
 
+console.log('\n── « A DÉJÀ TRAVAILLÉ AU PRIX DE LA GRILLE » (éditeur, 20/11/2026) ──');
+{ const A = (d) => doc(d, 'artisans', PRO);
+  ok(await passe(updateDoc(A(dPro), { iban: 'FR7630006000011234567890189' })),
+     'le prestataire met encore à jour sa propre fiche (doit rester possible)');
+  ok(!(await passe(updateDoc(A(dPro), { grilleTravaillee: { menage: true } }))),
+     'il NE s’écrit PAS « a travaillé au prix de la grille » : ce serait se remettre lui-même dans l’aléatoire'); }
+
 await env.cleanup();
 console.log(f ? '\n' + f + ' ÉCHEC(S)' : '\nTout est vert.');
 process.exit(f ? 1 : 0);
