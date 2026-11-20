@@ -24,7 +24,7 @@ ok(/motifs\[d\.id\] = motifNonPrevenu\(/.test(diff) && /uids\.filter\(\(uid\) =>
   'la diffusion décide par cette porte : la console dira ce que la diffusion a fait');
 ok(!/availOk\(availById\[uid\], r\) && enLigne\(onlineById\[uid\]\)/.test(diff), 'plus de seconde copie du filtre dans la diffusion');
 const dia = tranche('exports.diffusionDiagnostic', 2200);
-ok(/_adminOuRefus\(request\)/.test(dia) && /motifNonPrevenu\(a, r, svc, REG\.metier\[svc\]\)/.test(dia),
+ok(/_adminOuRefus\(request\)/.test(dia) && /motifNonPrevenu\(a, r, svc, REG\.metier\[svc\], reqId, d\.id\)/.test(dia),
   '« Non prévenus » : réservé à l’administrateur, raison donnée par la même porte');
 const pqm = tranche('exports.prevenirQuandMeme', 2600);
 ok(/_adminOuRefus\(request\)/.test(pqm) && /invites: FieldValue\.arrayUnion\(uid\), prevenus: FieldValue\.arrayUnion\(uid\)/.test(pqm),
@@ -34,6 +34,20 @@ ok(/r\.status !== 'pending'/.test(pqm) && /blockedUids/.test(pqm) && /a\.status 
 ok(/messageNouvelleMission\(r, false, tokens\)/.test(pqm) && /messageNouvelleMission\(r, !!preferred, tokens\)/.test(fn),
   'le même message que la diffusion, écrit une fois');
 ok(/'diffusion','prevenus','refusHisto','invites',/.test(RULES), 'les invités ne s’écrivent que par le serveur');
+
+console.log('A bis — qui a déjà dit non n’est plus relancé (éditeur, 20/11/2026)');
+{ const src = tranche('function dejaRepondu(', 700); const fin = src.indexOf('\n}\n');
+  const dejaRepondu = new Function('return ' + src.slice(0, fin + 2))();
+  ok(dejaRepondu({}, {declinedBy: 'u1'}, 'r1', 'u1') === 'a-refuse', 'refusée quand elle lui était adressée : « a refusé »');
+  ok(dejaRepondu({}, {refusHisto: [{uid: 'u2', nom: 'B'}]}, 'r1', 'u2') === 'a-refuse', 'refus gardé dans l’historique, même après réouverture');
+  ok(dejaRepondu({skippedAt: {r1: 123}}, {}, 'r1', 'u3') === 'a-passe', 'passée dans son fil : « a passé »');
+  ok(dejaRepondu({skippedAt: {r9: 123}}, {declinedBy: 'x'}, 'r1', 'u3') === '', 'une AUTRE demande passée ne compte pas (assertion arrière)'); }
+ok(/const rep = dejaRepondu\(dd, r, reqId, uid\);\s*if \(rep\) return rep;/.test(porte), 'la porte unique le dit avant tout le reste');
+const pool = tranche('async function diffuserAuPool(', 1800);
+ok(/motifNonPrevenu\(dd, r, svc, REGP\.metier\[svc\], reqId, d\.id\) === ''/.test(pool) && !/availOk\(availById\[uid\], r\)/.test(pool),
+  '« Relancer les prestataires » passe par la même porte : qui a dit non n’est pas relancé');
+ok(/motifNonPrevenu\(d\.data\(\) \|\| \{\}, r, svc, REGC\.metier\[svc\], reqIdC, d\.id\)/.test(diff), 'la première diffusion aussi');
+ok(/if \(dejaRepondu\(a, r, reqId, uid\)\) throw new HttpsError\('failed-precondition'/.test(pqm), '« Prévenir quand même » n’insiste pas non plus');
 
 (async () => {
   const b = await chromium.launch(o);
@@ -53,7 +67,8 @@ ok(/'diffusion','prevenus','refusHisto','invites',/.test(RULES), 'les invités n
         if (nom === 'diffusionDiagnostic') return Promise.resolve({ data: { ouverte: true, liste: [
           { uid: 'm1', nom: 'Marie Coursieres', motif: 'hors-grille', invite: false },
           { uid: 'x2', nom: 'Xavier', motif: 'indisponible', invite: false },
-          { uid: 'b3', nom: 'Bruno', motif: 'bloque', invite: false }] } });
+          { uid: 'b3', nom: 'Bruno', motif: 'bloque', invite: false },
+          { uid: 'p4', nom: 'Paula', motif: 'a-passe', invite: false }] } });
         if (nom === 'prevenirQuandMeme') return Promise.resolve({ data: { push: 1, mail: 0 } });
         return new Promise(() => {}); } }, functions: {} });
     document.body.classList.add('standalone'); const sp = document.getElementById('splash'); if (sp) sp.style.display = 'none';
@@ -79,7 +94,8 @@ ok(/'diffusion','prevenus','refusHisto','invites',/.test(RULES), 'les invités n
   ok(r1.voir, '« Voir les non prévenus » est offert sur une demande ouverte');
   ok(r1.voir && /Marie Coursieres · a refusé la grille sur ce métier/.test(r1.txt) && /Xavier · pas disponible à ce créneau/.test(r1.txt),
     'chacun est nommé, avec SA raison (celle du serveur)');
-  ok(r1.voir && r1.boutons.join() === 'np-prev:r1:m1,np-prev:r1:x2', 'un « Prévenir quand même » par prestataire, aucun pour celui que le client a bloqué');
+  ok(r1.voir && r1.boutons.join() === 'np-prev:r1:m1,np-prev:r1:x2', 'un « Prévenir quand même » par prestataire ; aucun pour celui que le client a bloqué, ni pour qui a déjà dit non');
+  ok(r1.voir && /Paula · a déjà passé cette demande/.test(r1.txt), 'qui a déjà passé la demande est nommé comme tel, pas « sans réponse »');
   ok(r1.voir && r1.appels.some((a) => a.nom === 'prevenirQuandMeme' && a.data.reqId === 'r1' && a.data.uid === 'm1'),
     'le geste prévient CE prestataire-là, sur CETTE demande');
   ok(r1.voir && /Prévenu ✓/.test(r1.toast) && r1.boutonsApres.join() === 'np-prev:r1:x2', 'c’est dit, et son bouton laisse place à « Prévenu »');

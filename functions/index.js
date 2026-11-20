@@ -299,13 +299,31 @@ function dowKey(dateISO) { const q = (dateISO || '').split('-'); if (q.length < 
 // prestataire précis passe quand même — le client l'a choisi, il déclinera s'il le veut.
 function enLigne(v) { return v !== false; }
 
+/* A-T-IL DÉJÀ RÉPONDU NON À CETTE DEMANDE ? 'a-refuse' | 'a-passe' | ''. */
+function dejaRepondu(dd, r, reqId, uid) {
+  const u = String(uid || '');
+  if (u) {
+    if (String((r && r.declinedBy) || '') === u) return 'a-refuse';
+    const h = (r && Array.isArray(r.refusHisto)) ? r.refusHisto : [];
+    if (h.some((x) => x && String(x.uid || '') === u)) return 'a-refuse';
+  }
+  const sk = dd && dd.skippedAt && typeof dd.skippedAt === 'object' ? dd.skippedAt : null;
+  if (reqId && sk && sk[reqId]) return 'a-passe';
+  return '';
+}
+
 /* POURQUOI CE PRESTATAIRE N'EST-IL PAS PRÉVENU D'UNE DEMANDE OUVERTE ? Une seule porte,
    lue par la diffusion elle-même ET par la console (« Non prévenus », l'éditeur,
    20/11/2026) : deux réponses écrites chacune de son côté finiraient par ne plus dire la
    même chose. '' = il est prévenu. Dans l'ordre où la diffusion écarte. */
-function motifNonPrevenu(dd, r, svc, regMet) {
+function motifNonPrevenu(dd, r, svc, regMet, reqId, uid) {
   const c = (dd && dd.cats) || [];
   if (svc && c.indexOf(svc) < 0) return 'metier';
+  /* IL A DÉJÀ DIT NON À CETTE DEMANDE : on n'insiste pas (l'éditeur, 20/11/2026 : « si
+     le prestataire refuse, on ne doit pas pouvoir relancer »). Passée dans son fil
+     (`skippedAt`), ou refusée quand elle lui était adressée (`declinedBy`, `refusHisto`). */
+  const rep = dejaRepondu(dd, r, reqId, uid);
+  if (rep) return rep;
   if (!siteOk(dd, svc, r.locationMode)) return 'lieu';
   if (!CATP.recoitLAleatoire(dd, svc, regMet)) return CATP.catalogueProprePose(dd, svc, regMet) ? 'carte' : 'hors-grille';
   if (!availOk(dd.avail, r)) return 'indisponible';
@@ -2090,7 +2108,8 @@ exports.notifyArtisansNewRequest = onDocumentCreated({document: 'requests/{reqId
   // Le métier, le lieu et la grille écartent toujours ; les créneaux et l'interrupteur
   // ne valent que pour le POOL (une demande dirigée passe outre). Porte : motifNonPrevenu.
   const motifs = {};
-  artsSnap.docs.forEach((d) => { motifs[d.id] = motifNonPrevenu(d.data() || {}, r, svc, REGC.metier[svc]); });
+  const reqIdC = event.params && event.params.reqId;
+  artsSnap.docs.forEach((d) => { motifs[d.id] = motifNonPrevenu(d.data() || {}, r, svc, REGC.metier[svc], reqIdC, d.id); });
   const uids = artsSnap.docs
     .filter((d) => ['', 'indisponible', 'hors-ligne'].indexOf(motifs[d.id]) >= 0)
     .map((d) => d.id);
@@ -2193,10 +2212,10 @@ exports.diffusionDiagnostic = onCall(async (request) => {
   arts.docs.forEach((d) => {
     const a = d.data() || {};
     if ((a.cats || []).indexOf(svc) < 0 || d.id === r.clientUid) return;
-    if (prevenus.has(d.id) && !invites.has(d.id)) return;
+    if (prevenus.has(d.id) && !invites.has(d.id)) return;   // déjà prévenu : « Réponses » dit ce qu'il a fait
     liste.push({
       uid: d.id, nom: String(a.name || 'Prestataire').slice(0, 60),
-      motif: bloques.has(d.id) ? 'bloque' : (motifNonPrevenu(a, r, svc, REG.metier[svc]) || 'non-alerte'),
+      motif: bloques.has(d.id) ? 'bloque' : (motifNonPrevenu(a, r, svc, REG.metier[svc], reqId, d.id) || 'non-alerte'),
       invite: invites.has(d.id),
     });
   });
@@ -2221,6 +2240,7 @@ exports.prevenirQuandMeme = onCall({secrets: [SMTP_PASS]}, async (request) => {
   const a = as.exists ? (as.data() || {}) : null;
   if (!a || a.status !== 'valide') throw new HttpsError('failed-precondition', 'Ce prestataire n’est pas validé.');
   if ((a.cats || []).indexOf(String(r.service || '')) < 0) throw new HttpsError('failed-precondition', 'Ce prestataire n’exerce pas ce métier.');
+  if (dejaRepondu(a, r, reqId, uid)) throw new HttpsError('failed-precondition', 'Il a déjà dit non à cette demande : on n’insiste pas.');
   // INVITÉ : son app lui montre la demande même hors de ses créneaux ou hors ligne.
   await ref.set({invites: FieldValue.arrayUnion(uid), prevenus: FieldValue.arrayUnion(uid)}, {merge: true});
   const artById = {}; artById[uid] = a;
@@ -2732,16 +2752,11 @@ async function diffuserAuPool(db, reqId, r, opts) {
       /* MÊME FRONTIÈRE QU'À LA CRÉATION, et seulement sur le POOL : la branche du
          dessus a déjà rendu la personne DEMANDÉE, qu'elle ait son catalogue ou non —
          c'est elle qu'on a choisie, et c'est tout l'objet de la seconde porte. */
-      return (!svc || c.indexOf(svc) >= 0) && d.id !== exclude && siteOk(dd, svc, r.locationMode)
-             && enLigne(dd.online) && CATP.recoitLAleatoire(dd, svc, REGP.metier[svc]); })
+      // LA MÊME PORTE QU'À LA CRÉATION (motifNonPrevenu) : métier, lieu, grille, créneau,
+      // interrupteur — et désormais « a déjà dit non à cette demande ».
+      return d.id !== exclude && motifNonPrevenu(dd, r, svc, REGP.metier[svc], reqId, d.id) === ''; })
     .map((d) => d.id);
-  if (preferred) {
-    uids = uids.indexOf(preferred) >= 0 ? [preferred] : [];
-  } else {
-    // Pool : on ne notifie que les artisans DISPONIBLES sur ce créneau.
-    const availById = {}; artsSnap.docs.forEach((d) => { availById[d.id] = (d.data() || {}).avail; });
-    uids = uids.filter((uid) => availOk(availById[uid], r));
-  }
+  if (preferred) uids = uids.indexOf(preferred) >= 0 ? [preferred] : [];
   const tokenToUid = await _jetonsArtisans(db, uids);
   const tokens = Object.keys(tokenToUid);
   let nPush = 0;
