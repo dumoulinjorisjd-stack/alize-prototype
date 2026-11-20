@@ -34,8 +34,13 @@ const iOnline=src.indexOf('if(!_directedMe&&S.proOnline===false)return;');
 ok(iAvail>0&&iOnline>iAvail,'le filtre est posé avec les autres, après les disponibilités');
 
 console.log('\nC — les TROIS envois du serveur, pas un seul');
-const n=(srv.match(/enLigne\(/g)||[]).length;
-ok(n>=4,'la règle est appliquée partout où le serveur choisit qui prévenir ('+(n-1)+' relais)');
+/* DEPUIS LE 20/11/2026 la création et la réouverture lisent UNE porte, motifNonPrevenu :
+   l'interrupteur y est écrit une fois, et chacune des deux la lit. */
+const porteMotif=(function(){const i=srv.indexOf('function motifNonPrevenu(');return i>0?srv.slice(i,srv.indexOf('\n}\n',i)):'';})();
+ok(/if \(!enLigne\(dd\.online\)\) return 'hors-ligne';/.test(porteMotif)
+   && (srv.match(/motifNonPrevenu\(d(d|\.data\(\) \|\| \{\}), r, svc,/g)||[]).length>=2
+   && /availOk\(dd\.avail, after\) && enLigne\(dd\.online\)/.test(srv),
+  'la règle est appliquée partout où le serveur choisit qui prévenir (création et relance par la porte, coup de pouce)');
 ok(/if \(!enLigne\(dd\.online\)\) return 'hors-ligne';/.test(srv) && /uids\.filter\(\(uid\) => motifs\[uid\] === ''\)/.test(srv),
   'nouvelle demande : le pot commun est filtré (par motifNonPrevenu, qui porte l’interrupteur)');
 ok(/availOk\(dd\.avail, after\) && enLigne\(dd\.online\)/.test(srv),
@@ -53,13 +58,14 @@ ok(dp>0,'la diffusion au pool est une porte nommée');
    plus haut, demande justement d'éviter. La propriété est que la RÉOUVERTURE applique les
    mêmes trois règles que la création : on ne diffuse pas à celui qu'on exclut, ni hors de
    son lieu, ni à quelqu'un hors ligne. */
-ok(/d\.id !== exclude/.test(portePool)&&/siteOk\(dd, svc, r\.locationMode\)/.test(portePool)
-   &&/enLigne\(dd\.online\)/.test(portePool),
+ok(/d\.id !== exclude && motifNonPrevenu\(dd, r, svc, REGP\.metier\[svc\], reqId, d\.id\) === ''/.test(portePool)
+   &&/if \(!siteOk\(dd, svc, r\.locationMode\)\) return 'lieu';/.test(porteMotif)
+   &&/if \(!enLigne\(dd\.online\)\) return 'hors-ligne';/.test(porteMotif),
   'demande rouverte après un lapin : même règle');
 /* ET CE QUI S'AJOUTE AU FILTRE EST NOMMÉ ICI, pour que la mesure du dessus reste lisible
    le jour où une quatrième condition arrive : un prestataire qui a posé SON catalogue ne
    reçoit pas l'aléatoire, qui ne distribue que les prix de la maison. */
-ok(/CATP\.recoitLAleatoire\(dd, svc,/.test(portePool),
+ok(/CATP\.recoitLAleatoire\(dd, svc, regMet\)/.test(porteMotif)&&/motifNonPrevenu\(dd, r, svc,/.test(portePool),
   'et le catalogue propre sort du pot commun, par la même porte');
 /* ET LES TROIS CHEMINS L'EMPRUNTENT — c'est ce qui empêche la divergence de revenir. */
 ok((srv.match(/await diffuserAuPool\(/g)||[]).length>=2,

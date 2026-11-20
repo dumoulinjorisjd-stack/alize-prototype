@@ -186,8 +186,10 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   ok(dp > 0, 'la diffusion au pool est une porte nommée');
   ok(/if \(preferred && d\.id === preferred\)/.test(portePool),
     'le prestataire demandé échappe au filtre « en ligne » et à la grille');
-  ok(/availOk\(availById\[uid\], r\)/.test(portePool), 'le pool est filtré sur la grille du créneau');
-  ok(/siteOk\(dd, svc, r\.locationMode\)/.test(portePool), 'et sur le lieu de la prestation');
+  const iM = SRV.indexOf('function motifNonPrevenu('), porteM = iM > 0 ? SRV.slice(iM, SRV.indexOf('\n}\n', iM)) : '';
+  const parLaPorte = /motifNonPrevenu\(dd, r, svc, REGP\.metier\[svc\], reqId, d\.id\) === ''/.test(portePool);
+  ok(parLaPorte && /if \(!availOk\(dd\.avail, r\)\) return 'indisponible';/.test(porteM), 'le pool est filtré sur la grille du créneau (par motifNonPrevenu)');
+  ok(parLaPorte && /if \(!siteOk\(dd, svc, r\.locationMode\)\) return 'lieu';/.test(porteM), 'et sur le lieu de la prestation');
   /* ET LA RÉOUVERTURE L'APPELLE AU LIEU DE RECOPIER : c'est ce qui empêche la divergence
      de revenir. L'assertion arrière vérifie que la porte est bien appelée PLUSIEURS fois
      — une porte qu'un seul chemin emprunte n'est pas une porte. */
