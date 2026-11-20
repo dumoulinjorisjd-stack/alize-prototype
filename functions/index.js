@@ -1132,27 +1132,45 @@ async function lireRegistre(db, n) {
   return snap.docs.filter((d) => ((d.data() || {}).type || 'commission') === 'commission');
 }
 async function recordMollieFee(db, reqId, molliePaymentId, commission) {
-  if (!mollieApiConfigured() || !molliePaymentId) return false;
+  if (!mollieApiConfigured()) return false;
   try {
-    const p = await mollieApi('/payments/' + encodeURIComponent(molliePaymentId), 'GET');
-    if (!p.ok || !p.data) return false;
-    const d = p.data;
-    const statut = String(d.status || '');
-    // Capture partielle : `amount` reste l'autorisation, `amountCaptured` est le débit réel.
-    const capture = (d.amountCaptured && d.amountCaptured.value != null) ? Number(d.amountCaptured.value) : null;
-    const autorise = (d.amount && d.amount.value != null) ? Number(d.amount.value) : null;
-    const paye = (capture != null && !isNaN(capture)) ? capture : autorise;
+    /* LES DEUX PAIEMENTS, PAS LE PREMIER SEUL (ENC.encaissement). Quand l'empreinte a
+       expiré, toute la prestation passe par le second paiement (le mandat) : ne lire que
+       l'empreinte laissait la mission « jamais encaissée », hors des comptes et de la
+       facture de commission, alors que le client avait payé. Relevé le 20/11/2026.
+       ON NE DEVINE PAS : si Mollie ne répond pas sur l'un des deux, on n'écrit rien et le
+       rapprochement suivant reprendra — un état à moitié lu se lirait comme un état. */
+    let secondId = '';
+    try {
+      const rq = await db.collection('requests').doc(reqId).get();
+      if (rq.exists) secondId = String((rq.data() || {}).complementPaymentId || '');
+    } catch (_) {}
+    if (secondId === molliePaymentId) secondId = '';
+    if (!molliePaymentId && !secondId) return false;
+    let d = null; let d2 = null;
+    if (molliePaymentId) {
+      const p = await mollieApi('/payments/' + encodeURIComponent(molliePaymentId), 'GET');
+      if (!p.ok || !p.data) return false;
+      d = p.data;
+    }
+    if (secondId) {
+      const p2 = await mollieApi('/payments/' + encodeURIComponent(secondId), 'GET');
+      if (!p2.ok || !p2.data) return false;
+      d2 = p2.data;
+    }
+    const E = ENC.encaissement(d, d2);
     const patch = {
-      mollieStatus: statut,
-      mollieEncaisse: (statut === 'paid'),
+      mollieStatus: String((d && d.status) || (d2 && d2.status) || ''),
+      mollieEncaisse: E.encaisse,
+      mollieEncaissePar: E.par,
+      mollieMontantPaye: E.montantPaye,
       mollieVerifieAt: FieldValue.serverTimestamp(),
     };
-    if (paye != null && !isNaN(paye)) patch.mollieMontantPaye = round2(paye);
-    const settle = (d.settlementAmount && d.settlementAmount.value != null) ? Number(d.settlementAmount.value) : null;
-    if (paye > 0 && settle != null && !isNaN(settle)) {
-      patch.mollieFee = round2(paye - settle);
-      patch.mollieSettlementAmount = settle;
-      patch.netTiServices = round2((Number(commission) || 0) - patch.mollieFee);
+    if (secondId) patch.mollieSecondStatus = String((d2 && d2.status) || '');
+    if (E.frais != null) {
+      patch.mollieFee = E.frais;
+      patch.mollieSettlementAmount = E.reglement;
+      patch.netTiServices = round2((Number(commission) || 0) - E.frais);
     }
     await db.collection('ledger').doc(reqId).set(patch, {merge: true});
     if (patch.mollieFee != null) {
@@ -1768,6 +1786,7 @@ const QUAND = require('./quand-disparu');
 const ARGENT = require('./argent-mis-de-cote');
 const CSE = require('./complement-sans-etat');
 const IRR = require('./versement-irroutable');
+const ENC = require('./encaissement');
 /* LE COMPTEUR DU JOUR. Un document par clé et par jour dans `quotas` — collection
  * SERVEUR (aucune règle ne l'ouvre, l'Admin SDK passe outre). Transaction : deux demandes
  * simultanées ne peuvent pas lire le même nombre et l'écrire deux fois.
@@ -5783,6 +5802,13 @@ exports.mollieWebhook = onRequest({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (req
               complementPayoutMotif: verse ? '' : (routeMotif() || '')}, {merge: true});
           } catch (_) {}
           try { await db.collection('ledger').doc(reqId).set({complementPayout: verse ? 'routed' : 'unrouted', complementNet: netC}, {merge: true}); } catch (_) {}
+          /* LE SECOND PAIEMENT ENTRE AUX COMPTES DÈS QU'IL EST PAYÉ : c'est souvent la
+             prestation entière (empreinte expirée). On relève les deux paiements tout de
+             suite plutôt que d'attendre le rapprochement du lendemain. */
+          try {
+            const lg = await db.collection('ledger').doc(reqId).get();
+            if (lg.exists) await recordMollieFee(db, reqId, String(r.molliePaymentId || ''), (lg.data() || {}).commissionAmount);
+          } catch (_) {}
           if (!verse) {
             try {
               await sendMail(db, ADMIN_EMAIL, {
