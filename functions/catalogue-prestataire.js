@@ -148,6 +148,12 @@ function commandable(artisan, svcId, reglageMetier) {
 function horsGrilleSur(artisan, svcId) {
   const a = artisan || {};
   if (a.acceptsGrille !== false) return false;
+  /* QUI A DÉJÀ TRAVAILLÉ AU PRIX DE LA GRILLE SUR CE MÉTIER L'A ACCEPTÉE DANS LES FAITS
+     (l'éditeur, 20/11/2026 : « c'est pourtant notre prix, il faut qu'elle soit
+     prévenue »). Le fait est écrit par le serveur seul (`grilleTravaillee`, verrouillé
+     dans les règles), métier par métier : une mission de ménage ne vaut pas pour la
+     garde d'enfants. */
+  if (a.grilleTravaillee && typeof a.grilleTravaillee === 'object' && a.grilleTravaillee[svcId] === true) return false;
   const dn = a.desiredNetRates;
   if (!dn || typeof dn !== 'object') return false;
   const v = dn[svcId];

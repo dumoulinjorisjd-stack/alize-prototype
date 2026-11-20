@@ -68,6 +68,13 @@ ok(!C.commandable(Object.assign({},REFUS,{ownCatalog:{massage:{on:true,lines:SIE
   'métier refermé aux cartes : sa carte ne s’applique plus, il redevient sans prix');
 ok(C.commandable(REFUS,'coiffure',OUVERT) && C.commandable(MAYA,'massage',OUVERT) && C.commandable({},'massage',OUVERT),
   'à la grille (ou métier non refusé, ou fiche ancienne) : commandable comme avant');
+const MARIE={acceptsGrille:false,desiredNetRates:{menage:'25',baby:'25'},grilleTravaillee:{menage:true}};
+ok(C.recoitLAleatoire(MARIE,'menage',OUVERT) && C.commandable(MARIE,'menage',OUVERT),
+  'a déjà travaillé au prix de la grille en ménage : il y reçoit de nouveau les commandes aléatoires (éditeur, 20/11/2026)');
+ok(!C.recoitLAleatoire(MARIE,'baby',OUVERT) && !C.commandable(MARIE,'baby',OUVERT),
+  'MÉTIER PAR MÉTIER : une mission de ménage ne vaut pas pour la garde d’enfants');
+ok(!C.recoitLAleatoire({acceptsGrille:false,desiredNetRates:{menage:'25'},grilleTravaillee:{menage:'oui'}},'menage',OUVERT),
+  'seul « true » compte : une valeur approchante ne remet personne dans l’aléatoire');
 
 console.log('\nC — le choix évolue dans les deux sens, et rien ne s’efface');
 const MASQUE={ownCatalog:{massage:{on:false,lines:SIENNES}}};
@@ -181,7 +188,7 @@ ok(/lignesConnues\s*\(/.test(corps),'sur l\u2019UNION de son catalogue et de la 
 ok(/notifyArtisansNewRequest/.test(corps)&&/createClientPayment/.test(corps),
   'assertion arrière — le relevé lit bien un serveur qui porte ces deux fonctions');
 ok(/catalogueQuiFaitFoi/.test(app),'et le client passe par la même porte pour savoir quoi afficher');
-ok(/Il ne re\\u00e7oit pas les commandes al\\u00e9atoires sur ces m\\u00e9tiers/.test(app),
+ok(/Il ne re\\u00e7oit pas les commandes al\\u00e9atoires en '\+noms\(hors\)/.test(app),
   'la fiche du prestataire hors grille dit qu’il ne reçoit pas l’aléatoire, là où l’on décide de le valider');
 
 console.log(f?('\n'+f+' ÉCHEC(S)\n'):'\nTout est vert.\n');

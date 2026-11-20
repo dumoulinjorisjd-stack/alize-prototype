@@ -1127,6 +1127,38 @@ async function mollieSoumettreProfil(accessToken, charge) {
 // et le rapprochement Mollie ne s'est jamais fait. On trie sur un seul champ (index
 // automatique) et on filtre le type en mémoire : même résultat, aucun index à créer,
 // aucune attente de construction.
+/* « A DÉJÀ TRAVAILLÉ AU PRIX DE LA GRILLE SUR CE MÉTIER » (l'éditeur, 20/11/2026).
+   Posé seulement si, à cet instant, aucune carte personnelle n'est en service sur ce
+   métier : sinon la mission s'est faite à SES prix, pas aux nôtres. */
+async function noterGrilleTravaillee(db, uid, svc) {
+  if (!uid || !svc) return false;
+  const ref = db.collection('artisans').doc(String(uid));
+  const snap = await ref.get();
+  if (!snap.exists) return false;
+  const a = snap.data() || {};
+  if (a.grilleTravaillee && a.grilleTravaillee[svc] === true) return false;
+  const REG = await reglagesCatalogueServeur(db);
+  if (CATP.catalogueProprePose(a, svc, REG.metier[svc])) return false;
+  const patch = {}; patch[svc] = true;
+  await ref.set({grilleTravaillee: patch}, {merge: true});
+  return true;
+}
+/* LE RATTRAPAGE DES MISSIONS PASSÉES : chaque écriture du registre (non écartée) dit
+   qu'un prestataire a été réglé sur un métier. Idempotent ; lancé par le rapprochement
+   quotidien et par « Rapprocher avec Mollie ». */
+async function rattraperGrilleTravaillee(db) {
+  const vus = new Set(); let poses = 0;
+  for (const d of await lireRegistre(db)) {
+    const e = d.data() || {};
+    if (e.exclu || !e.providerUid || !e.service) continue;
+    const k = e.providerUid + '|' + e.service;
+    if (vus.has(k)) continue;
+    vus.add(k);
+    try { if (await noterGrilleTravaillee(db, e.providerUid, e.service)) poses++; } catch (_) {}
+  }
+  if (poses) console.log('grilleTravaillee : ' + poses + ' métier(s) noté(s) comme travaillé(s) au prix de la grille.');
+  return poses;
+}
 async function lireRegistre(db, n) {
   const snap = await db.collection('ledger').orderBy('settledAt', 'desc').limit(n || 300).get();
   return snap.docs.filter((d) => ((d.data() || {}).type || 'commission') === 'commission');
@@ -3336,6 +3368,10 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}',
       saleInvoiceNo: saleInvoiceNo,
       settledAt: FieldValue.serverTimestamp(),
     });
+    /* A TRAVAILLÉ AU PRIX DE LA GRILLE SUR CE MÉTIER (CATP.horsGrilleSur) : posé à chaque
+       mission réglée sans carte personnelle en service — elle s'est donc faite au prix
+       Ti-Services. Écrit par le serveur seul. */
+    try { await noterGrilleTravaillee(db, providerUid, after.service || ''); } catch (_) {}
     console.log('Commission figée + registre reqId=' + reqId +
       ' base=' + base + ' pct=' + pct + '% comm=' + commissionTotale
       + (tipCommission ? (' (dont pourboire ' + tipCommission + ')') : '') + ' net=' + net);
@@ -3994,6 +4030,7 @@ exports.ledgerReconcile = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (requ
       // Un paiement introuvable chez Mollie ne doit pas faire tomber tout le rapprochement.
       try { if (await recordMollieFee(db, d.id, e.molliePaymentId, e.commissionAmount)) releves++; else echecs++; } catch (_) { echecs++; }
     }
+    try { await rattraperGrilleTravaillee(db); } catch (e) { console.warn('ledgerReconcile grilleTravaillee', e); }
     // On relit APRÈS écriture : on annonce un état vérifié, jamais un état supposé.
     let encaissees = 0; let autres = 0;
     (await lireRegistre(db)).forEach((d) => { const e = d.data() || {}; if (e.exclu) return; if (e.mollieEncaisse === true) encaissees++; else autres++; });
@@ -6925,6 +6962,7 @@ exports.paymentReconciliation = onSchedule({schedule: '0 9 * * *', secrets: [SMT
     }
     if (filled) console.log('paymentReconciliation : ' + filled + ' écriture(s) rapprochée(s) de Mollie.');
   } catch (e) { console.warn('reco mollieFee backfill', e); }
+  try { await rattraperGrilleTravaillee(db); } catch (e) { console.warn('reco grilleTravaillee', e); }
 
   // 7. ÉCRITURES QUE MOLLIE N'A JAMAIS ENCAISSÉES. Après rapprochement, une prestation
   //    facturée dont le paiement n'est pas « paid » chez Mollie n'a rien à faire dans la

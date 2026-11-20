@@ -169,6 +169,16 @@ const etat = (p) => p.evaluate(() => {
     ok(/if \(!r\.providerUid && r\.preferredProviderUid\)/.test(cp) && /CATP\.commandable\(ds\.data\(\) \|\| \{\}, svcD/.test(cp)
       && fn.indexOf('PRESTATAIRE NON COMMANDABLE') < fn.indexOf('if (Array.isArray(r.acts) && r.acts.length)'),
       'et une demande qui lui est adressée se refuse avant l’empreinte, à l’heure comme à l’acte'); }
+  { const fn = fs.readFileSync(path.join(RACINE, 'functions', 'index.js'), 'utf8');
+    const RULES = fs.readFileSync(path.join(RACINE, 'firestore.rules'), 'utf8');
+    const ng = fn.slice(fn.indexOf('async function noterGrilleTravaillee('), fn.indexOf('async function noterGrilleTravaillee(') + 900);
+    ok(/if \(CATP\.catalogueProprePose\(a, svc, REG\.metier\[svc\]\)\) return false;/.test(ng),
+      'le fait « a travaillé au prix de la grille » ne se pose pas sur une mission faite à SES prix (carte en service)');
+    ok(/await noterGrilleTravaillee\(db, providerUid, after\.service \|\| ''\)/.test(fn), 'il se pose à chaque mission réglée');
+    ok((fn.match(/await rattraperGrilleTravaillee\(db\)/g) || []).length === 2,
+      'et se rattrape sur les missions passées : rapprochement quotidien et « Rapprocher avec Mollie »');
+    ok(/request\.resource\.data\.get\('grilleTravaillee', \{\}\) == resource\.data\.get\('grilleTravaillee', \{\}\)/.test(RULES),
+      'un prestataire ne peut pas se l’attribuer : les règles le verrouillent'); }
   await b.close();
   console.log(f ? '\n' + f + ' ÉCHEC(S)' : '\nTOUT EST VERT');
   process.exit(f ? 1 : 0);

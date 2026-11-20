@@ -82,6 +82,29 @@ const mesurer = async (b, largeur) => {
     ok(!m.pageDeborde, 'la page ne déborde pas');
     ok(errs.length === 0, 'aucune erreur JS (' + errs.join(' | ').slice(0, 120) + ')');
   }
+  console.log('Fiche hors grille, métier par métier (éditeur, 20/11/2026)');
+  { const ctx = await b.newContext({locale: 'fr-FR', viewport: {width: 393, height: 1400}});
+    const p = await ctx.newPage();
+    await p.route('**/*', (r) => /gstatic|googleapis|firebase|cloudfunctions|google\.com/.test(r.request().url()) ? r.abort() : r.continue());
+    await p.goto(INDEX, {waitUntil: 'load'});
+    await p.waitForFunction(() => window.__S && window.__render); await p.waitForTimeout(400);
+    const t = await p.evaluate(() => {
+      document.body.classList.add('standalone'); const sp = document.getElementById('splash'); if (sp) sp.style.display = 'none';
+      const S = window.__S;
+      S.account = {name: 'Admin', email: 'contact@ti-services.fr', uid: 'adm', role: 'admin'};
+      S.persona = 'admin'; S.onboarded = true; S.authView = null; S.lang = 'fr';
+      S.adminArtisans = [{id: 'm1', uid: 'm1', real: true, name: 'Marie Coursieres', status: 'valide', cats: ['menage', 'baby'], rates: {}, jobs: 1, skipAt: {},
+        acceptsGrille: false, desiredNetRates: {menage: '25', baby: '25'}, grilleTravaillee: {menage: true}}];
+      S.adminArtsLoaded = true; S.admin = {view: 'art', sel: 'm1'}; window.__render();
+      const k = [...document.querySelectorAll('#view .fr')].find((r) => /Prix net souhait/.test(r.textContent));
+      return k ? k.textContent.replace(/\s+/g, ' ') : '';
+    });
+    ok(/Il ne reçoit pas les commandes aléatoires en Baby-sitting/.test(t) && !/aléatoires en Ménage/.test(t),
+      'la fiche dit où il ne reçoit pas l’aléatoire : garde d’enfants seulement');
+    ok(/En Ménage, il a déjà travaillé au prix de la grille : il y reçoit les commandes aléatoires/.test(t.replace(/\u00a0/g, ' ')),
+      'et où il les reçoit de nouveau, parce qu’il y a déjà travaillé au prix de la grille');
+    await ctx.close(); }
+
   console.log('Ordinateur 1280 px');
   const {m} = await mesurer(b, 1280);
   ok(m && !m.invisible && m.libelleAGauche, 'le libellé reste dans sa colonne, à gauche');
