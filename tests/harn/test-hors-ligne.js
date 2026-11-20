@@ -36,8 +36,8 @@ ok(iAvail>0&&iOnline>iAvail,'le filtre est posé avec les autres, après les dis
 console.log('\nC — les TROIS envois du serveur, pas un seul');
 const n=(srv.match(/enLigne\(/g)||[]).length;
 ok(n>=4,'la règle est appliquée partout où le serveur choisit qui prévenir ('+(n-1)+' relais)');
-ok(/availOk\(availById\[uid\], r\) && enLigne\(onlineById\[uid\]\)/.test(srv),
-  'nouvelle demande : le pot commun est filtré');
+ok(/if \(!enLigne\(dd\.online\)\) return 'hors-ligne';/.test(srv) && /uids\.filter\(\(uid\) => motifs\[uid\] === ''\)/.test(srv),
+  'nouvelle demande : le pot commun est filtré (par motifNonPrevenu, qui porte l’interrupteur)');
 ok(/availOk\(dd\.avail, after\) && enLigne\(dd\.online\)/.test(srv),
   'coup de pouce : un artisan hors ligne n’est pas re-sollicité');
 /* LA DIFFUSION AU POOL A DÉMÉNAGÉ DANS UNE PORTE (26/10/2026) : la règle était écrite en

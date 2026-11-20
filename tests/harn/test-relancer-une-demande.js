@@ -94,7 +94,7 @@ const iR = APP.indexOf('const cmdRelance=function(r)');
 const rel = APP.slice(iR, iR + 700);
 ok(iR > 0, 'le bouton est composé par une fonction nommée');
 ok(/r\.status!=='pending'\)return ''/.test(rel), 'il ne paraît que sur une demande qui cherche encore');
-ok(/\$\{cmdDiffusion\(r\)\}(\$\{cmdReponses\(r\)\})?\$\{cmdRelance\(r\)\}/.test(APP), 'et il suit la ligne qui dit l\'issue de la diffusion (et qui a répondu)');
+ok(/\$\{cmdDiffusion\(r\)\}(\$\{cmdReponses\(r\)\})?(\$\{cmdNonPrevenus\(r\)\})?\$\{cmdRelance\(r\)\}/.test(APP), 'et il suit la ligne qui dit l\'issue de la diffusion (et qui a répondu)');
 /* IL S'ARME. Une alerte partie ne se rappelle pas, et le geste touche des dizaines
    d'appareils : la discipline des deux boutons de purge. */
 ok(/S\._cmdRelance===r\.id/.test(rel), 'il s\'arme');

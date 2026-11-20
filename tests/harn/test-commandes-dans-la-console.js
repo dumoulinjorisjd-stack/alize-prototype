@@ -149,7 +149,8 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   /* UNE DEMANDE D'AVANT CE CHAMP NE DIT RIEN plutôt que de dire « personne » : on ne
      sait pas, et ce n'est pas la même chose. */
   const muette = await console_([EN_RECHERCHE], []);
-  ok(!/Personne prévenu/.test(muette.txt) && !/prévenus/.test(muette.txt),
+  const muetteSansBouton = muette.txt.replace(/Voir les non prévenus/g, '');
+  ok(!/Personne prévenu/.test(muetteSansBouton) && !/prévenus/.test(muetteSansBouton),
     'une demande d’avant ce champ ne prétend rien');
 
   /* G — LA CONSOLE NE PEUT DIRE QUE CE QUE LE SERVEUR ÉCRIT. Aucun banc ne fait tourner
@@ -207,8 +208,8 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
      avait COUPÉ ses notifications était quand même poussé, et comme un jeton périmé le
      faisait compter comme « joignable », il ne recevait pas non plus l'e-mail de
      secours. Il n'était prévenu par AUCUN chemin. */
-  ok((SRV.match(/await _jetonsArtisans\(db,/g) || []).length === 2,
-    'les deux chemins passent par la même porte à jetons');
+  ok((SRV.match(/await _jetonsArtisans\(db,/g) || []).length === 3,
+    'les trois chemins (nouvelle demande, demande rouverte, « Prévenir quand même ») passent par la même porte à jetons');
   ok(!/\(\(u\.data\(\) \|\| \{\}\)\.pushTokens \|\| \[\]\)\.forEach/.test(SRV),
     'et plus personne ne lit `pushTokens` à côté de cette porte');
   const porte = SRV.slice(SRV.indexOf('async function _jetonsArtisans'), SRV.indexOf('/* CE QUI EST PARTI'));
