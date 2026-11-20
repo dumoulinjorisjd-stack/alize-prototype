@@ -93,7 +93,7 @@ ok(/rien n’a été prélevé au client, <b>rien n’est dû<\/b>/.test(ecr),
   'la carte dit, ligne par ligne, que rien n\'est dû');
 ok(/\$\{versNb\?'Le client a payé/.test(ecr),
   'la bannière n\'affirme une dette que lorsqu\'il y en a une');
-ok(/versAbouti\(v\)===false\?`<button class="btn ghost sm" data-adm="vers-rate:/.test(ecr),
+ok(/\(versAbouti\(v\)===false&&!v\.parLeSecond\)\?`<button class="btn ghost sm" data-adm="vers-rate:/.test(ecr),
   'la sortie n\'est offerte QUE là où Mollie dit le paiement mort');
 
 console.log('\n── LA SORTIE EST LE MÊME GESTE, AVEC LES BONS MOTS ─────────────────────');
