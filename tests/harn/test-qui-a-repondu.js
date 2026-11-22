@@ -19,7 +19,9 @@ const iN = SRV.indexOf('async function _noterDiffusion');
 const corpsN = SRV.slice(iN, SRV.indexOf('\n}\n', iN));
 ok(/prevenus: FieldValue\.arrayUnion\(\.\.\._uidsPrevenus\(info\)\)/.test(corpsN), 'la liste s\'ACCUMULE (arrayUnion), une relance ne l\'efface pas');
 const appels = (SRV.match(/motif: 'envoyee', cibles: targetUids\.length[^}]*\}/g) || []);
-ok(appels.length === 2 && appels.every((a) => /uids: targetUids/.test(a)), 'les deux envois de la création passent la liste (' + appels.length + ')');
+/* DEPUIS LE 22/11/2026 la création n'écrit plus qu'UNE fois (la notification d'abord,
+   l'e-mail ensuite à qui elle n'a pas atteint) : un seul appel, avec la liste. */
+ok(appels.length === 1 && appels.every((a) => /uids: targetUids/.test(a)), 'l’envoi de la création passe la liste (' + appels.length + ')');
 ok(/_noterDiffusion\(db, reqId, Object\.assign\(\{ uids: uids \}, issue\)\)/.test(SRV), 'la relance et la réouverture aussi (diffuserAuPool)');
 const iR = SRV.indexOf('LE REFUS NE S\'EFFACE PLUS');
 const iQ = SRV.indexOf('_quotaJour(db, \'diff-\'', iR);
@@ -30,7 +32,7 @@ const iA = APP.indexOf('function refreshAdminArtisans');
 ok(/skipAt:\(a\.skippedAt&&typeof a\.skippedAt==='object'\)\?a\.skippedAt:\{\}/.test(APP.slice(iA, iA + 4000)),
   'la console lit l\'heure de passage sur la fiche de chaque artisan');
 ok(/'diffusion','prevenus','refusHisto'/.test(RULES), 'les deux champs sont réservés au serveur (serverKeys)');
-ok(eval('(' + SRV.slice(SRV.indexOf('function _uidsPrevenus'), SRV.indexOf('async function _noterDiffusion')).replace(/^function _uidsPrevenus/, 'function') + ')')
+ok(eval('(' + SRV.slice(SRV.indexOf('function _uidsPrevenus'), SRV.indexOf('\n}\n', SRV.indexOf('function _uidsPrevenus')) + 2).replace(/^function _uidsPrevenus/, 'function') + ')')
   ? true : false, 'le filtre se relit');
 
 (async () => {

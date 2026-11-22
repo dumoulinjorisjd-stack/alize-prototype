@@ -202,7 +202,8 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
 
   /* ELLE REND CE QU'ELLE A FAIT : sans cela, l'appelant retombait sur le nombre de
      JETONS et annonçait des envois qui ont pu tous échouer. */
-  ok(/return \{ successCount: ok, failureCount: ko \}/.test(SRV),
+  // Depuis le 22/11/2026 elle rend AUSSI les jetons livrés (le canal de chacun).
+  ok(/return \{ successCount: ok, failureCount: ko, livres: livres \}/.test(SRV),
     'pushMulticast rend le nombre réellement envoyé');
 
   /* LES DEUX CHEMINS LISENT LE CONSENTEMENT PAR LA MÊME PORTE. La réouverture — celle
