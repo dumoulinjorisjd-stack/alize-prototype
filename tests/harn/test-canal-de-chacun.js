@@ -39,9 +39,9 @@ ok(/canaux: CANP\.canauxPrevenus\(targetUids, tokenToUid, livres, suivi\.mailes,
    && /canaux: CANP\.canauxPrevenus\(uids, tokenToUid, livres, suivi\.mailes, suivi\.plafonnes\)/.test(pool)
    && /await ref\.set\(\{canaux: \{\[uid\]: canal\}\}, \{merge: true\}\);/.test(prev), 'chacun écrit le canal de CHAQUE prestataire sur la demande');
 ok(/\.\.\._canauxBornes\(info\),/.test(tranche('async function _noterDiffusion(', 1600)), 'la diffusion l’enregistre, fusionné clé par clé');
-{ const src = tranche('function _canauxBornes(', 600); const corps = src.slice(0, src.indexOf('\n}\n') + 2);
-  const bornes = new Function('CANP', 'PREVENUS_MAX', 'return ' + corps)(CANP, 80);
-  const r = bornes({ canaux: { u1: 'push', u2: 'n’importe quoi', u3: 'mail' } });
+{ const src = tranche('function _canauxBornes(', 600); const corps = src ? src.slice(0, src.indexOf('\n}\n') + 2) : '';
+  const bornes = corps ? new Function('CANP', 'PREVENUS_MAX', 'return ' + corps)(CANP, 80) : null;
+  const r = bornes ? bornes({ canaux: { u1: 'push', u2: 'n’importe quoi', u3: 'mail' } }) : 'absente';
   ok(JSON.stringify(r) === '{"canaux":{"u1":"push","u3":"mail"}}', 'une valeur hors de la liste fermée ne s’écrit pas (' + JSON.stringify(r) + ')'); }
 ok(/if \(S\.mailes\) S\.mailes\.push\(uid\);/.test(fn) && /if \(S\.plafonnes\) S\.plafonnes\.push\(uid\);/.test(fn), 'l’envoi d’e-mails dit à QUI il a écrit');
 ok(/'diffusion','prevenus','refusHisto','invites','canaux',/.test(fs.readFileSync(path.join(RACINE, 'firestore.rules'), 'utf8')), 'seul le serveur écrit le canal (règles)');
