@@ -210,8 +210,8 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
      avait COUPÉ ses notifications était quand même poussé, et comme un jeton périmé le
      faisait compter comme « joignable », il ne recevait pas non plus l'e-mail de
      secours. Il n'était prévenu par AUCUN chemin. */
-  ok((SRV.match(/await _jetonsArtisans\(db,/g) || []).length === 3,
-    'les trois chemins (nouvelle demande, demande rouverte, « Prévenir quand même ») passent par la même porte à jetons');
+  ok((SRV.match(/await _jetonsArtisans\(db,/g) || []).length === 4,
+    'les quatre chemins (nouvelle demande, demande rouverte, « Prévenir quand même », et le rappel qui cherche qui n’est pas joignable) passent par la même porte à jetons');
   ok(!/\(\(u\.data\(\) \|\| \{\}\)\.pushTokens \|\| \[\]\)\.forEach/.test(SRV),
     'et plus personne ne lit `pushTokens` à côté de cette porte');
   const porte = SRV.slice(SRV.indexOf('async function _jetonsArtisans'), SRV.indexOf('/* CE QUI EST PARTI'));
