@@ -2212,7 +2212,7 @@ exports.diffusionDiagnostic = onCall(async (request) => {
   arts.docs.forEach((d) => {
     const a = d.data() || {};
     if ((a.cats || []).indexOf(svc) < 0 || d.id === r.clientUid) return;
-    if (prevenus.has(d.id) && !invites.has(d.id)) return;   // déjà prévenu : « Réponses » dit ce qu'il a fait
+    if (prevenus.has(d.id)) return;   // déjà prévenu (par la diffusion ou par vous) : « Réponses » dit ce qu'il a fait
     liste.push({
       uid: d.id, nom: String(a.name || 'Prestataire').slice(0, 60),
       motif: bloques.has(d.id) ? 'bloque' : (motifNonPrevenu(a, r, svc, REG.metier[svc], reqId, d.id) || 'non-alerte'),
@@ -2253,6 +2253,56 @@ exports.prevenirQuandMeme = onCall({secrets: [SMTP_PASS]}, async (request) => {
   }
   console.log('prevenirQuandMeme ' + reqId + ' → ' + uid + ' (push ' + push + ', mail ' + mail + ') par ' + who);
   return {push, mail};
+});
+
+/* ── LE RAPPEL « ACTIVEZ VOS NOTIFICATIONS » (l'éditeur, 22/11/2026) ──
+   « Les prestataires en ménage ne répondent jamais. » Sur une demande, quatre sur sept
+   n'étaient joignables que par e-mail : sans appareil enregistré, ils apprennent une
+   mission trop tard. Un e-mail, le même pour tous, qui dit le geste exact sur iPhone et
+   sur Android. Le texte est écrit ICI et rendu à la console pour l'aperçu : ce que
+   l'administrateur lit est ce qui part. Une fois par semaine au plus par prestataire. */
+const RAPPEL_NOTIF_SUJET = 'Ti-Services · Activez les notifications pour recevoir les missions';
+const RAPPEL_NOTIF_JOURS = 7;
+function rappelNotifTexte(prenom) {
+  return 'Bonjour' + (prenom ? ' ' + prenom : '') + ',\n\n'
+    + 'Des demandes de clients vous sont envoyées sur Ti-Services, mais votre téléphone ne reçoit pas nos notifications : '
+    + 'vous ne les apprenez que par e-mail, souvent trop tard pour les prendre.\n\n'
+    + 'Pour être prévenu à l’instant :\n'
+    + '• Sur iPhone : ouvrez ti-services.fr dans Safari, bouton Partager → « Sur l’écran d’accueil ». '
+    + 'Ouvrez ensuite Ti-Services depuis cette icône et touchez « Activer les notifications ».\n'
+    + '• Sur Android : ouvrez ti-services.fr dans Chrome, menu ⋮ → « Installer l’application » (ou « Ajouter à l’écran d’accueil »), '
+    + 'puis touchez « Activer les notifications » dans l’app.\n\n'
+    + 'Si vous les aviez refusées : Réglages du téléphone → Ti-Services → Notifications.\n\n'
+    + 'L’équipe Ti-Services';
+}
+exports.rappelNotifications = onCall({secrets: [SMTP_PASS]}, async (request) => {
+  const who = _adminOuRefus(request);
+  const envoyer = !!(request.data && request.data.envoyer);
+  if (!envoyer) return {apercu: {sujet: RAPPEL_NOTIF_SUJET, texte: rappelNotifTexte('[prénom]')}};
+  const db = getFirestore();
+  const arts = await db.collection('artisans').where('status', '==', 'valide').get();
+  const uids = arts.docs.map((d) => d.id);
+  const tokenToUid = await _jetonsArtisans(db, uids);
+  const joignables = new Set(Object.values(tokenToUid));
+  const seuil = Date.now() - RAPPEL_NOTIF_JOURS * 86400000;
+  let envoyes = 0; let recents = 0; let sansEmail = 0;
+  for (const d of arts.docs) {
+    if (joignables.has(d.id)) continue;
+    const a = d.data() || {};
+    const deja = a.rappelNotifAt && a.rappelNotifAt.toMillis ? a.rappelNotifAt.toMillis() : Number(a.rappelNotifAt) || 0;
+    if (deja > seuil) { recents++; continue; }
+    const mail = String(a.email || '').trim();
+    if (!/.+@.+\..+/.test(mail)) { sansEmail++; continue; }
+    const prenom = String(a.repGiven || a.name || '').trim().split(' ')[0];
+    const html = escHtmlS(rappelNotifTexte(prenom)).split('\n').join('<br>');
+    try {
+      await sendMail(db, mail, {subject: RAPPEL_NOTIF_SUJET, html: html, pro: true});
+      await d.ref.set({rappelNotifAt: FieldValue.serverTimestamp()}, {merge: true});
+      envoyes++;
+    } catch (e) { console.warn('rappelNotifications', d.id, e); }
+  }
+  console.log('rappelNotifications : ' + envoyes + ' envoyé(s), ' + recents + ' récent(s), ' + sansEmail + ' sans e-mail, par ' + who);
+  return {envoyes, recents, sansEmail};
 });
 
 exports.notifyArtisanApproved = onDocumentUpdated({document: 'artisans/{artisanId}', secrets: [SMTP_PASS]}, async (event) => {
