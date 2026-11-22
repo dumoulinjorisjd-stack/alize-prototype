@@ -60,7 +60,10 @@ ok(/if \(prevenus\.has\(d\.id\)\) return;/.test(tranche('exports.diffusionDiagno
     window.__render();
     const rep = document.querySelector('.cmd-reponses');
     const a = document.querySelector('[data-wa="u1"]');
-    return { txt: rep ? rep.textContent.replace(/\s+/g, ' ') : '', href: a ? a.getAttribute('href') : '', target: a ? a.getAttribute('target') : '',
+    const carte = rep ? rep.closest('.card').getBoundingClientRect() : null;
+    const deborde = rep ? Math.max(...[...rep.querySelectorAll('*')].map((e) => e.getBoundingClientRect().right - carte.right)) : 99;
+    const lien = a ? [...a.getClientRects()] : [];
+    return { deborde: Math.round(deborde), uneLigne: lien.length === 1, txt: rep ? rep.textContent.replace(/\s+/g, ' ') : '', href: a ? a.getAttribute('href') : '', target: a ? a.getAttribute('target') : '',
       waU2: !!document.querySelector('[data-wa="u2"]'), entete: document.getElementById('view').textContent.replace(/\s+/g, ' ') };
   });
   ok(/Lydie Antoine sans réponse · vue 15:02/.test(r1.txt), 'elle l’a vue à 15 h 02 et ne l’a pas prise : c’est dit');
@@ -70,6 +73,8 @@ ok(/if \(prevenus\.has\(d\.id\)\) return;/.test(tranche('exports.diffusionDiagno
   ok(/^Bonjour Lydie, une demande de Ménage vous attend sur Ti-Services : Demain à 09:00, Toiny\. Elle est dans votre app : https:\/\/ti-services\.fr\/\?open=missions$/.test(txt),
     'le message est prérempli, sans montant (chacun touche un net différent) : « ' + txt + ' »');
   ok(!r1.waU2, 'pas de bouton sans numéro de téléphone');
+  ok(r1.deborde <= 0, 'à 393 px, rien ne sort du cadre (' + r1.deborde + ' px)');
+  ok(r1.uneLigne, 'et l’icône WhatsApp ne se sépare pas de son mot');
   ok(/7 prestataires prévenus · 3 par notification, 4 par e-mail · \+ 1 prévenu par vous/.test(r1.entete), 'l’en-tête compte aussi ceux que vous avez prévenus');
 
   console.log('C — côté prestataire : la demande vue est notée, une fois');
