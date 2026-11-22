@@ -3822,7 +3822,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='926';
+  const VERSION_APP='927';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -6315,6 +6315,13 @@
     const liste=lues.slice().sort(function(x,y){return (Number(y.noteAt)||0)-(Number(x.noteAt)||0);});
     return {avis:lues.length, moyenne:Math.round(somme/lues.length*10)/10, liste:liste};
   }
+  /* PAR QUEL CANAL UN PRESTATAIRE A ÉTÉ PRÉVENU (l'éditeur, 22/11/2026 : « on relance
+     par WhatsApp surtout ceux qui reçoivent juste le mail »). Une seule porte : la
+     ligne « Réponses », son ordre et le message après « Prévenir quand même » la lisent.
+     [libellé, à relancer en priorité, rang dans la liste] */
+  const CANAUX_PREV={mail:['e-mail seulement',true,0],plafond:['e-mail non parti (plafond du jour)',true,1],
+    aucun:['injoignable',true,2],push:['notifié',false,3]};
+  function canalPrevenu(r,uid){const c=r&&r.canaux&&r.canaux[uid];return CANAUX_PREV[c]?c:'';}
   function reqPourConsole(id,r0){
     r0=r0||{};
     const txt=function(v,n){return String(v==null?'':v).slice(0,n||60);};
@@ -6349,6 +6356,9 @@
          ne l'a pas rouverte ; l'historique, lui, survit à la réouverture. */
       prevenus:(Array.isArray(r0.prevenus)?r0.prevenus:[]).filter(function(u){return typeof u==='string'&&u;}).slice(0,80).map(function(u){return u.slice(0,128);}),
       invites:(Array.isArray(r0.invites)?r0.invites:[]).filter(function(u){return typeof u==='string'&&u;}).slice(0,80).map(function(u){return u.slice(0,128);}),
+      /* PAR QUEL CANAL CHACUN A ÉTÉ ATTEINT (serveur seul, liste fermée). */
+      canaux:(function(){const c=r0.canaux,o={};if(!c||typeof c!=='object')return o;
+        Object.keys(c).slice(0,120).forEach(function(u){if(u&&u.length<=128&&CANAUX_PREV[c[u]])o[u]=c[u];});return o;})(),
       refus:(function(){
         const l=(Array.isArray(r0.refusHisto)?r0.refusHisto:[]).filter(function(x){return x&&typeof x.uid==='string'&&x.uid;})
           .slice(0,40).map(function(x){return {uid:x.uid.slice(0,128),nom:txt(x.nom,60),at:dateMs(x.at)};});
@@ -12663,7 +12673,13 @@
       if(r.providerUid&&actif)ajoute(r.providerUid,'pris',0);
       (r.refus||[]).slice().reverse().forEach(function(x){ajoute(x.uid,'refus',x.at,x.nom);});
       arts.forEach(function(a){const uid=a.uid||a.id;const t=passeA(uid);if(t)ajoute(uid,'passe',t);});
-      (r.prevenus||[]).forEach(function(uid){ajoute(uid,'attente',0);});
+      /* SANS RÉPONSE : CEUX QUE SEUL L'E-MAIL A ATTEINTS D'ABORD — ce sont eux qu'on
+         relance par WhatsApp. Puis les injoignables, puis les notifiés. Une demande
+         antérieure au relevé des canaux garde son ordre. */
+      const rang=function(uid){const c=canalPrevenu(r,uid);return c?CANAUX_PREV[c][2]:4;};
+      (r.prevenus||[]).map(function(uid,i){return {uid:uid,i:i};})
+        .sort(function(a,b){return (rang(a.uid)-rang(b.uid))||(a.i-b.i);})
+        .forEach(function(x){ajoute(x.uid,'attente',0);});
       if(!lignes.length)return '';
       const relance=r.diff&&r.diff.motif==='relancee'?r.diff.at:0;
       const MOTS={pris:['a pris la mission','var(--good)'],refus:['a refusé','var(--coral-deep)'],passe:['a passé','var(--ink-soft)'],attente:['sans réponse','var(--muted)']};
@@ -12688,13 +12704,16 @@
         const avant=(l.etat==='passe'&&relance&&l.at&&l.at<relance)?' (avant la relance)':'';
         const vu=(l.etat==='attente')?vueA(l.uid):0;
         const vuTxt=(l.etat==='attente')?(vu?' · vue '+h(vu):' · jamais vue'):'';
+        const canal=(l.etat==='attente')?canalPrevenu(r,l.uid):'';
+        const canalH=canal?` <span data-canal="${canal}" style="color:${CANAUX_PREV[canal][1]?'var(--coral-deep)':'var(--good)'};font-weight:700">· ${esc(CANAUX_PREV[canal][0])}</span>`:'';
         const wa=(l.etat==='attente')?waDe(l.uid):'';
         /* UNE PERSONNE PAR LIGNE : avec « vue … » et le lien WhatsApp, la ligne ne tient
            plus d'un trait et un « nowrap » la faisait sortir du cadre au téléphone. */
-        return `<span class="cmd-rep" data-etat="${l.etat}" data-vue="${l.etat==='attente'?(vu?'oui':'non'):''}" style="display:block"><b style="white-space:nowrap">${esc(l.nom)}</b> <span style="color:${m[1]}">${esc(m[0]+quand+avant+vuTxt)}</span>${wa?` <a class="linklike" data-wa="${esc(l.uid)}" href="${esc(wa)}" target="_blank" rel="noopener" style="font-weight:700;white-space:nowrap">${I.whatsapp}&nbsp;WhatsApp</a>`:''}</span>`;
+        return `<span class="cmd-rep" data-etat="${l.etat}" data-vue="${l.etat==='attente'?(vu?'oui':'non'):''}" style="display:block"><b style="white-space:nowrap">${esc(l.nom)}</b> <span style="color:${m[1]}">${esc(m[0]+quand+avant)}</span>${canalH}<span style="color:${m[1]}">${esc(vuTxt)}</span>${wa?` <a class="linklike" data-wa="${esc(l.uid)}" href="${esc(wa)}" target="_blank" rel="noopener" style="font-weight:700;white-space:nowrap">${I.whatsapp}&nbsp;WhatsApp</a>`:''}</span>`;
       }).join('');
       const nb=function(e){return lignes.filter(function(l){return l.etat===e;}).length;};
-      const resume=[nb('refus')?(nb('refus')+' refus'):'',nb('passe')?(nb('passe')+' passage'+(nb('passe')>1?'s':'')):'',nb('attente')?(nb('attente')+' sans réponse'):''].filter(Boolean).join(', ');
+      const nMailSeul=lignes.filter(function(l){return l.etat==='attente'&&canalPrevenu(r,l.uid)==='mail';}).length;
+      const resume=[nb('refus')?(nb('refus')+' refus'):'',nb('passe')?(nb('passe')+' passage'+(nb('passe')>1?'s':'')):'',nb('attente')?(nb('attente')+' sans réponse'+(nMailSeul?' dont '+nMailSeul+' par e-mail seulement':'')):''].filter(Boolean).join(', ');
       const ancienne=!(r.prevenus&&r.prevenus.length)&&r.diff&&r.diff.cibles>0;
       return `<div class="mini cmd-reponses" style="margin-top:5px;line-height:1.55;color:var(--ink-soft)">${resume?'<b>Réponses</b>&nbsp;: '+esc(resume)+'<br>':''}${items}${reste>0?'et '+reste+' autre'+(reste>1?'s':''):''}${ancienne?'<br><span style="color:var(--muted)">La liste des prestataires prévenus n’était pas encore gardée pour cette demande : seuls les passages et les refus connus s’affichent.</span>':''}</div>`;
     };
@@ -20902,7 +20921,10 @@
         FB.fn.httpsCallable(FB.functions,'prevenirQuandMeme')({reqId:id,uid:uid}).then(function(r){
           const d=(r&&r.data)||{};const E=(S._nonPrev||{})[id];
           if(E){E.liste=E.liste.map(function(x){return x.uid===uid?Object.assign({},x,{invite:true}):x;});}
-          toast((d.push||d.mail)?'Prévenu ✓ (la demande s’affiche dans son app)':'Ajouté à la demande ✓ : aucun appareil ni e-mail joignable, elle s’affiche dans son app');render();
+          const rq=(S.adminReqs||[]).find(function(x){return x.id===id;});
+          if(rq&&CANAUX_PREV[d.canal]){rq.canaux=Object.assign({},rq.canaux||{});rq.canaux[uid]=d.canal;}
+          toast(d.canal==='push'?'Prévenu par notification ✓':d.canal==='mail'?'Prévenu par e-mail seulement ✓ : relancez-le par WhatsApp'
+            :(d.push||d.mail)?'Prévenu ✓ (la demande s’affiche dans son app)':'Ajouté à la demande ✓ : aucun appareil ni e-mail joignable, elle s’affiche dans son app');render();
         }).catch(function(e){toast('⚠︎ '+fbErrAdmin(e));});
         return;}
       else if(act==='cmd-relance'){

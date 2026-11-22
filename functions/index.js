@@ -1851,6 +1851,7 @@ const ARGENT = require('./argent-mis-de-cote');
 const CSE = require('./complement-sans-etat');
 const IRR = require('./versement-irroutable');
 const ENC = require('./encaissement');
+const CANP = require('./canaux-prevenus');
 /* LE COMPTEUR DU JOUR. Un document par clé et par jour dans `quotas` — collection
  * SERVEUR (aucune règle ne l'ouvre, l'Admin SDK passe outre). Transaction : deux demandes
  * simultanées ne peuvent pas lire le même nombre et l'écrire deux fois.
@@ -1952,6 +1953,15 @@ function _uidsPrevenus(info) {
   const l = Array.isArray((info || {}).uids) ? info.uids : [];
   return l.filter((u) => typeof u === 'string' && u && u.length <= 128).slice(0, PREVENUS_MAX);
 }
+function _canauxBornes(info) {
+  const c = (info || {}).canaux;
+  if (!c || typeof c !== 'object') return {};
+  const out = {};
+  Object.keys(c).slice(0, PREVENUS_MAX).forEach((u) => {
+    if (u && u.length <= 128 && CANP.CANAUX.indexOf(c[u]) >= 0) out[u] = c[u];
+  });
+  return Object.keys(out).length ? { canaux: out } : {};
+}
 async function _noterDiffusion(db, reqId, info) {
   try {
     if (!reqId) return;
@@ -1970,11 +1980,16 @@ async function _noterDiffusion(db, reqId, info) {
          s'ACCUMULE (création, relance, réouverture) : un artisan prévenu une fois l'a
          été, une relance ne l'efface pas. Bornée, comme toute liste écrite ici. */
       ...(_uidsPrevenus(info).length ? { prevenus: FieldValue.arrayUnion(..._uidsPrevenus(info)) } : {}),
+      /* ET PAR QUEL CANAL, pour chacun (l'éditeur, 22/11/2026 : « on relance par WhatsApp
+         surtout ceux qui reçoivent juste le mail »). Fusionné clé par clé : une relance
+         met à jour ceux qu'elle prévient, sans effacer les autres. */
+      ..._canauxBornes(info),
     }, { merge: true });
   } catch (e) { console.warn('_noterDiffusion', reqId, e); }
 }
 
-async function mailArtisansSansAppareil(db, artById, targetUids, tokenToUid, r, dirigee) {
+async function mailArtisansSansAppareil(db, artById, targetUids, tokenToUid, r, dirigee, suivi) {
+  const S = suivi || { mailes: [], plafonnes: [] };
   try {
     const joignables = {};
     Object.keys(tokenToUid || {}).forEach((tok) => { joignables[tokenToUid[tok]] = true; });
@@ -2002,7 +2017,7 @@ async function mailArtisansSansAppareil(db, artById, targetUids, tokenToUid, r, 
       // l'origine des demandes. C'est le dernier filet, après la garantie et le plafond
       // par client.
       const q = await _quotaJour(db, 'mail-pro-' + uid, ANTI.MAILS_JOUR_PRESTATAIRE);
-      if (!q.ok) { plafonnes++; return; }
+      if (!q.ok) { plafonnes++; if (S.plafonnes) S.plafonnes.push(uid); return; }
       try {
         await sendMail(db, mail, {
           subject: (dirigee ? 'Une demande vous est réservée, ' : 'Nouvelle demande, ') + svcM,
@@ -2024,6 +2039,7 @@ async function mailArtisansSansAppareil(db, artById, targetUids, tokenToUid, r, 
           cta: {label: 'Ouvrir mes missions', url: lien},
         });
         envoyes++;
+        if (S.mailes) S.mailes.push(uid);
       } catch (e) { console.warn('mailArtisansSansAppareil', uid, e); }
     }));
     console.log('E-mail « nouvelle demande » à ' + envoyes + ' artisan(s) sans appareil notifié'
@@ -2151,17 +2167,25 @@ exports.notifyArtisansNewRequest = onDocumentCreated({document: 'requests/{reqId
   const tokenToUid = await _jetonsArtisans(db, targetUids);
   const tokens = Object.keys(tokenToUid);
 
-  const nMail = await mailArtisansSansAppareil(db, artById, targetUids, tokenToUid, r, !!preferred);
-  if (!tokens.length) { console.log('Aucun jeton artisan enregistré, e-mail(s) envoyé(s) à la place.');
-    await _noterDiffusion(db, event.params && event.params.reqId,
-      { motif: 'envoyee', cibles: targetUids.length, push: 0, mail: nMail, uids: targetUids }); return; }
-
-  const message = messageNouvelleMission(r, !!preferred, tokens);
-
-  const res = await getMessaging().sendEachForMulticast(message);
-  console.log(`Push artisans : ${res.successCount}/${tokens.length}`);
+  /* LA NOTIFICATION D'ABORD, L'E-MAIL ENSUITE À QUI ELLE N'A PAS ATTEINT. L'e-mail ne
+     partait qu'à ceux qui n'ont AUCUN jeton : un prestataire dont le seul jeton est
+     périmé ne recevait ni notification (refusée par FCM) ni e-mail (il « avait » un
+     appareil). L'e-mail suit désormais ce qui a été LIVRÉ, pas ce qui a été tenté. */
+  let res = { successCount: 0, responses: [] };
+  if (tokens.length) {
+    // Un échec d'envoi groupé ne doit pas priver les autres de leur e-mail, qui part après.
+    try { res = await getMessaging().sendEachForMulticast(messageNouvelleMission(r, !!preferred, tokens)); }
+    catch (e) { console.warn('Push artisans', e); res = { successCount: 0, responses: [] }; }
+    console.log(`Push artisans : ${res.successCount}/${tokens.length}`);
+  } else console.log('Aucun jeton artisan enregistré, e-mail(s) envoyé(s) à la place.');
+  const livres = CANP.jetonsLivres(tokens, res.responses);
+  const livresA = {}; livres.forEach((t) => { livresA[t] = tokenToUid[t]; });
+  const suivi = { mailes: [], plafonnes: [] };
+  const nMail = await mailArtisansSansAppareil(db, artById, targetUids, livresA, r, !!preferred, suivi);
   await _noterDiffusion(db, event.params && event.params.reqId,
-    { motif: 'envoyee', cibles: targetUids.length, push: res.successCount, mail: nMail, uids: targetUids });
+    { motif: 'envoyee', cibles: targetUids.length, push: res.successCount, mail: nMail, uids: targetUids,
+      canaux: CANP.canauxPrevenus(targetUids, tokenToUid, livres, suivi.mailes, suivi.plafonnes) });
+  if (!tokens.length) return;
 
   const dels = [];
   res.responses.forEach((rp, i) => {
@@ -2246,13 +2270,18 @@ exports.prevenirQuandMeme = onCall({secrets: [SMTP_PASS]}, async (request) => {
   const artById = {}; artById[uid] = a;
   const tokenToUid = await _jetonsArtisans(db, [uid]);
   const tokens = Object.keys(tokenToUid);
-  let push = 0;
-  const mail = await mailArtisansSansAppareil(db, artById, [uid], tokenToUid, r, false);
+  let push = 0; let livres = [];
   if (tokens.length) {
-    try { const res = await getMessaging().sendEachForMulticast(messageNouvelleMission(r, false, tokens)); push = res.successCount; } catch (e) { console.warn('prevenirQuandMeme push', e); }
+    try { const res = await getMessaging().sendEachForMulticast(messageNouvelleMission(r, false, tokens)); push = res.successCount; livres = CANP.jetonsLivres(tokens, res.responses); } catch (e) { console.warn('prevenirQuandMeme push', e); }
   }
+  // L'e-mail suit ce que la notification a LIVRÉ (même règle qu'à la diffusion).
+  const livresA = {}; livres.forEach((t) => { livresA[t] = tokenToUid[t]; });
+  const suivi = { mailes: [], plafonnes: [] };
+  const mail = await mailArtisansSansAppareil(db, artById, [uid], livresA, r, false, suivi);
+  const canal = CANP.canauxPrevenus([uid], tokenToUid, livres, suivi.mailes, suivi.plafonnes)[uid];
+  await ref.set({canaux: {[uid]: canal}}, {merge: true});
   console.log('prevenirQuandMeme ' + reqId + ' → ' + uid + ' (push ' + push + ', mail ' + mail + ') par ' + who);
-  return {push, mail};
+  return {push, mail, canal};
 });
 
 /* ── LE RAPPEL « ACTIVEZ VOS NOTIFICATIONS » (l'éditeur, 22/11/2026) ──
@@ -2809,17 +2838,22 @@ async function diffuserAuPool(db, reqId, r, opts) {
   if (preferred) uids = uids.indexOf(preferred) >= 0 ? [preferred] : [];
   const tokenToUid = await _jetonsArtisans(db, uids);
   const tokens = Object.keys(tokenToUid);
-  let nPush = 0;
+  let nPush = 0; let livres = [];
   if (tokens.length) {
     const rp = await pushMulticast(tokens, String(o.titre || 'Espace artisan'), String(o.corps || ''), '/?open=missions',
       (t) => db.collection('users').doc(tokenToUid[t]).update({ pushTokens: FieldValue.arrayRemove(t) }));
     nPush = (rp && typeof rp.successCount === 'number') ? rp.successCount : 0;
+    livres = (rp && Array.isArray(rp.livres)) ? rp.livres : [];
   }
   const artById = {};
   artsSnap.docs.forEach((d) => { artById[d.id] = d.data() || {}; });
-  const nMail = await mailArtisansSansAppareil(db, artById, uids, tokenToUid, r, !!preferred);
+  // L'e-mail suit ce que la notification a LIVRÉ (même règle qu'à la création).
+  const livresA = {}; livres.forEach((t) => { livresA[t] = tokenToUid[t]; });
+  const suivi = { mailes: [], plafonnes: [] };
+  const nMail = await mailArtisansSansAppareil(db, artById, uids, livresA, r, !!preferred, suivi);
   const issue = uids.length
-    ? { motif: o.motif || 'envoyee', cibles: uids.length, push: nPush, mail: nMail }
+    ? { motif: o.motif || 'envoyee', cibles: uids.length, push: nPush, mail: nMail,
+      canaux: CANP.canauxPrevenus(uids, tokenToUid, livres, suivi.mailes, suivi.plafonnes) }
     : { motif: preferred ? 'dirige-introuvable' : (r.service ? 'aucun-disponible' : 'aucun-artisan') };
   await _noterDiffusion(db, reqId, Object.assign({ uids: uids }, issue));
   return Object.assign({ uids: uids }, issue);
@@ -2828,7 +2862,7 @@ async function pushMulticast(tokens, title, body, link, onInvalid, tag) {
   if (!tokens.length) return { successCount: 0, failureCount: 0 };
   try {
     const msg = getMessaging();
-    let ok = 0; let ko = 0;
+    let ok = 0; let ko = 0; const livres = [];
     for (let off = 0; off < tokens.length; off += 450) {
       const lot = tokens.slice(off, off + 450);
       const res = await msg.sendEachForMulticast({
@@ -2837,6 +2871,7 @@ async function pushMulticast(tokens, title, body, link, onInvalid, tag) {
         webpush: { fcmOptions: { link: link || '/' }, headers: { Urgency: 'high' } },
       });
       ok += res.successCount; ko += res.failureCount;
+      livres.push(...CANP.jetonsLivres(lot, res.responses));
       const dels = [];
       res.responses.forEach((r, i) => {
         if (!r.success) {
@@ -2855,8 +2890,8 @@ async function pushMulticast(tokens, title, body, link, onInvalid, tag) {
     /* ELLE REND CE QU'ELLE A FAIT. Elle ne rendait rien : l'appelant qui voulait écrire
        « N prestataires prévenus » devait retomber sur le nombre de JETONS, c'est-à-dire
        annoncer des envois qui ont pu tous échouer. */
-    return { successCount: ok, failureCount: ko };
-  } catch (e) { console.warn('pushMulticast', (e && e.message) || e); return { successCount: 0, failureCount: tokens.length }; }
+    return { successCount: ok, failureCount: ko, livres: livres };
+  } catch (e) { console.warn('pushMulticast', (e && e.message) || e); return { successCount: 0, failureCount: tokens.length, livres: [] }; }
 }
 // Jetons push d'un utilisateur, en RESPECTANT son choix : notifOn === false (il a coupé
 // les notifications) => aucun jeton. Seul le pool « nouvelle mission » faisait ce
