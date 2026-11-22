@@ -173,6 +173,12 @@ console.log('\n── « A DÉJÀ TRAVAILLÉ AU PRIX DE LA GRILLE » (éditeur, 
   ok(!(await passe(updateDoc(A(dPro), { grilleTravaillee: { menage: true } }))),
      'il NE s’écrit PAS « a travaillé au prix de la grille » : ce serait se remettre lui-même dans l’aléatoire'); }
 
+console.log('\n── PAR QUEL CANAL CHACUN A ÉTÉ PRÉVENU (éditeur, 22/11/2026) ──');
+ok(!(await passe(updateDoc(R(dCli), { canaux: { [PRO]: 'push' } }))),
+   'le client ne s’écrit pas « tous notifiés » : la console le répéterait comme un fait');
+ok(!(await passe(updateDoc(R(dPro), { ['canaux.' + PRO]: 'push' }))),
+   'le prestataire ne réécrit pas son propre canal');
+
 await env.cleanup();
 console.log(f ? '\n' + f + ' ÉCHEC(S)' : '\nTout est vert.');
 process.exit(f ? 1 : 0);
