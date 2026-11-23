@@ -179,6 +179,13 @@ ok(!(await passe(updateDoc(R(dCli), { canaux: { [PRO]: 'push' } }))),
 ok(!(await passe(updateDoc(R(dPro), { ['canaux.' + PRO]: 'push' }))),
    'le prestataire ne réécrit pas son propre canal');
 
+console.log('\n── LES REFUS DE LA BANQUE (éditeur, 23/11/2026) ──');
+for (const [champ, val] of [['refusCarteIds', []], ['complementRefusBanque', false], ['complementRefusMandat', ''],
+                            ['complementRefusAt', 0], ['complementLienApresRefus', false]]) {
+  ok(!(await passe(updateDoc(R(dCli), { [champ]: val }))),
+     'le client n’efface pas « ' + champ + ' » : ce sont ses refus qui arrêtent les tentatives');
+}
+
 await env.cleanup();
 console.log(f ? '\n' + f + ' ÉCHEC(S)' : '\nTout est vert.');
 process.exit(f ? 1 : 0);
