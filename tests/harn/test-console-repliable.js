@@ -60,6 +60,19 @@ const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; console.log
   ok(r.pliee && r.pliee.deborde <= 0, 'à 393 px, rien ne sort du cadre (' + (r.pliee && Math.round(r.pliee.deborde)) + ' px)');
   ok(r.apres && r.apres.pliee && r.apres.lignes === 0, 'un second toucher la replie');
 
+  console.log('A ter — repliée, une carte garde son ALERTE (personne prévenu)');
+  const al = await p.evaluate(() => {
+    const S = window.__S;
+    S.adminReqs = [Object.assign({}, S.adminReqs[0], { id: 'r9', diff: { motif: 'aucun-disponible', cibles: 0, push: 0, mail: 0, at: Date.now() }, prevenus: [], canaux: {} })];
+    S._fold = { 'a-bookings': true }; window.__render();
+    const c = document.querySelector('.cmd-carte'); return { pliee: !!(c && c.classList.contains('pliee')), txt: c ? c.textContent.replace(/\s+/g, ' ') : '' };
+  });
+  ok(al.pliee && /Personne prévenu/.test(al.txt), 'repliée, elle dit encore que personne n’a été prévenu (« ' + al.txt.slice(0, 120) + ' »)');
+  const ok2 = await p.evaluate(() => { const S = window.__S;
+    S.adminReqs = [Object.assign({}, S.adminReqs[0], { id: 'r8', diff: { motif: 'envoyee', cibles: 2, push: 1, mail: 1, at: Date.now() } })];
+    window.__render(); const c = document.querySelector('.cmd-carte'); return c ? c.textContent : ''; });
+  ok(!/prestataires prévenus/.test(ok2), 'mais la ligne de succès (« 2 prestataires prévenus ») attend qu’on la déplie');
+
   console.log('A bis — « Arrêtées récemment » est une carte, repliée d’office');
   const a = await p.evaluate(async () => {
     const S = window.__S; const now = Date.now();

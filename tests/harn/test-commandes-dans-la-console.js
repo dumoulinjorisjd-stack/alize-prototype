@@ -45,7 +45,9 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
        par métier, sans aucune coupe. On ouvre donc les DEUX cartes, et l'on déplie tout
        ce que le jeu d'essai contient — les assertions vérifient que la console le DIT,
        pas l'endroit où elle le dit. */
-    S.admin = { view: 'home' }; S._fold = { 'a-bookings': true, 'a-cmd-toutes': true };
+    S.admin = { view: 'home' }; S._fold = { 'a-bookings': true, 'a-cmd-toutes': true, 'a-cmd-arretees': true };
+    // Depuis le 23/11/2026 chaque commande est repliée d'office : on les ouvre toutes.
+    (reqs || []).forEach(function (r) { if (r && r.id) S._fold['cmd-ouvre-' + r.id] = true; });
     S._admCmdStat = {}; S._admCmdMet = {};
     (reqs || []).forEach(function (r) {
       S._admCmdStat[r.status] = true;

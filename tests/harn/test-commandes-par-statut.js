@@ -85,7 +85,8 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
     S.lang = 'fr'; S.onboarded = true; S.guest = false; S.demoMode = false;
     S.persona = 'admin'; S.admView = null; S.account = { name: 'CCS', email: 'ccs.dumoulin@gmail.com', uid: 'adm', role: 'admin' };
     S.adminReqsLus = true; S.adminClisLoaded = true; S.adminClients = [];
-    S._fold = { 'a-cmd-toutes': true, 'a-bookings': true };
+    // « Arrêtées récemment » est une carte repliée d'office depuis le 23/11/2026 : on l'ouvre.
+    S._fold = { 'a-cmd-toutes': true, 'a-bookings': true, 'a-cmd-arretees': true };
     S._admCmdStat = etat.stat || {}; S._admCmdMet = etat.met || {};
     /* QUINZE EXPIRÉES : au-delà des six que l'ancienne carte montrait. C'est le défaut
        signalé, et il ne se mesure qu'avec plus de six. */
@@ -231,7 +232,7 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   /* ON CHERCHE LA COMMANDE D'HIER PAR SON CLIENT, dans la carte VIVANTE. Compter les
      lignes ne prouvait rien : les commandes en cours en fournissent déjà trois. */
   ok(/Capucine/.test(hierExp.txtVivante),
-    'la commande expirée il y a vingt heures se lit dans la carte vivante, sans qu’on déplie quoi que ce soit');
+    'la commande expirée il y a vingt heures se lit dans la carte vivante, sous « Arrêtées récemment » (repliée d’office depuis le 23/11/2026, à la demande de l’éditeur)');
   ok(!/Client 0/.test(hierExp.txtVivante),
     'tandis que les expirées anciennes n’y sont pas : la borne est bien le TEMPS, et elles restent dans le registre');
 
