@@ -69,6 +69,8 @@ ok(eval('(' + SRV.slice(SRV.indexOf('function _uidsPrevenus'), SRV.indexOf('\n}\
     S.adminArtsLoaded = true; S.adminClisLoaded = true;
     S.adminReqs = JSON.parse(JSON.stringify(reqs)); S.adminReqsLus = true;
     S.admin = { view: 'home' }; S._fold = { 'a-bookings': true };
+    // Repliées d'office depuis le 23/11/2026 : on ouvre les commandes du jeu d'essai.
+    (S.adminReqs || []).forEach(function (r) { if (r && r.id) S._fold['cmd-ouvre-' + r.id] = true; });
     window.__render();
     const el = document.querySelector('.cmd-reponses');
     return { txt: el ? el.textContent.replace(/\s+/g, ' ') : '(absent)',

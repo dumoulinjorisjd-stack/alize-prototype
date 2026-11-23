@@ -66,7 +66,8 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
        ET L'ON COMPTE LES DEUX CARTES SÉPARÉMENT : une commande VIVANTE paraît dans les
        deux, et c'est voulu — la première dit ce qui se passe, la seconde est le registre
        complet, et un registre qui sauterait les commandes en cours aurait un trou. */
-    const compte = (c) => c ? c.querySelectorAll('.fold-body div.card').length : 0;
+    // Depuis le 23/11/2026 « Arrêtées récemment » est elle-même une carte (foldc) : on ne la compte pas comme une ligne.
+    const compte = (c) => c ? c.querySelectorAll('.fold-body div.card:not(.foldc)').length : 0;
     const lignes = compte(vivante), lignesRegistre = compte(registre);
     /* Les pastilles des LIGNES de commande (jamais celles des cartes de regroupement) :
        une ligne nomme UNE réservation, une carte en nomme un paquet. */
