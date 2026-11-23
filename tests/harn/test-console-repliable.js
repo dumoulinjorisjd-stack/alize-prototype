@@ -43,13 +43,15 @@ const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; console.log
       montant: /112,00/.test(c.textContent), qui: /Cécile/.test(c.textContent), haut: Math.round(c.getBoundingClientRect().height),
       deborde: Math.max(...[...c.querySelectorAll('*')].map((e) => e.getBoundingClientRect().right - c.getBoundingClientRect().right)) } : null; };
     const avant = etat();
-    document.querySelector('.cmd-carte .cmd-tete').click(); await new Promise((r) => setTimeout(r, 40));
+    const tete = () => document.querySelector('.cmd-carte .cmd-tete');
+    if (!tete()) return { avant, pliee: null, apres: null };
+    tete().click(); await new Promise((r) => setTimeout(r, 40));
     const pliee = etat();
-    document.querySelector('.cmd-carte .cmd-tete').click(); await new Promise((r) => setTimeout(r, 40));
+    if (tete()) tete().click(); await new Promise((r) => setTimeout(r, 40));
     const apres = etat();
     return { avant, pliee, apres };
   });
-  ok(r.avant && !r.avant.pliee && r.avant.lignes === 2, 'dépliée par défaut : rien ne disparaît sans geste');
+  ok(!!r.pliee && r.avant && !r.avant.pliee && r.avant.lignes === 2, 'dépliée par défaut : rien ne disparaît sans geste');
   ok(r.pliee && r.pliee.pliee && r.pliee.lignes === 0 && !r.pliee.clore, 'un toucher sur l’en-tête la replie : la liste et les boutons disparaissent');
   ok(r.pliee && r.pliee.qui && r.pliee.montant && /Réponses\s:\s2 sans réponse dont 1 par e-mail seulement/.test(r.pliee.court),
     'repliée, elle garde qui, combien et le résumé des réponses (« ' + (r.pliee && r.pliee.court) + ' »)');
