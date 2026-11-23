@@ -150,7 +150,8 @@ ok(MCC.indexOf("out.reason = 'plafond-absent'") < MCC.indexOf("mollieApi('/payme
   'le refus vient AVANT le moindre appel à Mollie : rien ne part pour être annulé ensuite');
 const appels = (srv.match(/await mollieChargeComplement\(db,/g) || []).length;   // la déclaration n'est pas un appelant
 ok(appels === 2, 'deux appelants, pas plus (' + appels + ' mesuré)');
-ok(/montantsDemande\(r\)\.gross\);/.test(srv), 'le relanceur borne par le total RECALCULÉ, pas par le montant qu’il relance');
+// Depuis le 23/11/2026 un option suit le plafond ({lienSeul}, après un refus de la banque) : le plafond reste le même.
+ok(/montantsDemande\(r\)\.gross(, \{lienSeul: DEC\.geste === 'lien'\})?\);/.test(srv), 'le relanceur borne par le total RECALCULÉ, pas par le montant qu’il relance');
 ok(/\/\/ noyau, le plafond de la facture\.|le plafond de la facture/.test(srv) || /\n            gross\);/.test(srv),
   'le règlement borne par le total validé par le client');
 
