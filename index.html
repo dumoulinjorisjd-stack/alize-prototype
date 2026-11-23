@@ -3822,7 +3822,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='928';
+  const VERSION_APP='929';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -12661,7 +12661,7 @@
        des prévenus (serveur), l'historique des refus (serveur), l'heure de passage (fiche
        de l'artisan). Une demande d'avant cette liste ne connaît pas ses prévenus : on le
        DIT, au lieu d'afficher un silence qui se lirait « personne n'a été prévenu ». */
-    const cmdReponses=function(r){
+    const cmdReponses=function(r,court){
       if(!r||!r.id)return '';
       const arts=S.adminArtisans||[];
       const nomDe=function(uid,repli){const a=arts.find(function(x){return (x.uid||x.id)===uid;});return (a&&a.name)||repli||'Prestataire';};
@@ -12714,6 +12714,9 @@
       const nb=function(e){return lignes.filter(function(l){return l.etat===e;}).length;};
       const nMailSeul=lignes.filter(function(l){return l.etat==='attente'&&canalPrevenu(r,l.uid)==='mail';}).length;
       const resume=[nb('refus')?(nb('refus')+' refus'):'',nb('passe')?(nb('passe')+' passage'+(nb('passe')>1?'s':'')):'',nb('attente')?(nb('attente')+' sans réponse'+(nMailSeul?' dont '+nMailSeul+' par e-mail seulement':'')):''].filter(Boolean).join(', ');
+      /* CARTE REPLIÉE : le résumé seul (l'éditeur, 23/11/2026 : « il faut pouvoir replier
+         ces cartes »). Même calcul que la liste dépliée, rien n'est compté deux fois. */
+      if(court)return resume?`<div class="mini cmd-reponses-court" style="margin-top:5px;color:var(--ink-soft)"><b>Réponses</b>&nbsp;: ${esc(resume)}</div>`:'';
       const ancienne=!(r.prevenus&&r.prevenus.length)&&r.diff&&r.diff.cibles>0;
       return `<div class="mini cmd-reponses" style="margin-top:5px;line-height:1.55;color:var(--ink-soft)">${resume?'<b>Réponses</b>&nbsp;: '+esc(resume)+'<br>':''}${items}${reste>0?'et '+reste+' autre'+(reste>1?'s':''):''}${ancienne?'<br><span style="color:var(--muted)">La liste des prestataires prévenus n’était pas encore gardée pour cette demande : seuls les passages et les refus connus s’affichent.</span>':''}</div>`;
     };
@@ -12800,19 +12803,27 @@
          et dit non. Une ligne sans écriture au registre ne se fait pas traiter de test ;
          une ligne rendue par une autre carte (elle n'est pas croisée) non plus. */
       const nonEnc=(r.enc&&r.enc.auRegistre&&!r.enc.encaisse&&CMD_ARGENT.indexOf(r.status)>=0);
-      return `<div class="card" style="padding:13px;margin-top:9px${longue?';border-left:4px solid var(--coral)':''}">
+      /* REPLIABLE (l'éditeur, 23/11/2026 : « il faut pouvoir replier ces cartes »). On
+         touche l'en-tête ; repliée, la carte garde qui, quand, combien, et le résumé des
+         réponses. Dépliée par défaut : rien ne disparaît sans geste. */
+      const plieCle='cmd-plie-'+(r.id||'');
+      const pliee=!!(r.id&&S._fold&&S._fold[plieCle]);
+      return `<div class="card cmd-carte${pliee?' pliee':''}" style="padding:13px;margin-top:9px${longue?';border-left:4px solid var(--coral)':''}">
+        <button class="cmd-tete" data-fold="${esc(plieCle)}" aria-expanded="${pliee?'false':'true'}" style="all:unset;display:block;width:100%;box-sizing:border-box;cursor:pointer;-webkit-tap-highlight-color:transparent">
         <div class="row between" style="align-items:flex-start;gap:8px">
           <b style="font-size:14px;flex:1;min-width:0">${sansMetier?(r.client?esc(r.client):'<i>client sans nom</i>'):esc(r.svcName||svcNm(r.svc)||r.svc||'Prestation')}</b>
-          <span class="chip ${L[0]}${vif?' live':''}" style="flex:none">${esc(L[1])}</span></div>
+          <span class="chip ${L[0]}${vif?' live':''}" style="flex:none">${esc(L[1])}</span>
+          <span class="fold-chev" style="align-self:center;transform:rotate(${pliee?0:90}deg)">${I.chevron}</span></div>
         <div class="mini" style="margin-top:3px">${sansMetier?(r.provider?esc(r.provider):(r.status==='pending'?'<i>personne n’a encore accepté</i>':'')):((r.client?esc(r.client):'<i>client sans nom</i>')+qui)}</div>
         <div class="mini" style="margin-top:2px;color:var(--muted)">${esc([quandTxt(r),r.zone].filter(Boolean).join(' · '))}</div>
         <div class="row between" style="align-items:center;margin-top:4px;gap:8px">
           <span class="mini money">${eur(montant)}${coup?' <span style="color:var(--coral-deep)">· dont '+eur(coup)+' de coup de pouce</span>':''}</span>
           ${nonEnc?`<span class="chip warn" style="flex:none">${esc(mollieEtatTxt(r.led||{}))}</span>`:''}
           <span class="mini" style="color:${longue?'var(--coral-deep);font-weight:700':'var(--muted)'}">${esc(age)}${r.directed?' · dirigée':''}</span></div>
-        ${cmdDiffusion(r)}${cmdReponses(r)}${cmdNonPrevenus(r)}${cmdRelance(r)}${cmdEssai(r)}
+        </button>
+        ${pliee?cmdReponses(r,true):`${cmdDiffusion(r)}${cmdReponses(r)}${cmdNonPrevenus(r)}${cmdRelance(r)}${cmdEssai(r)}
         ${cmdFin(r)}
-        ${cmdClore(r)}
+        ${cmdClore(r)}`}
       </div>`;
     };
     /* FAIRE LE TRI. Rien n'expire jamais une demande que personne n'a honorée : le
@@ -13247,7 +13258,7 @@
     return `<div class="pad">
       <div class="row between isle-wm" style="margin-top:10px"><div><span class="eyebrow">Console admin · Ti-Services</span><div class="h-hello">Tableau de bord</div></div><div class="avatar" style="background:linear-gradient(135deg,var(--ink),#000)">TS</div></div>
       <div class="row" style="gap:9px;margin-top:12px">${stat('En cours',cmdEnCours,'réservations','adm-list:a-bookings')}${stat('Artisans',validA,pendA.length+' en attente','adm-list:a-arts')}${stat('Clients',clis.length,pendC.length+' en attente','adm-list:a-clis')}</div>
-      <div class="card listrow" style="margin-top:10px"><span class="benic" style="flex:none">${I.card}</span><div class="lr-main"><span class="sub">Commission ce mois</span></div><b class="money" style="font-size:18px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(adminMonthCommission())}</b></div>
+      <button class="card listrow" data-adm="fact" style="width:100%;text-align:left;margin-top:10px"><span class="benic" style="flex:none">${I.card}</span><div class="lr-main"><span class="sub">Commission ce mois</span></div><b class="money" style="font-size:18px;font-family:var(--f-disp);color:var(--teal-deep)">${eur(adminMonthCommission())}</b></button>
       ${/* L'alerte de candidature parle de la file « À traiter » : elle se lit juste au-dessus
            d'elle, pas au milieu des compteurs. Une fois les notifications acceptées, elle
            disparaît d'elle-même. */''}
