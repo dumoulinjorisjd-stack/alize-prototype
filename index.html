@@ -3822,7 +3822,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='929';
+  const VERSION_APP='930';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -7851,6 +7851,7 @@
     "que sur les créneaux cochés":"only on the checked slots",
     "qui rend la mission plus attractive.":"which makes the job more attractive.",
     "refusée":"declined",
+    "Votre banque a refusé ce paiement 3 fois. Contactez-la, ou repassez la commande avec une autre carte.":"Your bank has declined this payment three times. Please contact your bank, or place the order again using a different card.",
     "relançons aussitôt":"relaunch right away",
     "replié":"collapsed",
     "reversé aux prestataires":"paid to the providers",
@@ -9332,6 +9333,7 @@
     "que sur les créneaux cochés":"apenas nos horários marcados",
     "qui rend la mission plus attractive.":"que torna o serviço mais atrativo.",
     "refusée":"recusada",
+    "Votre banque a refusé ce paiement 3 fois. Contactez-la, ou repassez la commande avec une autre carte.":"O seu banco recusou este pagamento 3 vezes. Contacte-o ou volte a efetuar a encomenda com outro cartão.",
     "relançons aussitôt":"relançamos de imediato",
     "replié":"recolhido",
     "reversé aux prestataires":"revertido para os prestadores",
@@ -16903,7 +16905,11 @@
       if(d.geste==='rien')return true;
       if(d.checkoutUrl){attentePaiement(d.checkoutUrl);location.href=d.checkoutUrl;return true;}
       return false;
-    }catch(e){console.warn('startMolliePayment',e);toast('\u26a0\ufe0e Paiement indisponible, réessayez');return false;}
+    }catch(e){console.warn('startMolliePayment',e);
+      /* TROIS REFUS DE LA BANQUE (l'éditeur, 23/11/2026) : le serveur ne propose plus de
+         payer cette commande. « Réessayez » serait faux : on dit le geste qui reste. */
+      if(/resource-exhausted/.test(String(e&&e.code||''))){S._payPlafond=m.reqId;toast('Votre banque a refusé ce paiement 3 fois. Contactez-la, ou repassez la commande avec une autre carte.');return false;}
+      toast('\u26a0\ufe0e Paiement indisponible, réessayez');return false;}
   }
   function placeMission(){const d=S.draft;if(!d)return;
     // Anti-rebond : deux appuis trop rapprochés ne créent qu'une seule demande.
@@ -16937,7 +16943,7 @@
       // Le paiement n'a pas pu démarrer (Mollie indisponible, abandon…) : on NE lance PAS
       // la recherche — la demande reste « à finaliser » (invisible des prestataires), le
       // client peut réessayer ou annuler. Aucune prestation non payée ne peut avoir lieu.
-      d.status='payment_failed';render();toast('Paiement non finalisé, votre demande n’a pas été proposée.');
+      d.status='payment_failed';render();if(S._payPlafond!==d.reqId)toast('Paiement non finalisé, votre demande n’a pas été proposée.');
     }})();render();return;}
     persistRequest(d);recurUpsert(d);startSearch();cacheClientLocal();}
   // Un prestataire de démonstration accepte la mission et ouvre la conversation.
@@ -22655,7 +22661,7 @@
       case 'card-save':{const el=document.getElementById('pfCardNum'),ex=document.getElementById('pfCardExp');const num=(el?el.value:'').replace(/\D/g,'');let last4,brand;if(num.length>=4){last4=num.slice(-4);brand=/^(5[1-5]|2[2-7])/.test(num)?'Mastercard':(/^3[47]/.test(num)?'Amex':'Visa');}else if(S.card){last4=S.card.last4;brand=S.card.brand;}else{toast('Entrez un numéro de carte valide');break;}S.card={brand,last4,exp:(ex&&ex.value)||(S.card?S.card.exp:'08/28')};S.cardForm=false;saveClientCloud();render();toast('Moyen de paiement enregistré');break;}
       case 'pay-canceledit':S.payEdit=false;render();break;
       case 'pay-confirm':placeMission();break;
-      case 'resume-pay':{const m=S.mission;if(!m)break;toast('Redirection vers le paiement sécurisé…');(async function(){try{if(!m.reqId)await persistRequest(m);}catch(_){}const ok=await startMolliePayment(m);if(!ok){m.status='payment_failed';render();toast('Paiement indisponible pour le moment, réessayez.');}})();break;}
+      case 'resume-pay':{const m=S.mission;if(!m)break;toast('Redirection vers le paiement sécurisé…');(async function(){try{if(!m.reqId)await persistRequest(m);}catch(_){}const ok=await startMolliePayment(m);if(!ok){m.status='payment_failed';render();if(S._payPlafond!==m.reqId)toast('Paiement indisponible pour le moment, réessayez.');}})();break;}
       case 'toggle-savecard':S.paySaveCard=(S.paySaveCard===false);render();break;
       case 'pay-save':{const el=document.getElementById('payCardNum'),ex=document.getElementById('payCardExp');const num=(el?el.value:'').replace(/\D/g,'');const last4=num.slice(-4)||'4242';const brand=/^(5[1-5]|2[2-7])/.test(num)?'Mastercard':(/^3[47]/.test(num)?'Amex':'Visa');const cardObj={brand,last4,exp:(ex&&ex.value)||'08/28'};
         if(S.paySaveCard!==false){ S.card=cardObj; saveClientCloud(); }

@@ -524,7 +524,8 @@ async function mandatDuClient(db, uid) {
   return out;
 }
 
-async function mollieChargeComplement(db, reqId, clientUid, amount, label, plafond) {
+async function mollieChargeComplement(db, reqId, clientUid, amount, label, plafond, opts) {
+  const lienSeul = !!(opts && opts.lienSeul);
   const out = {ok: false, direct: false, paymentId: '', checkoutUrl: '', reason: ''};
   if (!mollieApiConfigured() || !(amount > 0) || !reqId) { out.reason = 'inactif'; return out; }
   /* ══ LE PLAFOND EST EXIGÉ, ET IL VIENT D'UNE AUTRE SOURCE QUE LE MONTANT ═══════════
@@ -565,7 +566,8 @@ async function mollieChargeComplement(db, reqId, clientUid, amount, label, plafo
   if (customerId) {
     // « pending » ne peut rien porter : seul un mandat VALIDE prélève hors session.
     const mandateId = (M.mandat && M.mandat.statut === 'valid') ? M.mandat.id : '';
-    if (mandateId) {
+    // APRÈS UN REFUS DE LA BANQUE : un lien, jamais le mandat (RELP.relanceDecider).
+    if (mandateId && !lienSeul) {
       const rec = await mollieApi('/payments', 'POST',
         Object.assign({customerId: customerId, sequenceType: 'recurring', mandateId: mandateId}, body));
       if (rec.ok && rec.data && rec.data.id) {
@@ -1446,8 +1448,24 @@ async function notifyArtisanMollieActivated(db, uid) {
 // envoyé — que le client ne suit pas toujours. Dès qu'une carte est mémorisée (ou lors du
 // balayage quotidien), on repasse sur tout ce qui reste dû et on le prélève, sans rien
 // redemander. Renvoie le nombre de suppléments réellement encaissés ou relancés.
+/* UN REFUS DE LA BANQUE SUR LE PAIEMENT D'UNE COMMANDE (enregistrement à 0 € ou
+   empreinte) : on le compte, par identifiant — le webhook et le rattrapage peuvent voir
+   le même. Au-delà de RELP.REFUS_CARTE_MAX, la commande ne propose plus de payer. On
+   n'écrit jamais sur une demande qui n'existe plus (un set la recréerait). */
+async function noterRefusCarte(ref, pay) {
+  if (!ref || !pay || pay.status !== 'failed' || !pay.id) return;
+  try {
+    const s0 = await ref.get();
+    if (!s0.exists) return;
+    await ref.set({refusCarteIds: FieldValue.arrayUnion(String(pay.id))}, {merge: true});
+  } catch (e) { console.warn('noterRefusCarte', e); }
+}
 async function relancerComplements(db, clientUid) {
   if (!mollieApiConfigured() || !clientUid) return 0;
+  // Le mandat VALIDE d'aujourd'hui : c'est lui qui dit si une AUTRE carte a été donnée
+  // depuis un refus. Mollie muet : on ne sait pas, donc on ne prélève pas seul.
+  const MC = await mandatDuClient(db, clientUid);
+  const mandatActuel = (MC.lu && MC.mandat && MC.mandat.statut === 'valid') ? String(MC.mandat.id || '') : '';
   let docs = [];
   try {
     docs = (await db.collection('requests').where('clientUid', '==', clientUid)
@@ -1458,19 +1476,38 @@ async function relancerComplements(db, clientUid) {
     const r = d.data() || {};
     const montant = round2(Number(r.complementAmount) || 0);
     if (!(montant > 0.009)) continue;
+    // UN SEUL LIEN EN ATTENTE : on ne regarde l'ancien que s'il pourrait l'être encore.
+    let lienOuvert = false;
+    if (r.complementStatus === 'a_regler' && r.complementPaymentId) {
+      try {
+        const lp = await mollieApi('/payments/' + encodeURIComponent(String(r.complementPaymentId)), 'GET');
+        if (!lp.ok) continue;                                // Mollie muet : on ne crée rien de plus
+        lienOuvert = !!(lp.data && lp.data.status === 'open');
+      } catch (_) { continue; }
+    }
+    const DEC = RELP.relanceDecider({statut: r.complementStatus, lienOuvert: lienOuvert,
+      refusBanque: r.complementRefusBanque === true, mandatRefuse: r.complementRefusMandat || '',
+      mandatActuel: (r.complementRefusBanque === true && !MC.lu) ? String(r.complementRefusMandat || '') : mandatActuel,
+      lienApresRefus: r.complementLienApresRefus === true});
+    if (DEC.geste === 'rien') { console.log('Supplément non relancé reqId=' + d.id + ' (' + DEC.motif + ')'); continue; }
     let out;
     try {
       // Le plafond ne peut pas être `montant` lui-même : il vient du TOTAL VALIDÉ de la
       // demande, recalculé ici, donc d'une source indépendante de ce qui a été stocké.
       out = await mollieChargeComplement(db, d.id, clientUid, montant,
         'Ti-Services · supplément · ' + (r.serviceName || r.service || 'prestation'),
-        montantsDemande(r).gross);
+        montantsDemande(r).gross, {lienSeul: DEC.geste === 'lien'});
     } catch (e) { console.warn('relancerComplements', d.id, e); continue; }
     if (!out || !out.ok) continue;                       // on retentera plus tard
     try {
-      await d.ref.update({complementStatus: out.direct ? 'en_cours' : 'a_regler',
+      const suite = {complementStatus: out.direct ? 'en_cours' : 'a_regler',
         complementPaymentId: out.paymentId || '', complementCheckoutUrl: out.checkoutUrl || '',
-        complementIssue: ''});
+        complementIssue: ''};
+      if (DEC.geste === 'lien') suite.complementLienApresRefus = true;
+      // Une AUTRE carte : le refus d'hier ne la concerne pas. Refusée à son tour, le
+      // webhook le notera de nouveau, sur ce mandat-là.
+      if (DEC.motif === 'nouvelle-carte') { suite.complementRefusBanque = false; suite.complementLienApresRefus = false; }
+      await d.ref.update(suite);
     } catch (_) {}
     if (out.direct) n++;
     console.log('Supplément relancé reqId=' + d.id + ' ' + montant + ' €, ' + out.reason);
@@ -1876,6 +1913,7 @@ const CSE = require('./complement-sans-etat');
 const IRR = require('./versement-irroutable');
 const ENC = require('./encaissement');
 const CANP = require('./canaux-prevenus');
+const RELP = require('./relance-paiement');
 /* LE COMPTEUR DU JOUR. Un document par clé et par jour dans `quotas` — collection
  * SERVEUR (aucune règle ne l'ouvre, l'Admin SDK passe outre). Transaction : deux demandes
  * simultanées ne peuvent pas lire le même nombre et l'écrire deux fois.
@@ -5166,6 +5204,7 @@ exports.orderPaymentCheck = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (re
     }
     // Payé sans mandat : la carte n'est PAS mémorisée, donc rien ne couvre la commande.
     // L'ouvrir enverrait un prestataire travailler sur une prestation non prélevable.
+    await noterRefusCarte(ref, sp.data);
     if (et === 'paid') {
       if (st !== 'payment_failed') await ref.update({status: 'payment_failed', cardSetupStatus: 'sans-mandat'});
       return {status: 'payment_failed', echec: true, etat: 'sans-mandat'};
@@ -5190,6 +5229,7 @@ exports.orderPaymentCheck = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (re
     return {status: 'pending', ouverte: true, etat: etat};
   }
   if (['expired', 'canceled', 'failed'].indexOf(etat) >= 0) {
+    await noterRefusCarte(ref, pay.data);
     if (st !== 'payment_failed') await ref.update({status: 'payment_failed', molliePaymentStatus: etat});
     return {status: 'payment_failed', echec: true, etat: etat};
   }
@@ -5797,6 +5837,13 @@ exports.createClientPayment = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (
     }
   }
 
+  /* TROIS REFUS DE LA BANQUE, ET ON S'ARRÊTE (l'éditeur, 23/11/2026). Une série de
+     paiements refusés sur le même commerçant se remarque chez Mollie et chez les réseaux
+     de cartes. Le client contacte sa banque, ou repasse commande avec une autre carte. */
+  if (!RELP.tentativeCarteAdmise(r.refusCarteIds)) {
+    console.warn('createClientPayment : ' + RELP.REFUS_CARTE_MAX + ' refus de la banque, plus de tentative reqId=' + reqId);
+    throw new HttpsError('resource-exhausted', 'Votre banque a refusé ce paiement ' + RELP.REFUS_CARTE_MAX + ' fois.');
+  }
   const appUrl = APP_URL.replace(/\/$/, '');
   const redirectUrl = returnUrl || (appUrl + '/?paid=' + encodeURIComponent(reqId));
   const webhookUrl = 'https://europe-west1-t-service-prod.cloudfunctions.net/mollieWebhook';
@@ -6038,6 +6085,7 @@ exports.mollieWebhook = onRequest({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (req
               const rref2 = db2.collection('requests').doc(reqEchec);
               const rs2 = await rref2.get();
               const rr2 = rs2.exists ? (rs2.data() || {}) : null;
+              if (rr2 && rr2.clientUid === uidEchec) await noterRefusCarte(rref2, pay);
               if (rr2 && rr2.clientUid === uidEchec && rr2.status === 'pending_payment') {
                 await rref2.set({status: 'payment_failed', cardSetupStatus: String(pay.status || '')}, {merge: true});
                 console.log('Commande ' + reqEchec + ' : enregistrement de carte ' + pay.status);
@@ -6112,7 +6160,15 @@ exports.mollieWebhook = onRequest({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (req
           console.log('Supplément payé reqId=' + reqId + ' ' + montant + ' € (net ' + netC + '), versement ' + (verse ? 'ok' : 'à régulariser'));
         } else if (['failed', 'canceled', 'expired'].indexOf(pay.status) >= 0) {
           // Non encaissé : on le dit, et surtout on ne verse rien qu'on n'a pas.
-          try { await ref.set({complementStatus: 'echec'}, {merge: true}); } catch (_) {}
+          /* « failed » = LA BANQUE A REFUSÉ. On le retient, avec le mandat refusé : le
+             passage du matin ne reprélèvera plus seul (RELP.relanceDecider) — un seul
+             lien au client, ou une AUTRE carte. Un lien expiré ou abandonné n'est pas un
+             refus. Le lien d'après-refus, une fois créé, ne se recrée pas. */
+          const refusB = pay.status === 'failed';
+          try {
+            await ref.set(Object.assign({complementStatus: 'echec'}, refusB ? {complementRefusBanque: true,
+              complementRefusMandat: String(pay.mandateId || ''), complementRefusAt: Date.now()} : {}), {merge: true});
+          } catch (_) {}
           try {
             await sendMail(db, ADMIN_EMAIL, {
               subject: 'Supplément NON encaissé, ' + escHtmlS(r.serviceName || r.service || 'prestation'),
@@ -6165,6 +6221,7 @@ exports.mollieWebhook = onRequest({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (req
             const cur = await db.collection('requests').doc(reqId).get();
             if (cur.exists && (cur.data() || {}).status === 'pending_payment') upd.status = 'payment_failed';
           } catch (_) {}
+          await noterRefusCarte(db.collection('requests').doc(reqId), pay);
         }
         // NE JAMAIS RESSUSCITER UNE DEMANDE SUPPRIMÉE. `set(..., {merge:true})` CRÉE le
         // document quand il n'existe plus. Un client qui annule supprime sa demande ; si
