@@ -42,22 +42,43 @@ const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; console.log
       court: (c.querySelector('.cmd-reponses-court') || {}).textContent || '', clore: !!c.querySelector('[data-adm^="cmd-clore"], [data-adm^="clore"]') || /Clore/.test(c.textContent),
       montant: /112,00/.test(c.textContent), qui: /Cécile/.test(c.textContent), haut: Math.round(c.getBoundingClientRect().height),
       deborde: Math.max(...[...c.querySelectorAll('*')].map((e) => e.getBoundingClientRect().right - c.getBoundingClientRect().right)) } : null; };
-    const avant = etat();
-    const tete = () => document.querySelector('.cmd-carte .cmd-tete');
-    if (!tete()) return { avant, pliee: null, apres: null };
-    tete().click(); await new Promise((r) => setTimeout(r, 40));
+    // D'office (l'éditeur, 23/11/2026 : « il faut que ce soit replié automatiquement »).
     const pliee = etat();
+    const tete = () => document.querySelector('.cmd-carte .cmd-tete');
+    if (!tete()) return { pliee, ouverte: null, apres: null };
+    tete().click(); await new Promise((r) => setTimeout(r, 40));
+    const ouverte = etat();
     if (tete()) tete().click(); await new Promise((r) => setTimeout(r, 40));
     const apres = etat();
-    return { avant, pliee, apres };
+    return { pliee, ouverte, apres };
   });
-  ok(!!r.pliee && r.avant && !r.avant.pliee && r.avant.lignes === 2, 'dépliée par défaut : rien ne disparaît sans geste');
-  ok(r.pliee && r.pliee.pliee && r.pliee.lignes === 0 && !r.pliee.clore, 'un toucher sur l’en-tête la replie : la liste et les boutons disparaissent');
+  ok(r.pliee && r.pliee.pliee && r.pliee.lignes === 0 && !r.pliee.clore, 'repliée d’office : ni la liste ni les boutons');
+  ok(r.ouverte && !r.ouverte.pliee && r.ouverte.lignes === 2, 'un toucher sur l’en-tête la déplie : tout y est');
   ok(r.pliee && r.pliee.qui && r.pliee.montant && /Réponses\s:\s2 sans réponse dont 1 par e-mail seulement/.test(r.pliee.court),
     'repliée, elle garde qui, combien et le résumé des réponses (« ' + (r.pliee && r.pliee.court) + ' »)');
-  ok(r.pliee && r.avant && r.pliee.haut < r.avant.haut / 2, 'elle prend moins de la moitié de la hauteur (' + (r.pliee && r.pliee.haut) + ' contre ' + (r.avant && r.avant.haut) + ' px)');
+  ok(r.pliee && r.ouverte && r.pliee.haut < r.ouverte.haut / 2, 'repliée, elle prend moins de la moitié de la hauteur (' + (r.pliee && r.pliee.haut) + ' contre ' + (r.ouverte && r.ouverte.haut) + ' px)');
   ok(r.pliee && r.pliee.deborde <= 0, 'à 393 px, rien ne sort du cadre (' + (r.pliee && Math.round(r.pliee.deborde)) + ' px)');
-  ok(r.apres && !r.apres.pliee && r.apres.lignes === 2, 'un second toucher la déplie');
+  ok(r.apres && r.apres.pliee && r.apres.lignes === 0, 'un second toucher la replie');
+
+  console.log('A bis — « Arrêtées récemment » est une carte, repliée d’office');
+  const a = await p.evaluate(async () => {
+    const S = window.__S; const now = Date.now();
+    S.adminReqs = S.adminReqs.concat([
+      { id: 'x1', status: 'cancelled', uid: 'c2', at: now - 7200000, fin: now - 3600000, svc: 'menage', svcName: 'Ménage', when: 'Demain', zone: 'Gustavia', total: 56, client: 'Dinane', provider: '', providerUid: '' },
+      { id: 'x2', status: 'expired', uid: 'c3', at: now - 9000000, fin: now - 5000000, svc: 'menage', svcName: 'Ménage', when: 'Hier', zone: 'Toiny', total: 112, client: 'Cécile', provider: '', providerUid: '' }]);
+    S._fold = { 'a-bookings': true }; window.__render();
+    const tete = document.querySelector('[data-fold="a-cmd-arretees"]');
+    const carte = tete ? tete.closest('.foldc') : null;
+    const ferme = { existe: !!carte, txt: carte ? carte.textContent.replace(/\s+/g, ' ') : '', lignes: carte ? carte.querySelectorAll('.cmd-carte').length : -1,
+      dansLaCarteVive: !!document.querySelector('.cmd-carte .cmd-tete') };
+    if (tete) { tete.click(); await new Promise((r) => setTimeout(r, 40)); }
+    const c2 = document.querySelector('[data-fold="a-cmd-arretees"]');
+    const ouvert = c2 ? c2.closest('.foldc').querySelectorAll('.cmd-carte').length : -1;
+    return { ferme, ouvert };
+  });
+  ok(a.ferme.existe && a.ferme.lignes === 0 && /Arrêtées récemment/.test(a.ferme.txt) && /2 commandes annulées ou expirées/.test(a.ferme.txt),
+    'repliée, elle dit combien et quoi (« ' + a.ferme.txt.slice(0, 80) + ' »)');
+  ok(a.ouvert === 2, 'dépliée, elle montre ses deux commandes, chacune repliée à son tour (' + a.ouvert + ')');
 
   console.log('B — « Commission ce mois » ouvre Factures');
   const c = await p.evaluate(async () => {

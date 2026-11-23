@@ -56,7 +56,7 @@ ok(/if \(prevenus\.has\(d\.id\)\) return;/.test(tranche('exports.diffusionDiagno
     S.adminReqs = [{ id: 'r1', status: 'pending', uid: 'c1', at: Date.now() - 120000, svc: 'menage', svcName: 'Ménage', when: 'Demain', slot: '09:00',
       zone: 'Toiny', total: 112, unit: 'h', duration: 4, client: 'Cécile', provider: '', providerUid: '', directed: false, boostEur: 0,
       diff: { motif: 'envoyee', cibles: 7, push: 3, mail: 4, at: Date.now() - 120000 }, prevenus: ['u1', 'u2'], invites: ['u2'] }];
-    S.adminReqsLus = true; S.admin = { view: 'home' }; S._fold = { 'a-bookings': true };
+    S.adminReqsLus = true; S.admin = { view: 'home' }; S._fold = { 'a-bookings': true, 'cmd-ouvre-r1': true };
     window.__render();
     const rep = document.querySelector('.cmd-reponses');
     const a = document.querySelector('[data-wa="u1"]');

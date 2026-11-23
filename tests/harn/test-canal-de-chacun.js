@@ -72,7 +72,7 @@ ok(/'diffusion','prevenus','refusHisto','invites','canaux',/.test(fs.readFileSyn
       zone: 'Toiny', total: 112, unit: 'h', duration: 4, client: 'Cécile', provider: '', providerUid: '', directed: false, boostEur: 0,
       diff: { motif: 'envoyee', cibles: 4, push: 1, mail: 2, at: Date.now() - 120000 }, prevenus: ['u1', 'u2', 'u3', 'u4'], invites: [],
       canaux: { u1: 'push', u2: 'mail', u3: 'aucun', u4: 'mail' } }];
-    S.adminReqsLus = true; S.admin = { view: 'home' }; S._fold = { 'a-bookings': true };
+    S.adminReqsLus = true; S.admin = { view: 'home' }; S._fold = { 'a-bookings': true, 'cmd-ouvre-r1': true };
     window.__render();
     const rep = document.querySelector('.cmd-reponses');
     const carte = rep ? rep.closest('.card').getBoundingClientRect() : null;

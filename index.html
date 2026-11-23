@@ -3822,7 +3822,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='930';
+  const VERSION_APP='931';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -12805,11 +12805,12 @@
          et dit non. Une ligne sans écriture au registre ne se fait pas traiter de test ;
          une ligne rendue par une autre carte (elle n'est pas croisée) non plus. */
       const nonEnc=(r.enc&&r.enc.auRegistre&&!r.enc.encaisse&&CMD_ARGENT.indexOf(r.status)>=0);
-      /* REPLIABLE (l'éditeur, 23/11/2026 : « il faut pouvoir replier ces cartes »). On
-         touche l'en-tête ; repliée, la carte garde qui, quand, combien, et le résumé des
-         réponses. Dépliée par défaut : rien ne disparaît sans geste. */
-      const plieCle='cmd-plie-'+(r.id||'');
-      const pliee=!!(r.id&&S._fold&&S._fold[plieCle]);
+      /* REPLIABLE, ET REPLIÉE D'OFFICE (l'éditeur, 23/11/2026 : « il faut pouvoir replier
+         ces cartes », puis « il faut que ce soit replié automatiquement »). On touche
+         l'en-tête ; repliée, la carte garde qui, quand, combien, et le résumé des
+         réponses. Sans identifiant, elle reste ouverte : rien ne la rouvrirait. */
+      const plieCle='cmd-ouvre-'+(r.id||'');
+      const pliee=!!(r.id&&!(S._fold&&S._fold[plieCle]));
       return `<div class="card cmd-carte${pliee?' pliee':''}" style="padding:13px;margin-top:9px${longue?';border-left:4px solid var(--coral)':''}">
         <button class="cmd-tete" data-fold="${esc(plieCle)}" aria-expanded="${pliee?'false':'true'}" style="all:unset;display:block;width:100%;box-sizing:border-box;cursor:pointer;-webkit-tap-highlight-color:transparent">
         <div class="row between" style="align-items:flex-start;gap:8px">
@@ -12901,8 +12902,11 @@
       return (vives.length
           ? `<p class="mini" style="margin:0;color:var(--muted)">${plN(vives.length,'commande')} en cours.</p>`+vives.slice(0,CMD_MAX).map(function(r){return cmdLigne(r,false);}).join('')
           : `<p class="mini" style="margin:0;color:var(--muted)">Aucune commande en cours en ce moment.</p>`)
-        +(aMontrer.length?`<div class="mini" style="color:var(--coral-deep);font-weight:800;text-transform:uppercase;letter-spacing:.03em;margin-top:14px">Arrêtées récemment</div>`
-          +aMontrer.map(function(r){return cmdLigne(r,false);}).join(''):'')
+        /* « ARRÊTÉES RÉCEMMENT » EST UNE CARTE REPLIÉE (l'éditeur, 23/11/2026) : ce qui
+           s'est arrêté se consulte, ce n'est pas ce qu'on traite d'abord. */
+        +(aMontrer.length?foldCard('a-cmd-arretees',I.clock,'Arrêtées récemment',
+            plN(aMontrer.length,'commande')+' annulée'+(aMontrer.length>1?'s':'')+' ou expirée'+(aMontrer.length>1?'s':''),
+            aMontrer.map(function(r){return cmdLigne(r,false);}).join(''),`<span class="chip grey" style="flex:none">${aMontrer.length}</span>`):'')
         +`<p class="mini" style="margin-top:14px;color:var(--muted)">${arretees.length?`${plN(arretees.length,'commande')} arrêtée${arretees.length>1?'s':''}${reste>0?` (${reste} de plus de 48 h)`:''} et `:''}${plN(finies.length,'réglée')} : toutes sont dans « Toutes les commandes », par statut puis par métier.</p>`;
     })();
     /* LA CARTE QUI RANGE TOUT. Repliée par statut, puis par métier : on déplie ce qu'on

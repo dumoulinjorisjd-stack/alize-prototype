@@ -79,7 +79,7 @@ ok(/if \(dejaRepondu\(a, r, reqId, uid\)\) throw new HttpsError\('failed-precond
     S.adminReqs = [{ id: 'r1', status: 'pending', uid: 'c1', at: Date.now() - 600000, svc: 'menage', svcName: 'Ménage', when: 'Aujourd’hui', slot: '15:00',
       zone: 'Toiny', total: 84, unit: 'h', duration: 3, client: 'Cécile', provider: '', providerUid: '', directed: false, boostEur: 0,
       diff: { motif: 'envoyee', cibles: 7, push: 3, mail: 4, at: Date.now() - 600000 }, prevenus: ['u1'] }];
-    S.adminReqsLus = true; S.admin = { view: 'home' }; S._fold = { 'a-bookings': true }; S._nonPrev = {};
+    S.adminReqsLus = true; S.admin = { view: 'home' }; S._fold = { 'a-bookings': true, 'cmd-ouvre-r1': true }; S._nonPrev = {};
     window.__render();
     const voir = document.querySelector('[data-adm="np-voir:r1"]');
     if (!voir) return { voir: false };
