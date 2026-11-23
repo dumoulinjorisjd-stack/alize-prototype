@@ -129,7 +129,8 @@ console.log('\n── UNE DEMANDE SANS ÉCRITURE PEUT ÊTRE ÉCARTÉE ───�
    hors de portée. */
 const iL = SRV.indexOf('exports.ledgerExclude');
 const led = SRV.slice(iL, SRV.indexOf('\nexports.', iL + 20));
-ok(/const dejaLed = \(await ref\.get\(\)\)\.exists;/.test(led), 'la présence de l\'écriture est un FAIT, pas une condition d\'entrée');
+// Depuis le 23/11/2026 la lecture est gardée (ledSnap) : elle dit aussi si Mollie a encaissé.
+ok(/const dejaLed = (\(await ref\.get\(\)\)|ledSnap)\.exists;/.test(led) && /const ledSnap = await ref\.get\(\);/.test(led), 'la présence de l\'écriture est un FAIT, pas une condition d\'entrée');
 ok(/if \(!dejaLed && !dejaReq\) throw new HttpsError\('not-found'/.test(led),
   'mais quelque chose doit exister : on n\'écrit pas un drapeau sur un identifiant inventé');
 ok(/if \(dejaLed\) await ref\.set\(\{/.test(led), 'le registre n\'est touché que s\'il a une ligne');
