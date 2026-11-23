@@ -3822,7 +3822,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='927';
+  const VERSION_APP='928';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -13766,6 +13766,11 @@
        rien et on ne retire rien, un versement réellement dû ne doit pas pouvoir
        s'écarter sur un doute. */
     const VERS_SANS_ARGENT=['expired','failed','canceled'],VERS_AVEC_ARGENT=['paid','authorized'];
+    /* MOLLIE A ENCAISSÉ (le premier paiement, ou le second par le mandat) : ce n'est pas
+       un essai. Trois missions payées, libérées et virées à la main étaient sorties des
+       comptes par « C'était un essai, écarter », posé juste au-dessus de « Je l'ai versé
+       à la main » (l'éditeur, 23/11/2026). Le serveur refuse aussi ce motif-là. */
+    const versEncaisse=function(v){return String(v&&v.etat||'').trim().toLowerCase()==='paid'||!!(v&&v.parLeSecond)||!!(v&&v.libere);};
     const versAbouti=function(v){const e=String(v&&v.etat||'').trim().toLowerCase();
       if(VERS_SANS_ARGENT.indexOf(e)>=0)return false;
       if(VERS_AVEC_ARGENT.indexOf(e)>=0)return true;
@@ -13805,7 +13810,7 @@
                  second paiement se lisait « jamais abouti », et « retirer » sortait des
                  comptes TOUTE la mission, payée. Pas de retrait quand le second est encaissé. */''}
             ${(versAbouti(v)===false&&!v.parLeSecond)?`<button class="btn ghost sm" data-adm="vers-rate:${esc(v.reqId)}" style="margin-top:7px">${S._versRateArm===v.reqId?(I.warn+'&nbsp;Confirmer&nbsp;: retirer de cet écran'):(I.close||I.warn)+'&nbsp;Paiement jamais abouti, retirer'}</button>`:''}
-            <button class="btn ghost sm" data-adm="vers-essai:${esc(v.reqId)}" style="margin-top:7px">${S._versEssaiArm===v.reqId?(I.warn+'&nbsp;Confirmer&nbsp;: \u00e9carter des comptes'):(I.close||I.warn)+'&nbsp;C\u2019\u00e9tait un essai, \u00e9carter'}</button>
+            ${versEncaisse(v)?'':`<button class="btn ghost sm" data-adm="vers-essai:${esc(v.reqId)}" style="margin-top:7px">${S._versEssaiArm===v.reqId?(I.warn+'&nbsp;Confirmer&nbsp;: \u00e9carter des comptes'):(I.close||I.warn)+'&nbsp;C\u2019\u00e9tait un essai, \u00e9carter'}</button>`}
             <button class="btn ghost sm" data-adm="vers-main:${esc(v.reqId)}" style="margin-top:7px">${S._versMainArm===v.reqId?'Confirmer&nbsp;: je l’ai bien viré':(I.check+'&nbsp;Je l’ai versé à la main')}</button></div>`;}).join('')}
           <button class="btn primary sm" data-adm="vers-run" style="margin-top:12px">${I.bolt}&nbsp;Réessayer les ${versList.length}</button>
           <button class="btn ghost sm" data-adm="vers-scan" style="margin-top:12px">${I.search}&nbsp;Revérifier</button>

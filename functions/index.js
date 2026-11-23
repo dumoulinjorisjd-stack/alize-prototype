@@ -1191,9 +1191,17 @@ async function rattraperGrilleTravaillee(db) {
   if (poses) console.log('grilleTravaillee : ' + poses + ' métier(s) noté(s) comme travaillé(s) au prix de la grille.');
   return poses;
 }
-async function lireRegistre(db, n) {
+/* CE QUE MOLLIE A PU ENCAISSER : la prestation, ET l'indemnité d'annulation (écriture
+   `<demande>-annulation`, type « cancel-fee »). La console compte les deux dans le
+   bilan dès que Mollie dit « paid » ; le rapprochement, lui, ne relevait que les
+   prestations : une indemnité restait « hors comptes » pour toujours (relevé le
+   23/11/2026). Les lectures qui parlent de MISSIONS (grille travaillée) gardent les
+   seules prestations : une annulation n'est pas une mission faite au prix de la grille. */
+const REGISTRE_ENCAISSABLE = ['commission', 'cancel-fee'];
+async function lireRegistre(db, n, types) {
+  const T = Array.isArray(types) && types.length ? types : ['commission'];
   const snap = await db.collection('ledger').orderBy('settledAt', 'desc').limit(n || 300).get();
-  return snap.docs.filter((d) => ((d.data() || {}).type || 'commission') === 'commission');
+  return snap.docs.filter((d) => T.indexOf((d.data() || {}).type || 'commission') >= 0);
 }
 async function recordMollieFee(db, reqId, molliePaymentId, commission) {
   if (!mollieApiConfigured()) return false;
@@ -1205,8 +1213,13 @@ async function recordMollieFee(db, reqId, molliePaymentId, commission) {
        ON NE DEVINE PAS : si Mollie ne répond pas sur l'un des deux, on n'écrit rien et le
        rapprochement suivant reprendra — un état à moitié lu se lirait comme un état. */
     let secondId = '';
+    /* L'écriture d'une indemnité d'annulation s'appelle « <demande>-annulation » : AUCUNE
+       demande ne porte ce nom. On ne recopie donc les frais sur la demande que si elle
+       existe — sans quoi un `set(merge)` CRÉERAIT une fausse demande. */
+    let demandeExiste = false;
     try {
       const rq = await db.collection('requests').doc(reqId).get();
+      demandeExiste = rq.exists;
       if (rq.exists) secondId = String((rq.data() || {}).complementPaymentId || '');
     } catch (_) {}
     if (secondId === molliePaymentId) secondId = '';
@@ -1237,7 +1250,7 @@ async function recordMollieFee(db, reqId, molliePaymentId, commission) {
       patch.netTiServices = round2((Number(commission) || 0) - E.frais);
     }
     await db.collection('ledger').doc(reqId).set(patch, {merge: true});
-    if (patch.mollieFee != null) {
+    if (patch.mollieFee != null && demandeExiste) {
       try { await db.collection('requests').doc(reqId).set({mollieFee: patch.mollieFee, netTiServices: patch.netTiServices}, {merge: true}); } catch (_) {}
     }
     return true;
@@ -4213,7 +4226,7 @@ exports.ledgerReconcile = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (requ
   if (!mollieApiConfigured()) return {simulated: true, releves: 0, encaissees: 0, autres: 0};
   const db = getFirestore();
   try {
-    const led = await lireRegistre(db);
+    const led = await lireRegistre(db, 0, REGISTRE_ENCAISSABLE);
     let releves = 0; let echecs = 0;
     for (const d of led) {
       const e = d.data() || {};
@@ -4224,7 +4237,7 @@ exports.ledgerReconcile = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (requ
     try { await rattraperGrilleTravaillee(db); } catch (e) { console.warn('ledgerReconcile grilleTravaillee', e); }
     // On relit APRÈS écriture : on annonce un état vérifié, jamais un état supposé.
     let encaissees = 0; let autres = 0;
-    (await lireRegistre(db)).forEach((d) => { const e = d.data() || {}; if (e.exclu) return; if (e.mollieEncaisse === true) encaissees++; else autres++; });
+    (await lireRegistre(db, 0, REGISTRE_ENCAISSABLE)).forEach((d) => { const e = d.data() || {}; if (e.exclu) return; if (e.mollieEncaisse === true) encaissees++; else autres++; });
     console.log('ledgerReconcile : ' + releves + ' relevé(s), ' + echecs + ' sans réponse, ' + encaissees + ' encaissée(s), ' + autres + ' non encaissée(s), par ' + who);
     return {releves: releves, echecs: echecs, encaissees: encaissees, autres: autres};
   } catch (e) {
@@ -4375,7 +4388,18 @@ exports.ledgerExclude = onCall(async (request) => {
       throw new HttpsError('failed-precondition', 'Cette prestation a été réglée par son second paiement : elle ne s’écarte pas comme « jamais aboutie ».');
     }
   }
-  const dejaLed = (await ref.get()).exists;
+  const ledSnap = await ref.get();
+  const dejaLed = ledSnap.exists;
+  /* CE QUE MOLLIE A ENCAISSÉ NE S'ÉCARTE PAS « COMME UN ESSAI » (l'éditeur, 23/11/2026).
+   * Trois missions payées, débloquées et virées à la main étaient sorties des comptes :
+   * « C'était un essai, écarter » se tenait sur chaque ligne des versements bloqués,
+   * juste au-dessus de « Je l'ai versé à la main ». Les boutons de constat (essai,
+   * jamais abouti, commande de test) portent un MOTIF ; une écriture que Mollie dit
+   * encaissée le contredit. Elle s'écarte encore, mais sans motif, depuis « Retrouver
+   * une facture », là où l'on voit ce qu'on écarte. */
+  if (exclu && motif && dejaLed && (ledSnap.data() || {}).mollieEncaisse === true) {
+    throw new HttpsError('failed-precondition', 'Mollie a encaissé cette prestation : elle ne s’écarte pas comme un essai. Si c’est voulu, écartez-la depuis « Retrouver une facture ».');
+  }
   const dejaReq = dejaLed ? true : (await db.collection('requests').doc(reqId).get()).exists;
   if (!dejaLed && !dejaReq) throw new HttpsError('not-found', 'Ni écriture ni demande pour cette prestation.');
   if (dejaLed) await ref.set({
@@ -7139,7 +7163,7 @@ exports.paymentReconciliation = onSchedule({schedule: '0 9 * * *', secrets: [SMT
   // qu'un jour ou deux après la prestation. On complète ici, chaque matin, les frais des
   // prestations réglées dont le frais Mollie n'est pas encore renseigné (200 plus récentes).
   try {
-    const led = await lireRegistre(db);
+    const led = await lireRegistre(db, 0, REGISTRE_ENCAISSABLE);
     let filled = 0;
     for (const d of led) {
       const e = d.data() || {};
@@ -7160,7 +7184,7 @@ exports.paymentReconciliation = onSchedule({schedule: '0 9 * * *', secrets: [SMT
   //    comptabilité — et surtout, elle signale que personne n'a été débité.
   try {
     const items = [];
-    const led = await lireRegistre(db);
+    const led = await lireRegistre(db, 0, REGISTRE_ENCAISSABLE);
     for (const d of led) {
       const e = d.data() || {};
       if (e.exclu) continue;
