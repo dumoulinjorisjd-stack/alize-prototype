@@ -723,7 +723,7 @@ function reglementDecider(e) {
  * NOYAU PUR : ni horloge, ni réseau, ni base. Le mois de la prestation et l'état du
  * mandat se REÇOIVENT — c'est ce qui permet d'éprouver « carte expirée en mars » sans
  * attendre mars. */
-const COUVERTURE_MOTIFS = ['empreinte', 'mandat', 'mandat-en-cours', 'carte-expiree', 'sans-moyen'];
+const COUVERTURE_MOTIFS = ['empreinte', 'mandat', 'mandat-en-cours', 'carte-expiree', 'sans-moyen', 'carte-refusee'];
 const COUVERTURE_GESTES = ['rien', 'empreinte', 'carte', 'attendre'];
 /* AAAA-MM, comparés comme du texte : une carte vit JUSQU'À LA FIN de son mois
  * d'expiration, donc elle est morte seulement si ce mois est STRICTEMENT antérieur à
@@ -755,6 +755,17 @@ function commandeCouverture(e) {
   }
   if (statut === 'pending' && !expiree) {
     return {couvert: false, par: 'rien', geste: 'attendre', motif: 'mandat-en-cours', carteExpire: false};
+  }
+  /* LA BANQUE A REFUSÉ L'ENREGISTREMENT À 0,00 € POUR CETTE COMMANDE (l'éditeur,
+   * 23/11/2026 : « on fait l'empreinte du montant réel au refus de la banque »). Une
+   * cliente, 3-D Secure passé, carte refusée « pour une raison inconnue » : redemander
+   * le même enregistrement la remettait devant le même refus, et sa commande restait
+   * « à finaliser ». On pose l'empreinte du montant réel, que sa banque peut accepter.
+   * Sans mandat derrière : si l'empreinte meurt avant la fin, le solde partira en lien
+   * de paiement. Seul un REFUS (« failed ») ouvre ce repli — un abandon (« canceled »,
+   * « expired ») redemande l'enregistrement, qui reste le geste qui porte. */
+  if (e.enregistrementRefuse === true) {
+    return {couvert: false, par: 'empreinte', geste: 'empreinte', motif: 'carte-refusee', carteExpire: expiree};
   }
   if (expiree && (statut === 'valid' || statut === 'pending')) {
     return {couvert: false, par: 'rien', geste: 'carte', motif: 'carte-expiree', carteExpire: true};
@@ -5827,7 +5838,14 @@ exports.createClientPayment = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (
     empreinte: {statut: empStatut},
     mandat: MAND.mandat,
     moisPrestation: String(r.dateISO || '').slice(0, 7),
+    // `cardSetupStatus` est écrit par le serveur seul (webhook, rattrapage ; règles).
+    enregistrementRefuse: String(r.cardSetupStatus || '') === 'failed',
   });
+  if (COUV.motif === 'carte-refusee') {
+    // L'enregistrement raté avait noté « couverte par le mandat » : ce n'est plus vrai.
+    try { await db.collection('requests').doc(reqId).set({couverturePar: 'empreinte', couvertureMotif: 'carte-refusee'}, {merge: true}); } catch (_) {}
+    console.log('Commande ' + reqId + ' : enregistrement de carte refusé par la banque, empreinte du montant réel');
+  }
   // Un enregistrement est DÉJÀ en cours (le client revient de sa banque, Mollie n'a pas
   // encore basculé le mandat en « valid ») : on ne lui redemande pas sa carte et on ne
   // pose pas d'empreinte par-dessus. Il attend, l'app interroge `orderPaymentCheck`.
