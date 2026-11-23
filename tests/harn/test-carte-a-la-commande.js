@@ -109,7 +109,8 @@ ok(C({empreinte: {statut: 'expired'}, mandat: null, moisPrestation: '2026-12'}).
   'une empreinte expirée sans mandat renvoie à la carte');
 ok(C({empreinte: {statut: 'expired'}, mandat: {statut: 'valid', exp: '2030-01'}, moisPrestation: '2026-12'}).couvert === true,
   'et avec un mandat valide, elle est couverte malgré l\'empreinte morte');
-ok(bac.motifs.length === 5, 'les motifs sont une liste fermée');
+// Depuis le 23/11/2026 : « carte-refusee » (la banque a refusé l'enregistrement, test-refus-de-la-banque).
+ok(bac.motifs.length === 6 && bac.motifs.indexOf('carte-refusee') === 5, 'les motifs sont une liste fermée');
 ok(bac.motifs.indexOf(sans.motif) >= 0 && bac.motifs.indexOf(encours.motif) >= 0
   && bac.motifs.indexOf(morte.motif) >= 0 && bac.motifs.indexOf(avec.motif) >= 0 && bac.motifs.indexOf(deja.motif) >= 0,
   'et chaque motif rendu vient de cette liste');
