@@ -125,7 +125,8 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
            console en compte une quinzaine, et la dernière écrasait la mesure. */
         const toutes = Array.prototype.slice.call(view.querySelectorAll('.foldc'));
         const trouve = (re) => toutes.find(function (c) { return re.test(c.textContent || ''); });
-        const titresDe = (c) => c ? Array.prototype.map.call(c.querySelectorAll('.fold-body div.card > .row > b'),
+        // Depuis le 23/11/2026 l'en-tête d'une commande est un bouton (carte repliable) : le titre y est.
+        const titresDe = (c) => c ? Array.prototype.map.call(c.querySelectorAll('.fold-body div.card > .row > b, .fold-body div.card > .cmd-tete > .row > b'),
           function (x) { return (x.textContent || '').trim(); }) : [];
         return { registre: titresDe(trouve(/Par statut, puis par métier/)),
           vivante: titresDe(trouve(/Recherche → acceptée → en cours/)) };
