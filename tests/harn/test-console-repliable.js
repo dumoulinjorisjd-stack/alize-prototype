@@ -93,6 +93,21 @@ const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; console.log
     'repliée, elle dit combien et quoi (« ' + a.ferme.txt.slice(0, 80) + ' »)');
   ok(a.ouvert === 2, 'dépliée, elle montre ses deux commandes, chacune repliée à son tour (' + a.ouvert + ')');
 
+  console.log('A quater — l’heure convenue d’une demande « à tout moment de la journée »');
+  const hc = await p.evaluate(() => {
+    if (!(window.__cmd && window.__cmd.projette)) return { expose: false };
+    const S = window.__S; const base = { clientUid: 'c1', service: 'menage', serviceName: 'Ménage', when: 'mer. 25 nov.', slot: '', zone: 'Toiny', total: 112, clientName: 'Cécile' };
+    const acc = window.__cmd.projette('h1', Object.assign({}, base, { status: 'accepted', slotFlex: 'day', acceptedSlot: '10:30', providerName: 'Karla Barbosa', providerUid: 'u2' }));
+    const att = window.__cmd.projette('h2', Object.assign({}, base, { status: 'pending', slotFlex: 'day' }));
+    const sale = window.__cmd.projette('h3', Object.assign({}, base, { status: 'accepted', slotFlex: '<b>x</b>', acceptedSlot: '<img src=x>' }));
+    S.adminReqs = [acc, att]; S._fold = { 'a-bookings': true }; window.__render();
+    const t = [...document.querySelectorAll('.cmd-carte')].map((c) => c.textContent.replace(/\s+/g, ' '));
+    return { expose: true, acc: t.find((x) => /Karla/.test(x)) || '', att: t.find((x) => !/Karla/.test(x)) || '', sale: [sale.acceptedSlot, sale.slotFlex] };
+  });
+  ok(hc.expose && /mer\. 25 nov\. · 10:30/.test(hc.acc), 'acceptée : la console montre l’heure choisie par le prestataire (« ' + (hc.acc || '').slice(0, 70) + ' »)');
+  ok(hc.expose && /à tout moment de la journée/.test(hc.att), 'en recherche : elle dit « à tout moment de la journée »');
+  ok(hc.expose && hc.sale[0] === '' && hc.sale[1] === 0, 'une valeur qui n’est pas une heure ou une souplesse connue ne passe pas');
+
   console.log('B — « Commission ce mois » ouvre Factures');
   const c = await p.evaluate(async () => {
     const S = window.__S; S.admin = { view: 'home' }; window.__render();
