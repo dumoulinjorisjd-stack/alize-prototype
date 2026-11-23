@@ -10,32 +10,36 @@
    était créé chaque matin, même quand le précédent était encore ouvert.
 
    Trois règles :
-   1. APRÈS UN REFUS DE LA BANQUE, PLUS AUCUN PRÉLÈVEMENT AUTOMATIQUE. Un seul lien de
-      paiement (le client agit, 3-D Secure), puis on attend. On ne reprélève seul que
-      si le client a enregistré une AUTRE carte depuis le refus.
+   1. APRÈS UN REFUS DE LA BANQUE, PLUS AUCUN PRÉLÈVEMENT AUTOMATIQUE. Le client est
+      prévenu une fois (webhook) et invité à enregistrer une AUTRE carte ; c'est elle,
+      et elle seule, qui relance le prélèvement. PAS DE LIEN : un paiement par carte
+      expire en 15 minutes chez Mollie (« Expiry times per payment method »), un lien
+      créé au passage du matin serait mort avant d'être ouvert — et l'application n'a
+      aucun écran pour régler un supplément.
    2. UN SEUL LIEN EN ATTENTE : tant qu'il est ouvert, on n'en crée pas d'autre.
    3. AU PLUS TROIS REFUS DE LA BANQUE PAR COMMANDE : au-delà, on ne propose plus de
       payer cette commande ; le client contacte sa banque ou repasse commande avec une
       autre carte. */
 
 const REFUS_CARTE_MAX = 3;
-const RELANCE_GESTES = ['rien', 'prelever', 'lien'];
+const RELANCE_GESTES = ['rien', 'prelever'];
 
 /* `e` : { statut        — complementStatus ('impossible' | 'echec' | 'a_regler') ;
            lienOuvert    — vrai si le dernier paiement du supplément est encore « open » ;
            refusBanque   — vrai si la banque a refusé le dernier prélèvement ;
            mandatRefuse  — le mandat sur lequel ce refus a eu lieu ('' si aucun) ;
            mandatActuel  — le mandat VALIDE du client aujourd'hui ('' si aucun) ;
-           lienApresRefus — vrai si le lien d'après-refus a déjà été créé }
+           dejaPaye      — vrai si Mollie dit le dernier paiement du supplément « paid »
+                           (webhook perdu) : on ne prélève pas deux fois }
    Rend { geste, motif }. */
 function relanceDecider(e) {
   e = e || {};
+  if (e.dejaPaye === true) return { geste: 'rien', motif: 'deja-paye' };
   if (e.statut === 'a_regler' && e.lienOuvert === true) return { geste: 'rien', motif: 'lien-en-cours' };
   if (e.refusBanque === true) {
     const actuel = String(e.mandatActuel || '');
     if (actuel && actuel !== String(e.mandatRefuse || '')) return { geste: 'prelever', motif: 'nouvelle-carte' };
-    if (e.lienApresRefus === true) return { geste: 'rien', motif: 'lien-deja-envoye' };
-    return { geste: 'lien', motif: 'refus-banque' };
+    return { geste: 'rien', motif: 'attendre-autre-carte' };
   }
   return { geste: 'prelever', motif: 'a-retenter' };
 }

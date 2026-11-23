@@ -181,7 +181,7 @@ ok(!(await passe(updateDoc(R(dPro), { ['canaux.' + PRO]: 'push' }))),
 
 console.log('\n── LES REFUS DE LA BANQUE (éditeur, 23/11/2026) ──');
 for (const [champ, val] of [['refusCarteIds', []], ['complementRefusBanque', false], ['complementRefusMandat', ''],
-                            ['complementRefusAt', 0], ['complementLienApresRefus', false]]) {
+                            ['complementRefusAt', 0]]) {
   ok(!(await passe(updateDoc(R(dCli), { [champ]: val }))),
      'le client n’efface pas « ' + champ + ' » : ce sont ses refus qui arrêtent les tentatives');
 }

@@ -524,8 +524,7 @@ async function mandatDuClient(db, uid) {
   return out;
 }
 
-async function mollieChargeComplement(db, reqId, clientUid, amount, label, plafond, opts) {
-  const lienSeul = !!(opts && opts.lienSeul);
+async function mollieChargeComplement(db, reqId, clientUid, amount, label, plafond) {
   const out = {ok: false, direct: false, paymentId: '', checkoutUrl: '', reason: ''};
   if (!mollieApiConfigured() || !(amount > 0) || !reqId) { out.reason = 'inactif'; return out; }
   /* ══ LE PLAFOND EST EXIGÉ, ET IL VIENT D'UNE AUTRE SOURCE QUE LE MONTANT ═══════════
@@ -566,8 +565,7 @@ async function mollieChargeComplement(db, reqId, clientUid, amount, label, plafo
   if (customerId) {
     // « pending » ne peut rien porter : seul un mandat VALIDE prélève hors session.
     const mandateId = (M.mandat && M.mandat.statut === 'valid') ? M.mandat.id : '';
-    // APRÈS UN REFUS DE LA BANQUE : un lien, jamais le mandat (RELP.relanceDecider).
-    if (mandateId && !lienSeul) {
+    if (mandateId) {
       const rec = await mollieApi('/payments', 'POST',
         Object.assign({customerId: customerId, sequenceType: 'recurring', mandateId: mandateId}, body));
       if (rec.ok && rec.data && rec.data.id) {
@@ -1476,19 +1474,22 @@ async function relancerComplements(db, clientUid) {
     const r = d.data() || {};
     const montant = round2(Number(r.complementAmount) || 0);
     if (!(montant > 0.009)) continue;
-    // UN SEUL LIEN EN ATTENTE : on ne regarde l'ancien que s'il pourrait l'être encore.
-    let lienOuvert = false;
-    if (r.complementStatus === 'a_regler' && r.complementPaymentId) {
+    /* LE DERNIER PAIEMENT, TEL QUE MOLLIE LE VOIT. Ouvert : un seul lien à la fois.
+       Payé (webhook perdu) : surtout ne pas prélever une seconde fois. Mollie muet : on
+       ne fait rien de plus ce matin. */
+    let lienOuvert = false; let dejaPaye = false;
+    if (r.complementPaymentId) {
       try {
         const lp = await mollieApi('/payments/' + encodeURIComponent(String(r.complementPaymentId)), 'GET');
-        if (!lp.ok) continue;                                // Mollie muet : on ne crée rien de plus
-        lienOuvert = !!(lp.data && lp.data.status === 'open');
+        if (!lp.ok) continue;
+        const stp = String((lp.data && lp.data.status) || '');
+        lienOuvert = stp === 'open';
+        dejaPaye = stp === 'paid';
       } catch (_) { continue; }
     }
-    const DEC = RELP.relanceDecider({statut: r.complementStatus, lienOuvert: lienOuvert,
+    const DEC = RELP.relanceDecider({statut: r.complementStatus, lienOuvert: lienOuvert, dejaPaye: dejaPaye,
       refusBanque: r.complementRefusBanque === true, mandatRefuse: r.complementRefusMandat || '',
-      mandatActuel: (r.complementRefusBanque === true && !MC.lu) ? String(r.complementRefusMandat || '') : mandatActuel,
-      lienApresRefus: r.complementLienApresRefus === true});
+      mandatActuel: (r.complementRefusBanque === true && !MC.lu) ? String(r.complementRefusMandat || '') : mandatActuel});
     if (DEC.geste === 'rien') { console.log('Supplément non relancé reqId=' + d.id + ' (' + DEC.motif + ')'); continue; }
     let out;
     try {
@@ -1496,17 +1497,16 @@ async function relancerComplements(db, clientUid) {
       // demande, recalculé ici, donc d'une source indépendante de ce qui a été stocké.
       out = await mollieChargeComplement(db, d.id, clientUid, montant,
         'Ti-Services · supplément · ' + (r.serviceName || r.service || 'prestation'),
-        montantsDemande(r).gross, {lienSeul: DEC.geste === 'lien'});
+        montantsDemande(r).gross);
     } catch (e) { console.warn('relancerComplements', d.id, e); continue; }
     if (!out || !out.ok) continue;                       // on retentera plus tard
     try {
       const suite = {complementStatus: out.direct ? 'en_cours' : 'a_regler',
         complementPaymentId: out.paymentId || '', complementCheckoutUrl: out.checkoutUrl || '',
         complementIssue: ''};
-      if (DEC.geste === 'lien') suite.complementLienApresRefus = true;
       // Une AUTRE carte : le refus d'hier ne la concerne pas. Refusée à son tour, le
       // webhook le notera de nouveau, sur ce mandat-là.
-      if (DEC.motif === 'nouvelle-carte') { suite.complementRefusBanque = false; suite.complementLienApresRefus = false; }
+      if (DEC.motif === 'nouvelle-carte') suite.complementRefusBanque = false;
       await d.ref.update(suite);
     } catch (_) {}
     if (out.direct) n++;
@@ -6160,15 +6160,42 @@ exports.mollieWebhook = onRequest({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (req
           console.log('Supplément payé reqId=' + reqId + ' ' + montant + ' € (net ' + netC + '), versement ' + (verse ? 'ok' : 'à régulariser'));
         } else if (['failed', 'canceled', 'expired'].indexOf(pay.status) >= 0) {
           // Non encaissé : on le dit, et surtout on ne verse rien qu'on n'a pas.
-          /* « failed » = LA BANQUE A REFUSÉ. On le retient, avec le mandat refusé : le
-             passage du matin ne reprélèvera plus seul (RELP.relanceDecider) — un seul
-             lien au client, ou une AUTRE carte. Un lien expiré ou abandonné n'est pas un
-             refus. Le lien d'après-refus, une fois créé, ne se recrée pas. */
+          /* « failed » = LA BANQUE A REFUSÉ. On le retient, avec la carte refusée : le
+             passage du matin ne reprélèvera plus seul (RELP.relanceDecider) ; seule une
+             AUTRE carte relance. Un paiement sans mandat (un lien) ne nomme aucune carte :
+             on GARDE alors celle d'avant — sans quoi la carte refusée passerait pour une
+             nouvelle et serait reprélevée (relevé en relecture, 23/11/2026). Un lien
+             expiré ou abandonné n'est pas un refus. Jamais d'écriture sur une demande
+             supprimée : `set` la recréerait. */
           const refusB = pay.status === 'failed';
-          try {
-            await ref.set(Object.assign({complementStatus: 'echec'}, refusB ? {complementRefusBanque: true,
-              complementRefusMandat: String(pay.mandateId || ''), complementRefusAt: Date.now()} : {}), {merge: true});
-          } catch (_) {}
+          const premierRefus = refusB && r.complementRefusBanque !== true;
+          if (snap.exists) {
+            try {
+              await ref.set(Object.assign({complementStatus: 'echec'}, refusB ? {complementRefusBanque: true,
+                complementRefusMandat: String(pay.mandateId || r.complementRefusMandat || ''), complementRefusAt: Date.now()} : {}), {merge: true});
+            } catch (_) {}
+          }
+          // LE CLIENT EST PRÉVENU UNE FOIS, et on lui dit le seul geste qui règle : une
+          // autre carte, qui relance le prélèvement d'elle-même (webhook d'enregistrement).
+          if (premierRefus && snap.exists && r.clientUid) {
+            const txtC = 'Votre banque a refusé le prélèvement de ' + eurTxt(Number(r.complementAmount) || 0)
+              + ' pour votre prestation. Ajoutez une autre carte dans Profil → Moyen de paiement : le règlement se fera automatiquement.';
+            try {
+              const tokC = await userPushTokens(db, r.clientUid);
+              if (tokC.length) {
+                await pushMulticast(tokC, 'Paiement refusé par votre banque', txtC, '/',
+                  (tok) => db.collection('users').doc(r.clientUid).update({pushTokens: FieldValue.arrayRemove(tok)}).catch(() => {}));
+              }
+            } catch (_) {}
+            try {
+              const mailC = String(((await db.collection('users').doc(r.clientUid).get()).data() || {}).email || '').trim();
+              if (/.+@.+\..+/.test(mailC)) {
+                await sendMail(db, mailC, {subject: 'Ti-Services · Paiement refusé par votre banque',
+                  html: '<p>Bonjour,</p><p>' + escHtmlS(txtC) + '</p><p>L’équipe Ti-Services</p>',
+                  cta: {label: 'Ouvrir Ti-Services', url: APP_URL.replace(/\/$/, '') + '/'}});
+              }
+            } catch (_) {}
+          }
           try {
             await sendMail(db, ADMIN_EMAIL, {
               subject: 'Supplément NON encaissé, ' + escHtmlS(r.serviceName || r.service || 'prestation'),
