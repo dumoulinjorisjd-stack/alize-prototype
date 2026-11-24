@@ -119,7 +119,8 @@ const ACTES = { c_catamaran: [
   if (D.passe) {
     ok(D.tenableAuj === 0, 'après 09:00, aucune heure ne tient plus aujourd’hui pour la journée complète');
     ok(D.jours.indexOf(D.auj) < 0, 'aujourd’hui disparaît donc de la liste des jours');
-    ok(/Plus de départ possible aujourd’hui/.test(D.txt), 'et l’écran DIT pourquoi, au lieu de laisser un jour manquer sans explication');
+    // La phrase qui le commentait est retirée (l'éditeur, 24/11/2026 : « enlève la phrase sous demain »).
+    ok(!/Plus de départ possible aujourd’hui|Plus de créneau disponible aujourd’hui/.test(D.txt), 'sans phrase pour le commenter');
   } else {
     ok(D.tenableAuj === 1, 'avant 09:00, le départ du jour tient encore');
     ok(D.jours.indexOf(D.auj) >= 0, 'et aujourd’hui reste proposé');

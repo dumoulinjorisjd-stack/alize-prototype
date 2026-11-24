@@ -64,7 +64,7 @@ ok(corps.indexOf('versementEcarte(null, x)') < corps.indexOf("round2(Number(x.ne
 console.log('\n── CE QU\'ON ÉCARTE SE COMPTE ET SE DIT ─────────────────────────────────');
 /* Une liste qui rétrécit sans un mot se lit comme une liste qui a perdu quelque chose. */
 ok(/let ecartees = 0;/.test(corps), 'le serveur les compte');
-ok(/return \{bloques: bloques, verses: verses, ecartees: ecartees\};/.test(corps), 'et le rend');
+ok(/return \{bloques: bloques, verses: verses, ecartees: ecartees, sansObjet: sansObjet\};/.test(corps), 'et le rend (avec, depuis le 24/11/2026, les empreintes expirées réglées par le second paiement)');
 /* ET LE COMPTEUR EST EN PORTÉE AU RETOUR — ON LE DEMANDE À V8, ON NE COMPTE PLUS LES
    ACCOLADES. Une première version comparait deux PROFONDEURS et rendait « 2 = 2 » :
    la déclaration à (fonction + try), le retour à (fonction + objet littéral du
