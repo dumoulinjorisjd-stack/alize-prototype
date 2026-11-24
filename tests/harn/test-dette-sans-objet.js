@@ -62,6 +62,7 @@ console.log('C — la console : le bandeau et la carte disent la même chose');
   ok(!/Dû aux prestataires/.test(r.txt), 'une fois « sans-objet » écrit : plus de dette au bandeau');
   ok(/1 empreinte expirée, prestation réglée par le second paiement/.test(r.txt), 'la carte des versements dit ce qu’elle a rangé');
   ok(/Commissions encaissées/.test(r.txt) && /14,42/.test(r.txt), 'la commission reste dans les comptes');
+  ok(!/calqués sur Mollie/.test(r.txt), 'plus de bandeau qui explique le calcul sans geste à faire (l’éditeur, 24/11/2026)');
   r = await ecran([L({ molliePayout: 'sans-objet', complementPayout: 'unrouted' })], { loaded: true, list: [] });
   ok(/Dû aux prestataires/.test(r.txt) && /104,50/.test(r.txt), 'si c’est le second paiement qui n’est pas versé, la dette reste, sur LUI');
   ok(errs.length === 0, 'aucune erreur JS (' + errs.join(' | ').slice(0, 160) + ')');
