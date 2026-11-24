@@ -88,7 +88,7 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   });
   ok(dur.acts.length === 1 && dur.acts[0].u === 'm2' && dur.acts[0].qty === 45 && dur.acts[0].price === 5, 'la ligne envoyée porte prix unitaire, surface et unité : le serveur vérifie 5 € × 45');
   const SRC = fs.readFileSync(path.join(RACINE, 'index.html'), 'utf8');
-  ok(/acts:\(m\.acts&&m\.acts\.length\)\?m\.acts\.map\(function\(a\)\{return Object\.assign\(\{id:a\.id,nm:a\.nm,price:Number\(a\.price\)\|\|0,qty:a\.qty\|\|1\},actAuM2\(a\)\?\{u:'m2'\}:\{\}\);\}\)/.test(SRC),
+  ok(/acts:\(m\.acts&&m\.acts\.length\)\?m\.acts\.map\(function\(a\)\{return Object\.assign\(\{id:a\.id,nm:a\.nm,price:Number\(a\.price\)\|\|0,qty:a\.qty\|\|1\},actAuM2\(a\)\?\{u:'m2'\}:\{\}(,a\.ch\?\{ch:String\(a\.ch\)\}:\{\})?\);\}\)/.test(SRC),
     'la demande enregistrée garde l’unité');
   const CATP = require(path.join(RACINE, 'functions', 'catalogue-prestataire.js'));
   const v = CATP.prixAttendu([{ id: 'dk1', price: 5, qty: 45, u: 'm2' }], [{ id: 'dk1', price: 5 }]);

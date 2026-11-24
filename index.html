@@ -3822,7 +3822,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='933';
+  const VERSION_APP='934';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -4706,8 +4706,9 @@
     m.acts.forEach(function(a){
       const l=par[a.id];
       if(!l){r.retirees.push(a.nm||a.id);return;}
-      if(l.price!==a.price||l.nm!==a.nm)r.rechiffrees++;
-      garde.push(Object.assign({id:l.id,nm:l.nm,price:l.price,qty:a.qty||(actAuM2(a)?0:1)},actAuM2(a)?{u:'m2'}:{}));
+      const n=ligneCommandee(l,a.qty||(actAuM2(a)?0:1),a.ch||'');
+      if(n.price!==a.price||n.nm!==a.nm)r.rechiffrees++;
+      garde.push(n);
     });
     m.acts=garde;
     return r;
@@ -5455,7 +5456,7 @@
     Object.keys(S.adminCatalog).forEach(function(id){
       const fusion=baseCatalog(id);
       if(fusion&&fusion.length!==(S.adminCatalog[id]||[]).length){
-        S.adminCatalog[id]=fusion.map(function(a){const o={id:a.id,nm:a.nm,price:a.price,grp:a.grp||''};if(heuresDeLActe(a).length)o.h=heuresDeLActe(a).join(', ');if(dureeDeLActe(a))o.d=dureeDeLActe(a);if(dureeMinDeLActe(a)&&a.dm)o.dm=dureeMinDeLActe(a);if(actAuM2(a))o.u='m2';if(dm2DeLActe(a))o.dm2=dm2DeLActe(a);return o;});
+        S.adminCatalog[id]=fusion.map(function(a){const o={id:a.id,nm:a.nm,price:a.price,grp:a.grp||''};if(heuresDeLActe(a).length)o.h=heuresDeLActe(a).join(', ');if(dureeDeLActe(a))o.d=dureeDeLActe(a);if(dureeMinDeLActe(a)&&a.dm)o.dm=dureeMinDeLActe(a);if(actAuM2(a))o.u='m2';if(dm2DeLActe(a))o.dm2=dm2DeLActe(a);if(a.ch)o.ch=JSON.parse(JSON.stringify(a.ch));return o;});
       }
     });
   }
@@ -5542,7 +5543,7 @@
     const fusion=baseCatalog(svcId)||[];
     const copie=S.adminCatalog[svcId];
     if(!copie||copie.length!==fusion.length){
-      S.adminCatalog[svcId]=fusion.map(function(a){const o={id:a.id,nm:a.nm,price:a.price,grp:a.grp||''};if(actAuM2(a))o.u='m2';if(dm2DeLActe(a))o.dm2=dm2DeLActe(a);return o;});
+      S.adminCatalog[svcId]=fusion.map(function(a){const o={id:a.id,nm:a.nm,price:a.price,grp:a.grp||''};if(actAuM2(a))o.u='m2';if(dm2DeLActe(a))o.dm2=dm2DeLActe(a);if(a.ch)o.ch=JSON.parse(JSON.stringify(a.ch));return o;});
     }
     return S.adminCatalog[svcId];
   }
@@ -6730,6 +6731,49 @@
   function qteTexte(a){const q=qteCalcul(a);return actAuM2(a)?(q+'\u00a0m²'):(q>1?('×\u00a0'+q):'');}
   function prixUnitTexte(a){return (a&&a.price)+'\u00a0€'+(actAuM2(a)?'/m²':'');}
   function dm2DeLActe(a){const v=Math.round((Number(a&&a.dm2)||0)*2)/2;return (v>0&&v<=DM2_MAX)?v:0;}
+  /* UNE PRESTATION, UN CHOIX OBLIGATOIRE (l'éditeur, 24/11/2026 : « quand on choisit un
+     type de prestation on doit obligatoirement choisir une option […] sans risquer un
+     doublon ou un oubli »). Mesuré en v933 : « Monobrosse, matériel de la villa » et
+     « … du prestataire » se cochaient ENSEMBLE, 750 € pour 50 m². Une ligne de la grille
+     porte `ch` = { nm:'Matériel', opts:[{id,nm,price},…] } ; cochée, elle attend qu'on
+     choisisse UNE option, et c'est son prix qui compte. La durée reste celle de la ligne.
+     MIROIR de `choixPropre` (functions/catalogue-prestataire.js) : moins de deux options
+     lisibles, ce n'est pas un choix — la ligne se commande comme avant. */
+  function choixDeLActe(a){
+    const c=a&&a.ch;if(!c||typeof c!=='object')return null;
+    const nm=String(c.nm||'').trim();const vus={};const opts=[];
+    (Array.isArray(c.opts)?c.opts:[]).forEach(function(o){const id=String((o&&o.id)||'').trim(),on=String((o&&o.nm)||'').trim(),px=Number(o&&o.price);
+      if(!id||vus[id]||!on||!(px>0)||px>100000||opts.length>=6)return;vus[id]=1;opts.push({id:id,nm:on,price:Math.round(px*100)/100});});
+    return (nm&&opts.length>=2)?{nm:nm,opts:opts}:null;
+  }
+  function prixMinDuChoix(c){return Math.min.apply(null,c.opts.map(function(o){return o.price;}));}
+  // Le prix d'une ligne sur la carte : « dès » le moins cher de ses options.
+  function prixLigneHtml(a){const c=choixDeLActe(a);return c?('<span>dès</span>\u00a0'+esc(prixUnitTexte(Object.assign({},a,{price:prixMinDuChoix(c)})))):esc(prixUnitTexte(a));}
+  /* CE QU'UNE LIGNE DU CATALOGUE DEVIENT DANS LA COMMANDE — une seule porte pour cocher,
+     choisir l'option et rechiffrer. Option choisie : son prix, et son nom accolé à celui
+     de la ligne (il s'imprime sur la facture et se lit chez le prestataire). Pas encore
+     choisie : `ch:''` et un prix NUL — le total ne dit pas un prix que personne n'a choisi. */
+  function ligneCommandee(l,qty,optId){
+    const c=choixDeLActe(l);const o=c?(c.opts.find(function(x){return x.id===optId;})||null):null;
+    const out={id:l.id,nm:o?(l.nm+' · '+o.nm):l.nm,price:c?(o?o.price:0):l.price,qty:qty};
+    if(actAuM2(l))out.u='m2';if(c)out.ch=o?o.id:'';
+    return out;
+  }
+  function choixAFaire(p){return !!(p&&p.ch==='');}
+  // CONSOLE : le choix d'une ligne de la grille. Le prix de la ligne suit la moins chère
+  // des options (« dès … » sur la carte, prix d'appel de sa famille).
+  function synchroPrixDuChoix(a){const c=choixDeLActe(a);if(c)a.price=prixMinDuChoix(c);}
+  function choixConsoleHtml(svc,a){
+    const k=svc+':'+a.id;
+    if(!a.ch||typeof a.ch!=='object')return `<button class="btn ghost sm" data-actchon="${esc(k)}" style="margin-top:8px;width:auto;padding:6px 11px">${I.plus} Choix obligatoire</button>`;
+    const ops=Array.isArray(a.ch.opts)?a.ch.opts:[];
+    return `<div style="margin-top:8px;padding:9px 10px;border-radius:10px;border:1px solid var(--line)"><div class="row between" style="align-items:center"><span class="mini" style="color:var(--muted);font-weight:650">Choix obligatoire</span><button class="btn ghost sm" data-actchoff="${esc(k)}" style="width:auto;padding:5px 10px">Retirer</button></div>`
+      +`<input class="txt" data-actchnm="${esc(k)}" value="${esc(a.ch.nm||'')}" placeholder="Intitulé (ex. Matériel)" style="width:100%;padding:9px 12px;font-size:13px;margin-top:6px">`
+      +ops.map(function(o){const ko=k+':'+o.id;return `<div class="row" style="gap:6px;align-items:center;margin-top:6px"><input class="txt" data-actchonm="${esc(ko)}" value="${esc(o.nm||'')}" placeholder="Option (ex. De la villa)" style="flex:1;min-width:0;padding:8px 10px;font-size:13px"><input class="txt money" data-actchopx="${esc(ko)}" value="${(Number(o.price)>0)?Number(o.price):''}" inputmode="numeric" aria-label="Prix de l’option en euros" style="width:58px;padding:8px;text-align:right;font-size:13px"><b class="mini">€${actAuM2(a)?'/m²':''}</b><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actchodel="${esc(ko)}" aria-label="Retirer l’option">${I.trash}</button></div>`;}).join('')
+      +(ops.length<6?`<button class="btn ghost sm" data-actchoadd="${esc(k)}" style="margin-top:6px;width:auto;padding:6px 11px">${I.plus} Option</button>`:'')
+      +(choixDeLActe(a)?'':`<div class="mini" style="margin-top:6px;color:var(--coral-deep)">Pas encore proposé : un intitulé et deux options avec nom et prix.</div>`)
+      +`</div>`;
+  }
   // La durée d'une prestation COMMANDÉE : au m², le temps par m² × la surface.
   function dureeMinCommandee(def,qty){
     if(actAuM2(def)){const t=Math.ceil(dm2DeLActe(def)*(qteCalcul({u:'m2',qty:qty})));return Math.min(DUREE_MINUTES_MAX,t);}
@@ -7875,6 +7919,8 @@
     "que sur les créneaux cochés":"only on the checked slots",
     "qui rend la mission plus attractive.":"which makes the job more attractive.",
     "refusée":"declined",
+    "à choisir":"to choose",
+    "Choisissez une option pour continuer.":"Select an option to continue.",
     "(le prestataire réserve ce temps).":"(the provider books this time).",
     "Indiquez la surface en m² pour continuer.":"Enter the area in m² to continue.",
     "Surface":"Area",
@@ -9369,6 +9415,8 @@
     "que sur les créneaux cochés":"apenas nos horários marcados",
     "qui rend la mission plus attractive.":"que torna o serviço mais atrativo.",
     "refusée":"recusada",
+    "à choisir":"a escolher",
+    "Choisissez une option pour continuer.":"Escolha uma opção para continuar.",
     "(le prestataire réserve ce temps).":"(o prestador reserva este tempo).",
     "Indiquez la surface en m² pour continuer.":"Indique a área em m² para continuar.",
     "Surface":"Área",
@@ -13083,7 +13131,7 @@
         else if(s.id==='colis'){priceEditor=priceCtl('colis',px,' forfait','Forfait retrait');}
         // Console : les prestations sont rangées par FAMILLE (intertitre + champ « famille »
         // sur chaque ligne), sinon une grille de 50 actes est impossible à tenir à jour.
-        else if(isCatalogForfait(s.id)){priceEditor=`<div class="mini" style="color:var(--muted);margin-bottom:2px">Grille à l'acte</div>${catalogGroups(s.id).map(function(G){return (catalogGroups(s.id).length<2?'':`<div class="mini" style="margin-top:14px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:var(--teal-deep)">${esc(G.g)} · ${grpCount(G.acts.length)}</div>`)+G.acts.map(function(a){return `<div style="margin-top:9px;padding:10px;border-radius:12px;background:var(--card)"><input class="txt" data-actname="${s.id}:${a.id}" value="${esc(a.nm)}" placeholder="Nom de la prestation" style="width:100%;padding:11px 12px;font-size:14px"><input class="txt" data-actgrpname="${s.id}:${a.id}" value="${esc(a.grp||'')}" placeholder="Famille (ex. Femme · coloration)" style="width:100%;padding:9px 12px;font-size:12px;margin-top:6px"><input class="txt" data-acthours="${s.id}:${a.id}" value="${esc(heuresDeLActe(a).join(', '))}" placeholder="Heures de départ (ex. 9h, 13h30)" style="width:100%;padding:9px 12px;font-size:12px;margin-top:6px">${(function(){const av=heuresAvis(heuresDeLActe(a).join(', '));return av.txt?`<div class="mini" data-acthavis="${s.id}:${a.id}" style="margin-top:3px;color:${av.cls==='ko'?'var(--coral-deep)':'var(--muted)'}">${esc(av.txt)}</div>`:`<div class="mini" data-acthavis="${s.id}:${a.id}" style="margin-top:3px;color:var(--muted);display:none"></div>`;})()}<div class="row between" style="align-items:center;margin-top:7px"><span class="mini" style="color:var(--muted)">Vendu</span><span class="row" style="gap:6px"><button class="btn ${actAuM2(a)?'ghost':'primary'} sm" data-actunit="${s.id}:${a.id}:u" style="width:auto;padding:6px 11px">à l’unité</button><button class="btn ${actAuM2(a)?'primary':'ghost'} sm" data-actunit="${s.id}:${a.id}:m2" style="width:auto;padding:6px 11px">au m²</button></span></div>${actAuM2(a)?`<div class="row between" style="align-items:center;margin-top:7px"><span class="mini" style="color:var(--muted)">Temps par m² (agenda du prestataire)</span><span class="row" style="gap:6px;align-items:center"><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actdm2="${s.id}:${a.id}:down">−</button><b class="mini money" style="min-width:70px;text-align:center">${dm2DeLActe(a)?String(dm2DeLActe(a)).replace('.',',')+' min':'non dit'}</b><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actdm2="${s.id}:${a.id}:up">+</button></span></div>`:`<div class="row between" style="align-items:center;margin-top:7px"><span class="mini" style="color:var(--muted)">Durée (agenda du prestataire)</span><span class="row" style="gap:6px;align-items:center"><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actduree="${s.id}:${a.id}:down">−</button><b class="mini money" style="min-width:60px;text-align:center">${dureeDeLActe(a)?dureeDeLActe(a)+' h':'non dite'}</b><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actduree="${s.id}:${a.id}:up">+</button></span></div>`}<span class="row" style="gap:6px;align-items:center;justify-content:flex-end;margin-top:8px"><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actprice="${s.id}:${a.id}:down">−</button><span class="row" style="flex:none;gap:3px;align-items:baseline"><input class="txt money" data-actpricev="${s.id}:${a.id}" value="${a.price}" inputmode="numeric" aria-label="Prix client en euros" style="width:64px;padding:7px 8px;text-align:right;font-size:14px"><b class="mini">€${actAuM2(a)?'/m²':''}</b></span><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actprice="${s.id}:${a.id}:up">+</button><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actdel="${s.id}:${a.id}" aria-label="Retirer">${I.trash}</button></span></div>`;}).join('');}).join('')}<button class="btn ghost sm" data-actadd="${s.id}" style="margin-top:10px;width:auto;padding:8px 12px">${I.plus} Ajouter une prestation</button>`;}
+        else if(isCatalogForfait(s.id)){priceEditor=`<div class="mini" style="color:var(--muted);margin-bottom:2px">Grille à l'acte</div>${catalogGroups(s.id).map(function(G){return (catalogGroups(s.id).length<2?'':`<div class="mini" style="margin-top:14px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:var(--teal-deep)">${esc(G.g)} · ${grpCount(G.acts.length)}</div>`)+G.acts.map(function(a){return `<div style="margin-top:9px;padding:10px;border-radius:12px;background:var(--card)"><input class="txt" data-actname="${s.id}:${a.id}" value="${esc(a.nm)}" placeholder="Nom de la prestation" style="width:100%;padding:11px 12px;font-size:14px"><input class="txt" data-actgrpname="${s.id}:${a.id}" value="${esc(a.grp||'')}" placeholder="Famille (ex. Femme · coloration)" style="width:100%;padding:9px 12px;font-size:12px;margin-top:6px"><input class="txt" data-acthours="${s.id}:${a.id}" value="${esc(heuresDeLActe(a).join(', '))}" placeholder="Heures de départ (ex. 9h, 13h30)" style="width:100%;padding:9px 12px;font-size:12px;margin-top:6px">${(function(){const av=heuresAvis(heuresDeLActe(a).join(', '));return av.txt?`<div class="mini" data-acthavis="${s.id}:${a.id}" style="margin-top:3px;color:${av.cls==='ko'?'var(--coral-deep)':'var(--muted)'}">${esc(av.txt)}</div>`:`<div class="mini" data-acthavis="${s.id}:${a.id}" style="margin-top:3px;color:var(--muted);display:none"></div>`;})()}<div class="row between" style="align-items:center;margin-top:7px"><span class="mini" style="color:var(--muted)">Vendu</span><span class="row" style="gap:6px"><button class="btn ${actAuM2(a)?'ghost':'primary'} sm" data-actunit="${s.id}:${a.id}:u" style="width:auto;padding:6px 11px">à l’unité</button><button class="btn ${actAuM2(a)?'primary':'ghost'} sm" data-actunit="${s.id}:${a.id}:m2" style="width:auto;padding:6px 11px">au m²</button></span></div>${actAuM2(a)?`<div class="row between" style="align-items:center;margin-top:7px"><span class="mini" style="color:var(--muted)">Temps par m² (agenda du prestataire)</span><span class="row" style="gap:6px;align-items:center"><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actdm2="${s.id}:${a.id}:down">−</button><b class="mini money" style="min-width:70px;text-align:center">${dm2DeLActe(a)?String(dm2DeLActe(a)).replace('.',',')+' min':'non dit'}</b><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actdm2="${s.id}:${a.id}:up">+</button></span></div>`:`<div class="row between" style="align-items:center;margin-top:7px"><span class="mini" style="color:var(--muted)">Durée (agenda du prestataire)</span><span class="row" style="gap:6px;align-items:center"><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actduree="${s.id}:${a.id}:down">−</button><b class="mini money" style="min-width:60px;text-align:center">${dureeDeLActe(a)?dureeDeLActe(a)+' h':'non dite'}</b><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actduree="${s.id}:${a.id}:up">+</button></span></div>`}${choixConsoleHtml(s.id,a)}<span class="row" style="gap:6px;align-items:center;justify-content:flex-end;margin-top:8px">${choixDeLActe(a)?`<span class="mini" style="color:var(--muted)">Prix selon l’option</span>`:`<button class="btn ghost sm" style="width:30px;padding:5px 0" data-actprice="${s.id}:${a.id}:down">−</button><span class="row" style="flex:none;gap:3px;align-items:baseline"><input class="txt money" data-actpricev="${s.id}:${a.id}" value="${a.price}" inputmode="numeric" aria-label="Prix client en euros" style="width:64px;padding:7px 8px;text-align:right;font-size:14px"><b class="mini">€${actAuM2(a)?'/m²':''}</b></span><button class="btn ghost sm" style="width:30px;padding:5px 0" data-actprice="${s.id}:${a.id}:up">+</button>`}<button class="btn ghost sm" style="width:30px;padding:5px 0" data-actdel="${s.id}:${a.id}" aria-label="Retirer">${I.trash}</button></span></div>`;}).join('');}).join('')}<button class="btn ghost sm" data-actadd="${s.id}" style="margin-top:10px;width:auto;padding:8px 12px">${I.plus} Ajouter une prestation</button>`;}
         else{
           priceEditor=priceCtl(s.id,px,'/h','Tarif horaire');
           /* « Quand j'ajoute un métier je suis obligé de laisser un tarif horaire, mais
@@ -17152,7 +17200,7 @@
         colisCount:(m.svc==='colis'&&m.colis)?((m.colis.items||[]).length):null,
         colisSigned:false,
         // Métier « à l'acte » : la liste des prestations cochées et le total ferme.
-        acts:(m.acts&&m.acts.length)?m.acts.map(function(a){return Object.assign({id:a.id,nm:a.nm,price:Number(a.price)||0,qty:a.qty||1},actAuM2(a)?{u:'m2'}:{});}):null,
+        acts:(m.acts&&m.acts.length)?m.acts.map(function(a){return Object.assign({id:a.id,nm:a.nm,price:Number(a.price)||0,qty:a.qty||1},actAuM2(a)?{u:'m2'}:{},a.ch?{ch:String(a.ch)}:{});}):null,
         forfaitTotal:(m.acts&&m.acts.length)?t.sub:null,
         // Prestations / options additionnelles choisies (nom, prix, unité, quantité/heures).
         options:(m.options&&m.options.length)?m.options.map(function(o){return {id:o.id,nm:o.nm,price:Number(o.price)||0,unit:(o.unit==='h'?'h':'u'),qty:o.qty||1};}):null,
@@ -20847,7 +20895,7 @@
         return;
       }
     }
-    const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actqty],[data-actunit],[data-actdm2],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-psite],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-loc],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday],[data-tip],[data-pac],[data-sitemode],[data-invclient],[data-fold],[data-actgrp],[data-purge],[data-optpick],[data-optqty],[data-optadd],[data-optdel],[data-optprice],[data-optunit],[data-rf],[data-telfix],[data-actduree],[data-catdel],[data-catadd],[data-caton]');
+    const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actch],[data-actchon],[data-actchoff],[data-actchoadd],[data-actchodel],[data-actqty],[data-actunit],[data-actdm2],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-psite],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-loc],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday],[data-tip],[data-pac],[data-sitemode],[data-invclient],[data-fold],[data-actgrp],[data-purge],[data-optpick],[data-optqty],[data-optadd],[data-optdel],[data-optprice],[data-optunit],[data-rf],[data-telfix],[data-actduree],[data-catdel],[data-catadd],[data-caton]');
     if(!b)return;
     // Un clic ISSU d'un <input type=file> (notamment déclenché par programme, ex. la
     // feuille « appareil photo / galerie ») remonte jusqu'ici : on ne le traite pas
@@ -21842,13 +21890,15 @@
     if(b.dataset.catopen){jalonClient('catalogue');S.catView=b.dataset.catopen;render();return;}
     if(b.dataset.svc){if(!svcAvailable(b.dataset.svc)){toast('Bientôt disponible');return;}const svc=findSvc(b.dataset.svc);if(!svc)return;jalonClient('catalogue');jalonClient('config');S.catView=null;S.cfgMore=false;S.draft=newMission(svc);S._cfgVu=null;renderConfig();return;}
     // Menu d'actes (métiers à l'acte) : cocher / décocher une prestation.
+    if(b.dataset.actch){const m=S.draft;if(!m)return;const id=b.dataset.actch;const i=(m.acts||[]).findIndex(function(a){return a.id===id;});const l=actInfo(m.svc,id,m.preferredUid);
+      if(i>=0&&l)m.acts[i]=ligneCommandee(l,m.acts[i].qty,b.dataset.actopt||'');renderConfig();return;}
     if(b.dataset.actpick){const m=S.draft;if(!m)return;S._cfgRetire=null;m.acts=m.acts||[];const id=b.dataset.actpick;const i=m.acts.findIndex(function(a){return a.id===id;});
       // Choix EXCLUSIF : une formule remplace l'autre au lieu de s'y ajouter. Décocher
       // reste possible — on ne force pas une sélection, le total dirait un prix que
       // personne n'a demandé.
       const seul=metierDuSvc(m.svc).exclusif;
       // Au m², la surface reste à DIRE : quantité 0, et la commande attend qu'on la tape.
-      if(i>=0){m.acts.splice(i,1);}else{const a=actInfo(m.svc,id,m.preferredUid);if(a){if(seul)m.acts=[];m.acts.push(Object.assign({id:a.id,nm:a.nm,price:a.price,qty:actAuM2(a)?0:1},actAuM2(a)?{u:'m2'}:{}));}}renderConfig();
+      if(i>=0){m.acts.splice(i,1);}else{const a=actInfo(m.svc,id,m.preferredUid);if(a){if(seul)m.acts=[];m.acts.push(ligneCommandee(a,actAuM2(a)?0:1,''));}}renderConfig();
       if(i<0){try{const el=document.querySelector('[data-actm2="'+id.replace(/"/g,'')+'"]');if(el)el.focus();}catch(_){}}
       return;}
     if(b.dataset.actqty){const m=S.draft;if(!m)return;const parts=b.dataset.actqty.split(':');const id=parts[0],dir=parts[1];const a=(m.acts||[]).find(function(x){return x.id===id;});if(a){if(dir==='up')a.qty=(a.qty||1)+1;else{a.qty=(a.qty||1)-1;if(a.qty<1)m.acts=m.acts.filter(function(x){return x.id!==id;});}}renderConfig();return;}
@@ -22050,6 +22100,17 @@
       if(a){const d=Math.max(0,Math.min(DUREE_MAX,Math.round(dureeDeLActe(a))+(p[2]==='up'?1:-1)));if(d)a.d=d;else delete a.d;delete a.dm;saveCatalog();render();}return;}
     if(b.dataset.actprice){const p=b.dataset.actprice.split(':');const svc=p[0],aid=p[1],dir=p[2];const arr=ensureCatalogCopy(svc);const a=arr.find(function(x){return x.id===aid;});if(a){a.price=Math.max(1,(Number(a.price)||0)+(dir==='up'?1:-1));saveCatalog();render();}return;}
     if(b.dataset.actdel){const p=b.dataset.actdel.split(':');const svc=p[0],aid=p[1];const arr=ensureCatalogCopy(svc);S.adminCatalog[svc]=arr.filter(function(x){return x.id!==aid;});saveCatalog();render();return;}
+    if(b.dataset.actchon||b.dataset.actchoff||b.dataset.actchoadd||b.dataset.actchodel){
+      const p=(b.dataset.actchon||b.dataset.actchoff||b.dataset.actchoadd||b.dataset.actchodel).split(':');const a=ensureCatalogCopy(p[0]).find(function(x){return x.id===p[1];});
+      if(a){const px=Number(a.price)||1;
+        if(b.dataset.actchon)a.ch={nm:'',opts:[{id:'o1',nm:'',price:px},{id:'o2',nm:'',price:px}]};
+        else if(b.dataset.actchoff)delete a.ch;
+        else if(a.ch&&Array.isArray(a.ch.opts)){
+          if(b.dataset.actchoadd){let n=1;while(a.ch.opts.some(function(o){return o.id==='o'+n;}))n++;if(a.ch.opts.length<6)a.ch.opts.push({id:'o'+n,nm:'',price:px});}
+          else a.ch.opts=a.ch.opts.filter(function(o){return o.id!==p[2];});
+        }
+        synchroPrixDuChoix(a);saveCatalog();render();}
+      return;}
     if(b.dataset.actadd){const svc=b.dataset.actadd;const arr=ensureCatalogCopy(svc);S._actSeq=(S._actSeq||0)+1;arr.push({id:'usr'+S._actSeq+'_'+arr.length,nm:'',price:50});saveCatalog();render();return;}
     // Prestations / options (admin) : prix, unité (u/h), retrait, ajout.
     if(b.dataset.optprice){const p=b.dataset.optprice.split(':');const arr=ensureOptions(p[0]);const o=arr.find(function(x){return x.id===p[1];});if(o){o.price=Math.max(1,(Number(o.price)||0)+(p[2]==='up'?1:-1));saveCatalog();render();}return;}
@@ -23110,7 +23171,9 @@
     // Menu des actes de la grille : coche + quantité, total ferme en direct.
     const pickOf=id=>m.acts.find(a=>a.id===id);
     /* AU M², LA SURFACE SE TAPE : le compteur 1 par 1 ne sert à rien pour 45 m². */
-    const actLigne=a=>{const p=pickOf(a.id);const m2=actAuM2(a);return `<div class="actrow${p?' on':''}"${(p&&m2)?' style="flex-wrap:wrap"':''}><button class="actmain" data-actpick="${esc(a.id)}"><span class="actck">${p?I.check:''}</span><span class="actnm">${esc(a.nm)}</span><span class="actpr">${prixUnitTexte(a)}</span></button>${(p&&m2)?`<div class="row actm2" style="flex:1 0 100%;gap:8px;align-items:center;padding:4px 12px 10px"><span class="mini" style="color:var(--muted)">Surface</span><input class="txt money" data-actm2="${esc(a.id)}" value="${qteCalcul(p)||''}" inputmode="numeric" placeholder="0" aria-label="Surface en m²" style="width:84px;padding:8px 10px;text-align:right;font-size:15px"><b class="mini">m²</b><span class="mini" data-actm2tot="${esc(a.id)}" style="margin-left:auto;color:var(--ink-soft)">${eur((Number(a.price)||0)*qteCalcul(p))}</span></div>`:''}</div>`;};
+    const actLigne=a=>{const p=pickOf(a.id);const m2=actAuM2(a);const ch=p?choixDeLActe(a):null;const large=!!(p&&(m2||ch));
+      const pastilles=ch?`<div class="actch" style="flex:1 0 100%;padding:6px 12px ${m2?'2px':'10px'}"><div class="mini" style="color:${p.ch?'var(--muted)':'var(--coral-deep)'};font-weight:650">${esc(ch.nm)}${p.ch?'':' · <span>à choisir</span>'}</div><div class="row" style="gap:8px;margin-top:6px">${ch.opts.map(function(o){const on=p.ch===o.id;return `<button class="btn ${on?'primary':'ghost'} sm" data-actch="${esc(a.id)}" data-actopt="${esc(o.id)}" aria-pressed="${on?'true':'false'}" style="width:auto;min-height:44px;padding:9px 12px;flex:1 1 0;flex-direction:column;gap:2px;line-height:1.2"><span>${esc(o.nm)}</span><span style="font-size:12px;font-weight:500;color:inherit;opacity:.85">${esc(prixUnitTexte({price:o.price,u:a.u}))}</span></button>`;}).join('')}</div></div>`:'';
+      return `<div class="actrow${p?' on':''}"${large?' style="flex-wrap:wrap"':''}><button class="actmain" data-actpick="${esc(a.id)}"><span class="actck">${p?I.check:''}</span><span class="actnm">${esc(a.nm)}</span><span class="actpr">${prixLigneHtml(a)}</span></button>${pastilles}${(p&&m2)?`<div class="row actm2" style="flex:1 0 100%;gap:8px;align-items:center;padding:4px 12px 10px"><span class="mini" style="color:var(--muted)">Surface</span><input class="txt money" data-actm2="${esc(a.id)}" value="${qteCalcul(p)||''}" inputmode="numeric" placeholder="0" aria-label="Surface en m²" style="width:84px;padding:8px 10px;text-align:right;font-size:15px"><b class="mini">m²</b><span class="mini" data-actm2tot="${esc(a.id)}" style="margin-left:auto;color:var(--ink-soft)">${choixAFaire(p)?'':eur((Number(p.price)||0)*qteCalcul(p))}</span></div>`:''}</div>`;};
     // Grille courte : tout à plat. Grille détaillée (coiffure et ses ~50 lignes) : une
     // famille par carte repliée, avec son nombre de prestations, son prix d'appel et un
     // pastillage du nombre choisi — une famille où l'on a déjà coché reste ouverte.
@@ -23140,8 +23203,9 @@
           return `<div class="actgrp${ouv?' open':''}">${grpHead(k,G.g,grpCount(G.acts.length)+' · dès '+mini+' €',ouv,n)}${ouv?`<div class="actlist">${G.acts.map(actLigne).join('')}</div>`:''}</div>`;
         }).join('')}</div>`;
     // Une prestation au m² sans surface n'est pas encore une commande.
-    const nSel=m.acts.filter(function(a){return !actAuM2(a)||qteCalcul(a)>0;}).length;
+    const nSel=m.acts.filter(function(a){return (!actAuM2(a)||qteCalcul(a)>0)&&!choixAFaire(a);}).length;
     const manqueM2=m.acts.length>nSel;
+    const manqueChoix=m.acts.some(choixAFaire);
     const dureeM2=m.acts.some(actAuM2)?dureeMinDuDraft(m):0;
     const c=svcColor(m.svc);
     paintView(`<div class="pad"><div class="cfghead"><button class="reset" data-cfg="back">← Retour</button><span class="eyebrow" style="flex:1;justify-content:center;color:${c}">${svcIco(m.svc)} ${esc(m.svcName)}</span><button class="iconbtn" data-act="go-home" aria-label="Accueil" title="Accueil"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg></button></div>
@@ -23188,7 +23252,7 @@
 
       ${dureeM2?`<p class="mini actm2-duree" style="margin-top:8px;color:var(--muted)">Durée estimée&nbsp;: <b>${esc(dureeTexte(dureeM2))}</b> (le prestataire réserve ce temps).</p>`:''}
       <div class="est">${nSel?m.acts.filter(a=>!actAuM2(a)||qteCalcul(a)>0).map(a=>`<div class="line"><span>${esc(a.nm)}${actAuM2(a)?' · '+esc(qteTexte(a)):''}</span><b>${eur(a.price*qteCalcul(a))}</b></div>`).join(''):`<div class="line"><span style="color:var(--muted)">Aucune prestation sélectionnée</span><b>—</b></div>`}${optionsEstLines(m)}${(nSel&&needsPeople(m.svc)&&t.people>1)?`<div class="line"><span>${I.users} Pour ${peopleLbl(t.people)} (× ${t.people})</span><b>${eur(t.sub)}</b></div>`:''}${t.travel?`<div class="line"><span>${I.pin} Forfait déplacement</span><b>+${eur(t.travel)}</b></div>`:''}${(nSel&&!t.travel&&locModeOf(m)!=='salon')?`<div class="line"><span style="color:var(--good)">${I.check} Déplacement offert</span><b style="color:var(--good)">0 €</b></div>`:''}<div class="total"><span>Total</span><b>${nSel?eur(t.total):'—'}</b></div></div>
-      <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm"${(nSel&&!manqueM2)?'':' disabled'}>${m.preferredUid?`${I.user} Envoyer à ${esc((m.preferredName||'').split(' ')[0])}`:`${I.search} Trouver un pro`}${nSel?' · '+eur(t.total):''}</button>${manqueM2?`<p class="mini" style="text-align:center;margin-top:8px;color:var(--muted)">Indiquez la surface en m² pour continuer.</p>`:(nSel?'':`<p class="mini" style="text-align:center;margin-top:8px;color:var(--muted)">Cochez au moins une prestation pour continuer.</p>`)}</div>
+      <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm"${(nSel&&!manqueM2)?'':' disabled'}>${m.preferredUid?`${I.user} Envoyer à ${esc((m.preferredName||'').split(' ')[0])}`:`${I.search} Trouver un pro`}${nSel?' · '+eur(t.total):''}</button>${manqueM2?`<p class="mini" style="text-align:center;margin-top:8px;color:var(--muted)">${manqueChoix?'Choisissez une option pour continuer.':'Indiquez la surface en m² pour continuer.'}</p>`:(nSel?'':`<p class="mini" style="text-align:center;margin-top:8px;color:var(--muted)">Cochez au moins une prestation pour continuer.</p>`)}</div>
     </div>`,'config');
   }
   // « Coup de pouce » : menu déroulant (plus compact et lisible que la rangée de boutons).
@@ -23524,6 +23588,8 @@
       saveCatalogSoon();}
     // Renommage d'un acte de la grille (console admin) — pas de re-render (garde le focus).
     const nl=e.target.closest('[data-nl]');if(nl){S.admNl=S.admNl||{};S.admNl[nl.dataset.nl]=nl.value;S._nlCompte=null;}
+    const cho=e.target.closest('[data-actchnm],[data-actchonm],[data-actchopx]');if(cho){const p=(cho.dataset.actchnm||cho.dataset.actchonm||cho.dataset.actchopx||'').split(':');const a=ensureCatalogCopy(p[0]).find(function(x){return x.id===p[1];});
+      if(a&&a.ch){if(cho.hasAttribute('data-actchnm'))a.ch.nm=cho.value;else{const o=(a.ch.opts||[]).find(function(x){return x.id===p[2];});if(o){if(cho.hasAttribute('data-actchonm'))o.nm=cho.value;else o.price=prixSaisi(cho.value);}}synchroPrixDuChoix(a);saveCatalogSoon();}}
     const an=e.target.closest('[data-actname]');if(an){const p=an.dataset.actname.split(':');const arr=ensureCatalogCopy(p[0]);const a=arr.find(function(x){return x.id===p[1];});if(a){a.nm=an.value;saveCatalogSoon();}}
     /* Les heures de départ d'une prestation. On enregistre la liste NETTOYÉE : « 9h, 13:30 »
        devient « 13:30 » plutôt que de garder un texte qu'aucun écran ne saurait lire. Le

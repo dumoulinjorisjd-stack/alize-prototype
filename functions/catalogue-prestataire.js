@@ -59,6 +59,28 @@ const MOTIFS = {
 function nbr(v) { const n = Number(v); return isFinite(n) ? n : 0; }
 function txt(v) { return String(v == null ? '' : v).trim(); }
 
+/* UNE PRESTATION, UN CHOIX OBLIGATOIRE (l'éditeur, 24/11/2026 : « quand on choisit un
+   type de prestation on doit obligatoirement choisir une option […] sans risquer un
+   doublon ou un oubli »). Deux prestations « Monobrosse, matériel de la villa » et
+   « matériel du prestataire » se cochaient ENSEMBLE : 750 € pour 50 m². Une ligne porte
+   désormais `ch` = { nm: 'Matériel', opts: [{ id, nm, price }, …] } ; le client en
+   choisit UNE, et c'est son prix qui compte. La durée reste celle de la ligne (« le
+   matériel ne change pas le temps »).
+   UN CHOIX À MOINS DE DEUX OPTIONS LISIBLES N'EST PAS UN CHOIX : la ligne se commande
+   alors comme avant — c'est aussi l'état d'un choix en cours de saisie dans la console. */
+const CHOIX_OPTS_MAX = 6;
+function choixPropre(brut) {
+  if (!brut || typeof brut !== 'object') return null;
+  const nm = txt(brut.nm).slice(0, CAT_NOM_MAX);
+  const vus = Object.create(null); const opts = [];
+  (Array.isArray(brut.opts) ? brut.opts : []).forEach((o) => {
+    const id = txt(o && o.id); const on = txt(o && o.nm).slice(0, CAT_NOM_MAX); const px = nbr(o && o.price);
+    if (!id || vus[id] || !on || !(px > 0) || px > CAT_PRIX_MAX || opts.length >= CHOIX_OPTS_MAX) return;
+    vus[id] = 1; opts.push({ id: id, nm: on, price: Math.round(px * 100) / 100 });
+  });
+  return (nm && opts.length >= 2) ? { nm: nm, opts: opts } : null;
+}
+
 /* CE MÉTIER OUVRE-T-IL LES CATALOGUES PROPRES ? La porte, décidée dans la console et
    rangée là où vivent déjà les autres réglages par métier. Absent = FERMÉ : un métier
    qui n'a jamais été ouvert ne porte rien, et c'est le comportement d'aujourd'hui. */
@@ -88,6 +110,8 @@ function lignesPropres(brut) {
     const ligne = { id: id, nm: nm, price: Math.round(px * 100) / 100 };
     const dm = Math.round(nbr(l && l.dm));
     if (dm > 0 && dm <= CAT_DUREE_MIN_MAX) ligne.dm = dm;
+    const ch = choixPropre(l && l.ch);
+    if (ch) ligne.ch = ch;
     out.push(ligne);
   });
   return { lignes: out, ecartees: ecartees, coupees: coupees };
@@ -182,10 +206,17 @@ function prixAttendu(acts, lignes) {
     if (!l) { ecarts.push({ id: id, code: 'horsCatalogue', motif: MOTIFS.horsCatalogue }); return; }
     if (!(q > 0) || q !== Math.floor(q)) { ecarts.push({ id: id, code: 'quantite', motif: MOTIFS.quantite }); return; }
     const px = nbr(a && a.price);
-    if (Math.abs(px - l.price) > CAT_CENTIME) {
-      ecarts.push({ id: id, code: 'prix', motif: MOTIFS.prix, commande: px, catalogue: l.price });
+    /* LE PRIX ATTENDU EST CELUI DE L'OPTION CHOISIE. Sans cela, chaque commande « du
+       prestataire » se serait écrite au journal comme un prix faux. Une option qu'on ne
+       retrouve plus (retirée depuis) se juge au prix de la ligne, et ne bloque pas :
+       c'est un prix qui a bougé, pas une ligne inventée (voir `prixBloque`). */
+    const ch = choixPropre(l.ch);
+    const opt = (ch && a && a.ch) ? (ch.opts.find((o) => o.id === txt(a.ch)) || null) : null;
+    const attendu = opt ? opt.price : l.price;
+    if (Math.abs(px - attendu) > CAT_CENTIME) {
+      ecarts.push({ id: id, code: 'prix', motif: MOTIFS.prix, commande: px, catalogue: attendu });
     }
-    total += l.price * q;
+    total += attendu * q;
   });
   total = Math.round(total * 100) / 100;
   /* LE CODE SE TESTE, LA PHRASE SE LIT. `motif` porte un texte — il part dans un journal
@@ -236,6 +267,7 @@ function lignesConnues(propres, grille) {
 
 module.exports = {
   CAT_LIGNES_MAX, CAT_NOM_MAX, CAT_PRIX_MAX, CAT_CENTIME, CAT_DUREE_MIN_MAX, MOTIFS,
+  CHOIX_OPTS_MAX, choixPropre,
   metierOuvreCatalogue, lignesPropres, catalogueProprePose, catalogueQuiFaitFoi,
   recoitLAleatoire, horsGrilleSur, commandable, prixAttendu,
   PRIX_BLOQUANTS, prixBloque, lignesConnues,
