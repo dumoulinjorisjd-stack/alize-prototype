@@ -21,8 +21,10 @@ console.log('A — le registre sait ce qui est parti, et ce qui ne l’est pas')
 /* SIX ENDROITS, ET NON PLUS SEPT : les deux écritures du règlement — « routé » et « non
    routé » — ont fusionné en une seule porte, qui tourne JAMBE PAR JAMBE (empreinte,
    arrhes) et inscrit le même patch au registre. Un site de moins, une jambe de plus. */
-ok((fn.match(/collection\('ledger'\)\.doc\([^)]*\)\.set\(\{molliePayout:/g) || []).length === 5,
-  'cinq endroits écrivent le versement en clair au registre (dont l’indemnité d’annulation)');
+/* SIX DEPUIS LE 24/11/2026 : la vérification des versements inscrit aussi « sans objet »
+   (empreinte expirée, prestation réglée par le second paiement — IRR.jambeSansObjet). */
+ok((fn.match(/collection\('ledger'\)\.doc\([^)]*\)\.set\(\{molliePayout:/g) || []).length === 6,
+  'six endroits écrivent le versement en clair au registre (dont l’indemnité d’annulation et « sans objet »)');
 ok(/patch\[j\.champ\] = routed \? 'routed' : 'unrouted'/.test(fn)
   && /collection\('ledger'\)\.doc\(reqId\)\.set\(patch, \{merge: true\}\)/.test(fn),
   'et le sixième est la porte du règlement, qui inscrit chaque jambe au registre');

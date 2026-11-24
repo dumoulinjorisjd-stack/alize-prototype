@@ -3822,7 +3822,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='936';
+  const VERSION_APP='937';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -13959,6 +13959,8 @@
     versDu=round2(versList.reduce(function(t,v){return t+(versAbouti(v)===false?0:(Number(v.net)||0));},0));
     versRien=versList.filter(function(v){return versAbouti(v)===false;}).length;
     const versNb=versList.length-versRien;
+    // Rien à donner sur cette ligne : l'empreinte n'a jamais débité, le second paiement a tout réglé.
+    const rienADonner=function(v){return versAbouti(v)===false&&!!v.parLeSecond;};
     /* La règle de Mollie, dite avec ses mots : « the destination organization must be
        connected to your platform at payment creation ». Même phrase que le serveur
        (functions/versement-irroutable.js, REGLE_MOLLIE) — l'épreuve les compare. */
@@ -13973,20 +13975,20 @@
           ${versList.map(function(v){return `<div class="card" style="padding:13px;margin-top:9px">
             <div class="row between"><b style="font-size:14px">${esc(v.serviceName||'Prestation')}</b><span class="money" style="font-weight:700">${eur(Number(v.net)||0)}</span></div>
             <div class="mini" style="margin-top:3px">${esc(v.providerName||'—')}${v.invNo?(' · '+esc(v.invNo)):''}${v.etat?(' · état Mollie&nbsp;: '+esc(v.etat)):''}</div>
-            ${v.tente===false?`<div class="mini" style="margin-top:6px;color:var(--coral-deep)"><b>Le partage n'a jamais été tenté</b> pour cette prestation&nbsp;: aucun état n'a été enregistré. Elle n'apparaissait nulle part, ni ici, ni comme versée. «&nbsp;Réessayer&nbsp;» interroge Mollie et la remet dans le circuit.</div>`:''}
-            ${v.motif?`<div class="mini" style="margin-top:6px;color:var(--coral-deep)"><b>Réponse de Mollie&nbsp;:</b> ${esc(v.motif)}</div>`:''}
+            ${(v.tente===false&&!rienADonner(v))?`<div class="mini" style="margin-top:6px;color:var(--coral-deep)"><b>Le partage n'a jamais été tenté</b> pour cette prestation&nbsp;: aucun état n'a été enregistré. Elle n'apparaissait nulle part, ni ici, ni comme versée. «&nbsp;Réessayer&nbsp;» interroge Mollie et la remet dans le circuit.</div>`:''}
+            ${(v.motif&&!rienADonner(v))?`<div class="mini" style="margin-top:6px;color:var(--coral-deep)"><b>Réponse de Mollie&nbsp;:</b> ${esc(v.motif)}</div>`:''}
             ${(v.lecture&&versAdresse(v))?`<div class="mini" style="margin-top:4px;color:var(--muted)">Même réponse en simple lecture&nbsp;: ${esc(v.lecture)}, donc rien à voir avec ce versement-ci.</div>`:''}
-            ${versRegle(v)?`<div class="mini" style="margin-top:6px;color:var(--muted)">Le partage fonctionne, mais Mollie ne connaît plus <b>ce paiement-ci</b>&nbsp;: un paiement déjà réglé et viré sur le compte bancaire n’est plus partageable. Virez le net au prestataire, puis appuyez sur «&nbsp;Je l’ai versé à la main&nbsp;».</div>`:''}
+            ${(versRegle(v)&&!rienADonner(v))?`<div class="mini" style="margin-top:6px;color:var(--muted)">Le partage fonctionne, mais Mollie ne connaît plus <b>ce paiement-ci</b>&nbsp;: un paiement déjà réglé et viré sur le compte bancaire n’est plus partageable. Virez le net au prestataire, puis appuyez sur «&nbsp;Je l’ai versé à la main&nbsp;».</div>`:''}
             ${v.org==='non'?`<div class="mini" style="margin-top:6px;color:var(--muted)">Ce prestataire n’a aucun compte Mollie connecté&nbsp;: le versement ne peut pas partir tant qu’il ne l’a pas fait.</div>`:''}
             ${(versAbouti(v)===false&&v.parLeSecond)?`<div class="mini" style="margin-top:6px;color:var(--muted)">L’empreinte a expiré sans débiter le client&nbsp;: <b>la prestation a été réglée par son second paiement</b> (ligne «&nbsp;Second paiement&nbsp;»). Rien à verser sur celle-ci, et elle reste dans les comptes.</div>`:''}
             ${(versAbouti(v)===false&&!v.parLeSecond)?`<div class="mini" style="margin-top:6px;color:var(--muted)"><b>Ce paiement n’a jamais abouti</b> (état Mollie&nbsp;: ${esc(v.etat)})&nbsp;: rien n’a été prélevé au client, <b>rien n’est dû</b> au prestataire. Son net n’entre pas dans le total ci-dessus.</div>`:''}
             ${v.definitif?`<div class="banner warn" style="margin-top:9px">${I.shield}<span><b>Mollie ne versera jamais ce paiement-ci.</b> ${VERS_REGLE_MOLLIE} Le compte du prestataire a été relié après ce paiement&nbsp;: ce n’est ni une panne, ni son dossier. ${v.libere?'':'Libérez le paiement sur le solde Ti-Services, puis virez-lui sa part à la main.'}</span></div>`:''}
             ${v.libere?`<div class="mini" style="margin-top:6px;color:var(--teal-deep)"><b>Libéré sur le solde Ti-Services</b>${v.montantLibere?(' ('+eur(Number(v.montantLibere)||0)+')'):''}&nbsp;: il reste à virer <b>${eur(Number(v.net)||0)}</b> au prestataire, puis «&nbsp;Je l’ai versé à la main&nbsp;».</div>`:''}
-            ${(v.definitif||v.libere||versRegle(v))?(v.iban?`<div class="mini" style="margin-top:6px"><b>IBAN du prestataire&nbsp;:</b> <span style="font-family:var(--f-mono,monospace)">${esc(ibanEspace(v.iban))}</span>${v.ibanTitulaire?(' · '+esc(v.ibanTitulaire)):''}</div>
+            ${((v.definitif||v.libere||versRegle(v))&&!rienADonner(v))?(v.iban?`<div class="mini" style="margin-top:6px"><b>IBAN du prestataire&nbsp;:</b> <span style="font-family:var(--f-mono,monospace)">${esc(ibanEspace(v.iban))}</span>${v.ibanTitulaire?(' · '+esc(v.ibanTitulaire)):''}</div>
               <button class="btn ghost sm" data-adm="iban-copie:${esc(v.reqId)}" style="width:auto;margin-top:7px;padding:7px 12px">${I.copy}&nbsp;Copier l’IBAN</button>`
               :`<div class="mini" style="margin-top:6px;color:var(--coral-deep)"><b>Aucun IBAN saisi</b> par le prestataire&nbsp;: demandez-le lui, ou invitez-le à le renseigner dans son compte («&nbsp;Mes infos&nbsp;»).</div>`):''}
             ${v.definitif?(!v.libere&&String(v.etat||'').toLowerCase()==='paid'?`<button class="btn primary sm" data-adm="vers-lib:${esc(v.reqId)}" style="margin-top:9px">${S._versLibArm===v.reqId?(I.warn+'&nbsp;Confirmer&nbsp;: router tout le paiement vers Ti-Services'):(I.euro+'&nbsp;Libérer sur le solde Ti-Services')}</button>`:'')
-              :`<button class="btn ghost sm" data-adm="vers-one:${esc(v.reqId)}" style="margin-top:9px">${I.bolt}&nbsp;Réessayer ce versement</button>`}
+              :(rienADonner(v)?'':`<button class="btn ghost sm" data-adm="vers-one:${esc(v.reqId)}" style="margin-top:9px">${I.bolt}&nbsp;Réessayer ce versement</button>`)}
             ${/* LE PIÈGE DU 20/11/2026 : l'empreinte expirée d'une mission réglée par son
                  second paiement se lisait « jamais abouti », et « retirer » sortait des
                  comptes TOUTE la mission, payée. Pas de retrait quand le second est encaissé. */''}
@@ -13996,10 +13998,11 @@
                  expiré et c'est le SECOND paiement qui porte l'argent. Acter le virement ici
                  laissait la ligne « Second paiement » due, et la dette restait affichée. */''}
             ${(versAbouti(v)===false&&v.parLeSecond)?'':`<button class="btn ghost sm" data-adm="vers-main:${esc(v.reqId)}" style="margin-top:7px">${S._versMainArm===v.reqId?'Confirmer&nbsp;: je l’ai bien viré':(I.check+'&nbsp;Je l’ai versé à la main')}</button>`}</div>`;}).join('')}
-          <button class="btn primary sm" data-adm="vers-run" style="margin-top:12px">${I.bolt}&nbsp;Réessayer les ${versList.length}</button>
+          ${versNb?`<button class="btn primary sm" data-adm="vers-run" style="margin-top:12px">${I.bolt}&nbsp;Réessayer ${versNb>1?('les '+versNb):'ce versement'}</button>`:''}
           <button class="btn ghost sm" data-adm="vers-scan" style="margin-top:12px">${I.search}&nbsp;Revérifier</button>
           <p class="mini" style="margin-top:8px;color:var(--muted)">Chaque tentative interroge Mollie&nbsp;: état réel du paiement, versements déjà partis, et motif exact du refus. Rien n’est perdu, le rattrapage repart aussi tout seul dès que Mollie ouvre les virements du prestataire.</p>`
         :`<div class="banner good" style="margin-top:12px">${I.check}<span>Aucun&nbsp;: tous les prestataires ont reçu leur net.</span></div>
+          ${vers.sansObjet?`<div class="mini" style="margin-top:8px;color:var(--muted)">${vers.sansObjet} empreinte${vers.sansObjet>1?'s':''} expirée${vers.sansObjet>1?'s':''}, prestation réglée par le second paiement : rien à verser.</div>`:''}
           ${vers.ecartees?`<div class="mini" style="margin-top:8px;color:var(--muted)">${vers.ecartees} prestation${vers.ecartees>1?'s':''} écartée${vers.ecartees>1?'s':''} des comptes n'appara\u00eet${vers.ecartees>1?'ssent':''} pas ici\u00a0: aucun net n'est d\u00fb. Carte «\u00a0Retrouver une facture\u00a0» pour les revoir ou les r\u00e9int\u00e9grer.</div>`:''}
           <button class="btn ghost sm" data-adm="vers-scan" style="margin-top:12px">${I.search}&nbsp;Revérifier</button>`)}`;
     return `<div class="pad">
@@ -21371,7 +21374,7 @@
             const reste=(S.adminVers.list||[]).filter(function(v){return v.reqId!==cible;});
             const neuve=list.filter(function(v){return v.reqId===cible&&!v.verse;});
             S.adminVers=Object.assign({},S.adminVers,{list:reste.concat(neuve)});
-          } else S.adminVers={loaded:true,list:list.filter(function(v){return !v.verse;}),ecartees:Number(d.ecartees)||0};
+          } else S.adminVers={loaded:true,list:list.filter(function(v){return !v.verse;}),ecartees:Number(d.ecartees)||0,sansObjet:Number(d.sansObjet)||0};
           if(relance){
             const n=Number(d.verses)||0;
             if(n)toast(n+' versement'+(n>1?'s':'')+' parti'+(n>1?'s':'')+' ✓');

@@ -120,4 +120,18 @@ function libererDecider(e) {
   return {ok: true, montant: montant};
 }
 
-module.exports = {ISSUE_LIAISON, REGLE_MOLLIE, LIBERER_REFUS, refusDefinitif, jambeRetentable, routesDecider, libererDecider, montantLiberable, orgPlateforme, ORG_PLATEFORME, round2};
+/* LA JAMBE PRINCIPALE QUI N'A RIEN À VERSER (l'éditeur, 24/11/2026 : « pourquoi j'ai
+   encore la dette, je l'ai réglé cette facture »). L'empreinte a expiré (ou a été annulée,
+   ou refusée) sans débiter le client, et c'est le SECOND paiement qui a réglé toute la
+   prestation : il n'y a pas d'argent sur cette jambe-ci, donc rien à partager ni à devoir.
+   Mesuré en production : « Réessayer » tentait quand même le partage (Mollie : 404,
+   Payment not found), écrivait `unrouted` au REGISTRE mais pas sur la demande — la liste
+   disait « 0,00 € dû » pendant que le bandeau comptait 104,50 €. Une seule porte décide. */
+const STATUTS_SANS_ARGENT = ['expired', 'canceled', 'failed'];
+function jambeSansObjet(e) {
+  e = e || {};
+  const s = String(e.statutMollie || '').trim().toLowerCase();
+  return STATUTS_SANS_ARGENT.indexOf(s) >= 0 && String(e.complementStatus || '') === 'paye';
+}
+
+module.exports = {STATUTS_SANS_ARGENT, jambeSansObjet, ISSUE_LIAISON, REGLE_MOLLIE, LIBERER_REFUS, refusDefinitif, jambeRetentable, routesDecider, libererDecider, montantLiberable, orgPlateforme, ORG_PLATEFORME, round2};

@@ -4582,6 +4582,7 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
      technique de notre côté » au lieu de ses versements bloqués. Relevé en production
      le 26/10/2026, sur le lot qui venait de le poser. */
   let ecartees = 0;
+  let sansObjet = 0;   // empreintes expirées, prestation réglée par le second paiement
   // Les prestataires dont une ligne a été lue : leur somme sur la fiche se remet
   // d'aplomb à la fin (un refus devenu définitif quitte « mis de côté »).
   const aRecalculer = new Set();
@@ -4622,7 +4623,7 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
         // laissait passer les écritures marquées « unrouted » dont la DEMANDE a été
         // supprimée : la requête sur les demandes ne les trouve plus, et cette
         // seconde passe les ignorait aussi. De l'argent dû, invisible des deux côtés.
-        if (x.molliePayout === 'routed' || x.molliePayout === 'manuel') continue;
+        if (x.molliePayout === 'routed' || x.molliePayout === 'manuel' || x.molliePayout === 'sans-objet') continue;
         if (versementEcarte(null, x)) { ecartees++; continue; }         // essai écarté des comptes
         if (!(round2(Number(x.netAmount) || 0) > 0.009)) continue;     // rien n'est dû
         vus++;
@@ -4681,6 +4682,16 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
           // dossier du prestataire, et il est inutile de le chercher de ce côté.
           if (p.ok && p.data && p.data._links) ligne.liensRoutes = !!p.data._links.routes;
         } catch (_) {}
+        /* RIEN À VERSER SUR CETTE JAMBE (IRR.jambeSansObjet) : on ne tente aucun partage
+           sur un paiement qui n'a jamais débité, et on l'ÉCRIT des deux côtés — demande et
+           registre — pour que le bandeau de dette et cette liste lisent la même chose. */
+        if (IRR.jambeSansObjet({statutMollie: ligne.etat, complementStatus: r.complementStatus})) {
+          try { await d.ref.update({molliePayout: 'sans-objet', molliePayoutIssue: '', molliePayoutMotif: ''}); } catch (e) { console.warn('payoutRetry sans-objet demande', d.id, e); }
+          try { await db.collection('ledger').doc(d.id).set({molliePayout: 'sans-objet'}, {merge: true}); } catch (e) { console.warn('payoutRetry sans-objet registre', d.id, e); }
+          console.log('payoutRetry ' + d.id + ' : empreinte ' + ligne.etat + ', réglée par le second paiement, rien à verser sur cette jambe');
+          sansObjet++;
+          continue;
+        }
         // Les routes DÉJÀ posées. Si Mollie en a une, le versement est parti et c'est
         // NOTRE fiche qui est en retard — on la corrige au lieu de re-router en double.
         // On garde AUSSI la réponse en clair quand la lecture échoue : lire et écrire
@@ -4840,7 +4851,7 @@ exports.payoutRetry = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
   const verses = bloques.filter((b) => b.verse).length;
   console.log('payoutRetry (' + (relance ? 'relance' : 'inventaire') + ') : ' + bloques.length
     + ' versement(s) bloqué(s), ' + verses + ' réglé(s), par ' + who);
-  return {bloques: bloques, verses: verses, ecartees: ecartees};
+  return {bloques: bloques, verses: verses, ecartees: ecartees, sansObjet: sansObjet};
 });
 
 /**
