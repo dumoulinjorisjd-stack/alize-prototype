@@ -44,15 +44,18 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   console.log('\nA — là où l’on a quelque chose à MONTRER');
   for (const svc of ['plomberie', 'electricite', 'jardin', 'demenagement', 'piscine', 'clim', 'deck', 'menage']) {
     const r = await ecran(svc, true);
-    ok(r.photo && /préparer sa venue/.test(r.txt),
-      svc + ' : la photo est proposée, et l’écran dit à quoi elle sert');
+    // « Enlève aussi le texte explicatif sous photo » (l'éditeur, 24/11/2026).
+    ok(r.photo && !/préparer sa venue|résultat que vous aimeriez/.test(r.txt),
+      svc + ' : la photo est proposée, sans texte explicatif');
   }
 
   console.log('\nB — là où c’est le RÉSULTAT qu’on montre');
   for (const svc of ['coiffure', 'manucure', 'maquillage']) {
     const r = await ecran(svc, true);
-    ok(r.photo && /résultat que vous aimeriez/.test(r.txt),
-      svc + ' : on demande l’envie, pas l’état — ce n’est pas la même photo');
+    // Le texte qui distinguait l'envie de l'état est retiré avec les autres (l'éditeur,
+    // 24/11/2026 : « enlève aussi le texte explicatif sous photo »).
+    ok(r.photo && !/résultat que vous aimeriez|préparer sa venue/.test(r.txt),
+      svc + ' : la photo est proposée, sans texte explicatif');
   }
 
   console.log('\nC — là où le client n’a rien à photographier');

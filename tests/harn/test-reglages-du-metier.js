@@ -47,7 +47,7 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
     window.__cfg.render();
     const v = document.getElementById('view');
     return { annuaire: !!v.querySelector('[data-prefart]'),
-      photo: /Ajouter une photo|photo aide le prestataire|résultat que vous aimeriez/.test(v.textContent || ''),
+      photo: !!v.querySelector('[data-photoinput]'),  // le champ lui-même : son texte explicatif a été retiré (l'éditeur, 24/11/2026)
       cle: JSON.stringify(S.adminMetier[svc] || null) };
   }, { svc, metier });
 
