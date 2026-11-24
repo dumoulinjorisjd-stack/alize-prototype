@@ -71,6 +71,8 @@ ok(eval('(' + SRV.slice(SRV.indexOf('function _uidsPrevenus'), SRV.indexOf('\n}\
     S.admin = { view: 'home' }; S._fold = { 'a-bookings': true };
     // Repliées d'office depuis le 23/11/2026 : on ouvre les commandes du jeu d'essai.
     (S.adminReqs || []).forEach(function (r) { if (r && r.id) S._fold['cmd-ouvre-' + r.id] = true; });
+    // Prise, la mission replie sa diffusion derrière « Diffusion › » (l'éditeur, 24/11/2026) : on l'ouvre.
+    (S.adminReqs || []).forEach(function (r) { if (r && r.id) S._fold['cmd-diff-' + r.id] = true; });
     window.__render();
     const el = document.querySelector('.cmd-reponses');
     return { txt: el ? el.textContent.replace(/\s+/g, ' ') : '(absent)',
