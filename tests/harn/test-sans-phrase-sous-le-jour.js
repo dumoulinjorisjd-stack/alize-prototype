@@ -30,6 +30,18 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
     ok(!/Plus de créneau disponible|Plus de départ possible/.test(r.txt) && r.apresJour === '', 'aucune phrase sous le jour');
     if (svc === 'deck') ok(r.photo && r.photoAide === '' && !/Une photo aide le prestataire|Montrez le résultat/.test(r.txt), 'le champ Photos reste, sans texte explicatif');
   }
+  // « Pareil sous adresse » (l'éditeur, 24/11/2026) : plus de phrase sous le titre.
+  console.log('— adresse');
+  for (const cas of [{ svc: 'deck', adr: [] }, { svc: 'deck', adr: [{ id: 'a1', label: 'Villa', address: 'Lorient', zone: 'Lorient', geo: null }] }, { svc: 'colis', adr: [] }]) {
+    const r = await p.evaluate((cas) => {
+      const S = window.__S; S.addresses = cas.adr; S.draft = window.__newMission(window.__svc.trouve(cas.svc)); S.draft.addressId = '__manual'; window.__render();
+      const box = document.getElementById('manualAddr');
+      const premier = box ? box.firstElementChild : null;
+      return { box: !!box, premier: premier ? premier.className + '|' + premier.textContent.trim().slice(0, 40) : '', txt: document.getElementById('view').textContent };
+    }, cas);
+    ok(r.box && /^field\|/.test(r.premier) && !/Indiquez où le prestataire|Nouvelle adresse pour cette|Indiquez où vous faire livrer/.test(r.txt),
+      cas.svc + (cas.adr.length ? ' (adresses enregistrées)' : '') + ' : le bloc commence par son premier champ (' + r.premier + ')');
+  }
   ok(errs.length === 0, 'aucune erreur JS (' + errs.join(' | ').slice(0, 160) + ')');
   await b.close();
   console.log(f ? '\n' + f + ' ÉCHEC(S)' : '\nTOUT EST VERT');
