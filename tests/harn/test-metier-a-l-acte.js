@@ -10,9 +10,10 @@
    JavaScript, donc un métier dont on retirait la dernière prestation restait « à l'acte »
    avec zéro prestation — « dès 0 € » devant un choix vide.
 
-   ON RÉSERVE LA BASCULE AUX MÉTIERS DE LA CONSOLE : la nature d'un métier livré avec
-   l'application (le ménage est horaire) n'est pas une préférence, et la basculer d'un
-   bouton toucherait les prestataires qui l'exercent déjà. */
+   LA BASCULE A D'ABORD ÉTÉ RÉSERVÉE AUX MÉTIERS DE LA CONSOLE (23/09/2026). Le 23/11/2026,
+   l'éditeur l'ouvre aux métiers livrés (« je dois pouvoir choisir tout ça depuis la
+   console » — Deck & terrasse était coincé à l'heure) : pour eux, le bouton s'ARME et dit
+   combien de prestataires l'exercent. */
 const fs = require('fs'), path = require('path');
 const { chromium } = require('playwright-core');
 const RACINE = '/home/user/alize-work';
@@ -49,8 +50,11 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   ok(vu.bascule && vu.horaire, 'un métier de la console affiche son tarif horaire ET la bascule « passer à l’acte »');
 
   await p.evaluate(poser, false); await p.waitForTimeout(350);
-  vu = await p.evaluate(() => ({ bascule: !!document.querySelector('[data-adm^="acteon:"]') }));
-  ok(!vu.bascule, 'un métier livré avec l’application ne l’affiche pas — sa nature n’est pas une préférence');
+  vu = await p.evaluate(async () => { const bt = document.querySelector('[data-adm="acteon:menage"]'); if (!bt) return { bascule: false };
+    bt.click(); await new Promise((r) => setTimeout(r, 200));
+    return { bascule: true, intact: !((window.__S.adminCatalog || {}).menage || []).length,
+      arme: /Confirmer/.test((document.querySelector('[data-adm="acteon:menage"]') || {}).textContent || '') }; });
+  ok(vu.bascule && vu.intact && vu.arme, 'un métier livré l’affiche aussi (depuis le 23/11/2026), mais le premier appui ne fait que l’armer');
 
   console.log('\nC — la bascule fait disparaître le tarif horaire');
   await p.evaluate(poser, true); await p.waitForTimeout(300);
