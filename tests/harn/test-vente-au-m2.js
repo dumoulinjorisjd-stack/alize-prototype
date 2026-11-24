@@ -28,23 +28,23 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   await consoleDeck();
   let c = await p.evaluate(() => ({ bascule: !!document.querySelector('[data-adm="acteon:deck"]'), txt: document.body.innerText }));
   ok(c.bascule && /1 prestataire l’exerce/.test(c.txt), 'Deck & terrasse (métier livré) offre « Passer à l’acte », et dit qui l’exerce');
-  await p.evaluate(() => document.querySelector('[data-adm="acteon:deck"]').click()); await p.waitForTimeout(200);
+  await p.evaluate(() => { const x = document.querySelector('[data-adm="acteon:deck"]'); if (x) x.click(); }); await p.waitForTimeout(200);
   c = await p.evaluate(() => ({ n: ((window.__S.adminCatalog || {}).deck || []).length, arme: /Confirmer/.test((document.querySelector('[data-adm="acteon:deck"]') || {}).textContent || '') }));
   ok(c.n === 0 && c.arme, 'le premier appui ne change rien : il s’arme');
-  await p.evaluate(() => document.querySelector('[data-adm="acteon:deck"]').click()); await p.waitForTimeout(250);
+  await p.evaluate(() => { const x = document.querySelector('[data-adm="acteon:deck"]'); if (x) x.click(); }); await p.waitForTimeout(250);
   c = await p.evaluate(() => ({ n: ((window.__S.adminCatalog || {}).deck || []).length, horaire: /Tarif horaire/.test(document.body.innerText) }));
   ok(c.n === 1 && !c.horaire, 'le second passe à l’acte : une prestation à régler, plus de tarif horaire');
 
   console.log('B — la console : au m², et le temps par m²');
-  const id0 = await p.evaluate(() => window.__S.adminCatalog.deck[0].id);
-  await p.evaluate((id) => document.querySelector('[data-actunit="deck:' + id + ':m2"]').click(), id0); await p.waitForTimeout(150);
-  for (let i = 0; i < 4; i++) { await p.evaluate((id) => document.querySelector('[data-actdm2="deck:' + id + ':up"]').click(), id0); await p.waitForTimeout(60); }
-  c = await p.evaluate(() => { const a = window.__S.adminCatalog.deck[0]; return { u: a.u, dm2: a.dm2, txt: document.body.innerText }; });
+  const id0 = await p.evaluate(() => (((window.__S.adminCatalog || {}).deck || [])[0] || {}).id || '');
+  await p.evaluate((id) => { const x = document.querySelector('[data-actunit="deck:' + id + ':m2"]'); if (x) x.click(); }, id0); await p.waitForTimeout(150);
+  for (let i = 0; i < 4; i++) { await p.evaluate((id) => { const x = document.querySelector('[data-actdm2="deck:' + id + ':up"]'); if (x) x.click(); }, id0); await p.waitForTimeout(60); }
+  c = await p.evaluate(() => { const a = (((window.__S.adminCatalog || {}).deck || [])[0]) || {}; return { u: a.u, dm2: a.dm2, txt: document.body.innerText }; });
   ok(c.u === 'm2' && c.dm2 === 2, 'au m², avec 2 minutes par m² (4 crans de 30 s) (' + c.u + ', ' + c.dm2 + ')');
   ok(/Temps par m²/.test(c.txt) && /2 min/.test(c.txt) && /€\/m²/.test(c.txt), 'la console l’affiche en clair : temps par m², prix en €/m²');
-  await p.evaluate((id) => document.querySelector('[data-actunit="deck:' + id + ':u"]').click(), id0); await p.waitForTimeout(150);
-  c = await p.evaluate(() => { const a = window.__S.adminCatalog.deck[0]; return { u: a.u || '', dm2: a.dm2 || 0 }; });
-  ok(c.u === '' && c.dm2 === 0, 'revenir « à l’unité » retire l’unité et le temps par m²');
+  await p.evaluate((id) => { const x = document.querySelector('[data-actunit="deck:' + id + ':u"]'); if (x) x.click(); }, id0); await p.waitForTimeout(150);
+  c = await p.evaluate(() => { const a = (((window.__S.adminCatalog || {}).deck || [])[0]) || {}; return { u: a.u || '', dm2: a.dm2 || 0, existe: !!a.id }; });
+  ok(c.existe && c.u === '' && c.dm2 === 0, 'revenir « à l’unité » retire l’unité et le temps par m²');
 
   console.log('C — le client tape sa surface ; total et durée la suivent');
   const cmd = await p.evaluate(async () => {
@@ -55,11 +55,12 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
     S.draft = window.__newMission(window.__svc.trouve('deck')); window.__render();
     const v = () => document.getElementById('view');
     const prix = (v().querySelector('[data-actpick="dk1"] .actpr') || {}).textContent || '';
-    document.querySelector('[data-actpick="dk1"]').click(); await new Promise((r) => setTimeout(r, 60));
+    const pk = document.querySelector('[data-actpick="dk1"]'); if (pk) pk.click(); await new Promise((r) => setTimeout(r, 60));
     const champ = document.querySelector('[data-actm2="dk1"]');
     const vide = { champ: !!champ, focus: document.activeElement === champ, bouton: document.querySelector('[data-cfg="confirm"]').disabled,
       aide: /Indiquez la surface en m² pour continuer/.test(v().textContent) };
     // La cliente tape « 45 », chiffre par chiffre : le curseur ne quitte pas la case.
+    if (!champ) return { prix, vide, garde: false, qte: 0, u: '', soustotal: '', cta: '', ctaOff: true, duree: false, est: [], deborde: 99 };
     for (const ch of ['4', '5']) { const el = document.querySelector('[data-actm2="dk1"]'); el.value += ch; el.dispatchEvent(new Event('input', { bubbles: true })); await new Promise((r) => setTimeout(r, 30)); }
     const el = document.querySelector('[data-actm2="dk1"]');
     const t = v().textContent.replace(/\s+/g, ' ');
