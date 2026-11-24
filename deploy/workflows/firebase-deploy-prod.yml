@@ -1,0 +1,55 @@
+name: Déploiement Firebase PROD (t-service-prod)
+
+on:
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: "Cibles firebase deploy (--only). Vide = automatique : règles, fonctions si changées, écran en dernier"
+        required: false
+        default: ''
+
+# L'étiquette `prod-fonctions` (dernier déploiement réussi des fonctions) se pousse.
+permissions:
+  contents: write
+
+concurrency:
+  group: firebase-deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_ID: t-service-prod
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # L'historique entier : sans lui, la comparaison avec le dernier déploiement
+          # réussi ne trouve pas sa base, et toutes les fonctions repartiraient à chaque fois.
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Vérifier le secret
+        run: |
+          if [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT_PROD }}" ]; then
+            echo "::error::Secret FIREBASE_SERVICE_ACCOUNT_PROD manquant."
+            exit 1
+          fi
+      - name: Écrire la clé
+        run: |
+          printf '%s' '${{ secrets.FIREBASE_SERVICE_ACCOUNT_PROD }}' > "$RUNNER_TEMP/gcp-key.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/gcp-key.json" >> "$GITHUB_ENV"
+      - run: npm install -g firebase-tools
+      - working-directory: functions
+        run: npm install
+      - name: Déployer
+        run: |
+          TARGETS="${{ github.event.inputs.targets }}"
+          if [ -n "$TARGETS" ]; then
+            firebase deploy --only "$TARGETS" --project "$PROJECT_ID" --non-interactive --force
+          else
+            # Règles, puis fonctions (si changées, avec reprise de celles qui échouent),
+            # puis l'écran EN DERNIER et seulement si tout le reste a réussi.
+            bash deploy/deployer-prod.sh
+          fi
