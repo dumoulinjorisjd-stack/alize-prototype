@@ -186,6 +186,15 @@ for (const [champ, val] of [['refusCarteIds', []], ['complementRefusBanque', fal
      'le client n’efface pas « ' + champ + ' » : ce sont ses refus qui arrêtent les tentatives');
 }
 
+console.log('\n── L\'HEURE DES ÉTAPES QUE LE SERVEUR HORODATE (éditeur, 24/11/2026) ──');
+for (const champ of ['doneProAt', 'workingAt']) {
+  ok(!(await passe(updateDoc(R(dPro), { [champ]: 1 }))),
+     'le prestataire ne s’écrit pas « ' + champ + ' » (doneProAt fait courir la validation automatique)');
+  ok(!(await passe(updateDoc(R(dCli), { [champ]: 1 }))), 'le client non plus');
+}
+ok(await passe(updateDoc(R(dPro), { status: 'working' })),
+   'le prestataire démarre toujours sa mission (doit rester possible)');
+
 await env.cleanup();
 console.log(f ? '\n' + f + ' ÉCHEC(S)' : '\nTout est vert.');
 process.exit(f ? 1 : 0);

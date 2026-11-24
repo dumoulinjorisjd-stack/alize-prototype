@@ -3822,7 +3822,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='938';
+  const VERSION_APP='939';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -6343,6 +6343,13 @@
          fermée gagne : le motif, l'auteur et la date restent au registre, où l'écran
          des factures les montre déjà. */
       exclue:!!r0.comptaExclue,
+      /* OÙ EN EST LA MISSION (l'éditeur, 24/11/2026). Le jour prévu, et l'heure de chaque
+         étape franchie : `acceptedAt` (à l'acceptation), `workingAt` et `doneProAt`
+         (horodatés par le serveur), `paidAt`/`settledAt` (règlement), `ratedAt`. */
+      dateISO:/^\d{4}-\d{2}-\d{2}$/.test(String(r0.dateISO||''))?String(r0.dateISO):'',
+      etapesAt:{accepted:dateMs(r0.acceptedAt),working:dateMs(r0.workingAt),done_pro:dateMs(r0.doneProAt),
+        paid:(dateMs(r0.paidAt)||dateMs(r0.settledAt)),rated:dateMs(r0.ratedAt)},
+      complementStatus:txt(r0.complementStatus,16),
       /* QUAND ELLE S'EST ARRÊTÉE, tardive ou non, et si une indemnité attend une
          décision du prestataire. Le navigateur écrit un nombre, le balayage nocturne
          un horodatage serveur : `dateMs` est la seule à le savoir. */
@@ -6367,6 +6374,46 @@
         if(r0.status==='declined'&&typeof r0.declinedBy==='string'&&r0.declinedBy)
           l.push({uid:r0.declinedBy.slice(0,128),nom:txt(r0.declinedName,60),at:dateMs(r0.declinedAt)});
         return l;})()};
+  }
+  /* ══ OÙ EN EST UNE MISSION ACCEPTÉE ═══════════════════════════════════════════════
+     « Je vois que la mission est acceptée, mais je ne peux pas savoir où elle en est
+     réellement » (l'éditeur, 24/11/2026). Les étapes, l'heure de celles qui sont
+     franchies, ce qui doit arriver ensuite — et une alerte SEULEMENT quand il faut agir
+     (« oui 30 min et 24 h ») : démarrage en retard de 30 min, fin non validée depuis
+     24 h, paiement du supplément en échec, litige. Pure : le maintenant se reçoit. */
+  const AVANCE_ETAPES=[['accepted','Acceptée'],['working','Démarrée'],['done_pro','Terminée'],['paid','Validée et réglée']];
+  const AVANCE_RANG={accepted:0,working:1,done_pro:2,disputed:2,paid:3,rated:3};
+  const AVANCE_RETARD_MS=30*60000, AVANCE_VALIDATION_MS=24*3600000;
+  function debutPrevuMs(r){
+    const d=String(r&&r.dateISO||''),h=heureAffichee(r);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(d)||!/^\d{1,2}:\d{2}$/.test(h))return 0;
+    const p=d.split('-'),q=h.split(':');
+    return new Date(+p[0],(+p[1])-1,+p[2],+q[0],+q[1]).getTime();
+  }
+  function dureeCourte(ms){const mn=Math.max(0,Math.round(ms/60000));if(mn<60)return mn+' min';const h=Math.floor(mn/60),m=mn%60;if(h<48)return h+' h'+(m&&h<10?(' '+String(m).padStart(2,'0')):'');return Math.floor(h/24)+' jours';}
+  function momentCourt(ms,maintenant){
+    if(!ms)return '';const d=new Date(ms),n=new Date(maintenant);
+    const hm=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+    if(d.toDateString()===n.toDateString())return 'aujourd’hui '+hm;
+    return _WD[d.getDay()]+' '+d.getDate()+' '+_MO[d.getMonth()]+' '+hm;
+  }
+  function avancementMission(r,maintenant){
+    const st=String(r&&r.status||'');const rang=AVANCE_RANG[st];
+    if(rang==null)return null;
+    const at=(r.etapesAt||{});
+    const etapes=AVANCE_ETAPES.map(function(x,i){return {cle:x[0],nm:x[1],faite:i<=rang,courante:i===rang,at:(i<=rang?(Number(at[x[0]])||0):0)};});
+    const debut=debutPrevuMs(r);let suite='',alerte='';
+    if(st==='accepted'){
+      suite=debut?('Démarrage prévu '+momentCourt(debut,maintenant)):(r.dateISO?('Prévue '+jourAffiche(r)):'');
+      if(debut&&maintenant-debut>AVANCE_RETARD_MS)alerte='Pas démarrée, '+dureeCourte(maintenant-debut)+' après l’heure prévue';
+    }else if(st==='working')suite='En cours';
+    else if(st==='done_pro'){
+      suite='En attente de la validation du client';
+      const t=Number(at.done_pro)||0;
+      if(t&&maintenant-t>AVANCE_VALIDATION_MS)alerte='Terminée depuis '+dureeCourte(maintenant-t)+', pas validée par le client';
+    }else if(st==='disputed')alerte='Contestée par le client, à arbitrer';
+    if(!alerte&&['echec','impossible'].indexOf(String(r.complementStatus||''))>=0)alerte='Paiement du supplément en échec';
+    return {etapes:etapes,suite:suite,alerte:alerte};
   }
   /* ══ TOUTES LES COMMANDES, PAR STATUT PUIS PAR MÉTIER ═══════════════════════════
      « Dans les réservations en cours, je ne vois pas toutes celles qui ont expiré ou
@@ -12962,7 +13009,11 @@
          réponses. Sans identifiant, elle reste ouverte : rien ne la rouvrirait. */
       const plieCle='cmd-ouvre-'+(r.id||'');
       const pliee=!!(r.id&&!(S._fold&&S._fold[plieCle]));
-      return `<div class="card cmd-carte${pliee?' pliee':''}" style="padding:13px;margin-top:9px${longue?';border-left:4px solid var(--coral)':''}">
+      const av=avancementMission(r,Date.now());
+      // Prise, la mission n'a plus besoin de sa diffusion sous les yeux : elle se replie (« on replie »).
+      const diffCle='cmd-diff-'+(r.id||'');
+      const diffOuverte=!!(S._fold&&S._fold[diffCle]);
+      return `<div class="card cmd-carte${pliee?' pliee':''}" style="padding:13px;margin-top:9px${(longue||(av&&av.alerte))?';border-left:4px solid var(--coral)':''}">
         <button class="cmd-tete" data-fold="${esc(plieCle)}" aria-expanded="${pliee?'false':'true'}" style="all:unset;display:block;width:100%;box-sizing:border-box;cursor:pointer;-webkit-tap-highlight-color:transparent">
         <div class="row between" style="align-items:flex-start;gap:8px">
           <b style="font-size:14px;flex:1;min-width:0">${sansMetier?(r.client?esc(r.client):'<i>client sans nom</i>'):esc(r.svcName||svcNm(r.svc)||r.svc||'Prestation')}</b>
@@ -12975,7 +13026,8 @@
           ${nonEnc?`<span class="chip warn" style="flex:none">${esc(mollieEtatTxt(r.led||{}))}</span>`:''}
           <span class="mini" style="color:${longue?'var(--coral-deep);font-weight:700':'var(--muted)'}">${esc(age)}${r.directed?' · dirigée':''}</span></div>
         </button>
-        ${pliee?`${(r.diff&&r.diff.motif!=='envoyee'&&r.diff.motif!=='relancee')?cmdDiffusion(r):''}${cmdReponses(r,true)}`:`${cmdDiffusion(r)}${cmdReponses(r)}${cmdNonPrevenus(r)}${cmdRelance(r)}${cmdEssai(r)}
+        ${av?cmdAvancement(av,pliee):''}
+        ${pliee?(av?'':`${(r.diff&&r.diff.motif!=='envoyee'&&r.diff.motif!=='relancee')?cmdDiffusion(r):''}${cmdReponses(r,true)}`):`${av?`<button class="linklike mini" data-fold="${esc(diffCle)}" style="margin-top:8px;color:var(--muted)">Diffusion ${diffOuverte?'▾':'›'}</button>`:''}${(!av||diffOuverte)?`${cmdDiffusion(r)}${cmdReponses(r)}${cmdNonPrevenus(r)}${cmdRelance(r)}`:''}${cmdEssai(r)}
         ${cmdFin(r)}
         ${cmdClore(r)}`}
       </div>`;
@@ -13000,6 +13052,17 @@
      La console le peut désormais — c'est sa raison d'être. Mais jamais sur une pièce
      RÉGLÉE (`paid`, `rated`) : la comptabilité ne se réécrit pas. Ni sur un LITIGE, qui
      a son propre écran d'arbitrage — le clore d'ici effacerait la décision à prendre. */
+    /* L'avancement : une ligne par étape (téléphone), l'heure de celles qui sont faites,
+       ce qui vient ensuite, et l'alerte quand il faut agir. Repliée, la carte garde
+       l'étape en cours et l'alerte. */
+    const cmdAvancement=function(av,pliee){
+      const cour=av.etapes.find(function(e){return e.courante;})||av.etapes[0];
+      const alerte=av.alerte?`<div class="banner coral" style="margin-top:8px">${I.warn}<span>${esc(av.alerte)}</span></div>`:'';
+      if(pliee)return `<div class="mini" style="margin-top:6px"><b>${esc(cour.nm)}</b>${cour.at?(' · '+esc(momentCourt(cour.at,Date.now()))):''}${av.suite&&!av.alerte?(' · <span style="color:var(--muted)">'+esc(av.suite)+'</span>'):''}</div>${alerte}`;
+      return `<div style="margin-top:8px">${av.etapes.map(function(e){
+          return `<div class="row" style="gap:7px;align-items:center;min-height:22px;color:${e.faite?'var(--ink)':'var(--muted)'}"><span style="width:16px;flex:none;color:${e.faite?'var(--good)':'var(--muted)'}">${e.faite?'✓':'○'}</span><span class="mini" style="${e.courante?'font-weight:700':''}">${esc(e.nm)}</span>${e.at?`<span class="mini" style="margin-left:auto;color:var(--muted)">${esc(momentCourt(e.at,Date.now()))}</span>`:''}</div>`;
+        }).join('')}${av.suite&&!av.alerte?`<div class="mini" style="margin-top:5px;color:var(--muted)">${esc(av.suite)}</div>`:''}${alerte}</div>`;
+    };
     const cmdClore=function(r){
       if(!r||!r.id||CLORE_ETATS.indexOf(String(r.status||''))<0)return '';
       const arme=(S.admClore===r.id);

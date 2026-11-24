@@ -3072,6 +3072,14 @@ exports.notifyClientStatus = onDocumentUpdated('requests/{reqId}', async (event)
   if (aStatus === 'done_pro' && !after.doneProAt) {
     try { await event.data.after.ref.update({doneProAt: FieldValue.serverTimestamp()}); } catch (e) { console.warn('doneProAt', e); }
   }
+  // HORODATAGE SERVEUR du démarrage (l'éditeur, 24/11/2026 : « je vois que la mission est
+  // acceptée, mais je ne peux pas savoir où elle en est réellement »). La console montre
+  // chaque étape avec son heure ; seule celle-ci n'était écrite nulle part. Réécrite à
+  // chaque démarrage : un démarrage annulé puis refait garde l'heure du second.
+  // Aucune autre fonction ne réagit à « working » : cette écriture ne réveille rien.
+  if (aStatus === 'working') {
+    try { await event.data.after.ref.update({workingAt: FieldValue.serverTimestamp()}); } catch (e) { console.warn('workingAt', e); }
+  }
 
   const clientUid = after.clientUid;
   if (!clientUid) return;
