@@ -5013,6 +5013,64 @@ exports.refundOrder = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request)
   return {ok: true, montant: demande, total: total, repriseArtisan: ligne.repriseArtisan, restant: round2(encaisse - demande)};
 });
 
+/* ── RÉGLER MAINTENANT (l'éditeur, 23/11/2026) ──
+   Le client règle LUI-MÊME ce que le prélèvement automatique n'a pas pu encaisser (un
+   supplément, ou toute la prestation quand l'empreinte a expiré). Le paiement s'ouvre sur
+   le moment, 3-D Secure : pas de lien envoyé qui mourrait en 15 minutes. Le serveur relit
+   tout — la demande est la sienne, le montant est celui du document, borné par le total
+   recalculé, et trois refus de la banque arrêtent tout (RELP). Le webhook « complement »
+   fait le reste, comme pour tout second paiement : versement au prestataire, comptes. */
+exports.reglerReste = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) => {
+  const uid = request.auth && request.auth.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Connexion requise.');
+  const reqId = String((request.data && request.data.reqId) || '').trim().slice(0, 128);
+  if (!reqId) throw new HttpsError('invalid-argument', 'Prestation non désignée.');
+  if (!mollieApiConfigured()) return {simulated: true};
+  const db = getFirestore();
+  const ref = db.collection('requests').doc(reqId);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Prestation introuvable.');
+  const r = snap.data() || {};
+  if (r.clientUid !== uid) throw new HttpsError('permission-denied', 'Prestation d’un autre compte.');
+  if (['echec', 'impossible', 'a_regler'].indexOf(String(r.complementStatus || '')) < 0) {
+    throw new HttpsError('failed-precondition', 'Rien à régler sur cette prestation.');
+  }
+  const montant = round2(Number(r.complementAmount) || 0);
+  if (!(montant > 0.009)) throw new HttpsError('failed-precondition', 'Rien à régler sur cette prestation.');
+  const plafond = montantsDemande(r).gross;
+  if (!(plafond > 0) || montant > plafond + 0.009) {
+    console.warn('reglerReste au-delà du total reqId=' + reqId + ' ' + montant + ' > ' + plafond);
+    throw new HttpsError('failed-precondition', 'Montant incohérent : écrivez-nous.');
+  }
+  if (!RELP.tentativeCarteAdmise(r.refusCarteIds)) {
+    throw new HttpsError('resource-exhausted', 'Votre banque a refusé ce paiement ' + RELP.REFUS_CARTE_MAX + ' fois.');
+  }
+  // UN SEUL PAIEMENT À LA FOIS : celui d'avant est-il encore ouvert, ou déjà payé ?
+  if (r.complementPaymentId) {
+    const ex = await mollieApi('/payments/' + encodeURIComponent(String(r.complementPaymentId)), 'GET');
+    if (!ex.ok) throw new HttpsError('unavailable', 'Paiement indisponible pour le moment, réessayez.');
+    const st = String((ex.data && ex.data.status) || '');
+    if (st === 'paid') return {deja: true};
+    const lien0 = ex.data && ex.data._links && ex.data._links.checkout && ex.data._links.checkout.href;
+    if (st === 'open' && lien0) return {checkoutUrl: lien0, reused: true};
+  }
+  let customerId = '';
+  try { customerId = String(((await db.collection('users').doc(uid).get()).data() || {}).mollieCustomerId || ''); } catch (_) {}
+  const out = await mollieApi('/payments', 'POST', Object.assign({
+    amount: {currency: 'EUR', value: montant.toFixed(2)},
+    description: ('Ti-Services · règlement · ' + (r.serviceName || r.service || 'prestation')).toString().slice(0, 100),
+    redirectUrl: APP_URL.replace(/\/$/, '') + '/',
+    webhookUrl: 'https://europe-west1-t-service-prod.cloudfunctions.net/mollieWebhook',
+    method: 'creditcard',
+    metadata: {reqId: reqId, clientUid: uid, kind: 'complement', produit: PRODUIT},
+  }, customerId ? {customerId: customerId} : {}));
+  const lien = out.ok && out.data && out.data._links && out.data._links.checkout && out.data._links.checkout.href;
+  if (!lien) throw new HttpsError('unavailable', 'Paiement indisponible pour le moment, réessayez.');
+  await ref.set({complementStatus: 'a_regler', complementPaymentId: String(out.data.id || ''), complementCheckoutUrl: lien}, {merge: true});
+  console.log('reglerReste ' + reqId + ' : ' + montant + ' € ouvert par le client');
+  return {checkoutUrl: lien};
+});
+
 exports.payoutManual = onCall(async (request) => {
   const who = (request.auth && request.auth.token && request.auth.token.email) || '';
   if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
@@ -5031,6 +5089,12 @@ exports.payoutManual = onCall(async (request) => {
   const r = snap.data() || {};
   const champ = estComplement ? 'complementPayout' : 'molliePayout';
   if (r[champ] === 'routed') throw new HttpsError('failed-precondition', 'Ce versement est déjà parti par Mollie.');
+  /* LA LIGNE QUI NE PORTE RIEN (l'éditeur, 23/11/2026) : l'empreinte a expiré sans débiter
+     et le SECOND paiement a réglé toute la prestation. Acter un virement sur la jambe
+     principale laissait le second « non versé » — la dette restait due en double sens. */
+  if (!estComplement && String(r.complementStatus || '') === 'paye' && r.mollieCaptured !== true && r.molliePaymentCaptured !== true) {
+    throw new HttpsError('failed-precondition', 'Rien à verser sur cette ligne : la prestation a été réglée par son second paiement. Actez le virement sur la ligne « Second paiement ».');
+  }
   if (r[champ] === 'manuel') return {ok: true, deja: true};
   const upd = {};
   upd[champ] = 'manuel';
@@ -6169,6 +6233,8 @@ exports.mollieWebhook = onRequest({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (req
              supprimée : `set` la recréerait. */
           const refusB = pay.status === 'failed';
           const premierRefus = refusB && r.complementRefusBanque !== true;
+          // Tout refus de la banque compte dans les trois de la commande (RELP).
+          if (refusB) await noterRefusCarte(ref, pay);
           if (snap.exists) {
             try {
               await ref.set(Object.assign({complementStatus: 'echec'}, refusB ? {complementRefusBanque: true,
@@ -6179,7 +6245,7 @@ exports.mollieWebhook = onRequest({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (req
           // autre carte, qui relance le prélèvement d'elle-même (webhook d'enregistrement).
           if (premierRefus && snap.exists && r.clientUid) {
             const txtC = 'Votre banque a refusé le prélèvement de ' + eurTxt(Number(r.complementAmount) || 0)
-              + ' pour votre prestation. Ajoutez une autre carte dans Profil → Moyen de paiement : le règlement se fera automatiquement.';
+              + ' pour votre prestation. Ouvrez Ti-Services et touchez « Régler maintenant », ou ajoutez une autre carte dans Profil → Moyen de paiement : le règlement se fera alors automatiquement.';
             try {
               const tokC = await userPushTokens(db, r.clientUid);
               if (tokC.length) {

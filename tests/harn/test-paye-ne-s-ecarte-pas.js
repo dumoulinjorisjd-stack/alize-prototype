@@ -86,12 +86,25 @@ const r = await p.evaluate(() => {
   window.__render();
   const a = (id) => !!document.querySelector('[data-adm="vers-essai:' + id + '"]');
   window.__dbg = [...document.querySelectorAll('[data-adm^="vers-essai:"]')].map((e) => e.getAttribute('data-adm')).join();
-  return { dbg: window.__dbg, payee: a('payee'), liberee: a('liberee'), parlesecond: a('parlesecond'), inconnue: a('inconnue'), jamais: a('jamais'),
+  const main = (id) => !!document.querySelector('[data-adm="vers-main:' + id + '"]');
+  const mains = { parlesecond: main('parlesecond'), payee: main('payee'), jamais: main('jamais') };
+  const nMain = document.querySelectorAll('[data-adm^="vers-main:"]').length;
+  const lu = { payee: a('payee'), liberee: a('liberee'), parlesecond: a('parlesecond'), inconnue: a('inconnue'), jamais: a('jamais'),
     main: document.querySelectorAll('[data-adm^="vers-main:"]').length };
+  // Le bandeau du justificatif : une facture écartée à la main, une non encaissée.
+  S.adminLedger = [{ id: 'e1', reqId: 'e1', commissionAmount: 2, exclu: true, mollieEncaisse: true },
+    { id: 'e2', reqId: 'e2', commissionAmount: 3, mollieEncaisse: false, molliePaymentId: 'tr_2', mollieVerifie: true }];
+  S._fold = { 'f-acc': true }; window.__render();
+  const acc = (([...document.querySelectorAll('.foldc')].find((c) => /Justificatif de revenus/.test(c.textContent)) || {}).textContent || '').replace(/\s+/g, ' ');
+  return Object.assign({ mains, nMain, acc, dbg: window.__dbg }, lu);
 });
 ok(!r.payee && !r.liberee && !r.parlesecond, 'payée, libérée ou réglée par le second paiement : le bouton n’y est plus (' + r.dbg + ')');
 ok(r.inconnue && r.jamais, 'un état inconnu ou jamais abouti le garde (un essai reste écartable)');
-ok(r.main === 5, '« Je l’ai versé à la main » reste sur chaque ligne');
+ok(r.nMain === 4 && !r.mains.parlesecond && r.mains.payee && r.mains.jamais,
+  '« Je l’ai versé à la main » reste sur chaque ligne, SAUF celle qui ne porte rien (réglée par le second paiement)');
+ok(/1 prestation facturée non encaissée par Mollie/.test(r.acc) && /1 facture écartée des comptes à la main/.test(r.acc) && !/hors comptes/.test(r.acc),
+  'le justificatif sépare « non encaissée » et « écartée à la main » (« ' + r.acc.slice(Math.max(0, r.acc.indexOf('prestation') - 3), r.acc.indexOf('prestation') + 120) + ' »)');
+ok(/Rien à verser sur cette ligne : la prestation a été réglée par son second paiement/.test(SRV), 'le serveur refuse aussi d’acter un virement sur la ligne qui ne porte rien');
 ok(errs.length === 0, 'aucune erreur JS (' + errs.join(' | ').slice(0, 140) + ')');
 await b.close();
 console.log(f ? '\n' + f + ' ÉCHEC(S)' : '\nTOUT EST VERT');

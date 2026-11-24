@@ -75,7 +75,8 @@ console.log('C — les refus d’une commande se comptent, sans doublon ni résu
   if (noter) { await noter(ref(true), { id: 'tr_1', status: 'failed' }); await noter(ref(true), { id: 'tr_2', status: 'canceled' }); await noter(ref(false), { id: 'tr_3', status: 'failed' }); }
   ok(noter && ecrits.length === 1 && ecrits[0].refusCarteIds.union === 'tr_1', 'seul un refus (failed) se compte ; abandonné ne compte pas ; une demande supprimée ne renaît pas');
   const n = (SRV.match(/await noterRefusCarte\(/g) || []).length;
-  ok(n === 4, 'les quatre endroits qui constatent un échec de paiement de commande le comptent (' + n + ')');
+  // Cinq depuis « Régler maintenant » : le refus d'un règlement fait par le client compte aussi.
+  ok(n === 5, 'les cinq endroits qui constatent un refus de paiement le comptent (' + n + ')');
   const cp = bloc('exports.createClientPayment = onCall(').slice(0, 30000);
   const iCap = cp.indexOf('RELP.tentativeCarteAdmise(r.refusCarteIds)'), iMollie = cp.indexOf("mollieApi('/payments', 'POST'");
   ok(iCap > 0 && iMollie > iCap && /throw new HttpsError\('resource-exhausted'/.test(cp), 'au-delà de trois refus, la commande ne crée plus aucun paiement');
@@ -91,7 +92,7 @@ console.log('C — les refus d’une commande se comptent, sans doublon ni résu
       'la carte refusée ne redevient jamais « nouvelle » après un second refus sans carte nommée');
   }
   ok(/const premierRefus = refusB && r\.complementRefusBanque !== true;/.test(SRV) && /if \(premierRefus && snap\.exists && r\.clientUid\)/.test(SRV)
-     && /Ajoutez une autre carte dans Profil → Moyen de paiement : le règlement se fera automatiquement\./.test(SRV),
+     && /touchez « Régler maintenant », ou ajoutez une autre carte dans Profil → Moyen de paiement/.test(SRV),
     'le client est prévenu UNE fois, avec le geste qui règle (une autre carte)');
   ok(/if \(snap\.exists\) \{\s*try \{\s*await ref\.set\(Object\.assign\(\{complementStatus: 'echec'\}/.test(SRV), 'une demande supprimée n’est pas recréée par le webhook');
   ok(!/lienSeul|complementLienApresRefus/.test(SRV), 'plus aucun « lien d’après-refus » : il serait mort en 15 minutes'); }

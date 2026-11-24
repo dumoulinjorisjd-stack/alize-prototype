@@ -3822,7 +3822,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='931';
+  const VERSION_APP='932';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -7858,6 +7858,15 @@
     "que sur les créneaux cochés":"only on the checked slots",
     "qui rend la mission plus attractive.":"which makes the job more attractive.",
     "refusée":"declined",
+    "Votre banque a refusé ce paiement 3 fois. Ajoutez une autre carte dans Profil → Moyen de paiement : le règlement se fera automatiquement.":"Your bank has declined this payment three times. Please add another card under Profile → Payment method: the payment will then be processed automatically.",
+    "Connexion requise pour régler":"Sign in to pay",
+    "Déjà réglé ✓":"Already paid ✓",
+    "Paiement sécurisé par votre banque (3-D Secure).":"Payment secured by your bank (3-D Secure).",
+    "Le prélèvement automatique n’a pas pu se faire.":"The automatic payment could not be taken.",
+    "Votre banque a refusé le prélèvement.":"Your bank declined the payment.",
+    "Reste à régler":"Left to pay",
+    "Régler maintenant":"Pay now",
+    "Un règlement reste à faire":"A payment is still due",
     "Votre banque a refusé ce paiement 3 fois. Contactez-la, ou repassez la commande avec une autre carte.":"Your bank has declined this payment three times. Please contact your bank, or place the order again using a different card.",
     "relançons aussitôt":"relaunch right away",
     "replié":"collapsed",
@@ -9340,6 +9349,15 @@
     "que sur les créneaux cochés":"apenas nos horários marcados",
     "qui rend la mission plus attractive.":"que torna o serviço mais atrativo.",
     "refusée":"recusada",
+    "Votre banque a refusé ce paiement 3 fois. Ajoutez une autre carte dans Profil → Moyen de paiement : le règlement se fera automatiquement.":"O seu banco recusou este pagamento 3 vezes. Adicione outro cartão em Perfil → Forma de pagamento: o pagamento será efetuado automaticamente.",
+    "Connexion requise pour régler":"Inicie sessão para pagar",
+    "Déjà réglé ✓":"Já pago ✓",
+    "Paiement sécurisé par votre banque (3-D Secure).":"Pagamento protegido pelo seu banco (3-D Secure).",
+    "Le prélèvement automatique n’a pas pu se faire.":"Não foi possível efetuar o débito automático.",
+    "Votre banque a refusé le prélèvement.":"O seu banco recusou o débito.",
+    "Reste à régler":"Por pagar",
+    "Régler maintenant":"Pagar agora",
+    "Un règlement reste à faire":"Falta um pagamento",
     "Votre banque a refusé ce paiement 3 fois. Contactez-la, ou repassez la commande avec une autre carte.":"O seu banco recusou este pagamento 3 vezes. Contacte-o ou volte a efetuar a encomenda com outro cartão.",
     "relançons aussitôt":"relançamos de imediato",
     "replié":"recolhido",
@@ -13728,8 +13746,15 @@
     // écartées à la main. On les compte pour le dire — pas pour les additionner.
     const horsCompte=(S.demoMode||isDemo())?[]:(S.adminLedger||[]).filter(function(e){return e.mollieEncaisse!==true||e.exclu;});
     const aRapprocher=horsCompte.filter(function(e){return !!e.molliePaymentId&&!e.mollieVerifie&&!e.exclu;}).length;
+    const horsEcartees=horsCompte.filter(function(e){return !!e.exclu;});
+    const horsNonEnc=horsCompte.filter(function(e){return !e.exclu;});
     const accBody=`<div class="banner teal">${I.shield}<span>Ces chiffres sont <b>calqués sur Mollie</b>&nbsp;: une prestation n’y entre que si Mollie l’a <b>réellement encaissée</b>. Une empreinte autorisée mais jamais débitée, un essai, par exemple, porte pourtant un identifiant de paiement&nbsp;: elle est écartée.</span></div>
-      ${horsCompte.length?`<div class="banner warn" style="margin-top:10px">${I.clock}<span><b>${horsCompte.length} prestation${horsCompte.length>1?'s':''} facturée${horsCompte.length>1?'s':''} hors comptes</b>${aRapprocher?(', dont '+aRapprocher+' pas encore rapprochée'+(aRapprocher>1?'s':'')+' de Mollie'):''}. Détail dans « Retrouver une facture ».</span></div>`:''}
+      ${/* DEUX CHOSES DIFFÉRENTES, DEUX PHRASES (l'éditeur, 23/11/2026 : « c'est
+           contradictoire ») : « hors comptes » mêlait ce que Mollie n'a pas encaissé et ce
+           que l'administrateur a écarté à la main — et le rapprochement, qui ne compte
+           que les premières, répondait « 0 hors comptes » sous un bandeau qui en disait 1. */''}
+      ${horsNonEnc.length?`<div class="banner warn" style="margin-top:10px">${I.clock}<span><b>${horsNonEnc.length} prestation${horsNonEnc.length>1?'s':''} facturée${horsNonEnc.length>1?'s':''} non encaissée${horsNonEnc.length>1?'s':''} par Mollie</b>${aRapprocher?(', dont '+aRapprocher+' pas encore rapprochée'+(aRapprocher>1?'s':'')+' de Mollie'):''}. Détail dans « Retrouver une facture ».</span></div>`:''}
+      ${horsEcartees.length?`<div class="mini" style="margin-top:8px;color:var(--muted)">${horsEcartees.length} facture${horsEcartees.length>1?'s':''} écartée${horsEcartees.length>1?'s':''} des comptes à la main (essais), consultable${horsEcartees.length>1?'s':''} dans « Retrouver une facture ».</div>`:''}
       <button class="btn ghost sm" data-adm="ledger-reco" style="margin-top:12px">${I.card}&nbsp;Rapprocher avec Mollie</button>
       <p class="mini" style="margin:8px 0 12px;color:var(--muted)">Interroge Mollie sur chaque paiement et inscrit son état réel. Fait automatiquement chaque matin.</p>
       <hr class="dashed" style="margin:10px 0">
@@ -13835,7 +13860,10 @@
                  comptes TOUTE la mission, payée. Pas de retrait quand le second est encaissé. */''}
             ${(versAbouti(v)===false&&!v.parLeSecond)?`<button class="btn ghost sm" data-adm="vers-rate:${esc(v.reqId)}" style="margin-top:7px">${S._versRateArm===v.reqId?(I.warn+'&nbsp;Confirmer&nbsp;: retirer de cet écran'):(I.close||I.warn)+'&nbsp;Paiement jamais abouti, retirer'}</button>`:''}
             ${versEncaisse(v)?'':`<button class="btn ghost sm" data-adm="vers-essai:${esc(v.reqId)}" style="margin-top:7px">${S._versEssaiArm===v.reqId?(I.warn+'&nbsp;Confirmer&nbsp;: \u00e9carter des comptes'):(I.close||I.warn)+'&nbsp;C\u2019\u00e9tait un essai, \u00e9carter'}</button>`}
-            <button class="btn ghost sm" data-adm="vers-main:${esc(v.reqId)}" style="margin-top:7px">${S._versMainArm===v.reqId?'Confirmer&nbsp;: je l’ai bien viré':(I.check+'&nbsp;Je l’ai versé à la main')}</button></div>`;}).join('')}
+            ${/* RIEN À VERSER SUR CETTE LIGNE-CI (l'éditeur, 23/11/2026) : l'empreinte a
+                 expiré et c'est le SECOND paiement qui porte l'argent. Acter le virement ici
+                 laissait la ligne « Second paiement » due, et la dette restait affichée. */''}
+            ${(versAbouti(v)===false&&v.parLeSecond)?'':`<button class="btn ghost sm" data-adm="vers-main:${esc(v.reqId)}" style="margin-top:7px">${S._versMainArm===v.reqId?'Confirmer&nbsp;: je l’ai bien viré':(I.check+'&nbsp;Je l’ai versé à la main')}</button>`}</div>`;}).join('')}
           <button class="btn primary sm" data-adm="vers-run" style="margin-top:12px">${I.bolt}&nbsp;Réessayer les ${versList.length}</button>
           <button class="btn ghost sm" data-adm="vers-scan" style="margin-top:12px">${I.search}&nbsp;Revérifier</button>
           <p class="mini" style="margin-top:8px;color:var(--muted)">Chaque tentative interroge Mollie&nbsp;: état réel du paiement, versements déjà partis, et motif exact du refus. Rien n’est perdu, le rattrapage repart aussi tout seul dès que Mollie ouvre les virements du prestataire.</p>`
@@ -14407,6 +14435,45 @@
   // application n'a pas forcément été encaissée chez Mollie : une capture peut échouer et
   // l'empreinte tomber, et on se retrouve avec une facture pour un argent jamais prélevé.
   // Cette fonction ne renvoie « encaissé » que si le serveur l'a vérifié.
+  /* CE QUI RESTE À RÉGLER SUR UNE DEMANDE (l'éditeur, 23/11/2026 : « Régler maintenant »).
+     Une seule porte : le détail de la prestation et le bandeau de l'accueil la lisent.
+     Un supplément — ou toute la prestation quand l'empreinte a expiré — que le
+     prélèvement automatique n'a pas pu encaisser. Rend le montant, 0 s'il n'y a rien. */
+  const RESTE_ETATS=['echec','impossible','a_regler'];
+  function resteARegler(r){
+    if(!r||RESTE_ETATS.indexOf(String(r.complementStatus||''))<0)return 0;
+    const m=Math.round((Number(r.complementAmount)||0)*100)/100;
+    return m>0.009?m:0;
+  }
+  function resteMotif(r){return (r&&r.complementRefusBanque===true)?'Votre banque a refusé le prélèvement.':'Le prélèvement automatique n’a pas pu se faire.';}
+  function boutonReglerHtml(reqId,montant,petit){
+    return `<button class="btn primary${petit?' sm':''}" data-act="regler-reste:${esc(reqId)}" style="margin-top:10px${petit?';width:auto;padding:9px 14px':''}">${I.lock}&nbsp;<span>Régler maintenant</span>${petit?'':`<span>&nbsp;· ${eur(montant)}</span>`}</button>`;
+  }
+  /* LE BANDEAU DE L'ACCUEIL : ce que le client doit encore, lu une fois par session sur
+     SES demandes (la même requête que ses renforts, aucun index composite). */
+  function chargerResteARegler(){
+    try{
+      if(S._resteDuLu||S.persona!=='client'||!S.onboarded||isDemo())return;
+      if(!(FB&&FB.db&&FB.f&&FB.f.getDocs&&FB.auth&&FB.auth.currentUser))return;
+      S._resteDuLu=true;
+      const uid=FB.auth.currentUser.uid;
+      FB.f.getDocs(FB.f.query(FB.f.collection(FB.db,'requests'),FB.f.where('clientUid','==',uid))).then(function(snap){
+        const l=[];
+        snap.forEach(function(d){const r=d.data()||{};const du=resteARegler(r);
+          if(du>0)l.push({reqId:d.id,svc:r.serviceName||svcName(r.service)||'Prestation',quand:quandTxt(r),qui:r.providerName||'',montant:du});});
+        S.resteDu=l;render();
+      }).catch(function(e){console.warn('resteARegler',e);});
+    }catch(_){}
+  }
+  function bandeauResteARegler(){
+    chargerResteARegler();
+    const l=(S.persona==='client'&&S.onboarded&&S.resteDu)||[];
+    return l.map(function(x){return `<div class="card regler-bandeau" style="padding:14px;margin-top:12px;border-left:4px solid var(--coral)">
+      <b style="font-size:14px">Un règlement reste à faire</b>
+      <div class="mini" style="margin-top:4px;line-height:1.45">${esc(x.svc)}${x.quand?' · '+esc(x.quand):''}${x.qui?' · '+esc(x.qui):''} · <b>${eur(x.montant)}</b></div>
+      ${boutonReglerHtml(x.reqId,x.montant,true)}
+    </div>`;}).join('');
+  }
   function detailPaiement(r){
     if(!r)return null;
     const capte=(r.mollieCaptureAmount!=null)?Number(r.mollieCaptureAmount):null;
@@ -14430,6 +14497,8 @@
     const notes=r.notes||h.notes||'';
     const tip=Number(h.tip||r.tip||0)||0;
     const pay=detailPaiement(D.loaded?r:null);
+    // Ce qui reste à régler : côté client seulement, et une fois la demande relue.
+    const du=(!pro&&D.loaded)?resteARegler(r):0;
     // Côté prestataire, la vérité du versement est molliePayout — le même champ que le
     // reçu de fin de mission. On ne dit « payé » que si Mollie a réellement routé.
     const verse=pro?(r.molliePayout==='manuel'):false;
@@ -14471,13 +14540,21 @@
              ${tip>0?ligne('Pourboire du client',eur(tip)):''}
              ${ligne((verse||reserve)?'Vous avez perçu':'Vous percevez',`<span class="money">${eur(b.net)}</span>`)}
              <div class="mini" style="margin-top:9px;color:${(verse||reserve)?'var(--good)':'var(--muted)'}">${verse?(I.check+' Versement effectué.'):(reserve?(I.check+' Part réservée chez Mollie, versement au prochain règlement.'):(jambeIrroutable(r)?(I.info+' Cette somme vous est due, Ti-Services vous la vire. '+REGLE_MOLLIE):(I.info+' Cette somme vous est due et partira dès que Mollie ouvrira vos virements.')))}</div>`
-          : `${ligne('Total réglé',`<span class="money">${eur(t.total)}</span>`)}
-             ${tip>0?ligne('dont pourboire',eur(tip)):''}`}
-        ${pay?`<div class="mini" style="margin-top:9px;color:${pay.ok?'var(--good)':'var(--coral)'};font-weight:650">${pay.ok?I.check:I.info} ${esc(pay.txt)}</div>`:''}
+          : (du>0
+            ? `${du>=t.total-0.009?ligne('Reste à régler',`<span class="money">${eur(du)}</span>`)
+                 :`${ligne('Total',`<span class="money">${eur(t.total)}</span>`)}${ligne('Reste à régler',`<span class="money">${eur(du)}</span>`)}`}
+               <div class="regler-du" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--hair)">
+                 <div class="mini" style="color:var(--coral-deep);font-weight:650;line-height:1.45">${esc(resteMotif(r))}</div>
+                 ${boutonReglerHtml(h.reqId||r.reqId||D.reqId||'',du,false)}
+                 <div class="mini" style="margin-top:7px;color:var(--muted)">Paiement sécurisé par votre banque (3-D Secure).</div>
+               </div>`
+            : `${ligne('Total réglé',`<span class="money">${eur(t.total)}</span>`)}
+             ${tip>0?ligne('dont pourboire',eur(tip)):''}`)}
+        ${(pay&&!du)?`<div class="mini" style="margin-top:9px;color:${pay.ok?'var(--good)':'var(--coral)'};font-weight:650">${pay.ok?I.check:I.info} ${esc(pay.txt)}</div>`:''}
         ${h.invNo?`<div class="mini" style="margin-top:6px;color:var(--muted)">Facture N° ${esc(h.invNo)}</div>`:''}
       </div>
 
-      <button class="btn primary" data-act="${pro?('detail-inv-pro'):'detail-inv'}" style="margin-top:14px">${I.card}&nbsp;${pro?'Ma facture':'Voir ma facture'}</button>
+      <button class="btn ${du?'ghost':'primary'}" data-act="${pro?('detail-inv-pro'):'detail-inv'}" style="margin-top:14px">${I.card}&nbsp;${pro?'Ma facture':'Voir ma facture'}</button>
       ${h.reqId?`<button class="btn ghost sm" data-act="detail-chat" style="margin-top:9px">${I.chat}&nbsp;Écrire à ${esc(String(qui).split(' ')[0])}</button>`:''}
       <div style="height:18px"></div></div>`;
   }
@@ -15806,6 +15883,7 @@
     const first=fullName?fullName.split(' ')[0]:'';
     const zone=S.onboarded?((S.account&&S.account.zone)||(S.clientForm&&S.clientForm.zone)||'Gustavia'):'';
     return `<div class="pad">${headRow(I.pin+' '+(zone?esc(zone)+' · ':'')+'Saint-Barth',greetWord()+(first?' '+esc(first):'')+greetIco(),(!S.onboarded?headBtn('lang-toggle','Langue / Language',I.globe):'')+headBtn('open-share','Partager Ti-Services',I.share),S.onboarded?cliAvatar():'')}
+      ${bandeauResteARegler()}
       ${!S.onboarded?`<button class="card" data-act="guest-signup" style="width:100%;text-align:left;padding:12px 14px;margin-top:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;border-left:4px solid var(--teal-deep)"><div><b style="font-size:13px">${I.wave} Explorez librement</b><div class="mini" style="margin-top:2px">Compte requis seulement pour commander, c'est gratuit.</div></div><span class="chip good" style="flex:none">Créer un compte</span></button>`:''}
       ${(function(){
         /* SA CARTE, EN TÊTE : on vient de la voir en vidéo, c'est elle qu'on cherche.
@@ -21996,6 +22074,26 @@
       const h=(S.proHistory||[]).find(function(x){return x.reqId===id;});
       if(h)ouvrirChatPasse(Object.assign({},h,{clientName:h.clientFull||h.client||'Client'}));return;}
     if(b.dataset.act&&b.dataset.act.indexOf('renew:')===0){const h=doneHistory()[+b.dataset.act.split(':')[1]];if(h)renewMission(h);return;}
+    if(b.dataset.act&&b.dataset.act.indexOf('regler-reste:')===0){
+      /* RÉGLER MAINTENANT : le paiement s'ouvre sur le moment (3-D Secure) — pas de lien
+         envoyé qui mourrait en 15 minutes. Le serveur relit tout : montant, statut,
+         refus déjà comptés. */
+      const rid=b.dataset.act.slice('regler-reste:'.length);if(!rid)return;
+      if(!(FB&&FB.functions&&FB.fn&&FB.fn.httpsCallable)){toast('Connexion requise pour régler');return;}
+      if(S._reglerEnCours)return;S._reglerEnCours=true;
+      toast('Redirection vers le paiement sécurisé…');
+      FB.fn.httpsCallable(FB.functions,'reglerReste')({reqId:rid}).then(function(res){
+        S._reglerEnCours=false;const d=(res&&res.data)||{};
+        if(d.deja){S.resteDu=(S.resteDu||[]).filter(function(x){return x.reqId!==rid;});render();toast('Déjà réglé ✓');return;}
+        if(d.checkoutUrl){location.href=d.checkoutUrl;return;}
+        toast('Paiement indisponible pour le moment, réessayez.');
+      }).catch(function(e){S._reglerEnCours=false;
+        // La prestation est faite : « repassez la commande » n'aurait pas de sens. Une
+        // autre carte, elle, règle d'elle-même (enregistrement → relancerComplements).
+        if(/resource-exhausted/.test(String(e&&e.code||''))){toast('Votre banque a refusé ce paiement 3 fois. Ajoutez une autre carte dans Profil → Moyen de paiement : le règlement se fera automatiquement.');return;}
+        toast('Paiement indisponible pour le moment, réessayez.');});
+      return;
+    }
     if(b.dataset.act&&b.dataset.act.indexOf('recur-confirm:')===0){recurConfirm(b.dataset.act.slice('recur-confirm:'.length));return;}
     if(b.dataset.act&&b.dataset.act.indexOf('recur-skip:')===0){recurSkip(b.dataset.act.slice('recur-skip:'.length));return;}
     if(b.dataset.act&&b.dataset.act.indexOf('recur-stop:')===0){recurStop(b.dataset.act.slice('recur-stop:'.length));return;}
