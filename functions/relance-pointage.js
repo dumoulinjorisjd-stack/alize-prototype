@@ -8,9 +8,13 @@
    « Démarrer », pas de « Terminer » ; sans « Terminer », le client ne valide pas et le
    prestataire n'est pas payé.
 
-   DEUX RELANCES, UNE FOIS CHACUNE :
-     'demarrage' — acceptée, 1 h après l'heure prévue, toujours pas démarrée ;
-     'fin'       — démarrée, 1 h après la fin prévue, toujours pas terminée.
+   TROIS RELANCES, UNE FOIS CHACUNE (« le client aussi doit être relancé pour valider
+   la prestation », l'éditeur, 25/11/2026) :
+     'demarrage'  — au PRESTATAIRE : acceptée, 1 h après l'heure prévue, pas démarrée ;
+     'fin'        — au PRESTATAIRE : démarrée, 1 h après la fin prévue, pas terminée ;
+     'validation' — au CLIENT : terminée depuis 1 h (heure serveur), pas validée. Le
+                    rappel des 24 h et la validation automatique des 48 h restent ceux
+                    d'autoValidate.
    AU-DELÀ DE 12 H on ne relance plus : une mission aussi ancienne ne se rattrape pas
    par une notification, elle se voit dans la console.
    ON NE DEVINE PAS : sans heure prévue, ou sans durée connue, pas de relance. */
@@ -40,8 +44,8 @@ function dureePrevueMin(r) {
   return 0;
 }
 
-/* `e` : la demande, avec `workingAtMs` (l'heure du démarrage, en ms) déjà lue.
-   Rend 'demarrage', 'fin' ou ''. */
+/* `e` : la demande, avec `workingAtMs` et `doneProAtMs` (en ms) déjà lus.
+   Rend 'demarrage', 'fin', 'validation' ou ''. */
 function relancePointageDecider(e, maintenant) {
   e = e || {};
   const now = Number(maintenant) || 0;
@@ -53,6 +57,9 @@ function relancePointageDecider(e, maintenant) {
     const base = Number(e.workingAtMs) || debutPrevuMs(e);
     const dur = dureePrevueMin(e);
     return (base > 0 && dur > 0 && dans(base + dur * 60000)) ? 'fin' : '';
+  }
+  if (e.status === 'done_pro' && !e.relanceValidationAt) {
+    return dans(Number(e.doneProAtMs) || 0) ? 'validation' : '';
   }
   return '';
 }

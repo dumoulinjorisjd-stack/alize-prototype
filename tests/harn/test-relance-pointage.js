@@ -30,12 +30,19 @@ ok(R.relancePointageDecider({ status: 'working', dateISO: '2026-11-25', slot: '0
   'à l’acte : la durée enregistrée à la commande (90 min) fait foi');
 ok(R.relancePointageDecider({ status: 'working', dateISO: '2026-11-25', slot: '08:00', unit: 'forfait', workingAtMs: huitH }, huitH + 6 * H) === '',
   'durée inconnue (ancienne commande à l’acte) : on ne devine pas la fin');
-ok(R.relancePointageDecider(Object.assign({}, wk, { status: 'done_pro' }), huitH + 9 * H) === '', 'terminée : rien');
+ok(R.relancePointageDecider(Object.assign({}, wk, { status: 'done_pro' }), huitH + 9 * H) === '', 'terminée sans heure de fin serveur : rien');
 
-console.log('C — le serveur relance le prestataire et le note ; la commande enregistre sa durée');
+console.log('C — terminée, pas validée : le client (« le client aussi doit être relancé »)');
+const dp = { status: 'done_pro', doneProAtMs: huitH + 4 * H };
+ok(R.relancePointageDecider(dp, huitH + 4 * H + 59 * MN) === '', '59 min après la fin : rien');
+ok(R.relancePointageDecider(dp, huitH + 5 * H + MN) === 'validation', '1 h après : on relance le client');
+ok(R.relancePointageDecider(Object.assign({}, dp, { relanceValidationAt: 1 }), huitH + 6 * H) === '', 'une seule fois (le rappel des 24 h reste celui d’autoValidate)');
+
+console.log('D — le serveur relance, le note ; la commande enregistre sa durée');
 const mr = fn.slice(fn.indexOf('exports.missionReminders'), fn.indexOf('Rappel de re-commande'));
 ok(/RPT\.relancePointageDecider\(/.test(mr), 'le balayage des rappels lit la règle');
-ok(/for \(const st of \['accepted', 'working'\]\)/.test(mr) && /where\('dateISO', 'in', veille\)/.test(mr), 'il regarde les missions acceptées et démarrées d’hier et d’aujourd’hui');
+ok(/for \(const st of \['accepted', 'working', 'done_pro'\]\)/.test(mr) && /where\('dateISO', 'in', veille\)/.test(mr), 'il regarde les missions acceptées, démarrées et terminées d’hier et d’aujourd’hui');
+ok(/if \(geste === 'validation'\) \{[\s\S]*?doc\(r\.clientUid\)[\s\S]*?relanceValidationAt: FieldValue\.serverTimestamp\(\)/.test(mr), 'la relance de validation part au CLIENT, et se note');
 ok(/relanceDemarrageAt: FieldValue\.serverTimestamp\(\)/.test(mr) && /relanceFinAt: FieldValue\.serverTimestamp\(\)/.test(mr), 'il note chaque relance pour ne pas la refaire');
 ok(/pushMulticast\(tokens, titre, corps, '\/\?open=promissions'/.test(mr) && /sendMail\(db, u\.email, \{ subject: titre/.test(mr), 'notification au prestataire, e-mail s’il n’a pas d’appareil');
 ok(/dureePrevueMin:\(function\(\)\{const d=Math\.round\(dureeMinDuDraft\(m\)\|\|0\);return d>0\?d:null;\}\)\(\),/.test(app), 'la commande enregistre sa durée prévue');

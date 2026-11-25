@@ -6650,16 +6650,37 @@ exports.missionReminders = onSchedule({schedule: 'every 15 minutes', secrets: [S
      note la relance pour ne jamais la refaire. Hier ET aujourd'hui : une mission du soir
      se termine après minuit. */
   const veille = [dayISO(nowMs - 24 * 3600 * 1000), dayISO(nowMs)];
-  for (const st of ['accepted', 'working']) {
+  for (const st of ['accepted', 'working', 'done_pro']) {
     let docs = [];
     try { docs = (await db.collection('requests').where('status', '==', st).where('dateISO', 'in', veille).get()).docs; }
     catch (e) { console.warn('missionReminders pointage lecture', st, e); continue; }
     for (const doc of docs) {
       const r = doc.data() || {};
-      if (!r.providerUid) continue;
-      const wa = r.workingAt && r.workingAt.toMillis ? r.workingAt.toMillis() : Number(r.workingAt) || 0;
-      const geste = RPT.relancePointageDecider(Object.assign({}, r, {workingAtMs: wa}), nowMs);
+      const msDe = (v) => (v && v.toMillis) ? v.toMillis() : (Number(v) || 0);
+      const geste = RPT.relancePointageDecider(Object.assign({}, r, {workingAtMs: msDe(r.workingAt), doneProAtMs: msDe(r.doneProAt)}), nowMs);
       if (!geste) continue;
+      if (geste === 'validation') {
+        // AU CLIENT : la prestation est terminée depuis 1 h et il n'a pas validé.
+        if (!r.clientUid) continue;
+        try {
+          const svc = (r.serviceName || 'votre prestation').toString().slice(0, 60);
+          const qui = (((r.providerName || '').trim().split(/\s+/)[0]) || 'Votre prestataire');
+          const titre = 'Validez votre prestation · ' + svc;
+          const corps = qui + ' a terminé. Tout s’est bien passé ? Validez dans l’app, ou signalez un souci.';
+          const u = (await db.collection('users').doc(r.clientUid).get()).data() || {};
+          const tokens = (u.notifOn === false) ? [] : (u.pushTokens || []);
+          if (tokens.length) {
+            await pushMulticast(tokens, titre, corps, '/?open=' + encodeURIComponent(doc.id),
+              (tok) => db.collection('users').doc(r.clientUid).update({ pushTokens: FieldValue.arrayRemove(tok) }), 'ti-valider-' + doc.id);
+          } else if (u.email) {
+            await sendMail(db, u.email, { subject: 'Ti-Services · ' + titre, html: '<p>' + escHtmlS(corps) + '</p>' });
+          }
+          await doc.ref.update({ relanceValidationAt: FieldValue.serverTimestamp() });
+          console.log('Relance de validation envoyée au client pour ' + doc.id);
+        } catch (e) { console.warn('missionReminders validation', doc.id, e); }
+        continue;
+      }
+      if (!r.providerUid) continue;
       try {
         const svc = (r.serviceName || 'Mission').toString().slice(0, 60);
         const first = (((r.clientName || '').trim().split(/\s+/)[0]) || 'le client');
