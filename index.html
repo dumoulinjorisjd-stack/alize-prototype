@@ -3830,7 +3830,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='943';
+  const VERSION_APP='944';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -4937,6 +4937,43 @@
     let d=debutPrevuMs(m);
     if(!d&&/^\d{4}-\d{2}-\d{2}$/.test(String(m&&m.dateISO||''))){const p=m.dateISO.split('-');d=new Date(+p[0],(+p[1])-1,+p[2]).getTime();}
     return d>0&&maintenant<=d-DECLIN_DELAI_MS;
+  }
+  /* ══ SES RÉCURRENTES, DANS RÉSERVATIONS (l'éditeur, 25/11/2026) ═══════════════════
+     « Quand on retourne sur notre panneau de commande, on peut faire pause et reprendre »,
+     « il faut aussi un bouton supprimer ». Un passage que le prestataire ne peut pas
+     assurer s'y signale, avec « Proposer à quelqu'un d'autre » (le flux d'une demande
+     dirigée déclinée, `openToStandard`). Aucune pénalité : la pause et la suppression
+     annulent les passages à venir sans indemnité (serveur, `serieChangeEtat`). */
+  function recurLib(rc){return rc.rythme==='jour'?'Chaque jour':(rc.rythme==='mois'?'Chaque mois':'Chaque semaine');}
+  function serieBlock(){
+    const L=Object.keys(S.series||{}).map(function(k){return S.series[k];}).filter(function(x){return x&&(x.serieEtat==='active'||x.serieEtat==='pause');});
+    if(!L.length)return '';
+    const auj=dayIso(new Date());
+    return `<div style="margin-top:16px"><div class="eyebrow" style="color:var(--teal-deep)">${I.repeat} <span>Récurrentes</span> · ${L.length}</div>${L.map(function(x){
+      const rc=x.recurrence||{};const pause=x.serieEtat==='pause';
+      const passages=(S.missions||[]).filter(function(m){return (m.serieId===x.id||m.reqId===x.id)&&String(m.dateISO||'')>=auj;}).sort(function(a,b){return String(a.dateISO).localeCompare(String(b.dateISO));});
+      const prochain=passages.find(function(m){return m.status==='accepted'||m.status==='working'||m.status==='pending';});
+      const declines=passages.filter(function(m){return m.status==='declined';});
+      const jours=(rc.rythme==='semaine'&&Array.isArray(rc.jours))?RECUR_ORDRE.filter(function(j){return rc.jours.indexOf(j)>=0;}).map(function(j){return '<span>'+RECUR_JOURS[j]+'</span>';}).join(' · '):'';
+      const prenom=((x.providerName||'').trim().split(/\s+/)[0])||'';
+      const arme=(S._serieSupprArm===x.id);
+      return `<div class="card" style="padding:14px;margin-top:9px;border-left:4px solid ${pause?'var(--hair)':'var(--teal-deep)'}">
+        <div class="row between"><b style="font-size:14px">${esc(x.svcName||'')}</b><span class="chip ${pause?'':'good'}"${pause?' style="background:var(--sand-2)"':''}>${pause?'En pause':recurLib(rc)}</span></div>
+        <div class="mini" style="margin-top:3px">${[jours,esc(heureAffichee({slot:x.slot,status:'accepted'})||''),esc(x.providerName||'')].filter(Boolean).join(' · ')}</div>
+        ${pause?'':(prochain?`<div class="mini" style="margin-top:6px;color:var(--ink-soft)"><span>Prochain passage :</span> <span>${esc(fmtJourLong(prochain.dateISO))}</span></div>`:'')}
+        ${declines.map(function(m){return `<div class="banner warn" style="margin-top:10px">${I.warn}<span><b>${esc(prenom||'Votre prestataire')}</b> <span>ne peut pas venir le</span> <span>${esc(fmtJourLong(m.dateISO))}</span></span></div>
+          <button class="btn primary sm" data-act="serie-proposer:${esc(m.reqId||'')}" style="margin-top:8px">Proposer à quelqu’un d’autre</button>`;}).join('')}
+        <div class="row between" style="margin-top:12px;align-items:center;gap:8px">
+          <button class="btn ${pause?'primary':'ghost'} sm" data-act="${pause?'serie-reprendre':'serie-pause'}:${esc(x.id)}" style="width:auto;padding:9px 15px">${pause?'Reprendre':'Mettre en pause'}</button>
+          <button class="linklike" data-act="serie-suppr:${esc(x.id)}" style="color:var(--coral-deep);font-weight:700;min-height:44px">${arme?'Confirmer la suppression':'Supprimer'}</button></div>
+      </div>`;}).join('')}</div>`;
+  }
+  function serieEtat(id,etat,dit){
+    const x=(S.series||{})[id];if(!x)return;
+    x.serieEtat=etat;S._serieSupprArm=null;
+    if(!isDemo())pushReqUpdate({reqId:id},{serieEtat:etat,serieEtatAt:Date.now()});
+    if(etat==='supprimee')delete S.series[id];
+    toast(dit);render();
   }
   function recurPermise(m){return !!(m&&svcDe(m)!=='colis'&&!isDayU(m));}
   function jourSemaineIso(iso){return new Date(String(iso)+'T12:00:00Z').getUTCDay();}
@@ -8056,6 +8093,20 @@
     "Pause à tout moment dans Réservations.":"Pause anytime in Bookings.",
     "Premier passage":"First visit",
     "par passage":"per visit",
+    "Récurrentes":"Recurring",
+    "Chaque jour":"Every day",
+    "Chaque semaine":"Every week",
+    "Chaque mois":"Every month",
+    "En pause":"Paused",
+    "Prochain passage :":"Next visit:",
+    "ne peut pas venir le":"can't come on",
+    "Proposer à quelqu’un d’autre":"Offer to someone else",
+    "Mettre en pause":"Pause",
+    "Reprendre":"Resume",
+    "Confirmer la suppression":"Confirm deletion",
+    "Récurrence en pause":"Recurring booking paused",
+    "Récurrence reprise":"Recurring booking resumed",
+    "Récurrence supprimée":"Recurring booking deleted",
     "Récurrente · chaque jour":"Recurring · every day",
     "Récurrente · chaque semaine":"Recurring · every week",
     "Récurrente · chaque mois":"Recurring · every month",
@@ -9606,6 +9657,20 @@
     "Pause à tout moment dans Réservations.":"Pausa a qualquer momento em Reservas.",
     "Premier passage":"Primeira visita",
     "par passage":"por visita",
+    "Récurrentes":"Recorrentes",
+    "Chaque jour":"Todos os dias",
+    "Chaque semaine":"Todas as semanas",
+    "Chaque mois":"Todos os meses",
+    "En pause":"Em pausa",
+    "Prochain passage :":"Próxima visita:",
+    "ne peut pas venir le":"não pode vir a",
+    "Proposer à quelqu’un d’autre":"Propor a outra pessoa",
+    "Mettre en pause":"Pôr em pausa",
+    "Reprendre":"Retomar",
+    "Confirmer la suppression":"Confirmar a eliminação",
+    "Récurrence en pause":"Reserva recorrente em pausa",
+    "Récurrence reprise":"Reserva recorrente retomada",
+    "Récurrence supprimée":"Reserva recorrente eliminada",
     "Récurrente · chaque jour":"Recorrente · todos os dias",
     "Récurrente · chaque semaine":"Recorrente · todas as semanas",
     "Récurrente · chaque mois":"Recorrente · todos os meses",
@@ -16394,7 +16459,7 @@
     const list=done.length?clientHistoryBlock(done):((active.length||expBlock)?'':(S._clientReqLoading?`<div style="margin-top:12px">${reqSkeleton(2)}</div>`:`<div class="card" style="padding:26px 24px;margin-top:12px;text-align:center;color:var(--muted)"><div style="display:flex;justify-content:center">${octoMini(72,'wave')}</div><div style="margin-top:10px;font-weight:600;color:var(--ink-soft)">Aucune prestation pour l’instant</div><div style="margin-top:4px">Vos réservations et reçus apparaîtront ici.</div></div>`));
     const recList=(S.recurring||[]).filter(function(r){return r&&r.active!==false;});
     const rec=recList.length?`<div style="margin-top:16px"><div class="eyebrow" style="color:var(--muted)">${I.repeat} Mes abonnements</div>${recList.map(recurCard).join('')}</div>`:'';
-    return `<div class="pad">${headRow(I.wallet+' Réservations',active.length?'Vos demandes':'Mes réservations',headBtn('refresh-requests','Rafraîchir mes réservations',I.repeat),cliAvatar())}${active.length?notifCTA('client'):''}${activeBlock}${newBtn}${summary}${expBlock}${rec}${list}<div style="height:6px"></div></div>${clientNavbar()}`;
+    return `<div class="pad">${headRow(I.wallet+' Réservations',active.length?'Vos demandes':'Mes réservations',headBtn('refresh-requests','Rafraîchir mes réservations',I.repeat),cliAvatar())}${active.length?notifCTA('client'):''}${serieBlock()}${activeBlock}${newBtn}${summary}${expBlock}${rec}${list}<div style="height:6px"></div></div>${clientNavbar()}`;
   }
   // Carte de partage : QR à flasher + lien + partage natif (aucun fichier à chercher).
   function shareCard(){
@@ -22454,6 +22519,12 @@
         toast('Paiement indisponible pour le moment, réessayez.');});
       return;
     }
+    if(b.dataset.act&&b.dataset.act.indexOf('serie-')===0){const a=b.dataset.act,i=a.indexOf(':'),geste=a.slice(0,i),id=a.slice(i+1);
+      if(geste==='serie-pause'){serieEtat(id,'pause','Récurrence en pause');return;}
+      if(geste==='serie-reprendre'){serieEtat(id,'active','Récurrence reprise');return;}
+      if(geste==='serie-suppr'){if(S._serieSupprArm!==id){S._serieSupprArm=id;render();return;}serieEtat(id,'supprimee','Récurrence supprimée');return;}
+      if(geste==='serie-proposer'){const m=(S.missions||[]).find(function(x){return x.reqId===id;});if(m)openToStandard(m);return;}
+    }
     if(b.dataset.act&&b.dataset.act.indexOf('recur-confirm:')===0){recurConfirm(b.dataset.act.slice('recur-confirm:'.length));return;}
     if(b.dataset.act&&b.dataset.act.indexOf('recur-skip:')===0){recurSkip(b.dataset.act.slice('recur-skip:'.length));return;}
     if(b.dataset.act&&b.dataset.act.indexOf('recur-stop:')===0){recurStop(b.dataset.act.slice('recur-stop:'.length));return;}
@@ -25305,8 +25376,13 @@
            rejoignent PAS `S.missions`, sinon elles compteraient parmi les réservations en
            cours et paraîtraient dans les écrans qui les comptent. */
         const brutExp={};
+        /* SES SÉRIES RÉCURRENTES. La commande d'origine porte la série ; réglée, elle
+           quitte les « en cours », d'où ce seau à part, relu à chaque instantané. */
+        const series={};
         snap.forEach(function(docu){
           const r=docu.data()||{};
+          if(r.recurrence&&r.recurrence.rythme&&(r.serieEtat==='active'||r.serieEtat==='pause'))series[docu.id]={id:docu.id,recurrence:r.recurrence,serieEtat:r.serieEtat,
+            svc:r.service,svcName:r.serviceName||svcNm(r.service),providerName:r.providerName||'',slot:r.acceptedSlot||r.slot||'',dateISO:r.dateISO||'',status:r.status||''};
           if(r.status==='expired')brutExp[docu.id]=Object.assign({id:docu.id},r,
             {fin:(dateMs(r.expiredAt)||dateMs(r.createdAt))});
           if(active.indexOf(r.status)<0)return;
@@ -25350,6 +25426,7 @@
         /* CE QUI MÉRITE D'ÊTRE REPROPOSÉ. Le brut est gardé à part (`_expireesBrut`),
            comme le fil du prestataire garde `_openReqBrut` : le panneau n'a besoin que
            d'une projection bornée, mais reprendre la commande demande tout le document. */
+        S.series=series;if(JSON.stringify(Object.keys(series))!==JSON.stringify(Object.keys(S._seriesVues||{}))){S._seriesVues=series;changed=true;}
         S._expireesBrut=brutExp;
         S.expirees=reprendreListe(Object.keys(brutExp).map(function(k){return brutExp[k];}),
           Date.now(),function(id){return svcAvailable(id);});
