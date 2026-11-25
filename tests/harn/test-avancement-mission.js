@@ -72,12 +72,20 @@ ok(/'doneProAt','workingAt'/.test(regles.slice(regles.indexOf('function serverKe
   console.log('D — démarrée, puis terminée et pas validée');
   r = await carte({ status: 'working', dateISO: '2026-11-25', etapesAt: { accepted: NOW - 18 * H, working: NOW - 55 * 60000 } }, true);
   ok(/Démarrée\s?aujourd’hui 08:05/.test(r.txt) && /En cours/.test(r.txt) && !r.alerte, 'démarrée à 08:05, en cours');
-  r = await carte({ status: 'done_pro', dateISO: '2026-11-24', etapesAt: { accepted: NOW - 40 * H, working: NOW - 30 * H, done_pro: NOW - 23 * H } }, true);
-  ok(!r.alerte && /En attente de la validation du client/.test(r.txt), 'terminée depuis 23 h : on attend, sans alerte');
-  r = await carte({ status: 'done_pro', dateISO: '2026-11-24', etapesAt: { accepted: NOW - 40 * H, working: NOW - 30 * H, done_pro: NOW - 25 * H } }, false);
-  ok(/Terminée depuis 25 h, pas validée par le client/.test(r.alerte), 'depuis 25 h : l’alerte (« ' + r.alerte.trim() + ' »)');
-  r = await carte({ status: 'done_pro', dateISO: '2026-11-20', etapesAt: {} }, true);
-  ok(!r.alerte, 'sans heure de fin connue (ancienne mission), on ne devine rien');
+  /* LA VALIDATION AUTOMATIQUE (48 h) SE COMPTE, ELLE NE S'ALERTE PAS (l'éditeur, 25/11/2026). */
+  const fini = (o, plie) => carte(Object.assign({ status: 'done_pro', dateISO: '2026-11-24', duration: 4, etapesAt: { accepted: NOW - 60 * H, working: NOW - 30 * H } }, o), !plie);
+  r = await fini({ etapesAt: { accepted: NOW - 60 * H, working: NOW - 30 * H, done_pro: NOW - 23 * H } });
+  ok(!r.alerte && /Validation automatique dans 25 h/.test(r.txt), 'terminée depuis 23 h : « Validation automatique dans 25 h », sans alerte');
+  r = await fini({ etapesAt: { accepted: NOW - 60 * H, working: NOW - 30 * H, done_pro: NOW - 25 * H } }, true);
+  ok(!r.alerte && /Validation automatique dans 23 h/.test(r.txt), 'depuis 25 h : le compteur, même carte repliée (plus d’alerte des 24 h)');
+  r = await fini({ etapesAt: { accepted: NOW - 60 * H, working: NOW - 50 * H, done_pro: NOW - 48.5 * H } });
+  ok(/Validation automatique imminente/.test(r.txt) && !r.alerte, 'passé 48 h : imminente (le serveur passe toutes les heures)');
+  r = await fini({ finalHours: 5, etapesAt: { accepted: NOW - 60 * H, working: NOW - 30 * H, done_pro: NOW - 2 * H } });
+  ok(/Heures revues à la hausse : pas de validation automatique, le client doit valider/.test(r.alerte), 'heures revues à la hausse : l’alerte, il n’y aura pas de validation automatique');
+  r = await fini({ total: 150, totalConsenti: 112, etapesAt: { accepted: NOW - 60 * H, working: NOW - 30 * H, done_pro: NOW - 2 * H } });
+  ok(/Montant au-delà de l’accord/.test(r.alerte), 'total au-delà de l’accord : l’alerte aussi');
+  r = await fini({ etapesAt: {} });
+  ok(/Fin non horodatée : pas de validation automatique/.test(r.alerte), 'fin jamais horodatée : le serveur ne validera pas, on le dit');
 
   console.log('E — paiement en échec, et la carte d’une demande qui cherche encore');
   r = await carte({ status: 'paid', dateISO: '2026-11-24', complementStatus: 'echec', etapesAt: { paid: NOW - 2 * H } }, false);

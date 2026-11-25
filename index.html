@@ -3830,7 +3830,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='941';
+  const VERSION_APP='942';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -6358,6 +6358,10 @@
       etapesAt:{accepted:dateMs(r0.acceptedAt),working:dateMs(r0.workingAt),done_pro:dateMs(r0.doneProAt),
         paid:(dateMs(r0.paidAt)||dateMs(r0.settledAt)),rated:dateMs(r0.ratedAt)},
       complementStatus:txt(r0.complementStatus,16),
+      /* CE QUI DÉCIDE DE LA VALIDATION AUTOMATIQUE (autoValidate, serveur) : les heures
+         revues et le montant consenti. */
+      finalHours:(r0.finalHours!=null&&isFinite(Number(r0.finalHours)))?Number(r0.finalHours):null,
+      totalConsenti:Number(r0.totalConsenti)||Number(r0.molliePaymentAmount)||0,
       /* QUAND ELLE S'EST ARRÊTÉE, tardive ou non, et si une indemnité attend une
          décision du prestataire. Le navigateur écrit un nombre, le balayage nocturne
          un horodatage serveur : `dateMs` est la seule à le savoir. */
@@ -6391,7 +6395,19 @@
      24 h, paiement du supplément en échec, litige. Pure : le maintenant se reçoit. */
   const AVANCE_ETAPES=[['accepted','Acceptée'],['working','Démarrée'],['done_pro','Terminée'],['paid','Validée et réglée']];
   const AVANCE_RANG={accepted:0,working:1,done_pro:2,disputed:2,paid:3,rated:3};
-  const AVANCE_RETARD_MS=30*60000, AVANCE_VALIDATION_MS=24*3600000;
+  /* LA VALIDATION AUTOMATIQUE : 48 h après la fin horodatée par le serveur (AUTO_VALID_H,
+     functions/index.js), au passage horaire suivant. La console montre le COMPTE À
+     REBOURS, pas une alerte (l'éditeur, 25/11/2026 : « normalement il y a une validation
+     automatique au bout d'un moment, il faut que je voie le compteur de temps ») ; elle
+     n'alerte que lorsque cette validation NE SE FERA PAS : heures revues à la hausse ou
+     total au-delà de ce que le client a consenti (`accordRequis`, même règle que le
+     serveur), ou fin jamais horodatée. */
+  const AVANCE_RETARD_MS=30*60000, AUTO_VALID_MS=48*3600000;
+  function validationAutoBloquee(r){
+    const hausse=(r.finalHours!=null&&Number(r.finalHours)>(Number(r.duration)||0));
+    const consenti=Number(r.totalConsenti)||0;
+    return hausse?'hausse':((consenti>0&&(Number(r.total)||0)>consenti+0.009)?'depasse':'');
+  }
   function debutPrevuMs(r){
     const d=String(r&&r.dateISO||''),h=heureAffichee(r);
     if(!/^\d{4}-\d{2}-\d{2}$/.test(d)||!/^\d{1,2}:\d{2}$/.test(h))return 0;
@@ -6416,9 +6432,10 @@
       if(debut&&maintenant-debut>AVANCE_RETARD_MS)alerte='Pas démarrée, '+dureeCourte(maintenant-debut)+' après l’heure prévue';
     }else if(st==='working')suite='En cours';
     else if(st==='done_pro'){
-      suite='En attente de la validation du client';
-      const t=Number(at.done_pro)||0;
-      if(t&&maintenant-t>AVANCE_VALIDATION_MS)alerte='Terminée depuis '+dureeCourte(maintenant-t)+', pas validée par le client';
+      const t=Number(at.done_pro)||0;const bloque=validationAutoBloquee(r);
+      if(bloque)alerte=(bloque==='hausse'?'Heures revues à la hausse':'Montant au-delà de l’accord')+' : pas de validation automatique, le client doit valider';
+      else if(!t)alerte='Fin non horodatée : pas de validation automatique, le client doit valider';
+      else{const reste=t+AUTO_VALID_MS-maintenant;suite=reste>0?('Validation automatique dans '+dureeCourte(reste)):'Validation automatique imminente';}
     }else if(st==='disputed')alerte='Contestée par le client, à arbitrer';
     if(!alerte&&['echec','impossible'].indexOf(String(r.complementStatus||''))>=0)alerte='Paiement du supplément en échec';
     return {etapes:etapes,suite:suite,alerte:alerte};
