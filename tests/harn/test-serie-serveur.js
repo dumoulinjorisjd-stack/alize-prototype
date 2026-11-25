@@ -20,7 +20,7 @@ console.log('B — les passages');
 const gen = bloc('async function genererPassagesDeLaSerie', 'exports.genererPassagesRecurrents');
 ok(/if \(!r\.providerUid\)/.test(gen) && /M\.mandat\.statut === 'valid'/.test(gen), 'seulement avec un prestataire engagé et une carte valide');
 ok(/SERIE\.passagesACreer\(/.test(gen) && /ref\.create\(/.test(gen) && /SERIE\.idPassage\(parentDoc\.id, d\)/.test(gen), 'les dates du noyau, créées une seule fois par jour');
-ok(/collection\('private'\)\.doc\('details'\)\.set\(prive\)/.test(gen), 'l’adresse privée suit le passage');
+ok(/collection\('private'\)\.doc\('details'\)\.set\(prive, \{merge: true\}\)/.test(gen), 'l’adresse privée suit le passage');
 ok(/exports\.genererPassagesRecurrents = onSchedule\(\{schedule: 'every 6 hours'\}/.test(fn), 'un balayage toutes les 6 h');
 
 console.log('C — pause et suppression : sans pénalité, à partir de demain ; la reprise recrée');

@@ -6749,7 +6749,7 @@ async function genererPassagesDeLaSerie(db, parentDoc, maintenant) {
         createdAt: FieldValue.serverTimestamp(), acceptedAt: FieldValue.serverTimestamp(),
         couverturePar: 'mandat', couvertureMotif: 'serie',
       }));
-      if (prive) { try { await ref.collection('private').doc('details').set(prive); } catch (e) { console.warn('serie privé', ref.id, e); } }
+      if (prive) { try { await ref.collection('private').doc('details').set(prive, {merge: true}); } catch (e) { console.warn('serie privé', ref.id, e); } }
       bilan.crees++;
     } catch (e) {
       // ALREADY_EXISTS : un autre balayage l'a créé — c'est le but de `create`.
