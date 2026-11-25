@@ -3830,7 +3830,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='945';
+  const VERSION_APP='946';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -5309,7 +5309,7 @@
         +(a.referredByCode?(a.referralCode?'<br>':'')+'<span class="mini" style="color:var(--muted);font-weight:500">Parrainé par '+esc(a.referredByCode)+'</span>':'')));
     }
     // Où il travaille, et depuis quand : de quoi le rappeler et le situer sans chercher.
-    out.push(row('Adresse',a.address?esc(a.address):''));
+    out.push(row('Adresse',a.address?esc(a.address)+(factAdresseComplete(a.address)?'':'<div class="mini" style="color:var(--coral-deep);font-weight:600">Incomplète sur ses factures : ni code postal ni commune</div>'):''));
     /* « LE PROBLÈME EST POUR LE PRESTATAIRE DÉJÀ INSCRIT, COMMENT VA-T-ON CHOISIR S'IL
        EXERCE CHEZ LUI OU À DOMICILE ? » Personne ne l'a jamais déclaré : le champ est
        ABSENT sur tout le parc, et il était lu comme « les deux » partout — y compris sur
@@ -7520,7 +7520,7 @@
   function rateUnit(m){return isForfait(m)?'€':('€/'+(isDayU(m)?'jour':'h'));}
   function recoFor(m){return isDayU(m)?fixedRate(m):svcReco(m.svc);}
   function endDateTxt(m){if(!isDayU(m))return '';let startISO=m.dateISO;if(!startISO){const d=new Date();if(m.when==='Demain')d.setDate(d.getDate()+1);startISO=d.toISOString().slice(0,10);}const d=new Date(startISO+'T00:00:00');const e=new Date(d);e.setDate(d.getDate()+Math.max(1,m.duration)-1);const f=(x)=>x.getDate()+'/'+(x.getMonth()+1);return f(d)+' → '+f(e);}
-  function finalizePaid(m){if(m.commPct==null)m.commPct=myCommPct();const tt=totals(m);m.status='paid';S.proEarnings+=tt.payout;if(m._appt){m._appt.status='done';m._appt.duration=billHours(m);m._appt.amount=tt.total;}S.proHistory=S.proHistory||[];const seq='2026-'+String(43+S.proHistory.length).padStart(4,'0');m.invNo=seq;const cliN=(m.clientName||m.client||(isDemo()?'Camille M.':((S.account&&S.account.name)||'Client')));S.proHistory.unshift({id:'hm'+S.proHistory.length,dateISO:(m.dateISO||new Date().toISOString().slice(0,10)),svc:m.svc,client:cliN,clientFull:cliN,clientZone:m.zone,duration:billHours(m),unit:m.unit,acts:(m.acts&&m.acts.length)?m.acts.map(function(a){return {id:a.id,nm:a.nm,price:a.price,qty:a.qty||1};}):null,travel:tt.travel||0,tip:tt.tip||0,rate:tt.rate,amount:tt.total,commPct:tt.commPct,commission:tt.commission,net:tt.payout,invNo:seq,paidVia:'carte'});}
+  function finalizePaid(m){if(m.commPct==null)m.commPct=myCommPct();const tt=totals(m);m.status='paid';S.proEarnings+=tt.payout;if(m._appt){m._appt.status='done';m._appt.duration=billHours(m);m._appt.amount=tt.total;}S.proHistory=S.proHistory||[];const seq=isDemo()?('2026-'+String(43+S.proHistory.length).padStart(4,'0')):(m.invNo||'');m.invNo=seq;const cliN=(m.clientName||m.client||(isDemo()?'Camille M.':((S.account&&S.account.name)||'Client')));S.proHistory.unshift({id:'hm'+S.proHistory.length,dateISO:(m.dateISO||new Date().toISOString().slice(0,10)),svc:m.svc,client:cliN,clientFull:cliN,clientZone:m.zone,duration:billHours(m),unit:m.unit,acts:(m.acts&&m.acts.length)?m.acts.map(function(a){return {id:a.id,nm:a.nm,price:a.price,qty:a.qty||1};}):null,travel:tt.travel||0,tip:tt.tip||0,rate:tt.rate,amount:tt.total,commPct:tt.commPct,commission:tt.commission,net:tt.payout,invNo:seq,paidVia:'carte'});}
   /* AFFICHER UN MONTANT NE FAIT JAMAIS TOMBER UN ÉCRAN. `eur` appelait `toLocaleString`
      sur ce qu'on lui donnait : une valeur absente levait, et comme tout l'écran est
      fabriqué d'une seule traite, c'est l'ÉCRAN ENTIER qui ne se dessinait pas — plus de
@@ -7840,6 +7840,7 @@
     [/^Le client confirme la prestation\. Dès validation, (.+?) sont versés sur votre compte\.$/,function(m,amt){return 'The client is confirming the service. Once approved, '+amt+' is paid to your account.';}],
     [/^Vous serez prévenu dès que (.+?) aura confirmé depuis son application, le versement suit aussitôt\.$/,function(m,who){return "You'll be notified as soon as "+who+" confirms from their app, payment follows right after.";}],
     [/^Prestation à domicile · (\d{1,2}) ([A-Za-zÀ-ÿ]+)\.? (\d{4})$/,function(m,d,mo,y){var M=MO_EN[mo.toLowerCase()];return M?('Home service · '+M+' '+d+', '+y):m;}],
+    [/^Prestation du (\d{1,2}) ([A-Za-zÀ-ÿ]+)\.? (\d{4})$/,function(m,d,mo,y){var M=MO_EN[mo.toLowerCase()];return M?('Service on '+M+' '+d+', '+y):m;}],
     [/^Réglé par carte bancaire le (\d{1,2}) ([A-Za-zÀ-ÿ]+)\.? (\d{4}), encaissement pour compte du prestataire via Mollie, établissement de paiement agréé\. Aucun solde dû\.$/,function(m,d,mo,y){var M=MO_EN[mo.toLowerCase()];return M?('Paid by card on '+M+' '+d+', '+y+', collected on the provider’s behalf via Mollie, a licensed payment institution. No balance due.'):m;}],
     [/^offert dès (\d+)\s*€$/i,'free from $1 €'],
     [/^de prestation, sinon forfait de (\d+)\s*€\.$/i,'of service, otherwise a $1 € flat fee.'],
@@ -8096,6 +8097,7 @@
     "Pause à tout moment dans Réservations.":"Pause anytime in Bookings.",
     "Premier passage":"First visit",
     "par passage":"per visit",
+    "N° en cours d’attribution":"No. being assigned","Micro-entreprise":"Micro-enterprise","Adresse (sur vos factures)":"Address (on your invoices)","Modifier mes coordonnées":"Edit my details","Mettre à jour depuis le SIRET":"Update from SIRET","Recherche au répertoire Sirene…":"Searching the Sirene register…","Répertoire Sirene injoignable, réessayez dans un instant.":"Sirene register unreachable, try again in a moment.","SIRET introuvable au répertoire Sirene.":"SIRET not found in the Sirene register.","Établissement fermé au répertoire Sirene.":"Establishment listed as closed in the Sirene register.","Conforme au répertoire Sirene.":"Matches the Sirene register.","Le répertoire Sirene indique":"The Sirene register shows","Forme juridique":"Legal form","Appliquer":"Apply","Votre adresse est incomplète sur vos factures":"Your address on your invoices is incomplete","Il manque le code postal ou la commune.":"The postcode or town is missing.","Profil mis à jour ✓":"Profile updated ✓","⚠︎ Adresse incomplète : ajoutez le code postal ou la commune (ex. 97133 Saint-Barthélemy)":"⚠︎ Incomplete address: add the postcode or town (e.g. 97133 Saint-Barthélemy)",
     "Récurrentes":"Recurring",
     "Chaque jour":"Every day",
     "Chaque semaine":"Every week",
@@ -9661,6 +9663,7 @@
     "Pause à tout moment dans Réservations.":"Pausa a qualquer momento em Reservas.",
     "Premier passage":"Primeira visita",
     "par passage":"por visita",
+    "N° en cours d’attribution":"N.º em atribuição","Micro-entreprise":"Microempresa","Adresse (sur vos factures)":"Morada (nas suas faturas)","Modifier mes coordonnées":"Editar os meus dados","Mettre à jour depuis le SIRET":"Atualizar a partir do SIRET","Recherche au répertoire Sirene…":"A pesquisar no registo Sirene…","Répertoire Sirene injoignable, réessayez dans un instant.":"Registo Sirene inacessível, tente novamente daqui a pouco.","SIRET introuvable au répertoire Sirene.":"SIRET não encontrado no registo Sirene.","Établissement fermé au répertoire Sirene.":"Estabelecimento encerrado no registo Sirene.","Conforme au répertoire Sirene.":"Conforme o registo Sirene.","Le répertoire Sirene indique":"O registo Sirene indica","Forme juridique":"Forma jurídica","Appliquer":"Aplicar","Votre adresse est incomplète sur vos factures":"A sua morada nas faturas está incompleta","Il manque le code postal ou la commune.":"Falta o código postal ou o município.","Profil mis à jour ✓":"Perfil atualizado ✓","⚠︎ Adresse incomplète : ajoutez le code postal ou la commune (ex. 97133 Saint-Barthélemy)":"⚠︎ Morada incompleta: acrescente o código postal ou o município (ex. 97133 Saint-Barthélemy)",
     "Récurrentes":"Recorrentes",
     "Chaque jour":"Todos os dias",
     "Chaque semaine":"Todas as semanas",
@@ -11369,6 +11372,7 @@
     [/^Le client confirme la prestation\. Dès validation, (.+?) sont versés sur votre compte\.$/,function(m,amt){return 'O cliente está a confirmar o serviço. Após validação, '+amt+' são pagos na sua conta.';}],
     [/^Vous serez prévenu dès que (.+?) aura confirmé depuis son application, le versement suit aussitôt\.$/,function(m,who){return 'Será avisado assim que '+who+' confirmar na aplicação, o pagamento segue de imediato.';}],
     [/^Prestation à domicile · (\d{1,2}) ([A-Za-zÀ-ÿ]+)\.? (\d{4})$/,function(m,d,mo,y){var M=MO_PT[mo.toLowerCase()];return M?('Serviço ao domicílio · '+d+' de '+M+' de '+y):m;}],
+    [/^Prestation du (\d{1,2}) ([A-Za-zÀ-ÿ]+)\.? (\d{4})$/,function(m,d,mo,y){var M=MO_PT[mo.toLowerCase()];return M?('Serviço de '+d+' de '+M+' de '+y):m;}],
     [/^Réglé par carte bancaire le (\d{1,2}) ([A-Za-zÀ-ÿ]+)\.? (\d{4}), encaissement pour compte du prestataire via Mollie, établissement de paiement agréé\. Aucun solde dû\.$/,function(m,d,mo,y){var M=MO_PT[mo.toLowerCase()];return M?('Pago por cartão em '+d+' de '+M+' de '+y+', cobrança por conta do prestador via Mollie, instituição de pagamento autorizada. Sem saldo em dívida.'):m;}],
     [/^offert dès (\d+)\s*€$/i,'grátis a partir de $1 €'],
     [/^de prestation, sinon forfait de (\d+)\s*€\.$/i,'de serviço, caso contrário, taxa fixa de $1 €.'],
@@ -14033,10 +14037,10 @@
   function adminArtLines(artId){
     const g=adminLedgerGroups().find(function(x){return x.a.id===artId;});
     if(g){const doc=(S.adminArtisans||[]).find(function(x){return x.id===artId||x.uid===artId;});
-      return {name:g.a.name,uid:g.a.uid||artId,siret:(doc&&doc.siret)||'',type:(doc&&doc.type)||'entreprise',comm:g.c.comm,gross:g.c.gross,net:g.c.net,count:g.c.count,
+      return {name:g.a.name,uid:g.a.uid||artId,siret:(doc&&doc.siret)||'',type:(doc&&doc.type)||'entreprise',statusType:(doc&&doc.statusType)||'',legalForm:(doc&&doc.legalForm)||'',comm:g.c.comm,gross:g.c.gross,net:g.c.net,count:g.c.count,
         lines:g.entries.map(function(e){return {invNo:e.invNo||'',dateISO:e.dateISO||'',svc:e.service,svcName:e.serviceName||svcName(e.service),client:e.clientName||'',clientZone:'',unit:e.unit||'h',duration:e.hours||0,rate:e.rate||0,gross:e.grossTotal||e.base||0,pct:e.commissionPct||0,commission:e.commissionAmount||0,net:e.netAmount||0,rateFlag:!!e.rateFlag,reqId:e.reqId||e.id||'',refundedTotal:Number(e.refundedTotal)||0};})};}
     const a=adminFactArt();if(!a)return null;const c=commMonthly(a.history);
-    return {name:a.name,uid:a.uid||a.id,siret:a.siret||'',type:a.type||'entreprise',comm:c.comm,gross:c.gross,net:c.net,count:c.count,
+    return {name:a.name,uid:a.uid||a.id,siret:a.siret||'',type:a.type||'entreprise',statusType:a.statusType||'',legalForm:a.legalForm||'',comm:c.comm,gross:c.gross,net:c.net,count:c.count,
       lines:c.list.map(function(x){return {invNo:x.h.invNo||'',dateISO:x.h.dateISO||'',svc:x.h.svc,svcName:svcName(x.h.svc),client:x.h.clientFull||x.h.client||'',clientZone:x.h.clientZone||'',unit:x.h.unit||'h',duration:x.h.duration||0,rate:x.h.rate||0,gross:x.b.gross,pct:x.b.pct,commission:x.b.commission,net:x.b.net};})};
   }
   function adminFactArt(){return (S.adminArtisans||[]).find(function(a){return a.id===(S.admin.fact&&S.admin.fact.art);});}
@@ -14349,7 +14353,7 @@
       <div class="row between noprint" style="margin-top:6px;gap:8px"><button class="reset" data-adm="fact-back">← Retour</button><button class="btn primary" data-act="print-invoice" style="width:auto;padding:10px 16px">${I.card}&nbsp;Enregistrer / Imprimer</button></div>
       <div id="invoiceDoc"><div class="inv">
         <div class="row between" style="align-items:flex-start"><div><h2>FACTURE DE COMMISSION</h2><div class="mut">N° ${commInvNo(d.uid)}</div><div class="mut">${COMM_PERIOD}</div></div><div style="text-align:right"><div style="font-family:var(--f-disp);font-weight:800;font-size:16px;color:#151515">Ti-Services</div><div class="mut">Plateforme d'intermédiation</div>${ccsHead()}</div></div>
-        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Facturé à · intervenant</div><b>${esc(d.name)}</b><div class="mut">${d.type==='particulier'?'Particulier':'Entreprise'} · SIRET ${esc(d.siret||'—')}</div></div>
+        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Facturé à · intervenant</div><b>${esc(factNomPrestataire({legal:d.name,statusType:d.statusType,legalForm:d.legalForm}))}</b><div class="mut">${d.type==='particulier'?'Particulier':(d.statusType==='micro'?'Micro-entreprise':'Entreprise')} · SIRET ${esc(d.siret||'—')}</div></div>
         <table><thead><tr><th>Date</th><th>Prestation</th><th class="r">Base</th><th class="r">Taux</th><th class="r">Commission</th></tr></thead><tbody>${rows}</tbody></table>
         <div class="row between sec"><span class="mut">Total commission (${d.count} mission${d.count>1?'s':''})</span><span class="tot">${eur(d.comm)}</span></div>
         <div class="row between" style="margin-top:6px"><span class="mut">CA prestations</span><b>${eur(d.gross)}</b></div>
@@ -14419,8 +14423,8 @@
     return `<div class="pad">
       <div class="row between noprint" style="margin-top:6px;gap:8px"><button class="reset" data-adm="fact-mandat:${S.admin.fact.art}">← Retour</button><button class="btn primary" data-act="print-invoice" style="width:auto;padding:10px 16px">${I.card}&nbsp;Enregistrer / Imprimer</button></div>
       <div id="invoiceDoc"><div class="inv">
-        <div class="row between" style="align-items:flex-start"><div><h2>FACTURE</h2><div class="mut">N° ${esc(x.invNo||'—')}</div><div class="mut">Date : ${fmtLong(x.dateISO)}</div></div><div style="text-align:right"><div style="font-family:var(--f-disp);font-weight:800;font-size:16px;color:#151515">Ti-Services</div>${ccsHead()}</div></div>
-        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Prestataire</div><b>${esc(d.name)}</b><div class="mut">${d.type==='particulier'?'Particulier':'Entreprise'} · SIRET ${esc(d.siret||'—')}</div></div>
+        <div class="row between" style="align-items:flex-start"><div><h2>FACTURE</h2><div class="mut">${factNumeroHtml(x.invNo)}</div><div class="mut">Date : ${fmtLong(x.dateISO)}</div></div><div style="text-align:right"><div style="font-family:var(--f-disp);font-weight:800;font-size:16px;color:#151515">Ti-Services</div>${ccsHead()}</div></div>
+        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Prestataire</div><b>${esc(factNomPrestataire({legal:d.name,statusType:d.statusType,legalForm:d.legalForm}))}</b><div class="mut">${d.type==='particulier'?'Particulier':(d.statusType==='micro'?'Micro-entreprise':'Entreprise')} · SIRET ${esc(d.siret||'—')}</div></div>
         <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Client</div><b>${esc(x.client||'Client')}</b><div class="mut">${esc(x.clientZone||'Saint-Barthélemy')}, Saint-Barthélemy</div></div>
         <table><thead><tr><th>Prestation</th><th class="r">Qté</th><th class="r">PU</th><th class="r">Total</th></tr></thead>
         <tbody><tr><td>${esc(x.svcName)}, prestation à domicile</td><td class="r">${durTxt({unit:x.unit},x.duration)}</td><td class="r">${eur(x.rate)}</td><td class="r">${eur(x.gross)}</td></tr></tbody></table>
@@ -14487,7 +14491,9 @@
           })()}
           ${(a.cats&&a.cats.includes('baby'))?fRow('Diplômes garde d\'enfants',`${(a.diplomas&&a.diplomas.length)?a.diplomas.map(d=>esc(d==='Autre diplôme'&&a.diplomaOther?'Autre : '+a.diplomaOther:d)).join('<br>'):'<span style="color:var(--coral-deep)">Non renseignés</span>'}${(a.diplomas&&a.diplomas.length&&!a.diplomas.some(d=>/PSC1/.test(d)))?`<div class="mini" style="margin-top:5px;color:var(--coral-deep);font-weight:600">${I.shield} PSC1 (premiers secours) non déclaré, recommandé pour la garde d'enfants. Vérifiez les justificatifs avant validation.</div>`:''}`):''}
           ${fRow('SIRET',a.siret?`<button class="sirettap" data-adm="copysiret:${a.id}" title="Copier le numéro">${I.copy} <span class="money">${esc(fmtSiret(a.siret))}</span></button>
-            <a class="siretlink" href="https://annuaire-entreprises.data.gouv.fr/etablissement/${esc(a.siret)}" target="_blank" rel="noopener">Vérifier à l'annuaire ›</a>`:'<span class="money">—</span>')}
+            <a class="siretlink" href="https://annuaire-entreprises.data.gouv.fr/etablissement/${esc(a.siret)}" target="_blank" rel="noopener">Vérifier à l'annuaire ›</a>
+            <div style="margin-top:7px"><button class="btn ghost sm" data-adm="sirene:${a.id}" style="width:auto;padding:7px 12px">${I.search}&nbsp;Mettre à jour depuis le SIRET</button></div>
+            ${(S.admSirene&&S.admSirene.uid===(a.uid||a.id))?sireneBlocHtml(S.admSirene,'adm-sirene'):''}`:'<span class="money">—</span>')}
           ${artLegalRows(a)}
           ${fRow('Assurance RC',`${(function(){const st=insStatus(a),l=insLabel(st);return `<span class="chip ${l[0]}">${l[1]}</span>`;})()}${a.insurer?`<div class="mini" style="margin-top:4px;color:var(--ink);font-weight:600">${esc(a.insurer)}</div>`:''}${lienSur(a.insuranceUrl)?`<div style="margin-top:4px"><button class="linklike" data-act="doc-open" data-src="${esc(lienSur(a.insuranceUrl))}" data-nom="Attestation d'assurance" style="color:var(--teal-deep);font-weight:650">${I.other} Voir l'attestation</button></div>`:(a.insuranceUrl?`<div class="mini" style="margin-top:4px;color:var(--coral-deep)">Adresse de l'attestation non exploitable&nbsp;: le document doit être redéposé.</div>`:(insStatus(a)==='aucune'?`<div class="mini" style="margin-top:4px;color:var(--coral-deep)">Déclare ne pas avoir d'assurance responsabilité civile.</div>${(function(){
             /* « Du coup on pourra dire qu'on lui avait demandé de s'assurer » : encore
@@ -17756,7 +17762,7 @@
         if(r.providerLegal!=null&&m.providerLegal!==r.providerLegal){m.providerLegal=r.providerLegal;touched=true;}
         if(r.providerSiret!=null&&m.providerSiret!==r.providerSiret){m.providerSiret=r.providerSiret;touched=true;}
         if(r.providerAddress!=null&&m.providerAddress!==r.providerAddress){m.providerAddress=r.providerAddress;touched=true;}
-        if(r.providerStatusType!=null&&m.providerStatusType!==r.providerStatusType){m.providerStatusType=r.providerStatusType;touched=true;}if(r.providerAgeBand!=null&&m.providerAgeBand!==r.providerAgeBand){m.providerAgeBand=r.providerAgeBand;touched=true;}if(r.providerBabyJobs!=null&&m.providerBabyJobs!==r.providerBabyJobs){m.providerBabyJobs=r.providerBabyJobs;touched=true;}
+        if(r.providerStatusType!=null&&m.providerStatusType!==r.providerStatusType){m.providerStatusType=r.providerStatusType;touched=true;}if(r.providerLegalForm!=null&&m.providerLegalForm!==r.providerLegalForm){m.providerLegalForm=r.providerLegalForm;touched=true;}{const _fp=dateMs(r.doneProAt),_rg=dateMs(r.settledAt);if(_fp&&m.doneProAtMs!==_fp){m.doneProAtMs=_fp;touched=true;}if(_rg&&m.settledAtMs!==_rg){m.settledAtMs=_rg;touched=true;}}if(r.providerAgeBand!=null&&m.providerAgeBand!==r.providerAgeBand){m.providerAgeBand=r.providerAgeBand;touched=true;}if(r.providerBabyJobs!=null&&m.providerBabyJobs!==r.providerBabyJobs){m.providerBabyJobs=r.providerBabyJobs;touched=true;}
         if(Array.isArray(r.providerDiplomas))m.providerDiplomas=r.providerDiplomas;
         if(r.clientConfirmed!=null&&m.clientConfirmed!==r.clientConfirmed){m.clientConfirmed=r.clientConfirmed;touched=true;}
         if(r.colisSigned!=null&&m.colis&&m.colis.signed!==r.colisSigned){m.colis.signed=r.colisSigned;m.colis.signedAt=m.colis.signedAt||r.colisSignedAt||Date.now();touched=true;}
@@ -17943,7 +17949,7 @@
     S.proHistory=S.proHistory||[];
     const key=m.reqId||m._id;
     if(!S.proHistory.some(function(h){return key&&h.reqId===key;})){
-      S.proHistory.unshift({id:'hm'+(key||''+S.proHistory.length),reqId:key,dateISO:(m.dateISO||todayISO()),svc:m.svc,client:(m.clientName||'Client'),clientFull:(m.clientName||'Client'),clientZone:m.zone||'',duration:billHours(m),unit:m.unit||'h',acts:(m.acts&&m.acts.length)?m.acts.map(function(a){return {id:a.id,nm:a.nm,price:a.price,qty:a.qty||1};}):null,travel:t.travel||0,tip:_tip,rate:t.rate,amount:_gross,commPct:_pct,commission:_comm,net:_net,invNo:(v&&v.invNo)||m.invNo||('2026-'+String(1000+S.proHistory.length).padStart(4,'0')),paidVia:'carte'});
+      S.proHistory.unshift({id:'hm'+(key||''+S.proHistory.length),reqId:key,dateISO:(m.dateISO||todayISO()),svc:m.svc,client:(m.clientName||'Client'),clientFull:(m.clientName||'Client'),clientZone:m.zone||'',duration:billHours(m),unit:m.unit||'h',acts:(m.acts&&m.acts.length)?m.acts.map(function(a){return {id:a.id,nm:a.nm,price:a.price,qty:a.qty||1};}):null,travel:t.travel||0,tip:_tip,rate:t.rate,amount:_gross,commPct:_pct,commission:_comm,net:_net,invNo:(v&&v.invNo)||m.invNo||'',doneProAtMs:m.doneProAtMs||0,settledAtMs:m.settledAtMs||0,paidVia:'carte'});
     }
     saveProStats();
   }
@@ -18281,8 +18287,22 @@
       ${rebookCard}
       <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn ghost" data-act="new-mission">Nouvelle réservation ponctuelle</button></div></div>`;
   }
+  /* MENTIONS DE LA FACTURE — miroir de functions/mentions-facture.js (comparé par
+     tests/harn/test-mentions-facture.js). Nom suivi de « EI » pour un entrepreneur
+     individuel (C. com. R526-27), date de la prestation = jour de fin d'exécution à
+     Saint-Barthélemy, et jamais de numéro fabriqué. */
+  const FACT_DECALAGE_SBH_MS=4*3600000;
+  function factJourSbhISO(ms){const n=Number(ms);if(!(n>0))return '';return new Date(n-FACT_DECALAGE_SBH_MS).toISOString().slice(0,10);}
+  function factDatePrestationISO(r){r=r||{};return factJourSbhISO(r.doneProAtMs)||(/^\d{4}-\d{2}-\d{2}$/.test(String(r.dateISO||''))?r.dateISO:'');}
+  const FACT_FORMES_EI=/^(ei|e\.i\.?|eirl|entreprise individuelle|entrepreneur individuel)$/i;
+  const FACT_DEJA_EI=/(^|[\s,(])(EI|E\.I\.?|entrepreneur individuel)($|[\s,)])/i;
+  function factEstEI(p){p=p||{};return p.statusType==='micro'||FACT_FORMES_EI.test(String(p.legalForm||'').trim());}
+  function factNomPrestataire(p){p=p||{};const nom=String(p.legal||'').trim();if(!nom)return '';return (factEstEI(p)&&!FACT_DEJA_EI.test(nom))?(nom+' EI'):nom;}
+  function factAdresseComplete(a){const s=String(a||'').trim();if(s.length<4)return false;return /\b\d{5}\b/.test(s)||/\b(saint|st)[\s-]*barth/i.test(s);}
+  function factNumeroHtml(no){return no?('N° '+esc(no)):'<span>N° en cours d’attribution</span>';}
+  function factPrestaHtml(r,cls){const d=factDatePrestationISO(r);return d?`<div class="${cls||'mut'}">Prestation du ${fmtLong(d)}</div>`:'';}
   function clientInvoiceDoc(mArg){
-    const m=mArg||S.mission,t=totals(m),p=m.provider;const no=m.invNo||'2026-0198';const dt=fmtLong(m.dateISO||new Date().toISOString().slice(0,10));
+    const m=mArg||S.mission,t=totals(m),p=m.provider;const no=m.invNo||'';const dt=fmtLong(factJourSbhISO(m.settledAtMs)||m.dateISO||new Date().toISOString().slice(0,10));
     return `<div class="pad">
       <div class="row between noprint" style="margin-top:6px;gap:8px"><button class="reset" data-act="close-client-invoice">← Retour</button><button class="btn primary" data-act="dl-invoice" style="width:auto;padding:10px 16px">${I.card}&nbsp;Télécharger le PDF</button></div>
       <p class="mini noprint" style="text-align:center;color:var(--muted);margin-bottom:8px">${I.check} Reçue par e-mail, votre justificatif de prestation.</p>
@@ -18292,10 +18312,10 @@
             <svg class="inv-logo" viewBox="18.4 19.9 83.1 90.2"><g transform="translate(60 63) scale(0.8) translate(-60 -55)"><path d="M60 7 l3.4 7 7.7 1.1 -5.6 5.4 1.3 7.6 -6.8 -3.6 -6.8 3.6 1.3 -7.6 -5.6 -5.4 7.7 -1.1z" fill="#FFC24B" stroke="#2A2340" stroke-width="1.6" stroke-linejoin="round"/><g stroke="#FF6A5B" stroke-width="12" stroke-linecap="round" fill="none"><path d="M40 72 C 30 90, 26 97, 19 97"/><path d="M50 79 C 46 96, 44 101, 39 103"/><path d="M60 81 L60 103"/><path d="M70 79 C 74 96, 76 101, 81 103"/><path d="M80 72 C 90 90, 94 97, 101 97"/></g><path d="M60 28 C 39 28, 29 45, 29 61 C 29 76, 43 83, 60 83 C 77 83, 91 76, 91 61 C 91 45, 81 28, 60 28 Z" fill="#FF6A5B" stroke="#2A2340" stroke-width="3"/><circle cx="50" cy="57" r="7.5" fill="#fff" stroke="#2A2340" stroke-width="2"/><circle cx="70" cy="57" r="7.5" fill="#fff" stroke="#2A2340" stroke-width="2"/><circle cx="51.4" cy="58.2" r="3.5" fill="#2A2340"/><circle cx="71.4" cy="58.2" r="3.5" fill="#2A2340"/><circle cx="41.5" cy="66" r="3.2" fill="#FF9B8F"/><circle cx="78.5" cy="66" r="3.2" fill="#FF9B8F"/><path d="M54 68 Q60 74 66 68" stroke="#2A2340" stroke-width="2.6" fill="none" stroke-linecap="round"/></g></svg>
             <div><div class="inv-wordmark"><span>Ti</span>-Services</div><div class="inv-tag">Services à la demande · Saint-Barthélemy</div></div>
           </div>
-          <div class="inv-title"><div class="inv-facture">FACTURE</div><div class="inv-meta">N° ${esc(no)}</div><div class="inv-meta">${dt}</div><span class="inv-paid">✓ PAYÉE</span></div>
+          <div class="inv-title"><div class="inv-facture">FACTURE</div><div class="inv-meta">${factNumeroHtml(no)}</div><div class="inv-meta">${dt}</div>${factPrestaHtml(m,'inv-meta')}<span class="inv-paid">✓ PAYÉE</span></div>
         </div>
         <div class="inv-parties">
-          <div class="inv-party"><div class="inv-lbl">Prestataire</div><b>${esc(m.providerLegal||(p&&p.nm)||'Artisan Ti-Services')}</b>${m.providerAddress?`<div class="mut">${esc(m.providerAddress)}</div>`:`<div class="mut">Saint-Barthélemy</div>`}${m.providerSiret?`<div class="mut">SIRET ${esc(m.providerSiret)}</div>`:''}</div>
+          <div class="inv-party"><div class="inv-lbl">Prestataire</div><b>${esc(factNomPrestataire({legal:m.providerLegal||(p&&p.nm)||'',statusType:m.providerStatusType,legalForm:m.providerLegalForm})||'Artisan Ti-Services')}</b>${m.providerStatusType==='micro'?'<div class="mut">Micro-entreprise</div>':(m.providerLegalForm?`<div class="mut">${esc(m.providerLegalForm)}</div>`:'')}${m.providerAddress?`<div class="mut">${esc(m.providerAddress)}</div>`:`<div class="mut">Saint-Barthélemy</div>`}${m.providerSiret?`<div class="mut">SIRET ${esc(m.providerSiret)}</div>`:''}</div>
           <div class="inv-party"><div class="inv-lbl">Facturé à</div>${(S.account&&S.account.isPro&&S.account.company)?`<b>${esc(S.account.company)}</b><div class="mut">${esc((S.account&&S.account.name)||'')}</div>${S.account.siret?`<div class="mut">SIRET ${esc(S.account.siret)}</div>`:''}<div class="mut">${esc(migZone(m.zone))}${m.zone?', ':''}Saint-Barthélemy</div>`:`<b>${esc((S.account&&S.account.name)||(S.clientForm&&S.clientForm.name)||'Client')}</b><div class="mut">${esc(migZone(m.zone))}${m.zone?', ':''}Saint-Barthélemy</div>`}</div>
         </div>
         <table><thead><tr><th>Prestation</th><th class="r">Qté</th><th class="r">Prix unit.</th><th class="r">Total</th></tr></thead>
@@ -18768,25 +18788,51 @@
   // Catégories juridiques INSEE (niveau III) les plus courantes → libellé lisible pour la
   // mention légale « forme juridique ». Table volontairement limitée aux cas fréquents ;
   // si le code est inconnu, on laisse l'artisan saisir/corriger à la main.
-  const NATURE_JURIDIQUE={'1000':'Entrepreneur individuel','5202':'SNC','5306':'Société en commandite simple','5308':'Société en commandite par actions','5385':'Société d’exercice libéral','5410':'SARL','5415':'SARL','5426':'SARL','5498':'EURL','5499':'SARL','5505':'SA','5510':'SA','5515':'SA','5599':'SA','5710':'SAS','5720':'SASU','6540':'SCI','6220':'GIE','9220':'Association'};
   // PRÉ-REMPLISSAGE via le SIRET : interroge l'annuaire officiel des entreprises
   // (recherche-entreprises.api.gouv.fr, public et gratuit) et remplit la raison sociale,
   // l'adresse du siège et la forme juridique — l'artisan n'a plus qu'à vérifier/compléter.
-  async function lookupSiret(){
+  /* LA FICHE SIRENE — une seule porte : le serveur (ficheSiret, noyau
+     functions/fiche-sirene.js). {siret} : recherche ; {} : mon profil ; {uid} : la console.
+     Rien ne s'écrit sans geste : on montre l'écart, la personne applique. */
+  function ficheSireneAppel(data){
+    if(!(FB&&FB.fn&&FB.functions))return Promise.reject(new Error('hors-ligne'));
+    return FB.fn.httpsCallable(FB.functions,'ficheSiret')(data||{}).then(function(r){return (r&&r.data)||{};});
+  }
+  const SIRENE_CHAMPS={address:'Adresse',legalForm:'Forme juridique'};
+  function sireneBlocHtml(st,act){
+    if(!st)return '';
+    if(st.etat==='charge')return `<p class="mini" style="margin-top:10px">${I.clock} <span>Recherche au répertoire Sirene…</span></p>`;
+    if(st.etat==='erreur')return `<p class="mini" style="margin-top:10px;color:var(--coral-deep)">${esc(st.msg||'Répertoire Sirene injoignable, réessayez dans un instant.')}</p>`;
+    const fi=st.fiche||{};
+    if(!fi.trouve)return `<p class="mini" style="margin-top:10px;color:var(--coral-deep)">SIRET introuvable au répertoire Sirene.</p>`;
+    const ferme=fi.ouvert===false?`<div class="banner coral" style="margin-top:10px">${I.warn}<span>Établissement fermé au répertoire Sirene.</span></div>`:'';
+    const ec=st.ecart||[];
+    if(!ec.length)return ferme+`<p class="mini" style="margin-top:10px;color:var(--good);font-weight:600">${I.check} <span>Conforme au répertoire Sirene.</span></p>`;
+    return ferme+`<div class="card" style="padding:12px 14px;margin-top:10px;background:var(--sand-2);box-shadow:none">
+        <b style="font-size:14px">Le répertoire Sirene indique</b>
+        ${ec.map(function(e){return `<div style="margin-top:9px"><div class="mini">${SIRENE_CHAMPS[e.champ]||esc(e.champ)}</div>${e.avant?`<div class="mini" style="text-decoration:line-through">${esc(e.avant)}</div>`:''}<div style="font-size:14px;font-weight:700">${esc(e.apres)}</div></div>`;}).join('')}
+        <div class="row" style="gap:8px;margin-top:12px"><button class="btn primary sm" data-act="${act}-appliquer" style="width:auto;padding:9px 16px">Appliquer</button><button class="btn ghost sm" data-act="${act}-fermer" style="width:auto;padding:9px 14px">Annuler</button></div></div>`;
+  }
+  function sireneLancer(cle,data){
+    S[cle]={etat:'charge',uid:data&&data.uid};render();
+    ficheSireneAppel(data).then(function(r){S[cle]={etat:'ok',uid:data&&data.uid,fiche:r.fiche||{},ecart:r.ecart||[]};render();})
+      .catch(function(e){S[cle]={etat:'erreur',uid:data&&data.uid,msg:(e&&e.message&&e.message!=='hors-ligne')?String(e.message):''};render();});
+  }
+  async function lookupSiret(auto){
     const raw=((S.proForm&&S.proForm.siret)||'').replace(/\D/g,'');
-    if(raw.length!==14){toast('Saisissez d’abord les 14 chiffres du SIRET');return;}
+    if(raw.length!==14){if(!auto)toast('Saisissez d’abord les 14 chiffres du SIRET');return;}
+    // « Quand il rentre son SIRET, toutes ces informations se mettent automatiquement »
+    // (l'éditeur, 25/11/2026) : au 14e chiffre, une fois par numéro.
+    if(S._siretBusy||(auto&&S._siretVu===raw))return;
+    S._siretVu=raw;
     S._siretBusy=true;render();
     try{
-      const res=await fetch('https://recherche-entreprises.api.gouv.fr/search?q='+encodeURIComponent(raw)+'&page=1&per_page=1');
-      if(!res.ok)throw new Error('http');
-      const d=await res.json();
-      const r=(d&&d.results&&d.results[0])||null;
-      if(!r){toast('SIRET introuvable, vérifiez le numéro (ou saisissez à la main)');return;}
-      const nj=(r.nature_juridique||'').toString();
-      const isEI=(nj===''||nj==='1000'); // entrepreneur individuel / micro
-      const raison=r.nom_raison_sociale||r.nom_complet||'';
-      const sg=r.siege||{};
-      const adr=(sg.adresse||[sg.numero_voie,sg.type_voie,sg.libelle_voie,sg.code_postal,sg.libelle_commune].filter(Boolean).join(' ')).trim();
+      const rep=await ficheSireneAppel({siret:raw});
+      const fi=(rep&&rep.fiche)||{};
+      if(!fi.trouve){toast('SIRET introuvable, vérifiez le numéro (ou saisissez à la main)');return;}
+      const isEI=!!fi.estEI;
+      const raison=fi.nom||'';
+      const adr=fi.adresse||'';
       S.proForm=S.proForm||{};
       if(raison&&!(S.proForm.name||'').trim())S.proForm.name=raison;
       if(adr&&!(S.proForm.address||'').trim())S.proForm.address=adr;
@@ -18794,25 +18840,23 @@
       if(isEI){ S.proForm.statusType='micro'; }
       else{
         S.proForm.statusType='entreprise';
-        const lf=NATURE_JURIDIQUE[nj]||''; if(lf&&!(S.proForm.legalForm||'').trim())S.proForm.legalForm=lf;
+        const lf=fi.formeJuridique||''; if(lf&&!(S.proForm.legalForm||'').trim())S.proForm.legalForm=lf;
         // Ville d'immatriculation RCS = ville du GREFFE (pas la commune du siège). À
         // Saint-Barthélemy (et Saint-Martin), le greffe compétent est BASSE-TERRE → on le
         // préremplit automatiquement. Ailleurs, on propose la commune du siège (modifiable).
-        const cp=(sg.code_postal||'').toString();const cm=(sg.libelle_commune||sg.commune||'').toString().toLowerCase();
+        const cp=String(fi.codePostal||'');const cm=String(fi.commune||'').toLowerCase();
         const stBarth=/^971/.test(cp)||/barth|martin/.test(cm);
-        const rcsVille=stBarth?'Basse-Terre':((sg.libelle_commune||sg.commune||'').replace(/\b\w/g,c=>c.toUpperCase()));
+        const rcsVille=stBarth?'Basse-Terre':(String(fi.commune||'').toLowerCase().replace(/\b\w/g,c=>c.toUpperCase()));
         if(rcsVille&&!(S.proForm.rcsCity||'').trim())S.proForm.rcsCity=rcsVille;
         // Capital social : NON exposé par l'annuaire public (recherche-entreprises). On le
         // remplit s'il figure malgré tout dans la réponse, sinon saisie manuelle (on ne
         // fabrique jamais une mention légale).
-        const cap=(r.capital||r.capital_social||(r.complements&&(r.complements.capital_social||r.complements.capital))||'').toString().replace(/[^\d]/g,'');
-        if(cap&&!(S.proForm.capital||'').trim())S.proForm.capital=cap;
         capMissing=!(S.proForm.capital||'').trim();
       }
       try{refreshProSubmit();}catch(_){}
       render();
       toast(capMissing?'Infos récupérées ✓, reste le capital social (non public) à saisir':'Informations récupérées ✓, vérifiez avant de valider');
-    }catch(e){ toast('Annuaire indisponible, saisissez vos infos à la main'); }
+    }catch(e){ if(!auto)toast('Annuaire indisponible, saisissez vos infos à la main'); }
     finally{ S._siretBusy=false; try{render();}catch(_){} }
   }
   // Écran d'ENTRÉE de l'inscription prestataire (e-mail) : minimal — juste de quoi CRÉER le
@@ -19689,7 +19733,12 @@
           <div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="background:var(--coral-wash);color:var(--coral-deep)">${I.phone}</span>
           <div style="flex:1;min-width:0"><b style="font-size:14px">Votre numéro ne permet pas de vous joindre</b><p class="mini" style="margin-top:3px"><span>${esc(p)} · ${esc(telImpossibleTxt(p))}</span> <span>Les clients et Ti-Services ne peuvent pas vous appeler.</span></p></div>
           <span class="mini" style="color:var(--coral-deep);font-weight:700;flex:none">Corriger ›</span></div></button>`;})();
-    const _enTete=_carteTel+(online?'':_carteEnLigne)+notifCTA('pro')+(_mollieBloque?_carteMollie:'')+(S.proIban?'':_carteIrroutable);
+    const _carteAdresse=(function(){const a=String(S.proAddress||'');if(isDemo()||factAdresseComplete(a))return '';
+      return `<button class="card" data-act="pro-adresse" style="padding:14px;margin-top:12px;width:100%;text-align:left;display:block;border:1.5px solid color-mix(in srgb,var(--coral) 45%,transparent)">
+          <div class="row" style="gap:11px;align-items:flex-start"><span class="benic" style="background:var(--coral-wash);color:var(--coral-deep)">${I.pin}</span>
+          <div style="flex:1;min-width:0"><b style="font-size:14px">Votre adresse est incomplète sur vos factures</b><p class="mini" style="margin-top:3px">${a.trim()?`<span>${esc(a)}</span> · `:''}<span>Il manque le code postal ou la commune.</span></p></div>
+          <span class="mini" style="color:var(--coral-deep);font-weight:700;flex:none">Corriger ›</span></div></button>`;})();
+    const _enTete=_carteTel+_carteAdresse+(online?'':_carteEnLigne)+notifCTA('pro')+(_mollieBloque?_carteMollie:'')+(S.proIban?'':_carteIrroutable);
     const _pied=(online?_carteEnLigne:'')+(_mollieBloque?'':_carteMollie)+(S.proIban?_carteIrroutable:'')+_bandeauOuverture;
     return `<div class="pad">${proHead('Prestataire · '+catNames,'Mes missions',proHeadBtn('open-share','Partager Ti-Services',I.share))}
       ${_enTete}
@@ -20563,8 +20612,8 @@
       <div class="row between noprint" style="margin-top:6px;gap:8px"><button class="reset" data-act="close-invoice">← Retour</button><button class="btn primary" data-act="print-invoice" style="width:auto;padding:10px 16px">${I.card}&nbsp;Enregistrer / Imprimer</button></div>
       <p class="mini noprint" style="text-align:center;color:var(--muted);margin-bottom:8px">${I.check} Générée automatiquement · transmise au prestataire (comptabilité) et au client (justificatif).</p>
       <div id="invoiceDoc"><div class="inv">
-        <div class="row between" style="align-items:flex-start"><div><h2>FACTURE</h2><div class="mut">N° ${h.invNo}</div><div class="mut">Date : ${fmtLong(h.dateISO)}</div></div><div style="text-align:right"><div style="font-family:var(--f-disp);font-weight:800;font-size:16px;color:#151515">Ti-Services</div>${ccsHead()}</div></div>
-        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Prestataire</div><b>${S.proLegal}</b><div class="mut">${S.proStatusType==='particulier'?'Particulier':'Entreprise'} · ${S.proAddress}</div><div class="mut">SIRET ${S.proSiret||'—'} · Assurance RC ${S.proInsurer||'—'}</div></div>
+        <div class="row between" style="align-items:flex-start"><div><h2>FACTURE</h2><div class="mut">${factNumeroHtml(h.invNo)}</div><div class="mut">Date : ${fmtLong(factJourSbhISO(h.settledAtMs)||h.dateISO)}</div>${factPrestaHtml(h)}</div><div style="text-align:right"><div style="font-family:var(--f-disp);font-weight:800;font-size:16px;color:#151515">Ti-Services</div>${ccsHead()}</div></div>
+        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Prestataire</div><b>${esc(factNomPrestataire({legal:S.proLegal,statusType:S.proStatusType,legalForm:S.proLegalForm}))}</b><div class="mut">${S.proStatusType==='particulier'?'Particulier':(S.proStatusType==='micro'?'Micro-entreprise':'Entreprise')} · ${esc(S.proAddress||'')}</div><div class="mut">SIRET ${S.proSiret||'—'} · Assurance RC ${S.proInsurer||'—'}</div></div>
         <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Client</div><b>${h.clientFull}</b><div class="mut">${h.clientZone}, Saint-Barthélemy</div></div>
         <table><thead><tr><th>Prestation</th><th class="r">Qté</th><th class="r">PU</th><th class="r">Total</th></tr></thead>
         <tbody>${(h.acts&&h.acts.length)?h.acts.map(function(a){return `<tr><td>${esc(a.nm)}, ${esc(svcName(h.svc))}</td><td class="r">${actAuM2(a)?esc(qteTexte(a)):(a.qty||1)}</td><td class="r">${eur(a.price)}${actAuM2(a)?'/m²':''}</td><td class="r">${eur((a.price||0)*(a.qty||1))}</td></tr>`;}).join('')+(h.travel?`<tr><td>Forfait de déplacement</td><td class="r">1</td><td class="r">${eur(h.travel)}</td><td class="r">${eur(h.travel)}</td></tr>`:''):(h.cancelFee
@@ -20762,13 +20811,13 @@
         const dips=(S.proDiplomas||[]).slice();
         if(S.proDiplomaOther)dips.push(S.proDiplomaOther);
         const row=function(lbl,val){return fRow(lbl,esc(val));};
-        const editing=!!S.proEditContact;const cf=S.proContactForm||{phone:S.proPhone||'',bio:S.proBio||'',iban:S.proIban||'',ibanTitulaire:S.proIbanTitulaire||''};
+        const editing=!!S.proEditContact;const cf=S.proContactForm||{phone:S.proPhone||'',bio:S.proBio||'',iban:S.proIban||'',ibanTitulaire:S.proIbanTitulaire||'',address:S.proAddress||''};
         return foldCard('p-infos',I.user,"Mes informations d'inscription",esc(S.proLegal||S.proName||''),`
         <div class="fiche">
           ${row('Nom / raison sociale',S.proLegal||S.proName)}
           ${row('Statut',S.proStatusType==='particulier'?'Particulier':'Entreprise')}
           ${row('SIRET',S.proSiret)}
-          ${row('Adresse',S.proAddress)}
+          ${editing?`<div style="margin-top:12px"><label class="sub" style="display:block;margin-bottom:5px">Adresse (sur vos factures)</label><input class="txt" data-proeditaddr value="${esc(cf.address||'')}" placeholder="Ex. Gustavia, 97133 Saint-Barthélemy" autocomplete="street-address" style="width:100%"></div>`:row('Adresse',S.proAddress)}
           ${row('Date de naissance',birthTxt)}
           ${editing?`<div style="margin-top:12px"><label class="sub" style="display:block;margin-bottom:5px">Téléphone</label>${phoneCombo('proedit',cf.phone)}</div>`:row('Téléphone',S.proPhone)}
           ${row('E-mail',email)}
@@ -20782,7 +20831,8 @@
         ${dips.length?`<div style="margin-top:12px"><span class="sub">Diplômes / qualifications</span><div class="row" style="gap:6px;margin-top:6px;flex-wrap:wrap">${dips.map(function(d){return `<span class="chip">${esc(d)}</span>`;}).join('')}</div></div>`:''}
         ${editing
           ?`<div class="row" style="gap:8px;margin-top:14px"><button class="btn primary sm" data-act="pro-contact-save" style="width:auto;padding:9px 16px">${I.check}&nbsp;Enregistrer</button><button class="btn ghost sm" data-act="pro-contact-cancel" style="width:auto;padding:9px 14px">Annuler</button></div>`
-          :`<button class="btn ghost sm" data-act="pro-contact-edit" style="margin-top:14px;width:auto;padding:9px 14px">${I.edit}&nbsp;Modifier téléphone, présentation &amp; IBAN</button>`}
+          :`<div class="row" style="gap:8px;margin-top:14px;flex-wrap:wrap"><button class="btn ghost sm" data-act="pro-contact-edit" style="width:auto;padding:9px 14px">${I.edit}&nbsp;Modifier mes coordonnées</button>${S.proSiret?`<button class="btn ghost sm" data-act="pro-sirene" style="width:auto;padding:9px 14px">${I.search}&nbsp;Mettre à jour depuis le SIRET</button>`:''}</div>`}
+        ${sireneBlocHtml(S.sirenePro,'pro-sirene')}
         <p class="mini" style="margin-top:12px;color:var(--muted)">Info légale à corriger&nbsp;? Contactez Ti-Services.</p>`);})()}
 
       ${foldCard('p-metiers',I.hardhat,'Mes métiers',cats.map(function(c){return svcNm(c);}).join(' · '),`<div class="row" style="gap:8px;flex-wrap:wrap">
@@ -20921,7 +20971,7 @@
       <p class="mini noprint" style="text-align:center;color:var(--muted);margin-bottom:8px">${I.check} Relevé récapitulatif de ${stmtLabel(p)}, pour votre comptabilité.</p>
       <div id="invoiceDoc"><div class="inv">
         <div class="row between" style="align-items:flex-start"><div><h2>RELEVÉ MENSUEL</h2><div class="mut">${stmtLabel(p)}</div></div><div style="text-align:right"><div style="font-family:var(--f-disp);font-weight:800;font-size:16px;color:#151515">Ti-Services</div>${ccsHead()}</div></div>
-        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Prestataire</div><b>${S.proLegal}</b><div class="mut">${S.proStatusType==='particulier'?'Particulier':'Entreprise'} · ${S.proAddress}</div><div class="mut">SIRET ${S.proSiret||'—'}</div></div>
+        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Prestataire</div><b>${esc(factNomPrestataire({legal:S.proLegal,statusType:S.proStatusType,legalForm:S.proLegalForm}))}</b><div class="mut">${S.proStatusType==='particulier'?'Particulier':(S.proStatusType==='micro'?'Micro-entreprise':'Entreprise')} · ${esc(S.proAddress||'')}</div><div class="mut">SIRET ${S.proSiret||'—'}</div></div>
         <table><thead><tr><th>Date</th><th>Prestation</th><th class="r">Durée</th><th class="r">Net</th></tr></thead>
         <tbody>${rows}</tbody></table>
         <div class="row between sec"><span class="mut">Total encaissé (${list.length} prestation${list.length>1?'s':''})</span><span class="tot">${eur(total)}</span></div>
@@ -21000,7 +21050,7 @@
       <p class="mini noprint" style="text-align:center;color:${defini?'var(--muted)':'var(--coral-deep)'};margin-bottom:8px">${defini?I.check+' Attestation annuelle définitive, à conserver pour vos déclarations.':I.clock+' Récapitulatif provisoire, année en cours, montants susceptibles d\'évoluer.'}</p>
       <div id="invoiceDoc"><div class="inv">
         <div class="row between" style="align-items:flex-start"><div><h2>ATTESTATION ANNUELLE DE REVENUS</h2><div class="mut">N° TS-A-${y}-${String(uid||'0000').replace(/[^A-Za-z0-9]/g,'').slice(-4).toUpperCase()}</div><div class="mut">Année ${y}${defini?'':', provisoire'}</div></div><div style="text-align:right"><div style="font-family:var(--f-disp);font-weight:800;font-size:16px;color:#151515">Ti-Services</div><div class="mut">Plateforme d'intermédiation</div>${ccsHead()}</div></div>
-        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Prestataire</div><b>${S.proLegal}</b><div class="mut">${S.proStatusType==='particulier'?'Particulier':'Entreprise'} · ${S.proAddress}</div><div class="mut">SIRET ${S.proSiret||'—'}</div></div>
+        <div class="sec"><div class="mut" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px">Prestataire</div><b>${esc(factNomPrestataire({legal:S.proLegal,statusType:S.proStatusType,legalForm:S.proLegalForm}))}</b><div class="mut">${S.proStatusType==='particulier'?'Particulier':(S.proStatusType==='micro'?'Micro-entreprise':'Entreprise')} · ${esc(S.proAddress||'')}</div><div class="mut">SIRET ${S.proSiret||'—'}</div></div>
         <table><thead><tr><th>Mois</th><th class="r">Missions</th><th class="r">Brut</th><th class="r">Commission</th><th class="r">Net</th></tr></thead>
         <tbody>${rows}</tbody></table>
         <div class="row between sec"><span class="mut">Chiffre d'affaires brut encaissé (${ag.count} mission${ag.count>1?'s':''})</span><span class="tot">${eur(ag.gross)}</span></div>
@@ -21865,6 +21915,11 @@
         const iban=normIban((v&&v.iban)||'');
         if(!iban)return;
         try{ if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(iban).then(function(){toast('IBAN copié ✓');},function(){toast(ibanEspace(iban));}); } else { toast(ibanEspace(iban)); } }catch(_){ toast(ibanEspace(iban)); }
+        return;
+      }
+      else if(act==='sirene'){
+        const a=(S.adminArtisans||[]).find(x=>x.id===id);if(!a)return;
+        sireneLancer('admSirene',{uid:a.uid||a.id});
         return;
       }
       else if(act==='copysiret'){
@@ -23141,14 +23196,35 @@
       // Modification en self-service des SEULES coordonnées « libres » (téléphone,
       // présentation) — simples champs Firestore, sans impact sur la connexion.
       // L'e-mail (identifiant Auth) et les infos légales restent gérés hors app.
-      case 'pro-contact-edit':S.proContactForm={phone:S.proPhone||'',bio:S.proBio||'',iban:S.proIban||'',ibanTitulaire:S.proIbanTitulaire||''};S.proEditContact=true;render();break;
+      case 'pro-contact-edit':S.proContactForm={phone:S.proPhone||'',bio:S.proBio||'',iban:S.proIban||'',ibanTitulaire:S.proIbanTitulaire||'',address:S.proAddress||''};S.proEditContact=true;render();break;
       /* La carte « X € vous sont dus » mène AU CHAMP : ouvrir le compte, déplier la fiche
          et passer en saisie, plutôt que de laisser chercher où se met un IBAN. */
-      case 'pro-tel':S.proNav='account';S.proContactForm={phone:S.proPhone||'',bio:S.proBio||'',iban:S.proIban||'',ibanTitulaire:S.proIbanTitulaire||''};S.proEditContact=true;S._fold=Object.assign({},S._fold,{'p-infos':true});render();
+      case 'pro-tel':S.proNav='account';S.proContactForm={phone:S.proPhone||'',bio:S.proBio||'',iban:S.proIban||'',ibanTitulaire:S.proIbanTitulaire||'',address:S.proAddress||''};S.proEditContact=true;S._fold=Object.assign({},S._fold,{'p-infos':true});render();
         setTimeout(function(){const el=document.querySelector('[data-phonenum]');if(el){try{el.scrollIntoView({block:'center'});el.focus();}catch(_){}}},60);break;
-      case 'pro-iban':S.proNav='account';S.proContactForm={phone:S.proPhone||'',bio:S.proBio||'',iban:S.proIban||'',ibanTitulaire:S.proIbanTitulaire||''};S.proEditContact=true;S._fold=Object.assign({},S._fold,{'p-infos':true});render();
+      case 'pro-iban':S.proNav='account';S.proContactForm={phone:S.proPhone||'',bio:S.proBio||'',iban:S.proIban||'',ibanTitulaire:S.proIbanTitulaire||'',address:S.proAddress||''};S.proEditContact=true;S._fold=Object.assign({},S._fold,{'p-infos':true});render();
         setTimeout(function(){const el=document.querySelector('[data-proeditiban]');if(el){try{el.scrollIntoView({block:'center'});el.focus();}catch(_){}}},60);break;
       case 'pro-contact-cancel':S.proEditContact=false;S.proContactForm=null;render();break;
+      case 'pro-sirene':sireneLancer('sirenePro',{});break;
+      case 'adm-sirene-fermer':S.admSirene=null;render();break;
+      case 'adm-sirene-appliquer':{const st=S.admSirene;if(!st||!st.uid||!st.ecart||!st.ecart.length)break;
+        const patch={};st.ecart.forEach(function(e){if(e.champ==='address'||e.champ==='legalForm')patch[e.champ]=String(e.apres||'').slice(0,200);});
+        const a=(S.adminArtisans||[]).find(function(x){return (x.uid||x.id)===st.uid;});
+        FB.f.setDoc(FB.f.doc(FB.db,'artisans',st.uid),patch,{merge:true}).then(function(){if(a)Object.assign(a,patch);S.admSirene={etat:'ok',uid:st.uid,fiche:st.fiche,ecart:[]};toast('Profil mis à jour ✓');render();}).catch(function(e){toast('⚠︎ Non enregistré : '+fbErrTxt(e));});
+        break;}
+      case 'pro-sirene-fermer':S.sirenePro=null;render();break;
+      case 'pro-sirene-appliquer':{const st=S.sirenePro;if(!st||!st.ecart||!st.ecart.length)break;
+        const patch={};st.ecart.forEach(function(e){if(e.champ==='address'||e.champ==='legalForm')patch[e.champ]=String(e.apres||'').slice(0,200);});
+        if(patch.address!=null){S.proAddress=patch.address;if(S.proContactForm)S.proContactForm.address=patch.address;}
+        if(patch.legalForm!=null)S.proLegalForm=patch.legalForm;
+        S.sirenePro={etat:'ok',fiche:st.fiche,ecart:[]};
+        if(FB&&FB.auth&&FB.auth.currentUser&&!isDemo()){FB.f.setDoc(FB.f.doc(FB.db,'artisans',FB.auth.currentUser.uid),patch,{merge:true}).then(function(){toast('Profil mis à jour ✓');}).catch(function(e){toast('⚠︎ Non enregistré : '+fbErrTxt(e));});}
+        else toast('Profil mis à jour ✓');
+        render();break;}
+      /* LA CARTE « ADRESSE INCOMPLÈTE » mène à la correction : la fiche Sirene si le SIRET
+         est connu (un geste : Appliquer), et le champ adresse dans tous les cas. */
+      case 'pro-adresse':S.proNav='account';S.proContactForm={phone:S.proPhone||'',bio:S.proBio||'',iban:S.proIban||'',ibanTitulaire:S.proIbanTitulaire||'',address:S.proAddress||''};S.proEditContact=true;S._fold=Object.assign({},S._fold,{'p-infos':true});
+        if(S.proSiret)sireneLancer('sirenePro',{});else render();
+        setTimeout(function(){const el=document.querySelector('[data-proeditaddr]');if(el){try{el.scrollIntoView({block:'center'});}catch(_){}}},60);break;
       case 'pro-contact-save':{const f=S.proContactForm||{};
         /* L'IBAN SE CONTRÔLE AVANT DE S'ENREGISTRER : c'est sur lui qu'on virera une somme à
            la main. Une clé qui ne tombe pas juste (deux chiffres intervertis, une lettre
@@ -23160,11 +23236,15 @@
            numéro incomplet, et plus personne ne pouvait le joindre. Un numéro qui ne
            peut pas sonner N'ENTRE PAS, et la saisie reste à l'écran pour être corrigée. */
         if(!telStockeLu(f.phone||'').ok){toast('⚠︎ '+(telImpossibleTxt(f.phone||'')||'Indiquez votre numéro de téléphone : c’est par lui qu’on vous joint.'));break;}
+        /* L'ADRESSE FIGURE SUR CHAQUE FACTURE : une adresse changée doit situer (code
+           postal ou commune). L'ancienne, même incomplète, ne bloque pas le reste. */
+        const adrSaisie=String(f.address==null?(S.proAddress||''):f.address).trim();
+        if(adrSaisie!==String(S.proAddress||'').trim()&&!factAdresseComplete(adrSaisie)){toast('⚠︎ Adresse incomplète : ajoutez le code postal ou la commune (ex. 97133 Saint-Barthélemy)');break;}
         // Un IBAN enregistré n'ouvre pas les paiements : si Mollie ne l'est pas, on le
         // redit au moment même où il croit avoir fait le nécessaire.
         const enregistreTxt=function(){return (ibanSaisi&&!(mollieState()==='active'||molliePeutTravailler()))?'IBAN enregistré. Pour être payé de vos missions, activez Mollie.':'Coordonnées mises à jour ✓';};
-        S.proPhone=(f.phone||'').trim();S.proBio=(f.bio||'').trim();S.proIban=ibanSaisi;S.proIbanTitulaire=String(f.ibanTitulaire||'').trim().slice(0,100);S.proEditContact=false;S.proContactForm=null;
-        if(FB&&FB.auth&&FB.auth.currentUser&&!isDemo()){const uid=FB.auth.currentUser.uid;FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{phone:S.proPhone,bio:S.proBio,iban:S.proIban,ibanTitulaire:S.proIbanTitulaire},{merge:true}).then(function(){toast(enregistreTxt());}).catch(function(e){toast('⚠︎ Non enregistré : '+fbErrTxt(e));});try{FB.f.setDoc(FB.f.doc(FB.db,'users',uid),{phone:S.proPhone},{merge:true});}catch(_){}
+        S.proPhone=(f.phone||'').trim();S.proBio=(f.bio||'').trim();S.proIban=ibanSaisi;S.proIbanTitulaire=String(f.ibanTitulaire||'').trim().slice(0,100);S.proAddress=adrSaisie.slice(0,200);S.proEditContact=false;S.proContactForm=null;
+        if(FB&&FB.auth&&FB.auth.currentUser&&!isDemo()){const uid=FB.auth.currentUser.uid;FB.f.setDoc(FB.f.doc(FB.db,'artisans',uid),{phone:S.proPhone,bio:S.proBio,iban:S.proIban,ibanTitulaire:S.proIbanTitulaire,address:S.proAddress},{merge:true}).then(function(){toast(enregistreTxt());}).catch(function(e){toast('⚠︎ Non enregistré : '+fbErrTxt(e));});try{FB.f.setDoc(FB.f.doc(FB.db,'users',uid),{phone:S.proPhone},{merge:true});}catch(_){}
           // La présentation n'est visible du client QUE pour la garde d'enfants. On répercute
           // la nouvelle bio sur les gardes en cours (elle était figée à l'acceptation).
           (S.proMissions||[]).forEach(function(mm){if(mm&&mm.reqId&&mm.svc==='baby'){mm.providerBio=S.proBio;try{FB.f.updateDoc(FB.f.doc(FB.db,'requests',mm.reqId),{providerBio:S.proBio});}catch(_){}}});}
@@ -23823,6 +23903,7 @@
     const _an=e.target.closest('[data-autrenom]');
     if(_an){S._autreNom=_an.value;return;}
     const pf=e.target.closest('[data-pf]');
+    if(pf&&pf.dataset.pf==='siret'&&String(pf.value||'').replace(/\D/g,'').length===14){setTimeout(function(){try{lookupSiret(true);}catch(_){}},0);}
     if(pf){
       /* UNE CASE DE PRIX N'ACCEPTE QUE DES CHIFFRES. Demandé par l'éditeur devant une
          inscription bloquée : « c'est un défaut de notre part, on devrait uniquement
@@ -23910,6 +23991,7 @@
     const pf2=e.target.closest('[data-pf2]');if(pf2&&S.profileForm){S.profileForm[pf2.dataset.pf2]=pf2.value;const sb=document.querySelector('[data-act="save-profile"]');if(sb)sb.disabled=!((S.profileForm.name||'').trim().length>1);}
     const peb=e.target.closest('[data-proeditbio]');if(peb){S.proContactForm=S.proContactForm||{};S.proContactForm.bio=peb.value;}
     const pei=e.target.closest('[data-proeditiban]');if(pei){S.proContactForm=S.proContactForm||{};S.proContactForm.iban=pei.value;}
+    const pea=e.target.closest('[data-proeditaddr]');if(pea){S.proContactForm=S.proContactForm||{};S.proContactForm.address=pea.value;}
     const pet=e.target.closest('[data-proeditibantit]');if(pet){S.proContactForm=S.proContactForm||{};S.proContactForm.ibanTitulaire=pet.value;}
     const lf=e.target.closest('[data-lf]');if(lf){(S.loginForm=S.loginForm||{email:'',password:'',remember:true})[lf.dataset.lf]=lf.value;}
     const pr=e.target.closest('[data-prate]');if(pr){S.proForm.rate=+pr.value;const el=document.getElementById('prateVal');if(el)el.textContent=pr.value+' €/h';}
@@ -25449,7 +25531,7 @@
           if(inHist[docu.id]){if(srvNo){const ex=S.history.find(function(h){return h.reqId===docu.id;});if(ex&&!ex.invNo){ex.invNo=srvNo;histChanged=true;}}return;}
           const dur=(r.finalHours!=null?r.finalHours:(r.duration||1));
           const prov=(local&&local.provider)?local.provider:Object.assign({},PROVIDERS[r.service]||{ini:'AR'},{nm:r.providerName||'Votre prestataire',ini:inits(r.providerName||'Artisan')});
-          S.history.unshift({reqId:docu.id,svc:r.service,svcName:r.serviceName||svcNm(r.service),status:'paid',when:r.when||'',dateISO:r.dateISO||'',zone:r.zone||'',unit:r.unit||'h',duration:dur,finalHours:dur,rate:r.rate||0,boost:r.boost||0,tip:r.tip||0,acts:(r.acts&&r.acts.length)?r.acts.map(function(a){return {id:a.id,nm:a.nm,price:a.price,qty:a.qty||1};}):null,invNo:srvNo,providerUid:r.providerUid||'',provider:{nm:prov.nm,ini:prov.ini||inits(prov.nm||'AR')},providerLegal:r.providerLegal||'',providerSiret:r.providerSiret||'',providerAddress:r.providerAddress||'',providerStatusType:r.providerStatusType||''});
+          S.history.unshift({reqId:docu.id,svc:r.service,svcName:r.serviceName||svcNm(r.service),status:'paid',when:r.when||'',dateISO:r.dateISO||'',zone:r.zone||'',unit:r.unit||'h',duration:dur,finalHours:dur,rate:r.rate||0,boost:r.boost||0,tip:r.tip||0,acts:(r.acts&&r.acts.length)?r.acts.map(function(a){return {id:a.id,nm:a.nm,price:a.price,qty:a.qty||1};}):null,invNo:srvNo,providerUid:r.providerUid||'',provider:{nm:prov.nm,ini:prov.ini||inits(prov.nm||'AR')},providerLegal:r.providerLegal||'',providerSiret:r.providerSiret||'',providerAddress:r.providerAddress||'',providerStatusType:r.providerStatusType||'',providerLegalForm:r.providerLegalForm||'',doneProAtMs:dateMs(r.doneProAt),settledAtMs:dateMs(r.settledAt)});
           inHist[docu.id]=1;histChanged=true;
         });
         // Filet anti-doublon : jamais deux missions partageant le même reqId.
@@ -25524,7 +25606,7 @@
         const hasSrv=(r.commissionAmount!=null&&r.netAmount!=null);
         const gross=(r.grossTotal!=null?r.grossTotal:(r.total||((r.rate||0)*dur)));
         const commission=hasSrv?r.commissionAmount:0;const net=hasSrv?r.netAmount:gross;const cpct=hasSrv?(r.commissionPct||0):0;
-        S.proHistory.unshift({id:'hm'+docu.id,reqId:docu.id,dateISO:(r.dateISO||todayISO()),svc:r.service,client:(r.clientName||'Client'),clientFull:(r.clientName||'Client'),clientZone:r.zone||'',duration:dur,unit:r.unit||'h',rate:r.rate||0,amount:gross,tip:r.tip||0,commPct:cpct,commission:commission,net:net,invNo:srvNo||('2026-'+String(1000+S.proHistory.length).padStart(4,'0')),paidVia:'carte'});
+        S.proHistory.unshift({id:'hm'+docu.id,reqId:docu.id,dateISO:(r.dateISO||todayISO()),svc:r.service,client:(r.clientName||'Client'),clientFull:(r.clientName||'Client'),clientZone:r.zone||'',duration:dur,unit:r.unit||'h',rate:r.rate||0,amount:gross,tip:r.tip||0,commPct:cpct,commission:commission,net:net,invNo:srvNo||'',doneProAtMs:dateMs(r.doneProAt),settledAtMs:dateMs(r.settledAt),paidVia:'carte'});
         S.proEarnings=Math.round(((S.proEarnings||0)+net)*100)/100;S.proJobsTotal=(S.proJobsTotal||0)+1;known[docu.id]=1;changed=true;
       }
       if(changed)saveProStats();

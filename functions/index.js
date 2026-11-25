@@ -1920,6 +1920,8 @@ const CANP = require('./canaux-prevenus');
 const RELP = require('./relance-paiement');
 const RPT = require('./relance-pointage');
 const SERIE = require('./serie-recurrente');
+const MF = require('./mentions-facture');
+const FS = require('./fiche-sirene');
 /* LE COMPTEUR DU JOUR. Un document par clé et par jour dans `quotas` — collection
  * SERVEUR (aucune règle ne l'ouvre, l'Admin SDK passe outre). Transaction : deux demandes
  * simultanées ne peuvent pas lire le même nombre et l'écrire deux fois.
@@ -3461,6 +3463,33 @@ function montantsDemande(r) {
  * les rendre. Le règlement continue de les déduire du solde à encaisser, et de router
  * leur net sur LEUR paiement — ce qu'il ne faisait pas (voir `reglementDecider`). */
 
+/* NUMÉRO DE FACTURE — une seule porte (règlement, et rattrapage à l'envoi). Séquentiel par
+   prestataire, attribué dans une transaction : voir le commentaire de settleCommission. */
+async function attribuerNumeroFacture(db, providerUid) {
+  return await db.runTransaction(async (tx) => {
+        const cref = db.collection('counters').doc(providerUid);
+        const aref = db.collection('artisans').doc(providerUid);
+        const sref = db.collection('counters').doc('_series');
+        // TOUTES les lectures avant la moindre écriture (contrainte des transactions).
+        const csnap = await tx.get(cref);
+        const asnap = await tx.get(aref);
+        let serie = String((asnap.exists && asnap.data().invoiceSerie) || '').trim();
+        let serieN = 0;
+        if (!serie) {
+          const ssnap = await tx.get(sref);
+          serieN = ((ssnap.exists ? (ssnap.data().next || 0) : 0)) + 1;
+          serie = serieCode(serieN);
+        }
+        const seq = ((csnap.exists ? (csnap.data().saleSeq || 0) : 0)) + 1;
+        if (serieN) {
+          tx.set(sref, { next: serieN }, { merge: true });
+          tx.set(aref, { invoiceSerie: serie }, { merge: true });
+        }
+        tx.set(cref, { saleSeq: seq, invoiceSerie: serie, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        return (new Date()).getFullYear() + '-' + serie + '-' + String(seq).padStart(4, '0');
+      });
+}
+
 exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}',
   // MOLLIE_CLIENT_ID / _SECRET : non pour encaisser, mais pour REVÉRIFIER le dossier du
   // prestataire avant de lui dire qu'il manque une pièce (`notifyArtisanMollieProblem`).
@@ -3574,30 +3603,8 @@ exports.settleCommission = onDocumentUpdated({document: 'requests/{reqId}',
   // PAS : une numérotation se poursuit, elle ne se réécrit jamais.
   let saleInvoiceNo = after.saleInvoiceNo || '';
   if (!saleInvoiceNo) {
-    try {
-      saleInvoiceNo = await db.runTransaction(async (tx) => {
-        const cref = db.collection('counters').doc(providerUid);
-        const aref = db.collection('artisans').doc(providerUid);
-        const sref = db.collection('counters').doc('_series');
-        // TOUTES les lectures avant la moindre écriture (contrainte des transactions).
-        const csnap = await tx.get(cref);
-        const asnap = await tx.get(aref);
-        let serie = String((asnap.exists && asnap.data().invoiceSerie) || '').trim();
-        let serieN = 0;
-        if (!serie) {
-          const ssnap = await tx.get(sref);
-          serieN = ((ssnap.exists ? (ssnap.data().next || 0) : 0)) + 1;
-          serie = serieCode(serieN);
-        }
-        const seq = ((csnap.exists ? (csnap.data().saleSeq || 0) : 0)) + 1;
-        if (serieN) {
-          tx.set(sref, { next: serieN }, { merge: true });
-          tx.set(aref, { invoiceSerie: serie }, { merge: true });
-        }
-        tx.set(cref, { saleSeq: seq, invoiceSerie: serie, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-        return (new Date()).getFullYear() + '-' + serie + '-' + String(seq).padStart(4, '0');
-      });
-    } catch (e) { console.warn('settleCommission numbering', e); saleInvoiceNo = ''; }
+    try { saleInvoiceNo = await attribuerNumeroFacture(db, providerUid); }
+    catch (e) { console.warn('settleCommission numbering', e); saleInvoiceNo = ''; }
   }
 
   try {
@@ -7575,8 +7582,9 @@ function frDate(ts) {
   let d;
   try { d = (ts && ts.toDate) ? ts.toDate() : (ts ? new Date(ts) : new Date()); } catch (_) { d = new Date(); }
   if (!d || isNaN(d.getTime())) d = new Date();
-  const mois = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
-  return d.getDate() + ' ' + mois[d.getMonth()] + ' ' + d.getFullYear();
+  // Le JOUR À SAINT-BARTHÉLEMY (UTC−4), pas celui du serveur : un règlement à 22 h sur
+  // l'île tombait au lendemain sur la facture.
+  return MF.dateFrLongue(MF.jourSbhISO(d.getTime()));
 }
 // Lignes et total de la facture — calculés par la SOURCE UNIQUE (montantsDemande), la
 // même que celle du règlement. Chacun calculait de son côté et ils divergeaient : la
@@ -7649,32 +7657,20 @@ async function buildInvoicePdf(inv) {
   TR('FACTURE', R, y + 2, 20, bold, ink);
   TR('N° ' + inv.invNo, R, y - 13, 10, font, mut);
   TR(inv.dateStr, R, y - 26, 10, font, mut);
-  TR('PAYÉE', R, y - 41, 10, bold, teal);
-  y -= 62;
+  if (inv.datePrestaStr) TR('Prestation du ' + inv.datePrestaStr, R, y - 39, 10, font, mut);
+  TR('PAYÉE', R, y - (inv.datePrestaStr ? 54 : 41), 10, bold, teal);
+  y -= inv.datePrestaStr ? 75 : 62;
   page.drawLine({ start: { x: M, y }, end: { x: R, y }, thickness: 1, color: hair });
   y -= 22;
   const colL = M; const colR = M + 275;
   T('PRESTATAIRE', colL, y, 8, bold, mut); T('FACTURÉ À', colR, y, 8, bold, mut);
   y -= 14;
-  T(inv.provider.legal || 'Artisan Ti-Services', colL, y, 11, bold, ink);
+  T(MF.nomPrestataire(inv.provider) || 'Artisan Ti-Services', colL, y, 11, bold, ink);
   T(inv.client.company || inv.client.name || 'Client', colR, y, 11, bold, ink);
   y -= 13;
-  // Mentions légales du prestataire selon son statut. Société : forme juridique + capital
-  // + RCS (obligatoire). Micro-entreprise : mention dédiée. SIREN = 9 premiers chiffres du
-  // SIRET. Pour un particulier, on n'ajoute ni forme ni RCS.
-  const pSiret = (inv.provider.siret || '').replace(/\s/g, '');
-  const siren = pSiret.slice(0, 9);
-  const stype = inv.provider.statusType || '';
-  let formLine = '';
-  if (stype === 'micro') {
-    formLine = 'Micro-entreprise';
-  } else if (stype !== 'particulier') {
-    const capNum = Number(String(inv.provider.capital || '').replace(/[^\d.]/g, ''));
-    formLine = [inv.provider.legalForm || '', (capNum > 0 ? 'au capital de ' + eurTxt(capNum) : '')].filter(Boolean).join(' ');
-  }
-  const rcsLine = (stype !== 'particulier' && stype !== 'micro' && inv.provider.rcsCity && siren)
-    ? ('RCS ' + inv.provider.rcsCity + ' ' + siren) : '';
-  const pL = [formLine, inv.provider.address || 'Saint-Barthélemy', pSiret ? ('SIRET ' + pSiret) : '', rcsLine].filter(Boolean);
+  // Mentions légales du prestataire selon son statut (MF.lignesPrestataire : forme et
+  // capital, adresse, SIRET, RCS pour une société ; « Micro-entreprise » sinon).
+  const pL = MF.lignesPrestataire(inv.provider, eurTxt);
   const cL = [inv.client.company ? inv.client.name : '', inv.client.siret ? ('SIRET ' + inv.client.siret) : '', (inv.client.zone ? inv.client.zone + ', ' : '') + 'Saint-Barthélemy'].filter(Boolean);
   const mx = Math.max(pL.length, cL.length);
   for (let i = 0; i < mx; i++) { if (pL[i]) T(pL[i], colL, y, 9, font, mut); if (cL[i]) T(cL[i], colR, y, 9, font, mut); y -= 12; }
@@ -7766,6 +7762,22 @@ async function buildProcurationPdf(d) {
   return Buffer.from(bytes).toString('base64');
 }
 
+/* LES DONNÉES DE LA FACTURE — une seule porte pour l'e-mail (emailClientInvoice) et le
+   téléchargement (invoicePdf). Plus de numéro de secours : une facture porte le numéro de
+   sa série, ou n'existe pas encore (« numéro unique, séquence chronologique et continue »). */
+function msDeTs(t) { try { return t ? (t.toMillis ? t.toMillis() : (t.toDate ? t.toDate().getTime() : Number(t) || 0)) : 0; } catch (_) { return 0; } }
+function donneesFacture(r, client) {
+  const { lines, total } = invoiceLines(r);
+  return {
+    invNo: String(r.saleInvoiceNo || r.invNo || ''),
+    dateStr: frDate(r.settledAt),
+    datePrestaStr: MF.dateFrLongue(MF.datePrestationISO({ doneProAtMs: msDeTs(r.doneProAt), dateISO: r.dateISO })),
+    provider: { legal: r.providerLegal || r.providerName || 'Artisan Ti-Services', address: r.providerAddress || '', siret: r.providerSiret || '', statusType: r.providerStatusType || '', legalForm: r.providerLegalForm || '', capital: r.providerCapital || '', rcsCity: r.providerRcsCity || '' },
+    client: { name: client.name, company: client.company || '', siret: client.siret || '', zone: r.zone || '' },
+    lines, total,
+  };
+}
+
 exports.emailClientInvoice = onDocumentUpdated({document: 'requests/{reqId}', secrets: [SMTP_PASS]}, async (event) => {
   const before = (event.data && event.data.before && event.data.before.data()) || {};
   const after = (event.data && event.data.after && event.data.after.data()) || {};
@@ -7783,23 +7795,27 @@ exports.emailClientInvoice = onDocumentUpdated({document: 'requests/{reqId}', se
     if (u.isPro) { company = u.company || ''; csiret = u.siret || ''; }
   } catch (_) {}
   if (!email) { console.log('emailClientInvoice : pas d\'e-mail client, ignoré.'); return; }
-  const { lines, total } = invoiceLines(after);
-  const invNo = after.saleInvoiceNo || after.invNo || ('2026-' + String(event.params.reqId).slice(-4));
-  const dateStr = frDate(after.settledAt);
+  // NUMÉRO : si le règlement n'a pas pu l'attribuer, on l'attribue ici (même porte,
+  // même transaction). Sans numéro, AUCUNE facture ne part : un numéro fabriqué
+  // casserait la séquence de la série.
+  let saleNo = after.saleInvoiceNo || '';
+  if (!saleNo && after.providerUid) {
+    try {
+      saleNo = await attribuerNumeroFacture(db, after.providerUid);
+      await event.data.after.ref.update({ saleInvoiceNo: saleNo });
+      await db.collection('ledger').doc(event.params.reqId).set({ invNo: saleNo }, { merge: true });
+    } catch (e) { console.error('emailClientInvoice numérotation', event.params.reqId, e); saleNo = ''; }
+  }
+  if (!saleNo) { console.error('emailClientInvoice : facture sans numéro, non envoyée', event.params.reqId); return; }
+  const F = donneesFacture(Object.assign({}, after, { saleInvoiceNo: saleNo }), { name: clientName, company, siret: csiret });
+  const { invNo, dateStr, total } = F;
   const svcName = (after.serviceName || 'prestation').toString().slice(0, 80);
   let pdfB64 = '';
-  try {
-    pdfB64 = await buildInvoicePdf({
-      invNo, dateStr,
-      provider: { legal: after.providerLegal || after.providerName || 'Artisan Ti-Services', address: after.providerAddress || '', siret: after.providerSiret || '', statusType: after.providerStatusType || '', legalForm: after.providerLegalForm || '', capital: after.providerCapital || '', rcsCity: after.providerRcsCity || '' },
-      client: { name: clientName, company, siret: csiret, zone: after.zone || '' },
-      lines, total,
-    });
-  } catch (e) { console.warn('buildInvoicePdf', e); }
+  try { pdfB64 = await buildInvoicePdf(F); } catch (e) { console.warn('buildInvoicePdf', e); }
   const message = {
     subject: 'Votre facture Ti-Services - ' + svcName + ' (n° ' + invNo + ')',
     html: '<p>Bonjour ' + escHtmlS(String(clientName).split(' ')[0]) + ',</p>' +
-          '<p>Merci d\'avoir fait appel à <b>Ti-Services</b>. Vous trouverez ci-joint votre facture (PDF) pour la prestation « ' + escHtmlS(svcName) + ' » du ' + dateStr + '.</p>' +
+          '<p>Merci d\'avoir fait appel à <b>Ti-Services</b>. Vous trouverez ci-joint votre facture (PDF) pour la prestation « ' + escHtmlS(svcName) + ' » du ' + (F.datePrestaStr || dateStr) + '.</p>' +
           '<p>Elle reste également disponible à tout moment dans l\'application, rubrique « Historique &amp; factures ».</p>' +
           '<p>À très vite,<br>L\'équipe Ti-Services</p>',
   };
@@ -8087,6 +8103,43 @@ exports.funnelDetail = onCall(async (request) => {
  * e-mail, à partir de la demande figée dans Firestore — donc un vrai fichier .pdf,
  * sans passer par la boîte d'impression du navigateur. Réservé au client concerné,
  * au prestataire assigné et à l'admin. */
+/* LE PROFIL DEPUIS LE SIRET (l'éditeur, 25/11/2026). Lit l'API publique « Recherche
+   d'entreprises » (DINUM, données Sirene/RNE, sans clé) et rend la fiche et l'écart avec
+   le profil. N'ÉCRIT RIEN : la personne voit l'écart et applique (le prestataire sur sa
+   fiche, l'administrateur depuis la console). Le téléphone n'appelle jamais l'API
+   lui-même. data : { siret? } pour soi, { uid } pour l'administrateur. */
+exports.ficheSiret = onCall(async (request) => {
+  // Sans connexion : seulement une recherche sur le SIRET donné (inscription commencée
+  // avant le compte ; données publiques). Lire un profil exige d'en être le titulaire,
+  // ou l'administrateur.
+  const uid = (request.auth && request.auth.uid) || '';
+  const who = (request.auth && request.auth.token && request.auth.token.email) || '';
+  const admin = !!who && who.toLowerCase() === ADMIN_EMAIL.toLowerCase();
+  const d = request.data || {};
+  const db = getFirestore();
+  let cible = uid;
+  if (d.uid && d.uid !== uid) {
+    if (!admin) throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
+    cible = String(d.uid);
+  }
+  let profil = {};
+  if (cible) { try { const a = await db.collection('artisans').doc(cible).get(); profil = a.exists ? (a.data() || {}) : {}; } catch (_) {} }
+  const siret = FS.siretPropre(d.siret) || FS.siretPropre(profil.siret);
+  if (!siret) throw new HttpsError('invalid-argument', 'SIRET de 14 chiffres requis.');
+  let json = null;
+  try {
+    const rep = await fetch('https://recherche-entreprises.api.gouv.fr/search?q=' + siret + '&page=1&per_page=1',
+      { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(8000) });
+    if (!rep.ok) throw new Error('HTTP ' + rep.status);
+    json = await rep.json();
+  } catch (e) {
+    console.warn('ficheSiret', siret.slice(0, 9), e && e.message);
+    throw new HttpsError('unavailable', 'Répertoire Sirene injoignable, réessayez dans un instant.');
+  }
+  const fiche = FS.ficheDepuisSirene(json, siret);
+  return { fiche, ecart: FS.ecartProfil(profil, fiche) };
+});
+
 exports.invoicePdf = onCall(async (request) => {
   const uid = request.auth && request.auth.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Connexion requise.');
@@ -8101,24 +8154,17 @@ exports.invoicePdf = onCall(async (request) => {
   if (r.clientUid !== uid && r.providerUid !== uid && !admin) {
     throw new HttpsError('permission-denied', 'Accès refusé.');
   }
-  const { lines, total } = invoiceLines(r);
-  const invNo = r.saleInvoiceNo || r.invNo || ('2026-' + reqId.slice(-4));
-  const dateStr = frDate(r.settledAt);
+  if (!(r.saleInvoiceNo || r.invNo)) throw new HttpsError('failed-precondition', 'Facture en cours de numérotation, réessayez dans un instant.');
   let clientName = r.clientName || 'Client'; let company = ''; let csiret = '';
   try {
     const u = (await db.collection('users').doc(r.clientUid).get()).data() || {};
     if (u.name) clientName = u.name;
     if (u.isPro) { company = u.company || ''; csiret = u.siret || ''; }
   } catch (_) {}
+  const F = donneesFacture(r, { name: clientName, company, siret: csiret });
+  const invNo = F.invNo;
   let pdf = '';
-  try {
-    pdf = await buildInvoicePdf({
-      invNo, dateStr,
-      provider: { legal: r.providerLegal || r.providerName || 'Artisan Ti-Services', address: r.providerAddress || '', siret: r.providerSiret || '', statusType: r.providerStatusType || '', legalForm: r.providerLegalForm || '', capital: r.providerCapital || '', rcsCity: r.providerRcsCity || '' },
-      client: { name: clientName, company, siret: csiret, zone: r.zone || '' },
-      lines, total,
-    });
-  } catch (e) { console.warn('invoicePdf build', e); throw new HttpsError('internal', 'Génération du PDF impossible.'); }
+  try { pdf = await buildInvoicePdf(F); } catch (e) { console.warn('invoicePdf build', e); throw new HttpsError('internal', 'Génération du PDF impossible.'); }
   return { pdf, invNo, filename: 'Facture-Ti-Services-' + invNo + '.pdf' };
 });
 
