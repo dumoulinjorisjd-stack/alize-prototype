@@ -1914,6 +1914,7 @@ const IRR = require('./versement-irroutable');
 const ENC = require('./encaissement');
 const CANP = require('./canaux-prevenus');
 const RELP = require('./relance-paiement');
+const RPT = require('./relance-pointage');
 /* LE COMPTEUR DU JOUR. Un document par clé et par jour dans `quotas` — collection
  * SERVEUR (aucune règle ne l'ouvre, l'Admin SDK passe outre). Transaction : deux demandes
  * simultanées ne peuvent pas lire le même nombre et l'écrire deux fois.
@@ -6643,6 +6644,41 @@ exports.missionReminders = onSchedule({schedule: 'every 15 minutes', secrets: [S
       await doc.ref.update({ reminded1h: true });
       console.log('Rappel 1 h envoyé pour ' + doc.id);
     } catch (e) { console.warn('missionReminders', doc.id, e); }
+  }
+  /* LE POINTAGE OUBLIÉ (l'éditeur, 25/11/2026 : « on relance 1 h après le manque de
+     pointage »). La règle est dans `relance-pointage.js` ; ici on lit, on envoie, et on
+     note la relance pour ne jamais la refaire. Hier ET aujourd'hui : une mission du soir
+     se termine après minuit. */
+  const veille = [dayISO(nowMs - 24 * 3600 * 1000), dayISO(nowMs)];
+  for (const st of ['accepted', 'working']) {
+    let docs = [];
+    try { docs = (await db.collection('requests').where('status', '==', st).where('dateISO', 'in', veille).get()).docs; }
+    catch (e) { console.warn('missionReminders pointage lecture', st, e); continue; }
+    for (const doc of docs) {
+      const r = doc.data() || {};
+      if (!r.providerUid) continue;
+      const wa = r.workingAt && r.workingAt.toMillis ? r.workingAt.toMillis() : Number(r.workingAt) || 0;
+      const geste = RPT.relancePointageDecider(Object.assign({}, r, {workingAtMs: wa}), nowMs);
+      if (!geste) continue;
+      try {
+        const svc = (r.serviceName || 'Mission').toString().slice(0, 60);
+        const first = (((r.clientName || '').trim().split(/\s+/)[0]) || 'le client');
+        const titre = geste === 'demarrage' ? ('Mission démarrée ? · ' + svc) : ('Mission terminée ? · ' + svc);
+        const corps = geste === 'demarrage'
+          ? ('Appuyez sur « Démarrer » dans l’app, ' + first + ' vous attend.')
+          : ('Appuyez sur « Terminer » pour que ' + first + ' valide et que vous soyez payé.');
+        const u = (await db.collection('users').doc(r.providerUid).get()).data() || {};
+        const tokens = (u.notifOn === false) ? [] : (u.pushTokens || []);
+        if (tokens.length) {
+          await pushMulticast(tokens, titre, corps, '/?open=promissions',
+            (tok) => db.collection('users').doc(r.providerUid).update({ pushTokens: FieldValue.arrayRemove(tok) }), 'ti-pointage-' + doc.id);
+        } else if (u.email) {
+          await sendMail(db, u.email, { subject: titre, html: '<p>' + escHtmlS(corps) + '</p>' });
+        }
+        await doc.ref.update(geste === 'demarrage' ? { relanceDemarrageAt: FieldValue.serverTimestamp() } : { relanceFinAt: FieldValue.serverTimestamp() });
+        console.log('Relance de pointage (' + geste + ') envoyée pour ' + doc.id);
+      } catch (e) { console.warn('missionReminders pointage', doc.id, e); }
+    }
   }
 });
 
