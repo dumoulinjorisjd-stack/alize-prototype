@@ -764,7 +764,11 @@ function commandeCouverture(e) {
    * Sans mandat derrière : si l'empreinte meurt avant la fin, le solde partira en lien
    * de paiement. Seul un REFUS (« failed ») ouvre ce repli — un abandon (« canceled »,
    * « expired ») redemande l'enregistrement, qui reste le geste qui porte. */
-  if (e.enregistrementRefuse === true) {
+  /* UNE COMMANDE RÉCURRENTE N'A PAS CE REPLI (l'éditeur, 25/11/2026 : « au moment du
+   * paiement il faut l'obliger à cliquer "enregistrer ma carte" »). Une empreinte meurt
+   * en sept à trente jours ; les passages suivants n'auraient rien pour être prélevés.
+   * On redemande donc l'enregistrement, avec une autre carte s'il le faut. */
+  if (e.enregistrementRefuse === true && e.recurrente !== true) {
     return {couvert: false, par: 'empreinte', geste: 'empreinte', motif: 'carte-refusee', carteExpire: expiree};
   }
   if (expiree && (statut === 'valid' || statut === 'pending')) {
@@ -1915,6 +1919,7 @@ const ENC = require('./encaissement');
 const CANP = require('./canaux-prevenus');
 const RELP = require('./relance-paiement');
 const RPT = require('./relance-pointage');
+const SERIE = require('./serie-recurrente');
 /* LE COMPTEUR DU JOUR. Un document par clé et par jour dans `quotas` — collection
  * SERVEUR (aucune règle ne l'ouvre, l'Admin SDK passe outre). Transaction : deux demandes
  * simultanées ne peuvent pas lire le même nombre et l'écrire deux fois.
@@ -3101,6 +3106,15 @@ exports.notifyClientStatus = onDocumentUpdated('requests/{reqId}', async (event)
   } else if (aStatus === 'done_pro') {
     title = 'Vos réservations · Prestation terminée';
     body = provider + ' a terminé, validez pour finaliser.';
+  } else if (bStatus === 'accepted' && aStatus === 'declined' && after.serieId) {
+    // UN PASSAGE D'UNE SÉRIE RÉCURRENTE que son prestataire ne peut pas assurer « cette
+    // fois » (l'éditeur, 25/11/2026) : le client choisit de le proposer à quelqu'un
+    // d'autre. Les passages suivants restent à son prestataire.
+    const who = (before.providerName || after.preferredProviderName || 'Votre prestataire').toString().split(/\s+/)[0].slice(0, 40);
+    const p = String(after.dateISO || '').split('-');
+    const jour = p.length === 3 ? (Number(p[2]) + '/' + Number(p[1])) : '';
+    title = 'Vos réservations · Passage à remplacer';
+    body = who + ' ne peut pas venir' + (jour ? ' le ' + jour : '') + '. Proposez ce passage à quelqu’un d’autre.';
   } else if (bStatus === 'pending' && aStatus === 'declined') {
     // L'artisan PRÉCISÉMENT demandé (demande dirigée) a décliné : le client doit
     // décider de la suite (proposer à tous les artisans, ou annuler).
@@ -5971,6 +5985,7 @@ exports.createClientPayment = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (
     moisPrestation: String(r.dateISO || '').slice(0, 7),
     // `cardSetupStatus` est écrit par le serveur seul (webhook, rattrapage ; règles).
     enregistrementRefuse: String(r.cardSetupStatus || '') === 'failed',
+    recurrente: !!SERIE.recurrencePropre(r.recurrence),
   });
   if (COUV.motif === 'carte-refusee') {
     // L'enregistrement raté avait noté « couverte par le mandat » : ce n'est plus vrai.
@@ -6701,6 +6716,94 @@ exports.missionReminders = onSchedule({schedule: 'every 15 minutes', secrets: [S
       } catch (e) { console.warn('missionReminders pointage', doc.id, e); }
     }
   }
+});
+
+/* ══ LES PASSAGES D'UNE COMMANDE RÉCURRENTE ══════════════════════════════════════════
+   (l'éditeur, 25/11/2026). La règle est dans `serie-recurrente.js` ; ici on lit, on crée,
+   on recopie l'adresse privée. Une série ne produit des passages que si :
+   - elle est active (`serieEtat`) ;
+   - un prestataire s'y est engagé (la commande d'origine a été acceptée) ;
+   - le client a une carte enregistrée VALIDE : chaque passage se prélève dessus, après
+     sa validation, comme tout règlement sans empreinte (`reglementDecider`).
+   Chaque passage a un identifiant par jour (`SERIE.idPassage`) et se CRÉE (create) :
+   deux passages du même jour sont impossibles, même si deux balayages se croisent. */
+const jourSbh = (ms) => new Date(ms - 4 * 3600 * 1000).toISOString().slice(0, 10);
+async function genererPassagesDeLaSerie(db, parentDoc, maintenant) {
+  const r = parentDoc.data() || {};
+  const bilan = {crees: 0, motif: ''};
+  if (!SERIE.recurrencePropre(r.recurrence)) { bilan.motif = 'sans-rythme'; return bilan; }
+  if (!r.providerUid) { bilan.motif = 'sans-prestataire'; return bilan; }
+  const M = await mandatDuClient(db, r.clientUid);
+  if (!(M.mandat && M.mandat.statut === 'valid')) { bilan.motif = 'sans-carte'; return bilan; }
+  const deja = (await db.collection('requests').where('serieId', '==', parentDoc.id).get()).docs
+    .map((d) => String((d.data() || {}).dateISO || ''));
+  const dates = SERIE.passagesACreer({recurrence: r.recurrence, etat: r.serieEtat,
+    aujourdhui: jourSbh(maintenant), existants: deja});
+  if (!dates.length) return bilan;
+  let prive = null;
+  try { const pd = await parentDoc.ref.collection('private').doc('details').get(); prive = pd.exists ? (pd.data() || null) : null; } catch (_) {}
+  for (const d of dates) {
+    const ref = db.collection('requests').doc(SERIE.idPassage(parentDoc.id, d));
+    try {
+      await ref.create(Object.assign(SERIE.passageDepuis(r, d, parentDoc.id), {
+        createdAt: FieldValue.serverTimestamp(), acceptedAt: FieldValue.serverTimestamp(),
+        couverturePar: 'mandat', couvertureMotif: 'serie',
+      }));
+      if (prive) { try { await ref.collection('private').doc('details').set(prive); } catch (e) { console.warn('serie privé', ref.id, e); } }
+      bilan.crees++;
+    } catch (e) {
+      // ALREADY_EXISTS : un autre balayage l'a créé — c'est le but de `create`.
+      if (!(e && (e.code === 6 || /already exists/i.test(String(e.message || ''))))) console.warn('serie création', ref.id, e);
+    }
+  }
+  return bilan;
+}
+exports.genererPassagesRecurrents = onSchedule({schedule: 'every 6 hours'}, async () => {
+  const db = getFirestore();
+  const now = Date.now();
+  let series = [];
+  try { series = (await db.collection('requests').where('serieEtat', '==', 'active').get()).docs; }
+  catch (e) { console.warn('genererPassagesRecurrents lecture', e); return; }
+  let crees = 0; const bloquees = {};
+  for (const doc of series) {
+    try {
+      const b = await genererPassagesDeLaSerie(db, doc, now);
+      crees += b.crees; if (b.motif) bloquees[b.motif] = (bloquees[b.motif] || 0) + 1;
+    } catch (e) { console.warn('genererPassagesRecurrents', doc.id, e); }
+  }
+  console.log('genererPassagesRecurrents : ' + series.length + ' série(s), ' + crees + ' passage(s) créé(s)' +
+    (Object.keys(bloquees).length ? ', en attente : ' + JSON.stringify(bloquees) : ''));
+});
+/* PAUSE OU SUPPRESSION : les passages déjà créés et à venir s'annulent, SANS PÉNALITÉ
+   (l'éditeur : « on n'applique pas de pénalité sur les engagements récurrents »). Ceux
+   du jour même restent : la prestation a pu commencer. La reprise (« active ») laisse le
+   balayage recréer les suivants ; on le lance tout de suite pour ne pas attendre 6 h. */
+exports.serieChangeEtat = onDocumentUpdated('requests/{reqId}', async (event) => {
+  const before = (event.data && event.data.before && event.data.before.data()) || {};
+  const after = (event.data && event.data.after && event.data.after.data()) || {};
+  if (before.serieEtat === after.serieEtat || !SERIE.recurrencePropre(after.recurrence)) return;
+  const db = getFirestore();
+  const id = event.params.reqId;
+  if (after.serieEtat === 'active') {
+    try { await genererPassagesDeLaSerie(db, event.data.after, Date.now()); } catch (e) { console.warn('serieChangeEtat reprise', id, e); }
+    return;
+  }
+  if (after.serieEtat !== 'pause' && after.serieEtat !== 'supprimee') return;
+  const demain = SERIE.ajouterJours(jourSbh(Date.now()), 1);
+  const motif = after.serieEtat === 'pause' ? 'serie-pause' : 'serie-supprimee';
+  const cibles = (await db.collection('requests').where('serieId', '==', id).get()).docs;
+  // Le premier passage (la commande d'origine) aussi, s'il est encore à venir.
+  cibles.push(event.data.after);
+  let n = 0;
+  for (const d of cibles) {
+    const x = d.data() || {};
+    if ((x.status !== 'accepted' && x.status !== 'pending' && x.status !== 'declined') || String(x.dateISO || '') < demain) continue;
+    try {
+      await d.ref.update({status: 'cancelled', lateCancel: false, cancelFee: 0, feeDecision: 'none', cancelledAt: Date.now(), annulationMotif: motif});
+      n++;
+    } catch (e) { console.warn('serieChangeEtat annulation', d.id, e); }
+  }
+  console.log('serieChangeEtat ' + id + ' → ' + after.serieEtat + ' : ' + n + ' passage(s) à venir annulé(s) sans pénalité');
 });
 
 /* ── Rappel de re-commande : pour les prestations récurrentes par nature, si la

@@ -195,6 +195,24 @@ for (const champ of ['doneProAt', 'workingAt']) {
 ok(await passe(updateDoc(R(dPro), { status: 'working' })),
    'le prestataire démarre toujours sa mission (doit rester possible)');
 
+console.log('\n── LA RÉCURRENCE (éditeur, 25/11/2026) ──');
+await env.withSecurityRulesDisabled(async (c) => {
+  await setDoc(doc(c.firestore(), 'requests', 'P1'), { clientUid: CLI, providerUid: PRO, status: 'accepted', service: 'menage', serviceName: 'Ménage',
+    unit: 'h', rate: 28, duration: 4, serieId: 'S0', dateISO: '2026-12-05', acts: [], options: [], tip: 0, messages: [], supportClient: [], supportPro: [] });
+  await setDoc(doc(c.firestore(), 'requests', 'S0'), { clientUid: CLI, providerUid: PRO, status: 'accepted', service: 'menage', serviceName: 'Ménage',
+    unit: 'h', rate: 28, duration: 4, recurrence: { rythme: 'semaine', jours: [3], debut: '2026-12-02' }, serieEtat: 'active', acts: [], options: [], tip: 0, messages: [], supportClient: [], supportPro: [] });
+});
+ok(await passe(setDoc(doc(dCli, 'requests', 'N1'), { clientUid: CLI, status: 'pending', service: 'menage', recurrence: { rythme: 'jour', jours: [], debut: '2026-12-02' }, serieEtat: 'active' })),
+   'le client crée une commande récurrente (doit rester possible)');
+ok(!(await passe(setDoc(doc(dCli, 'requests', 'N2'), { clientUid: CLI, status: 'pending', service: 'menage', serieId: 'S0' }))),
+   'il ne se déclare pas passage d’une série : serieId est au serveur');
+ok(await passe(updateDoc(doc(dCli, 'requests', 'S0'), { serieEtat: 'pause' })), 'le client met sa série en pause (doit rester possible)');
+ok(!(await passe(updateDoc(doc(dAut, 'requests', 'S0'), { serieEtat: 'supprimee' }))), 'personne d’autre ne la touche');
+ok(await passe(updateDoc(doc(dPro, 'requests', 'P1'), { status: 'declined', providerUid: null, declinedBy: PRO })),
+   'le prestataire décline un passage, « je ne peux pas cette fois » (doit rester possible)');
+ok(await passe(updateDoc(doc(dCli, 'requests', 'P1'), { status: 'pending', directed: false, preferredProviderUid: null, declinedBy: null })),
+   'le client le propose à quelqu’un d’autre (doit rester possible)');
+
 await env.cleanup();
 console.log(f ? '\n' + f + ' ÉCHEC(S)' : '\nTout est vert.');
 process.exit(f ? 1 : 0);
