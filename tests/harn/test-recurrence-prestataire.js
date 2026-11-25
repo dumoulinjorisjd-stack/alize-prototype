@@ -37,6 +37,16 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   const en = await p.evaluate(() => { window.__S.lang = 'en'; window.__render(); const t = document.getElementById('view').textContent.replace(/\s+/g, ' '); window.__S.lang = 'fr'; return t; });
   ok(/Recurring · every week \(We · Sa\)\. By accepting, you commit to every visit\./.test(en), 'et en anglais');
 
+  // « il faut comprendre que la somme perçue est par prestation » (l'éditeur, 25/11/2026)
+  ok(/Vous percevez ?\d+,\d\d € par passage Montant net que vous touchez à chaque passage, versé après chacun\./.test(r), 'la fiche dit que le montant vaut pour un passage');
+  const liste = await p.evaluate(() => { const S = window.__S; S.proReqView = null; window.__render(); return document.getElementById('view').textContent.replace(/\s+/g, ' '); });
+  ok(/Ménage ?\d+,\d\d € par passage/.test(liste), 'la liste des missions disponibles aussi');
+  const ponct = await p.evaluate(() => { const S = window.__S; delete S.openRequests[0].recurrence; S.proReqView = 'R1'; window.__render(); const t = document.getElementById('view').textContent.replace(/\s+/g, ' '); S.proReqView = null; window.__render(); return t + ' || ' + document.getElementById('view').textContent.replace(/\s+/g, ' '); });
+  ok(!/par passage/.test(ponct) && /pour cette mission, versé après la prestation/.test(ponct), 'une demande ponctuelle ne change pas');
+  const enP = await p.evaluate(() => { const S = window.__S; S.openRequests[0].recurrence = { rythme: 'semaine', jours: [3, 6], debut: '2026-12-02' }; S.proReqView = 'R1'; S.lang = 'en'; window.__render(); const t = document.getElementById('view').textContent.replace(/\s+/g, ' '); S.lang = 'fr'; S.proReqView = null; window.__render(); return t; });
+  await p.clock.runFor(500); await p.evaluate(() => { window.__ecrits = []; });   // la « vue » de la fiche s'écrit à part
+  ok(/per visit Net amount you earn for each visit, paid after each one\./.test(enP), 'et en anglais');
+
   console.log('B — un passage à plus de 48 h : « Je ne peux pas cette fois »');
   const passage = (dateISO, serieId) => p.evaluate(({ dateISO, serieId }) => {
     const S = window.__S; S.proReqView = null; S.proDeclinAsk = false; S.proReopenAsk = false;
