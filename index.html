@@ -4923,6 +4923,21 @@
      récurrence sur le colis (une fenêtre de dates) ni à la journée. */
   const RECUR_JOURS=['Di','Lu','Ma','Me','Je','Ve','Sa'];      // index = getDay()
   const RECUR_ORDRE=[1,2,3,4,5,6,0];                            // affichés du lundi au dimanche
+  /* LE PRESTATAIRE S'ENGAGE SUR LA SÉRIE (« le pro accepte dès le début la récurrence »). */
+  function recurBandeau(r){
+    const rc=r&&r.recurrence;if(!rc||!rc.rythme)return '';
+    const lib=rc.rythme==='jour'?'Récurrente · chaque jour':(rc.rythme==='mois'?'Récurrente · chaque mois':'Récurrente · chaque semaine');
+    const jours=(rc.rythme==='semaine'&&Array.isArray(rc.jours))?RECUR_ORDRE.filter(function(j){return rc.jours.indexOf(j)>=0;}).map(function(j){return '<span>'+RECUR_JOURS[j]+'</span>';}).join(' · '):'';
+    return `<div class="banner teal" style="margin-top:12px">${I.repeat}<span><b>${lib}</b>${jours?' ('+jours+')':''}. <span>En acceptant, vous vous engagez sur chaque passage.</span></span></div>`;
+  }
+  /* « JE NE PEUX PAS CETTE FOIS », jusqu'à 48 h avant le passage (miroir de declinPossible,
+     functions/serie-recurrente.js). Sans heure convenue, l'échéance part du début du jour. */
+  const DECLIN_DELAI_MS=48*3600000;
+  function declinPassagePossible(m,maintenant){
+    let d=debutPrevuMs(m);
+    if(!d&&/^\d{4}-\d{2}-\d{2}$/.test(String(m&&m.dateISO||''))){const p=m.dateISO.split('-');d=new Date(+p[0],(+p[1])-1,+p[2]).getTime();}
+    return d>0&&maintenant<=d-DECLIN_DELAI_MS;
+  }
   function recurPermise(m){return !!(m&&svcDe(m)!=='colis'&&!isDayU(m));}
   function jourSemaineIso(iso){return new Date(String(iso)+'T12:00:00Z').getUTCDay();}
   function recurrenceDuDraft(m){
@@ -8041,6 +8056,15 @@
     "Pause à tout moment dans Réservations.":"Pause anytime in Bookings.",
     "Premier passage":"First visit",
     "par passage":"per visit",
+    "Récurrente · chaque jour":"Recurring · every day",
+    "Récurrente · chaque semaine":"Recurring · every week",
+    "Récurrente · chaque mois":"Recurring · every month",
+    "En acceptant, vous vous engagez sur chaque passage.":"By accepting, you commit to every visit.",
+    "Passage dans moins de 48 h : prévenez le client par message.":"Visit in less than 48 h: let the client know by message.",
+    "Libérer ce passage ? Le client le proposera à quelqu’un d’autre, les suivants restent à vous.":"Release this visit? The client will offer it to someone else; the next ones stay yours.",
+    "Oui, je ne peux pas cette fois":"Yes, I can't make it this time",
+    "Je ne peux pas cette fois":"I can't make it this time",
+    "Passage libéré, le client est prévenu":"Visit released, the client has been notified",
     "Adresse exacte":"Exact address",
     "Indiquez où le prestataire doit intervenir.":"Enter where the pro should work.",
     "Nom du lieu":"Place name",
@@ -9582,6 +9606,15 @@
     "Pause à tout moment dans Réservations.":"Pausa a qualquer momento em Reservas.",
     "Premier passage":"Primeira visita",
     "par passage":"por visita",
+    "Récurrente · chaque jour":"Recorrente · todos os dias",
+    "Récurrente · chaque semaine":"Recorrente · todas as semanas",
+    "Récurrente · chaque mois":"Recorrente · todos os meses",
+    "En acceptant, vous vous engagez sur chaque passage.":"Ao aceitar, compromete-se com cada visita.",
+    "Passage dans moins de 48 h : prévenez le client par message.":"Visita em menos de 48 h: avise o cliente por mensagem.",
+    "Libérer ce passage ? Le client le proposera à quelqu’un d’autre, les suivants restent à vous.":"Libertar esta visita? O cliente vai propô-la a outra pessoa; as seguintes continuam suas.",
+    "Oui, je ne peux pas cette fois":"Sim, desta vez não posso",
+    "Je ne peux pas cette fois":"Desta vez não posso",
+    "Passage libéré, le client est prévenu":"Visita libertada, o cliente foi avisado",
     "Adresse exacte":"Morada exata",
     "Indiquez où le prestataire doit intervenir.":"Indique onde o profissional deve intervir.",
     "Nom du lieu":"Nome do local",
@@ -20244,7 +20277,10 @@
           :`<button class="btn primary" disabled style="opacity:.55">Démarrer la prestation</button>
             <p class="mini" style="margin-top:9px;color:var(--muted);line-height:1.5">${I.clock} Vous pourrez démarrer à partir du <b>${esc(dateHeureFr(d.ouvreA))}</b>. La prestation est prévue ${esc(jourAffiche(m))}${m.slot?' à '+esc(m.slot):''}.</p>`;})():`<button class="btn primary" data-act="pro-finish-start">J'ai terminé la prestation</button>`}${isDemo()?`<p class="mini" style="text-align:center;margin-top:10px"><button class="linklike" data-act="demo-go-client">${I.user} Voir côté client (démo)</button></p>`:''}</div>
       ${demarrageAnnulable(m.status)?`<p class="mini" style="text-align:center;margin-top:14px">${S.proUndoAsk?`<span style="color:var(--coral-deep)">Revenir en arrière&nbsp;? La mission redevient « à réaliser ».</span> <button class="linklike" data-act="pro-undo-start" style="color:var(--coral-deep);font-weight:700">Oui, je n’ai pas commencé</button> · <button class="linklike" data-act="pro-undo-cancel" style="color:var(--muted)">Non</button>`:`<button class="linklike" data-act="pro-undo-ask" style="color:var(--muted)">Je n’ai pas encore commencé</button>`}</p>`:''}
-      ${m.status==='accepted'?`<p class="mini" style="text-align:center;margin-top:14px">${S.proReopenAsk?`<span style="color:var(--coral-deep)">Rendre la mission&nbsp;? Elle repart aux autres artisans.</span><br><button class="linklike" data-act="pro-reopen-confirm" style="color:var(--coral-deep);font-weight:700">Oui, je me désiste</button> · <button class="linklike" data-act="pro-reopen-cancel">Annuler</button>`:`<button class="linklike" data-act="pro-reopen" style="color:var(--muted)">Je ne peux plus assurer cette mission</button>`}</p>`:''}</div>`;
+      ${(m.status==='accepted'&&m.serieId)?`<p class="mini" style="text-align:center;margin-top:14px">${!declinPassagePossible(m,Date.now())?`<span style="color:var(--muted)">Passage dans moins de 48 h : prévenez le client par message.</span>`
+        :(S.proDeclinAsk?`<span style="color:var(--coral-deep)">Libérer ce passage ? Le client le proposera à quelqu’un d’autre, les suivants restent à vous.</span><br><button class="linklike" data-act="pro-passage-declin-ok" style="color:var(--coral-deep);font-weight:700;min-height:44px">Oui, je ne peux pas cette fois</button> · <button class="linklike" data-act="pro-passage-declin-non" style="min-height:44px">Annuler</button>`
+          :`<button class="linklike" data-act="pro-passage-declin" style="color:var(--coral-deep);font-weight:700;min-height:44px">Je ne peux pas cette fois</button>`)}</p>`
+      :m.status==='accepted'?`<p class="mini" style="text-align:center;margin-top:14px">${S.proReopenAsk?`<span style="color:var(--coral-deep)">Rendre la mission&nbsp;? Elle repart aux autres artisans.</span><br><button class="linklike" data-act="pro-reopen-confirm" style="color:var(--coral-deep);font-weight:700">Oui, je me désiste</button> · <button class="linklike" data-act="pro-reopen-cancel">Annuler</button>`:`<button class="linklike" data-act="pro-reopen" style="color:var(--muted)">Je ne peux plus assurer cette mission</button>`}</p>`:''}</div>`;
   }
   function proFinish(){
     const m=S.mission;const fh=(m.finalHours!=null)?m.finalHours:m.duration;const adj=fh!==m.duration;const t=m.rate*fh;const d=fh-m.duration;
@@ -22689,6 +22725,18 @@
       case 'waive-cancelfee':{const m=S.mission;if(m&&m.status==='cancelled'){m.feeDecision='waived';m.feeDecidedAt=Date.now();if(!isDemo())pushReqUpdate(m,{feeDecision:'waived',feeDecidedAt:Date.now()});const j=(S.proMissions||[]).indexOf(m);if(j>=0)S.proMissions.splice(j,1);S.mission=null;S.proNav='home';render();toast('Vous avez renoncé à l’indemnité');}break;}
       case 'confirm-done':{const _tt=totals(S.mission);pushMissionStatus(S.mission,{status:'paid',tip:_tt.tip||0,total:_tt.total});finalizePaid(S.mission);render();burstConfetti();break;}
       case 'pro-reopen':S.proReopenAsk=true;render();break;
+      case 'pro-passage-declin':S.proDeclinAsk=true;render();break;
+      case 'pro-passage-declin-non':S.proDeclinAsk=false;render();break;
+      /* LE PASSAGE REVIENT AU CLIENT, qui choisit de le proposer à quelqu'un d'autre
+         (notifyClientStatus : « Passage à remplacer »). La série reste au prestataire. */
+      case 'pro-passage-declin-ok':{const m=S.mission;S.proDeclinAsk=false;
+        if(m&&m.serieId&&m.status==='accepted'&&declinPassagePossible(m,Date.now())){
+          const uid=(FB&&FB.auth&&FB.auth.currentUser&&FB.auth.currentUser.uid)||'';
+          if(!isDemo())pushReqUpdate(m,{status:'declined',providerUid:null,declinedBy:uid,declinedName:S.proName||'',declinedAt:Date.now()});
+          S.proMissions=(S.proMissions||[]).filter(function(x){return x!==m&&x.reqId!==m.reqId;});
+          S.mission=null;S.proNav='home';toast('Passage libéré, le client est prévenu');
+        }
+        render();break;}
       case 'pro-reopen-cancel':S.proReopenAsk=false;render();break;
       case 'pro-reopen-confirm':reopenMission(S.mission);break;
       case 'client-noshow':S.clientNoShowAsk=true;render();break;
@@ -25270,7 +25318,7 @@
             subscribeClientRequest(docu.id);
             changed=true;
           }
-          m.status=r.status;m.svc=r.service;m.svcName=r.serviceName||svcNm(r.service);m.rate=r.rate;m.duration=r.duration||1;m.unit=r.unit||'h';m.when=r.when||'';m.slot=r.acceptedSlot||r.slot||m.slot||'';m.zone=r.zone||m.zone||'';m.boost=r.boost||0;m.boostEur=r.boostEur||0;m.tip=r.tip||0;m.slotFlex=r.slotFlex||0;m.notes=r.notes||m.notes||'';m.frequency=r.frequency||m.frequency||'ponctuelle';m.people=r.people||m.people||1;
+          m.status=r.status;m.serieId=r.serieId||'';m.recurrence=r.recurrence||null;m.svc=r.service;m.svcName=r.serviceName||svcNm(r.service);m.rate=r.rate;m.duration=r.duration||1;m.unit=r.unit||'h';m.when=r.when||'';m.slot=r.acceptedSlot||r.slot||m.slot||'';m.zone=r.zone||m.zone||'';m.boost=r.boost||0;m.boostEur=r.boostEur||0;m.tip=r.tip||0;m.slotFlex=r.slotFlex||0;m.notes=r.notes||m.notes||'';m.frequency=r.frequency||m.frequency||'ponctuelle';m.people=r.people||m.people||1;
           /* LES PRESTATIONS CHOISIES SE RELISENT, SINON LE PRIX SE REFAIT À L'HEURE.
              « Le prix affiché de 60 euros n'est pas le bon » : un massage « 1 h relaxant »
              à 110 € s'affichait à 60 €. La demande ÉCRIT bien ses actes, mais cette
@@ -25365,7 +25413,7 @@
         if(active.indexOf(r.status)<0)continue;
         let det={};try{const s=await FB.f.getDoc(FB.f.doc(FB.db,'requests',docu.id,'private','details'));det=s.exists()?s.data():{};}catch(_){}
         const base=findSvc(r.service)||{id:r.service,nm:r.serviceName||svcNm(r.service),rate:r.rate||svcBase(r.service)};
-        const m=Object.assign(newMission(base),{_id:'pm'+docu.id,reqId:docu.id,status:r.status,svc:r.service,svcName:r.serviceName||svcNm(r.service),rate:r.rate,duration:r.duration||1,unit:r.unit||'h',dateISO:r.dateISO||'',acts:r.acts||null,when:r.when||'',slot:(r.acceptedSlot||r.slot||''),slotFlex:r.slotFlex||0,zone:r.zone||det.zone||'',address:det.address||'',geo:det.geo||null,access:det.access||'',boost:r.boost||0,tip:r.tip||0,notes:r.notes||'',photos:(r.photos||[]).slice(),clientName:r.clientName||det.clientName||'',clientPhoto:r.clientPhoto||det.clientPhoto||null,clientPhone:r.clientPhone||det.clientPhone||'',provider:Object.assign({},PROVIDERS[r.service]||{},{nm:S.proName||'Vous'})});
+        const m=Object.assign(newMission(base),{_id:'pm'+docu.id,reqId:docu.id,status:r.status,serieId:r.serieId||'',recurrence:r.recurrence||null,svc:r.service,svcName:r.serviceName||svcNm(r.service),rate:r.rate,duration:r.duration||1,unit:r.unit||'h',dateISO:r.dateISO||'',acts:r.acts||null,when:r.when||'',slot:(r.acceptedSlot||r.slot||''),slotFlex:r.slotFlex||0,zone:r.zone||det.zone||'',address:det.address||'',geo:det.geo||null,access:det.access||'',boost:r.boost||0,tip:r.tip||0,notes:r.notes||'',photos:(r.photos||[]).slice(),clientName:r.clientName||det.clientName||'',clientPhoto:r.clientPhoto||det.clientPhoto||null,clientPhone:r.clientPhone||det.clientPhone||'',provider:Object.assign({},PROVIDERS[r.service]||{},{nm:S.proName||'Vous'})});
         // Colis : reprendre le dossier de retrait + l'état de signature (survivent au rechargement).
         if(r.service==='colis'){m.poste=r.poste||det.poste||'';m.dateFrom=r.dateFrom||det.dateFrom||'';m.dateTo=r.dateTo||det.dateTo||'';if(det.colis)m.colis=Object.assign({},det.colis,{signed:!!r.colisSigned,signedAt:r.colisSignedAt||(det.colis&&det.colis.signedAt)||null,signature:r.colisSignature||(det.colis&&det.colis.signature)||''});}
         if(Array.isArray(r.messages))m.chat=mergeChat(m.chat,r.messages);
@@ -26509,7 +26557,7 @@
       await FB.f.updateDoc(FB.f.doc(FB.db,'requests',reqId),acc);
       let det={};try{const s=await FB.f.getDoc(FB.f.doc(FB.db,'requests',reqId,'private','details'));det=s.exists()?s.data():{};}catch(_){}
       const base=findSvc(req.service)||{id:req.service,nm:req.serviceName||svcNm(req.service),rate:req.rate||svcBase(req.service)};
-      S.mission=Object.assign(newMission(base),{reqId:reqId,status:'accepted',svc:req.service,svcName:req.serviceName||svcNm(req.service),rate:req.rate,duration:req.duration||1,unit:req.unit||'h',acts:req.acts||null,when:req.when||'',slot:acceptedSlot,slotFlex:req.slotFlex||0,proposedSlot:req.slotFlex?acceptedSlot:null,zone:req.zone||det.zone||'',address:det.address||'',geo:det.geo||null,access:det.access||'',boost:req.boost||0,boostEur:req.boostEur||0,people:req.people||1,locationMode:req.locationMode||'domicile',notes:req.notes||'',photos:(req.photos||[]).slice(),clientName:req.clientName||det.clientName||'',clientPhoto:req.clientPhoto||det.clientPhoto||null,clientPhone:det.clientPhone||'',provider:{nm:S.proName||'Vous',ini:inits(S.proName||'Vous'),rating:0,jobs:S.proJobsTotal||0,founder:!!S.proFounder}});
+      S.mission=Object.assign(newMission(base),{reqId:reqId,status:'accepted',serieId:req.serieId||'',recurrence:req.recurrence||null,svc:req.service,svcName:req.serviceName||svcNm(req.service),rate:req.rate,duration:req.duration||1,unit:req.unit||'h',acts:req.acts||null,when:req.when||'',slot:acceptedSlot,slotFlex:req.slotFlex||0,proposedSlot:req.slotFlex?acceptedSlot:null,zone:req.zone||det.zone||'',address:det.address||'',geo:det.geo||null,access:det.access||'',boost:req.boost||0,boostEur:req.boostEur||0,people:req.people||1,locationMode:req.locationMode||'domicile',notes:req.notes||'',photos:(req.photos||[]).slice(),clientName:req.clientName||det.clientName||'',clientPhoto:req.clientPhoto||det.clientPhoto||null,clientPhone:det.clientPhone||'',provider:{nm:S.proName||'Vous',ini:inits(S.proName||'Vous'),rating:0,jobs:S.proJobsTotal||0,founder:!!S.proFounder}});
       // Colis : reprend la fenêtre de dates + le dossier de retrait (pièces privées).
       if(req.service==='colis'){S.mission.poste=req.poste||det.poste||'';S.mission.dateFrom=req.dateFrom||det.dateFrom||'';S.mission.dateTo=req.dateTo||det.dateTo||'';if(det.colis){S.mission.colis=Object.assign({},det.colis,{signed:!!req.colisSigned,signedAt:req.colisSignedAt||(det.colis&&det.colis.signedAt)||null,signature:req.colisSignature||(det.colis&&det.colis.signature)||''});}}
       proAddMission(S.mission);watchRequest(reqId);S._accepting=null;S.proReqView=null;S.proReqSlot=null;S.proReqJour=null;S.proNav='home';render();burstConfetti();toast('Mission acceptée, à vous de jouer !');
@@ -26613,6 +26661,7 @@
             choisi son prestataire habituel, FAUX depuis qu'accepter une contre-
             proposition adresse la demande à celui qui l'a faite — il lisait une raison
             inventée. La demande porte son origine (`reopenedBy`), on la lit. */''}
+      ${recurBandeau(r)}
       ${directedMe?(r.reopenedBy==='contre-proposition'
         ? `<div class="banner teal" style="margin-top:12px">${I.check}<span><b>${esc(r.clientName||'Ce client')} a accepté le créneau que vous avez proposé.</b> La demande vous est réservée au ${esc(fmtJourLong(r.dateISO||''))}${r.slot?(' à '+esc(r.slot)):''}. Confirmez-la pour la bloquer.</span></div>`
         : `<div class="banner teal" style="margin-top:12px">${I.star}<span><b>${esc(r.clientName||'Ce client')} vous a demandé personnellement.</b> Cette demande ne passe pas par la file d’attente habituelle, elle vous est adressée à vous seul, parce que vous avez déjà travaillé ensemble. Vous êtes le premier informé.</span></div>`):''}
