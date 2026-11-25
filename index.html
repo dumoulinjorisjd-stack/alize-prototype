@@ -3830,7 +3830,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='942';
+  const VERSION_APP='943';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -4914,6 +4914,45 @@
   Object.keys(PROVIDERS).forEach(function(k){PROVIDERS[k].insured=true;});
   const FREQS=[{id:'ponctuelle',lbl:'Ponctuelle',short:'ponctuelle'},{id:'hebdo',lbl:'Chaque semaine',short:'chaque semaine'},{id:'bihebdo',lbl:'Toutes les 2 sem.',short:'toutes les 2 semaines'},{id:'mensuelle',lbl:'Chaque mois',short:'chaque mois'}];
   const freqInfo=(id)=>FREQS.find(f=>f.id===id)||FREQS[0];
+  /* ══ PONCTUELLE OU RÉCURRENTE (l'éditeur, 25/11/2026) ═══════════════════════════════
+     « Un bouton quand on passe une commande, comme pour un virement : ponctuel,
+     récurrent ; si récurrent, une fréquence. » Chaque jour (7/7), chaque semaine aux
+     jours cochés (deux passages par semaine : deux jours), chaque mois au même quantième.
+     La commande enregistre `recurrence` ; le serveur crée les passages suivants
+     (functions/serie-recurrente.js, dont `recurrenceDuDraft` est le miroir). Pas de
+     récurrence sur le colis (une fenêtre de dates) ni à la journée. */
+  const RECUR_JOURS=['Di','Lu','Ma','Me','Je','Ve','Sa'];      // index = getDay()
+  const RECUR_ORDRE=[1,2,3,4,5,6,0];                            // affichés du lundi au dimanche
+  function recurPermise(m){return !!(m&&svcDe(m)!=='colis'&&!isDayU(m));}
+  function jourSemaineIso(iso){return new Date(String(iso)+'T12:00:00Z').getUTCDay();}
+  function recurrenceDuDraft(m){
+    const r=m&&m.recur;if(!r||!recurPermise(m))return null;
+    const debut=String(m.dateISO||'');if(!/^\d{4}-\d{2}-\d{2}$/.test(debut))return null;
+    if(r.rythme==='semaine'){
+      const j=[...new Set((r.jours||[]).map(Number).filter(function(x){return Number.isInteger(x)&&x>=0&&x<=6;}))].sort(function(a,b){return a-b;});
+      return j.length?{rythme:'semaine',jours:j,debut:debut}:null;
+    }
+    return (r.rythme==='jour'||r.rythme==='mois')?{rythme:r.rythme,jours:[],debut:debut}:null;
+  }
+  /* LE PREMIER PASSAGE EST UN DES JOURS COCHÉS. Cocher le samedi alors que la date
+     choisie est un mardi déplace le premier passage au prochain jour coché. */
+  function recurAligner(m){
+    const r=m&&m.recur;if(!r||r.rythme!=='semaine'||!(r.jours||[]).length)return;
+    if(/^\d{4}-\d{2}-\d{2}$/.test(m.dateISO||'')&&r.jours.indexOf(jourSemaineIso(m.dateISO))>=0)return;
+    const J=metierDuSvc(m.svc).jours;const auj=dayIso(new Date());
+    const o=dayOptions(J).find(function(x){return r.jours.indexOf(jourSemaineIso(x.iso))>=0&&(x.iso!==auj||heuresTenables(m,auj).length);});
+    if(o){m.dateISO=o.iso;m.dateMode='pick';m.when=dayLabelFor(o.iso,J);}
+  }
+  function blocFrequence(m){
+    if(!recurPermise(m))return '';
+    const r=m.recur||null;
+    const seg=function(attr,val,txt,on){return `<button class="seg${on?' on':''}" ${attr}="${val}">${txt}</button>`;};
+    return `<div class="field"><label>Fréquence</label><div class="segs">${seg('data-recur','ponctuelle','Ponctuelle',!r)}${seg('data-recur','recurrente','Récurrente',!!r)}</div></div>`
+      +(r?`<div class="field"><label>Chaque</label><div class="segs">${seg('data-rythme','jour','Jour',r.rythme==='jour')}${seg('data-rythme','semaine','Semaine',r.rythme==='semaine')}${seg('data-rythme','mois','Mois',r.rythme==='mois')}</div></div>`
+        +(r.rythme==='semaine'?`<div class="field"><label>Les jours</label><div class="row" style="gap:4px">${RECUR_ORDRE.map(function(j){const on=(r.jours||[]).indexOf(j)>=0;
+          return `<button class="seg${on?' on':''}" data-recjour="${j}" aria-pressed="${on?'true':'false'}" style="flex:1 1 0;min-width:0;height:44px;padding:0">${RECUR_JOURS[j]}</button>`;}).join('')}</div></div>`:'')
+        +`<p class="mini" style="margin:-2px 0 12px;color:var(--ink-soft);font-weight:600">Pause à tout moment dans Réservations.</p>`:'');
+  }
   function occLabels(freq){if(freq==='hebdo')return ['Aujourd’hui','Semaine prochaine','Dans 2 semaines','Dans 3 semaines'];if(freq==='bihebdo')return ['Aujourd’hui','Dans 2 semaines','Dans 4 semaines'];if(freq==='mensuelle')return ['Aujourd’hui','Le mois prochain'];return ['Aujourd’hui'];}
   // ---- Récurrence ASSISTÉE (abonnement) ---------------------------------------
   // Modèle validé : l'app garde l'INTENTION récurrente (S.recurring) et propose le
@@ -7987,6 +8026,21 @@
     "refusée":"declined",
     "à choisir":"to choose",
     "Choisissez une option pour continuer.":"Select an option to continue.",
+    "Ponctuelle":"One-off",
+    "Récurrente":"Recurring",
+    "Chaque":"Every",
+    "Mois":"Month",
+    "Les jours":"Days",
+    "Lu":"Mo",
+    "Ma":"Tu",
+    "Me":"We",
+    "Je":"Th",
+    "Ve":"Fr",
+    "Sa":"Sa",
+    "Di":"Su",
+    "Pause à tout moment dans Réservations.":"Pause anytime in Bookings.",
+    "Premier passage":"First visit",
+    "par passage":"per visit",
     "Adresse exacte":"Exact address",
     "Indiquez où le prestataire doit intervenir.":"Enter where the pro should work.",
     "Nom du lieu":"Place name",
@@ -9513,6 +9567,21 @@
     "refusée":"recusada",
     "à choisir":"a escolher",
     "Choisissez une option pour continuer.":"Escolha uma opção para continuar.",
+    "Ponctuelle":"Pontual",
+    "Récurrente":"Recorrente",
+    "Chaque":"Cada",
+    "Mois":"Mês",
+    "Les jours":"Dias",
+    "Lu":"Seg",
+    "Ma":"Ter",
+    "Me":"Qua",
+    "Je":"Qui",
+    "Ve":"Sex",
+    "Sa":"Sáb",
+    "Di":"Dom",
+    "Pause à tout moment dans Réservations.":"Pausa a qualquer momento em Reservas.",
+    "Premier passage":"Primeira visita",
+    "par passage":"por visita",
     "Adresse exacte":"Morada exata",
     "Indiquez où le prestataire doit intervenir.":"Indique onde o profissional deve intervir.",
     "Nom du lieu":"Nome do local",
@@ -17333,6 +17402,7 @@
         // Lieu : 'domicile' (le prestataire se déplace) ou 'salon' (le client va chez le prestataire).
         locationMode:locModeOf(m),
         frequency:m.frequency||'ponctuelle',
+        recurrence:recurrenceDuDraft(m),serieEtat:recurrenceDuDraft(m)?'active':null,
         notes:(m.notes||'').slice(0,500),
         preferredProviderUid:m.preferredUid||null,
         preferredProviderName:m.preferredName||'',
@@ -21044,7 +21114,7 @@
         return;
       }
     }
-    const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-actch],[data-actchon],[data-actchoff],[data-actchoadd],[data-actchodel],[data-actqty],[data-actunit],[data-actdm2],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-psite],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-loc],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday],[data-tip],[data-pac],[data-sitemode],[data-invclient],[data-fold],[data-actgrp],[data-purge],[data-optpick],[data-optqty],[data-optadd],[data-optdel],[data-optprice],[data-optunit],[data-rf],[data-telfix],[data-actduree],[data-catdel],[data-catadd],[data-caton]');
+    const b=e.target.closest('[data-act],[data-svc],[data-catopen],[data-actpick],[data-recur],[data-rythme],[data-recjour],[data-actch],[data-actchon],[data-actchoff],[data-actchoadd],[data-actchodel],[data-actqty],[data-actunit],[data-actdm2],[data-cnav],[data-follow],[data-cnav2],[data-pnav],[data-star],[data-persona],[data-adm],[data-av],[data-atab],[data-pcat],[data-pcatopen],[data-pdip],[data-psite],[data-pstatus],[data-pstatustype],[data-cfg],[data-zone],[data-czone],[data-when],[data-boost],[data-price],[data-actprice],[data-actdel],[data-actadd],[data-freq],[data-slot],[data-addr],[data-afzone],[data-conc-oc],[data-conc-os],[data-conc-slot],[data-conc-when],[data-conc-dur],[data-cf2zone],[data-pf2zone],[data-srate],[data-slotflex],[data-loc],[data-prefart],[data-babypick],[data-poste],[data-colisitemtype],[data-proslot],[data-proreqslot],[data-agmonth],[data-agday],[data-tip],[data-pac],[data-sitemode],[data-invclient],[data-fold],[data-actgrp],[data-purge],[data-optpick],[data-optqty],[data-optadd],[data-optdel],[data-optprice],[data-optunit],[data-rf],[data-telfix],[data-actduree],[data-catdel],[data-catadd],[data-caton]');
     if(!b)return;
     // Un clic ISSU d'un <input type=file> (notamment déclenché par programme, ex. la
     // feuille « appareil photo / galerie ») remonte jusqu'ici : on ne le traite pas
@@ -22067,6 +22137,13 @@
     if(b.dataset.addr){if(S.draft){const v=b.dataset.addr;if(v==='__manual'){S.draft.addressId='__manual';S._focusAddr=true;if(!S.draft.address&&!S.draft.geo){S.draft.address='';S.draft.geo=null;S.draft.access='';}}else{const a=S.addresses.find(x=>x.id===v);if(a){S.draft.addressId=a.id;S.draft.address=a.address;S.draft.zone=a.zone;S.draft.geo=a.geo;S.draft.access=a.access||'';}}}renderConfig();return;}
     if(b.dataset.afzone){if(S.addrForm)S.addrForm.zone=b.dataset.afzone;render();return;}
     if(b.dataset.slot){if(S.draft){if(b.dataset.slot==='__pick'){S.draft.slotMode='pick';}else{S.draft.slotMode=null;S.draft.slot=b.dataset.slot;}}renderConfig();return;}
+    /* PONCTUELLE OU RÉCURRENTE (l'éditeur, 25/11/2026). « Semaine » part du jour de la
+       date choisie ; cocher un jour ajoute un passage par semaine ; on ne décoche pas le
+       dernier (une semaine sans jour n'est pas une récurrence). */
+    if(b.dataset.recur&&S.draft){const m=S.draft;m.recur=(b.dataset.recur==='recurrente')?(m.recur||{rythme:'semaine',jours:[jourSemaineIso(m.dateISO||dayIso(new Date()))]}):null;recurAligner(m);renderConfig();return;}
+    if(b.dataset.rythme&&S.draft&&S.draft.recur){const m=S.draft;m.recur.rythme=b.dataset.rythme;if(m.recur.rythme==='semaine'&&!(m.recur.jours||[]).length)m.recur.jours=[jourSemaineIso(m.dateISO||dayIso(new Date()))];recurAligner(m);renderConfig();return;}
+    if(b.dataset.recjour!=null&&S.draft&&S.draft.recur){const m=S.draft,j=Number(b.dataset.recjour);const l=(m.recur.jours||[]).slice();const k=l.indexOf(j);
+      if(k>=0){if(l.length>1)l.splice(k,1);}else l.push(j);m.recur.jours=l;recurAligner(m);renderConfig();return;}
     if(b.dataset.slotflex!=null){if(S.draft){const v=b.dataset.slotflex;S.draft.slotFlex=(v==='day'||v==='week')?v:(+v);}renderConfig();return;}
     if(b.dataset.loc!=null){if(S.draft){S.draft.locationMode=(b.dataset.loc==='salon')?'salon':'domicile';}renderConfig();return;}
     if(b.dataset.fold){S._fold=S._fold||{};S._fold[b.dataset.fold]=!S._fold[b.dataset.fold];render();return;}
@@ -23125,7 +23202,8 @@
     // Aujourd'hui sans heure tenable disparaît de la liste, sans phrase (l'éditeur, 24/11/2026 : « enlève la phrase sous demain »).
     const note='';
     if(J<=30){
-      const jours=dayOptions(J).filter(function(o){return !(plusAujourdhui&&o.iso===auj);});
+      const rj=(m&&m.recur&&m.recur.rythme==='semaine')?(m.recur.jours||[]):null;
+      const jours=dayOptions(J).filter(function(o){return !(plusAujourdhui&&o.iso===auj)&&(!rj||rj.indexOf(jourSemaineIso(o.iso))>=0);});
       return `<select class="txt" data-cfday>${jours.map(function(o){return `<option value="${o.iso}"${m.dateISO===o.iso?' selected':''}>${esc(o.lbl)}</option>`;}).join('')}</select>${note}`;
     }
     const deb=new Date(base);if(plusAujourdhui)deb.setDate(deb.getDate()+1);
@@ -23376,7 +23454,7 @@
       `)}
       ${blocCfg('Quand ?',I.cal,`
       ${/* la carte s'appelle « Quand ? » : le champ nomme le JOUR. */''}
-      <div class="field"><label>Jour</label>${daySelect}</div>
+      ${blocFrequence(m)}<div class="field"><label>${m.recur?'Premier passage':'Jour'}</label>${daySelect}</div>
       <div class="field"><label>${motsDuLieu(m.svc).heure}</label>${dayFlex?`<p class="mini" style="margin:2px 0 0;color:var(--muted)">${I.clock} ${phraseCreneauLarge(m)}</p>`:`${hourSelect}${slotNote}`}</div>
       ${heuresDuDraft(m).declare?'':`<div class="field"><label>Souplesse sur le créneau</label><div class="segs souplesse"><button class="seg ${(!m.slotFlex)?'on':''}" data-slotflex="0">Précise</button><button class="seg ${m.slotFlex===60?'on':''}" data-slotflex="60">± 1 h</button><button class="seg ${m.slotFlex===120?'on':''}" data-slotflex="120">± 2 h</button>${souplesseLarge(m)?`<button class="seg ${m.slotFlex==='day'?'on':''}" data-slotflex="day">Journée</button><button class="seg ${m.slotFlex==='week'?'on':''}" data-slotflex="week">Semaine</button>`:''}</div>${(m.slotFlex&&!dayFlex)?`<p class="mini" style="margin-top:6px">${I.clock} Le pro confirmera un <b>créneau précis ${flexTxtClient(m)}</b> en acceptant.</p>`:''}</div>`}
       `)}
@@ -23401,7 +23479,7 @@
 
       ${dureeM2?`<p class="mini actm2-duree" style="margin-top:8px;color:var(--muted)">Durée estimée&nbsp;: <b>${esc(dureeTexte(dureeM2))}</b> (le prestataire réserve ce temps).</p>`:''}
       <div class="est">${nSel?m.acts.filter(a=>!actAuM2(a)||qteCalcul(a)>0).map(a=>`<div class="line"><span>${esc(a.nm)}${actAuM2(a)?' · '+esc(qteTexte(a)):''}</span><b>${eur(a.price*qteCalcul(a))}</b></div>`).join(''):`<div class="line"><span style="color:var(--muted)">Aucune prestation sélectionnée</span><b>—</b></div>`}${optionsEstLines(m)}${(nSel&&needsPeople(m.svc)&&t.people>1)?`<div class="line"><span>${I.users} Pour ${peopleLbl(t.people)} (× ${t.people})</span><b>${eur(t.sub)}</b></div>`:''}${t.travel?`<div class="line"><span>${I.pin} Forfait déplacement</span><b>+${eur(t.travel)}</b></div>`:''}${(nSel&&!t.travel&&locModeOf(m)!=='salon')?`<div class="line"><span style="color:var(--good)">${I.check} Déplacement offert</span><b style="color:var(--good)">0 €</b></div>`:''}<div class="total"><span>Total</span><b>${nSel?eur(t.total):'—'}</b></div></div>
-      <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm"${(nSel&&!manqueM2)?'':' disabled'}>${m.preferredUid?`${I.user} Envoyer à ${esc((m.preferredName||'').split(' ')[0])}`:`${I.search} Trouver un pro`}${nSel?' · '+eur(t.total):''}</button>${manqueM2?`<p class="mini" style="text-align:center;margin-top:8px;color:var(--muted)">${manqueChoix?'Choisissez une option pour continuer.':'Indiquez la surface en m² pour continuer.'}</p>`:(nSel?'':`<p class="mini" style="text-align:center;margin-top:8px;color:var(--muted)">Cochez au moins une prestation pour continuer.</p>`)}</div>
+      <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm"${(nSel&&!manqueM2)?'':' disabled'}>${m.preferredUid?`${I.user} Envoyer à ${esc((m.preferredName||'').split(' ')[0])}`:`${I.search} Trouver un pro`}${nSel?' · '+eur(t.total)+(recurrenceDuDraft(m)?' <span>par passage</span>':''):''}</button>${manqueM2?`<p class="mini" style="text-align:center;margin-top:8px;color:var(--muted)">${manqueChoix?'Choisissez une option pour continuer.':'Indiquez la surface en m² pour continuer.'}</p>`:(nSel?'':`<p class="mini" style="text-align:center;margin-top:8px;color:var(--muted)">Cochez au moins une prestation pour continuer.</p>`)}</div>
     </div>`,'config');
   }
   // « Coup de pouce » : menu déroulant (plus compact et lisible que la rangée de boutons).
@@ -23481,7 +23559,7 @@
       ${blocCfg('Quand ?',I.cal,`
       ${m.svc==='animaux'?`<div class="field"><label>Mode de garde</label><div class="segs"><button class="seg ${isDayU(m)?'on':''}" data-cfg="unit-j">${I.cal} À la journée</button><button class="seg ${!isDayU(m)?'on':''}" data-cfg="unit-h">${I.clock} À l'heure</button></div><p class="mini" style="margin-top:6px">${I.cal} Plusieurs jours&nbsp;? Choisissez « à la journée ».</p></div>`:''}
       ${/* La carte s'appelle déjà « Quand ? » : le champ nomme le JOUR, pas la question. */''}
-      <div class="field"><label>${isDayU(m)?'Date de début':'Jour'}</label>${daySelect}</div>
+      ${blocFrequence(m)}<div class="field"><label>${isDayU(m)?'Date de début':(m.recur?'Premier passage':'Jour')}</label>${daySelect}</div>
       <div class="field"><label>${isDayU(m)?'Heure de dépôt':motsDuLieu(m.svc).heure}</label>${dayFlex?`<p class="mini" style="margin:2px 0 0;color:var(--muted)">${I.clock} ${phraseCreneauLarge(m)}</p>`:`${hourSelect}${slotNote}`}</div>
       ${heuresDuDraft(m).declare?'':`<div class="field"><label>Souplesse sur le créneau</label><div class="segs souplesse"><button class="seg ${(!m.slotFlex)?'on':''}" data-slotflex="0">Précise</button><button class="seg ${m.slotFlex===60?'on':''}" data-slotflex="60">± 1 h</button><button class="seg ${m.slotFlex===120?'on':''}" data-slotflex="120">± 2 h</button>${souplesseLarge(m)?`<button class="seg ${m.slotFlex==='day'?'on':''}" data-slotflex="day">Journée</button><button class="seg ${m.slotFlex==='week'?'on':''}" data-slotflex="week">Semaine</button>`:''}</div>${(m.slotFlex&&!dayFlex)?`<p class="mini" style="margin-top:6px">${I.clock} Le pro confirmera un <b>créneau précis ${flexTxtClient(m)}</b> en acceptant.</p>`:''}</div>`}
       `)}
@@ -23516,7 +23594,7 @@
       </div>`}
       `)}
       <div class="est"><div class="line"><span>${m.svcName} · ${t.rate} ${rateUnit(m)} × ${durTxt(m)}${(needsPeople(m.svc)&&t.people>1)?' × '+t.people+' pers.':''}</span><b>${eur(((forfaitSub(m)!=null?forfaitSub(m):t.rate*billHours(m))*t.people))}</b></div>${optionsEstLines(m)}<div class="total"><span>Total</span><b>${eur(t.total)}</b></div></div>
-      <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm">${m.preferredUid?`${I.user} Envoyer à ${esc((m.preferredName||'').split(' ')[0])}`:`${I.search} Trouver un prestataire`} · ${eur(t.total)}</button></div></div>`,'config');
+      <div class="footcta" style="position:static;background:none;padding:18px 0 0"><button class="btn primary" data-cfg="confirm">${m.preferredUid?`${I.user} Envoyer à ${esc((m.preferredName||'').split(' ')[0])}`:`${I.search} Trouver un prestataire`} · ${eur(t.total)}${recurrenceDuDraft(m)?' <span>par passage</span>':''}</button></div></div>`,'config');
     if(S._focusAddr){S._focusAddr=false;setTimeout(function(){const el=document.getElementById('manualAddr');if(el){try{el.scrollIntoView({behavior:'smooth',block:'center'});}catch(_){el.scrollIntoView();}const inp=el.querySelector('[data-addrmanual]');if(inp)try{inp.focus({preventScroll:true});}catch(_){}}},70);}
   }
   view.addEventListener('scroll',function(){updateBackFab();},{passive:true});
