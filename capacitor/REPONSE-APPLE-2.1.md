@@ -54,8 +54,8 @@ Report and Block, the provider side, and account deletion.
 **2. Devices tested**
 - [Nom du modèle, ex. iPhone 13 mini], iOS [version, ex. 26.2] (physical device, Xcode 26.3
   and TestFlight)
-- iPhone screen sizes from 320 to 440 points checked in our automated test suite
-  (including large text / Display Zoom).
+- Layouts also checked in a browser at every current iPhone screen width, from 320
+  points (Display Zoom) to 440 points.
 
 **3. What the app does, for whom, and why**
 Ti-Services is a local marketplace for home services on the island of Saint-Barthélemy

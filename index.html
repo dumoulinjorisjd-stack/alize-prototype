@@ -343,6 +343,31 @@
      une ligne, et le bloc s'aligne à droite quand il passe dessous. */
   .fh-end{display:flex;align-items:center;gap:9px;flex:0 0 auto;margin-left:auto}
   .fold-head .chip{white-space:normal}
+  .fh-chips{display:contents}
+  /* SOUS 360 POINTS (zoom de l'écran « Texte plus grand », petits iPhone), la pastille
+     coupait le titre (« Mes informati… », vu sur iPhone le 26/11/2026). Elle passe sous le
+     texte, dans sa colonne ; le chevron reste à droite, centré. Les pastilles multiples se
+     replient ENSEMBLE. Au-dessus de 360 points, rien ne change (mesuré). */
+  @media (max-width:359px){
+    .fold-head:has(.fh-chips){display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:11px;row-gap:6px;align-items:center}
+    .fold-head:has(.fh-chips) .fh-main{grid-column:1;grid-row:1}
+    .fold-head:has(.fh-chips) .fh-end{display:contents}
+    .fold-head:has(.fh-chips) .fh-chips{grid-column:1;grid-row:2;display:flex;flex-wrap:wrap;gap:6px;padding-left:45px;min-width:0}
+    .fold-head:has(.fh-chips) .fold-chev{grid-column:2;grid-row:1 / span 2}
+    .fid-row .fid-chips{flex:1 1 100%;justify-content:flex-start;padding-left:45px}
+  }
+  /* Les pastilles de fidélité passent à la ligne quand elles ne tiennent pas à côté du
+     titre (portugais à 375 points : « Embaixador » + « Bronze » sortaient de la carte). */
+  .fid-row{flex-wrap:wrap;row-gap:8px}
+  .fid-chips{display:flex;gap:6px;flex:none;align-items:center;flex-wrap:wrap;justify-content:flex-end;margin-left:auto}
+  /* « Bon retour » : le bouton passe sous le nom plutôt que d'écraser l'adresse. */
+  .bonretour{flex-wrap:wrap;row-gap:10px}
+  .bonretour>.row{flex:1 1 190px}
+  .bonretour .em{white-space:nowrap}
+  .bonretour>.btn{flex:none;margin-left:auto}
+  /* Pied de page légal : l'intitulé sur sa ligne, les liens rangés sans séparateur — un
+     « · » laissé en bout de ligne (« CGU · CGV · ») faisait désordre à 320 points. */
+  .legal-links{display:flex;flex-wrap:wrap;justify-content:center;gap:2px 16px;margin-top:2px}
   /* Vidéo du guide d'installation : format téléphone, jamais plus haute que l'écran. */
   .ig-video{margin-top:14px}
   .ig-video>summary{cursor:pointer;list-style:none;text-align:center;font-size:13px;font-weight:650;
@@ -2752,7 +2777,7 @@
   function foldCard(id,icon,title,sub,body,chip,dot){
     const open=!!(S._fold&&S._fold[id]);
     return `<div class="card foldc${open?' open':''}" style="margin-top:12px">
-      <button class="fold-head" data-fold="${id}" aria-expanded="${open?'true':'false'}"><span class="fh-main">${dot?admDot(true):''}<span class="benic" style="flex:none">${icon}</span><div style="flex:1 1 auto;min-width:0"><b style="font-size:14px">${title}</b>${sub?`<div class="mini fh-sub">${sub}</div>`:''}</div></span><span class="fh-end">${chip||''}<span class="fold-chev" aria-hidden="true">${I.chevron}</span></span></button>
+      <button class="fold-head" data-fold="${id}" aria-expanded="${open?'true':'false'}"><span class="fh-main">${dot?admDot(true):''}<span class="benic" style="flex:none">${icon}</span><div style="flex:1 1 auto;min-width:0"><b style="font-size:14px">${title}</b>${sub?`<div class="mini fh-sub">${sub}</div>`:''}</div></span><span class="fh-end">${chip?`<span class="fh-chips">${chip}</span>`:''}<span class="fold-chev" aria-hidden="true">${I.chevron}</span></span></button>
       ${open?`<div class="fold-body">${body}</div>`:''}
     </div>`;
   }
@@ -3835,7 +3860,7 @@
   const VERSION_APP='949';
   function legalFooter(role){
     const compte = role!=='public';
-    return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
+    return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9"><span>Documents légaux</span><span class="legal-links"><button class="linklike" data-act="view-cgu">CGU</button><button class="linklike" data-act="view-cgv">CGV</button><button class="linklike" data-act="view-mentions">Mentions légales</button><button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?`<button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?`<button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</span></p>
     <p class="mini" style="text-align:center;margin-top:6px;color:var(--muted)">© 2026 C.C.S, Ti-Services™. Tous droits réservés.<br><span style="opacity:.75"><span>Version</span> <span>${VERSION_APP}</span></span></p>`;
   }
   // Radar de recherche : Zouti au centre (à la place de la loupe), anneaux qui pulsent
@@ -8844,7 +8869,7 @@
     // Pitch
     "Comment ça marche":"How it works","Les services disponibles":"Available services","Un pro chez vous,":"A pro at your home,","en quelques minutes.":"in minutes.","Un pro chez vous, en quelques minutes.":"A pro at your home, in minutes.",
     // Sauvegarde + pied de page
-    "Sauvegarde des factures":"Invoice backup","À faire":"To do","À jour":"Up to date","Téléchargez chaque mois une copie de vos factures et données comptables.":"Download a copy of your invoices and accounting data every month.","Vous êtes seul responsable de la conservation de vos justificatifs":"You alone are responsible for keeping your records",", Ti-Services fournit l'outil sans garantir la conservation au-delà de ses obligations légales.":", Ti-Services provides the tool but doesn't guarantee retention beyond its legal obligations.","Télécharger (CSV)":"Download (CSV)","Supprimer mon compte":"Delete my account","Documents légaux :":"Legal documents:","Mentions légales":"Legal notice","Confidentialité":"Privacy","Notifications":"Notifications","Activées":"On","Contact Ti-Services":"Contact Ti-Services","Support ›":"Support ›","Une question sur votre compte ou l'application ? Écrivez-nous, sans lien avec une réservation.":"A question about your account or the app? Write to us, unrelated to a booking.","Une question sur votre compte, un dossier, l'application ? Écrivez-nous, sans lien avec une mission.":"A question about your account, a file or the app? Write to us, unrelated to a job.","Tous droits réservés.":"All rights reserved.",
+    "Sauvegarde des factures":"Invoice backup","À faire":"To do","À jour":"Up to date","Téléchargez chaque mois une copie de vos factures et données comptables.":"Download a copy of your invoices and accounting data every month.","Vous êtes seul responsable de la conservation de vos justificatifs":"You alone are responsible for keeping your records",", Ti-Services fournit l'outil sans garantir la conservation au-delà de ses obligations légales.":", Ti-Services provides the tool but doesn't guarantee retention beyond its legal obligations.","Télécharger (CSV)":"Download (CSV)","Supprimer mon compte":"Delete my account","Documents légaux :":"Legal documents:","Documents légaux":"Legal documents","Mentions légales":"Legal notice","Confidentialité":"Privacy","Notifications":"Notifications","Activées":"On","Contact Ti-Services":"Contact Ti-Services","Support ›":"Support ›","Une question sur votre compte ou l'application ? Écrivez-nous, sans lien avec une réservation.":"A question about your account or the app? Write to us, unrelated to a booking.","Une question sur votre compte, un dossier, l'application ? Écrivez-nous, sans lien avec une mission.":"A question about your account, a file or the app? Write to us, unrelated to a job.","Tous droits réservés.":"All rights reserved.",
     // Pitch / paiement / avantages (client & artisan)
     "Commandez votre prestation en 1 clic":"Order your service in 1 tap",
     "Choisissez un service, une date/heure. Ajoutez une photo et l’adresse (point GPS) si besoin.":"Pick a service and a date/time. Add a photo and the address (GPS point) if needed.",
@@ -10710,7 +10735,7 @@
     ", Ti-Services fournit l'outil sans garantir la conservation au-delà de ses obligations légales.":", a Ti-Services fornece a ferramenta sem garantir a conservação além das suas obrigações legais.",
     "Télécharger (CSV)":"Descarregar (CSV)",
     "Supprimer mon compte":"Eliminar a minha conta",
-    "Documents légaux :":"Documentos legais:",
+    "Documents légaux :":"Documentos legais:","Documents légaux":"Documentos legais",
     "Mentions légales":"Menções legais",
     "Confidentialité":"Privacidade",
     "Notifications":"Notificações",
@@ -16147,7 +16172,7 @@
       </div>
       <div class="h-hello welcome-title">Créateur de lien pour améliorer votre quotidien</div>
       <div style="flex:1 0 auto;min-height:18px"></div>
-      ${S.account?`<div class="card" style="padding:13px 15px;margin-top:16px;display:flex;align-items:center;justify-content:space-between;gap:10px"><div class="row" style="gap:9px"><span class="benic">${I.user}</span><div><b style="font-size:13px">Bon retour, ${esc(S.account.name.split(' ')[0])}</b><div class="mini">${esc(S.account.email)}</div></div></div><button class="btn primary sm" data-act="show-login" style="width:auto;padding:9px 14px">Se connecter</button></div>`:''}
+      ${S.account?`<div class="card bonretour" style="padding:13px 15px;margin-top:16px;display:flex;align-items:center;justify-content:space-between;gap:10px"><div class="row" style="gap:9px"><span class="benic">${I.user}</span><div><b style="font-size:13px">Bon retour, ${esc(S.account.name.split(' ')[0])}</b><div class="mini">${(function(e){const i=e.lastIndexOf('@');return i>0?'<span class="em">'+esc(e.slice(0,i))+'</span><wbr><span class="em">'+esc(e.slice(i))+'</span>':'<span class="em">'+esc(e)+'</span>';})(String(S.account.email||''))}</div></div></div><button class="btn primary sm" data-act="show-login" style="width:auto;padding:9px 14px">Se connecter</button></div>`:''}
       <div class="footcta" style="position:static;background:none;padding:0 0 26px;flex:none">
         <!-- « JE CHERCHE UN SERVICE » OUVRE LES PRESTATIONS, PLUS LA CRÉATION DE COMPTE.
              Il posait « onb-start » (authView signup) : le premier geste de quelqu'un qui
@@ -20534,10 +20559,10 @@
   function fidCard(){
     const jobs=statusJobs(),tier=monPalier(),col=fidColor(tier.key),isAmb=!!S.proFounder;
     return `<button class="card" data-act="open-fidelity" style="padding:16px;margin-top:12px;width:100%;text-align:left;display:block">
-      <div class="row between" style="gap:12px;align-items:center">
+      <div class="row between fid-row" style="gap:12px;align-items:center">
         <div class="row" style="gap:11px;align-items:center"><span class="benic">${I.star}</span>
           <div><b style="font-size:14px">Statut fidélité</b><div class="mini" style="margin-top:2px">${jobs} mission${jobs>1?'s':''} au total ›</div></div></div>
-        <div class="row" style="gap:6px;flex:none;align-items:center;flex-wrap:wrap;justify-content:flex-end">${isAmb?`<span class="chip founder-chip">${I.star} Ambassadeur</span>`:''}<span class="chip" style="background:${col}22;color:${col}">${I.star} ${tier.nm}</span></div>
+        <div class="fid-chips">${isAmb?`<span class="chip founder-chip">${I.star} Ambassadeur</span>`:''}<span class="chip" style="background:${col}22;color:${col}">${I.star} ${tier.nm}</span></div>
       </div></button>`;
   }
   // Détail du statut fidélité : compteur, badge Ambassadeur (à vie) + son avantage
