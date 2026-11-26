@@ -24315,11 +24315,26 @@
       // En plein écran, le document ne doit JAMAIS rester décalé : overflow:hidden
       // bloque le doigt mais pas un défilement PROGRAMMÉ (ex. autofocus d'un champ à
       // la connexion, qui recentre la page et « repliait » la barre). On recale à 0.
-      if((document.body.classList.contains('standalone')||document.body.classList.contains('desktop'))&&(window.scrollY||window.scrollX))window.scrollTo(0,0);
+      if((document.body.classList.contains('standalone')||document.body.classList.contains('desktop'))&&(window.scrollY||window.scrollX)&&!saisieClavierNative())window.scrollTo(0,0);
     });
   }
   // Tout décalage du document en plein écran est immédiatement annulé.
-  window.addEventListener('scroll',function(){if(document.body&&(document.body.classList.contains('standalone')||document.body.classList.contains('desktop'))&&(window.scrollY||window.scrollX))window.scrollTo(0,0);},{passive:true});
+  /* DANS L'APPLICATION IPHONE, LE CLAVIER A LA MAIN. Pendant qu'on tape, iOS remonte la
+     page pour garder le champ au-dessus du clavier ; le recalage à 0 la redescendait
+     aussitôt, et l'écran sautait à chaque lettre (vu sur iPhone, 26/11/2026, champ
+     e-mail de la connexion). Dans l'application native, tant qu'un champ de saisie a le
+     doigt, on laisse faire iOS ; au départ du clavier, on recale. La PWA et l'ordinateur
+     gardent le recalage tel quel : rien n'y a été mesuré. */
+  function saisieClavierNative(){
+    try{
+      if(!isNativeShell())return false;
+      const a=document.activeElement; if(!a)return false;
+      if(a.isContentEditable||a.tagName==='TEXTAREA'||a.tagName==='SELECT')return true;
+      return a.tagName==='INPUT'&&!/^(checkbox|radio|button|submit|reset|range|color|file|hidden|image)$/i.test(a.type||'');
+    }catch(_){ return false; }
+  }
+  window.addEventListener('scroll',function(){if(document.body&&(document.body.classList.contains('standalone')||document.body.classList.contains('desktop'))&&(window.scrollY||window.scrollX)&&!saisieClavierNative())window.scrollTo(0,0);},{passive:true});
+  document.addEventListener('focusout',function(){setTimeout(function(){try{if(!saisieClavierNative()&&isNativeShell()&&(window.scrollY||window.scrollX))window.scrollTo(0,0);}catch(_){}},60);});
   setAppHeight();
   window.addEventListener('resize',setAppHeight);
   window.addEventListener('orientationchange',function(){setAppHeight();setTimeout(setAppHeight,250);setTimeout(setAppHeight,600);});
