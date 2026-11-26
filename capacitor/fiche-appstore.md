@@ -1,8 +1,11 @@
-# Fiche App Store — TOUT ce qu'il faut pour App Store Connect
+# Fiche App Store — tout ce qu'il faut pour App Store Connect
 
-Chaque section ci-dessous correspond à un champ d'App Store Connect.
-Copier-coller dans l'ordre. Les seuls éléments à saisir de tête sont les
-mots de passe des comptes démo (JAMAIS dans ce fichier : le dépôt est public).
+Chaque section correspond à un champ d'App Store Connect (ASC), à copier-coller dans
+l'ordre. Les mots de passe des comptes de démonstration ne figurent JAMAIS ici : le
+dépôt est public. Ils se saisissent directement dans ASC.
+
+Mise à jour du 26/11/2026, après audit contre les règles d'Apple « Last Updated :
+October 16, 2026 » (https://developer.apple.com/app-store/review/guidelines/).
 
 ---
 
@@ -15,12 +18,25 @@ mots de passe des comptes démo (JAMAIS dans ce fichier : le dépôt est public)
 | **Catégorie principale** | Style de vie |
 | **Catégorie secondaire** | Économie et entreprise |
 | **Prix** | Gratuit |
-| **Disponibilité** | France (suffit : St-Barthélemy en fait partie) — ou Monde entier, au choix |
+| **Disponibilité** | France (Saint-Barthélemy en fait partie) |
 | **Copyright** | © 2026 C.C.S |
-| **Classification d'âge** | Répondre « Non » à tout le questionnaire → 4+ |
-| **URL d'assistance** | https://ti-services.fr |
+| **Appareils** | iPhone seulement (le projet est réglé ainsi : pas de captures iPad à fournir) |
+| **URL d'assistance** | https://ti-services.fr/legal/mentions.html (adresse, e-mail et téléphone publiés) |
 | **URL marketing** (facultatif) | https://ti-services.fr |
-| **URL de confidentialité** | https://ti-services.fr/?legal=confidentialite |
+| **URL de confidentialité** | https://ti-services.fr/legal/confidentialite.html |
+
+## Classification par âge (questionnaire ASC)
+
+Les CGU réservent l'inscription aux **personnes majeures** : Apple demande alors de
+retenir l'âge le plus élevé (aide ASC « Set an app age rating »). Réponses :
+
+- Contenu généré par les utilisateurs : **Oui** (messagerie client ↔ prestataire, photos)
+- Messagerie et discussion : **Oui**
+- Localisation partagée : **Oui** (le point GPS de l'adresse est transmis au prestataire)
+- Réseaux sociaux : **Non** (pas de fil public)
+- Accès Web sans restriction : **Non** (la navigation est limitée à ti-services.fr et Mollie)
+- Rencontres, jeux d'argent, violence, contenus sexuels, alcool, tabac, drogues : **Non**
+- Âge minimal fixé par les conditions : **18 ans** → note **18+**
 
 ## Description
 
@@ -28,30 +44,30 @@ Ti-Services, c'est un pro de confiance chez vous en quelques minutes, à
 Saint-Barthélemy.
 
 Ménage, garde d'enfants, jardinage, coiffure, aide à domicile… Commandez en
-quelques gestes : le service, l'heure, l'adresse — c'est tout. Un prestataire
+quelques gestes : le service, l'heure, l'adresse, c'est tout. Un prestataire
 vérifié accepte, vous suivez tout en direct, et le paiement est automatique et
 sécurisé une fois la prestation faite, facture incluse.
 
 POUR LES CLIENTS
 • Des prestataires vérifiés (identité, SIRET, assurance)
-• Commande en 3 gestes, point GPS précis — pratique sur l'île
-• Paiement sécurisé après la prestation, aucune avance
-• Garantie Ti-Services : prestataire absent ou travail non conforme ? Vous n'êtes
-  pas débité.
-• Notifications à chaque étape : accepté, en route, terminé
+• Commande en quelques gestes, point GPS précis, pratique sur l'île
+• Commandes ponctuelles ou récurrentes, à mettre en pause à tout moment
+• Paiement après la prestation, aucune avance
+• Notifications à chaque étape : accepté, démarré, terminé
+• Messagerie avec votre prestataire
 
 POUR LES PRESTATAIRES
 • Recevez les demandes en direct, acceptez d'un geste
-• Concentrez-vous sur votre métier : paiement, facturation et suivi automatiques
-• Un statut de fidélité qui fait baisser la commission au fil des missions
+• Paiement, facturation et suivi automatiques
+• Une commission qui baisse au fil des missions
 
-Ti-Services est édité par C.C.S à Saint-Barthélemy (COM, hors TVA).
+Ti-Services est édité par C.C.S à Saint-Barthélemy.
 
 ## Mots-clés (100 car. max)
 
 saint-barth,ménage,jardinage,baby-sitting,coiffure,services,domicile,artisan,st-barthélemy
 
-## Nouveautés de cette version (obligatoire, v1)
+## Nouveautés de cette version (v1)
 
 Première version de Ti-Services : commandez un service à domicile en quelques
 gestes, suivez la prestation en direct, payez en toute sécurité une fois le
@@ -59,88 +75,112 @@ travail fait.
 
 ---
 
-## Questionnaire confidentialité (App Privacy)
+## Confidentialité de l'app (App Privacy)
 
-Collecte de données : OUI. Déclarer, pour chaque type, « lié à l'identité de
-l'utilisateur », usage « Fonctionnalité de l'app », **pistage : NON** :
+Collecte de données : **OUI**. Pour chaque type : **lié à l'identité de
+l'utilisateur**, usage **Fonctionnalité de l'app**, **pistage : NON**. Ces réponses
+sont alignées sur `ios/App/App/PrivacyInfo.xcprivacy` ; changer l'un, c'est
+changer l'autre.
 
 - **Coordonnées** : nom, adresse e-mail, numéro de téléphone, adresse physique
 - **Localisation** : localisation précise (point GPS de l'adresse d'intervention)
-- **Informations financières** : infos de paiement (traitées par Mollie, PSP —
-  l'app ne stocke jamais les numéros de carte)
-- **Identifiants** : identifiant utilisateur
-- **Pistage inter-apps (tracking) : NON** — pas de publicité, pas de revente,
-  pas de courtiers en données.
+- **Contenu utilisateur** : photos, e-mails ou messages (messagerie dans l'app),
+  autre contenu (présentation du prestataire, précisions d'une commande),
+  service client (messages au support)
+- **Historique d'achats** : prestations commandées
+- **Informations financières** : autres informations financières (IBAN des
+  prestataires). La carte bancaire est saisie chez Mollie : Ti-Services n'y a
+  jamais accès, elle n'est pas « collectée » au sens d'Apple.
+- **Identifiants** : identifiant utilisateur, identifiant d'appareil (jeton de
+  notification)
+- **Autres données** : pièce d'identité et attestation d'assurance des
+  prestataires (vérification)
+- **Pistage : NON**, aucune publicité, aucun courtier en données, donc pas de
+  demande App Tracking Transparency.
 
-## Export compliance (chiffrement)
+## Chiffrement (export compliance)
 
-Déjà déclaré dans l'app (`ITSAppUsesNonExemptEncryption = false`) : HTTPS
-standard uniquement → aucune question à l'envoi du build.
+Déclaré dans l'app (`ITSAppUsesNonExemptEncryption = false`) : HTTPS du système
+uniquement, aucune question à chaque envoi.
 
 ---
 
 ## Informations pour l'examen (App Review Information)
 
-### Connexion requise : OUI — identifiants à saisir dans ASC
+### Connexion requise : OUI
 
-- **Champ identifiant** : demo.client@ti-services.fr
-- **Champ mot de passe** : *(saisir dans ASC uniquement — ne figure pas ici)*
+- **Identifiant** : demo.client@ti-services.fr
+- **Mot de passe** : *(saisir dans ASC seulement)*
 
 ### Coordonnées de contact
 
-Joris DUMOULIN · [ton téléphone au format +590…] · ccs.dumoulin@gmail.com
+Joris DUMOULIN · [téléphone au format +590…] · [e-mail du compte développeur]
 
-### Notes pour l'examinateur (copier-coller dans le champ « Notes »)
+### Notes pour l'examinateur (copier-coller dans « Notes »)
 
-Ti-Services est une place de marché locale de services à domicile pour l'île de
-Saint-Barthélemy (France). L'app apporte les notifications push natives,
-indispensables aux prestataires (nouvelles missions en temps réel) et aux
-clients (suivi de prestation).
+Ti-Services is a local marketplace for home services on the island of
+Saint-Barthélemy (France): cleaning, gardening, babysitting, hairdressing at home,
+repairs, pet sitting, parcel pick-up. Clients order a service; verified local
+providers (self-employed, registered businesses) accept it and carry it out at the
+client's home.
 
-CONTEXTE D'OUVERTURE — L'ouverture au grand public est planifiée au 1er octobre
-2026 : d'ici là, les comptes clients ordinaires voient les services « bientôt
-disponibles ». Le compte de démonstration fourni ci-dessus dispose de l'ACCÈS
-COMPLET (commande possible) afin d'évaluer l'intégralité du parcours.
+NATIVE FEATURES: native push notifications (new missions for providers in real time,
+order status for clients: accepted, started, finished, new message); precise GPS
+point of the service address (location used only when the user taps the button,
+manual address always possible); camera and photo library to attach photos to a
+request; native offline screen with automatic retry; navigation restricted to our
+own domain and to our payment provider.
 
-MARKETPLACE — Certaines catégories peuvent afficher « Bientôt disponible » :
-c'est le comportement normal d'une place de marché tant qu'aucun prestataire
-vérifié ne propose ce service. La majorité des catégories sont actives et
-commandables avec le compte fourni.
+DEMO ACCOUNTS (both are sandboxed: nothing they do reaches real users):
+1. Client: demo.client@ti-services.fr (password above). An order is already in
+   progress with its conversation. Placing a new order is simulated: no payment is
+   taken and a demo provider accepts it after two seconds, which opens the
+   conversation.
+2. Provider: demo.prestataire@ti-services.fr / [same password]. It sees one sample
+   request. Accepting it writes nothing and opens the conversation with the demo
+   client. It never sees real clients' requests.
 
-DEUXIÈME COMPTE DE DÉMONSTRATION (espace prestataire) — pour évaluer le côté
-intervenant : demo.artisan@ti-services.fr / [même mot de passe — saisir ici].
-Ce compte est un prestataire validé : il reçoit les demandes et peut les
-accepter.
+USER-GENERATED CONTENT (Guideline 1.2): messages containing insults, slurs or threats
+are refused before they are sent (FR/EN/PT filter, also applied to provider
+descriptions and order notes). In every conversation: "Signaler" (Report) and
+"Bloquer" (Block). Users accept the Terms at sign-up. Reports:
+contact@ti-services.fr, handled by our team.
 
-PAIEMENTS — Les paiements concernent exclusivement des prestations de services
-PHYSIQUES rendues à domicile (ménage, jardinage…), traitées par le prestataire
-de paiement Mollie, conformément à la règle 3.1.5(a) — l'achat intégré (IAP)
-ne s'applique pas.
+PAYMENTS (Guideline 3.1.3(e)): all payments are for PHYSICAL services performed at the
+client's home, processed by our payment provider Mollie (card). The optional tip goes
+to the person who performed the service. "Coup de pouce" is an optional increase of
+the price of that physical service, paid to the provider. No digital goods, no
+subscriptions, no in-app content for sale.
 
-COMPTE — La suppression de compte est disponible dans l'app (Profil →
-« Supprimer mon compte »), conformément à la règle 5.1.1(v).
+SIGN-IN: our own email and password accounts only, no third-party login.
+
+ACCOUNT DELETION (Guideline 5.1.1(v)): Profile → "Supprimer mon compte" (clients and
+providers). Data are deleted; invoices already issued are kept for the legal period,
+as stated in our privacy policy.
 
 ---
 
-## Captures d'écran (formats 6,7" 1290×2796 et 6,5" 1284×2778)
+## Captures d'écran
 
-À faire depuis le simulateur (⌘S) ou fournies par l'outillage du projet :
-1. Accueil client (grille des services) — connecté avec le compte démo
-2. Commande (choix heure/adresse/point GPS)
-3. Suivi de mission (statut en direct)
-4. Espace prestataire « Mes missions »
-5. Statut fidélité / parrainage
+Fournies dans `capacitor/captures-appstore/`, prises sur les vrais écrans avec les
+comptes de démonstration :
+- **iPhone 6,9"** (1320 × 2868) : `6.9-1-accueil.png` … `6.9-5-prestataire.png`
+- **iPhone 6,3"** (1206 × 2622) : `6.3-1-accueil.png` … `6.3-5-prestataire.png`
+
+Ordre : 1 accueil client · 2 commande · 3 réservations · 4 conversation · 5 espace
+prestataire.
 
 ---
 
-## Check-list finale avant de cliquer « Soumettre »
+## Check-list finale avant « Soumettre pour examen »
 
-- [ ] Comptes démo créés sur ti-services.fr : demo.client@… (fait) et
-      demo.artisan@… **validé** dans la console admin (fait)
-- [ ] Mots de passe saisis DANS ASC (identifiants + notes), pas dans ce fichier
-- [x] Toutes les catégories actives pour le compte démo : automatique (le compte
-      de démonstration voit toutes les tuiles ouvertes, code v520)
-- [ ] Build envoyé depuis Xcode (Archive → Distribute) et sélectionné dans ASC
-- [ ] Captures d'écran chargées (2 tailles)
-- [ ] Questionnaire confidentialité rempli (section ci-dessus)
-- [ ] Numéro de téléphone de contact renseigné dans App Review Information
+- [ ] Version web v948 (ou plus) publiée sur ti-services.fr : bac à sable du
+      prestataire de démonstration, filtre des propos, adresse de signalement
+- [ ] Comptes de démonstration vérifiés dans la console : client ET prestataire
+      validé, mots de passe connus, jamais purgés
+- [ ] Build envoyé depuis Xcode 26 ou plus récent (Archive → Distribute) et sélectionné
+- [ ] Captures chargées (6,9" et 6,3")
+- [ ] App Privacy et classification par âge remplis comme ci-dessus
+- [ ] Statut de commerçant (DSA) renseigné dans ASC
+- [ ] Contrat du programme développeur à jour accepté (version du 13/10/2026)
+- [ ] Réponse au premier retour d'Apple, point par point, dans « App Review »
