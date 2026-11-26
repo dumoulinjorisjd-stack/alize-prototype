@@ -14,6 +14,7 @@ grand » ou petit modèle) : toute correction d'affichage se mesure à 320 ET à
 | 2 | L'écran saute à chaque lettre tapée, surtout en revenant dans une case qui contient déjà du texte (connexion, et beaucoup d'autres écrans). | Corrigé dans la 949 pour tous les champs (`saisieClavierNative`), test `test-clavier-natif.js`. **Pas encore publié** ; à revérifier sur l'iPhone après publication, sur plusieurs écrans. |
 | 3 | Profil client à 320 points : « Mes informati… », « Mes adre… » coupés par les pastilles « Tél. manquant », « Adresse manquante » (`foldCard`). | Maquette VALIDÉE par l'éditeur : sous 360 points, la pastille passe sous le texte, dans la colonne, chevron à droite (`outils` : avant/après dans le relevé de session). À coder : CSS `.fold-head` en grille sous 360 px ; vérifier TOUTES les cartes `foldCard` (client, prestataire, conciergerie) en FR/EN/PT ; rien ne bouge à 375 et plus. |
 | 5 | Compte prestataire de démonstration : carte « Votre adresse est incomplète… Il manque le code postal ou la commune », mais l'éditeur ne trouve « aucune case pour le code postal » (il se tape dans le champ unique « Adresse (sur vos factures) »). | À trancher par l'éditeur : (a) message qui dit le geste (« Ajoutez le code postal dans votre adresse, ex. 97133 Saint-Barthélemy ») ou (b) trois cases rue / code postal / commune (maquette d'abord). Et le compte de démonstration doit avoir une adresse complète avant la soumission (sinon l'examinateur voit la carte rouge). |
+| 6 | Même parcours « Corriger › » : l'adresse ne compte qu'après « Enregistrer », et l'éditeur souligne qu'« il faut penser à cliquer sur Enregistrer ». | À mesurer à 320 points : le bouton Enregistrer est-il visible sans défiler quand le champ adresse est centré ? Sinon le rapprocher du champ (ou le dire) ; on ne réécrit rien en silence (pas d'enregistrement automatique sans décision de l'éditeur). |
 | 4 | Premier lancement depuis Xcode : accueil, puis long écran noir, puis accueil. Pas reproduit aux lancements suivants. | À revérifier sur une installation NEUVE par TestFlight (supprimer l'app, réinstaller, ouvrir). |
 
 ## Notes, sans correction prévue
@@ -42,12 +43,13 @@ grand » ou petit modèle) : toute correction d'affichage se mesure à 320 ET à
 - Conversation : message normal envoyé ; « Test connard » refusé, texte gardé ;
   « Signaler » et « Bloquer » présents.
 - Compte de démonstration client : connexion OK, commande en cours visible.
+- Compte de démonstration prestataire : une seule demande d'exemple (« demain à 9h00 »),
+  aucune vraie demande ; Accepter ouvre la conversation ; « Signaler » et « Bloquer Camille ».
+  Adresse complétée (Gustavia, 97133 Saint-Barthélemy) : la carte rouge a disparu.
 - Signature Xcode : équipe JORIS DUMOULIN, profil géré, Push Notifications, Background
   Modes → Remote notifications, GoogleService-Info.plist rattaché.
 
 ## Reste à essayer
 
-- Compte de démonstration prestataire (demande d'exemple, aucune vraie demande,
-  Accepter ouvre la conversation, Signaler/Bloquer).
 - Suppression de compte sur un compte jetable.
 - Archive → TestFlight, puis installation neuve (point 4) et notifications.
