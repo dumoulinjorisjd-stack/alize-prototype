@@ -183,6 +183,38 @@ ok(FS.ecartProfil({ address: 'rue jean  bart 97133 saint-barthelemy' }, fi).leng
   ok(c3.e.length === 1 && c3.e[0].ref === 'artisans/u0' && c3.e[0].data.address === 'RUE JEAN BART 97133 SAINT-BARTHELEMY', 'Appliquer : la fiche du prestataire est mise à jour');
   ok(c3.a === 'RUE JEAN BART 97133 SAINT-BARTHELEMY', 'et la console l’affiche');
 
+  console.log('G — le répertoire ne publie pas l’adresse (l’éditeur, 26/11/2026 : « Conforme » sur « Jean bart »)');
+  const fiP = FS.ficheDepuisSirene(sirene({ statut_diffusion: 'P' }), '91234567800029');
+  const repP = { fiche: fiP, ecart: FS.ecartProfil({ address: 'Jean bart', statusType: 'micro' }, fiP) };
+  ok(fiP.trouve && !fiP.adresse && fiP.diffusible === false && repP.ecart.length === 0, 'noyau : trouvé, sans adresse, aucun écart');
+  const g1 = await p.evaluate((r) => {
+    window.__ecrits = []; window.__appels = []; window.__reponse = r;
+    const S = window.__S; S.admSirene = null; S.admin = { view: 'art', sel: 'u0' }; S.adminArtisans[0].address = 'Jean bart'; window.__render();
+    document.querySelector('[data-adm="sirene:u0"]').click();
+    return 1;
+  }, repP);
+  await p.waitForTimeout(60);
+  const g2 = await p.evaluate(() => ({ t: document.getElementById('view').textContent.replace(/\s+/g, ' '), champ: document.querySelector('[data-admaddr]') }));
+  ok(!/Conforme au répertoire Sirene/.test(g2.t), 'plus de « Conforme » quand le répertoire ne donne pas d’adresse');
+  ok(/ne publie pas l’adresse \(diffusion restreinte\)/.test(g2.t), 'la console dit pourquoi');
+  const g3 = await p.evaluate(() => { const i = document.querySelector('[data-admaddr]'); if (!i) return null; const v0 = i.value;
+    i.value = 'Rue Jean Bart'; i.dispatchEvent(new Event('input', { bubbles: true })); document.querySelector('[data-act="adm-adresse-enregistrer"]').click();
+    const refus = window.__ecrits.length;
+    i.value = 'Rue Jean Bart, 97133 Saint-Barthélemy'; i.dispatchEvent(new Event('input', { bubbles: true })); document.querySelector('[data-act="adm-adresse-enregistrer"]').click();
+    return { v0, refus }; });
+  await p.waitForTimeout(30);
+  const g4 = await p.evaluate(() => ({ e: window.__ecrits.slice(), a: window.__S.adminArtisans[0].address }));
+  ok(g3 && g3.v0 === 'Jean bart', 'le champ part de l’adresse actuelle');
+  ok(g3 && g3.refus === 0, 'adresse sans code postal ni commune : refusée');
+  ok(g4.e.length === 1 && g4.e[0].ref === 'artisans/u0' && g4.e[0].data.address === 'Rue Jean Bart, 97133 Saint-Barthélemy' && Object.keys(g4.e[0].data).length === 1, 'la console enregistre l’adresse saisie, et rien d’autre');
+  ok(g4.a === 'Rue Jean Bart, 97133 Saint-Barthélemy', 'et l’affiche');
+  // côté prestataire : même vérité, et le geste pour la saisir
+  await pro('Jean bart', '91234567800029');
+  await p.evaluate((r) => { window.__reponse = r; window.__S.proNav = 'account'; window.__S._fold = Object.assign({}, window.__S._fold, { 'p-infos': true }); window.__render(); document.querySelector('[data-act="pro-sirene"]').click(); }, repP);
+  await p.waitForTimeout(60);
+  const g5 = await p.evaluate(() => ({ t: document.getElementById('view').textContent.replace(/\s+/g, ' '), btn: !!document.querySelector('[data-act="pro-adresse"]') }));
+  ok(!/Conforme au répertoire Sirene/.test(g5.t) && /ne publie pas l’adresse/.test(g5.t) && g5.btn, 'prestataire : pas de « Conforme », la raison, et « Saisir mon adresse »');
+
   ok(!errs.length, 'aucune erreur JS' + (errs.length ? ' : ' + errs.join(' | ') : ''));
   await b.close();
   console.log(f ? f + ' ÉCHEC(S)' : 'TOUT EST VERT');

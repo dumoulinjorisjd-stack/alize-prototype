@@ -3830,7 +3830,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='946';
+  const VERSION_APP='947';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9">Documents légaux&nbsp;: <button class="linklike" data-act="view-cgu">CGU</button> · <button class="linklike" data-act="view-cgv">CGV</button> · <button class="linklike" data-act="view-mentions">Mentions légales</button> · <button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?` · <button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?` · <button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</p>
@@ -8097,6 +8097,7 @@
     "Pause à tout moment dans Réservations.":"Pause anytime in Bookings.",
     "Premier passage":"First visit",
     "par passage":"per visit",
+    "Le répertoire Sirene ne publie pas l’adresse (diffusion restreinte).":"The Sirene register does not publish the address (restricted disclosure).","Le répertoire Sirene ne donne pas d’adresse pour ce SIRET.":"The Sirene register gives no address for this SIRET.","Saisir mon adresse":"Enter my address",
     "N° en cours d’attribution":"No. being assigned","Micro-entreprise":"Micro-enterprise","Adresse (sur vos factures)":"Address (on your invoices)","Modifier mes coordonnées":"Edit my details","Mettre à jour depuis le SIRET":"Update from SIRET","Recherche au répertoire Sirene…":"Searching the Sirene register…","Répertoire Sirene injoignable, réessayez dans un instant.":"Sirene register unreachable, try again in a moment.","SIRET introuvable au répertoire Sirene.":"SIRET not found in the Sirene register.","Établissement fermé au répertoire Sirene.":"Establishment listed as closed in the Sirene register.","Conforme au répertoire Sirene.":"Matches the Sirene register.","Le répertoire Sirene indique":"The Sirene register shows","Forme juridique":"Legal form","Appliquer":"Apply","Votre adresse est incomplète sur vos factures":"Your address on your invoices is incomplete","Il manque le code postal ou la commune.":"The postcode or town is missing.","Profil mis à jour ✓":"Profile updated ✓","⚠︎ Adresse incomplète : ajoutez le code postal ou la commune (ex. 97133 Saint-Barthélemy)":"⚠︎ Incomplete address: add the postcode or town (e.g. 97133 Saint-Barthélemy)",
     "Récurrentes":"Recurring",
     "Chaque jour":"Every day",
@@ -9663,6 +9664,7 @@
     "Pause à tout moment dans Réservations.":"Pausa a qualquer momento em Reservas.",
     "Premier passage":"Primeira visita",
     "par passage":"por visita",
+    "Le répertoire Sirene ne publie pas l’adresse (diffusion restreinte).":"O registo Sirene não publica a morada (difusão restrita).","Le répertoire Sirene ne donne pas d’adresse pour ce SIRET.":"O registo Sirene não indica morada para este SIRET.","Saisir mon adresse":"Introduzir a minha morada",
     "N° en cours d’attribution":"N.º em atribuição","Micro-entreprise":"Microempresa","Adresse (sur vos factures)":"Morada (nas suas faturas)","Modifier mes coordonnées":"Editar os meus dados","Mettre à jour depuis le SIRET":"Atualizar a partir do SIRET","Recherche au répertoire Sirene…":"A pesquisar no registo Sirene…","Répertoire Sirene injoignable, réessayez dans un instant.":"Registo Sirene inacessível, tente novamente daqui a pouco.","SIRET introuvable au répertoire Sirene.":"SIRET não encontrado no registo Sirene.","Établissement fermé au répertoire Sirene.":"Estabelecimento encerrado no registo Sirene.","Conforme au répertoire Sirene.":"Conforme o registo Sirene.","Le répertoire Sirene indique":"O registo Sirene indica","Forme juridique":"Forma jurídica","Appliquer":"Aplicar","Votre adresse est incomplète sur vos factures":"A sua morada nas faturas está incompleta","Il manque le code postal ou la commune.":"Falta o código postal ou o município.","Profil mis à jour ✓":"Perfil atualizado ✓","⚠︎ Adresse incomplète : ajoutez le code postal ou la commune (ex. 97133 Saint-Barthélemy)":"⚠︎ Morada incompleta: acrescente o código postal ou o município (ex. 97133 Saint-Barthélemy)",
     "Récurrentes":"Recorrentes",
     "Chaque jour":"Todos os dias",
@@ -18807,15 +18809,24 @@
     if(!fi.trouve)return `<p class="mini" style="margin-top:10px;color:var(--coral-deep)">SIRET introuvable au répertoire Sirene.</p>`;
     const ferme=fi.ouvert===false?`<div class="banner coral" style="margin-top:10px">${I.warn}<span>Établissement fermé au répertoire Sirene.</span></div>`:'';
     const ec=st.ecart||[];
-    if(!ec.length)return ferme+`<p class="mini" style="margin-top:10px;color:var(--good);font-weight:600">${I.check} <span>Conforme au répertoire Sirene.</span></p>`;
-    return ferme+`<div class="card" style="padding:12px 14px;margin-top:10px;background:var(--sand-2);box-shadow:none">
+    /* SANS ADRESSE PUBLIÉE, RIEN N'EST « CONFORME » : un entrepreneur individuel peut
+       refuser la diffusion de ses coordonnées (statut de diffusion partiel), et le
+       répertoire ne rend alors aucune adresse. On le dit, et l'adresse se saisit à la
+       main (l'éditeur, 26/11/2026 : « Conforme » s'affichait sur « Jean bart »). */
+    const sansAdresse=!fi.adresse?`<div class="banner coral" style="margin-top:10px">${I.warn}<span>${fi.diffusible===false?'Le répertoire Sirene ne publie pas l’adresse (diffusion restreinte).':'Le répertoire Sirene ne donne pas d’adresse pour ce SIRET.'}</span></div>`
+      +(act==='adm-sirene'
+        ?`<div style="margin-top:10px"><label class="sub" style="display:block;margin-bottom:5px">Adresse (sur ses factures)</label><input class="txt" data-admaddr value="${esc(st.adresseSaisie!=null?st.adresseSaisie:(st.adresseActuelle||''))}" placeholder="Ex. Gustavia, 97133 Saint-Barthélemy" style="width:100%"><button class="btn primary sm" data-act="adm-adresse-enregistrer" style="width:auto;padding:9px 16px;margin-top:8px;white-space:nowrap">Enregistrer l’adresse</button></div>`
+        :(S.proEditContact?'':`<button class="btn ghost sm" data-act="pro-adresse" style="width:auto;padding:9px 14px;margin-top:8px;white-space:nowrap">${I.edit}&nbsp;Saisir mon adresse</button>`))
+      :'';
+    if(!ec.length)return ferme+(fi.adresse?`<p class="mini" style="margin-top:10px;color:var(--good);font-weight:600">${I.check} <span>Conforme au répertoire Sirene.</span></p>`:sansAdresse);
+    return ferme+sansAdresse+`<div class="card" style="padding:12px 14px;margin-top:10px;background:var(--sand-2);box-shadow:none">
         <b style="font-size:14px">Le répertoire Sirene indique</b>
         ${ec.map(function(e){return `<div style="margin-top:9px"><div class="mini">${SIRENE_CHAMPS[e.champ]||esc(e.champ)}</div>${e.avant?`<div class="mini" style="text-decoration:line-through">${esc(e.avant)}</div>`:''}<div style="font-size:14px;font-weight:700">${esc(e.apres)}</div></div>`;}).join('')}
         <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap"><button class="btn primary sm" data-act="${act}-appliquer" style="width:auto;padding:9px 16px;white-space:nowrap">Appliquer</button><button class="btn ghost sm" data-act="${act}-fermer" style="width:auto;padding:9px 14px;white-space:nowrap">Annuler</button></div></div>`;
   }
   function sireneLancer(cle,data){
     S[cle]={etat:'charge',uid:data&&data.uid};render();
-    ficheSireneAppel(data).then(function(r){S[cle]={etat:'ok',uid:data&&data.uid,fiche:r.fiche||{},ecart:r.ecart||[]};render();})
+    ficheSireneAppel(data).then(function(r){const av=S[cle]||{};S[cle]={etat:'ok',uid:data&&data.uid,fiche:r.fiche||{},ecart:r.ecart||[],adresseActuelle:av.adresseActuelle};render();})
       .catch(function(e){S[cle]={etat:'erreur',uid:data&&data.uid,msg:(e&&e.message&&e.message!=='hors-ligne')?String(e.message):''};render();});
   }
   async function lookupSiret(auto){
@@ -21920,6 +21931,7 @@
       else if(act==='sirene'){
         const a=(S.adminArtisans||[]).find(x=>x.id===id);if(!a)return;
         sireneLancer('admSirene',{uid:a.uid||a.id});
+        if(S.admSirene)S.admSirene.adresseActuelle=a.address||'';
         return;
       }
       else if(act==='copysiret'){
@@ -23206,6 +23218,12 @@
       case 'pro-contact-cancel':S.proEditContact=false;S.proContactForm=null;render();break;
       case 'pro-sirene':sireneLancer('sirenePro',{});break;
       case 'adm-sirene-fermer':S.admSirene=null;render();break;
+      case 'adm-adresse-enregistrer':{const st=S.admSirene;if(!st||!st.uid)break;
+        const adr=String(st.adresseSaisie!=null?st.adresseSaisie:(st.adresseActuelle||'')).trim().slice(0,200);
+        if(!factAdresseComplete(adr)){toast('⚠︎ Adresse incomplète : ajoutez le code postal ou la commune (ex. 97133 Saint-Barthélemy)');break;}
+        const a=(S.adminArtisans||[]).find(function(x){return (x.uid||x.id)===st.uid;});
+        FB.f.setDoc(FB.f.doc(FB.db,'artisans',st.uid),{address:adr},{merge:true}).then(function(){if(a)a.address=adr;S.admSirene=null;toast('Profil mis à jour ✓');render();}).catch(function(e){toast('⚠︎ Non enregistré : '+fbErrTxt(e));});
+        break;}
       case 'adm-sirene-appliquer':{const st=S.admSirene;if(!st||!st.uid||!st.ecart||!st.ecart.length)break;
         const patch={};st.ecart.forEach(function(e){if(e.champ==='address'||e.champ==='legalForm')patch[e.champ]=String(e.apres||'').slice(0,200);});
         const a=(S.adminArtisans||[]).find(function(x){return (x.uid||x.id)===st.uid;});
@@ -23992,6 +24010,7 @@
     const peb=e.target.closest('[data-proeditbio]');if(peb){S.proContactForm=S.proContactForm||{};S.proContactForm.bio=peb.value;}
     const pei=e.target.closest('[data-proeditiban]');if(pei){S.proContactForm=S.proContactForm||{};S.proContactForm.iban=pei.value;}
     const pea=e.target.closest('[data-proeditaddr]');if(pea){S.proContactForm=S.proContactForm||{};S.proContactForm.address=pea.value;}
+    const aad=e.target.closest('[data-admaddr]');if(aad&&S.admSirene){S.admSirene.adresseSaisie=aad.value;}
     const pet=e.target.closest('[data-proeditibantit]');if(pet){S.proContactForm=S.proContactForm||{};S.proContactForm.ibanTitulaire=pet.value;}
     const lf=e.target.closest('[data-lf]');if(lf){(S.loginForm=S.loginForm||{email:'',password:'',remember:true})[lf.dataset.lf]=lf.value;}
     const pr=e.target.closest('[data-prate]');if(pr){S.proForm.rate=+pr.value;const el=document.getElementById('prateVal');if(el)el.textContent=pr.value+' €/h';}
