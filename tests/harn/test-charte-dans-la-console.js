@@ -80,7 +80,7 @@ const ecran = (p) => p.evaluate(() => (document.getElementById('view').textConte
     pro: window.__S ? null : null,
   }));
   const html = fs.readFileSync(path.join(RACINE, 'index.html'), 'utf8');
-  ok(E && /role==='pro'\?` · <button class="linklike" data-act="view-charte">/.test(html),
+  ok(E && /role==='pro'\?`<button class="linklike" data-act="view-charte">/.test(html),
     'le pied de page légal n’est pas touché : la charte y reste réservée au prestataire');
   ok(/case 'view-cgu':case 'view-cgv':case 'view-charte'/.test(html)
     && /LEGAL_CLES\.indexOf\(_k\)>=0/.test(html),
