@@ -18,6 +18,7 @@ grand » ou petit modèle) : toute correction d'affichage se mesure à 320 ET à
 | 7 | Compte prestataire à 320 points : pastilles de fidélité hors carte ; « Mes documents » : l'état sort de la carte. | **Corrigé (949)**, y compris en portugais à 375 et 393 points (trouvé par la mesure). Le test mesure désormais tout texte hors carte. |
 | 8 | Pied de page : « · » orphelin en bout de ligne. | **Corrigé (949)**, variante B validée : « DOCUMENTS LÉGAUX », deux liens par ligne quand ils tiennent, un seul sinon. |
 | 9 | Carte « Bon retour » : e-mail coupé au milieu. | **Corrigé (949)**, variante B validée (après une première version jugée « pas jolie ni convaincante ») : initiale, nom et e-mail en haut, « Se connecter » en contour sur toute la largeur. « Déjà un compte ? » GARDÉ (utile avec plusieurs comptes). |
+| 10 | iPhone mini : la barre à flèches et le clavier couvrent le champ qu'on tape, on ne voit pas ce qu'on écrit (même cause probable que le 2 : la page était redescendue sous le clavier). | À vérifier sur la 949. Si insuffisant : module clavier Capacitor (`@capacitor/keyboard`, zone de l'app réduite au-dessus du clavier, barre à flèches masquable) = nouveau build Xcode. |
 | 4 | Premier lancement depuis Xcode : accueil, puis long écran noir, puis accueil. Pas reproduit aux lancements suivants. | À revérifier sur une installation NEUVE par TestFlight (supprimer l'app, réinstaller, ouvrir). |
 
 ## Notes, sans correction prévue

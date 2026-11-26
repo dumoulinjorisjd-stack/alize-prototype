@@ -52,7 +52,7 @@ prompts, the payment step, user-generated content (messaging) with the content f
 Report and Block, the provider side, and account deletion.
 
 **2. Devices tested**
-- [Nom du modèle, ex. iPhone 13 mini], iOS 27 (physical device, Xcode 26.3 and TestFlight)
+- iPhone mini, iOS 27 (physical device, Xcode 26.3 and TestFlight)
 - Layouts also checked in a browser at every current iPhone screen width, from 320
   points (Display Zoom) to 440 points.
 
