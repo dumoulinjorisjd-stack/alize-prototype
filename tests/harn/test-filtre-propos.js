@@ -74,11 +74,13 @@ ok(F.proposInjurieux('Connnnnard') === 'connard', 'les lettres répétées ne co
   await fb();
   const e = await p.evaluate(() => {
     const S = window.__S; S.persona = 'pro'; S.proStatus = 'valide'; S.proPhone = '0690 12 34 56'; S.proBio = ''; S.proNav = 'account';
-    S.proContactForm = { phone: '0690 12 34 56', bio: 'Je réponds aux connards', iban: '', ibanTitulaire: '', address: '' }; S.proEditContact = true; S._fold = { 'p-infos': true }; window.__render();
-    document.querySelector('[data-act="pro-contact-save"]').click();
-    return { ecrits: window.__ecrits.length, bio: S.proBio, edition: S.proEditContact };
+    S.account = { name: 'Laure', email: 'c@e.fr', uid: 'c1', role: 'pro' };
+    const essai = (bio) => { window.__ecrits = []; S.proContactForm = { phone: '0690 12 34 56', bio, iban: '', ibanTitulaire: '', address: '' }; S.proEditContact = true; S._fold = { 'p-infos': true }; window.__render();
+      document.querySelector('[data-act="pro-contact-save"]').click(); return { ecrits: window.__ecrits.length, bio: S.proBio, edition: S.proEditContact }; };
+    return { ko: essai('Je réponds aux connards'), okk: essai('Je fais le ménage avec soin') };
   });
-  ok(e.ecrits === 0 && e.bio === '' && e.edition, 'présentation injurieuse : refusée, rien n’est écrit, la saisie reste ouverte');
+  ok(e.ko.ecrits === 0 && e.ko.bio === '' && e.ko.edition, 'présentation injurieuse : refusée, rien n’est écrit, la saisie reste ouverte');
+  ok(e.okk.ecrits > 0 && e.okk.bio === 'Je fais le ménage avec soin', 'contrôle : une présentation normale s’enregistre');
 
   ok(!errs.length, 'aucune erreur JS' + (errs.length ? ' : ' + errs.join(' | ') : ''));
   await b.close();
