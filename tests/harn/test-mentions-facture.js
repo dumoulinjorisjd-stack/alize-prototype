@@ -120,7 +120,7 @@ ok(FS.ecartProfil({ address: 'rue jean  bart 97133 saint-barthelemy' }, fi).leng
     return document.getElementById('view').textContent.replace(/\s+/g, ' ');
   }, { adresse, siret });
   let accueil = await pro('Jean bart', '91234567800029');
-  ok(/Votre adresse est incomplète sur vos factures/.test(accueil) && /Il manque le code postal ou la commune/.test(accueil), 'accueil : la carte « adresse incomplète »');
+  ok(/Votre adresse est incomplète sur vos factures/.test(accueil) && /Ajoutez le code postal dans votre adresse, ex\. 97133 Saint-Barthélemy\./.test(accueil), 'accueil : la carte « adresse incomplète »');
   ok(!/Votre adresse est incomplète/.test(await pro('Rue Jean Bart, 97133 Saint-Barthélemy', '91234567800029')), 'adresse complète : pas de carte');
   await pro('Jean bart', '91234567800029');
   await p.evaluate((r) => { window.__reponse = r; document.querySelector('[data-act="pro-adresse"]').click(); }, { fiche: fi, ecart: FS.ecartProfil({ address: 'Jean bart', statusType: 'micro' }, fi) });

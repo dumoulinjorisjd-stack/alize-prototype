@@ -7,6 +7,7 @@
    D. pied de page : un « · » orphelin en bout de ligne (« CGU · CGV · »).
    Mesuré à 320, 375, 393 et 430 points, en FR, EN et PT, sur ce que le navigateur REND
    (rectangles, lignes de texte), pas sur la source.
+   F. tout texte qui sort de sa carte, n'importe où sur ces écrans (« Mes documents ») ;
    E. contrôle : à 393 points, la pastille d'une carte repliable reste à droite du titre
       (rien n'a bougé au-dessus de 360). */
 const fs = require('fs'), path = require('path');
@@ -60,6 +61,12 @@ const ECRANS = {
         for (let k = 0; k < cs.length; k++) if (cs[k].c === '·') { if ((cs[k + 1] && cs[k + 1].top > cs[k].top + 2) || (cs[k - 1] && cs[k - 1].top < cs[k].top - 2)) d.push('D « · » orphelin en bout de ligne'); }
         pied.querySelectorAll('button').forEach((bt) => { const r = bt.getBoundingClientRect(); if (r.right > vw + 1 || r.left < -1) d.push('D lien hors écran : ' + bt.textContent); if (lignes(bt) > 1) d.push('D lien coupé : ' + bt.textContent); }); }
       else d.push('D pied de page introuvable');
+      // F — tout texte qui sort de sa carte, sur tout l'écran (pas seulement les cartes repérées)
+      document.querySelectorAll('.card').forEach((c) => { const cr = c.getBoundingClientRect(); if (!cr.width) return;
+        const w = document.createTreeWalker(c, NodeFilter.SHOW_TEXT); let n;
+        while ((n = w.nextNode())) { if (!n.textContent.trim()) continue; const rg = document.createRange(); rg.selectNodeContents(n);
+          const rs = [...rg.getClientRects()].filter((x) => x.width > 0);
+          if (rs.some((x) => x.right > cr.right + 1 || x.left < cr.left - 1)) { d.push('F texte hors carte : « ' + n.textContent.trim().slice(0, 40) + ' »'); break; } } });
       if (document.documentElement.scrollWidth > vw + 1) d.push('page plus large que l\'écran');
       return { d, tetes: [...document.querySelectorAll('.fold-head')].filter((h) => h.querySelector('.chip')).map((h) => { const col = h.querySelector('.fh-main b').parentElement.getBoundingClientRect(); const c = h.querySelector('.chip').getBoundingClientRect(); return c.left >= col.right - 1 && c.top < col.bottom; }), nbFold: document.querySelectorAll('.fold-head').length, legal: [...document.querySelectorAll('p.mini')].filter((x) => /Documents l|Legal documents|Documentos legais/.test(x.textContent)).length, bon: !!br, fid: document.querySelectorAll('[data-act="open-fidelity"]').length };
     }, { lang, etat: ECRANS[ec] });
