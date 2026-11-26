@@ -44,24 +44,24 @@ const ECRANS = {
       });
       // B — statut fidélité
       document.querySelectorAll('[data-act="open-fidelity"]').forEach((c) => { const card = c.getBoundingClientRect(); c.querySelectorAll('.chip').forEach((x) => { if (x.getBoundingClientRect().right > card.right + 1) d.push('B pastille hors carte : ' + x.textContent.trim()); }); });
-      // C — e-mail de la carte « Bon retour » : coupé seulement devant le @, jamais au milieu d'un mot
-      const br = document.querySelector('.bonretour .mini');
-      if (br) { const rg = document.createRange(); rg.selectNodeContents(br); const rs = [...rg.getClientRects()].filter((x) => x.width > 0);
-        const nb = new Set(rs.map((x) => Math.round(x.top))).size;
-        // Chaque morceau (« demo.artisan », « @ti-services.fr ») tient sur une ligne : la seule
-        // coupure possible tombe juste avant le @.
-        const morceaux = [...br.querySelectorAll('.em')];
-        if (!morceaux.length) d.push('C e-mail sans découpe au @');
-        morceaux.forEach((m) => { if (lignes(m) > 1) d.push('C e-mail coupé au milieu : ' + m.textContent); });
-        if (nb > 1 && morceaux.length === 2 && !(morceaux[1].getBoundingClientRect().top > morceaux[0].getBoundingClientRect().top + 2)) d.push('C coupure ailleurs qu au @');
-        if (br.closest('.card').scrollWidth > br.closest('.card').clientWidth + 1) d.push('C carte Bon retour déborde'); }
-      // D — pied de page : aucune ligne ne finit par un séparateur ; les liens restent dans l'écran
-      document.querySelectorAll('.legal-links').forEach((ll) => {
-        if (/·/.test(ll.textContent)) d.push('D séparateur « · » dans les liens');
-        ll.querySelectorAll('button').forEach((bt) => { const r = bt.getBoundingClientRect(); if (r.right > vw + 1 || r.left < -1) d.push('D lien hors écran : ' + bt.textContent); if (lignes(bt) > 1) d.push('D lien coupé : ' + bt.textContent); });
-      });
+      // Les caractères d'un bloc et la ligne où chacun tombe, mesurés sur le rendu.
+      const parLigne = (el) => { const out = []; const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        let n; while ((n = w.nextNode())) { for (let k = 0; k < n.textContent.length; k++) { const rg = document.createRange(); rg.setStart(n, k); rg.setEnd(n, k + 1); const rr = [...rg.getClientRects()].filter((x) => x.width > 0)[0]; if (rr) out.push({ c: n.textContent[k], top: Math.round(rr.top) }); } } return out; };
+      // C — e-mail de la carte « Bon retour » (la carte au bouton « Se connecter » de l'accueil) :
+      // s'il passe sur deux lignes, la coupure tombe juste avant le @, nulle part ailleurs.
+      const sl = document.querySelector('.card [data-act="show-login"]'); const carteBR = sl && sl.closest('.card');
+      const br = carteBR && [...carteBR.querySelectorAll('.mini')].find((x) => /@/.test(x.textContent));
+      if (br) { const cs = parLigne(br);
+        for (let k = 1; k < cs.length; k++) if (cs[k].top > cs[k - 1].top + 2 && cs[k].c !== '@') d.push('C e-mail coupé au milieu, avant « ' + cs[k].c + ' »');
+        if (carteBR.scrollWidth > carteBR.clientWidth + 1) d.push('C carte Bon retour déborde'); }
+      // D — pied de page légal : aucun « · » en bout ni en début de ligne, liens dans l'écran
+      const pied = [...document.querySelectorAll('p.mini')].find((x) => /Documents l|Legal documents|Documentos legais/.test(x.textContent));
+      if (pied) { const cs = parLigne(pied).filter((x) => x.c.trim());
+        for (let k = 0; k < cs.length; k++) if (cs[k].c === '·') { if ((cs[k + 1] && cs[k + 1].top > cs[k].top + 2) || (cs[k - 1] && cs[k - 1].top < cs[k].top - 2)) d.push('D « · » orphelin en bout de ligne'); }
+        pied.querySelectorAll('button').forEach((bt) => { const r = bt.getBoundingClientRect(); if (r.right > vw + 1 || r.left < -1) d.push('D lien hors écran : ' + bt.textContent); if (lignes(bt) > 1) d.push('D lien coupé : ' + bt.textContent); }); }
+      else d.push('D pied de page introuvable');
       if (document.documentElement.scrollWidth > vw + 1) d.push('page plus large que l\'écran');
-      return { d, tetes: [...document.querySelectorAll('.fold-head')].filter((h) => h.querySelector('.chip')).map((h) => { const col = h.querySelector('.fh-main b').parentElement.getBoundingClientRect(); const c = h.querySelector('.chip').getBoundingClientRect(); return c.left >= col.right - 1 && c.top < col.bottom; }), nbFold: document.querySelectorAll('.fold-head').length, legal: document.querySelectorAll('.legal-links').length, bon: !!br, fid: document.querySelectorAll('[data-act="open-fidelity"]').length };
+      return { d, tetes: [...document.querySelectorAll('.fold-head')].filter((h) => h.querySelector('.chip')).map((h) => { const col = h.querySelector('.fh-main b').parentElement.getBoundingClientRect(); const c = h.querySelector('.chip').getBoundingClientRect(); return c.left >= col.right - 1 && c.top < col.bottom; }), nbFold: document.querySelectorAll('.fold-head').length, legal: [...document.querySelectorAll('p.mini')].filter((x) => /Documents l|Legal documents|Documentos legais/.test(x.textContent)).length, bon: !!br, fid: document.querySelectorAll('[data-act="open-fidelity"]').length };
     }, { lang, etat: ECRANS[ec] });
     r.d.forEach((x) => defauts.push(w + ' ' + lang + ' ' + ec + ' — ' + x));
     if (w === 320 && lang === 'fr') console.log('  (' + ec + ' : ' + r.nbFold + ' cartes repliables, ' + r.legal + ' pied de page, carte Bon retour ' + (r.bon ? 'oui' : 'non') + ', fidélité ' + r.fid + ')');
