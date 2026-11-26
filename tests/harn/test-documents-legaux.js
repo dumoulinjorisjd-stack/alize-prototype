@@ -21,7 +21,7 @@ const ENGAGEMENTS={
     ['coordonnées d’une mission', {fr:/détourner de leur finalité/i, en:/misuse the details/i,      pt:/desviar da sua finalidade/i}],
     ['licence non sous-licenciable', {fr:/non sous-licenciable/i,  en:/non-sublicensable/i,         pt:/não sublicenciável/i}],
     ['profil affiché aux clients',   {fr:/affichées aux Clients/i, en:/shown to Clients/i,          pt:/exibidas aos Clientes/i}],
-    ['adresse de signalement',       {fr:/signalement@ti-services\.fr/, en:/signalement@ti-services\.fr/, pt:/signalement@ti-services\.fr/}],
+    ['adresse de signalement',       {fr:/contact@ti-services\.fr/, en:/contact@ti-services\.fr/, pt:/contact@ti-services\.fr/}],
     ['sommes acquises préservées',   {fr:/ne prive l'Intervenant d'aucune somme acquise/i, en:/does not deprive a Provider of any sum earned/i, pt:/não priva o Prestador de qualquer montante adquirido/i}],
     ['préavis de trente jours',      {fr:/préavis de trente jours/i, en:/thirty days' notice/i,     pt:/pré-aviso de trinta dias/i}],
   ],
@@ -82,7 +82,7 @@ const ENGAGEMENTS={
 
   console.log('\nCOHÉRENCE — ce que les documents promettent doit exister ailleurs');
   const src=fs.readFileSync(path.join(RACINE,'index.html'),'utf8');
-  ok(/signalement@ti-services\.fr/.test(src),'l’adresse de signalement est bien celle citée partout');
+  ok(/contact@ti-services\.fr/.test(src),'l’adresse de signalement est bien celle citée partout');
   ok(/mail\.infomaniak\.com/.test(fs.readFileSync(path.join(RACINE,'functions','index.js'),'utf8')),
     'Infomaniak est déclaré parce qu’il est réellement utilisé pour le courrier');
   ok(!/anthropic|openai/i.test(fs.readFileSync(path.join(RACINE,'functions','index.js'),'utf8')),
