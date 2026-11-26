@@ -47,10 +47,10 @@ grand » ou petit modèle) : toute correction d'affichage se mesure à 320 ET à
 - Compte de démonstration prestataire : une seule demande d'exemple (« demain à 9h00 »),
   aucune vraie demande ; Accepter ouvre la conversation ; « Signaler » et « Bloquer Camille ».
   Adresse complétée (Gustavia, 97133 Saint-Barthélemy) : la carte rouge a disparu.
+- Suppression de compte (compte jetable) : va au bout depuis l'app, reconnexion refusée.
 - Signature Xcode : équipe JORIS DUMOULIN, profil géré, Push Notifications, Background
   Modes → Remote notifications, GoogleService-Info.plist rattaché.
 
 ## Reste à essayer
 
-- Suppression de compte sur un compte jetable.
 - Archive → TestFlight, puis installation neuve (point 4) et notifications.
