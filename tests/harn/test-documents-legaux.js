@@ -23,6 +23,7 @@ const ENGAGEMENTS={
     ['profil affiché aux clients',   {fr:/affichées aux Clients/i, en:/shown to Clients/i,          pt:/exibidas aos Clientes/i}],
     ['adresse de signalement',       {fr:/contact@ti-services\.fr/, en:/contact@ti-services\.fr/, pt:/contact@ti-services\.fr/}],
     ['sommes acquises préservées',   {fr:/ne prive l'Intervenant d'aucune somme acquise/i, en:/does not deprive a Provider of any sum earned/i, pt:/não priva o Prestador de qualquer montante adquirido/i}],
+    ['tolérance zéro sous 24 h',    {fr:/Tolérance zéro\.<\/b>[^<]*dans les 24 heures/, en:/Zero tolerance\.<\/b>[^<]*within 24 hours/, pt:/Tolerância zero\.<\/b>[^<]*no prazo de 24 horas/}],
     ['préavis de trente jours',      {fr:/préavis de trente jours/i, en:/thirty days' notice/i,     pt:/pré-aviso de trinta dias/i}],
   ],
   confidentialite:[

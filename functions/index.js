@@ -7624,7 +7624,7 @@ function invoiceLines(r) {
   if (M.travel > 0) lines.push({ label: 'Forfait de d\u00e9placement', qty: '1', unit: eurTxt(M.travel), total: M.travel });
   // Le pourboire est une LIBÉRALITÉ du client, hors prix de la prestation et hors
   // commission, reversée en totalité au prestataire. La facture doit le dire.
-  if (M.tip > 0) lines.push({ label: 'Pourboire \u2014 libéralité, revers\u00e9e int\u00e9gralement au prestataire', qty: '1', unit: eurTxt(M.tip), total: M.tip });
+  if (M.tip > 0) lines.push({ label: 'Pourboire \u2014 libéralité, revers\u00e9e au prestataire apr\u00e8s commission (frais de carte et de gestion)', qty: '1', unit: eurTxt(M.tip), total: M.tip });
   return { lines, total: M.gross, tip: M.tip };
 }
 function wrapPdf(page, font, size, color, text, x, y, maxW, lh) {

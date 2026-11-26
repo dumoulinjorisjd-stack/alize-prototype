@@ -215,6 +215,18 @@ ok(FS.ecartProfil({ address: 'rue jean  bart 97133 saint-barthelemy' }, fi).leng
   const g5 = await p.evaluate(() => ({ t: document.getElementById('view').textContent.replace(/\s+/g, ' '), btn: !!document.querySelector('[data-act="pro-adresse"]') }));
   ok(!/Conforme au répertoire Sirene/.test(g5.t) && /ne publie pas l’adresse/.test(g5.t) && g5.btn, 'prestataire : pas de « Conforme », la raison, et « Saisir mon adresse »');
 
+  console.log('H — le pourboire dit ce qu’il devient (commission prélevée, décision du 26/11/2026)');
+  const tp = await p.evaluate(() => {
+    const m = Object.assign(window.__newMission(window.__svc.trouve('menage')), { reqId: 'R9', status: 'paid', invNo: '2026-D-0009', dateISO: '2026-11-25', tip: 5,
+      providerLegal: 'Karla Barbosa', providerStatusType: 'micro', providerAddress: 'Rue Jean Bart, 97133 Saint-Barthélemy', providerSiret: '91234567800029', provider: { nm: 'Karla', ini: 'KB' } });
+    return window.__clientInvoiceDoc(m).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+  });
+  ok(/Pourboire Libéralité du client, reversée au prestataire après commission \(frais de carte et de gestion\)/.test(tp), 'écran : le pourboire est reversé après commission');
+  ok(!/hors prix de la prestation|intégralement/.test(tp), 'écran : plus de promesse de reversement intégral');
+  const srvSrc = fs.readFileSync(path.join(RACINE, 'functions', 'index.js'), 'utf8');
+  ok(/label: 'Pourboire \\u2014 libéralité, revers\\u00e9e au prestataire apr\\u00e8s commission \(frais de carte et de gestion\)'/.test(srvSrc), 'PDF : même phrase que l’écran');
+  ok(!/int\\u00e9gralement au prestataire/.test(srvSrc), 'PDF : plus de « reversée intégralement »');
+
   ok(!errs.length, 'aucune erreur JS' + (errs.length ? ' : ' + errs.join(' | ') : ''));
   await b.close();
   console.log(f ? f + ' ÉCHEC(S)' : 'TOUT EST VERT');

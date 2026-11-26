@@ -143,12 +143,15 @@ DEMO ACCOUNTS (both are sandboxed: nothing they do reaches real users):
 USER-GENERATED CONTENT (Guideline 1.2): messages containing insults, slurs or threats
 are refused before they are sent (FR/EN/PT filter, also applied to provider
 descriptions and order notes). In every conversation: "Signaler" (Report) and
-"Bloquer" (Block). Users accept the Terms at sign-up. Reports:
-contact@ti-services.fr, handled by our team.
+"Bloquer" (Block). Users accept the Terms at sign-up; article 7.6 states zero
+tolerance for objectionable content or abusive users. Reports:
+contact@ti-services.fr, reviewed within 24 hours; the content is removed and its
+author suspended or excluded.
 
 PAYMENTS (Guideline 3.1.3(e)): all payments are for PHYSICAL services performed at the
-client's home, processed by our payment provider Mollie (card). The optional tip goes
-to the person who performed the service. "Coup de pouce" is an optional increase of
+client's home, processed by our payment provider Mollie (card). The optional tip is
+passed on to the provider who performed the service, minus our commission covering card
+and handling fees. "Coup de pouce" is an optional increase of
 the price of that physical service, paid to the provider. No digital goods, no
 subscriptions, no in-app content for sale.
 
