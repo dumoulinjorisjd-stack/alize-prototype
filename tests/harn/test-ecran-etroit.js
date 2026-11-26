@@ -29,7 +29,7 @@ const ECRANS = {
     await p.route('**/*', (r) => /gstatic|googleapis|firebase|cloudfunctions|google\.com/.test(r.request().url()) ? r.abort() : r.continue());
     await p.goto('file://' + path.join(RACINE, 'tests', 'harn', 'app.html')); await p.waitForFunction(() => window.__S && window.__render);
     await p.addStyleTag({ content: '.stage{display:block!important}.pad{opacity:1!important;animation:none!important}' });
-    const r = await p.evaluate(({ lang, etat }) => {
+    const r = await p.evaluate(({ lang, etat, w: largeur }) => {
       document.body.classList.add('standalone'); try { localStorage.setItem('ti_installee', '1'); } catch (_) {}
       const sp = document.getElementById('splash'); if (sp) sp.style.display = 'none';
       const S = window.__S; S.lang = lang; S.demoMode = false; (new Function('S', etat))(S); window.__render();
@@ -54,6 +54,9 @@ const ECRANS = {
       const br = carteBR && [...carteBR.querySelectorAll('.mini')].find((x) => /@/.test(x.textContent));
       if (br) { const cs = parLigne(br);
         for (let k = 1; k < cs.length; k++) if (cs[k].top > cs[k - 1].top + 2 && cs[k].c !== '@') d.push('C e-mail coupé au milieu, avant « ' + cs[k].c + ' »');
+        if (largeur >= 375 && new Set(cs.map((x) => x.top)).size > 1) d.push('C e-mail sur deux lignes à ' + largeur + ' points');
+        const bt = carteBR.querySelector('[data-act="show-login"]').getBoundingClientRect(), crb = carteBR.getBoundingClientRect();
+        if (bt.width < crb.width * 0.8 || bt.top < br.getBoundingClientRect().bottom) d.push('C le bouton Se connecter n est pas sous l identite, sur toute la largeur');
         if (carteBR.scrollWidth > carteBR.clientWidth + 1) d.push('C carte Bon retour déborde'); }
       // D — pied de page légal : aucun « · » en bout ni en début de ligne, liens dans l'écran
       const pied = [...document.querySelectorAll('p.mini')].find((x) => /Documents l|Legal documents|Documentos legais/.test(x.textContent));
@@ -69,7 +72,7 @@ const ECRANS = {
           if (rs.some((x) => x.right > cr.right + 1 || x.left < cr.left - 1)) { d.push('F texte hors carte : « ' + n.textContent.trim().slice(0, 40) + ' »'); break; } } });
       if (document.documentElement.scrollWidth > vw + 1) d.push('page plus large que l\'écran');
       return { d, tetes: [...document.querySelectorAll('.fold-head')].filter((h) => h.querySelector('.chip')).map((h) => { const col = h.querySelector('.fh-main b').parentElement.getBoundingClientRect(); const c = h.querySelector('.chip').getBoundingClientRect(); return c.left >= col.right - 1 && c.top < col.bottom; }), nbFold: document.querySelectorAll('.fold-head').length, legal: [...document.querySelectorAll('p.mini')].filter((x) => /Documents l|Legal documents|Documentos legais/.test(x.textContent)).length, bon: !!br, fid: document.querySelectorAll('[data-act="open-fidelity"]').length };
-    }, { lang, etat: ECRANS[ec] });
+    }, { lang, etat: ECRANS[ec], w });
     r.d.forEach((x) => defauts.push(w + ' ' + lang + ' ' + ec + ' — ' + x));
     if (w === 320 && lang === 'fr') console.log('  (' + ec + ' : ' + r.nbFold + ' cartes repliables, ' + r.legal + ' pied de page, carte Bon retour ' + (r.bon ? 'oui' : 'non') + ', fidélité ' + r.fid + ')');
     if (w === 393 && lang === 'fr' && ec === 'profil') tetes393 = r.tetes;
