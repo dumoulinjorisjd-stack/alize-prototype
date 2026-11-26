@@ -8099,6 +8099,7 @@
     "Pause à tout moment dans Réservations.":"Pause anytime in Bookings.",
     "Premier passage":"First visit",
     "par passage":"per visit",
+    "⚠︎ Ce texte contient des propos injurieux ou menaçants : reformulez-le.":"⚠︎ This text contains insulting or threatening language: please rephrase it.",
     "Le répertoire Sirene ne publie pas l’adresse (diffusion restreinte).":"The Sirene register does not publish the address (restricted disclosure).","Le répertoire Sirene ne donne pas d’adresse pour ce SIRET.":"The Sirene register gives no address for this SIRET.","Saisir mon adresse":"Enter my address",
     "N° en cours d’attribution":"No. being assigned","Micro-entreprise":"Micro-enterprise","Adresse (sur vos factures)":"Address (on your invoices)","Modifier mes coordonnées":"Edit my details","Mettre à jour depuis le SIRET":"Update from SIRET","Recherche au répertoire Sirene…":"Searching the Sirene register…","Répertoire Sirene injoignable, réessayez dans un instant.":"Sirene register unreachable, try again in a moment.","SIRET introuvable au répertoire Sirene.":"SIRET not found in the Sirene register.","Établissement fermé au répertoire Sirene.":"Establishment listed as closed in the Sirene register.","Conforme au répertoire Sirene.":"Matches the Sirene register.","Le répertoire Sirene indique":"The Sirene register shows","Forme juridique":"Legal form","Appliquer":"Apply","Votre adresse est incomplète sur vos factures":"Your address on your invoices is incomplete","Il manque le code postal ou la commune.":"The postcode or town is missing.","Profil mis à jour ✓":"Profile updated ✓","⚠︎ Adresse incomplète : ajoutez le code postal ou la commune (ex. 97133 Saint-Barthélemy)":"⚠︎ Incomplete address: add the postcode or town (e.g. 97133 Saint-Barthélemy)",
     "Récurrentes":"Recurring",
@@ -9666,6 +9667,7 @@
     "Pause à tout moment dans Réservations.":"Pausa a qualquer momento em Reservas.",
     "Premier passage":"Primeira visita",
     "par passage":"por visita",
+    "⚠︎ Ce texte contient des propos injurieux ou menaçants : reformulez-le.":"⚠︎ Este texto contém linguagem injuriosa ou ameaçadora: reformule-o.",
     "Le répertoire Sirene ne publie pas l’adresse (diffusion restreinte).":"O registo Sirene não publica a morada (difusão restrita).","Le répertoire Sirene ne donne pas d’adresse pour ce SIRET.":"O registo Sirene não indica morada para este SIRET.","Saisir mon adresse":"Introduzir a minha morada",
     "N° en cours d’attribution":"N.º em atribuição","Micro-entreprise":"Microempresa","Adresse (sur vos factures)":"Morada (nas suas faturas)","Modifier mes coordonnées":"Editar os meus dados","Mettre à jour depuis le SIRET":"Atualizar a partir do SIRET","Recherche au répertoire Sirene…":"A pesquisar no registo Sirene…","Répertoire Sirene injoignable, réessayez dans un instant.":"Registo Sirene inacessível, tente novamente daqui a pouco.","SIRET introuvable au répertoire Sirene.":"SIRET não encontrado no registo Sirene.","Établissement fermé au répertoire Sirene.":"Estabelecimento encerrado no registo Sirene.","Conforme au répertoire Sirene.":"Conforme o registo Sirene.","Le répertoire Sirene indique":"O registo Sirene indica","Forme juridique":"Forma jurídica","Appliquer":"Aplicar","Votre adresse est incomplète sur vos factures":"A sua morada nas faturas está incompleta","Il manque le code postal ou la commune.":"Falta o código postal ou o município.","Profil mis à jour ✓":"Perfil atualizado ✓","⚠︎ Adresse incomplète : ajoutez le code postal ou la commune (ex. 97133 Saint-Barthélemy)":"⚠︎ Morada incompleta: acrescente o código postal ou o município (ex. 97133 Saint-Barthélemy)",
     "Récurrentes":"Recorrentes",
@@ -14777,7 +14779,13 @@
     if(S.brouillons)delete S.brouillons[cle];
     if(t){t.value='';etirerSaisie(t);}
   }
-  function sendChat(){const el=document.getElementById('chatInput');const m=chatMission();if(!el||!m)return;const v=el.value.trim();if(!v)return;viderBrouillon('chatInput');const msg={from:S.persona,text:v,at:Date.now()};m.chat=m.chat||[];m.chat.push(msg);render();view.scrollTop=view.scrollHeight;if(FB&&m.reqId&&!isDemo()){const p=FB.f.updateDoc(FB.f.doc(FB.db,'requests',m.reqId),{messages:FB.f.arrayUnion(msg)});if(p&&p.catch)p.catch(function(e){toast('⚠︎ Message non envoyé, réessayez');console.warn('chat send',e);});}}
+  /* FILTRE DES PROPOS — miroir de functions/filtre-propos.js (règle 1.2 d'Apple : filtrer le
+     contenu choquant avant qu'il parte). Même liste, comparée par tests/harn/test-filtre-propos.js. */
+  const PROPOS_TERMES=["connard","connards","connasse","conasse","salope","salopes","salaud","salauds","encule","encules","enculer","fils de pute","sale pute","pute","putes","batard","batards","nique ta mere","ntm","fdp","pd","pede","pedes","tapette","negre","negres","bougnoule","bougnoules","youpin","bamboula","sale noir","sale arabe","je vais te tuer","je vais te buter","je vais te crever","je vais te defoncer","suce ma","fuck","fucking","fucker","motherfucker","fuck you","cunt","bitch","bitches","whore","slut","asshole","nigger","nigga","faggot","fag","i will kill you","i ll kill you","caralho","porra","puta","foda se","fodase","filho da puta","puta que pariu","viado","cabrao","vadia","arrombado","vou te matar","vou matar te","vai tomar no cu"];
+  function proposNormaliser(t){return String(t||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/0/g,'o').replace(/1/g,'i').replace(/3/g,'e').replace(/4/g,'a').replace(/@/g,'a').replace(/\$/g,'s').replace(/[^a-z\s]/g,' ').replace(/([a-z])\1{2,}/g,'$1$1').replace(/\s+/g,' ').trim();}
+  function proposInjurieux(texte){const t=' '+proposNormaliser(texte)+' ';if(t.length<3)return '';for(const terme of PROPOS_TERMES){if(t.indexOf(' '+terme+' ')>=0)return terme;}return '';}
+  const PROPOS_REFUS='⚠︎ Ce texte contient des propos injurieux ou menaçants : reformulez-le.';
+  function sendChat(){const el=document.getElementById('chatInput');const m=chatMission();if(!el||!m)return;const v=el.value.trim();if(!v)return;if(proposInjurieux(v)){toast(PROPOS_REFUS);return;}viderBrouillon('chatInput');const msg={from:S.persona,text:v,at:Date.now()};m.chat=m.chat||[];m.chat.push(msg);render();view.scrollTop=view.scrollHeight;if(FB&&m.reqId&&!isDemo()){const p=FB.f.updateDoc(FB.f.doc(FB.db,'requests',m.reqId),{messages:FB.f.arrayUnion(msg)});if(p&&p.catch)p.catch(function(e){toast('⚠︎ Message non envoyé, réessayez');console.warn('chat send',e);});}}
   // Marque la conversation comme lue par le rôle courant (accusé « Lu » pour l'autre).
   function markChatRead(){const m=chatMission();if(!m||(S.persona!=='client'&&S.persona!=='pro'))return;const field=(S.persona==='pro')?'readProAt':'readClientAt';const now=Date.now();m[field]=now;if(FB&&m.reqId&&!isDemo()){try{FB.f.updateDoc(FB.f.doc(FB.db,'requests',m.reqId),{[field]:now});}catch(_){}}}
   // Accusés de lecture de la messagerie SUPPORT (par prestation). L'admin marque avoir lu
@@ -17406,6 +17414,7 @@
       toast('\u26a0\ufe0e Paiement indisponible, réessayez');return false;}
   }
   function placeMission(){const d=S.draft;if(!d)return;
+    if(proposInjurieux(d.notes||'')){toast(PROPOS_REFUS);return;}
     // Anti-rebond : deux appuis trop rapprochés ne créent qu'une seule demande.
     if(S._placing&&(Date.now()-S._placing)<1800){return;}
     // Compte d'examen : la commande aboutit sans toucher ni à Mollie ni à Firestore.
@@ -23255,6 +23264,7 @@
            modification non. Un artisan pouvait donc remplacer un numéro juste par un
            numéro incomplet, et plus personne ne pouvait le joindre. Un numéro qui ne
            peut pas sonner N'ENTRE PAS, et la saisie reste à l'écran pour être corrigée. */
+        if(proposInjurieux(f.bio||'')){toast(PROPOS_REFUS);break;}
         if(!telStockeLu(f.phone||'').ok){toast('⚠︎ '+(telImpossibleTxt(f.phone||'')||'Indiquez votre numéro de téléphone : c’est par lui qu’on vous joint.'));break;}
         /* L'ADRESSE FIGURE SUR CHAQUE FACTURE : une adresse changée doit situer (code
            postal ou commune). L'ancienne, même incomplète, ne bloque pas le reste. */
