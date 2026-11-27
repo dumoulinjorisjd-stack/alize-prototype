@@ -5489,9 +5489,12 @@ exports.adminRelancerDemande = onCall({secrets: [SMTP_PASS]}, async (request) =>
    régler, facturer, verser — est le circuit ordinaire, qui démarre de lui-même sur le
    passage en « done_pro ». */
 exports.adminReprendreCommande = onCall(async (request) => {
-  const tok = (request.auth && request.auth.token) || {};
-  const who = String(tok.email || '');
-  if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase() || tok.email_verified !== true) {
+  // LA MÊME PORTE QUE LES SEIZE AUTRES : l'adresse de l'administrateur. Pas de
+  // `email_verified` en plus — l'app ne fait confirmer aucune adresse, la condition ne
+  // devient jamais vraie (voir envoyerNewsletter) ; l'ajouter ici a fermé la console au
+  // premier essai, le 27/11/2026.
+  const who = String((request.auth && request.auth.token && request.auth.token.email) || '');
+  if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
     throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
   }
   const reqId = String((request.data && request.data.reqId) || '').trim().slice(0, 128);

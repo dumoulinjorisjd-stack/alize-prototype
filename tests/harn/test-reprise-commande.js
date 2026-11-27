@@ -34,7 +34,9 @@ ok(RP.debutValidationMs({ doneProAt: 100, validationDepuis: 900 }, ms) === 900, 
 ok(RP.debutValidationMs({ doneProAt: 100 }, ms) === 100, 'une commande ordinaire : il part de la fin de prestation, comme avant');
 const src = fs.readFileSync(path.join(RACINE, 'functions', 'index.js'), 'utf8');
 ok(/const depuis = REPRISE\.debutValidationMs\(r, ms\);/.test(src), 'autoValidate lit ce noyau');
-ok(/exports\.adminReprendreCommande[\s\S]{0,700}email_verified !== true/.test(src), 'la porte serveur est réservée à l’administrateur vérifié');
+const porte = (src.match(/exports\.adminReprendreCommande = onCall[\s\S]*?\n\}\);/) || [''])[0];
+ok(/who\.toLowerCase\(\) !== ADMIN_EMAIL\.toLowerCase\(\)/.test(porte), 'la porte serveur est réservée à l’adresse de l’administrateur');
+ok(!/email_verified !==|email_verified ===/.test(porte), 'et elle n’exige pas une adresse confirmée, que l’app ne fait jamais confirmer (sinon la console est fermée)');
 
 (async () => {
   const o = { headless: true }; if (fs.existsSync('/opt/pw-browsers/chromium')) o.executablePath = '/opt/pw-browsers/chromium';
