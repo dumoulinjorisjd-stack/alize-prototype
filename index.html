@@ -6238,6 +6238,9 @@
      (`plN`, `chip`) : déclarée dans la fonction de rendu, elle était invisible partout
      ailleurs — l'épreuve a levé dessus. */
   const CLORE_ETATS=['pending','pending_payment','payment_failed','declined','accepted','working'];
+  /* Miroir de functions/reprise-commande.js (expireeATort), comparé par
+     tests/harn/test-reprise-commande.js. */
+  function expireeATort(r){const d=r||{};return String(d.status||'')==='expired'&&!d.expiredBy&&!!String(d.providerUid||'').trim()&&d.mollieCaptured!==true;}
   const DEMARRAGE_COURTOISIE_MS=60*60*1000;
   function creneauDebutMs(dateISO,slot,slotFlex){
     if(!/^\d{4}-\d{2}-\d{2}$/.test(String(dateISO||'')))return null;
@@ -6502,7 +6505,7 @@
          étape franchie : `acceptedAt` (à l'acceptation), `workingAt` et `doneProAt`
          (horodatés par le serveur), `paidAt`/`settledAt` (règlement), `ratedAt`. */
       dateISO:/^\d{4}-\d{2}-\d{2}$/.test(String(r0.dateISO||''))?String(r0.dateISO):'',
-      etapesAt:{accepted:dateMs(r0.acceptedAt),working:dateMs(r0.workingAt),done_pro:dateMs(r0.doneProAt),
+      etapesAt:{accepted:dateMs(r0.acceptedAt),working:dateMs(r0.workingAt),done_pro:dateMs(r0.doneProAt),validation:dateMs(r0.validationDepuis),
         paid:(dateMs(r0.paidAt)||dateMs(r0.settledAt)),rated:dateMs(r0.ratedAt)},
       complementStatus:txt(r0.complementStatus,16),
       /* CE QUI DÉCIDE DE LA VALIDATION AUTOMATIQUE (autoValidate, serveur) : les heures
@@ -6515,6 +6518,9 @@
       fin:(dateMs(r0.cancelledAt)||dateMs(r0.expiredAt)),
       tardive:!!r0.lateCancel, frais:Number(r0.cancelFee)||0,
       decision:txt(r0.feeDecision,16), parQui:txt(r0.expiredBy,10),
+      /* EXPIRÉE À TORT (27/11/2026) : l'appli du client passait en « expirée » une commande
+         ACCEPTÉE, sans auteur. Miroir de functions/reprise-commande.js (expireeATort). */
+      aTort:expireeATort(r0), reprise:!!(r0.reprise&&typeof r0.reprise==='object'),
       /* CE QUI EST PARTI AUX PRESTATAIRES, écrit par le serveur sur la demande. */
       diff:(function(){const d=r0.diffusion;if(!d||typeof d!=='object')return null;
         return {motif:txt(d.motif,24),cibles:Number(d.cibles)||0,
@@ -6579,7 +6585,8 @@
       if(debut&&maintenant-debut>AVANCE_RETARD_MS)alerte='Pas démarrée, '+dureeCourte(maintenant-debut)+' après l’heure prévue';
     }else if(st==='working')suite='En cours';
     else if(st==='done_pro'){
-      const t=Number(at.done_pro)||0;const bloque=validationAutoBloquee(r);
+      /* Le délai part de la REPRISE quand il y en a eu une (debutValidationMs, serveur). */
+      const t=Number(at.validation)||Number(at.done_pro)||0;const bloque=validationAutoBloquee(r);
       if(bloque)alerte=(bloque==='hausse'?'Heures revues à la hausse':'Montant au-delà de l’accord')+' : pas de validation automatique, le client doit valider';
       else if(!t)alerte='Fin non horodatée : pas de validation automatique, le client doit valider';
       else{const reste=t+AUTO_VALID_MS-maintenant;suite=reste>0?('Validation automatique dans '+dureeCourte(reste)):'Validation automatique imminente';}
@@ -6629,13 +6636,16 @@
      celles des dernières 48 h paraissent, sans exception et sans compteur.
 
      ET CE QUI ATTEND UNE DÉCISION RESTE, QUEL QUE SOIT SON ÂGE : une indemnité
-     d'annulation que le prestataire n'a pas tranchée attend vraiment quelqu'un. */
+     d'annulation que le prestataire n'a pas tranchée attend vraiment quelqu'un, une
+     commande acceptée que l'appli du client a expirée à tort aussi (27/11/2026). */
   const ARRET_RECENT_MS=48*3600000;
   function arretsAMontrer(arretees,maintenant){
     const t0=Number(maintenant)||0;
     return (arretees||[]).filter(function(r){
       if(!r)return false;
       if(r.status==='cancelled'&&r.tardive&&r.decision==='pending')return true;
+      // Expirée par l'appli du client alors qu'acceptée : une reprise attend peut-être.
+      if(r.status==='expired'&&r.aTort)return true;
       const t=Number(r.fin||r.at)||0;
       /* Sans date d'arrêt on ne sait pas si c'est récent : on ne devine pas, et la
          commande reste dans le registre, où elle est de toute façon. */
@@ -13280,7 +13290,7 @@
       // Prise, la mission n'a plus besoin de sa diffusion sous les yeux : elle se replie (« on replie »).
       const diffCle='cmd-diff-'+(r.id||'');
       const diffOuverte=!!(S._fold&&S._fold[diffCle]);
-      return `<div class="card cmd-carte${pliee?' pliee':''}" style="padding:13px;margin-top:9px${(longue||(av&&av.alerte))?';border-left:4px solid var(--coral)':''}">
+      return `<div class="card cmd-carte${pliee?' pliee':''}" style="padding:13px;margin-top:9px${(longue||(av&&av.alerte)||(r.status==='expired'&&r.aTort))?';border-left:4px solid var(--coral)':''}">
         <button class="cmd-tete" data-fold="${esc(plieCle)}" aria-expanded="${pliee?'false':'true'}" style="all:unset;display:block;width:100%;box-sizing:border-box;cursor:pointer;-webkit-tap-highlight-color:transparent">
         <div class="row between" style="align-items:flex-start;gap:8px">
           <b style="font-size:14px;flex:1;min-width:0">${sansMetier?(r.client?esc(r.client):'<i>client sans nom</i>'):esc(r.svcName||svcNm(r.svc)||r.svc||'Prestation')}</b>
@@ -13294,7 +13304,7 @@
           <span class="mini" style="color:${longue?'var(--coral-deep);font-weight:700':'var(--muted)'}">${esc(age)}${r.directed?' · dirigée':''}</span></div>
         </button>
         ${av?cmdAvancement(av,pliee):''}
-        ${pliee?(av?'':`${(r.diff&&r.diff.motif!=='envoyee'&&r.diff.motif!=='relancee')?cmdDiffusion(r):''}${cmdReponses(r,true)}`):`${av?`<button class="linklike mini" data-fold="${esc(diffCle)}" style="margin-top:8px;color:var(--muted)">Diffusion ${diffOuverte?'▾':'›'}</button>`:''}${(!av||diffOuverte)?`${cmdDiffusion(r)}${cmdReponses(r)}${cmdNonPrevenus(r)}${cmdRelance(r)}`:''}${cmdEssai(r)}
+        ${pliee?((r.status==='expired'&&r.aTort?cmdFin(r):'')+(av?'':`${(r.diff&&r.diff.motif!=='envoyee'&&r.diff.motif!=='relancee')?cmdDiffusion(r):''}${cmdReponses(r,true)}`)):`${av?`<button class="linklike mini" data-fold="${esc(diffCle)}" style="margin-top:8px;color:var(--muted)">Diffusion ${diffOuverte?'▾':'›'}</button>`:''}${(!av||diffOuverte)?`${cmdDiffusion(r)}${cmdReponses(r)}${cmdNonPrevenus(r)}${cmdRelance(r)}`:''}${cmdEssai(r)}
         ${cmdFin(r)}
         ${cmdClore(r)}`}
       </div>`;
@@ -13350,6 +13360,12 @@
        attend vraiment, et la ligne le dit en corail. */
     const cmdFin=function(r){
       if(!r)return '';
+      if(r.status==='expired'&&r.aTort){
+        const arme=(S.admReprise===r.id);
+        return `<div class="banner coral" style="margin-top:8px;display:block"><b>Expirée par l’appli du client alors qu’acceptée${r.provider?' par '+esc(r.provider):''}${r.fin?' · '+esc(cmdAge(r.fin)):''}.</b> <span>Rien n’a été prélevé ni versé. Si la prestation a été faite, reprenez-la.</span></div>
+        <div style="margin-top:8px"><button class="btn ghost sm" data-adm="reprise:${esc(r.id)}" style="width:auto;padding:7px 11px;${arme?'color:#fff;background:var(--coral-deep);border-color:var(--coral-deep)':'color:var(--coral-deep)'}">${arme?I.warn+' Confirmer, la prestation a été faite':'Reprendre : prestation faite'}</button>
+        ${arme?`<div class="mini" style="margin-top:5px;color:var(--muted);line-height:1.45">Elle repasse en « terminée » au jour du rendez-vous. Le client est prévenu et valide ou conteste ; sans réponse, validation automatique dans 48 h. Le paiement suit le circuit habituel, puis la facture et le versement au prestataire.</div>`:''}</div>`;
+      }
       if(r.status==='expired'){
         return `<div class="mini" style="margin-top:5px;color:var(--muted)">${I.clock} Expirée${r.parQui==='admin'?' (close depuis la console)':' faute de preneur'}${r.fin?' · '+esc(cmdAge(r.fin)):''}.</div>`;
       }
@@ -22217,6 +22233,18 @@
       else if(act==='tous-en-ligne'){
         if(S.admEnLigneArme!==true){S.admEnLigneArme=true;render();return;}
         S.admEnLigneArme=false; remettreToutEnLigne(); return;
+      }
+      /* REPRENDRE UNE COMMANDE EXPIRÉE À TORT. Deux touchers ; la décision est au serveur
+         (adminReprendreCommande → reprise-commande.js), qui refuse tout ce qui n'est pas
+         une expirée sans auteur avec un prestataire. */
+      else if(act==='reprise'){
+        if(S.admReprise!==id){S.admReprise=id;render();return;}
+        S.admReprise=null;
+        if(!(FB&&FB.fn&&FB.functions)){render();toast('Hors ligne, rien n’a été écrit');return;}
+        FB.fn.httpsCallable(FB.functions,'adminReprendreCommande')({reqId:id})
+          .then(function(){toast('Commande reprise : le client est prévenu pour valider');})
+          .catch(function(e){toast('⚠︎ Non reprise : '+fbErrAdmin(e));});
+        render();return;
       }
       else if(act==='reqclore'){
         if(S.admClore!==id){S.admClore=id;render();return;}

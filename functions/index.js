@@ -17,7 +17,7 @@ const {setGlobalOptions} = require('firebase-functions/v2');
 const {defineSecret} = require('firebase-functions/params');
 const crypto = require('crypto');
 const {initializeApp} = require('firebase-admin/app');
-const {getFirestore, FieldValue} = require('firebase-admin/firestore');
+const {getFirestore, FieldValue, Timestamp} = require('firebase-admin/firestore');
 const {getMessaging} = require('firebase-admin/messaging');
 const {getAuth} = require('firebase-admin/auth');
 
@@ -1908,6 +1908,7 @@ exports.assignFounderSpot = onDocumentCreated('artisans/{artisanId}', async (eve
 const ANTI = require('./anti-abus');
 const CATP = require('./catalogue-prestataire');
 const DEPASSE = require('./creneau-depasse');
+const REPRISE = require('./reprise-commande');
 const ARCH = require('./archive-messages');
 const DEP = require('./journal-departs');
 const PASSE = require('./recherche-passe');
@@ -5482,6 +5483,41 @@ exports.adminRelancerDemande = onCall({secrets: [SMTP_PASS]}, async (request) =>
   return { relance: true, cibles: (out.uids || []).length, push: out.push || 0, mail: out.mail || 0, motif: out.motif };
 });
 
+/* ── REPRENDRE UNE COMMANDE EXPIRÉE À TORT (l'éditeur, 27/11/2026) ──
+   Voir functions/reprise-commande.js : la décision vit là, une fois. Ici, l'accès, la
+   transaction et la trace. Le reste — prévenir la cliente, attendre sa validation,
+   régler, facturer, verser — est le circuit ordinaire, qui démarre de lui-même sur le
+   passage en « done_pro ». */
+exports.adminReprendreCommande = onCall(async (request) => {
+  const tok = (request.auth && request.auth.token) || {};
+  const who = String(tok.email || '');
+  if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase() || tok.email_verified !== true) {
+    throw new HttpsError('permission-denied', 'Réservé à l\'administrateur.');
+  }
+  const reqId = String((request.data && request.data.reqId) || '').trim().slice(0, 128);
+  if (!reqId) throw new HttpsError('invalid-argument', 'Commande manquante.');
+  const db = getFirestore();
+  const ref = db.collection('requests').doc(reqId);
+  const out = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) throw new HttpsError('not-found', 'Commande introuvable.');
+    const r = snap.data() || {};
+    const v = REPRISE.repriseDecider(r, Date.now());
+    if (!v.ok) throw new HttpsError('failed-precondition', v.motif);
+    tx.update(ref, {
+      status: 'done_pro',
+      doneProAt: Timestamp.fromMillis(v.finMs),
+      validationDepuis: FieldValue.serverTimestamp(),
+      reprise: {par: who, at: FieldValue.serverTimestamp(), expireeLe: r.expiredAt || null,
+        motif: 'expirée par l’appli du client alors qu’acceptée'},
+      expiredAt: FieldValue.delete(),
+    });
+    return {finMs: v.finMs, client: String(r.clientName || ''), prestataire: String(r.providerName || '')};
+  });
+  console.log('adminReprendreCommande ' + reqId + ' par ' + who + ' : fin ' + new Date(out.finMs).toISOString());
+  return {ok: true, finMs: out.finMs};
+});
+
 exports.adminClientCard = onCall({secrets: ['MOLLIE_ACCESS_TOKEN']}, async (request) => {
   const who = (request.auth && request.auth.token && request.auth.token.email) || '';
   if (!who || who.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
@@ -7210,7 +7246,9 @@ exports.autoValidate = onSchedule({schedule: 'every 1 hours', secrets: [SMTP_PAS
   try { docs = (await db.collection('requests').where('status', '==', 'done_pro').get()).docs; } catch (e) { console.warn('autoValidate scan', e); return; }
   for (const d of docs) {
     const r = d.data() || {};
-    const depuis = ms(r.doneProAt);
+    // Une commande REPRISE depuis la console porte la fin du jour du ménage (pour la
+    // facture) : le délai part de la reprise, pas de cette date (reprise-commande.js).
+    const depuis = REPRISE.debutValidationMs(r, ms);
     if (!depuis) continue;                    // pas d'horodatage serveur → on ne décide rien
     const heures = (now - depuis) / 3600000;
 
