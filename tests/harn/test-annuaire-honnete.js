@@ -37,7 +37,7 @@ let f = 0; const ok = (c, l) => { if (c) console.log('  ✓ ' + l); else { f++; 
   ok(!/Chargement des prestataires/.test(a.txt), 'plus de « Chargement… » une fois l’échec connu');
   ok(/Liste des prestataires indisponible pour le moment/.test(a.txt) && a.retry, 'l’écran le dit, avec « Réessayer »');
   console.log('B — Réessayer');
-  const bb = await p.evaluate(async () => { window.__mode = 'ok'; document.querySelector('[data-act="prodir-retry"]').click(); await new Promise((r) => setTimeout(r, 150));
+  const bb = await p.evaluate(async () => { window.__mode = 'ok'; const bt = document.querySelector('[data-act="prodir-retry"]'); if (!bt) return { txt: '', appels: -1 }; bt.click(); await new Promise((r) => setTimeout(r, 150));
     const v = document.getElementById('view'); return { txt: v.textContent.replace(/\s+/g, ' '), appels: window.__appels }; });
   ok(bb.appels === 2 && /Maëlle Masseuse/.test(bb.txt) && !/indisponible/.test(bb.txt), 'l’appel repart et la prestataire paraît');
   console.log('C — contrôle : tout va bien');
