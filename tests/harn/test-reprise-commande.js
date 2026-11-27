@@ -42,9 +42,9 @@ ok(/exports\.adminReprendreCommande[\s\S]{0,700}email_verified !== true/.test(sr
   const p = await (await b.newContext({ viewport: { width: 393, height: 1400 }, serviceWorkers: 'block' })).newPage();
   const errs = []; p.on('pageerror', (e) => errs.push(e.message));
   await p.route('**/*', (r) => /gstatic|googleapis|firebase|cloudfunctions|google\.com/.test(r.request().url()) ? r.abort() : r.continue());
-  await p.goto('file://' + path.join(RACINE, 'tests', 'harn', 'app.html')); await p.waitForFunction(() => window.__S && window.__render && window.__aTort && window.__cmd);
+  await p.goto('file://' + path.join(RACINE, 'tests', 'harn', 'app.html')); await p.waitForFunction(() => window.__S && window.__render && window.__cmd);
   console.log('C — le miroir de la console');
-  const miroir = await p.evaluate((cas) => cas.map((c) => window.__aTort(c[1])), CAS);
+  const miroir = await p.evaluate((cas) => (typeof window.__aTort === 'function' ? cas.map((c) => window.__aTort(c[1])) : ['miroir absent']), CAS);
   ok(JSON.stringify(miroir) === JSON.stringify(CAS.map((c) => RP.expireeATort(c[1]))), 'même verdict sur chaque cas (' + miroir.join(', ') + ')');
   const proj = await p.evaluate((r) => window.__cmd.projette('rC', Object.assign({ expiredAt: Date.now() - 40 * 3600000 }, r)), base);
   ok(proj && proj.aTort === true, 'la fiche console porte le repère');
