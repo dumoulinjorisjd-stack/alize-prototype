@@ -3883,7 +3883,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='949';
+  const VERSION_APP='950';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9"><span class="legal-titre">Documents légaux</span><span class="legal-links"><button class="linklike" data-act="view-cgu">CGU</button><button class="linklike" data-act="view-cgv">CGV</button><button class="linklike" data-act="view-mentions">Mentions légales</button><button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?`<button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?`<button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</span></p>
@@ -6788,10 +6788,19 @@
   }
   // Purge auto (client) : retire une demande non honorée 12 h après son créneau (souplesse
   // comprise). Marquée « expired » côté serveur → disparaît aussi du fil des prestataires.
+  /* JAMAIS UNE COMMANDE ACCEPTÉE. La liste comptait « accepted » et « working » : le
+     téléphone du client passait en « expirée » une mission qu'un prestataire avait prise,
+     douze heures après le créneau, pour la seule raison qu'il n'avait pas touché
+     « Démarrer » / « Terminer ». Le serveur libérait alors l'empreinte et annonçait au
+     prestataire sa mission « retirée » : vu le 27/11/2026, un ménage FAIT (112 €) ni
+     prélevé ni payé. Le serveur, lui, n'expire que ce que personne n'a pris
+     (`expirerDemandesNonHonorees`) — « une demande acceptée qui dérape est une annulation,
+     cela ne se décide pas dans un balayage ». Le téléphone suit la même règle. */
+  const STATUTS_PURGEABLES=['pending_payment','payment_failed','searching','declined','pending'];
   function purgeStaleMissions(){
     const arr=S.missions||[];let purged=false;
     for(var i=arr.length-1;i>=0;i--){var m=arr[i];
-      if(['pending_payment','payment_failed','searching','declined','pending','accepted','working'].indexOf(m.status)<0)continue;
+      if(STATUTS_PURGEABLES.indexOf(m.status)<0)continue;
       if(!isStaleMission(m))continue;
       if(m.reqId&&!isDemo()){try{pushReqUpdate(m,{status:'expired',expiredAt:Date.now()});}catch(_){}}
       if(S.mission===m)S.mission=null;
