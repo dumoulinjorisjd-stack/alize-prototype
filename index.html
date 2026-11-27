@@ -3883,7 +3883,7 @@
      Le numéro est le MÊME que celui du service worker (`CACHE` dans sw.js), et une
      épreuve refuse qu'ils divergent — sans quoi l'écran annoncerait une version que
      l'appareil n'exécute pas, ce qui est pire que de ne rien dire. */
-  const VERSION_APP='950';
+  const VERSION_APP='951';
   function legalFooter(role){
     const compte = role!=='public';
     return `<p class="mini" style="text-align:center;margin-top:16px;color:var(--muted);line-height:1.9"><span class="legal-titre">Documents légaux</span><span class="legal-links"><button class="linklike" data-act="view-cgu">CGU</button><button class="linklike" data-act="view-cgv">CGV</button><button class="linklike" data-act="view-mentions">Mentions légales</button><button class="linklike" data-act="view-confidentialite">Confidentialité</button>${compte?`<button class="linklike" data-act="view-suppression">Suppression de compte</button>`:''}${role==='pro'?`<button class="linklike" data-act="view-charte">Charte intervenant</button>`:''}</span></p>
@@ -17277,12 +17277,23 @@
   }
   // Annuaire du métier (callable listProviders) — chargé une fois par service et par
   // session. Rend null tant que la liste arrive (le rendu affiche « chargement »).
+  /* L'annuaire de ce métier n'a pas pu être chargé (erreur ou pas de réponse). */
+  function proDirErreur(svc){return !!(S._proDir&&S._proDir[svc]&&S._proDir[svc].erreur);}
+  /* Ce que dit l'écran tant que l'annuaire n'est pas là : « Chargement… » seulement s'il
+     est vraiment en route ; l'échec avec « Réessayer » ; rien pour un visiteur sans
+     session, pour qui aucun chargement ne partira jamais. */
+  function proDirAttente(svc,style){
+    if(proDirErreur(svc))return `<p class="mini" style="${style};color:var(--coral-deep)">Liste des prestataires indisponible pour le moment. <button class="linklike" data-act="prodir-retry" data-prodir="${esc(svc)}">Réessayer</button></p>`;
+    if(!(FB&&FB.auth&&FB.auth.currentUser))return '';
+    return `<p class="mini" style="${style};color:var(--muted)">Chargement des prestataires…</p>`;
+  }
   function proDirFor(svc){
     /* CE QUI EST DÉJÀ CONNU PASSE EN PREMIER : l'annuaire chargé, ou la fiche injectée
        par un lien nominatif (`chargerFichePublique`). Sans cela, un visiteur arrivé par
        une publicité recevait la liste de DÉMONSTRATION. */
     const e=S._proDir&&S._proDir[svc];
     if(e&&e.list)return e.list;
+    if(e&&e.erreur)return null;   // « Réessayer » relance ; on ne relance pas tout seul en boucle
     // Démo / simulation locale (Firebase indisponible) : annuaire factice pour montrer
     // le parcours.
     if(isDemo())return [
@@ -17298,10 +17309,21 @@
     if(!(FB&&FB.auth&&FB.auth.currentUser))return null;
     if(FB&&FB.auth&&FB.auth.currentUser&&!(e&&e.loading)){
       S._proDir=S._proDir||{};S._proDir[svc]={loading:true,list:null};
-      FB.fn.httpsCallable(FB.functions,'listProviders')({service:svc}).then(function(r){
+      /* UN CHARGEMENT QUI ÉCHOUE LE DIT (vu dans l'app iPhone, 27/11/2026 : « Chargement
+         des prestataires… » sans fin). L'échec écrivait une liste vide SANS redessiner :
+         l'écran restait sur « Chargement… » pour toujours. Et un appel qui ne répond
+         jamais ne doit pas tenir l'écran : quinze secondes, puis on le dit. */
+      const redessine=function(){try{if(S.draft&&S.draft.svc===svc)renderConfig();else render();}catch(_){}};
+      Promise.race([
+        FB.fn.httpsCallable(FB.functions,'listProviders')({service:svc}),
+        new Promise(function(_,rej){setTimeout(function(){rej({code:'app/timeout'});},15000);})
+      ]).then(function(r){
         S._proDir[svc]={list:((r&&r.data&&r.data.providers)||[]).slice(0,20)};
-        if(S.draft&&S.draft.svc===svc)renderConfig();
-      }).catch(function(){S._proDir[svc]={list:[]};});
+        redessine();
+      }).catch(function(err){
+        try{console.warn('listProviders',svc,(err&&(err.code||err.message))||err);}catch(_){}
+        S._proDir[svc]={list:null,erreur:true};redessine();
+      });
       return null;
     }
     return (e&&e.loading)?null:[];
@@ -17434,7 +17456,7 @@
       : `<p class="mini" style="margin-top:6px">${I.clock} Adressée <b>uniquement à ${esc((m.preferredName||'').split(' ')[0])}</b>. S'il décline ou ne répond pas, vous pourrez la proposer à tous les prestataires d'un geste, vous n'êtes jamais bloqué.</p>`):'';
     return `<div class="field">${lblPresta}<div class="stack" style="gap:8px;margin-top:2px">
       ${impose?'':`<button class="addr-opt${!m.preferredUid?' on':''}" data-prefart="" data-prefnm=""><b>${I.bolt} Le premier disponible</b><div class="mini" style="margin-top:2px">Proposé à tous les prestataires du métier, le plus rapide.</div></button>`}
-      ${dir===null?`<p class="mini" style="margin:4px 0 0;color:var(--muted)">Chargement des prestataires…</p>`:list.map(card).join('')}
+      ${dir===null?proDirAttente(m.svc,'margin:4px 0 0'):list.map(card).join('')}
     </div>${note}</div>`;
   }
   // Créneaux réellement libres du prestataire visé (agenda Google/iCal + missions Ti).
@@ -20853,7 +20875,7 @@
     const myUid=(FB&&FB.auth&&FB.auth.currentUser)?FB.auth.currentUser.uid:'';
     const others=(dir||[]).filter(function(a){return a.uid!==myUid;});
     const pick=!f.svc?'':(dir===null
-      ? `<p class="mini" style="margin-top:6px;color:var(--muted)">Chargement des prestataires…</p>`
+      ? proDirAttente(f.svc,'margin-top:6px')
       : (others.length?`<div class="field"><label>Un confrère en particulier&nbsp;?</label>
           <select class="txt" data-rfi="preferred"><option value="">Peu importe, le premier disponible</option>${others.map(function(a){return '<option value="'+esc(a.uid)+'|'+esc(a.name)+'"'+(f.preferredUid===a.uid?' selected':'')+'>'+esc(a.name)+'</option>';}).join('')}</select>
           ${f.preferredUid?`<p class="mini" style="margin-top:6px">${I.clock} Adressée <b>uniquement à ${esc((f.preferredName||'').split(' ')[0])}</b>. S'il décline, vous pourrez la rouvrir à tous.</p>`:''}</div>`
@@ -22998,6 +23020,7 @@
       // existait déjà — le seul qui suspende réellement, puisque `autoValidate` ne balaie
       // que les prestations restées `done_pro`. Ce mécanisme ne servait qu'à contester des
       // HEURES : on ne pouvait pas contester la QUALITÉ, c'est-à-dire le motif le plus courant.
+      case 'prodir-retry':{const sv=b.dataset.prodir||'';if(S._proDir&&sv)delete S._proDir[sv];if(S.draft&&S.draft.svc===sv)renderConfig();else render();break;}
       case 'brouillon-reprendre':{const p=lireBrouillon();if(!p){render();break;}
         // On relève la date AVANT de dessiner : l'écran de configuration normalise le
         // brouillon EN PLACE (c'est le même objet), donc après `render()` la date passée a
