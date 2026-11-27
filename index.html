@@ -22907,11 +22907,17 @@
       case 'do-login':attemptLogin();break;
       case 'toggle-remember':S.loginForm.remember=(S.loginForm.remember===false);render();break;
       case 'forgot-pw':{let emDom='';try{const el=document.querySelector('[data-loginform] [data-lf="email"]');if(el&&el.value)emDom=el.value;}catch(_){}const em=(emDom||(S.loginForm&&S.loginForm.email)||(S.account&&S.account.email)||'').trim();if(!/.+@.+\..+/.test(em)){toast('Saisissez votre e-mail, puis « Mot de passe oublié ».');break;}if(FB){toast('Envoi de l’e-mail en cours…');fbResetPassword(em);}else{toast('Un lien de réinitialisation vous serait envoyé par e-mail.');}break;}
-      case 'google-soon':if(FB){fbGoogle();}else if(sansServeur()){panneServeur();}else{toast('Connexion Google, bientôt disponible');}break;
+      /* LE GESTE DE LA PERSONNE FAIT FOI (l'éditeur, 27/11/2026 : « un client qui crée son
+         compte avec Google est mis directement en prestataire »). Le drapeau
+         `signupAsArtisan`, posé dès qu'on ouvre l'inscription prestataire, n'était effacé
+         que par « retour côté client » : sorti autrement, il restait levé et l'emportait
+         sur un geste Google CLIENT. Depuis l'écran « Se connecter » comme depuis
+         l'inscription client, on le baisse, et l'ancienne intention ne survit pas. */
+      case 'google-soon':try{localStorage.removeItem('tiSignupIntent');}catch(_){}signupAsArtisan=false;signupAsConcierge=false;if(FB){fbGoogle();}else if(sansServeur()){panneServeur();}else{toast('Connexion Google, bientôt disponible');}break;
       // Inscription CLIENT via Google : on mémorise l'intention (survit à une redirection
       // mobile) puis on lance l'authentification. loadUserProfile crée le compte client
       // et route vers le profil pour compléter les informations.
-      case 'google-client':try{localStorage.setItem('tiSignupIntent','client');}catch(_){}if(FB){fbGoogle();}else if(sansServeur()){panneServeur();}else{toast('Connexion Google, bientôt disponible');}break;
+      case 'google-client':try{localStorage.setItem('tiSignupIntent','client');}catch(_){}signupAsArtisan=false;signupAsConcierge=false;if(FB){fbGoogle();}else if(sansServeur()){panneServeur();}else{toast('Connexion Google, bientôt disponible');}break;
       // Inscription PRESTATAIRE via Google : idem, mais on prépare le formulaire pro et on
       // reste dessus après authentification (SIRET, assurance, métiers restent à saisir).
       case 'google-pro':try{localStorage.setItem('tiSignupIntent','artisan');}catch(_){}signupAsArtisan=true;S.proForm=S.proForm||{name:'',phone:'',email:'',password:'',password2:'',cats:[],status:'pro',siret:'',rate:35,bio:'',insurer:'',insuranceDoc:false,mandat:false,cgu:false,charte:false,rates:{},otherService:'',photo:'',refCode:storedParrain()};if(FB){fbGoogle();}else if(sansServeur()){panneServeur();}else{toast('Connexion Google, bientôt disponible');}break;
@@ -25489,6 +25495,9 @@
       }
       // Inscription prestataire en cours : la fiche users (role: artisan) n'est peut-être
       // pas encore écrite → surtout NE PAS créer de compte client. On route vers l'espace pro.
+      // Une intention CLIENT mémorisée (bouton Google de l'inscription client) l'emporte
+      // sur le drapeau : le drapeau survit à une navigation, l'intention dit le geste.
+      if(signupIntent==='client')signupAsArtisan=false;
       if(signupAsArtisan&&(!data||data.role!=='client')){
         S.account={name:name,email:user.email||'',uid:user.uid,role:'artisan'};
         S.persona='pro';S.proName=name;S.proStatus='pending';S.onboarded=true;S.authView=null;S.proNav='home';
