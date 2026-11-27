@@ -13862,6 +13862,9 @@
               ${d.phone?`<a href="tel:${telClean(d.phone)}" style="color:var(--teal-deep);font-weight:700;font-size:13px">${esc(d.phone)}</a>${telStockeLu(d.phone).ok?'':`<span class="mini" style="color:var(--coral-deep);font-weight:700">${esc(telImpossibleTxt(d.phone))}</span>`}`:''}
             </div>
             <button class="uidtap" data-adm="copyuid:${d.uid}" title="Copier l'identifiant du compte">${I.copy} <span class="money">${esc(d.uid)}</span></button>
+            ${(function(){const arme=(S.admDraftClient===d.uid);
+              return `<div style="margin-top:8px"><button class="btn ghost sm" data-adm="draft2client:${esc(d.uid)}" style="width:auto;padding:7px 11px;${arme?'color:#fff;background:var(--coral-deep);border-color:var(--coral-deep)':''}">${arme?I.warn+' Confirmer, passer en client':'Passer en client'}</button>
+              ${arme?`<div class="mini" style="margin-top:5px;color:var(--muted);line-height:1.45">Le compte devient un compte client : à sa prochaine ouverture, l’app s’ouvre côté client. Rien n’est effacé, et la personne pourra toujours s’inscrire comme prestataire.</div>`:''}</div>`;})()}
           </div></div>`;}).join('');
         // Repliable comme ses voisines : la liste peut être longue et repousser tout le
         // reste de la console. Le compteur reste visible sur l'en-tête, replié ou non.
@@ -22259,6 +22262,21 @@
       /* REPRENDRE UNE COMMANDE EXPIRÉE À TORT. Deux touchers ; la décision est au serveur
          (adminReprendreCommande → reprise-commande.js), qui refuse tout ce qui n'est pas
          une expirée sans auteur avec un prestataire. */
+      /* UNE CANDIDATURE JAMAIS ENVOYÉE QUI ÉTAIT UN CLIENT (l'éditeur, 27/11/2026 : « je
+         ne peux pas passer en client une candidature jamais finie »). Le défaut de
+         l'inscription Google en a créé : le bouton Google client menait à l'espace
+         prestataire. Deux touchers ; on n'écrit que le rôle, et la trace du changement. */
+      else if(act==='draft2client'){
+        if(S.admDraftClient!==id){S.admDraftClient=id;render();return;}
+        S.admDraftClient=null;
+        const d=(S.adminDrafts||[]).find(function(x){return x.uid===id;});
+        if(!d){render();toast('Ce compte n’est plus dans les candidatures jamais envoyées');return;}
+        if(!(FB&&FB.db&&FB.f)){render();toast('Hors ligne, rien n’a été écrit');return;}
+        FB.f.updateDoc(FB.f.doc(FB.db,'users',id),{role:'client',roleChange:{de:'artisan',vers:'client',par:'admin',at:Date.now()}})
+          .then(function(){S.adminDrafts=(S.adminDrafts||[]).filter(function(x){return x.uid!==id;});render();toast((d.name||'Le compte')+' est maintenant client');})
+          .catch(function(e){render();toast('⚠︎ Non modifié : '+fbErrAdmin(e));});
+        render();return;
+      }
       else if(act==='reprise'){
         if(S.admReprise!==id){S.admReprise=id;render();return;}
         S.admReprise=null;
